@@ -14,6 +14,17 @@ export type Strings = {
     assetPath: string;
     assetPathHint: string;
     sceneAssets: string;
+    workspaceRail: string;
+    workspaceSections: string;
+    railCollapse: string;
+    railExpand: string;
+    railWidth: string;
+    sectionNames: Record<
+      "description" | "specification" | "scenes" | "speech" | "library" | "module" | "history",
+      string
+    >;
+    libraryCount: (count: number) => string;
+    librarySectionEmpty: string;
     sceneAssetTree: string;
     chooseSceneAsset: string;
     unassignedScene: string;

@@ -499,7 +499,7 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   // --- Expand: the rail's top button (localized) restores the pinned sidebar ---
   await page.getByRole("button", { name: "展开侧栏" }).click();
   await expect(page.locator("aside")).toHaveClass(/w-64/);
-  await expect(page.getByRole("button", { name: "收起侧栏" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Collapse sidebar" })).toBeVisible();
 });
 
 test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) => {
@@ -840,7 +840,9 @@ test("layout: no page grows the document (absolute descendants stay in their scr
   // A short viewport puts the second Agent's node below the fold with a handful of Sessions
   // instead of dozens — the same geometry a full-height window reaches with a longer list.
   await page.setViewportSize({ width: 1440, height: 420 });
-  const paths = ["/chat", "/agents", "/agents/default_agent", "/plugins", "/models"];
+  // Activities is a full-height workspace with its own scrolling panes, so it has to
+  // satisfy this invariant the same way the other pages do.
+  const paths = ["/chat", "/agents", "/agents/default_agent", "/plugins", "/models", "/activities"];
   const grewBy = (p) =>
     p.evaluate(() => {
       const de = document.documentElement;
@@ -860,7 +862,7 @@ test("layout: no page grows the document (absolute descendants stay in their scr
   // stopped fitting below ~412px — a window that short is reachable by browser zoom or docked
   // devtools. The nav now scrolls with the session list, and the collapsed rail scrolls its
   // icons the same way, so both states shrink to nothing instead of pushing the page out.
-  const railToggle = page.getByRole("button", { name: "收起侧栏" });
+  const railToggle = page.getByRole("button", { name: "Collapse sidebar" });
   for (const height of [420, 320, 240]) {
     await page.setViewportSize({ width: 1440, height });
     await page.goto(`${BASE}/chat`);

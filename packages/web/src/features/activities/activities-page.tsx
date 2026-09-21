@@ -21,7 +21,14 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { CreateActivityDialog } from "./create-activity-dialog";
-import { MediaWorkbench } from "./media-workbench";
+import { ActivityRail } from "./activity-rail";
+import { ActivityWorkspace as WorkspaceShell } from "./activity-workspace";
+import { AssetEditor } from "./asset-editor";
+import { fileSizeText } from "./media-library";
+import { SpeechCoverage } from "./speech-coverage";
+import { buildSceneTree, filterTree, treeSelections, type SceneAssetType } from "./scene-assets";
+import { firstSelection, sameSelection, type SceneAssetSelection } from "./scene-asset-tree";
+import { resolveSection, workspaceSections, type WorkspaceSection } from "./workspace-model";
 import { ModulePreview } from "./module-preview";
 import { SceneReview } from "./scene-review";
 import { SpecDiffView } from "./spec-diff-view";
@@ -123,37 +130,21 @@ function ActivityWorkspace({
   );
   const visible = useMemo(() => filterActivities(items, search), [items, search]);
   if (activityId) {
+    // The workspace fills this pane and scrolls inside itself, so nothing may wrap it
+    // in a scroller or a max-width column.
     return (
-      <div className="h-full overflow-auto">
-        <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
-          <nav className="text-xs">
-            <Link className="underline" to="/activities">
-              {S.activities.backToActivities}
-            </Link>
-          </nav>
-          {/* The editor disables itself for a member or a lost Project; say why, as the list does. */}
-          {!available && (
-            <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
-              {S.activities.unavailable}
-            </p>
-          )}
-          {available && !editable && (
-            <p className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
-              {S.activities.readOnly}
-            </p>
-          )}
-          <ActivityEditor
-            key={activityId}
-            projectId={projectId}
-            activityId={activityId}
-            editable={editable}
-            available={available}
-            onDirty={(value) => {
-              dirty.current = value;
-            }}
-            onSaved={reload}
-          />
-        </div>
+      <div className="h-full min-h-0">
+        <ActivityEditor
+          key={activityId}
+          projectId={projectId}
+          activityId={activityId}
+          editable={editable}
+          available={available}
+          onDirty={(value) => {
+            dirty.current = value;
+          }}
+          onSaved={reload}
+        />
       </div>
     );
   }
@@ -279,7 +270,13 @@ function ActivityEditor({
   const [description, setDescription] = useState("");
   const [spec, setSpec] = useState("");
   const [specOpen, setSpecOpen] = useState(false);
+  const [sectionChoice, setSection] = useState<WorkspaceSection | null>(null);
+  const [languageChoice, setLanguage] = useState("");
+  const [kind, setKind] = useState<SceneAssetType | "all">("all");
+  const [selected, setSelected] = useState<SceneAssetSelection | null>(null);
   const [diffOpen, setDiffOpen] = useState(false);
+  // Controlled like the specification's, so moving between sections does not close it.
+  const [mediaOpen, setMediaOpen] = useState(false);
   const [media, setMedia] = useState("");
   const [runs, setRuns] = useState<ActivityRunSummary[]>([]);
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -537,6 +534,60 @@ function ActivityEditor({
   } catch {
     /* Preserve invalid JSON for correction without replacing it with a saved manifest. */
   }
+  /** Start one generation run and show it at the top of the history immediately. */
+  function startRun(path: string, body: Record<string, unknown>) {
+    void action(async () => {
+      const run = await apiFetch<ActivityRun>(`${endpoint}/${path}`, {
+        method: "POST",
+        body: { agentId: selectedAgent, expectedRevision: detail!.draft.contentRevision, ...body },
+      });
+      if (alive.current) {
+        setRuns((previous) => [
+          summarize(run),
+          ...previous.filter((item) => item.runId !== run.runId),
+        ]);
+        setRefreshVersion((value) => value + 1);
+      }
+    });
+  }
+  /** Accept a candidate, which replaces the draft rather than starting anything. */
+  function acceptRun(runId: string, path: string) {
+    void action(async () => {
+      const draft = await apiFetch<ActivityDraft>(
+        `${endpoint}/runs/${encodeURIComponent(runId)}/${path}`,
+        { method: "POST", body: { expectedRevision: detail!.draft.contentRevision } },
+      );
+      if (alive.current) {
+        accept({ ...detail!, draft });
+        setNotice(S.activities.saved);
+      }
+    });
+  }
+  // The rail and the detail pane read one derivation, so they cannot disagree about
+  // which language, which scene, or which asset is being shown.
+  const sections = workspaceSections({
+    hasSpec: !!detail?.draft.spec,
+    hasPlan: !!detail?.draft.mediaPlan,
+    hasModule: !!latestModuleRun(runs),
+  });
+  const section = resolveSection(sectionChoice, {
+    hasSpec: !!detail?.draft.spec,
+    hasPlan: !!detail?.draft.mediaPlan,
+    hasModule: !!latestModuleRun(runs),
+  });
+  const language = editedManifest?.assets[languageChoice]
+    ? languageChoice
+    : (Object.keys(editedManifest?.assets ?? {})[0] ?? "en-US");
+  const tree = filterTree(
+    buildSceneTree(detail?.draft.spec ?? null, editedManifest?.assets[language] ?? []),
+    kind,
+  );
+  // A selection the filter or a rebuilt plan removed falls back to the first leaf, so
+  // the detail pane never points at an asset the tree no longer draws.
+  const selection =
+    selected && treeSelections(tree).some((entry) => sameSelection(entry, selected))
+      ? selected
+      : firstSelection(tree);
   if (!detail)
     return (
       <p
@@ -547,57 +598,27 @@ function ActivityEditor({
       </p>
     );
   return (
-    <section className="min-w-0 space-y-5">
-      <header className="space-y-1">
-        <h2 className="break-words text-lg font-semibold">{detail.title}</h2>
-        <p className="break-all text-xs text-gray-500">
-          {detail.productCode} / {detail.refNum} · {S.activities.collection}: {detail.collectionId}
-        </p>
-        <p aria-live="polite" className={`text-xs ${dirty ? toneInk.attention : toneInk.muted}`}>
-          {dirty ? S.activities.unsaved : S.activities.draftStatus[detail.draft.status]}
-        </p>
-      </header>
-      {error && (
-        <p role="alert" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
-          {error}
-        </p>
-      )}
-      {loadError && available && (
-        <p role="alert" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
-          {loadError}
-        </p>
-      )}
-      {notice && (
-        <p role="status" className={`text-xs ${toneInk.success}`}>
-          {notice}
-        </p>
-      )}
-      {changed && (
-        <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
-          {S.activities.remoteChanged}
-        </p>
-      )}
-      <div className="space-y-2">
-        <Textarea
-          size="sm"
-          label={S.activities.description}
-          rows={7}
-          value={description}
-          maxLength={100_000}
-          onChange={(e) => setDescription(e.target.value)}
-          disabled={available && (!editable || busy)}
-          readOnly={!available}
-        />
-        <div className="flex flex-wrap gap-2">
-          {editable && (
-            <Button
-              size="sm"
-              onClick={() => void save("description")}
-              disabled={busy || description === detail.draft.description}
-            >
-              {S.activities.saveDescription}
-            </Button>
-          )}
+    <WorkspaceShell
+      header={
+        <>
+          <Link
+            to="/activities"
+            className="shrink-0 text-xs text-gray-500 underline hover:text-gray-700 dark:hover:text-gray-300"
+          >
+            {S.activities.backToActivities}
+          </Link>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-sm font-semibold" title={detail.title}>
+              {detail.title}
+            </h2>
+            <p className="truncate text-xs text-gray-500">
+              {detail.productCode} / {detail.refNum} · {S.activities.collection}:{" "}
+              {detail.collectionId}
+            </p>
+          </div>
+          <p aria-live="polite" className={`text-xs ${dirty ? toneInk.attention : toneInk.muted}`}>
+            {dirty ? S.activities.unsaved : S.activities.draftStatus[detail.draft.status]}
+          </p>
           <Button
             size="sm"
             disabled={busy || !available}
@@ -611,488 +632,582 @@ function ActivityEditor({
           >
             {S.activities.reload}
           </Button>
-        </div>
-      </div>
-      {editable && (
-        <div className="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-800">
-          <Select
-            size="sm"
-            label={S.activities.agent}
-            value={selectedAgent}
-            onChange={(e) => setAgentId(e.target.value)}
-            disabled={busy || running}
-          >
-            {agents.map((agent) => (
-              <option key={agent.agentId} value={agent.agentId}>
-                {agent.name ?? agent.agentId}
-              </option>
-            ))}
-          </Select>
-          {detail.activityType === "book" && (
-            <>
-              <h3 className="flex items-center gap-2 text-xs font-semibold">
-                {S.activities.readingMode}
-                <InfoPopover label={S.activities.readingMode}>
-                  <p>{S.activities.readingModeHelp}</p>
-                </InfoPopover>
-              </h3>
-              <Select
-                size="sm"
-                aria-label={S.activities.readingMode}
-                hint={S.activities.readingModeHint}
-                value={bookMode}
-                onChange={(e) => setBookMode(e.target.value as typeof bookMode)}
-                disabled={busy || running}
-              >
-                <option value="">{S.activities.chooseReadingMode}</option>
-                <option value="readAlong">{S.activities.readAlong}</option>
-                <option value="decodable">{S.activities.decodable}</option>
-              </Select>
-            </>
+        </>
+      }
+      notices={
+        <>
+          {!available && (
+            <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
+              {S.activities.unavailable}
+            </p>
           )}
-          {dirty && <p className={`text-xs ${toneInk.attention}`}>{S.activities.saveFirst}</p>}
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={busy || running || dirty || !selectedAgent || !description.trim()}
-            onClick={() =>
-              void action(async () => {
-                const run = await apiFetch<ActivityRun>(`${endpoint}/generate-spec`, {
-                  method: "POST",
-                  body: { agentId: selectedAgent, expectedRevision: detail.draft.contentRevision },
-                });
-                if (alive.current) {
-                  setRuns((previous) => [
-                    summarize(run),
-                    ...previous.filter((item) => item.runId !== run.runId),
-                  ]);
-                  setRefreshVersion((value) => value + 1);
-                }
-              })
-            }
-          >
-            {S.activities.generate}
-          </Button>
-          <Input
-            size="sm"
-            label={S.activities.wafRoot}
-            value={wafRoot}
-            onChange={(event) => setWafRoot(event.target.value)}
-            disabled={busy || running}
-            hint={S.activities.wafRootHint}
-          />
-          <Button
-            size="sm"
-            disabled={
-              busy ||
-              running ||
-              dirty ||
-              !selectedAgent ||
-              detail.draft.status !== "valid" ||
-              !detail.draft.spec ||
-              (detail.activityType === "book" && (!bookMode || !detail.draft.mediaPlan))
-            }
-            onClick={() =>
-              void action(async () => {
-                const run = await apiFetch<ActivityRun>(`${endpoint}/assemble-module`, {
-                  method: "POST",
-                  body: {
-                    agentId: selectedAgent,
-                    expectedRevision: detail.draft.contentRevision,
-                    wafRoot: wafRoot.trim() || undefined,
-                    ...(detail.activityType === "book" ? { bookMode } : {}),
-                  },
-                });
-                if (alive.current) {
-                  setRuns((previous) => [
-                    summarize(run),
-                    ...previous.filter((item) => item.runId !== run.runId),
-                  ]);
-                  setRefreshVersion((value) => value + 1);
-                }
-              })
-            }
-          >
-            {S.activities.assemble}
-          </Button>
-        </div>
-      )}
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold">{S.activities.sceneReview}</h3>
-        <SceneReview spec={detail.draft.spec} />
-      </section>
-      <details
-        className="space-y-2"
-        open={specOpen}
-        onToggle={(event) => setSpecOpen(event.currentTarget.open)}
-      >
-        <summary className="cursor-pointer text-xs font-medium">
-          {S.activities.advancedSpec}
-        </summary>
-        <Textarea
-          size="sm"
-          label={S.activities.spec}
-          rows={15}
-          className="font-mono"
-          value={spec}
-          onChange={(e) => setSpec(e.target.value)}
-          disabled={available && (!editable || busy)}
-          readOnly={!available}
-          spellCheck={false}
+          {available && !editable && (
+            <p className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
+              {S.activities.readOnly}
+            </p>
+          )}
+          {error && (
+            <p role="alert" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
+              {error}
+            </p>
+          )}
+          {loadError && available && (
+            <p role="alert" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
+              {loadError}
+            </p>
+          )}
+          {notice && (
+            <p role="status" className={`text-xs ${toneInk.success}`}>
+              {notice}
+            </p>
+          )}
+          {changed && (
+            <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
+              {S.activities.remoteChanged}
+            </p>
+          )}
+        </>
+      }
+      rail={(dismiss) => (
+        <ActivityRail
+          sections={sections}
+          section={section}
+          onSection={(next) => {
+            setSection(next);
+            dismiss();
+          }}
+          languages={Object.keys(editedManifest?.assets ?? {})}
+          tree={tree}
+          language={language}
+          onLanguage={setLanguage}
+          kind={kind}
+          onKind={setKind}
+          selection={selection}
+          onSelect={(next) => {
+            setSelected(next);
+            dismiss();
+          }}
         />
-        <div className="flex flex-wrap items-center gap-2">
-          {editable && (
-            <Button
-              size="sm"
-              disabled={busy || !spec.trim() || spec === pretty(detail.draft.spec)}
-              onClick={() => void save("spec")}
-            >
-              {S.activities.saveSpec}
-            </Button>
-          )}
-          <Button
-            size="sm"
-            disabled={spec === pretty(detail.draft.spec)}
-            onClick={() => setDiffOpen((value) => !value)}
-          >
-            {diffOpen ? S.activities.diffHide : S.activities.diffShow}
-          </Button>
-        </div>
-        {diffOpen && (
-          <SpecDiffView
-            saved={pretty(detail.draft.spec)}
-            edited={spec}
-            onRevert={editable && !busy ? () => setSpec(pretty(detail.draft.spec)) : undefined}
-          />
-        )}
-      </details>
-      <section className="space-y-3">
-        <h3 className="flex items-center gap-2 text-sm font-semibold">
-          {S.activities.mediaTitle}
-          <InfoPopover label={S.activities.mediaTitle}>
-            <p>{S.activities.mediaHelp}</p>
-            <p>{S.activities.speechHelp}</p>
-            <p>{S.activities.imageHelp}</p>
-            <p>{S.activities.textHelp}</p>
-          </InfoPopover>
-        </h3>
-        {editable && (
-          <Button
-            size="sm"
-            disabled={
-              busy || running || dirty || detail.draft.status !== "valid" || !detail.draft.spec
-            }
-            onClick={() =>
-              void action(async () => {
-                const draft = await apiFetch<ActivityDraft>(`${endpoint}/plan-media`, {
-                  method: "POST",
-                  body: { expectedRevision: detail.draft.contentRevision },
-                });
-                if (alive.current) {
-                  accept({ ...detail, draft });
-                  setNotice(S.activities.saved);
-                }
-              })
-            }
-          >
-            {detail.draft.mediaPlan ? S.activities.rebuildMedia : S.activities.planMedia}
-          </Button>
-        )}
-        {detail.draft.mediaPlan && (
-          <>
-            {editedManifest ? (
-              <MediaWorkbench
-                manifest={editedManifest}
-                spec={detail.draft.spec}
-                media={uploads}
-                mediaLoading={uploadsLoading}
-                onUpload={upload}
-                runs={runs}
-                endpoint={endpoint}
-                editable={editable}
-                disabled={busy || !available}
-                canGenerate={
-                  editable &&
-                  available &&
-                  detail.draft.status === "valid" &&
-                  !busy &&
-                  !running &&
-                  !dirty &&
-                  !!selectedAgent
-                }
-                revision={detail.draft.contentRevision}
-                canAccept={editable && available && !busy && !running && !dirty}
-                canPreview={editable && available && !busy && !dirty}
-                wafRoot={wafRoot}
-                voices={voices}
-                onChange={(value) => setMedia(pretty(value))}
-                onGenerateAudio={(language, assetKey, voice) =>
-                  void action(async () => {
-                    const run = await apiFetch<ActivityRun>(`${endpoint}/generate-audio`, {
-                      method: "POST",
-                      body: {
-                        agentId: selectedAgent,
-                        expectedRevision: detail.draft.contentRevision,
-                        language,
-                        assetKey,
-                        voice,
-                      },
-                    });
-                    if (alive.current) {
-                      setRuns((previous) => [
-                        summarize(run),
-                        ...previous.filter((item) => item.runId !== run.runId),
-                      ]);
-                      setRefreshVersion((value) => value + 1);
-                    }
-                  })
-                }
-                onGenerateAllAudio={(language, assetKeys, voice) =>
-                  setSpeechQueue({ language, voice, keys: assetKeys })
-                }
-                speechQueue={speechQueue?.keys.length ?? 0}
-                onCancelSpeechQueue={() => setSpeechQueue(null)}
-                onGenerateImage={(language, assetKey) =>
-                  void action(async () => {
-                    const run = await apiFetch<ActivityRun>(`${endpoint}/generate-image`, {
-                      method: "POST",
-                      body: {
-                        agentId: selectedAgent,
-                        expectedRevision: detail.draft.contentRevision,
-                        language,
-                        assetKey,
-                      },
-                    });
-                    if (alive.current) {
-                      setRuns((previous) => [
-                        summarize(run),
-                        ...previous.filter((item) => item.runId !== run.runId),
-                      ]);
-                      setRefreshVersion((value) => value + 1);
-                    }
-                  })
-                }
-                onGenerateText={(language, assetKey) =>
-                  void action(async () => {
-                    const run = await apiFetch<ActivityRun>(`${endpoint}/generate-media-text`, {
-                      method: "POST",
-                      body: {
-                        agentId: selectedAgent,
-                        expectedRevision: detail.draft.contentRevision,
-                        language,
-                        assetKey,
-                      },
-                    });
-                    if (alive.current) {
-                      setRuns((previous) => [
-                        summarize(run),
-                        ...previous.filter((item) => item.runId !== run.runId),
-                      ]);
-                      setRefreshVersion((value) => value + 1);
-                    }
-                  })
-                }
-                onAcceptText={(runId) =>
-                  void action(async () => {
-                    const draft = await apiFetch<ActivityDraft>(
-                      `${endpoint}/runs/${encodeURIComponent(runId)}/accept-media-text`,
-                      {
-                        method: "POST",
-                        body: { expectedRevision: detail.draft.contentRevision },
-                      },
-                    );
-                    if (alive.current) {
-                      accept({ ...detail, draft });
-                      setNotice(S.activities.saved);
-                    }
-                  })
-                }
-                onAcceptAudio={(runId) =>
-                  void action(async () => {
-                    const draft = await apiFetch<ActivityDraft>(
-                      `${endpoint}/runs/${encodeURIComponent(runId)}/accept-audio`,
-                      {
-                        method: "POST",
-                        body: { expectedRevision: detail.draft.contentRevision },
-                      },
-                    );
-                    if (alive.current) {
-                      accept({ ...detail, draft });
-                      setNotice(S.activities.saved);
-                    }
-                  })
-                }
-                onAcceptImage={(runId) =>
-                  void action(async () => {
-                    const draft = await apiFetch<ActivityDraft>(
-                      `${endpoint}/runs/${encodeURIComponent(runId)}/accept-image`,
-                      {
-                        method: "POST",
-                        body: { expectedRevision: detail.draft.contentRevision },
-                      },
-                    );
-                    if (alive.current) {
-                      accept({ ...detail, draft });
-                      setNotice(S.activities.saved);
-                    }
-                  })
-                }
-              />
-            ) : (
-              <p className={`text-xs ${toneInk.attention}`}>{S.activities.invalidMediaEditor}</p>
-            )}
-            <ul className="space-y-1 text-xs">
-              {Object.entries(detail.draft.mediaPlan.manifest.assets).map(([language, assets]) => (
-                <li key={language}>
-                  {language}:{" "}
-                  {S.activities.mediaCounts(
-                    assets.length,
-                    assets.filter((asset) => !!asset.path).length,
-                  )}
-                </li>
-              ))}
-            </ul>
-            <details className="space-y-2">
-              <summary className="cursor-pointer text-xs font-medium">
-                {S.activities.advancedMedia}
-              </summary>
-              <Textarea
-                size="sm"
-                label={S.activities.mediaManifest}
-                rows={12}
-                className="font-mono"
-                value={media}
-                onChange={(event) => setMedia(event.target.value)}
-                spellCheck={false}
-                disabled={available && (!editable || busy)}
-                readOnly={!available}
-                hint={S.activities.mediaPathHint}
-              />
-            </details>
-            {editable && (
-              <Button
-                size="sm"
-                disabled={
-                  busy || !media.trim() || media === pretty(detail.draft.mediaPlan.manifest)
-                }
-                onClick={() => void save("media")}
-              >
-                {S.activities.saveMedia}
-              </Button>
-            )}
-          </>
-        )}
-      </section>
-      {available && (
-        <ModulePreview
+      )}
+    >
+      {section === "scenes" && editedManifest ? (
+        <AssetEditor
+          manifest={editedManifest}
+          language={language}
+          selection={selection}
+          media={uploads}
+          mediaLoading={uploadsLoading}
+          onUpload={upload}
           runs={runs}
-          spec={detail.draft.spec}
-          languages={Object.keys(detail.draft.mediaPlan?.manifest.assets ?? {})}
-          stale={(() => {
-            const moduleRun = latestModuleRun(runs);
-            return Boolean(moduleRun && moduleRun.inputRevision !== detail.draft.contentRevision);
-          })()}
+          endpoint={endpoint}
+          editable={editable}
+          disabled={busy || !available}
+          mediaDirty={!!editedManifest && media !== pretty(detail.draft.mediaPlan?.manifest)}
+          onSaveMedia={() => void save("media")}
+          canGenerate={
+            editable &&
+            available &&
+            detail.draft.status === "valid" &&
+            !busy &&
+            !running &&
+            !dirty &&
+            !!selectedAgent
+          }
+          revision={detail.draft.contentRevision}
+          canAccept={editable && available && !busy && !running && !dirty}
+          canPreview={editable && available && !busy && !dirty}
+          wafRoot={wafRoot}
+          voices={voices}
+          onChange={(value) => setMedia(pretty(value))}
+          onGenerateAudio={(lang, assetKey, voice) =>
+            startRun("generate-audio", { language: lang, assetKey, voice })
+          }
+          onGenerateImage={(lang, assetKey) =>
+            startRun("generate-image", { language: lang, assetKey })
+          }
+          onAcceptAudio={(runId) => acceptRun(runId, "accept-audio")}
+          onAcceptImage={(runId) => acceptRun(runId, "accept-image")}
+          onGenerateText={(lang, assetKey) =>
+            startRun("generate-media-text", { language: lang, assetKey })
+          }
+          onAcceptText={(runId) => acceptRun(runId, "accept-media-text")}
         />
-      )}
-      {available && (
-        <section className="space-y-3">
-          <h3 className="text-sm font-semibold">{S.activities.runs}</h3>
-          {runs.length === 0 && <p className="text-xs text-gray-500">{S.activities.noRuns}</p>}
-          {runs.map((run) => (
-            <article
-              key={run.runId}
-              className="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-800"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs">
-                  {run.kind === "module"
-                    ? S.activities.moduleRun
-                    : run.kind === "audio"
-                      ? S.activities.audioRun
-                      : run.kind === "image"
-                        ? S.activities.imageRun
-                        : run.kind === "media-text"
-                          ? S.activities.textRun
-                          : S.activities.specRun}
-                </span>
-                <span className={`rounded px-2 py-0.5 text-xs ${toneSurface[runTone[run.status]]}`}>
-                  {run.kind === "module" && run.status === "succeeded"
-                    ? S.activities.moduleReady
-                    : run.kind === "audio" || run.kind === "image" || run.kind === "media-text"
-                      ? S.activities.speechStatus[run.status]
-                      : S.activities.status[run.status]}
-                </span>
-                <time className="text-xs text-gray-500" dateTime={run.createdAt}>
-                  {new Date(run.createdAt).toLocaleString()}
-                </time>
-              </div>
-              {run.error && <p className="break-words text-xs">{run.error}</p>}
-              {run.status === "running" && (
-                <p className="text-xs text-gray-500">{S.activities.runningHelp}</p>
+      ) : (
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="mx-auto max-w-4xl space-y-5">
+              {section === "description" && (
+                <>
+                  <div className="space-y-2">
+                    <Textarea
+                      size="sm"
+                      label={S.activities.description}
+                      rows={7}
+                      value={description}
+                      maxLength={100_000}
+                      onChange={(e) => setDescription(e.target.value)}
+                      disabled={available && (!editable || busy)}
+                      readOnly={!available}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {editable && (
+                        <Button
+                          size="sm"
+                          onClick={() => void save("description")}
+                          disabled={busy || description === detail.draft.description}
+                        >
+                          {S.activities.saveDescription}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {editable && (
+                    <div className="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+                      <Select
+                        size="sm"
+                        label={S.activities.agent}
+                        value={selectedAgent}
+                        onChange={(e) => setAgentId(e.target.value)}
+                        disabled={busy || running}
+                      >
+                        {agents.map((agent) => (
+                          <option key={agent.agentId} value={agent.agentId}>
+                            {agent.name ?? agent.agentId}
+                          </option>
+                        ))}
+                      </Select>
+                      {detail.activityType === "book" && (
+                        <>
+                          <h3 className="flex items-center gap-2 text-xs font-semibold">
+                            {S.activities.readingMode}
+                            <InfoPopover label={S.activities.readingMode}>
+                              <p>{S.activities.readingModeHelp}</p>
+                            </InfoPopover>
+                          </h3>
+                          <Select
+                            size="sm"
+                            aria-label={S.activities.readingMode}
+                            hint={S.activities.readingModeHint}
+                            value={bookMode}
+                            onChange={(e) => setBookMode(e.target.value as typeof bookMode)}
+                            disabled={busy || running}
+                          >
+                            <option value="">{S.activities.chooseReadingMode}</option>
+                            <option value="readAlong">{S.activities.readAlong}</option>
+                            <option value="decodable">{S.activities.decodable}</option>
+                          </Select>
+                        </>
+                      )}
+                      {dirty && (
+                        <p className={`text-xs ${toneInk.attention}`}>{S.activities.saveFirst}</p>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        disabled={busy || running || dirty || !selectedAgent || !description.trim()}
+                        onClick={() =>
+                          void action(async () => {
+                            const run = await apiFetch<ActivityRun>(`${endpoint}/generate-spec`, {
+                              method: "POST",
+                              body: {
+                                agentId: selectedAgent,
+                                expectedRevision: detail.draft.contentRevision,
+                              },
+                            });
+                            if (alive.current) {
+                              setRuns((previous) => [
+                                summarize(run),
+                                ...previous.filter((item) => item.runId !== run.runId),
+                              ]);
+                              setRefreshVersion((value) => value + 1);
+                            }
+                          })
+                        }
+                      >
+                        {S.activities.generate}
+                      </Button>
+                      <Input
+                        size="sm"
+                        label={S.activities.wafRoot}
+                        value={wafRoot}
+                        onChange={(event) => setWafRoot(event.target.value)}
+                        disabled={busy || running}
+                        hint={S.activities.wafRootHint}
+                      />
+                      <Button
+                        size="sm"
+                        disabled={
+                          busy ||
+                          running ||
+                          dirty ||
+                          !selectedAgent ||
+                          detail.draft.status !== "valid" ||
+                          !detail.draft.spec ||
+                          (detail.activityType === "book" && (!bookMode || !detail.draft.mediaPlan))
+                        }
+                        onClick={() =>
+                          void action(async () => {
+                            const run = await apiFetch<ActivityRun>(`${endpoint}/assemble-module`, {
+                              method: "POST",
+                              body: {
+                                agentId: selectedAgent,
+                                expectedRevision: detail.draft.contentRevision,
+                                wafRoot: wafRoot.trim() || undefined,
+                                ...(detail.activityType === "book" ? { bookMode } : {}),
+                              },
+                            });
+                            if (alive.current) {
+                              setRuns((previous) => [
+                                summarize(run),
+                                ...previous.filter((item) => item.runId !== run.runId),
+                              ]);
+                              setRefreshVersion((value) => value + 1);
+                            }
+                          })
+                        }
+                      >
+                        {S.activities.assemble}
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
-              <div className="flex flex-wrap items-center gap-3">
-                {run.kind === "module" && run.status === "succeeded" && run.sessionId && (
-                  <a
-                    className="text-xs underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    href={`/api/sessions/${encodeURIComponent(run.sessionId)}/files/preview-redirect?path=preview%2Findex.html`}
+              {section === "specification" && (
+                <>
+                  <section className="space-y-3">
+                    <h3 className="text-sm font-semibold">{S.activities.sceneReview}</h3>
+                    <SceneReview spec={detail.draft.spec} />
+                  </section>
+                  <details
+                    className="space-y-2"
+                    open={specOpen}
+                    onToggle={(event) => setSpecOpen(event.currentTarget.open)}
                   >
-                    {S.activities.previewModule}
-                  </a>
-                )}
-                {run.kind === "module" && run.inputRevision !== detail.draft.contentRevision && (
-                  <span className={`text-xs ${toneInk.attention}`}>{S.activities.olderModule}</span>
-                )}
-                {run.sessionId && (
-                  <Link
-                    className="text-xs underline"
-                    to={`/chat/${encodeURIComponent(run.sessionId)}`}
-                  >
-                    {S.activities.openSession}
-                  </Link>
-                )}
-                {editable && run.status === "running" && (
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      void action(async () => {
-                        const result = await apiFetch<ActivityRun>(
-                          `${endpoint}/runs/${run.runId}/cancel`,
-                          { method: "POST", body: {} },
-                        );
-                        if (alive.current)
-                          setRuns((previous) =>
-                            previous.map((item) =>
-                              item.runId === result.runId ? summarize(result) : item,
-                            ),
-                          );
-                      })
-                    }
-                  >
-                    {S.activities.cancel}
-                  </Button>
-                )}
-              </div>
-              {run.hasCandidate && (
-                <CandidateReview
-                  endpoint={`${endpoint}/runs/${encodeURIComponent(run.runId)}/candidate`}
-                  editable={editable && run.kind === "spec"}
-                  busy={busy}
-                  onUse={(candidate) => {
-                    if (!dirty || window.confirm(S.activities.discard)) {
-                      setSpec(candidate);
-                      setSpecOpen(true);
-                    }
+                    <summary className="cursor-pointer text-xs font-medium">
+                      {S.activities.advancedSpec}
+                    </summary>
+                    <Textarea
+                      size="sm"
+                      label={S.activities.spec}
+                      rows={15}
+                      className="font-mono"
+                      value={spec}
+                      onChange={(e) => setSpec(e.target.value)}
+                      disabled={available && (!editable || busy)}
+                      readOnly={!available}
+                      spellCheck={false}
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      {editable && (
+                        <Button
+                          size="sm"
+                          disabled={busy || !spec.trim() || spec === pretty(detail.draft.spec)}
+                          onClick={() => void save("spec")}
+                        >
+                          {S.activities.saveSpec}
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        disabled={spec === pretty(detail.draft.spec)}
+                        onClick={() => setDiffOpen((value) => !value)}
+                      >
+                        {diffOpen ? S.activities.diffHide : S.activities.diffShow}
+                      </Button>
+                    </div>
+                    {diffOpen && (
+                      <SpecDiffView
+                        saved={pretty(detail.draft.spec)}
+                        edited={spec}
+                        onRevert={
+                          editable && !busy ? () => setSpec(pretty(detail.draft.spec)) : undefined
+                        }
+                      />
+                    )}
+                  </details>
+                </>
+              )}
+              {section === "scenes" && (
+                <>
+                  <section className="space-y-3">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold">
+                      {S.activities.mediaTitle}
+                      <InfoPopover label={S.activities.mediaTitle}>
+                        <p>{S.activities.mediaHelp}</p>
+                        <p>{S.activities.speechHelp}</p>
+                        <p>{S.activities.imageHelp}</p>
+                        <p>{S.activities.textHelp}</p>
+                      </InfoPopover>
+                    </h3>
+                    {editable && (
+                      <Button
+                        size="sm"
+                        disabled={
+                          busy ||
+                          running ||
+                          dirty ||
+                          detail.draft.status !== "valid" ||
+                          !detail.draft.spec
+                        }
+                        onClick={() =>
+                          void action(async () => {
+                            const draft = await apiFetch<ActivityDraft>(`${endpoint}/plan-media`, {
+                              method: "POST",
+                              body: { expectedRevision: detail.draft.contentRevision },
+                            });
+                            if (alive.current) {
+                              accept({ ...detail, draft });
+                              setNotice(S.activities.saved);
+                            }
+                          })
+                        }
+                      >
+                        {detail.draft.mediaPlan
+                          ? S.activities.rebuildMedia
+                          : S.activities.planMedia}
+                      </Button>
+                    )}
+                  </section>
+                </>
+              )}
+              {section === "speech" && editedManifest && (
+                <SpeechCoverage
+                  assets={editedManifest.assets[language] ?? []}
+                  language={language}
+                  editable={editable}
+                  canGenerate={
+                    editable && available && !busy && !running && !dirty && !!selectedAgent
+                  }
+                  onSelect={(key) => {
+                    const usage = (editedManifest.assets[language] ?? [])
+                      .find((entry) => entry.key === key)
+                      ?.usages.map((entry) => entry.sceneId)[0];
+                    // A narration is only in the tree while the filter admits audio, and
+                    // a filter left on images would drop the selection and open whatever
+                    // came first instead.
+                    setKind((current) => (current === "all" ? current : "audio"));
+                    setSelected({ sceneId: usage ?? "", key });
+                    setSection("scenes");
                   }}
+                  onGenerateAll={(keys) =>
+                    setSpeechQueue({ language, voice: voices[0] ?? "", keys })
+                  }
+                  queued={speechQueue?.keys.length ?? 0}
+                  onCancelQueue={() => setSpeechQueue(null)}
                 />
               )}
-            </article>
-          ))}
+              {section === "library" && (
+                <section className="space-y-3">
+                  <h3 className="text-sm font-semibold">{S.activities.libraryTitle}</h3>
+                  {uploadsLoading ? (
+                    <p role="status" className="text-xs text-gray-500">
+                      {S.activities.libraryLoading}
+                    </p>
+                  ) : !uploads.length ? (
+                    <p className="text-xs text-gray-500">{S.activities.librarySectionEmpty}</p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-gray-500">
+                        {S.activities.libraryCount(uploads.length)}
+                      </p>
+                      <ul className="space-y-1">
+                        {uploads.map((entry) => (
+                          <li
+                            key={entry.path}
+                            className="flex flex-wrap items-baseline justify-between gap-3 rounded-md border border-gray-200 p-2 text-xs dark:border-gray-800"
+                          >
+                            <span className="min-w-0 break-all">{entry.name}</span>
+                            <span className="shrink-0 text-gray-500">
+                              {S.activities.mediaTypes[entry.kind]} ·{" "}
+                              {fileSizeText(entry.byteLength)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </section>
+              )}
+              {section === "module" && (
+                <>
+                  {available && (
+                    <ModulePreview
+                      runs={runs}
+                      spec={detail.draft.spec}
+                      languages={Object.keys(detail.draft.mediaPlan?.manifest.assets ?? {})}
+                      stale={(() => {
+                        const moduleRun = latestModuleRun(runs);
+                        return Boolean(
+                          moduleRun && moduleRun.inputRevision !== detail.draft.contentRevision,
+                        );
+                      })()}
+                    />
+                  )}
+                </>
+              )}
+              {section === "history" && available && (
+                <>
+                  <section className="space-y-3">
+                    <h3 className="text-sm font-semibold">{S.activities.runs}</h3>
+                    {runs.length === 0 && (
+                      <p className="text-xs text-gray-500">{S.activities.noRuns}</p>
+                    )}
+                    {runs.map((run) => (
+                      <article
+                        key={run.runId}
+                        className="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-800"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs">
+                            {run.kind === "module"
+                              ? S.activities.moduleRun
+                              : run.kind === "audio"
+                                ? S.activities.audioRun
+                                : run.kind === "image"
+                                  ? S.activities.imageRun
+                                  : run.kind === "media-text"
+                                    ? S.activities.textRun
+                                    : S.activities.specRun}
+                          </span>
+                          <span
+                            className={`rounded px-2 py-0.5 text-xs ${toneSurface[runTone[run.status]]}`}
+                          >
+                            {run.kind === "module" && run.status === "succeeded"
+                              ? S.activities.moduleReady
+                              : run.kind === "audio" ||
+                                  run.kind === "image" ||
+                                  run.kind === "media-text"
+                                ? S.activities.speechStatus[run.status]
+                                : S.activities.status[run.status]}
+                          </span>
+                          <time className="text-xs text-gray-500" dateTime={run.createdAt}>
+                            {new Date(run.createdAt).toLocaleString()}
+                          </time>
+                        </div>
+                        {run.error && <p className="break-words text-xs">{run.error}</p>}
+                        {run.status === "running" && (
+                          <p className="text-xs text-gray-500">{S.activities.runningHelp}</p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-3">
+                          {run.kind === "module" && run.status === "succeeded" && run.sessionId && (
+                            <a
+                              className="text-xs underline"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              href={`/api/sessions/${encodeURIComponent(run.sessionId)}/files/preview-redirect?path=preview%2Findex.html`}
+                            >
+                              {S.activities.previewModule}
+                            </a>
+                          )}
+                          {run.kind === "module" &&
+                            run.inputRevision !== detail.draft.contentRevision && (
+                              <span className={`text-xs ${toneInk.attention}`}>
+                                {S.activities.olderModule}
+                              </span>
+                            )}
+                          {run.sessionId && (
+                            <Link
+                              className="text-xs underline"
+                              to={`/chat/${encodeURIComponent(run.sessionId)}`}
+                            >
+                              {S.activities.openSession}
+                            </Link>
+                          )}
+                          {editable && run.status === "running" && (
+                            <Button
+                              size="sm"
+                              disabled={busy}
+                              onClick={() =>
+                                void action(async () => {
+                                  const result = await apiFetch<ActivityRun>(
+                                    `${endpoint}/runs/${run.runId}/cancel`,
+                                    { method: "POST", body: {} },
+                                  );
+                                  if (alive.current)
+                                    setRuns((previous) =>
+                                      previous.map((item) =>
+                                        item.runId === result.runId ? summarize(result) : item,
+                                      ),
+                                    );
+                                })
+                              }
+                            >
+                              {S.activities.cancel}
+                            </Button>
+                          )}
+                        </div>
+                        {run.hasCandidate && (
+                          <CandidateReview
+                            endpoint={`${endpoint}/runs/${encodeURIComponent(run.runId)}/candidate`}
+                            editable={editable && run.kind === "spec"}
+                            busy={busy}
+                            onUse={(candidate) => {
+                              if (!dirty || window.confirm(S.activities.discard)) {
+                                setSpec(candidate);
+                                setSpecOpen(true);
+                              }
+                            }}
+                          />
+                        )}
+                      </article>
+                    ))}
+                  </section>
+                </>
+              )}
+              {section === "specification" && editedManifest && detail.draft.mediaPlan && (
+                <>
+                  <ul className="space-y-1 text-xs">
+                    {Object.entries(detail.draft.mediaPlan?.manifest.assets).map(
+                      ([language, assets]) => (
+                        <li key={language}>
+                          {language}:{" "}
+                          {S.activities.mediaCounts(
+                            assets.length,
+                            assets.filter((asset) => !!asset.path).length,
+                          )}
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                  <details
+                    className="space-y-2"
+                    open={mediaOpen}
+                    onToggle={(event) => setMediaOpen(event.currentTarget.open)}
+                  >
+                    <summary className="cursor-pointer text-xs font-medium">
+                      {S.activities.advancedMedia}
+                    </summary>
+                    <Textarea
+                      size="sm"
+                      label={S.activities.mediaManifest}
+                      rows={12}
+                      className="font-mono"
+                      value={media}
+                      onChange={(event) => setMedia(event.target.value)}
+                      spellCheck={false}
+                      disabled={available && (!editable || busy)}
+                      readOnly={!available}
+                      hint={S.activities.mediaPathHint}
+                    />
+                  </details>
+                  {editable && (
+                    <Button
+                      size="sm"
+                      disabled={
+                        busy || !media.trim() || media === pretty(detail.draft.mediaPlan?.manifest)
+                      }
+                      onClick={() => void save("media")}
+                    >
+                      {S.activities.saveMedia}
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
         </section>
       )}
-    </section>
+    </WorkspaceShell>
   );
 }
 

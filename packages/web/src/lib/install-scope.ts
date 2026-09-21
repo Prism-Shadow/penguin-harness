@@ -145,6 +145,18 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.activityRailWidth",
+    scope: "browser",
+    why: "Activity workspace rail width in px; layout preference of this browser, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.activityRailCollapsed",
+    scope: "browser",
+    why: "Whether the activity workspace rail is collapsed; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
     key: "penguin.dock.launcherY",
     scope: "browser",
     why: "Where the floating dock launcher rests along the chat body's edge; chrome layout, holds no entity.",

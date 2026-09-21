@@ -83,51 +83,83 @@ export function MediaBinding({
       ) : (
         editable && (
           <>
-            <div className="space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
-              <p className="text-xs font-medium">{S.activities.uploadTitle}</p>
-              <p className="text-xs text-gray-500">{S.activities.uploadHint[kind]}</p>
-              <label
-                className={`relative inline-flex items-center ${labelButtonClass("secondary", "sm")}`}
-              >
-                <HiddenFileInput
-                  accept={UPLOAD_ACCEPT[kind]}
-                  disabled={disabled || uploading}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    event.target.value = "";
-                    if (!file) return;
-                    setUploadError("");
-                    setUploading(true);
-                    void onUpload(file)
-                      .then((stored) => {
-                        // `accept` only steers the file chooser, and the server reads
-                        // the real format from the bytes. Binding audio to an image
-                        // would reach the assembled module, so refuse it here and say
-                        // so; the file itself stays in the library.
-                        if (stored.kind !== kind)
-                          setUploadError(S.activities.uploadWrongKind(stored.kind));
-                        else onChange(stored.path);
-                      })
-                      .catch((error: unknown) =>
-                        setUploadError(error instanceof Error ? error.message : String(error)),
-                      )
-                      .finally(() => setUploading(false));
-                  }}
-                />
-                {uploading ? S.activities.uploading : S.activities.uploadFile}
-              </label>
-              {uploadError && (
-                <p role="alert" className={`break-words text-xs ${toneInk.danger}`}>
-                  {uploadError}
-                </p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                <p className="text-xs font-medium">{S.activities.uploadTitle}</p>
+                <p className="text-xs text-gray-500">{S.activities.uploadHint[kind]}</p>
+                <label
+                  className={`relative inline-flex items-center ${labelButtonClass("secondary", "sm")}`}
+                >
+                  <HiddenFileInput
+                    accept={UPLOAD_ACCEPT[kind]}
+                    disabled={disabled || uploading}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      if (!file) return;
+                      setUploadError("");
+                      setUploading(true);
+                      void onUpload(file)
+                        .then((stored) => {
+                          // `accept` only steers the file chooser, and the server reads
+                          // the real format from the bytes. Binding audio to an image
+                          // would reach the assembled module, so refuse it here and say
+                          // so; the file itself stays in the library.
+                          if (stored.kind !== kind)
+                            setUploadError(S.activities.uploadWrongKind(stored.kind));
+                          else onChange(stored.path);
+                        })
+                        .catch((error: unknown) =>
+                          setUploadError(error instanceof Error ? error.message : String(error)),
+                        )
+                        .finally(() => setUploading(false));
+                    }}
+                  />
+                  {uploading ? S.activities.uploading : S.activities.uploadFile}
+                </label>
+                {uploadError && (
+                  <p role="alert" className={`break-words text-xs ${toneInk.danger}`}>
+                    {uploadError}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                <p className="text-xs font-medium">{S.activities.libraryTitle}</p>
+                <p className="text-xs text-gray-500">{S.activities.libraryHint}</p>
+                <Button size="sm" disabled={disabled} onClick={() => setLibraryOpen(true)}>
+                  {S.activities.libraryOpen}
+                </Button>
+              </div>
+              {candidates.length > 0 && (
+                <div className="space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                  <p className="text-xs font-medium">{S.activities.reuseTitle}</p>
+                  <p className="text-xs text-gray-500">{S.activities.reuseHint}</p>
+                  <Select
+                    size="sm"
+                    label={S.activities.reuseChoose}
+                    value={reuse}
+                    disabled={disabled}
+                    onChange={(event) => setReuse(event.target.value)}
+                  >
+                    <option value="">{S.activities.reuseChoose}</option>
+                    {candidates.map((candidate) => (
+                      <option key={candidate.key} value={candidate.key}>
+                        {candidate.key} — {candidate.path}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    size="sm"
+                    disabled={disabled || !chosen}
+                    onClick={() => {
+                      if (chosen?.path) onChange(chosen.path);
+                      setReuse("");
+                    }}
+                  >
+                    {S.activities.reuseApply}
+                  </Button>
+                </div>
               )}
-            </div>
-            <div className="space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
-              <p className="text-xs font-medium">{S.activities.libraryTitle}</p>
-              <p className="text-xs text-gray-500">{S.activities.libraryHint}</p>
-              <Button size="sm" disabled={disabled} onClick={() => setLibraryOpen(true)}>
-                {S.activities.libraryOpen}
-              </Button>
             </div>
             {libraryOpen && (
               <MediaLibraryModal
@@ -146,36 +178,6 @@ export function MediaBinding({
               <Button size="sm" disabled={disabled} onClick={() => onChange(undefined)}>
                 {S.activities.clearBinding}
               </Button>
-            )}
-            {candidates.length > 0 && (
-              <div className="space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
-                <p className="text-xs font-medium">{S.activities.reuseTitle}</p>
-                <p className="text-xs text-gray-500">{S.activities.reuseHint}</p>
-                <Select
-                  size="sm"
-                  label={S.activities.reuseChoose}
-                  value={reuse}
-                  disabled={disabled}
-                  onChange={(event) => setReuse(event.target.value)}
-                >
-                  <option value="">{S.activities.reuseChoose}</option>
-                  {candidates.map((candidate) => (
-                    <option key={candidate.key} value={candidate.key}>
-                      {candidate.key} — {candidate.path}
-                    </option>
-                  ))}
-                </Select>
-                <Button
-                  size="sm"
-                  disabled={disabled || !chosen}
-                  onClick={() => {
-                    if (chosen?.path) onChange(chosen.path);
-                    setReuse("");
-                  }}
-                >
-                  {S.activities.reuseApply}
-                </Button>
-              </div>
             )}
           </>
         )

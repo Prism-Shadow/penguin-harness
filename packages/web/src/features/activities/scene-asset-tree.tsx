@@ -60,7 +60,9 @@ function AssetRow({
         className="mt-0.5 text-gray-500"
       />
       <span className="min-w-0 flex-1">
-        <span className="block break-all">{asset.key}</span>
+        <span className="block truncate" title={asset.key}>
+          {asset.key}
+        </span>
         <span className="block text-gray-500">
           {state}
           {asset.shared ? ` · ${S.activities.sharedAsset}` : ""}
@@ -116,7 +118,9 @@ export function SceneAssetTree({
               className={`flex w-full items-center rounded-md px-1.5 py-1.5 text-left text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-900 ${ICON_GAP.row}`}
             >
               <Chevron open={open} size={ICON_SIZE.chevronDense} className="text-gray-500" />
-              <span className="min-w-0 flex-1 break-all">{scene.sceneId}</span>
+              <span className="min-w-0 flex-1 truncate" title={scene.sceneId}>
+                {scene.sceneId}
+              </span>
               <span className="shrink-0 font-normal text-gray-500">
                 {S.activities.sceneBoundCount(bound, total)}
               </span>
