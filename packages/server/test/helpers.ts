@@ -3,6 +3,7 @@
  * requests via app.request() + building Trace files.
  * None of these tests listen on a port or make real LLM requests.
  */
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -82,6 +83,33 @@ import type { Access } from "../src/mechanisms/projects.js";
 
 export async function makeTempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
+}
+
+let symlinkCapability: boolean | undefined;
+
+/**
+ * Whether this process can create symbolic links at all. Windows denies symlink creation
+ * without a privilege or Developer Mode (EPERM), so tests that need a real symlink skip when
+ * the probe fails — and still run wherever the capability exists (Linux/macOS, elevated or
+ * Developer-Mode Windows) instead of vanishing on every Windows machine. The probe tries once
+ * in a temp directory and caches the answer.
+ */
+export function canCreateSymlink(): boolean {
+  if (symlinkCapability === undefined) {
+    const probeDir = mkdtempSync(path.join(os.tmpdir(), "penguin-symlink-probe-"));
+    try {
+      // A directory link, the variant the guarded cases create; the privilege gate is the
+      // same for file links.
+      symlinkSync(probeDir, path.join(probeDir, "probe"), "dir");
+      symlinkCapability = true;
+    } catch {
+      symlinkCapability = false;
+    } finally {
+      // maxRetries for the same ci-windows cascade reason createTestApp's cleanup documents.
+      rmSync(probeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  }
+  return symlinkCapability;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

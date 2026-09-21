@@ -29,8 +29,12 @@ import type {
   MemoryTransferFile,
   ProjectCreateResponse,
 } from "../src/api/types.js";
-import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { apiClient, canCreateSymlink, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+
+// Symlink creation needs a privilege or Developer Mode on Windows; canCreateSymlink()
+// probes once and caches, so these cases still run where the capability exists.
+const itWithSymlinks = it.skipIf(!canCreateSymlink());
 
 const WORKSPACE_KEY = "my-app-a81f32c4";
 // The `type:` line is the retired field earlier files may still carry — listing must ignore it.
@@ -134,7 +138,7 @@ describe("memory api", () => {
     expect(await fs.readdir(wsDir)).not.toContain(name);
   });
 
-  it("neither lists nor follows a symlinked topic file", async () => {
+  itWithSymlinks("neither lists nor follows a symlinked topic file", async () => {
     const outside = path.join(t.root, "outside-secret.txt");
     await fs.writeFile(outside, "secret", "utf8");
     await fs.symlink(outside, path.join(wsDir, "leak.md"));
@@ -144,7 +148,7 @@ describe("memory api", () => {
     expect((await owner.get(`${filesPath()}/leak.md`)).status).toBe(404);
   });
 
-  it("404s a scope directory smuggled in as a symlink", async () => {
+  itWithSymlinks("404s a scope directory smuggled in as a symlink", async () => {
     const outside = path.join(t.root, "outside-dir");
     await fs.mkdir(outside, { recursive: true });
     await fs.writeFile(path.join(outside, "loot.md"), "---\nname: l\n---\nx\n", "utf8");
@@ -622,43 +626,52 @@ describe("memory scope export/import", () => {
     );
   });
 
-  it("replaces a symlink standing at a memory's name instead of writing through it", async () => {
-    const outside = path.join(t.root, "outside-secret.md");
-    await fs.writeFile(outside, "secret\n", "utf8");
-    await fs.symlink(outside, path.join(wsDir, "leak.md"));
+  itWithSymlinks(
+    "replaces a symlink standing at a memory's name instead of writing through it",
+    async () => {
+      const outside = path.join(t.root, "outside-secret.md");
+      await fs.writeFile(outside, "secret\n", "utf8");
+      await fs.symlink(outside, path.join(wsDir, "leak.md"));
 
-    const res = await runImport(document([topic("leak.md", "imported body")]), {
-      mode: "overwrite",
-      confirm: true,
-    });
-    expect(res.status).toBe(200);
-    // The link is gone, the memory is a real file inside the scope, and the file it pointed at
-    // never saw the write.
-    expect((await fs.lstat(path.join(wsDir, "leak.md"))).isSymbolicLink()).toBe(false);
-    expect(await fs.readFile(path.join(wsDir, "leak.md"), "utf8")).toContain("imported body");
-    expect(await fs.readFile(outside, "utf8")).toBe("secret\n");
-  });
+      const res = await runImport(document([topic("leak.md", "imported body")]), {
+        mode: "overwrite",
+        confirm: true,
+      });
+      expect(res.status).toBe(200);
+      // The link is gone, the memory is a real file inside the scope, and the file it pointed at
+      // never saw the write.
+      expect((await fs.lstat(path.join(wsDir, "leak.md"))).isSymbolicLink()).toBe(false);
+      expect(await fs.readFile(path.join(wsDir, "leak.md"), "utf8")).toContain("imported body");
+      expect(await fs.readFile(outside, "utf8")).toBe("secret\n");
+    },
+  );
 
   it("leaves no temporary file behind in the scope directory", async () => {
     expect((await runImport(document([topic("a.md", "x")]))).status).toBe(200);
     expect((await fs.readdir(wsDir)).filter((n) => n.endsWith(".tmp"))).toEqual([]);
   });
 
-  it("rejects a bad scope key and a scope smuggled in as a symlink, on both routes", async () => {
-    expect((await owner.get(exportPath("..%2Fescape"))).status).toBe(400);
-    expect((await runImport(document([]), { key: "..%2Fescape" })).status).toBe(400);
-    expect((await owner.get(exportPath("never-run-0badc0de"))).status).toBe(404);
-    expect((await runImport(document([]), { key: "never-run-0badc0de" })).status).toBe(404);
+  itWithSymlinks(
+    "rejects a bad scope key and a scope smuggled in as a symlink, on both routes",
+    async () => {
+      expect((await owner.get(exportPath("..%2Fescape"))).status).toBe(400);
+      expect((await runImport(document([]), { key: "..%2Fescape" })).status).toBe(400);
+      expect((await owner.get(exportPath("never-run-0badc0de"))).status).toBe(404);
+      expect((await runImport(document([]), { key: "never-run-0badc0de" })).status).toBe(404);
 
-    const outside = path.join(t.root, "outside-dir");
-    await fs.mkdir(outside, { recursive: true });
-    await fs.symlink(outside, memoryScopeDir(t.root, projectId, "default_agent", "evil-12345678"));
-    expect((await owner.get(exportPath("evil-12345678"))).status).toBe(404);
-    expect((await runImport(document([topic("a.md", "x")]), { key: "evil-12345678" })).status).toBe(
-      404,
-    );
-    expect(await fs.readdir(outside)).toEqual([]);
-  });
+      const outside = path.join(t.root, "outside-dir");
+      await fs.mkdir(outside, { recursive: true });
+      await fs.symlink(
+        outside,
+        memoryScopeDir(t.root, projectId, "default_agent", "evil-12345678"),
+      );
+      expect((await owner.get(exportPath("evil-12345678"))).status).toBe(404);
+      expect(
+        (await runImport(document([topic("a.md", "x")]), { key: "evil-12345678" })).status,
+      ).toBe(404);
+      expect(await fs.readdir(outside)).toEqual([]);
+    },
+  );
 
   // —— Authorization ——
 

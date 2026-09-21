@@ -22,6 +22,7 @@ import type {
 } from "../src/api/types.js";
 import {
   apiClient,
+  canCreateSymlink,
   createDesktopApp,
   createTestApp,
   desktopLoginCookie,
@@ -30,6 +31,10 @@ import {
   provisionUser,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+
+// Symlink creation needs a privilege or Developer Mode on Windows; canCreateSymlink()
+// probes once and caches, so these cases still run where the capability exists.
+const itWithSymlinks = it.skipIf(!canCreateSymlink());
 
 describe("workspace-files-service", () => {
   let ws: string;
@@ -90,51 +95,60 @@ describe("workspace-files-service", () => {
     expect(sub.entries.map((e) => e.name)).toEqual(["c.md"]);
   });
 
-  it("a symlink to a directory inside the Workspace: kind is dir and it can be drilled into", async () => {
-    await fs.symlink(path.join(ws, "sub"), path.join(ws, "link-sub"));
-    const root = await svc.list(ws, "");
-    expect(root.entries.map((e) => `${e.kind}:${e.name}`)).toEqual([
-      "dir:link-sub",
-      "dir:sub",
-      "file:b.txt",
-    ]);
-    const viaLink = await svc.list(ws, "link-sub");
-    expect(viaLink.entries.map((e) => e.name)).toEqual(["c.md"]);
-  });
+  itWithSymlinks(
+    "a symlink to a directory inside the Workspace: kind is dir and it can be drilled into",
+    async () => {
+      await fs.symlink(path.join(ws, "sub"), path.join(ws, "link-sub"));
+      const root = await svc.list(ws, "");
+      expect(root.entries.map((e) => `${e.kind}:${e.name}`)).toEqual([
+        "dir:link-sub",
+        "dir:sub",
+        "file:b.txt",
+      ]);
+      const viaLink = await svc.list(ws, "link-sub");
+      expect(viaLink.entries.map((e) => e.name)).toEqual(["c.md"]);
+    },
+  );
 
-  it("symlink escape: reads and writes are both rejected when the link points outside the Workspace", async () => {
-    await fs.symlink(outside, path.join(ws, "link-out"));
-    const root = await svc.list(ws, "");
-    expect(root.entries.map((entry) => entry.name)).not.toContain("link-out");
-    await expect(svc.list(ws, "link-out")).rejects.toMatchObject({ status: 400 });
-    await expect(svc.read(ws, "link-out/secret.txt")).rejects.toMatchObject({ status: 400 });
-    // Writing outside via a directory symlink: caught by the parent-directory realpath check.
-    await expect(svc.write(ws, "link-out/evil.txt", Buffer.from("x"))).rejects.toMatchObject({
-      status: 400,
-    });
-    // Auto-creation under a missing path is equally restricted: if the nearest
-    // existing ancestor is a symlink pointing outside, mkdir must not be used to escape.
-    await expect(svc.write(ws, "link-out/new/evil.txt", Buffer.from("x"))).rejects.toMatchObject({
-      status: 400,
-    });
-    expect(
-      await fs
-        .stat(path.join(outside, "new"))
-        .then(() => true)
-        .catch(() => false),
-    ).toBe(false);
-  });
+  itWithSymlinks(
+    "symlink escape: reads and writes are both rejected when the link points outside the Workspace",
+    async () => {
+      await fs.symlink(outside, path.join(ws, "link-out"));
+      const root = await svc.list(ws, "");
+      expect(root.entries.map((entry) => entry.name)).not.toContain("link-out");
+      await expect(svc.list(ws, "link-out")).rejects.toMatchObject({ status: 400 });
+      await expect(svc.read(ws, "link-out/secret.txt")).rejects.toMatchObject({ status: 400 });
+      // Writing outside via a directory symlink: caught by the parent-directory realpath check.
+      await expect(svc.write(ws, "link-out/evil.txt", Buffer.from("x"))).rejects.toMatchObject({
+        status: 400,
+      });
+      // Auto-creation under a missing path is equally restricted: if the nearest
+      // existing ancestor is a symlink pointing outside, mkdir must not be used to escape.
+      await expect(svc.write(ws, "link-out/new/evil.txt", Buffer.from("x"))).rejects.toMatchObject({
+        status: 400,
+      });
+      expect(
+        await fs
+          .stat(path.join(outside, "new"))
+          .then(() => true)
+          .catch(() => false),
+      ).toBe(false);
+    },
+  );
 
-  it("writing through a last-segment symlink: O_NOFOLLOW refuses to overwrite files outside the Workspace by proxy", async () => {
-    // The Agent has a symlink inside the Workspace pointing to an outside file; an upload attempts to overwrite it.
-    const victim = path.join(outside, "secret.txt");
-    await fs.symlink(victim, path.join(ws, "report.pdf"));
-    await expect(svc.write(ws, "report.pdf", Buffer.from("PWNED"))).rejects.toMatchObject({
-      status: 400,
-    });
-    // The outside file's content is unchanged.
-    expect(await fs.readFile(victim, "utf8")).toBe("secret");
-  });
+  itWithSymlinks(
+    "writing through a last-segment symlink: O_NOFOLLOW refuses to overwrite files outside the Workspace by proxy",
+    async () => {
+      // The Agent has a symlink inside the Workspace pointing to an outside file; an upload attempts to overwrite it.
+      const victim = path.join(outside, "secret.txt");
+      await fs.symlink(victim, path.join(ws, "report.pdf"));
+      await expect(svc.write(ws, "report.pdf", Buffer.from("PWNED"))).rejects.toMatchObject({
+        status: 400,
+      });
+      // The outside file's content is unchanged.
+      expect(await fs.readFile(victim, "utf8")).toBe("secret");
+    },
+  );
 
   it("write precondition: a matching version writes, one the file has moved past is refused with nothing written", async () => {
     const { version } = await svc.read(ws, "b.txt");
@@ -268,45 +282,52 @@ describe("workspace-files-service", () => {
     });
   });
 
-  it("move and delete confinement: `..` at either end, a symlinked destination directory, and a symlink at the final segment are all refused", async () => {
-    const outsideName = path.basename(outside);
-    await fs.symlink(outside, path.join(ws, "link-out"));
+  itWithSymlinks(
+    "move and delete confinement: `..` at either end, a symlinked destination directory, and a symlink at the final segment are all refused",
+    async () => {
+      const outsideName = path.basename(outside);
+      await fs.symlink(outside, path.join(ws, "link-out"));
 
-    // `..` in the source: the file outside is neither read nor moved in.
-    await expect(svc.move(ws, `../${outsideName}/secret.txt`, "stolen.txt")).rejects.toMatchObject({
-      status: 400,
-    });
-    expect(await fs.stat(path.join(ws, "stolen.txt")).catch(() => null)).toBeNull();
+      // `..` in the source: the file outside is neither read nor moved in.
+      await expect(
+        svc.move(ws, `../${outsideName}/secret.txt`, "stolen.txt"),
+      ).rejects.toMatchObject({
+        status: 400,
+      });
+      expect(await fs.stat(path.join(ws, "stolen.txt")).catch(() => null)).toBeNull();
 
-    // `..` in the destination: nothing lands outside the Workspace.
-    await expect(svc.move(ws, "b.txt", "../escape.txt")).rejects.toMatchObject({ status: 400 });
-    expect(await fs.stat(path.join(path.dirname(ws), "escape.txt")).catch(() => null)).toBeNull();
-    expect(await fs.readFile(path.join(ws, "b.txt"), "utf8")).toBe("hello");
+      // `..` in the destination: nothing lands outside the Workspace.
+      await expect(svc.move(ws, "b.txt", "../escape.txt")).rejects.toMatchObject({ status: 400 });
+      expect(await fs.stat(path.join(path.dirname(ws), "escape.txt")).catch(() => null)).toBeNull();
+      expect(await fs.readFile(path.join(ws, "b.txt"), "utf8")).toBe("hello");
 
-    // A destination parent that is a symlink pointing outside: caught by the same
-    // canonical-parent check an upload runs, including through a directory it would create.
-    await expect(svc.move(ws, "b.txt", "link-out/evil.txt")).rejects.toMatchObject({ status: 400 });
-    await expect(svc.move(ws, "b.txt", "link-out/new/evil.txt")).rejects.toMatchObject({
-      status: 400,
-    });
-    expect(await fs.stat(path.join(outside, "evil.txt")).catch(() => null)).toBeNull();
+      // A destination parent that is a symlink pointing outside: caught by the same
+      // canonical-parent check an upload runs, including through a directory it would create.
+      await expect(svc.move(ws, "b.txt", "link-out/evil.txt")).rejects.toMatchObject({
+        status: 400,
+      });
+      await expect(svc.move(ws, "b.txt", "link-out/new/evil.txt")).rejects.toMatchObject({
+        status: 400,
+      });
+      expect(await fs.stat(path.join(outside, "evil.txt")).catch(() => null)).toBeNull();
 
-    // `..` in a delete: the file outside survives.
-    await expect(svc.remove(ws, `../${outsideName}/secret.txt`)).rejects.toMatchObject({
-      status: 400,
-    });
-    expect(await fs.readFile(path.join(outside, "secret.txt"), "utf8")).toBe("secret");
+      // `..` in a delete: the file outside survives.
+      await expect(svc.remove(ws, `../${outsideName}/secret.txt`)).rejects.toMatchObject({
+        status: 400,
+      });
+      expect(await fs.readFile(path.join(outside, "secret.txt"), "utf8")).toBe("secret");
 
-    // A symlink at the final segment — the Agent's "preset a link, act on it by proxy"
-    // pattern: O_NOFOLLOW refuses it, so neither the link's target nor the link is touched.
-    await fs.symlink(path.join(outside, "secret.txt"), path.join(ws, "report.pdf"));
-    await expect(svc.move(ws, "report.pdf", "sub/report.pdf")).rejects.toMatchObject({
-      status: 400,
-    });
-    await expect(svc.remove(ws, "report.pdf")).rejects.toMatchObject({ status: 400 });
-    expect(await fs.readFile(path.join(outside, "secret.txt"), "utf8")).toBe("secret");
-    expect((await fs.lstat(path.join(ws, "report.pdf"))).isSymbolicLink()).toBe(true);
-  });
+      // A symlink at the final segment — the Agent's "preset a link, act on it by proxy"
+      // pattern: O_NOFOLLOW refuses it, so neither the link's target nor the link is touched.
+      await fs.symlink(path.join(outside, "secret.txt"), path.join(ws, "report.pdf"));
+      await expect(svc.move(ws, "report.pdf", "sub/report.pdf")).rejects.toMatchObject({
+        status: 400,
+      });
+      await expect(svc.remove(ws, "report.pdf")).rejects.toMatchObject({ status: 400 });
+      expect(await fs.readFile(path.join(outside, "secret.txt"), "utf8")).toBe("secret");
+      expect((await fs.lstat(path.join(ws, "report.pdf"))).isSymbolicLink()).toBe(true);
+    },
+  );
 
   it("search: finds a file several directories down that no listing ever reached, reports it as a tree row would, and matches the name rather than the path", async () => {
     await fs.mkdir(path.join(ws, "a", "b", "c"), { recursive: true });
@@ -368,25 +389,28 @@ describe("workspace-files-service", () => {
     ]);
   });
 
-  it("search confinement: an out-of-bounds symlink is never walked into and never appears as a hit, and a link back to the root cannot spin the walk", async () => {
-    await fs.writeFile(path.join(outside, "secret-needle.txt"), "s");
-    await fs.symlink(outside, path.join(ws, "link-out"));
-    // A cycle: the Workspace root reachable from inside itself, twice over.
-    await fs.symlink(ws, path.join(ws, "self"));
-    await fs.symlink(ws, path.join(ws, "sub", "back"));
+  itWithSymlinks(
+    "search confinement: an out-of-bounds symlink is never walked into and never appears as a hit, and a link back to the root cannot spin the walk",
+    async () => {
+      await fs.writeFile(path.join(outside, "secret-needle.txt"), "s");
+      await fs.symlink(outside, path.join(ws, "link-out"));
+      // A cycle: the Workspace root reachable from inside itself, twice over.
+      await fs.symlink(ws, path.join(ws, "self"));
+      await fs.symlink(ws, path.join(ws, "sub", "back"));
 
-    // Nothing outside is reachable, and the link that points there is not itself a hit.
-    expect((await svc.search(ws, "secret")).hits).toEqual([]);
-    expect((await svc.search(ws, "link-out")).hits).toEqual([]);
+      // Nothing outside is reachable, and the link that points there is not itself a hit.
+      expect((await svc.search(ws, "secret")).hits).toEqual([]);
+      expect((await svc.search(ws, "link-out")).hits).toEqual([]);
 
-    // The walk terminates and reports each in-bounds entry once.
-    const all = await svc.search(ws, "b.txt");
-    expect(all.hits.map((h) => h.path)).toEqual(["b.txt"]);
-    expect(all.truncated).toBe(false);
-    // A self-link is an in-bounds directory, so it is a legitimate hit — it is only never
-    // descended into a second time.
-    expect((await svc.search(ws, "self")).hits.map((h) => h.path)).toEqual(["self"]);
-  });
+      // The walk terminates and reports each in-bounds entry once.
+      const all = await svc.search(ws, "b.txt");
+      expect(all.hits.map((h) => h.path)).toEqual(["b.txt"]);
+      expect(all.truncated).toBe(false);
+      // A self-link is an in-bounds directory, so it is a legitimate hit — it is only never
+      // descended into a second time.
+      expect((await svc.search(ws, "self")).hits.map((h) => h.path)).toEqual(["self"]);
+    },
+  );
 
   it("search: the hit cap truncates and says so; an empty or oversize query is a 400", async () => {
     await Promise.all(
