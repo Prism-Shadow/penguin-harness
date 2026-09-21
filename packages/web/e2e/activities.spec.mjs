@@ -657,6 +657,48 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   expect(f.errors).toEqual([]);
 });
 
+test("reviews specification edits against the saved specification before saving", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  const editor = page.getByRole("textbox", { name: "Specification JSON", exact: true });
+  await editor.fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+
+  // Nothing edited yet, so there is nothing to review.
+  const show = page.getByRole("button", { name: "Show changes", exact: true });
+  await expect(show).toBeDisabled();
+
+  const edited = {
+    ...spec,
+    title: "Sight words, revised",
+    scenes: [
+      { id: "intro", description: "Choose a different word" },
+      { id: "quiz", description: "Answer" },
+    ],
+  };
+  await editor.fill(JSON.stringify(edited, null, 2));
+  await show.click();
+
+  // The scenes that moved are named, and both layouts render the same change.
+  await expect(page.getByRole("button", { name: /^intro · changed/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^quiz · added/ })).toBeVisible();
+  await expect(page.getByText("Choose a different word", { exact: false }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Side by side", exact: true }).click();
+  const diff = page.getByLabel("Changes since the last save", { exact: true });
+  await expect(diff.getByText("Saved specification", { exact: true })).toBeVisible();
+  await expect(diff.getByText("Your edit", { exact: true })).toBeVisible();
+
+  // Reverting is confirmed, and puts the saved specification back in the box.
+  await page.getByRole("button", { name: "Revert all changes", exact: true }).click();
+  await expect(page.getByText(/Discard every edit/)).toBeVisible();
+  await page.getByRole("button", { name: "Revert all changes", exact: true }).last().click();
+  await expect(editor).toHaveValue(JSON.stringify(spec, null, 2));
+  await expect(page.getByText("No changes since the last save.")).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
 test("reports speech coverage and generates every missing narration at once", async ({ page }) => {
   const f = await fixture(page);
   await create(page);

@@ -24,6 +24,7 @@ import { CreateActivityDialog } from "./create-activity-dialog";
 import { MediaWorkbench } from "./media-workbench";
 import { ModulePreview } from "./module-preview";
 import { SceneReview } from "./scene-review";
+import { SpecDiffView } from "./spec-diff-view";
 import { activityInitials, filterActivities, latestModuleRun } from "./preview";
 
 const basePath = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/activities`;
@@ -278,6 +279,7 @@ function ActivityEditor({
   const [description, setDescription] = useState("");
   const [spec, setSpec] = useState("");
   const [specOpen, setSpecOpen] = useState(false);
+  const [diffOpen, setDiffOpen] = useState(false);
   const [media, setMedia] = useState("");
   const [runs, setRuns] = useState<ActivityRunSummary[]>([]);
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -738,14 +740,30 @@ function ActivityEditor({
           readOnly={!available}
           spellCheck={false}
         />
-        {editable && (
+        <div className="flex flex-wrap items-center gap-2">
+          {editable && (
+            <Button
+              size="sm"
+              disabled={busy || !spec.trim() || spec === pretty(detail.draft.spec)}
+              onClick={() => void save("spec")}
+            >
+              {S.activities.saveSpec}
+            </Button>
+          )}
           <Button
             size="sm"
-            disabled={busy || !spec.trim() || spec === pretty(detail.draft.spec)}
-            onClick={() => void save("spec")}
+            disabled={spec === pretty(detail.draft.spec)}
+            onClick={() => setDiffOpen((value) => !value)}
           >
-            {S.activities.saveSpec}
+            {diffOpen ? S.activities.diffHide : S.activities.diffShow}
           </Button>
+        </div>
+        {diffOpen && (
+          <SpecDiffView
+            saved={pretty(detail.draft.spec)}
+            edited={spec}
+            onRevert={editable && !busy ? () => setSpec(pretty(detail.draft.spec)) : undefined}
+          />
         )}
       </details>
       <section className="space-y-3">
