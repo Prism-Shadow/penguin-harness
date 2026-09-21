@@ -3,6 +3,7 @@
 - **Date:** 2026-09-07
 - **Type:** fix
 - **Scope:** `plugins`
+- **PR:** [#637](https://github.com/Prism-Shadow/penguin-harness/pull/637), [#626](https://github.com/Prism-Shadow/penguin-harness/pull/626)
 
 [English](2026-09-07-claude-code-finds-its-program.md)
 
