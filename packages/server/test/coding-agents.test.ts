@@ -132,6 +132,52 @@ describe("coding agents api", () => {
     ).toBe(400);
   });
 
+  // The chat-session contract: no folder given, the server allocates its own.
+  it("auto-creates a temporary workspace when workspaceDir is omitted", async () => {
+    const created = await admin.post("/api/coding-agents/sessions", { agentId: "fake" });
+    expect(created.status).toBe(201);
+    const { session } = (await created.json()) as { session: CodingAgentSessionInfo };
+    expect(session.workspaceDir).toMatch(/workspaces[/\\]tmp-[0-9a-f]{8}$/);
+    expect((await admin.get(`/api/coding-agents/sessions/${session.sessionId}`)).status).toBe(200);
+  });
+
+  it("exposes agent config options and sets them by id", async () => {
+    const created = await admin.post("/api/coding-agents/sessions", {
+      agentId: "fake",
+      workspaceDir: workspace,
+    });
+    const { session } = (await created.json()) as { session: CodingAgentSessionInfo };
+    const detail = (await (
+      await admin.get(`/api/coding-agents/sessions/${session.sessionId}`)
+    ).json()) as CodingAgentSessionDetailResponse;
+    expect(detail.configOptions.map((o) => o.id)).toEqual(["model"]);
+    expect(detail.configOptions[0]?.currentValue).toBe("balanced");
+
+    const set = await admin.post(`/api/coding-agents/sessions/${session.sessionId}/config`, {
+      configId: "model",
+      value: "fast",
+    });
+    expect(set.status).toBe(200);
+    const body = (await set.json()) as {
+      configOptions: CodingAgentSessionDetailResponse["configOptions"];
+    };
+    expect(body.configOptions[0]?.currentValue).toBe("fast");
+
+    // The stored detail reflects the new value, and unknown sessions/sessions-gone 404.
+    const reread = (await (
+      await admin.get(`/api/coding-agents/sessions/${session.sessionId}`)
+    ).json()) as CodingAgentSessionDetailResponse;
+    expect(reread.configOptions[0]?.currentValue).toBe("fast");
+    expect(
+      (
+        await admin.post("/api/coding-agents/sessions/does-not-exist/config", {
+          configId: "m",
+          value: "x",
+        })
+      ).status,
+    ).toBe(404);
+  });
+
   it("drives a full turn against a spawned agent and exposes the transcript", async () => {
     const created = await admin.post("/api/coding-agents/sessions", {
       agentId: "fake",
@@ -147,7 +193,9 @@ describe("coding agents api", () => {
         .status,
     ).toBe(202);
     const detail = await waitForTurnEnd(admin, session.sessionId);
-    expect(detail.events).toEqual([
+    // The fixture advertises a Model config option; the creation event opens the log.
+    expect(detail.events[0]).toMatchObject({ type: "config_options" });
+    expect(detail.events.slice(1)).toEqual([
       {
         type: "message_chunk",
         sessionId: session.sessionId,
@@ -157,7 +205,7 @@ describe("coding agents api", () => {
     ]);
     // The transcript survives a fresh read (the log, not a live subscription).
     const reread = await admin.get(`/api/coding-agents/sessions/${session.sessionId}`);
-    expect(((await reread.json()) as CodingAgentSessionDetailResponse).events).toHaveLength(2);
+    expect(((await reread.json()) as CodingAgentSessionDetailResponse).events).toHaveLength(3);
   });
 
   it("answers 404 for unknown sessions across every session route", async () => {

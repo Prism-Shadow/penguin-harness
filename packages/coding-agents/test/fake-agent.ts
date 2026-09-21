@@ -13,6 +13,7 @@ import {
   type CreateElicitationResponse,
   type PromptRequest,
   type RequestPermissionResponse,
+  type SessionConfigOption,
   type SessionModeState,
   type StopReason,
 } from "@agentclientprotocol/sdk";
@@ -21,6 +22,11 @@ export type FakePromptHandler = (
   ctx: AgentRequestContext<PromptRequest>,
   sessionId: string,
 ) => Promise<StopReason> | StopReason;
+
+export type FakeSetConfigHandler = (
+  configId: string,
+  value: boolean | string,
+) => SessionConfigOption[] | void;
 
 export class FakeCodingAgent {
   readonly app: AgentApp;
@@ -31,8 +37,12 @@ export class FakeCodingAgent {
   protocolVersionOverride: number | null = null;
   readonly cancelNotifications: string[] = [];
   readonly answeredPermissions: RequestPermissionResponse[] = [];
+  readonly setConfigRequests: { configId: string; value: boolean | string }[] = [];
+  private configOptions: SessionConfigOption[] = [];
+  setConfigOptionHandler: FakeSetConfigHandler | null = null;
 
-  constructor(options: { modes?: SessionModeState } = {}) {
+  constructor(options: { modes?: SessionModeState; configOptions?: SessionConfigOption[] } = {}) {
+    this.configOptions = options.configOptions ?? [];
     this.app = agent({ name: "fake-agent" })
       .onConnect((conn) => {
         this.connection = conn;
@@ -43,7 +53,15 @@ export class FakeCodingAgent {
       .onRequest(methods.agent.session.new, () => ({
         sessionId: `sess-${++this.sessionSeq}`,
         ...(options.modes !== undefined ? { modes: options.modes } : {}),
+        ...(options.configOptions !== undefined ? { configOptions: options.configOptions } : {}),
       }))
+      .onRequest(methods.agent.session.setConfigOption, (ctx) => {
+        this.setConfigRequests.push({ configId: ctx.params.configId, value: ctx.params.value });
+        const applied = this.setConfigOptionHandler?.(ctx.params.configId, ctx.params.value);
+        if (applied !== undefined) this.configOptions = applied;
+        else this.applyConfigValue(ctx.params.configId, ctx.params.value);
+        return { configOptions: this.configOptions };
+      })
       .onRequest(methods.agent.session.prompt, async (ctx): Promise<{ stopReason: StopReason }> => {
         const stopReason =
           this.promptHandler === null
@@ -117,6 +135,26 @@ export class FakeCodingAgent {
       url: "https://example.com/login",
       message: "Sign in to continue",
     });
+  }
+
+  /** Emit a full config-option set to the client, as a live config_option_update. */
+  async pushConfigOptions(sessionId: string): Promise<void> {
+    await this.requireConnection().client.notify(methods.client.session.update, {
+      sessionId,
+      update: { sessionUpdate: "config_option_update", configOptions: this.configOptions },
+    });
+  }
+
+  /** Default set behavior: move the option to the value the client asked for. */
+  private applyConfigValue(configId: string, value: boolean | string): void {
+    for (const option of this.configOptions) {
+      if (option.id !== configId) continue;
+      if (option.type === "boolean" && typeof value === "boolean") {
+        option.currentValue = value;
+      } else if (option.type === "select" && typeof value === "string") {
+        option.currentValue = value;
+      }
+    }
   }
 
   private requireConnection(): AgentConnection {

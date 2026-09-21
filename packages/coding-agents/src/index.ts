@@ -25,6 +25,7 @@ export {
   type AgentPermissionOutcome,
   type AgentPermissionRequest,
   type AgentServerDefinition,
+  type AgentSessionConfigOption,
   type AgentSessionEvent,
   type AgentStopReason,
   type AgentToolCall,

@@ -68,6 +68,22 @@ export interface AgentModes {
   modes: { id: string; name: string }[];
 }
 
+/**
+ * One session configuration option — model choice, reasoning level, toggles — as the UI
+ * renders it. Options arrive with `session/new` and update live; `category` ("model",
+ * "thought_level", ...) is the agent's UX hint only and may be absent or unknown.
+ */
+export interface AgentSessionConfigOption {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  type: "select" | "boolean";
+  currentValue: string | boolean;
+  /** Selectable values, for `type: "select"` (value groups flattened). */
+  options: { value: string; name: string }[];
+}
+
 export type AgentStopReason =
   "end_turn" | "max_tokens" | "max_turn_requests" | "refusal" | "cancelled" | "failed";
 
@@ -82,6 +98,11 @@ export type AgentSessionEvent =
   | { type: "tool_call"; sessionId: string; call: AgentToolCall }
   | { type: "tool_call_update"; sessionId: string; call: AgentToolCall }
   | { type: "modes"; sessionId: string; modes: AgentModes }
+  | {
+      type: "config_options";
+      sessionId: string;
+      options: AgentSessionConfigOption[];
+    }
   | { type: "usage"; sessionId: string; used: number; size?: number }
   | { type: "permission_request"; sessionId: string; request: AgentPermissionRequest }
   | {

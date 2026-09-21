@@ -38,6 +38,7 @@ import type {
   CodingAgentPermissionRequest,
   CodingAgentPromptRequest,
   CodingAgentSaveRequest,
+  CodingAgentSessionConfigRequest,
   CodingAgentSessionDetailResponse,
   CodingAgentSessionInfo,
   CodingAgentSessionsResponse,
@@ -1864,6 +1865,16 @@ export const setCodingAgentMode = (sessionId: string, body: CodingAgentModeReque
     method: "POST",
     body,
   });
+
+/** The reply carries the agent's full updated config-option set; the SSE log also delivers it. */
+export const setCodingAgentSessionConfig = (
+  sessionId: string,
+  body: CodingAgentSessionConfigRequest,
+) =>
+  apiFetch<{ configOptions: CodingAgentSessionDetailResponse["configOptions"] }>(
+    `/api/coding-agents/sessions/${encodeURIComponent(sessionId)}/config`,
+    { method: "POST", body },
+  );
 
 export const endCodingAgentSession = (sessionId: string) =>
   apiFetch<void>(`/api/coding-agents/sessions/${encodeURIComponent(sessionId)}`, {

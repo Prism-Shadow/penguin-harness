@@ -5,13 +5,14 @@
  *   POST   /api/coding-agents/agents                                   (admin: save a custom definition)
  *   DELETE /api/coding-agents/agents/:agentId                          (admin)
  *   GET    /api/coding-agents/sessions                                 (any user)
- *   POST   /api/coding-agents/sessions                                 (any user: { agentId, workspaceDir })
+ *   POST   /api/coding-agents/sessions                                 (any user: { agentId, workspaceDir? })
  *   GET    /api/coding-agents/sessions/:sessionId                      (detail + event log)
  *   GET    /api/coding-agents/sessions/:sessionId/stream               (SSE)
  *   POST   /api/coding-agents/sessions/:sessionId/prompt               ({ text } -> 202; turn streams)
  *   POST   /api/coding-agents/sessions/:sessionId/permissions/:requestId ({ outcome } -> 204)
  *   POST   /api/coding-agents/sessions/:sessionId/cancel               (204)
  *   POST   /api/coding-agents/sessions/:sessionId/mode                 ({ modeId } -> 204)
+ *   POST   /api/coding-agents/sessions/:sessionId/config               ({ configId, value } -> updated options)
  *   DELETE /api/coding-agents/sessions/:sessionId                      (204)
  *
  * Reading and running is any authenticated user — the same trust level as creating a
@@ -24,7 +25,14 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { CodingAgents } from "../../mechanisms/coding-agents.js";
 import { sseEndpoint } from "../sse.js";
 import { HttpError } from "../errors.js";
-import { badRequest, pathParam, readJson, requireString, requireValidId } from "../validate.js";
+import {
+  badRequest,
+  optionalString,
+  pathParam,
+  readJson,
+  requireString,
+  requireValidId,
+} from "../validate.js";
 
 /** What this route group reaches — bound by its module (see services/agent-routes.ts). */
 export interface CodingAgentsRouteDeps {
@@ -98,13 +106,15 @@ export function codingAgentsRoutes(deps: CodingAgentsRouteDeps): Hono<AppEnv> {
   app.post("/sessions", async (c) => {
     const body = await readJson(c);
     const agentId = requireString(body, "agentId", { maxLen: 64, label: "agentId" });
-    const workspaceDir = requireString(body, "workspaceDir", {
+    // Optional: empty means the service auto-creates a temporary workspace, the same
+    // contract core Sessions have.
+    const workspaceDir = optionalString(body, "workspaceDir", {
       maxLen: 1024,
       label: "workspaceDir",
-    });
+    })?.trim();
     let session;
     try {
-      session = await deps.codingAgents.createSession(agentId, workspaceDir);
+      session = await deps.codingAgents.createSession(agentId, workspaceDir ?? "");
     } catch (error) {
       rethrowKernelError(error);
     }
@@ -205,6 +215,26 @@ export function codingAgentsRoutes(deps: CodingAgentsRouteDeps): Hono<AppEnv> {
       rethrowKernelError(error);
     }
     return c.body(null, 204);
+  });
+
+  // Model choice and other agent-advertised session settings; the reply carries the
+  // agent's full updated set (the live SSE stream delivers the same via the log).
+  app.post("/sessions/:sessionId/config", async (c) => {
+    const sessionId = requireSessionId(c);
+    requireExistingSession(deps, sessionId);
+    const body = await readJson(c);
+    const configId = requireString(body, "configId", { maxLen: 200, label: "configId" });
+    const value = (body as { value?: unknown }).value;
+    if (typeof value !== "boolean" && !(typeof value === "string" && value !== "")) {
+      throw badRequest("value must be a boolean or a non-empty string.");
+    }
+    try {
+      await deps.codingAgents.setConfigOption(sessionId, configId, value);
+    } catch (error) {
+      rethrowKernelError(error);
+    }
+    const detail = deps.codingAgents.sessionDetail(sessionId);
+    return c.json({ configOptions: detail?.configOptions ?? [] });
   });
 
   app.delete("/sessions/:sessionId", async (c) => {

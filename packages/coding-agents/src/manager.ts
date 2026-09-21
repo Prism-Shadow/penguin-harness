@@ -13,6 +13,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import {
   AcpConnection,
+  configOptionsFromAcp,
   type AcpClientInfo,
   type AcpConnectionHandlers,
   type SpawnProcess,
@@ -23,6 +24,7 @@ import {
   type AgentPermissionOutcome,
   type AgentPermissionRequest,
   type AgentServerDefinition,
+  type AgentSessionConfigOption,
   type AgentSessionEvent,
   type AgentModes,
   type AgentStopReason,
@@ -33,6 +35,14 @@ const DEFAULT_PERMISSION_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_MAX_LOGGED_EVENTS = 4_000;
 /** After `session/cancel`, how long an agent gets to report the turn's end itself. */
 const CANCEL_GRACE_MS = 15_000;
+
+/** Deep-enough copy so a view/log snapshot never aliases the live record state. */
+function cloneConfigOptions(options: AgentSessionConfigOption[]): AgentSessionConfigOption[] {
+  return options.map((option) => ({
+    ...option,
+    options: option.options.map((value) => ({ ...value })),
+  }));
+}
 
 export interface CodingAgentManagerOptions {
   clientInfo: AcpClientInfo;
@@ -57,6 +67,8 @@ export interface AgentSessionView {
   workspaceDir: string;
   busy: boolean;
   createdAt: number;
+  /** Model choice and other session settings, as the agent advertised them. */
+  configOptions: AgentSessionConfigOption[];
   /** The bounded event log, oldest first — enough to rebuild the transcript. */
   events: AgentSessionEvent[];
 }
@@ -70,6 +82,7 @@ interface SessionRecord {
   /** Increments per turn; stale turn endings (a cancelled turn's grace timer) drop out. */
   turnSeq: number;
   modes: AgentModes | null;
+  configOptions: AgentSessionConfigOption[];
   permissions: Map<
     string,
     { resolve: (outcome: AgentPermissionOutcome) => void; timer: NodeJS.Timeout }
@@ -189,6 +202,7 @@ export class CodingAgentManager {
               modes: response.modes.availableModes.map((m) => ({ id: m.id, name: m.name })),
             }
           : null,
+      configOptions: configOptionsFromAcp(response.configOptions),
       permissions: new Map(),
       log: [],
     };
@@ -196,7 +210,34 @@ export class CodingAgentManager {
     if (record.modes !== null) {
       this.append(record, { type: "modes", sessionId: record.sessionId, modes: record.modes });
     }
+    if (record.configOptions.length > 0) {
+      this.append(record, {
+        type: "config_options",
+        sessionId: record.sessionId,
+        options: cloneConfigOptions(record.configOptions),
+      });
+    }
     return this.viewOf(record);
+  }
+
+  /**
+   * Set one session configuration option (a model choice, a toggle); the agent's reply
+   * carries the full updated set, which becomes the session's new state.
+   */
+  async setConfigOption(
+    sessionId: string,
+    configId: string,
+    value: boolean | string,
+  ): Promise<void> {
+    const record = this.requireSession(sessionId);
+    const connection = this.connections.get(record.definitionId);
+    if (connection === undefined) throw new AcpAgentError("agent connection is closed");
+    record.configOptions = await connection.setSessionConfigOption(sessionId, configId, value);
+    this.append(record, {
+      type: "config_options",
+      sessionId,
+      options: cloneConfigOptions(record.configOptions),
+    });
   }
 
   /** One turn; resolves after the turn's `turn_end` has been logged. */
@@ -342,6 +383,7 @@ export class CodingAgentManager {
       workspaceDir: record.workspaceDir,
       busy: record.busy,
       createdAt: record.createdAt,
+      configOptions: cloneConfigOptions(record.configOptions),
       events: [...record.log],
     };
   }
@@ -429,6 +471,13 @@ export class CodingAgentManager {
       const merged: AgentModes = { ...record.modes, currentModeId: event.modes.currentModeId };
       record.modes = merged;
       this.append(record, { type: "modes", sessionId: record.sessionId, modes: merged });
+      return;
+    }
+    if (event.type === "config_options") {
+      // The agent pushed a full set (a live config_option_update): it becomes the
+      // session's state, and the log entry rebuilds late joiners' transcripts.
+      record.configOptions = cloneConfigOptions(event.options);
+      this.append(record, event);
       return;
     }
     this.append(record, event);

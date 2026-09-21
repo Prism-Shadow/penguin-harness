@@ -20,6 +20,7 @@ import {
   type NewSessionResponse,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type SessionConfigOption,
   type SessionNotification,
   type StopReason,
   type ToolCallContent,
@@ -27,7 +28,12 @@ import {
   type ToolCallStatus,
   type ToolKind,
 } from "@agentclientprotocol/sdk";
-import { AcpAgentError, type AgentSessionEvent, type AgentToolCall } from "./types.js";
+import {
+  AcpAgentError,
+  type AgentSessionConfigOption,
+  type AgentSessionEvent,
+  type AgentToolCall,
+} from "./types.js";
 
 export type SpawnProcess = typeof spawn;
 
@@ -205,6 +211,20 @@ export class AcpConnection {
     await this.conn.agent.request(methods.agent.session.setMode, { sessionId, modeId });
   }
 
+  /** Set one session config option (model, toggle); resolves with the full updated set. */
+  async setSessionConfigOption(
+    sessionId: string,
+    configId: string,
+    value: boolean | string,
+  ): Promise<AgentSessionConfigOption[]> {
+    const response = await this.conn.agent.request(methods.agent.session.setConfigOption, {
+      sessionId,
+      configId,
+      ...(typeof value === "boolean" ? { value, type: "boolean" as const } : { value }),
+    });
+    return configOptionsFromAcp(response.configOptions);
+  }
+
   /** Ask the agent to close a session; a refusal or a missing method is not an error. */
   async closeSession(sessionId: string): Promise<void> {
     try {
@@ -247,8 +267,38 @@ export class AcpConnection {
   }
 }
 
-/** Build the client-side ACP app: session updates to events, human-owned asks to handlers. */
-function buildClientApp(
+/**
+ * Project ACP session config options onto the neutral vocabulary. Select value groups
+ * are flattened (group name prefixed when it differs from the value's own), so the UI
+ * renders one flat dropdown regardless of how the agent organized its values.
+ */
+export function configOptionsFromAcp(
+  options: SessionConfigOption[] | null | undefined,
+): AgentSessionConfigOption[] {
+  if (options === undefined || options === null) return [];
+  return options.map((option) => {
+    const base = {
+      id: option.id,
+      name: option.name,
+      ...(option.description ? { description: option.description } : {}),
+      ...(option.category ? { category: option.category } : {}),
+    };
+    if (option.type === "boolean") {
+      return { ...base, type: "boolean" as const, currentValue: option.currentValue, options: [] };
+    }
+    const values = option.options.flatMap((entry) =>
+      "options" in entry
+        ? entry.options.map((value) => ({
+            value: value.value,
+            name: value.name === entry.name ? value.name : `${entry.name} · ${value.name}`,
+          }))
+        : [{ value: entry.value, name: entry.name }],
+    );
+    return { ...base, type: "select" as const, currentValue: option.currentValue, options: values };
+  });
+}
+
+/** Build the client-side ACP app: session updates to events, human-owned asks to handlers. */ function buildClientApp(
   clientInfo: AcpClientInfo,
   handlers: AcpConnectionHandlers,
 ): ReturnType<typeof client> {
@@ -313,6 +363,13 @@ function emitUpdate(
         type: "modes",
         sessionId,
         modes: { currentModeId: update.currentModeId, modes: [] },
+      });
+      return;
+    case "config_option_update":
+      onEvent({
+        type: "config_options",
+        sessionId,
+        options: configOptionsFromAcp(update.configOptions),
       });
       return;
     case "usage_update":

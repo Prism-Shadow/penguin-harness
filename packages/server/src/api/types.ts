@@ -4894,12 +4894,19 @@ export interface CodingAgentSessionsResponse {
 }
 
 export interface CodingAgentSessionDetailResponse extends CodingAgentSessionInfo {
+  configOptions: import("@prismshadow/penguin-coding-agents").AgentSessionConfigOption[];
   events: CodingAgentEvent[];
 }
 
 export interface CodingAgentCreateRequest {
   agentId: string;
-  workspaceDir: string;
+  /** Omitted or empty: the server auto-creates a temporary workspace for the session. */
+  workspaceDir?: string;
+}
+
+export interface CodingAgentSessionConfigRequest {
+  configId: string;
+  value: boolean | string;
 }
 
 export interface CodingAgentPromptRequest {
@@ -4916,6 +4923,8 @@ export interface CodingAgentModeRequest {
 
 /** The kernel's protocol-neutral event vocabulary, re-exported for API consumers. */
 export type CodingAgentEvent = import("@prismshadow/penguin-coding-agents").AgentSessionEvent;
+export type CodingAgentConfigOption =
+  import("@prismshadow/penguin-coding-agents").AgentSessionConfigOption;
 export type { AudioTarget, AudioResult } from "../activities/audio.js";
 export type { MediaAsset, AssetManifest } from "../activities/media.js";
 export type { UploadedMedia, UploadKind } from "../activities/upload.js";

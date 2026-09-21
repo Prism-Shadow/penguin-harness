@@ -18,9 +18,13 @@ interface Harness {
 
 function harness(options: {
   modes?: { currentModeId: string; availableModes: { id: string; name: string }[] };
+  configOptions?: import("@agentclientprotocol/sdk").SessionConfigOption[];
   permissionTimeoutMs?: number;
 }): Harness {
-  const fake = new FakeCodingAgent({ modes: options.modes });
+  const fake = new FakeCodingAgent({
+    modes: options.modes,
+    configOptions: options.configOptions,
+  });
   const events: AgentSessionEvent[] = [];
   const manager = new CodingAgentManager({
     clientInfo: CLIENT_INFO,
@@ -113,6 +117,39 @@ describe("CodingAgentManager", () => {
     expect(last).toMatchObject({ type: "modes", modes: { currentModeId: "auto" } });
     const modes = (last as { modes: { modes: unknown[] } }).modes;
     expect(modes.modes).toHaveLength(2);
+  });
+
+  it("surfaces config options from session/new and sets them by id", async () => {
+    const { manager, fake } = harness({
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "balanced",
+          options: [
+            { value: "balanced", name: "Balanced" },
+            { value: "fast", name: "Fast" },
+          ],
+        },
+        { id: "plan", name: "Planning", type: "boolean", currentValue: false },
+      ],
+    });
+    const session = await manager.createSession("fake", workspace);
+    const view = manager.sessionView(session.sessionId);
+    expect(view?.configOptions.map((o) => o.id)).toEqual(["model", "plan"]);
+    expect(view?.events.filter((e) => e.type === "config_options")).toHaveLength(1);
+
+    await manager.setConfigOption(session.sessionId, "model", "fast");
+    expect(fake.setConfigRequests).toEqual([{ configId: "model", value: "fast" }]);
+    expect(manager.sessionView(session.sessionId)?.configOptions[0]?.currentValue).toBe("fast");
+
+    // A live agent-pushed set lands in the log and becomes the session's state.
+    await fake.pushConfigOptions(session.sessionId);
+    const after = manager.sessionView(session.sessionId);
+    // Creation, the set's reply, and the pushed update: one logged set each.
+    expect(after?.events.filter((e) => e.type === "config_options")).toHaveLength(3);
   });
 
   it("refuses a second concurrent prompt on the same session", async () => {

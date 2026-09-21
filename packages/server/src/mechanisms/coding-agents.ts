@@ -28,6 +28,7 @@ export abstract class CodingAgents extends Interface<{
   prompt(sessionId: string, text: string): void;
   cancel(sessionId: string): Promise<void>;
   setMode(sessionId: string, modeId: string): Promise<void>;
+  setConfigOption(sessionId: string, configId: string, value: boolean | string): Promise<void>;
   respondPermission(requestId: string, outcome: AgentPermissionOutcome): boolean;
   disposeSession(sessionId: string): Promise<void>;
 }>() {}

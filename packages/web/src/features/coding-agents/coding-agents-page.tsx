@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  CodingAgentConfigOption,
   CodingAgentDiscoveryCandidate,
   CodingAgentEvent,
   CodingAgentSaveRequest,
@@ -20,18 +21,22 @@ import {
   removeCodingAgent,
   saveCodingAgent,
   setCodingAgentMode,
+  setCodingAgentSessionConfig,
 } from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { toneDot, toneInk, toneStrip, type Tone } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
+import { useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Field } from "../../components/ui/field";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
+import { Select } from "../../components/ui/select";
+import { WorkspaceSelect } from "../chat/workspace-select";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { useCodingAgents, useCodingAgentStream } from "./use-coding-agents";
 
@@ -70,7 +75,7 @@ export function CodingAgentsPage() {
   const { agents, sessions, loading, loadError, reload } = useCodingAgents();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [launchFor, setLaunchFor] = useState<CodingAgentServerInfo | null>(null);
+  const [launchFor, setLaunchFor] = useState<string | null>(null);
   const [removing, setRemoving] = useState<CodingAgentServerInfo | null>(null);
 
   return (
@@ -125,7 +130,7 @@ export function CodingAgentsPage() {
                     {[agent.command, ...agent.args].join(" ")}
                   </div>
                 </div>
-                <Button size="sm" onClick={() => setLaunchFor(agent)}>
+                <Button size="sm" onClick={() => setLaunchFor(agent.id)}>
                   {S.codingAgents.newSession}
                 </Button>
                 {isAdmin ? (
@@ -147,7 +152,12 @@ export function CodingAgentsPage() {
       />
 
       <AddAgentModal open={addOpen} onClose={() => setAddOpen(false)} onSaved={reload} />
-      <LaunchModal agent={launchFor} onClose={() => setLaunchFor(null)} onCreated={reload} />
+      <LaunchModal
+        agents={agents}
+        initialAgentId={launchFor}
+        onClose={() => setLaunchFor(null)}
+        onCreated={reload}
+      />
       <ConfirmModal
         open={removing !== null}
         title={S.codingAgents.removeConfirmTitle}
@@ -245,6 +255,7 @@ function buildTranscript(events: CodingAgentEvent[]): {
   stops: { label: "turnEnded" | "turnCancelled" | "turnFailed"; tone: Tone }[];
   modes: { id: string; name: string }[];
   currentMode: string | null;
+  configOptions: CodingAgentConfigOption[];
   permission: PermissionRequest | null;
 } {
   const blocks: TextBlock[] = [];
@@ -253,6 +264,7 @@ function buildTranscript(events: CodingAgentEvent[]): {
   const stops: { label: "turnEnded" | "turnCancelled" | "turnFailed"; tone: Tone }[] = [];
   let modes: { id: string; name: string }[] = [];
   let currentMode: string | null = null;
+  let configOptions: CodingAgentConfigOption[] = [];
   let permission: PermissionRequest | null = null;
   const resolved = new Set<string>();
   let current: TextBlock | null = null;
@@ -276,6 +288,8 @@ function buildTranscript(events: CodingAgentEvent[]): {
     } else if (event.type === "modes") {
       if (event.modes.modes.length > 0) modes = event.modes.modes;
       currentMode = event.modes.currentModeId;
+    } else if (event.type === "config_options") {
+      configOptions = event.options;
     } else if (event.type === "permission_request") {
       permission = event.request;
     } else if (event.type === "permission_resolved") {
@@ -285,7 +299,16 @@ function buildTranscript(events: CodingAgentEvent[]): {
     }
   }
   if (permission !== null && resolved.has(permission.requestId)) permission = null;
-  return { blocks, toolList: [...tools.values()], notices, stops, modes, currentMode, permission };
+  return {
+    blocks,
+    toolList: [...tools.values()],
+    notices,
+    stops,
+    modes,
+    currentMode,
+    configOptions,
+    permission,
+  };
 }
 
 function SessionView({ sessionId, onSettled }: { sessionId: string; onSettled: () => void }) {
@@ -390,6 +413,13 @@ function SessionView({ sessionId, onSettled }: { sessionId: string; onSettled: (
         <div ref={bottomRef} />
       </div>
       <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">
+        {transcript.configOptions.length > 0 ? (
+          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            {transcript.configOptions.map((option) => (
+              <ConfigOptionControl key={option.id} sessionId={sessionId} option={option} />
+            ))}
+          </div>
+        ) : null}
         {transcript.modes.length > 0 ? (
           <div className="mb-2 flex items-center gap-2">
             <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -443,6 +473,57 @@ function SessionView({ sessionId, onSettled }: { sessionId: string; onSettled: (
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * One agent-advertised session setting — the model dropdown is the one that matters —
+ * rendered next to the composer. The set updates itself: the agent's reply and any live
+ * config_option_update arrive as config_options events on the session's stream.
+ */
+function ConfigOptionControl({
+  sessionId,
+  option,
+}: {
+  sessionId: string;
+  option: CodingAgentConfigOption;
+}) {
+  const set = (value: boolean | string) => {
+    void setCodingAgentSessionConfig(sessionId, { configId: option.id, value }).catch(
+      (e: unknown) => toastError(apiErrorText(e)),
+    );
+  };
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">{option.name}</span>
+      {option.type === "select" ? (
+        <Select
+          size="sm"
+          aria-label={option.name}
+          value={String(option.currentValue)}
+          onChange={(e) => set(e.target.value)}
+        >
+          {option.options.map((value) => (
+            <option key={value.value} value={value.value}>
+              {value.name}
+            </option>
+          ))}
+        </Select>
+      ) : (
+        <button
+          type="button"
+          aria-pressed={option.currentValue === true}
+          onClick={() => set(option.currentValue !== true)}
+          className={`rounded-full border px-2 py-0.5 text-xs ${
+            option.currentValue === true
+              ? "border-[var(--accent-bg)] bg-[var(--accent-bg)] text-[var(--accent-fg)]"
+              : "border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          }`}
+        >
+          {option.currentValue === true ? S.codingAgents.configOn : S.codingAgents.configOff}
+        </button>
+      )}
     </div>
   );
 }
@@ -709,19 +790,39 @@ function DiscoveryList({
   );
 }
 
+/**
+ * Start a session: pick a saved agent, optionally pick a folder. An empty folder is the
+ * same contract chat has — the server auto-creates a temporary workspace — so starting
+ * is one click, and the folder browser is there for when a specific checkout matters.
+ */
 function LaunchModal({
-  agent,
+  agents,
+  initialAgentId,
   onClose,
   onCreated,
 }: {
-  agent: CodingAgentServerInfo | null;
+  agents: CodingAgentServerInfo[];
+  initialAgentId: string | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const { currentProject } = useProject();
+  const [agentId, setAgentId] = useState("");
   const [workspace, setWorkspace] = useState("");
+  // Re-open resets the picker to the row that launched it (or the first agent).
+  useEffect(() => {
+    if (initialAgentId !== null) {
+      setAgentId(initialAgentId);
+      setWorkspace("");
+    }
+  }, [initialAgentId]);
+  const agent = agents.find((a) => a.id === agentId) ?? null;
   const create = () => {
-    if (agent === null || workspace.trim() === "") return;
-    createCodingAgentSession({ agentId: agent.id, workspaceDir: workspace.trim() })
+    if (agent === null) return;
+    createCodingAgentSession({
+      agentId: agent.id,
+      ...(workspace.trim() === "" ? {} : { workspaceDir: workspace.trim() }),
+    })
       .then(() => {
         onCreated();
         setWorkspace("");
@@ -731,23 +832,53 @@ function LaunchModal({
   };
   return (
     <Modal
-      open={agent !== null}
-      title={agent?.title ?? agent?.id ?? S.codingAgents.newSession}
+      open={initialAgentId !== null}
+      title={S.codingAgents.newSession}
       onClose={onClose}
       footer={
         <>
           <Button size="sm" onClick={onClose}>
             {S.codingAgents.cancel}
           </Button>
-          <Button size="sm" variant="primary" disabled={workspace.trim() === ""} onClick={create}>
+          <Button size="sm" variant="primary" disabled={agent === null} onClick={create}>
             {S.codingAgents.startSession}
           </Button>
         </>
       }
     >
-      <Field label={S.codingAgents.workspaceLabel} hint={S.codingAgents.workspaceHint} required>
-        <Input size="sm" value={workspace} onChange={(e) => setWorkspace(e.target.value)} />
-      </Field>
+      <div className="space-y-3">
+        <Field label={S.codingAgents.agentLabel} required>
+          <Select size="sm" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+            {agents.length === 0 ? (
+              <option value="">{S.codingAgents.noAgents}</option>
+            ) : (
+              agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.title ?? a.id}
+                </option>
+              ))
+            )}
+          </Select>
+        </Field>
+        {agent !== null ? (
+          <div className="truncate font-mono text-xs text-gray-500 dark:text-gray-400">
+            {[agent.command, ...agent.args].join(" ")}
+          </div>
+        ) : null}
+        {currentProject !== null ? (
+          <WorkspaceSelect
+            projectId={currentProject.projectId}
+            workspace={workspace}
+            onChange={setWorkspace}
+            variant="form"
+            fieldLabel={S.codingAgents.workspaceLabel}
+          />
+        ) : (
+          <Field label={S.codingAgents.workspaceLabel} hint={S.codingAgents.workspaceHint}>
+            <Input size="sm" value={workspace} onChange={(e) => setWorkspace(e.target.value)} />
+          </Field>
+        )}
+      </div>
     </Modal>
   );
 }

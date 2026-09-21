@@ -251,6 +251,9 @@ export type Strings = {
     save: string;
     cancel: string;
     newSession: string;
+    agentLabel: string;
+    configOn: string;
+    configOff: string;
     sessionsTitle: string;
     noSessions: string;
     workspaceLabel: string;

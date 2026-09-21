@@ -26,6 +26,7 @@ import {
   type AgentSessionEvent,
 } from "@prismshadow/penguin-coding-agents";
 import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import type {
@@ -124,8 +125,14 @@ export class CodingAgentService implements CodingAgents {
     if (definition === undefined) {
       throw new AcpAgentError(`unknown agent: ${agentId}`);
     }
-    await fs.mkdir(agentHome(this.config.root, agentId), { recursive: true, mode: 0o700 });
-    const view = await manager.createSession(agentId, workspaceDir);
+    const home = agentHome(this.config.root, agentId);
+    await fs.mkdir(home, { recursive: true, mode: 0o700 });
+    // No explicit folder: the session gets its own temporary workspace, the same
+    // auto-create contract core Sessions have (the Web App's pickers treat empty as
+    // exactly this).
+    const dir =
+      workspaceDir.trim() === "" ? await this.createTempWorkspace(home) : workspaceDir.trim();
+    const view = await manager.createSession(agentId, dir);
     const channel = this.channels.get(`coding-agent:${view.sessionId}`);
     // Bridge kernel events into the channel hub: replay/resync then belong to the hub.
     const unbridge = manager.subscribe(view.sessionId, (event: AgentSessionEvent) => {
@@ -138,7 +145,7 @@ export class CodingAgentService implements CodingAgents {
   sessionDetail(sessionId: string): CodingAgentSessionDetailResponse | undefined {
     const view = this.getManager().sessionView(sessionId);
     if (view === undefined) return undefined;
-    return { ...this.toInfo(view), events: view.events };
+    return { ...this.toInfo(view), configOptions: view.configOptions, events: view.events };
   }
 
   channelFor(sessionId: string): ChannelApi | undefined {
@@ -163,6 +170,14 @@ export class CodingAgentService implements CodingAgents {
     await this.getManager().setMode(sessionId, modeId);
   }
 
+  async setConfigOption(
+    sessionId: string,
+    configId: string,
+    value: boolean | string,
+  ): Promise<void> {
+    await this.getManager().setConfigOption(sessionId, configId, value);
+  }
+
   respondPermission(requestId: string, outcome: AgentPermissionOutcome): boolean {
     return this.getManager().respondPermission(requestId, outcome);
   }
@@ -174,6 +189,27 @@ export class CodingAgentService implements CodingAgents {
   }
 
   // --- internals ---------------------------------------------------------------------------
+
+  /**
+   * `agentHome/workspaces/tmp-<8hex>`, the same auto-create contract core Sessions have
+   * (that helper is project/agent-keyed, which coding-agent sessions deliberately are
+   * not). The final mkdir is non-recursive on purpose: recursive mkdir succeeds silently
+   * on an existing directory, which would put two sessions into one workspace.
+   */
+  private async createTempWorkspace(home: string): Promise<string> {
+    const base = path.join(home, "workspaces");
+    await fs.mkdir(base, { recursive: true, mode: 0o700 });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const dir = path.join(base, `tmp-${randomUUID().slice(0, 8)}`);
+      try {
+        await fs.mkdir(dir, { mode: 0o700 });
+        return dir;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+    }
+    throw new AcpAgentError("could not allocate a unique temporary workspace directory");
+  }
 
   private loadDefinitions(): AgentServerDefinition[] {
     const raw = this.settings.get(DEFINITIONS_KEY);
