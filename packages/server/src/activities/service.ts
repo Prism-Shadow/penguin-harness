@@ -11,6 +11,13 @@ import { planMedia, validateManifest, validateMediaCoverage } from "./media.js";
 import { mediaTextField, type MediaTextTarget } from "./media-text.js";
 import { AUDIO_MAX_BYTES, inspectWave, type AudioResult, type AudioTarget } from "./audio.js";
 import { readArtifactBytes } from "./artifact.js";
+import {
+  isUploadReference,
+  listUploads,
+  readUpload,
+  storeUpload,
+  type UploadedMedia,
+} from "./upload.js";
 import { readBoundImage, type ImageRequest } from "./image.js";
 import {
   GENERATED_IMAGE_MAX_BYTES,
@@ -88,7 +95,69 @@ export class ActivityService implements ActivityAuthoring {
         mimeType: "image/png",
       };
     }
+    const bound = activity.draft.mediaPlan?.manifest.assets[input.language]?.find(
+      (asset) => asset.key === input.assetKey,
+    )?.path;
+    // An upload lives in this activity's workspace; only checkout media needs a WAF root.
+    if (isUploadReference(bound))
+      return readUpload(this.activityWorkspace(projectId, activity), bound!);
     return readBoundImage(activity, input);
+  }
+
+  private activityWorkspace(
+    projectId: string,
+    activity: ActivityRecord & { draft: ActivityDraft },
+  ): string {
+    return this.draftWorkspace(
+      projectId,
+      activity.collectionId,
+      activity.id,
+      activity.draft.draftId,
+    );
+  }
+  async uploadMedia(
+    projectId: string,
+    activityId: string,
+    name: string,
+    bytes: Buffer,
+  ): Promise<UploadedMedia> {
+    return this.projectWork.run(projectId, async () => {
+      const activity = await this.getActivity(projectId, activityId);
+      return storeUpload(this.activityWorkspace(projectId, activity), name, bytes);
+    });
+  }
+  async listMedia(projectId: string, activityId: string): Promise<UploadedMedia[]> {
+    const activity = await this.getActivity(projectId, activityId);
+    return listUploads(this.activityWorkspace(projectId, activity));
+  }
+  async uploadContent(
+    projectId: string,
+    activityId: string,
+    reference: string,
+  ): Promise<{ bytes: Buffer; mimeType: string }> {
+    const activity = await this.getActivity(projectId, activityId);
+    return readUpload(this.activityWorkspace(projectId, activity), reference);
+  }
+  /** Stage every uploaded binding beside the generated ones, for assembly. */
+  async prepareUploadedMedia(
+    projectId: string,
+    activityId: string,
+    workspace: string,
+    expectedRevision: string,
+  ): Promise<void> {
+    const activity = await this.getActivity(projectId, activityId);
+    if (activity.draft.contentRevision !== expectedRevision)
+      throw new HttpError(409, "draft_conflict", "Media changed before assembly.");
+    const source = this.activityWorkspace(projectId, activity);
+    const copied = new Set<string>();
+    for (const asset of Object.values(activity.draft.mediaPlan?.manifest.assets ?? {}).flat()) {
+      if (!isUploadReference(asset.path) || copied.has(asset.path!)) continue;
+      const { bytes } = await readUpload(source, asset.path!);
+      const file = path.join(workspace, asset.path!);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, bytes, { flag: "wx" });
+      copied.add(asset.path!);
+    }
   }
 
   private imagePath(
@@ -507,7 +576,7 @@ export class ActivityService implements ActivityAuthoring {
     manifest: unknown,
     expectedRevision: string,
   ): Promise<ActivityDraft> {
-    return this.change(projectId, activityId, expectedRevision, (draft, activity) => {
+    return this.change(projectId, activityId, expectedRevision, async (draft, activity) => {
       if (
         !draft.mediaPlan ||
         draft.mediaPlan.specRevision !== contentRevision(draft.spec) ||
@@ -535,6 +604,21 @@ export class ActivityService implements ActivityAuthoring {
               throw new Error("Use Accept this image to bind a generated candidate.");
           }
         }
+        // An upload is bytes this server holds, so what it actually is can be checked
+        // rather than assumed. A path alone says nothing about the media it names.
+        const workspace = this.activityWorkspace(projectId, { ...activity, draft });
+        for (const assets of Object.values(parsed.assets))
+          for (const asset of assets) {
+            if (!isUploadReference(asset.path)) continue;
+            const { mimeType } = await readUpload(workspace, asset.path!);
+            const kind = mimeType.slice(0, mimeType.indexOf("/"));
+            const wanted =
+              asset.type === "image" ? "image" : asset.type === "audio" ? "audio" : "video";
+            if (kind !== wanted)
+              throw new Error(
+                `Asset ${asset.key} expects ${wanted} media, but ${asset.path} holds ${kind} media.`,
+              );
+          }
         return { ...draft, mediaPlan: { ...draft.mediaPlan, manifest: parsed } };
       } catch (error) {
         throw new HttpError(422, "media_invalid", (error as Error).message);
@@ -640,7 +724,10 @@ export class ActivityService implements ActivityAuthoring {
     projectId: string,
     activityId: string,
     expectedRevision: string | undefined,
-    edit: (draft: ActivityDraft, activity: ActivityRecord) => ActivityDraft,
+    edit: (
+      draft: ActivityDraft,
+      activity: ActivityRecord,
+    ) => ActivityDraft | Promise<ActivityDraft>,
   ): Promise<ActivityDraft> {
     return this.projectWork.run(projectId, () =>
       this.locks.run(activityId, async () => {
@@ -651,7 +738,7 @@ export class ActivityService implements ActivityAuthoring {
             "draft_conflict",
             "Draft changed. Reload it before applying your edit.",
           );
-        const draft = edit(current.draft, current);
+        const draft = await edit(current.draft, current);
         draft.contentRevision = draftRevision(draft);
         draft.updatedAt = new Date().toISOString();
         await this.writeDraft(projectId, draft, current.collectionId);

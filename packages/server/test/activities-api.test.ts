@@ -195,6 +195,32 @@ describe("native activity authoring API", () => {
     expect(draft.mediaPlan!.manifest.assets["en-US"]).toHaveLength(1);
     expect(draft.contentRevision).not.toBe(before);
     const manifest = structuredClone(draft.mediaPlan!.manifest);
+
+    // An upload is bytes this server holds, so a binding to one is checked against what
+    // the file actually is. A WAV bound to an image asset must not reach assembly.
+    const wav = Buffer.concat([
+      Buffer.from("RIFF", "ascii"),
+      Buffer.alloc(4),
+      Buffer.from("WAVE", "ascii"),
+      Buffer.alloc(16),
+    ]);
+    const uploaded = (await (
+      await client.post(`${endpoint}/media-uploads`, {
+        name: "bell.wav",
+        dataBase64: wav.toString("base64"),
+      })
+    ).json()) as { path: string; kind: string };
+    expect(uploaded.kind).toBe("audio");
+    const mismatched = structuredClone(manifest);
+    mismatched.assets["en-US"]![0]!.path = uploaded.path;
+    const refused = await client.put(`${endpoint}/media`, {
+      mismatched,
+      manifest: mismatched,
+      expectedRevision: draft.contentRevision,
+    });
+    expect(refused.status).toBe(422);
+    expect(JSON.stringify(await refused.json())).toContain("expects image media");
+
     manifest.assets["en-US"]![0]!.path = "media/images/cat.png";
     expect(
       (await client.put(`${endpoint}/media`, { manifest, expectedRevision: before })).status,

@@ -7,6 +7,7 @@ import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activi
 import { findWafRoot } from "./waf-module.js";
 import { SPEECH_MODEL, SPEECH_VOICES } from "./audio.js";
 import { IMAGE_MODEL } from "./generated-image.js";
+import { UPLOAD_MAX_BYTES } from "./upload.js";
 import {
   badRequest,
   optionalString,
@@ -163,6 +164,57 @@ export class ActivityRoutes {
         expectedRevision: requireString(query, "expectedRevision", { minLen: 1, maxLen: 128 }),
         wafRoot: optionalString(query, "wafRoot", { maxLen: 4096 }) || undefined,
       });
+      return new Response(new Uint8Array(result.bytes), {
+        headers: {
+          "Content-Type": result.mimeType,
+          "Content-Length": String(result.bytes.byteLength),
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy": "default-src 'none'; sandbox",
+          "Cross-Origin-Resource-Policy": "same-origin",
+        },
+      });
+    });
+    // Uploads and their listing stay inside this activity's own workspace under
+    // PENGUIN_HOME. The shared WAF checkout is never written to.
+    app.post("/:activityId/media-uploads", async (c) => {
+      const body = await readJson(c);
+      const name = requireString(body, "name", { minLen: 1, maxLen: 255 });
+      const dataBase64 = requireString(body, "dataBase64", {
+        minLen: 1,
+        // Base64 is four characters per three bytes; cap the text before decoding it.
+        maxLen: Math.ceil(UPLOAD_MAX_BYTES / 3) * 4 + 8,
+      });
+      let bytes: Buffer;
+      try {
+        bytes = Buffer.from(dataBase64, "base64");
+      } catch {
+        throw badRequest("dataBase64 is not valid base64.");
+      }
+      return c.json(
+        await this.activities.uploadMedia(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          name,
+          bytes,
+        ),
+        201,
+      );
+    });
+    app.get("/:activityId/media-uploads", async (c) =>
+      c.json({
+        media: await this.activities.listMedia(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+        ),
+      }),
+    );
+    app.get("/:activityId/media-upload", async (c) => {
+      const result = await this.activities.uploadContent(
+        requireValidId(c, "projectId"),
+        pathParam(c, "activityId"),
+        requireString(c.req.query(), "path", { minLen: 1, maxLen: 1024 }),
+      );
       return new Response(new Uint8Array(result.bytes), {
         headers: {
           "Content-Type": result.mimeType,

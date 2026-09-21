@@ -10,6 +10,7 @@ import {
   validateMediaCoverage,
   wafManifest,
 } from "./media.js";
+import { isUploadReference } from "./upload.js";
 import { HttpError } from "../http/errors.js";
 import { readArtifactBytes } from "./artifact.js";
 import { AUDIO_MAX_BYTES, inspectWave } from "./audio.js";
@@ -260,7 +261,9 @@ export async function prepareModule(
     const generated = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
       .flat()
       .some((asset) => asset.path === reference && (asset.generatedAudio || asset.generatedImage));
-    let current = generated ? workspace : wafRoot;
+    // Generated and uploaded media were staged into this Session; only curated
+    // library media is expected to already exist in the shared checkout.
+    let current = generated || isUploadReference(reference) ? workspace : wafRoot;
     const parts = reference.split("/");
     for (let index = 0; index < parts.length; index++) {
       current = path.join(current, parts[index]!);
@@ -458,9 +461,9 @@ export async function collectModule(
 
 export const modulePrompt = `Implement the saved activity specification in input.json as a real WAF HTML module.
 The module/ directory contains the native WAF scaffold. Read waf-context.json for the local framework, navbar and media checkout. Read that framework's contracts before implementing.
-If input.json contains draft.mediaPlan, its manifest and language-specific configuration are approved inputs. Preserve their keys, scripts and paths; do not invent replacements. Paths are relative to wafRoot except assets carrying generatedAudio or generatedImage: their approved bytes have already been copied into this Session's media/generated directory. Verify bound files, copy only required assets into preview using normal Harness tools and approvals, and resolve {{MEDIA}} to the preview's relative media base. Assets without paths remain unbound: report them explicitly and do not claim complete media. A binding is a reference, not proof of file availability.
+If input.json contains draft.mediaPlan, its manifest and language-specific configuration are approved inputs. Preserve their keys, scripts and paths; do not invent replacements. Paths are relative to wafRoot except assets carrying generatedAudio or generatedImage and assets whose path begins with media/uploads/: their approved bytes have already been copied into this Session's media directory. Verify bound files, copy only required assets into preview using normal Harness tools and approvals, and resolve {{MEDIA}} to the preview's relative media base. Assets without paths remain unbound: report them explicitly and do not claim complete media. A binding is a reference, not proof of file availability.
 Work only in this Session workspace. Treat the shared WAF checkout as read-only. Do not modify shared modules or run Loom's pipeline/server. Do not delegate.
-Copy each accepted generatedAudio or generatedImage file unchanged from media/generated to preview/media/generated, and resolve its configuration against that preview/media base. The collector verifies the accepted media hashes. Do not include binary files in module-result.json's text file list.
+Copy each accepted generatedAudio or generatedImage file unchanged from media/generated to preview/media/generated, and each media/uploads file unchanged to preview/media/uploads, and resolve its configuration against that preview/media base. The collector verifies the accepted media hashes. Do not include binary files in module-result.json's text file list.
 Implement the actual learning interactions and feedback in module/src, preserving waf-state-machine, WAF lifecycle, Interactable input and cleanup. Complete the ref configuration, asset manifest and state machine for the input productCode/refNum. Use existing media when available; report missing media explicitly, never invent successful generation.
 For a book, input.bookMode is the user's explicit reading-mode choice. The scaffolded product configuration contains the selected book policy, the book state machine, the scene catalog, and complete localized scenes. Preserve the policy, scene order, roles, derived page numbers, image alt text, and ordered audio cues. Cover/title pages show only artwork. Story visible text is primary narration; supplemental cues remain hidden. Read-along autoplays on first visit without advancing; Decodable waits the configured reading delay for manual narration and unlocks Next only after all cues complete. Keep backward navigation and rereading available after completion. Missing word timings or pronunciation assets are missing capabilities to report, not timings to invent. Empty timing arrays must not be presented as verified synchronized highlighting.
 The scaffold ships the complete native reader under module/src: src/index.ts boots the waf-state-machine with enterReader/bookFinalize actions; src/book-reader holds the model, controller, view and adapter. Use them as shipped. The entry wires the intro video, framework pause/resume, pagehide teardown (controller.dispose plus stateMachine.stop), keyboard navigation, and completion via BOOK.COMPLETED while keeping the view interactive. The adapter compiles word highlight events only from timings present in the configuration; with the currently empty timing arrays narration must play without highlighting and the preview must report synchronized highlighting as unavailable. Supply native timed-audio operations through the port with channel vocals; a missing cue must reject as failed narration, never resolve as success. Keep the reader's Interactables scene-owned so they survive the final state. Verify the assembled module typechecks, and exercise the real scenarios in the preview: delay, pause/resume, interrupted narration, follow-up cues, quiet revisits, and post-completion navigation. Report any capability the data cannot support (word audio, timings, intro video) instead of claiming it. Include all reader source files in module-result.json.

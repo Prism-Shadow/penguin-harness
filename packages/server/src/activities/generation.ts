@@ -384,6 +384,12 @@ export class ActivityGenerationService implements ActivityGeneration {
                 workspace,
                 expectedRevision,
               );
+              await this.activities.prepareUploadedMedia(
+                projectId,
+                activityId,
+                workspace,
+                expectedRevision,
+              );
               await prepareModule(workspace, activity, wafRoot, bookMode);
             }
             if (audio || image) {

@@ -7,6 +7,7 @@ import type {
   ActivityRun,
   ActivityRunSummary,
   AssetManifest,
+  UploadedMedia,
 } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
@@ -289,9 +290,38 @@ function ActivityEditor({
   const [bookMode, setBookMode] = useState<"" | "readAlong" | "decodable">("");
   const [wafRoot, setWafRoot] = useState("");
   const [voices, setVoices] = useState<string[]>([]);
+  const [uploads, setUploads] = useState<UploadedMedia[]>([]);
+  const [uploadsLoading, setUploadsLoading] = useState(false);
   const state = useRef({ dirty: false, busy: false, revision: "", available });
   const alive = useRef(true);
   const endpoint = `${basePath(projectId)}/${encodeURIComponent(activityId)}`;
+  const loadUploads = useCallback(async () => {
+    setUploadsLoading(true);
+    try {
+      const value = await apiFetch<{ media: UploadedMedia[] }>(`${endpoint}/media-uploads`);
+      if (alive.current) setUploads(value.media);
+    } catch (e) {
+      if (alive.current) setError(apiErrorText(e));
+    } finally {
+      if (alive.current) setUploadsLoading(false);
+    }
+  }, [endpoint]);
+  /** Read the file the author chose, store it, and hand back its binding reference. */
+  const upload = useCallback(
+    async (file: File) => {
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let index = 0; index < buffer.length; index += 0x8000)
+        binary += String.fromCharCode(...buffer.subarray(index, index + 0x8000));
+      const stored = await apiFetch<UploadedMedia>(`${endpoint}/media-uploads`, {
+        method: "POST",
+        body: { name: file.name, dataBase64: btoa(binary) },
+      });
+      await loadUploads();
+      return stored;
+    },
+    [endpoint, loadUploads],
+  );
   useEffect(() => {
     if (!available || !editable) return;
     let cancelled = false;
@@ -302,6 +332,7 @@ function ActivityEditor({
       .catch((e) => {
         if (!cancelled) setError(apiErrorText(e));
       });
+    void loadUploads();
     void apiFetch<{ wafRoot: string | null }>(`${basePath(projectId)}/module-setup`)
       .then((value) => {
         if (!cancelled) setWafRoot(value.wafRoot ?? "");
@@ -704,6 +735,9 @@ function ActivityEditor({
               <MediaWorkbench
                 manifest={editedManifest}
                 spec={detail.draft.spec}
+                media={uploads}
+                mediaLoading={uploadsLoading}
+                onUpload={upload}
                 runs={runs}
                 endpoint={endpoint}
                 editable={editable}

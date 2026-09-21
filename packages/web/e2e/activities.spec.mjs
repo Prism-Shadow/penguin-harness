@@ -9,6 +9,12 @@ const dist = fileURLToPath(new URL("../dist/", import.meta.url));
 const origin = "http://localhost:57321";
 const projectId = "author-activities";
 const base = `/api/projects/${projectId}/activities`;
+/** A one-pixel PNG, small enough to hand straight to a file input. */
+const PIXEL = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
+  "base64",
+);
+
 const spec = {
   id: "words",
   title: "Sight words",
@@ -39,6 +45,8 @@ async function fixture(page) {
   const prefsWrites = [];
   const imageRequests = [];
   let imageFailure = false;
+  // Media the activity workspace holds, as the upload routes would report it.
+  const uploads = [];
   let imageCandidateReads = 0;
   let imageCandidateFailure = false;
   let imageGenerationFailure = false;
@@ -128,6 +136,35 @@ async function fixture(page) {
       return json({ activities: activity ? [activity] : [] });
     if (p === `${base}/module-setup`) return json({ wafRoot: "C:/WAF checkout" });
     if (p === `${base}/speech-setup`) return json({ voices: ["Kore", "Puck"] });
+    if (p === `${base}/act_test/media-uploads`) {
+      if (request.method() === "POST") {
+        const input = request.postDataJSON();
+        const stored = {
+          path: `media/uploads/${input.name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/-[^-]*$/, "")}-1234abcd.png`,
+          name: `${input.name}`,
+          kind: "image",
+          mimeType: "image/png",
+          byteLength: Buffer.from(input.dataBase64, "base64").byteLength,
+          sha256: "a".repeat(64),
+          updatedAt: "2026-09-21T10:00:00.000Z",
+        };
+        uploads.push(stored);
+        return json(stored, 201);
+      }
+      return json({ media: uploads });
+    }
+    if (p === `${base}/act_test/media-upload`) {
+      return route.fulfill({
+        contentType: "image/png",
+        body: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      });
+    }
     if (p === `${base}/act_test/media-image`) {
       imageRequests.push(Object.fromEntries(url.searchParams));
       if (imageFailure)
@@ -598,6 +635,47 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   await page.reload();
   await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
   await expect(editor).toHaveValue(JSON.stringify(manifest, null, 2));
+  await expect(page.getByText(/1 assets, 1 paths assigned, 0 unbound/)).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
+test("uploads media into the activity workspace and binds it from the library", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+
+  const binding = page.getByRole("textbox", { name: /^Media path/ });
+  await expect(binding).toHaveValue("");
+  await expect(page.getByText("Read from the WAF checkout.")).toHaveCount(0);
+
+  // Uploading binds the asset to the stored reference the server chose.
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles({ name: "cat.png", mimeType: "image/png", buffer: PIXEL });
+  await expect(binding).toHaveValue(/^media\/uploads\/cat-[a-f0-9]{8}\.png$/);
+  await expect(page.getByText("Stored with this activity.")).toBeVisible();
+
+  // Clearing and rebinding from the library reaches the same file.
+  await page.getByRole("button", { name: "Clear media path", exact: true }).click();
+  await expect(binding).toHaveValue("");
+  await page.getByRole("button", { name: "Choose from media library", exact: true }).click();
+  await expect(page.getByText("Choose a file to see it here.")).toBeVisible();
+  await page.getByRole("textbox", { name: "Search by file name", exact: true }).fill("zebra");
+  await expect(page.getByText("No uploaded file matches this search.")).toBeVisible();
+  await page.getByRole("textbox", { name: "Search by file name", exact: true }).fill("cat");
+  await page.getByRole("button", { name: /^cat\.png/ }).click();
+  await expect(page.getByRole("button", { name: "Preview image", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Use this file", exact: true }).click();
+  await expect(binding).toHaveValue(/^media\/uploads\/cat-[a-f0-9]{8}\.png$/);
+  await expect(page.getByText("Stored with this activity.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
   await expect(page.getByText(/1 assets, 1 paths assigned, 0 unbound/)).toBeVisible();
   expect(f.errors).toEqual([]);
 });

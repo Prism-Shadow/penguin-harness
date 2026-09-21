@@ -3,6 +3,7 @@ import type { AudioTarget, AudioResult } from "../activities/audio.js";
 import type { ImageRequest } from "../activities/image.js";
 import type { ImageTarget, ImageResult } from "../activities/generated-image.js";
 import type { MediaTextTarget } from "../activities/media-text.js";
+import type { UploadedMedia } from "../activities/upload.js";
 import type {
   ActivityDraft,
   ActivityRecord,
@@ -114,6 +115,25 @@ export abstract class ActivityAuthoring extends Interface<{
     workspace: string,
     expectedRevision: string,
   ): Promise<void>;
+  /** Stage author-uploaded media into an assembly workspace, beside the generated media. */
+  prepareUploadedMedia(
+    projectId: string,
+    activityId: string,
+    workspace: string,
+    expectedRevision: string,
+  ): Promise<void>;
+  uploadMedia(
+    projectId: string,
+    activityId: string,
+    name: string,
+    bytes: Buffer,
+  ): Promise<UploadedMedia>;
+  listMedia(projectId: string, activityId: string): Promise<UploadedMedia[]>;
+  uploadContent(
+    projectId: string,
+    activityId: string,
+    reference: string,
+  ): Promise<{ bytes: Buffer; mimeType: string }>;
   planMedia(
     projectId: string,
     activityId: string,

@@ -1,5 +1,9 @@
 import { useState } from "react";
-import type { AssetManifest, ActivityRunSummary } from "@prismshadow/penguin-server/api";
+import type {
+  AssetManifest,
+  ActivityRunSummary,
+  UploadedMedia,
+} from "@prismshadow/penguin-server/api";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
@@ -7,6 +11,8 @@ import { S } from "../../lib/strings";
 import { toneInk, toneSurface } from "../../lib/tone";
 import { ImagePreview } from "./image-preview";
 import { MediaBinding } from "./media-binding";
+import { isUploadPath } from "./media-library";
+import { MediaPlayer } from "./media-player";
 import { MediaTextReview } from "./media-text-review";
 import {
   SceneAssetTree,
@@ -19,6 +25,8 @@ import { buildSceneTree, filterTree, treeSelections, type SceneAssetType } from 
 export function MediaWorkbench({
   manifest,
   spec,
+  media,
+  mediaLoading,
   runs,
   endpoint,
   editable,
@@ -36,10 +44,14 @@ export function MediaWorkbench({
   onAcceptImage,
   onGenerateText,
   onAcceptText,
+  onUpload,
 }: {
   manifest: AssetManifest;
   /** The saved specification owns scene order, which the tree follows. */
   spec: Record<string, unknown> | null;
+  /** Everything uploaded for this activity, offered by the library picker. */
+  media: readonly UploadedMedia[];
+  mediaLoading: boolean;
   runs: ActivityRunSummary[];
   endpoint: string;
   editable: boolean;
@@ -57,6 +69,7 @@ export function MediaWorkbench({
   onAcceptImage: (runId: string) => void;
   onGenerateText: (language: string, assetKey: string) => void;
   onAcceptText: (runId: string) => void;
+  onUpload: (file: File) => Promise<UploadedMedia>;
 }) {
   const [languageChoice, setLanguage] = useState("");
   const [kind, setKind] = useState<SceneAssetType | "all">("all");
@@ -219,8 +232,12 @@ export function MediaWorkbench({
             <MediaBinding
               asset={asset}
               siblings={group}
+              media={media}
+              mediaLoading={mediaLoading}
+              endpoint={endpoint}
               editable={editable}
               disabled={disabled}
+              onUpload={onUpload}
               onChange={(path) =>
                 edit((entry) => {
                   if (path) entry.path = path;
@@ -228,9 +245,16 @@ export function MediaWorkbench({
                 })
               }
             />
-            {(asset.type === "video" || asset.type === "animation") && (
-              <p className="text-xs text-gray-500">{S.activities.noInAppPreview}</p>
-            )}
+            {(asset.type === "video" || asset.type === "animation") &&
+              (isUploadPath(asset.path) ? (
+                <MediaPlayer
+                  kind="video"
+                  src={`${endpoint}/media-upload?path=${encodeURIComponent(asset.path!)}`}
+                  label={asset.key}
+                />
+              ) : (
+                <p className="text-xs text-gray-500">{S.activities.noInAppPreview}</p>
+              ))}
             {asset.type === "audio" && (
               <>
                 <Textarea

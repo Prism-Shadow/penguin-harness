@@ -4918,3 +4918,4 @@ export interface CodingAgentModeRequest {
 export type CodingAgentEvent = import("@prismshadow/penguin-coding-agents").AgentSessionEvent;
 export type { AudioTarget, AudioResult } from "../activities/audio.js";
 export type { MediaAsset, AssetManifest } from "../activities/media.js";
+export type { UploadedMedia, UploadKind } from "../activities/upload.js";
