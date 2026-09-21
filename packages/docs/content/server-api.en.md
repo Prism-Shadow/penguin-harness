@@ -1046,7 +1046,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two kinds of chann
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | `GET /api/sessions/:sessionId/stream` | The Session's message stream and run events, including `session_created` for its subagent Sessions and the goal-mode events |
-| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_state`, `session_background`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated` and company mode's `org_*` events |
+| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_state`, `session_background`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated` and company mode's `org_*` events |
 
 ### Wire Format
 
@@ -1071,7 +1071,7 @@ export type ServerEvent =
   | { type: "credentials_updated" }
   | { type: "hello" }
   | { type: "web_updated"; rev: string }
-  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
+  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source?: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "goal_started"; sessionId: string; objective: string; budget: number }
@@ -1094,7 +1094,7 @@ export type ServerEvent =
 | `credentials_updated` | The Project's model credentials changed |
 | `hello` | Handshake on the user channel |
 | `web_updated` | A hot update replaced the served web assets; clients reload |
-| `session_created` | A new Session was registered, such as a subagent Session |
+| `session_created` | A Session now exists: created by the Web App, the CLI, a schedule, or an agent spawning a child |
 | `schedule_fired` | A scheduled task fired and its prompt was delivered |
 | `schedule_queued` | The target Session is running, so this firing was queued |
 | `goal_started` | A goal run began, before its first round |
@@ -1112,7 +1112,7 @@ export type ServerEvent =
 - `session_background` fires when a command moves to the background past its yield window or starts with `run_in_background`, when a process exits or is stopped, and when a background subagent starts, settles or is released. It carries `SessionInfo.backgroundTasks` as it now stands (`processes` = background command sessions still running, `subagents` = subagent Sessions moved to the background and mid-round), zeros included, so a list can clear its mark without refetching. The list rows and the single-Session GET omit the field when both counts are zero. Its audience is the same as for `session_state`.
 - `credentials_updated` follows `PUT /models` or a completed key-minting flow. Cached runtimes were invalidated, so the client clears any composer state disabled by an auth failure.
 - `web_updated` carries the new web revision as `rev` and is sent to every user channel.
-- `session_created` is sent on the parent Session's channel.
+- `session_created` is sent for every creation to the user channels of the Project's owner and members, and for a subagent also on the parent Session's channel. `source` is absent for a user-created Session, as it is on the row. A title set through `PATCH /api/sessions/:id` is announced as `session_title` the same way.
 - `schedule_fired` names in `sessionId` the Session that received the prompt, which in new-Session mode is a new Session. A queued firing is sent once the Session is idle.
 - `goal_round` carries `used`, the tokens counted so far.
 - The `org_*` events are sent to the user channels of the Project's members. `org_channel` includes the message's mentions, so a client can tell whether it is addressed. These events are best effort; the organization routes carry the durable state.

@@ -1046,7 +1046,7 @@ Telegram 连接时会先清空积压，跳过无连接期间发送的消息。�
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | 每个 Session | `GET /api/sessions/:sessionId/stream` | Session 的消息流和运行事件，包括子 Agent Session 的 `session_created` 以及目标模式事件 |
-| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_state`、`session_background`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated` 以及公司模式的 `org_*` 事件 |
+| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_state`、`session_background`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated` 以及公司模式的 `org_*` 事件 |
 
 ### 传输格式
 
@@ -1071,7 +1071,7 @@ export type ServerEvent =
   | { type: "credentials_updated" }
   | { type: "hello" }
   | { type: "web_updated"; rev: string }
-  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
+  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source?: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "goal_started"; sessionId: string; objective: string; budget: number }
@@ -1094,7 +1094,7 @@ export type ServerEvent =
 | `credentials_updated` | Project 的模型凭据发生变化 |
 | `hello` | 用户通道上的握手 |
 | `web_updated` | 热更新替换了对外提供的 web 资源；客户端需重新加载 |
-| `session_created` | 注册了一个新 Session，例如子 Agent Session |
+| `session_created` | 一个 Session 现在存在了：由 Web App、CLI、定时任务或 Agent 派生子 Session 创建 |
 | `schedule_fired` | 定时任务已触发，Prompt 已投递 |
 | `schedule_queued` | 目标 Session 正在运行，这次触发已排队 |
 | `goal_started` | 目标运行开始，在第一轮之前 |
@@ -1112,7 +1112,7 @@ export type ServerEvent =
 - 以下情况会触发 `session_background`：命令超过让出窗口转入后台，或以 `run_in_background` 启动；进程退出或停止；后台子 Agent 开始一轮、结束一轮或释放。事件携带 `SessionInfo.backgroundTasks` 的当前值（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转入后台、正处于一轮中的子 Agent Session 数），归零时同样发送，列表无需重新拉取就能撤下标记。两个计数都为零时，列表行和单个 Session 的 GET 会省略这个字段。受众与 `session_state` 相同。
 - `credentials_updated` 在 `PUT /models` 或签发 API key 的流程完成之后发送。缓存的运行时已失效，客户端应清除因认证失败而禁用的输入框状态。
 - `web_updated` 以 `rev` 携带新的 web 修订号，发送到每个用户通道。
-- `session_created` 发送到父 Session 的通道。
+- `session_created` 在每次创建时发送到 Project 所有者和成员的用户通道；子 Agent Session 还会同时发送到父 Session 的通道。用户创建的 Session 没有 `source`，与行上一致。通过 `PATCH /api/sessions/:id` 设置的标题以同样方式作为 `session_title` 宣告。
 - `schedule_fired` 的 `sessionId` 是接收 Prompt 的 Session，在新建 Session 模式下是一个新 Session。排队的触发会在 Session 空闲后发送。
 - `goal_round` 携带 `used`，即目前累计的 Token 数。
 - `org_*` 事件发送到 Project 成员的用户通道。`org_channel` 包含消息里的提及信息，客户端可据此判断消息是否指向自己。这些事件是尽力而为的；持久状态以组织路由为准。
