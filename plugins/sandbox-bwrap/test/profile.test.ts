@@ -188,8 +188,13 @@ describe("bwrap on another platform", () => {
 
 describe("the bwrap it runs", () => {
   it("ships its own, so a host without bubblewrap still confines", () => {
-    // The real thing: the package carries a binary for THIS host (scripts/vendor-bwrap.mjs).
+    // The real thing: the package carries a binary for THIS host (scripts/vendor-bwrap.mjs) —
+    // on Linux only, the one platform bubblewrap runs on. Elsewhere there is none to carry.
     const shipped = vendoredRunner();
+    if (process.platform !== "linux") {
+      expect(shipped).toBe("");
+      return;
+    }
     expect(shipped).toMatch(/vendor[\\/]linux-(x64|arm64)[\\/]bin[\\/]bwrap$/);
     expect(existsSync(shipped)).toBe(true);
   });
