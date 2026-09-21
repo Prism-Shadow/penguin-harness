@@ -222,6 +222,19 @@ describe("preview route", () => {
     expect(url).toMatch(/^http:\/\/127\.0\.0\.1:7364\/preview\/[^/]+\/index\.html$/);
   });
 
+  // The module preview's scene/language overrides travel on this redirect — the only
+  // transport they have to the final document.
+  it("carries extra query parameters onto the preview document", async () => {
+    const res = await owner.get(
+      `/api/sessions/${sessionId}/files/preview-redirect` +
+        `?path=${encodeURIComponent("index.html")}&scene=beach&language=de`,
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toMatch(
+      /^http:\/\/127\.0\.0\.1:7364\/preview\/[^/]+\/index\.html\?scene=beach&language=de$/,
+    );
+  });
+
   it("serves the file with a real content type, no sandbox, and no referrer", async () => {
     const { url } = await mint("index.html");
     const res = await t.app.request(url!);

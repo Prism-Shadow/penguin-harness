@@ -126,8 +126,7 @@ export function createBookReaderView(options: {
     controlRow.appendChild(element);
   }
 
-  function releasePageInteractables(): void {
-    const released = pageInteractables.splice(0);
+  function releaseInteractables(released: Interactable[]): void {
     for (const interactable of released) interactable.dispose();
     for (let index = interactables.length - 1; index >= 0; index--) {
       if (released.includes(interactables[index]!)) interactables.splice(index, 1);
@@ -177,9 +176,13 @@ export function createBookReaderView(options: {
       outgoing.setAttribute('data-book-page-motion', 'outgoing');
       outgoing.setAttribute('aria-hidden', 'true');
       outgoing.inert = true;
+      // Claim the outgoing page's interactables now, not in the cleanup: the incoming
+      // page adds its own words below, and this page turn's async cleanup must not
+      // dispose those.
+      const released = pageInteractables.splice(0);
       const cleanup = () => {
         outgoing.remove();
-        releasePageInteractables();
+        releaseInteractables(released);
       };
       outgoing.addEventListener('animationend', cleanup, { once: true });
       window.clearTimeout(pageTurnCleanupTimer);
