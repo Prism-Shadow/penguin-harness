@@ -129,6 +129,17 @@ function ActivityWorkspace({
               {S.activities.backToActivities}
             </Link>
           </nav>
+          {/* The editor disables itself for a member or a lost Project; say why, as the list does. */}
+          {!available && (
+            <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
+              {S.activities.unavailable}
+            </p>
+          )}
+          {available && !editable && (
+            <p className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
+              {S.activities.readOnly}
+            </p>
+          )}
           <ActivityEditor
             key={activityId}
             projectId={projectId}

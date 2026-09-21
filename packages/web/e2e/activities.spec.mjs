@@ -531,6 +531,8 @@ async function fixture(page) {
 
 async function create(page, { activityType = "standard" } = {}) {
   await page.goto(`${origin}/activities`);
+  // Creation lives behind the landing's action, not inline on the page.
+  await page.getByRole("button", { name: "New activity", exact: true }).click();
   await page.getByRole("textbox", { name: "Product code", exact: true }).fill("words");
   await page.getByRole("spinbutton", { name: "Reference number", exact: true }).fill("12");
   await page.getByRole("textbox", { name: "Title", exact: true }).fill("Sight words");
@@ -676,7 +678,9 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   await expect(page.getByText("Module assembly", { exact: true })).toBeVisible();
   f.complete();
   await page.reload();
-  await expect(page.getByRole("link", { name: "Open WAF preview", exact: true })).toHaveAttribute(
+  await expect(
+    page.getByRole("link", { name: "Open WAF preview", exact: true }).first(),
+  ).toHaveAttribute(
     "href",
     "/api/sessions/session_test/files/preview-redirect?path=preview%2Findex.html",
   );
@@ -686,7 +690,10 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   ).toHaveCount(0);
   await page.getByRole("textbox", { name: "Description", exact: true }).fill("A new revision");
   await page.getByRole("button", { name: "Save description", exact: true }).click();
-  await expect(page.getByText("Built from an earlier draft", { exact: true })).toBeVisible();
+  // The runs list and the embedded preview both carry the staleness notice.
+  await expect(
+    page.getByText("Built from an earlier draft", { exact: true }).first(),
+  ).toBeVisible();
   expect(f.errors).toEqual([]);
 });
 
@@ -1164,7 +1171,7 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   page.on("dialog", (dialog) => dialog.accept());
   await page.goBack();
   await expect(page).toHaveURL(/\/activities$/);
-  await page.getByRole("link", { name: "words / 12 Sight words" }).click();
+  await page.getByRole("link", { name: /Sight words/ }).click();
   await description.fill("Another edit");
   await page.getByRole("button", { name: "Activities test", exact: true }).click();
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
