@@ -94,7 +94,12 @@ export interface ModelProviderInfo {
   id: string;
   /** Display name (brand name, shared by Chinese and English UI). */
   label: string;
-  /** API key env var name (AgentHub reads this automatically when credential is blank). */
+  /**
+   * API key env var name: the pair AgentHub's client for this group's rows reads when handed no
+   * key. Whether a keyless row may actually lean on it is decided per entry by
+   * modelEnvFallback — a gateway group records OPENAI_* because that is what its generic
+   * client reads, and precisely for that reason its rows never get the fallback.
+   */
   envKey: string;
   /** base URL env var name. */
   envBaseUrlKey: string;
@@ -233,8 +238,9 @@ export const PENGUIN_GO_PROVIDER_ID = "penguin-go";
  * Pay-As-You-Go and Qwen Token Plan — reach their models through one of AgentHub's generic
  * OpenAI-protocol clients (`openai-responses` for OpenRouter, `openai-chat` for the rest).
  * Those clients read **OPENAI_API_KEY / OPENAI_BASE_URL** when the credential is blank, not
- * the gateway's own variable names, so every gateway group records the OPENAI_* pair and the
- * env fallback hint the frontend shows is accurate either way.
+ * the gateway's own variable names, so every gateway group records the OPENAI_* pair as the
+ * fact it is — and that is exactly why a keyless gateway row is refused the fallback (see
+ * modelEnvFallback): the variable holds the user's OpenAI key, and a gateway is not OpenAI.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
@@ -2502,6 +2508,236 @@ export function resolveProviderModelEnv(
       : { envKey: group.envKey, envBaseUrlKey: group.envBaseUrlKey };
   }
   return resolveModelEnv(modelId, clientType);
+}
+
+/**
+ * The endpoints AgentHub's vendor clients talk to when handed no base URL, per credential
+ * variable: the OpenAI and Anthropic SDK defaults, Google's Generative Language host, the
+ * defaults the vendor-specific clients (deepseek_v4, glm5_3, kimi_k3, minimax_m3) carry, plus
+ * the second official host where a vendor runs two (Z.AI's mainland bigmodel.cn, Moonshot's
+ * international .ai, MiniMax's mainland minimaxi.com). A key taken from the environment is
+ * sent only to one of these — see modelEnvFallback.
+ */
+export const VENDOR_ENDPOINTS: Readonly<Record<string, readonly string[]>> = {
+  OPENAI_API_KEY: ["https://api.openai.com/v1"],
+  ANTHROPIC_API_KEY: ["https://api.anthropic.com"],
+  GEMINI_API_KEY: ["https://generativelanguage.googleapis.com"],
+  DEEPSEEK_API_KEY: [DEEPSEEK_BASE_URL],
+  ZAI_API_KEY: ["https://api.z.ai/api/paas/v4", "https://open.bigmodel.cn/api/paas/v4"],
+  MOONSHOT_API_KEY: ["https://api.moonshot.cn/v1", "https://api.moonshot.ai/v1"],
+  MINIMAX_API_KEY: [MINIMAX_BASE_URL, "https://api.minimaxi.com/v1"],
+};
+
+/**
+ * Endpoint equality for the credential rule: scheme and host compared case-insensitively
+ * (with the port), the path without trailing slashes; a value that does not parse as a URL
+ * matches nothing.
+ */
+export function sameEndpoint(a: string, b: string): boolean {
+  const norm = (value: string): string | undefined => {
+    try {
+      const u = new URL(value.trim());
+      return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
+    } catch {
+      return undefined;
+    }
+  };
+  const na = norm(a);
+  return na !== undefined && na === norm(b);
+}
+
+/** What the credential rule reads off a model entry: the paired reference, the pinned protocol and the endpoint. */
+export interface ModelCredentialShape {
+  provider: string;
+  modelId: string;
+  /** Pinned AgentHub client type; blank or absent = auto-routed by model id. */
+  clientType?: string | undefined;
+  /** Inline base URL; blank or absent = the routed client's default endpoint (or its `*_BASE_URL` variable). */
+  baseUrl?: string | undefined;
+}
+
+/** The environment pair a keyless entry may fall back to, and who reads it. */
+export interface ModelEnvFallback extends ModelEnvInfo {
+  /**
+   * `true`: AgentHub's routed client reads this pair itself, so the harness hands it no key
+   * and the client's own environment lookup — and its own error when the variable is unset —
+   * apply unchanged. `false`: a provider-scoped pair no AgentHub client knows (the Penguin Go
+   * relay's); the harness reads it and passes the value explicitly, refusing when it is unset.
+   */
+  readByClient: boolean;
+}
+
+/**
+ * The environment fallback a keyless model entry is allowed, or `undefined` when it gets
+ * none and must carry its own key.
+ *
+ * AgentHub's clients read a vendor variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …)
+ * whenever they are handed no key, whatever base URL they were pointed at — so a keyless row
+ * in a gateway group would send the user's own OpenAI or Anthropic key to the gateway. The
+ * rule here is about the **destination**, not the group's label: environment keys are for
+ * official endpoints only.
+ *
+ * - No base URL on the entry: the routed client talks to its own default endpoint, or to the
+ *   `*_BASE_URL` the user set beside the key — that pairing is AgentHub's own and is left to
+ *   it entirely; the client reads the pair itself.
+ * - A base URL that is one of that vendor's own official endpoints (VENDOR_ENDPOINTS; the
+ *   catalog pins the DeepSeek and MiniMax rows this way) — allowed.
+ * - Anything else — every gateway group's preset endpoint, custom / user-defined / vLLM rows
+ *   with their own endpoints, a vendor row re-pointed at a proxy — refused. A row's own base
+ *   URL equal to the `*_BASE_URL` variable's value earns no exception either (per the user:
+ *   environment keys are for official endpoints only): put the key on the row.
+ * - A group with a provider-scoped pair (Penguin Go, whose key no AgentHub client reads) is
+ *   allowed that pair for every one of its rows, regardless of base URL; the harness reads it.
+ *
+ * Pure, so the server and the models page answer the same question for the preview, the
+ * dialog hint and the refusal.
+ */
+export function modelEnvFallback(entry: ModelCredentialShape): ModelEnvFallback | undefined {
+  const clientType = entry.clientType?.trim() || undefined;
+  const clientPair = resolveModelEnv(entry.modelId, clientType);
+  const groupPair = resolveProviderModelEnv(entry.provider, entry.modelId, clientType);
+  if (groupPair !== undefined && groupPair.envKey !== clientPair?.envKey) {
+    return { ...groupPair, readByClient: false };
+  }
+  if (clientPair === undefined) return undefined;
+  const baseUrl = entry.baseUrl?.trim();
+  if (!baseUrl) return { ...clientPair, readByClient: true };
+  if ((VENDOR_ENDPOINTS[clientPair.envKey] ?? []).some((own) => sameEndpoint(own, baseUrl))) {
+    return { ...clientPair, readByClient: true };
+  }
+  return undefined;
+}
+
+/**
+ * The variable a keyless entry added to this group with the group's defaults falls back to,
+ * or `undefined` when such an entry gets none: gateways (a preset base URL), the pinned
+ * self-hosted group (vLLM), custom and user-defined groups all point away from the vendors'
+ * own endpoints. The group-level key dialog's hint and the group header read this.
+ */
+export function providerEnvFallbackKey(providerId: string): string | undefined {
+  const info = providerInfo(providerId);
+  if (
+    info === undefined ||
+    info.id === "custom" ||
+    info.gatewayBaseUrl !== undefined ||
+    info.clientType !== undefined
+  ) {
+    return undefined;
+  }
+  return info.envKey;
+}
+
+/**
+ * A model entry that cannot be given to an AgentHub client as configured: no key, and no
+ * environment variable it may use; or a relay row with no endpoint for its relay key. The
+ * message names the model and what to do, and says "API key" so hosts that classify
+ * credential errors by message (the server's `isMissingCredential`) file it with the SDKs'
+ * own missing-credential errors.
+ */
+export class ModelCredentialError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelCredentialError";
+  }
+}
+
+/** What a client is constructed with: an explicit key, or none when the routed client may read its own variable. */
+export interface ResolvedModelCredential {
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+/**
+ * The credential an AgentHub client is built with for a **model entry**, applying
+ * modelEnvFallback's rule (the one function every path shares): Session creation and resume,
+ * the vision describer, the connectivity / speed / vision probes and the utility completion
+ * go through here; the endpoint listing and protocol detection, which have a protocol and a
+ * URL but no entry, apply the same rule through endpointEnvApiKey.
+ *
+ * - An inline key (the entry's, or an explicit override) is used as given.
+ * - No key, fallback allowed and read by the client: no key is handed over, the client reads
+ *   the pair itself — byte-for-byte what happened before this rule existed, including the
+ *   SDK's own error when the variable is unset too (an entry with no base URL under a Bedrock
+ *   `ANTHROPIC_BASE_URL` and no `ANTHROPIC_API_KEY` stays valid).
+ * - No key, fallback allowed but provider-scoped: the variable's value is passed explicitly,
+ *   and an unset variable is refused here rather than letting the client read a vendor's.
+ * - No key, no fallback: refused with a ModelCredentialError before any client exists.
+ * - A provider-scoped group's row (Penguin Go) is also refused without a base URL, whatever
+ *   the key's source: the relay key must not travel to the vendor's default endpoint.
+ */
+export function resolveModelCredential(
+  entry: ModelCredentialShape & { apiKey?: string | undefined },
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): ResolvedModelCredential {
+  const ref = `${entry.provider}/${entry.modelId}`;
+  const baseUrl = entry.baseUrl || undefined;
+  const apiKey = entry.apiKey || undefined;
+  const fallback = modelEnvFallback(entry);
+  if (fallback !== undefined && !fallback.readByClient && !baseUrl?.trim()) {
+    throw new ModelCredentialError(
+      `Model ${ref} has no base URL. Its API key belongs to the ${providerInfo(entry.provider)?.label ?? entry.provider} endpoint and cannot be sent to the vendor's default endpoint: set the base URL on the model entry.`,
+    );
+  }
+  if (apiKey !== undefined) return { apiKey, ...(baseUrl !== undefined ? { baseUrl } : {}) };
+  if (fallback === undefined) {
+    // A Bedrock region on the entry is not "not the vendor's": it is AWS, whose usual
+    // credential is the default provider chain rather than a key. Until AgentHub stops
+    // letting its Bedrock client attach ANTHROPIC_API_KEY, a keyless row here is refused,
+    // and the message says what still works.
+    if (baseUrl?.trim().toLowerCase().startsWith("bedrock://")) {
+      throw new ModelCredentialError(
+        `Model ${ref} has no API key. A Bedrock endpoint set on the model entry cannot fall back to the environment yet: set the entry's AWS key (access,secret), or leave its base URL empty and set ANTHROPIC_BASE_URL=${baseUrl.trim()} in the server environment.`,
+      );
+    }
+    throw new ModelCredentialError(
+      `Model ${ref} has no API key. Its endpoint is not the vendor's own, so no environment variable is used for it: set the API key on the model entry.`,
+    );
+  }
+  if (fallback.readByClient) return baseUrl !== undefined ? { baseUrl } : {};
+  const value = env[fallback.envKey]?.trim();
+  if (!value) {
+    throw new ModelCredentialError(
+      `Model ${ref} has no API key: set one on the model entry, or set ${fallback.envKey} in the server environment.`,
+    );
+  }
+  return { apiKey: value, ...(baseUrl !== undefined ? { baseUrl } : {}) };
+}
+
+/**
+ * The key the environment lends a bare endpoint spoken to on a generic protocol client —
+ * the add-group listing and the protocol probes, which have a base URL and a protocol but no
+ * entry yet. Same rule as modelEnvFallback: only a vendor's own endpoint gets the vendor's
+ * key; a gateway or a private server gets none.
+ */
+export function endpointEnvApiKey(
+  clientType: string,
+  baseUrl: string | undefined,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string | undefined {
+  const fallback = modelEnvFallback({ provider: "custom", modelId: "", clientType, baseUrl });
+  if (fallback === undefined) return undefined;
+  return env[fallback.envKey]?.trim() || undefined;
+}
+
+/**
+ * The variable the UI may present as covering a keyless entry — the masked preview on the
+ * card, the dialog's "leave empty to use …" hint — or `undefined` when nothing should be
+ * promised. Narrower than modelEnvFallback on purpose: a row with no base URL in a group whose
+ * defaults point away from the vendor (the vLLM presets, a custom row saved without an
+ * endpoint) does fall back to OPENAI_API_KEY under the rule, but presenting that as "key
+ * configured" would encourage exactly the misconfiguration that sends the OpenAI key and a
+ * self-hosted model id to api.openai.com. The preview therefore needs the row to name a vendor
+ * endpoint itself, or to sit in a group whose defaults are the vendor's (providerEnvFallbackKey).
+ * The server's `GET /models` preview and the web dialog's hint both read this, so the two
+ * cannot disagree.
+ */
+export function modelEnvPreviewKey(entry: ModelCredentialShape): string | undefined {
+  const fallback = modelEnvFallback(entry);
+  if (fallback === undefined) return undefined;
+  if (entry.baseUrl?.trim() || providerEnvFallbackKey(entry.provider) !== undefined) {
+    return fallback.envKey;
+  }
+  return undefined;
 }
 
 /**

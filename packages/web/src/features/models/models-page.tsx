@@ -86,6 +86,7 @@ import {
   fastModeProtocol,
   modelHomepageUrl,
   providerClientType,
+  providerEnvFallbackKey,
   providerInfo,
   resolveProviderModelEnv,
 } from "@prismshadow/penguin-core/model-catalog";
@@ -112,6 +113,7 @@ import {
   detectableBaseUrl,
   displayWidthCh,
   envHintClientType,
+  envHintKeyFor,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -2841,20 +2843,27 @@ function ModelDialog({
   // the model id and API key labels in both the add and edit dialogs; custom
   // and self-defined groups have no link).
   const dialogProvider = providerInfo(form.provider);
-  // env fallback resolves live from the current form (uses the same
-  // the same provider-aware resolver as the server's getModels): the Penguin Go relay
-  // keeps its own key while ordinary groups follow client routing.
+  // The variable the entry ROUTES to, resolved live from the current form (the same
+  // provider-aware resolver as the server): the Penguin Go relay keeps its own key while
+  // ordinary groups follow client routing. This is the routability signal for vendor groups
+  // (autoRouteMiss below), not the key hint.
   //
   // Custom and user-defined groups opt out of the model_id half (per maintainer): typing
   // `claude-sonnet-5` into a custom group must not quietly imply the Anthropic client and
   // its ANTHROPIC_* key. Those groups default to the compatible client, which is also what
   // gets persisted when nothing is picked or detected — so keying the hint off it is what
   // the entry will actually read after saving.
-  const liveEnvKey = resolveProviderModelEnv(
+  const routedEnvKey = resolveProviderModelEnv(
     form.provider,
     form.modelId.trim(),
     envHintClientType(form.provider, form.clientType),
   )?.envKey;
+  // The variable a blank key may be PRESENTED as covered by, for the entry as drafted (core's
+  // modelEnvPreviewKey, which the server's masked preview reads too): undefined for every row
+  // whose endpoint is not the vendor's own — a gateway's preset base URL, a custom or vLLM
+  // server, a vendor row re-pointed at a proxy — and for a keyless vLLM / custom row with no
+  // base URL. The hint and the stored-mask block below follow this, never routedEnvKey.
+  const liveEnvKey = envHintKeyFor(form.provider, form.modelId, form.clientType, form.baseUrl);
   // The protocol this group pins on every entry, user-added ones included (OpenRouter,
   // vLLM); undefined for every group that leaves the protocol to auto-routing, a gateway
   // preset, or detection.
@@ -2872,7 +2881,7 @@ function ModelDialog({
     vendorGroup &&
     !form.clientType.trim() &&
     form.modelId.trim() !== "" &&
-    liveEnvKey === undefined;
+    routedEnvKey === undefined;
 
   /** Identity section: upstream model id (renamable; "get model id" link next
    * to the label) + display name and group side by side (both editable;
@@ -3233,13 +3242,18 @@ function ModelDialog({
             rule): the created-at position says where the key comes from instead, and there is
             no clear control — an environment variable cannot be cleared from here. Typing a new
             key hides this like the stored block; once saved, the stored key takes priority and
-            the display switches to the stored form. */}
-        {!form.credential?.apiKeyMasked && form.envKeyMasked !== undefined && !form.apiKeyInput && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-            <span className="font-mono">{form.envKeyMasked}</span>
-            <span className="text-gray-400">{S.models.readFromEnv}</span>
-          </div>
-        )}
+            the display switches to the stored form. The mask is the SAVED row's: once the draft
+            resolves to another variable or to none (a proxy base URL typed over a vendor row),
+            it is hidden rather than left promising a key the draft will not have. */}
+        {!form.credential?.apiKeyMasked &&
+          form.envKeyMasked !== undefined &&
+          liveEnvKey === form.envKey &&
+          !form.apiKeyInput && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+              <span className="font-mono">{form.envKeyMasked}</span>
+              <span className="text-gray-400">{S.models.readFromEnv}</span>
+            </div>
+          )}
 
         {/* 2) base URL (required for custom / user-defined groups and explicit openai protocol — see
             baseUrlRequired). The in-field suffix at the right edge shows the protocol path the
@@ -3677,6 +3691,7 @@ function GroupKeyDialog({
   onSubmit: (apiKey: string) => void;
 }) {
   const [key, setKey] = useState("");
+  const groupEnvKey = providerEnvFallbackKey(provider.id);
   return (
     <Modal
       open
@@ -3709,11 +3724,14 @@ function GroupKeyDialog({
           className="font-mono"
           autoComplete="off"
           autoFocus
-          // Only promise the variable when the server reported a value for it: the group's
-          // variable name is always known, which says nothing about whether it is set.
+          // Only promise the variable when this group's rows may fall back to it at all
+          // (providerEnvFallbackKey: never a gateway, custom, vLLM or user-defined group —
+          // the OpenAI key an Anthropic row proved set is not this gateway's key) AND the
+          // server reported a value for it: the group's variable name is always known,
+          // which says nothing about whether it is set.
           placeholder={
-            detectedEnvKeys.has(provider.envKey)
-              ? S.models.apiKeyEnvHint(provider.envKey)
+            groupEnvKey !== undefined && detectedEnvKeys.has(groupEnvKey)
+              ? S.models.apiKeyEnvHint(groupEnvKey)
               : undefined
           }
         />

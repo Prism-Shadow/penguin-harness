@@ -62,7 +62,7 @@ The group appears in the list once its first model is saved.
 **Import models** fills a new group with every model an OpenAI-compatible or Anthropic-compatible endpoint lists.
 
 1. Select **Import models**.
-2. In **API key**, enter the key. Leave it empty to use the protocol's `OPENAI_*` or `ANTHROPIC_*` environment variables.
+2. In **API key**, enter the endpoint's key. The server's `OPENAI_*` / `ANTHROPIC_*` variables are not used for an endpoint that is not the vendor's own (see [Set API keys](#set-api-keys)), so a listing without a key is refused.
 3. In **Custom base URL**, enter the endpoint's base URL.
 4. Select **Detect** at the top-right of the field, or pick the protocol from the menu at the right edge of the field. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
 5. Select **Import all models**. PenguinHarness asks the endpoint for its model list and saves every model into the new group, in the endpoint's order.
@@ -88,7 +88,7 @@ All of the group's models and their API keys are removed. Built-in groups cannot
 2. In **Model ID**, enter the model id exactly as the provider's API expects it, for example `gpt-5.5`. **Get model IDs** opens the provider's model list.
 3. Optional: in **Display name**, enter a display name. An empty display name shows the model id.
 4. Fill in the credentials and endpoint:
-   - **API key**: leave it empty to use the provider's environment variable. The field names the variable when it is set on the server.
+   - **API key**: in a vendor group, leave it empty to use the provider's environment variable; the field names the variable when it is set on the server. In a gateway group, in **Custom** and in groups you created, the key is required — no environment variable is used for an endpoint that is not the vendor's own.
    - **Custom base URL**: required in **Custom** and in groups you created. In gateway groups it is filled in for you.
 5. Optional: fill in the limits and prices:
    - **Context window**: the model's context window in Tokens. For a model that is not in the built-in catalog, an empty field saves as 1000000.
@@ -163,8 +163,8 @@ Detection never blocks a save. If you select **Confirm** while the protocol is s
 
 - Probes are minimal invalid requests with `{}` bodies. They cost no Tokens and need no valid model id: an error in the protocol's own shape proves the route exists, a `404` or `405` means the path is not served, and HTML or gateway noise counts for nothing.
 - The probed URLs and auth headers are exactly what the AgentHub client uses after saving: `Authorization: Bearer` for the OpenAI protocols, and `x-api-key` plus `Authorization: Bearer` and `anthropic-version` for `ant-messages`. A detected protocol is one that will really work.
-- The server picks the probe credential in three steps: the API key typed in the dialog, else the key already stored for the entry, else the environment variable of the protocol that probe speaks (`ANTHROPIC_API_KEY` for `ant-messages`, `OPENAI_API_KEY` for the two OpenAI protocols). The choice is made per probe, because the protocol is what is being determined. None of these values reach the browser or the response.
-- Detection works with no credential at all, since a protocol-shaped `401` identifies the route. An authenticated probe is still far more likely to get that answer than the generic `401` or gateway HTML an anonymous request often gets.
+- The server picks the probe credential in three steps: the API key typed in the dialog, else the key already stored for the entry, else the environment variable of the protocol that probe speaks (`ANTHROPIC_API_KEY` for `ant-messages`, `OPENAI_API_KEY` for the two OpenAI protocols) — but only when the probed URL is that vendor's own endpoint. The choice is made per probe, because the protocol is what is being determined. None of these values reach the browser or the response.
+- Detection works with no credential at all, since a protocol-shaped `401` identifies the route. A gateway or a private server is therefore probed anonymously: your vendor key is never sent to a URL you typed.
 - Nothing is inferred from the model id in these groups. Typing `claude-sonnet-5` into a custom group does not select the Anthropic client or its `ANTHROPIC_*` key: custom groups fall back to `openai-chat`, and the API key hint follows that. Vendor and gateway groups are not affected; their ids are known to the catalog, so they route by id or by the group's preset.
 - Entries created before detection existed keep `client_type = "openai"`, which is still an alias of `openai-chat`. They are rewritten only when you pick a protocol or a detection applies. An older, non-standard protocol value is shown read-only: "Protocol: {t} (kept as configured; not editable)".
 - Detection is available as `POST /api/projects/:id/models/detect` (owner only); see [Server API](/server-api).
@@ -180,7 +180,7 @@ Detection never blocks a save. If you select **Confirm** while the protocol is s
 > [!NOTE]
 > Unlike protocol detection, this probe is a real, billed request: an image request cannot be made free the way the protocol probes are. It runs only when you select **Detect**, never on its own and never on save.
 
-The credential comes from the same chain as the connection test: the key typed in the dialog, else the stored key, else the protocol's environment variable, all resolved on the server. **Vision support** appears only for models that are not in the built-in catalog; catalog models already declare whether they accept images.
+The credential comes from the same chain as the connection test: the key typed in the dialog, else the stored key, else the environment variable where the endpoint is allowed one (see [Set API keys](#set-api-keys)), all resolved on the server. **Vision support** appears only for models that are not in the built-in catalog; catalog models already declare whether they accept images.
 
 ## Set API keys
 
@@ -188,7 +188,7 @@ Each model carries its own API key, or none.
 
 - **One model.** In **Model settings**, enter the key in **API key**. Once saved, the key is shown masked; leave the field empty to keep it, or select **Clear stored API key** to remove it.
 - **A whole group.** On a group's header, select **Set key** and enter the key. It applies to every model in the group.
-- **No key.** A model without a key uses the provider's environment variable on the server; see [Built-in provider groups](#built-in-provider-groups). The card and the dialog show when a key is read from an environment variable.
+- **No key.** A model without a key uses the provider's environment variable on the server **only when its requests go to that provider's official endpoint**: the entry has no base URL (AgentHub's own `*_API_KEY` / `*_BASE_URL` pairing then applies), or its base URL is the vendor's own endpoint. A row with its own base URL is never covered by the environment, not even when `OPENAI_BASE_URL` names the same server. Gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, the Qwen gateways), **Custom**, **vLLM** and groups you created point at other endpoints, so their models need their own key: a Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The Penguin Go group is the exception that proves the rule — its rows fall back to its own `PENGUIN_GO_API_KEY`, never to a vendor's variable. The card and the dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
 
 A key you type is stored in the hidden Project config file, which has mode 0600. The Web App always masks it.
 
@@ -352,7 +352,7 @@ A local inference server can join a Project in two ways.
 
 ### Add the model to the vLLM group
 
-Add the model to the **vLLM** group. The protocol is fixed to `openai-chat-vllm-adapter`, and the group has no preset base URL, so set **Custom base URL** to your server.
+Add the model to the **vLLM** group. The protocol is fixed to `openai-chat-vllm-adapter`, and the group has no preset base URL, so set **Custom base URL** to your server. Set **API key** too: the server's key, or any placeholder if it checks none. A row with its own base URL is never covered by the server's `OPENAI_API_KEY`, so a keyless row is refused.
 
 The group ships eight preset models at a price of 0:
 
@@ -374,6 +374,7 @@ Add a `custom` model with:
 - `client_type = "openai-chat"`
 - `base_url` pointing at the server, for example `http://127.0.0.1:8000/v1`
 - the served model name as `model_id`
+- `api_key`: the server's key, or any placeholder if it checks none — the environment's `OPENAI_API_KEY` does not cover a server of your own
 
 Protocol detection settles on `openai-chat` for such servers, and the base URL field's suffix menu selects it by hand.
 
@@ -391,7 +392,7 @@ The per-request output limit and the compaction threshold both follow this windo
 
 ## Built-in provider groups
 
-The table below lists the built-in groups and the environment variables their models fall back to when an entry has no key. The catalog source is `packages/core/src/state/model-catalog.ts`. Each group also has a `_BASE_URL` variant, for example `ANTHROPIC_BASE_URL`. The **Models** page lists the groups in this order, followed by the groups you create.
+The table below lists the built-in groups and the environment variables their models fall back to when an entry has no key. The catalog source is `packages/core/src/state/model-catalog.ts`. Each group also has a `_BASE_URL` variant, for example `ANTHROPIC_BASE_URL`. The **Models** page lists the groups in this order, followed by the groups you create. A gateway group's rows carry the gateway's endpoint, so **they never fall back**: the variable in their row is the one their protocol client reads, and exactly because it holds your vendor key it is not sent to the gateway (see [Set API keys](#set-api-keys)).
 
 | Provider | API key env var | Notes |
 | --- | --- | --- |
@@ -410,9 +411,9 @@ The table below lists the built-in groups and the environment variables their mo
 | qwen-pay-as-you-go | `OPENAI_API_KEY` | Qwen pay-as-you-go (DashScope's OpenAI-compatible endpoint), preset base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`; resold third-party models keep vendor-prefixed ids (e.g. `kimi/kimi-k3`) |
 | qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan subscription gateway, preset base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`; pricing from each model page's official list price (the preview model has only a quota-multiplier promo, no list price) |
 | vllm | `OPENAI_API_KEY` | Self-hosted vLLM servers: protocol fixed to `openai-chat-vllm-adapter`, no preset base URL, eight preset models priced at 0 (see [Connect a local or self-hosted endpoint](#connect-a-local-or-self-hosted-endpoint)) |
-| custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint; ships one preset, Atria Dawn Preview (Anthropic Messages API at `api.atria-asi.ai`, credential from `ANTHROPIC_API_KEY` when the entry has none, 256K window, priced at $0 until the vendor publishes prices) |
+| custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint; ships one preset, Atria Dawn Preview (Anthropic Messages API at `api.atria-asi.ai`, needs its own key, 256K window, priced at $0 until the vendor publishes prices) |
 
-The gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through AgentHub's generic OpenAI-protocol clients, so with blank credentials they read `OPENAI_API_KEY`, not a gateway-specific variable.
+The gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through AgentHub's generic OpenAI-protocol clients, whose variable is `OPENAI_API_KEY`; a keyless row there is refused rather than sent your OpenAI key. The same holds for custom, vLLM and user-created groups unless the row's base URL is the vendor's own endpoint.
 
 - The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) for its presets and for any model you add to it, because OpenRouter serves the Responses API at that same base URL for every model it resells.
 - The other gateway presets use the Chat Completions client (`client_type = "openai-chat"`).

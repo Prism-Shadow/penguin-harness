@@ -48,7 +48,7 @@ penguin config model add --provider deepseek --model-id deepseek-flash --api-key
 You can also add models later on the **Models** page of the Web App.
 
 - A model is always named by a `(provider, model_id)` pair, so `--provider` and `--model-id` are both required. PenguinHarness never infers the provider from the model id. See [Models & Providers](/models) for the built-in groups.
-- The API key can also come from an environment variable. When a model entry has no inline `api_key`, AgentHub (the LLM gateway library) reads variables such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.
+- The API key can also come from an environment variable, for the vendor's own endpoint. When a model entry has no inline `api_key` and no `base_url` of its own (or one that is the vendor's official endpoint), AgentHub (the LLM gateway library) reads variables such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. An entry pointed at a gateway or a server of your own needs `--api-key`. A `.env` file in the working directory is loaded automatically.
 
 ## Start the Web App
 

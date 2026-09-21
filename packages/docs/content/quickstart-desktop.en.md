@@ -50,7 +50,7 @@ A model is always referenced as a `(provider, model_id)` pair: the provider is n
 
 API keys already exported in your shell profile (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) work without entering them again. On macOS and Linux, when you launch the app from the Dock or the desktop, it imports the login shell's environment, filling in only the variables the launch itself did not set. The agent shell's `PATH` benefits the same way. Set `PENGUIN_NO_LOGIN_SHELL_ENV` to turn this off.
 
-For an official provider's model with no stored key, the **Models** page shows the detected variable's value masked, just as it shows a stored key: on the model's card, and in the model's dialog, which marks the key as **Read from environment variable**. Gateway and custom groups are not matched against these variables.
+For an official provider's model with no stored key, the **Models** page shows the detected variable's value masked, just as it shows a stored key: on the model's card, and in the model's dialog, which marks the key as **Read from environment variable**. Gateway groups, and custom or vLLM rows with a base URL of their own, are not matched against these variables — a model there needs its own key.
 
 ## Run your first Task
 

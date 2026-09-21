@@ -31,6 +31,7 @@ import {
   listInstalledHooks,
   projectDir,
   resolveSessionMemory,
+  resolveModelCredential,
   resolveModelRef,
   sessionScratchpadDir,
   systemConfigPath,
@@ -214,7 +215,13 @@ export interface CreateSessionOptions {
    * own config.
    */
   thinkingLevel?: ThinkingLevelName | null;
-  /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
+  /**
+   * Explicit credentials; if unspecified, falls back to the credentials in the Project config,
+   * then — only when the entry's requests go to the vendor's own endpoint (no base URL, or a
+   * vendor endpoint) — to the vendor's environment variable, read by AgentHub. A keyless entry
+   * pointed anywhere else (a gateway, a self-hosted server) is refused with a
+   * ModelCredentialError; see resolveModelCredential.
+   */
   apiKey?: string;
   baseUrl?: string;
   /** Internal use: this Session's depth in the subagent spawn chain (0 at the top level), used to cap spawn depth. */
@@ -226,7 +233,7 @@ export interface CreateSessionOptions {
 export interface ResumeSessionOptions {
   /** Id of the Session to resume. */
   sessionId: string;
-  /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
+  /** Explicit credentials; if unspecified, falls back to the Project config, then to the vendor's environment variable on the same terms as CreateSessionOptions.apiKey. */
   apiKey?: string;
   baseUrl?: string;
 }
@@ -334,6 +341,26 @@ function resolveCompaction(
     mode: config?.mode === "discard" ? "discard" : "summarize",
     prompt: config?.prompt ?? DEFAULT_COMPACTION_PROMPT,
   };
+}
+
+/**
+ * The credential a Session's (or a describer's) client is built with for a model entry: the
+ * explicit override, else the entry's inline fields, else — only where resolveModelCredential
+ * allows it — nothing, so the routed client reads its own environment variable. A keyless
+ * entry whose endpoint is not the vendor's own throws its ModelCredentialError here, which
+ * hosts file with the SDKs' missing-credential errors (the server's `isMissingCredential`).
+ */
+function entryCredential(
+  entry: ModelEntry,
+  opts: { apiKey?: string | undefined; baseUrl?: string | undefined },
+): { apiKey?: string; baseUrl?: string } {
+  return resolveModelCredential({
+    provider: entry.provider,
+    modelId: entry.model_id,
+    clientType: entry.client_type,
+    baseUrl: opts.baseUrl ?? entry.base_url,
+    apiKey: opts.apiKey ?? entry.api_key,
+  });
 }
 
 /**
@@ -590,11 +617,11 @@ export class Agent {
         `Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`,
       );
     }
-    // Credentials are inlined on the model entry (single config file); an
-    // explicit argument takes priority, falling back to AgentHub reading env vars
-    // when both are absent.
-    const apiKey = opts.apiKey ?? modelEntry.api_key;
-    const baseUrl = opts.baseUrl ?? modelEntry.base_url;
+    // Credentials are inlined on the model entry (single config file); an explicit
+    // argument takes priority. With neither, the entry may lean on the environment only
+    // where the rule in resolveModelCredential allows (the vendor's own endpoint): a keyless
+    // row pointed elsewhere is refused here, before any client exists.
+    const { apiKey, baseUrl } = entryCredential(modelEntry, opts);
 
     // An explicit Workspace must already exist as a directory: if it
     // doesn't, throw rather than auto-create (to avoid a typo silently working in
@@ -710,8 +737,9 @@ export class Agent {
         `The original Session's Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model add\` to configure it again before resuming.`,
       );
     }
-    const apiKey = opts.apiKey ?? modelEntry.api_key;
-    const baseUrl = opts.baseUrl ?? modelEntry.base_url;
+    // Same credential rule as createSession (see entryCredential): a key deleted since the
+    // Session was created surfaces here, at resume.
+    const { apiKey, baseUrl } = entryCredential(modelEntry, opts);
 
     // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
     // and contexts opened without a pin read the Agent config's chain (the same chain
@@ -1115,11 +1143,13 @@ export class Agent {
         visionDescriber = {
           // The model attribution in the tool output matches the request's source: both are the entry's upstream model_id.
           modelId: visionEntry.model_id,
+          // Resolved on each call rather than once here: the same credential rule as the
+          // session model (a keyless entry pointed away from its vendor is refused), and a
+          // refusal is a failed read_file, not a failed Session.
           createLLM: () =>
             new GenerativeModel({
               modelId: visionEntry.model_id,
-              ...(visionEntry.api_key !== undefined ? { apiKey: visionEntry.api_key } : {}),
-              ...(visionEntry.base_url !== undefined ? { baseUrl: visionEntry.base_url } : {}),
+              ...entryCredential(visionEntry, {}),
               ...(visionEntry.client_type !== undefined
                 ? { clientType: visionEntry.client_type }
                 : {}),

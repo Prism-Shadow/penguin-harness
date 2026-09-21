@@ -62,7 +62,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 **导入模型**会把一个 OpenAI 兼容或 Anthropic 兼容端点列出的所有模型填进新分组。
 
 1. 点击**导入模型**。
-2. 在 **API key** 里输入密钥。留空则使用协议的 `OPENAI_*` 或 `ANTHROPIC_*` 环境变量。
+2. 在 **API key** 里输入该端点的密钥。端点不是厂商自己的地址时，服务端的 `OPENAI_*` / `ANTHROPIC_*` 变量不会被使用（见[设置 API key](#设置-api-key)），不填 key 的导入会被拒绝。
 3. 在**自定义 base URL** 里输入端点的 base URL。
 4. 点击字段右上角的**检测协议**，或者在字段最右侧的菜单里选择协议。见[检测自定义模型的协议](#检测自定义模型的协议)。
 5. 点击**批量导入模型**。PenguinHarness 会向端点请求模型列表，然后按端点返回的顺序把所有模型保存到新分组。
@@ -88,7 +88,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 2. 在**模型 ID** 里输入模型 id，必须与供应商 API 要求的完全一致，例如 `gpt-5.5`。**获取模型 id** 会打开供应商的模型列表。
 3. 可选：在**模型名称**里输入显示名。显示名为空时直接显示模型 id。
 4. 填写凭证和端点：
-   - **API key**：留空则使用供应商的环境变量。如果服务端设置了这个变量，输入框会显示变量名。
+   - **API key**：在厂商分组里留空则使用供应商的环境变量，服务端设置了这个变量时输入框会显示变量名。在网关分组、**Custom** 分组和你创建的分组里 key 必填——端点不是厂商自己的地址时，不会使用任何环境变量。
    - **自定义 base URL**：在 **Custom** 分组和你创建的分组里必填。网关分组会自动填好。
 5. 可选：填写限制和价格：
    - **上下文窗口**：模型的上下文窗口大小，单位是 Token。模型不在内置模型目录里时，留空会保存为 1000000。
@@ -163,8 +163,8 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 - 探测请求是请求体为 `{}` 的最小无效请求，不消耗 Token，也不需要有效的模型 id：返回的错误若符合协议自身的格式，就证明路由存在；返回 `404` 或 `405`，说明路径没有提供服务；HTML 或网关杂讯一律不算数。
 - 探测用的 URL 和认证头，与保存后 AgentHub 客户端实际使用的完全一致：OpenAI 系协议用 `Authorization: Bearer`，`ant-messages` 用 `x-api-key` 加 `Authorization: Bearer` 和 `anthropic-version`。所以检测出的协议一定真实可用。
-- 服务端按三步选取探测凭据：优先用弹窗里填写的 API key，其次用这个条目已保存的 key，最后用探测目标协议对应的环境变量（`ant-messages` 用 `ANTHROPIC_API_KEY`，两个 OpenAI 协议用 `OPENAI_API_KEY`）。每发一次探测都会重新选择，因为此刻要确定的就是协议。这些值不会传到浏览器，也不会出现在响应里。
-- 完全没有凭据也能检测，因为协议格式的 `401` 同样能识别路由。不过相比匿名请求经常得到的笼统 `401` 或网关 HTML，带凭据的探测得到这个明确答案的可能性大得多。
+- 服务端按三步选取探测凭据：优先用弹窗里填写的 API key，其次用这个条目已保存的 key，最后用探测目标协议对应的环境变量（`ant-messages` 用 `ANTHROPIC_API_KEY`，两个 OpenAI 协议用 `OPENAI_API_KEY`）——但只在被探测的 URL 是该厂商自己的端点时才会使用。每发一次探测都会重新选择，因为此刻要确定的就是协议。这些值不会传到浏览器，也不会出现在响应里。
+- 完全没有凭据也能检测，因为协议格式的 `401` 同样能识别路由。因此网关或私有服务器一律匿名探测：你的厂商 key 不会发往你输入的 URL。
 - 在这些分组里，不会从模型 id 推断任何东西。在自定义分组里输入 `claude-sonnet-5`，不会因此选用 Anthropic 客户端或它的 `ANTHROPIC_*` key：自定义分组一律回退到 `openai-chat`，API key 提示也照此显示。供应商分组和网关分组不受影响；模型目录认识它们的 id，所以按 id 或按分组的预置来路由。
 - 在检测功能出现之前创建的条目，保留 `client_type = "openai"`，它至今仍是 `openai-chat` 的别名。只有手动选择协议、或某次检测生效时，才会改写这个值。旧的非标准协议值以只读方式显示：「协议：{t}（沿用原配置，不可修改）」。
 - 检测也可以通过 `POST /api/projects/:id/models/detect` 调用（仅 owner 可用），参见 [Server API](/server-api)。
@@ -180,7 +180,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 > [!NOTE]
 > 和协议检测不同，这一探测是真实、计费的请求：图片请求无法像协议探测那样做到免费。它只在你点击**检测**时执行，绝不会自动运行，也不会在保存时运行。
 
-凭据来源和连通性测试是同一条链路：先用弹窗里填写的 key，其次用已保存的 key，最后用协议对应的环境变量，全部在服务端解析。**支持视觉**只对不在内置模型目录里的模型显示；目录里的模型本身就声明了是否接受图片。
+凭据来源和连通性测试是同一条链路：先用弹窗里填写的 key，其次用已保存的 key，最后在端点允许的范围内用环境变量（见[设置 API key](#设置-api-key)），全部在服务端解析。**支持视觉**只对不在内置模型目录里的模型显示；目录里的模型本身就声明了是否接受图片。
 
 ## 设置 API key
 
@@ -188,7 +188,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 - **单个模型。** 在**模型配置**里，把 key 填入 **API key**。保存后 key 会打码显示；输入框留空即保留原 key，点击**清除已存 API key** 可删除它。
 - **整个分组。** 在分组标题栏上点击**手动设置密钥**并输入 key，组内所有模型都会使用它。
-- **不配 key。** 没配 key 的模型使用服务端上供应商的环境变量；参见[内置供应商分组](#内置供应商分组)。key 来自环境变量时，卡片和弹窗都会显示这一点。
+- **不配 key。** 没配 key 的模型**只在请求确实发往该供应商的官方端点时**使用服务端上供应商的环境变量：条目没有 base URL（此时按 AgentHub 自己的 `*_API_KEY` / `*_BASE_URL` 配对），或 base URL 是厂商自己的端点。自带 base URL 的条目一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、两个 Qwen 网关）、**Custom**、**vLLM** 和你创建的分组指向别的端点，其中的模型必须配自己的 key：在这些分组里对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。Penguin Go 分组是唯一的例外，它回退到自己的 `PENGUIN_GO_API_KEY`，从不使用厂商变量。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
 
 你填写的 key 存在 Project 的隐藏配置文件里，文件权限为 0600。Web App 里它始终打码显示。
 
@@ -352,7 +352,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 
 ### 把模型添加到 vLLM 分组
 
-把模型添加到 **vLLM** 分组。协议固定为 `openai-chat-vllm-adapter`，分组没有预置 base URL，所以要把**自定义 base URL** 设置为你的服务器地址。
+把模型添加到 **vLLM** 分组。协议固定为 `openai-chat-vllm-adapter`，分组没有预置 base URL，所以要把**自定义 base URL** 设置为你的服务器地址。同时填上 **API key**：服务器的 key，服务器不校验 key 时随便填一个占位值也行。自带 base URL 的条目不会由服务端的 `OPENAI_API_KEY` 覆盖，没有 key 的条目会被拒绝。
 
 分组自带八个预置模型，价格均为 0：
 
@@ -374,6 +374,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 - `client_type = "openai-chat"`
 - `base_url` 指向服务器，例如 `http://127.0.0.1:8000/v1`
 - `model_id` 填服务器实际提供的模型名称
+- `api_key`：服务器的 key，服务器不校验 key 时填任意占位值——环境里的 `OPENAI_API_KEY` 不覆盖你自己的服务器
 
 对这类服务器，协议检测会判定为 `openai-chat`；也可以通过 base URL 字段的后缀菜单手动选定。
 
@@ -391,7 +392,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 
 ## 内置供应商分组
 
-下表列出了各个内置分组，以及条目没有 key 时模型回退使用的环境变量。模型目录的源码位于 `packages/core/src/state/model-catalog.ts`。每个分组还有一个 `_BASE_URL` 变体，例如 `ANTHROPIC_BASE_URL`。**模型库**页面按这个顺序列出分组，你创建的分组排在后面。
+下表列出了各个内置分组，以及条目没有 key 时模型回退使用的环境变量。模型目录的源码位于 `packages/core/src/state/model-catalog.ts`。每个分组还有一个 `_BASE_URL` 变体，例如 `ANTHROPIC_BASE_URL`。**模型库**页面按这个顺序列出分组，你创建的分组排在后面。网关分组的条目带着网关自己的端点，因此**从不回退**：表里的变量是它们的协议客户端读取的那一个，而正因为它存的是你的厂商 key，它不会被发往网关（见[设置 API key](#设置-api-key)）。
 
 | 供应商 | API key 环境变量 | 说明 |
 | --- | --- | --- |
@@ -410,9 +411,9 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 | qwen-pay-as-you-go | `OPENAI_API_KEY` | Qwen 按量付费（DashScope 的 OpenAI 兼容端点），预置 base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`；转售的第三方模型保留供应商前缀 id（如 `kimi/kimi-k3`） |
 | qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；价格取自各模型页面的官方牌价（预览模型只有配额倍率优惠，没有牌价） |
 | vllm | `OPENAI_API_KEY` | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，无预置 base URL，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
-| custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn Preview（Anthropic Messages API，地址 `api.atria-asi.ai`，条目没有凭据时使用 `ANTHROPIC_API_KEY`，上下文窗口 256K，供应商公布价格之前定价 $0） |
+| custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn Preview（Anthropic Messages API，地址 `api.atria-asi.ai`，需要自己的 key，上下文窗口 256K，供应商公布价格之前定价 $0） |
 
-网关分组（openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 AgentHub 通用的 OpenAI 协议客户端，凭据留空时读取 `OPENAI_API_KEY`，而不是某个网关专属的变量。
+网关分组（openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 AgentHub 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom、vLLM 和自建分组同样如此，除非条目的 base URL 就是厂商自己的端点。
 
 - OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
