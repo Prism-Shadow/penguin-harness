@@ -234,6 +234,49 @@ export function extendsExpr(
   return false;
 }
 
+/**
+ * An interface's CLOSED shape, as one canonical string: its declaration plus every
+ * interface and named data type it reaches through the table, keys sorted. Two builds that
+ * print the same string mean the same thing by the interface, all the way down.
+ *
+ * This is equality, where {@link satisfies} is assignability — and equality is what a
+ * value BOTH sides read and write needs: one-way assignability lets the reader accept what
+ * the writer is about to break. It also needs no second table, so a predecessor can leave
+ * its string next to the value and a successor can compare it against its own.
+ */
+export function closedShape(table: TableLike, key: string): string | null {
+  const { ifaces, types } = tableOf(table);
+  if (ifaces[key] === undefined) return null;
+  const reached = new Map<string, unknown>();
+  const visit = (node: unknown): void => {
+    if (node === null || typeof node !== "object") return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    const { iface, $ref } = node as { iface?: unknown; $ref?: unknown };
+    for (const [kind, name, from] of [
+      ["iface", iface, ifaces],
+      ["type", $ref, types],
+    ] as const) {
+      if (typeof name !== "string" || reached.has(`${kind}:${name}`)) continue;
+      const target = (from as Record<string, unknown>)[name];
+      reached.set(`${kind}:${name}`, target ?? null);
+      visit(target);
+    }
+    Object.values(node).forEach(visit);
+  };
+  visit({ iface: key });
+  const sorted = (v: unknown): unknown =>
+    v === null || typeof v !== "object"
+      ? v
+      : Array.isArray(v)
+        ? v.map(sorted)
+        : Object.fromEntries(
+            Object.keys(v)
+              .sort()
+              .map((k) => [k, sorted((v as Record<string, unknown>)[k])]),
+          );
+  return JSON.stringify(sorted(Object.fromEntries(reached)));
+}
+
 /** A short rendering for messages. */
 export function show(expr: TypeExpr): string {
   if ("data" in expr) return typeof expr.data === "string" ? expr.data : JSON.stringify(expr.data);
