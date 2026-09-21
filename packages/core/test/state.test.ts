@@ -1434,6 +1434,20 @@ describe("project-config round trip", () => {
       /legacy|separate fields/,
     );
   });
+
+  it("reports a clear error when models is not a list of tables (no bare TypeError)", async () => {
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    // Every TOML-expressible broken shape: a string, a number, a plain table. Before the fix
+    // these crashed the whole load with "(parsed.models ?? []).map is not a function" — no
+    // file name, no guidance.
+    for (const broken of ['models = "oops"\n', "models = 42\n", "[models]\na = 1\n"]) {
+      await fs.writeFile(file, broken, "utf8");
+      await expect(loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).rejects.toThrow(
+        /models in \.project_config\.toml is in a legacy\/invalid format \(must be a list of \[\[models\]\] tables\)/,
+      );
+    }
+  });
 });
 
 describe("command_policy (sandbox command policy block)", () => {

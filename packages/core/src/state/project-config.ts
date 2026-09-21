@@ -288,6 +288,21 @@ function assertModelEntry(file: string, entry: unknown): ModelEntry {
 }
 
 /**
+ * Validates the models field: absent reads as an empty table; anything but a list of
+ * `[[models]]` entries is a clear error (a broken/hand-edited value must not surface as a
+ * bare `TypeError: .map is not a function` with no file name and no guidance).
+ */
+function parseModelsField(file: string, value: unknown): ModelEntry[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new Error(
+      `models in .project_config.toml is in a legacy/invalid format (must be a list of [[models]] tables): ${file}. ${OLD_FORMAT_HINT}`,
+    );
+  }
+  return value.map((m) => assertModelEntry(file, m));
+}
+
+/**
  * Leniently parses the `[default_chat]` block (new-chat defaults): each key is validated
  * independently and an invalid value (wrong type / unknown enum member / `"none"` as a
  * thinking level) drops that key rather than failing the load — the block only ever
@@ -426,7 +441,7 @@ export function projectConfigFromTable(
     ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
     ...(commandPolicy !== undefined ? { command_policy: commandPolicy } : {}),
     ...(plugins !== undefined ? { plugins } : {}),
-    models: ((parsed.models as unknown[] | undefined) ?? []).map((m) => assertModelEntry(file, m)),
+    models: parseModelsField(file, parsed.models),
   };
 }
 
