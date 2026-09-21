@@ -5,22 +5,26 @@
  * desktop App must not hold, and ModelScope returns that code to a redirect URI the App does
  * not own. The bridge at `config.modelscopeBridgeUrl` keeps the secret and runs the exchange.
  * The App speaks only the device-style start/poll pair below to the bridge, and receives
- * exactly once an api-inference access token, which it then writes across the ModelScope group
- * the same way any other group key is written.
+ * exactly once an api-inference token delivery, which it then writes across the ModelScope
+ * group the same way any other group key is written.
  *
  * Two consequences of that single delivery shape most of this file. A poll that has already
  * succeeded can never be re-polled — the bridge clears its server-side copy on delivery — so a
  * write that fails afterwards keeps the token on the flow for `retryApply` instead of asking
- * the user to authorize again; and because nothing here renews an expired token, a group whose
- * token has lapsed reports the upstream's rejection and asks for a fresh authorization (the
- * bridge exposes a refresh route the harness does not call yet).
+ * the user to authorize again. The refresh token is stored in web.db, never in
+ * .project_config.toml; model requests call `ensureFresh` before loading a runtime and silently
+ * rotate the access token when it is near expiry.
  */
 import { randomBytes } from "node:crypto";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 import { HttpError } from "../http/errors.js";
 import { Config } from "../hmr/capabilities.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type {
+  ModelProviderAuthToken,
+  ModelProviderAuthTokens,
+  ProjectConfigStore,
+} from "../mechanisms/projects.js";
 import type { ModelScopeAuthFlowStatusResponse } from "../api/types.js";
 
 /** Recorded by the bridge alongside the flow; it identifies the App but does not gate it. */
@@ -31,9 +35,11 @@ const MAX_FLOWS_PER_OWNER = 8;
 const MAX_RESPONSE_BYTES = 512 * 1024;
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_ACCESS_TOKEN_LENGTH = 4096;
+const MAX_REFRESH_TOKEN_LENGTH = 4096;
 const MAX_AUTHORIZE_URL_LENGTH = 2048;
 const DEFAULT_RETRY_AFTER_MS = 1_000;
 const MAX_RETRY_AFTER_MS = 60_000;
+const REFRESH_SKEW_MS = 5 * 60 * 1000;
 
 type FlowStatus = "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
 
@@ -48,7 +54,7 @@ interface Flow {
   status: FlowStatus;
   error?: ModelScopeAuthFlowStatusResponse["error"];
   applied?: number;
-  accessToken?: string;
+  credential?: ModelScopeCredential;
   polling?: Promise<void>;
   retryPollAt?: number;
   changed?: boolean;
@@ -56,11 +62,27 @@ interface Flow {
 
 export type ModelScopeAuthStatusResult = ModelScopeAuthFlowStatusResponse & { changed?: true };
 
+export interface ModelScopeCredential {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: string;
+}
+
+export interface ModelScopeRefreshResult {
+  changed: boolean;
+}
+
 interface ModelScopeAuthDeps {
   /** Base URL of the bridge, without a trailing slash (config.modelscopeBridgeUrl). */
   bridgeUrl: string;
-  /** Writes the token across the ModelScope group; resolves to how many rows took it. */
-  applyKey: (projectId: string, accessToken: string) => Promise<number>;
+  /** Writes the delivered credential; resolves to how many rows took the access token. */
+  applyCredential: (
+    projectId: string,
+    credential: ModelScopeCredential,
+    options?: { expectedRefreshToken?: string },
+  ) => Promise<number>;
+  /** Reads the server-side refresh metadata for the group. */
+  readStoredCredential?: (projectId: string) => ModelProviderAuthToken | undefined;
   fetchImpl?: typeof fetch;
   now?: () => number;
 }
@@ -119,15 +141,41 @@ function authorizeEndpoint(value: unknown): string {
   return raw;
 }
 
-/** Validates the one-time delivery and extracts the api-inference access token. */
-export function modelscopeAccessToken(value: unknown): string {
+function optionalTokenString(value: unknown, maxLength: number, label: string): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  return requiredString(value, maxLength, label);
+}
+
+function optionalIsoDate(value: unknown, label: string): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const raw = requiredString(value, 128, label);
+  const ms = Date.parse(raw);
+  if (!Number.isFinite(ms)) throw new Error(`The bridge returned an invalid ${label}.`);
+  return new Date(ms).toISOString();
+}
+
+/** Validates the one-time delivery and extracts the api-inference credential. */
+export function modelscopeCredential(
+  value: unknown,
+  fallbackRefreshToken?: string,
+): ModelScopeCredential {
   const body = asRecord(value);
   if (body.status !== "completed") throw new Error("The bridge returned another status.");
-  return requiredString(
-    asRecord(body.token).accessToken,
-    MAX_ACCESS_TOKEN_LENGTH,
-    "access token",
-  );
+  const token = asRecord(body.token);
+  const refreshToken =
+    optionalTokenString(token.refreshToken, MAX_REFRESH_TOKEN_LENGTH, "refresh token") ??
+    fallbackRefreshToken;
+  const expiresAt = optionalIsoDate(token.expiresAt, "access token expiry");
+  return {
+    accessToken: requiredString(token.accessToken, MAX_ACCESS_TOKEN_LENGTH, "access token"),
+    ...(refreshToken !== undefined ? { refreshToken } : {}),
+    ...(expiresAt !== undefined ? { expiresAt } : {}),
+  };
+}
+
+/** Backward-compatible helper used by older tests and small validators. */
+export function modelscopeAccessToken(value: unknown): string {
+  return modelscopeCredential(value).accessToken;
 }
 
 function retryAfterMs(value: unknown): number {
@@ -144,6 +192,7 @@ function retryAfterSeconds(value: unknown): number {
 
 export class ModelScopeAuthService {
   private readonly flows = new Map<string, Flow>();
+  private readonly refreshes = new Map<string, Promise<ModelScopeRefreshResult>>();
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
 
@@ -172,6 +221,24 @@ export class ModelScopeAuthService {
     });
   }
 
+  async ensureFresh(input: {
+    projectId: string;
+    provider: string;
+  }): Promise<ModelScopeRefreshResult> {
+    if (input.provider !== MODELSCOPE_PROVIDER_ID) return { changed: false };
+    const stored = this.deps.readStoredCredential?.(input.projectId);
+    const state = this.refreshState(stored);
+    if (stored === undefined || state === "fresh") return { changed: false };
+    const key = `${input.projectId}:${input.provider}`;
+    const existing = this.refreshes.get(key);
+    if (existing) return existing;
+    const refresh = this.refreshNow(input.projectId, stored, state).finally(() => {
+      this.refreshes.delete(key);
+    });
+    this.refreshes.set(key, refresh);
+    return refresh;
+  }
+
   async start(input: { projectId: string; userId: string }): Promise<{
     flowId: string;
     authorizeUrl: string;
@@ -193,7 +260,11 @@ export class ModelScopeAuthService {
         }),
       });
     } catch {
-      throw new HttpError(502, "modelscope_unreachable", "The ModelScope bridge could not be reached.");
+      throw new HttpError(
+        502,
+        "modelscope_unreachable",
+        "The ModelScope bridge could not be reached.",
+      );
     }
     if (response.status === 429) {
       let body: unknown = null;
@@ -211,7 +282,11 @@ export class ModelScopeAuthService {
       );
     }
     if (response.status !== 201) {
-      throw new HttpError(502, "modelscope_start_failed", "The ModelScope bridge refused the key flow.");
+      throw new HttpError(
+        502,
+        "modelscope_start_failed",
+        "The ModelScope bridge refused the key flow.",
+      );
     }
     let body: Record<string, unknown>;
     let authorizeUrl: string;
@@ -274,7 +349,7 @@ export class ModelScopeAuthService {
     userId: string;
   }): Promise<ModelScopeAuthStatusResult> {
     const flow = this.requireFlow(input);
-    if (flow.status !== "apply_failed" || flow.accessToken === undefined) {
+    if (flow.status !== "apply_failed" || flow.credential === undefined) {
       throw new HttpError(
         409,
         "modelscope_auth_not_retryable",
@@ -310,7 +385,46 @@ export class ModelScopeAuthService {
     }
     flow.code = null;
     flow.deviceSecret = null;
-    flow.accessToken = undefined;
+    flow.credential = undefined;
+  }
+
+  private refreshState(
+    stored: ModelProviderAuthToken | undefined,
+  ): "fresh" | "refresh" | "expired" {
+    if (stored === undefined || stored.accessTokenExpiresAt === undefined) return "fresh";
+    const expiresAt = Date.parse(stored.accessTokenExpiresAt);
+    if (!Number.isFinite(expiresAt)) return "fresh";
+    const now = this.now();
+    if (expiresAt <= now) return "expired";
+    return expiresAt <= now + REFRESH_SKEW_MS ? "refresh" : "fresh";
+  }
+
+  private async refreshNow(
+    projectId: string,
+    stored: ModelProviderAuthToken,
+    state: "refresh" | "expired",
+  ): Promise<ModelScopeRefreshResult> {
+    try {
+      const response = await this.request("/oauth/refresh", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refreshToken: stored.refreshToken }),
+      });
+      if (!response.ok) throw new Error(`Bridge refresh failed: ${response.status}`);
+      const credential = modelscopeCredential(await readJsonBounded(response), stored.refreshToken);
+      const applied = await this.deps.applyCredential(projectId, credential, {
+        expectedRefreshToken: stored.refreshToken,
+      });
+      if (applied === 0) return { changed: false };
+      return { changed: true };
+    } catch (error) {
+      if (state === "refresh") return { changed: false };
+      throw new HttpError(
+        401,
+        "modelscope_refresh_failed",
+        "The ModelScope authorization expired and could not be refreshed. Authorize ModelScope again.",
+      );
+    }
   }
 
   private async pollBridge(flow: Flow): Promise<void> {
@@ -360,7 +474,7 @@ export class ModelScopeAuthService {
     if (status === "pending") return;
     if (status === "completed") {
       try {
-        flow.accessToken = modelscopeAccessToken(body);
+        flow.credential = modelscopeCredential(body);
       } catch {
         flow.status = "error";
         flow.error = "invalid_key";
@@ -390,16 +504,16 @@ export class ModelScopeAuthService {
   }
 
   private async apply(flow: Flow): Promise<void> {
-    if (flow.accessToken === undefined) return;
+    if (flow.credential === undefined) return;
     flow.status = "applying";
     flow.error = undefined;
     try {
-      const applied = await this.deps.applyKey(flow.projectId, flow.accessToken);
+      const applied = await this.deps.applyCredential(flow.projectId, flow.credential);
       // A group with no rows would silently swallow the token, leaving the user authorized
       // with nothing to show for it.
       if (applied === 0) throw new Error("The ModelScope group is empty.");
       flow.applied = applied;
-      flow.accessToken = undefined;
+      flow.credential = undefined;
       flow.status = "completed";
       flow.changed = true;
     } catch {
@@ -456,7 +570,7 @@ export class ModelScopeAuthService {
 
 /** The per-App ModelScope key authorization capability consumed by Project model routes. */
 export abstract class ModelScopeAuth extends Interface<
-  Pick<ModelScopeAuthService, "start" | "status" | "retryApply" | "cancel">
+  Pick<ModelScopeAuthService, "start" | "status" | "retryApply" | "cancel" | "ensureFresh">
 >() {}
 
 /** Keep in-flight flows on the current bridge, like PlatformAuthProvider keeps them on Penguin Go. */
@@ -464,13 +578,33 @@ export abstract class ModelScopeAuth extends Interface<
 export class ModelScopeAuthProvider {
   @Use() private readonly config!: Config;
   @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly providerAuthTokens!: ModelProviderAuthTokens;
   @Provide() auth!: ModelScopeAuth;
 
   setup() {
     this.auth = new ModelScopeAuthService({
       bridgeUrl: this.config.modelscopeBridgeUrl,
-      applyKey: (projectId, accessToken) =>
-        this.projectConfig.setGroupApiKey(projectId, MODELSCOPE_PROVIDER_ID, accessToken),
+      applyCredential: async (projectId, credential, options) => {
+        if (credential.refreshToken !== undefined) {
+          return this.projectConfig.setGroupApiKeyWithProviderAuthToken(
+            projectId,
+            MODELSCOPE_PROVIDER_ID,
+            credential.accessToken,
+            {
+              refreshToken: credential.refreshToken,
+              accessTokenExpiresAt: credential.expiresAt,
+            },
+            options,
+          );
+        }
+        return this.projectConfig.setGroupApiKey(
+          projectId,
+          MODELSCOPE_PROVIDER_ID,
+          credential.accessToken,
+        );
+      },
+      readStoredCredential: (projectId) =>
+        this.providerAuthTokens.get(projectId, MODELSCOPE_PROVIDER_ID),
     });
   }
 }

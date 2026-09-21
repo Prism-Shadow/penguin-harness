@@ -216,13 +216,13 @@ ModelScope 有三处不同：
 
 - 授权不经过魔搭自己的页面，而是经过一台**授权中转层**。中转层持有魔搭的 client secret，代 PenguinHarness 走完 OAuth，再把一把可直接调用 api-inference 的 access token 交回来。中转层的地址来自服务端环境变量 `MODELSCOPE_BRIDGE_URL`，见[环境变量](/configuration#环境变量)。
 - 授权页的地址由中转层给出，PenguinHarness 原样打开，不像 Penguin Go 那样自己拼。同样没有手动填写授权码的方式。
-- 拿到的 access token 是**会过期**的，PenguinHarness 目前不会自动续期。过期后上游会拒绝请求，届时重新点一次**自动获取密钥**即可。
+- 拿到的 access token 是**会过期**的；PenguinHarness 会在服务端保存刷新凭据，并在模型请求前静默续期。刷新凭据失效或缺失时，才需要重新点一次**自动获取密钥**。
 
 注意事项：
 
 - 只有 Project owner 能发起授权。TokenDance 还要求由他本人已登录的会话完成授权，实际上就是打开着弹窗的那个标签页。重定向本身不要求会话就能接收，因为供应商带回的浏览器未必是你发起授权时用的那个；但它只交回授权码：在弹窗来取结果之前，不会发生任何换取，也不会保存任何 key。
 - 整个换取过程都在服务端完成。TokenDance 的 PKCE verifier、Penguin Go 的设备密钥、以及 ModelScope 的授权码和设备密钥都不会进入浏览器；新 key 直接写入模型表，同样不经过浏览器。ModelScope 的 client secret 从头到尾都不在 PenguinHarness 里，只有中转层持有。
-- 一次授权只交付一把 key，有效期取供应商给出的截止时间，且不超过十分钟。
+- 一次授权流程最多等待十分钟。ModelScope 交付的是一组 access token / refresh token：access token 写入模型表，refresh token 只保存在服务端 DB，不返回给前端，也不写入 Project 配置。
 - 交付回来的 key 只交一次。Penguin Go 和 ModelScope 都会在本地保存失败时短暂保留这一次交付，因此可以直接重试写入，不必再次授权。ModelScope 下无需去魔搭控制台清理——它交回的是你自己账号的 token，不是新造的 key。
 - TokenDance 的 key 携带[应用归因](#应用归因)表中 PenguinHarness 的应用 URL，所以即使用其他工具发起调用，用量也仍会归到 PenguinHarness 名下。
 
@@ -444,7 +444,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 
 `modelscope` 是聚合网关分组：同一个魔搭 api-inference 端点，预置 base URL `https://api-inference.modelscope.cn/v1`，每条预置各自写明 AgentHub 应该为这个上游模型使用的协议。模型 id 就是上游仓库名，因此保留供应商前缀（`deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）。Qwen 条目使用 OpenAI Chat Completions；DeepSeek 条目固定为 `deepseek-v4`，与直连 DeepSeek 和 Penguin Go 的 DeepSeek V4 条目保持一致。新建的 Project 立即带上这些预置；更早创建的 Project 用**同步预置**补上。
 
-分组的 key 从标题栏取得，见[授权获取新 API key](#授权获取新-api-key)。授权走一台授权中转层，由中转层持有魔搭的 client secret 并交回一把 api-inference access token，而不是经过魔搭自己的页面。除此之外这个分组没有特别之处：推理请求直接发给 `https://api-inference.modelscope.cn/v1`，从不经过中转层；token 和其他分组的 key 一样写进 `.project_config.toml`。token 会过期且目前不会自动续期，过期的分组需要从标题栏重新授权一次。
+分组的 key 从标题栏取得，见[授权获取新 API key](#授权获取新-api-key)。授权走一台授权中转层，由中转层持有魔搭的 client secret 并交回一组 api-inference access token / refresh token，而不是经过魔搭自己的页面。除此之外这个分组没有特别之处：推理请求直接发给 `https://api-inference.modelscope.cn/v1`，从不经过中转层；access token 和其他分组的 key 一样写进 `.project_config.toml`，refresh token 只保存在服务端 DB。access token 会过期，PenguinHarness 会在模型请求前静默续期；refresh token 缺失或失效时，才需要从标题栏重新授权一次。
 
 预置条目不带价格。魔搭的 api-inference 是计费的，但它的模型页面读不到费率，所以这些条目按未定价处理：模型页在它们上面不显示价格徽标，成本中心把它们的用量报为未计价。这是目录记录「没人查过这个价格」的方式，见[价格与促销](#价格与促销)。
 

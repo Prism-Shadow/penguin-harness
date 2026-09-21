@@ -22,6 +22,16 @@ CREATE TABLE IF NOT EXISTS model_promotions ( -- NOT a cache rebuildable from fi
   PRIMARY KEY (project_id, provider, model_id)
 );`;
 
+export const MODEL_PROVIDER_AUTH_TOKENS_SQL = `
+CREATE TABLE IF NOT EXISTS model_provider_auth_tokens ( -- Server-side OAuth refresh metadata for provider groups. The current request token remains in .project_config.toml as api_key; this table holds only the refresh material that must never be returned to the frontend or written into Project files.
+  project_id              TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+  provider                TEXT NOT NULL,
+  refresh_token           TEXT NOT NULL,
+  access_token_expires_at TEXT,
+  updated_at              TEXT NOT NULL,
+  PRIMARY KEY (project_id, provider)
+);`;
+
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
   user_id             TEXT PRIMARY KEY,            -- semantic id doubles as login name: ^[a-z][a-z0-9_-]{1,31}$
@@ -59,6 +69,7 @@ CREATE TABLE IF NOT EXISTS project_members (  -- member grants only; owners are 
   PRIMARY KEY (project_id, user_id)
 );
 ${MODEL_PROMOTIONS_SQL}
+${MODEL_PROVIDER_AUTH_TOKENS_SQL}
 CREATE TABLE IF NOT EXISTS agents (           -- index only; name/description live in system_config.yaml
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,

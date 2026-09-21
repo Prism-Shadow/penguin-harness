@@ -32,7 +32,11 @@ function owner(deps: ModelScopeAuthRouteDeps, userId: string, projectId: string)
   deps.access.requireProjectOwner(userId, projectId);
 }
 
-function publishIfChanged(deps: ModelScopeAuthRouteDeps, projectId: string, changed: boolean): void {
+function publishIfChanged(
+  deps: ModelScopeAuthRouteDeps,
+  projectId: string,
+  changed: boolean,
+): void {
   if (changed) modelConfigChanged(deps, projectId);
 }
 

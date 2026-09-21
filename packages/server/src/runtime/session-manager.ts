@@ -85,6 +85,7 @@ import type { SessionService as SessionServiceImpl } from "../services/session-s
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
 import { SessionService } from "../services/session-service.js";
+import { ModelScopeAuth } from "../services/modelscope-auth-service.js";
 import { TitleGenerator } from "./title-generator.js";
 import { loopbackHostRoles } from "../services/preview-token.js";
 import { mergedNoProxy } from "../net/proxy.js";
@@ -351,6 +352,8 @@ export interface SessionManagerDeps {
   titles?: TitleNotifier;
   /** Error persistence (optional: without it, only logs — same as before this was wired up). */
   errors?: ErrorSink;
+  /** Provider auth refresh (optional for tests that do not exercise external model credentials). */
+  modelScopeAuth?: ModelScopeAuth;
   log?: (line: string) => void;
   /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   /**
@@ -1691,12 +1694,25 @@ export class SessionManager {
     return this.agentGenerations.get(agentKey(projectId, agentId)) ?? 0;
   }
 
+  private async refreshProviderCredentialIfNeeded(row: {
+    projectId: string;
+    agentId: string;
+    provider: string;
+  }): Promise<void> {
+    const refreshed = await this.deps.modelScopeAuth?.ensureFresh({
+      projectId: row.projectId,
+      provider: row.provider,
+    });
+    if (refreshed?.changed) this.invalidateProjectRuntimes(row.projectId);
+  }
+
   /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key on self-heal. */
   private async ensureEntry(sessionId: string): Promise<RuntimeEntry> {
     const existing = this.entries.get(sessionId);
     /** Background-task counts the discarded runtime last reported (see the publish below). */
     let discardedBackgroundTasks: SessionBackgroundTasks | undefined;
     if (existing) {
+      await this.refreshProviderCredentialIfNeeded(existing);
       if (existing.generation === this.generationOf(existing.projectId, existing.agentId)) {
         return existing;
       }
@@ -1722,6 +1738,7 @@ export class SessionManager {
         "Session does not exist or you do not have access.",
       );
     }
+    await this.refreshProviderCredentialIfNeeded(row);
     // Captured before the (awaited) load: an invalidation racing with the load leaves
     // this entry stale, so the access after next rebuilds it with the new values.
     const generation = this.generationOf(row.projectId, row.agentId);
@@ -2305,6 +2322,7 @@ export class SessionsModule {
   @Use() private readonly sources!: SessionOrigins;
   @Use() private readonly recorder!: UsageRecording;
   @Use() private readonly errors!: Errors;
+  @Use() private readonly modelScopeAuth!: ModelScopeAuth;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traceStore!: TraceIndexStore;
@@ -2397,6 +2415,7 @@ export class SessionsModule {
       sources,
       recorder,
       errors,
+      modelScopeAuth: this.modelScopeAuth,
       titles,
       log,
       notifyProjectUsers,

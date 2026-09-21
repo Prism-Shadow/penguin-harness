@@ -454,10 +454,7 @@ function keyAuth(route: string, flowNotFoundCode: string): KeyAuthEndpoints {
 export const platformAuthEndpoints = keyAuth("platform-auth", "platform_auth_flow_not_found");
 
 /** ModelScope's, run through the harness's own authorization bridge. */
-export const modelScopeAuthEndpoints = keyAuth(
-  "modelscope-auth",
-  "modelscope_auth_flow_not_found",
-);
+export const modelScopeAuthEndpoints = keyAuth("modelscope-auth", "modelscope_auth_flow_not_found");
 
 export const syncPlatformModels = (projectId: string) =>
   apiFetch<PlatformModelSyncResponse>(

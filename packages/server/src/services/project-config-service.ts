@@ -38,6 +38,7 @@ import {
   GenerativeModel,
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
+  MODELSCOPE_PROVIDER_ID,
   PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
   defaultProjectConfig,
@@ -99,6 +100,8 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type {
   ModelPromotion,
+  ModelProviderAuthToken,
+  ModelProviderAuthTokens,
   ModelPromotions,
   ProjectConfigStore,
 } from "../mechanisms/projects.js";
@@ -463,16 +466,40 @@ export class ProjectConfigService implements ProjectConfigStore {
    * entry) falls back to a full read.
    */
   private readonly cache = new Map<string, { mtimeMs: number; table: RawTable }>();
+  private readonly providerCredentialLocks = new Map<string, Promise<unknown>>();
 
   @Use() private readonly paths!: Paths;
   /** Optional for narrow service tests; the production Projects module always provides it. */
   @Use() private readonly promotions?: ModelPromotions;
+  /** Optional for narrow service tests; OAuth refresh metadata lives in web.db, not TOML. */
+  @Use() private readonly providerAuthTokens?: ModelProviderAuthTokens;
   private get root(): string {
     return this.paths.root;
   }
 
   private filePath(projectId: string): string {
     return projectConfigPath(this.root, projectId);
+  }
+
+  private async withProviderCredentialLock<T>(
+    projectId: string,
+    provider: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const key = `${projectId}\0${provider}`;
+    const previous = this.providerCredentialLocks.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const current = previous.catch(() => undefined).then(() => gate);
+    this.providerCredentialLocks.set(key, current);
+    await previous.catch(() => undefined);
+    try {
+      return await task();
+    } finally {
+      release();
+      if (this.providerCredentialLocks.get(key) === current)
+        this.providerCredentialLocks.delete(key);
+    }
   }
 
   /**
@@ -1243,9 +1270,14 @@ export class ProjectConfigService implements ProjectConfigStore {
     });
     const raw = await this.readRaw(projectId);
     const prevModels = asArray(raw.models);
+    const hadModelScopeGroup = prevModels.some(
+      (model) => model.provider === MODELSCOPE_PROVIDER_ID,
+    );
 
     const seen = new Set<string>();
     const nextModels: RawTable[] = [];
+    let keepModelScopeGroup = false;
+    let clearModelScopeProviderAuthToken = false;
     // Rename mapping (old reference key -> new reference): default model / vision model pointers follow a key change instead of being lost on a full table replacement.
     const renamed = new Map<string, ModelRefDto>();
     // Each row's promotion, settled against the stored set once the file is written.
@@ -1347,15 +1379,19 @@ export class ProjectConfigService implements ProjectConfigStore {
       if (entry.clearApiKey) {
         delete next.api_key;
         delete next.created_at;
+        if (entry.provider === MODELSCOPE_PROVIDER_ID) clearModelScopeProviderAuthToken = true;
       }
       if (entry.apiKey !== undefined) {
         next.api_key = entry.apiKey;
         next.created_at = new Date().toISOString();
+        if (entry.provider === MODELSCOPE_PROVIDER_ID) clearModelScopeProviderAuthToken = true;
       }
       if (entry.baseUrl === null) delete next.base_url;
       else if (entry.baseUrl !== undefined) next.base_url = entry.baseUrl;
+      if (entry.provider === MODELSCOPE_PROVIDER_ID) keepModelScopeGroup = true;
       nextModels.push(next);
     }
+    if (hadModelScopeGroup && !keepModelScopeGroup) clearModelScopeProviderAuthToken = true;
 
     // default_model: when provided it must be present in models; when omitted the previous value is kept (the pointer follows a key rename; if it was deleted, it's removed).
     let defaultModel: ModelRefDto | undefined;
@@ -1418,20 +1454,29 @@ export class ProjectConfigService implements ProjectConfigStore {
     else delete next.default_model;
     if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
     else delete next.vision_model;
-    await this.writeRaw(projectId, next);
-    if (this.promotions !== undefined) {
-      const stored = new Map(
-        this.promotions.list(projectId).map((p) => [refKey(p.provider, p.modelId), p.discount]),
-      );
-      const rows: ModelPromotion[] = [];
-      for (const { provider, modelId, declared, keep } of promotionPlan) {
-        const discount = keep ? stored.get(refKey(provider, modelId)) : declared;
-        if (discount !== undefined && discount !== null) rows.push({ provider, modelId, discount });
+    const commit = async (): Promise<ModelsResponse> => {
+      await this.writeRaw(projectId, next);
+      if (this.promotions !== undefined) {
+        const stored = new Map(
+          this.promotions.list(projectId).map((p) => [refKey(p.provider, p.modelId), p.discount]),
+        );
+        const rows: ModelPromotion[] = [];
+        for (const { provider, modelId, declared, keep } of promotionPlan) {
+          const discount = keep ? stored.get(refKey(provider, modelId)) : declared;
+          if (discount !== undefined && discount !== null)
+            rows.push({ provider, modelId, discount });
+        }
+        // Built from the new table alone, so a dropped row's promotion is gone with it.
+        this.promotions.replaceAll(projectId, rows);
       }
-      // Built from the new table alone, so a dropped row's promotion is gone with it.
-      this.promotions.replaceAll(projectId, rows);
-    }
-    return this.getModels(projectId);
+      if (clearModelScopeProviderAuthToken) {
+        this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
+      }
+      return this.getModels(projectId);
+    };
+    return clearModelScopeProviderAuthToken
+      ? this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, commit)
+      : commit();
   }
 
   /**
@@ -1443,6 +1488,45 @@ export class ProjectConfigService implements ProjectConfigStore {
    * Returns how many entries were written; an empty group writes nothing and returns 0.
    */
   async setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number> {
+    if (provider === MODELSCOPE_PROVIDER_ID) {
+      return this.withProviderCredentialLock(projectId, provider, async () => {
+        const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+        if (applied > 0) this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
+        return applied;
+      });
+    }
+    return this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+  }
+
+  async setGroupApiKeyWithProviderAuthToken(
+    projectId: string,
+    provider: string,
+    apiKey: string,
+    token: Omit<ModelProviderAuthToken, "provider" | "updatedAt">,
+    options: { expectedRefreshToken?: string } = {},
+  ): Promise<number> {
+    return this.withProviderCredentialLock(projectId, provider, async () => {
+      if (options.expectedRefreshToken !== undefined) {
+        const current = this.providerAuthTokens?.get(projectId, provider);
+        if (current?.refreshToken !== options.expectedRefreshToken) return 0;
+      }
+      const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+      if (applied > 0) {
+        this.providerAuthTokens?.upsert(projectId, {
+          provider,
+          refreshToken: token.refreshToken,
+          accessTokenExpiresAt: token.accessTokenExpiresAt,
+        });
+      }
+      return applied;
+    });
+  }
+
+  private async setGroupApiKeyUnlocked(
+    projectId: string,
+    provider: string,
+    apiKey: string,
+  ): Promise<number> {
     const raw = await this.readRaw(projectId);
     const createdAt = new Date().toISOString();
     let applied = 0;

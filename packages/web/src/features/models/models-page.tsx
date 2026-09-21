@@ -1331,8 +1331,7 @@ export function ModelsPage() {
                         </Button>
                       )}
                       {isOwner &&
-                        (group.provider.oauth ||
-                          group.provider.bridgeAuth !== undefined) && (
+                        (group.provider.oauth || group.provider.bridgeAuth !== undefined) && (
                           // Authorize-a-key action: rendered off the group's own catalog
                           // descriptor, so a provider gains this button by publishing a flow
                           // rather than by being named here — `oauth` for the ones whose PKCE

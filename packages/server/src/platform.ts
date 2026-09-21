@@ -68,6 +68,7 @@ import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
 import { ModelPromotionsRepo } from "./db/repos/model-promotions.js";
+import { ModelProviderAuthTokensRepo } from "./db/repos/model-provider-auth-tokens.js";
 import { MembersRepo } from "./db/repos/members.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { UsageRepo } from "./db/repos/usage.js";
@@ -125,6 +126,7 @@ import {
   AgentIndex,
   Members,
   ModelOAuth,
+  ModelProviderAuthTokens,
   ProjectConfigStore,
   ProjectLifecycle,
   Projects,
@@ -255,6 +257,7 @@ export class IdentityModule {}
   children: [
     ProjectsRepo,
     ModelPromotionsRepo,
+    ModelProviderAuthTokensRepo,
     MembersRepo,
     AgentsRepo,
     ProjectAccess,
@@ -273,6 +276,7 @@ export class IdentityModule {}
     Access,
     ProjectLifecycle,
     ProjectConfigStore,
+    ModelProviderAuthTokens,
     ModelOAuth,
     PlatformAuth,
     ModelScopeAuth,
