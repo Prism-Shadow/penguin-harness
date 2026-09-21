@@ -73,11 +73,11 @@ import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/
 import type { SessionRow } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
-import type { PendingApproval } from "./approvals.js";
+import type { Approvals, PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import { AgentStateStore } from "./agent-state.js";
-import type { LiveTailTracker } from "./live-tail.js";
+import type { LiveTail } from "./live-tail.js";
 import { asSessionSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
@@ -135,15 +135,15 @@ function compactUnavailable(why: Exclude<CompactAvailability, "ok">): HttpError 
 }
 
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
+/** What one run is started with: the approval callback and the interrupt signal. */
+export type RunOpts = {
+  approve: ApproveFn;
+  signal: AbortSignal;
+};
+
 export interface RuntimeSession {
   readonly sessionId: string;
-  run(
-    newMessages: OmniMessage[],
-    opts: {
-      approve: ApproveFn;
-      signal: AbortSignal;
-    },
-  ): AsyncGenerator<OmniMessage>;
+  run(newMessages: OmniMessage[], opts: RunOpts): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /**
    * The Session's thinking level (core `Session.thinkingLevel`, plain state): soft-limited —
@@ -443,7 +443,7 @@ export interface RuntimeEntry {
   modelId: string;
   session: RuntimeSession;
   status: SessionStatus;
-  approvals: ApprovalRegistry;
+  approvals: Approvals;
   abort: AbortController | null;
   /** The in-flight drive Promise (awaited during graceful shutdown). */
   running: Promise<void> | null;
@@ -668,7 +668,7 @@ export class SessionManager {
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes when a Project's credentials change. */
   private readonly agentGenerations: Map<string, number>;
   /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
-  private readonly liveTail: LiveTailTracker;
+  private readonly liveTail: LiveTail;
   private readonly sweepTimer: NodeJS.Timeout;
   /** Clock for persisted timestamps (see SessionManagerDeps.now); wall clock unless injected. */
   private readonly now: () => Date;

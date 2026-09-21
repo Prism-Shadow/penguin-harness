@@ -149,7 +149,14 @@ function startPayload(frag: OpenFragment): PartialModelPayload {
   }
 }
 
-export class LiveTailTracker {
+/** The open streaming fragments of running sessions, as their holder uses them — what {@link LiveTailTracker} implements. */
+export interface LiveTail {
+  observe(sessionId: string, msg: OmniMessage): void;
+  fragments(sessionId: string): OmniMessage[];
+  clear(sessionId: string): void;
+}
+
+export class LiveTailTracker implements LiveTail {
   /** sessionId → open fragments keyed by fragmentKey, in the order they were opened. */
   private readonly sessions = new Map<string, Map<string, OpenFragment>>();
 
