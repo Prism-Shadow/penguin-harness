@@ -12,6 +12,7 @@ import {
   methods,
   ndJsonStream,
   PROTOCOL_VERSION,
+  RequestError,
   type AgentApp,
   type ClientConnection,
   type ContentBlock,
@@ -45,8 +46,10 @@ function spawnTarget(command: string, args: string[]): [string, string[]] {
 }
 
 function quoteForCmdLine(token: string): string {
-  if (token !== "" && !/[\s"]/.test(token)) return token;
-  return `"${token.replaceAll('"', '""')}"`;
+  if (token !== "" && !/[\s"%]/.test(token)) return token;
+  // cmd.exe expands %VARS% even inside double quotes; each % escapes as ^% outside a
+  // fresh quote pair so a bare arg like 100% survives the shell intact.
+  return `"${token.replaceAll('"', '""').replaceAll("%", '"^%"')}"`;
 }
 
 export interface AcpConnectionHandlers {
@@ -62,6 +65,8 @@ export interface AcpClientInfo {
 
 export class AcpConnection {
   private killTimerArmed = false;
+  /** The spawn's own failure (ENOENT, EACCES, ...): the handshake then dies with a generic stream error that hides it. */
+  private spawnError: Error | null = null;
 
   private constructor(
     private readonly conn: ClientConnection,
@@ -69,6 +74,10 @@ export class AcpConnection {
     private readonly handlers: AcpConnectionHandlers,
     private readonly proc?: ChildProcess,
   ) {
+    proc?.on("error", (error: Error) => {
+      this.spawnError = error;
+      proc.kill();
+    });
     void conn.closed.then(() => {
       handlers.onEvent({ type: "state", state: "closed" });
       this.killTree();
@@ -97,7 +106,6 @@ export class AcpConnection {
       // The cmd.exe route hands one pre-quoted string over; node must not re-quote it.
       ...(file !== command ? { windowsVerbatimArguments: true } : {}),
     });
-    proc.on("error", () => proc.kill());
     // Diagnostics can carry account secrets: drain without exposing them.
     proc.stderr.resume();
     if (process.env.PENGUIN_CODING_AGENTS_DEBUG === "1") {
@@ -121,23 +129,53 @@ export class AcpConnection {
 
   /** `initialize` handshake; refuses an agent speaking an unsupported protocol version. */
   async initialize(): Promise<void> {
-    const info = await this.conn.agent.request(methods.agent.initialize, {
-      protocolVersion: PROTOCOL_VERSION,
-      clientInfo: {
-        name: this.clientInfo.name,
-        title: "PenguinHarness",
-        version: this.clientInfo.version,
-      },
-      // The agent does the filesystem/terminal work itself; we only relay elicitation
-      // (login flows), which we surface as notices rather than answer programmatically.
-      clientCapabilities: { elicitation: { form: {}, url: {} } },
-    });
+    let info;
+    try {
+      info = await this.conn.agent.request(methods.agent.initialize, {
+        protocolVersion: PROTOCOL_VERSION,
+        clientInfo: {
+          name: this.clientInfo.name,
+          title: "PenguinHarness",
+          version: this.clientInfo.version,
+        },
+        // The agent does the filesystem/terminal work itself; we only relay elicitation
+        // (login flows), which we surface as notices rather than answer programmatically.
+        clientCapabilities: { elicitation: { form: {}, url: {} } },
+      });
+    } catch (error) {
+      this.dispose();
+      throw this.startupError(error);
+    }
     if (info.protocolVersion !== PROTOCOL_VERSION) {
       this.dispose();
       throw new AcpAgentError(
         `agent speaks ACP protocol ${info.protocolVersion}, not the supported ${PROTOCOL_VERSION}`,
       );
     }
+  }
+
+  /**
+   * A dead child surfaces as a generic stream failure; lead with the spawn error it came
+   * from. A RequestError is the opposite case — the live agent refusing the handshake —
+   * and its diagnostic is the useful part: initialize carries no user content, so unlike
+   * turn errors it is safe to relay.
+   */
+  private startupError(error: unknown): AcpAgentError {
+    if (this.spawnError !== null) {
+      return new AcpAgentError(
+        `the agent command could not be started: ${this.spawnError.message}`,
+        {
+          cause: this.spawnError,
+        },
+      );
+    }
+    if (error instanceof RequestError) {
+      const detail = error.message !== "" ? `: ${error.message}` : "";
+      return new AcpAgentError(`the agent refused the ACP handshake${detail}`, { cause: error });
+    }
+    return new AcpAgentError("the agent exited before the ACP handshake completed", {
+      cause: error,
+    });
   }
 
   async newSession(cwd: string): Promise<NewSessionResponse> {

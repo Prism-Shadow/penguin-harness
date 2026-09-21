@@ -102,6 +102,21 @@ describe("agent discovery", () => {
     expect(codex?.launch?.command).toContain("codex-acp");
     expect(codex?.launch?.args).toEqual([]);
   });
+
+  // fnm keeps one bin dir per Node install; on Windows that is the standard home of
+  // npm-shim CLIs, and unlike the per-shell multishell dirs it survives the shell.
+  it("finds CLIs under fnm's versioned Node roots", async () => {
+    await install(path.join(home, "fnm", "node-versions", "v22.11.0", "installation"), "npx");
+    const candidates = await discoverAgents({
+      env: { PATH: "", FNM_DIR: path.join(home, "fnm") },
+      home,
+    });
+    const claude = candidates.find((c) => c.recipeId === "claude");
+    expect(claude?.launch?.command).toContain(
+      path.join("node-versions", "v22.11.0", "installation"),
+    );
+    expect(claude?.launch?.args).toEqual(["-y", "claude-agent-acp"]);
+  });
 });
 
 describe("resolveCommandPath", () => {

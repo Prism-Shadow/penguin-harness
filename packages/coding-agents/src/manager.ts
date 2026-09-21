@@ -6,7 +6,11 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk";
+import type {
+  NewSessionResponse,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
+} from "@agentclientprotocol/sdk";
 import {
   AcpConnection,
   type AcpClientInfo,
@@ -151,8 +155,26 @@ export class CodingAgentManager {
     if (stat === undefined || !stat.isDirectory()) {
       throw new AcpAgentError(`workspaceDir does not exist or is not a directory: ${workspaceDir}`);
     }
-    const connection = await this.connectionFor(definition);
-    const response = await connection.newSession(workspaceDir);
+    // Spawn and handshake failures arrive as generic stream errors; the kernel's own
+    // vocabulary keeps them from surfacing as bare 500s, naming the command instead.
+    let connection: AcpConnection;
+    try {
+      connection = await this.connectionFor(definition);
+    } catch (error) {
+      throw error instanceof AcpAgentError
+        ? error
+        : new AcpAgentError(`the agent command could not be started: ${definition.command}`, {
+            cause: error,
+          });
+    }
+    let response: NewSessionResponse;
+    try {
+      response = await connection.newSession(workspaceDir);
+    } catch (error) {
+      throw error instanceof AcpAgentError
+        ? error
+        : new AcpAgentError("the agent refused to open a session", { cause: error });
+    }
     const record: SessionRecord = {
       sessionId: response.sessionId,
       definitionId,

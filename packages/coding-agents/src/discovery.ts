@@ -11,6 +11,7 @@
  */
 import os from "node:os";
 import path from "node:path";
+import fs from "node:fs/promises";
 import { resolveCommandPath } from "./resolve.js";
 
 export interface AgentLaunch {
@@ -93,10 +94,11 @@ const AGENT_RECIPES: AgentRecipe[] = [
 
 /**
  * Install homes for CLIs a server process's PATH misses: version-manager shims and the
- * per-user npm/pnpm global bins. Windows takes npm's AppData shim dir; the POSIX
- * absolutes are skipped on Windows where they do not exist.
+ * per-user npm/pnpm global bins, plus the versioned Node roots (fnm, nvm). Windows takes
+ * npm's AppData shim dir; the POSIX absolutes are skipped on Windows where they do not
+ * exist.
  */
-function installDirCandidates(home: string): string[] {
+async function installDirCandidates(home: string, env: NodeJS.ProcessEnv): Promise<string[]> {
   const dirs = [
     ".local/bin",
     ".volta/bin",
@@ -113,6 +115,50 @@ function installDirCandidates(home: string): string[] {
     if (process.platform === "darwin") dirs.push(path.join(home, "Library", "pnpm"));
     else dirs.push(path.join(home, ".local/share/pnpm"));
   }
+  dirs.push(...(await versionedToolchainDirs(home, env)));
+  return [...new Set(dirs)];
+}
+
+/** Real subdirectories of `dir`; a missing root simply contributes nothing. */
+async function subdirectories(dir: string): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => path.join(dir, entry.name));
+}
+
+/**
+ * One bin dir per installed Node version: fnm keeps shims in `node-versions/<version>/installation`
+ * under its root; nvm in `versions/node/<version>/bin`; nvm-windows puts them directly in each
+ * `v<semver>` dir under %APPDATA%\nvm. fnm's per-shell multishell dirs are symlinks, so the
+ * isDirectory check excludes them — a PATH entry that dies with its shell must never be
+ * suggested.
+ */
+async function versionedToolchainDirs(home: string, env: NodeJS.ProcessEnv): Promise<string[]> {
+  const dirs: string[] = [];
+  const fnmRoots = [
+    env.FNM_DIR,
+    path.join(home, ".local", "share", "fnm"),
+    path.join(home, ".fnm"),
+    ...(env.LOCALAPPDATA ? [path.join(env.LOCALAPPDATA, "fnm")] : []),
+    ...(env.APPDATA ? [path.join(env.APPDATA, "fnm")] : []),
+  ].filter((root): root is string => typeof root === "string" && root !== "");
+  for (const root of fnmRoots) {
+    for (const version of await subdirectories(path.join(root, "node-versions"))) {
+      dirs.push(path.join(version, "installation"));
+    }
+  }
+  const nvmRoots = [env.NVM_DIR, path.join(home, ".nvm")].filter(
+    (root): root is string => typeof root === "string" && root !== "",
+  );
+  for (const root of nvmRoots) {
+    for (const version of await subdirectories(path.join(root, "versions", "node"))) {
+      dirs.push(path.join(version, "bin"));
+    }
+  }
+  if (env.APPDATA !== undefined && env.APPDATA !== "") {
+    for (const version of await subdirectories(path.join(env.APPDATA, "nvm"))) {
+      if (/^v\d/.test(path.basename(version))) dirs.push(version);
+    }
+  }
   return dirs;
 }
 
@@ -124,7 +170,7 @@ export async function discoverAgents(
   options: { env?: NodeJS.ProcessEnv; home?: string } = {},
 ): Promise<AgentDiscoveryCandidate[]> {
   const env = options.env ?? process.env;
-  const extraDirs = installDirCandidates(options.home ?? os.homedir());
+  const extraDirs = await installDirCandidates(options.home ?? os.homedir(), env);
   // Absolute path when found on the machine, undefined when not (resolveCommandPath
   // hands unresolved bare names back unchanged).
   const find = async (command: string) => {
