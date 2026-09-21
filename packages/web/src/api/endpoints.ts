@@ -1816,7 +1816,7 @@ export const discoverCodingAgents = () =>
 export const saveCodingAgent = (body: CodingAgentSaveRequest) =>
   apiFetch<{ agent: CodingAgentServerInfo }>("/api/coding-agents/agents", {
     method: "POST",
-    body: JSON.stringify(body),
+    body,
   });
 
 export const removeCodingAgent = (agentId: string) =>
@@ -1828,7 +1828,7 @@ export const listCodingAgentSessions = () =>
 export const createCodingAgentSession = (body: CodingAgentCreateRequest) =>
   apiFetch<{ session: CodingAgentSessionInfo }>("/api/coding-agents/sessions", {
     method: "POST",
-    body: JSON.stringify(body),
+    body,
   });
 
 export const getCodingAgentSession = (sessionId: string) =>
@@ -1840,7 +1840,7 @@ export const getCodingAgentSession = (sessionId: string) =>
 export const promptCodingAgentSession = (sessionId: string, body: CodingAgentPromptRequest) =>
   apiFetch<void>(`/api/coding-agents/sessions/${encodeURIComponent(sessionId)}/prompt`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body,
   });
 
 export const answerCodingAgentPermission = (
@@ -1851,7 +1851,7 @@ export const answerCodingAgentPermission = (
   apiFetch<void>(
     `/api/coding-agents/sessions/${encodeURIComponent(sessionId)}` +
       `/permissions/${encodeURIComponent(requestId)}`,
-    { method: "POST", body: JSON.stringify(body) },
+    { method: "POST", body },
   );
 
 export const cancelCodingAgentSession = (sessionId: string) =>
@@ -1862,7 +1862,7 @@ export const cancelCodingAgentSession = (sessionId: string) =>
 export const setCodingAgentMode = (sessionId: string, body: CodingAgentModeRequest) =>
   apiFetch<void>(`/api/coding-agents/sessions/${encodeURIComponent(sessionId)}/mode`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body,
   });
 
 export const endCodingAgentSession = (sessionId: string) =>

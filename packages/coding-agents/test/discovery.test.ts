@@ -139,4 +139,16 @@ describe("resolveCommandPath", () => {
     const resolved = await resolveCommandPath("tool", { env: { PATH: bin } });
     expect(resolved.toLowerCase()).toBe(path.join(bin, "tool.cmd").toLowerCase());
   });
+
+  // fnm's per-shell multishell dirs hold only the extensionless shim; resolving to it
+  // would bake an unspawnable, dying-with-the-shell path into a saved definition.
+  it.skipIf(!WIN)("never resolves a bare name to an extensionless shim", async () => {
+    await fs.writeFile(path.join(bin, "npx"), "", { mode: 0o755 });
+    expect(await resolveCommandPath("npx", { env: { PATH: bin } })).toBe("npx");
+    // A command that spells its own dot still resolves by exact name.
+    await fs.writeFile(path.join(bin, "odd.name"), "", { mode: 0o755 });
+    expect((await resolveCommandPath("odd.name", { env: { PATH: bin } })).toLowerCase()).toBe(
+      path.join(bin, "odd.name").toLowerCase(),
+    );
+  });
 });

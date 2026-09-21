@@ -16,18 +16,21 @@ function pathDirs(env: NodeJS.ProcessEnv): string[] {
 
 /**
  * Candidate extensions for a bare command name. On Windows the extensions come before
- * the bare name on purpose: npm leaves an extensionless POSIX shim (`gemini`, `npx`)
+ * anything else on purpose: npm leaves an extensionless POSIX shim (`gemini`, `npx`)
  * beside the real `gemini.cmd`, and the bare file exists but cannot be spawned by
- * Windows — trying it first would resolve discovery to the wrong twin.
+ * Windows — trying it first would resolve discovery to the wrong twin. The exact name
+ * is only a fallback for commands that spell a dot themselves (`tool.cmd`); a bare
+ * name's extensionless match is skipped entirely, even when it is all a PATH dir has
+ * (fnm's multishell dirs hold only the shim).
  */
-function candidateExtensions(env: NodeJS.ProcessEnv): string[] {
+function candidateExtensions(env: NodeJS.ProcessEnv, command: string): string[] {
   if (process.platform !== "win32") return [""];
   const exts = (env.PATHEXT ?? "")
     .split(";")
     .map((e) => e.trim())
     .filter((e) => e !== "")
     .map((e) => (e.startsWith(".") ? e : `.${e}`));
-  return [...(exts.length > 0 ? exts : DEFAULT_PATHEXT), ""];
+  return [...(exts.length > 0 ? exts : DEFAULT_PATHEXT), ...(command.includes(".") ? [""] : [])];
 }
 
 async function isExecutable(file: string): Promise<boolean> {
@@ -58,7 +61,7 @@ export async function resolveCommandPath(
   const env = options.env ?? process.env;
   if (command.includes("/") || command.includes("\\")) return command;
   const dirs = [...pathDirs(env), ...(options.extraDirs ?? [])];
-  for (const ext of candidateExtensions(env)) {
+  for (const ext of candidateExtensions(env, command)) {
     const found = await firstMatch(dirs, `${command}${ext}`);
     if (found !== undefined) return found;
   }
