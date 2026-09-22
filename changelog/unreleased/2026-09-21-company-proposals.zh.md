@@ -3,7 +3,7 @@
 - **Date:** 2026-09-21
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`, `plugins`
-- **PR:** [#0000](https://github.com/Prism-Shadow/penguin-harness/pull/0000)
+- **PR:** [#825](https://github.com/Prism-Shadow/penguin-harness/pull/825)
 
 [English](2026-09-21-company-proposals.md)
 
