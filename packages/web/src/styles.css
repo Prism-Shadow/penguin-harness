@@ -825,6 +825,28 @@ html.dark .shiki span {
 .md-compact h4 {
   font-size: 0.875rem;
 }
+/* A channel message's time (features/company/channel-view.tsx) sits in the bubble's bottom-right
+   corner, and the words keep room for it: the last line of the body ends in an inline gap of the
+   time's width — WhatsApp's spacer — so a line that ends short of the gap shares the line with
+   the time, and one that does not wraps its last word under, leaving the corner to the time. A
+   block that cannot end in an inline gap (code, a table) is given the line under it instead. */
+.channel-bubble {
+  --channel-time-gap: 2.75rem;
+}
+.channel-bubble .md-body > :is(p, h1, h2, h3, h4):last-child::after,
+.channel-bubble .md-body > :is(ul, ol):last-child > li:last-child::after,
+.channel-bubble .md-body > blockquote:last-child > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: var(--channel-time-gap);
+}
+.channel-bubble .md-body > :is(pre, table):last-child {
+  margin-bottom: 1.125rem;
+}
+.channel-time-gap {
+  flex: 0 0 var(--channel-time-gap);
+}
+
 .md-compact > :first-child {
   margin-top: 0;
 }
