@@ -2887,4 +2887,87 @@ describe("organization runtime", () => {
       expect(await service.list(P)).toHaveLength(1);
     });
   });
+
+  describe("the plugin gateway", () => {
+    it("reads the organization as a plugin sees it, and attributes a write the routes' way", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      const view = await service.gatewayView(P, ORG);
+      expect(view).toMatchObject({
+        projectId: P,
+        orgId: ORG,
+        name: "Acme",
+        status: "active",
+        language: "en",
+        userIds: ["alice"],
+      });
+      expect(view?.employees.map((e) => [e.agentId, e.reportsTo])).toEqual([
+        [CEO, null],
+        [HR, CEO],
+      ]);
+      expect(view?.employees.every((e) => e.name !== "")).toBe(true);
+      expect(await service.gatewayView(P, "nope")).toBeNull();
+      expect(await service.gatewayPrincipal(P, ORG, { userId: "alice" })).toBe("user:alice");
+      expect(await service.gatewayPrincipal(P, ORG, { userId: "alice", agentId: HR })).toBe(
+        `agent:${HR}`,
+      );
+      // An Agent id that is nobody's employee here does not make the person an employee.
+      expect(
+        await service.gatewayPrincipal(P, ORG, { userId: "alice", agentId: "stranger" }),
+      ).toBe("user:alice");
+    });
+
+    it("ensures a channel with the person and the employees in it, idempotently, and speaks in the person's name", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      const opts = { name: "Proposals", purpose: "Where proposals are discussed" };
+      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, "alice", [`agent:${HR}`]);
+      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, "alice", [`agent:${HR}`]);
+      const detail = await service.channel(P, ORG, "proposals", { userId: "alice" });
+      expect(detail.name).toBe("Proposals");
+      expect(detail.members.map((m) => m.principal).sort()).toEqual(
+        [`agent:${HR}`, "user:alice"].sort(),
+      );
+      const sent = await service.gatewaySend(
+        P,
+        ORG,
+        "alice",
+        "proposals",
+        `@agent:${HR} proposal:1 — please write it`,
+      );
+      const messages = await service.channelMessages(P, ORG, { userId: "alice" }, "proposals", {});
+      const msg = messages.messages.find((m) => m.id === sent.id);
+      expect(msg).toMatchObject({ sender: "user:alice", hop: 0, mentions: [`agent:${HR}`] });
+    });
+
+    it("opens an employee's session as the organization's, titled and started on the body", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      const before = created.length;
+      const opened = await service.gatewayOpenSession({
+        projectId: P,
+        orgId: ORG,
+        agentId: HR,
+        title: "Proposal #1: batch the notices",
+        body: "Implement proposal #1.",
+      });
+      expect(created.slice(before)).toEqual([
+        { projectId: P, agentId: HR, workspace: opened.workspace, client: "org" },
+      ]);
+      expect(sessions.findById(opened.sessionId)?.title).toBe("Proposal #1: batch the notices");
+      expect(started.at(-1)).toMatchObject({
+        sessionId: opened.sessionId,
+        text: "Implement proposal #1.",
+      });
+      await expect(
+        service.gatewayOpenSession({
+          projectId: P,
+          orgId: ORG,
+          agentId: "stranger",
+          title: "x",
+          body: "y",
+        }),
+      ).rejects.toMatchObject({ status: 400, code: "not_an_employee" });
+    });
+  });
 });
