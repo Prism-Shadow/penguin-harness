@@ -34,4 +34,6 @@ export const NAV_ICONS = {
   orgFinance: ICONS.dollarCircle,
   /** The handbook, the company's knowledge base. */
   orgHandbook: ICONS.bookOpen,
+  /** Proposals: a change written up, waiting to be approved. */
+  orgProposals: ICONS.fileCheck,
 } as const;

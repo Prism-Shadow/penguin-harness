@@ -278,6 +278,7 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   chip: "blue",
   gauge: "blue",
   file: "blue",
+  fileCheck: "blue",
   filePlus: "blue",
   folder: "blue",
   folderPlus: "blue",

@@ -20,6 +20,7 @@
  */
 import type { ReactNode } from "react";
 import { Md } from "../../content/prose/prose";
+import type { MdProps } from "../../content/prose/prose";
 import { StreamingCaret } from "../assistant-text/streaming-caret";
 import { useStreamReveal } from "../assistant-text/use-stream-reveal";
 
@@ -36,6 +37,10 @@ export interface StreamTextProps {
   settledClassName?: string;
   /** Rendered after the text once it is fully revealed (a stop reason, a files card). */
   children?: ReactNode;
+  /** `markdown` only: extra remark passes over the Markdown (e.g. the Web App's `proposal:<n>` capsules). */
+  extraPlugins?: MdProps["extraPlugins"];
+  /** `markdown` only: element renderers merged over the Markdown's own (the nodes those passes produce). */
+  components?: MdProps["components"];
 }
 
 export function StreamText({
@@ -45,6 +50,8 @@ export function StreamText({
   className = "",
   settledClassName = "",
   children,
+  extraPlugins,
+  components,
 }: StreamTextProps) {
   const revealed = useStreamReveal(text, streaming);
   const live = streaming || revealed.length < text.length;
@@ -62,7 +69,12 @@ export function StreamText({
   return (
     <div className={`ui-stream ${look}`.trimEnd()} data-state={state}>
       {/* Re-renders the revealed text directly while live; memoized, so a settled body skips the re-parse, and code blocks highlight once on settle (see prose.tsx). */}
-      <Md text={revealed} streaming={live} />
+      <Md
+        text={revealed}
+        streaming={live}
+        {...(extraPlugins !== undefined ? { extraPlugins } : {})}
+        {...(components !== undefined ? { components } : {})}
+      />
       {live && <StreamingCaret />}
       {!live && children}
     </div>

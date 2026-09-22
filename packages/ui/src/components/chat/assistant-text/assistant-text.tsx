@@ -7,6 +7,7 @@
  * seen exactly as the transcript shows it.
  */
 import type { ReactNode } from "react";
+import type { MdProps } from "../../content/prose/prose";
 import { StreamText } from "../stream-text/stream-text";
 
 export interface AssistantTextProps {
@@ -16,14 +17,26 @@ export interface AssistantTextProps {
   streaming: boolean;
   /** Rendered after the reply once it is fully revealed. */
   children?: ReactNode;
+  /** Extra remark passes over the Markdown (e.g. the Web App's `proposal:<n>` capsules). */
+  extraPlugins?: MdProps["extraPlugins"];
+  /** Element renderers merged over the Markdown's own (the nodes those passes produce). */
+  components?: MdProps["components"];
 }
 
-export function AssistantText({ text, streaming, children }: AssistantTextProps) {
+export function AssistantText({
+  text,
+  streaming,
+  children,
+  extraPlugins,
+  components,
+}: AssistantTextProps) {
   return (
     <StreamText
       text={text}
       streaming={streaming}
       className="md-body anim-msg my-3 font-sans text-base leading-relaxed text-fg"
+      {...(extraPlugins !== undefined ? { extraPlugins } : {})}
+      {...(components !== undefined ? { components } : {})}
     >
       {children}
     </StreamText>
