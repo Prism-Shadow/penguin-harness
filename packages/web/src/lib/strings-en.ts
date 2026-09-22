@@ -3650,7 +3650,7 @@ Scenarios:
       "deny-all": "Deny all",
     } as Record<string, string>,
     status: "Status",
-    statusActive: "Active",
+    statusActive: "Running",
     statusPaused: "Paused",
     pause: "Pause organization",
     resume: "Resume organization",
@@ -3670,6 +3670,11 @@ Scenarios:
     /** Principals as the chat and tickets name them. */
     principalSystem: "System",
     principalAll: "Everyone",
+    /** A data path in a ticket drawn as a capsule: the hover names the whole path, a click copies it. */
+    pathCapsule: {
+      hint: (path: string): string => `${path}\nClick to copy the full path`,
+      copy: (path: string): string => `Copy path ${path}`,
+    },
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "Unbounded",

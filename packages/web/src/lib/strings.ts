@@ -3636,6 +3636,11 @@ Benchmark：
     /** Principals as the chat and tickets name them. */
     principalSystem: "系统",
     principalAll: "所有人",
+    /** A data path in a ticket drawn as a capsule: the hover names the whole path, a click copies it. */
+    pathCapsule: {
+      hint: (path: string): string => `${path}\n点击复制完整路径`,
+      copy: (path: string): string => `复制路径 ${path}`,
+    },
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "不限",

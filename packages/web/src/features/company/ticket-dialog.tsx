@@ -54,8 +54,8 @@ import { Modal } from "../../components/ui/modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { Md } from "../chat/md";
 import { OrgSection } from "./org-layout";
+import { PathMarkdown, PathText } from "./path-capsule";
 import {
   BlockedBadge,
   JumpButton,
@@ -377,7 +377,7 @@ function TicketDialog({
       <p className="text-xs text-gray-400 dark:text-gray-500">{empty}</p>
     ) : (
       <div className="md-body text-sm leading-relaxed text-gray-800 dark:text-gray-100">
-        <Md text={text} />
+        <PathMarkdown text={text} scope={{ projectId }} />
       </div>
     );
 
@@ -490,7 +490,7 @@ function TicketDialog({
                 >
                   <span>
                     <span className="font-medium">{S.company.tickets.blockedReason}:</span>{" "}
-                    {detail.blocked}
+                    <PathText text={detail.blocked ?? ""} scope={{ projectId }} />
                   </span>
                   {detail.blockedBy !== undefined && (
                     <span className="inline-flex items-center gap-1.5">
@@ -670,7 +670,7 @@ function TicketDialog({
                   <ul className="md-body md-compact list-disc pl-5 text-sm text-gray-800 marker:text-gray-400 dark:text-gray-100 dark:marker:text-gray-500">
                     {detail.progress.map((p, i) => (
                       <li key={`${i}-${p}`}>
-                        <Md text={p} />
+                        <PathMarkdown text={p} scope={{ projectId }} />
                       </li>
                     ))}
                   </ul>
