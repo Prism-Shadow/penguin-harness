@@ -1,0 +1,9 @@
+{
+  "autoApprove": {
+    "enabled": true,
+    "riskCeiling": "low",
+    "filters": {
+      "excludePaths": ["packages/server/src/auth/**", "packages/server/src/db/**"]
+    }
+  }
+}
