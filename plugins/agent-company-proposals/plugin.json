@@ -1,0 +1,14 @@
+{
+  "description": "The three playbooks of a company's proposals (the company-proposals plugin must be installed on the Project): the author writes a short, abstract, paragraph-commentable proposal and revises it on feedback; the implementer builds it at the same time on a proposal branch, opens the PR against dev and reports back; the tester checks the dev branch in batches and files a fix ticket for merged proposals or a runtime feedback for the rest.",
+  "description_zh": "公司提案的三份操作手册（Project 须先装上 company-proposals 插件）：作者写一份短小、抽象、可逐段评论的提案并按反馈修订；实施者同时在提案分支上实施、向 dev 开 PR 并反馈；测试者分批测试 dev 分支，已合并的提案开修复工单，其余发运行时反馈。",
+  "short_description": "Proposal author, implementer and tester playbooks for company mode.",
+  "short_description_zh": "公司模式提案的作者、实施者与测试者手册。",
+  "version": "2026.09.21.1",
+  "category": "agent-company",
+  "preinstall": false,
+  "quick_start": {
+    "prompt": "Explain how a proposal moves through this organization — who writes it, who builds it, how a person comments and approves — and show the penguin org proposal commands each role runs.",
+    "prompt_zh": "说明一份提案在这个组织里怎么流转——谁写、谁做、人怎么评论与认可——并给出每个角色要用的 penguin org proposal 命令。",
+    "skills": ["proposal-author"]
+  }
+}

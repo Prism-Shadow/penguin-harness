@@ -1,0 +1,20 @@
+{
+  "name": "@penguinharness/agent-company-proposals",
+  "version": "0.2.13",
+  "description": "Proposals for PenguinHarness company mode: the author, implementer and tester playbooks behind the company-proposals plugin — a change written for a person to read while a second employee builds it, revised on the implementation's feedback, commented on in batches and merged on approval.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/agent-company-proposals"
+  },
+  "files": [
+    "plugin.json",
+    "icon.svg",
+    "skills",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

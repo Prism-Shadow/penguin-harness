@@ -152,7 +152,13 @@ describe("loadPreinstalledPlugins", () => {
     const preinstalled = loadPreinstalledPlugins().map((p) => p.name);
     expect(preinstalled).toContain("goal");
     expect(preinstalled).toContain("software-development");
-    for (const manual of ["agent-company", "continual-learning", "humanizer", "use-claude-code"]) {
+    for (const manual of [
+      "agent-company",
+      "agent-company-proposals",
+      "continual-learning",
+      "humanizer",
+      "use-claude-code",
+    ]) {
       expect(all).toContain(manual);
       expect(preinstalled).not.toContain(manual);
     }
@@ -212,7 +218,7 @@ describe("groupPlugins / loadPluginGroups", () => {
       "model-development",
       "skill-porting",
     ]);
-    expect(names("agent-company")).toEqual(["agent-company"]);
+    expect(names("agent-company")).toEqual(["agent-company", "agent-company-proposals"]);
   });
 });
 

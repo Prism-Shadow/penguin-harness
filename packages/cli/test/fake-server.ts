@@ -98,6 +98,8 @@ export interface FakeOrgState {
   desks: Map<string, Json>;
   /** The `unpriced` flag of the finance response. */
   unpriced: boolean;
+  /** The company-proposals plugin's ledger, keyed by number; absent (undefined) = the plugin is not installed, every proposals route is a plain 404. */
+  proposals?: Map<number, Json>;
 }
 
 /** Who a fake request is attributed to, or the error response that settles it. */
@@ -390,6 +392,7 @@ export class FakeServer {
       handbook: new Map([["README.md", `# ${overrides.name ?? "Org"} — organization handbook\n`]]),
       desks: new Map(),
       unpriced: false,
+      proposals: new Map(),
       ...overrides,
     };
     this.orgs.set(org.orgId, org);
@@ -1013,7 +1016,178 @@ export class FakeServer {
       });
     }
 
+    if (a === "proposals") return this.handleProposals(method, org, b, c, segments[4], body, url);
+
     return this.error(404, "not_found", `No fake route for ${method} ${url.pathname}`);
+  }
+
+  // ---- company mode: proposals (the company-proposals plugin's routes) ----
+
+  /** Adds a proposal (ProposalDetail shape) to an organization whose plugin is installed. */
+  addProposal(orgId: string, item: Json & { number: number }): Json {
+    const org = this.orgs.get(orgId)!;
+    if (org.proposals === undefined) org.proposals = new Map();
+    const proposal: Json = {
+      title: `Proposal ${item.number}`,
+      status: "drafting",
+      revision: 0,
+      author: "dev1",
+      implementer: null,
+      delegatedBy: "admin",
+      createdAt: ORG_NOW,
+      updatedAt: ORG_NOW,
+      unread: 0,
+      pendingComments: 0,
+      materials: [],
+      brief: "",
+      scope: [],
+      sections: [],
+      comments: [],
+      events: [],
+      sessions: [],
+      seq: 0,
+      ...item,
+    };
+    org.proposals.set(item.number, proposal);
+    return proposal;
+  }
+
+  /**
+   * The plugin's contract, reduced to what the CLI tests look at: every write answers the
+   * proposal's detail, `publish` splits the Markdown into `## ` sections and bumps the
+   * revision, and an organization without the plugin answers nothing but a plain 404.
+   */
+  private handleProposals(
+    method: string,
+    org: FakeOrgState,
+    b: string | undefined,
+    c: string | undefined,
+    d: string | undefined,
+    body: Json | undefined,
+    url: URL,
+  ): Response {
+    const proposals = org.proposals;
+    if (proposals === undefined) {
+      return this.error(404, "not_found", `No route for ${method} ${url.pathname}`);
+    }
+    const list = (): Json[] => [...proposals.values()];
+    if (b === undefined) {
+      if (method === "POST") {
+        if (!isNonEmptyString(body?.author)) return this.badRequest("author is required.");
+        if (!isNonEmptyString(body?.brief)) return this.badRequest("brief is required.");
+        const number = proposals.size + 1;
+        const created = this.addProposal(org.orgId, {
+          number,
+          author: body.author,
+          brief: body.brief,
+          ...(isNonEmptyString(body.title) ? { title: body.title } : {}),
+          events: [{ seq: 1, at: ORG_NOW, kind: "created", by: "user:admin" }],
+          seq: 1,
+        });
+        return this.json(created, 201);
+      }
+      return this.json({ proposals: list(), channelId: "proposals" });
+    }
+    const number = Number(b);
+    const proposal = proposals.get(number);
+    if (!proposal) {
+      return this.error(404, "proposal_not_found", `Proposal does not exist: #${b}`);
+    }
+    const bump = (kind: string, extra: Json = {}): Json => {
+      const seq = Number(proposal.seq) + 1;
+      proposal.seq = seq;
+      proposal.events = [
+        ...(proposal.events as Json[]),
+        {
+          seq,
+          at: ORG_NOW,
+          kind,
+          by: isNonEmptyString(body?.agentId) ? `agent:${body.agentId}` : "user:admin",
+          ...extra,
+        },
+      ];
+      return proposal;
+    };
+    if (c === undefined) {
+      if (method === "GET") return this.json(proposal);
+      if (method === "PUT") {
+        if (!isNonEmptyString(body?.markdown)) return this.badRequest("markdown is required.");
+        const revision = Number(proposal.revision) + 1;
+        const title = /^title:\s*(.+)$/m.exec(body.markdown)?.[1]?.trim();
+        const sections = [
+          ...body.markdown.matchAll(/^## (.+)$\n+([\s\S]*?)(?=^## |$(?![\r\n]))/gm),
+        ].map((m, i) => ({
+          id: `s${i + 1}`,
+          heading: m[1]!.trim(),
+          paragraphs: m[2]!
+            .split(/\n\s*\n/)
+            .map((t) => t.trim())
+            .filter((t) => t !== "")
+            .map((text, j) => ({ id: `p${i + 1}-${j + 1}`, text })),
+        }));
+        Object.assign(proposal, { revision, sections, ...(title !== undefined ? { title } : {}) });
+        return this.json(bump("revised", { revision }));
+      }
+    }
+    if (method !== "POST") return this.error(404, "not_found", "No such route.");
+    switch (c) {
+      case "ready":
+      case "approved":
+      case "approve":
+      case "merged":
+      case "reject": {
+        const status =
+          c === "approve"
+            ? "approved"
+            : c === "reject"
+              ? "rejected"
+              : c === "ready"
+                ? "ready"
+                : "merged";
+        if (c === "reject" && !isNonEmptyString(body?.reason)) {
+          return this.badRequest("reason is required.");
+        }
+        proposal.status = status;
+        return this.json(bump(status));
+      }
+      case "implement": {
+        if (!isNonEmptyString(body?.agentId)) return this.badRequest("agentId is required.");
+        const s = this.addSession({ agentId: body.agentId });
+        proposal.implementer = body.agentId;
+        proposal.sessions = [...(proposal.sessions as string[]), String(s.sessionId)];
+        return this.json(bump("implementation_started"));
+      }
+      case "materials": {
+        if (!isNonEmptyString(body?.kind) || !isNonEmptyString(body?.url)) {
+          return this.badRequest("kind and url are required.");
+        }
+        const label = isNonEmptyString(body.label) ? body.label : body.url;
+        proposal.materials = [
+          ...(proposal.materials as Json[]),
+          { kind: body.kind, label, url: body.url, by: "agent:dev1", at: ORG_NOW },
+        ];
+        return this.json(bump("material_added", { text: label }));
+      }
+      case "feedback": {
+        if (!isNonEmptyString(body?.text)) return this.badRequest("text is required.");
+        return this.json(
+          bump(body.runtime === true ? "runtime_feedback" : "feedback", { text: body.text }),
+        );
+      }
+      case "comments": {
+        if (d === "request" || d === undefined) return this.json(bump("changes_requested"));
+        const comment = (proposal.comments as Json[]).find((x) => x.id === d);
+        if (!comment) return this.error(404, "comment_not_found", `Comment does not exist: ${d}`);
+        comment.resolved = {
+          by: "agent:dev1",
+          at: ORG_NOW,
+          text: isNonEmptyString(body?.text) ? body.text : "",
+        };
+        return this.json(bump("resolved"));
+      }
+      default:
+        return this.error(404, "not_found", `No fake route for POST proposals/${c}`);
+    }
   }
 
   // ---- company mode: channels ----

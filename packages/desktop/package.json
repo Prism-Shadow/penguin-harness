@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@penguinharness/agent-company": "workspace:*",
+    "@penguinharness/agent-company-proposals": "workspace:*",
     "@penguinharness/agent-development": "workspace:*",
     "@penguinharness/agent-tuning": "workspace:*",
     "@penguinharness/continual-learning": "workspace:*",

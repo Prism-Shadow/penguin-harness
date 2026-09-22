@@ -2912,9 +2912,9 @@ describe("organization runtime", () => {
         `agent:${HR}`,
       );
       // An Agent id that is nobody's employee here does not make the person an employee.
-      expect(
-        await service.gatewayPrincipal(P, ORG, { userId: "alice", agentId: "stranger" }),
-      ).toBe("user:alice");
+      expect(await service.gatewayPrincipal(P, ORG, { userId: "alice", agentId: "stranger" })).toBe(
+        "user:alice",
+      );
     });
 
     it("ensures a channel with the person and the employees in it, idempotently, and speaks in the person's name", async () => {

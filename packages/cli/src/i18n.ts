@@ -497,6 +497,76 @@ export interface Messages {
     financeTotal(period: string, total: string): string;
     /** stderr note under `finance`: some usage had no pricing, so the total is a lower bound. */
     unpriced(): string;
+    /** `penguin org proposal`: the company-proposals plugin's routes (a 404 without an organization code = the plugin is not installed). */
+    proposalDesc: string;
+    proposalLsDesc: string;
+    proposalShowDesc: string;
+    proposalCreateDesc: string;
+    proposalPublishDesc: string;
+    proposalReadyDesc: string;
+    proposalApproveDesc: string;
+    proposalMergedDesc: string;
+    proposalRejectDesc: string;
+    proposalImplementDesc: string;
+    proposalMaterialDesc: string;
+    proposalMaterialAddDesc: string;
+    proposalFeedbackDesc: string;
+    proposalCommentsDesc: string;
+    proposalResolveDesc: string;
+    /** ls's --status: one lifecycle state. */
+    proposalStatusFilter: string;
+    /** create's --author: the employee that writes it. */
+    proposalAuthor: string;
+    /** create's --brief: the delegation, one sentence (named with a trailing underscore: `proposalBrief` is the `show` line). */
+    proposalBrief_: string;
+    proposalTitle: string;
+    /** publish's --file: the whole proposal as one Markdown document. */
+    proposalFile: string;
+    /** implement's --agent: the employee that builds it. */
+    proposalImplementer: string;
+    proposalMessage: string;
+    proposalWorkspace: string;
+    proposalMaterialLabel: string;
+    proposalFeedbackText: string;
+    /** feedback's --runtime: from the test team's run of the dev branch. */
+    proposalRuntime: string;
+    /** comments' --pending: the batched, unresolved ones — the author's worklist. */
+    proposalPending: string;
+    proposalResolveText: string;
+    proposalRejectReason: string;
+    /** A 404 with no organization code under `…/proposals`: the plugin is not on this Project. */
+    proposalsPluginMissing(): string;
+    proposalNumberInvalid(value: string): string;
+    proposalStatusInvalid(value: string): string;
+    /** `material add` without a `<kind>=<url>` of a known kind. */
+    proposalMaterialInvalid(value: string): string;
+    proposalsEmpty(): string;
+    proposalCommentsEmpty(number: number): string;
+    /** Confirmations of the proposal writes. */
+    proposalCreated(number: number, title: string): string;
+    proposalPublished(number: number, revision: number): string;
+    proposalStatusSet(number: number, status: string): string;
+    proposalImplementing(number: number, implementer: string, sessionId: string): string;
+    proposalMaterialAdded(number: number, kind: string): string;
+    proposalFeedbackRecorded(number: number): string;
+    proposalCommentResolved(number: number, commentId: string): string;
+    /** `proposal show`: the head lines above the document. */
+    proposalHead(number: number, title: string, status: string, revision: number): string;
+    proposalPeople(author: string, implementer: string | null, delegatedBy: string): string;
+    proposalBrief(brief: string): string;
+    proposalSessions(sessions: string): string;
+    proposalScope(): string;
+    proposalMaterials(): string;
+    proposalComments(): string;
+    proposalEvents(): string;
+    /** A comment whose paragraph is no longer in the current revision. */
+    proposalCommentOnRevision(paragraphId: string, revision: number): string;
+    proposalPendingMark(): string;
+    proposalResolvedMark(text: string): string;
+    colNumber(): string;
+    colRevision(): string;
+    colAuthor(): string;
+    colImplementer(): string;
     colEmployees(): string;
     colRunning(): string;
     colOpen(): string;
@@ -1292,6 +1362,81 @@ const en: Messages = {
     financeTotal: (period, total) => `Total (${period}): ${total}`,
     unpriced: () =>
       "[unpriced] some usage ran on a model without pricing: the figures are a lower bound",
+    proposalDesc:
+      "Proposals (the company-proposals plugin): a change written for a person to read while an employee builds it",
+    proposalLsDesc: "List the organization's proposals (filtered locally by --status)",
+    proposalShowDesc:
+      "Show a proposal: its head, scope, materials, the sections, the comments and the events",
+    proposalCreateDesc:
+      "Delegate a proposal to an employee: it is told in the proposals channel and writes it",
+    proposalPublishDesc:
+      "Publish a revision from a Markdown file (frontmatter title and scope, then the sections)",
+    proposalReadyDesc: "Mark a proposal ready for reading (the author or a person)",
+    proposalApproveDesc: "Approve a proposal and request its merge (a person)",
+    proposalMergedDesc: "Report the implementation merged (the implementer or a person)",
+    proposalRejectDesc: "Reject a proposal with a reason (a person)",
+    proposalImplementDesc:
+      "Open an implementation session for an employee on the proposal; prints the session id",
+    proposalMaterialDesc: "Related material: the PR, an issue, a branch, a document, a ticket",
+    proposalMaterialAddDesc:
+      "Attach material as <kind>=<url> (pr, issue, branch, doc, ticket, url)",
+    proposalFeedbackDesc:
+      "Send the author feedback from the implementation (or, with --runtime, from testing the dev branch)",
+    proposalCommentsDesc: "List the comments a person left on the paragraphs",
+    proposalResolveDesc: "Resolve one comment, with a note on what changed",
+    proposalStatusFilter:
+      "Only proposals in this state (drafting, ready, approved, merged, rejected)",
+    proposalAuthor: "The employee that writes the proposal (its Agent id)",
+    proposalBrief_: "The delegation, in one sentence",
+    proposalTitle: "A working title (the published document's own title replaces it)",
+    proposalFile: "The proposal as one Markdown document",
+    proposalImplementer: "The employee that builds the proposal (its Agent id)",
+    proposalMessage: "A note appended to the proposal text the session opens with",
+    proposalWorkspace:
+      "Another directory inside the shared workspace (default: the employee's desk workspace)",
+    proposalMaterialLabel: "How the material is listed (default: derived from the URL)",
+    proposalFeedbackText: "What the implementation found",
+    proposalRuntime: "The feedback comes from the test team's run of the dev branch",
+    proposalPending: "Only the batched, unresolved comments — what the author has to work through",
+    proposalResolveText: "What was changed for it",
+    proposalRejectReason: "Why the proposal is rejected",
+    proposalsPluginMissing: () =>
+      "The organization has no proposals plugin: install company-proposals on this Project.",
+    proposalNumberInvalid: (value) =>
+      `Invalid proposal number "${value}": expected a positive integer.`,
+    proposalStatusInvalid: (value) =>
+      `Invalid status "${value}": expected drafting, ready, approved, merged or rejected.`,
+    proposalMaterialInvalid: (value) =>
+      `Invalid material "${value}": expected <kind>=<url> with kind pr, issue, branch, doc, ticket or url.`,
+    proposalsEmpty: () => "No proposals.",
+    proposalCommentsEmpty: (number) => `No comments on proposal #${number}.`,
+    proposalCreated: (number, title) => `Created proposal #${number}: ${title}`,
+    proposalPublished: (number, revision) => `Published proposal #${number}, revision ${revision}.`,
+    proposalStatusSet: (number, status) => `Proposal #${number} is now ${status}.`,
+    proposalImplementing: (number, implementer, sessionId) =>
+      `Proposal #${number}: ${implementer} is implementing it in session ${sessionId}.`,
+    proposalMaterialAdded: (number, kind) => `Attached ${kind} to proposal #${number}.`,
+    proposalFeedbackRecorded: (number) => `Feedback recorded on proposal #${number}.`,
+    proposalCommentResolved: (number, commentId) =>
+      `Resolved comment ${commentId} on proposal #${number}.`,
+    proposalHead: (number, title, status, revision) =>
+      `Proposal #${number}: ${title} — ${status}, revision ${revision}`,
+    proposalPeople: (author, implementer, delegatedBy) =>
+      `Author ${author}, implementer ${implementer ?? "-"}, delegated by ${delegatedBy}`,
+    proposalBrief: (brief) => `Brief: ${brief}`,
+    proposalSessions: (sessions) => `Implementation sessions: ${sessions}`,
+    proposalScope: () => "Scope (file, name pattern):",
+    proposalMaterials: () => "Materials:",
+    proposalComments: () => "Comments:",
+    proposalEvents: () => "Events:",
+    proposalCommentOnRevision: (paragraphId, revision) =>
+      `paragraph ${paragraphId} of revision ${revision} (no longer in the current one)`,
+    proposalPendingMark: () => "[pending]",
+    proposalResolvedMark: (text) => `[resolved${text === "" ? "" : `: ${text}`}]`,
+    colNumber: () => "#",
+    colRevision: () => "REV",
+    colAuthor: () => "AUTHOR",
+    colImplementer: () => "IMPLEMENTER",
     colEmployees: () => "EMPLOYEES",
     colRunning: () => "RUNNING",
     colOpen: () => "OPEN",
@@ -2046,6 +2191,70 @@ const zh: Messages = {
     channelLastMessage: (time) => `最后一条消息：${time}`,
     financeTotal: (period, total) => `合计（${period}）：${total}`,
     unpriced: () => "[unpriced] 部分用量所用模型未配置价格：以上数字是下限",
+    proposalDesc: "提案（company-proposals 插件）：写给人读的一份改动，员工同时实施它",
+    proposalLsDesc: "列出组织的提案（按 --status 本地过滤）",
+    proposalShowDesc: "显示一份提案：头部、范围、材料、各节、评论与事件",
+    proposalCreateDesc: "把一份提案委托给某位员工：在提案频道里告知它，由它来写",
+    proposalPublishDesc:
+      "从 Markdown 文件发布一次修订（frontmatter 的 title 与 scope，然后是各节）",
+    proposalReadyDesc: "标记提案可以读了（作者或人）",
+    proposalApproveDesc: "认可提案并请求合并（人）",
+    proposalMergedDesc: "报告实施已合并（实施者或人）",
+    proposalRejectDesc: "拒绝提案并给出理由（人）",
+    proposalImplementDesc: "为某位员工开一个实施会话来做这份提案；打印会话 id",
+    proposalMaterialDesc: "关联材料：PR、issue、分支、文档、工单",
+    proposalMaterialAddDesc: "以 <kind>=<url> 挂上材料（pr、issue、branch、doc、ticket、url）",
+    proposalFeedbackDesc: "把实施中的发现反馈给作者（加 --runtime 则是测试 dev 分支的发现）",
+    proposalCommentsDesc: "列出人在各段上留下的评论",
+    proposalResolveDesc: "解决一条评论，并说明改了什么",
+    proposalStatusFilter: "只列这一状态的提案（drafting、ready、approved、merged、rejected）",
+    proposalAuthor: "写提案的员工（其 Agent id）",
+    proposalBrief_: "一句话的委托",
+    proposalTitle: "暂定标题（发布的文档自带的标题会替换它）",
+    proposalFile: "整份提案，一个 Markdown 文件",
+    proposalImplementer: "实施提案的员工（其 Agent id）",
+    proposalMessage: "附在会话开头的提案文本之后的一句附言",
+    proposalWorkspace: "共享工作区内的另一个目录（缺省：该员工工位的工作区）",
+    proposalMaterialLabel: "材料在列表里的名字（缺省：由 URL 推导）",
+    proposalFeedbackText: "实施中发现了什么",
+    proposalRuntime: "这条反馈来自测试团队对 dev 分支的一次测试",
+    proposalPending: "只列已发出的、未解决的评论——作者要处理的那些",
+    proposalResolveText: "为它改了什么",
+    proposalRejectReason: "拒绝的理由",
+    proposalsPluginMissing: () => "该组织没有提案插件：请在这个 Project 上安装 company-proposals。",
+    proposalNumberInvalid: (value) => `提案编号「${value}」无效：应为正整数。`,
+    proposalStatusInvalid: (value) =>
+      `状态「${value}」无效：应为 drafting、ready、approved、merged 或 rejected。`,
+    proposalMaterialInvalid: (value) =>
+      `材料「${value}」无效：应为 <kind>=<url>，kind 取 pr、issue、branch、doc、ticket 或 url。`,
+    proposalsEmpty: () => "没有提案。",
+    proposalCommentsEmpty: (number) => `提案 #${number} 没有评论。`,
+    proposalCreated: (number, title) => `已创建提案 #${number}：${title}`,
+    proposalPublished: (number, revision) => `已发布提案 #${number} 的第 ${revision} 次修订。`,
+    proposalStatusSet: (number, status) => `提案 #${number} 现在是 ${status}。`,
+    proposalImplementing: (number, implementer, sessionId) =>
+      `提案 #${number}：${implementer} 正在会话 ${sessionId} 中实施。`,
+    proposalMaterialAdded: (number, kind) => `已把 ${kind} 挂到提案 #${number}。`,
+    proposalFeedbackRecorded: (number) => `已记录对提案 #${number} 的反馈。`,
+    proposalCommentResolved: (number, commentId) => `已解决提案 #${number} 的评论 ${commentId}。`,
+    proposalHead: (number, title, status, revision) =>
+      `提案 #${number}：${title}——${status}，第 ${revision} 次修订`,
+    proposalPeople: (author, implementer, delegatedBy) =>
+      `作者 ${author}，实施者 ${implementer ?? "-"}，委托人 ${delegatedBy}`,
+    proposalBrief: (brief) => `委托：${brief}`,
+    proposalSessions: (sessions) => `实施会话：${sessions}`,
+    proposalScope: () => "范围（文件，名称模式）：",
+    proposalMaterials: () => "材料：",
+    proposalComments: () => "评论：",
+    proposalEvents: () => "事件：",
+    proposalCommentOnRevision: (paragraphId, revision) =>
+      `第 ${revision} 次修订的段落 ${paragraphId}（已不在当前修订里）`,
+    proposalPendingMark: () => "[待发]",
+    proposalResolvedMark: (text) => `[已解决${text === "" ? "" : `：${text}`}]`,
+    colNumber: () => "#",
+    colRevision: () => "修订",
+    colAuthor: () => "作者",
+    colImplementer: () => "实施者",
     colEmployees: () => "员工数",
     colRunning: () => "运行中",
     colOpen: () => "未结",
