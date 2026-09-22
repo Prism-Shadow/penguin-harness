@@ -62,6 +62,8 @@ import { sessionsSandbox } from "./steps/sessions-sandbox.js";
 import { userProfile } from "./steps/user-profile.js";
 import { sessionsSurface } from "./steps/sessions-surface.js";
 import { portForwards } from "./steps/port-forwards.js";
+import { portForwardsAdoption } from "./steps/port-forwards-adoption.js";
+import { portForwardsDirection } from "./steps/port-forwards-direction.js";
 
 export type { Migration } from "./migration.js";
 export { IrreversibleMigrationError, UnknownMigrationError, appliedMigrations } from "./runner.js";
@@ -88,6 +90,8 @@ export const MIGRATIONS: readonly Migration[] = [
   browserExtensions,
   sessionsSurface,
   portForwards,
+  portForwardsAdoption,
+  portForwardsDirection,
 ];
 
 /**

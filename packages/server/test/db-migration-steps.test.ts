@@ -301,6 +301,8 @@ describe("machines-columns → current: browser-extensions", () => {
         "browser-extensions",
         "sessions-surface",
         "port-forwards",
+        "port-forwards-adoption",
+        "port-forwards-direction",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
