@@ -872,10 +872,21 @@ export const getMessages = (sessionId: string, page?: MessagesPageQuery) => {
 
 // Task execution, approval, abort, compaction ------------------------------------------------------
 
+/** A task input carries file bytes exactly when one of its parts is a file part. */
+function taskInputHasFiles(body: TaskCreateRequest): boolean {
+  return (
+    Array.isArray(body.input) &&
+    body.input.some((part) => typeof part === "object" && part !== null && part.type === "file")
+  );
+}
+
 export const postTask = (sessionId: string, body: TaskCreateRequest) =>
   apiFetch<TaskCreateResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/tasks`, {
     method: "POST",
     body,
+    // Whole-request gzip (#521): compress only attachment-bearing requests, and only when
+    // the result is smaller (the client falls back to plain JSON otherwise).
+    gzip: taskInputHasFiles(body),
   });
 
 export const getGoal = (sessionId: string) =>
@@ -938,6 +949,8 @@ export const postSteer = (sessionId: string, body: SteerRequest) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/steer`, {
     method: "POST",
     body,
+    // Same whole-request gzip as task posts (#521): only when files ride along.
+    gzip: Array.isArray(body.files) && body.files.length > 0,
   });
 
 /** Panel message to one subagent child (#272) — a user input on the child, whatever its state: steered mid-run, started on an idle child, resumed when the released session was revived (the child runs at its own Session's thinking level; pin it with patchSession). 404 subagent_gone when nothing can be revived, 409 subagent_busy when the child cannot take it right now. */

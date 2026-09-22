@@ -8,6 +8,7 @@
  * login page — instead of each page popping its own "unauthorized" error.
  */
 import { S } from "../lib/strings";
+import { gzipIfBeneficial } from "./gzip";
 
 /** Unified API error: carries the HTTP status code and server error code (server error body {error:{code,message}}). */
 export class ApiError extends Error {
@@ -42,6 +43,13 @@ export interface ApiFetchOptions {
   body?: unknown;
   /** Query parameters (undefined values are skipped). */
   query?: Record<string, string | number | undefined>;
+  /**
+   * Send the JSON body gzipped when compression strictly pays (#521). The API shape is
+   * unchanged (`Content-Type: application/json` plus `Content-Encoding: gzip`); anything
+   * else (small bodies, incompressible payloads, missing CompressionStream) falls back
+   * to the plain body silently.
+   */
+  gzip?: boolean;
 }
 
 /** Response metadata a caller may need alongside the parsed body. */
@@ -79,15 +87,24 @@ export async function apiFetchWithMeta<T>(
 
   let response: Response;
   try {
+    let headers: Record<string, string> | undefined;
+    let fetchBody: BodyInit | undefined;
+    if (options.body !== undefined) {
+      const json = JSON.stringify(options.body);
+      headers = { "Content-Type": "application/json" };
+      fetchBody = json;
+      if (options.gzip === true) {
+        const gzipped = await gzipIfBeneficial(json);
+        if (gzipped !== null) {
+          headers = { ...headers, "Content-Encoding": "gzip" };
+          fetchBody = new Blob([gzipped]);
+        }
+      }
+    }
     response = await fetch(url, {
       method: options.method ?? "GET",
       credentials: "same-origin",
-      ...(options.body !== undefined
-        ? {
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(options.body),
-          }
-        : {}),
+      ...(fetchBody !== undefined ? { headers, body: fetchBody } : {}),
     });
   } catch {
     throw new ApiError(0, "network_error", S.errors.networkError);
