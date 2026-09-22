@@ -1,0 +1,151 @@
+/**
+ * A port forward drawn as what it is: a cable from one end to the other.
+ *
+ * The two ends are named — the machine on the left, "here" (this server) on the right — and
+ * the direction is the cable's own arrow, so a row never has to be decoded: bytes come from
+ * the port on the left and arrive at the port on the right. The state lives ON the cable
+ * (its ink is the tone, and while connections are open the dashes travel along it), which
+ * is what keeps the row's words for the addresses alone.
+ *
+ * One drawing for the dock's Ports panel and a machine's Ports page, and for the form that
+ * makes a new one — an empty cable with the two ports still to be typed — so the form is a
+ * row before it is a record, and reads the same way.
+ */
+import type { ReactNode } from "react";
+import type { PortForwardInfo } from "@prismshadow/penguin-server/api";
+import { ICON_GAP } from "../../lib/icon-scale";
+import { S } from "../../lib/strings";
+import { toneInk } from "../../lib/tone";
+import type { Tone } from "../../lib/tone";
+import { dialLine, forwardTone, listenerLine } from "./port-forward-facts";
+
+/** A name on a plug: the machine's alias, or "here". */
+const PLUG =
+  "inline-flex h-7 max-w-[10rem] shrink items-center rounded-md border border-gray-200 bg-gray-50 px-2 font-mono text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200";
+const PLUG_NAME = "min-w-0 truncate";
+const PLUG_PORT = "ml-1 shrink-0 tabular-nums";
+
+export function Plug({
+  name,
+  port,
+  children,
+}: {
+  name: string;
+  port?: number;
+  children?: ReactNode;
+}) {
+  return (
+    <span className={PLUG} title={name}>
+      <span className={PLUG_NAME}>{name}</span>
+      {port !== undefined && <span className={PLUG_PORT}>:{port}</span>}
+      {children}
+    </span>
+  );
+}
+
+/**
+ * The cable itself: a line with an arrowhead, in the tone's ink. `flowing` sends dashes along
+ * it — transform-free on purpose, so the global reduced-motion rule simply leaves the dashes
+ * standing, which still reads as "a cable" and no longer as "traffic".
+ */
+export function Cable({ tone, flowing, label }: { tone: Tone; flowing: boolean; label: string }) {
+  return (
+    <span
+      className={`flex min-w-8 flex-1 items-center ${toneInk[tone]}`}
+      role="img"
+      aria-label={label}
+    >
+      {/* No viewBox on the line: its x2 is a percentage of whatever width the row gives it,
+          so the cable stretches and the arrowhead beside it keeps its shape. */}
+      <svg className="h-3 min-w-0 flex-1" aria-hidden="true">
+        <line
+          x1="0"
+          y1="6"
+          x2="100%"
+          y2="6"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeDasharray={flowing ? "4 3" : undefined}
+          className={flowing ? "cable-flow" : undefined}
+        />
+      </svg>
+      <svg viewBox="0 0 8 12" className="-ml-px h-3 w-2 shrink-0" aria-hidden="true">
+        <path
+          d="M1 2l5 4-5 4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  );
+}
+
+/** Bytes as a person reads them on a row: three significant figures at most. */
+export function formatTraffic(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["kB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+/**
+ * One forward as a row: the cable line, then every fact under it, the bad one in its ink.
+ * `actions` sit at the row's right edge.
+ */
+export function ForwardRow({
+  forward,
+  machineName,
+  locale,
+  actions,
+}: {
+  forward: PortForwardInfo;
+  machineName: string;
+  locale: "zh" | "en";
+  actions?: ReactNode;
+}) {
+  const tone = forwardTone(forward);
+  const facts = `${listenerLine(forward)} · ${dialLine(forward, locale)}`;
+  return (
+    <li
+      data-testid="port-forward-row"
+      className="rounded-lg px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-900/60"
+    >
+      <div className={`flex items-center ${ICON_GAP.row}`}>
+        <Plug name={machineName} port={forward.remotePort} />
+        <Cable tone={tone} flowing={forward.open > 0} label={facts} />
+        <Plug name={S.ports.here} port={forward.localPort} />
+        {actions !== undefined && (
+          <span className={`ml-1 flex shrink-0 items-center ${ICON_GAP.tight}`}>{actions}</span>
+        )}
+      </div>
+      <div className="mt-1 flex items-center gap-2 pl-1 text-[11px] text-gray-500 dark:text-gray-400">
+        <span className={forward.open > 0 ? `${toneInk[tone]} font-medium` : ""}>
+          {S.ports.connections(forward.open)}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span className="shrink-0 tabular-nums">
+          ↑ {formatTraffic(forward.bytesUp)} ↓ {formatTraffic(forward.bytesDown)}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span className={`min-w-0 truncate ${"error" in forward.listener ? toneInk.danger : ""}`}>
+          {listenerLine(forward)}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span
+          className={`min-w-0 truncate ${forward.dial !== null && "failedAt" in forward.dial ? toneInk.attention : ""}`}
+        >
+          {dialLine(forward, locale)}
+        </span>
+      </div>
+    </li>
+  );
+}
