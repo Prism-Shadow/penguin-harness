@@ -85,9 +85,20 @@ export function parseProposalRef(text: string): ProposalRef | null {
   return pattern === undefined || pattern === "" ? { number } : { number, pattern };
 }
 
-/** Sentence punctuation a bare reference at the end of a sentence would otherwise swallow. */
+/**
+ * Sentence punctuation a bare reference at the end of a sentence would otherwise swallow.
+ * A closing bracket is only punctuation when nothing inside the pattern opened it: the
+ * capture group of `proposal:12#Rename (\w+)` ends in `)` and keeps it.
+ */
 export function trimPatternPunctuation(pattern: string): string {
-  return pattern.replace(/[.,;:!?)\]}]$/, "");
+  const last = pattern.at(-1);
+  if (last === undefined) return pattern;
+  if (/[.,;:!?]/.test(last)) return pattern.slice(0, -1);
+  const open = last === ")" ? "(" : last === "]" ? "[" : last === "}" ? "{" : null;
+  if (open === null) return pattern;
+  const opened = pattern.split(open).length - 1;
+  const closed = pattern.split(last).length - 1;
+  return closed > opened ? pattern.slice(0, -1) : pattern;
 }
 
 /** A reference as its canonical text, the value the capsule element carries. */

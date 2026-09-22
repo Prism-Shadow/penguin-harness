@@ -4666,7 +4666,7 @@ Scenarios:
       brief: "Brief",
       briefHint: "What to change and why, in a sentence or two",
       titleField: "Title",
-      titleHint: "Optional — the author names it when writing",
+      titleHint: "The author names it when writing",
       created: (n: number): string => `Proposal #${n} created`,
       queue: "Queue",
       queueEmpty: "No proposals yet",

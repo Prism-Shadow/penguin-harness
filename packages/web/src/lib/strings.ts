@@ -4652,7 +4652,7 @@ Benchmark：
       brief: "委托",
       briefHint: "要改什么、为什么，一两句即可",
       titleField: "标题",
-      titleHint: "可留空，作者写提案时定",
+      titleHint: "作者写提案时定",
       created: (n: number): string => `提案 #${n} 已创建`,
       queue: "队列",
       queueEmpty: "还没有提案",
