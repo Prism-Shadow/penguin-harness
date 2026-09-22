@@ -248,6 +248,10 @@ export class WorkflowService implements Workflows {
   private readonly pending = new Map<string, NodeJS.Timeout>();
   /** The load in flight per workflow: a load takes a compiler run, so two can overlap. */
   private readonly loading = new Map<string, Promise<Loaded>>();
+  /** The revision the newest queued load will load, while one is queued (see reloadIfChanged). */
+  private readonly loadingRevision = new Map<string, string>();
+  /** Workflows whose folder is being deleted: the watcher schedules no reload for them. */
+  private readonly removing = new Set<string>();
   private resources: ClassCtx["resources"] | null = null;
   private disposed = false;
 
@@ -287,6 +291,28 @@ export class WorkflowService implements Workflows {
   async reload(projectId: string, agentId: string, workflowId: string): Promise<WorkflowInfo> {
     const folder = await this.folder(projectId, agentId, workflowId);
     return this.info(workflowId, await this.load(projectId, agentId, folder));
+  }
+
+  /**
+   * The watcher's reload: only when the content differs from what is loaded, or from what the
+   * load in flight is loading. An event is a hint, not an edit — Windows reports a `change` on
+   * a directory when a file in it is read or written (the workflow's own state, `.build/`, and
+   * a load's own reads of the folder), and reloading on those tore the tree down under the
+   * request that had just written its state, or loaded the same folder twice over. The
+   * revision is the content hash, so an edit always differs.
+   */
+  private async reloadIfChanged(
+    projectId: string,
+    agentId: string,
+    workflowId: string,
+  ): Promise<void> {
+    const folder = await this.folder(projectId, agentId, workflowId);
+    const k = key(projectId, agentId, workflowId);
+    const current = this.loading.has(k)
+      ? this.loadingRevision.get(k)
+      : this.loaded.get(k)?.folder.revision;
+    if (current === folder.revision) return;
+    await this.load(projectId, agentId, folder);
   }
 
   async dispatch(
@@ -349,7 +375,25 @@ export class WorkflowService implements Workflows {
 
   async remove(projectId: string, agentId: string, workflowId: string): Promise<void> {
     const folder = await this.folder(projectId, agentId, workflowId);
-    await fs.promises.rm(folder.dir, { recursive: true, force: true });
+    const k = key(projectId, agentId, workflowId);
+    // Nothing may write into the folder while it is deleted: a load writes `.build/`, and a
+    // file recreated there mid-delete fails the rm on Windows (ENOTEMPTY). Pending reloads are
+    // dropped, none is scheduled until the folder is gone, and one already running finishes.
+    this.removing.add(k);
+    try {
+      const t = this.pending.get(k);
+      if (t) clearTimeout(t);
+      this.pending.delete(k);
+      await this.loading.get(k)?.catch(() => undefined);
+      await fs.promises.rm(folder.dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
+    } finally {
+      this.removing.delete(k);
+    }
     await fs.promises.rm(path.join(historyDir(this.paths.root, projectId, agentId), workflowId), {
       recursive: true,
       force: true,
@@ -405,12 +449,17 @@ export class WorkflowService implements Workflows {
       .catch(() => undefined)
       .then(async () => {
         const current = (await readFolder(folder.dir, folder.id)) ?? folder;
+        if (this.loading.get(k) === run) this.loadingRevision.set(k, current.revision);
         return this.loadNow(projectId, agentId, current);
       });
     this.loading.set(k, run);
+    this.loadingRevision.set(k, folder.revision);
     void run
       .finally(() => {
-        if (this.loading.get(k) === run) this.loading.delete(k);
+        if (this.loading.get(k) === run) {
+          this.loading.delete(k);
+          this.loadingRevision.delete(k);
+        }
       })
       .catch(() => undefined);
     return run;
@@ -616,14 +665,15 @@ export class WorkflowService implements Workflows {
     let watcher: fs.FSWatcher;
     try {
       watcher = fs.watch(dir, { recursive: true }, (_event, filename) => {
-        const id = typeof filename === "string" ? filename.split(/[\\/]/)[0] : undefined;
+        const segments = typeof filename === "string" ? filename.split(/[\\/]/) : [];
+        const id = segments[0];
         // The workflow's own document is not code, and neither is the staging file a write
         // of it goes through: `state.json` used to be the only name skipped, so every
         // `setState` recompiled the workflow and tore down the tree that had just written it.
         if (id === undefined || !isWorkflowId(id)) return;
         if (filename?.endsWith(STATE_FILE) || (filename !== null && isTempName(filename))) return;
         // The server's own emit (`.build/`), and any other dot-directory, is not an edit.
-        if (filename?.split(/[\\/]/)[1]?.startsWith(".")) return;
+        if (segments[1]?.startsWith(".")) return;
         this.schedule(projectId, agentId, id);
       });
     } catch {
@@ -668,13 +718,14 @@ export class WorkflowService implements Workflows {
 
   private schedule(projectId: string, agentId: string, workflowId: string): void {
     const k = key(projectId, agentId, workflowId);
+    if (this.removing.has(k)) return;
     const t = this.pending.get(k);
     if (t) clearTimeout(t);
     this.pending.set(
       k,
       setTimeout(() => {
         this.pending.delete(k);
-        void this.reload(projectId, agentId, workflowId).catch((err) => {
+        void this.reloadIfChanged(projectId, agentId, workflowId).catch((err) => {
           if (err instanceof WorkflowNotFound) {
             this.forget(projectId, agentId, workflowId);
             return;

@@ -116,7 +116,9 @@ async function writtenAgainst(dir: string, edit: (table: IfaceTable) => void): P
   await fs.writeFile(file, JSON.stringify(table));
 }
 
-describe("workflows", () => {
+// Most of these run the TypeScript compiler, several times each: on a CI runner a single test
+// can pass 5s, the default POSIX limit, without anything being wrong.
+describe("workflows", { timeout: 30_000 }, () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
   let ownerCookie: string;
