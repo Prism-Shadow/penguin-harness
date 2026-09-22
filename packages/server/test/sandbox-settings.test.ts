@@ -336,6 +336,7 @@ describe("sandbox settings group", () => {
   it("keeps what was saved across a restart", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-sandbox-settings-"));
     const dbPath = path.join(dir, "web.db");
+    let second: Awaited<ReturnType<typeof appWith>> | undefined;
     try {
       const first = await appWith([], dbPath);
       await first.admin.put("/api/admin/plugin-config", {
@@ -349,12 +350,15 @@ describe("sandbox settings group", () => {
       await first.t.cleanup();
 
       const seen: Seen[] = [];
-      const second = await appWith(seen, dbPath);
-      apps.push(second.t);
+      second = await appWith(seen, dbPath);
       expect(second.sandbox.currentSettings()).toEqual({ mode: "read-only" });
       second.spawn();
       expect(seen.at(-1)?.runner).toBe("runner-c");
     } finally {
+      // The database lives outside either app's root, so it is only removable once the app
+      // holding it is closed: Windows refuses to unlink an open file (EBUSY on web.db-shm),
+      // and fs.rm retries that past the test's timeout.
+      await second?.t.cleanup();
       await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
