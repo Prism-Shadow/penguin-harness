@@ -65,7 +65,7 @@ describe("the proposal reference pass", () => {
     expect(html).toContain('<li><mark data-ref="proposal:1"></mark></li>');
     expect(html).toContain('<td><mark data-ref="proposal:2"></mark></td>');
     expect(html).toContain("<code>proposal:3</code>");
-    expect(html).toContain("proposal:4\n");
+    expect(html).toContain("<code>proposal:4</code>");
     expect(html).not.toContain('data-ref="proposal:3"');
     expect(html).not.toContain('data-ref="proposal:4"');
   });
