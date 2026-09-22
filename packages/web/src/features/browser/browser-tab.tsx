@@ -43,10 +43,15 @@ const BAR_BUTTON =
 /**
  * No `allow-top-navigation`: the page may not navigate the app away. `allow-same-origin` is
  * safe BECAUSE the origin is the site's own host — it is what gives the page its cookies and
- * storage, and it names no origin the app lives on.
+ * storage, and it names no origin the app lives on. Popups are real windows, and they leave
+ * the sandbox: a window the page opens (an OAuth sign-in, a print view) is a top-level page
+ * of its own on the site's host — `window.opener` and `postMessage` back to the page work —
+ * and would be crippled by inheriting the frame's flags (no `allow-top-navigation` means it
+ * could not even follow a script redirect of its own). Dialogs (`alert`, `confirm`,
+ * `prompt`) are `allow-modals`.
  */
 const SANDBOX =
-  "allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads";
+  "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads";
 
 interface Shown {
   /** The site's address, as the bar shows it. */

@@ -22,6 +22,7 @@
 - **浏览器主机上没有 App。** `HttpModule` 新增 `hosts` slot：Host 匹配的请求先于请求体上限、JSON-only 规则、Cookie 门与一切路由组分发给绑定的 app，且从不落回。未知 label 答 `404`。
 - **站点只能由 App 签发**：`POST /api/browser/sites`，位于浏览器页面永远拿不到的会话 Cookie 之后。机器的端口需要管理员；本服务端的端口与公网对任一登录用户开放。
 - label 是该主机唯一的凭据，因此所有代理响应都带 `Referrer-Policy: no-referrer`。iframe 沙箱不含 `allow-top-navigation`。
+- **弹窗与对话框可用。** 页面打开的窗口（`window.open`、指向站点自身的 `target="_blank"` 链接——OAuth 登录、打印视图）是站点主机上的真实窗口，不受 iframe 沙箱约束：`window.opener` 与回页面的 `postMessage` 可用，弹窗可自由导航。`alert`、`confirm`、`prompt` 同样允许。
 - 浏览器需要 App 经 `localhost` 打开（桌面端、本机，或隧道到本机）；否则签发端点答 `409` `browser_unavailable`，标签内说明原因。
 
 ## 出站防护
