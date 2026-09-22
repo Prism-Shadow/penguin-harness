@@ -1,0 +1,368 @@
+/**
+ * Primer (`github`) — the default theme. Reference: github.com and primer.style.
+ *
+ * W0 status: every value is the app's CURRENT computed value, so adopting the token layer moves
+ * no pixel — system font stacks, stock Tailwind gray in light, the app's four pure-black dark
+ * overrides (gray-950/900/800/700), emerald / amber / red status tones, the 6px control radius,
+ * Tailwind's stock shadow recipes and the 3px gray focus ring. Values the app had no equivalent
+ * for (the `done` and `info` tones, diff surfaces, glass, the type and density roles) are
+ * proposals in the same palette, consumed by nothing yet. The Primer unification — Mona Sans +
+ * Noto, one border grey, Primer's tone hues, the dark elevation ring — lands as W1a.
+ *
+ * Shape every theme file follows: one `@layer ui-theme` block with a base rule and a dark rule.
+ * The base rule declares every name in tokens.ts, in its group order, with its light value, plus
+ * the gray bridge that re-points Tailwind's `--color-gray-*` / `--color-white` so the app's
+ * existing palette classes follow the theme. The dark rule matches the same root and declares
+ * only what dark changes, bridge steps included; everything else keeps its base value.
+ *
+ * This file is the default and is imported first, so it also matches <html> with no `data-theme`
+ * at all. Another theme's base rule outranks this base rule, and ties with this dark rule and wins
+ * by coming later, so its dark mode starts from its own base values and never from these; the
+ * theme files must therefore be imported in this order (theme.css shows it).
+ *
+ * Tokens here may read the gray bridge declared in the same block (`var(--color-gray-500)`); the
+ * bridge itself is always literal, so no reference can cycle. Stock Tailwind colours are copied
+ * as their exact `oklch()` values from tailwindcss/theme.css — a rounded hex would move pixels.
+ */
+@layer ui-theme {
+  :root,
+  :root[data-theme="github"] {
+    /* ---- Gray bridge: stock Tailwind v4 gray ---- */
+    --color-white: var(--ui-surface);
+    --color-gray-50: oklch(98.5% 0.002 247.839);
+    --color-gray-100: oklch(96.7% 0.003 264.542);
+    --color-gray-200: oklch(92.8% 0.006 264.531);
+    --color-gray-300: oklch(87.2% 0.01 258.338);
+    --color-gray-400: oklch(70.7% 0.022 261.325);
+    --color-gray-500: oklch(55.1% 0.027 264.364);
+    --color-gray-600: oklch(44.6% 0.03 256.802);
+    --color-gray-700: oklch(37.3% 0.034 259.733);
+    --color-gray-800: oklch(27.8% 0.033 256.848);
+    --color-gray-900: oklch(21% 0.034 264.665);
+    --color-gray-950: oklch(13% 0.028 261.692);
+
+    /* ---- Colour — surfaces ---- */
+    --ui-canvas: #ffffff;
+    --ui-surface: #ffffff;
+    --ui-surface-muted: var(--color-gray-50);
+    --ui-inset: var(--color-gray-50);
+    --ui-overlay: #ffffff;
+    --ui-overlay-backdrop: oklab(0% 0 0 / 0.45); /* = bg-black/45, alpha exactly .45 */
+
+    /* ---- Colour — text ---- */
+    --ui-fg: var(--color-gray-900);
+    --ui-fg-muted: var(--color-gray-500);
+    --ui-fg-subtle: var(--color-gray-400);
+    --ui-fg-link: #0b57d0; /* brand-700 */
+    --ui-fg-link-hover: #1a73e8; /* brand-600 */
+
+    /* ---- Colour — lines ---- */
+    --ui-line: var(--color-gray-200);
+    --ui-line-muted: var(--color-gray-100);
+    --ui-line-emphasis: var(--color-gray-300);
+    --ui-divider: var(--color-gray-200);
+
+    /* ---- Colour — accent (neutral: near-black on white) ---- */
+    --ui-accent: #111827;
+    --ui-accent-hover: #1f2937;
+    --ui-accent-active: #374151;
+    --ui-accent-fg: #ffffff;
+    --ui-accent-muted: rgb(17 24 39 / 0.08);
+    --ui-accent-line: rgb(17 24 39 / 0.4);
+
+    /* ---- Colour — semantic tones ----
+       Ink on a tint and a solid fill's label clear 4.5:1 (badge text is the 700 step, as the app's
+       tinted pills draw it); fg on the page surfaces clears 3:1. `neutral` ink is the muted pill's
+       gray-600. Nothing in the app reads these yet — its tones still come from tone.ts classes. */
+    --ui-tone-success-fg: oklch(50.8% 0.118 165.612); /* emerald-700 */
+    --ui-tone-success-bg: oklch(97.9% 0.021 166.113); /* emerald-50 */
+    --ui-tone-success-line: oklch(84.5% 0.143 164.978); /* emerald-300 */
+    --ui-tone-success-emphasis: oklch(50.8% 0.118 165.612); /* emerald-700 */
+    --ui-tone-success-emphasis-fg: #ffffff;
+    --ui-tone-attention-fg: oklch(55.5% 0.163 48.998); /* amber-700 */
+    --ui-tone-attention-bg: oklch(98.7% 0.022 95.277); /* amber-50 */
+    --ui-tone-attention-line: oklch(87.9% 0.169 91.605); /* amber-300 */
+    --ui-tone-attention-emphasis: oklch(76.9% 0.188 70.08); /* amber-500, dark label */
+    --ui-tone-attention-emphasis-fg: var(--color-gray-950);
+    --ui-tone-danger-fg: oklch(50.5% 0.213 27.518); /* red-700 */
+    --ui-tone-danger-bg: oklch(97.1% 0.013 17.38); /* red-50 */
+    --ui-tone-danger-line: oklch(80.8% 0.114 19.571); /* red-300 */
+    --ui-tone-danger-emphasis: oklch(50.5% 0.213 27.518); /* red-700 */
+    --ui-tone-danger-emphasis-fg: #ffffff;
+    --ui-tone-done-fg: oklch(49.6% 0.265 301.924); /* purple-700 */
+    --ui-tone-done-bg: oklch(97.7% 0.014 308.299); /* purple-50 */
+    --ui-tone-done-line: oklch(82.7% 0.119 306.383); /* purple-300 */
+    --ui-tone-done-emphasis: oklch(49.6% 0.265 301.924); /* purple-700 */
+    --ui-tone-done-emphasis-fg: #ffffff;
+    --ui-tone-neutral-fg: var(--color-gray-600);
+    --ui-tone-neutral-bg: var(--color-gray-100);
+    --ui-tone-neutral-line: var(--color-gray-200);
+    --ui-tone-neutral-emphasis: var(--color-gray-600);
+    --ui-tone-neutral-emphasis-fg: #ffffff;
+    --ui-tone-info-fg: oklch(50% 0.134 242.749); /* sky-700 */
+    --ui-tone-info-bg: oklch(97.7% 0.013 236.62); /* sky-50 */
+    --ui-tone-info-line: oklch(82.8% 0.111 230.318); /* sky-300 */
+    --ui-tone-info-emphasis: oklch(50% 0.134 242.749); /* sky-700 */
+    --ui-tone-info-emphasis-fg: #ffffff;
+
+    /* ---- Colour — charts (the context-window part order, then the token-kind blues) ---- */
+    --ui-chart-1: oklch(68.5% 0.169 237.323); /* sky-500 */
+    --ui-chart-2: oklch(76.9% 0.188 70.08); /* amber-500 */
+    --ui-chart-3: oklch(66.7% 0.295 322.15); /* fuchsia-500 */
+    --ui-chart-4: oklch(64.5% 0.246 16.439); /* rose-500 */
+    --ui-chart-5: oklch(60.6% 0.25 292.717); /* violet-500 */
+    --ui-chart-6: oklch(69.6% 0.17 162.48); /* emerald-500 */
+    --ui-chart-cache-read: #7dd3fc;
+    --ui-chart-cache-write: #0ea5e9;
+    --ui-chart-output: #0369a1;
+    --ui-chart-grid: var(--color-gray-200);
+    --ui-chart-axis: var(--color-gray-400);
+
+    /* ---- Colour — code ---- */
+    --ui-code-bg: var(--color-gray-50);
+    --ui-code-line: var(--color-gray-200);
+    --ui-code-gutter: var(--color-gray-400);
+    --ui-code-selection: oklch(90.1% 0.058 230.902); /* sky-200 */
+    --ui-diff-add-bg: oklch(97.9% 0.021 166.113); /* emerald-50 */
+    --ui-diff-add-word: oklch(90.5% 0.093 164.15); /* emerald-200 */
+    --ui-diff-del-bg: oklch(97.1% 0.013 17.38); /* red-50 */
+    --ui-diff-del-word: oklch(88.5% 0.062 18.334); /* red-200 */
+    --ui-diff-hunk-bg: oklch(97.7% 0.013 236.62); /* sky-50 */
+
+    /* ---- Shape: Tailwind's stock radius scale ---- */
+    --ui-radius-xs: 0.125rem;
+    --ui-radius-sm: 0.25rem;
+    --ui-radius-md: 0.375rem;
+    --ui-radius-lg: 0.5rem;
+    --ui-radius-xl: 0.75rem;
+    --ui-radius-pill: 9999px;
+    --ui-border-w: 1px;
+    --ui-border-w-thick: 2px;
+
+    /* ---- Elevation: Tailwind's stock shadow-sm / lg / xl / 2xl; no glass ---- */
+    --ui-shadow-flat: 0 0 #0000;
+    --ui-shadow-raised: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    --ui-shadow-overlay: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --ui-shadow-modal: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+    --ui-shadow-drawer: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+    --ui-glass-bg: var(--ui-overlay);
+    --ui-glass-blur: 0px;
+    --ui-glass-saturate: 100%;
+    --ui-glass-line: var(--ui-line);
+    --ui-glass-highlight: transparent;
+
+    /* ---- Typography — families: the system stacks the app ships today ---- */
+    --ui-font-sans:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei",
+      sans-serif;
+    --ui-font-mono:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+      monospace;
+    --ui-font-display: var(--ui-font-sans);
+    --ui-font-cjk: "PingFang SC", "Microsoft YaHei", sans-serif;
+
+    /* ---- Typography — scale and roles (shared by every theme: heights never move) ---- */
+    --ui-text-body-size: 0.875rem;
+    --ui-text-body-lh: 1.25rem;
+    --ui-text-small-size: 0.75rem;
+    --ui-text-small-lh: 1rem;
+    --ui-text-caption-size: 0.75rem;
+    --ui-text-caption-lh: 1rem;
+    --ui-text-code-size: 0.8125rem;
+    --ui-text-code-lh: 1.25rem;
+    --ui-text-prose-size: 0.875rem;
+    --ui-text-prose-lh: 1.5rem;
+    --ui-h1-size: 1.5rem;
+    --ui-h1-lh: 2rem;
+    --ui-h1-weight: 600;
+    --ui-h1-tracking: normal;
+    --ui-h1-transform: none;
+    --ui-h1-font: var(--ui-font-sans);
+    --ui-h2-size: 1.25rem;
+    --ui-h2-lh: 1.75rem;
+    --ui-h2-weight: 600;
+    --ui-h2-tracking: normal;
+    --ui-h2-transform: none;
+    --ui-h2-font: var(--ui-font-sans);
+    --ui-h3-size: 1.125rem;
+    --ui-h3-lh: 1.75rem;
+    --ui-h3-weight: 600;
+    --ui-h3-tracking: normal;
+    --ui-h3-transform: none;
+    --ui-h3-font: var(--ui-font-sans);
+    --ui-h4-size: 1rem;
+    --ui-h4-lh: 1.5rem;
+    --ui-h4-weight: 600;
+    --ui-h4-tracking: normal;
+    --ui-h4-transform: none;
+    --ui-h4-font: var(--ui-font-sans);
+    --ui-h5-size: 0.875rem;
+    --ui-h5-lh: 1.25rem;
+    --ui-h5-weight: 600;
+    --ui-h5-tracking: normal;
+    --ui-h5-transform: none;
+    --ui-h5-font: var(--ui-font-sans);
+    --ui-h6-size: 0.75rem;
+    --ui-h6-lh: 1rem;
+    --ui-h6-weight: 600;
+    --ui-h6-tracking: normal;
+    --ui-h6-transform: none;
+    --ui-h6-font: var(--ui-font-sans);
+    --ui-md-h1-size: 1.25rem;
+    --ui-md-h2-size: 1.125rem;
+    --ui-md-h3-size: 1rem;
+    --ui-weight-body: 400;
+    --ui-weight-medium: 500;
+    --ui-weight-strong: 600;
+    --ui-tracking-body: normal;
+    --ui-tracking-mono: normal;
+    --ui-tracking-label: normal;
+
+    /* ---- Density (shared by every theme except padding-inline) ----
+       Control rungs, content height = 2 × padding-block + the rung's line-height (sm: small,
+       md and lg: body), plus a 1px border on each side:
+         sm 0.25rem × 2 + 1rem    = 1.5rem  (Button sm, Input sm)
+         md 0.375rem × 2 + 1.25rem = 2rem   (Button md)
+         lg 0.625rem × 2 + 1.25rem = 2.5rem (Input base; it reaches the height with py-2 + text-base)
+       That is 27 / 36 / 45px at the default 18px root (29 / 38 / 47 with borders) and 24 / 32 / 40
+       at 16px. They are the app's existing controls, which is why they are not Primer's
+       28 / 32 / 40px at the 18px root: moving there changes every control's height, a visible
+       change for a later wave. */
+    --ui-control-py-sm: 0.25rem;
+    --ui-control-py-md: 0.375rem;
+    --ui-control-py-lg: 0.625rem;
+    --ui-control-px-sm: 0.625rem;
+    --ui-control-px-md: 0.75rem;
+    --ui-control-px-lg: 0.75rem;
+    --ui-control-gap-sm: 0.25rem;
+    --ui-control-gap-md: 0.5rem;
+    --ui-row-py: 0.375rem;
+    --ui-row-px: 0.5rem;
+    --ui-menu-row-py: 0.5rem;
+    --ui-menu-row-px: 0.875rem;
+    --ui-card-p: 1rem;
+    --ui-panel-p: 1rem;
+    --ui-stack-1: 0.5rem;
+    --ui-stack-2: 1rem;
+    --ui-stack-3: 1.5rem;
+
+    /* ---- Motion ---- */
+    --ui-dur-fast: 150ms;
+    --ui-dur-base: 200ms;
+    --ui-dur-slow: 280ms;
+    --ui-ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
+    --ui-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --ui-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ui-ease-overlay-in: ease-out;
+    --ui-ease-overlay-out: ease-in;
+    --ui-live-timing: linear;
+
+    /* ---- Icons ---- */
+    --ui-icon-stroke: 1.7;
+    --ui-icon-cap: round;
+    --ui-icon-join: round;
+
+    /* ---- Focus, selection and scrollbar ---- */
+    --ui-focus-ring: 3px solid rgb(107 114 128 / 0.4);
+    --ui-focus-ring-offset: 2px;
+    --ui-focus-ring-input: 0 0 0 2px color-mix(in oklab, var(--color-gray-400) 30%, transparent);
+    --ui-selection-bg: rgb(0 0 0 / 0.1);
+    --ui-scrollbar-w: thin;
+    --ui-scrollbar-thumb: rgb(60 64 67 / 0.28);
+    --ui-scrollbar-thumb-hover: rgb(60 64 67 / 0.45);
+    --ui-scrollbar-track: transparent;
+    --ui-scrollbar-visibility: auto;
+  }
+
+  /* Dark declares only what the mode changes. `:root.dark` also matches the rule above, so every
+     name not repeated here — the shape, type, density, motion and icon groups whole, the solid
+     fills and their labels, the backdrop — keeps its one value from there, and a `var()` in it
+     resolves against this rule's values (`--ui-glass-bg: var(--ui-overlay)` is the dark overlay). */
+  :root.dark,
+  :root[data-theme="github"].dark {
+    /* ---- Gray bridge: the app's pure-black dark (no indigo tint) on the four darkest steps;
+       600…50 stay stock and are inherited from the light block. ---- */
+    --color-gray-950: #000000;
+    --color-gray-900: #0d0d0d;
+    --color-gray-800: #1f1f1f;
+    --color-gray-700: #303030;
+    /* Stays literal white in dark: the app's `dark:border-white/10`, `dark:bg-white/10`,
+       `dark:hover:bg-white` and `ring-white` read it as light INK, and its few unpaired `bg-white`
+       have always rendered white here. A theme that re-points it at a dark surface must first
+       move those call sites to tokens. */
+    --color-white: #ffffff;
+
+    /* ---- Colour — surfaces ---- */
+    --ui-canvas: var(--color-gray-950);
+    --ui-surface: var(--color-gray-900);
+    --ui-surface-muted: #161616; /* proposal: between the card surface and its line */
+    --ui-inset: var(--color-gray-950);
+    --ui-overlay: var(--color-gray-900);
+
+    /* ---- Colour — text ---- */
+    --ui-fg: var(--color-gray-100);
+    --ui-fg-muted: var(--color-gray-400);
+    --ui-fg-subtle: var(--color-gray-500);
+    --ui-fg-link: #8ab4f8; /* brand-300 */
+    --ui-fg-link-hover: #8ab4f8;
+
+    /* ---- Colour — lines ---- */
+    --ui-line: var(--color-gray-800);
+    --ui-line-muted: var(--color-gray-800); /* the app's dark divider, `dark:border-gray-800` */
+    --ui-line-emphasis: var(--color-gray-700);
+    --ui-divider: var(--color-gray-800);
+
+    /* ---- Colour — accent (neutral: light gray with dark text) ---- */
+    --ui-accent: #f3f4f6;
+    --ui-accent-hover: #e5e7eb;
+    --ui-accent-active: #d1d5db;
+    --ui-accent-fg: #111827;
+    --ui-accent-muted: rgb(243 244 246 / 0.12);
+    --ui-accent-line: rgb(243 244 246 / 0.4);
+
+    /* ---- Colour — semantic tones: 400 ink on the 950/40 tints the app's dark notices use; the
+       solid fills and their labels are the light ones ---- */
+    --ui-tone-success-fg: oklch(76.5% 0.177 163.223); /* emerald-400 */
+    --ui-tone-success-bg: oklch(26.2% 0.051 172.552 / 0.4); /* emerald-950/40 */
+    --ui-tone-success-line: oklch(50.8% 0.118 165.612); /* emerald-700 */
+    --ui-tone-attention-fg: oklch(82.8% 0.189 84.429); /* amber-400 */
+    --ui-tone-attention-bg: oklch(27.9% 0.077 45.635 / 0.4); /* amber-950/40 */
+    --ui-tone-attention-line: oklch(55.5% 0.163 48.998); /* amber-700 */
+    --ui-tone-danger-fg: oklch(70.4% 0.191 22.216); /* red-400 */
+    --ui-tone-danger-bg: oklch(25.8% 0.092 26.042 / 0.4); /* red-950/40 */
+    --ui-tone-danger-line: oklch(50.5% 0.213 27.518); /* red-700 */
+    --ui-tone-done-fg: oklch(71.4% 0.203 305.504); /* purple-400 */
+    --ui-tone-done-bg: oklch(29.1% 0.149 302.717 / 0.4); /* purple-950/40 */
+    --ui-tone-done-line: oklch(49.6% 0.265 301.924); /* purple-700 */
+    --ui-tone-neutral-fg: var(--color-gray-300);
+    --ui-tone-neutral-bg: var(--color-gray-800);
+    --ui-tone-neutral-line: var(--color-gray-800);
+    --ui-tone-info-fg: oklch(74.6% 0.16 232.661); /* sky-400 */
+    --ui-tone-info-bg: oklch(29.3% 0.066 243.157 / 0.4); /* sky-950/40 */
+    --ui-tone-info-line: oklch(50% 0.134 242.749); /* sky-700 */
+
+    /* ---- Colour — charts ---- */
+    --ui-chart-1: oklch(58.8% 0.158 241.966); /* sky-600 */
+    --ui-chart-2: oklch(66.6% 0.179 58.318); /* amber-600 */
+    --ui-chart-3: oklch(59.1% 0.293 322.896); /* fuchsia-600 */
+    --ui-chart-6: oklch(59.6% 0.145 163.225); /* emerald-600 */
+    --ui-chart-grid: var(--color-gray-800);
+    --ui-chart-axis: var(--color-gray-500);
+
+    /* ---- Colour — code ---- */
+    --ui-code-bg: var(--color-gray-900);
+    --ui-code-line: var(--color-gray-800);
+    --ui-code-gutter: var(--color-gray-600);
+    --ui-code-selection: color-mix(in oklab, oklch(68.5% 0.169 237.323) 40%, transparent);
+    --ui-diff-add-bg: color-mix(in oklab, oklch(69.6% 0.17 162.48) 15%, transparent);
+    --ui-diff-add-word: color-mix(in oklab, oklch(69.6% 0.17 162.48) 35%, transparent);
+    --ui-diff-del-bg: color-mix(in oklab, oklch(63.7% 0.237 25.331) 15%, transparent);
+    --ui-diff-del-word: color-mix(in oklab, oklch(63.7% 0.237 25.331) 35%, transparent);
+    --ui-diff-hunk-bg: color-mix(in oklab, oklch(68.5% 0.169 237.323) 15%, transparent);
+
+    /* ---- Selection and scrollbar ---- */
+    --ui-selection-bg: rgb(255 255 255 / 0.18);
+    --ui-scrollbar-thumb: rgb(232 234 237 / 0.2);
+    --ui-scrollbar-thumb-hover: rgb(232 234 237 / 0.35);
+  }
+}

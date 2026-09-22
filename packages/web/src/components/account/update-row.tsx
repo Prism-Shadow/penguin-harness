@@ -35,9 +35,7 @@ export function UpdateRow({
             className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
           />
         )}
-        {row.dot && (
-          <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]" />
-        )}
+        {row.dot && <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-accent" />}
         <span className="min-w-0 truncate">{rowLabel(flow)}</span>
       </span>
       {currentVersion !== null && (

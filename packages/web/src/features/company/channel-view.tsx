@@ -110,7 +110,7 @@ const RUN_AVATAR_PX = 28;
  * The two bubble surfaces. The reader's own takes the app's brand blue rather than a tone from
  * lib/tone.ts: which side of a conversation wrote a message is an identity, not a judgement,
  * and a status hue would announce a state the message does not have. It is also the only tint
- * that stays clearly apart from the neutral bubble under every accent — `--accent-bg` is grey
+ * that stays clearly apart from the neutral bubble under every accent — `--ui-accent` is grey
  * in the default neutral theme, where a wash of it is the neutral bubble again.
  */
 const BUBBLE_SURFACE = {

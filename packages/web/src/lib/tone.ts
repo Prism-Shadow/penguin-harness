@@ -39,9 +39,9 @@ export type Tone = "busy" | "attention" | "success" | "danger" | "muted";
 /**
  * Ink for a glyph or a line of status text. Measured as WCAG 2.x contrast ratios against the
  * four surfaces these marks actually sit on — white and gray-50 in light (chat surfaces and the
- * sidebar), and the neutral scale this app overrides in `styles.css` for dark: gray-950 `#000000`
- * and gray-900 `#0d0d0d`. The lower number of each pair is the sidebar, which is the worse case
- * in both themes:
+ * sidebar), and the neutral scale the default theme overrides for dark (`@prismshadow/penguin-ui`
+ * `themes/github.css`): gray-950 `#000000` and gray-900 `#0d0d0d`. The lower number of each pair
+ * is the sidebar, which is the worse case in both themes:
  *
  * - `busy` / `success`  emerald-600 / emerald-400 …… 3.65–3.50 : 1 light, 10.83–10.03 : 1 dark
  * - `attention`         amber-600 / amber-400 ……… 3.20–3.06 : 1 light, 12.19–11.28 : 1 dark

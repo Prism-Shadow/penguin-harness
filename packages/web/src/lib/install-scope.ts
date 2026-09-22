@@ -97,6 +97,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.themeId",
+    scope: "browser",
+    why: "Which theme renders the app (the key lives in @prismshadow/penguin-ui/boot); pure appearance.",
+  },
+  {
+    kind: "exact",
     key: "penguin.fontScale",
     scope: "browser",
     why: "Root font size — a readability preference of this display.",

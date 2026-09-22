@@ -1,0 +1,42 @@
+{
+  "name": "@prismshadow/penguin-ui",
+  "version": "0.2.13",
+  "private": true,
+  "type": "module",
+  "description": "PenguinHarness shared UI: design tokens, the three themes, bundled fonts and the component set the Web App and the gallery render.",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./theme.css": {
+      "style": "./src/theme.css",
+      "default": "./src/theme.css"
+    },
+    "./themes/*": "./src/themes/*",
+    "./fonts.css": {
+      "style": "./src/fonts/index.css",
+      "default": "./src/fonts/index.css"
+    },
+    "./boot": "./src/boot.ts",
+    "./fixtures": "./src/fixtures/index.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "peerDependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.6"
+  }
+}

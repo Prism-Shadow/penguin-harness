@@ -264,7 +264,7 @@ export function Sheet({ open, snap, onSnapChange, onClose, title, children }: Sh
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={title}>
       <div
         ref={scrimRef}
-        className={`absolute inset-0 bg-black/45 ${reduced ? "anim-fade" : ""}`}
+        className={`absolute inset-0 bg-[var(--ui-overlay-backdrop)] ${reduced ? "anim-fade" : ""}`}
         style={{ opacity: 0 }}
         onPointerDown={() => onClose()}
       />

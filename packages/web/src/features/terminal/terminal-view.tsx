@@ -52,8 +52,8 @@ export type TerminalStatus = "connecting" | "ready" | "exited" | "error";
  * The screen's own palette, one per appearance. Two things matter here.
  *
  * The surface colours are the app's, not a terminal's: `#000000`/`#ffffff` are the body
- * tones (styles.css overrides the neutral gray scale to pure black in dark mode), and the
- * selection matches `::selection` there. A panel docked inside the app that brought its
+ * tones (the default theme, `themes/github.css` in @prismshadow/penguin-ui, overrides the
+ * neutral gray scale to pure black in dark mode), and the selection matches its `::selection`. A panel docked inside the app that brought its
  * own charcoal along read as a foreign window sitting on top of it.
  *
  * The sixteen ANSI slots are NOT the app's palette and must not be: programs pick them by
