@@ -3,7 +3,7 @@
 - **Date:** 2026-09-22
 - **Type:** fix
 - **Scope:** `web`
-- **PR:** [#0000](https://github.com/Prism-Shadow/penguin-harness/pull/0000)
+- **PR:** [#826](https://github.com/Prism-Shadow/penguin-harness/pull/826)
 
 [English](2026-09-22-channel-bubble-phone.md)
 
