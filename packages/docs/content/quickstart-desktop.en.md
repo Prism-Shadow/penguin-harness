@@ -79,6 +79,8 @@ On macOS, the app does not install the command while it runs from the mounted dm
 
 The desktop app uses the same data root as a [CLI install](/quickstart-cli), so you can use the two side by side.
 
+Only one server can use a data root at a time. If one is already running on yours — a `penguin web` or `penguin server` instance, or an older copy of the app that is still open — the app attaches to that server instead of starting a second one, and signs its own window in against it, so the window still opens with no login page. Being able to read the data root is what lets it do that, so a root it cannot read leaves the window on the login page instead, behind a dialog naming the data root and the server that holds it. The window signs itself in but cannot set a password on a server it only attached to: for a password you can type, such as for a browser reaching that same server, stop the server and run `penguin server reset-admin-password`.
+
 If you later serve that data root over the network with `penguin server`, first give its `admin` a password you can use, because the desktop app deliberately seeds one that nobody can read. Stop the server, then run:
 
 ```bash
@@ -86,6 +88,8 @@ penguin server reset-admin-password
 ```
 
 The `admin` account returns to the unclaimed state. When you start the server again, it prints a first-login link where you set the new password.
+
+That command is also the way out if a window ever does show the login page: the password the desktop app created for itself is random and was never shown, so there is nothing to type there.
 
 ## Next steps
 

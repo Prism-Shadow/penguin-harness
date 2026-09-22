@@ -17,7 +17,12 @@
  * no node integration); every capability flows through the server's HTTP API.
  *
  * Attach mode: when a live server (e.g. `penguin web`) already owns the data root, the
- * window loads that instance instead — normal login page, deliberate degradation.
+ * window loads that instance instead. The one-shot token buys nothing there, so the shell
+ * signs the window in the other way it is entitled to — a session minted straight into the
+ * data root it owns (see attach-session.ts) — and the same move answers any later arrival at
+ * the sign-in page, which has no password anyone could type. Signing out is the exception:
+ * it is a decision rather than a failure, so it is left to stand until the next sign-in or
+ * the next launch.
  *
  * Tray: a system-tray icon is shown for as long as the app runs, and by default closing the
  * window only hides it, so the server and its background tasks keep running (see tray.ts;
@@ -36,11 +41,20 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { app, BrowserWindow, dialog, shell } from "electron";
+import { app, BrowserWindow, dialog, session, shell } from "electron";
 import type { WindowOpenHandlerResponse } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
+import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
+import type { ServerLock } from "@prismshadow/penguin-server/lock";
 import { appIdentity, desktopDataRoot } from "./app-identity.js";
+import {
+  createSignInGuard,
+  isLoginPageUrl,
+  planSignIn,
+  signInFailureDialog,
+} from "./attach-session.js";
+import type { SignInFailure } from "./attach-session.js";
 import { embeddedCliEntry } from "./launcher.js";
 import { webDistEntry, webDistFor } from "./web-dist.js";
 import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
@@ -179,6 +193,16 @@ function createWindow(url: string): void {
       openInSystem(target);
     }
   });
+  // The catch-all for every route to the sign-in page — an attached instance that never saw
+  // this shell's token, a session that lapsed, a claim that failed. The page asks for a
+  // password this installation does not have, so the shell answers it the way it answers
+  // attach mode (see signInFromDataRoot). Both events are needed: the App routes to the
+  // sign-in page within the loaded page, and the server redirects to it across a load.
+  win.webContents.on("did-navigate", (_event, url) => onMainWindowNavigated(url));
+  win.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (isMainFrame) onMainWindowNavigated(url);
+  });
+  watchForSignOut(win);
   win.webContents.on("render-process-gone", () => win?.webContents.reload());
   armSmokeProbe(win);
   void win.loadURL(url);
@@ -230,6 +254,20 @@ function guardOpenedWindow(
 ): void {
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
   child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath, false));
+  // A session that dies while a child window is open sends that window to the sign-in page
+  // too — the App's guard redirects on the first 401, wherever it is rendered. A sign-in form
+  // is of no use in a subordinate surface: there is no password to type, and signing back in
+  // is the main window's business, which it now does by itself. So the child closes instead,
+  // which for a detached terminal returns its tab to the dock in the main window rather than
+  // stranding it behind a form. A preview window never reaches this page: an unauthorized
+  // preview hand-off answers with an API error, not the App.
+  const closeOnSignInPage = (url: string): void => {
+    if (isLoginPageUrl(url, appOrigin)) child.close();
+  };
+  child.webContents.on("did-navigate", (_event, url) => closeOnSignInPage(url));
+  child.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (isMainFrame) closeOnSignInPage(url);
+  });
   child.webContents.on("will-navigate", (event, target) => {
     if (!isLocalSurfaceUrl(target, appOrigin)) {
       event.preventDefault();
@@ -281,6 +319,89 @@ function navigateMainWindow(target: string): void {
   }
   showMainWindow();
   void win.loadURL(url);
+}
+
+// --- signing the window in -------------------------------------------------
+
+/** The data root this shell owns; null until boot resolves it. */
+let shellDataRoot: string | null = null;
+/**
+ * The lock of the server this shell attached to instead of starting its own, so a failure
+ * can name the process holding the data root; null while the server is this shell's.
+ */
+let attachedServer: ServerLock | null = null;
+/**
+ * Which arrivals at the sign-in page the shell answers with a session — one attempt per
+ * stay, and none at all after a sign-out. It starts fresh with the process, which is what
+ * makes a launch the way back in after signing out (see attach-session.ts).
+ */
+const signInGuard = createSignInGuard();
+
+/**
+ * Puts a session cookie for the current origin into the window's cookie store, by minting a
+ * session row in the data root this shell owns. False means it could not and the dialog
+ * explaining that is up; the caller then lets the window reach the sign-in page, which is at
+ * least a page with an explanation behind it rather than a dead end.
+ */
+async function signInFromDataRoot(): Promise<boolean> {
+  const root = shellDataRoot;
+  if (root === null || appOrigin === null) return false;
+  const plan = planSignIn({ root, origin: appOrigin, mint: mintApiToken });
+  if (plan.outcome === "failed") {
+    showSignInFailure(root, plan.failure);
+    return false;
+  }
+  try {
+    await session.defaultSession.cookies.set(plan.cookie);
+    return true;
+  } catch (err) {
+    // The row exists and the cookie store refused it. Rare enough to have no handling of its
+    // own, and identical from where the user sits, so it takes the same explanation.
+    showSignInFailure(root, { reason: "failed", detail: String(err) });
+    return false;
+  }
+}
+
+/** Reports a failed sign-in: one line in the log, and the dialog the user acts on. */
+function showSignInFailure(dataRoot: string, failure: SignInFailure): void {
+  process.stdout.write(`[shell] the window could not be signed in: ${failure.detail}\n`);
+  const opts = {
+    type: "warning" as const,
+    title: app.name,
+    ...signInFailureDialog({ dataRoot, other: attachedServer, failure }),
+  };
+  void (win !== null ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts));
+}
+
+/** The App's sign-out, as a request pattern: the one intent a navigation cannot express. */
+const SIGN_OUT_REQUEST = "*://*/api/auth/logout";
+
+/**
+ * Watches for the App ending the session on purpose, which the catch-all must not undo.
+ * A sign-out leads to the same page as an expired session and needs the opposite answer, and
+ * the page never tells the shell which it is — so the intent is read off the request the App
+ * makes to end the session. The listener belongs to the session rather than to one window, so
+ * a sign-out from any window of this app counts, and registering it again replaces it.
+ */
+function watchForSignOut(target: BrowserWindow): void {
+  target.webContents.session.webRequest.onCompleted({ urls: [SIGN_OUT_REQUEST] }, (details) => {
+    // A refused sign-out leaves the session alive, so the window never reaches the sign-in
+    // page, and there is nothing to suppress.
+    if (details.statusCode < 400 && isAppUrl(details.url, appOrigin)) signInGuard.signedOut();
+  });
+}
+
+/** Runs the guard's decision for wherever the main window has just landed. */
+function onMainWindowNavigated(url: string): void {
+  if (signInGuard.arrived(url, appOrigin) !== "rescue") return;
+  void signInFromDataRoot().then((signedIn) => {
+    // The app root, not a reload: the page underneath IS the sign-in page, and reloading it
+    // shows it for a beat before the App redirects a signed-in window away from it. A failed
+    // attempt loads nothing — the window is already going where it would be sent.
+    const landing = signedIn && appOrigin !== null ? `${appOrigin}/` : null;
+    signInGuard.tried(landing);
+    if (landing !== null) void win?.loadURL(landing);
+  });
 }
 
 // --- tray -----------------------------------------------------------------
@@ -453,16 +574,28 @@ async function boot(): Promise<void> {
     homedir: os.homedir(),
     releaseRoot: resolveRoot,
   });
+  shellDataRoot = dataRoot;
   if (!app.isPackaged) {
     process.stdout.write(`[shell] dev instance '${app.name}' on data root ${dataRoot}\n`);
   }
   const existing = await liveServerLock(dataRoot);
   if (existing !== null) {
-    // Attach mode: the one-shot token only works against a server this shell spawned,
-    // so the window goes through the normal login page of the existing instance.
+    // Attach mode: another server — a `penguin web` run, an older app still up — holds this
+    // data root, and the one-shot token only works against a server this shell spawned. The
+    // window is signed in the other way the product recognizes instead: a session minted
+    // straight into the root this shell owns, which is the same authority the CLI mints on.
+    attachedServer = existing;
     appOrigin = `http://localhost:${existing.port}`;
-    process.stdout.write(`[shell] attaching to the running server at ${appOrigin}\n`);
-    createWindow(`${appOrigin}/`);
+    process.stdout.write(
+      `[shell] attaching to the running server at ${appOrigin} (pid ${existing.pid})\n`,
+    );
+    await signInFromDataRoot();
+    // Either way the window opens on the app root: signed in it goes straight into the App,
+    // and otherwise the App sends it to the sign-in page the dialog has just explained. The
+    // attempt is recorded with that URL, so arriving there does not buy a second one.
+    const landing = `${appOrigin}/`;
+    signInGuard.tried(landing);
+    createWindow(landing);
     return;
   }
   await startServerAndWindow(dataRoot);

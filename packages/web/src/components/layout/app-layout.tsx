@@ -7,6 +7,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
+import { nagsAboutInitialPassword } from "../../lib/account-menu";
 import { S } from "../../lib/strings";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
@@ -352,7 +353,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 }
 
 export function AppLayout() {
-  const { user, desktopMode } = useAuth();
+  const { user, desktopMode, sessionVia } = useAuth();
   // The docks belong to the conversation they were arranged in, so switching Sessions
   // switches the arrangement with it (dock-state.ts). The draft page's route id ("new" /
   // a parked draft id) is a scope of its own, handed to the Session the first send
@@ -384,7 +385,8 @@ export function AppLayout() {
   // dismissed banner never flashes before disappearing. Hydration only runs when the banner
   // would show at all; unreachable prefs fail open (treated as not dismissed, banner shows).
   const [passwordBannerDismissed, setPasswordBannerDismissed] = useState<boolean | null>(null);
-  const passwordBannerRelevant = Boolean(user?.passwordIsInitial) && !desktopMode;
+  const passwordBannerRelevant =
+    Boolean(user?.passwordIsInitial) && nagsAboutInitialPassword({ desktopMode, sessionVia });
   useEffect(() => {
     if (!passwordBannerRelevant) return;
     let cancelled = false;
