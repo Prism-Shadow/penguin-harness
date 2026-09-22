@@ -317,19 +317,6 @@ function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/**
- * Leniently parses the `[command_policy]` block (sandbox command policy): each key is
- * validated independently and an invalid value drops that key rather than failing the
- * load. A non-boolean `enabled` falls back to on (the safe direction); a `rules` value
- * that is not an array reads as absent, i.e. the factory set. A present array is the
- * literal list — invalid entries are dropped individually, which can narrow the deny set,
- * but the write paths validate up front and the file is never hand-edited by design, so
- * this only fires for hand-placed data.
- *
- * Exported for the server's ProjectConfigService, which holds a cached parse of the same
- * file — the same sharing rule as projectConfigFromTable, so the two paths can never
- * narrow the block differently.
- */
 /** What a Project asks of one plugin. `version` absent (or `"*"` in the file) means whatever the deployment ships. */
 export interface PluginRequirement {
   version?: string;
@@ -450,6 +437,19 @@ export function pluginTablesToToml(tables: PluginTables): Record<string, unknown
   return out;
 }
 
+/**
+ * Leniently parses the `[command_policy]` block (sandbox command policy): each key is
+ * validated independently and an invalid value drops that key rather than failing the
+ * load. A non-boolean `enabled` falls back to on (the safe direction); a `rules` value
+ * that is not an array reads as absent, i.e. the factory set. A present array is the
+ * literal list — invalid entries are dropped individually, which can narrow the deny set,
+ * but the write paths validate up front and the file is never hand-edited by design, so
+ * this only fires for hand-placed data.
+ *
+ * Exported for the server's ProjectConfigService, which holds a cached parse of the same
+ * file — the same sharing rule as projectConfigFromTable, so the two paths can never
+ * narrow the block differently.
+ */
 export function parseCommandPolicy(value: unknown): CommandPolicyConfig | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   const t = value as Record<string, unknown>;

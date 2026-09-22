@@ -986,18 +986,6 @@ export class ContextEngine {
   }
 
   /**
-   * User-initiated compaction request (e.g. a CLI command): reuses the automatic compaction
-   * flow without checking thresholds (reason=manual). Only callable at a Task boundary (between
-   * runs); streams out paired compaction events. No-op when compaction is not configured.
-   *
-   * Carry-over left over from an interruption is cleaned up here too: summarize folds it into
-   * the compaction request (structured tool outputs keep their pairing with the already
-   * committed tool_call, otherwise the compaction request itself would be rejected by the
-   * provider as an unanswered tool_use, see issue #33; flatten text is absorbed into the
-   * summary); discard drops the structured outputs paired with the old context, keeping only the
-   * self-contained flatten text.
-   */
-  /**
    * Whether compaction is possible, and the **reason** when it isn't.
    *
    * `compact()` is a no-op and **yields no messages** in these cases; if the UI treats invoking
@@ -1024,6 +1012,18 @@ export class ContextEngine {
     });
   }
 
+  /**
+   * User-initiated compaction request (e.g. a CLI command): reuses the automatic compaction
+   * flow without checking thresholds (reason=manual). Only callable at a Task boundary (between
+   * runs); streams out paired compaction events. No-op when compaction is not configured.
+   *
+   * Carry-over left over from an interruption is cleaned up here too: summarize folds it into
+   * the compaction request (structured tool outputs keep their pairing with the already
+   * committed tool_call, otherwise the compaction request itself would be rejected by the
+   * provider as an unanswered tool_use, see issue #33; flatten text is absorbed into the
+   * summary); discard drops the structured outputs paired with the old context, keeping only the
+   * self-contained flatten text.
+   */
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
     // The manual entry into a compaction, and the second place the live settings decide
     // something: the `mode` below, and the prompt summarizeContext reads from them.
