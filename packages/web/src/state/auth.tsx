@@ -25,6 +25,21 @@ const DEFAULT_UPLOAD_LIMITS: UploadLimits = {
   attachmentLimitMaxMb: 200,
 };
 
+/**
+ * A GET /api/me issued right after a successful login failed: does the session it was meant to
+ * read still stand? A 401 is the one answer that says it does not — the login held, but the
+ * session cookie never took (blocked cookies, a cross-site context, a proxy dropping
+ * `Set-Cookie`), so there is no session to adopt a user onto, and the client's 401 handler has
+ * already cleared the user. Any other failure (offline, a 5xx) leaves the session standing and
+ * costs only the flags that read would have refreshed.
+ *
+ * Exported as a test seam: this package's vitest runs in node with no DOM, so the decision is
+ * asserted by value rather than by mounting the Provider.
+ */
+export function loginSessionSurvives(error: unknown): boolean {
+  return !(error instanceof ApiError && error.status === 401);
+}
+
 interface AuthContextValue {
   /** undefined = initializing; null = not logged in. */
   user: UserInfo | null | undefined;
@@ -57,7 +72,7 @@ interface AuthContextValue {
   uploadLimits: UploadLimits;
   /**
    * Whether company mode is enabled server-wide (the admin master switch in server settings,
-   * default on). Off hides the work-mode switch for everyone and 404s every organization
+   * default off). Off hides the work-mode switch for everyone and 404s every organization
    * route; the user's own preference (`UiPrefs.companyMode`) only hides the switch for them.
    */
   companyMode: boolean;
@@ -84,8 +99,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [desktopMode, setDesktopMode] = useState(false);
   const [sessionVia, setSessionVia] = useState<MeResponse["sessionVia"]>("password");
   const [uploadLimits, setUploadLimits] = useState<UploadLimits>(DEFAULT_UPLOAD_LIMITS);
-  // Off until /api/me says otherwise: the mode switch must not flash for a server that has
-  // turned company mode off, and the default on the server side is on anyway.
+  // Off until /api/me says otherwise, as it is on a server nobody has turned it on: the mode
+  // switch must not flash for a server that has company mode off.
   const [companyMode, setCompanyMode] = useState(false);
 
   // Any API returning 401 (session expired / database rebuilt) clears the current user, and
@@ -122,7 +137,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (userId: string, password: string) => {
     const res = await api.login({ userId, password });
-    setUser(res.user);
     // previewIsolated only rides on GET /api/me, and the mount-time fetch ran before
     // this session existed — without a refetch, a deployment with no separate preview
     // origin would keep the optimistic `true` after a UI login (navigation is
@@ -130,6 +144,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // preview path it can't actually serve. Never fail the login over it: the session
     // cookie is already set, so a transient /me error just leaves the default in place
     // until the next refresh.
+    //
+    // The user is adopted together with that answer, not before it: the shell mounts the
+    // moment there is a user, and a shell mounted on the pre-login flags acts on them — the
+    // company store reads an "off" master switch as its cue to put the chosen work mode
+    // back to development, which would cost every UI login a company choice.
     try {
       const me = await api.getMe();
       setUser(me.user);
@@ -138,8 +157,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSessionVia(me.sessionVia);
       setUploadLimits(me.uploadLimits);
       setCompanyMode(me.companyMode);
-    } catch {
-      // Login itself succeeded; keep the optimistic default.
+    } catch (e) {
+      // Login itself succeeded; adopt the user and keep the optimistic defaults — unless the
+      // read came back 401, which says the session cookie never took. Adopting a user on a
+      // session that does not exist would undo the 401 handler's setUser(null) in the same
+      // continuation and mount the shell over a dead session.
+      if (loginSessionSurvives(e)) setUser(res.user);
     }
   }, []);
 
