@@ -3,7 +3,7 @@
 - **Date:** 2026-09-22
 - **Type:** fix
 - **Scope:** `server`
-- **PR:** [#0000](https://github.com/Prism-Shadow/penguin-harness/pull/0000)
+- **PR:** [#827](https://github.com/Prism-Shadow/penguin-harness/pull/827)
 
 [English](2026-09-22-shell-tree-after-reassembly.md)
 
