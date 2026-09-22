@@ -59,12 +59,10 @@ describe("a WebSocket through a Browser host", () => {
           api: {
             upgrade,
             // The terminal path, reached only when the platform did not claim the socket.
-            terminals: () => ({
-              get: () => {
-                terminalUpgrades++;
-                return undefined;
-              },
-            }),
+            terminals: () => {
+              terminalUpgrades++;
+              return { get: () => undefined };
+            },
           },
         }),
       } as never,
@@ -121,9 +119,10 @@ describe("a WebSocket through a Browser host", () => {
     expect(unreachable.status).toBe(502);
     expect(terminalUpgrades).toBe(0);
 
+    // The App's own host: the platform declines, and the terminal path answers — its cookie
+    // gate first, which this bare handshake does not pass.
     const app = await connect(`localhost:${frontPort}`, "/api/terminals/t1/stream");
-    expect(app.status).toBe(404); // the terminal path answered: no such terminal
-    expect(terminalUpgrades).toBe(1);
+    expect(app.status).toBe(401);
   });
 });
 
