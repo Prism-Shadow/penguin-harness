@@ -9,6 +9,9 @@
  * - Delete: the built-in admin cannot be deleted; Projects owned by the user are
  *   deleted along with it (including data directories), with sessions/memberships/UI
  *   preferences cascade-deleted via foreign keys.
+ *
+ * Both of those end sessions, so both go through `signOutEverywhere`: dropping the rows
+ * alone leaves the connections those rows authorised still open.
  */
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
@@ -18,6 +21,7 @@ import type { UserRow } from "../db/repos/users.js";
 import { SEMANTIC_ID_RULE, USERNAME_PATTERN } from "./ids.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
+import type { LiveStreams } from "../auth/live-streams.js";
 import type { Admin, AuthSessions, Users } from "../mechanisms/identity.js";
 import type { ProjectLifecycle, Projects } from "../mechanisms/projects.js";
 
@@ -25,6 +29,7 @@ import type { ProjectLifecycle, Projects } from "../mechanisms/projects.js";
 export class AdminService implements Admin {
   @Use() private readonly users!: Users;
   @Use() private readonly authSessions!: AuthSessions;
+  @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly projects!: Projects;
   @Use() private readonly projectService!: ProjectLifecycle;
   @Use() private readonly clock!: Clock;
@@ -92,8 +97,21 @@ export class AdminService implements Admin {
     }
     const isSelfAdminReset = userId === ADMIN_USER_ID;
     this.users.updatePassword(userId, await this.hasher.hash(password), !isSelfAdminReset);
-    // Force re-login: delete every session row for this user.
+    this.signOutEverywhere(userId);
+  }
+
+  /**
+   * Sign a user out of every window: the session rows go, and so does every SSE stream
+   * those sessions authorised. The two belong together — a stream is authorised once, when
+   * it connects, so dropping the rows on their own leaves the window streaming happily
+   * until its reader happens to make a request. Anything that revokes a user's sessions
+   * calls this rather than the repo directly. Forgetting it is not fatal: each stream
+   * re-checks its own session on the next heartbeat (http/sse.ts), which costs the window
+   * one beat instead of ending it at once.
+   */
+  private signOutEverywhere(userId: string): void {
     this.authSessions.deleteByUser(userId);
+    this.liveStreams.endForUser(userId);
   }
 
   /** Delete user: the built-in admin cannot be deleted; owned Projects (including data directories) are deleted along with it. */
@@ -109,5 +127,9 @@ export class AdminService implements Admin {
       await this.projectService.destroyProject(project.projectId);
     }
     this.users.delete(userId); // project_members / ui_prefs cascade-deleted
+    // The session rows went with the user row (ON DELETE CASCADE), so this is about the
+    // connections they authorised: a window left open on a deleted account would go on
+    // streaming until it tried to fetch something.
+    this.signOutEverywhere(userId);
   }
 }

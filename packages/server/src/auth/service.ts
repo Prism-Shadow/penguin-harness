@@ -343,6 +343,20 @@ export class AuthService implements Auth {
     return { user, via, renewed };
   }
 
+  /**
+   * Whether the session behind a cookie token still exists and has not expired — the same
+   * two facts {@link authenticateWithMeta} establishes, without its sliding renewal or its
+   * user lookup. A connection that outlives the request that opened it has to re-ask
+   * periodically (the SSE heartbeat does, once per beat), and asking through the renewing
+   * path would top the expiry up every time: a window nobody has touched since last week
+   * would stay signed in purely because it is still connected.
+   */
+  sessionIsLive(token: string): boolean {
+    const session = this.authSessions.findByTokenHash(sessionTokenHash(token));
+    if (!session) return false;
+    return Date.parse(session.expiresAt) > this.clock.now().getTime();
+  }
+
   private issueSession(userId: string, via: SessionViaValue): string {
     return this.authSessions.issue({
       userId,

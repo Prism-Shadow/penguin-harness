@@ -10,7 +10,7 @@ import { approvalDecision, assistantText, toolCall, userText } from "@prismshado
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const SID = "session-2026-07-06-10-00-00-aabb0001";
@@ -144,6 +144,26 @@ describe("sse-stream", () => {
     );
     expect(JSON.parse(frames[0]!.data)).toEqual({ type: "resync_required" });
     expect(JSON.parse(frames[1]!.data)).toEqual({ type: "task_state", state: "idle", queued: 0 });
+  });
+
+  it("an admin resetting the password ends the streams that user had open", async () => {
+    const res = await t.app.request("/api/events", { headers: { cookie } });
+    expect(res.status).toBe(200);
+    const reader = res.body!.getReader();
+    // The hello frame proves the subscription is live — and therefore registered — before
+    // the reset lands.
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain("hello");
+
+    const admin = await loginAdmin(t.app);
+    const reset = await apiClient(t.app, admin.cookie).post("/api/admin/users/streamer/password", {
+      password: "password-456",
+    });
+    expect(reset.status).toBe(204);
+
+    // Ended by the reset itself, within the same request: no heartbeat has passed, and the
+    // reader has made no request of its own that could have noticed.
+    expect((await reader.read()).done).toBe(true);
+    expect((await t.app.request("/api/events", { headers: { cookie } })).status).toBe(401);
   });
 
   it("FD-2: same-epoch Last-Event-ID hitting the buffer → replays later events, then the task_state snapshot", async () => {

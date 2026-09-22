@@ -1122,7 +1122,7 @@ export type ServerEvent =
 - Event ids increase monotonically per channel and have the form `<epoch>-<seq>`.
 - Each channel keeps a bounded replay buffer: the most recent 10,000 events or 8MB.
 - On reconnect with `Last-Event-ID`, the server replays the gap if the id is still in the buffer. Otherwise it first sends `resync_required`, and the client refetches `/messages` before continuing.
-- A heartbeat comment line is written every 20 seconds.
+- A heartbeat comment line is written every 20 seconds. The same beat re-checks the session behind the connection and ends the stream when that session is gone or has expired, so a client whose sign-in was revoked stops streaming instead of waiting for its next request to fail. Revoking sessions directly — an admin resetting a password or deleting an account — ends that user's open streams at once; the heartbeat is the catch-all. A stream authenticated by the local API token has no session row and is left alone.
 - Event order: on a reconnect that carries `Last-Event-ID`, the replayed gap (or `resync_required`) arrives first, then the initial events (the authoritative `task_state` snapshot and any still-pending `approval_request`s), then the live stream. A fresh connection without `Last-Event-ID` skips the replay, so its first event is the `task_state` snapshot.
 
 ### Recommended Client Pattern

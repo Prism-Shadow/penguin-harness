@@ -50,7 +50,7 @@ import type { SessionRow } from "../../db/repos/sessions.js";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import { isGoalOutcome } from "../../runtime/goal-events.js";
 import { HttpError } from "../errors.js";
-import { sseEndpoint } from "../sse.js";
+import { sseEndpoint, streamRevocation } from "../sse.js";
 import {
   badRequest,
   optionalEnum,
@@ -91,6 +91,10 @@ export interface SessionsRouteDeps {
   desktopMode: boolean;
   /** Opens a Workspace file's directory in the machine's file manager (the reveal route). */
   fileReveal: FileReveal;
+  /** The registry that ends a Session stream when the session behind it is revoked. */
+  liveStreams: LiveStreams;
+  /** Re-validates the session behind an open stream, once per heartbeat. */
+  auth: Auth;
 }
 import { MAX_UPLOAD_BYTES } from "../../services/workspace-files-service.js";
 import {
@@ -134,6 +138,8 @@ import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
 import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
+import type { LiveStreams } from "../../auth/live-streams.js";
+import type { Auth } from "../../mechanisms/identity.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
@@ -984,7 +990,10 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         ...(p.origin !== undefined ? { origin: p.origin } : {}),
       })),
     ];
-    return sseEndpoint(c, channel, { initialEvents });
+    return sseEndpoint(c, channel, {
+      initialEvents,
+      revocation: streamRevocation(c, c.var.user, deps),
+    });
   });
 
   app.post("/:sessionId/tasks", async (c) => {
@@ -1729,6 +1738,8 @@ export class SessionApiRoutes {
   @Use() private readonly sources!: SessionOrigins;
   @Use() private readonly errorsRepo!: ErrorLog;
   @Use() private readonly usage!: UsageQueries;
+  @Use() private readonly liveStreams!: LiveStreams;
+  @Use() private readonly auth!: Auth;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1769,6 +1780,8 @@ export class SessionApiRoutes {
       // this process or it did not, and that cannot change under a running server.
       desktopMode: this.desktop.current() !== null,
       fileReveal: this.fileReveal,
+      liveStreams: this.liveStreams,
+      auth: this.auth,
     };
     const modelOAuthDeps = {
       config: this.config,

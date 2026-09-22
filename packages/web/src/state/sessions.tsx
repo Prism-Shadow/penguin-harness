@@ -45,6 +45,7 @@ import type {
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
+import { probeSession } from "../api/session-probe";
 import { openUserEvents } from "../api/sse";
 import { isCompanyEvent, publishCompanyEvent, publishCompanyResync } from "./company";
 import {
@@ -796,6 +797,14 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     const conn = openUserEvents({
       onOmniMessage: () => undefined,
       onServerEvent: (ev) => applyUserEvent(store, ev, () => window.location.reload()),
+      // This stream is the only thing an idle window has open, and the server ends it when
+      // the session behind it is revoked — which EventSource reports as an ordinary fatal
+      // error, indistinguishable from a dead network. Asking settles it: a session that is
+      // really gone takes the window to the sign-in page instead of leaving it here
+      // listening to nothing (api/session-probe.ts).
+      onError: (closed) => {
+        if (closed) void probeSession();
+      },
     });
     return () => conn.close();
   }, [store]);

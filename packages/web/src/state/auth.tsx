@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import type { MeResponse, UploadLimits, UserInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { ApiError, setUnauthorizedHandler } from "../api/client";
+import { probeSession } from "../api/session-probe";
 
 /**
  * Stand-in until GET /api/me answers, matching the server's shipped defaults. The window is the
@@ -119,6 +120,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  // A window that only reads — a tab left open overnight, a page with no live stream —
+  // learns nothing about a session revoked meanwhile until its reader acts, and then finds
+  // out through a failed action. Re-asking when the window comes back to the foreground is
+  // one request at the moment someone is about to use it, and probeSession collapses a
+  // burst of focus events into that one request.
+  const signedIn = user !== null && user !== undefined;
+  useEffect(() => {
+    if (!signedIn) return;
+    const recheck = () => {
+      if (document.visibilityState === "hidden") return;
+      void probeSession();
+    };
+    window.addEventListener("focus", recheck);
+    document.addEventListener("visibilitychange", recheck);
+    return () => {
+      window.removeEventListener("focus", recheck);
+      document.removeEventListener("visibilitychange", recheck);
+    };
+  }, [signedIn]);
 
   const login = useCallback(async (userId: string, password: string) => {
     const res = await api.login({ userId, password });

@@ -33,6 +33,7 @@ import {
   ResourceGroups,
 } from "./hmr/capabilities.js";
 import { ScryptHasher, PasswordHasher } from "./auth/password.js";
+import { LiveStreamRegistry, LiveStreams } from "./auth/live-streams.js";
 import {
   DefaultMessagingTuning,
   Messaging,
@@ -251,13 +252,14 @@ export class RuntimeModule {}
     UsersRepo,
     AuthSessionsRepo,
     ScryptHasher,
+    LiveStreamRegistry,
     AuthService,
     AdminService,
     AdminRoutes,
     MeRoutes,
     AuthRoutes,
   ],
-  exports: [Users, AuthSessions, Auth, Admin, PasswordHasher],
+  exports: [Users, AuthSessions, Auth, Admin, PasswordHasher, LiveStreams],
 })
 export class IdentityModule {}
 

@@ -23,7 +23,8 @@ import type {
   SessionStatus,
   SubagentRuntimeInfo,
 } from "@prismshadow/penguin-server/api";
-import { getGoal, getMe, getMessages } from "../../api/endpoints";
+import { getGoal, getMessages } from "../../api/endpoints";
+import { probeSession } from "../../api/session-probe";
 import { openSessionStream } from "../../api/sse";
 import { createStreamController } from "../../lib/omni/stream-controller";
 import type {
@@ -261,11 +262,10 @@ export function useSessionStream(
       // Hydrate the goal banner only once the subscription is live (fires on first connect and
       // every reconnect); the prev/active guards keep it from clobbering a live banner.
       onOpen: hydrateGoal,
-      // EventSource can't read the status code: when the connection is judged a fatal error and
-      // closes, probe once with GET /api/me; if the session has expired (401), the client's
-      // global handler clears the user and redirects to the login page.
+      // EventSource can't read the status code: when the connection is judged a fatal error
+      // and closes, ask whether this browser is still signed in (api/session-probe.ts).
       onError: (closed) => {
-        if (closed) void getMe().catch(() => undefined);
+        if (closed) void probeSession();
       },
     });
     void controller.load();
