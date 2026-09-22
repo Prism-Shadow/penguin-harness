@@ -38,7 +38,8 @@ export function subscribeTerminalViewStates(listener: () => void): () => void {
 const IDLE_STATE: TerminalViewState = { status: "connecting", info: null };
 
 /**
- * Listeners for a shown terminal asking to be closed (Ctrl+W inside it). A view knows only
+ * Listeners for a shown terminal asking to be closed (the terminal.close shortcut inside it,
+ * ⌘W / Ctrl+W by default). A view knows only
  * its own id, while the dock holding the tab owns the close path — the confirm-then-kill
  * its × runs — so the request is relayed by id to whichever dock has that tab.
  */
@@ -116,7 +117,7 @@ function shownIdsSnapshot(): string[] {
 export function TerminalDockRuntime() {
   const ids = useSyncExternalStore(subscribeDock, shownIdsSnapshot);
 
-  // (The Ctrl+` hotkey is a module-scope listener in dock-terminal.ts — binding it
+  // (The terminal toggle is a module-scope command handler in dock-terminal.ts — binding it
   // in an effect here left a post-paint window where the shortcut was dead.)
 
   // Containers and view state of terminals that are no longer shown can go; a re-shown
