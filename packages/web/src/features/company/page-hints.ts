@@ -20,7 +20,7 @@ export interface HintStorage {
 }
 
 /** The pages that carry a dismissible hint. */
-export type HintPage = "calendar" | "tickets";
+export type HintPage = "calendar" | "tickets" | "proposals";
 
 /** What a dismissed hint stores. The value is never read back — the key's presence is the answer. */
 const DISMISSED = "1";

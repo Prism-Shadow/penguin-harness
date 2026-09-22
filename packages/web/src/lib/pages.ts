@@ -13,8 +13,13 @@ import manifest from "../module.json";
 export interface PageEntry {
   id: string;
   key: string;
+  /**
+   * The route. For `nav: "org"` it is relative to `/org/:projectId/:orgId/` (a company-mode
+   * page mounts under that layout, beside the organization's own pages); otherwise absolute.
+   */
   path: string;
-  nav: "main" | "none";
+  /** `main` = the development nav; `org` = a company-mode page with a nav row after the organization's own; `none` = by URL only. */
+  nav: "main" | "org" | "none";
   admin: boolean;
   /** Built but not yet offered: kept in the manifest, reachable by URL and tests, hidden from the nav. */
   released: boolean;
@@ -31,6 +36,15 @@ export const NAV_PAGE_KEYS: readonly string[] = PAGES.filter((p) => p.nav === "m
 /** The nav as this user sees it: released pages, minus admin-only ones for a non-admin. */
 export function navPagesFor(isAdmin: boolean): readonly PageEntry[] {
   return PAGES.filter((p) => p.nav === "main" && p.released && (isAdmin || !p.admin));
+}
+
+/**
+ * The company-mode pages of a merged table — every one the server contributed under
+ * `nav: "org"` — in contribution order. The local manifest has none: the organization's own
+ * six pages are the company layout's fixed children, not entries here.
+ */
+export function orgPagesOf(pages: readonly PageEntry[]): PageEntry[] {
+  return pages.filter((p) => p.nav === "org" && p.released);
 }
 
 /**
@@ -55,7 +69,7 @@ export function mergePages(
       id: typeof page.id === "string" ? page.id : `remote.${page.key}`,
       key: page.key,
       path: page.path,
-      nav: page.nav === "main" ? "main" : "none",
+      nav: page.nav === "main" || page.nav === "org" ? page.nav : "none",
       admin: page.admin === true,
       released: page.released !== false,
       renderer,

@@ -60,6 +60,78 @@ export function orgPagePath(projectId: string, orgId: string, page: CompanyNavKe
 }
 
 /**
+ * The company-mode pages a plugin contributes (`nav: "org"` in the page table): the nav rows
+ * after the organization's six, each keyed by the builtin renderer the contribution names, so
+ * the label (`S.nav.org.<label>`) and the glyph (company-nav-icons.ts) are this build's and the
+ * contribution only says that the page exists. `segment` is the route's first segment under
+ * `/org/:projectId/:orgId/`, where the row leads; the page's own params (`proposals/:number?`)
+ * come after it.
+ */
+export const ORG_PAGE_RENDERERS = {
+  OrgProposalsPage: { label: "proposals", segment: "proposals" },
+} as const;
+export type OrgPageRenderer = keyof typeof ORG_PAGE_RENDERERS;
+
+/** Whether a contributed page's renderer is one the company layout knows a row for. */
+export function isOrgPageRenderer(name: string): name is OrgPageRenderer {
+  return Object.hasOwn(ORG_PAGE_RENDERERS, name);
+}
+
+/** The first segment of a contributed page's relative path — the row's destination, with the page's own params (`:number?`) left off. */
+export function orgPageSegment(path: string): string {
+  return path.replace(/^\/+/, "").split("/")[0] ?? "";
+}
+
+/** Path of one contributed company-mode page of one organization, by its route's first segment. */
+export function orgContributedPagePath(projectId: string, orgId: string, segment: string): string {
+  return `${orgRoot(projectId, orgId)}/${segment}`;
+}
+
+/** One contributed company-mode page as a nav row: its renderer (the label's and glyph's key) and where it leads. */
+export interface OrgPageRow {
+  key: string;
+  renderer: OrgPageRenderer;
+  /** Null while company mode has no organization, which renders the row disabled. */
+  to: string | null;
+}
+
+/**
+ * The nav rows of the contributed company-mode pages this build can draw, in contribution
+ * order. A page whose renderer this build has no row for is skipped here (the router skips it
+ * too: no renderer, no route).
+ */
+export function orgPageRows(
+  pages: ReadonlyArray<{
+    key: string;
+    path: string;
+    nav: string;
+    renderer: { builtin: string } | { iframe: unknown };
+  }>,
+  org: { projectId: string; orgId: string } | null,
+): OrgPageRow[] {
+  const rows: OrgPageRow[] = [];
+  for (const page of pages) {
+    if (page.nav !== "org" || !("builtin" in page.renderer)) continue;
+    const renderer = page.renderer.builtin;
+    if (!isOrgPageRenderer(renderer)) continue;
+    rows.push({
+      key: page.key,
+      renderer,
+      to:
+        org === null
+          ? null
+          : orgContributedPagePath(org.projectId, org.orgId, orgPageSegment(page.path)),
+    });
+  }
+  return rows;
+}
+
+/** Path of one proposal of one organization (the proposals page with that proposal selected). */
+export function orgProposalPath(projectId: string, orgId: string, number: number): string {
+  return `${orgRoot(projectId, orgId)}/proposals/${number}`;
+}
+
+/**
  * Path of one channel of one organization. A channel is reached from the sidebar's list, not
  * from a landing: the organization switcher and a bare `/org/<projectId>/<orgId>` open the
  * overview instead, which is the page that says what the whole organization is doing.

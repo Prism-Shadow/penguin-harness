@@ -17,9 +17,11 @@ import type {
   OrgSessionsResponse,
   OrganizationSummary,
 } from "@prismshadow/penguin-server/api";
+import type { CompanyStreamEvent } from "../src/state/company";
 import {
   createCompanyStore,
   isCompanyEvent,
+  proposalUnreadTotal,
   machineOfOpenOrg,
   subscribeCompanyEvents,
   subscribeCompanyResync,
@@ -218,7 +220,60 @@ describe("company store event routing", () => {
       tickets: 1,
       runs: 1,
       budget: 1,
+      proposals: 0,
     });
+  });
+
+  it("bumps the proposals version on the proposals plugin's event for the open organization only", () => {
+    const store = createCompanyStore();
+    store.setState({ currentOrgKey: "p/o" });
+    const event = (orgId: string, plugin = "company-proposals") =>
+      store.getState().applyCompanyEvent(
+        {
+          type: "plugin",
+          plugin,
+          data: { projectId: "p", orgId, number: 1, seq: 4, kind: "ready" },
+        },
+        null,
+      );
+    event("elsewhere");
+    event("o", "some-other-plugin");
+    store
+      .getState()
+      .applyCompanyEvent({ type: "plugin", plugin: "company-proposals", data: null }, null);
+    expect(store.getState().versions.proposals).toBe(0);
+    event("o");
+    expect(store.getState().versions.proposals).toBe(1);
+    expect(store.getState().versions.orgs).toBe(0);
+  });
+
+  it("keeps the proposals index only while the plugin's page is contributed, and clears a read one's badge at once", () => {
+    const store = createCompanyStore();
+    const item = {
+      number: 2,
+      title: "t",
+      status: "ready" as const,
+      revision: 1,
+      author: "a",
+      implementer: null,
+      delegatedBy: "alice",
+      createdAt: "2026-09-21T00:00:00Z",
+      updatedAt: "2026-09-21T00:00:00Z",
+      unread: 3,
+      pendingComments: 0,
+      materials: [],
+    };
+    store.setState({
+      proposalsEnabled: true,
+      proposals: [item, { ...item, number: 1, unread: 1 }],
+    });
+    expect(proposalUnreadTotal(store.getState().proposals)).toBe(4);
+    store.getState().markProposalRead(2);
+    expect(proposalUnreadTotal(store.getState().proposals)).toBe(1);
+    store.getState().setProposalsEnabled(false);
+    expect(store.getState().proposals).toBeNull();
+    store.getState().proposalsChanged();
+    expect(store.getState().versions.proposals).toBe(1);
   });
 });
 
@@ -417,7 +472,7 @@ describe("applyUserEvent forwarding", () => {
     const sessions = createSessionsStore();
     const reload = vi.fn(() => Promise.resolve());
     sessions.setState({ projectId: "p1", reload });
-    const seen: CompanyServerEvent[] = [];
+    const seen: CompanyStreamEvent[] = [];
     const stop = subscribeCompanyEvents((ev) => seen.push(ev));
     try {
       const run: CompanyServerEvent = {
