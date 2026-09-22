@@ -627,13 +627,17 @@ export function ChannelView() {
                 /* A message that names the reader is marked by its mention chip alone: a
                    tinted bubble reads as a state of the whole message, and in a channel where
                    most messages name someone it turns the stream into a highlight. */
-                className={`channel-bubble max-w-[75%] px-3 py-1.5 text-sm leading-relaxed ${bubbleCorners(shape)} ${own ? BUBBLE_SURFACE.own : BUBBLE_SURFACE.other}`}
+                /* A phone's column is the avatar gutter short of the screen already; three
+                   quarters of what is left wrapped Chinese at seven characters a line. */
+                className={`channel-bubble max-w-[88%] px-3 py-1.5 text-sm leading-relaxed sm:max-w-[75%] ${bubbleCorners(shape)} ${own ? BUBBLE_SURFACE.own : BUBBLE_SURFACE.other}`}
               >
-                {/* The time is a column of its own at the bubble's end, bottom-aligned: on a
-                    one-line message it lands beside the words, on a longer one it settles
-                    into the bottom-right corner, and it never overlaps the body. */}
-                <div className={`flex items-end ${ICON_GAP.menu}`}>
-                  <div className="min-w-0 flex-1">
+                {/* The time ends the bubble, bottom-aligned: beside the words on a message
+                    that fits one line with it, and on a line of its own — right-aligned,
+                    under the last line — when the words need the width. It is not a column
+                    beside the body, which on a phone took a fifth of the bubble off every
+                    line of a long message. */}
+                <div className={`flex flex-wrap items-end justify-end ${ICON_GAP.menu}`}>
+                  <div className="min-w-0 flex-[1_1_auto]">
                     <div className="md-body md-compact">
                       <ChannelMessageBody text={m.text} />
                     </div>
@@ -641,7 +645,7 @@ export function ChannelView() {
                   </div>
                   <span
                     title={at}
-                    className="shrink-0 text-[11px] tabular-nums text-gray-600 dark:text-gray-400"
+                    className="ml-auto shrink-0 text-[11px] tabular-nums text-gray-600 dark:text-gray-400"
                   >
                     <span className="sr-only">{S.company.channels.sentAt(at)}</span>
                     <span aria-hidden>{clockTime(m.time)}</span>
