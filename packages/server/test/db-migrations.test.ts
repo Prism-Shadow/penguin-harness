@@ -67,7 +67,9 @@ function dropCompanyModeTables(db: DatabaseSync): void {
  * rolls back through 13 drops the table, and would otherwise land on less than it began with.
  */
 function dropPortForwards(db: DatabaseSync): void {
-  db.exec("DROP INDEX IF EXISTS idx_port_forwards_machine; DROP TABLE IF EXISTS port_forwards;");
+  db.exec(
+    "DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP INDEX IF EXISTS idx_port_forwards_machine; DROP TABLE IF EXISTS port_forwards;",
+  );
 }
 
 /**

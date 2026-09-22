@@ -7,7 +7,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { closeConnectionTo, connectionTo, sessionOf } from "../src/machines/transport/index.js";
+import {
+  attachSessionRegistry,
+  closeAllConnections,
+  closeConnectionTo,
+  connectionTo,
+  forwardKey,
+  sessionOf,
+} from "../src/machines/transport/index.js";
+import type { Resources } from "@prismshadow/penguin-core/kernel";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
@@ -25,6 +33,8 @@ posixOnly("the session", () => {
       `#!/bin/sh
 echo "$*" >> ${JSON.stringify(logFile)}
 case "$*" in *refused*) echo "deploy@refused: Permission denied (publickey)." >&2; exit 255 ;; esac
+# The master answering a control request: port 65001 will not bind, every other one does.
+case "$*" in *" -O "*:65001:*) echo "Port forwarding failed: bind: Address already in use" >&2; exit 255 ;; *" -O "*) exit 0 ;; esac
 for a in "$@"; do last=$a; done
 [ "$last" = sh ] && exec /bin/sh
 exit 1
@@ -39,7 +49,8 @@ exit 1
     process.env.PATH = originalPath;
     fs.rmSync(stubBin, { recursive: true, force: true });
   });
-  const spawns = () => fs.readFileSync(logFile, "utf8").trim().split("\n");
+  const spawns = () =>
+    fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n") : [];
 
   it("runs commands with their exit code, and an `exit` cannot end the session", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
@@ -156,5 +167,75 @@ exit 1
     expect(sessionOf("ssh:nas")).toBeNull();
     await conn.exec("true");
     expect(spawns()).toHaveLength(2);
+  });
+
+  it("masters a control socket, and asks it for each wanted forward once the session is up", async () => {
+    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    expect(conn.supportsForwards()).toBe(true);
+    const good = { direction: "in" as const, localPort: 3000, remotePort: 3001 };
+    const bad = { direction: "out" as const, localPort: 5432, remotePort: 65001 };
+    // Wanted before the session exists: recorded, nothing asked yet.
+    await conn.setForwards([good]);
+    expect(spawns()).toHaveLength(0);
+    await conn.hold();
+    expect(spawns()[0]).toMatch(/ -M -S \S+penguin-ssh-\S+\.sock /);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(spawns().filter((line) => line.includes("-O forward"))).toEqual([
+      expect.stringContaining("-O forward -L 127.0.0.1:3000:127.0.0.1:3001 nas"),
+    ]);
+    expect(conn.forwardFacts().get(forwardKey(good))).toEqual({ ok: true });
+
+    // Added live: asked at once; ssh's refusal is the fact, in its words.
+    await conn.setForwards([good, bad]);
+    expect(spawns().filter((line) => line.includes("-O forward"))).toHaveLength(2);
+    expect(conn.forwardFacts().get(forwardKey(bad))).toEqual({
+      ok: false,
+      detail: "Port forwarding failed: bind: Address already in use",
+    });
+    // Dropped live: cancelled, and its fact goes with it.
+    await conn.setForwards([bad]);
+    expect(spawns().filter((line) => line.includes("-O cancel"))).toEqual([
+      expect.stringContaining("-O cancel -L 127.0.0.1:3000:127.0.0.1:3001 nas"),
+    ]);
+    expect(conn.forwardFacts().has(forwardKey(good))).toBe(false);
+  });
+
+  it("a held session is delivered through the registry and claimed back, a transient one is not", async () => {
+    const store = new Map<string, { resource: unknown; dispose?: () => void }>();
+    const registry: Resources = {
+      register(id, resource, dispose) {
+        const entry = { resource, dispose };
+        store.delete(id);
+        store.set(id, entry);
+        return () => {
+          if (store.get(id) !== entry) return;
+          store.delete(id);
+          entry.dispose?.();
+        };
+      },
+      claim: <T>(id: string) => store.get(id)?.resource as T | undefined,
+    } as Resources;
+    attachSessionRegistry(registry);
+    try {
+      const held = await connectionTo({ alias: "nas", user: "deploy" }).hold();
+      const transient = await connectionTo({ alias: "build-box", user: "deploy" }).open();
+      expect(held.ok && transient.ok).toBe(true);
+      expect(store.has("machineSession:ssh:nas")).toBe(true);
+      expect(store.has("machineSession:ssh:build-box")).toBe(false);
+
+      // The generation goes: its transient session ends, its held one stays up.
+      closeAllConnections();
+      expect(sessionOf("ssh:nas")).toBeNull(); // this generation's map is empty…
+      // …and the next generation's first ask claims the same child back, no spawn.
+      const again = await connectionTo({ alias: "nas", user: "deploy" }).hold();
+      expect(again.ok && held.ok && again.session.pid === held.session.pid).toBe(true);
+      expect(spawns().filter((line) => line.endsWith(" nas sh"))).toHaveLength(1);
+      expect(spawns().filter((line) => line.endsWith(" build-box sh"))).toHaveLength(1);
+      // A disconnect closes it for good, registry entry included.
+      closeConnectionTo("ssh:nas");
+      expect(store.has("machineSession:ssh:nas")).toBe(false);
+    } finally {
+      attachSessionRegistry(null);
+    }
   });
 });

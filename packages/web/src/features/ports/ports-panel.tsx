@@ -25,7 +25,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
 import { parsePort } from "./port-forward-facts";
 import { Cable, ForwardRow, Plug } from "./forward-cable";
 import { useMachineName } from "./use-machine-name";
@@ -70,10 +69,10 @@ function MachinePorts({
   workspace: string;
   active: boolean;
 }) {
-  const { locale } = useLocale();
   const machineName = useMachineName(machineId);
   const [forwards, setForwards] = useState<PortForwardInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [direction, setDirection] = useState<"in" | "out">("in");
   const [remoteText, setRemoteText] = useState("");
   const [localText, setLocalText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -97,14 +96,20 @@ function MachinePorts({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const remotePort = parsePort(remoteText);
-    if (remotePort === null) return setError(S.ports.invalidRemotePort);
-    const localPort = localText.trim() === "" ? undefined : parsePort(localText, 1024);
-    if (localPort === null) return setError(S.ports.invalidLocalPort);
+    // An `out` forward names our port, and the machine's port defaults to the same number.
+    const localTyped = parsePort(localText, 1024);
+    const remoteTyped = parsePort(remoteText);
+    if (direction === "in" && remoteTyped === null) return setError(S.ports.invalidRemotePort);
+    if (direction === "out" && localTyped === null) return setError(S.ports.invalidLocalPort);
+    if (localText.trim() !== "" && localTyped === null) return setError(S.ports.invalidLocalPort);
+    if (remoteText.trim() !== "" && remoteTyped === null)
+      return setError(S.ports.invalidRemotePort);
+    const remotePort = remoteTyped ?? localTyped!;
+    const localPort = localTyped ?? undefined;
     setBusy(true);
     setError(null);
     try {
-      await createPortForward({ machineId, workspace, remotePort, localPort });
+      await createPortForward({ machineId, workspace, direction, remotePort, localPort });
       setRemoteText("");
       setLocalText("");
       await load();
@@ -125,6 +130,38 @@ function MachinePorts({
     await load();
   };
 
+  // The form's two plugs: the machine's, its port typed on it, and ours. The arrow between
+  // them is a button — click it and the plugs swap sides, which is the whole of choosing
+  // a direction: what is typed on the left is where the bytes come from.
+  const machinePlug = (
+    <Plug name={machineName}>
+      <span className={PORT_FIELD_SEP}>:</span>
+      <input
+        {...noAutofill}
+        aria-label={S.ports.remotePort}
+        placeholder={direction === "in" ? "3000" : S.ports.samePort}
+        inputMode="numeric"
+        value={remoteText}
+        onChange={(event) => setRemoteText(event.target.value)}
+        className={PORT_FIELD}
+      />
+    </Plug>
+  );
+  const herePlug = (
+    <Plug name={S.ports.here}>
+      <span className={PORT_FIELD_SEP}>:</span>
+      <input
+        {...noAutofill}
+        aria-label={S.ports.localPort}
+        placeholder={direction === "in" ? S.ports.autoPort : "5432"}
+        inputMode="numeric"
+        value={localText}
+        onChange={(event) => setLocalText(event.target.value)}
+        className={PORT_FIELD}
+      />
+    </Plug>
+  );
+
   return (
     <div data-testid="ports-panel" className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -144,7 +181,6 @@ function MachinePorts({
                   key={forward.id}
                   forward={forward}
                   machineName={machineName}
-                  locale={locale}
                   actions={
                     <>
                       <CopyButton
@@ -187,37 +223,24 @@ function MachinePorts({
         className="shrink-0 border-t border-gray-200 p-3 dark:border-gray-800"
       >
         <div className={`flex items-center ${ICON_GAP.row}`}>
-          <Plug name={machineName}>
-            <span className={PORT_FIELD_SEP}>:</span>
-            <input
-              {...noAutofill}
-              aria-label={S.ports.remotePort}
-              placeholder="3000"
-              inputMode="numeric"
-              value={remoteText}
-              onChange={(event) => setRemoteText(event.target.value)}
-              className={PORT_FIELD}
-            />
-          </Plug>
-          <Cable tone="muted" flowing={false} label={S.ports.formTitle} />
-          <Plug name={S.ports.here}>
-            <span className={PORT_FIELD_SEP}>:</span>
-            <input
-              {...noAutofill}
-              aria-label={S.ports.localPort}
-              placeholder={S.ports.autoPort}
-              inputMode="numeric"
-              value={localText}
-              onChange={(event) => setLocalText(event.target.value)}
-              className={PORT_FIELD}
-            />
-          </Plug>
+          {direction === "in" ? machinePlug : herePlug}
+          <button
+            type="button"
+            title={direction === "in" ? S.ports.directionIn : S.ports.directionOut}
+            aria-label={S.ports.flipDirection}
+            aria-pressed={direction === "out"}
+            onClick={() => setDirection(direction === "in" ? "out" : "in")}
+            className="flex min-w-8 flex-1 cursor-pointer items-center rounded hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            <Cable tone="muted" flowing={false} label={S.ports.flipDirection} />
+          </button>
+          {direction === "in" ? herePlug : machinePlug}
           <Button
             type="submit"
             variant="primary"
             size="sm"
             className="ml-1"
-            disabled={busy || remoteText === ""}
+            disabled={busy || (direction === "in" ? remoteText === "" : localText === "")}
           >
             {S.ports.forward}
           </Button>

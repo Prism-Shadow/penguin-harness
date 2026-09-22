@@ -183,12 +183,18 @@ export const zh = {
     connections: (n: number) => `${n} 个连接`,
     invalidRemotePort: "远端端口须为 1–65535 的整数。",
     invalidLocalPort: "本地端口须为 1024–65535 的整数。",
-    /** The facts, one line each — by layer, never folded into one word. */
-    listenerUp: "监听中",
-    listenerError: (error: string) => `监听失败：${error}`,
-    neverDialled: "尚无连接",
-    dialOk: (when: string) => `最近一次拨号成功 · ${when}`,
-    dialFailed: (detail: string, when: string) => `最近一次拨号失败：${detail} · ${when}`,
+    /** The status, in the words of whoever carries the forward. */
+    statusOnSession: "已加到 ssh 会话上",
+    statusListening: "监听中",
+    statusPending: "等待 ssh 应答",
+    statusNotConnected: "机器未连接——连接后自动生效",
+    statusFailed: (detail: string) => `失败：${detail}`,
+    /** The form's arrow, which flips the direction; the titles say which way it points now. */
+    flipDirection: "切换方向",
+    directionIn: "机器 → 本地：把机器上的端口带到本地",
+    directionOut: "本地 → 机器：把本地端口送到机器上",
+    /** An out forward's machine port, left blank: the same number as ours. */
+    samePort: "同号",
     /** A machine's Ports page. */
     machineTitle: (alias: string) => `${alias} 的端口转发`,
     backToMachines: "机器",

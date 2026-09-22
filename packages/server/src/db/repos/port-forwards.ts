@@ -5,6 +5,7 @@
  * above all, because an address a person saved has to stay true.
  */
 import type { DatabaseSync } from "node:sqlite";
+import type { ForwardDirection } from "../../machines/commands.js";
 
 export interface PortForwardRow {
   id: string;
@@ -12,6 +13,8 @@ export interface PortForwardRow {
   machineId: string;
   /** The Workspace directory on that machine. */
   workspace: string;
+  /** `in`: the machine's port comes here. `out`: our port goes there. */
+  direction: ForwardDirection;
   remotePort: number;
   localPort: number;
   createdAt: string;
@@ -22,6 +25,7 @@ function toRow(row: Record<string, unknown>): PortForwardRow {
     id: row.id as string,
     machineId: row.machine_id as string,
     workspace: row.workspace as string,
+    direction: row.direction as ForwardDirection,
     remotePort: row.remote_port as number,
     localPort: row.local_port as number,
     createdAt: row.created_at as string,
@@ -44,26 +48,42 @@ export class PortForwardsRepo {
     return row ? toRow(row as Record<string, unknown>) : null;
   }
 
-  find(machineId: string, workspace: string, remotePort: number): PortForwardRow | null {
+  find(
+    machineId: string,
+    workspace: string,
+    direction: ForwardDirection,
+    remotePort: number,
+  ): PortForwardRow | null {
     const row = this.db
       .prepare(
-        "SELECT * FROM port_forwards WHERE machine_id = ? AND workspace = ? AND remote_port = ?",
+        "SELECT * FROM port_forwards WHERE machine_id = ? AND workspace = ? AND direction = ? AND remote_port = ?",
       )
-      .get(machineId, workspace, remotePort);
+      .get(machineId, workspace, direction, remotePort);
     return row ? toRow(row as Record<string, unknown>) : null;
   }
 
+  /** The `in` forward holding a local port: two `in` forwards cannot share one, an `out` may name any. */
   byLocalPort(localPort: number): PortForwardRow | null {
-    const row = this.db.prepare("SELECT * FROM port_forwards WHERE local_port = ?").get(localPort);
+    const row = this.db
+      .prepare("SELECT * FROM port_forwards WHERE direction = 'in' AND local_port = ?")
+      .get(localPort);
     return row ? toRow(row as Record<string, unknown>) : null;
   }
 
   insert(row: PortForwardRow): void {
     this.db
       .prepare(
-        "INSERT INTO port_forwards (id, machine_id, workspace, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO port_forwards (id, machine_id, workspace, direction, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(row.id, row.machineId, row.workspace, row.remotePort, row.localPort, row.createdAt);
+      .run(
+        row.id,
+        row.machineId,
+        row.workspace,
+        row.direction,
+        row.remotePort,
+        row.localPort,
+        row.createdAt,
+      );
   }
 
   delete(id: string): void {

@@ -5,11 +5,10 @@
 import { describe, expect, it } from "vitest";
 import type { PortForwardInfo } from "@prismshadow/penguin-server/api";
 import {
-  dialLine,
   forwardTone,
   groupByWorkspace,
-  listenerLine,
   parsePort,
+  statusLine,
 } from "../src/features/ports/port-forward-facts";
 import { PANEL_KINDS } from "../src/features/dock/dock-state";
 
@@ -17,57 +16,31 @@ const forward = (over: Partial<PortForwardInfo> = {}): PortForwardInfo => ({
   id: "f1",
   machineId: "QS7J4YVgSovi-Z2c",
   workspace: "/home/dev/site",
+  direction: "in",
   remotePort: 3000,
   localPort: 3000,
   createdAt: "2026-09-19T08:00:00.000Z",
-  listener: { listening: true },
-  dial: null,
-  open: 0,
-  bytesUp: 0,
-  bytesDown: 0,
+  via: "ssh",
+  status: { kind: "active" },
   ...over,
 });
 
-describe("a forward's tone", () => {
-  it("is in contact while nothing says otherwise — a forward nobody has used yet is not a problem", () => {
+describe("a forward's tone and line", () => {
+  it("is carried, waiting, down, or refused — in that order of colour", () => {
     expect(forwardTone(forward())).toBe("link");
-    expect(forwardTone(forward({ dial: { answeredAt: "2026-09-19T08:01:00.000Z" } }))).toBe("link");
+    expect(forwardTone(forward({ status: { kind: "pending" } }))).toBe("muted");
+    expect(forwardTone(forward({ status: { kind: "not-connected" } }))).toBe("attention");
+    expect(forwardTone(forward({ status: { kind: "failed", detail: "bind: in use" } }))).toBe(
+      "danger",
+    );
   });
 
-  it("asks for attention when the last dial got nowhere", () => {
-    expect(
-      forwardTone(
-        forward({
-          dial: { failedAt: "2026-09-19T08:01:00.000Z", detail: "machine not connected" },
-        }),
-      ),
-    ).toBe("attention");
-  });
-
-  it("is the listener's failure first: with no listener no dial can even be tried", () => {
-    expect(
-      forwardTone(
-        forward({
-          listener: { error: "EADDRINUSE" },
-          dial: { answeredAt: "2026-09-19T08:01:00.000Z" },
-        }),
-      ),
-    ).toBe("danger");
-  });
-});
-
-describe("a forward's lines", () => {
-  it("name each layer with what it knows", () => {
-    expect(listenerLine(forward({ listener: { error: "EADDRINUSE" } }))).toContain("EADDRINUSE");
-    expect(
-      dialLine(
-        forward({
-          dial: { failedAt: "2026-09-19T08:01:00.000Z", detail: "machine not connected" },
-        }),
-        "en",
-      ),
-    ).toContain("machine not connected");
-    expect(dialLine(forward(), "en")).not.toBe("");
+  it("says who carries it, and repeats ssh's own words when it refused", () => {
+    expect(statusLine(forward())).not.toBe(statusLine(forward({ via: "listener" })));
+    expect(statusLine(forward({ status: { kind: "failed", detail: "bind: in use" } }))).toContain(
+      "bind: in use",
+    );
+    expect(statusLine(forward({ status: { kind: "not-connected" } }))).not.toBe("");
   });
 });
 

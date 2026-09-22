@@ -238,7 +238,12 @@ export function serverLogTail(layout: RemoteLayout): string {
  * "local port taken" into an exit instead of a session that silently cannot dial, and the
  * keepalives surface a dead link within a minute.
  */
-export function sessionArgs(target: RemoteTarget, socksPort: number): string[] {
+export function sessionArgs(
+  target: RemoteTarget,
+  socksPort: number,
+  /** The control socket this session is master of (POSIX; Win32 OpenSSH has no multiplexing). */
+  controlPath: string | null = null,
+): string[] {
   if (!Number.isInteger(socksPort) || socksPort < 1 || socksPort > 65535) {
     throw new Error(`bad port ${socksPort}`);
   }
@@ -251,10 +256,62 @@ export function sessionArgs(target: RemoteTarget, socksPort: number): string[] {
     "ServerAliveInterval=15",
     "-o",
     "ServerAliveCountMax=4",
+    // The master of a control socket, so a port forward can be added to or taken off THIS
+    // session later (`-O forward` / `-O cancel`, forwardControlArgs) instead of a second
+    // connection or a restart of this one. ControlPersist stays off: the session lives as
+    // long as this process holds it, and dies with it.
+    ...(controlPath === null ? [] : ["-M", "-S", controlPath]),
     "-D",
     `127.0.0.1:${socksPort}`,
     target.alias,
     "sh",
+  ];
+}
+
+/** Which way a port forward carries bytes: `in` brings a machine's port here, `out` sends one of ours there. */
+export type ForwardDirection = "in" | "out";
+
+export interface ForwardSpec {
+  direction: ForwardDirection;
+  /** The port on this server's loopback. */
+  localPort: number;
+  /** The port on the machine's loopback. */
+  remotePort: number;
+}
+
+/**
+ * The forward as ssh spells it: `-L` listens HERE and delivers to the machine's port, `-R`
+ * listens on the MACHINE and delivers to ours. Both ends are the loopback by name — a
+ * forward is never an open door on either network.
+ */
+export function forwardFlag(spec: ForwardSpec): [flag: "-L" | "-R", value: string] {
+  for (const port of [spec.localPort, spec.remotePort]) {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
+  }
+  return spec.direction === "in"
+    ? ["-L", `127.0.0.1:${spec.localPort}:127.0.0.1:${spec.remotePort}`]
+    : ["-R", `127.0.0.1:${spec.remotePort}:127.0.0.1:${spec.localPort}`];
+}
+
+/**
+ * `ssh -S <control> -O forward|cancel -L|-R <spec> <alias>`: asks the master holding the
+ * session to add or drop one forward. Answered by the master over the socket — no new
+ * connection, and a forward that cannot bind fails THIS command, not the session.
+ */
+export function forwardControlArgs(
+  target: RemoteTarget,
+  controlPath: string,
+  op: "forward" | "cancel",
+  spec: ForwardSpec,
+): string[] {
+  return [
+    ...connectionOptions(target),
+    "-S",
+    controlPath,
+    "-O",
+    op,
+    ...forwardFlag(spec),
+    target.alias,
   ];
 }
 

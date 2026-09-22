@@ -44,6 +44,7 @@ import { SESSION_COOKIE } from "../auth/middleware.js";
 import http from "node:http";
 import type net from "node:net";
 import {
+  attachSessionRegistry,
   appendHostBlock,
   closeAllConnections,
   closeConnectionTo,
@@ -53,7 +54,12 @@ import {
   sessionOf,
   writeSshConfig,
 } from "./transport/index.js";
-import type { ExecResult, MachineConnection, ShellSession } from "./transport/index.js";
+import type {
+  ExecResult,
+  ForwardFact,
+  MachineConnection,
+  ShellSession,
+} from "./transport/index.js";
 import {
   findHostBlock,
   machineIdentity,
@@ -63,7 +69,7 @@ import {
 } from "./ssh-config.js";
 import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
-import type { RemoteTarget } from "./commands.js";
+import type { ForwardSpec, RemoteTarget } from "./commands.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { probeServerState } from "./server-state.js";
 import { upgradeRemote } from "./upgrade.js";
@@ -130,6 +136,10 @@ export interface MachinesEffects {
   agent: (target: RemoteTarget, remotePort: number) => http.Agent;
   /** One TCP connection to `127.0.0.1:<remotePort>` on that machine, as a channel of its session. */
   dial: (target: RemoteTarget, remotePort: number) => Promise<net.Socket>;
+  /** Port forwards on the session: whether ssh here can carry them, the wanted set, and ssh's answers. */
+  supportsForwards: (target: RemoteTarget) => boolean;
+  setForwards: (target: RemoteTarget, specs: readonly ForwardSpec[]) => Promise<void>;
+  forwardFacts: (target: RemoteTarget) => ReadonlyMap<string, ForwardFact>;
   stopServer: (target: RemoteTarget) => ReturnType<typeof stopRemoteServer>;
   mintToken: (
     target: RemoteTarget,
@@ -227,6 +237,9 @@ export class MachinesService {
       session: (address) => sessionOf(address),
       agent: (target, remotePort) => connectionTo(target).agent(remotePort),
       dial: (target, remotePort) => connectionTo(target).dial(remotePort),
+      supportsForwards: (target) => connectionTo(target).supportsForwards(),
+      setForwards: (target, specs) => connectionTo(target).setForwards(specs),
+      forwardFacts: (target) => connectionTo(target).forwardFacts(),
       stopServer: (target) => stopRemoteServer(target, layout, this.#effects.runOn),
       mintToken: (target, runOn) => mintTokenOnRemote(target, layout, runOn),
       upgrade: upgradeRemote,
@@ -472,6 +485,39 @@ export class MachinesService {
   /** Whether this server has a machine by that id on record, connected or not. */
   knows(machineId: string): boolean {
     return this.#rowFor(machineId) !== null;
+  }
+
+  /**
+   * The port forwards wanted on a machine's session — ssh's own `-L` / `-R`, added to and
+   * taken off the live session (transport/ssh-session.ts). The set is remembered by the
+   * session, so a machine that reconnects gets them back without anyone asking again; a
+   * machine not on record is refused. `supported` is false on a Windows hub, whose ssh has
+   * no control socket to ask.
+   */
+  async setForwards(
+    machineId: string,
+    specs: readonly ForwardSpec[],
+  ): Promise<{ ok: true; supported: boolean } | { ok: false; detail: "unknown machine" }> {
+    const row = this.#rowFor(machineId);
+    if (row === null) return { ok: false, detail: "unknown machine" };
+    const target = this.#targetOf(row.address.slice("ssh:".length));
+    if (!this.#effects.supportsForwards(target)) return { ok: true, supported: false };
+    await this.#effects.setForwards(target, specs);
+    return { ok: true, supported: true };
+  }
+
+  /** ssh's last word on each forward of a machine (by forwardKey), and whether its session is up. */
+  forwardFacts(machineId: string): {
+    connected: boolean;
+    facts: ReadonlyMap<string, ForwardFact>;
+  } {
+    const row = this.#rowFor(machineId);
+    if (row === null) return { connected: false, facts: new Map() };
+    const target = this.#targetOf(row.address.slice("ssh:".length));
+    return {
+      connected: this.#liveSession(row.address) !== null,
+      facts: this.#effects.forwardFacts(target),
+    };
   }
 
   /**
@@ -1527,6 +1573,9 @@ export abstract class Machines extends Interface<
     | "ownId"
     | "knows"
     | "dialPort"
+    | "setForwards"
+    | "forwardFacts"
+    | "ownId"
     | "jobs"
     | "startUse"
     | "stopUsing"
@@ -1569,14 +1618,19 @@ export class MachinesModule {
     // after — every stored reference to this machine, here and on the machines it reaches,
     // points at it. A test that supplies its own service mints none.
     const repo = new MachinesRepo(this.db as unknown as DatabaseSync);
+    // Held sessions are delivered across a hot push through the registry; the transport
+    // needs it before start() re-holds anything, or a delivered session would be opened
+    // again beside itself.
+    attachSessionRegistry(this.hmr.resources);
     const machines = new MachinesService(this.paths.root, repo.ownId(), repo, {}, () =>
       this.hmr.assetsDir(),
     );
     this.machines = machines;
     this.routes = machinesRoutes({ machines, access: this.access });
     this.serverProxyRoutes = machinesServerProxyRoutes(machines);
-    // Every ssh session THIS generation opened closes with it; the successor's setup
-    // re-holds each one the install record says was held.
+    // This generation's transient sessions close with it; held ones stay up in the registry
+    // for the successor to claim, and its start() re-holds whatever the record says was
+    // held and is not there.
     effect(() => machines.stop());
   }
 }

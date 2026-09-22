@@ -4459,9 +4459,8 @@ export interface MachinesStopUsingRequest {
 // ---------------------------------------------------------------------------
 
 /**
- * One forward, its record and what is known of it right now. The facts are reported by
- * layer and never folded into one "working" flag: a listener that is up says nothing about
- * the machine behind it.
+ * One forward, its record and what is known of it right now. The status names which layer
+ * speaks — the session, ssh, or this process's own listener — and is never one "working" flag.
  */
 export interface PortForwardInfo {
   id: string;
@@ -4469,20 +4468,26 @@ export interface PortForwardInfo {
   machineId: string;
   /** The Workspace directory on that machine the forward belongs to. */
   workspace: string;
+  /** `in`: the machine's port comes here (ssh -L). `out`: our port goes there (ssh -R). */
+  direction: "in" | "out";
   /** `127.0.0.1:<remotePort>` over there. */
   remotePort: number;
   /** `127.0.0.1:<localPort>` on this server; fixed once given. */
   localPort: number;
   createdAt: string;
-  /** The local listener: up, or why it is not (`EADDRINUSE`, …). */
-  listener: { listening: true } | { error: string };
-  /** The last dial to the machine; null until a client has connected since this process started. */
-  dial: { answeredAt: string } | { failedAt: string; detail: string } | null;
-  /** Connections open right now. */
-  open: number;
-  /** Bytes to the machine and back, since this process started. */
-  bytesUp: number;
-  bytesDown: number;
+  /** Who carries it: ssh on the machine's session, or a listener of this process's own (a Windows hub). */
+  via: "ssh" | "listener";
+  status:
+    /** ssh (or the listener) has it. */
+    | { kind: "active" }
+    /** The session is up and ssh has not answered yet. */
+    | { kind: "pending" }
+    /** The machine's session is down; the forward is wanted and waits for it. */
+    | { kind: "not-connected" }
+    /** ssh, or the listener, or the last dial said no — in its own words. */
+    | { kind: "failed"; detail: string };
+  /** What only the listener path can count. */
+  traffic?: { open: number; bytesUp: number; bytesDown: number };
 }
 
 /** `GET /api/port-forwards?machine=&workspace=` — both filters optional. */
@@ -4494,7 +4499,10 @@ export interface PortForwardsResponse {
 export interface PortForwardCreateRequest {
   machineId: string;
   workspace: string;
+  /** Default `in`. */
+  direction?: "in" | "out";
   remotePort: number;
+  /** `in`: omitted = chosen here, starting at `remotePort`. `out`: required — the service being sent. */
   localPort?: number;
 }
 

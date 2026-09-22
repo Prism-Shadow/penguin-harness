@@ -26,9 +26,10 @@
  *
  * LIFETIME. A session a passing command opened is transient and idles out; one a connect
  * asked to HOLD is kept — reopened by the transport itself when it drops, until a disconnect
- * closes it. Sessions belong to the generation that opened them: a platform generation on its
- * way out closes all of its own (closeAllConnections), and the next re-holds what the record
- * says was held. No session is ever closed by a pid remembered from before.
+ * closes it. A held session outlives a platform generation: it is delivered through the
+ * resource registry and claimed back by the next (ssh-session.ts); a generation on its way
+ * out closes only its transient sessions (closeAllConnections). No session is ever closed by
+ * a pid remembered from before.
  */
 import http from "node:http";
 import type net from "node:net";
@@ -41,13 +42,14 @@ import {
   openShell,
   runOnShell,
   sessionOf,
+  shellOf,
 } from "./ssh-session.js";
-import type { ShellSession } from "./ssh-session.js";
+import type { ForwardFact, ShellSession } from "./ssh-session.js";
 import { dialThroughSocks } from "./socks.js";
 import { inLane } from "./lane.js";
 import { scpArgs, sshArgs } from "../commands.js";
 import type { ExecResult } from "./exec.js";
-import type { RemoteTarget } from "../commands.js";
+import type { ForwardSpec, RemoteTarget } from "../commands.js";
 
 /**
  * The verbs a caller speaks to a machine with — what install-server.ts is written against,
@@ -115,6 +117,21 @@ export class MachineConnection implements MachineChannel {
     return sessionOf(this.address);
   }
 
+  /** Whether ssh on this side can carry port forwards on the session (a control socket: not on Windows). */
+  supportsForwards(): boolean {
+    return shellOf(this.address, this.target).supportsForwards();
+  }
+
+  /** The forwards wanted on this machine's session — applied now if it is up, and every time it comes up. */
+  setForwards(specs: readonly ForwardSpec[]): Promise<void> {
+    return shellOf(this.address, this.target).setForwards(specs);
+  }
+
+  /** ssh's last word on each wanted forward, by forwardKey; empty until the session has been asked. */
+  forwardFacts(): ReadonlyMap<string, ForwardFact> {
+    return shellOf(this.address, this.target).forwardFacts();
+  }
+
   /** A TCP connection to `127.0.0.1:<remotePort>` as seen from the machine — a channel in the session. */
   async dial(remotePort: number): Promise<net.Socket> {
     const opened = await this.open();
@@ -175,7 +192,7 @@ export function closeConnectionTo(address: string): void {
   closeShell(address);
 }
 
-/** Every connection this generation opened, closed — the platform's dispose effect. */
+/** This generation's transient connections closed, its held ones delivered — the platform's dispose effect. */
 export function closeAllConnections(): void {
   closeAllShells();
 }

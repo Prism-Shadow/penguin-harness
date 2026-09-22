@@ -42,6 +42,9 @@ describe("port forwarding API", () => {
       machines: new MachinesService(machinesRoot, LOCAL_ID, repo, {
         listAliases: () => ["build-box"],
         session: () => null,
+        supportsForwards: () => true,
+        setForwards: async () => {},
+        forwardFacts: () => new Map(),
       }),
     });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
@@ -72,11 +75,11 @@ describe("port forwarding API", () => {
     expect(forward).toMatchObject({
       machineId: MACHINE,
       workspace: WORKSPACE,
+      direction: "in",
       remotePort: 3000,
       localPort,
-      listener: { listening: true },
-      dial: null,
-      open: 0,
+      via: "ssh",
+      status: { kind: "not-connected" },
     });
 
     const query = `machine=${MACHINE}&workspace=${encodeURIComponent(WORKSPACE)}`;
@@ -112,8 +115,28 @@ describe("port forwarding API", () => {
     );
   });
 
+  it("takes an out forward, which names the local service it sends", async () => {
+    const out = await admin.post("/api/port-forwards", {
+      machineId: MACHINE,
+      workspace: WORKSPACE,
+      direction: "out",
+      remotePort: 5432,
+      localPort: 5432,
+    });
+    expect(out.status).toBe(201);
+    expect((await out.json()) as PortForwardInfo).toMatchObject({ direction: "out", via: "ssh" });
+    const unnamed = await admin.post("/api/port-forwards", {
+      machineId: MACHINE,
+      workspace: WORKSPACE,
+      direction: "out",
+      remotePort: 5433,
+    });
+    expect(unnamed.status).toBe(400);
+  });
+
   it("validates the ports and the filter", async () => {
     const body = { machineId: MACHINE, workspace: WORKSPACE, remotePort: 3000 };
+    expect((await admin.post("/api/port-forwards", { ...body, direction: "up" })).status).toBe(400);
     expect((await admin.post("/api/port-forwards", { ...body, remotePort: 0 })).status).toBe(400);
     expect((await admin.post("/api/port-forwards", { ...body, remotePort: "3000" })).status).toBe(
       400,

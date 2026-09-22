@@ -579,18 +579,22 @@ export const MIGRATIONS: readonly Migration[] = [
           id          TEXT PRIMARY KEY,
           machine_id  TEXT NOT NULL,
           workspace   TEXT NOT NULL,
+          direction   TEXT NOT NULL,
           remote_port INTEGER NOT NULL,
-          local_port  INTEGER NOT NULL UNIQUE,
+          local_port  INTEGER NOT NULL,
           created_at  TEXT NOT NULL,
-          UNIQUE (machine_id, workspace, remote_port)
+          UNIQUE (machine_id, workspace, direction, remote_port)
         );
         CREATE INDEX IF NOT EXISTS idx_port_forwards_machine ON port_forwards(machine_id, workspace);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_port_forwards_local_in ON port_forwards(local_port) WHERE direction = 'in';
       `);
     },
     // LOSES every saved forward: which port of which machine each Workspace brought here,
     // and the local port it was given.
     down(db) {
-      db.exec(`DROP TABLE IF EXISTS port_forwards;`);
+      db.exec(
+        `DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP INDEX IF EXISTS idx_port_forwards_machine; DROP TABLE IF EXISTS port_forwards;`,
+      );
     },
   },
 ];

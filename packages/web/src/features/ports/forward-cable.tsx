@@ -4,7 +4,8 @@
  * The two ends are named — the machine on the left, "here" (this server) on the right — and
  * the direction is the cable's own arrow, so a row never has to be decoded: bytes come from
  * the port on the left and arrive at the port on the right. The state lives ON the cable
- * (its ink is the tone, and while connections are open the dashes travel along it), which
+ * (its ink is the tone, and where connections can be counted the dashes travel while some
+ * are open), which
  * is what keeps the row's words for the addresses alone.
  *
  * One drawing for the dock's Ports panel and a machine's Ports page, and for the form that
@@ -17,7 +18,7 @@ import { ICON_GAP } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
-import { dialLine, forwardTone, listenerLine } from "./port-forward-facts";
+import { forwardTone, statusLine } from "./port-forward-facts";
 
 /** A name on a plug: the machine's alias, or "here". */
 const PLUG =
@@ -98,53 +99,54 @@ export function formatTraffic(bytes: number): string {
 }
 
 /**
- * One forward as a row: the cable line, then every fact under it, the bad one in its ink.
+ * One forward as a row: the cable line, then its status under it in the cable's ink.
  * `actions` sit at the row's right edge.
  */
 export function ForwardRow({
   forward,
   machineName,
-  locale,
   actions,
 }: {
   forward: PortForwardInfo;
   machineName: string;
-  locale: "zh" | "en";
   actions?: ReactNode;
 }) {
   const tone = forwardTone(forward);
-  const facts = `${listenerLine(forward)} · ${dialLine(forward, locale)}`;
+  const status = statusLine(forward);
+  const traffic = forward.traffic;
+  const flowing = traffic !== undefined && traffic.open > 0;
+  // Bytes go from the left plug to the right one, whichever direction the forward is: an
+  // `in` forward starts at the machine, an `out` one starts here.
+  const from = <Plug name={machineName} port={forward.remotePort} />;
+  const to = <Plug name={S.ports.here} port={forward.localPort} />;
   return (
     <li
       data-testid="port-forward-row"
+      data-direction={forward.direction}
       className="rounded-lg px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-900/60"
     >
       <div className={`flex items-center ${ICON_GAP.row}`}>
-        <Plug name={machineName} port={forward.remotePort} />
-        <Cable tone={tone} flowing={forward.open > 0} label={facts} />
-        <Plug name={S.ports.here} port={forward.localPort} />
+        {forward.direction === "in" ? from : to}
+        <Cable tone={tone} flowing={flowing} label={status} />
+        {forward.direction === "in" ? to : from}
         {actions !== undefined && (
           <span className={`ml-1 flex shrink-0 items-center ${ICON_GAP.tight}`}>{actions}</span>
         )}
       </div>
       <div className="mt-1 flex items-center gap-2 pl-1 text-[11px] text-gray-500 dark:text-gray-400">
-        <span className={forward.open > 0 ? `${toneInk[tone]} font-medium` : ""}>
-          {S.ports.connections(forward.open)}
-        </span>
-        <span aria-hidden="true">·</span>
-        <span className="shrink-0 tabular-nums">
-          ↑ {formatTraffic(forward.bytesUp)} ↓ {formatTraffic(forward.bytesDown)}
-        </span>
-        <span aria-hidden="true">·</span>
-        <span className={`min-w-0 truncate ${"error" in forward.listener ? toneInk.danger : ""}`}>
-          {listenerLine(forward)}
-        </span>
-        <span aria-hidden="true">·</span>
-        <span
-          className={`min-w-0 truncate ${forward.dial !== null && "failedAt" in forward.dial ? toneInk.attention : ""}`}
-        >
-          {dialLine(forward, locale)}
-        </span>
+        <span className={`min-w-0 truncate ${tone === "link" ? "" : toneInk[tone]}`}>{status}</span>
+        {traffic !== undefined && (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className={flowing ? `${toneInk[tone]} font-medium` : ""}>
+              {S.ports.connections(traffic.open)}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span className="shrink-0 tabular-nums">
+              ↑ {formatTraffic(traffic.bytesUp)} ↓ {formatTraffic(traffic.bytesDown)}
+            </span>
+          </>
+        )}
       </div>
     </li>
   );
