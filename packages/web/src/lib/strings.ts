@@ -169,7 +169,8 @@ export const zh = {
     back: "后退",
     forward: "前进",
     reload: "重新加载",
-    openExternally: "在系统浏览器中打开",
+    /** The dock header's detach for a Browser tab: the page moves to a tab of the web browser's own and comes back when it closes. */
+    detach: "弹出到新标签页",
     /** The blank tab says what `localhost` means here — it is not the viewer's own machine. */
     startLocal: "输入地址后回车。localhost:<端口> 指本服务端上的端口；也可以输入公网网址。",
     startMachine:

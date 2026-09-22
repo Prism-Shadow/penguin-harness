@@ -14,7 +14,7 @@
  * reattaches on return).
  *
  * The header carries the strip, a "+" menu (panels, a fresh shell, and any live shell no
- * conversation holds), a detach button while a terminal is shown, a move-to-other-edge
+ * conversation holds), a detach button while a terminal or a Browser page is shown, a move-to-other-edge
  * button, and the dock's × (hide — tabs and everything their bodies hold stay; each tab's
  * own always-visible × is what removes). Tabs drag sideways to reorder; dragging a tab out
  * of the strip brings up the edge overlay (dock-drag.tsx) and dropping on the other edge
@@ -61,6 +61,7 @@ import {
   subscribeTerminalCloseRequests,
 } from "../terminal/terminal-view-pool";
 import type { TerminalInfo } from "../terminal/terminal-view";
+import { detachBrowser } from "../browser/browser-detach";
 import { forgetBrowserTab, newBrowserTab } from "../browser/browser-tabs";
 import { confirmClose } from "./close-guard";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
@@ -401,9 +402,10 @@ export function DockPanel({
    * it back where it was (dock-terminal.ts owns the round trip).
    */
   const detach = useCallback(() => {
-    if (activeTab?.kind !== "terminal") return;
+    if (activeTab === null || activeTab.kind === "panel") return;
     const home = merged ? (tabHome(tabKey(activeTab)) ?? "bottom") : position;
-    detachTerminal(activeTab.terminalId, home);
+    if (activeTab.kind === "terminal") detachTerminal(activeTab.terminalId, home);
+    else detachBrowser(activeTab.browserId, home);
   }, [activeTab, merged, position]);
 
   // The shown tab keeps itself in view: with many tabs the strip scrolls, and a
@@ -853,8 +855,12 @@ export function DockPanel({
 
       {/* Right-hand action cluster with uniform spacing, ending in close. */}
       <div className="flex shrink-0 items-center gap-1.5">
-        {activeTab?.kind === "terminal" && (
-          <DockButton label={S.terminal.detach} testId="dock-detach" onClick={detach}>
+        {activeTab !== null && activeTab.kind !== "panel" && (
+          <DockButton
+            label={activeTab.kind === "terminal" ? S.terminal.detach : S.browser.detach}
+            testId="dock-detach"
+            onClick={detach}
+          >
             <GlyphIcon d={DETACH_ICON} size={ICON_SIZE.rowLead} />
           </DockButton>
         )}

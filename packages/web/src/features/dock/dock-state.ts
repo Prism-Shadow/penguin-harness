@@ -619,6 +619,30 @@ export function addBrowserTab(id: string, position?: DockPosition): void {
   notify();
 }
 
+/**
+ * Puts a Browser tab back into a NAMED conversation's dock — the detach round trip
+ * (features/browser/browser-detach.ts): the page lived in a tab of the web browser's own,
+ * that tab closed, and the dock tab returns where it left — even if the user is looking at
+ * another conversation by then. A tab already back (opened again from the "+" menu) stays.
+ */
+export function restoreBrowserTab(scopeId: string, id: string, position: DockPosition): void {
+  const key = `browser:${id}`;
+  if (scopeId === scope) {
+    if (findTab(key) === null) addBrowserTab(id, position);
+    return;
+  }
+  const target = scopes[scopeId] ?? emptyScope();
+  if ([...target.right.tabs, ...target.bottom.tabs].some((tab) => tabKey(tab) === key)) return;
+  const state = target[position];
+  state.tabs = [...state.tabs, { kind: "browser", browserId: id }];
+  state.active = key;
+  state.open = true;
+  const { [scopeId]: _previous, ...rest } = scopes;
+  scopes = { ...rest, [scopeId]: target };
+  persist();
+  notify();
+}
+
 // ---------------------------------------------------------------------------- terminals
 
 function terminalKey(id: string): string {

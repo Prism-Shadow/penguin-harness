@@ -43,7 +43,7 @@ The dock gets Browser tabs. `localhost:3000` in one means port 3000 of the machi
 ## Pages
 
 - The entries sit next to the terminal's: the dock picker, the "+" menu and the launcher fan, plus a Ports panel row ("Open in a browser tab"). They land in the right dock by default.
-- The bar has back, forward, reload and the address; a Workspace on this server also gets "Open in the system browser". A tab's address is remembered with the dock layout, so a reload returns to the page.
+- The bar has back, forward, reload and the address. The dock header's detach button — the terminal's — moves the page to a tab of the web browser's own (its `<label>.localhost` URL, so cookies and storage travel with it; in the desktop app, a window of the app) and brings the dock tab back when that tab closes. A tab's address is remembered with the dock layout, so a reload returns to the page.
 
 ## The runtime's part: an upgrade seam
 

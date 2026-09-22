@@ -89,6 +89,22 @@ describe("a Browser tab in the dock", () => {
     expect(tabs.browserAddress(id)).toBe("");
   });
 
+  it("comes back to the dock it left after a detach, even into another conversation, and not twice", async () => {
+    const dock = await import("../src/features/dock/dock-state");
+    dock.setDockScope("s1");
+    dock.addBrowserTab("b1", "bottom");
+    dock.removeTab("browser:b1"); // detached: the page lives in a tab of its own now
+    expect(dock.dockTabs("bottom")).toEqual([]);
+    dock.setDockScope("s2"); // the user moved on
+    dock.restoreBrowserTab("s1", "b1", "bottom");
+    expect(dock.dockTabs("bottom")).toEqual([]); // not here…
+    dock.setDockScope("s1");
+    expect(dock.dockTabs("bottom").map(dock.tabKey)).toEqual(["browser:b1"]); // …there
+    dock.restoreBrowserTab("s1", "b1", "right");
+    expect(dock.dockTabs("right")).toEqual([]);
+    expect(dock.dockTabs("bottom").map(dock.tabKey)).toEqual(["browser:b1"]);
+  });
+
   it("opens in the right dock, may be many, and comes back from storage", async () => {
     const dock = await import("../src/features/dock/dock-state");
     dock.setDockScope("s1");

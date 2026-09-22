@@ -147,7 +147,7 @@ export const en: Strings = {
     back: "Back",
     forward: "Forward",
     reload: "Reload",
-    openExternally: "Open in the system browser",
+    detach: "Open in a new tab",
     startLocal:
       "Type an address and press Enter. localhost:<port> is a port on this server; a public web address works too.",
     startMachine:

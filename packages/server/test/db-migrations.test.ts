@@ -291,6 +291,13 @@ function shape(db: DatabaseSync): string {
   );
 }
 
+/** Every migration above `from`, in the order `migrate` applies them: what a root at `from` takes. */
+const namesAfter = (from: number): string[] =>
+  [...(MIGRATIONS as readonly { version: number; name: string }[])]
+    .filter((m) => m.version > from)
+    .sort((a, b) => a.version - b.version)
+    .map((m) => m.name);
+
 describe("migration mechanism", () => {
   it("versions are contiguous from 1, so a stamp names an unambiguous state", () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual(MIGRATIONS.map((_, i) => i + 1));
@@ -626,15 +633,8 @@ describe("migration 8 → current: model-promotions", () => {
         )
         .get();
     try {
-      expect(migrate(db).applied).toEqual([
-        "model-promotions",
-        "model-provider-auth-tokens",
-        "sessions-sandbox",
-        "machines-columns",
-        "sessions-surface",
-        "user-profile-adoption",
-      ]);
-      expect(schemaVersion(db)).toBe(15);
+      expect(migrate(db).applied).toEqual(namesAfter(8));
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
 
@@ -650,15 +650,8 @@ describe("migration 8 → current: model-promotions", () => {
   it("is safe to create while a pushed platform boots", () => {
     const db = open8();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual([
-        "model-promotions",
-        "model-provider-auth-tokens",
-        "sessions-sandbox",
-        "machines-columns",
-        "sessions-surface",
-        "user-profile-adoption",
-      ]);
-      expect(schemaVersion(db)).toBe(15);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(namesAfter(8));
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
       db.close();
     }
@@ -675,14 +668,8 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         )
         .get();
     try {
-      expect(migrate(db).applied).toEqual([
-        "model-provider-auth-tokens",
-        "sessions-sandbox",
-        "machines-columns",
-        "sessions-surface",
-        "user-profile-adoption",
-      ]);
-      expect(schemaVersion(db)).toBe(15);
+      expect(migrate(db).applied).toEqual(namesAfter(9));
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(tableExists()).toEqual({ "1": 1 });
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -799,10 +786,10 @@ describe("a root stamped by the closed #797 line: port-forwards-adoption", () =>
     const db = new sqlite.DatabaseSync(":memory:");
     try {
       db.exec(SCHEMA_SQL);
-      // Exactly the broken root: every table but port_forwards, stamped 14 — what a hand-over
-      // of this build onto a root stamped 13 under the other line's numbering leaves behind.
+      // Exactly the broken root: every table but port_forwards, stamped past this line's
+      // port-forwards migration — what a hand-over onto a root the other line stamped leaves behind.
       db.exec("DROP TABLE port_forwards");
-      db.exec("PRAGMA user_version = 14");
+      db.exec("PRAGMA user_version = 15");
       const list = () => db.prepare("SELECT * FROM port_forwards").all();
       expect(list).toThrow(/no such table/);
 
@@ -812,11 +799,11 @@ describe("a root stamped by the closed #797 line: port-forwards-adoption", () =>
         (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
       ).toBe(MIGRATIONS.length);
 
-      // A root that took 13 in its proper place: 15 finds its work done and changes nothing.
+      // A root that took port-forwards in its proper place: the adoption finds its work done.
       const fresh = new sqlite.DatabaseSync(":memory:");
       try {
         fresh.exec(SCHEMA_SQL);
-        fresh.exec("PRAGMA user_version = 14");
+        fresh.exec("PRAGMA user_version = 15");
         migrate(fresh, { swapPath: true });
         expect(fresh.prepare("SELECT * FROM port_forwards").all()).toEqual([]);
       } finally {
@@ -829,9 +816,9 @@ describe("a root stamped by the closed #797 line: port-forwards-adoption", () =>
 });
 
 /**
- * The first form of `port_forwards`: what migration 13 created on the roots that ran it
- * before its DDL was changed in place, and what migration 15 still creates on the roots it
- * adopts — no direction, one local port per forward.
+ * The first form of `port_forwards`: what the port-forwards migration created on the roots
+ * that ran it before its DDL was changed in place, and what the adoption still creates on the
+ * roots it adopts — no direction, one local port per forward.
  */
 const PORT_FORWARDS_V1_DDL = `
   CREATE TABLE port_forwards (
@@ -847,7 +834,7 @@ const PORT_FORWARDS_V1_DDL = `
 `;
 
 describe("the first form of port_forwards → current: port-forwards-direction", () => {
-  /** A root that ran migration 13 in its first form and has a forward saved, stamped 15. */
+  /** A root that ran port-forwards in its first form and has a forward saved, stamped at the adoption. */
   function openFirstForm(): DatabaseSync {
     const db = new sqlite.DatabaseSync(":memory:");
     db.exec(SCHEMA_SQL);
@@ -856,7 +843,7 @@ describe("the first form of port_forwards → current: port-forwards-direction",
     db.prepare(
       "INSERT INTO port_forwards (id, machine_id, workspace, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?)",
     ).run("f1", "m1", "/home/dev/site", 3000, 3000, "2026-09-21T00:00:00.000Z");
-    db.exec("PRAGMA user_version = 15");
+    db.exec("PRAGMA user_version = 16");
     return db;
   }
   const columns = (db: DatabaseSync): string[] =>
@@ -903,12 +890,12 @@ describe("the first form of port_forwards → current: port-forwards-direction",
     }
   });
 
-  it("brings a table migration 15 created — the same first form — to the current shape too", () => {
+  it("brings a table the adoption created — the same first form — to the current shape too", () => {
     const db = new sqlite.DatabaseSync(":memory:");
     try {
       db.exec(SCHEMA_SQL);
       db.exec("DROP TABLE port_forwards");
-      db.exec("PRAGMA user_version = 14");
+      db.exec("PRAGMA user_version = 15");
       migrate(db, { swapPath: true });
       expect(columns(db)).toContain("direction");
       insertNew(db, "f1", "/home/dev/site", "out", 5432, 5432);
@@ -921,7 +908,7 @@ describe("the first form of port_forwards → current: port-forwards-direction",
     const db = new sqlite.DatabaseSync(":memory:");
     try {
       db.exec(SCHEMA_SQL);
-      db.exec("PRAGMA user_version = 15");
+      db.exec("PRAGMA user_version = 16");
       const before = shape(db);
       migrate(db);
       expect(shape(db)).toBe(before);

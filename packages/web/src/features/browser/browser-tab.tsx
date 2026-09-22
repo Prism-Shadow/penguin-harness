@@ -21,12 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { openBrowserSite } from "../../api/endpoints";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import {
-  ARROW_LEFT_ICON,
-  ARROW_RIGHT_ICON,
-  EXTERNAL_LINK_ICON,
-  REFRESH_ICON,
-} from "../../components/ui/icons";
+import { ARROW_LEFT_ICON, ARROW_RIGHT_ICON, REFRESH_ICON } from "../../components/ui/icons";
 import { EmptyState } from "../../components/ui/empty-state";
 import { noAutofill } from "../../components/ui/input";
 import { apiErrorText } from "../../lib/api-error";
@@ -34,7 +29,7 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { readDocumentTheme } from "../../lib/workflow-theme";
 import { useTheme } from "../../state/theme";
-import { browserAddress, setBrowserAddress } from "./browser-tabs";
+import { browserAddress, noteBrowserLocation, setBrowserAddress } from "./browser-tabs";
 import { browserThemeMessage } from "./browser-theme";
 
 const BAR_BUTTON =
@@ -108,6 +103,7 @@ export function BrowserTab({
         setShown({ address: site.address, origin: site.origin, src: site.url });
         setTyped(site.address);
         setBrowserAddress(id, site.address);
+        noteBrowserLocation(id, site.url);
         if (record) {
           setTrail((trail) => {
             const entries = [...trail.entries.slice(0, trail.at + 1), site.address];
@@ -155,6 +151,7 @@ export function BrowserTab({
         if (address === null) return;
         setTyped(address);
         setBrowserAddress(id, address);
+        noteBrowserLocation(id, data.href);
         if (typeof data.title === "string" && data.title !== "") onTitle?.(data.title);
       } else if (data?.type === "penguin:browser:open" && typeof data.url === "string") {
         void show(data.url, true);
@@ -228,18 +225,6 @@ export function BrowserTab({
           spellCheck={false}
           className="h-7 min-w-0 flex-1 rounded border border-gray-200 bg-transparent px-2 font-mono text-xs outline-none focus:border-gray-400 dark:border-gray-700 dark:focus:border-gray-500"
         />
-        {shown !== null && machineId === null && (
-          <a
-            className={BAR_BUTTON}
-            href={shown.address}
-            target="_blank"
-            rel="noreferrer noopener"
-            title={S.browser.openExternally}
-            aria-label={S.browser.openExternally}
-          >
-            <GlyphIcon d={EXTERNAL_LINK_ICON} size={ICON_SIZE.inlineGlyph} />
-          </a>
-        )}
       </form>
       {error !== null && (
         <p role="alert" className="shrink-0 px-3 py-2 text-xs text-red-600 dark:text-red-400">

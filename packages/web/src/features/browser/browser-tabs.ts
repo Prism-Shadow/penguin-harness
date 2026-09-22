@@ -50,7 +50,23 @@ export function setBrowserAddress(id: string, address: string): void {
   write({ ...tabs, [id]: { address } });
 }
 
+/**
+ * Where each Browser tab's frame is right now — the `<label>.localhost` URL — by tab id. In
+ * memory only: it is what "open in a new tab" hands the browser, and a fresh host is minted
+ * on the next mount anyway.
+ */
+const locations = new Map<string, string>();
+
+export function noteBrowserLocation(id: string, url: string): void {
+  locations.set(id, url);
+}
+
+export function browserLocation(id: string): string | null {
+  return locations.get(id) ?? null;
+}
+
 export function forgetBrowserTab(id: string): void {
+  locations.delete(id);
   const tabs = read();
   delete tabs[id];
   write(tabs);
