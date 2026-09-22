@@ -44,7 +44,12 @@ The dock gets Browser tabs. `localhost:3000` in one means port 3000 of the machi
 - The entries sit next to the terminal's: the dock picker, the "+" menu and the launcher fan, plus a Ports panel row ("Open in a browser tab"). They land in the right dock by default.
 - The bar has back, forward, reload and the address; a Workspace on this server also gets "Open in the system browser". A tab's address is remembered with the dock layout, so a reload returns to the page.
 
+## The runtime's part: an upgrade seam
+
+- **WebSockets are tunnelled.** A Response cannot carry a live socket, so upgrades get a seam of their own, the HTTP seam's counterpart: the runtime offers every Upgrade to the platform first (`PlatformApi.upgrade`, optional like `http`), and what the platform does not claim stays the terminal stream's, exactly as before. The Browser claims those whose Host is a Browser host and tunnels them to the site — request line and headers up as they came but for Host and Origin, then two sockets piped into each other. A dev server's hot-reload channel connects.
+- **The App's `/api/*` defenses step aside on a Browser host.** The JSON-only rule and the body cap are the App's; a browsed site's `/api/*` is that site's, so a form post or a multipart upload there goes through. The upgrade channel (`/api/hmr`) keeps both on every host.
+- Both are runtime code, so they reach an installed instance by reinstalling its program (Machines page: update; desktop: a release), not by a push. Nothing else is asked of the runtime: a platform from before the seam claims no upgrade, and a runtime from before it never offers one.
+
 ## Not proxied
 
-- WebSocket upgrades, so a dev server's hot-reload channel does not connect. The handshake belongs to the runtime.
-- A browsed site's own non-JSON writes under `/api/*`: the runtime shell applies its JSON-only and body-size rules to that prefix ahead of the platform.
+- Nothing a page needs. A cross-site cookie profile aside, a site in a Browser tab behaves as it does in a tab of its own.

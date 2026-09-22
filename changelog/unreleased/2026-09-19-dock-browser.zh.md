@@ -44,7 +44,12 @@
 - 入口与终端的入口并列：停靠栏选单、「+」菜单、浮动球扇面，另有端口面板行上的「在浏览器标签中打开」，缺省落在右侧停靠栏。
 - 顶部一行为后退、前进、重新加载与地址栏；Workspace 在本服务端时另有「在系统浏览器中打开」。标签所示地址随停靠栏布局一并保存，刷新后回到原页面。
 
+## runtime 的部分：upgrade seam
+
+- **WebSocket 走隧道。** Response 带不了一条活的 socket，因此 upgrade 有自己的 seam，与 HTTP seam 对称：runtime 把每个 Upgrade 先交给平台（`PlatformApi.upgrade`，与 `http` 一样可选），平台不认领的仍归终端流，与此前完全一样。浏览器认领 Host 为浏览器主机的那些并隧道到站点——请求行与头原样上送，只改 Host 与 Origin，然后两条 socket 互相接通。dev server 的热重载通道能连上。
+- **App 的 `/api/*` 防御在浏览器主机上让路。** JSON-only 规则与请求体上限是 App 的；被浏览站点的 `/api/*` 是该站点自己的，表单提交与 multipart 上传照常通过。升级通道（`/api/hmr`）在任何主机上都保留两者。
+- 这两处是 runtime 代码，到达已安装实例靠重装程序（Machines 页更新；桌面端发版），不靠推送。runtime 不被要求别的：早于 seam 的平台不认领任何 upgrade，早于 seam 的 runtime 不会去问。
+
 ## 不代理
 
-- WebSocket upgrade，因此 dev server 的热重载通道连不上。握手属于 runtime。
-- 被浏览站点自己的 `/api/*` 下的非 JSON 写请求：runtime shell 先于平台对该前缀执行 JSON-only 与请求体上限。
+- 页面需要的都代理了。除跨站 Cookie 配置外，浏览器标签里的站点表现得与独立标签页一样。
