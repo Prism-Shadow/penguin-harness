@@ -84,6 +84,8 @@ export class ApiSocket {
   readonly #streams = new Map<number, StreamEntry>();
   readonly #waiting = new Set<StreamEntry>();
   #attempts = 0;
+  /** Why the last socket closed, as the browser reports it — the one fact a refused handshake leaves behind. */
+  #lastClose = "never closed";
   #neverOpened = 0;
   #reconnect: ReturnType<typeof setTimeout> | null = null;
   /** Calls waiting on a handshake in progress (see ready()). */
@@ -195,6 +197,9 @@ export class ApiSocket {
     if (this.#watchdog !== null) clearTimeout(this.#watchdog);
     this.#watchdog = setTimeout(() => {
       this.#watchdog = null;
+      console.warn(
+        `[api-socket] no frame for ${2 * HEARTBEAT_MS} ms: closing the silent socket to reconnect`,
+      );
       this.#closeOnPurpose();
     }, 2 * HEARTBEAT_MS);
   }
@@ -267,6 +272,9 @@ export class ApiSocket {
     if (this.#state !== "closed") return;
     if (typeof WebSocket === "undefined") {
       this.#state = "unavailable";
+      console.warn(
+        "[api-socket] this browser has no WebSocket: streams run as EventSources, calls as fetches",
+      );
       return;
     }
     this.#state = "connecting";
@@ -294,8 +302,14 @@ export class ApiSocket {
       this.#armWatchdog();
       this.#frame(e.data);
     };
-    ws.onclose = () => {
+    ws.onclose = (event?: CloseEvent) => {
       if (this.#ws !== ws) return;
+      // The browser's one word on a refused handshake: 1006 with no reason is a handshake the
+      // server answered with a status (401, 404, 503…), which the WebSocket API never shows.
+      this.#lastClose =
+        event === undefined
+          ? "closed"
+          : `close code ${event.code}${event.reason ? ` (${event.reason})` : ""}${event.wasClean ? "" : ", not clean"}`;
       const opened = this.#state === "open";
       const onPurpose = this.#closingOnPurpose;
       this.#closingOnPurpose = false;
@@ -309,7 +323,16 @@ export class ApiSocket {
         // just shown reachable (the identity was probed for this very attempt); otherwise
         // the identity is forgotten so the next attempt probes first — a server that is
         // down must not read as a server without a socket.
-        if (this.#freshProbe) this.#neverOpened += 1;
+        if (this.#freshProbe) {
+          this.#neverOpened += 1;
+          console.warn(
+            `[api-socket] the handshake did not open (${this.#neverOpened}/${GIVE_UP_AFTER} against a server that answered /api/me): ${this.#lastClose} — ${url}`,
+          );
+        } else {
+          console.warn(
+            `[api-socket] the handshake did not open, not counted (the server was not probed for this attempt): ${this.#lastClose}`,
+          );
+        }
         this.#identity = null;
       }
       this.#settleReady(false);
@@ -382,6 +405,7 @@ export class ApiSocket {
         // Answered without streaming: the endpoint refused (fatal) or is not ready (retry).
         const status = frame.status as number;
         if (fatal(status)) {
+          console.warn(`[api-socket] stream ${stream.path} refused with ${status}; not retried`);
           this.#streams.delete(id);
           stream.id = null;
           stream.handlers.onError?.(true);
@@ -415,6 +439,11 @@ export class ApiSocket {
 
     if (this.#neverOpened >= GIVE_UP_AFTER) {
       this.#state = "unavailable";
+      console.error(
+        `[api-socket] giving up on the API socket: ${GIVE_UP_AFTER} handshakes never opened (last: ${this.#lastClose}). ` +
+          `Every stream now runs as its own EventSource and every call as a fetch until this page reloads — ` +
+          `a browser holds about six such connections per origin, so requests may queue behind the streams.`,
+      );
       for (const entry of this.#waiting) {
         if (entry.closed) continue;
         entry.fallen = entry.fallback();
