@@ -38,8 +38,10 @@
  * one ask rather than the session (the session's own ExitOnForwardFailure guards only what
  * it was started with: the SOCKS listener). The wanted set is kept here, re-applied every
  * time the session comes back up, and what ssh answered for each is kept as its fact. Win32
- * OpenSSH has no multiplexing, so a session there has no control socket and carries no
- * forwards of ssh's own; the caller says what it does instead (port-forwards/service.ts).
+ * OpenSSH has no multiplexing, so a session there carries its forwards in its START
+ * arguments instead: a change of the wanted set reopens the session with the new set (the
+ * channels through it — relays, dials — reconnect on their own), and what ssh says of a
+ * forward it could not bind is read off its stderr.
  *
  * A HOT PUSH keeps a held session. The shell object is registered in the runtime's resource
  * registry under `machineSession:<address>` and claimed back by the next generation, the way
@@ -98,13 +100,35 @@ const sessionResourceId = (address: string): string => `machineSession:${address
  * has about a hundred characters to spend, and macOS's temp directory takes half of them.
  */
 function controlPathFor(address: string): string | null {
-  if (process.platform === "win32") return null;
+  if (process.platform === "win32" || !controlSockets) return null;
   const short = createHash("sha256").update(address).digest("base64url").slice(0, 12);
   return path.join(os.tmpdir(), `penguin-ssh-${short}.sock`);
 }
 
 /** Asking the master over the control socket is local: a slow answer is a wedged master. */
 const CONTROL_TIMEOUT_MS = 15_000;
+
+/** Whether sessions master a control socket at all; a test turns it off to walk the Windows path on POSIX. */
+let controlSockets = true;
+export function useControlSockets(enabled: boolean): void {
+  controlSockets = enabled;
+}
+
+/**
+ * The ports ssh could not forward, read off a session's stderr. `-R`: "Warning: remote port
+ * forwarding failed for listen port 5432". `-L`: "bind [127.0.0.1]:3000: Address already in
+ * use" followed by "channel_setup_fwd_listener_tcpip: cannot listen to port: 3000".
+ */
+export function forwardFailures(stderr: string): Map<number, string> {
+  const failed = new Map<number, string>();
+  for (const line of stderr.split(/\r?\n/)) {
+    const remote = /remote port forwarding failed for listen port (\d+)/.exec(line);
+    if (remote) failed.set(Number(remote[1]), line.trim());
+    const local = /cannot listen to port: (\d+)/.exec(line);
+    if (local) failed.set(Number(local[1]), line.trim());
+  }
+  return failed;
+}
 
 /** How long an idle session is kept before it is let go. */
 const IDLE_MS = 10 * 60_000;
@@ -193,20 +217,28 @@ class MachineShell {
     }
   }
 
-  /** Whether ssh can carry forwards on this session (a control socket exists). */
-  supportsForwards(): boolean {
-    return this.#controlPath !== null;
-  }
-
   /**
-   * Sets the forwards wanted on this session. Applied at once when the session is up — each
-   * added one asked of the master, each dropped one cancelled — and again whenever it comes
-   * back up. Without a control socket the set is recorded and nothing is asked.
+   * Sets the forwards wanted on this session. With a control socket, applied at once when the
+   * session is up — each added one asked of the master, each dropped one cancelled — and again
+   * whenever it comes back up. Without one, a changed set reopens a live session with the new
+   * set in its arguments; a session that is down takes the set when it next comes up.
    */
   async setForwards(specs: readonly ForwardSpec[]): Promise<void> {
     const wanted = new Map(specs.map((spec) => [forwardKey(spec), spec]));
     const dropped = [...this.#forwards.keys()].filter((key) => !wanted.has(key));
     const added = [...wanted.keys()].filter((key) => !this.#forwards.has(key));
+    if (dropped.length === 0 && added.length === 0) return;
+    if (this.#controlPath === null) {
+      for (const key of dropped) this.#forwards.delete(key);
+      for (const key of added) this.#forwards.set(key, wanted.get(key)!);
+      this.#forwardFacts.clear();
+      if (this.#child !== null) {
+        // Reopened now, not on the backoff: the person just asked for this forward.
+        this.#reset();
+        if (this.#held) await this.run(":", { timeoutMs: OPEN_TIMEOUT_MS });
+      }
+      return;
+    }
     for (const key of dropped) {
       const spec = this.#forwards.get(key)!;
       this.#forwards.delete(key);
@@ -224,8 +256,23 @@ class MachineShell {
     return this.#forwardFacts;
   }
 
-  /** Every wanted forward, asked of the master that just came up. */
+  /**
+   * Every wanted forward, asked of the master that just came up — or, for a session that
+   * carried them in its arguments, read off what ssh said while connecting.
+   */
   async #applyForwards(): Promise<void> {
+    if (this.#controlPath === null) {
+      const failed = forwardFailures(this.#stderr);
+      for (const spec of this.#forwards.values()) {
+        const port = spec.direction === "in" ? spec.localPort : spec.remotePort;
+        const said = failed.get(port);
+        this.#forwardFacts.set(
+          forwardKey(spec),
+          said === undefined ? { ok: true } : { ok: false, detail: said },
+        );
+      }
+      return;
+    }
     for (const spec of this.#forwards.values()) await this.#ask(spec);
   }
 
@@ -335,9 +382,16 @@ class MachineShell {
     const port = await freeLocalPort();
     if (port === null) throw new Error("no free local port for the session's SOCKS listener");
     this.#mark = `--penguin-${randomBytes(9).toString("hex")}--`;
-    const child = spawn("ssh", sessionArgs(this.target, port, this.#controlPath), {
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const child = spawn(
+      "ssh",
+      sessionArgs(
+        this.target,
+        port,
+        this.#controlPath,
+        this.#controlPath === null ? [...this.#forwards.values()] : [],
+      ),
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
     // setEncoding, not String(chunk): a multibyte character whose bytes land in two `data`
     // events would otherwise decode to two replacement characters. The stream's decoder holds
     // an incomplete sequence back until the rest of it arrives.
@@ -444,7 +498,7 @@ class MachineShell {
       if (this.#child !== null) this.#backoffMs = RECONNECT_MIN_MS;
       // And the master is up — the first command through is the proof — so the forwards
       // wanted on this session are asked of it now. Once per child: a drop resets the flag.
-      if (this.#child !== null && !this.#forwardsApplied && this.#controlPath !== null) {
+      if (this.#child !== null && !this.#forwardsApplied) {
         this.#forwardsApplied = true;
         void this.#applyForwards();
       }
@@ -489,14 +543,7 @@ export function attachSessionRegistry(resources: Resources | null): void {
 /** The shape of a held session as a successor claims it — the members it will call. */
 export type HeldSession = Pick<
   MachineShell,
-  | "hold"
-  | "held"
-  | "run"
-  | "session"
-  | "close"
-  | "supportsForwards"
-  | "setForwards"
-  | "forwardFacts"
+  "hold" | "held" | "run" | "session" | "close" | "setForwards" | "forwardFacts"
 >;
 
 function shellFor(machineAddress: string, target: RemoteTarget): MachineShell {

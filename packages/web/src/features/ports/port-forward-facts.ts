@@ -32,7 +32,7 @@ export function statusLine(forward: PortForwardInfo): string {
     case "pending":
       return S.ports.statusPending;
     case "active":
-      return forward.via === "ssh" ? S.ports.statusOnSession : S.ports.statusListening;
+      return S.ports.statusOnSession;
   }
 }
 

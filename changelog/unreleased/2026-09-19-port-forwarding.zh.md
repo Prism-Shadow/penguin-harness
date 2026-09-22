@@ -14,8 +14,8 @@
 - **一条转发是 `(机器, Workspace, 方向, 远端端口 ⇄ 本地端口)`。** 它属于 Workspace（某台机器上的一个目录），因此该 Workspace 的每个对话看到同一份转发。`in` 把机器的端口放到本地的 `localhost:<本地端口>`；`out` 把本地端口放到机器上的 `localhost:<远端端口>`。位于本服务端的 Workspace 没有转发：它的端口本就在回环上。
 - **保存在 `web.db`**（表 `port_forwards`，migration 13 `port-forwards`，swap-safe）。`in` 转发的本地端口缺省取与远端端口同号且本地空闲的端口，否则向上取第一个空闲端口，也可以指定（1024–65535）。`out` 转发须指明送出去的本地服务，机器端口缺省与之同号。
 - **由机器的会话承载。** 一台机器的全部转发是它会话的期望集。会话是控制 socket 的 master（`ssh -M -S`），转发以 `ssh -O forward` 加到**正在运行的**会话上、以 `-O cancel` 撤下——不开第二条连接、不重连，绑不上的端口只让这一次请求失败，不影响会话。会话重连后期望集自动重新申请。转发从不拉起 ssh：机器没人用时它等着，并如实报告。
-- **Windows hub 上**——Win32 OpenSSH 没有控制 socket——`in` 转发改由本进程自己的 listener 承载，有客户端连上时经会话的 SOCKS 通道拨到机器；`out` 转发被拒绝（`409 unsupported_here`）。
-- **状态按层给出，不是一个标志：** `not-connected`（会话未连接）、`pending`（已连，ssh 尚未应答）、`active`（ssh 或 listener 已承载）、`failed` 附 ssh 原话。listener 路径另计当前连接数与上下行字节。
+- **Windows hub 上**——Win32 OpenSSH 没有控制 socket——会话改为在启动参数里带上转发：集合变化时用新集合重开会话（经它的通道自行重连），ssh 对绑不上的端口说的话从它的 stderr 读出。两个方向、同样的记录、同样的状态。
+- **状态按层给出，不是一个标志：** `not-connected`（会话未连接）、`pending`（已连，ssh 尚未应答）、`active`（ssh 已承载）、`failed` 附 ssh 原话。
 
 ## 持有的会话跨热推送存活
 

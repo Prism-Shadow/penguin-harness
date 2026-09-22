@@ -44,12 +44,8 @@ export function Plug({
   );
 }
 
-/**
- * The cable itself: a line with an arrowhead, in the tone's ink. `flowing` sends dashes along
- * it — transform-free on purpose, so the global reduced-motion rule simply leaves the dashes
- * standing, which still reads as "a cable" and no longer as "traffic".
- */
-export function Cable({ tone, flowing, label }: { tone: Tone; flowing: boolean; label: string }) {
+/** The cable itself: a line with an arrowhead, in the tone's ink. */
+export function Cable({ tone, label }: { tone: Tone; label: string }) {
   return (
     <span
       className={`flex min-w-8 flex-1 items-center ${toneInk[tone]}`}
@@ -67,8 +63,6 @@ export function Cable({ tone, flowing, label }: { tone: Tone; flowing: boolean; 
           stroke="currentColor"
           strokeWidth="1.7"
           strokeLinecap="round"
-          strokeDasharray={flowing ? "4 3" : undefined}
-          className={flowing ? "cable-flow" : undefined}
         />
       </svg>
       <svg viewBox="0 0 8 12" className="-ml-px h-3 w-2 shrink-0" aria-hidden="true">
@@ -83,19 +77,6 @@ export function Cable({ tone, flowing, label }: { tone: Tone; flowing: boolean; 
       </svg>
     </span>
   );
-}
-
-/** Bytes as a person reads them on a row: three significant figures at most. */
-export function formatTraffic(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["kB", "MB", "GB", "TB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
 
 /**
@@ -113,8 +94,6 @@ export function ForwardRow({
 }) {
   const tone = forwardTone(forward);
   const status = statusLine(forward);
-  const traffic = forward.traffic;
-  const flowing = traffic !== undefined && traffic.open > 0;
   // Bytes go from the left plug to the right one, whichever direction the forward is: an
   // `in` forward starts at the machine, an `out` one starts here.
   const from = <Plug name={machineName} port={forward.remotePort} />;
@@ -127,26 +106,16 @@ export function ForwardRow({
     >
       <div className={`flex items-center ${ICON_GAP.row}`}>
         {forward.direction === "in" ? from : to}
-        <Cable tone={tone} flowing={flowing} label={status} />
+        <Cable tone={tone} label={status} />
         {forward.direction === "in" ? to : from}
         {actions !== undefined && (
           <span className={`ml-1 flex shrink-0 items-center ${ICON_GAP.tight}`}>{actions}</span>
         )}
       </div>
-      <div className="mt-1 flex items-center gap-2 pl-1 text-[11px] text-gray-500 dark:text-gray-400">
-        <span className={`min-w-0 truncate ${tone === "link" ? "" : toneInk[tone]}`}>{status}</span>
-        {traffic !== undefined && (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className={flowing ? `${toneInk[tone]} font-medium` : ""}>
-              {S.ports.connections(traffic.open)}
-            </span>
-            <span aria-hidden="true">·</span>
-            <span className="shrink-0 tabular-nums">
-              ↑ {formatTraffic(traffic.bytesUp)} ↓ {formatTraffic(traffic.bytesDown)}
-            </span>
-          </>
-        )}
+      <div
+        className={`mt-1 truncate pl-1 text-[11px] ${tone === "link" ? "text-gray-500 dark:text-gray-400" : toneInk[tone]}`}
+      >
+        {status}
       </div>
     </li>
   );

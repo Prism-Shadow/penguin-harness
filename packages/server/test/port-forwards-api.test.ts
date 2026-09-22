@@ -42,7 +42,6 @@ describe("port forwarding API", () => {
       machines: new MachinesService(machinesRoot, LOCAL_ID, repo, {
         listAliases: () => ["build-box"],
         session: () => null,
-        supportsForwards: () => true,
         setForwards: async () => {},
         forwardFacts: () => new Map(),
       }),
@@ -78,7 +77,6 @@ describe("port forwarding API", () => {
       direction: "in",
       remotePort: 3000,
       localPort,
-      via: "ssh",
       status: { kind: "not-connected" },
     });
 
@@ -124,7 +122,7 @@ describe("port forwarding API", () => {
       localPort: 5432,
     });
     expect(out.status).toBe(201);
-    expect((await out.json()) as PortForwardInfo).toMatchObject({ direction: "out", via: "ssh" });
+    expect((await out.json()) as PortForwardInfo).toMatchObject({ direction: "out" });
     const unnamed = await admin.post("/api/port-forwards", {
       machineId: MACHINE,
       workspace: WORKSPACE,

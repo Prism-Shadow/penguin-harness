@@ -201,6 +201,17 @@ describe("ssh / scp invocations", () => {
     const mastered = sessionArgs(target, 49152, "/tmp/penguin-x.sock").join(" ");
     expect(mastered).toContain("-M -S /tmp/penguin-x.sock");
     expect(sessionArgs(target, 49152).join(" ")).not.toContain("-M");
+    // Forwards in the start arguments (no control socket): spelled before -D, and a port
+    // that will not bind no longer ends the session — it is reported instead.
+    const carried = sessionArgs(target, 49152, null, [
+      { direction: "in", localPort: 3000, remotePort: 3001 },
+      { direction: "out", localPort: 5432, remotePort: 5433 },
+    ]).join(" ");
+    expect(carried).toContain("ExitOnForwardFailure=no");
+    expect(carried).toContain(
+      "-L 127.0.0.1:3000:127.0.0.1:3001 -R 127.0.0.1:5433:127.0.0.1:5432 -D",
+    );
+    expect(sessionArgs(target, 49152).join(" ")).toContain("ExitOnForwardFailure=yes");
   });
 
   it("spells a forward as ssh wants it, and asks the master for it over the control socket", () => {
