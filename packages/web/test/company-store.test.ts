@@ -168,6 +168,24 @@ describe("company store event routing", () => {
     expect(store.getState().orgChartError).toBeNull();
   });
 
+  it("adopts the last organization only while none is current — a route's choice stands", () => {
+    // The shell adopts the organization last opened when nothing names one. An organization
+    // route names one in its own effect, which runs before the shell's in the same commit, so
+    // the shell must read the store as it is by then, not as the render saw it.
+    const store = createCompanyStore();
+    store.setState({ lastOrgKey: "p1/acme" });
+    store.getState().adoptLastOrg();
+    expect(store.getState().currentOrgKey).toBe("p1/acme");
+
+    store.setState({ currentOrgKey: "p1/other", lastOrgKey: "p1/acme", orgChart: null });
+    store.getState().adoptLastOrg();
+    expect(store.getState().currentOrgKey).toBe("p1/other");
+
+    store.setState({ currentOrgKey: null, lastOrgKey: null });
+    store.getState().adoptLastOrg();
+    expect(store.getState().currentOrgKey).toBeNull();
+  });
+
   it("bumps the version of each family, and the organization list for the ones that change a summary", () => {
     const store = createCompanyStore();
     store.getState().applyCompanyEvent(
