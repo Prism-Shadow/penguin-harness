@@ -24,7 +24,7 @@ import { COMPANY_MODE_ICON, CloseIcon, NAV_ICONS } from "../ui/icons";
 import { useCompany } from "../../state/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
 import { ChannelRailRows } from "../../features/company/channel-sidebar";
-import { DeskRailRows } from "../../features/company/org-session-groups";
+import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
 import {
   COMPANY_NAV_KEYS,
   isOrgRoute,
@@ -291,16 +291,17 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             </Tooltip>
           );
         })}
-        {/* The organization's channels and then its desks, under the pages the way they sit
-            under the nav in the pinned sidebar. A hairline says where each run ends; a channel
-            row carries its own unread count and a desk its running dot, since a rail with no
-            labels must still say how much is waiting. */}
+        {/* The organization's channels, its desks and then its Temporary entries, under the
+            pages the way they sit under the nav in the pinned sidebar. A hairline says where each
+            run ends; a channel row carries its own unread count and a desk or an entry its
+            running dot, since a rail with no labels must still say how much is waiting. */}
         {inCompany && navOrg !== null && (
           <>
             <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
             <ChannelRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
             <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
             <DeskRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
+            <TempSessionRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
           </>
         )}
       </nav>

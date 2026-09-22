@@ -66,6 +66,8 @@ function populated(): ReturnType<typeof memStorage> {
     "penguin.modelsGroupOrder.default_project": '["anthropic"]',
     "penguin.dock.layout": '{"scopes":{"session-1":{}},"bottomRatio":0.4}',
     "penguin.terminal.page.id": "term-1",
+    "penguin.orgTempSessions.admin.default_project.acme":
+      '[{"sessionId":"session-2","agentId":"acme_dev","title":"Build the site"}]',
 
     "penguin.theme": "dark",
     "penguin.fontScale": "lg",

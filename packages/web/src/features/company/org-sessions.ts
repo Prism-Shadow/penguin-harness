@@ -120,6 +120,24 @@ export function withDeskMessagingChannel(
 }
 
 /**
+ * The title the organization gives each of its ticket sessions, by Session id — what the
+ * sidebar's Temporary group draws. The organization's own sessions route is the source because
+ * the development list excludes organization rows and cannot be asked (see the session list's
+ * `excludeOrg`); a session the route does not name keeps the title its ticket listed it under.
+ */
+export function ticketSessionTitles(
+  sessions: OrgSessionsResponse | undefined,
+): ReadonlyMap<string, string> {
+  const out = new Map<string, string>();
+  for (const ticket of sessions?.tickets ?? []) {
+    for (const s of ticket.sessions) {
+      if (s.title !== undefined && s.title !== "") out.set(s.sessionId, s.title);
+    }
+  }
+  return out;
+}
+
+/**
  * The glyph a desk row draws: the same live states the ordinary session list shows (an
  * hourglass while running, the squeeze while compacting), and nothing when settled — a desk
  * row has no read marker of its own, so it never claims "unread".

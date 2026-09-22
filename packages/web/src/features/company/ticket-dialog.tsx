@@ -16,9 +16,12 @@
  * its own save / cancel; the footer holds the block / unblock and move actions. Saves confirm
  * first, like every organization write.
  *
- * Nothing here is a whole-row link: a child, a session and the parent are opened by their own
- * small corner button, so a click always says where it lands. Only a session leaves the page —
- * a conversation has no in-place form — and a parent or a child swaps the dialog's own ticket.
+ * The parent, a child and a ticket session are each opened by clicking their title — a text
+ * button that underlines on hover and names its destination in its tooltip — while the rest of
+ * their row stays inert, so the controls and marks beside a title are never a click target.
+ * A parent or a child swaps the dialog's own ticket. Only a session leaves the page, since a
+ * conversation has no in-place form: it opens as the full conversation page and joins the
+ * company sidebar's Temporary group (temp-session.ts).
  * A session's live status is not drawn: a ticket reports its own work, not what a session is
  * doing this second.
  */
@@ -41,6 +44,7 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
+import { useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
@@ -58,10 +62,10 @@ import { Md } from "../chat/md";
 import { OrgSection } from "./org-layout";
 import {
   BlockedBadge,
-  JumpButton,
   PrincipalChip,
   PriorityBadge,
   TicketStatusBadge,
+  TitleButton,
   principalLabel,
 } from "./shared";
 import { agentPrincipal, splitPrincipalList } from "./principals";
@@ -75,6 +79,9 @@ import {
 } from "./ticket-board";
 import { ticketHistoryRows, ticketSummaryCounts } from "./ticket-history";
 import { dayKey } from "./calendar-geom";
+import { orgKey } from "./company-nav";
+import { deskRows } from "./org-sessions";
+import { chatPath, openTempSession } from "./temp-session";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
@@ -137,6 +144,7 @@ function TicketDialog({
 }) {
   const navigate = useNavigate();
   const company = useCompany();
+  const { setCurrentAgentId } = useProject();
   const { currency } = useTheme();
   const { user } = useAuth();
   const me = user?.userId ?? null;
@@ -382,11 +390,25 @@ function TicketDialog({
     );
 
   /**
-   * One field of the summary grid. Every row is exactly one line tall, so labels and values
-   * line up down the column: anything taller than the line — the parent's jump button is the
-   * only such thing — pulls its own box back in with a negative margin rather than growing
-   * the row and pushing its label off the others' baseline.
+   * Opens a ticket session: the one way out of the dialog. The session goes to the top of the
+   * company sidebar's Temporary group (a desk session keeps its desk row instead) and the
+   * conversation opens as its full page. The current Agent follows it, as a desk row's does.
    */
+  const openSession = (session: { sessionId: string; agentId: string; title?: string }) => {
+    const desks = deskRows(company.orgChart, company.orgSessions.get(orgKey(projectId, orgId)));
+    openTempSession(
+      me,
+      projectId,
+      orgId,
+      { sessionId: session.sessionId, agentId: session.agentId, title: session.title ?? "" },
+      desks.map((d) => d.sessionId),
+    );
+    if (session.agentId !== "") setCurrentAgentId(session.agentId);
+    onClose();
+    navigate(chatPath(session.sessionId));
+  };
+
+  /** One field of the summary grid: every row is one line tall, so labels and values line up down the column. */
   const row = (label: string, value: ReactNode) => (
     <>
       <dt className="whitespace-nowrap text-gray-500 dark:text-gray-400">{label}</dt>
@@ -582,16 +604,13 @@ function TicketDialog({
                     {row(
                       S.company.tickets.parent,
                       detail.parent !== undefined ? (
-                        <>
-                          <span className="min-w-0 truncate" title={detail.parent}>
-                            {titles.get(detail.parent) ?? detail.parent}
-                          </span>
-                          <JumpButton
-                            label={S.company.tickets.openTicket}
-                            className="-my-1"
-                            onClick={() => onOpenTicket(detail.parent!)}
-                          />
-                        </>
+                        <TitleButton
+                          title={`${S.company.tickets.openTicket} · ${detail.parent}`}
+                          className="truncate"
+                          onClick={() => onOpenTicket(detail.parent!)}
+                        >
+                          {titles.get(detail.parent) ?? detail.parent}
+                        </TitleButton>
                       ) : (
                         <span className="text-gray-400 dark:text-gray-500">
                           {S.company.tickets.noParent}
@@ -698,7 +717,7 @@ function TicketDialog({
                 {textSection("result", detail.result, S.company.tickets.noResult)}
               </OrgSection>
 
-              {/* The child tickets, folded: a plain list, each row opened by its own button. */}
+              {/* The child tickets, folded: a plain list, each opened by clicking its title. */}
               <Fold
                 title={S.company.tickets.children}
                 summary={
@@ -715,8 +734,14 @@ function TicketDialog({
                   <ul className="space-y-0.5">
                     {children.map((c) => (
                       <li key={c.ticketId} className="flex items-center gap-2 px-2 py-1.5 text-sm">
-                        <span className="min-w-0 flex-1 truncate" title={c.ticketId}>
-                          {c.title}
+                        <span className="flex min-w-0 flex-1">
+                          <TitleButton
+                            title={`${S.company.tickets.openTicket} · ${c.ticketId}`}
+                            className="truncate"
+                            onClick={() => onOpenTicket(c.ticketId)}
+                          >
+                            {c.title}
+                          </TitleButton>
                         </span>
                         {"status" in c && <TicketStatusBadge status={c.status} />}
                         {"owner" in c && (
@@ -732,19 +757,15 @@ function TicketDialog({
                             {formatMoney(c.cost, currency)}
                           </span>
                         )}
-                        <JumpButton
-                          label={S.company.tickets.openTicket}
-                          onClick={() => onOpenTicket(c.ticketId)}
-                        />
                       </li>
                     ))}
                   </ul>
                 )}
               </Fold>
 
-              {/* The sessions this ticket was worked in, folded. They are opened from here and
-                  nowhere else: starting one and attaching one belong to the owner's desk and to
-                  the CLI, not to a reader of the board. */}
+              {/* The sessions this ticket was worked in, folded, each opened by clicking its
+                  title. They are opened from here and nowhere else: starting one and attaching
+                  one belong to the owner's desk and to the CLI, not to a reader of the board. */}
               <Fold
                 title={S.company.tickets.sessions}
                 summary={
@@ -760,23 +781,33 @@ function TicketDialog({
                     {detail.sessionItems.map((s) => (
                       <li key={s.sessionId} className="flex items-center gap-2 px-2 py-1.5 text-sm">
                         <PrincipalChip principal={agentPrincipal(s.agentId)} names={names} />
-                        <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-300">
-                          {s.title ?? s.sessionId}
+                        <span className="flex min-w-0 flex-1">
+                          {s.agentId === "" ? (
+                            // The ticket still names a session whose row is gone (its Agent
+                            // was deleted, say): the server answers it with no Agent, and
+                            // there is nothing to open, so it is plain text and never
+                            // becomes a Temporary entry.
+                            <span
+                              className="truncate text-gray-400 dark:text-gray-500"
+                              title={s.sessionId}
+                            >
+                              {s.title ?? s.sessionId}
+                            </span>
+                          ) : (
+                            <TitleButton
+                              title={S.company.tickets.openSession}
+                              className="truncate text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+                              onClick={() => openSession(s)}
+                            >
+                              {s.title ?? s.sessionId}
+                            </TitleButton>
+                          )}
                         </span>
                         {s.lastActiveAt !== undefined && (
                           <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
                             {formatDateTime(s.lastActiveAt)}
                           </span>
                         )}
-                        {/* The one way out of the dialog: a conversation has no in-place form,
-                            so opening a session closes this and lands on it. */}
-                        <JumpButton
-                          label={S.company.tickets.openSession}
-                          onClick={() => {
-                            onClose();
-                            navigate(`/chat/${s.sessionId}`);
-                          }}
-                        />
                       </li>
                     ))}
                   </ul>
@@ -981,8 +1012,8 @@ function TicketDialog({
 }
 
 /**
- * The confirmation every move goes through, wherever the move was asked for — the board's
- * drag-and-drop and the dialog's footer — so a card dropped in a column and a ticket moved
+ * The confirmation every move goes through, wherever the move was asked for — a card dragged
+ * on the board and the dialog's footer — so a card dropped in a column and a ticket moved
  * from its detail ask the same question. Moving into rejected also asks for the one-line
  * reason that is recorded under the ticket's result; the box empties whenever a new move is
  * proposed, so yesterday's wording cannot ride along.
