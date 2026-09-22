@@ -87,7 +87,7 @@ describe("loadLibraryPlugins", () => {
   it("loads every plugin directory sorted by name: its npm version, a category, and a dated version on every part", async () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    expect(plugins.length).toBe(20);
+    expect(plugins.length).toBe(21);
     for (const plugin of plugins) {
       const pkg = JSON.parse(
         await fs.readFile(path.join(pluginsRoot, plugin.name, "package.json"), "utf8"),
@@ -269,7 +269,13 @@ describe("loadPreinstalledPlugins", () => {
     const preinstalled = loadPreinstalledPlugins().map((p) => p.name);
     expect(preinstalled).toContain("goal");
     expect(preinstalled).toContain("software-development");
-    for (const manual of ["agent-company", "continual-learning", "humanizer", "use-claude-code"]) {
+    for (const manual of [
+      "agent-company",
+      "agent-company-proposals",
+      "continual-learning",
+      "humanizer",
+      "use-claude-code",
+    ]) {
       expect(all).toContain(manual);
       expect(preinstalled).not.toContain(manual);
     }
@@ -328,6 +334,7 @@ describe("groupPlugins / loadPluginGroups", () => {
     expect(names("office-productivity")).toEqual([
       "a2ui",
       "agent-company",
+      "agent-company-proposals",
       "browser-automation",
       "continual-learning",
       "data-analysis",
