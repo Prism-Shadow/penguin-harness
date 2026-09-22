@@ -48,10 +48,11 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "
 const PREVIEW_HOST = "127.0.0.1";
 
 /**
- * Whether a URL belongs to this instance's local surface: the app origin itself or its
- * loopback counterpart on the same port, which is where Workspace previews are served.
- * Preview windows navigate freely within it; anything else is external and belongs in
- * the system browser.
+ * Whether a URL belongs to this instance's local surface: the app origin itself, its
+ * loopback counterpart on the same port (where Workspace previews are served), or a
+ * `<label>.localhost` host on that port — the Browser's sites, each on a host of its own.
+ * Preview windows and a Browser page's popups navigate freely within it; anything else is
+ * external and belongs in the system browser.
  */
 export function isLocalSurfaceUrl(url: string, origin: string | null): boolean {
   if (origin === null) return false;
@@ -64,7 +65,10 @@ export function isLocalSurfaceUrl(url: string, origin: string | null): boolean {
     return false;
   }
   if (target.protocol !== app.protocol || target.port !== app.port) return false;
-  return LOOPBACK_HOSTS.has(target.hostname) && LOOPBACK_HOSTS.has(app.hostname);
+  if (!LOOPBACK_HOSTS.has(app.hostname)) return false;
+  // Browsers resolve every `*.localhost` to the loopback by themselves, so on this port a
+  // sub-name is this instance answering — the Browser serving one of its sites.
+  return LOOPBACK_HOSTS.has(target.hostname) || target.hostname.endsWith(".localhost");
 }
 
 /** "Open in a new tab" for a Workspace HTML file: mints a preview token, then 302s to the preview host. */
