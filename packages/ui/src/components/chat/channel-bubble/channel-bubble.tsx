@@ -106,7 +106,7 @@ export function ChannelRun({
   return (
     <div className={`flex items-start ${ICON_GAP.card} py-1.5`}>
       {!own && (avatar ?? <SenderAvatar sender={sender} />)}
-      <div className={`flex min-w-0 flex-1 flex-col gap-1 ${own ? "items-end" : "items-start"}`}>
+      <div className={`flex min-w-0 flex-[1_1_auto] flex-col gap-1 ${own ? "items-end" : "items-start"}`}>
         {own ? (
           <span className="sr-only">{ownLabel ?? sender.name}</span>
         ) : (
@@ -174,16 +174,16 @@ export function ChannelBubble({
     <div
       id={id}
       data-side={own ? "own" : "other"}
-      className={`channel-bubble max-w-[75%] px-3 py-1.5 text-sm leading-relaxed ${corners(own, last)} ${own ? SURFACE.own : SURFACE.other}`}
+      className={`channel-bubble max-w-[88%] sm:max-w-[75%] px-3 py-1.5 text-sm leading-relaxed ${corners(own, last)} ${own ? SURFACE.own : SURFACE.other}`}
     >
-      <div className={`flex items-end ${ICON_GAP.menu}`}>
-        <div className="min-w-0 flex-1">
+      <div className={`flex flex-wrap items-end justify-end ${ICON_GAP.menu}`}>
+        <div className="min-w-0 flex-[1_1_auto]">
           <div className="md-body md-compact">{children}</div>
           {footer}
         </div>
         <span
           data-tooltip={timeTooltip}
-          className="shrink-0 text-xs tabular-nums text-tone-neutral-fg"
+          className="ml-auto shrink-0 text-[11px] tabular-nums text-tone-neutral-fg"
         >
           <span className="sr-only">{timeLabel}</span>
           <span aria-hidden>{time}</span>
