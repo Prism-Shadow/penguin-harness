@@ -1,5 +1,11 @@
 import { defineConfig } from "tsup";
 
+// The same shape as claude-code and the sandbox plugins: the `@prismshadow/penguin-core/plugin`
+// decorators are compiled INTO the bundle (they register through a `Symbol.for` store, so a
+// second copy of the code is the same store). A pushed plugin is unpacked under the data
+// root, where Node's walk-up never reaches the program's `lib/node_modules`, so a bare import
+// of the SDK would fail at load on every installation — discord-bot's `external` shape only
+// works from a repo checkout.
 export default defineConfig({
   entry: ["src/index.ts"],
   format: ["esm"],
@@ -7,10 +13,4 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
-  // The SDK is the host's: the plugin compiles against its types and calls its helpers at
-  // runtime, and must never carry a second copy (the production pack marks it external too).
-  external: ["@prismshadow/penguin-core", /^@prismshadow\/penguin-core\//],
-  // Everything else it runs is inside the bundle: a builtin plugin ships as its own few files,
-  // not as an npm dependency tree the host pushes one file at a time.
-  noExternal: ["hono"],
 });
