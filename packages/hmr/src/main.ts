@@ -16,6 +16,7 @@
  * `start` receives the control object before it runs, so the product's routes and seam can
  * be built over it while the first generation is still coming up.
  */
+import { constants } from "node:buffer";
 import zlib from "node:zlib";
 import type { Instance, Park } from "@prismshadow/penguin-core/kernel";
 import type { HmrHost, UpgradeAllTarget, UpgradeOutcome } from "./host.js";
@@ -142,6 +143,21 @@ async function probe<Api extends Park>(instance: Instance<Api>, path: string): P
   }
 }
 
+/**
+ * Bound on what an upgrade body may INFLATE to.
+ *
+ * Not a size policy — it is the platform's own ceiling, read from it rather than chosen: the
+ * inflated payload is turned into ONE string for `JSON.parse`, and V8 caps a string at
+ * `MAX_STRING_LENGTH` (~512MB), so a payload past this point cannot be parsed however large a
+ * push is allowed to be. Nothing about a legitimate push comes near it; a real one is
+ * single-digit megabytes.
+ *
+ * What it stops is the case where the number is missing altogether: `gunzipSync` with no bound
+ * lets a few hundred kilobytes of gzip decide how many gigabytes this process allocates, and the
+ * process dies before ever reaching the string that would have thrown.
+ */
+const UPGRADE_MAX_INFLATED_BYTES = constants.MAX_STRING_LENGTH;
+
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const bad = (message: string): Response => json(400, { error: { code: "bad_request", message } });
@@ -172,7 +188,9 @@ export function parseUpgradeTarget(
     source?: { repo: string; revision: string };
   };
   try {
-    payload = JSON.parse(zlib.gunzipSync(body).toString("utf8"));
+    payload = JSON.parse(
+      zlib.gunzipSync(body, { maxOutputLength: UPGRADE_MAX_INFLATED_BYTES }).toString("utf8"),
+    );
   } catch (err) {
     throw new Error(
       `invalid gzip upgrade payload: ${err instanceof Error ? err.message : String(err)}`,
