@@ -211,7 +211,7 @@ export function checkTree(
       }
       let schema: ((v: unknown) => unknown) | null = null;
       try {
-        schema = type.raw(inlineRefs(slot.data, tableOf(table).types)).onUndeclaredKey("reject");
+        schema = slotSchema(inlineRefs(slot.data, tableOf(table).types));
       } catch (err) {
         problems.push({
           path: m.path,
@@ -244,6 +244,23 @@ export function checkTree(
     }
   }
   return { problems, provides };
+}
+
+/**
+ * A slot's contribution schema, parsed once per definition. arktype files every parse in a
+ * registry that lives as long as the process and never shrinks, and every boot checks every
+ * contribution: parsed afresh, each boot grew it (see leafExtends in ./data.ts).
+ */
+const slotSchemas = new Map<string, (v: unknown) => unknown>();
+
+function slotSchema(def: Json): (v: unknown) => unknown {
+  const key = JSON.stringify(def);
+  let schema = slotSchemas.get(key);
+  if (schema === undefined) {
+    schema = type.raw(def).onUndeclaredKey("reject");
+    slotSchemas.set(key, schema);
+  }
+  return schema;
 }
 
 /** A definition with its `$ref`s substituted, for arktype (which knows no references); a cycle stays a reference and parses as `unknown`. */

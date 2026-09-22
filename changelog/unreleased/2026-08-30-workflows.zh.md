@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-30
 - **Type:** feature
-- **Scope:** `server`, `web`, `cli`, `skills`
+- **Scope:** `core`, `server`, `web`, `cli`, `skills`
 - **PR:** [#718](https://github.com/Prism-Shadow/penguin-harness/pull/718)
 
 [English](2026-08-30-workflows.md)
@@ -42,3 +42,7 @@ Agent 现在可以在自己的目录里保存*工作流*：`workflows/<id>/` 是
 工作流页面是独立文档，应用的样式表照不进去。现在框架会在页面根节点打上 `light` / `dark`，把应用*已解析*的令牌复制过去——灰阶、强调色对、字体栈、根字号——并把 `/workflow-ui.css` 注入到 head 最前面：这份基础样式表按应用的观感为纯 HTML（标题、列表、表单、表格、代码）定样，并暴露 `--wf-bg`、`--wf-fg`、`--wf-muted`、`--wf-border`、`--wf-surface`、`--wf-accent`、`--wf-accent-fg`，以及 `wf-primary`、`wf-card`、`wf-rows`、`wf-row`、`wf-muted` 等类。页面自己的规则依然优先；调色板只有一份定义——应用复制它已经解析出来的值，样式表不再重述一遍。切换主题或强调色会直接给已打开的页面换装，无需重新加载。技能要求用这些变量书写标记，因此 Agent 写出的工作流在明暗两种主题下都与用户的主题一致。
 
 `penguin-sdk` 技能记录了目录布局与契约。新建对话页的「搭建和优化智能体」示例新增 **搭建自定义工作流界面：Agent 指挥台**——一个把同一任务并行派给本 Project 多个 Agent、实时显示每个 Session 状态的工作流，另有一张统计标签页与占满应用的大屏视图——取代了原来的 Claude Code 文档 RAG 示例。
+
+## 接口检查每个进程只解析一次
+
+每次启动模块树——工作流的、插件的、平台自身的——都要把每条连线和每个 contribution 与其接口比对，而每次叶子比较和每个 slot 的 schema 都由 arktype 重新解析一遍。arktype 会把每次解析登记到一张与进程同寿、从不收缩的注册表里，于是每次启动都要往里添上数千条：长期运行的服务器随每次热推送、插件加载和工作流重载不断增长，启动数百个 App 的测试 worker 更是直接卡死。现在叶子比较在每个进程里只判定一次并记住结果，slot 的 schema 按定义只解析一次；二者都来自接口表，数量有限。

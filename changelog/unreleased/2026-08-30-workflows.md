@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-30
 - **Type:** feature
-- **Scope:** `server`, `web`, `cli`, `skills`
+- **Scope:** `core`, `server`, `web`, `cli`, `skills`
 - **PR:** [#718](https://github.com/Prism-Shadow/penguin-harness/pull/718)
 
 [中文版](2026-08-30-workflows.zh.md)
@@ -42,3 +42,7 @@ A page can be the whole app: `/app/:projectId/:agentId/:workflowId[/:tabKey]` sh
 A workflow page is its own document, so the app's stylesheet reaches none of it. The frame now stamps `light` / `dark` on the page's root, copies the app's *resolved* tokens onto it — the gray scale, the accent pair, the font stack, the root font size — and injects `/workflow-ui.css` first in its head: a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wf-bg`, `--wf-fg`, `--wf-muted`, `--wf-border`, `--wf-surface`, `--wf-accent`, `--wf-accent-fg` plus the classes `wf-primary`, `wf-card`, `wf-rows`, `wf-row`, `wf-muted`. The page's own rules still win, and the palette keeps one definition: the app copies what it already resolved instead of the stylesheet restating it. Switching theme or accent re-themes an open page without reloading it. The skill asks for markup written against those variables, so a workflow an Agent writes matches the user's theme in both directions.
 
 The `penguin-sdk` skill documents the layout and the contract. The new-chat page's *Build and optimize agents* examples gain **Build a custom workflow UI: mission control** — a workflow that dispatches one task to several of the Project's Agents in parallel and shows every Session's live status, with a second tab of statistics and a fill-the-app view — in place of the Claude Code docs RAG example.
+
+## Interface checks parse once per process
+
+Every module-tree boot — a workflow's, a plugin's, the platform's own — checks each wire and contribution against its interface, and each leaf comparison and slot schema was parsed by arktype afresh. arktype files every parse in a registry that lives as long as the process and never shrinks, so each boot added thousands of entries: a long-running server grew with every hot push, plugin load and workflow reload, and a test worker booting hundreds of apps stalled outright. A leaf comparison is now decided once per process and remembered, and a slot's schema is parsed once per definition; both come from interface tables, so there are only so many.

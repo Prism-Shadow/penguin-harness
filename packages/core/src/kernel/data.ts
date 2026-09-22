@@ -47,12 +47,28 @@ function arrayElem(s: string): string | null {
   return splitUnion(inner) === null ? inner : null;
 }
 
+/**
+ * Leaf decisions, once per process. arktype files every node a parse builds in a registry
+ * that lives as long as the process and never shrinks (`$ark.nodesByRegisteredId`) — a
+ * definition it has parsed before still adds entries — and every boot's interface check asks
+ * thousands of these. A long-lived server boots a tree on every hot push and plugin load,
+ * and a test worker boots hundreds of apps: the registry grew until each insert took longer
+ * than a boot should. The pairs come from interface tables, so there are only so many.
+ */
+const leafDecisions = new Map<string, boolean>();
+
 function leafExtends(a: string, b: string): boolean {
+  const key = `${a}\u0000${b}`;
+  const known = leafDecisions.get(key);
+  if (known !== undefined) return known;
+  let fits: boolean;
   try {
-    return type.raw(a).extends(type.raw(b));
+    fits = type.raw(a).extends(type.raw(b));
   } catch {
-    return a === b;
+    fits = a === b;
   }
+  leafDecisions.set(key, fits);
+  return fits;
 }
 
 /**
