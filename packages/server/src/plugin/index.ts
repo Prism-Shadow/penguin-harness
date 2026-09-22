@@ -39,6 +39,12 @@ export type { SessionIndex } from "../mechanisms/sessions.js";
 export type { AgentIndex, Projects, ProjectConfigStore } from "../mechanisms/projects.js";
 export type { Errors } from "../mechanisms/observability.js";
 export type {
+  OrgActor,
+  OrgEmployeeView,
+  OrgGateway,
+  OrgView,
+} from "../mechanisms/organization.js";
+export type {
   PluginConfig,
   PluginConfigField,
   PluginConfiguration,

@@ -2674,6 +2674,12 @@ export type ServerEvent =
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }
   /**
+   * A plugin's own event to the people of a Project: `plugin` is the package's short name
+   * (the id its module contributions carry, e.g. `company-proposals`), `data` whatever it
+   * publishes. The platform relays it; only the plugin's page reads it.
+   */
+  | { type: "plugin"; plugin: string; data: unknown }
+  /**
    * The user-channel counterpart of `task_state`: the same run-state flip, named by
    * `sessionId`, delivered on GET /api/events.
    *
@@ -5306,6 +5312,196 @@ export type CompanyServerEvent =
       state: "warned" | "paused" | "resumed";
       ratio: number;
     };
+
+// ---------------------------------------------------------------------------
+// Company proposals (the company-proposals plugin: /api/projects/:p/organizations/:o/proposals)
+//
+// The plugin owns the ledger and the routes; the page that draws a proposal is one of the
+// web app's builtin renderers, so the data contract lives here beside the other DTOs the
+// web build compiles against. Absent the plugin, none of these routes exist.
+// ---------------------------------------------------------------------------
+
+/** A proposal's lifecycle; a revision never changes it, a request for changes puts `ready` back to `drafting`. */
+export type ProposalStatus = "drafting" | "ready" | "approved" | "merged" | "rejected";
+
+/** One pair of the scope: a file, and optionally a pattern (a regular expression, with capture groups) over the names it touches. */
+export interface ProposalScopeEntry {
+  file: string;
+  name?: string;
+}
+
+/** One paragraph of a section: the unit a comment anchors to. `id` is stable across revisions for unchanged text. */
+export interface ProposalParagraph {
+  id: string;
+  text: string;
+}
+
+export interface ProposalSection {
+  id: string;
+  heading: string;
+  paragraphs: ProposalParagraph[];
+}
+
+export type ProposalMaterialKind = "pr" | "issue" | "branch" | "doc" | "ticket" | "url";
+
+export interface ProposalMaterial {
+  kind: ProposalMaterialKind;
+  label: string;
+  url: string;
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  at: string;
+}
+
+/** A person's comment on one paragraph. Pending (`batchId` null) until the person requests changes; then part of a batch the author works through. */
+export interface ProposalComment {
+  id: string;
+  paragraphId: string;
+  /** The revision the paragraph belonged to when the comment was written. */
+  revision: number;
+  text: string;
+  by: string;
+  at: string;
+  batchId: string | null;
+  resolved?: { by: string; at: string; text: string };
+}
+
+export type ProposalEventKind =
+  | "created"
+  | "revised"
+  | "ready"
+  | "changes_requested"
+  | "implementation_started"
+  | "material_added"
+  | "feedback"
+  | "runtime_feedback"
+  | "resolved"
+  | "approved"
+  | "merged"
+  | "rejected";
+
+/** One thing that happened to a proposal; `seq` orders the whole ledger and is what a read position points at. */
+export interface ProposalEvent {
+  seq: number;
+  at: string;
+  kind: ProposalEventKind;
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  /** One line for the timeline: the feedback text, the batch size, the material's label, the reason. */
+  text?: string;
+  /** The revision a `revised` event produced. */
+  revision?: number;
+}
+
+/** A proposal as the queue lists it. */
+export interface ProposalItem {
+  number: number;
+  title: string;
+  status: ProposalStatus;
+  revision: number;
+  /** The employee that writes it (`agentId`). */
+  author: string;
+  /** The employee that builds it, once `implement` named one. */
+  implementer: string | null;
+  /** The person who delegated it (`userId`). */
+  delegatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Events after the caller's read position, not counting the caller's own. */
+  unread: number;
+  /** The caller's pending comments (people only; 0 for an employee). */
+  pendingComments: number;
+  materials: ProposalMaterial[];
+}
+
+export interface ProposalDetail extends ProposalItem {
+  /** The delegation, as the person wrote it. */
+  brief: string;
+  scope: ProposalScopeEntry[];
+  sections: ProposalSection[];
+  /** Pending comments are the commenter's own until requested: an employee sees only batched ones. */
+  comments: ProposalComment[];
+  events: ProposalEvent[];
+  /** Implementation sessions, in the order they were opened. */
+  sessions: string[];
+  /** The ledger's latest `seq`: what `POST …/read` should carry to mark everything read. */
+  seq: number;
+}
+
+export interface ProposalsResponse {
+  proposals: ProposalItem[];
+  /** The id of the organization's proposals channel, once one exists. */
+  channelId: string | null;
+}
+
+export interface ProposalCreateRequest {
+  /** The author employee's Agent id. */
+  author: string;
+  brief: string;
+  title?: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+/** `PUT …/:number` — a revision: the whole proposal as one Markdown document (frontmatter `title` and `scope`, then the sections). */
+export interface ProposalPublishRequest {
+  markdown: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalImplementRequest {
+  agentId: string;
+  message?: string;
+  workspace?: string;
+  sessionId?: string;
+  /** The caller's identity claim (the CLI's PENGUIN_AGENT_ID); distinct from `agentId`, the implementer. */
+  callerAgentId?: string;
+}
+
+export interface ProposalMaterialRequest {
+  kind: ProposalMaterialKind;
+  url: string;
+  label?: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalFeedbackRequest {
+  text: string;
+  /** From the test team's run of the dev branch rather than from building the proposal. */
+  runtime?: boolean;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalCommentRequest {
+  paragraphId: string;
+  text: string;
+}
+
+export interface ProposalResolveRequest {
+  text?: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ProposalRejectRequest {
+  reason: string;
+}
+
+export interface ProposalReadRequest {
+  upTo: number;
+}
+
+/** The `data` of the plugin event `company-proposals` publishes after every write. */
+export interface ProposalPluginEvent {
+  projectId: string;
+  orgId: string;
+  number: number;
+  seq: number;
+  kind: ProposalEventKind | "comment";
+}
 
 // ---------------------------------------------------------------------------
 // Web contributions (GET /api/contributions)
