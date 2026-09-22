@@ -50,13 +50,15 @@ import type {
   OrgHandbookFilesResponse,
 } from "../../api/types.js";
 import { TICKET_SLUG_PATTERN } from "../../api/types.js";
+import { userText } from "@prismshadow/penguin-core";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../../http/errors.js";
 import { userChannelKey } from "../../http/routes/events.js";
 import type { Channels, Clock, Config, Log } from "../../hmr/capabilities.js";
 import type { ChannelHub } from "../channel.js";
-import type { OrgCache } from "../../mechanisms/organization.js";
+import { OrgGateway } from "../../mechanisms/organization.js";
+import type { OrgCache, OrgView } from "../../mechanisms/organization.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type {
   AgentIndex,
@@ -2685,6 +2687,110 @@ export class OrganizationService {
   }
 
   // ---------------------------------------------------------------------------
+  // The plugin gateway (mechanisms/organization.ts OrgGateway): narrowings of the methods
+  // above, so a plugin can read an organization, attribute a write, speak in a channel and
+  // open an employee's session without holding this service.
+  // ---------------------------------------------------------------------------
+
+  async gatewayView(projectId: string, orgId: string): Promise<OrgView | null> {
+    const org = await loadOrg(this.deps, projectId, orgId);
+    if (org === null) return null;
+    const names = await orgEmployeeNames(this.deps, org);
+    return {
+      projectId,
+      orgId,
+      name: org.config.name,
+      status: org.config.status,
+      language: orgLanguage(org.config),
+      workspace: sharedWorkspace(org),
+      employees: org.chart.employees.map((e) => ({
+        agentId: e.agentId,
+        name: names.get(e.agentId) ?? e.agentId,
+        title: e.title,
+        reportsTo: e.reportsTo,
+      })),
+      userIds: this.projectUserIds(org),
+    };
+  }
+
+  async gatewayPrincipal(projectId: string, orgId: string, actor: Actor): Promise<string> {
+    const org = await this.requireOrg(projectId, orgId);
+    return this.actorPrincipal(org, actor);
+  }
+
+  async gatewayEnsureChannel(
+    projectId: string,
+    orgId: string,
+    channelId: string,
+    opts: { name: string; purpose: string },
+    userId: string,
+    principals: readonly string[],
+  ): Promise<void> {
+    const actor: Actor = { userId };
+    const org = await this.requireOrg(projectId, orgId);
+    if ((await this.deps.store.readChannel(org.dir, channelId)) === null) {
+      await this.createChannel(projectId, orgId, { channelId, ...opts }, actor);
+    }
+    // The person first: joining is theirs by right, and only a member may invite the rest.
+    await this.addChannelMember(projectId, orgId, channelId, userPrincipal(userId), actor);
+    for (const principal of principals) {
+      if (principal === userPrincipal(userId)) continue;
+      await this.addChannelMember(projectId, orgId, channelId, principal, actor);
+    }
+  }
+
+  async gatewaySend(
+    projectId: string,
+    orgId: string,
+    userId: string,
+    channelId: string,
+    text: string,
+  ): Promise<{ id: string }> {
+    const msg = await this.sendChannelMessage(projectId, orgId, userId, channelId, { text });
+    return { id: msg.id };
+  }
+
+  /** {@link openTicketSession} without the ticket: the session is the employee's, marked as the organization's, and started on `body`. */
+  async gatewayOpenSession(args: {
+    projectId: string;
+    orgId: string;
+    agentId: string;
+    title: string;
+    body: string;
+    workspace?: string;
+  }): Promise<{ sessionId: string; workspace: string }> {
+    const org = await this.requireValidOrg(args.projectId, args.orgId);
+    const employee = org.byId.get(args.agentId);
+    if (!employee) {
+      throw new HttpError(
+        400,
+        "not_an_employee",
+        `${args.agentId} is not an employee of ${args.orgId}`,
+      );
+    }
+    const spec = args.workspace ?? employee.workspace;
+    const workspace = await this.deps.store.ensureWorkspace(sharedWorkspace(org), spec);
+    if (workspace === null) {
+      throw badRequest(`workspace directory does not exist: ${spec}`);
+    }
+    const model = employee.model ?? org.config.model;
+    const created = await this.deps.sessionCreator.createSession({
+      projectId: org.projectId,
+      agentId: args.agentId,
+      workspace,
+      ...(model !== undefined ? { modelId: model.modelId, provider: model.provider } : {}),
+      approvalMode: org.config.approvalMode,
+      client: "org",
+      source: "company",
+    });
+    this.deps.sessions.updateTitle(created.sessionId, args.title);
+    // Messages the session sends carry hop 1: it was opened by a plugin's drive, not by a person.
+    this.deps.cache.setTriggerHop(created.sessionId, 0);
+    await this.deps.runner.startTask(created.sessionId, [userText(args.body, "server")]);
+    return created;
+  }
+
+  // ---------------------------------------------------------------------------
   // Finance and sessions
   // ---------------------------------------------------------------------------
 
@@ -3059,6 +3165,7 @@ export class OrganizationModule {
   @Use() private readonly messagingRepo!: MessagingBindings;
   @Provide() orgService!: OrgService;
   @Provide() orgScheduler!: OrgScheduler;
+  @Provide() orgGateway!: OrgGateway;
   setup({ effect }: ClassCtx) {
     const channels = this.channels as ChannelHub;
     const agentService = this.agentService;
@@ -3124,11 +3231,11 @@ export class OrganizationModule {
     };
     const orgScheduler = new OrganizationScheduler(deps);
     this.orgScheduler = orgScheduler;
-    const service = new OrganizationService(deps, orgScheduler);
-    this.orgService = service;
+    const orgService = new OrganizationService(deps, orgScheduler);
+    this.orgService = orgService;
     // An employee's model is its desk Session's: a switch made on a desk reaches the chart.
     const unsubscribe = runner.onModelChanged((sessionId, model) => {
-      service.deskModelChanged(sessionId, model).catch((err: unknown) =>
+      orgService.deskModelChanged(sessionId, model).catch((err: unknown) =>
         deps.errors.record({
           source: "organization",
           err,
@@ -3138,6 +3245,18 @@ export class OrganizationModule {
       );
     });
     effect(() => unsubscribe());
+    this.orgGateway = {
+      companyModeEnabled: deps.companyModeEnabled,
+      organization: (projectId, orgId) => orgService.gatewayView(projectId, orgId),
+      principalOf: (projectId, orgId, actor) =>
+        orgService.gatewayPrincipal(projectId, orgId, actor),
+      ensureChannel: (projectId, orgId, channelId, opts, userId, principals) =>
+        orgService.gatewayEnsureChannel(projectId, orgId, channelId, opts, userId, principals),
+      sendChannelMessage: (projectId, orgId, userId, channelId, text) =>
+        orgService.gatewaySend(projectId, orgId, userId, channelId, text),
+      openEmployeeSession: (args) => orgService.gatewayOpenSession(args),
+      notifyProject: deps.notifyProject,
+    };
     // Only active while this App is; the successor's start() reconciles from the files.
     effect(() => orgScheduler.stop());
   }

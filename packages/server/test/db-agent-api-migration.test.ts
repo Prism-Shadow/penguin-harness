@@ -4,7 +4,9 @@ import { appliedMigrations, migrate, rollbackTo } from "../src/db/migrations/ind
 import { namesAfter, openFresh, record, shape, sqlite } from "./db-migrations-fixtures.js";
 function open13(): DatabaseSync {
   const db = openFresh();
-  db.exec("DROP INDEX IF EXISTS idx_agent_api_keys_agent; DROP TABLE IF EXISTS agent_api_keys; DROP TABLE IF EXISTS agent_api;");
+  db.exec(
+    "DROP INDEX IF EXISTS idx_agent_api_keys_agent; DROP TABLE IF EXISTS agent_api_keys; DROP TABLE IF EXISTS agent_api;",
+  );
   // A root that has run everything but agent-api: the fixture names what it lacks, so the
   // migration list growing after it (this line's own later migrations) never widens `applied`.
   record(db, namesAfter(null).filter((name) => name !== "agent-api"));
