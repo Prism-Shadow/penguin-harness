@@ -4,19 +4,24 @@
  *
  * Platform layer end to end. The isolation is a HOST (`<label>.localhost`), which a request
  * carries in its headers and HttpModule dispatches on before anything of the App's runs —
- * no listener, no port and no shell route is added, so a hot push delivers the whole feature.
+ * no listener, no port and no route of the runtime's is added, so a hot push delivers the
+ * whole feature. A WebSocket on a Browser host reaches it through the runtime's upgrade
+ * seam (terminal/ws.ts offers every upgrade to the platform first) and is tunnelled
+ * (upgrade.ts).
  */
 import type { DatabaseSync } from "node:sqlite";
 import type { Hono } from "hono";
 import { Bind, Module, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
-import { Clock, Config, Db } from "../hmr/capabilities.js";
+import { Clock, Config, Db, Log } from "../hmr/capabilities.js";
 import { Machines } from "../machines/service.js";
 import { Settings } from "../mechanisms/settings.js";
 import { HttpFetch } from "../services/update-check-service.js";
 import { BrowserEgress } from "./egress.js";
 import { browserApiRoutes, browserHostApp } from "./routes.js";
+import { browserHostUpgrade } from "./upgrade.js";
+import type { HostApp } from "../http/app.js";
 import { BrowserSitesRepo } from "./sites.js";
 
 const PROXY_ENV = ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"] as const;
@@ -47,8 +52,9 @@ export class BrowserModule {
   @Use() private readonly settings!: Settings;
   @Use() private readonly machines!: Machines;
   @Use() private readonly http!: HttpFetch;
+  @Use() private readonly log!: Log;
   @Bind("BrowserModule.routes") routes!: Hono<AppEnv>;
-  @Bind("BrowserModule.hosts") hostApp!: Hono;
+  @Bind("BrowserModule.hosts") hostApp!: HostApp;
   setup({ effect }: ClassCtx) {
     const sites = new BrowserSitesRepo(this.db as unknown as DatabaseSync, () => this.clock.now());
     const egress = new BrowserEgress({
@@ -67,7 +73,10 @@ export class BrowserModule {
       knowsMachine: (machineId) => this.machines.knows(machineId),
       port: () => this.config.port,
     });
-    this.hostApp = browserHostApp({ sites, egress });
+    this.hostApp = {
+      app: browserHostApp({ sites, egress }),
+      upgrade: browserHostUpgrade({ sites, egress, log: (line) => this.log.line(line) }),
+    };
     effect(() => egress.close());
   }
 }

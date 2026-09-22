@@ -1,6 +1,8 @@
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Hono } from "hono";
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import type { AppEnv } from "../auth/middleware.js";
 import { Config, Log } from "../hmr/capabilities.js";
 import type { MiddlewareHandler } from "hono";
@@ -31,7 +33,23 @@ export abstract class Http extends Interface<{
     userId: string,
     request: Opaque<"Request", Request>,
   ): Promise<Opaque<"Response", Response>>;
+  /**
+   * An Upgrade (a WebSocket handshake), offered by the runtime before its own handlers see
+   * it — the seam an upgrade takes, since a Response cannot carry a live socket. True when a
+   * host of this surface's own claimed the socket; false leaves it to the runtime.
+   */
+  upgrade(
+    req: Opaque<"IncomingMessage", IncomingMessage>,
+    socket: Opaque<"Duplex", Duplex>,
+    head: Opaque<"Buffer", Buffer>,
+  ): Promise<boolean>;
 }>() {}
+
+/** What a host of its own binds: the app that answers its requests, and, if it carries any, its upgrades. */
+export interface HostApp {
+  app: Hono;
+  upgrade?: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<boolean>;
+}
 
 export interface HttpSlots {
   /**
@@ -52,12 +70,11 @@ export interface HttpSlots {
    * guarantee that no App route is reachable there has to hold by construction, not by each
    * route remembering to check.
    */
-  hosts: Slot<{ pattern: string }, Opaque<"Hono", Hono>>;
+  hosts: Slot<{ pattern: string }, Opaque<"HostApp", HostApp>>;
 }
 
-interface HostApp {
+interface BoundHost extends HostApp {
   pattern: RegExp;
-  app: Hono;
 }
 
 /**
@@ -86,9 +103,9 @@ export class HttpModule {
       }))
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 
-    const hosts: HostApp[] = [...(contributions.hosts ?? [])].map((c) => ({
+    const hosts: BoundHost[] = [...(contributions.hosts ?? [])].map((c) => ({
       pattern: new RegExp(c.data.pattern as string),
-      app: c.code as Hono,
+      ...(c.code as HostApp),
     }));
 
     // The HTTP surface, gated on the cookie; and the same surface once per socket user,
@@ -121,6 +138,14 @@ export class HttpModule {
       fetch: (request: Request) => Promise.resolve(cookieGated.fetch(request)),
       fetchAs: (userId: string, request: Request) =>
         Promise.resolve(enteredAs(userId).fetch(request)),
+      // By Host, like the requests: the one host whose pattern matches gets the socket, and
+      // only if it carries upgrades at all. No host, no claim — the runtime's own then.
+      upgrade: async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+        const hostname = hostOnly(requestAuthority(req.url ?? "/", req.headers.host)).toLowerCase();
+        const host = hosts.find((h) => h.pattern.test(hostname));
+        if (host?.upgrade === undefined) return false;
+        return host.upgrade(req, socket, head);
+      },
     };
   }
 
@@ -129,7 +154,7 @@ export class HttpModule {
     routes: { prefix: string; auth: "user" | "none"; order: number; app: Hono<AppEnv> }[],
     gate: MiddlewareHandler<AppEnv>,
     /** Hosts answered by an app of their own. None on the socket's surface: a call frame names a path, never a Host. */
-    hosts: HostApp[] = [],
+    hosts: BoundHost[] = [],
   ): Hono<AppEnv> {
     const errors = this.errors;
     const access = this.access;

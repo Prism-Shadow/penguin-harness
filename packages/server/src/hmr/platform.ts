@@ -45,6 +45,8 @@ import {
 } from "@prismshadow/penguin-core/kernel";
 import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
 import { TerminalManager } from "../terminal/manager.js";
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import type { TerminalSession } from "../terminal/session.js";
 import { SESSION_GROUP } from "../machines/transport/index.js";
 import type { HeldSession } from "../machines/transport/index.js";
@@ -103,6 +105,13 @@ export interface PlatformApi extends Park {
    */
   terminals(): TerminalManager;
   attachStream(ws: WebSocket, session: TerminalSession, url: URL, log: (l: string) => void): void;
+  /**
+   * The upgrade seam, the HTTP seam's counterpart for a live socket: every Upgrade the
+   * runtime receives is offered here first (terminal/ws.ts), and true means the platform
+   * took the socket. Optional, like `http`: a platform from before it simply never claims
+   * one, and a runtime from before it never asks — nothing either side requires of the other.
+   */
+  upgrade?(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<boolean>;
   /**
    * The module tree this App built (null on a declared bare kernel). In-process member,
    * NOT a registry entry: the runtime holds this instance already (hmr.ensure()), so a
@@ -457,6 +466,7 @@ async function createInner(
   const httpApi = business?.api<{
     fetch(request: Request): Promise<Response>;
     fetchAs(userId: string, request: Request): Promise<Response>;
+    upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<boolean>;
   }>("HttpModule", "http");
   const http = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
   const logNode = business?.api<Log>("RuntimeModule", "Log") ?? null;
@@ -487,6 +497,9 @@ async function createInner(
       terminals: terminals.handleIds().length,
     }),
     http,
+    ...(httpApi === undefined
+      ? {}
+      : { upgrade: (req, socket, head) => httpApi.upgrade(req, socket, head) }),
     terminals: () => terminals,
     attachStream: (ws, session, url, log) => {
       // The runtime handed the socket over exactly as for a local pty, owner checked. Three
@@ -620,6 +633,8 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       park: () => inner.api.park(),
       info: () => inner.api.info(),
       http: (request) => inner.api.http(request),
+      upgrade: (req, socket, head) =>
+        inner.api.upgrade?.(req, socket, head) ?? Promise.resolve(false),
       terminals: () => inner.api.terminals(),
       attachStream: (ws, session, url, log) => {
         if (!isApiSocketRef(session)) return inner.api.attachStream(ws, session, url, log);

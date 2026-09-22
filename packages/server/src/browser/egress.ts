@@ -148,6 +148,44 @@ export class BrowserEgress {
     this.#direct = null;
   }
 
+  /**
+   * A raw TCP (or TLS) stream to the target, for a tunnel this server only carries — a
+   * WebSocket upgrade. Vetted like a fetch: a Workspace port is dialled through the machine
+   * (or the loopback here, never this server's own port), a public host only after every
+   * address it resolves to proved public — and, being a direct connection, to one of THOSE
+   * addresses, so the check is the dial.
+   */
+  async open(target: BrowserTarget, machineId: string | null): Promise<net.Socket> {
+    if (target.kind === "workspace") {
+      const socket = await this.#dial(target.port, machineId);
+      return target.secure ? overTls(socket) : socket;
+    }
+    const url = new URL(target.origin);
+    const addresses = await vetPublicHost(url.hostname, this.deps.resolve);
+    const secure = url.protocol === "https:";
+    const port = url.port === "" ? (secure ? 443 : 80) : Number(url.port);
+    const host = addresses[0] as string;
+    const socket = await new Promise<net.Socket>((resolve, reject) => {
+      const raw = net.connect({ host, port });
+      raw.once("connect", () => resolve(raw));
+      raw.once("error", reject);
+    });
+    return secure ? tls.connect({ socket, servername: url.hostname }) : socket;
+  }
+
+  /** The socket a Workspace port is reached on: through the machine, or the loopback here. */
+  async #dial(port: number, machineId: string | null): Promise<net.Socket> {
+    if (machineId === null) {
+      if (port === this.deps.ownPort()) {
+        throw new EgressRefused("own_port", "That port is this app's own.");
+      }
+      return net.connect({ host: "127.0.0.1", port });
+    }
+    const dialled = await this.deps.dialPort(machineId, port);
+    if (!dialled.ok) throw new EgressRefused("machine_unreachable", dialled.detail);
+    return dialled.socket;
+  }
+
   fetch(
     target: BrowserTarget,
     machineId: string | null,
@@ -188,18 +226,7 @@ export class BrowserEgress {
     machineId: string | null,
     request: EgressRequest,
   ): Promise<Response> {
-    let socket: net.Socket;
-    if (machineId === null) {
-      if (port === this.deps.ownPort()) {
-        throw new EgressRefused("own_port", "That port is this app's own.");
-      }
-      socket = net.connect({ host: "127.0.0.1", port });
-    } else {
-      const dialled = await this.deps.dialPort(machineId, port);
-      if (!dialled.ok) throw new EgressRefused("machine_unreachable", dialled.detail);
-      socket = dialled.socket;
-    }
-
+    let socket = await this.#dial(port, machineId);
     if (secure) socket = overTls(socket);
 
     const headers: Record<string, string> = {};
