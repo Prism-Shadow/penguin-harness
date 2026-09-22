@@ -79,6 +79,31 @@ describe("pathPrependPrefix", () => {
     expect(pathPrependPrefix("cmd", ["C:\\shim"])).toBe(`set "PATH=C:\\shim;%PATH%" && `);
   });
 
+  it("a quote in the directory is left out of the cmd statement instead of breaking it", () => {
+    // A `"` would close `set "PATH=…"` and spill the rest of the line as loose tokens in
+    // front of the command, so such a directory is dropped from the statement — the
+    // child-environment prepend still carries it — and the others keep their order.
+    expect(pathPrependPrefix("cmd", ['C:\\a"b'])).toBe("");
+    expect(pathPrependPrefix("cmd", ["C:\\first", 'C:\\a"b', "C:\\second"])).toBe(
+      `set "PATH=C:\\first;C:\\second;%PATH%" && `,
+    );
+  });
+
+  it("a `%` in a cmd directory is passed through unchanged, as the comment documents", () => {
+    // cmd expands the reference when it runs the statement; the cost is a prefix naming
+    // the wrong directory, not a mangled PATH.
+    expect(pathPrependPrefix("cmd", ["C:\\100%"])).toBe(`set "PATH=C:\\100%;%PATH%" && `);
+  });
+
+  it("the dialects that can quote still carry a quote in the directory untouched", () => {
+    // Regression pin for the cmd guard: POSIX single quotes make a `"` literal and
+    // PowerShell single-quoted literals carry one too, so neither branch needs to filter.
+    expect(pathPrependPrefix("bash", ['C:\\a"b'])).toBe(`export PATH='C:\\a"b':"$PATH"; `);
+    expect(pathPrependPrefix("pwsh", ['C:\\a"b'])).toBe(
+      `$env:PATH = 'C:\\a"b' + ';' + $env:PATH; `,
+    );
+  });
+
   it("a shell whose PATH syntax is not one of those gets nothing at all", () => {
     // fish has no `export`; an unrecognized PENGUIN_SHELL basename is anyone's guess. A
     // prefix in the wrong dialect would fail every command, so neither gets one — the

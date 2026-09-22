@@ -71,8 +71,18 @@ export function pathPrependPrefix(shellName: string, dirs: readonly string[]): s
   }
   // cmd offers no quoting: a `%` in a directory would be read as a variable reference and
   // expanded here. What that costs is a prefix naming the wrong directory, not a mangled
-  // PATH — the `;%PATH%` tail is unaffected.
-  if (shellName === "cmd") return `set "PATH=${dirs.join(";")};%PATH%" && `;
+  // PATH — the `;%PATH%` tail is unaffected. (A `&` or `^` stays literal inside the double
+  // quotes, and `!` only matters under delayed expansion, which `cmd /d /s /c` — see
+  // shell.ts — does not enable.) A `"` is the one character a directory cannot carry at
+  // all: it closes the quoted `set` statement and spills the rest of the line as loose
+  // tokens in front of the command, so such a directory is left out of the statement
+  // rather than emitted as a broken one — the child-environment prepend still puts it on
+  // the inherited PATH.
+  if (shellName === "cmd") {
+    const carryable = dirs.filter((dir) => !dir.includes('"'));
+    if (carryable.length === 0) return "";
+    return `set "PATH=${carryable.join(";")};%PATH%" && `;
+  }
   if (!EXPORT_PATH_SHELLS.has(shellName)) return "";
   return `export PATH=${dirs.map(posixQuote).join(":")}:"$PATH"; `;
 }
