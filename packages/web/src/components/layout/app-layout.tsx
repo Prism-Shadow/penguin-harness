@@ -40,7 +40,7 @@ import { useCompletionNotifications } from "../../state/use-completion-notificat
 import { useTrayLocale } from "../../state/use-tray-locale";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { useCompany } from "../../state/company";
-import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
+import { COMPANY_NAV_ICONS, ORG_PAGE_ICONS } from "../../features/company/company-nav-icons";
 import { ChannelRailRows, DefaultChannelRailRow } from "../../features/company/channel-sidebar";
 import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
 import {
@@ -50,7 +50,6 @@ import {
   orgPageRows,
   parseOrgKey,
 } from "../../features/company/company-nav";
-import { ORG_PAGE_ICONS } from "../../features/company/company-nav-icons";
 import { useOrgPages } from "../../features/company/use-org-pages";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { FindBar } from "../find/find-bar";
