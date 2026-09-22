@@ -141,6 +141,10 @@ export const en: Strings = {
   /** Port forwarding: the dock's Ports panel, and a machine's Ports page. */
   ports: {
     panelTitle: "Ports",
+    here: "here",
+    machine: "machine",
+    formTitle: "New forward",
+    autoPort: "auto",
     localNote:
       "This Workspace is on this server: its ports are reachable on localhost as they are.",
     adminOnly: "Only an admin can forward a machine's port.",
@@ -163,10 +167,6 @@ export const en: Strings = {
     backToMachines: "Machines",
     machineEmpty:
       "No port forwards on this machine yet. Add one from the Ports panel of a conversation on it.",
-    colListener: "Listener",
-    colDial: "Last dial",
-    colOpen: "Open",
-    colTraffic: "Up / down",
     verb: "Ports",
     verbTitle: "Every port forward of this machine",
   },

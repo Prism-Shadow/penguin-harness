@@ -163,6 +163,13 @@ export const zh = {
   /** Port forwarding: the dock's Ports panel, and a machine's Ports page. */
   ports: {
     panelTitle: "端口",
+    /** The right-hand plug of every cable: this server, where the browser is talking to. */
+    here: "本地",
+    /** The left-hand plug while the machine's name is not known yet. */
+    machine: "机器",
+    /** The form's own cable reads "<machine> :[port] ──▶ 本地 :[port]"; these name the two fields. */
+    formTitle: "新的转发",
+    autoPort: "自动",
     /** A Workspace on this server has nothing to forward. */
     localNote: "此 Workspace 在本服务端上，端口可直接经 localhost 访问。",
     adminOnly: "只有管理员可以转发机器的端口。",
@@ -186,10 +193,6 @@ export const zh = {
     machineTitle: (alias: string) => `${alias} 的端口转发`,
     backToMachines: "机器",
     machineEmpty: "这台机器还没有端口转发。在位于它上面的对话里，从「端口」面板添加。",
-    colListener: "监听",
-    colDial: "最近一次拨号",
-    colOpen: "连接",
-    colTraffic: "上行 / 下行",
     /** The verb on a machine's card. */
     verb: "端口",
     verbTitle: "查看这台机器的全部端口转发",

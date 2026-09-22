@@ -333,6 +333,18 @@
   grid-template-rows: 0fr;
   animation: tree-group-close 200ms ease-in;
 }
+/* The port-forward cable: dashes travel from the machine's plug to this server's while a
+   connection is open. Only the dash offset moves, and a standing dashed line is a perfectly
+   good cable, so the global `animation: none !important` below needs no special case here. */
+@keyframes cable-flow {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+.cable-flow {
+  animation: cable-flow 700ms linear infinite;
+}
+
 @keyframes tree-group-open {
   from {
     grid-template-rows: 0fr;

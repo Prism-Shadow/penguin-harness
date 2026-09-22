@@ -14,13 +14,12 @@ import { deletePortForward, getMachines, listPortForwards } from "../../api/endp
 import { CloseIcon } from "../../components/ui/icons";
 import { Skeleton } from "../../components/ui/skeleton";
 import { apiErrorText } from "../../lib/api-error";
-import { formatBytes } from "../../lib/format";
 import { S } from "../../lib/strings";
-import { toneDot } from "../../lib/tone";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { dialLine, forwardTone, groupByWorkspace, listenerLine } from "./port-forward-facts";
+import { groupByWorkspace } from "./port-forward-facts";
+import { ForwardRow } from "./forward-cable";
 
 const POLL_MS = 3000;
 const MONO = "font-mono text-xs";
@@ -104,24 +103,17 @@ export function MachinePortsPage() {
         ) : (
           groups.map(([workspace, rows]) => (
             <section key={workspace} className="mt-5" data-testid="machine-ports-workspace">
-              <h2 className={`${MONO} truncate text-gray-500`} title={workspace}>
+              <h2 className={`${MONO} truncate px-2 text-gray-500`} title={workspace}>
                 {workspace}
               </h2>
-              <ul className="mt-2 space-y-2">
+              <ul className="mt-1 space-y-0.5">
                 {rows.map((forward) => (
-                  <li
+                  <ForwardRow
                     key={forward.id}
-                    data-testid="machine-port-forward"
-                    className="rounded-xl border border-gray-200 p-3 dark:border-gray-800"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[forwardTone(forward)]}`}
-                        aria-hidden="true"
-                      />
-                      <span className={`${MONO} min-w-0 flex-1 truncate`}>
-                        {forward.remotePort} → localhost:{forward.localPort}
-                      </span>
+                    forward={forward}
+                    machineName={machine?.alias ?? machineId}
+                    locale={locale}
+                    actions={
                       <button
                         type="button"
                         title={S.ports.remove}
@@ -131,20 +123,8 @@ export function MachinePortsPage() {
                       >
                         <CloseIcon size={12} />
                       </button>
-                    </div>
-                    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-                      <dt className="text-gray-500">{S.ports.colListener}</dt>
-                      <dd>{listenerLine(forward)}</dd>
-                      <dt className="text-gray-500">{S.ports.colDial}</dt>
-                      <dd className="break-words">{dialLine(forward, locale)}</dd>
-                      <dt className="text-gray-500">{S.ports.colOpen}</dt>
-                      <dd>{forward.open}</dd>
-                      <dt className="text-gray-500">{S.ports.colTraffic}</dt>
-                      <dd className={MONO}>
-                        {formatBytes(forward.bytesUp)} / {formatBytes(forward.bytesDown)}
-                      </dd>
-                    </dl>
-                  </li>
+                    }
+                  />
                 ))}
               </ul>
             </section>
