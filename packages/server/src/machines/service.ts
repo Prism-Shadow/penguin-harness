@@ -136,8 +136,7 @@ export interface MachinesEffects {
   agent: (target: RemoteTarget, remotePort: number) => http.Agent;
   /** One TCP connection to `127.0.0.1:<remotePort>` on that machine, as a channel of its session. */
   dial: (target: RemoteTarget, remotePort: number) => Promise<net.Socket>;
-  /** Port forwards on the session: whether ssh here can carry them, the wanted set, and ssh's answers. */
-  supportsForwards: (target: RemoteTarget) => boolean;
+  /** Port forwards on the session: the wanted set, and ssh's answers. */
   setForwards: (target: RemoteTarget, specs: readonly ForwardSpec[]) => Promise<void>;
   forwardFacts: (target: RemoteTarget) => ReadonlyMap<string, ForwardFact>;
   stopServer: (target: RemoteTarget) => ReturnType<typeof stopRemoteServer>;
@@ -237,7 +236,6 @@ export class MachinesService {
       session: (address) => sessionOf(address),
       agent: (target, remotePort) => connectionTo(target).agent(remotePort),
       dial: (target, remotePort) => connectionTo(target).dial(remotePort),
-      supportsForwards: (target) => connectionTo(target).supportsForwards(),
       setForwards: (target, specs) => connectionTo(target).setForwards(specs),
       forwardFacts: (target) => connectionTo(target).forwardFacts(),
       stopServer: (target) => stopRemoteServer(target, layout, this.#effects.runOn),
@@ -491,19 +489,16 @@ export class MachinesService {
    * The port forwards wanted on a machine's session — ssh's own `-L` / `-R`, added to and
    * taken off the live session (transport/ssh-session.ts). The set is remembered by the
    * session, so a machine that reconnects gets them back without anyone asking again; a
-   * machine not on record is refused. `supported` is false on a Windows hub, whose ssh has
-   * no control socket to ask.
+   * machine not on record is refused.
    */
   async setForwards(
     machineId: string,
     specs: readonly ForwardSpec[],
-  ): Promise<{ ok: true; supported: boolean } | { ok: false; detail: "unknown machine" }> {
+  ): Promise<{ ok: true } | { ok: false; detail: "unknown machine" }> {
     const row = this.#rowFor(machineId);
     if (row === null) return { ok: false, detail: "unknown machine" };
-    const target = this.#targetOf(row.address.slice("ssh:".length));
-    if (!this.#effects.supportsForwards(target)) return { ok: true, supported: false };
-    await this.#effects.setForwards(target, specs);
-    return { ok: true, supported: true };
+    await this.#effects.setForwards(this.#targetOf(row.address.slice("ssh:".length)), specs);
+    return { ok: true };
   }
 
   /** ssh's last word on each forward of a machine (by forwardKey), and whether its session is up. */

@@ -243,6 +243,11 @@ export function sessionArgs(
   socksPort: number,
   /** The control socket this session is master of (POSIX; Win32 OpenSSH has no multiplexing). */
   controlPath: string | null = null,
+  /**
+   * Forwards carried from the start — the way a session without a control socket carries
+   * them (Win32 OpenSSH): the set changes, the session is reopened with the new set.
+   */
+  forwards: readonly ForwardSpec[] = [],
 ): string[] {
   if (!Number.isInteger(socksPort) || socksPort < 1 || socksPort > 65535) {
     throw new Error(`bad port ${socksPort}`);
@@ -250,8 +255,11 @@ export function sessionArgs(
   return [
     ...connectionOptions(target),
     "-T",
+    // With forwards in the start args, a port that will not bind must NOT end the session —
+    // it is reported (ssh says so on stderr) and the session goes on carrying the rest. The
+    // SOCKS port is chosen free moments before the spawn, which is what the exit guarded.
     "-o",
-    "ExitOnForwardFailure=yes",
+    `ExitOnForwardFailure=${forwards.length === 0 ? "yes" : "no"}`,
     "-o",
     "ServerAliveInterval=15",
     "-o",
@@ -261,6 +269,7 @@ export function sessionArgs(
     // connection or a restart of this one. ControlPersist stays off: the session lives as
     // long as this process holds it, and dies with it.
     ...(controlPath === null ? [] : ["-M", "-S", controlPath]),
+    ...forwards.flatMap((spec) => forwardFlag(spec)),
     "-D",
     `127.0.0.1:${socksPort}`,
     target.alias,

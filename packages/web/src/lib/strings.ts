@@ -180,12 +180,10 @@ export const zh = {
     copyAddress: "复制本地地址",
     open: "在浏览器中打开",
     remove: "删除转发",
-    connections: (n: number) => `${n} 个连接`,
     invalidRemotePort: "远端端口须为 1–65535 的整数。",
     invalidLocalPort: "本地端口须为 1024–65535 的整数。",
     /** The status, in the words of whoever carries the forward. */
     statusOnSession: "已加到 ssh 会话上",
-    statusListening: "监听中",
     statusPending: "等待 ssh 应答",
     statusNotConnected: "机器未连接——连接后自动生效",
     statusFailed: (detail: string) => `失败：${detail}`,

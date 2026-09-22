@@ -1,7 +1,6 @@
 /**
  * Port forwarding: the wanted set handed to a machine's session, what ssh's answers read as,
- * the local port chosen, both directions — and, on a hub whose ssh cannot carry forwards,
- * the listener this process binds instead, with real sockets on the loopback.
+ * the local port chosen, both directions.
  */
 import net from "node:net";
 import type { AddressInfo } from "node:net";
@@ -13,7 +12,6 @@ import { forwardKey } from "../src/machines/transport/index.js";
 import type { ForwardFact } from "../src/machines/transport/index.js";
 import { PortForwardService } from "../src/port-forwards/service.js";
 import type { ForwardCarrier, PortForwardInfo } from "../src/port-forwards/service.js";
-import { waitFor } from "./helpers.js";
 
 const MACHINE = "QS7J4YVgSovi-Z2c";
 const WORKSPACE = "/home/dev/site";
@@ -27,18 +25,6 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-/** Sends `text` to a local port and resolves with everything that came back before the close. */
-function roundTrip(port: number, text: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const socket = net.connect(port, "127.0.0.1");
-    let heard = "";
-    socket.on("connect", () => socket.end(text));
-    socket.on("data", (chunk) => (heard += chunk.toString("utf8")));
-    socket.on("close", () => resolve(heard));
-    socket.on("error", reject);
-  });
-}
-
 const made = (result: Awaited<ReturnType<PortForwardService["create"]>>): PortForwardInfo => {
   if ("error" in result) throw new Error(`refused: ${result.error}`);
   return result;
@@ -46,18 +32,15 @@ const made = (result: Awaited<ReturnType<PortForwardService["create"]>>): PortFo
 
 /** A machine session double: what it was handed, what it answers, whether it is up. */
 class FakeCarrier implements ForwardCarrier {
-  supported = true;
   connected = true;
   wanted = new Map<string, ForwardSpec[]>();
   answers = new Map<string, ForwardFact>();
-  dials = 0;
-  constructor(private readonly machinePort: number) {}
   knows(machineId: string): boolean {
     return machineId === MACHINE;
   }
   async setForwards(machineId: string, specs: readonly ForwardSpec[]) {
     this.wanted.set(machineId, [...specs]);
-    return { ok: true as const, supported: this.supported };
+    return { ok: true as const };
   }
   forwardFacts(machineId: string) {
     const facts = new Map<string, ForwardFact>();
@@ -67,52 +50,23 @@ class FakeCarrier implements ForwardCarrier {
     }
     return { connected: this.connected, facts };
   }
-  async dialPort(_machineId: string, remotePort: number) {
-    this.dials++;
-    if (!this.connected) return { ok: false as const, detail: "machine not connected" };
-    return new Promise<{ ok: true; socket: net.Socket } | { ok: false; detail: string }>(
-      (resolve) => {
-        const socket = net.connect(remotePort, "127.0.0.1");
-        socket.once("connect", () => resolve({ ok: true, socket }));
-        socket.once("error", (err) => resolve({ ok: false, detail: err.message }));
-      },
-    );
-  }
 }
 
 describe("PortForwardService", () => {
   let db: ReturnType<typeof openDatabase>;
   let repo: PortForwardsRepo;
-  /** The "machine": echoes what it hears, upper-cased, so a reply proves the far end answered. */
-  let machine: net.Server;
-  let machinePort: number;
   let carrier: FakeCarrier;
-  let services: PortForwardService[];
 
-  const service = (): PortForwardService => {
-    const made = new PortForwardService(repo, carrier, () => new Date("2026-09-19T08:00:00.000Z"));
-    services.push(made);
-    return made;
-  };
+  const service = (): PortForwardService =>
+    new PortForwardService(repo, carrier, () => new Date("2026-09-19T08:00:00.000Z"));
 
   beforeEach(async () => {
     db = openDatabase(":memory:");
     repo = new PortForwardsRepo(db);
-    services = [];
-    machine = net.createServer({ allowHalfOpen: true }, (socket) => {
-      let heard = "";
-      socket.on("data", (chunk) => (heard += chunk.toString("utf8")));
-      socket.on("end", () => socket.end(heard.toUpperCase()));
-      socket.on("error", () => socket.destroy());
-    });
-    await new Promise<void>((resolve) => machine.listen(0, "127.0.0.1", resolve));
-    machinePort = (machine.address() as AddressInfo).port;
-    carrier = new FakeCarrier(machinePort);
+    carrier = new FakeCarrier();
   });
 
-  afterEach(async () => {
-    for (const each of services) each.stop();
-    await new Promise<void>((resolve) => machine.close(() => resolve()));
+  afterEach(() => {
     db.close();
   });
 
@@ -141,9 +95,8 @@ describe("PortForwardService", () => {
         { direction: "in", localPort: inbound.localPort, remotePort: 3000 },
         { direction: "out", localPort: 5432, remotePort: 5432 },
       ]);
-      expect(inbound).toMatchObject({ via: "ssh", direction: "in" });
-      expect(outbound).toMatchObject({ via: "ssh", direction: "out" });
-      expect(carrier.dials).toBe(0);
+      expect(inbound).toMatchObject({ direction: "in" });
+      expect(outbound).toMatchObject({ direction: "out" });
 
       // Removing one hands the machine the set without it.
       expect(await forwards.remove(inbound.id)).toBe(true);
@@ -279,7 +232,7 @@ describe("PortForwardService", () => {
           localPort: 8080,
         }),
       );
-      carrier = new FakeCarrier(machinePort);
+      carrier = new FakeCarrier();
       carrier.connected = false;
       const after = service();
       await after.start();
@@ -288,106 +241,6 @@ describe("PortForwardService", () => {
         { kind: "not-connected" },
         { kind: "not-connected" },
       ]);
-      expect(carrier.dials).toBe(0);
-    });
-  });
-
-  describe("on a hub whose ssh cannot carry forwards", () => {
-    beforeEach(() => {
-      carrier.supported = false;
-    });
-
-    it("binds an `in` forward here, carries bytes both ways, and dials only when someone connects", async () => {
-      const forwards = service();
-      const localPort = await freePort();
-      const forward = made(
-        await forwards.create({
-          machineId: MACHINE,
-          workspace: WORKSPACE,
-          direction: "in",
-          remotePort: machinePort,
-          localPort,
-        }),
-      );
-      expect(forward).toMatchObject({
-        via: "listener",
-        status: { kind: "active" },
-        traffic: { open: 0 },
-      });
-      expect(carrier.dials).toBe(0);
-      expect(await roundTrip(localPort, "hello")).toBe("HELLO");
-      expect(carrier.dials).toBe(1);
-      await waitFor(() => forwards.list()[0]!.traffic!.open === 0);
-      expect(forwards.list()[0]!.traffic).toEqual({ open: 0, bytesUp: 5, bytesDown: 5 });
-    });
-
-    it("refuses an `out` forward: nothing here can make the machine listen", async () => {
-      const forwards = service();
-      expect(
-        await forwards.create({
-          machineId: MACHINE,
-          workspace: WORKSPACE,
-          direction: "out",
-          remotePort: 5432,
-          localPort: 5432,
-        }),
-      ).toEqual({ error: "unsupported_here" });
-      expect(forwards.list()).toEqual([]);
-    });
-
-    it("keeps the reason when the machine is not connected, and reports a port it cannot bind", async () => {
-      const forwards = service();
-      const localPort = await freePort();
-      const forward = made(
-        await forwards.create({
-          machineId: MACHINE,
-          workspace: WORKSPACE,
-          direction: "in",
-          remotePort: machinePort,
-          localPort,
-        }),
-      );
-      carrier.connected = false;
-      expect(await roundTrip(localPort, "hello")).toBe("");
-      expect(forwards.list()[0]!.status).toEqual({
-        kind: "failed",
-        detail: "machine not connected",
-      });
-      forwards.stop();
-
-      const squatter = net.createServer();
-      await new Promise<void>((resolve) => squatter.listen(localPort, "127.0.0.1", resolve));
-      try {
-        const blocked = service();
-        await blocked.start();
-        expect(blocked.list()).toMatchObject([
-          { id: forward.id, localPort, status: { kind: "failed", detail: "EADDRINUSE" } },
-        ]);
-      } finally {
-        await new Promise<void>((resolve) => squatter.close(() => resolve()));
-      }
-    });
-
-    it("removing a forward closes its listener and the connections through it", async () => {
-      const forwards = service();
-      const localPort = await freePort();
-      const forward = made(
-        await forwards.create({
-          machineId: MACHINE,
-          workspace: WORKSPACE,
-          direction: "in",
-          remotePort: machinePort,
-          localPort,
-        }),
-      );
-      const client = net.connect(localPort, "127.0.0.1");
-      await new Promise<void>((resolve) => client.once("connect", () => resolve()));
-      await waitFor(() => forwards.list()[0]!.traffic!.open > 0);
-      const closed = new Promise<void>((resolve) => client.once("close", () => resolve()));
-      expect(await forwards.remove(forward.id)).toBe(true);
-      await closed;
-      expect(forwards.list()).toEqual([]);
-      await expect(roundTrip(localPort, "x")).rejects.toThrow(/ECONNREFUSED/);
     });
   });
 

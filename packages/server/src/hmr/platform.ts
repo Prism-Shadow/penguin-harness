@@ -254,16 +254,7 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
   // A held ssh session to a machine, as the successor's transport claims it back
   // (machines/transport/ssh-session.ts): commands, the SOCKS port, and the forwards it
   // carries. Every member the adopter calls, for the same reason as `terminal`.
-  machineSession: [
-    "hold",
-    "held",
-    "run",
-    "session",
-    "close",
-    "supportsForwards",
-    "setForwards",
-    "forwardFacts",
-  ],
+  machineSession: ["hold", "held", "run", "session", "close", "setForwards", "forwardFacts"],
 };
 
 /**

@@ -4460,7 +4460,7 @@ export interface MachinesStopUsingRequest {
 
 /**
  * One forward, its record and what is known of it right now. The status names which layer
- * speaks — the session, ssh, or this process's own listener — and is never one "working" flag.
+ * speaks — the session, or ssh — and is never one "working" flag.
  */
 export interface PortForwardInfo {
   id: string;
@@ -4475,19 +4475,15 @@ export interface PortForwardInfo {
   /** `127.0.0.1:<localPort>` on this server; fixed once given. */
   localPort: number;
   createdAt: string;
-  /** Who carries it: ssh on the machine's session, or a listener of this process's own (a Windows hub). */
-  via: "ssh" | "listener";
   status:
-    /** ssh (or the listener) has it. */
+    /** ssh has it. */
     | { kind: "active" }
     /** The session is up and ssh has not answered yet. */
     | { kind: "pending" }
     /** The machine's session is down; the forward is wanted and waits for it. */
     | { kind: "not-connected" }
-    /** ssh, or the listener, or the last dial said no — in its own words. */
+    /** ssh said no — in its own words. */
     | { kind: "failed"; detail: string };
-  /** What only the listener path can count. */
-  traffic?: { open: number; bytesUp: number; bytesDown: number };
 }
 
 /** `GET /api/port-forwards?machine=&workspace=` — both filters optional. */

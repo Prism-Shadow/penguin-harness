@@ -20,7 +20,6 @@ const forward = (over: Partial<PortForwardInfo> = {}): PortForwardInfo => ({
   remotePort: 3000,
   localPort: 3000,
   createdAt: "2026-09-19T08:00:00.000Z",
-  via: "ssh",
   status: { kind: "active" },
   ...over,
 });
@@ -36,7 +35,6 @@ describe("a forward's tone and line", () => {
   });
 
   it("says who carries it, and repeats ssh's own words when it refused", () => {
-    expect(statusLine(forward())).not.toBe(statusLine(forward({ via: "listener" })));
     expect(statusLine(forward({ status: { kind: "failed", detail: "bind: in use" } }))).toContain(
       "bind: in use",
     );

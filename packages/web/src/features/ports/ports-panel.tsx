@@ -232,7 +232,7 @@ function MachinePorts({
             onClick={() => setDirection(direction === "in" ? "out" : "in")}
             className="flex min-w-8 flex-1 cursor-pointer items-center rounded hover:bg-gray-100 dark:hover:bg-gray-800"
           >
-            <Cable tone="muted" flowing={false} label={S.ports.flipDirection} />
+            <Cable tone="muted" label={S.ports.flipDirection} />
           </button>
           {direction === "in" ? herePlug : machinePlug}
           <Button

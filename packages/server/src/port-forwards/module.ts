@@ -10,7 +10,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Hono } from "hono";
 import { Bind, Module, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import { PortForwardsRepo } from "../db/repos/port-forwards.js";
 import { Db } from "../hmr/capabilities.js";
@@ -34,15 +33,15 @@ export class PortForwardsModule {
   @Use() private readonly db!: Db;
   @Use() private readonly machines!: Machines;
   @Bind("PortForwardsModule.routes") routes!: Hono<AppEnv>;
-  setup({ effect }: ClassCtx) {
+  setup() {
     const forwards = new PortForwardService(
       new PortForwardsRepo(this.db as unknown as DatabaseSync),
       this.machines,
     );
     this.routes = portForwardRoutes(forwards);
     // Each machine's wanted set, handed to its session — asked of ssh only where a session
-    // is up; a machine that is down keeps it for later (service.ts).
+    // is up; a machine that is down keeps it for later (service.ts). Nothing to undo on
+    // dispose: the sessions carry the forwards, and the sessions are delivered.
     void forwards.start();
-    effect(() => forwards.stop());
   }
 }

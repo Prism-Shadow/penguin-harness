@@ -5,8 +5,7 @@
  *                                 is meaningless (a directory is only a Workspace on its
  *                                 machine), `machine` alone is that machine's every forward.
  * POST   /                      — forward a port; 201, 404 unknown machine, 409 when the
- *                                 forward exists, the asked local port is taken, or an `out`
- *                                 forward is asked of a hub whose ssh cannot carry one.
+ *                                 forward exists or the asked local port is taken.
  * DELETE /:id                   — close its listener and connections, forget it.
  *
  * Admin rather than any logged-in user, the rule `/server/<machineId>/` already has: a
@@ -77,12 +76,6 @@ export function portForwardRoutes(forwards: PortForwardService): Hono<AppEnv> {
         );
       case "no_free_local_port":
         throw new HttpError(409, "local_port_in_use", "No free local port near that one.");
-      case "unsupported_here":
-        throw new HttpError(
-          409,
-          "unsupported_here",
-          "This server's ssh cannot carry an out forward (Win32 OpenSSH has no control socket).",
-        );
     }
   });
 

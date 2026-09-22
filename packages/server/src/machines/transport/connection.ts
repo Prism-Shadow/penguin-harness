@@ -117,11 +117,6 @@ export class MachineConnection implements MachineChannel {
     return sessionOf(this.address);
   }
 
-  /** Whether ssh on this side can carry port forwards on the session (a control socket: not on Windows). */
-  supportsForwards(): boolean {
-    return shellOf(this.address, this.target).supportsForwards();
-  }
-
   /** The forwards wanted on this machine's session — applied now if it is up, and every time it comes up. */
   setForwards(specs: readonly ForwardSpec[]): Promise<void> {
     return shellOf(this.address, this.target).setForwards(specs);
