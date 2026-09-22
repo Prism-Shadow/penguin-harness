@@ -22,7 +22,7 @@ import { UpdateDot } from "../ui/update-dot";
 import { UserAvatar } from "../ui/user-avatar";
 import { COMPANY_MODE_ICON, CloseIcon, NAV_ICONS } from "../ui/icons";
 import { useCompany } from "../../state/company";
-import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
+import { COMPANY_NAV_ICONS, ORG_PAGE_ICONS } from "../../features/company/company-nav-icons";
 import { ChannelRailRows } from "../../features/company/channel-sidebar";
 import { DeskRailRows } from "../../features/company/org-session-groups";
 import {
@@ -33,7 +33,6 @@ import {
   orgPageRows,
   parseOrgKey,
 } from "../../features/company/company-nav";
-import { ORG_PAGE_ICONS } from "../../features/company/company-nav-icons";
 import { useContributions } from "../../state/contributions";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { UserMenu } from "./user-menu";
