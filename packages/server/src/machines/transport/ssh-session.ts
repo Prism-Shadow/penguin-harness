@@ -31,13 +31,31 @@
  * up on a dead link, a command that timed out — it is reopened on its own, with a backoff,
  * until it is explicitly closed. The proxy's dials ride the held session and never touch a
  * timer, so traffic alone is neither what keeps it nor what could lose it.
+ *
+ * PORT FORWARDS ride the session too. On POSIX the session is the master of a control socket
+ * (`-M -S`), and a forward is added to or taken off the LIVE session with `ssh -O forward` /
+ * `-O cancel` — no second connection, no restart, and a port that will not bind fails that
+ * one ask rather than the session (the session's own ExitOnForwardFailure guards only what
+ * it was started with: the SOCKS listener). The wanted set is kept here, re-applied every
+ * time the session comes back up, and what ssh answered for each is kept as its fact. Win32
+ * OpenSSH has no multiplexing, so a session there has no control socket and carries no
+ * forwards of ssh's own; the caller says what it does instead (port-forwards/service.ts).
+ *
+ * A HOT PUSH keeps a held session. The shell object is registered in the runtime's resource
+ * registry under `machineSession:<address>` and claimed back by the next generation, the way
+ * a pty is: the ssh child, its SOCKS channels, its forwards and its relays all outlive the
+ * swap. A transient session is not: it belongs to the generation that opened it.
  */
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import net from "node:net";
-import { sessionArgs } from "../commands.js";
-import type { RemoteTarget } from "../commands.js";
+import os from "node:os";
+import path from "node:path";
+import type { Resources } from "@prismshadow/penguin-core/kernel";
+import { forwardControlArgs, sessionArgs } from "../commands.js";
+import type { ForwardSpec, RemoteTarget } from "../commands.js";
+import { run } from "./exec.js";
 
 /**
  * What a command in the session produced. `output` is stdout and stderr merged, with the
@@ -63,6 +81,30 @@ export interface ShellSession {
   pid: number;
   socksPort: number;
 }
+
+/** What ssh answered when a forward was last asked for. */
+export type ForwardFact = { ok: true } | { ok: false; detail: string };
+
+/** A stable key for a forward: what the wanted set and the facts are indexed by. */
+export function forwardKey(spec: ForwardSpec): string {
+  return `${spec.direction}:${spec.localPort}:${spec.remotePort}`;
+}
+
+/** The registry id a held session is delivered under. */
+const sessionResourceId = (address: string): string => `machineSession:${address}`;
+
+/**
+ * Where the control socket goes: the temp directory, under a short name — a unix socket path
+ * has about a hundred characters to spend, and macOS's temp directory takes half of them.
+ */
+function controlPathFor(address: string): string | null {
+  if (process.platform === "win32") return null;
+  const short = createHash("sha256").update(address).digest("base64url").slice(0, 12);
+  return path.join(os.tmpdir(), `penguin-ssh-${short}.sock`);
+}
+
+/** Asking the master over the control socket is local: a slow answer is a wedged master. */
+const CONTROL_TIMEOUT_MS = 15_000;
 
 /** How long an idle session is kept before it is let go. */
 const IDLE_MS = 10 * 60_000;
@@ -120,14 +162,89 @@ class MachineShell {
   #held = false;
   #reopen: NodeJS.Timeout | null = null;
   #backoffMs = RECONNECT_MIN_MS;
+  /** The control socket this session masters; null on Windows, where ssh has none. */
+  readonly #controlPath: string | null;
+  /** The forwards wanted on this session, by key, and what ssh last said about each. */
+  readonly #forwards = new Map<string, ForwardSpec>();
+  readonly #forwardFacts = new Map<string, ForwardFact>();
+  /** Whether the wanted set has been asked of the CURRENT child; reset when it drops. */
+  #forwardsApplied = false;
+  /** Retires this session's registry entry; a no-op once a successor has taken it over. */
+  #unregister: (() => void) | null = null;
 
-  constructor(private readonly target: RemoteTarget) {}
+  constructor(
+    private readonly target: RemoteTarget,
+    readonly address: string,
+  ) {
+    this.#controlPath = controlPathFor(address);
+  }
 
   /** Keeps the session from here on: a session opened transiently is promoted in place. */
   hold(): void {
     this.#held = true;
     if (this.#idle !== null) clearTimeout(this.#idle);
     this.#idle = null;
+    // Delivered across a hot push from now on (module doc): registered under this
+    // generation, which retires whatever a predecessor registered for the same address.
+    if (registry !== null && this.#unregister === null) {
+      this.#unregister = registry.register(sessionResourceId(this.address), this, () =>
+        this.close(),
+      );
+    }
+  }
+
+  /** Whether ssh can carry forwards on this session (a control socket exists). */
+  supportsForwards(): boolean {
+    return this.#controlPath !== null;
+  }
+
+  /**
+   * Sets the forwards wanted on this session. Applied at once when the session is up — each
+   * added one asked of the master, each dropped one cancelled — and again whenever it comes
+   * back up. Without a control socket the set is recorded and nothing is asked.
+   */
+  async setForwards(specs: readonly ForwardSpec[]): Promise<void> {
+    const wanted = new Map(specs.map((spec) => [forwardKey(spec), spec]));
+    const dropped = [...this.#forwards.keys()].filter((key) => !wanted.has(key));
+    const added = [...wanted.keys()].filter((key) => !this.#forwards.has(key));
+    for (const key of dropped) {
+      const spec = this.#forwards.get(key)!;
+      this.#forwards.delete(key);
+      this.#forwardFacts.delete(key);
+      if (this.#child !== null && this.#forwardsApplied) await this.#control("cancel", spec);
+    }
+    for (const key of added) this.#forwards.set(key, wanted.get(key)!);
+    if (this.#child !== null && this.#forwardsApplied) {
+      for (const key of added) await this.#ask(this.#forwards.get(key)!);
+    }
+  }
+
+  /** ssh's last word on each wanted forward, by key; absent until the session has been asked. */
+  forwardFacts(): ReadonlyMap<string, ForwardFact> {
+    return this.#forwardFacts;
+  }
+
+  /** Every wanted forward, asked of the master that just came up. */
+  async #applyForwards(): Promise<void> {
+    for (const spec of this.#forwards.values()) await this.#ask(spec);
+  }
+
+  async #ask(spec: ForwardSpec): Promise<void> {
+    const key = forwardKey(spec);
+    const result = await this.#control("forward", spec);
+    if (!this.#forwards.has(key)) return; // dropped while the master was answering
+    this.#forwardFacts.set(key, result);
+  }
+
+  /** One `-O forward` / `-O cancel` at the master. Never throws; ssh's own words are the detail. */
+  async #control(op: "forward" | "cancel", spec: ForwardSpec): Promise<ForwardFact> {
+    if (this.#controlPath === null) return { ok: false, detail: "ssh here has no control socket" };
+    const result = await run("ssh", forwardControlArgs(this.target, this.#controlPath, op, spec), {
+      timeoutMs: CONTROL_TIMEOUT_MS,
+    });
+    if (result.code === 0) return { ok: true };
+    const said = (result.stderr + result.stdout).trim().split("\n").pop() ?? "";
+    return { ok: false, detail: said === "" ? `ssh -O ${op} exited ${result.code}` : said };
   }
 
   held(): boolean {
@@ -155,7 +272,12 @@ class MachineShell {
     this.#held = false;
     if (this.#reopen !== null) clearTimeout(this.#reopen);
     this.#reopen = null;
+    // Out of the registry means shut down: a session nobody holds is nobody's to deliver.
+    // (Identity-checked there: a successor that took this address over is untouched.)
+    const unregister = this.#unregister;
+    this.#unregister = null;
     this.#reset();
+    unregister?.();
   }
 
   /** Ends the child and answers what was pending. A held session comes back on its own. */
@@ -186,6 +308,8 @@ class MachineShell {
   #drop(): void {
     this.#child = null;
     this.#socksPort = null;
+    this.#forwardsApplied = false;
+    this.#forwardFacts.clear();
     this.#buffer = "";
     this.#emitted = 0;
     const pending = this.#pending;
@@ -211,7 +335,9 @@ class MachineShell {
     const port = await freeLocalPort();
     if (port === null) throw new Error("no free local port for the session's SOCKS listener");
     this.#mark = `--penguin-${randomBytes(9).toString("hex")}--`;
-    const child = spawn("ssh", sessionArgs(this.target, port), { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn("ssh", sessionArgs(this.target, port, this.#controlPath), {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     // setEncoding, not String(chunk): a multibyte character whose bytes land in two `data`
     // events would otherwise decode to two replacement characters. The stream's decoder holds
     // an incomplete sequence back until the rest of it arrives.
@@ -316,6 +442,12 @@ class MachineShell {
       // A command completed over a live child: whatever the last drop cost, the next starts
       // from the shortest wait again.
       if (this.#child !== null) this.#backoffMs = RECONNECT_MIN_MS;
+      // And the master is up — the first command through is the proof — so the forwards
+      // wanted on this session are asked of it now. Once per child: a drop resets the flag.
+      if (this.#child !== null && !this.#forwardsApplied && this.#controlPath !== null) {
+        this.#forwardsApplied = true;
+        void this.#applyForwards();
+      }
       if (this.#held) return;
       this.#idle = setTimeout(() => this.close(), IDLE_MS);
       this.#idle.unref?.();
@@ -327,22 +459,55 @@ class MachineShell {
  * The sessions, by machine address. Module-level rather than per App, so ordinary work does
  * not reopen a connection it already has.
  *
- * A hot push DOES lose them: the platform bundle is re-imported cache-busted (hmr/host.ts),
- * so this map starts empty in the successor. The generation on its way out closes what it
- * opened — closeAllShells, from the platform's dispose effect — because it is the one that
- * holds the child handles; the successor then re-holds every connection the record says was
- * held (machines/service.ts). A transient session that was never closed that way is collected
- * by its idle timer, which belongs to the process rather than to the module that armed it.
- * Nothing is ever killed by a pid read back from a file: a pid is reused by the OS, and the
- * process at a remembered number may by then be anyone's.
+ * A hot push re-imports the platform bundle cache-busted (hmr/host.ts), so this map starts
+ * empty in the successor — but a HELD session is not lost: it is delivered through the
+ * resource registry (module doc) and claimed back by address the first time the successor
+ * asks for that machine. The generation on its way out closes only its transient sessions
+ * (closeAllShells, from the platform's dispose effect); one never closed that way is
+ * collected by its idle timer, which belongs to the process rather than to the module that
+ * armed it. Nothing is ever killed by a pid read back from a file: a pid is reused by the
+ * OS, and the process at a remembered number may by then be anyone's.
  */
 const sessions = new Map<string, MachineShell>();
+
+/**
+ * The runtime's resource registry, once the platform hands it over (attachSessionRegistry):
+ * where held sessions are delivered across a hot push. Null in a test that never attaches
+ * one — every session then belongs to the generation that opened it, as before.
+ */
+let registry: Resources | null = null;
+
+/**
+ * Hands this module the registry. Called by the machines module at setup — BEFORE it
+ * re-holds anything — so a held session the previous generation delivered is claimed back
+ * rather than opened again beside it.
+ */
+export function attachSessionRegistry(resources: Resources | null): void {
+  registry = resources;
+}
+
+/** The shape of a held session as a successor claims it — the members it will call. */
+export type HeldSession = Pick<
+  MachineShell,
+  | "hold"
+  | "held"
+  | "run"
+  | "session"
+  | "close"
+  | "supportsForwards"
+  | "setForwards"
+  | "forwardFacts"
+>;
 
 function shellFor(machineAddress: string, target: RemoteTarget): MachineShell {
   let shell = sessions.get(machineAddress);
   if (shell === undefined) {
-    shell = new MachineShell(target);
+    // A predecessor's held session first: same address, same ssh child, still up.
+    shell =
+      registry?.claim<MachineShell>(sessionResourceId(machineAddress)) ??
+      new MachineShell(target, machineAddress);
     sessions.set(machineAddress, shell);
+    if (shell.held()) shell.hold(); // re-registers under THIS generation (registry ownership)
   }
   return shell;
 }
@@ -394,12 +559,20 @@ export function isHeld(machineAddress: string): boolean {
 }
 
 /**
- * Every session this module opened, closed — what a platform generation does on its way out,
- * so that its successor starts with nothing of its to collect.
+ * What a platform generation does on its way out: transient sessions closed (they were this
+ * generation's), held ones LEFT RUNNING for the successor to claim from the registry — or,
+ * with no registry attached, closed like the rest.
  */
 export function closeAllShells(): void {
-  for (const shell of sessions.values()) shell.close();
+  for (const shell of sessions.values()) {
+    if (registry === null || !shell.held()) shell.close();
+  }
   sessions.clear();
+}
+
+/** A machine's session, forwards and all — for the caller that keeps the wanted set. */
+export function shellOf(machineAddress: string, target: RemoteTarget): HeldSession {
+  return shellFor(machineAddress, target);
 }
 
 /** The session held to a machine, while it is up. */

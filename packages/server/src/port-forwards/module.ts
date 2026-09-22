@@ -2,10 +2,10 @@
  * Port forwarding as a node of the platform tree: the service over this server's database
  * and the machines feature's held connections, and its route group.
  *
- * A platform-layer feature end to end — the listeners are opened by this process and the
- * dials ride the machine connection that already exists — so a hot push delivers it, and a
- * swap hands it over the way it hands over the machine connections: this generation closes
- * its listeners on the way out, and the successor's setup binds them again from the record.
+ * A platform-layer feature end to end — the forwards ride the machine session that already
+ * exists — so a hot push delivers it, and a swap keeps every forward up: the session that
+ * carries them is delivered to the successor (machines/transport/ssh-session.ts), and the
+ * successor's setup only hands it the same wanted set again.
  */
 import type { DatabaseSync } from "node:sqlite";
 import type { Hono } from "hono";
@@ -40,7 +40,8 @@ export class PortForwardsModule {
       this.machines,
     );
     this.routes = portForwardRoutes(forwards);
-    // Local binds only — no machine is spoken to until a client connects (service.ts).
+    // Each machine's wanted set, handed to its session — asked of ssh only where a session
+    // is up; a machine that is down keeps it for later (service.ts).
     void forwards.start();
     effect(() => forwards.stop());
   }

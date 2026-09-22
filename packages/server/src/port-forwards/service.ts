@@ -1,29 +1,34 @@
 /**
- * Port forwarding: a TCP port on a machine's loopback, brought to THIS server's loopback.
+ * Port forwarding: a port on a machine's loopback brought to THIS server's loopback (`in`),
+ * or one of ours sent to the machine's (`out`) — ssh's own `-L` and `-R`, on the one session
+ * held to the machine.
  *
- * One forward is `(machine, Workspace, remotePort) → localPort`. It belongs to a Workspace —
- * a directory on a machine — not to a Session: every conversation in that Workspace sees the
- * same list. The record is in web.db (db/repos/port-forwards.ts); what is here is the part
- * that lives: one listener per record on `127.0.0.1:<localPort>`, and the bytes through it.
+ * A forward is `(machine, Workspace, direction, remotePort ⇄ localPort)`. It belongs to a
+ * Workspace — a directory on a machine — not to a Session: every conversation in that
+ * Workspace sees the same list. The record is in web.db (db/repos/port-forwards.ts); what is
+ * here is the bookkeeping between the record and the session that carries it.
  *
- * THE LISTENER IS CHEAP AND LOCAL, THE DIAL IS NOT. A listener binds when its record is made
- * and when a platform generation starts, and costs nothing until someone connects. Only then
- * is a channel dialled to the machine — through the one connection held to it
- * (Machines.dialPort), never through one of its own. A forward does not open ssh: with the
- * machine not connected the client is closed at once and the reason is kept, so a saved
- * forward cannot quietly reconnect a machine someone stopped using.
+ * THE SESSION CARRIES IT. Every forward of a machine is handed to that machine's session as
+ * its wanted set (Machines.setForwards). The session adds each to the live ssh with
+ * `-O forward`, drops it with `-O cancel`, re-applies the set whenever it reconnects, and
+ * keeps ssh's answer per forward — a port that would not bind, in ssh's own words. Nothing
+ * here opens ssh: a saved forward on a machine nobody is using is a wanted set on a session
+ * that is down, reported as such, until someone uses the machine again.
  *
- * LOOPBACK ONLY. The listener binds 127.0.0.1 and nothing else: a forward hands whoever can
- * reach it a port of another computer, and "whoever can reach it" has to stay "this machine".
+ * WINDOWS HUB. Win32 OpenSSH has no control socket to add a forward to, so on a Windows hub
+ * an `in` forward is carried by a listener of this process's own — bound on 127.0.0.1, dialling
+ * the machine through the session's SOCKS channel when a client connects — and an `out`
+ * forward is refused: nothing here can make the machine listen.
  *
- * FACTS, NOT A FLAG. What is known of a forward is reported by layer, each with its moment:
- * whether the listener is up, what the last dial came to, how many connections are open and
- * how many bytes went each way. Nothing folds them into one "working" boolean — a listener
- * that is up says nothing about the machine behind it, and the page debugging a dead port
- * needs to see which layer is the dead one.
+ * FACTS, NOT A FLAG. A forward's status names which layer speaks: the session is down, ssh has
+ * not been asked yet, ssh said yes, or ssh said no and why. The listener path adds what it
+ * alone can see — connections open and bytes each way.
  */
 import net from "node:net";
 import { randomBytes } from "node:crypto";
+import type { ForwardDirection, ForwardSpec } from "../machines/commands.js";
+import { forwardKey } from "../machines/transport/index.js";
+import type { ForwardFact } from "../machines/transport/index.js";
 import type { PortForwardRow, PortForwardsRepo } from "../db/repos/port-forwards.js";
 
 /** The lowest local port a forward may take: below it a bind needs privileges this server should not have. */
@@ -32,39 +37,47 @@ const MAX_PORT = 65535;
 /** How far above the asked port the automatic choice looks before giving up. */
 const LOCAL_PORT_SEARCH = 200;
 
-export type ListenerFact = { listening: true } | { error: string };
-export type DialFact = { answeredAt: string } | { failedAt: string; detail: string };
+export type ForwardStatus =
+  | { kind: "active" }
+  | { kind: "pending" }
+  | { kind: "not-connected" }
+  | { kind: "failed"; detail: string };
 
 export interface PortForwardInfo extends PortForwardRow {
-  listener: ListenerFact;
-  /** The last dial to the machine; null until a client has connected. */
-  dial: DialFact | null;
-  /** Connections open right now. */
-  open: number;
-  /** Bytes from local clients to the machine, and back, since this process started. */
-  bytesUp: number;
-  bytesDown: number;
+  /** Who carries it: ssh on the session, or a listener of this process's own (Windows hub). */
+  via: "ssh" | "listener";
+  status: ForwardStatus;
+  /** What only the listener path can count. */
+  traffic?: { open: number; bytesUp: number; bytesDown: number };
 }
 
 export type CreateRefusal =
   | { error: "unknown_machine" }
   | { error: "forward_exists"; existing: PortForwardInfo }
   | { error: "local_port_in_use"; localPort: number }
-  | { error: "no_free_local_port" };
+  | { error: "no_free_local_port" }
+  /** An `out` forward on a hub whose ssh cannot carry one. */
+  | { error: "unsupported_here" };
 
-/** What the service needs from the machines feature: whether an id is known, and a channel to a port. */
-export interface ForwardDialer {
+/** What the service needs from the machines feature. */
+export interface ForwardCarrier {
   knows(machineId: string): boolean;
+  setForwards(
+    machineId: string,
+    specs: readonly ForwardSpec[],
+  ): Promise<{ ok: true; supported: boolean } | { ok: false; detail: string }>;
+  forwardFacts(machineId: string): { connected: boolean; facts: ReadonlyMap<string, ForwardFact> };
   dialPort(
     machineId: string,
     remotePort: number,
   ): Promise<{ ok: true; socket: net.Socket } | { ok: false; detail: string }>;
 }
 
+/** A listener of this process's own — the Windows hub's way of carrying an `in` forward. */
 interface Live {
   server: net.Server | null;
-  listener: ListenerFact;
-  dial: DialFact | null;
+  listener: { listening: true } | { error: string };
+  dial: { answeredAt: string } | { failedAt: string; detail: string } | null;
   sockets: Set<net.Socket>;
   bytesUp: number;
   bytesDown: number;
@@ -74,21 +87,50 @@ export function isPort(value: unknown): value is number {
   return Number.isInteger(value) && (value as number) >= 1 && (value as number) <= MAX_PORT;
 }
 
+export function isDirection(value: unknown): value is ForwardDirection {
+  return value === "in" || value === "out";
+}
+
+const specOf = (row: PortForwardRow): ForwardSpec => ({
+  direction: row.direction,
+  localPort: row.localPort,
+  remotePort: row.remotePort,
+});
+
+/** Whether `127.0.0.1:<port>` can be bound here right now. */
+function bindable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once("error", () => resolve(false));
+    probe.listen({ host: "127.0.0.1", port, exclusive: true }, () =>
+      probe.close(() => resolve(true)),
+    );
+  });
+}
+
 export class PortForwardService {
+  /** Machines whose session cannot carry forwards: their `in` forwards live here instead. */
   readonly #live = new Map<string, Live>();
+  readonly #unsupported = new Set<string>();
 
   constructor(
     private readonly repo: PortForwardsRepo,
-    private readonly dialer: ForwardDialer,
+    private readonly carrier: ForwardCarrier,
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  /** Binds a listener for every saved forward. A port that will not bind is a fact of that forward, not a failure of the start. */
+  /** Hands every machine its wanted set. A machine that is down keeps the set for when it is up. */
   async start(): Promise<void> {
-    await Promise.all(this.repo.all().map((row) => this.#listen(row)));
+    const byMachine = new Map<string, PortForwardRow[]>();
+    for (const row of this.repo.all()) {
+      const rows = byMachine.get(row.machineId);
+      if (rows === undefined) byMachine.set(row.machineId, [row]);
+      else rows.push(row);
+    }
+    for (const machineId of byMachine.keys()) await this.#sync(machineId);
   }
 
-  /** Closes every listener and every connection through them. The records stay. */
+  /** Closes this process's own listeners. The records — and the sessions' wanted sets — stay. */
   stop(): void {
     for (const id of [...this.#live.keys()]) this.#close(id);
   }
@@ -107,61 +149,122 @@ export class PortForwardService {
   async create(input: {
     machineId: string;
     workspace: string;
+    direction: ForwardDirection;
     remotePort: number;
     localPort?: number;
   }): Promise<PortForwardInfo | CreateRefusal> {
-    if (!this.dialer.knows(input.machineId)) return { error: "unknown_machine" };
-    const existing = this.repo.find(input.machineId, input.workspace, input.remotePort);
+    if (!this.carrier.knows(input.machineId)) return { error: "unknown_machine" };
+    const existing = this.repo.find(
+      input.machineId,
+      input.workspace,
+      input.direction,
+      input.remotePort,
+    );
     if (existing !== null) return { error: "forward_exists", existing: this.#info(existing) };
-
-    // An asked-for port is taken or refused; an automatic one starts at the remote port —
-    // the address a person would guess — and walks up to the first that binds.
-    const asked = input.localPort;
-    const first = asked ?? Math.max(input.remotePort, MIN_LOCAL_PORT);
-    const last = asked ?? Math.min(first + LOCAL_PORT_SEARCH, MAX_PORT);
-    for (let localPort = first; localPort <= last; localPort++) {
-      if (this.repo.byLocalPort(localPort) !== null) continue;
-      const row: PortForwardRow = {
-        id: randomBytes(9).toString("base64url"),
-        machineId: input.machineId,
-        workspace: input.workspace,
-        remotePort: input.remotePort,
-        localPort,
-        createdAt: this.now().toISOString(),
-      };
-      // Bound BEFORE it is recorded: a record whose port never bound would be a forward that
-      // has not worked for a single moment of its life.
-      await this.#listen(row);
-      if ("listening" in this.#live.get(row.id)!.listener) {
-        this.repo.insert(row);
-        return this.#info(row);
-      }
-      this.#close(row.id);
+    if (input.direction === "out" && this.#unsupported.has(input.machineId)) {
+      return { error: "unsupported_here" };
     }
-    return asked === undefined
-      ? { error: "no_free_local_port" }
-      : { error: "local_port_in_use", localPort: asked };
+
+    // The local port. Asked for: taken or refused. Automatic: the remote port's own number —
+    // the address a person would guess — or the first above it that is free here. An `out`
+    // forward's local port is the service being sent, which is the caller's to name.
+    let localPort = input.localPort;
+    if (localPort === undefined) {
+      const first = Math.max(input.remotePort, MIN_LOCAL_PORT);
+      for (let port = first; port <= Math.min(first + LOCAL_PORT_SEARCH, MAX_PORT); port++) {
+        if (this.repo.byLocalPort(port) !== null) continue;
+        if (input.direction === "in" && !(await bindable(port))) continue;
+        localPort = port;
+        break;
+      }
+      if (localPort === undefined) return { error: "no_free_local_port" };
+    } else if (input.direction === "in") {
+      if (this.repo.byLocalPort(localPort) !== null || !(await bindable(localPort))) {
+        return { error: "local_port_in_use", localPort };
+      }
+    }
+
+    const row: PortForwardRow = {
+      id: randomBytes(9).toString("base64url"),
+      machineId: input.machineId,
+      workspace: input.workspace,
+      direction: input.direction,
+      remotePort: input.remotePort,
+      localPort,
+      createdAt: this.now().toISOString(),
+    };
+    this.repo.insert(row);
+    const synced = await this.#sync(input.machineId);
+    // A hub that cannot carry an `out` forward learned so only now, on its first machine.
+    if (!synced && input.direction === "out") {
+      this.repo.delete(row.id);
+      return { error: "unsupported_here" };
+    }
+    return this.#info(row);
   }
 
   /** False when there is no such forward. */
-  remove(id: string): boolean {
-    if (this.repo.get(id) === null) return false;
-    this.#close(id);
+  async remove(id: string): Promise<boolean> {
+    const row = this.repo.get(id);
+    if (row === null) return false;
     this.repo.delete(id);
+    this.#close(id);
+    await this.#sync(row.machineId);
     return true;
+  }
+
+  /**
+   * The machine's wanted set, as the record has it, handed to its session. On a hub whose ssh
+   * cannot carry forwards the `in` ones are bound here instead. Answers whether ssh carries
+   * them.
+   */
+  async #sync(machineId: string): Promise<boolean> {
+    const rows = this.repo.all().filter((row) => row.machineId === machineId);
+    const result = await this.carrier.setForwards(machineId, rows.map(specOf));
+    const supported = result.ok && result.supported;
+    if (supported) {
+      this.#unsupported.delete(machineId);
+      return true;
+    }
+    this.#unsupported.add(machineId);
+    for (const row of rows) {
+      if (row.direction === "in" && !this.#live.has(row.id)) await this.#listen(row);
+    }
+    return false;
   }
 
   #info(row: PortForwardRow): PortForwardInfo {
     const live = this.#live.get(row.id);
-    return {
-      ...row,
-      listener: live?.listener ?? { error: "not started" },
-      dial: live?.dial ?? null,
-      open: live?.sockets.size ?? 0,
-      bytesUp: live?.bytesUp ?? 0,
-      bytesDown: live?.bytesDown ?? 0,
-    };
+    if (live !== undefined) {
+      const status: ForwardStatus =
+        "error" in live.listener
+          ? { kind: "failed", detail: live.listener.error }
+          : live.dial !== null && "failedAt" in live.dial
+            ? { kind: "failed", detail: live.dial.detail }
+            : { kind: "active" };
+      return {
+        ...row,
+        via: "listener",
+        status,
+        traffic: { open: live.sockets.size, bytesUp: live.bytesUp, bytesDown: live.bytesDown },
+      };
+    }
+    if (this.#unsupported.has(row.machineId)) {
+      return { ...row, via: "ssh", status: { kind: "failed", detail: "not carried on this hub" } };
+    }
+    const { connected, facts } = this.carrier.forwardFacts(row.machineId);
+    const fact = facts.get(forwardKey(specOf(row)));
+    const status: ForwardStatus = !connected
+      ? { kind: "not-connected" }
+      : fact === undefined
+        ? { kind: "pending" }
+        : fact.ok
+          ? { kind: "active" }
+          : { kind: "failed", detail: fact.detail };
+    return { ...row, via: "ssh", status };
   }
+
+  // --- the listener path (Windows hub) ------------------------------------------------------
 
   #listen(row: PortForwardRow): Promise<void> {
     const live: Live = {
@@ -207,7 +310,7 @@ export class PortForwardService {
     // the dial stays in the kernel's buffer instead of this process's.
     client.pause();
 
-    const dialled = await this.dialer.dialPort(row.machineId, row.remotePort);
+    const dialled = await this.carrier.dialPort(row.machineId, row.remotePort);
     if (!dialled.ok) {
       live.dial = { failedAt: this.now().toISOString(), detail: dialled.detail };
       client.destroy();

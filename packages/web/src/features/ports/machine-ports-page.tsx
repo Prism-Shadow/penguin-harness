@@ -16,7 +16,6 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { groupByWorkspace } from "./port-forward-facts";
 import { ForwardRow } from "./forward-cable";
@@ -26,7 +25,6 @@ const MONO = "font-mono text-xs";
 
 export function MachinePortsPage() {
   const { machineId = "" } = useParams();
-  const { locale } = useLocale();
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const [forwards, setForwards] = useState<PortForwardInfo[] | null>(null);
@@ -112,7 +110,6 @@ export function MachinePortsPage() {
                     key={forward.id}
                     forward={forward}
                     machineName={machine?.alias ?? machineId}
-                    locale={locale}
                     actions={
                       <button
                         type="button"

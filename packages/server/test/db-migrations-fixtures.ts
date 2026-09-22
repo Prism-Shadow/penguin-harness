@@ -98,7 +98,9 @@ export function dropProfileColumns(db: DatabaseSync): void {
  * through port-forwards drops the table, and would otherwise land on less than it began with.
  */
 export function dropPortForwards(db: DatabaseSync): void {
-  db.exec("DROP INDEX IF EXISTS idx_port_forwards_machine; DROP TABLE IF EXISTS port_forwards;");
+  db.exec(
+    "DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP INDEX IF EXISTS idx_port_forwards_machine; DROP TABLE IF EXISTS port_forwards;",
+  );
 }
 
 /** The current declaration: what a fresh database is created with. */

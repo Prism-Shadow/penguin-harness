@@ -1,34 +1,39 @@
 /**
- * How a forward's facts read: the dot's tone, and one line per layer. Shared by the dock's
- * Ports panel and a machine's Ports page, so the same forward never reads two ways.
- *
- * The facts stay apart on purpose. A listener that is up says nothing about the machine
- * behind it, and the page debugging a dead port needs to see which layer is the dead one —
- * so the tone is the worst layer's, and the lines name each.
+ * How a forward's status reads: the cable's tone, and the line under it. Shared by the
+ * dock's Ports panel and a machine's Ports page, so the same forward never reads two ways.
+ * The status names which layer spoke — the session, ssh, this server's own listener — and
+ * what it said, so the page debugging a dead port sees where it died.
  */
 import type { PortForwardInfo } from "@prismshadow/penguin-server/api";
-import { formatRelativeShort } from "../../lib/format";
 import { S } from "../../lib/strings";
 import type { Tone } from "../../lib/tone";
 
-/** Red: nothing can connect. Amber: they can, and the last one got nowhere. Blue: in contact, or nothing said otherwise yet. */
+/** Red: whoever carries it said no. Amber: the machine's session is down. Muted: ssh has not answered yet. Blue: carried. */
 export function forwardTone(forward: PortForwardInfo): Tone {
-  if ("error" in forward.listener) return "danger";
-  if (forward.dial !== null && "failedAt" in forward.dial) return "attention";
-  return "link";
+  switch (forward.status.kind) {
+    case "failed":
+      return "danger";
+    case "not-connected":
+      return "attention";
+    case "pending":
+      return "muted";
+    case "active":
+      return "link";
+  }
 }
 
-export function listenerLine(forward: PortForwardInfo): string {
-  return "error" in forward.listener
-    ? S.ports.listenerError(forward.listener.error)
-    : S.ports.listenerUp;
-}
-
-export function dialLine(forward: PortForwardInfo, locale: "zh" | "en"): string {
-  if (forward.dial === null) return S.ports.neverDialled;
-  return "failedAt" in forward.dial
-    ? S.ports.dialFailed(forward.dial.detail, formatRelativeShort(forward.dial.failedAt, locale))
-    : S.ports.dialOk(formatRelativeShort(forward.dial.answeredAt, locale));
+/** The status in words: which layer speaks, and what it said. */
+export function statusLine(forward: PortForwardInfo): string {
+  switch (forward.status.kind) {
+    case "failed":
+      return S.ports.statusFailed(forward.status.detail);
+    case "not-connected":
+      return S.ports.statusNotConnected;
+    case "pending":
+      return S.ports.statusPending;
+    case "active":
+      return forward.via === "ssh" ? S.ports.statusOnSession : S.ports.statusListening;
+  }
 }
 
 /** A port as typed: whole, in range — or null. Empty is the caller's to read as "not given". */

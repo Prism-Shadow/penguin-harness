@@ -31,6 +31,8 @@ import {
   scpArgs,
   shQuote,
   sshArgs,
+  forwardControlArgs,
+  forwardFlag,
   sessionArgs,
 } from "../src/machines/commands.js";
 import { resolvePushPlan } from "../src/machines/install-server.js";
@@ -195,6 +197,30 @@ describe("ssh / scp invocations", () => {
   it("refuses a SOCKS port that is not one", () => {
     expect(() => sessionArgs(target, 0)).toThrow(/bad port/);
     expect(() => sessionArgs(target, 70000)).toThrow(/bad port/);
+    // With a control socket the session is its master, so forwards can be added to it live.
+    const mastered = sessionArgs(target, 49152, "/tmp/penguin-x.sock").join(" ");
+    expect(mastered).toContain("-M -S /tmp/penguin-x.sock");
+    expect(sessionArgs(target, 49152).join(" ")).not.toContain("-M");
+  });
+
+  it("spells a forward as ssh wants it, and asks the master for it over the control socket", () => {
+    const target = { alias: "nas", user: "" };
+    expect(forwardFlag({ direction: "in", localPort: 3000, remotePort: 3001 })).toEqual([
+      "-L",
+      "127.0.0.1:3000:127.0.0.1:3001",
+    ]);
+    expect(forwardFlag({ direction: "out", localPort: 5432, remotePort: 5433 })).toEqual([
+      "-R",
+      "127.0.0.1:5433:127.0.0.1:5432",
+    ]);
+    expect(() => forwardFlag({ direction: "in", localPort: 0, remotePort: 1 })).toThrow(/bad port/);
+    const args = forwardControlArgs(target, "/tmp/p.sock", "forward", {
+      direction: "in",
+      localPort: 3000,
+      remotePort: 3001,
+    }).join(" ");
+    expect(args).toContain("-S /tmp/p.sock -O forward -L 127.0.0.1:3000:127.0.0.1:3001 nas");
+    expect(args).not.toContain(" sh");
   });
 
   it("a 200 is not yet a yes: blocked is a refusal, and a swap not written down is not durable", () => {
