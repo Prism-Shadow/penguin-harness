@@ -82,6 +82,8 @@ type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "u
  * what is faked here is only the reaching-out, never the logic under test.
  */
 export interface MachinesEffects {
+  /** How long after boot the second out-of-date sweep runs (see start()). */
+  lateSweepMs: number;
   listAliases: typeof listHostAliases;
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
@@ -147,6 +149,8 @@ export class MachinesService {
   readonly #effects: MachinesEffects;
   readonly #assets: () => string | null;
   readonly #machineId: string;
+  /** The boot's second sweep, pending (see start()). */
+  #lateSweep: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly dataRoot: string,
@@ -171,6 +175,7 @@ export class MachinesService {
       upgrade: upgradeRemote,
       loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
       now: () => new Date(),
+      lateSweepMs: 20_000,
       ...effects,
     };
   }
@@ -809,6 +814,16 @@ export class MachinesService {
     // config handed over as it connects lands on the build that will read it.
     await this.syncOutOfDate();
     await this.autoConnect();
+    // Once more, later. A pushed platform boots BEFORE its version is committed: the store is
+    // written only when the boot has succeeded, and this method runs as part of that boot. So
+    // the pass above usually read the PREVIOUS version off the disk, found every machine
+    // already carrying it, and handed nothing over — the push then reached the machines one
+    // push late, or never. By now the commit has landed; with nothing behind this is a no-op.
+    this.#lateSweep = setTimeout(() => {
+      this.#lateSweep = null;
+      void this.syncOutOfDate().catch(() => undefined);
+    }, this.#effects.lateSweepMs);
+    this.#lateSweep.unref?.();
   }
 
   /**
@@ -817,6 +832,8 @@ export class MachinesService {
    * Nothing here closes by a remembered pid: the child handles are this generation's own.
    */
   stop(): void {
+    if (this.#lateSweep !== null) clearTimeout(this.#lateSweep);
+    this.#lateSweep = null;
     closeAllConnections();
   }
 

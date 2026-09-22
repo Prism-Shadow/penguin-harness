@@ -420,6 +420,46 @@ describe("machines API", () => {
       });
     });
 
+    it("hands a push over even though the platform boots before the push is committed", async () => {
+      // The store is written only once the pushed platform has booted, and start() runs AS
+      // that boot: its first sweep reads the previous version off the disk and finds the
+      // machine already carrying it. The push used to reach the machines one push late.
+      const previous = {
+        baseVersion: "9.9.9",
+        harness: '{"platform":{"bundle":"store/platform/0dd0.mjs"}}',
+        hmrDir: "/nonexistent",
+        version: "9.9.9+hmr.0dd0",
+      };
+      const pushed = { ...previous, version: "9.9.9+hmr.cafe" };
+      let committed = false;
+      const handed: string[] = [];
+      await boot({
+        resolvePlan: () => (committed ? pushed : previous),
+        install: async () => ({
+          kind: "already-installed",
+          version: previous.version,
+          identity: IDENTITY,
+        }),
+        upgrade: async () => {
+          handed.push(committed ? pushed.version : previous.version);
+          return { kind: "upgraded", detail: "", persisted: true };
+        },
+        lateSweepMs: 30,
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(machinesRepo.get("ssh:nas")?.version).toBe(previous.version);
+      handed.length = 0;
+
+      // The new generation boots; the commit lands a moment after.
+      const boot2 = t.deps.machines.start();
+      committed = true;
+      await boot2;
+      await waitFor(() => machinesRepo.get("ssh:nas")?.version === pushed.version);
+      expect(handed).toContain(pushed.version);
+      t.deps.machines.stop();
+    });
+
     it("a server with nothing pushed to it hands nothing over: a matching machine is simply done", async () => {
       // A packaged install has no pushed state (plan.harness === null) and readPushedBuild
       // would answer no-build. The former no-op must stay one, not become a failed job with

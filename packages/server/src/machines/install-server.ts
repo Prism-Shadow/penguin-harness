@@ -17,7 +17,7 @@
  * directory, the `~/.local/bin/penguin` symlink on POSIX, and the data root's hmr/ state.
  * No sudo, no service units, no profile edits, and the rest of the data root is untouched.
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -63,16 +63,40 @@ export interface PushPlan {
 }
 
 /**
- * The pushed-state suffix for a display version: the platform bundle's content sha out of a
- * harness.json (`store/platform/<sha>.mjs`), shortened. Falls back to a bare marker for a
- * manifest whose shape this build does not recognize — the suffix is display, not identity;
- * equality checks compare the harness text itself.
+ * The pushed-state suffix of a version: which HARNESS this is — the platform bundle, the CLI
+ * bundle and the web artifact, by the content shas a harness.json names them with
+ * (`store/platform/<sha>.mjs`, `store/cli/<sha>.mjs`, `store/web/<sha>.webz`), folded into one
+ * and shortened. It is what `syncOutOfDate` compares, so it has to move whenever any of the
+ * three does: read off the platform bundle alone, a push that changed only the web app or the
+ * CLI left every machine "up to date" and was never handed over.
+ *
+ * The assets are deliberately no part of it. They are what a harness loads — plugins, the
+ * native modules it pins — not the harness, and are pushed on their own.
+ *
+ * A manifest that names the platform bundle alone keeps that bundle's sha; one whose shape
+ * this build does not recognize gets a bare marker.
  */
 function harnessSuffix(harnessText: string): string {
   try {
-    const parsed = JSON.parse(harnessText) as { platform?: { bundle?: string } };
-    const sha = /([0-9a-f]{8,})\.mjs$/.exec(parsed.platform?.bundle ?? "")?.[1];
-    if (sha !== undefined) return `+hmr.${sha.slice(0, 12)}`;
+    const parsed = JSON.parse(harnessText) as {
+      platform?: { bundle?: string };
+      cli?: { bundle?: string };
+      web?: { manifest?: string };
+    };
+    const shaOf = (file: string | undefined) => /([0-9a-f]{8,})\.[a-z]+$/.exec(file ?? "")?.[1];
+    const platform = shaOf(parsed.platform?.bundle);
+    if (platform !== undefined) {
+      const rest = [shaOf(parsed.cli?.bundle), shaOf(parsed.web?.manifest)].filter(
+        (sha): sha is string => sha !== undefined,
+      );
+      const id =
+        rest.length === 0
+          ? platform
+          : createHash("sha256")
+              .update([platform, ...rest].join("\n"))
+              .digest("hex");
+      return `+hmr.${id.slice(0, 12)}`;
+    }
   } catch {
     /* fall through */
   }
