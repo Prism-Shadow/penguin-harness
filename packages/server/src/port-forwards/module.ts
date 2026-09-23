@@ -14,6 +14,8 @@ import type { AppEnv } from "../auth/middleware.js";
 import { PortForwardsRepo } from "../db/repos/port-forwards.js";
 import { Db } from "../hmr/capabilities.js";
 import { Machines } from "../machines/service.js";
+import { Settings } from "../mechanisms/settings.js";
+import { SettingsExposureConsent } from "./exposure.js";
 import { portForwardRoutes } from "./routes.js";
 import { PortForwardService } from "./service.js";
 
@@ -32,11 +34,14 @@ import { PortForwardService } from "./service.js";
 export class PortForwardsModule {
   @Use() private readonly db!: Db;
   @Use() private readonly machines!: Machines;
+  /** Holds the per-machine consent to exposed `out` forwards (exposure.ts). */
+  @Use() private readonly settings!: Settings;
   @Bind("PortForwardsModule.routes") routes!: Hono<AppEnv>;
   setup() {
     const forwards = new PortForwardService(
       new PortForwardsRepo(this.db as unknown as DatabaseSync),
       this.machines,
+      new SettingsExposureConsent(this.settings),
     );
     this.routes = portForwardRoutes(forwards);
     // Each machine's wanted set, handed to its session — asked of ssh only where a session

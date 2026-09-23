@@ -5,14 +5,25 @@
  *                                 is meaningless (a directory is only a Workspace on its
  *                                 machine), `machine` alone is that machine's every forward.
  * POST   /                      — forward a port; 201, 404 unknown machine, 409 when the
- *                                 forward exists or the asked local port is taken.
+ *                                 forward exists, the asked local port is taken, or an `out`
+ *                                 forward's machine is not cleared for it (`forward_exposes`
+ *                                 when its sshd widens the bind, `forward_exposure_unknown`
+ *                                 when it could not be read) — see service.ts.
  * DELETE /:id                   — close its listener and connections, forget it.
+ * GET    /exposure              — every machine, its consent and last verdict.
+ * PUT    /exposure/:machineId   — `{allowed}`: consent to `out` forwards its sshd exposes.
+ * POST   /exposure/:machineId/probe — ask the machine again.
  *
  * Admin rather than any logged-in user, the rule `/server/<machineId>/` already has: a
  * forward reaches into another computer over ssh access that is the server account's.
  */
 import { Hono } from "hono";
-import type { PortForwardInfo, PortForwardsResponse } from "../api/types.js";
+import type {
+  ForwardExposureResponse,
+  MachineExposureResponse,
+  PortForwardInfo,
+  PortForwardsResponse,
+} from "../api/types.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest, pathParam, readJson, requireString } from "../http/validate.js";
@@ -76,7 +87,38 @@ export function portForwardRoutes(forwards: PortForwardService): Hono<AppEnv> {
         );
       case "no_free_local_port":
         throw new HttpError(409, "local_port_in_use", "No free local port near that one.");
+      case "exposure_refused":
+        throw made.mode === "exposes"
+          ? new HttpError(
+              409,
+              "forward_exposes",
+              "This machine's sshd binds an out forward on every interface (GatewayPorts yes); allow it under Settings > Ports first.",
+            )
+          : new HttpError(
+              409,
+              "forward_exposure_unknown",
+              "Where this machine's sshd would bind an out forward could not be found out; allow it under Settings > Ports first.",
+            );
     }
+  });
+
+  app.get("/exposure", (c) => {
+    const body: ForwardExposureResponse = { machines: forwards.exposure() };
+    return c.json(body);
+  });
+
+  app.put("/exposure/:machineId", async (c) => {
+    const body = await readJson(c);
+    if (typeof body.allowed !== "boolean") throw badRequest("allowed must be a boolean.");
+    const machine = await forwards.setAllowed(pathParam(c, "machineId"), body.allowed);
+    if (machine === null) throw new HttpError(404, "unknown_machine", "No machine by that id.");
+    return c.json<MachineExposureResponse>({ machine });
+  });
+
+  app.post("/exposure/:machineId/probe", async (c) => {
+    const machine = await forwards.probe(pathParam(c, "machineId"));
+    if (machine === null) throw new HttpError(404, "unknown_machine", "No machine by that id.");
+    return c.json<MachineExposureResponse>({ machine });
   });
 
   app.delete("/:id", async (c) => {

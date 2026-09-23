@@ -28,6 +28,17 @@ describe("a forward's tone and line", () => {
   it("is carried, waiting, down, or refused — in that order of colour", () => {
     expect(forwardTone(forward())).toBe("link");
     expect(forwardTone(forward({ status: { kind: "pending" } }))).toBe("muted");
+    // Held back by this server for the machine's sake reads like a refusal: red, and the line says why.
+    expect(
+      forwardTone(
+        forward({ status: { kind: "exposure-refused", mode: "exposes" }, direction: "out" }),
+      ),
+    ).toBe("danger");
+    expect(
+      statusLine(
+        forward({ status: { kind: "exposure-refused", mode: "unknown" }, direction: "out" }),
+      ),
+    ).toContain("sshd");
     expect(forwardTone(forward({ status: { kind: "not-connected" } }))).toBe("attention");
     expect(forwardTone(forward({ status: { kind: "failed", detail: "bind: in use" } }))).toBe(
       "danger",

@@ -54,6 +54,7 @@ import { createHash, randomBytes } from "node:crypto";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
 import { forwardControlArgs, sessionArgs } from "../commands.js";
 import type { ForwardSpec, RemoteTarget } from "../commands.js";
@@ -108,6 +109,10 @@ export function forwardKey(spec: ForwardSpec): string {
  */
 export const SESSION_GROUP = "machineSession.v2";
 const sessionResourceId = (address: string): string => `${SESSION_GROUP}:${address}`;
+/** Registry id of the leaving build's closed shape of MachineSession — in the group, so it goes with it. */
+export const SESSION_SHAPE_ID = `${SESSION_GROUP}:shape`;
+/** MachineSession's key in the generated interface table (ifaces.json). */
+export const MACHINE_SESSION_IFACE = "@prismshadow/penguin-server#MachineSession";
 
 /**
  * Where the control socket goes: the temp directory, under a short name — a unix socket path
@@ -156,6 +161,36 @@ const OPEN_TIMEOUT_MS = 30_000;
 /** A held session that dropped is reopened after this long, doubling per failure up to the cap. */
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 60_000;
+
+/**
+ * A forward ssh could not bind is asked again on these waits, then left as ssh said. A refusal
+ * is usually transient: the port is still held by the session this one replaced — the far
+ * sshd releases a listener only once it sees that connection end — or by a generation on its
+ * way out across a hot push. Three tries cover that; a port something else owns stays failed
+ * until the wanted set changes or the session reconnects.
+ */
+const FORWARD_RETRY_MS: readonly number[] = [2_000, 5_000, 15_000];
+let forwardRetryMs = FORWARD_RETRY_MS;
+/** Tests shorten the retry waits; null restores the real ones. */
+export function useForwardRetryDelays(delays: readonly number[] | null): void {
+  forwardRetryMs = delays ?? FORWARD_RETRY_MS;
+}
+
+/** How long a replaced child is given to end before its successor is spawned. */
+const CHILD_END_MS = 2_000;
+
+/** Resolves once the child has exited, or after CHILD_END_MS — never hangs on a stuck one. */
+function ended(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, CHILD_END_MS);
+    timer.unref?.();
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
 
 /**
  * Decoding the heredoc, on either base64 there is. GNU coreutils spells decode `-d` and
@@ -207,6 +242,9 @@ class MachineShell {
   readonly #forwardFacts = new Map<string, ForwardFact>();
   /** Whether the wanted set has been asked of the CURRENT child; reset when it drops. */
   #forwardsApplied = false;
+  /** Forwards ssh refused are asked again: the attempts made for the current wanted set, and the timer. */
+  #forwardRetries = 0;
+  #forwardRetry: NodeJS.Timeout | null = null;
   /** Retires this session's registry entry; a no-op once a successor has taken it over. */
   #unregister: (() => void) | null = null;
 
@@ -242,14 +280,16 @@ class MachineShell {
     const dropped = [...this.#forwards.keys()].filter((key) => !wanted.has(key));
     const added = [...wanted.keys()].filter((key) => !this.#forwards.has(key));
     if (dropped.length === 0 && added.length === 0) return;
+    // A new set starts the refusal retries over.
+    this.#forwardRetries = 0;
+    this.#clearForwardRetry();
     if (this.#controlPath === null) {
       for (const key of dropped) this.#forwards.delete(key);
       for (const key of added) this.#forwards.set(key, wanted.get(key)!);
       this.#forwardFacts.clear();
       if (this.#child !== null) {
         // Reopened now, not on the backoff: the person just asked for this forward.
-        this.#reset();
-        if (this.#held) await this.run(":", { timeoutMs: OPEN_TIMEOUT_MS });
+        await this.#replaceChild();
       }
       return;
     }
@@ -272,7 +312,8 @@ class MachineShell {
 
   /**
    * Every wanted forward, asked of the master that just came up — or, for a session that
-   * carried them in its arguments, read off what ssh said while connecting.
+   * carried them in its arguments, read off what ssh said while connecting. What ssh refused
+   * is asked again on FORWARD_RETRY_MS.
    */
   async #applyForwards(): Promise<void> {
     if (this.#controlPath === null) {
@@ -285,9 +326,58 @@ class MachineShell {
           said === undefined ? { ok: true } : { ok: false, detail: said },
         );
       }
-      return;
+    } else {
+      for (const spec of this.#forwards.values()) await this.#ask(spec);
     }
-    for (const spec of this.#forwards.values()) await this.#ask(spec);
+    this.#scheduleForwardRetry();
+  }
+
+  /** Ends the current child, waits for it to go, and opens the next — a held session's reopen. */
+  async #replaceChild(): Promise<void> {
+    const child = this.#child;
+    this.#reset();
+    // The far sshd frees this session's listeners only once it sees the connection end, and
+    // the successor asks for the same ports: spawned before the old child is gone, it would be
+    // refused for ports this session itself still holds.
+    if (child !== null) await ended(child);
+    if (this.#held) await this.run(":", { timeoutMs: OPEN_TIMEOUT_MS });
+  }
+
+  #clearForwardRetry(): void {
+    if (this.#forwardRetry !== null) clearTimeout(this.#forwardRetry);
+    this.#forwardRetry = null;
+  }
+
+  /** Arms the next retry while some wanted forward stands refused and attempts remain. */
+  #scheduleForwardRetry(): void {
+    this.#clearForwardRetry();
+    const refused = [...this.#forwards.values()].filter(
+      (spec) => this.#forwardFacts.get(forwardKey(spec))?.ok === false,
+    );
+    if (refused.length === 0 || this.#child === null) return;
+    const wait = forwardRetryMs[this.#forwardRetries];
+    if (wait === undefined) return;
+    this.#forwardRetry = setTimeout(() => {
+      this.#forwardRetry = null;
+      if (this.#child === null) return;
+      // A command in flight is not interrupted for a retry: the same wait again.
+      if (this.#pending !== null) {
+        this.#scheduleForwardRetry();
+        return;
+      }
+      this.#forwardRetries += 1;
+      if (this.#controlPath === null) {
+        // The arguments are the only way to ask: the session is reopened with them.
+        this.#forwardFacts.clear();
+        void this.#replaceChild();
+        return;
+      }
+      void (async () => {
+        for (const spec of refused) await this.#ask(spec);
+        this.#scheduleForwardRetry();
+      })();
+    }, wait);
+    this.#forwardRetry.unref?.();
   }
 
   async #ask(spec: ForwardSpec): Promise<void> {
@@ -333,6 +423,7 @@ class MachineShell {
     this.#held = false;
     if (this.#reopen !== null) clearTimeout(this.#reopen);
     this.#reopen = null;
+    this.#clearForwardRetry();
     // Out of the registry means shut down: a session nobody holds is nobody's to deliver.
     // (Identity-checked there: a successor that took this address over is untouched.)
     const unregister = this.#unregister;
@@ -544,29 +635,54 @@ const sessions = new Map<string, MachineShell>();
  * one — every session then belongs to the generation that opened it, as before.
  */
 let registry: Resources | null = null;
+/** Whether the predecessor's delivered sessions may be claimed at all (hmr/platform.ts decided). */
+let adoptDelivered = true;
 
 /**
- * Hands this module the registry. Called by the machines module at setup — BEFORE it
- * re-holds anything — so a held session the previous generation delivered is claimed back
- * rather than opened again beside it.
+ * Hands this module the registry, and the platform's verdict on the predecessor's delivered
+ * sessions. Called by the machines module at setup — BEFORE it re-holds anything — so a
+ * session the previous generation delivered is claimed back rather than opened again
+ * beside it; or, when the verdict is no (the contract changed), never claimed: the platform
+ * disposes that group at its commit, and this generation opens its own.
  */
-export function attachSessionRegistry(resources: Resources | null): void {
+export function attachSessionRegistry(resources: Resources | null, adoptable = true): void {
   registry = resources;
+  adoptDelivered = adoptable;
 }
 
-/** The shape of a held session as a successor claims it — the members it will call. */
-export type HeldSession = Pick<
-  MachineShell,
-  "hold" | "held" | "run" | "session" | "close" | "setForwards" | "forwardFacts"
->;
+/**
+ * A held session as a successor claims it: the contract between two builds of this file.
+ *
+ * An INTERFACE, so the generated table (ifaces.json) carries its signatures and everything
+ * they reach, and hmr/platform.ts can compare the leaving build's closed shape of it with
+ * the booting build's before adopting anything: a member added, removed or retyped — or a
+ * type behind one — dooms the delivered group, and the machines are re-held with objects
+ * of the new code. What the shape cannot see is a change of BEHAVIOR behind an unchanged
+ * signature; that is what the version in SESSION_GROUP's name is for.
+ */
+@Interface()
+export abstract class MachineSession {
+  abstract hold(): void;
+  abstract held(): boolean;
+  abstract run(command: string, opts?: ShellRunOptions): Promise<ShellResult>;
+  abstract session(): ShellSession | null;
+  abstract close(): void;
+  abstract setForwards(specs: readonly ForwardSpec[]): Promise<void>;
+  abstract forwardFacts(): ReadonlyMap<string, ForwardFact>;
+}
+
+/** The delivered contract, by the name the declaration and the adopter use. */
+export type HeldSession = MachineSession;
 
 function shellFor(machineAddress: string, target: RemoteTarget): MachineShell {
   let shell = sessions.get(machineAddress);
   if (shell === undefined) {
-    // A predecessor's held session first: same address, same ssh child, still up.
+    // A predecessor's held session first: same address, same ssh child, still up — unless
+    // the platform judged the predecessor's contract another one.
     shell =
-      registry?.claim<MachineShell>(sessionResourceId(machineAddress)) ??
-      new MachineShell(target, machineAddress);
+      (adoptDelivered
+        ? registry?.claim<MachineShell>(sessionResourceId(machineAddress))
+        : undefined) ?? new MachineShell(target, machineAddress);
     sessions.set(machineAddress, shell);
     if (shell.held()) shell.hold(); // re-registers under THIS generation (registry ownership)
   }

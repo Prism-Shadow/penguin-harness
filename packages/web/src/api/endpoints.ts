@@ -80,6 +80,8 @@ import type {
   MachinesUseResponse,
   BrowserSiteRequest,
   BrowserSiteResponse,
+  ForwardExposureResponse,
+  MachineExposureResponse,
   PortForwardCreateRequest,
   PortForwardInfo,
   PortForwardsResponse,
@@ -1713,6 +1715,23 @@ export const createPortForward = (forward: PortForwardCreateRequest) =>
 
 export const deletePortForward = (id: string) =>
   apiFetch<void>(`/api/port-forwards/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+/** Every machine with an id: whether an admin allowed exposed `out` forwards there, and the last probe. */
+export const listForwardExposure = () =>
+  apiFetch<ForwardExposureResponse>("/api/port-forwards/exposure");
+
+export const setForwardExposure = (machineId: string, allowed: boolean) =>
+  apiFetch<MachineExposureResponse>(
+    `/api/port-forwards/exposure/${encodeURIComponent(machineId)}`,
+    { method: "PUT", body: { allowed } },
+  );
+
+/** Asks the machine's sshd again where it would bind an `out` forward. */
+export const probeForwardExposure = (machineId: string) =>
+  apiFetch<MachineExposureResponse>(
+    `/api/port-forwards/exposure/${encodeURIComponent(machineId)}/probe`,
+    { method: "POST" },
+  );
 
 // Browser ------------------------------------------------------------------------------
 //

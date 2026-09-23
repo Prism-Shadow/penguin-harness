@@ -13,7 +13,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { PortForwardInfo } from "@prismshadow/penguin-server/api";
 import { createPortForward, deletePortForward, listPortForwards } from "../../api/endpoints";
+import { ApiError } from "../../api/client";
 import { Button } from "../../components/ui/button";
+import { Modal } from "../../components/ui/modal";
 import { CopyButton } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -27,6 +29,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { newBrowserTab } from "../browser/browser-tabs";
 import { addBrowserTab } from "../dock/dock-state";
+import { SettingsDialog } from "../settings/settings-dialog";
 import { parsePort } from "./port-forward-facts";
 import { Cable, ForwardRow, Plug } from "./forward-cable";
 import { useMachineName } from "./use-machine-name";
@@ -78,6 +81,9 @@ function MachinePorts({
   const [remoteText, setRemoteText] = useState("");
   const [localText, setLocalText] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The server refused an `out` forward for where the machine's sshd would bind it; the person is asked to allow it. */
+  const [exposureAsk, setExposureAsk] = useState<"exposes" | "unknown" | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -116,7 +122,12 @@ function MachinePorts({
       setLocalText("");
       await load();
     } catch (err) {
-      setError(apiErrorText(err));
+      // Not an error line: a decision. The forward would be an open door on the machine's
+      // network (or nobody can tell), and only an admin's consent under Settings opens it.
+      if (err instanceof ApiError && err.code === "forward_exposes") setExposureAsk("exposes");
+      else if (err instanceof ApiError && err.code === "forward_exposure_unknown") {
+        setExposureAsk("unknown");
+      } else setError(apiErrorText(err));
     } finally {
       setBusy(false);
     }
@@ -266,6 +277,43 @@ function MachinePorts({
           </p>
         )}
       </form>
+      <Modal
+        open={exposureAsk !== null}
+        title={S.ports.exposureAskTitle}
+        onClose={() => setExposureAsk(null)}
+        footer={
+          <>
+            <Button size="sm" variant="secondary" onClick={() => setExposureAsk(null)}>
+              {S.common.cancel}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                setExposureAsk(null);
+                setSettingsOpen(true);
+              }}
+            >
+              {S.ports.openSettings}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-700 dark:text-gray-300">
+          {exposureAsk === "unknown"
+            ? S.ports.exposureAskUnknown(machineName)
+            : S.ports.exposureAskExposes(machineName)}
+        </p>
+      </Modal>
+      {/* Consent given there hands a withheld forward over; the list is re-read on the way back. */}
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => {
+          setSettingsOpen(false);
+          void load();
+        }}
+        section="ports"
+      />
     </div>
   );
 }

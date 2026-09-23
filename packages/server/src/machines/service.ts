@@ -44,6 +44,7 @@ import { SESSION_COOKIE } from "../auth/middleware.js";
 import http from "node:http";
 import type net from "node:net";
 import {
+  SESSION_GROUP,
   attachSessionRegistry,
   appendHostBlock,
   closeAllConnections,
@@ -69,7 +70,7 @@ import {
 } from "./ssh-config.js";
 import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
 import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
-import type { ForwardSpec, RemoteTarget } from "./commands.js";
+import type { ForwardExposure, ForwardSpec, RemoteTarget } from "./commands.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { probeServerState } from "./server-state.js";
 import { upgradeRemote } from "./upgrade.js";
@@ -91,7 +92,7 @@ import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { DatabaseSync } from "node:sqlite";
-import type { Db, Hmr, Paths } from "../hmr/capabilities.js";
+import type { Db, Hmr, Paths, ResourceGroups } from "../hmr/capabilities.js";
 import { currentRemoteLayout } from "./layout.js";
 import type { RemoteLayout } from "./layout.js";
 
@@ -139,6 +140,8 @@ export interface MachinesEffects {
   /** Port forwards on the session: the wanted set, and ssh's answers. */
   setForwards: (target: RemoteTarget, specs: readonly ForwardSpec[]) => Promise<void>;
   forwardFacts: (target: RemoteTarget) => ReadonlyMap<string, ForwardFact>;
+  /** What that machine's sshd does with an `out` forward's loopback bind (commands.ts ForwardExposure). */
+  forwardExposure: (target: RemoteTarget) => Promise<ForwardExposure>;
   stopServer: (target: RemoteTarget) => ReturnType<typeof stopRemoteServer>;
   mintToken: (
     target: RemoteTarget,
@@ -238,6 +241,7 @@ export class MachinesService {
       dial: (target, remotePort) => connectionTo(target).dial(remotePort),
       setForwards: (target, specs) => connectionTo(target).setForwards(specs),
       forwardFacts: (target) => connectionTo(target).forwardFacts(),
+      forwardExposure: (target) => connectionTo(target).probeForwardExposure(),
       stopServer: (target) => stopRemoteServer(target, layout, this.#effects.runOn),
       mintToken: (target, runOn) => mintTokenOnRemote(target, layout, runOn),
       upgrade: upgradeRemote,
@@ -513,6 +517,32 @@ export class MachinesService {
       connected: this.#liveSession(row.address) !== null,
       facts: this.#effects.forwardFacts(target),
     };
+  }
+
+  /**
+   * What a machine's sshd does with the loopback bind an `out` forward asks for: honoured,
+   * widened to every interface, or not to be found out — one connection of its own
+   * (transport/connection.ts), never a channel of the held session.
+   */
+  async forwardExposure(machineId: string): Promise<ForwardExposure> {
+    const row = this.#rowFor(machineId);
+    if (row === null) return { mode: "unknown", detail: "unknown machine" };
+    return this.#effects.forwardExposure(this.#targetOf(row.address.slice("ssh:".length)));
+  }
+
+  /**
+   * Every machine on record that has an id of its own, by alias — what a server-wide page
+   * lists. This server itself is not among them: it is never a forward's far side.
+   */
+  known(): { machineId: string; alias: string }[] {
+    const seen = new Map<string, string>();
+    for (const row of this.repo.all()) {
+      if (row.machineId === null || !row.address.startsWith("ssh:")) continue;
+      if (!seen.has(row.machineId)) seen.set(row.machineId, row.address.slice("ssh:".length));
+    }
+    return [...seen]
+      .map(([machineId, alias]) => ({ machineId, alias }))
+      .sort((a, b) => a.alias.localeCompare(b.alias));
   }
 
   /**
@@ -1570,6 +1600,8 @@ export abstract class Machines extends Interface<
     | "dialPort"
     | "setForwards"
     | "forwardFacts"
+    | "forwardExposure"
+    | "known"
     | "jobs"
     | "startUse"
     | "stopUsing"
@@ -1604,6 +1636,8 @@ export class MachinesModule {
   @Use() private readonly db!: Db;
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly access!: Access;
+  /** Whether the predecessor's delivered sessions may be claimed (hmr/platform.ts judged their contract). */
+  @Use() private readonly resourceGroups!: ResourceGroups;
   @Provide() machines!: Machines;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
   @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
@@ -1615,7 +1649,7 @@ export class MachinesModule {
     // Held sessions are delivered across a hot push through the registry; the transport
     // needs it before start() re-holds anything, or a delivered session would be opened
     // again beside itself.
-    attachSessionRegistry(this.hmr.resources);
+    attachSessionRegistry(this.hmr.resources, this.resourceGroups.adoptable(SESSION_GROUP));
     const machines = new MachinesService(this.paths.root, repo.ownId(), repo, {}, () =>
       this.hmr.assetsDir(),
     );

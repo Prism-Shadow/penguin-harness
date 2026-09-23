@@ -47,9 +47,12 @@ import {
 import type { ForwardFact, ShellSession } from "./ssh-session.js";
 import { dialThroughSocks } from "./socks.js";
 import { inLane } from "./lane.js";
-import { scpArgs, sshArgs } from "../commands.js";
+import { exposureProbeArgs, readExposure, scpArgs, sshArgs } from "../commands.js";
 import type { ExecResult } from "./exec.js";
-import type { ForwardSpec, RemoteTarget } from "../commands.js";
+import type { ForwardExposure, ForwardSpec, RemoteTarget } from "../commands.js";
+
+/** The exposure probe is a whole connection of its own: a handshake plus one listing. */
+const EXPOSURE_PROBE_TIMEOUT_MS = 30_000;
 
 /**
  * The verbs a caller speaks to a machine with — what install-server.ts is written against,
@@ -125,6 +128,18 @@ export class MachineConnection implements MachineChannel {
   /** ssh's last word on each wanted forward, by forwardKey; empty until the session has been asked. */
   forwardFacts(): ReadonlyMap<string, ForwardFact> {
     return shellOf(this.address, this.target).forwardFacts();
+  }
+
+  /**
+   * What this machine's sshd would do with an `out` forward's loopback bind (commands.ts
+   * ForwardExposure). A connection of its own rather than a channel of the session: the
+   * probe's listener must not outlive the question, and without a control socket the session
+   * could not take it off again.
+   */
+  async probeForwardExposure(): Promise<ForwardExposure> {
+    return readExposure(
+      await run("ssh", exposureProbeArgs(this.target), { timeoutMs: EXPOSURE_PROBE_TIMEOUT_MS }),
+    );
   }
 
   /** A TCP connection to `127.0.0.1:<remotePort>` as seen from the machine — a channel in the session. */

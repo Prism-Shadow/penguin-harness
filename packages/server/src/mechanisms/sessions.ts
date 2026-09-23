@@ -37,6 +37,17 @@ export abstract class SessionIndex extends Interface<{
   deleteById(sessionId: string): void;
 }>() {}
 
+/**
+ * What a run that has just ended asks of the CURRENT generation: start the next queued
+ * follow-up, or deliver background notices that raced the run's exit. A run outlives the
+ * generation that launched it (see AgentState.current), and what it starts next is the
+ * current logic's to start.
+ */
+export interface RunStarter {
+  startQueuedFollowUp(sessionId: string): Promise<void>;
+  startBackgroundNoticeTask(sessionId: string): Promise<void>;
+}
+
 /** AgentState: the mechanism AgentStateStore implements — the Session runtime's in-memory state, data only. */
 export abstract class AgentState extends Interface<{
   readonly entries: Map<string, RuntimeEntry>;
@@ -47,6 +58,8 @@ export abstract class AgentState extends Interface<{
   readonly deletingSessions: Set<string>;
   readonly agentGenerations: Map<string, number>;
   readonly liveTail: LiveTail;
+  /** The generation working on this state right now; every generation points it at itself when it takes the state over. */
+  current: RunStarter | null;
 }>() {}
 
 /** SessionOrigins: the mechanism SessionSources implements. */

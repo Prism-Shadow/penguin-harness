@@ -33,6 +33,7 @@ export type SettingsSectionKey =
   | "uploads"
   | "company"
   | "sharing"
+  | "ports"
   | "plugins"
   | "users";
 
@@ -69,6 +70,8 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     // The company-mode master switch: server-global like the proxy and upload limits.
     { key: "company", group: "server", visible: (v) => v.isAdmin },
     { key: "sharing", group: "server", visible: (v) => v.isAdmin },
+    // Which machines may carry `out` forwards their sshd would expose: server-global, an admin's call.
+    { key: "ports", group: "server", visible: (v) => v.isAdmin },
     // The sandbox, and the options loaded plugins declare (server-global, like the plugins themselves).
     { key: "plugins", group: "server", visible: (v) => v.isAdmin },
     // Single-user under the desktop shell: the server rejects the admin user routes there.
