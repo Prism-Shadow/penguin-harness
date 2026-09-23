@@ -11,6 +11,7 @@ import {
   attachSessionRegistry,
   closeAllConnections,
   useControlSockets,
+  useForwardRetryDelays,
   closeConnectionTo,
   connectionTo,
   forwardKey,
@@ -34,6 +35,12 @@ posixOnly("the session", () => {
       `#!/bin/sh
 echo "$*" >> ${JSON.stringify(logFile)}
 case "$*" in *refused*) echo "deploy@refused: Permission denied (publickey)." >&2; exit 255 ;; esac
+# Port 65002 is still held the first time it is asked — by the session just replaced — and free after.
+once=${JSON.stringify(path.join(stubBin, "65002.asked"))}
+case "$*" in *:65002:*) if [ ! -f "$once" ]; then touch "$once"
+  case "$*" in *" -O "*) echo "Port forwarding failed: bind: Address already in use" >&2; exit 255 ;;
+  *) echo "Warning: remote port forwarding failed for listen port 65002" >&2 ;; esac
+fi ;; esac
 # The master answering a control request: port 65001 will not bind, every other one does.
 case "$*" in *" -O "*:65001:*) echo "Port forwarding failed: bind: Address already in use" >&2; exit 255 ;; *" -O "*) exit 0 ;; esac
 # A session started WITH forwards (the Windows path): ssh warns about the one it could not bind and goes on.
@@ -271,6 +278,77 @@ exit 1
     } finally {
       closeConnectionTo("ssh:nas");
       attachSessionRegistry(null);
+    }
+  });
+
+  it("asks again for a forward ssh refused — a port the replaced session still held — and stops after the last wait", async () => {
+    useForwardRetryDelays([20, 20, 20]);
+    try {
+      const conn = connectionTo({ alias: "nas", user: "deploy" });
+      const flaky = { direction: "out" as const, localPort: 5432, remotePort: 65002 };
+      const dead = { direction: "out" as const, localPort: 5433, remotePort: 65001 };
+      await conn.setForwards([flaky, dead]);
+      const held = await conn.hold();
+      expect(held.ok).toBe(true);
+      // Each ask is a spawn of its own; the three waits and their asks take a moment.
+      await new Promise((r) => setTimeout(r, 500));
+      // The master refused both at first; 65002 is bound on the first retry, 65001 never.
+      const asks = () => spawns().filter((line) => line.includes("-O forward"));
+      expect(asks().filter((line) => line.includes(":65002:"))).toHaveLength(2);
+      expect(asks().filter((line) => line.includes(":65001:"))).toHaveLength(4);
+      expect(conn.forwardFacts().get(forwardKey(flaky))).toEqual({ ok: true });
+      expect(conn.forwardFacts().get(forwardKey(dead))).toEqual({
+        ok: false,
+        detail: "Port forwarding failed: bind: Address already in use",
+      });
+      // Retries are spent: nothing more is asked until the set changes.
+      await new Promise((r) => setTimeout(r, 150));
+      expect(asks()).toHaveLength(6);
+      // The one session stayed up throughout: a control request is not a reopen.
+      expect(spawns().filter((line) => line.endsWith(" nas sh"))).toHaveLength(1);
+    } finally {
+      useForwardRetryDelays(null);
+    }
+  });
+
+  it("without a control socket reopens for a refused forward, after the old child is gone, and stops after the last wait", async () => {
+    useControlSockets(false);
+    useForwardRetryDelays([20, 20, 20]);
+    try {
+      const conn = connectionTo({ alias: "nas", user: "deploy" });
+      const flaky = { direction: "out" as const, localPort: 5432, remotePort: 65002 };
+      await conn.setForwards([flaky]);
+      const held = await conn.hold();
+      expect(held.ok).toBe(true);
+      await new Promise((r) => setTimeout(r, 120));
+      // Refused while connecting, reopened once, bound: two sessions, and the first is gone.
+      expect(spawns().filter((line) => line.endsWith(" nas sh"))).toHaveLength(2);
+      expect(conn.forwardFacts().get(forwardKey(flaky))).toEqual({ ok: true });
+      expect(
+        held.ok &&
+          (() => {
+            try {
+              process.kill(held.session.pid, 0);
+              return false;
+            } catch {
+              return true;
+            }
+          })(),
+      ).toBe(true);
+
+      // A port nothing frees: three reopens, then ssh's word stands.
+      const dead = { direction: "out" as const, localPort: 5433, remotePort: 65001 };
+      await conn.setForwards([flaky, dead]);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(spawns().filter((line) => line.endsWith(" nas sh"))).toHaveLength(2 + 1 + 3);
+      expect(conn.forwardFacts().get(forwardKey(dead))).toEqual({
+        ok: false,
+        detail: "Warning: remote port forwarding failed for listen port 65001",
+      });
+      expect(conn.forwardFacts().get(forwardKey(flaky))).toEqual({ ok: true });
+    } finally {
+      useControlSockets(true);
+      useForwardRetryDelays(null);
     }
   });
 

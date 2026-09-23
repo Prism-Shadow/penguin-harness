@@ -26,6 +26,7 @@ export {
   forwardKey,
   sessionOf,
   useControlSockets,
+  useForwardRetryDelays,
 } from "./ssh-session.js";
 export type { ForwardFact, HeldSession } from "./ssh-session.js";
 export { MachineSession } from "./ssh-session.js";
