@@ -4716,6 +4716,7 @@ Scenarios:
       comments: (n: number): string => `${n} comments`,
       commentPlaceholder: "Say something about this passage…",
       commentSelection: "Comment on selection",
+      commentParagraph: "Comment on this paragraph",
       selectionHint: "Select a passage of the body to comment on it",
       selectedText: "Selected text",
       selectionNotPlaced: "The selection could not be placed in the text; select again.",

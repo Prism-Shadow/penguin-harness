@@ -4702,6 +4702,7 @@ Benchmark：
       comments: (n: number): string => `${n} 条评论`,
       commentPlaceholder: "对这段文字说点什么…",
       commentSelection: "评论所选文字",
+      commentParagraph: "评论这一段",
       selectionHint: "选中正文里的一段文字即可评论",
       selectedText: "所选文字",
       selectionNotPlaced: "没能在正文里定位所选文字，请重新选择。",
