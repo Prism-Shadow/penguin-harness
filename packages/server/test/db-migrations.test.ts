@@ -815,6 +815,46 @@ describe("a root stamped by the closed #797 line: port-forwards-adoption", () =>
   });
 });
 
+describe("a root stamped by the chain before its restack onto main: model-tables-adoption", () => {
+  it("brings back model_promotions and model_provider_auth_tokens on the swap path, and a root that has them migrates the same", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(SCHEMA_SQL);
+      // Exactly the broken root: every table but main's two model tables, stamped 16 under
+      // the old line's numbering — where 9 and 10 were sessions-sandbox and machines-columns,
+      // so this line reads its model-promotions (9) and model-provider-auth-tokens (10) as done.
+      db.exec("DROP TABLE model_promotions");
+      db.exec("DROP TABLE model_provider_auth_tokens");
+      db.exec("PRAGMA user_version = 16");
+      const promotions = () => db.prepare("SELECT * FROM model_promotions").all();
+      const tokens = () => db.prepare("SELECT * FROM model_provider_auth_tokens").all();
+      expect(promotions).toThrow(/no such table/);
+      expect(tokens).toThrow(/no such table/);
+
+      migrate(db, { swapPath: true });
+      expect(promotions()).toEqual([]);
+      expect(tokens()).toEqual([]);
+      expect(
+        (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
+      ).toBe(MIGRATIONS.length);
+
+      // A root that took 9 and 10 in their proper place: the adoption finds its work done.
+      const fresh = new sqlite.DatabaseSync(":memory:");
+      try {
+        fresh.exec(SCHEMA_SQL);
+        fresh.exec("PRAGMA user_version = 18");
+        migrate(fresh, { swapPath: true });
+        expect(fresh.prepare("SELECT * FROM model_promotions").all()).toEqual([]);
+        expect(fresh.prepare("SELECT * FROM model_provider_auth_tokens").all()).toEqual([]);
+      } finally {
+        fresh.close();
+      }
+    } finally {
+      db.close();
+    }
+  });
+});
+
 /**
  * The first form of `port_forwards`: what the port-forwards migration created on the roots
  * that ran it before its DDL was changed in place, and what the adoption still creates on the
