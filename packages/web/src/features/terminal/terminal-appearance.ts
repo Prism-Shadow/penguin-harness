@@ -37,6 +37,10 @@ export interface TerminalChrome {
   danger: string;
   /** Bordered text button (retry, detach on the standalone page). */
   outlineButton: string;
+  /** A resting cap in the touch key bar. */
+  keyCap: string;
+  /** A sticky modifier cap waiting for the character that will consume it. */
+  keyCapArmed: string;
 }
 
 const DARK: TerminalChrome = {
@@ -55,6 +59,10 @@ const DARK: TerminalChrome = {
   attention: "text-amber-400",
   danger: "text-red-400",
   outlineButton: "border-gray-700 text-gray-300 hover:bg-gray-800",
+  keyCap: "border-gray-700 bg-gray-900 text-gray-200 active:bg-gray-800",
+  // Armed is `attention` (waiting on the user's next key); aria-pressed carries the state
+  // for anyone the colour does not reach.
+  keyCapArmed: "border-amber-500 bg-amber-500/15 text-amber-300",
 };
 
 const LIGHT: TerminalChrome = {
@@ -72,6 +80,8 @@ const LIGHT: TerminalChrome = {
   attention: "text-amber-600",
   danger: "text-red-600",
   outlineButton: "border-gray-300 text-gray-600 hover:bg-gray-100",
+  keyCap: "border-gray-300 bg-gray-50 text-gray-700 active:bg-gray-200",
+  keyCapArmed: "border-amber-600 bg-amber-100 text-amber-700",
 };
 
 export function useTerminalChrome(): TerminalChrome {

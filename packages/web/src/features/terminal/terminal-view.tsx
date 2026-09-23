@@ -9,14 +9,20 @@
  * a fresh one, honouring URL parameters — whatever that host's policy is). This component
  * only knows how to attach to whatever `ensure` resolved.
  *
- * To restart with a different terminal, remount it (change the React `key`).
+ * To restart with a different terminal, remount it (change the React `key`). On a touch
+ * device the surface also carries the key bar (terminal-keybar.tsx), so both hosts get the
+ * keys a soft keyboard lacks without either of them knowing about it.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 // Types only (erased at compile time): the xterm runtime stays behind loadXterm() below.
 import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
+import { TerminalKeyBar, type TerminalControl } from "./terminal-keybar";
+import { NO_MODIFIERS, applyModifiers, hasModifier, type TerminalModifiers } from "./terminal-keys";
+import { TouchScroll } from "./terminal-touch";
+import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { useTheme } from "../../state/theme";
 import { useAuth } from "../../state/auth";
 import { machineForTerminal, terminalUrl } from "../../lib/terminal-machines";
@@ -234,6 +240,15 @@ export function TerminalView({
   const darkRef = useRef(terminalDark);
   darkRef.current = terminalDark;
   const termRef = useRef<XTerminal | null>(null);
+  // Touch affordances. The bar is the only consumer of all three: the control handle the
+  // effect publishes once a terminal is live, the sticky modifiers it arms (spent on the
+  // data path below), and whether xterm holds focus (which way the keyboard cap points).
+  const coarsePointer = useCoarsePointer();
+  const control = useRef<TerminalControl | null>(null);
+  const [modifiers, setModifiers] = useState<TerminalModifiers>(NO_MODIFIERS);
+  const modifiersRef = useRef(modifiers);
+  modifiersRef.current = modifiers;
+  const [focused, setFocused] = useState(false);
   useEffect(() => {
     if (termRef.current) termRef.current.options.theme = terminalTheme(terminalDark);
   }, [terminalDark]);
@@ -428,11 +443,22 @@ export function TerminalView({
        */
       const { signal } = listenerAbort;
       const appOwnsMouse = (): boolean => term.modes.mouseTrackingMode !== "none";
+      // A long press on a touchscreen also raises `contextmenu`, and it is not a right
+      // click: the finger that meant to select text would paste the clipboard into a live
+      // shell instead. Touch gets the key bar's paste cap, which says what it does.
+      let touchPointer = false;
+      container.addEventListener(
+        "pointerdown",
+        (event) => {
+          touchPointer = event.pointerType === "touch" || event.pointerType === "pen";
+        },
+        { signal },
+      );
       container.addEventListener(
         "contextmenu",
         (event) => {
           event.preventDefault(); // a terminal never shows the page's context menu
-          if (appOwnsMouse()) return;
+          if (appOwnsMouse() || touchPointer) return;
           // PuTTY-style right click: copy the selection if there is one, else paste.
           if (term.hasSelection()) copySelection();
           else pasteFromClipboard();
@@ -450,9 +476,78 @@ export function TerminalView({
         },
         { signal },
       );
+      /**
+       * A finger dragging while a program owns the mouse: the wheel it does not have.
+       *
+       * xterm turns its own touch scrolling off for exactly these programs, and they are the
+       * ones that need it most — a TUI on the alternate screen (Claude Code) leaves the
+       * terminal no scrollback to scroll, draws its transcript itself, and pages it only when
+       * a wheel reports. So the travel becomes wheel events (terminal-touch.ts for the
+       * arithmetic), dispatched at xterm's own element so IT encodes them in whatever
+       * protocol the program asked for — hand-rolled SGR here would be a second encoder to
+       * keep in step with the first.
+       *
+       * A tap is left alone: nothing scrolls until the travel passes the slop, so the
+       * browser's tap-to-click still reaches a program that answers clicks. Where the mouse
+       * is free, xterm's own touch handling runs first (on its element, below this one) and
+       * this stays out of the way entirely.
+       */
+      const touchScroll = new TouchScroll();
+      /** The height of one row, in pixels: the screen element is exactly rows cells tall. */
+      const cellHeight = (): number => {
+        const screen = term.element?.querySelector(".xterm-screen");
+        if (!screen || term.rows <= 0) return 0;
+        return screen.getBoundingClientRect().height / term.rows;
+      };
+      const wheelLine = (x: number, y: number, down: boolean): void => {
+        term.element?.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaY: down ? 1 : -1,
+            // Lines, not pixels: one event is one line, whatever this device's cells measure.
+            deltaMode: 1,
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      };
+      container.addEventListener(
+        "touchstart",
+        (event) => {
+          if (!appOwnsMouse() || event.touches.length !== 1) {
+            touchScroll.end(); // a second finger (pinch) is not a scroll
+            return;
+          }
+          touchScroll.start(event.touches[0]!.clientY);
+        },
+        { signal, passive: true },
+      );
+      container.addEventListener(
+        "touchmove",
+        (event) => {
+          const touch = event.touches[0];
+          if (!touchScroll.started || event.touches.length !== 1 || touch === undefined) return;
+          const lines = touchScroll.move(touch.clientY, cellHeight());
+          if (!touchScroll.engaged) return;
+          // The host carries `touch-none` on a touch device, so there is normally nothing
+          // left to cancel; this is for the device that reports a fine pointer and is one
+          // anyway, where the page would otherwise scroll out from under the gesture.
+          if (event.cancelable) event.preventDefault();
+          for (let i = Math.abs(lines); i > 0; i--) {
+            wheelLine(touch.clientX, touch.clientY, lines > 0);
+          }
+        },
+        { signal, passive: false },
+      );
+      container.addEventListener("touchend", () => touchScroll.end(), { signal, passive: true });
+      container.addEventListener("touchcancel", () => touchScroll.end(), { signal, passive: true });
+
       // Click-to-focus anywhere in the view, padding included — finishing a selection drag
       // also lands here, which is fine: focusing xterm's textarea keeps the selection.
       container.addEventListener("mouseup", () => term.focus(), { signal });
+      container.addEventListener("focusin", () => setFocused(true), { signal });
+      container.addEventListener("focusout", () => setFocused(false), { signal });
 
       // Size ownership follows the user's attention (see server size-ownership.ts): the pty
       // is laid out for the most recent CLAIMING connection, and `update`s from anyone else
@@ -468,10 +563,23 @@ export function TerminalView({
         { signal },
       );
 
-      term.onData((data) => {
+      const send = (data: string): void => {
         if (socket?.readyState === WebSocket.OPEN) {
           socket.send(encodeFrame(TerminalOpcode.Input, data));
         }
+      };
+
+      term.onData((data) => {
+        // A sticky Ctrl/Alt armed on the touch key bar composes with the next character the
+        // soft keyboard produces, then spends itself. Nothing to do when none is armed,
+        // which is every keystroke on a physical keyboard.
+        const mods = modifiersRef.current;
+        if (!hasModifier(mods)) {
+          send(data);
+          return;
+        }
+        send(applyModifiers(data, mods));
+        setModifiers(NO_MODIFIERS);
       });
 
       // Title changes ride the ordinary byte stream (OSC 0/2); this client's xterm parses
@@ -534,9 +642,20 @@ export function TerminalView({
       observer.observe(container);
       term.focus();
 
+      // What the touch key bar drives. Published after the terminal is open and dropped on
+      // dispose, so a bar tap between two attaches is a no-op rather than a throw.
+      control.current = {
+        send,
+        paste: pasteFromClipboard,
+        focus: () => term.focus(),
+        blur: () => term.blur(),
+        applicationCursorKeys: () => term.modes.applicationCursorKeysMode,
+      };
+
       return () => {
         disposed = true;
         termRef.current = null;
+        control.current = null;
         listenerAbort.abort();
         observer.disconnect();
         socket?.close();
@@ -545,5 +664,27 @@ export function TerminalView({
     }
   }, []);
 
-  return <div ref={hostRef} className={className ?? "min-h-0 flex-1 overflow-hidden"} />;
+  // The className lands on the WRAPPER, not on the xterm host: the host has to be the
+  // flex child that takes the leftover height, so that the bar's own height comes off the
+  // terminal's grid instead of pushing the surface past its container.
+  return (
+    <div className={`flex flex-col ${className ?? "min-h-0 flex-1 overflow-hidden"}`}>
+      {/* `touch-none` on a touch device: the drag above is the gesture, and the browser
+          must not take it for its own (a page scroll, a pull-to-refresh) — which also
+          stops mid-gesture cancellation, since a taken-over touch stops being cancelable.
+          xterm's own touch scrolling sets scrollTop itself and is unaffected. */}
+      <div
+        ref={hostRef}
+        className={`min-h-0 flex-1 overflow-hidden ${coarsePointer ? "touch-none" : ""}`}
+      />
+      {coarsePointer && (
+        <TerminalKeyBar
+          control={control}
+          modifiers={modifiers}
+          onModifiers={setModifiers}
+          focused={focused}
+        />
+      )}
+    </div>
+  );
 }
