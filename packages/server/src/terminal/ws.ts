@@ -15,7 +15,7 @@
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
-import { SESSION_COOKIE } from "../auth/middleware.js";
+import { isOwnOrigin, parseCookieHeader, sessionCookies } from "../auth/middleware.js";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "../mechanisms/identity.js";
 
@@ -55,8 +55,10 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
 
     if (!isAllowedOrigin(req)) return refuse(socket, 403, "Forbidden");
 
-    const token = readCookie(req.headers.cookie, SESSION_COOKIE);
-    const authed = token ? deps.authService.authenticateWithMeta(token) : null;
+    const authed =
+      sessionCookies(parseCookieHeader(req.headers.cookie), req.headers.host)
+        .map(({ token }) => deps.authService.authenticateWithMeta(token))
+        .find((a) => a !== null) ?? null;
     if (!authed) return refuse(socket, 401, "Unauthorized");
 
     // The platform may be mid-swap; ensure() resolves the instance that owns the
@@ -89,33 +91,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
  * browser's own Host survives the proxy and this comparison holds in development too.
  */
 function isAllowedOrigin(req: IncomingMessage): boolean {
-  const origin = req.headers.origin;
-  if (!origin) return true; // non-browser client (CLI, tests): no ambient cookie to abuse
-  let parsed: URL;
-  try {
-    parsed = new URL(origin);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-  return parsed.host === (req.headers.host ?? "");
-}
-
-function readCookie(header: string | undefined, name: string): string | null {
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() !== name) continue;
-    try {
-      return decodeURIComponent(part.slice(eq + 1).trim());
-    } catch {
-      // A malformed percent escape is an invalid credential, not a server error — this
-      // runs in the `upgrade` handler, where a throw would take the whole process down.
-      return null;
-    }
-  }
-  return null;
+  return isOwnOrigin(req.headers.origin, req.headers.host);
 }
 
 function refuse(socket: Duplex, status: number, text: string): void {

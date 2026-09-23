@@ -56,6 +56,10 @@ const DROP_REQUEST_HEADERS = new Set([
   "host",
   "cookie",
   "authorization",
+  // The browser's Origin names THIS server; the machine, addressed under a Host of its own,
+  // would read it as another origin's and refuse every write. Where the request came from is
+  // judged here, on the server the browser talks to (the write guard covers `/server/*`).
+  "origin",
   "connection",
   "keep-alive",
   "upgrade",
