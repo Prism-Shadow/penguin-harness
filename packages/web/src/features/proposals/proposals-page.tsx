@@ -166,14 +166,16 @@ function QueuePage() {
 
   // The query lives in the URL (`?q=`, omitted at the default), so a filter can be linked
   // and survives a reload; the box edits it debounced, Enter applies at once, Esc resets.
+  // An EMPTY query is "everything" and stays in the URL as `?q=` — dropping it would read
+  // back as the default and hide the closed half again.
   const [params, setParams] = useSearchParams();
-  const query = params.get("q") ?? DEFAULT_PROPOSAL_QUERY;
+  const query = params.has("q") ? (params.get("q") ?? "") : DEFAULT_PROPOSAL_QUERY;
   const setQuery = useCallback(
     (next: string) => {
       setParams(
         (prev) => {
           const out = new URLSearchParams(prev);
-          if (next.trim() === DEFAULT_PROPOSAL_QUERY || next.trim() === "") out.delete("q");
+          if (next.trim() === DEFAULT_PROPOSAL_QUERY) out.delete("q");
           else out.set("q", next.trim());
           return out;
         },
