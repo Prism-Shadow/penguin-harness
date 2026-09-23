@@ -86,18 +86,11 @@ export function dropBrowserExtensions(db: DatabaseSync): void {
   db.exec("DROP TABLE IF EXISTS browser_extensions");
 }
 
-/** Takes user-profile's two columns off a database built from the current declaration. */
-export function dropProfileColumns(db: DatabaseSync): void {
-  db.exec("ALTER TABLE users DROP COLUMN avatar");
-  db.exec("ALTER TABLE users DROP COLUMN display_name");
-}
-
 /**
- * Takes port-forwards' table off a database built from the current declaration. Every fixture
- * standing for a database OLDER than port forwarding needs it: a round trip that rolls back
- * through port-forwards drops the table, and would otherwise land on less than it began with.
+ * Takes the port-forwards table off a database built from the current declaration — and
+ * everything declared after it, which every database older than port forwarding lacks too.
  */
-export function dropPortForwards(db: DatabaseSync): void {
+export function dropPortForwardsAndLater(db: DatabaseSync): void {
   db.exec(
     "DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP INDEX IF EXISTS idx_port_forwards_machine; DROP TABLE IF EXISTS port_forwards;",
   );
@@ -105,6 +98,12 @@ export function dropPortForwards(db: DatabaseSync): void {
   db.exec(
     "DROP INDEX IF EXISTS idx_agent_api_keys_agent; DROP TABLE IF EXISTS agent_api_keys; DROP TABLE IF EXISTS agent_api;",
   );
+}
+
+/** Takes user-profile's two columns off a database built from the current declaration. */
+export function dropProfileColumns(db: DatabaseSync): void {
+  db.exec("ALTER TABLE users DROP COLUMN avatar");
+  db.exec("ALTER TABLE users DROP COLUMN display_name");
 }
 
 /** The current declaration: what a fresh database is created with. */
@@ -125,10 +124,10 @@ export function open024(): DatabaseSync {
   db.exec(
     "DROP INDEX IF EXISTS idx_agent_api_keys_agent; DROP TABLE IF EXISTS agent_api_keys; DROP TABLE IF EXISTS agent_api;",
   );
-  dropPortForwards(db);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  dropPortForwardsAndLater(db);
   dropCompanyTables(db);
   db.exec("DROP TABLE messaging_bindings");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
@@ -141,10 +140,10 @@ export function open024(): DatabaseSync {
 /** A 0.2.9 database: 0.2.4 plus messaging, still goal_state; through messaging-delivery-flags. */
 export function open029(): DatabaseSync {
   const db = openFresh();
-  dropPortForwards(db);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  dropPortForwardsAndLater(db);
   dropCompanyTables(db);
   db.exec(GOAL_STATE_DDL);
   // No machines tables (the machines migration adds them) and no profile columns.
@@ -157,10 +156,10 @@ export function open029(): DatabaseSync {
 /** A database from before the user profile: through `machines`, no company mode yet. */
 export function openPreProfile(): DatabaseSync {
   const db = openFresh();
-  dropPortForwards(db);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  dropPortForwardsAndLater(db);
   dropProfileColumns(db);
   dropCompanyTables(db);
   stampThrough(db, "machines");
@@ -194,10 +193,10 @@ const PRE_CHANNEL_CHAT_DDL = `
 /** Through company-mode-org-caches: company mode's caches, before chat became channels. */
 export function openOrgCaches(): DatabaseSync {
   const db = openFresh();
-  dropPortForwards(db);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  dropPortForwardsAndLater(db);
   db.exec(PRE_CHANNEL_CHAT_DDL);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
   stampThrough(db, "company-mode-org-caches");
@@ -207,7 +206,7 @@ export function openOrgCaches(): DatabaseSync {
 /** Through company-mode-channels: channels, and no desk-notice queue yet. */
 export function openChannels(): DatabaseSync {
   const db = openFresh();
-  dropPortForwards(db);
+  dropPortForwardsAndLater(db);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
@@ -219,7 +218,6 @@ export function openChannels(): DatabaseSync {
 /** Through company-mode-desk-notices: the promotions table does not exist yet. */
 export function openDeskNotices(): DatabaseSync {
   const db = openFresh();
-  dropPortForwards(db);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
@@ -230,7 +228,6 @@ export function openDeskNotices(): DatabaseSync {
 /** Through model-promotions: provider auth refresh tokens do not exist yet. */
 export function openPromotions(): DatabaseSync {
   const db = openFresh();
-  dropPortForwards(db);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   stampThrough(db, "model-promotions");
@@ -240,7 +237,7 @@ export function openPromotions(): DatabaseSync {
 /** Through machines-columns: everything before the Chrome pairings. */
 export function openMachinesColumns(): DatabaseSync {
   const db = openFresh();
-  dropPortForwards(db);
+  dropPortForwardsAndLater(db);
   dropBrowserExtensions(db);
   stampThrough(db, "machines-columns");
   return db;

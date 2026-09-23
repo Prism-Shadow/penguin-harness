@@ -305,6 +305,7 @@ describe("machines-columns → current: browser-extensions", () => {
         "port-forwards",
         "port-forwards-adoption",
         "port-forwards-direction",
+        "model-tables-adoption",
         "messaging-conversations",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
@@ -345,6 +346,19 @@ describe("machines-columns → current: browser-extensions", () => {
 });
 
 describe("numbered roots other lines stamped: adopted whole", () => {
+  it("a root the closed #797 line stamped 13 gets port_forwards back, on the swap path", () => {
+    const db = openFresh();
+    try {
+      db.exec("DROP TABLE port_forwards; PRAGMA user_version = 13;");
+      expect(() => db.prepare("SELECT * FROM port_forwards").all()).toThrow(/no such table/);
+      migrate(db, { swapPath: true });
+      expect(db.prepare("SELECT * FROM port_forwards").all()).toEqual([]);
+      expect(columns(db, "port_forwards")).toContain("direction");
+    } finally {
+      db.close();
+    }
+  });
+
   it("a root the chain stamped 16 before its restack gets both model tables back, on the swap path", () => {
     const db = openFresh();
     try {
@@ -406,6 +420,115 @@ describe("messaging-conversations → current: sessions-kept-at and the Agent AP
       expect(db.prepare("SELECT kept_at FROM sessions").get()).toEqual({
         kept_at: "2026-10-11T01:00:00.000Z",
       });
+    } finally {
+      db.close();
+    }
+  });
+});
+
+/**
+ * The first form of `port_forwards`: what port-forwards created on the roots that ran it
+ * before its DDL was changed in place, and what port-forwards-adoption creates on a root
+ * without the table — no direction, one local port per forward.
+ */
+const PORT_FORWARDS_V1_DDL = `
+  CREATE TABLE port_forwards (
+    id          TEXT PRIMARY KEY,
+    machine_id  TEXT NOT NULL,
+    workspace   TEXT NOT NULL,
+    remote_port INTEGER NOT NULL,
+    local_port  INTEGER NOT NULL UNIQUE,
+    created_at  TEXT NOT NULL,
+    UNIQUE (machine_id, workspace, remote_port)
+  );
+  CREATE INDEX IF NOT EXISTS idx_port_forwards_machine ON port_forwards(machine_id, workspace);
+`;
+
+describe("the first form of port_forwards → current: port-forwards-direction", () => {
+  /** A root that ran port-forwards in its first form and has a forward saved. */
+  function openFirstForm(): DatabaseSync {
+    const db = openFresh();
+    db.exec("DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP TABLE port_forwards;");
+    db.exec(PORT_FORWARDS_V1_DDL);
+    db.prepare(
+      "INSERT INTO port_forwards (id, machine_id, workspace, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("f1", "m1", "/home/dev/site", 3000, 3000, "2026-09-21T00:00:00.000Z");
+    stampThrough(db, "port-forwards-adoption");
+    return db;
+  }
+  const insertNew = (
+    db: DatabaseSync,
+    id: string,
+    ws: string,
+    dir: string,
+    rp: number,
+    lp: number,
+  ) =>
+    db
+      .prepare(
+        "INSERT INTO port_forwards (id, machine_id, workspace, direction, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(id, "m1", ws, dir, rp, lp, "2026-09-21T00:00:00.000Z");
+  const insertOld = (db: DatabaseSync, id: string, ws: string, rp: number, lp: number) =>
+    db
+      .prepare(
+        "INSERT INTO port_forwards (id, machine_id, workspace, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .run(id, "m1", ws, rp, lp, "2026-09-21T00:00:00.000Z");
+
+  it("gives the table its direction on the swap path, keeps the forward as `in`, and takes an `out` sharing its port", () => {
+    const db = openFirstForm();
+    try {
+      migrate(db, { swapPath: true });
+      expect(columns(db, "port_forwards")).toContain("direction");
+      expect(db.prepare("SELECT id, direction, local_port FROM port_forwards").all()).toEqual([
+        { id: "f1", direction: "in", local_port: 3000 },
+      ]);
+      insertNew(db, "f2", "/home/dev/site", "out", 5432, 3000);
+      // What a predecessor rolled back to would still write: no direction named.
+      insertOld(db, "f3", "/home/dev/other", 8080, 8080);
+      expect(db.prepare("SELECT direction FROM port_forwards WHERE id = 'f3'").get()).toEqual({
+        direction: "in",
+      });
+      expect(() => insertOld(db, "f4", "/home/dev/third", 9000, 3000)).toThrow(/UNIQUE/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("brings a table port-forwards-adoption created — the same first form — to the current shape too", () => {
+    const db = openFresh();
+    try {
+      db.exec("DROP TABLE port_forwards");
+      stampThrough(db, "port-forwards");
+      migrate(db, { swapPath: true });
+      expect(columns(db, "port_forwards")).toContain("direction");
+      insertNew(db, "f1", "/home/dev/site", "out", 5432, 5432);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("leaves a table that already has the column alone", () => {
+    const db = openFresh();
+    try {
+      stampThrough(db, "port-forwards-adoption");
+      const before = shape(db);
+      migrate(db);
+      expect(shape(db)).toBe(before);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down puts the first form back, without the `out` forwards it cannot hold", () => {
+    const db = openFirstForm();
+    try {
+      migrate(db);
+      insertNew(db, "f2", "/home/dev/site", "out", 5432, 3000);
+      rollbackTo(db, "port-forwards-adoption");
+      expect(columns(db, "port_forwards")).not.toContain("direction");
+      expect(db.prepare("SELECT id FROM port_forwards").all()).toEqual([{ id: "f1" }]);
     } finally {
       db.close();
     }
