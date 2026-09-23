@@ -73,8 +73,8 @@ class FakeGateway implements OrgGateway {
     ],
     userIds: ["boss"],
   };
-  channels: Array<{ channelId: string; userId: string; principals: string[] }> = [];
-  messages: Array<{ userId: string; channelId: string; text: string }> = [];
+  channels: Array<{ channelId: string; by: OrgActor; principals: string[] }> = [];
+  messages: Array<{ by: OrgActor; channelId: string; text: string }> = [];
   sessions: Array<{ agentId: string; title: string; body: string; workspace?: string }> = [];
   events: ServerEvent[] = [];
   failChannel = false;
@@ -99,21 +99,15 @@ class FakeGateway implements OrgGateway {
     _o: string,
     channelId: string,
     _opts: { name: string; purpose: string },
-    userId: string,
+    by: OrgActor,
     principals: readonly string[],
   ): Promise<void> {
     if (this.failChannel) throw new Error("channel unavailable");
-    this.channels.push({ channelId, userId, principals: [...principals] });
+    this.channels.push({ channelId, by, principals: [...principals] });
   }
-  async sendChannelMessage(
-    _p: string,
-    _o: string,
-    userId: string,
-    channelId: string,
-    text: string,
-  ) {
+  async sendChannelMessage(_p: string, _o: string, by: OrgActor, channelId: string, text: string) {
     if (this.failChannel) throw new Error("channel unavailable");
-    this.messages.push({ userId, channelId, text });
+    this.messages.push({ by, channelId, text });
     return { id: `msg-${this.messages.length}` };
   }
   async openEmployeeSession(args: {
@@ -130,6 +124,23 @@ class FakeGateway implements OrgGateway {
   }
   notifyProject(_projectId: string, event: ServerEvent): void {
     this.events.push(event);
+  }
+}
+
+/** The Agent lifecycle as the service uses it: which employees carry the skills plugin, and the installs it asked for. */
+class FakeAgents {
+  /** The plugin's version in the library; null = the library does not carry it. */
+  library: string | null = "2026.09.21.1";
+  installed = new Set<string>();
+  updates: string[] = [];
+  failInstall = false;
+  async pluginVersion(_p: string, agentId: string, _name: string) {
+    return { installed: this.installed.has(agentId) ? this.library : null, library: this.library };
+  }
+  async updatePlugin(_p: string, agentId: string, _name: string): Promise<void> {
+    if (this.failInstall) throw new Error("library unreadable");
+    this.updates.push(agentId);
+    this.installed.add(agentId);
   }
 }
 
@@ -156,16 +167,19 @@ async function refused(run: () => Promise<unknown>): Promise<{ status: number; c
 describe("ProposalService", () => {
   let root: string;
   let gateway: FakeGateway;
+  let agents: FakeAgents;
   let settings: FakeSettings;
   let service: ProposalService;
   const lines: string[] = [];
+  const log = { line: (l: string) => lines.push(l) };
 
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "proposals-service-"));
     gateway = new FakeGateway();
+    agents = new FakeAgents();
     settings = new FakeSettings();
     lines.length = 0;
-    service = new ProposalService({ gateway, root, settings, log: { line: (l) => lines.push(l) } });
+    service = new ProposalService({ gateway, agents, root, settings, log });
   });
   afterEach(async () => {
     await fs.rm(root, { recursive: true, force: true });
@@ -194,7 +208,7 @@ describe("ProposalService", () => {
       code: "org_not_found",
     });
     gateway = new FakeGateway();
-    service = new ProposalService({ gateway, root, settings, log: { line: () => {} } });
+    service = new ProposalService({ gateway, agents, root, settings, log });
     expect(await refused(() => service.list(PROJECT, ORG, OUTSIDER))).toEqual({
       status: 403,
       code: "project_access",
@@ -215,17 +229,19 @@ describe("ProposalService", () => {
       revision: 0,
       author: "acme_dev",
       implementer: null,
-      delegatedBy: "boss",
+      delegatedBy: "user:boss",
       brief: "Batch the notices\nsecond line",
       unread: 0,
     });
     expect(gateway.channels).toEqual([
-      { channelId: PROPOSALS_CHANNEL, userId: "boss", principals: ["agent:acme_dev"] },
+      { channelId: PROPOSALS_CHANNEL, by: BOSS, principals: ["agent:acme_dev"] },
     ]);
     expect(gateway.messages).toHaveLength(1);
-    expect(gateway.messages[0]).toMatchObject({ userId: "boss", channelId: PROPOSALS_CHANNEL });
+    expect(gateway.messages[0]).toMatchObject({ by: BOSS, channelId: PROPOSALS_CHANNEL });
     expect(gateway.messages[0]!.text).toContain("@agent:acme_dev proposal:1");
     expect(gateway.messages[0]!.text).toContain("penguin org proposal publish 1");
+    // The author is given the skills plugin, once.
+    expect(agents.updates).toEqual(["acme_dev"]);
     expect(gateway.events).toEqual([
       {
         type: "plugin",
@@ -233,22 +249,75 @@ describe("ProposalService", () => {
         data: { projectId: PROJECT, orgId: ORG, number: 1, seq: 1, kind: "created" },
       },
     ]);
-    // Only a person delegates; the author must be an employee.
-    expect(
-      await refused(() => service.create(PROJECT, ORG, { author: "acme_dev", brief: "x" }, author)),
-    ).toEqual({
-      status: 403,
-      code: "person_required",
-    });
+    // The author must be an employee, and a person has to name one.
     expect(
       await refused(() => service.create(PROJECT, ORG, { author: "ghost", brief: "x" }, BOSS)),
     ).toEqual({
       status: 400,
       code: "bad_request",
     });
+    expect(await refused(() => service.create(PROJECT, ORG, { brief: "x" }, BOSS))).toEqual({
+      status: 400,
+      code: "bad_request",
+    });
     expect(
       (await service.create(PROJECT, ORG, { author: "acme_dev", brief: "Another" }, BOSS)).number,
     ).toBe(2);
+    expect(agents.updates).toEqual(["acme_dev"]);
+  });
+
+  it("an employee proposes on its own: it is the author and the delegator, nobody is @-mentioned, the channel is prepared", async () => {
+    const created = await service.create(PROJECT, ORG, { brief: "Rotate the API token" }, author);
+    expect(created).toMatchObject({
+      number: 1,
+      author: "acme_dev",
+      delegatedBy: "agent:acme_dev",
+      status: "drafting",
+    });
+    expect(created.events[0]).toMatchObject({ kind: "created", by: "agent:acme_dev" });
+    // Its own desk would only be woken by an @ of itself; the channel still gets it as a
+    // member so a batch or an approval can reach it later.
+    expect(gateway.messages).toEqual([]);
+    expect(gateway.channels).toEqual([
+      { channelId: PROPOSALS_CHANNEL, by: author, principals: ["agent:acme_dev"] },
+    ]);
+    expect(agents.updates).toEqual(["acme_dev"]);
+    // Delegating to a colleague: the colleague is the author and is told, in the employee's name.
+    const handed = await service.create(
+      PROJECT,
+      ORG,
+      { author: "acme_impl", brief: "Split the sweep" },
+      author,
+    );
+    expect(handed).toMatchObject({ number: 2, author: "acme_impl", delegatedBy: "agent:acme_dev" });
+    expect(gateway.messages).toHaveLength(1);
+    expect(gateway.messages[0]).toMatchObject({ by: author, channelId: PROPOSALS_CHANNEL });
+    expect(gateway.messages[0]!.text).toContain("@agent:acme_impl proposal:2");
+    expect(agents.updates).toEqual(["acme_dev", "acme_impl"]);
+    // A person sees the employee's proposal as unread; the employee counts nothing.
+    const seen = await service.get(PROJECT, ORG, 1, BOSS);
+    expect(seen.unread).toBe(1);
+  });
+
+  it("the skills plugin is installed only where it is missing, and a library without it is only logged", async () => {
+    agents.installed.add("acme_dev");
+    await service.create(PROJECT, ORG, { author: "acme_dev", brief: "Already equipped" }, BOSS);
+    expect(agents.updates).toEqual([]);
+    agents.library = null;
+    await service.create(PROJECT, ORG, { author: "acme_impl", brief: "No library" }, BOSS);
+    expect(agents.updates).toEqual([]);
+    agents.library = "2026.09.21.1";
+    agents.failInstall = true;
+    const created = await service.create(
+      PROJECT,
+      ORG,
+      { author: "acme_qa", brief: "Broken" },
+      BOSS,
+    );
+    expect(created.number).toBe(3);
+    expect(lines.some((l) => l.includes("agent-company-proposals not installed on acme_qa"))).toBe(
+      true,
+    );
   });
 
   it("the author publishes, marks ready, and nobody else but a person may", async () => {
@@ -432,13 +501,29 @@ describe("ProposalService", () => {
     expect(session.body).toContain('title: "Batch the ticket notices"');
     expect(gateway.channels.at(-1)).toEqual({
       channelId: PROPOSALS_CHANNEL,
-      userId: "boss",
+      by: author,
       principals: ["agent:acme_dev", "agent:acme_impl"],
     });
     expect(started.events.at(-1)).toMatchObject({
       kind: "implementation_started",
       text: "acme_impl",
     });
+    // The implementer is equipped too (the author was at the delegation).
+    expect(agents.updates).toEqual(["acme_dev", "acme_impl"]);
+  });
+
+  it("implement without an implementer is the author building its own proposal", async () => {
+    const n = await delegated();
+    await service.publish(PROJECT, ORG, n, DOC, author);
+    const started = await service.implement(PROJECT, ORG, n, {}, author);
+    expect(started).toMatchObject({ implementer: "acme_dev", sessions: ["impl-1"] });
+    expect(gateway.sessions[0]).toMatchObject({ agentId: "acme_dev" });
+    expect(gateway.channels.at(-1)).toEqual({
+      channelId: PROPOSALS_CHANNEL,
+      by: author,
+      principals: ["agent:acme_dev", "agent:acme_dev"],
+    });
+    expect(agents.updates).toEqual(["acme_dev"]);
   });
 
   it("materials, feedback and runtime feedback: the author is told, runtime feedback tells the implementer too", async () => {
@@ -604,7 +689,7 @@ describe("ProposalService", () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
-    const again = new ProposalService({ gateway, root, settings, log: { line: () => {} } });
+    const again = new ProposalService({ gateway, agents, root, settings, log });
     const replayed = await again.get(PROJECT, ORG, n, BOSS);
     expect(replayed).toEqual(await service.get(PROJECT, ORG, n, BOSS));
     expect(replayed.status).toBe("ready");

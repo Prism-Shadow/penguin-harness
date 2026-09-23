@@ -67,23 +67,29 @@ export abstract class OrgGateway extends Interface<{
   /** `agent:<id>` when the actor is (or speaks from a session of) an employee, else `user:<id>`. */
   principalOf(projectId: string, orgId: string, actor: OrgActor): Promise<string>;
   /**
-   * The channel exists with these members afterwards: created by `userId` when missing
-   * (a person may create any channel), joined by `userId` when they are not in it (a person
-   * may join any channel), the other principals invited by them. Idempotent.
+   * The channel exists with these members afterwards: created by `by` when missing (a person
+   * or an employee may create a channel), the person behind `by` joined when they are not in
+   * it (a person may join any channel; an employee is in what it created or was invited to),
+   * then `by`'s own employee (when it is one) and the other principals invited by that
+   * person. Idempotent.
    */
   ensureChannel(
     projectId: string,
     orgId: string,
     channelId: string,
     opts: { name: string; purpose: string },
-    userId: string,
+    by: OrgActor,
     principals: readonly string[],
   ): Promise<void>;
-  /** A message in the person's own name (hop 0); `@mentions` in it trigger the employees named. */
+  /**
+   * A message in the actor's name: an employee's when `by` speaks from one of its sessions
+   * (the hop the session carries), else the person's (hop 0). `@mentions` in it trigger the
+   * employees named, within the channel's membership.
+   */
   sendChannelMessage(
     projectId: string,
     orgId: string,
-    userId: string,
+    by: OrgActor,
     channelId: string,
     text: string,
   ): Promise<{ id: string }>;

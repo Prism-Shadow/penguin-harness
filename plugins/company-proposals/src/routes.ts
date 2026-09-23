@@ -4,11 +4,11 @@
  * `c.get("user")` is the signed-in user and `c.get("sessionVia")` says how they signed in.
  *
  *   GET    /                         the queue (each with the caller's unread count)
- *   POST   /                         delegate: { author, brief, title? }
+ *   POST   /                         start one: { author?, brief, title? } (author defaults to the calling employee)
  *   GET    /:number                  the proposal
  *   PUT    /:number                  publish a revision: { markdown }
  *   POST   /:number/ready | approve | reject { reason } | merged
- *   POST   /:number/implement        { agentId, message?, workspace? } → an implementation session
+ *   POST   /:number/implement        { agentId?, message?, workspace? } → an implementation session (default: the author's own)
  *   POST   /:number/materials        { kind, url, label? }
  *   POST   /:number/feedback         { text, runtime? }
  *   POST   /:number/comments         { paragraphId, text } (pending)
@@ -153,7 +153,9 @@ export function proposalRoutes(service: ProposalService): Hono {
       param(c, "projectId"),
       param(c, "orgId"),
       {
-        author: requireString(body, "author", 64),
+        ...(optionalString(body, "author", 64) !== undefined
+          ? { author: optionalString(body, "author", 64) }
+          : {}),
         brief: requireString(body, "brief"),
         ...(optionalString(body, "title", 200) !== undefined
           ? { title: optionalString(body, "title", 200) }
@@ -242,7 +244,9 @@ export function proposalRoutes(service: ProposalService): Hono {
         param(c, "orgId"),
         numberParam(c),
         {
-          agentId: requireString(body, "agentId", 64),
+          ...(optionalString(body, "agentId", 64) !== undefined
+            ? { agentId: optionalString(body, "agentId", 64) }
+            : {}),
           ...(message !== undefined ? { message } : {}),
           ...(workspace !== undefined ? { workspace } : {}),
         },

@@ -24,6 +24,35 @@ function lines(...entries: LedgerEntry[]): LedgerLine[] {
 }
 
 describe("foldLedger", () => {
+  it("reads the delegator as a principal, and a bare user id written before principals were recorded as a person", () => {
+    const state = foldLedger([
+      {
+        seq: 1,
+        at: "2026-09-21T00:00:00Z",
+        kind: "created",
+        number: 1,
+        title: "A",
+        author: "dev",
+        delegatedBy: "boss",
+        brief: "b",
+      },
+      {
+        seq: 2,
+        at: "2026-09-21T00:00:01Z",
+        kind: "created",
+        number: 2,
+        title: "B",
+        author: "dev",
+        delegatedBy: "agent:dev",
+        brief: "b",
+      },
+    ]);
+    expect(state.proposals.get(1)).toMatchObject({ delegatedBy: "user:boss" });
+    expect(state.proposals.get(1)?.events[0]).toMatchObject({ kind: "created", by: "user:boss" });
+    expect(state.proposals.get(2)).toMatchObject({ delegatedBy: "agent:dev" });
+    expect(state.proposals.get(2)?.events[0]).toMatchObject({ by: "agent:dev" });
+  });
+
   it("folds a creation, a revision and status changes into one proposal with its events", () => {
     const state = foldLedger(
       lines(

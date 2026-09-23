@@ -41,6 +41,7 @@ export type LedgerEntry =
       number: number;
       title: string;
       author: string;
+      /** The principal that started it: `user:<id>` or `agent:<id>` (a bare user id in lines written before principals were recorded). */
       delegatedBy: string;
       brief: string;
     }
@@ -112,6 +113,10 @@ function emptyState(): LedgerState {
 export function applyLine(state: LedgerState, line: LedgerLine): void {
   state.lastSeq = Math.max(state.lastSeq, line.seq);
   if (line.kind === "created") {
+    // Lines written before principals were recorded carry a bare user id.
+    const delegatedBy = line.delegatedBy.includes(":")
+      ? line.delegatedBy
+      : `user:${line.delegatedBy}`;
     state.proposals.set(line.number, {
       number: line.number,
       title: line.title,
@@ -119,7 +124,7 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       revision: 0,
       author: line.author,
       implementer: null,
-      delegatedBy: line.delegatedBy,
+      delegatedBy,
       brief: line.brief,
       createdAt: line.at,
       updatedAt: line.at,
@@ -128,7 +133,7 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       materials: [],
       sessions: [],
       comments: [],
-      events: [{ seq: line.seq, at: line.at, kind: "created", by: `user:${line.delegatedBy}` }],
+      events: [{ seq: line.seq, at: line.at, kind: "created", by: delegatedBy }],
       seq: line.seq,
     });
     return;

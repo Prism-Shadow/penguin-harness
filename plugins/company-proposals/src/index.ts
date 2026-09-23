@@ -22,7 +22,13 @@
 import type { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/plugin";
 import type { ClassCtx, Plugin } from "@prismshadow/penguin-core/plugin";
-import type { Log, OrgGateway, Paths, Settings } from "@prismshadow/penguin-server/plugin";
+import type {
+  AgentLifecycle,
+  Log,
+  OrgGateway,
+  Paths,
+  Settings,
+} from "@prismshadow/penguin-server/plugin";
 import { ProposalService } from "./service.js";
 import { ROUTES_ID, proposalRoutes } from "./routes.js";
 
@@ -41,6 +47,7 @@ export {
   PROPOSALS_CHANNEL,
   PROPOSALS_CHANNEL_NAME,
   PROPOSALS_CHANNEL_PURPOSE,
+  SKILLS_PLUGIN,
   ProposalError,
   ProposalService,
   slugOf,
@@ -90,6 +97,7 @@ export const PAGE_ID = "company-proposals.page";
 })
 export class CompanyProposalsPlugin {
   @Use("CompanyModule") private readonly gateway!: OrgGateway;
+  @Use("AgentsModule") private readonly agents!: AgentLifecycle;
   @Use("RuntimeModule") private readonly paths!: Paths;
   @Use("SettingsModule") private readonly settings!: Settings;
   @Use("RuntimeModule") private readonly log!: Log;
@@ -98,6 +106,7 @@ export class CompanyProposalsPlugin {
   setup(_ctx: ClassCtx) {
     const service = new ProposalService({
       gateway: this.gateway,
+      agents: this.agents,
       root: this.paths.root,
       settings: this.settings,
       log: this.log,

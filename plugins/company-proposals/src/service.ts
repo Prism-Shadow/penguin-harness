@@ -15,10 +15,11 @@
  * no read position — the page is for people.
  */
 import type {
+  AgentLifecycle,
+  Log,
   OrgActor,
   OrgGateway,
   OrgView,
-  Log,
   Settings,
 } from "@prismshadow/penguin-server/plugin";
 import type {
@@ -41,6 +42,8 @@ import {
 export const PLUGIN_NAME = "company-proposals";
 /** The channel authors, implementers, testers and the delegating person talk in. */
 export const PROPOSALS_CHANNEL = "proposals";
+/** The skills plugin the author and the implementer are given on demand. */
+export const SKILLS_PLUGIN = "agent-company-proposals";
 export const PROPOSALS_CHANNEL_NAME = "Proposals";
 export const PROPOSALS_CHANNEL_PURPOSE = "Proposals: authors, implementers and testers talk here";
 
@@ -67,6 +70,8 @@ export class ProposalError extends Error {
 
 export interface ServiceDeps {
   gateway: OrgGateway;
+  /** The Agent lifecycle: what an employee carries of the skills plugin, and installing it. */
+  agents: Pick<AgentLifecycle, "pluginVersion" | "updatePlugin">;
   /** The data root (Paths.root). */
   root: string;
   settings: Pick<Settings, "get" | "set">;
@@ -266,26 +271,50 @@ export class ProposalService {
   // The channel: how the plugin speaks to employees
   // ---------------------------------------------------------------------------
 
-  /** A message in the delegating person's name; a failure is logged, never raised — the ledger write already stands. */
-  private async say(
+  /**
+   * The proposals channel with these principals in it, arranged by the actor (an employee's
+   * own membership rides along). A failure is logged, never raised — the ledger write stands.
+   */
+  private async prepareChannel(
     org: OrgView,
     p: Proposal,
+    by: OrgActor,
     principals: readonly string[],
-    text: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       await this.deps.gateway.ensureChannel(
         org.projectId,
         org.orgId,
         PROPOSALS_CHANNEL,
         { name: PROPOSALS_CHANNEL_NAME, purpose: PROPOSALS_CHANNEL_PURPOSE },
-        p.delegatedBy,
+        by,
         principals,
       );
+      return true;
+    } catch (err) {
+      this.deps.log.line(
+        `[${PLUGIN_NAME}] proposal #${p.number}: channel not prepared: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return false;
+    }
+  }
+
+  /** A message in the actor's name — the person's, or the employee's when it speaks from its session; a failure is logged, never raised. */
+  private async say(
+    org: OrgView,
+    p: Proposal,
+    by: OrgActor,
+    principals: readonly string[],
+    text: string,
+  ): Promise<void> {
+    if (!(await this.prepareChannel(org, p, by, principals))) return;
+    try {
       await this.deps.gateway.sendChannelMessage(
         org.projectId,
         org.orgId,
-        p.delegatedBy,
+        by,
         PROPOSALS_CHANNEL,
         text,
       );
@@ -314,39 +343,72 @@ export class ProposalService {
     this.deps.gateway.notifyProject(org.projectId, { type: "plugin", plugin: PLUGIN_NAME, data });
   }
 
+  /**
+   * The skills plugin reaches whoever writes or builds a proposal, on demand: nobody is hired
+   * for it and nobody installs it by hand. A library without the plugin, or an install that
+   * fails, is logged — the proposal stands either way.
+   */
+  private async ensureSkills(projectId: string, agentId: string): Promise<void> {
+    try {
+      const version = await this.deps.agents.pluginVersion(projectId, agentId, SKILLS_PLUGIN);
+      if (version.installed !== null || version.library === null) return;
+      await this.deps.agents.updatePlugin(projectId, agentId, SKILLS_PLUGIN);
+    } catch (err) {
+      this.deps.log.line(
+        `[${PLUGIN_NAME}] ${SKILLS_PLUGIN} not installed on ${agentId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Writes
   // ---------------------------------------------------------------------------
 
+  /**
+   * Anyone in the organization starts a proposal — a person delegating, an employee proposing
+   * (the CEO to the board is the canonical case) or delegating to a colleague. The author is
+   * the employee named, else the employee that asks; a person has to name one.
+   */
   async create(
     projectId: string,
     orgId: string,
-    req: { author: string; brief: string; title?: string },
+    req: { author?: string; brief: string; title?: string },
     actor: OrgActor,
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
-    this.requirePerson(caller, "delegate a proposal");
     const brief = req.brief.trim();
     if (brief === "") throw badRequest("brief must not be empty.");
-    this.requireEmployee(org, req.author, "author");
+    const author = req.author ?? caller.agentId;
+    if (author === null) throw badRequest("author is required: name the employee that writes it.");
+    this.requireEmployee(org, author, "author");
     const number = ledger.nextNumber();
     const title = req.title?.trim() || brief.split("\n")[0]!.slice(0, 120);
     const line = await ledger.append({
       kind: "created",
       number,
       title,
-      author: req.author,
-      delegatedBy: caller.userId,
+      author,
+      delegatedBy: caller.principal,
       brief,
     });
     const p = this.requireProposal(ledger, number);
     this.notify(org, number, line.seq, "created");
-    await this.say(
-      org,
-      p,
-      [agentPrincipal(req.author)],
-      `@agent:${req.author} proposal:${number} — ${brief}\n\nWrite the proposal: \`penguin org proposal publish ${number} --file <markdown>\`, then \`penguin org proposal ready ${number}\` when a person can read it.`,
-    );
+    await this.ensureSkills(projectId, author);
+    if (caller.agentId === author) {
+      // Its own proposal: nothing to tell it, and an @ of itself would only start a work run
+      // on its own desk. The channel is prepared so a batch or an approval can reach it.
+      await this.prepareChannel(org, p, actor, [agentPrincipal(author)]);
+    } else {
+      await this.say(
+        org,
+        p,
+        actor,
+        [agentPrincipal(author)],
+        `@agent:${author} proposal:${number} — ${brief}\n\nWrite the proposal: \`penguin org proposal publish ${number} --file <markdown>\`, then \`penguin org proposal ready ${number}\` when a person can read it.`,
+      );
+    }
     return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
   }
 
@@ -449,6 +511,7 @@ export class ProposalService {
     await this.say(
       org,
       p,
+      actor,
       [agentPrincipal(to)],
       p.implementer !== null
         ? `@agent:${to} proposal:${number} is approved — merge it and run \`penguin org proposal merged ${number}\`.`
@@ -475,6 +538,7 @@ export class ProposalService {
     await this.say(
       org,
       p,
+      actor,
       [
         agentPrincipal(p.author),
         ...(p.implementer !== null ? [agentPrincipal(p.implementer)] : []),
@@ -513,13 +577,15 @@ export class ProposalService {
     projectId: string,
     orgId: string,
     number: number,
-    req: { agentId: string; message?: string; workspace?: string },
+    req: { agentId?: string; message?: string; workspace?: string },
     actor: OrgActor,
   ): Promise<ProposalDetail & { sessionId: string }> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
     const p = this.requireProposal(ledger, number);
     this.requireAuthorOrPerson(p, caller, "ask for an implementation");
-    this.requireEmployee(org, req.agentId, "implementer");
+    // Nobody is hired to build: the author builds its own proposal unless it names a colleague.
+    const implementer = req.agentId ?? p.author;
+    this.requireEmployee(org, implementer, "implementer");
     if (p.status === "merged" || p.status === "rejected") {
       throw new ProposalError(409, "proposal_status", `Proposal #${number} is ${p.status}.`);
     }
@@ -534,7 +600,7 @@ export class ProposalService {
     const opened = await this.deps.gateway.openEmployeeSession({
       projectId,
       orgId,
-      agentId: req.agentId,
+      agentId: implementer,
       title: `Proposal #${number}: ${p.title}`,
       body,
       ...(req.workspace !== undefined ? { workspace: req.workspace } : {}),
@@ -542,26 +608,17 @@ export class ProposalService {
     const line = await ledger.append({
       kind: "implementation",
       number,
-      implementer: req.agentId,
+      implementer,
       sessionId: opened.sessionId,
       by: caller.principal,
     });
     this.notify(org, number, line.seq, "implementation_started");
+    await this.ensureSkills(projectId, implementer);
     // The implementer joins the channel now, so the messages that follow can reach it.
-    try {
-      await this.deps.gateway.ensureChannel(
-        projectId,
-        orgId,
-        PROPOSALS_CHANNEL,
-        { name: PROPOSALS_CHANNEL_NAME, purpose: PROPOSALS_CHANNEL_PURPOSE },
-        p.delegatedBy,
-        [agentPrincipal(p.author), agentPrincipal(req.agentId)],
-      );
-    } catch (err) {
-      this.deps.log.line(
-        `[${PLUGIN_NAME}] proposal #${number}: channel not prepared: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    await this.prepareChannel(org, p, actor, [
+      agentPrincipal(p.author),
+      agentPrincipal(implementer),
+    ]);
     return {
       ...this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
       sessionId: opened.sessionId,
@@ -638,6 +695,7 @@ export class ProposalService {
     await this.say(
       org,
       p,
+      actor,
       to,
       runtime
         ? `${mentions} proposal:${number} runtime feedback from ${caller.principal}: ${text}\n\nRevise together — the author updates the proposal (\`penguin org proposal publish ${number} --file …\`), the implementer the branch.`
@@ -698,6 +756,7 @@ export class ProposalService {
     await this.say(
       org,
       p,
+      actor,
       [agentPrincipal(p.author)],
       `@agent:${p.author} proposal:${number} has a batch of ${pending.length} comment${pending.length === 1 ? "" : "s"}: \`penguin org proposal comments ${number} --pending\`, resolve each (\`penguin org proposal resolve ${number} <commentId> -m …\`), then publish the revision and mark it ready again.`,
     );
