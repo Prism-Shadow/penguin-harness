@@ -587,6 +587,7 @@ describe("ModelScope key authorization routes", () => {
       "Qwen/Qwen3.8-27B",
       "Qwen/Qwen3.8-Flash-Next",
     ]);
+    expect(preset.every((model) => model.clientType === "openai-responses")).toBe(true);
     expect(preset.every((model) => model.credential?.apiKeyMasked === undefined)).toBe(true);
 
     expect((await memberClient.post(`${base}/start`, {})).status).toBe(403);

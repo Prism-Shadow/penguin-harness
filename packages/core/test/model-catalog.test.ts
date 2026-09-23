@@ -739,11 +739,10 @@ describe("model-catalog", () => {
       expect(m.baseUrl).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
     }
     const ms = MODEL_CATALOG.filter((m) => m.provider === "modelscope");
-    // Preset rows keep ModelScope's upstream ids. Like Penguin Go, this group is an aggregate:
-    // the row's client type tracks the upstream model family for display/request semantics, while
-    // the group credential remains ModelScope's api-inference token. Pricing is deliberately
-    // absent (see UNPRICED above); the windows and vision flags repeat what other rows of the
-    // same models record.
+    // Preset rows keep ModelScope's upstream ids and pin the Responses protocol served by its
+    // api-inference endpoint, while the group credential remains ModelScope's token. Pricing is
+    // deliberately absent (see UNPRICED above); the windows and vision flags repeat what other
+    // rows of the same models record.
     expect(
       ms.map((m) => [m.modelId, m.contextWindow, m.supportsVision, m.clientType, m.baseUrl]),
     ).toEqual([
@@ -751,21 +750,21 @@ describe("model-catalog", () => {
         "deepseek-ai/DeepSeek-V4.1-Flash",
         1000000,
         true,
-        "deepseek-v4",
+        "openai-responses",
         "https://api-inference.modelscope.cn/v1",
       ],
       [
         "Qwen/Qwen3.8-27B",
         262144,
         true,
-        "openai-chat-vllm-adapter",
+        "openai-responses",
         "https://api-inference.modelscope.cn/v1",
       ],
       [
         "Qwen/Qwen3.8-Flash-Next",
         262144,
         true,
-        "openai-chat-vllm-adapter",
+        "openai-responses",
         "https://api-inference.modelscope.cn/v1",
       ],
     ]);

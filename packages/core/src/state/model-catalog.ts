@@ -1995,11 +1995,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // own `org/Model-Name` spelling; DeepSeek was read from the endpoint's public /v1/models
   // listing (2026-09-18), and the Qwen additions from their public model pages (2026-09-20).
   //
-  // Like Penguin Go, this is a mixed-protocol aggregate: rows pin the AgentHub protocol the
-  // upstream model should display and use. The Qwen ids have no native AgentHub qwen client and
-  // therefore use the vLLM Chat Completions adapter, which maps thinking controls onto their
-  // chat templates; the DeepSeek id pins `deepseek-v4` so it shows the same protocol family as
-  // the direct and Penguin Go DeepSeek V4 rows instead of flattening the group to one protocol.
+  // ModelScope serves all three presets through its OpenAI Responses endpoint, so every row pins
+  // AgentHub's generic Responses client. Keeping the protocol explicit also prevents ids from
+  // auto-routing to vendor-specific clients with a different request shape.
   //
   // The window and vision flags are NOT read from ModelScope's own docs — its model pages are
   // client-rendered and carry no price. They repeat what other rows of the same models record,
@@ -2016,7 +2014,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: MODELSCOPE_PROVIDER_ID,
     contextWindow: 1000000,
     supportsVision: true,
-    clientType: "deepseek-v4",
+    clientType: "openai-responses",
     baseUrl: MODELSCOPE_BASE_URL,
   },
   {
@@ -2025,7 +2023,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: MODELSCOPE_PROVIDER_ID,
     contextWindow: 262144,
     supportsVision: true,
-    clientType: VLLM_CLIENT_TYPE,
+    clientType: "openai-responses",
     baseUrl: MODELSCOPE_BASE_URL,
   },
   {
@@ -2034,7 +2032,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: MODELSCOPE_PROVIDER_ID,
     contextWindow: 262144,
     supportsVision: true,
-    clientType: VLLM_CLIENT_TYPE,
+    clientType: "openai-responses",
     baseUrl: MODELSCOPE_BASE_URL,
   },
   // -- MiniMax (direct M3 Responses client; official USD pay-as-you-go list prices, standard

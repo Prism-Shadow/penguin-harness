@@ -419,11 +419,11 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 | vllm | `OPENAI_API_KEY` | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，无预置 base URL，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
 | custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn Preview（Anthropic Messages API，地址 `api.atria-asi.ai`，条目没有凭据时使用 `ANTHROPIC_API_KEY`，上下文窗口 256K，供应商公布价格之前定价 $0） |
 
-OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 AgentHub 通用的 OpenAI 协议客户端，凭据留空时读取 `OPENAI_API_KEY`，而不是某个网关专属的变量。ModelScope 也使用 `OPENAI_*` 凭据变量，因为它的凭据是 api-inference token，但它的预置条目可以逐条固定模型专属协议。
+OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 AgentHub 通用的 OpenAI 协议客户端，凭据留空时读取 `OPENAI_API_KEY`，而不是某个网关专属的变量。ModelScope 也使用 `OPENAI_*` 凭据变量，因为它的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议。
 
 - OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
-- ModelScope 像 Penguin Go 一样是聚合网关：Qwen 预置使用 `openai-chat-vllm-adapter`，在 Chat Completions 上按 Qwen 模板传递思考参数；DeepSeek 预置固定为 `deepseek-v4`，运行时走 AgentHub Responses client。
+- ModelScope 像 Penguin Go 一样是聚合网关，但三条预置都使用 AgentHub 通用 Responses 客户端（`client_type = "openai-responses"`）。
 - 这些网关客户端读取相同的 `OPENAI_*` 变量，所以无论哪种方式，凭据规则完全一致。
 
 直连 MiniMax M3 的客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模型使用 `https://api.minimax.io/v1`。只有条目没有自己的 `base_url` 时，才会读取 `MINIMAX_BASE_URL`。
@@ -442,7 +442,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 
 ### ModelScope 分组
 
-`modelscope` 是聚合网关分组：同一个魔搭 api-inference 端点，预置 base URL `https://api-inference.modelscope.cn/v1`，每条预置各自写明 AgentHub 应该为这个上游模型使用的协议。模型 id 就是上游仓库名，因此保留供应商前缀（`deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）。Qwen 条目使用 `openai-chat-vllm-adapter`，在线路仍为 Chat Completions 的同时正确控制 Qwen 模板的思考参数；DeepSeek 条目固定为 `deepseek-v4`，与直连 DeepSeek 和 Penguin Go 的 DeepSeek V4 条目保持一致。新建的 Project 立即带上这些预置；更早创建的 Project 用**同步预置**补上。
+`modelscope` 是聚合网关分组：三条预置共用魔搭 api-inference 端点，预置 base URL 为 `https://api-inference.modelscope.cn/v1`。模型 id 就是上游仓库名，因此保留供应商前缀（`deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）。三条预置都固定使用 AgentHub 通用 Responses 客户端（`client_type = "openai-responses"`），推理请求发往 `{base_url}/responses`。新建的 Project 立即带上这些预置；既有 Project 可通过**同步预置**或下一次 ModelScope 授权更新已存的协议。
 
 分组的 key 从标题栏取得，见[授权获取新 API key](#授权获取新-api-key)。授权走一台授权中转层，由中转层持有魔搭的 client secret 并交回一组 api-inference access token / refresh token，而不是经过魔搭自己的页面。除此之外这个分组没有特别之处：推理请求直接发给 `https://api-inference.modelscope.cn/v1`，从不经过中转层；access token 和其他分组的 key 一样写进 `.project_config.toml`，refresh token 只保存在服务端 DB。access token 会过期，PenguinHarness 会在模型请求前静默续期；refresh token 缺失或失效时，才需要从标题栏重新授权一次。
 
