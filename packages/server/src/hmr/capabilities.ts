@@ -100,6 +100,11 @@ interface HmrInterfaces extends Interfaces {
 
 export const HMR_INTERFACES: HmrInterfaces = {
   family: PENGUIN_FAMILY,
+  // A config member added after runtimes shipped does NOT go in this list: naming it here
+  // refuses every installed runtime that predates it, and a push can never replace the
+  // runtime — only a reinstall can. Such a member is optional on ServerConfig and its
+  // consumer defaults it when the runtime does not publish it: cliEntry, penguinGoOrigin,
+  // modelscopeBridgeUrl.
   config: [
     "root",
     "host",
@@ -114,7 +119,6 @@ export const HMR_INTERFACES: HmrInterfaces = {
     "portFile",
     "trustProxy",
     "supervised",
-    "penguinGoOrigin",
   ],
   db: ["prepare", "exec", "close"],
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],

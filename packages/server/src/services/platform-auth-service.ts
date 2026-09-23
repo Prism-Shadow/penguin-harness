@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import { PENGUIN_GO_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 import { HttpError } from "../http/errors.js";
+import { normalizePenguinGoOrigin } from "../config.js";
 import { Config } from "../hmr/capabilities.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import type { PlatformAuthFlowStatusResponse } from "../api/types.js";
@@ -604,7 +605,8 @@ export class PlatformAuthProvider {
 
   setup() {
     this.auth = new PlatformAuthService({
-      origin: this.config.penguinGoOrigin,
+      // A runtime older than the field publishes none; the default is the production origin.
+      origin: this.config.penguinGoOrigin ?? normalizePenguinGoOrigin(undefined),
       getKey: (projectId) => this.projectConfig.getGroupApiKey(projectId, PENGUIN_GO_PROVIDER_ID),
       applyCatalog: (projectId, catalog, apiKey, applyKeyToExisting) =>
         this.projectConfig.mergePlatformModels(

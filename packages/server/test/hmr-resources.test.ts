@@ -349,6 +349,22 @@ describe("runtime capability handshake", () => {
     expect(claimHmrCapabilities(r)).toMatchObject({ kind: "refused" });
   });
 
+  it("names no config member added after runtimes shipped, so an older runtime still claims", () => {
+    // Naming one would refuse every installed runtime that predates it, and a push can never
+    // replace the runtime. These are optional on ServerConfig and defaulted by their consumer.
+    for (const later of ["cliEntry", "penguinGoOrigin", "modelscopeBridgeUrl"]) {
+      expect(HMR_INTERFACES.config).not.toContain(later);
+    }
+    // A runtime that published exactly today's list minus nothing more: the pre-#716 shape.
+    const r = new HotResources();
+    stubCaps(r);
+    r.register(HMR_CONFIG_RESOURCE_ID, {
+      ...Object.fromEntries(HMR_INTERFACES.config.map((m) => [m, () => undefined])),
+    });
+    r.register(HMR_INTERFACES_RESOURCE_ID, { ...HMR_INTERFACES });
+    expect(claimHmrCapabilities(r)).toMatchObject({ kind: "claimed" });
+  });
+
   it("claims on a matching descriptor", () => {
     const r = new HotResources();
     stubCaps(r);
