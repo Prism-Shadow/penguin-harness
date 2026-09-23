@@ -492,7 +492,9 @@ describe("ProposalService", () => {
       `⟦${firstComment!.id}⟧ user:boss (open): Who reads the notices?`,
     );
     expect(forAuthor.text).toContain(`penguin org proposal resolve ${n} <id>`);
-    expect(forAuthor.text).not.toContain(String(first.start));
+    // No offsets: not the pair, not the words — the ids may carry digits of their own.
+    expect(forAuthor.text).not.toContain(`${first.start}, ${first.end}`);
+    expect(forAuthor.text).not.toMatch(/\bstart\b|\brange\b|\boffset\b/);
     expect(
       await refused(() => service.resolve(PROJECT, ORG, n, firstComment!.id, "done", impl)),
     ).toEqual({
