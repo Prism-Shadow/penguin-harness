@@ -680,7 +680,8 @@ describe("ProposalService", () => {
     expect(gateway.messages).toEqual([]);
     expect(
       lines.some(
-        (l) => l.includes("channel message not sent") && l.includes("channel unavailable"),
+        // The channel step fails at its first stop, preparing the channel; a later failure would say "message not sent".
+        (l) => l.includes("channel not prepared") && l.includes("channel unavailable"),
       ),
     ).toBe(true);
   });
