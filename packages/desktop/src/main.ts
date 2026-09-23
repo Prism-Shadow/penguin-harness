@@ -7,7 +7,9 @@
  * through a new installer — so a capability that could instead be delivered
  * by a platform push must be. A rejected example: adding a preload bridge so
  * the web UI could open DevTools, when the shell's own View menu already
- * does it.
+ * does it. The page can still ask for DevTools — through the host-command
+ * relay every other shell action uses (`open-devtools`), which needs no
+ * bridge and no capability in the renderer.
  *
  * One window over the embedded server: fork penguin-server as a utilityProcess on the
  * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its port (last launch's when
@@ -50,6 +52,7 @@ import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
+import { isDevToolsKey, isMenuBarKey } from "./shortcuts.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
 import { resolveTrayLocale } from "./tray-menu.js";
@@ -133,19 +136,49 @@ function fatal(context: string, err: unknown): void {
  * Windows and Linux: the menu bar is hidden outright, not auto-hidden. With `autoHideMenuBar`
  * a lone Alt press pulled the bar up and took the keyboard from the page, so every Alt
  * combination the page or the terminal wanted (Alt+B, Alt+., Alt+Enter) was eaten. Hidden,
- * the application menu still exists — its accelerators keep working, and macOS keeps its
- * system menu bar — and F10 brings the bar up for the rare time it is wanted. The menu's
- * own actions are offered from the page's command palette (see http/routes/command.ts).
+ * the application menu still exists — macOS keeps its system menu bar — and F10 brings the
+ * bar up for the rare time it is wanted. The menu's own actions are offered from the page's
+ * command palette (see http/routes/command.ts).
+ *
+ * The menu's ACCELERATORS are not something to rely on here. Chromium offers a key to the
+ * page before it fires one, so anything the page consumes never reaches the menu — the
+ * terminal alone claims Ctrl+Shift+C, Ctrl+Shift+V and Shift+Insert — and with the bar
+ * hidden there is nothing on screen to reveal the binding either. A shortcut this shell
+ * means to guarantee is bound here instead, on `before-input-event`, which runs BEFORE the
+ * page sees the key.
  */
 function hideMenuBar(target: BrowserWindow): void {
   if (process.platform === "darwin") return;
   target.setMenuBarVisibility(false);
   target.webContents.on("before-input-event", (event, input) => {
-    if (input.type !== "keyDown" || input.key !== "F10") return;
-    if (input.alt || input.control || input.meta || input.shift) return;
-    target.setMenuBarVisibility(!target.isMenuBarVisible());
-    event.preventDefault();
+    if (isMenuBarKey(input)) {
+      target.setMenuBarVisibility(!target.isMenuBarVisible());
+      event.preventDefault();
+    } else if (isDevToolsKey(input)) {
+      toggleDevTools();
+      event.preventDefault();
+    }
   });
+}
+
+/**
+ * DevTools as its own window (`detach`) rather than a pane: a console error is usually being
+ * copied out to someone else, and a docked panel reflows the page under it while that happens.
+ *
+ * `openDevTools` is what the palette's command runs — it says "open", so an open window is
+ * focused rather than closed. A key that people press twice toggles.
+ */
+function openDevTools(): void {
+  if (win === null) return;
+  const contents = win.webContents;
+  if (contents.isDevToolsOpened()) contents.devToolsWebContents?.focus();
+  else contents.openDevTools({ mode: "detach" });
+}
+
+function toggleDevTools(): void {
+  if (win === null) return;
+  if (win.webContents.isDevToolsOpened()) win.webContents.closeDevTools();
+  else win.webContents.openDevTools({ mode: "detach" });
 }
 
 function createWindow(url: string): void {
@@ -413,6 +446,10 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
       void checkForUpdatesManually();
       return;
     }
+    if (host === "open-devtools") {
+      openDevTools();
+      return;
+    }
     const command = parseTrayCommand(message);
     if (command !== null) {
       if (command.locale !== undefined) setTrayLocale(command.locale);
@@ -430,6 +467,8 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
     hostCommandsMessage([
       ...(currentCliInstallKind() !== null ? (["install-cli"] as const) : []),
       ...(updatesAvailableInThisForm() ? (["check-updates"] as const) : []),
+      // Unconditional: every Electron build has DevTools, packaged ones included.
+      "open-devtools",
     ]),
   );
 }
