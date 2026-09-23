@@ -613,8 +613,9 @@ describe("migration 8 → current: model-promotions", () => {
         "model-provider-auth-tokens",
         "sessions-sandbox",
         "machines-columns",
+        "sessions-surface",
       ]);
-      expect(schemaVersion(db)).toBe(12);
+      expect(schemaVersion(db)).toBe(13);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
 
@@ -635,8 +636,9 @@ describe("migration 8 → current: model-promotions", () => {
         "model-provider-auth-tokens",
         "sessions-sandbox",
         "machines-columns",
+        "sessions-surface",
       ]);
-      expect(schemaVersion(db)).toBe(12);
+      expect(schemaVersion(db)).toBe(13);
     } finally {
       db.close();
     }
@@ -657,8 +659,9 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         "model-provider-auth-tokens",
         "sessions-sandbox",
         "machines-columns",
+        "sessions-surface",
       ]);
-      expect(schemaVersion(db)).toBe(12);
+      expect(schemaVersion(db)).toBe(13);
       expect(tableExists()).toEqual({ "1": 1 });
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +

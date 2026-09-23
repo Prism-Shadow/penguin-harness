@@ -525,7 +525,7 @@ export const MIGRATIONS: readonly Migration[] = [
     down() {},
   },
   {
-    version: 11,
+    version: 13,
     name: "sessions-surface",
     // The column that says which surface renders a Session (NULL = the built-in
     // conversation). It has to be a migration, not only a line in openDatabase's
