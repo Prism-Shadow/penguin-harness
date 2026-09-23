@@ -386,25 +386,58 @@ describe("machines API", () => {
       );
     });
 
-    it("a machine with nothing running on it is done, not failed — its disk already has this", async () => {
-      // A hot swap replaces the code a RUNNING server is serving. With none there is nothing
-      // to swap and nothing wrong: the files are in place for its next start.
-      let asked = false;
+    it("a machine with nothing running on it is started, and the build is handed to what started", async () => {
+      // A state-only install copies nothing, and the update channel is the running
+      // server's: with none there was nothing to hand the build to, and recording this
+      // version anyway left the machine on whatever its disk held. So the server is started
+      // first, and the build reaches it the way it reaches any running one.
+      let started = 0;
+      let asked = 0;
       await boot({
-        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        // Down until this server starts it; up from then on.
+        probe: async () =>
+          started === 0
+            ? { state: { kind: "stopped" }, machineId: null }
+            : { state: { kind: "running", port: 7364, pid: 4242 }, machineId: null },
+        startServer: async () => {
+          started += 1;
+          return { ok: true };
+        },
         resolvePlan: () => PUSHED_PLAN,
         install: async () => ({ kind: "state-only", identity: IDENTITY }),
         upgrade: async () => {
-          asked = true;
+          asked += 1;
           return { kind: "upgraded", detail: "", persisted: true };
         },
       });
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
 
-      expect(asked).toBe(false);
-      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true });
-      expect(t.deps.machines.job()?.log.join(" ")).toContain("next starts");
+      expect(started).toBe(1);
+      expect(asked).toBe(1);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, version: "9.9.9+hmr.cafe" });
+      expect(t.deps.machines.job()?.log.join(" ")).toContain(
+        "starting it on port 7364 to hand the build over",
+      );
+    });
+
+    it("a machine that cannot be started is a failure, not a machine on this version", async () => {
+      await boot({
+        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        startServer: async () => ({ ok: false, detail: "port 7364 already in use" }),
+        resolvePlan: () => PUSHED_PLAN,
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        step: "start its server",
+        message: "port 7364 already in use",
+        canReplaceProgram: true,
+      });
+      // Nothing reached that disk: the record does not say it did.
+      expect(machinesRepo.get("ssh:nas")?.version ?? null).not.toBe("9.9.9+hmr.cafe");
     });
 
     it("a machine already carrying this build still gets it handed over: files are not the process", async () => {
@@ -1439,20 +1472,47 @@ describe("machines API", () => {
       expect(Object.keys(recordsInStore()).sort()).toEqual(["ssh:build-box", "ssh:nas"]);
     });
 
-    it("a machine already on this build is not reinstalled: use goes straight to connecting", async () => {
-      let installs = 0;
+    it("a machine already on this build is not reinstalled: use asks it, then goes straight to connecting", async () => {
+      // Asked of the MACHINE, not read off the record: the installer's own probe is what
+      // says "already on this", and it costs one ssh round trip.
+      let asked = 0;
       await boot({
         install: async () => {
-          installs += 1;
-          return { kind: "installed", output: "done", identity: IDENTITY };
+          asked += 1;
+          return { kind: "already-installed", version: "9.9.9", identity: IDENTITY };
         },
       });
       machinesRepo.patch("ssh:nas", { version: "9.9.9", installedAt: "2026-08-01T00:00:00.000Z" });
       machinesRepo.setMembers("default_project", ["ssh:nas"]);
       await useBody(["ssh:nas"]);
       await waitFor(settled);
-      expect(installs).toBe(0);
-      expect(jobsOf()[0]?.log[0]).toBe("Already on 9.9.9.");
+      expect(asked).toBe(1);
+      expect(jobsOf()[0]?.log.join(" ")).toContain("Already on 9.9.9.");
+      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+    });
+
+    it("a machine recorded at this build but carrying another is brought forward: the record is not trusted", async () => {
+      // The record is what the last job wrote. A job that found no server to hand the
+      // build to used to write this version with nothing on that disk; "use" then saw
+      // nothing to do, and the machine stayed on the build it had.
+      let handedOver = 0;
+      await boot({
+        resolvePlan: () => PUSHED_PLAN,
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+        upgrade: async () => {
+          handedOver += 1;
+          return { kind: "upgraded", detail: "", persisted: true };
+        },
+      });
+      machinesRepo.patch("ssh:nas", {
+        version: PUSHED_PLAN.version,
+        installedAt: "2026-08-01T00:00:00.000Z",
+      });
+      machinesRepo.setMembers("default_project", ["ssh:nas"]);
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(handedOver).toBe(1);
+      expect(jobsOf()[0]?.log.join(" ")).not.toContain("Already on");
       expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
     });
 
