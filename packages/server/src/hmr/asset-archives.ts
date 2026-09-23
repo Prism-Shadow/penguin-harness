@@ -54,7 +54,13 @@ export function unpackedAssetsDir(dir: string): string {
     tar.x({ sync: true, file: path.join(archivesDir, name), cwd: tmp });
   }
   fs.writeFileSync(path.join(tmp, COMPLETE), archives.join("\n"));
-  fs.rmSync(out, { recursive: true, force: true });
+  try {
+    fs.rmSync(out, { recursive: true, force: true });
+  } catch {
+    // `force` forgives a missing tree, not one held open: on Windows the App being replaced
+    // keeps files under it open, and the removal itself is refused with EPERM. Nothing to
+    // do here — the rename below is what says whether the tree could be replaced.
+  }
   try {
     fs.renameSync(tmp, out);
   } catch (err) {
