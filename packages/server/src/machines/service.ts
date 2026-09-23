@@ -1467,7 +1467,7 @@ export class MachinesService {
           "That alias reaches this very machine — it answered with this server's own id. A server does not push this build over the program directory it is running from.",
       };
     }
-    say("Putting the program there…", "install");
+    say("Asking what it carries…", "check");
     const outcome = await this.#effects.install({
       target,
       plan,
@@ -1485,6 +1485,7 @@ export class MachinesService {
         ...this.#sshCause(target, outcome.detail),
       };
     }
+    if (outcome.kind === "already-installed") say(`Already on ${outcome.version}.`, "check");
     // What the machine is, before anything below asks it again: the hand-over and the
     // restart both probe, and they should already speak its dialect.
     this.repo.patch(address, { platform: outcome.identity.platform });
@@ -1503,10 +1504,30 @@ export class MachinesService {
       // asks the machine itself, so a runtime that cannot claim this platform refuses in
       // words rather than restarting into a silent fallback.
       say("Handing this build to its own update channel…", "handover");
-      const pushed = await this.#handOverBuild(address, target, plan, say);
+      let pushed = await this.#handOverBuild(address, target, plan, say);
       if (pushed.kind === "no-server") {
-        say("Its server is not running; this build will be used when it next starts.");
-      } else if (pushed.kind !== "upgraded") {
+        // The channel is the running server's, and a state-only install copies nothing:
+        // with the server down there is nothing to hand the build to, and nothing put it on
+        // that disk either. Recording this version anyway is what left a machine on the
+        // build it had, with "use" then finding nothing to do. So the server is started
+        // first — the build reaches it the way it reaches any running one, refusals included.
+        const port = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
+        say(
+          `Its server is not running; starting it on port ${port} to hand the build over…`,
+          "restart",
+        );
+        const started = await this.#effects.startServer(target, port);
+        if (!started.ok) return { ok: false, step: "start its server", message: started.detail };
+        pushed = await this.#handOverBuild(address, target, plan, say);
+        if (pushed.kind === "no-server") {
+          return {
+            ok: false,
+            step: "start its server",
+            message: "it was started, but no server answers over there.",
+          };
+        }
+      }
+      if (pushed.kind !== "upgraded") {
         return {
           ok: false,
           step: "hand over the pushed build",
