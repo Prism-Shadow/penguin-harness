@@ -200,8 +200,29 @@ interface ParkedInterfaces extends Interfaces {
   terminal: MembersOf<TerminalSession>;
 }
 
+/**
+ * The API sockets the platform shell serves (PRFC-0011), handed to the successor platform
+ * as one handle that closes them all. A socket's calls resolve the App of the moment for as
+ * long as the SHELL lives (a re-assembly changes nothing for it); a push replaces the shell,
+ * and the socket would keep dispatching into the replaced one — its machines, sessions and
+ * hubs handed over, its local routes still answering, every call through a machine hanging
+ * without a word. So the successor closes them (1012) once it is up, and the browser's
+ * client reconnects through the runtime's handshake and re-issues its streams.
+ */
+const API_SOCKETS_RESOURCE_ID = "apiSockets:open";
+/**
+ * How long after the successor's boot its predecessor's sockets are closed. The runtime
+ * re-points its own tree to the successor right after the swap resolves; a reconnect that
+ * arrived before that (a runtime from before #827 authenticates the handshake on a snapshot
+ * of the tree) read a disposed tree and took the process down. Two seconds is far more
+ * than that hand-off takes and far less than anyone notices.
+ */
+const RECONNECT_GRACE_MS = 2_000;
+
 export const DECLARED_RESOURCES: ParkedInterfaces = {
   family: PENGUIN_FAMILY,
+  // The predecessor's open API sockets, as the successor closes them (see the ID's doc).
+  apiSockets: ["close"],
   // A parked pty, as its adopters use it — EVERY member reached after adoption, not a
   // representative sample: the manager (id, seq, ownerUserId, alive, info, onExit, kill,
   // dispose), the routes (capture, write, rename, exit) and the stream binding
@@ -453,16 +474,9 @@ async function createInner(
       // The runtime handed the socket over exactly as for a local pty, owner checked. Three
       // things it can be: the API socket (its reserved id — served as the owner the runtime
       // just held it to), a reference to a machine's pty (the relay takes it), or a local pty.
-      if (isApiSocketRef(session)) {
-        if (httpApi === undefined) return ws.close(1013, "no business surface");
-        const userId = session.ownerUserId;
-        serveApiSocket(ws, {
-          fetch: (request) => httpApi.fetchAs(userId, request),
-          origin: `${url.protocol}//${url.host}`,
-          log,
-        });
-        return;
-      }
+      // The API socket is the shell's (platformImpl below): it outlives this App, so its
+      // calls must resolve the App of the moment, which only the shell knows.
+      if (isApiSocketRef(session)) return ws.close(1013, "served by the platform shell");
       if (remote?.attach(ws, session, url, log) === true) return;
       bindTerminalStream(ws, session, url, log);
     },
@@ -549,7 +563,22 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // The kernel hands create() its node's own document; the inner boot wants the tree's,
     // which for this platform (no kernel children — the module tree parks inside `modules`)
     // is that document wrapped once.
+    // The predecessor shell's open sockets, read BEFORE the boot below overwrites the entry.
+    const previousSockets = ctx.resources.claim<{ close(): void }>(API_SOCKETS_RESOURCE_ID);
     inner = await boot(innerImpl, PlatformIface, initialDoc(PlatformIface, context), ctx.resources);
+
+    /** The API sockets this shell serves; each call on them resolves the inner App of the moment. */
+    const apiSockets = new Set<WebSocket>();
+    ctx.resources.register(API_SOCKETS_RESOURCE_ID, {
+      close: () => {
+        for (const ws of apiSockets) ws.close(1012, "the harness was updated; reconnect");
+        apiSockets.clear();
+      },
+    });
+    if (previousSockets !== undefined) {
+      const grace = setTimeout(() => previousSockets.close(), RECONNECT_GRACE_MS);
+      grace.unref?.();
+    }
 
     let drained: Promise<void> | undefined;
     ctx.effect(() => {
@@ -574,7 +603,37 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       info: () => inner.api.info(),
       http: (request) => inner.api.http(request),
       terminals: () => inner.api.terminals(),
-      attachStream: (ws, session, url, log) => inner.api.attachStream(ws, session, url, log),
+      attachStream: (ws, session, url, log) => {
+        if (!isApiSocketRef(session)) return inner.api.attachStream(ws, session, url, log);
+        // The API socket: served here, as the owner the runtime held it to, with every call
+        // entering the inner App of the moment — a re-assembly under an open socket is
+        // invisible to it. A bare kernel has no routes to enter.
+        if (inner.api.business() === null) return ws.close(1013, "no business surface");
+        const userId = session.ownerUserId;
+        apiSockets.add(ws);
+        ws.once("close", () => apiSockets.delete(ws));
+        serveApiSocket(ws, {
+          fetch: (request) => {
+            const http = inner.api
+              .business()
+              ?.api<{ fetchAs(userId: string, request: Request): Promise<Response> }>(
+                "HttpModule",
+                "http",
+              );
+            if (http === undefined) {
+              return Promise.resolve(
+                Response.json(
+                  { error: { code: "unavailable", message: "The App is being replaced." } },
+                  { status: 503 },
+                ),
+              );
+            }
+            return http.fetchAs(userId, request);
+          },
+          origin: `${url.protocol}//${url.host}`,
+          log,
+        });
+      },
       business: () => inner.api.business(),
       shutdown: () => inner.api.shutdown(),
       drained: () => drained,

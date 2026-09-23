@@ -170,7 +170,13 @@ async function callOverSocket(method: string, url: string, body: unknown): Promi
   try {
     const res = await apiSocket.call(method, url, body !== undefined ? { body } : {});
     return { status: res.status, body: res.body ?? null, date: res.headers.date ?? null };
-  } catch {
+  } catch (err) {
+    // A read the server never answered (socket.ts ANSWER_TIMEOUT_MS, warned about there) is
+    // asked again over HTTP: nothing was changed by asking, and a page waiting on it would
+    // otherwise wait for good. A write is not repeated — it may have landed.
+    if (err instanceof Error && err.message === "socket_timeout" && isReadMethod(method)) {
+      return null;
+    }
     // The socket closed under the call. A lost answer is a lost answer whichever transport
     // lost it, so this is not retried blindly: the HTTP fallback is only for calls that never
     // left (the socket rejects before sending when it is not open), which is the isOpen()
@@ -178,6 +184,8 @@ async function callOverSocket(method: string, url: string, body: unknown): Promi
     throw new ApiError(0, "network_error", S.errors.networkError);
   }
 }
+
+const isReadMethod = (method: string): boolean => method === "GET" || method === "HEAD";
 
 async function callOverHttp(method: string, url: string, body: unknown): Promise<Answer> {
   let response: Response;
@@ -226,8 +234,12 @@ export async function apiRequest(url: string, init: { method?: string } = {}): P
           headers: { "content-type": "application/json", ...res.headers },
         });
       }
-    } catch {
-      throw new TypeError("network error"); // what fetch throws when the connection is lost
+    } catch (err) {
+      // An unanswered read goes over HTTP, as in callOverSocket; anything else is a lost connection.
+      const unanswered = err instanceof Error && err.message === "socket_timeout";
+      if (!(unanswered && isReadMethod(init.method ?? "GET"))) {
+        throw new TypeError("network error"); // what fetch throws when the connection is lost
+      }
     }
   }
   return fetch(url, { ...init, credentials: "same-origin" });
