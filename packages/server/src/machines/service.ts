@@ -752,7 +752,7 @@ export class MachinesService {
           "That alias reaches this very machine — it answered with this server's own id. A server does not push this build over the program directory it is running from.",
       };
     }
-    say("Putting the program there…", "install");
+    say("Asking what it carries…", "check");
     const outcome = await this.#effects.install({
       target,
       plan,
@@ -764,6 +764,7 @@ export class MachinesService {
     if (outcome.kind === "failed") {
       return { ok: false, step: outcome.step, message: outcome.detail };
     }
+    if (outcome.kind === "already-installed") say(`Already on ${outcome.version}.`, "check");
     // What the machine is, before anything below asks it again: the hand-over and the
     // restart both probe, and they should already speak its dialect.
     this.repo.patch(address, { platform: outcome.identity.platform });
@@ -782,10 +783,30 @@ export class MachinesService {
       // asks the machine itself, so a runtime that cannot claim this platform refuses in
       // words rather than restarting into a silent fallback.
       say("Handing this build to its own update channel…", "handover");
-      const pushed = await this.#handOverBuild(address, target, say);
+      let pushed = await this.#handOverBuild(address, target, say);
       if (pushed.kind === "no-server") {
-        say("Its server is not running; this build will be used when it next starts.");
-      } else if (pushed.kind !== "upgraded") {
+        // The channel is the running server's, and a state-only install copies nothing:
+        // with the server down there is nothing to hand the build to, and nothing put it on
+        // that disk either. Recording this version anyway is what left a machine on the
+        // build it had, with "use" then finding nothing to do. So the server is started
+        // first — the build reaches it the way it reaches any running one, refusals included.
+        const port = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
+        say(
+          `Its server is not running; starting it on port ${port} to hand the build over…`,
+          "restart",
+        );
+        const started = await this.#effects.startServer(target, port);
+        if (!started.ok) return { ok: false, step: "start its server", message: started.detail };
+        pushed = await this.#handOverBuild(address, target, say);
+        if (pushed.kind === "no-server") {
+          return {
+            ok: false,
+            step: "start its server",
+            message: "it was started, but no server answers over there.",
+          };
+        }
+      }
+      if (pushed.kind !== "upgraded") {
         return {
           ok: false,
           step: "hand over the pushed build",
@@ -945,16 +966,12 @@ export class MachinesService {
     if (machine === undefined) {
       return { ok: false, step: "use", message: "that host is no longer in the ssh config." };
     }
-    const needsInstall =
-      replaceProgram || machine.installed === null || machine.installed.version !== plan.version;
-    if (needsInstall) {
-      const installed = await this.#installWork(projectId, machine, plan, replaceProgram, say);
-      if (installed !== null && !installed.ok) return installed;
-    } else {
-      say(`Already on ${plan.version}.`, "check");
-      // The Project that asked is the Project that uses it, install or no install.
-      this.#setMember(projectId, address, true);
-    }
+    // Always through the install path, which asks the MACHINE what it carries. The record
+    // here is only what the last job wrote, and a job that found no server to hand the
+    // build to used to write this version without the build reaching that disk — after
+    // which "use" saw nothing to do, forever, on a machine running an older build.
+    const installed = await this.#installWork(projectId, machine, plan, replaceProgram, say);
+    if (installed !== null && !installed.ok) return installed;
     // A Windows machine has no shell to hold a session on (see startConnect): installed is
     // as far as "use" goes there, and the page says so from the platform on record.
     if (this.repo.get(address)?.platform === "win32") {
