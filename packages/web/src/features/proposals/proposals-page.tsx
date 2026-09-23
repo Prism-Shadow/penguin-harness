@@ -83,6 +83,7 @@ import {
   parseProposalHash,
   proposalActions,
   proposalsRoute,
+  paragraphSpan,
   rangeOfSelection,
   sectionSource,
   sortProposals,
@@ -447,14 +448,19 @@ function DetailPage({ number }: { number: number }) {
     selectedText: string,
     paragraphId: string | null,
     text: string,
+    whole = false,
   ): Promise<boolean> => {
     if (detail === null) return false;
     const source = sectionSource(section);
-    const range = rangeOfSelection(
-      source,
-      selectedText,
-      paragraphId === null ? undefined : { section, paragraphId },
-    );
+    // A whole paragraph (the hover button) is its own span; a selection is looked up.
+    const range =
+      whole && paragraphId !== null
+        ? paragraphSpan(section, paragraphId)
+        : rangeOfSelection(
+            source,
+            selectedText,
+            paragraphId === null ? undefined : { section, paragraphId },
+          );
     if (range === null) {
       toastError(t.selectionNotPlaced);
       return false;
@@ -619,6 +625,7 @@ function ProposalView({
     selectedText: string,
     paragraphId: string | null,
     text: string,
+    whole?: boolean,
   ) => Promise<boolean>;
   onOpenSession: (sessionId: string) => void;
   onOpenTicket: (ticketId: string) => void;
@@ -877,6 +884,8 @@ interface Selection {
   text: string;
   top: number;
   left: number;
+  /** The whole paragraph, from its hover button — no words to look up. */
+  whole?: boolean;
 }
 
 /**
@@ -905,6 +914,7 @@ function ProposalBody({
     selectedText: string,
     paragraphId: string | null,
     text: string,
+    whole?: boolean,
   ) => Promise<boolean>;
 }) {
   const t = S.company.proposals;
@@ -1002,19 +1012,55 @@ function ProposalBody({
               </h3>
               <div data-section-id={section.id} className="space-y-2">
                 {section.paragraphs.map((paragraph) => (
+                  // A paragraph is a hover target: its surface tints and a Comment button
+                  // appears at its right edge, commenting on the whole paragraph — the
+                  // no-aim way; a drag-select still names a narrower passage.
                   <div
                     key={paragraph.id}
                     id={domId(paragraph.id)}
                     data-paragraph-id={paragraph.id}
-                    className={`md-body md-compact scroll-mt-4 rounded px-1 text-sm text-gray-800 transition-colors duration-150 dark:text-gray-100 ${
-                      highlightId === paragraph.id ? toneSurface.attention : ""
+                    className={`group relative scroll-mt-4 rounded transition-colors duration-150 ${
+                      highlightId === paragraph.id
+                        ? toneSurface.attention
+                        : closed
+                          ? ""
+                          : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
                     }`}
                   >
-                    <Md
-                      text={paragraph.text}
-                      extraPlugins={PROPOSAL_REMARK_PLUGINS}
-                      components={PROPOSAL_COMPONENTS}
-                    />
+                    <div
+                      className={`md-body md-compact px-1 text-sm text-gray-800 dark:text-gray-100 ${
+                        closed ? "" : "pr-8"
+                      }`}
+                    >
+                      <Md
+                        text={paragraph.text}
+                        extraPlugins={PROPOSAL_REMARK_PLUGINS}
+                        components={PROPOSAL_COMPONENTS}
+                      />
+                    </div>
+                    {!closed && (
+                      <button
+                        type="button"
+                        aria-label={t.commentParagraph}
+                        title={t.commentParagraph}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setSelection(null);
+                          window.getSelection()?.removeAllRanges();
+                          setComposer({
+                            sectionId: section.id,
+                            paragraphId: paragraph.id,
+                            text: paragraph.text,
+                            top: 0,
+                            left: 0,
+                            whole: true,
+                          });
+                        }}
+                        className="absolute top-0.5 right-1 flex h-6 w-6 items-center justify-center rounded text-gray-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:bg-gray-200 hover:text-gray-700 focus-visible:opacity-100 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                      >
+                        <GlyphIcon d={COMMENT_ICON} size={ICON_SIZE.inlineGlyph} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1024,7 +1070,13 @@ function ProposalBody({
                   busy={busy}
                   onCancel={() => setComposer(null)}
                   onSubmit={async (text) => {
-                    const ok = await onComment(section, composer.text, composer.paragraphId, text);
+                    const ok = await onComment(
+                      section,
+                      composer.text,
+                      composer.paragraphId,
+                      text,
+                      composer.whole === true,
+                    );
                     if (ok) {
                       setComposer(null);
                       setOpenSections((prev) => new Set([...prev, section.id]));
