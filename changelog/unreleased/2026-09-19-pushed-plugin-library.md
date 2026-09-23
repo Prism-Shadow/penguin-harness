@@ -11,3 +11,11 @@ Core reads the skill and hook plugin library through Node from a host package �
 `scripts/deploy.mjs` now packs the library core declares — 13 plugins, about 0.4 MB, content-addressed like every other asset — as `archives/library.tgz`, laid out as a host package (`library/package.json` naming the packages, `library/node_modules/@penguinharness/<name>/…`). At boot the platform points core at it (`usePushedPluginLibrary`), and core looks there before it looks above its own module and above the running program. A push without the archive, or a platform that was not pushed at all, reads the library where it did before.
 
 An Agent's installed skills are copies, as they were: a newer library shows up as the plugin's *Update* on the Agent, it does not rewrite what is installed.
+
+## Unpacking beside a tree the previous App holds open
+
+The archives are extracted beside the unpacked tree and renamed in. On Windows the App being
+replaced still holds files under the old tree open (node-pty's binary, a plugin's modules): the
+removal left them, the rename onto the remainder was refused, and the boot of every push whose
+assets resolved to that directory failed — the runtime restarted on each. This attempt's complete
+tree is now served from where it was extracted instead.
