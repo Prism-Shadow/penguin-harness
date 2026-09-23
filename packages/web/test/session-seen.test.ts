@@ -6,6 +6,9 @@ import {
   markSessionSeen,
   noteSessionSeen,
   parseSessionSeen,
+  dropSessionSeenCache,
+  readSessionSeen,
+  refreshSessionSeenCache,
   resetSessionSeenCache,
   serializeSessionSeen,
   sessionSeenKey,
@@ -124,6 +127,53 @@ describe("storage round-trip", () => {
     expect(written.seen.size).toBe(500);
     expect(written.seen.has("s599")).toBe(true); // Most recent kept.
     expect(written.seen.has("s0")).toBe(false); // Oldest evicted.
+  });
+});
+
+describe("another tab's write", () => {
+  beforeEach(resetSessionSeenCache);
+
+  it("is served once its key is dropped from the cache, and not before", () => {
+    const storage = memoryStorage();
+    const key = sessionSeenKey("proj");
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T1) })));
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T1));
+    // The other tab opened `a` later; this tab's parsed copy does not know.
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T2) })));
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T1));
+    // What the storage event does for that key.
+    dropSessionSeenCache(key);
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T2));
+    expect(isSessionUnread(readSessionSeen("proj", storage), "a", T2)).toBe(false);
+  });
+});
+
+describe("coming back to the tab", () => {
+  beforeEach(resetSessionSeenCache);
+
+  it("re-reads what storage holds", () => {
+    const storage = memoryStorage();
+    const key = sessionSeenKey("proj");
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T1) })));
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T1));
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T2) })));
+    refreshSessionSeenCache();
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T2));
+  });
+
+  it("keeps markers storage refused: the copy in memory is the only one", () => {
+    const backing = memoryStorage();
+    const full = {
+      getItem: (key: string) => backing.getItem(key),
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+    };
+    noteSessionSeen("proj", "a", T1, full);
+    expect(isSessionUnread(readSessionSeen("proj", full), "a", T1)).toBe(false);
+    refreshSessionSeenCache();
+    dropSessionSeenCache(sessionSeenKey("proj"));
+    expect(isSessionUnread(readSessionSeen("proj", full), "a", T1)).toBe(false);
   });
 });
 
