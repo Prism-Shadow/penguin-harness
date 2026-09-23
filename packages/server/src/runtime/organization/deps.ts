@@ -155,8 +155,45 @@ export interface OrgDeps {
   notifyProject: (projectId: string, event: ServerEvent) => void;
   /** The admin master switch, read per pass so a change applies without a restart. */
   companyModeEnabled: () => boolean;
+  /**
+   * The Project's machines, as far as company mode needs them. Optional: a server with no
+   * machines (and every test that binds none) runs each organization it holds.
+   */
+  machines?: OrgMachines;
   now?: () => number;
   log?: (line: string) => void;
+}
+
+/** One call to a machine's own API, as that machine's authenticated caller (machines/machine-api.ts). */
+export interface OrgMachineApi {
+  request(
+    method: "GET" | "POST" | "PUT",
+    path: string,
+    body?: unknown,
+  ): Promise<{ status: number; text: string }>;
+}
+
+/**
+ * Which server this is, and how to reach another. An organization RUNS on the machine its
+ * shared workspace is on (`workspace_machine`): that server opens its desks and drives its
+ * calendar, and this one — when it is not that server — keeps a mirror of the organization's
+ * files in the Project and leaves the rest alone.
+ */
+export interface OrgMachines {
+  /** This server's own machine id. */
+  ownId(): string;
+  /** The API of a connected machine; null when it is not connected. */
+  api(machineId: string): Promise<OrgMachineApi | null>;
+}
+
+/** The machine an organization runs on when that is not this server; null when it runs here. */
+export function runsOn(
+  deps: Pick<OrgDeps, "machines">,
+  config: { workspaceMachine?: string },
+): string | null {
+  const machine = config.workspaceMachine;
+  if (machine === undefined) return null;
+  return deps.machines === undefined || deps.machines.ownId() === machine ? null : machine;
 }
 
 /** What company mode needs of the session runtime — declared at the consumer (Go style). */

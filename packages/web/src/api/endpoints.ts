@@ -232,6 +232,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
+import { rememberSessionsIn, rememberOrgMachine } from "../lib/org-machines";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 
@@ -391,8 +392,11 @@ export const putCommandPolicy = (
 
 // Model configuration -------------------------------------------------------------------
 
-export const getModels = (projectId: string) =>
-  apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`);
+/** The Project's models on this server, or on the machine named: model config is per server. */
+export const getModels = (projectId: string, machineId: string | null = null) =>
+  apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`, {
+    server: machineId,
+  });
 
 export const putModels = (projectId: string, body: ModelsUpdateRequest) =>
   apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`, {
@@ -1786,21 +1790,43 @@ const orgBase = (projectId: string, orgId?: string) =>
     orgId === undefined ? "" : `/${encodeURIComponent(orgId)}`
   }`;
 
+/**
+ * The Project's organizations, from this server. One whose shared workspace is on a machine
+ * RUNS there and says so (`machineId`); that is remembered (lib/org-machines.ts), which is what
+ * routes every organization-scoped call below without any of them naming a machine.
+ */
 export const listOrganizations = (projectId: string) =>
   apiFetch<OrganizationsResponse>(orgBase(projectId));
 
-export const createOrganization = (projectId: string, body: OrganizationCreateRequest) =>
-  apiFetch<OrganizationDetail>(orgBase(projectId), { method: "POST", body });
+/**
+ * Creates the organization in this Project. With `workspaceMachine` it is created ON that
+ * machine — its Agents and Sessions are there — and mirrored here; where it runs (and so where
+ * its CEO desk Session is, which is what opens next) is remembered before the caller navigates.
+ */
+export const createOrganization = async (projectId: string, body: OrganizationCreateRequest) => {
+  const detail = await apiFetch<OrganizationDetail>(orgBase(projectId), { method: "POST", body });
+  rememberOrgMachine(projectId, detail.orgId, detail.machineId ?? null);
+  // This answer came from here, not through the machine, so the Sessions it names (the CEO
+  // desk) are recorded by hand — the client only does it for answers a machine gave.
+  rememberSessionsIn(detail, detail.machineId ?? null);
+  return detail;
+};
 
 /**
  * A semantic id for a display name — a Project's, an Agent's, a Benchmark's, an organization's or
  * a channel's, by `kind` — from the default model of the Project in the path, with an ASCII
- * fallback and a dated placeholder behind it.
+ * fallback and a dated placeholder behind it. `machineId` asks the server the thing will live on
+ * (an organization's machine); null is this one.
  */
-export const suggestSemanticId = (projectId: string, body: SemanticIdSuggestRequest) =>
+export const suggestSemanticId = (
+  projectId: string,
+  body: SemanticIdSuggestRequest,
+  machineId: string | null = null,
+) =>
   apiFetch<SemanticIdSuggestResponse>(`/api/projects/${encodeURIComponent(projectId)}/suggest-id`, {
     method: "POST",
     body,
+    server: machineId,
   });
 
 export const getOrganization = (projectId: string, orgId: string) =>

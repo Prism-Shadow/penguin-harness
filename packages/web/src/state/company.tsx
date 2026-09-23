@@ -50,7 +50,10 @@ import type {
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
+import { ApiError } from "../api/client";
 import { apiErrorText } from "../lib/api-error";
+import { forgetOrgMachines, rememberOrgMachine } from "../lib/org-machines";
+import { machineIdOf } from "../lib/workspace-machines";
 import { S } from "../lib/strings";
 import { toastAttention } from "../components/ui/toast";
 import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/beta-badge";
@@ -67,6 +70,20 @@ import {
 } from "../lib/work-mode";
 import { useAuth } from "./auth";
 import { useProject } from "./project";
+
+/**
+ * The machine the open organization runs on, or null for this server (and while the list has
+ * not named the organization yet). The reads of the open organization re-run when it changes:
+ * the same organization key then means another server.
+ */
+export function machineOfOpenOrg(
+  organizations: readonly OrganizationSummary[],
+  currentOrgKey: string | null,
+): string | null {
+  if (currentOrgKey === null) return null;
+  const open = organizations.find((o) => orgKey(o.projectId, o.orgId) === currentOrgKey);
+  return open?.machineId ?? null;
+}
 
 /** The event families the organization scheduler publishes on the user channel. */
 export function isCompanyEvent(ev: ServerEvent): ev is CompanyServerEvent {
@@ -224,6 +241,32 @@ function counters(channels: readonly OrgChannelItem[]): {
   return { channelUnread: unread, channelMentions: mentions };
 }
 
+/** A machine of a Project this server holds a connection to: its id and the ssh alias people read. */
+export interface HeldMachine {
+  machineId: string;
+  alias: string;
+}
+
+/**
+ * The machines of a Project this server holds a connection to — the ones whose API can be
+ * asked right now. The machine list is admin-only, and a reader who cannot see it has no
+ * machine to ask either: the listing is then this server's alone, as it was before
+ * organizations could live anywhere else.
+ */
+export async function heldMachines(projectId: string): Promise<HeldMachine[]> {
+  try {
+    const res = await api.getMachines(projectId);
+    return res.machines
+      .filter((m) => !m.local && m.installed !== null && m.connection !== null)
+      .flatMap((m) => {
+        const machineId = machineIdOf(m);
+        return machineId === null ? [] : [{ machineId, alias: m.alias }];
+      });
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Builds one Provider's store. Exported as a test seam: the package's vitest runs in Node
  * with no DOM, so the event routing below is exercised against the store directly.
@@ -356,21 +399,29 @@ export function createCompanyStore() {
     reloadOrganizations: async (projectIds) => {
       set({ orgsLoading: true });
       try {
+        // One list, from this server: an organization belongs to the Project. One whose shared
+        // workspace is on a machine RUNS there, and says so (`machineId`) — that is where its
+        // own requests are sent (lib/org-machines.ts); this server holds its mirror. `null`
+        // for a Project that could not be asked, which is recorded, since a shortened list is
+        // not evidence that anything was deleted (forgetMissingOrganizations).
         const lists = await Promise.all(
           projectIds.map((projectId) =>
             api
               .listOrganizations(projectId)
               .then((res) => res.organizations)
-              // One Project's failure (lost access, a transient error) must not hide the
-              // rest — but it is recorded, since the shortened list is not evidence that
-              // anything was deleted (forgetMissingOrganizations).
               .catch(() => null),
           ),
         );
+        const sources = lists;
+        const organizations = sources.filter((list) => list !== null).flat();
+        forgetOrgMachines();
+        for (const org of organizations) {
+          rememberOrgMachine(org.projectId, org.orgId, org.machineId ?? null);
+        }
         set({
-          organizations: lists.filter((list) => list !== null).flat(),
+          organizations,
           orgsLoaded: true,
-          orgsPartial: lists.some((list) => list === null),
+          orgsPartial: sources.some((list) => list === null),
         });
       } finally {
         set({ orgsLoading: false });
@@ -692,22 +743,29 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   // The open organization's channels: the sidebar's list and every badge on it. Re-read when
   // the organization changes and whenever a message event says one of its counters moved —
   // the listing carries the server's read cursors, which no client-side bump can know.
+  //
+  // Both this read and the roster below wait for the organization list: it is what says which
+  // machine an organization runs on, and the open organization is known before it (the shell
+  // adopts the last one from storage). Asked any earlier, the request goes to this server,
+  // whose copy of an organization that runs elsewhere is a mirror — its employees' Agents are
+  // not here, so every one of them would come back named by its id.
   const { currentOrgKey, versions } = state;
   const messageVersion = versions.messages;
+  const openMachine = machineOfOpenOrg(state.organizations, currentOrgKey);
   useEffect(() => {
     const open = parseOrgKey(currentOrgKey);
-    if (!serverEnabled || open === null) return;
+    if (!serverEnabled || open === null || !orgsLoaded) return;
     void store.getState().reloadChannels(open.projectId, open.orgId);
-  }, [store, serverEnabled, currentOrgKey, messageVersion]);
+  }, [store, serverEnabled, currentOrgKey, orgsLoaded, openMachine, messageVersion]);
 
   // The open organization's roster: the sidebar's 工位 group has a row per employee, desk or
   // no desk. Re-read when the organization changes and when a run or a personnel change
   // (both bump `orgs`) says the chart moved.
   useEffect(() => {
     const open = parseOrgKey(currentOrgKey);
-    if (!serverEnabled || open === null) return;
+    if (!serverEnabled || open === null || !orgsLoaded) return;
     void store.getState().reloadOrgChart(open.projectId, open.orgId);
-  }, [store, serverEnabled, currentOrgKey, orgsVersion]);
+  }, [store, serverEnabled, currentOrgKey, orgsLoaded, openMachine, orgsVersion]);
 
   // In company mode the shell always has a current organization: the one its sidebar names.
   // The organization routes announce it, but a desk or ticket conversation lives at

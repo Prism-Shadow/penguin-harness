@@ -3910,11 +3910,13 @@ Scenarios:
     modelProjectDefaultNamed: (name: string): string => `Project default (${name})`,
     modelsLoadFailed:
       "The model list could not be read; you can still create with the Project default",
+    machineCompanyModeOff:
+      "Company mode is off on that machine. Turn it on in that machine's Settings first, then create the organization on it.",
     workspaceField: "Company workspace",
     workspaceInfo:
-      "The directory the employees work in together: each employee's workspace is one of its sub-directories (or all of it), and desk and ticket sessions run inside it.",
+      "The directory the employees work in together: each employee's workspace is one of its sub-directories (or all of it), and desk and ticket sessions run inside it. It can be on one of the Project's connected machines: the organization then runs on that machine — its Agents and Sessions are there — and still belongs to this Project, which keeps a copy of its files. It cannot be moved afterwards.",
     workspaceHint:
-      "Leave empty for the organization's own workspace/ directory; a path must be an existing directory on the server",
+      "Leave empty for the organization's own workspace/ directory; a path must be an existing directory, on this server or on a connected machine",
     workspaceEmpty: "The organization's own workspace/ directory",
     workspaceMenuHint: "Pick an existing directory as the company workspace",
     workspaceClear: "Back to the organization's own directory",
