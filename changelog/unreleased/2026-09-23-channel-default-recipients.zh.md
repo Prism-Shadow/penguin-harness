@@ -18,5 +18,5 @@
 
 - `PATCH /api/projects/:projectId/organizations/:orgId/channels/:channelId` 接受 `notify`（任一成员可设；`[]` 清空；含非成员时整条请求以 `notify_not_member` 拒绝），频道条目带 `notify`。
 - `penguin org channel notify <channel_id> <principal>...` 设定名单，`--none` 清空；`penguin org channel show` 打印名单。
-- 频道头菜单新增「默认通知」，对话框从本频道成员里勾选；频道头的「?」列出当前的默认通知对象。
+- 频道头右上角的成员列表每行带「总是通知」开关（未归档频道的任一成员可切换）；频道头的「?」列出当前的默认通知对象。
 - 组织手册向员工说明了这份名单。
