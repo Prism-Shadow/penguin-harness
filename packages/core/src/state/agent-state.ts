@@ -17,6 +17,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
+  type HookCommand,
   type HookManifest,
   type LibraryPlugin,
   type SkillMetadata,
@@ -662,13 +663,63 @@ export async function installPlugin(
   }
 }
 
-/** The manifest of the hook package directory `dir`, or null when there is no parseable `hooks.json` (then it is not a hook package). */
+/**
+ * The manifest of the hook package directory `dir`, or null when there is no parseable or
+ * well-shaped `hooks.json` (then it is not a hook package). A manifest that parses but is
+ * not shaped like a HookManifest is rejected the same way: `sessionHooks` maps the hook
+ * points without further checks, so a malformed manifest would throw a bare TypeError there
+ * and brick every create/resume of the Agent until the directory is removed by hand.
+ * Missing hook points default to [] (unknown keys are ignored rather than rejected, per the
+ * manifest contract); a point that is present but not an array of `{ command, timeout? }`
+ * entries — a non-empty string command, and when present a positive numeric timeout — is
+ * not a hook package.
+ */
 async function readHookManifest(dir: string): Promise<HookManifest | null> {
+  let parsed: unknown;
   try {
-    return JSON.parse(await fs.readFile(path.join(dir, "hooks.json"), "utf8")) as HookManifest;
+    parsed = JSON.parse(await fs.readFile(path.join(dir, "hooks.json"), "utf8"));
   } catch {
     return null;
   }
+  const manifest = asHookManifest(parsed);
+  if (manifest === null) {
+    process.stderr.write(
+      `[hooks] ${dir}: hooks.json is not a hook manifest; skipping the package\n`,
+    );
+    return null;
+  }
+  return manifest;
+}
+
+/** The parsed `hooks.json` as a HookManifest, or null when its shape is not one. */
+function asHookManifest(parsed: unknown): HookManifest | null {
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const m = parsed as Record<string, unknown>;
+  if (
+    typeof m.name !== "string" ||
+    typeof m.description !== "string" ||
+    typeof m.version !== "string"
+  ) {
+    return null;
+  }
+  const point = (key: string): HookCommand[] | null => {
+    const value = m[key] ?? [];
+    if (!Array.isArray(value)) return null;
+    for (const entry of value) {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return null;
+      const cmd = entry as Record<string, unknown>;
+      if (typeof cmd.command !== "string" || cmd.command === "") return null;
+      if (cmd.timeout !== undefined && !(typeof cmd.timeout === "number" && cmd.timeout > 0)) {
+        return null;
+      }
+    }
+    return value as HookCommand[];
+  };
+  const stop = point("stop");
+  const preToolUse = point("pre_tool_use");
+  const userPrompt = point("user_prompt");
+  if (stop === null || preToolUse === null || userPrompt === null) return null;
+  return { ...m, stop, pre_tool_use: preToolUse, user_prompt: userPrompt } as HookManifest;
 }
 
 /** Serializes a manifest the way every writer of `hooks.json` does (pretty-printed, trailing newline). */

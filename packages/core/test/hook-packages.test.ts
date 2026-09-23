@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
@@ -106,6 +106,120 @@ describe("the Agent-level hook switch", () => {
       expect(await again.runUserPromptHook("expander", "hi")).toEqual({ context: "expanded" });
     } finally {
       again.dispose();
+    }
+  });
+});
+
+/**
+ * A hooks.json that parses but is not shaped like a HookManifest must not reach
+ * `sessionHooks` (it maps the hook points without further checks): the reader rejects the
+ * package as "not a hook package", the same way an unparseable one is rejected.
+ */
+describe("a hooks.json that parses but is not shaped like a manifest", () => {
+  /** Writes `hooks/<name>/hooks.json` by hand (the installer never emits a broken one). */
+  async function parkPackage(name: string, manifest: Record<string, unknown>): Promise<void> {
+    const dir = path.join(hooksDir(tmpRoot, ...ids), name);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "hooks.json"), JSON.stringify(manifest), "utf8");
+  }
+
+  it("skips a package whose hook point is not an array, and healthy packages beside it", async () => {
+    await createAgent();
+    await installHook(tmpRoot, ...ids, MANIFEST, FILES);
+    await parkPackage("broken", {
+      name: "broken",
+      description: "x",
+      version: "2026.09.02.1",
+      stop: 0,
+      pre_tool_use: [],
+      user_prompt: [],
+    });
+
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    let listed: string[];
+    let warnings: string;
+    try {
+      listed = (await listInstalledHooks(tmpRoot, ...ids)).map((h) => h.name);
+      warnings = stderr.mock.calls.map((args) => String(args[0])).join("");
+    } finally {
+      stderr.mockRestore();
+    }
+    expect(listed).toContain("expander");
+    expect(listed).not.toContain("broken");
+    expect(warnings).toContain("broken");
+  });
+
+  it("skips a package whose hook entry has no usable command or timeout", async () => {
+    await createAgent();
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await parkPackage("no-command", {
+        name: "no-command",
+        description: "x",
+        version: "2026.09.02.1",
+        stop: [{ timeout: 5 }],
+        pre_tool_use: [],
+        user_prompt: [],
+      });
+      await parkPackage("empty-command", {
+        name: "empty-command",
+        description: "x",
+        version: "2026.09.02.1",
+        stop: [{ command: "" }],
+        pre_tool_use: [],
+        user_prompt: [],
+      });
+      await parkPackage("bad-timeout", {
+        name: "bad-timeout",
+        description: "x",
+        version: "2026.09.02.1",
+        stop: [{ command: "run.mjs", timeout: 0 }],
+        pre_tool_use: [],
+        user_prompt: [],
+      });
+      expect((await listInstalledHooks(tmpRoot, ...ids)).map((h) => h.name)).toEqual(["goal"]);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it("defaults missing hook points to empty arrays", async () => {
+    await createAgent();
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await parkPackage("sparse", { name: "sparse", description: "x", version: "2026.09.02.1" });
+      const sparse = (await listInstalledHooks(tmpRoot, ...ids)).find((h) => h.name === "sparse");
+      expect(sparse?.stop).toEqual([]);
+      expect(sparse?.pre_tool_use).toEqual([]);
+      expect(sparse?.user_prompt).toEqual([]);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it("does not brick session creation, and healthy hooks still run", async () => {
+    const agent = await createAgent();
+    await installHook(tmpRoot, ...ids, MANIFEST, FILES);
+    await parkPackage("broken", {
+      name: "broken",
+      description: "x",
+      version: "2026.09.02.1",
+      stop: 0,
+      pre_tool_use: [],
+      user_prompt: [],
+    });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const ws = path.join(tmpRoot, "ws-shape");
+    try {
+      await fs.mkdir(ws, { recursive: true });
+      const session = await agent.createSession({ workspaceDir: ws });
+      try {
+        expect(await session.runUserPromptHook("expander", "hi")).toEqual({ context: "expanded" });
+      } finally {
+        session.dispose();
+      }
+    } finally {
+      stderr.mockRestore();
     }
   });
 });
