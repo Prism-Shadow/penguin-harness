@@ -4726,6 +4726,8 @@ Scenarios:
       staleComments: "Comments on earlier revisions",
       commentedOn: (quote: string): string => `“${quote}”`,
       addComment: "Add comment",
+      commentEdited: "Comment updated",
+      commentDeleted: "Comment withdrawn",
       commentAdded: "Comment noted — Request changes sends it to the author",
       pending: "Pending",
       resolved: "Resolved",

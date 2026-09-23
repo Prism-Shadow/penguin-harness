@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { OrgActor, OrgGateway, OrgView } from "@prismshadow/penguin-server/plugin";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import plugin, {
+  sectionSource,
   CompanyProposalsPlugin,
   PAGE_ID,
   PROPOSALS_CHANNEL,
@@ -756,6 +757,69 @@ describe("ProposalService", () => {
     expect(settings.values.get("company-proposals:reads:proj/acme/boss")).toBe(
       JSON.stringify({ [n]: detail.seq }),
     );
+  });
+
+  it("a pending comment is its writer's to reword or withdraw; sent, or someone else's, it is not", async () => {
+    const n = await delegated();
+    await service.publish(PROJECT, ORG, n, DOC, author);
+    const published = await service.get(PROJECT, ORG, n, BOSS);
+    const change = published.sections[0]!;
+    const start = sectionSource(change).indexOf("notifyTicket");
+    const range = {
+      sectionId: change.id,
+      start,
+      end: start + "notifyTicket".length,
+      quote: "notifyTicket",
+    };
+    let detail = await service.comment(PROJECT, ORG, n, { ...range, text: "first words" }, BOSS);
+    const [c] = detail.comments;
+    detail = await service.editComment(PROJECT, ORG, n, c!.id, "  better words  ", BOSS);
+    expect(detail.comments.find((x) => x.id === c!.id)?.text).toBe("better words");
+    expect(
+      await refused(() => service.editComment(PROJECT, ORG, n, c!.id, " ", BOSS)),
+    ).toMatchObject({
+      status: 400,
+    });
+    // Another person, and the employee, cannot touch it; a comment that is not there is 404.
+    expect(
+      await refused(() => service.editComment(PROJECT, ORG, n, c!.id, "mine now", OUTSIDER)),
+    ).toEqual({
+      status: 403,
+      code: "project_access",
+    });
+    expect(await refused(() => service.deleteComment(PROJECT, ORG, n, "nope", BOSS))).toEqual({
+      status: 404,
+      code: "comment_not_found",
+    });
+    // A second person of the Project is not the writer either.
+    gateway.org!.userIds = ["boss", "cfo"];
+    expect(
+      await refused(() => service.deleteComment(PROJECT, ORG, n, c!.id, { userId: "cfo" })),
+    ).toEqual({ status: 403, code: "not_commenter" });
+    // Withdrawn: gone from the person's view, and the pending count with it.
+    detail = await service.deleteComment(PROJECT, ORG, n, c!.id, BOSS);
+    expect(detail.comments).toEqual([]);
+    expect(detail.pendingComments).toBe(0);
+    // Sent, a comment stands as the author read it.
+    detail = await service.comment(PROJECT, ORG, n, { ...range, text: "sent words" }, BOSS);
+    const sent = detail.comments[0]!;
+    await service.requestChanges(PROJECT, ORG, n, BOSS);
+    expect(
+      await refused(() => service.editComment(PROJECT, ORG, n, sent.id, "too late", BOSS)),
+    ).toEqual({
+      status: 409,
+      code: "comment_sent",
+    });
+    expect(await refused(() => service.deleteComment(PROJECT, ORG, n, sent.id, BOSS))).toEqual({
+      status: 409,
+      code: "comment_sent",
+    });
+    // The ledger replays to the same view.
+    const again = new ProposalService({ gateway, agents, root, settings, log });
+    const replayed = await again.get(PROJECT, ORG, n, BOSS);
+    expect(replayed.comments.map((x) => [x.id, x.text, x.batchId !== null])).toEqual([
+      [sent.id, "sent words", true],
+    ]);
   });
 
   it("a channel that fails never fails the write: the ledger has the line, the log has the reason", async () => {

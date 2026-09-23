@@ -4712,6 +4712,8 @@ Benchmark：
       staleComments: "旧修订上的评论",
       commentedOn: (quote: string): string => `「${quote}」`,
       addComment: "添加评论",
+      commentEdited: "评论已更新",
+      commentDeleted: "评论已撤回",
       commentAdded: "评论已记下，点「请求整改」发给作者",
       pending: "待发",
       resolved: "已解决",

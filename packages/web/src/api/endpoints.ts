@@ -129,6 +129,7 @@ import type {
   OrgTicketStartRequest,
   OrgTicketStartResponse,
   OrgTicketUpdateRequest,
+  ProposalCommentEditRequest,
   ProposalCommentRequest,
   ProposalCreateRequest,
   ProposalDetail,
@@ -2422,6 +2423,29 @@ export const commentOrgProposal = (
 /** Every pending comment of the caller becomes one batch, and the author is told in the proposals channel. */
 export const requestOrgProposalChanges = (projectId: string, orgId: string, number: number) =>
   proposalAction<ProposalDetail>(projectId, orgId, number, "comments/request");
+
+export const editOrgProposalComment = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  commentId: string,
+  body: ProposalCommentEditRequest,
+) =>
+  apiFetch<ProposalDetail>(
+    `${orgBase(projectId, orgId)}/proposals/${number}/comments/${encodeURIComponent(commentId)}`,
+    { method: "PATCH", body },
+  );
+
+export const deleteOrgProposalComment = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  commentId: string,
+) =>
+  apiFetch<ProposalDetail>(
+    `${orgBase(projectId, orgId)}/proposals/${number}/comments/${encodeURIComponent(commentId)}`,
+    { method: "DELETE" },
+  );
 
 export const resolveOrgProposalComment = (
   projectId: string,

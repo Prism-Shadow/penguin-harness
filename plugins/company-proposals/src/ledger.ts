@@ -84,6 +84,9 @@ export type LedgerEntry =
       text: string;
       by: string;
     }
+  /** A pending comment reworded, or withdrawn, by the person who wrote it — its own until sent, so neither is an event. */
+  | { kind: "comment_edited"; number: number; commentId: string; text: string; by: string }
+  | { kind: "comment_deleted"; number: number; commentId: string; by: string }
   /** A request for changes: the pending comments it gathers, in one batch. */
   | { kind: "batch"; number: number; id: string; commentIds: string[]; by: string }
   | { kind: "resolved"; number: number; commentId: string; text: string; by: string };
@@ -203,6 +206,16 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
         at: line.at,
         batchId: null,
       });
+      return;
+    }
+    case "comment_edited": {
+      const c = p.comments.find((x) => x.id === line.commentId);
+      if (c !== undefined && c.batchId === null) c.text = line.text;
+      return;
+    }
+    case "comment_deleted": {
+      const at = p.comments.findIndex((x) => x.id === line.commentId && x.batchId === null);
+      if (at >= 0) p.comments.splice(at, 1);
       return;
     }
     case "batch": {

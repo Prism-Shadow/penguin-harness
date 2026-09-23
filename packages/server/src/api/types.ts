@@ -5514,6 +5514,11 @@ export interface ProposalCommentsResponse {
   text: string;
 }
 
+/** `PATCH …/:number/comments/:id` — a pending comment reworded by the person who wrote it. */
+export interface ProposalCommentEditRequest {
+  text: string;
+}
+
 export interface ProposalResolveRequest {
   text?: string;
   sessionId?: string;
