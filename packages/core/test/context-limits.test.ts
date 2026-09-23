@@ -129,6 +129,10 @@ describe("effectiveMaxOutputTokens (per-request output clamp)", () => {
     expect(effectiveMaxOutputTokens(undefined, 32768, 1000)).toBeUndefined();
     expect(effectiveMaxOutputTokens(-1, 32768, 1000)).toBeUndefined();
     expect(effectiveMaxOutputTokens(0, 32768, 1000)).toBeUndefined();
+    // TOML accepts nan as a float: a configured NaN must keep the "off" contract, not
+    // slip past the non-positive guard (NaN <= 0 is false) onto the request.
+    expect(effectiveMaxOutputTokens(NaN, 32768, 1000)).toBeUndefined();
+    expect(effectiveMaxOutputTokens(NaN, undefined, 1000)).toBeUndefined();
   });
 
   it("does not clamp without a configured window: no hard cap from an assumption", () => {

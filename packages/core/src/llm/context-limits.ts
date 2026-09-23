@@ -193,7 +193,9 @@ export function effectiveMaxOutputTokens(
   contextWindow: number | undefined,
   estimatedInputTokens: number,
 ): number | undefined {
-  if (configured === undefined || configured <= 0) return undefined;
+  // !(configured > 0), not configured <= 0: TOML accepts nan as a float, and a configured
+  // NaN must keep the "off" contract instead of leaking onto the request as max_tokens.
+  if (configured === undefined || !(configured > 0)) return undefined;
   if (contextWindow === undefined) return configured;
   const remaining = contextWindow - estimatedInputTokens - OUTPUT_SAFETY_MARGIN;
   return Math.min(configured, Math.max(remaining, MIN_OUTPUT_TOKENS));
