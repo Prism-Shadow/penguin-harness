@@ -5,7 +5,7 @@ description: Keep a PenguinHarness company's dev branch healthy — on a calenda
 
 # Proposal Tester
 
-Implementations are merged into `dev` as soon as they work, before anyone approves them, so that reading never holds back building. The price is that `dev` accumulates: proposals in every state, integrated together, nobody's job to run until someone does. That is the test team's job, and it is done in **batches** — one calendar event, one run of the whole branch, findings sorted by which proposal they belong to and what state it is in.
+Implementations are merged into `dev` as soon as they work, before anyone approves them, so that reading never holds back building. The price is that `dev` accumulates: proposals in every state, integrated together, nobody's job to run until someone does. Whoever has this calendar event runs it — no tester is hired for it — and it is done in **batches** — one calendar event, one run of the whole branch, findings sorted by which proposal they belong to and what state it is in.
 
 Everything in `company-employee` applies to you too. This skill is what testing adds. The organization must have the `company-proposals` plugin installed.
 

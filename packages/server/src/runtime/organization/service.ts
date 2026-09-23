@@ -2620,30 +2620,40 @@ export class OrganizationService {
     orgId: string,
     channelId: string,
     opts: { name: string; purpose: string },
-    userId: string,
+    by: Actor,
     principals: readonly string[],
   ): Promise<void> {
-    const actor: Actor = { userId };
     const org = await this.requireOrg(projectId, orgId);
     if ((await this.deps.store.readChannel(org.dir, channelId)) === null) {
-      await this.createChannel(projectId, orgId, { channelId, ...opts }, actor);
+      // The creator is a member from the start, employee or person.
+      await this.createChannel(projectId, orgId, { channelId, ...opts }, by);
     }
-    // The person first: joining is theirs by right, and only a member may invite the rest.
-    await this.addChannelMember(projectId, orgId, channelId, userPrincipal(userId), actor);
-    for (const principal of principals) {
-      if (principal === userPrincipal(userId)) continue;
-      await this.addChannelMember(projectId, orgId, channelId, principal, actor);
+    // Memberships are the person's to arrange: joining is theirs by right, an employee may not
+    // invite itself, and only a member may invite the rest — so the person behind the actor
+    // joins first, then invites the actor's own employee (when it is one) and the others.
+    const person: Actor = { userId: by.userId };
+    await this.addChannelMember(projectId, orgId, channelId, userPrincipal(by.userId), person);
+    const self = this.actorPrincipal(org, by);
+    const wanted = self.startsWith("agent:") ? [self, ...principals] : principals;
+    for (const principal of wanted) {
+      if (principal === userPrincipal(by.userId)) continue;
+      await this.addChannelMember(projectId, orgId, channelId, principal, person);
     }
   }
 
   async gatewaySend(
     projectId: string,
     orgId: string,
-    userId: string,
+    by: Actor,
     channelId: string,
     text: string,
   ): Promise<{ id: string }> {
-    const msg = await this.sendChannelMessage(projectId, orgId, userId, channelId, { text });
+    // An employee speaks through its session (the message inherits the session's hop); an
+    // Agent id alone names nobody's session, so the message is then the person's.
+    const msg = await this.sendChannelMessage(projectId, orgId, by.userId, channelId, {
+      text,
+      ...(by.sessionId !== undefined ? { sessionId: by.sessionId } : {}),
+    });
     return { id: msg.id };
   }
 
@@ -3128,10 +3138,10 @@ export class OrganizationModule {
       organization: (projectId, orgId) => orgService.gatewayView(projectId, orgId),
       principalOf: (projectId, orgId, actor) =>
         orgService.gatewayPrincipal(projectId, orgId, actor),
-      ensureChannel: (projectId, orgId, channelId, opts, userId, principals) =>
-        orgService.gatewayEnsureChannel(projectId, orgId, channelId, opts, userId, principals),
-      sendChannelMessage: (projectId, orgId, userId, channelId, text) =>
-        orgService.gatewaySend(projectId, orgId, userId, channelId, text),
+      ensureChannel: (projectId, orgId, channelId, opts, by, principals) =>
+        orgService.gatewayEnsureChannel(projectId, orgId, channelId, opts, by, principals),
+      sendChannelMessage: (projectId, orgId, by, channelId, text) =>
+        orgService.gatewaySend(projectId, orgId, by, channelId, text),
       openEmployeeSession: (args) => orgService.gatewayOpenSession(args),
       notifyProject: deps.notifyProject,
     };

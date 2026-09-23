@@ -1073,12 +1073,18 @@ export class FakeServer {
     const list = (): Json[] => [...proposals.values()];
     if (b === undefined) {
       if (method === "POST") {
-        if (!isNonEmptyString(body?.author)) return this.badRequest("author is required.");
         if (!isNonEmptyString(body?.brief)) return this.badRequest("brief is required.");
+        // The author defaults to the calling employee; a person has to name one.
+        const author = isNonEmptyString(body?.author)
+          ? body.author
+          : isNonEmptyString(body?.agentId)
+            ? body.agentId
+            : null;
+        if (author === null) return this.badRequest("author is required.");
         const number = proposals.size + 1;
         const created = this.addProposal(org.orgId, {
           number,
-          author: body.author,
+          author,
           brief: body.brief,
           ...(isNonEmptyString(body.title) ? { title: body.title } : {}),
           events: [{ seq: 1, at: ORG_NOW, kind: "created", by: "user:admin" }],
@@ -1153,7 +1159,7 @@ export class FakeServer {
       case "implement": {
         if (!isNonEmptyString(body?.agentId)) return this.badRequest("agentId is required.");
         const s = this.addSession({ agentId: body.agentId });
-        proposal.implementer = body.agentId;
+        proposal.implementer = isNonEmptyString(body?.agentId) ? body.agentId : proposal.author;
         proposal.sessions = [...(proposal.sessions as string[]), String(s.sessionId)];
         return this.json(bump("implementation_started"));
       }

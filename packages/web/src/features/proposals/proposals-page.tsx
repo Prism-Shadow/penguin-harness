@@ -589,7 +589,7 @@ function ProposalView({
             )}
           </Meta>
           <Meta label={t.delegatedBy}>
-            <PrincipalChip principal={`user:${detail.delegatedBy}`} names={names} />
+            <PrincipalChip principal={detail.delegatedBy} names={names} />
           </Meta>
           <Meta label={S.common.created}>
             <span title={formatDateTime(detail.createdAt)}>

@@ -2917,13 +2917,14 @@ describe("organization runtime", () => {
       );
     });
 
-    it("ensures a channel with the person and the employees in it, idempotently, and speaks in the person's name", async () => {
+    it("ensures a channel with the person and the employees in it, idempotently, and speaks in the actor's name", async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
       const opts = { name: "Proposals", purpose: "Where proposals are discussed" };
-      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, "alice", [`agent:${HR}`]);
-      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, "alice", [`agent:${HR}`]);
-      const detail = await service.channel(P, ORG, "proposals", { userId: "alice" });
+      const alice = { userId: "alice" };
+      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, alice, [`agent:${HR}`]);
+      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, alice, [`agent:${HR}`]);
+      const detail = await service.channel(P, ORG, "proposals", alice);
       expect(detail.name).toBe("Proposals");
       expect(detail.members.map((m) => m.principal).sort()).toEqual(
         [`agent:${HR}`, "user:alice"].sort(),
@@ -2931,13 +2932,38 @@ describe("organization runtime", () => {
       const sent = await service.gatewaySend(
         P,
         ORG,
-        "alice",
+        alice,
         "proposals",
         `@agent:${HR} proposal:1 — please write it`,
       );
-      const messages = await service.channelMessages(P, ORG, { userId: "alice" }, "proposals", {});
+      const messages = await service.channelMessages(P, ORG, alice, "proposals", {});
       const msg = messages.messages.find((m) => m.id === sent.id);
       expect(msg).toMatchObject({ sender: "user:alice", hop: 0, mentions: [`agent:${HR}`] });
+      // An employee acting from its desk speaks as itself: the message is the employee's,
+      // at the hop its session carries, and the employee was invited by the person first.
+      const desk = await service.desk(P, ORG, CEO, {});
+      const ceo = { userId: "alice", agentId: CEO, sessionId: desk.sessionId };
+      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, ceo, []);
+      const after = await service.channel(P, ORG, "proposals", alice);
+      expect(after.members.map((m) => m.principal)).toContain(`agent:${CEO}`);
+      const own = await service.gatewaySend(
+        P,
+        ORG,
+        ceo,
+        "proposals",
+        "proposal:2 is mine to write",
+      );
+      const again = await service.channelMessages(P, ORG, alice, "proposals", {});
+      expect(again.messages.find((m) => m.id === own.id)).toMatchObject({
+        sender: `agent:${CEO}`,
+        hop: 1,
+      });
+      // A channel an employee opens has the employee in it from the start.
+      await service.gatewayEnsureChannel(P, ORG, "reviews", opts, ceo, [`agent:${HR}`]);
+      const reviews = await service.channel(P, ORG, "reviews", alice);
+      expect(reviews.members.map((m) => m.principal).sort()).toEqual(
+        [`agent:${CEO}`, `agent:${HR}`, "user:alice"].sort(),
+      );
     });
 
     it("opens an employee's session as the organization's, titled and started on the body", async () => {

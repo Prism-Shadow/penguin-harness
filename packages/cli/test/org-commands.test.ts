@@ -1406,6 +1406,16 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     });
     expect(out()).toBe(`${t.org.proposalCreated(1, "Batched notices")}\n`);
 
+    // Without --author the server decides (the calling employee): nothing is sent for it.
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "create", "--brief", "Rotate the token"])).toBe(0);
+    expect(lastRequest("POST", "/proposals")?.body).toEqual({
+      brief: "Rotate the token",
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(server.orgs.get("acme")!.proposals!.get(2)!.author).toBe("dev1");
+
     stdout.length = 0;
     expect(await cli(["org", "proposal", "ls"])).toBe(0);
     expect(out()).toContain("#1");
@@ -1466,6 +1476,18 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     const sessions = server.orgs.get("acme")!.proposals!.get(2)!.sessions as string[];
     expect(sessions).toHaveLength(1);
     expect(out()).toBe(`${t.org.proposalImplementing(2, "impl1", sessions[0]!)}\n`);
+  });
+
+  it("implement without --agent sends no implementer: the author builds its own proposal", async () => {
+    server.addProposal("acme", { number: 3, author: "dev1" });
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "implement", "3"])).toBe(0);
+    expect(lastRequest("POST", "/proposals/3/implement")?.body).toEqual({
+      sessionId: DESK_SESSION,
+      callerAgentId: "dev1",
+    });
+    const sessions = server.orgs.get("acme")!.proposals!.get(3)!.sessions as string[];
+    expect(out()).toBe(`${t.org.proposalImplementing(3, "dev1", sessions[0]!)}\n`);
   });
 
   it("material add, feedback and the status commands post their bodies with the caller's identity", async () => {

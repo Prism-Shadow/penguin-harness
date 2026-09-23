@@ -1,17 +1,17 @@
 ---
 name: proposal-author
-description: Write and revise a PenguinHarness company proposal — a short, abstract, paragraph-commentable description of a change that a person reads while a second employee builds it; publish it with penguin org proposal, ask an implementer to start, mark it ready, work through the person's batched comments and the implementation's feedback, and keep the scope a subset.
+description: Write and revise a PenguinHarness company proposal — a short, abstract, paragraph-commentable description of a change that a person reads while it is being built; start one yourself or take a delegation, publish it with penguin org proposal, open the implementation session (your own, or a colleague's), mark it ready, work through the person's batched comments and the implementation's feedback, and keep the scope a subset.
 ---
 
 # Proposal Author
 
-A **proposal** is a change written for a person to read: what is changed, why, and one test that shows it — in terms of interfaces, never files. A person delegates it to you; you write it and, in the same breath, ask a colleague to build it, so the person reads while the code takes shape. The implementation's findings change the proposal; the person's comments change it too. Nothing in it waits for anyone: the person reads at their pace, the implementer builds at theirs, and you keep the two in step.
+A **proposal** is a change written for a person to read: what is changed, why, and one test that shows it — in terms of interfaces, never files. It is a task mechanism, not a job: any employee proposes — on a person's delegation, or on its own when a change needs the board's eyes (the CEO proposing a plan is the plain case) — and you write it and, in the same breath, open the implementation session, so the person reads while the code takes shape. You build it yourself unless a colleague is better placed. The implementation's findings change the proposal; the person's comments change it too. Nothing in it waits for anyone: the person reads at their pace, the build goes at its own, and you keep the two in step. Approving, rejecting and commenting stay with people.
 
-Everything in `company-employee` applies to you too — the handbook first, the working language, the desk that schedules and does not do. This skill is what the author's job adds. The organization must have the `company-proposals` plugin installed; without it every `penguin org proposal` command answers that the plugin is missing.
+Everything in `company-employee` applies to you too — the handbook first, the working language, the desk that schedules and does not do. This skill is what writing a proposal adds; it arrives on your Agent by itself the first time you write or build one. The organization must have the `company-proposals` plugin installed; without it every `penguin org proposal` command answers that the plugin is missing.
 
 ## Before you start
 
-If the message only names this skill without a concrete request, ask what should be proposed. A delegation arrives as a `mention` run in the organization's `proposals` channel — `@you proposal:<n> — <brief>` — or as a person talking to your desk directly. Either way, the number already exists: read it with `penguin org proposal show <n>` before writing a line.
+If the message only names this skill without a concrete request, ask what should be proposed. A delegation arrives as a `mention` run in the organization's `proposals` channel — `@you proposal:<n> — <brief>` — or as a person talking to your desk directly; then the number already exists: read it with `penguin org proposal show <n>` before writing a line. A proposal of your own starts with `penguin org proposal create --brief "<one sentence>"` — you are its author; name `--author <colleague>` only to hand it to someone else.
 
 ## The document
 
@@ -49,12 +49,13 @@ Every ticket change woke the desk, a dozen times a day for one employee, each ru
 ```bash
 penguin org proposal show <n>                                  # the brief, the current text, comments, events
 penguin org proposal publish <n> --file proposal.md            # a revision; unchanged paragraphs keep their ids and comments
-penguin org proposal implement <n> --agent <implementer> -m "…" # an implementation session for a colleague; prints its id
+penguin org proposal create --brief "…" [--author <colleague>]  # a proposal of your own (or handed to a colleague)
+penguin org proposal implement <n> [--agent <colleague>] -m "…"  # the implementation session — yours, or a colleague's; prints its id
 penguin org proposal ready <n>                                 # tell the person it can be read
 penguin org proposal comments <n> --pending                    # the batch of comments waiting for you
 penguin org proposal resolve <n> <comment_id> -m "what changed"
 penguin org proposal material <n> add doc=<url> --label "RFC"
-penguin org channel send --channel proposals -m "@<implementer> proposal:<n> …"
+penguin org channel send --channel proposals -m "@<colleague> proposal:<n> …"
 ```
 
 Every write is attributed to you from your environment; there is nothing to pass.
@@ -62,7 +63,7 @@ Every write is attributed to you from your environment; there is nothing to pass
 ## The loop
 
 1. **Read the brief and the code.** `show <n>`, then the handbook and the code the brief points at. Decide the smallest change that does what was asked; that is the scope.
-2. **Publish the first revision** and **ask the implementer at once**: `implement <n> --agent <colleague> -m "<what to start with>"`. Do not wait for the person to read — the whole point is that reading and building overlap. The implementation session opens with the proposal text; its owner works on a `proposal/<n>-<slug>` branch against `dev` and reports through `feedback`.
+2. **Publish the first revision** and **open the implementation at once**: `implement <n> -m "<what to start with>"` opens a session of your own on the proposal; `--agent <colleague>` hands the build to a colleague instead. Do not wait for the person to read — the whole point is that reading and building overlap. The implementation session opens with the proposal text; it works on a `proposal/<n>-<slug>` branch against `dev` and reports through `feedback`.
 3. **Mark it ready** as soon as it says what it should: `ready <n>`. The person sees a ready event; further revisions do not undo it.
 4. **A feedback event** (`@you proposal:<n> …` in the channel) means the implementation found something the text does not say — a file outside the scope, an interface that behaves differently, a test that cannot be written as described. Change the proposal to match reality: widen the scope, rewrite the paragraph, replace the test — then `publish` again. If the finding changes the purpose, say so in the channel and let the person decide.
 5. **A batch of comments** (`@you proposal:<n> has a batch of <k> comments`) is one revision, not `k`: `comments <n> --pending`, work through all of them, `publish` once, then `resolve` each with one line saying what changed (or why nothing did). A person may send several batches; each is handled the same way.
@@ -72,6 +73,6 @@ Every write is attributed to you from your environment; there is nothing to pass
 ## Cautions
 
 - **Never a file link in the body.** A path pulls the reader into the diff; the diff is the PR in the materials. If a paragraph cannot be written without a path, it is describing an implementation detail — leave it to the PR.
-- **Do not merge, do not build.** The implementer owns the branch and the PR; you own the text. A one-line fix you would make yourself goes to the implementer as feedback in the channel.
+- **The desk does not build.** The branch and the PR belong to the implementation session — yours or a colleague's; the desk owns the text. A one-line fix goes into that session, not into the desk.
 - **One proposal, one change.** A brief that asks for two things is two proposals; say so in the channel and ask the person to delegate the second.
 - **The desk writes, a session builds.** Writing the proposal is desk work — reading code, thinking, one file. Anything that changes the workspace belongs to the implementation session.

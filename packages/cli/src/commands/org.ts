@@ -26,8 +26,8 @@
  *                    | send -m <text> [--channel <id>] [--ref-ticket] [--ref-session]
  *   penguin org handbook list | show [path] | write <path> (-m <text> | --file <f>) | rm <path>
  *   penguin org finance [--period <yyyy-mm>]
- *   penguin org proposal ls [--status <s>] | show <n> | create --author <agent_id> --brief <s> [--title <s>]
- *                    | publish <n> --file <md> | ready <n> | implement <n> --agent <agent_id> [-m] [--workspace]
+ *   penguin org proposal ls [--status <s>] | show <n> | create [--author <agent_id>] --brief <s> [--title <s>]
+ *                    | publish <n> --file <md> | ready <n> | implement <n> [--agent <agent_id>] [-m] [--workspace]
  *                    | material <n> add <kind>=<url> [--label <s>] | feedback <n> -m <text> [--runtime]
  *                    | comments <n> [--pending] | resolve <n> <comment_id> [-m <text>] | merged <n>
  *                    | approve <n> | reject <n> --reason <s>
@@ -1832,7 +1832,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     proposal
       .command("create")
       .description(t.org.proposalCreateDesc)
-      .requiredOption("--author <agent_id>", t.org.proposalAuthor)
+      .option("--author <agent_id>", t.org.proposalAuthor)
       .requiredOption("--brief <text>", t.org.proposalBrief_)
       .option("--title <title>", t.org.proposalTitle),
     t,
@@ -1840,7 +1840,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     const scope = await orgScope(opts, t);
     if (scope === null) return;
     const detail = await proposalRequest<ProposalDetail>(scope, t, "POST", "", {
-      author: String(opts.author),
+      ...(opts.author !== undefined ? { author: String(opts.author) } : {}),
       brief: String(opts.brief),
       ...(opts.title !== undefined ? { title: String(opts.title) } : {}),
       ...actorFields(),
@@ -1905,7 +1905,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     proposal
       .command("implement <number>")
       .description(t.org.proposalImplementDesc)
-      .requiredOption("--agent <agent_id>", t.org.proposalImplementer)
+      .option("--agent <agent_id>", t.org.proposalImplementer)
       .option("-m, --message <text>", t.org.proposalMessage)
       .option("--workspace <path>", t.org.proposalWorkspace),
     t,
@@ -1918,7 +1918,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     // `callerAgentId` rather than under the field {@link actorFields} would use.
     const { sessionId, agentId: callerAgentId } = actorFields();
     const detail = await proposalRequest<ProposalDetail>(scope, t, "POST", `/${number}/implement`, {
-      agentId: String(opts.agent),
+      ...(opts.agent !== undefined ? { agentId: String(opts.agent) } : {}),
       ...(opts.message !== undefined ? { message: String(opts.message) } : {}),
       ...(opts.workspace !== undefined ? { workspace: String(opts.workspace) } : {}),
       ...(sessionId !== undefined ? { sessionId } : {}),
@@ -1930,7 +1930,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       printLine(
         t.org.proposalImplementing(
           detail.number,
-          detail.implementer ?? String(opts.agent),
+          detail.implementer ?? detail.author,
           detail.sessions[detail.sessions.length - 1] ?? "",
         ),
       );

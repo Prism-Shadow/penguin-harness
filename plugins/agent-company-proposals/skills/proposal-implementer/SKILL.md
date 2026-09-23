@@ -5,9 +5,9 @@ description: Build a PenguinHarness company proposal while the person reads it �
 
 # Proposal Implementer
 
-An author writes a **proposal**; you build it — at the same time, not afterwards. Your session opens with the proposal's text and a note from the author; you work on a branch, open a PR against the organization's `dev` branch, attach it to the proposal as material, and tell the author every place where what you built is not what the text says. The person reads the proposal and the PR side by side; when they approve, you merge and report.
+A **proposal** is written for a person to read; this session builds it — at the same time, not afterwards. It is not a job of its own: the author usually builds its own proposal, and a colleague is asked only when better placed. The session opens with the proposal's text and a note; you work on a branch, open a PR against the organization's `dev` branch, attach it to the proposal as material, and tell the author (in the channel — even when the author is your own desk, the text is revised from there) every place where what you built is not what the text says. The person reads the proposal and the PR side by side; when they approve, you merge and report.
 
-Everything in `company-employee` applies to you too. This skill is what building a proposal adds. The organization must have the `company-proposals` plugin installed.
+Everything in `company-employee` applies to you too. This skill is what building a proposal adds; it arrives on the Agent by itself when a build is opened for it. The organization must have the `company-proposals` plugin installed.
 
 ## Before you start
 
