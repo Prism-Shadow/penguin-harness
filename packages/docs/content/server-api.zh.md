@@ -614,7 +614,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/agents/:agentId/sessions` | 列出 Agent 的 Session 及运行状态，不论由哪个客户端创建；`excludeOrg=1` 则只要用户自己的那些 |
-| POST | `/agents/:agentId/sessions` | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201 `{session}` |
+| POST | `/agents/:agentId/sessions` | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?, source?, surface?}` → 201 `{session}`。`surface` 创建该 kind 的**表面 Session**——插件贡献的一种（见 `GET /api/contributions`），否则返回 `400` `unknown_surface`：它不带模型引用，由该表面而非对话渲染，用下方接口打开 |
 | GET | `/dirs?path=` | Workspace 选择器背后的服务器端目录浏览器 |
 | GET | `/dir-skills?path=` | 目录所带的 Skill，用于导入到新 Agent |
 
@@ -676,6 +676,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/stream` | SSE 事件流；见[流式传输（SSE）](#流式传输sse) |
 | GET | `/context` | 当前模型上下文的组成，以及压缩将从哪里开始 |
 | GET | `/goal` | 当前 Session 最近一次目标运行 |
+| GET / POST / DELETE | `/surface` | **表面 Session** 的表面。`GET` 返回 `{kind, status, opened, alive, view?}`；`POST {prompt?, cols?, rows?}` 打开它——幂等，已打开则原样返回，`prompt` 仅在首次打开时送达——并返回同一结构；`DELETE` 关闭它。没有表面、或表面所属插件未加载的 Session 返回 `404` `not_a_surface_session`；表面 Session 不接受 Task（`409` `surface_session`） |
 
 - `GET /` 返回 Session 的信息。与列表行不同，单个 Session 的响应还带 `tracePath`，即最新 Trace 文件的绝对路径。`orgId` 标记公司模式缓存持有的会话（工位会话，或这个组织某个工单的贡献会话）；普通 Session 一律不带这个字段，列表路由同样会设置它。
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
