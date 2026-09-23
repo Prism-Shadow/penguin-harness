@@ -4,7 +4,8 @@
  * far an @-chain relays, the channel's own purpose beside it — nothing when the all-hands
  * channel has none, since what that channel is for is in the "?" — the members as a stack of
  * avatars opening a member popover — an employee row there opens its desk session — and the
- * actions: invite, leave, and the overflow menu with rename, purpose, archive and unarchive.
+ * actions: invite, leave, and the overflow menu with rename, purpose, default recipients,
+ * archive and unarchive.
  *
  * Who may do what is the server's rule, not this file's: everything here is shown to a
  * person, who is a Project member and therefore may join, archive and unarchive — and may
@@ -40,7 +41,7 @@ import {
 import { usePortalPanel } from "../../components/ui/use-portal-panel";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
-import { ChannelTextDialog } from "./channel-dialogs";
+import { ChannelNotifyDialog, ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
 import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
 import type { InviteCandidate } from "./channel-list";
@@ -55,6 +56,9 @@ const LEAVE_ICON = "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H
 
 /** Purpose (lucide text): the menu row that edits what the channel is for. */
 const PURPOSE_ICON = "M4 6h16M4 12h12M4 18h8";
+
+/** Default recipients (lucide bell): the menu row that picks who a message with no @ reaches. */
+const NOTIFY_ICON = "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0";
 
 /** Opening a desk session (lucide door-open): the member popover's employee rows, and the org chart's node menu. */
 export const DESK_ICON = "M13 4h3v16h-3M3 20h11V4L3 6zM10 12h.01";
@@ -280,6 +284,7 @@ export function ChannelHeader({
   const { setCurrentAgentId } = useProject();
   const [renameOpen, setRenameOpen] = useState(false);
   const [purposeOpen, setPurposeOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -292,6 +297,7 @@ export function ChannelHeader({
   useEffect(() => {
     setRenameOpen(false);
     setPurposeOpen(false);
+    setNotifyOpen(false);
     setLeaveOpen(false);
     setArchiveOpen(false);
     setMenuOpen(false);
@@ -374,13 +380,19 @@ export function ChannelHeader({
     }
   };
 
-  const patchText = async (body: { name?: string; purpose?: string }) => {
+  const patchText = async (body: { name?: string; purpose?: string; notify?: string[] }) => {
     await api.patchOrgChannel(projectId, orgId, detail.channelId, body);
     setRenameOpen(false);
     setPurposeOpen(false);
+    setNotifyOpen(false);
     toastSuccess(S.common.saved);
     onChanged();
   };
+
+  // The list names principals; the "?" reads them out by name, as the member list does.
+  const notifyNames = detail.notify.map(
+    (p) => detail.members.find((m) => m.principal === p)?.name ?? p,
+  );
 
   return (
     <>
@@ -406,6 +418,11 @@ export function ChannelHeader({
                 {allHands ? S.company.channels.allHandsInfo : S.company.channels.channelInfo}
               </span>
               <span className="mt-1.5 block">{S.company.channels.hopSummary}</span>
+              {notifyNames.length > 0 && (
+                <span className="mt-1.5 block">
+                  {S.company.channels.notifyLine(notifyNames.join(", "))}
+                </span>
+              )}
             </InfoPopover>
           </h1>
           {/* The purpose reads as a subtitle on the same line, so the header stays one row. */}
@@ -489,6 +506,17 @@ export function ChannelHeader({
                   {overflowMenuGlyph(PURPOSE_ICON)}
                   {S.company.channels.editPurpose}
                 </button>
+                <button
+                  type="button"
+                  className={overflowMenuRowClass}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setNotifyOpen(true);
+                  }}
+                >
+                  {overflowMenuGlyph(NOTIFY_ICON)}
+                  {S.company.channels.editNotify}
+                </button>
               </>
             )}
             {/* Archiving is a people-only action, and the Web App's caller is always a
@@ -549,6 +577,13 @@ export function ChannelHeader({
         multiline
         onClose={() => setPurposeOpen(false)}
         onSubmit={(value) => patchText({ purpose: value })}
+      />
+      <ChannelNotifyDialog
+        open={notifyOpen}
+        members={detail.members}
+        initial={detail.notify}
+        onClose={() => setNotifyOpen(false)}
+        onSubmit={(notify) => patchText({ notify })}
       />
       <ConfirmModal
         open={leaveOpen}

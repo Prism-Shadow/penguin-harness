@@ -321,11 +321,15 @@ describe("channel files", () => {
     createdAt: "2026-09-03T01:00:00.000Z",
     archived: false,
     members: ["user:alice", "agent:acme_dev"],
+    notify: ["agent:acme_dev", "user:alice"],
   };
 
   it("round-trips a member channel and the all-hands channel", () => {
     const raw = serializeChannelConfig(site);
     expect(raw).toContain('members = [ "user:alice", "agent:acme_dev" ]');
+    expect(raw).toContain('notify = [ "agent:acme_dev", "user:alice" ]');
+    // An empty list is no list: the file says nothing rather than `notify = [ ]`.
+    expect(serializeChannelConfig({ ...site, notify: [] })).not.toContain("notify =");
     expect(parseChannelConfig("site", raw)).toEqual({ ok: true, value: site });
 
     const all: ChannelConfig = {
@@ -393,6 +397,16 @@ describe("channel files", () => {
       "duplicate member",
     );
     expect(errorOf("site", base)).toContain("members must be a list");
+    // Default recipients: principals only, each once; `all` names nobody in particular.
+    expect(errorOf("site", [...base, "members = []", 'notify = "agent:acme_dev"'])).toContain(
+      "notify must be a list",
+    );
+    expect(errorOf("site", [...base, "members = []", 'notify = ["all"]'])).toContain(
+      "not a principal",
+    );
+    expect(
+      errorOf("site", [...base, "members = []", 'notify = ["user:alice", "user:alice"]']),
+    ).toContain("duplicate notify");
     // `everyone` belongs to the all-hands channel and to no other, and it keeps no list.
     expect(errorOf("site", [...base, "everyone = true"])).toContain("all-hands channel");
     expect(errorOf(DEFAULT_CHANNEL_ID, [...base, "members = []"])).toContain("everyone = true");

@@ -4244,6 +4244,13 @@ Benchmark：
       renameTitle: "重命名频道",
       editPurpose: "改主题",
       purposeTitle: "修改频道主题",
+      /** The default-recipients menu row and its dialog. */
+      editNotify: "默认通知",
+      notifyTitle: "默认通知",
+      notifyHint:
+        "没有 @ 的消息视同 @ 了勾选的人：员工的工位会被触发，人会在「@我」里看到。只能选本频道的成员。",
+      notifyEmpty: "这个频道里还没有成员",
+      notifyLine: (names: string): string => `没有 @ 的消息默认送给：${names}`,
       archive: "归档",
       unarchive: "取消归档",
       archiveTitle: "归档频道",

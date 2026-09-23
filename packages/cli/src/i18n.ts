@@ -287,6 +287,10 @@ export interface Messages {
     channelJoinDesc: string;
     channelLeaveDesc: string;
     channelRemoveDesc: string;
+    channelNotifyDesc: string;
+    /** --none: clear the default recipients. */
+    channelNotifyNone: string;
+    channelNotifyNeedsList: string;
     channelArchiveDesc: string;
     channelUnarchiveDesc: string;
     channelTailDesc: string;
@@ -435,6 +439,8 @@ export interface Messages {
     channelJoined(channelId: string): string;
     channelLeft(channelId: string): string;
     channelMemberRemoved(channelId: string, principal: string): string;
+    channelNotifySet(channelId: string, principals: string): string;
+    channelNotifyCleared(channelId: string): string;
     channelArchived(channelId: string): string;
     channelUnarchived(channelId: string): string;
     messageSent(id: string): string;
@@ -491,6 +497,7 @@ export interface Messages {
     /** `channel show`: the head line, then the lines the channel actually has. */
     channelHead(name: string, channelId: string, members: number, archived: boolean): string;
     channelPurposeLine(purpose: string): string;
+    channelNotifyLine(principals: string): string;
     channelCreatedBy(principal: string, createdAt: string): string;
     channelLastMessage(time: string): string;
     financeTotal(period: string, total: string): string;
@@ -1102,6 +1109,10 @@ const en: Messages = {
     channelJoinDesc: "Join a channel yourself (people only; an employee waits to be invited)",
     channelLeaveDesc: "Leave a channel",
     channelRemoveDesc: "Remove another member from a channel (people only)",
+    channelNotifyDesc:
+      "Set a channel's default recipients: members a message with no @ counts as mentioning (an employee's desk is triggered, a person sees it under @me)",
+    channelNotifyNone: "Clear the default recipients",
+    channelNotifyNeedsList: "Give the principals to notify, or --none to clear the list.",
     channelArchiveDesc: "Archive a channel: read-only until it is unarchived (people only)",
     channelUnarchiveDesc: "Unarchive a channel (people only)",
     channelTailDesc: "Print a channel's last messages of a day (20 unless -n is given)",
@@ -1225,6 +1236,9 @@ const en: Messages = {
     channelJoined: (channelId) => `Joined ${channelId}.`,
     channelLeft: (channelId) => `Left ${channelId}.`,
     channelMemberRemoved: (channelId, principal) => `${principal} removed from ${channelId}.`,
+    channelNotifySet: (channelId, principals) =>
+      `Messages in ${channelId} with no @ now count as mentioning ${principals}.`,
+    channelNotifyCleared: (channelId) => `${channelId} has no default recipients now.`,
     channelArchived: (channelId) => `Channel ${channelId} archived.`,
     channelUnarchived: (channelId) => `Channel ${channelId} unarchived.`,
     messageSent: (id) => `Message ${id} sent.`,
@@ -1284,6 +1298,7 @@ const en: Messages = {
     channelHead: (name, channelId, members, archived) =>
       `${name} (${channelId}) — ${members} members${archived ? ", archived" : ""}`,
     channelPurposeLine: (purpose) => `Purpose: ${purpose}`,
+    channelNotifyLine: (principals) => `Default recipients (a message with no @): ${principals}`,
     channelCreatedBy: (principal, createdAt) => `Created by ${principal} on ${createdAt}`,
     channelLastMessage: (time) => `Last message: ${time}`,
     financeTotal: (period, total) => `Total (${period}): ${total}`,
@@ -1870,6 +1885,10 @@ const zh: Messages = {
     channelJoinDesc: "自行加入频道（仅限人；员工只能等成员邀请）",
     channelLeaveDesc: "退出频道",
     channelRemoveDesc: "把另一位成员移出频道（仅限人）",
+    channelNotifyDesc:
+      "设置频道的默认通知对象：没有 @ 的消息视同 @ 了这些成员（员工的工位被触发，人会在「@我」里看到）",
+    channelNotifyNone: "清空默认通知对象",
+    channelNotifyNeedsList: "请给出要通知的 principal，或用 --none 清空名单。",
     channelArchiveDesc: "归档频道：在取消归档前只读（仅限人）",
     channelUnarchiveDesc: "取消频道的归档（仅限人）",
     channelTailDesc: "打印某个频道某一天的最后若干条消息（未给 -n 时 20 条）",
@@ -1979,6 +1998,9 @@ const zh: Messages = {
     channelJoined: (channelId) => `已加入 ${channelId}。`,
     channelLeft: (channelId) => `已退出 ${channelId}。`,
     channelMemberRemoved: (channelId, principal) => `已把 ${principal} 移出 ${channelId}。`,
+    channelNotifySet: (channelId, principals) =>
+      `${channelId} 里没有 @ 的消息现在视同 @ 了 ${principals}。`,
+    channelNotifyCleared: (channelId) => `${channelId} 现在没有默认通知对象。`,
     channelArchived: (channelId) => `频道 ${channelId} 已归档。`,
     channelUnarchived: (channelId) => `频道 ${channelId} 已取消归档。`,
     messageSent: (id) => `消息 ${id} 已发送。`,
@@ -2038,6 +2060,7 @@ const zh: Messages = {
     channelHead: (name, channelId, members, archived) =>
       `${name}（${channelId}）——成员 ${members}${archived ? "，已归档" : ""}`,
     channelPurposeLine: (purpose) => `用途：${purpose}`,
+    channelNotifyLine: (principals) => `默认通知（没有 @ 的消息）：${principals}`,
     channelCreatedBy: (principal, createdAt) => `由 ${principal} 创建于 ${createdAt}`,
     channelLastMessage: (time) => `最后一条消息：${time}`,
     financeTotal: (period, total) => `合计（${period}）：${total}`,

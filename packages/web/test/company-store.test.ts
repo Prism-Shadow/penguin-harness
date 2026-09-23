@@ -55,6 +55,7 @@ const channel = (over: Partial<OrgChannelItem> = {}): OrgChannelItem => ({
   createdBy: "system",
   createdAt: "2026-09-02T00:00:00Z",
   memberCount: 2,
+  notify: [],
   isMember: true,
   unread: 0,
   mentionsMe: 0,
