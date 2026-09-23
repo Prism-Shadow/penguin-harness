@@ -31,6 +31,9 @@ import type {
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
   DesktopUpdaterStatusMessage,
+  HostCommand,
+  HostCommandMessage,
+  HostCommandsMessage,
 } from "@prismshadow/penguin-server/api";
 
 /** electron-updater's events, reduced to what the status needs. */
@@ -108,4 +111,17 @@ export function parseUpdaterCommand(data: unknown): DesktopUpdaterCommandMessage
   return msg.action === "check" || msg.action === "download" || msg.action === "install"
     ? msg.action
     : null;
+}
+
+/** The shell's once-per-wiring push of the host commands it offers the page's command palette. */
+export function hostCommandsMessage(commands: HostCommand[]): HostCommandsMessage {
+  return { type: "host-commands", commands };
+}
+
+/** Validates one server-relayed host-command frame off the port. Spelled here rather than imported: the shell takes the server's api as types only. */
+export function parseHostCommand(data: unknown): HostCommand | null {
+  if (typeof data !== "object" || data === null) return null;
+  const msg = data as Partial<HostCommandMessage>;
+  if (msg.type !== "host-command") return null;
+  return msg.command === "install-cli" || msg.command === "check-updates" ? msg.command : null;
 }

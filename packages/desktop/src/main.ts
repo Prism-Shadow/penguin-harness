@@ -62,8 +62,20 @@ import {
   trayStatusMessage,
   updateTrayPrefs,
 } from "./tray-prefs.js";
-import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
-import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
+import {
+  checkForUpdatesManually,
+  getUpdaterStatus,
+  handleUpdaterCommand,
+  initUpdater,
+  onUpdaterStatus,
+  updatesAvailableInThisForm,
+} from "./updater.js";
+import {
+  hostCommandsMessage,
+  parseHostCommand,
+  parseUpdaterCommand,
+  updaterStatusMessage,
+} from "./updater-status.js";
 import {
   classifyWindowOpen,
   desktopLoginUrl,
@@ -115,6 +127,25 @@ function fatal(context: string, err: unknown): void {
   const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
   dialog.showErrorBox(app.name, `${context}\n\n${detail}`);
   app.exit(1);
+}
+
+/**
+ * Windows and Linux: the menu bar is hidden outright, not auto-hidden. With `autoHideMenuBar`
+ * a lone Alt press pulled the bar up and took the keyboard from the page, so every Alt
+ * combination the page or the terminal wanted (Alt+B, Alt+., Alt+Enter) was eaten. Hidden,
+ * the application menu still exists — its accelerators keep working, and macOS keeps its
+ * system menu bar — and F10 brings the bar up for the rare time it is wanted. The menu's
+ * own actions are offered from the page's command palette (see http/routes/command.ts).
+ */
+function hideMenuBar(target: BrowserWindow): void {
+  if (process.platform === "darwin") return;
+  target.setMenuBarVisibility(false);
+  target.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.key !== "F10") return;
+    if (input.alt || input.control || input.meta || input.shift) return;
+    target.setMenuBarVisibility(!target.isMenuBarVisible());
+    event.preventDefault();
+  });
 }
 
 function createWindow(url: string): void {
@@ -174,6 +205,7 @@ function createWindow(url: string): void {
     }
     return openWindowFor(target, iconPath);
   });
+  hideMenuBar(win);
   win.webContents.on("did-create-window", (child, details) =>
     guardOpenedWindow(child, iconPath, isAuthorizationBridgeUrl(details.url)),
   );
@@ -227,11 +259,13 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
  * `authorizationBridge` marks the main window's hidden Penguin Go bridge. Only the main window
  * opens one, so every window further down passes false.
  */
+
 function guardOpenedWindow(
   child: BrowserWindow,
   iconPath: string | null,
   authorizationBridge: boolean,
 ): void {
+  hideMenuBar(child);
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
   child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath, false));
   child.webContents.on("will-navigate", (event, target) => {
@@ -369,6 +403,16 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
       handleUpdaterCommand(action);
       return;
     }
+    // The page's command palette asking for a host command — what the menu items ran.
+    const host = parseHostCommand(message);
+    if (host === "install-cli") {
+      void installCliCommand(win);
+      return;
+    }
+    if (host === "check-updates") {
+      void checkForUpdatesManually();
+      return;
+    }
     const command = parseTrayCommand(message);
     if (command !== null) {
       if (command.locale !== undefined) setTrayLocale(command.locale);
@@ -382,6 +426,12 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
   });
   child.postMessage(updaterStatusMessage(getUpdaterStatus()));
   pushTrayStatus();
+  child.postMessage(
+    hostCommandsMessage([
+      ...(currentCliInstallKind() !== null ? (["install-cli"] as const) : []),
+      ...(updatesAvailableInThisForm() ? (["check-updates"] as const) : []),
+    ]),
+  );
 }
 
 /** Starts (or restarts) the embedded server and points the window at the claim link. */
