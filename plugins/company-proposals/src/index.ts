@@ -54,6 +54,15 @@ export {
 } from "./service.js";
 export type { ServiceDeps } from "./service.js";
 export { ROUTES_ID, proposalRoutes } from "./routes.js";
+export {
+  PARAGRAPH_GAP,
+  locateQuote,
+  markRanges,
+  paragraphAtOffset,
+  paragraphSpan,
+  renderForAgent,
+  sectionSource,
+} from "./comments.js";
 
 /** The page contribution's id, as the manifest names it. */
 export const PAGE_ID = "company-proposals.page";

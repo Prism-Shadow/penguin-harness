@@ -1,6 +1,6 @@
 ---
 name: proposal-author
-description: Write and revise a PenguinHarness company proposal — a short, abstract, paragraph-commentable description of a change that a person reads while it is being built; start one yourself or take a delegation, publish it with penguin org proposal, open the implementation session (your own, or a colleague's), mark it ready, work through the person's batched comments and the implementation's feedback, and keep the scope a subset.
+description: Write and revise a PenguinHarness company proposal — a short, abstract description of a change that a person reads — and comments on, passage by passage — while it is being built; start one yourself or take a delegation, publish it with penguin org proposal, open the implementation session (your own, or a colleague's), mark it ready, work through the person's batched comments and the implementation's feedback, and keep the scope a subset.
 ---
 
 # Proposal Author
@@ -41,18 +41,18 @@ Every ticket change woke the desk, a dozen times a day for one employee, each ru
 
 - **`scope` is the only place a file path appears.** Each entry is a file and, optionally, a `name` — a regular expression, capture groups allowed, over the names the change touches in that file. The scope is a **subset**: the files and names the change is meant to touch, not everything it might. When the implementer finds it needs more, it tells you and you widen it; never write a scope you have not read.
 - **The sections speak in interfaces.** `## Change` (or `## 改动`) says what is changed, naming functions, classes, routes and fields — never a path, never a link to a file; the server refuses a body with a file link. `## Purpose` (`## 目的`) says why, in one paragraph. `## Test` (`## 测试`) names one test case and says what it asserts. Add a section when the change needs one; do not pad the three.
-- **Short.** A paragraph per section is the norm. Every paragraph is a place a person can comment, so a paragraph says one thing.
+- **Short.** A paragraph per section is the norm. A person comments on any passage they select, so every sentence should be one they can point at.
 - **Where the body lives is the company's choice.** If the handbook keeps proposals as issues or as `rfcs/<n>-<slug>.md` in the workspace, write the file there and publish from it; the ledger the page renders is what you publish, and the issue or file is material you attach (`material add issue=<url>` / `doc=<url>`).
 
 ## The commands
 
 ```bash
 penguin org proposal show <n>                                  # the brief, the current text, comments, events
-penguin org proposal publish <n> --file proposal.md            # a revision; unchanged paragraphs keep their ids and comments
+penguin org proposal publish <n> --file proposal.md            # a revision; a comment follows its passage into the new text
 penguin org proposal create --brief "…" [--author <colleague>]  # a proposal of your own (or handed to a colleague)
 penguin org proposal implement <n> [--agent <colleague>] -m "…"  # the implementation session — yours, or a colleague's; prints its id
 penguin org proposal ready <n>                                 # tell the person it can be read
-penguin org proposal comments <n> --pending                    # the batch of comments waiting for you
+penguin org proposal comments <n> --pending                    # the text with each commented passage marked ⟦<id>⟧…⟦/<id>⟧, then the comments by id
 penguin org proposal resolve <n> <comment_id> -m "what changed"
 penguin org proposal material <n> add doc=<url> --label "RFC"
 penguin org channel send --channel proposals -m "@<colleague> proposal:<n> …"
@@ -66,7 +66,7 @@ Every write is attributed to you from your environment; there is nothing to pass
 2. **Publish the first revision** and **open the implementation at once**: `implement <n> -m "<what to start with>"` opens a session of your own on the proposal; `--agent <colleague>` hands the build to a colleague instead. Do not wait for the person to read — the whole point is that reading and building overlap. The implementation session opens with the proposal text; it works on a `proposal/<n>-<slug>` branch against `dev` and reports through `feedback`.
 3. **Mark it ready** as soon as it says what it should: `ready <n>`. The person sees a ready event; further revisions do not undo it.
 4. **A feedback event** (`@you proposal:<n> …` in the channel) means the implementation found something the text does not say — a file outside the scope, an interface that behaves differently, a test that cannot be written as described. Change the proposal to match reality: widen the scope, rewrite the paragraph, replace the test — then `publish` again. If the finding changes the purpose, say so in the channel and let the person decide.
-5. **A batch of comments** (`@you proposal:<n> has a batch of <k> comments`) is one revision, not `k`: `comments <n> --pending`, work through all of them, `publish` once, then `resolve` each with one line saying what changed (or why nothing did). A person may send several batches; each is handled the same way.
+5. **A batch of comments** (`@you proposal:<n> has a batch of <k> comments`) is one revision, not `k`: `comments <n> --pending` prints the proposal with every commented passage wrapped in `⟦<id>⟧…⟦/<id>⟧` and the comments listed by that id under it — the marks say exactly which words the person means; read the passage, not the id. Work through all of them, `publish` once (a comment whose passage you kept follows it; one whose passage you rewrote is listed as a comment on the earlier revision — that is fine, it is answered by your `resolve` note), then `resolve <n> <id>` each with one line saying what changed (or why nothing did). A person may send several batches; each is handled the same way.
 6. **Runtime feedback** (`--runtime`, from the test team) on a proposal that is not yet approved is yours and the implementer's together: agree in the channel who changes what, revise the text where the behaviour changed, and let the implementer fix the branch.
 7. **Approval** is the person's: they approve and request the merge, the implementer merges and reports `merged`. Your part ends when the text matches what was merged; if the merge diverged from the text, publish one last revision.
 

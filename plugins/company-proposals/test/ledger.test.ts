@@ -10,6 +10,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   Ledger,
+  applyLine,
   foldLedger,
   ledgerPath,
   parseLedger,
@@ -167,6 +168,126 @@ describe("foldLedger", () => {
       "changes_requested",
       "resolved",
     ]);
+  });
+
+  it("anchors a range comment to its paragraph, follows the passage through a revision, and lets a lost passage keep its revision", () => {
+    const sections = (change: string) => [
+      { id: "change", heading: "Change", paragraphs: [{ id: "p1", text: change }] },
+      { id: "purpose", heading: "Purpose", paragraphs: [{ id: "p2", text: "Because." }] },
+    ];
+    const state = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 1,
+          title: "T",
+          scope: [],
+          sections: sections("The notices go out in one batch."),
+          by: "agent:dev",
+        },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c1",
+          sectionId: "change",
+          start: 4,
+          end: 11,
+          quote: "notices",
+          revision: 1,
+          text: "which?",
+          by: "user:boss",
+        },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 2,
+          title: "T",
+          scope: [],
+          sections: sections("Every ticket's  notices go out in one batch."),
+          by: "agent:dev",
+        },
+      ),
+    );
+    const c = state.proposals.get(1)!.comments[0]!;
+    // Found again with the whitespace collapsed, at the passage's new place.
+    expect(c).toMatchObject({
+      sectionId: "change",
+      range: { start: 16, end: 23 },
+      quote: "notices",
+      paragraphId: "p1",
+      revision: 2,
+    });
+    applyLine(state, {
+      seq: 5,
+      at,
+      kind: "revised",
+      number: 1,
+      revision: 3,
+      title: "T",
+      scope: [],
+      sections: sections("Every ticket's digest goes out in one batch."),
+      by: "agent:dev",
+    });
+    const lost = state.proposals.get(1)!.comments[0]!;
+    expect(lost.revision).toBe(2);
+    expect(lost.paragraphId).toBeUndefined();
+    expect(lost.quote).toBe("notices");
+  });
+
+  it("anchors a comment line written on a paragraph (the pre-range form) to that paragraph's whole span", () => {
+    const state = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 1,
+          title: "T",
+          scope: [],
+          sections: [
+            {
+              id: "change",
+              heading: "Change",
+              paragraphs: [
+                { id: "p1", text: "First." },
+                { id: "p2", text: "Second paragraph." },
+              ],
+            },
+          ],
+          by: "agent:dev",
+        },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c1",
+          paragraphId: "p2",
+          revision: 1,
+          text: "why",
+          by: "user:boss",
+        },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c2",
+          paragraphId: "p9",
+          revision: 1,
+          text: "gone",
+          by: "user:boss",
+        },
+      ),
+    );
+    const [onP2, onNothing] = state.proposals.get(1)!.comments;
+    expect(onP2).toMatchObject({
+      sectionId: "change",
+      range: { start: 8, end: 25 },
+      quote: "Second paragraph.",
+      paragraphId: "p2",
+      revision: 1,
+    });
+    expect(onNothing).toMatchObject({ sectionId: "", quote: "", revision: 1 });
+    expect(onNothing!.paragraphId).toBeUndefined();
   });
 
   it("skips a line about a proposal that does not exist, and keeps counting seq", () => {

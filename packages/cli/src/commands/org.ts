@@ -77,7 +77,7 @@ import type {
   OrgTicketsResponse,
   OrganizationDetail,
   OrganizationsResponse,
-  ProposalComment,
+  ProposalCommentsResponse,
   ProposalDetail,
   ProposalItem,
   ProposalMaterialKind,
@@ -559,38 +559,12 @@ function renderProposals(items: readonly ProposalItem[], t: Messages): string {
   );
 }
 
-/** The comments a reader sees, in section order: each with its id, the paragraph it stands on, and its state. */
-function renderComments(
-  d: ProposalDetail,
-  comments: readonly ProposalComment[],
-  t: Messages,
-): string {
-  const paragraphs = new Map<string, { heading: string; text: string }>();
-  for (const section of d.sections) {
-    for (const p of section.paragraphs)
-      paragraphs.set(p.id, { heading: section.heading, text: p.text });
-  }
-  const lines: string[] = [];
-  for (const c of comments) {
-    const at = paragraphs.get(c.paragraphId);
-    const where =
-      at === undefined
-        ? t.org.proposalCommentOnRevision(c.paragraphId, c.revision)
-        : `${at.heading} › ${at.text.split("\n")[0] ?? ""}`;
-    const state =
-      c.resolved !== undefined
-        ? t.org.proposalResolvedMark(c.resolved.text)
-        : c.batchId === null
-          ? t.org.proposalPendingMark()
-          : "";
-    lines.push(`[${c.id}] ${where}`);
-    lines.push(`  ${c.by} ${c.at}: ${c.text}${state === "" ? "" : `  ${state}`}`);
-  }
-  return `${lines.join("\n")}\n`;
-}
-
-/** `proposal show`: the head, the brief, the scope, the materials, the sections as Markdown, the comments, the events. */
-function renderProposal(d: ProposalDetail, t: Messages): string {
+/**
+ * `proposal show`: the head, the brief, the scope, the materials, the sections as Markdown —
+ * with the comments' passages marked and the comments by id when the server sent that text —
+ * and the events.
+ */
+function renderProposal(d: ProposalDetail, t: Messages, marked: string | null): string {
   const head = [
     t.org.proposalHead(d.number, d.title, d.status, d.revision),
     t.org.proposalPeople(d.author, d.implementer, d.delegatedBy),
@@ -615,14 +589,16 @@ function renderProposal(d: ProposalDetail, t: Messages): string {
             ...d.materials.map((m) => `  ${m.kind}  ${m.label}  ${m.url}`),
           ].join("\n"),
         ];
-  // The sections are the document itself: what `show` prints is what `publish --file` sent.
-  const sections = d.sections.map((section) =>
-    [`## ${section.heading}`, ...section.paragraphs.map((p) => p.text)].join("\n\n"),
-  );
-  const comments =
-    d.comments.length === 0
-      ? []
-      : [`${t.org.proposalComments()}\n${renderComments(d, d.comments, t).trimEnd()}`];
+  // The sections are the document itself: what `show` prints is what `publish --file` sent —
+  // or, once there are comments, the server's marked rendering of it (`⟦<id>⟧…⟦/<id>⟧` around
+  // each passage, the comments by id under it), which is how an agent reads a comment.
+  const sections =
+    marked !== null
+      ? [marked.trimEnd()]
+      : d.sections.map((section) =>
+          [`## ${section.heading}`, ...section.paragraphs.map((p) => p.text)].join("\n\n"),
+        );
+  const comments: string[] = [];
   // The kinds stay in English: they are field values, like a ticket history's actions.
   const events = d.events.map(
     (e) =>
@@ -1823,8 +1799,21 @@ export function registerOrgCommand(program: Command, t: Messages): void {
         `/${number}${query(actorQuery())}`,
       );
       if (detail === null) return;
-      if (opts.json === true) printJson(detail);
-      else process.stdout.write(renderProposal(detail, t));
+      if (opts.json === true) {
+        printJson(detail);
+        return;
+      }
+      // With comments on it, the body is printed as the server marks it for an agent.
+      const marked =
+        detail.comments.length === 0
+          ? null
+          : await proposalRequest<ProposalCommentsResponse>(
+              scope,
+              t,
+              "GET",
+              `/${number}/comments${query(actorQuery())}`,
+            );
+      process.stdout.write(renderProposal(detail, t, marked === null ? null : marked.text));
     },
   );
 
@@ -1995,27 +1984,27 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (number === null) return;
     const scope = await orgScope(opts, t);
     if (scope === null) return;
-    const detail = await proposalRequest<ProposalDetail>(
+    // `--pending` is the author's view: what a person has requested and nobody has resolved.
+    // The server renders the text: the passages marked, the comments by id — no offsets.
+    const res = await proposalRequest<ProposalCommentsResponse>(
       scope,
       t,
       "GET",
-      `/${number}${query(actorQuery())}`,
+      `/${number}/comments${query([
+        ["pending", opts.pending === true ? "1" : undefined],
+        ...actorQuery(),
+      ])}`,
     );
-    if (detail === null) return;
-    // `--pending` is the author's view: what a person has requested and nobody has resolved.
-    const comments =
-      opts.pending === true
-        ? detail.comments.filter((c) => c.batchId !== null && c.resolved === undefined)
-        : detail.comments;
+    if (res === null) return;
     if (opts.json === true) {
-      printJson({ number: detail.number, comments });
+      printJson({ number: res.number, comments: res.comments });
       return;
     }
-    if (comments.length === 0) {
-      printLine(t.org.proposalCommentsEmpty(detail.number));
+    if (res.comments.length === 0) {
+      printLine(t.org.proposalCommentsEmpty(res.number));
       return;
     }
-    process.stdout.write(renderComments(detail, comments, t));
+    process.stdout.write(res.text.endsWith("\n") ? res.text : `${res.text}\n`);
   });
 
   scoped(

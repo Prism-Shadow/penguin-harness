@@ -374,21 +374,60 @@ describe("ProposalService", () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
-    const p1 = (await service.get(PROJECT, ORG, n, BOSS)).sections[0]!.paragraphs[0]!.id;
-    const p3 = (await service.get(PROJECT, ORG, n, BOSS)).sections[1]!.paragraphs[0]!.id;
+    const published = await service.get(PROJECT, ORG, n, BOSS);
+    const change = published.sections[0]!;
+    const purpose = published.sections[1]!;
+    const changeSource = change.paragraphs.map((p) => p.text).join("\n\n");
+    const at = (source: string, words: string) => {
+      const start = source.indexOf(words);
+      expect(start).toBeGreaterThanOrEqual(0);
+      return { start, end: start + words.length, quote: words };
+    };
+    const first = at(changeSource, "notifyTicket");
     expect(
-      await refused(() => service.comment(PROJECT, ORG, n, { paragraphId: p1, text: "x" }, author)),
+      await refused(() =>
+        service.comment(PROJECT, ORG, n, { sectionId: change.id, ...first, text: "x" }, author),
+      ),
     ).toEqual({
       status: 403,
       code: "person_required",
     });
     expect(
       await refused(() =>
-        service.comment(PROJECT, ORG, n, { paragraphId: "p99", text: "x" }, BOSS),
+        service.comment(PROJECT, ORG, n, { sectionId: "nope", ...first, text: "x" }, BOSS),
       ),
     ).toEqual({
       status: 400,
       code: "bad_request",
+    });
+    // The quote must read as the range says: a stale page cannot anchor to the wrong words.
+    expect(
+      await refused(() =>
+        service.comment(
+          PROJECT,
+          ORG,
+          n,
+          { sectionId: change.id, start: first.start, end: first.end, quote: "other", text: "x" },
+          BOSS,
+        ),
+      ),
+    ).toEqual({
+      status: 400,
+      code: "comment_range",
+    });
+    expect(
+      await refused(() =>
+        service.comment(
+          PROJECT,
+          ORG,
+          n,
+          { sectionId: change.id, start: 5, end: 5, quote: "", text: "x" },
+          BOSS,
+        ),
+      ),
+    ).toEqual({
+      status: 400,
+      code: "comment_range",
     });
     expect(await refused(() => service.requestChanges(PROJECT, ORG, n, BOSS))).toEqual({
       status: 400,
@@ -399,22 +438,34 @@ describe("ProposalService", () => {
       PROJECT,
       ORG,
       n,
-      { paragraphId: p1, text: "Who reads the notices?" },
+      { sectionId: change.id, ...first, text: "Who reads the notices?" },
       BOSS,
     );
+    const purposeSource = purpose.paragraphs.map((p) => p.text).join("\n\n");
+    const second = at(purposeSource, purpose.paragraphs[0]!.text.slice(0, 12));
     const mine = await service.comment(
       PROJECT,
       ORG,
       n,
-      { paragraphId: p3, text: "Say which sweep." },
+      { sectionId: purpose.id, ...second, text: "Say which sweep." },
       BOSS,
     );
     expect(mine.pendingComments).toBe(2);
     expect(mine.comments.map((c) => c.batchId)).toEqual([null, null]);
+    expect(mine.comments[0]).toMatchObject({
+      sectionId: change.id,
+      range: { start: first.start, end: first.end },
+      quote: "notifyTicket",
+      paragraphId: change.paragraphs[0]!.id,
+      revision: 1,
+    });
     // The author sees nothing yet; the messages so far are the delegation only.
     const seenByAuthor = await service.get(PROJECT, ORG, n, author);
     expect(seenByAuthor.comments).toEqual([]);
     expect(seenByAuthor.pendingComments).toBe(0);
+    expect((await service.comments(PROJECT, ORG, n, { pending: true }, author)).comments).toEqual(
+      [],
+    );
     expect(gateway.messages).toHaveLength(1);
 
     const requested = await service.requestChanges(PROJECT, ORG, n, BOSS);
@@ -432,20 +483,39 @@ describe("ProposalService", () => {
     );
     expect(gateway.messages[1]!.text).toContain(`penguin org proposal comments ${n} --pending`);
 
-    const forAuthor = await service.get(PROJECT, ORG, n, author);
+    // What the author reads: the passages marked in the text, the comments by id, no offsets.
+    const forAuthor = await service.comments(PROJECT, ORG, n, { pending: true }, author);
     expect(forAuthor.comments).toHaveLength(2);
-    const [first] = forAuthor.comments;
-    expect(await refused(() => service.resolve(PROJECT, ORG, n, first!.id, "done", impl))).toEqual({
+    const [firstComment] = forAuthor.comments;
+    expect(forAuthor.text).toContain(`⟦${firstComment!.id}⟧notifyTicket⟦/${firstComment!.id}⟧`);
+    expect(forAuthor.text).toContain(
+      `⟦${firstComment!.id}⟧ user:boss (open): Who reads the notices?`,
+    );
+    expect(forAuthor.text).toContain(`penguin org proposal resolve ${n} <id>`);
+    expect(forAuthor.text).not.toContain(String(first.start));
+    expect(
+      await refused(() => service.resolve(PROJECT, ORG, n, firstComment!.id, "done", impl)),
+    ).toEqual({
       status: 403,
       code: "not_author",
     });
-    const resolved = await service.resolve(PROJECT, ORG, n, first!.id, "Named the reader.", author);
+    const resolved = await service.resolve(
+      PROJECT,
+      ORG,
+      n,
+      firstComment!.id,
+      "Named the reader.",
+      author,
+    );
     expect(resolved.comments[0]!.resolved).toMatchObject({
       by: "agent:acme_dev",
       text: "Named the reader.",
     });
     expect(
-      await refused(() => service.resolve(PROJECT, ORG, n, first!.id, "again", author)),
+      (await service.comments(PROJECT, ORG, n, { pending: true }, author)).comments,
+    ).toHaveLength(1);
+    expect(
+      await refused(() => service.resolve(PROJECT, ORG, n, firstComment!.id, "again", author)),
     ).toEqual({
       status: 409,
       code: "comment_resolved",
@@ -454,6 +524,22 @@ describe("ProposalService", () => {
       status: 404,
       code: "comment_not_found",
     });
+
+    // A revision moves the passage; the comment follows it. A passage that is gone leaves
+    // its comment on the revision it was last seen in.
+    const moved = DOC.replace("## Change\n\n", "## Change\n\nAdded first.\n\n");
+    const afterMove = await service.publish(PROJECT, ORG, n, moved, author);
+    const followed = afterMove.comments.find((c) => c.id === firstComment!.id)!;
+    expect(followed.revision).toBe(2);
+    expect(followed.range.start).toBe(first.start + "Added first.\n\n".length);
+    const gone = DOC.replace("notifyTicket", "somethingElse");
+    const afterGone = await service.publish(PROJECT, ORG, n, gone, author);
+    const orphan = afterGone.comments.find((c) => c.id === firstComment!.id)!;
+    expect(orphan.revision).toBe(2);
+    expect(orphan.paragraphId).toBeUndefined();
+    expect((await service.comments(PROJECT, ORG, n, { pending: false }, BOSS)).text).toContain(
+      `(on revision 2: "notifyTicket")`,
+    );
   });
 
   it("implement opens the implementer's session on the proposal's text and invites it to the channel", async () => {

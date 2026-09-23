@@ -24,6 +24,7 @@ import type {
 } from "@prismshadow/penguin-server/plugin";
 import type {
   ProposalComment,
+  ProposalCommentsResponse,
   ProposalDetail,
   ProposalItem,
   ProposalMaterialKind,
@@ -31,6 +32,7 @@ import type {
   ProposalStatus,
   ProposalsResponse,
 } from "@prismshadow/penguin-server/api";
+import { renderForAgent, sectionSource } from "./comments.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
 import {
   ProposalDocumentError,
@@ -704,11 +706,38 @@ export class ProposalService {
     return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
   }
 
+  /**
+   * The comments the caller may see, with the sections marked for an agent (see
+   * comments.ts): `pending` narrows to the batched, unresolved ones — the author's work list.
+   */
+  async comments(
+    projectId: string,
+    orgId: string,
+    number: number,
+    opts: { pending: boolean },
+    actor: OrgActor,
+  ): Promise<ProposalCommentsResponse> {
+    const { ledger, caller } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(ledger, number);
+    const visible = this.visibleComments(p, caller);
+    const comments = opts.pending
+      ? visible.filter((c) => c.batchId !== null && c.resolved === undefined)
+      : visible;
+    return {
+      number: p.number,
+      comments,
+      text: renderForAgent(p, comments, {
+        resolveCommand: (id) => `penguin org proposal resolve ${number} ${id} -m "<what changed>"`,
+      }),
+    };
+  }
+
+  /** A comment on `[start, end)` of a section's source: the slice must be the quote, so a stale page cannot anchor a comment to the wrong words. */
   async comment(
     projectId: string,
     orgId: string,
     number: number,
-    req: { paragraphId: string; text: string },
+    req: { sectionId: string; start: number; end: number; quote: string; text: string },
     actor: OrgActor,
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
@@ -716,15 +745,33 @@ export class ProposalService {
     this.requirePerson(caller, "comment on a proposal");
     const text = req.text.trim();
     if (text === "") throw badRequest("text must not be empty.");
-    if (!p.sections.some((s) => s.paragraphs.some((x) => x.id === req.paragraphId))) {
-      throw badRequest(`No paragraph ${req.paragraphId} in revision ${p.revision}.`);
+    const section = p.sections.find((s) => s.id === req.sectionId);
+    if (section === undefined) {
+      throw badRequest(`No section ${req.sectionId} in revision ${p.revision}.`);
+    }
+    const source = sectionSource(section);
+    const inRange =
+      Number.isInteger(req.start) &&
+      Number.isInteger(req.end) &&
+      req.start >= 0 &&
+      req.start < req.end &&
+      req.end <= source.length;
+    if (!inRange || source.slice(req.start, req.end) !== req.quote) {
+      throw new ProposalError(
+        400,
+        "comment_range",
+        `The range [${req.start}, ${req.end}) of section ${req.sectionId} does not read as quoted in revision ${p.revision}; reload the proposal and select again.`,
+      );
     }
     const id = `c${p.comments.length + 1}-${Math.random().toString(36).slice(2, 8)}`;
     const line = await ledger.append({
       kind: "comment",
       number,
       id,
-      paragraphId: req.paragraphId,
+      sectionId: req.sectionId,
+      start: req.start,
+      end: req.end,
+      quote: req.quote,
       revision: p.revision,
       text,
       by: caller.principal,

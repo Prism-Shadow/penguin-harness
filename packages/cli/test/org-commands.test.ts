@@ -1548,13 +1548,17 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(out()).toBe(`${t.org.proposalStatusSet(5, "rejected")}\n`);
   });
 
-  it("comments lists the batched, unresolved ones under --pending, and resolve posts the note", async () => {
+  it("comments prints the text with the passages marked under --pending, and resolve posts the note", async () => {
     server.addProposal("acme", {
       number: 4,
+      revision: 1,
       sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: "Alpha\nmore" }] }],
       comments: [
         {
           id: "c1",
+          sectionId: "s1",
+          range: { start: 0, end: 5 },
+          quote: "Alpha",
           paragraphId: "p1",
           revision: 1,
           text: "Say who calls it",
@@ -1564,6 +1568,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
         },
         {
           id: "c2",
+          sectionId: "s1",
+          range: { start: 6, end: 10 },
+          quote: "more",
           paragraphId: "p1",
           revision: 1,
           text: "Pending one",
@@ -1573,7 +1580,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
         },
         {
           id: "c3",
-          paragraphId: "p0",
+          sectionId: "s1",
+          range: { start: 0, end: 5 },
+          quote: "Older",
           revision: 0,
           text: "Done already",
           by: "user:admin",
@@ -1584,18 +1593,18 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       ],
     });
     expect(await cli(["org", "proposal", "comments", "4", "--pending"])).toBe(0);
+    expect(lastRequest("GET", "/proposals/4/comments")?.search).toContain("pending=1");
     expect(out()).toBe(
-      "[c1] Change › Alpha\n  user:admin 2026-09-21T00:00:00Z: Say who calls it\n",
+      "## Change\n\n⟦c1⟧Alpha⟦/c1⟧\nmore\n\n### Comments\n\n⟦c1⟧ user:admin (open): Say who calls it\n",
     );
 
     stdout.length = 0;
     expect(await cli(["org", "proposal", "comments", "4"])).toBe(0);
     const text = out();
-    expect(text).toContain(
-      `[c2] Change › Alpha\n  user:admin 2026-09-21T00:00:00Z: Pending one  ${t.org.proposalPendingMark()}`,
-    );
-    expect(text).toContain(`[c3] ${t.org.proposalCommentOnRevision("p0", 0)}`);
-    expect(text).toContain(t.org.proposalResolvedMark("Rewritten"));
+    expect(text).toContain("⟦c1⟧Alpha⟦/c1⟧\n⟦c2⟧more⟦/c2⟧");
+    expect(text).toContain("⟦c2⟧ user:admin (pending): Pending one");
+    expect(text).toContain("⟦c3⟧ user:admin (resolved: Rewritten): Done already");
+    expect(text).not.toContain("range");
 
     stdout.length = 0;
     expect(await cli(["org", "proposal", "resolve", "4", "c1", "-m", "Named the caller"])).toBe(0);

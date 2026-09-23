@@ -1,28 +1,33 @@
 /**
- * The proposals page — one page, two columns: the queue on the left (one card per proposal:
- * its number, its title as the link, its status as a text pill, its author's avatar and its
- * unread count; unread first, then newest), and on the right the proposal the route names —
- * its header, the person's brief, the materials (the implementer's PR among them), the scope
- * table (the one place a file path appears), the body's sections with a comment gutter on
- * every paragraph, the sessions opened for it, the event timeline, and the action bar.
+ * The proposals pages — two, on one contributed route (`proposals/:number?`): the QUEUE, a
+ * full-width list (one row per proposal: its number, its title as the link, its status as a
+ * text pill, its author, its unread count and when it last moved; unread first, then newest),
+ * and one PROPOSAL as its own page — a breadcrumb back to the queue, the header, the brief,
+ * the materials (the implementer's PR among them), the scope table (the one place a file path
+ * appears), the body, the sessions opened for it, the event timeline, and the action bar. No
+ * side column: the body is what a person reads, and it gets the width.
  *
- * The page is a builtin renderer the company-proposals plugin's page contribution names
- * (`OrgProposalsPage`); it mounts under the organization layout at `proposals/:number?` only
- * while the contributions carry that entry, and reads the queue off the company store's index
- * (state/company.tsx), which the sidebar's badge and every `proposal:<n>` capsule share.
+ * Both are the builtin renderer the company-proposals plugin's page contribution names
+ * (`OrgProposalsPage`); it mounts under the organization layout only while the contributions
+ * carry that entry, and reads the queue off the company store's index (state/company.tsx),
+ * which the sidebar's badge and every `proposal:<n>` capsule share.
  *
- * Comments are the person's, pending until sent: each paragraph's gutter opens its thread,
- * a pending comment is attention-toned and counted on the "Request changes" button, and that
- * button sends every pending comment to the author as one batch — the author works through a
- * batch, not a trickle. Approving requests the merge; rejecting asks for a one-line reason.
- * Opening a proposal marks everything on it read, which is what clears its badge.
+ * A comment is on a PASSAGE: the person selects text in a section, a chip offers "Comment on
+ * selection", and the comment is stored as a range of that section's Markdown source — found
+ * by matching the selected words against the source's plain projection (proposals-model.ts
+ * `rangeOfSelection`), so what is stored is exact while what was selected was rendered text.
+ * Existing comments show as marks over their passages (attention-toned while pending, plain
+ * once sent, faded once resolved); clicking a mark opens the section's comments under it.
+ * Pending comments are the person's own until "Request changes" sends them to the author as
+ * one batch. Approving requests the merge; rejecting asks for a one-line reason. Opening a
+ * proposal marks everything on it read, which is what clears its badge.
  *
  * A `proposal:<n>#<pattern>` capsule lands here with the pattern in the hash (`#p=…`); once the
  * proposal is loaded the pattern is matched against its headings and paragraph first lines
  * and the page scrolls to the hit, marking it for a moment.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import type {
   ProposalComment,
@@ -30,7 +35,7 @@ import type {
   ProposalItem,
   ProposalMaterial,
   ProposalMaterialKind,
-  ProposalParagraph,
+  ProposalSection,
   ProposalStatus,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -54,7 +59,7 @@ import { Select } from "../../components/ui/select";
 import { Skeleton } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
-import { orgProposalPath } from "../company/company-nav";
+import { orgContributedPagePath, orgProposalPath } from "../company/company-nav";
 import { EmployeeAvatar } from "../company/employee-avatar";
 import { OrgEmptyLine, OrgPage, OrgSection, useOrg } from "../company/org-layout";
 import { dismissHint, hintKey, isHintDismissed } from "../company/page-hints";
@@ -68,18 +73,22 @@ import {
 import { PROPOSAL_COMPONENTS, PROPOSAL_REMARK_PLUGINS } from "./proposal-links";
 import {
   PROPOSAL_STATUS_TONE,
-  commentsOn,
+  commentsInSection,
   eventDetail,
   eventLine,
   filterProposals,
+  findPassage,
   matchProposalPattern,
   orphanComments,
   parseProposalHash,
   proposalActions,
+  proposalsRoute,
+  rangeOfSelection,
+  sectionSource,
   sortProposals,
 } from "./proposals-model";
 
-/** Speech bubble (lucide message-square): the gutter's comment mark. */
+/** Speech bubble (lucide message-square): the comment chip's mark. */
 const COMMENT_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
 
 /**
@@ -102,6 +111,14 @@ const domId = (id: string): string => `proposal-${id}`;
 /** How long the scrolled-to paragraph keeps its mark. */
 const HIGHLIGHT_MS = 2400;
 
+/** The classes a comment's mark wears by state: pending (the person's own, unsent), sent, resolved. */
+const MARK_CLASS = {
+  pending: `rounded-sm ${toneSurface.attention} cursor-pointer`,
+  sent: "rounded-sm bg-gray-200 text-inherit cursor-pointer dark:bg-gray-700",
+  resolved:
+    "rounded-sm bg-transparent text-inherit underline decoration-dotted decoration-gray-400 cursor-pointer",
+};
+
 export function ProposalStatusPill({ status }: { status: ProposalStatus }) {
   return (
     <Badge tone={PROPOSAL_STATUS_TONE[status]}>
@@ -111,26 +128,36 @@ export function ProposalStatusPill({ status }: { status: ProposalStatus }) {
 }
 
 export function OrgProposalsPage() {
+  const params = useParams<{ number?: string }>();
+  const route = proposalsRoute(params.number);
+  return "queue" in route ? <QueuePage /> : <DetailPage number={route.number} />;
+}
+
+/** Employee id → display name, for every principal drawn on these pages. */
+function useEmployeeNames(): ReadonlyMap<string, string> {
+  const company = useCompany();
+  return useMemo(
+    () => new Map((company.orgChart?.employees ?? []).map((e) => [e.agentId, e.name])),
+    [company.orgChart],
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The queue
+// ---------------------------------------------------------------------------
+
+function QueuePage() {
   const { projectId, orgId, org } = useOrg();
   const company = useCompany();
   const { user } = useAuth();
   const { locale } = useLocale();
   const navigate = useNavigate();
-  const location = useLocation();
-  const params = useParams<{ number?: string }>();
+  const names = useEmployeeNames();
+  const t = S.company.proposals;
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.proposals}` : S.nav.org.proposals);
 
-  const selected = params.number === undefined ? null : Number(params.number);
-  const selectedNumber = selected !== null && Number.isSafeInteger(selected) ? selected : null;
-
   const [query, setQuery] = useState("");
-  const [detail, setDetail] = useState<ProposalDetail | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<"request" | "approve" | "reject" | "merged" | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   // The empty-queue note goes away for good once read; the page's "?" carries the same
   // sentence. Keyed by organization, so switching to another one re-reads the dismissal.
@@ -140,140 +167,17 @@ export function OrgProposalsPage() {
     setHintDismissed(isHintDismissed(emptyHintKey));
   }, [emptyHintKey]);
 
-  /** Employee id → display name, for every principal drawn on the page. */
-  const names = useMemo(
-    () => new Map((company.orgChart?.employees ?? []).map((e) => [e.agentId, e.name])),
-    [company.orgChart],
-  );
-
-  const proposalsVersion = company.versions.proposals;
-
-  // The selected proposal's detail: read when the selection changes and whenever the index
-  // says a proposal moved (the plugin's event, or a write from this page). The listing the
-  // queue draws from is the store's, refreshed off the same version.
-  const loadDetail = useCallback(async () => {
-    if (selectedNumber === null) {
-      setDetail(null);
-      setDetailError(null);
-      return;
-    }
-    try {
-      const d = await api.getOrgProposal(projectId, orgId, selectedNumber);
-      setDetail(d);
-      setDetailError(null);
-    } catch (e) {
-      setDetailError(apiErrorText(e));
-    }
-  }, [projectId, orgId, selectedNumber]);
-  useEffect(() => {
-    setDetail(null);
-    setDetailError(null);
-  }, [selectedNumber]);
-  useEffect(() => {
-    void loadDetail();
-  }, [loadDetail, proposalsVersion]);
-
-  // Reading is what marks read: once a detail is on screen, the read position moves to its
-  // latest event, and the badge clears here before the server confirms.
-  const readSeqRef = useRef<{ number: number; seq: number } | null>(null);
-  useEffect(() => {
-    if (detail === null || detail.unread === 0) return;
-    const last = readSeqRef.current;
-    if (last !== null && last.number === detail.number && last.seq >= detail.seq) return;
-    readSeqRef.current = { number: detail.number, seq: detail.seq };
-    company.markProposalRead(detail.number);
-    void api.readOrgProposal(projectId, orgId, detail.number, { upTo: detail.seq }).catch(() => {
-      // A lost write only costs a badge that comes back on the next listing.
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the store's mark is stable per Provider
-  }, [detail, projectId, orgId]);
-
-  // The hash names where to land: a pattern from a capsule, or an element id. Resolved once
-  // per detail, since the paragraph ids are the detail's.
-  useEffect(() => {
-    if (detail === null) return;
-    const target = parseProposalHash(location.hash);
-    if (target === null) return;
-    const id =
-      "pattern" in target
-        ? (matchProposalPattern(detail, target.pattern)?.targetId ?? null)
-        : target.targetId;
-    if (id === null) return;
-    const el = document.getElementById(domId(id));
-    if (el === null) return;
-    el.scrollIntoView({ block: "center" });
-    setHighlightId(id);
-    const timer = window.setTimeout(() => setHighlightId(null), HIGHLIGHT_MS);
-    return () => window.clearTimeout(timer);
-  }, [detail, location.hash]);
-
   const queue = useMemo(
     () =>
       company.proposals === null ? null : sortProposals(filterProposals(company.proposals, query)),
     [company.proposals, query],
   );
-
   const open = (number: number) => navigate(orgProposalPath(projectId, orgId, number));
-
-  /** One write against the selected proposal: the answer is the new detail, and every other surface refetches off the store's bump. */
-  const write = async (run: () => Promise<ProposalDetail>, done: string): Promise<boolean> => {
-    setBusy(true);
-    try {
-      const next = await run();
-      setDetail(next);
-      company.proposalsChanged();
-      toastSuccess(done);
-      return true;
-    } catch (e) {
-      toastError(apiErrorText(e));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onConfirm = async () => {
-    if (detail === null || confirm === null) return;
-    const number = detail.number;
-    const t = S.company.proposals;
-    let ok = false;
-    if (confirm === "request") {
-      ok = await write(
-        () => api.requestOrgProposalChanges(projectId, orgId, number),
-        t.changesRequested,
-      );
-    } else if (confirm === "approve") {
-      ok = await write(() => api.approveOrgProposal(projectId, orgId, number), t.approved);
-    } else if (confirm === "reject") {
-      ok = await write(
-        () => api.rejectOrgProposal(projectId, orgId, number, { reason: rejectReason.trim() }),
-        t.rejected,
-      );
-    } else {
-      ok = await write(() => api.mergedOrgProposal(projectId, orgId, number), t.merged);
-    }
-    if (ok) {
-      setConfirm(null);
-      setRejectReason("");
-    }
-  };
-
-  const addComment = async (paragraphId: string, text: string) => {
-    if (detail === null) return false;
-    return write(
-      () => api.commentOrgProposal(projectId, orgId, detail.number, { paragraphId, text }),
-      S.company.proposals.commentAdded,
-    );
-  };
-
-  const t = S.company.proposals;
-  const actions = detail === null ? null : proposalActions(detail.status, detail.pendingComments);
 
   return (
     <OrgPage
       title={S.nav.org.proposals}
       info={t.info}
-      wide
       actions={
         <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
           {t.newProposal}
@@ -310,105 +214,36 @@ export function OrgProposalsPage() {
         </div>
       )}
 
-      {/* Two columns from lg up; below that the queue is a strip of cards above the detail,
-          scrolled sideways, so a phone still shows what is waiting without burying the text. */}
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <aside className="shrink-0 lg:w-72" aria-label={t.queue}>
-          <div className="mb-2">
-            <Input
-              size="sm"
-              value={query}
-              aria-label={t.queue}
-              placeholder={t.queue}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          {queue === null ? (
-            <div className="space-y-2" aria-busy="true">
-              <Skeleton className="h-16" />
-              <Skeleton className="h-16" />
-              <Skeleton className="h-16" />
-            </div>
-          ) : queue.length === 0 ? (
-            <OrgEmptyLine>{t.queueEmpty}</OrgEmptyLine>
-          ) : (
-            <ul className="flex snap-x gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
-              {queue.map((item) => (
-                <QueueCard
-                  key={item.number}
-                  item={item}
-                  names={names}
-                  selected={item.number === selectedNumber}
-                  onOpen={() => open(item.number)}
-                />
-              ))}
-            </ul>
-          )}
-        </aside>
-
-        <section className="min-w-0 flex-1">
-          {selectedNumber === null ? (
-            <OrgEmptyLine>{t.pickOne}</OrgEmptyLine>
-          ) : detailError !== null ? (
-            <ErrorLine
-              message={t.loadFailed}
-              detail={detailError}
-              onRetry={() => void loadDetail()}
-            />
-          ) : detail === null ? (
-            <div className="space-y-4" aria-busy="true">
-              <Skeleton className="h-16" />
-              <Skeleton className="h-24" />
-              <Skeleton className="h-40" />
-            </div>
-          ) : (
-            <ProposalView
-              detail={detail}
+      <div className="mb-3 max-w-sm">
+        <Input
+          size="sm"
+          value={query}
+          aria-label={t.queue}
+          placeholder={t.queue}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+      {queue === null ? (
+        <div className="space-y-2" aria-busy="true">
+          <Skeleton className="h-14" />
+          <Skeleton className="h-14" />
+          <Skeleton className="h-14" />
+        </div>
+      ) : queue.length === 0 ? (
+        <OrgEmptyLine>{t.queueEmpty}</OrgEmptyLine>
+      ) : (
+        <ul className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+          {queue.map((item) => (
+            <QueueRow
+              key={item.number}
+              item={item}
               names={names}
               locale={locale}
-              highlightId={highlightId}
-              busy={busy}
-              onComment={addComment}
-              onOpenSession={(sessionId) => navigate(`/chat/${sessionId}`)}
-              onOpenTicket={(ticketId) => company.openTicket(projectId, orgId, ticketId)}
-              actions={
-                actions === null ? null : (
-                  <>
-                    <Button
-                      size="sm"
-                      disabled={busy || !actions.requestChanges}
-                      onClick={() => setConfirm("request")}
-                    >
-                      {t.requestChanges(detail.pendingComments)}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      disabled={busy || !actions.approve}
-                      onClick={() => setConfirm("approve")}
-                    >
-                      {t.approve}
-                    </Button>
-                    {actions.markMerged && (
-                      <Button size="sm" disabled={busy} onClick={() => setConfirm("merged")}>
-                        {t.markMerged}
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      disabled={busy || !actions.reject}
-                      onClick={() => setConfirm("reject")}
-                    >
-                      {t.reject}
-                    </Button>
-                  </>
-                )
-              }
+              onOpen={() => open(item.number)}
             />
-          )}
-        </section>
-      </div>
+          ))}
+        </ul>
+      )}
 
       <NewProposalDialog
         open={createOpen}
@@ -422,6 +257,295 @@ export function OrgProposalsPage() {
           open(item.number);
         }}
       />
+    </OrgPage>
+  );
+}
+
+/**
+ * One row of the queue. The title is the link (a text button, underlined on hover); the
+ * row itself is inert. The unread count rides at the right in the attention tone, the
+ * status as a text pill beside the title, the author's avatar and when it last moved under it.
+ */
+function QueueRow({
+  item,
+  names,
+  locale,
+  onOpen,
+}: {
+  item: ProposalItem;
+  names: ReadonlyMap<string, string>;
+  locale: "zh" | "en";
+  onOpen: () => void;
+}) {
+  const t = S.company.proposals;
+  return (
+    <li className="flex items-start gap-3 px-3 py-2.5">
+      <span className="mt-0.5 w-10 shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+        #{item.number}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <TitleButton onClick={onOpen} title={t.openProposal} className="text-sm font-medium">
+            <span className="line-clamp-2">{item.title}</span>
+          </TitleButton>
+          <ProposalStatusPill status={item.status} />
+        </div>
+        <div
+          className={`mt-1 flex flex-wrap items-center ${ICON_GAP.row} text-[11px] text-gray-500 dark:text-gray-400`}
+        >
+          <EmployeeAvatar
+            id={item.author}
+            name={names.get(item.author) ?? item.author}
+            size={ICON_SIZE.rowLead}
+            className="shrink-0 rounded"
+          />
+          <span className="truncate">{names.get(item.author) ?? item.author}</span>
+          <span aria-hidden="true">·</span>
+          <span title={formatDateTime(item.updatedAt)}>
+            {t.updated} {formatRelativeShort(item.updatedAt, locale)}
+          </span>
+        </div>
+      </div>
+      {item.unread > 0 && (
+        <span
+          title={t.unreadBadge(item.unread)}
+          aria-label={t.unreadBadge(item.unread)}
+          className={`mt-0.5 shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${toneSurface.attention}`}
+        >
+          {item.unread}
+        </span>
+      )}
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// One proposal
+// ---------------------------------------------------------------------------
+
+function DetailPage({ number }: { number: number }) {
+  const { projectId, orgId, org } = useOrg();
+  const company = useCompany();
+  const { locale } = useLocale();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const names = useEmployeeNames();
+  const t = S.company.proposals;
+
+  const [detail, setDetail] = useState<ProposalDetail | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState<"request" | "approve" | "reject" | "merged" | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  useDocumentTitle(
+    detail === null
+      ? `#${number} · ${S.nav.org.proposals}`
+      : `#${number} ${detail.title} · ${org?.name ?? S.nav.org.proposals}`,
+  );
+
+  const proposalsVersion = company.versions.proposals;
+
+  // The proposal's detail: read on arrival and whenever the index says a proposal moved (the
+  // plugin's event, or a write from this page).
+  const loadDetail = useCallback(async () => {
+    try {
+      const d = await api.getOrgProposal(projectId, orgId, number);
+      setDetail(d);
+      setDetailError(null);
+    } catch (e) {
+      setDetailError(apiErrorText(e));
+    }
+  }, [projectId, orgId, number]);
+  useEffect(() => {
+    setDetail(null);
+    setDetailError(null);
+  }, [number]);
+  useEffect(() => {
+    void loadDetail();
+  }, [loadDetail, proposalsVersion]);
+
+  // Reading is what marks read: once the detail is on screen, the read position moves to its
+  // latest event, and the badge clears here before the server confirms.
+  const readSeqRef = useRef<{ number: number; seq: number } | null>(null);
+  useEffect(() => {
+    if (detail === null || detail.unread === 0) return;
+    const last = readSeqRef.current;
+    if (last !== null && last.number === detail.number && last.seq >= detail.seq) return;
+    readSeqRef.current = { number: detail.number, seq: detail.seq };
+    company.markProposalRead(detail.number);
+    void api.readOrgProposal(projectId, orgId, detail.number, { upTo: detail.seq }).catch(() => {
+      // A lost write only costs a badge that comes back on the next listing.
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the store's mark is stable per Provider
+  }, [detail, projectId, orgId]);
+
+  // The hash names where to land: a pattern from a capsule, or an element id. Resolved once
+  // per detail, since the paragraph ids are the detail's.
+  useEffect(() => {
+    if (detail === null) return;
+    const target = parseProposalHash(location.hash);
+    if (target === null) return;
+    const id =
+      "pattern" in target
+        ? (matchProposalPattern(detail, target.pattern)?.targetId ?? null)
+        : target.targetId;
+    if (id === null) return;
+    const el = document.getElementById(domId(id));
+    if (el === null) return;
+    el.scrollIntoView({ block: "center" });
+    setHighlightId(id);
+    const timer = window.setTimeout(() => setHighlightId(null), HIGHLIGHT_MS);
+    return () => window.clearTimeout(timer);
+  }, [detail, location.hash]);
+
+  /** One write against the proposal: the answer is the new detail, and every other surface refetches off the store's bump. */
+  const write = async (run: () => Promise<ProposalDetail>, done: string): Promise<boolean> => {
+    setBusy(true);
+    try {
+      const next = await run();
+      setDetail(next);
+      company.proposalsChanged();
+      toastSuccess(done);
+      return true;
+    } catch (e) {
+      toastError(apiErrorText(e));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onConfirm = async () => {
+    if (detail === null || confirm === null) return;
+    let ok = false;
+    if (confirm === "request") {
+      ok = await write(
+        () => api.requestOrgProposalChanges(projectId, orgId, number),
+        t.changesRequested,
+      );
+    } else if (confirm === "approve") {
+      ok = await write(() => api.approveOrgProposal(projectId, orgId, number), t.approved);
+    } else if (confirm === "reject") {
+      ok = await write(
+        () => api.rejectOrgProposal(projectId, orgId, number, { reason: rejectReason.trim() }),
+        t.rejected,
+      );
+    } else {
+      ok = await write(() => api.mergedOrgProposal(projectId, orgId, number), t.merged);
+    }
+    if (ok) {
+      setConfirm(null);
+      setRejectReason("");
+    }
+  };
+
+  /** A comment on a passage: the range the selection names in the section's source, quoted exactly as the server will check it. */
+  const addComment = async (
+    section: ProposalSection,
+    selectedText: string,
+    paragraphId: string | null,
+    text: string,
+  ): Promise<boolean> => {
+    if (detail === null) return false;
+    const source = sectionSource(section);
+    const range = rangeOfSelection(
+      source,
+      selectedText,
+      paragraphId === null ? undefined : { section, paragraphId },
+    );
+    if (range === null) {
+      toastError(t.selectionNotPlaced);
+      return false;
+    }
+    return write(
+      () =>
+        api.commentOrgProposal(projectId, orgId, detail.number, {
+          sectionId: section.id,
+          start: range.start,
+          end: range.end,
+          quote: source.slice(range.start, range.end),
+          text,
+        }),
+      t.commentAdded,
+    );
+  };
+
+  const actions = detail === null ? null : proposalActions(detail.status, detail.pendingComments);
+  const crumb = (
+    <nav aria-label={S.nav.org.proposals} className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+      <TitleButton
+        onClick={() => navigate(orgContributedPagePath(projectId, orgId, "proposals"))}
+        title={t.backToQueue}
+        className="text-xs"
+      >
+        {S.nav.org.proposals}
+      </TitleButton>
+      <span className="mx-1.5" aria-hidden="true">
+        ›
+      </span>
+      <span className="font-mono">#{number}</span>
+    </nav>
+  );
+
+  return (
+    <OrgPage title={detail?.title ?? `#${number}`} info={t.info}>
+      {crumb}
+      {detailError !== null ? (
+        <ErrorLine message={t.loadFailed} detail={detailError} onRetry={() => void loadDetail()} />
+      ) : detail === null ? (
+        <div className="space-y-4" aria-busy="true">
+          <Skeleton className="h-16" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-40" />
+        </div>
+      ) : (
+        <ProposalView
+          detail={detail}
+          names={names}
+          locale={locale}
+          highlightId={highlightId}
+          busy={busy}
+          onComment={addComment}
+          onOpenSession={(sessionId) => navigate(`/chat/${sessionId}`)}
+          onOpenTicket={(ticketId) => company.openTicket(projectId, orgId, ticketId)}
+          actions={
+            actions === null ? null : (
+              <>
+                <Button
+                  size="sm"
+                  disabled={busy || !actions.requestChanges}
+                  onClick={() => setConfirm("request")}
+                >
+                  {t.requestChanges(detail.pendingComments)}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={busy || !actions.approve}
+                  onClick={() => setConfirm("approve")}
+                >
+                  {t.approve}
+                </Button>
+                {actions.markMerged && (
+                  <Button size="sm" disabled={busy} onClick={() => setConfirm("merged")}>
+                    {t.markMerged}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={busy || !actions.reject}
+                  onClick={() => setConfirm("reject")}
+                >
+                  {t.reject}
+                </Button>
+              </>
+            )
+          }
+        />
+      )}
 
       <ConfirmModal
         open={confirm !== null}
@@ -473,70 +597,7 @@ export function OrgProposalsPage() {
   );
 }
 
-/**
- * One card of the queue. The title is the link (a text button, underlined on hover); the
- * card itself is inert. The unread count rides at the top right in the attention tone, the
- * status as a text pill under the title, the author's avatar beside it.
- */
-function QueueCard({
-  item,
-  names,
-  selected,
-  onOpen,
-}: {
-  item: ProposalItem;
-  names: ReadonlyMap<string, string>;
-  selected: boolean;
-  onOpen: () => void;
-}) {
-  const t = S.company.proposals;
-  return (
-    <li
-      aria-current={selected ? "true" : undefined}
-      className={`w-60 shrink-0 snap-start rounded-md border p-3 lg:w-auto ${
-        selected
-          ? "border-gray-400 bg-gray-50 dark:border-gray-600 dark:bg-gray-800/60"
-          : "border-gray-200 dark:border-gray-800"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <span className="font-mono text-[11px] text-gray-400 dark:text-gray-500">
-          #{item.number}
-        </span>
-        {item.unread > 0 && (
-          <span
-            title={t.unreadBadge(item.unread)}
-            aria-label={t.unreadBadge(item.unread)}
-            className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${toneSurface.attention}`}
-          >
-            {item.unread}
-          </span>
-        )}
-      </div>
-      <TitleButton
-        onClick={onOpen}
-        title={t.openProposal}
-        className={`mt-0.5 block w-full text-sm font-medium ${selected ? "" : ""}`}
-      >
-        <span className="line-clamp-2">{item.title}</span>
-      </TitleButton>
-      <div className={`mt-2 flex items-center justify-between ${ICON_GAP.row}`}>
-        <ProposalStatusPill status={item.status} />
-        <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-          <EmployeeAvatar
-            id={item.author}
-            name={names.get(item.author) ?? item.author}
-            size={ICON_SIZE.rowLead}
-            className="shrink-0 rounded"
-          />
-          <span className="truncate">{names.get(item.author) ?? item.author}</span>
-        </span>
-      </div>
-    </li>
-  );
-}
-
-/** The selected proposal: header, brief, materials, scope, body, sessions, events, and the action bar at the foot. */
+/** The proposal: header, brief, materials, scope, body with its comments, sessions, events, and the action bar at the foot. */
 function ProposalView({
   detail,
   names,
@@ -553,17 +614,23 @@ function ProposalView({
   locale: "zh" | "en";
   highlightId: string | null;
   busy: boolean;
-  onComment: (paragraphId: string, text: string) => Promise<boolean>;
+  onComment: (
+    section: ProposalSection,
+    selectedText: string,
+    paragraphId: string | null,
+    text: string,
+  ) => Promise<boolean>;
   onOpenSession: (sessionId: string) => void;
   onOpenTicket: (ticketId: string) => void;
   actions: ReactNode;
 }) {
   const t = S.company.proposals;
-  const orphans = useMemo(
-    () => orphanComments(detail.comments, detail.sections),
-    [detail.comments, detail.sections],
+  const stale = useMemo(
+    () => orphanComments(detail.comments, detail.revision),
+    [detail.comments, detail.revision],
   );
   const events = useMemo(() => [...detail.events].reverse(), [detail.events]);
+  const closed = detail.status === "merged" || detail.status === "rejected";
   return (
     <div className="space-y-6">
       <header>
@@ -576,7 +643,6 @@ function ProposalView({
             {detail.revision === 0 ? t.noRevision : t.revision(detail.revision)}
           </span>
         </div>
-        <h2 className="mt-1 text-lg font-semibold leading-snug">{detail.title}</h2>
         <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
           <Meta label={t.author}>
             <PrincipalChip principal={`agent:${detail.author}`} names={names} />
@@ -655,40 +721,31 @@ function ProposalView({
         {detail.sections.length === 0 ? (
           <OrgEmptyLine>{t.sectionsEmpty}</OrgEmptyLine>
         ) : (
-          <div className="space-y-5">
-            {detail.sections.map((section) => (
-              <div key={section.id} id={domId(section.id)} className="scroll-mt-4">
-                <h3
-                  className={`mb-2 text-sm font-semibold ${
-                    highlightId === section.id ? `rounded px-1 ${toneSurface.attention}` : ""
-                  }`}
-                >
-                  {section.heading}
-                </h3>
-                <div className="space-y-2">
-                  {section.paragraphs.map((paragraph) => (
-                    <ParagraphRow
-                      key={paragraph.id}
-                      paragraph={paragraph}
-                      comments={commentsOn(detail.comments, paragraph.id)}
-                      names={names}
-                      locale={locale}
-                      highlighted={highlightId === paragraph.id}
-                      busy={busy}
-                      closed={detail.status === "merged" || detail.status === "rejected"}
-                      onComment={(text) => onComment(paragraph.id, text)}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <>
+            {!closed && (
+              <p className="mb-3 text-[11px] text-gray-400 dark:text-gray-500">{t.selectionHint}</p>
+            )}
+            <ProposalBody
+              detail={detail}
+              names={names}
+              locale={locale}
+              highlightId={highlightId}
+              busy={busy}
+              closed={closed}
+              onComment={onComment}
+            />
+          </>
         )}
-        {orphans.length > 0 && (
-          <div className="mt-4 space-y-2">
-            {orphans.map((c) => (
-              <CommentLine key={c.id} comment={c} names={names} locale={locale} orphan />
-            ))}
+        {stale.length > 0 && (
+          <div className="mt-5">
+            <h4 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {t.staleComments}
+            </h4>
+            <div className="space-y-2">
+              {stale.map((c) => (
+                <CommentLine key={c.id} comment={c} names={names} locale={locale} stale />
+              ))}
+            </div>
           </div>
         )}
       </OrgSection>
@@ -744,7 +801,7 @@ function ProposalView({
         </ol>
       </OrgSection>
 
-      {/* The action bar sits at the foot of the detail and stays in view while the body
+      {/* The action bar sits at the foot of the page and stays in view while the body
           scrolls under it: the decision is taken after reading, so it waits at the end. */}
       {actions !== null && (
         <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-end gap-2 border-t border-gray-200 bg-white/95 px-1 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
@@ -809,131 +866,318 @@ function MaterialChip({
   );
 }
 
+// ---------------------------------------------------------------------------
+// The body: sections, passage marks, the selection chip and the composer
+// ---------------------------------------------------------------------------
+
+/** What the person selected: the section it lies in, the paragraph it starts in, the words, and where to put the chip. */
+interface Selection {
+  sectionId: string;
+  paragraphId: string | null;
+  text: string;
+  top: number;
+  left: number;
+}
+
 /**
- * One paragraph and its gutter: the comment mark (with the thread's count) at the left, the
- * paragraph rendered as Markdown, and — once the gutter is opened — the thread beneath it:
- * pending comments in the attention tone, batched ones plain, resolved ones folded to their
- * answer, then the box for a new one. A closed proposal takes no new comment.
+ * The sections, each a block of paragraphs rendered as Markdown, over which the comments
+ * are drawn as marks (a DOM pass after every render — see markComments) and a selection
+ * offers a chip. Under a section its comments unfold: opened by the chip on the section's
+ * count, or by clicking a mark, which also names the comment.
  */
-function ParagraphRow({
-  paragraph,
-  comments,
+function ProposalBody({
+  detail,
   names,
   locale,
-  highlighted,
+  highlightId,
   busy,
   closed,
   onComment,
 }: {
-  paragraph: ProposalParagraph;
-  comments: ProposalComment[];
+  detail: ProposalDetail;
   names: ReadonlyMap<string, string>;
   locale: "zh" | "en";
-  highlighted: boolean;
+  highlightId: string | null;
   busy: boolean;
   closed: boolean;
-  onComment: (text: string) => Promise<boolean>;
+  onComment: (
+    section: ProposalSection,
+    selectedText: string,
+    paragraphId: string | null,
+    text: string,
+  ) => Promise<boolean>;
 }) {
   const t = S.company.proposals;
-  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [composer, setComposer] = useState<Selection | null>(null);
+  const [openSections, setOpenSections] = useState<ReadonlySet<string>>(new Set());
+  const [focusedComment, setFocusedComment] = useState<string | null>(null);
+
+  // The marks: cleared and drawn again whenever the comments or the text change. They are
+  // DOM the renderer does not know about, which is why they go on after render and come
+  // off before the next pass rather than living in React's tree.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (root === null) return;
+    clearMarks(root);
+    for (const section of detail.sections) {
+      const block = root.querySelector<HTMLElement>(`[data-section-id="${section.id}"]`);
+      if (block === null) continue;
+      for (const c of commentsInSection(detail.comments, section.id, detail.revision)) {
+        markPassage(block, c, principalLabel(c.by, names));
+      }
+    }
+    return () => clearMarks(root);
+  }, [detail.sections, detail.comments, detail.revision, names]);
+
+  const readSelection = () => {
+    const root = rootRef.current;
+    const sel = window.getSelection();
+    if (root === null || sel === null || sel.isCollapsed || sel.rangeCount === 0) {
+      setSelection(null);
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const startBlock = sectionOf(range.startContainer);
+    const endBlock = sectionOf(range.endContainer);
+    if (startBlock === null || startBlock !== endBlock || !root.contains(startBlock)) {
+      setSelection(null);
+      return;
+    }
+    const text = sel.toString();
+    if (text.trim() === "") {
+      setSelection(null);
+      return;
+    }
+    const rect = range.getBoundingClientRect();
+    const rootRect = root.getBoundingClientRect();
+    setSelection({
+      sectionId: startBlock.dataset.sectionId ?? "",
+      paragraphId: paragraphOf(range.startContainer),
+      text,
+      top: rect.bottom - rootRect.top + 6,
+      left: Math.max(0, Math.min(rect.left - rootRect.left, rootRect.width - 160)),
+    });
+  };
+
+  const onMouseUp = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const mark = (e.target as HTMLElement).closest?.("mark[data-comment]");
+    if (mark instanceof HTMLElement) {
+      const id = mark.dataset.comment ?? null;
+      const sectionId = sectionOf(mark)?.dataset.sectionId ?? null;
+      if (id !== null && sectionId !== null) {
+        setFocusedComment(id);
+        setOpenSections((prev) => new Set([...prev, sectionId]));
+      }
+    }
+    // The browser settles the selection after mouseup; read it once it has.
+    window.setTimeout(readSelection, 0);
+  };
+
+  const toggleSection = (sectionId: string) =>
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) next.delete(sectionId);
+      else next.add(sectionId);
+      return next;
+    });
+
+  const sectionById = (id: string) => detail.sections.find((s) => s.id === id) ?? null;
+
+  return (
+    <div ref={rootRef} className="relative" onMouseUp={onMouseUp}>
+      <div className="space-y-5">
+        {detail.sections.map((section) => {
+          const comments = commentsInSection(detail.comments, section.id, detail.revision);
+          const isOpen = openSections.has(section.id);
+          return (
+            <div key={section.id} id={domId(section.id)} className="scroll-mt-4">
+              <h3
+                className={`mb-2 text-sm font-semibold ${
+                  highlightId === section.id ? `rounded px-1 ${toneSurface.attention}` : ""
+                }`}
+              >
+                {section.heading}
+              </h3>
+              <div data-section-id={section.id} className="space-y-2">
+                {section.paragraphs.map((paragraph) => (
+                  <div
+                    key={paragraph.id}
+                    id={domId(paragraph.id)}
+                    data-paragraph-id={paragraph.id}
+                    className={`md-body md-compact scroll-mt-4 rounded px-1 text-sm text-gray-800 transition-colors duration-150 dark:text-gray-100 ${
+                      highlightId === paragraph.id ? toneSurface.attention : ""
+                    }`}
+                  >
+                    <Md
+                      text={paragraph.text}
+                      extraPlugins={PROPOSAL_REMARK_PLUGINS}
+                      components={PROPOSAL_COMPONENTS}
+                    />
+                  </div>
+                ))}
+              </div>
+              {composer !== null && composer.sectionId === section.id && (
+                <CommentComposer
+                  quote={composer.text}
+                  busy={busy}
+                  onCancel={() => setComposer(null)}
+                  onSubmit={async (text) => {
+                    const ok = await onComment(section, composer.text, composer.paragraphId, text);
+                    if (ok) {
+                      setComposer(null);
+                      setOpenSections((prev) => new Set([...prev, section.id]));
+                    }
+                    return ok;
+                  }}
+                />
+              )}
+              {comments.length > 0 && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    onClick={() => toggleSection(section.id)}
+                    className={`inline-flex items-center gap-1 text-[11px] ${
+                      comments.some((c) => c.batchId === null)
+                        ? toneInk.attention
+                        : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                    }`}
+                  >
+                    <GlyphIcon d={COMMENT_ICON} size={ICON_SIZE.inlineGlyph} />
+                    {t.sectionComments(comments.length)}
+                  </button>
+                  {isOpen && (
+                    <div className="mt-1 space-y-2 border-l-2 border-gray-200 pl-3 dark:border-gray-800">
+                      {comments.map((c) => (
+                        <CommentLine
+                          key={c.id}
+                          comment={c}
+                          names={names}
+                          locale={locale}
+                          focused={focusedComment === c.id}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* The chip: offered while a selection lies in one section, gone once it is taken. */}
+      {selection !== null && !closed && composer === null && (
+        <div className="absolute z-10" style={{ top: selection.top, left: selection.left }}>
+          <Button
+            size="sm"
+            variant="primary"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              if (sectionById(selection.sectionId) === null) return;
+              setComposer(selection);
+              setSelection(null);
+              window.getSelection()?.removeAllRanges();
+            }}
+          >
+            <GlyphIcon d={COMMENT_ICON} size={ICON_SIZE.inlineGlyph} />
+            <span className="ml-1">{t.commentSelection}</span>
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The composer under a section: the passage as a quote, the text, Add / Cancel; Ctrl/Cmd+Enter adds. */
+function CommentComposer({
+  quote,
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  quote: string;
+  busy: boolean;
+  onCancel: () => void;
+  onSubmit: (text: string) => Promise<boolean>;
+}) {
+  const t = S.company.proposals;
   const [text, setText] = useState("");
-  const pending = comments.filter((c) => c.batchId === null).length;
   const submit = async () => {
     const value = text.trim();
     if (value === "") return;
-    if (await onComment(value)) setText("");
+    if (await onSubmit(value)) setText("");
   };
-  const gutterInk =
-    pending > 0
-      ? toneInk.attention
-      : comments.length > 0
-        ? "text-gray-600 dark:text-gray-300"
-        : "text-gray-300 hover:text-gray-600 dark:text-gray-700 dark:hover:text-gray-300";
   return (
-    <div id={domId(paragraph.id)} className="group flex scroll-mt-4 items-start gap-2">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-label={comments.length > 0 ? t.comments(comments.length) : t.comment}
-        title={comments.length > 0 ? t.comments(comments.length) : t.comment}
-        onClick={() => setOpen(!open)}
-        className={`mt-0.5 flex h-6 w-8 shrink-0 items-center justify-center gap-0.5 rounded text-[11px] tabular-nums transition-colors duration-150 ${gutterInk}`}
-      >
-        <GlyphIcon d={COMMENT_ICON} size={ICON_SIZE.inlineGlyph} />
-        {comments.length > 0 && <span>{comments.length}</span>}
-      </button>
-      <div className="min-w-0 flex-1">
-        <div
-          className={`md-body md-compact rounded px-1 text-sm text-gray-800 transition-colors duration-150 dark:text-gray-100 ${
-            highlighted ? toneSurface.attention : ""
-          }`}
+    <div className="mt-2 space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
+      <div className="text-[11px] text-gray-500 dark:text-gray-400">{t.selectedText}</div>
+      <blockquote className="border-l-2 border-gray-300 pl-2 text-xs text-gray-700 whitespace-pre-wrap dark:border-gray-600 dark:text-gray-200">
+        {quote}
+      </blockquote>
+      <Textarea
+        size="sm"
+        rows={3}
+        aria-label={t.addComment}
+        placeholder={t.commentPlaceholder}
+        value={text}
+        autoFocus
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit();
+          if (e.key === "Escape") onCancel();
+        }}
+      />
+      <div className="flex justify-end gap-2">
+        <Button size="sm" onClick={onCancel} disabled={busy}>
+          {S.common.cancel}
+        </Button>
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={busy || text.trim() === ""}
+          onClick={() => void submit()}
         >
-          <Md
-            text={paragraph.text}
-            extraPlugins={PROPOSAL_REMARK_PLUGINS}
-            components={PROPOSAL_COMPONENTS}
-          />
-        </div>
-        {open && (
-          <div className="mt-1 space-y-2 border-l-2 border-gray-200 pl-3 dark:border-gray-800">
-            {comments.map((c) => (
-              <CommentLine key={c.id} comment={c} names={names} locale={locale} />
-            ))}
-            {!closed && (
-              <div className="flex items-end gap-2">
-                <div className="min-w-0 flex-1">
-                  <Textarea
-                    size="sm"
-                    rows={2}
-                    aria-label={t.addComment}
-                    placeholder={t.commentPlaceholder}
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit();
-                    }}
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  disabled={busy || text.trim() === ""}
-                  onClick={() => void submit()}
-                >
-                  {t.addComment}
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
+          {t.addComment}
+        </Button>
       </div>
     </div>
   );
 }
 
-/** One comment: who, when, the text; its pending tag; and the resolution folded under it when there is one. */
+/** One comment: the passage it is on, who, when, the text; its pending tag; and the resolution folded under it when there is one. */
 function CommentLine({
   comment,
   names,
   locale,
-  orphan = false,
+  focused = false,
+  stale = false,
 }: {
   comment: ProposalComment;
   names: ReadonlyMap<string, string>;
   locale: "zh" | "en";
-  /** The paragraph it was written on is gone from the current revision. */
-  orphan?: boolean;
+  /** Named by a click on its mark. */
+  focused?: boolean;
+  /** Its passage is not in the current revision. */
+  stale?: boolean;
 }) {
   const t = S.company.proposals;
   const [showResolved, setShowResolved] = useState(false);
   return (
-    <div className="text-xs">
+    <div
+      id={`comment-${comment.id}`}
+      className={`rounded px-1 text-xs transition-colors duration-150 ${
+        focused ? toneSurface.attention : ""
+      }`}
+    >
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-gray-500 dark:text-gray-400">
         <span className="font-medium text-gray-700 dark:text-gray-200">
           {principalLabel(comment.by, names)}
         </span>
         <span title={formatDateTime(comment.at)}>{formatRelativeShort(comment.at, locale)}</span>
         {comment.batchId === null && <Badge tone="amber">{t.pending}</Badge>}
-        {orphan && <span>{t.fromRevision(comment.revision)}</span>}
+        {stale && <span>{t.fromRevision(comment.revision)}</span>}
         {comment.resolved !== undefined && (
           <button
             type="button"
@@ -945,6 +1189,11 @@ function CommentLine({
           </button>
         )}
       </div>
+      {(stale || focused) && comment.quote !== "" && (
+        <blockquote className="mt-0.5 line-clamp-2 border-l-2 border-gray-300 pl-2 text-gray-600 dark:border-gray-600 dark:text-gray-300">
+          {comment.quote}
+        </blockquote>
+      )}
       <p className="mt-0.5 whitespace-pre-wrap text-gray-800 dark:text-gray-100">{comment.text}</p>
       {comment.resolved !== undefined && showResolved && (
         <p className="mt-1 text-gray-600 dark:text-gray-300">
@@ -953,6 +1202,68 @@ function CommentLine({
       )}
     </div>
   );
+}
+
+/** The section block a node lies in, or null. */
+function sectionOf(node: Node | null): HTMLElement | null {
+  const el = node instanceof HTMLElement ? node : node?.parentElement;
+  return el?.closest<HTMLElement>("[data-section-id]") ?? null;
+}
+
+/** The paragraph a node lies in, or null. */
+function paragraphOf(node: Node | null): string | null {
+  const el = node instanceof HTMLElement ? node : node?.parentElement;
+  return el?.closest<HTMLElement>("[data-paragraph-id]")?.dataset.paragraphId ?? null;
+}
+
+/** Takes every comment mark off, leaving the text nodes as the renderer made them. */
+function clearMarks(root: HTMLElement): void {
+  for (const mark of Array.from(root.querySelectorAll("mark[data-comment]"))) {
+    const parent = mark.parentNode;
+    if (parent === null) continue;
+    while (mark.firstChild !== null) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    parent.normalize();
+  }
+}
+
+/**
+ * Wraps a comment's passage in a `<mark>` — the first place the quote's words appear in the
+ * block's rendered text, across element boundaries: the text nodes are split at the
+ * passage's ends and each piece inside it gets its own mark, from the last node backwards so
+ * the earlier offsets stay true. A passage the rendered text does not hold (a quote across a
+ * code fence's syntax, say) gets no mark and keeps its listing under the section.
+ */
+function markPassage(block: HTMLElement, comment: ProposalComment, by: string): void {
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  const starts: number[] = [];
+  let text = "";
+  for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
+    nodes.push(n as Text);
+    starts.push(text.length);
+    text += (n as Text).data;
+  }
+  const hit = findPassage(text, comment.quote);
+  if (hit === null) return;
+  const state =
+    comment.resolved !== undefined ? "resolved" : comment.batchId === null ? "pending" : "sent";
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const nodeStart = starts[i]!;
+    const nodeEnd = nodeStart + nodes[i]!.data.length;
+    const s = Math.max(hit.start, nodeStart);
+    const e = Math.min(hit.end, nodeEnd);
+    if (s >= e) continue;
+    let target = nodes[i]!;
+    if (e < nodeEnd) target.splitText(e - nodeStart);
+    if (s > nodeStart) target = target.splitText(s - nodeStart);
+    const mark = document.createElement("mark");
+    mark.dataset.comment = comment.id;
+    mark.className = MARK_CLASS[state];
+    mark.title = `${by}: ${comment.text}`;
+    target.parentNode?.insertBefore(mark, target);
+    mark.appendChild(target);
+  }
 }
 
 /**

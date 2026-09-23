@@ -5354,10 +5354,27 @@ export interface ProposalMaterial {
 }
 
 /** A person's comment on one paragraph. Pending (`batchId` null) until the person requests changes; then part of a batch the author works through. */
+/**
+ * A person's comment on a passage: a range in one section's Markdown source (the section's
+ * paragraphs joined by a blank line, see the plugin's `sectionSource`), stored as offsets and
+ * re-anchored by its `quote` on every revision — agents never see the offsets, they see the
+ * passage wrapped in `⟦<id>⟧…⟦/<id>⟧` markers. Pending (`batchId` null) until the person
+ * requests changes; then part of a batch the author works through.
+ */
 export interface ProposalComment {
   id: string;
-  paragraphId: string;
-  /** The revision the paragraph belonged to when the comment was written. */
+  /** The section the range lies in (section ids follow the heading, so they survive revisions). */
+  sectionId: string;
+  /** Offsets into the section's source, `[start, end)`, of the revision `revision`. */
+  range: { start: number; end: number };
+  /** The passage the range covered when written — what re-anchors it after a revision. */
+  quote: string;
+  /**
+   * The paragraph the range starts in, derived; absent when the passage is not in the current
+   * revision (the comment is then listed as one on revision `revision`).
+   */
+  paragraphId?: string;
+  /** The revision the range refers to: the current one, or the last one the passage was found in. */
   revision: number;
   text: string;
   by: string;
@@ -5476,8 +5493,24 @@ export interface ProposalFeedbackRequest {
   agentId?: string;
 }
 
+/** `POST …/:number/comments` — a comment on `[start, end)` of `sectionId`'s source; `quote` must equal that slice. */
 export interface ProposalCommentRequest {
-  paragraphId: string;
+  sectionId: string;
+  start: number;
+  end: number;
+  quote: string;
+  text: string;
+}
+
+/**
+ * `GET …/:number/comments[?pending=1]` — the comments the caller may see (`pending`: the
+ * batched, unresolved ones — the author's work list), and `text`: the proposal's sections
+ * with every listed comment's passage wrapped in `⟦<id>⟧…⟦/<id>⟧`, followed by the comments
+ * by id. What an agent reads; it carries no offsets.
+ */
+export interface ProposalCommentsResponse {
+  number: number;
+  comments: ProposalComment[];
   text: string;
 }
 

@@ -9,17 +9,22 @@
 import { describe, expect, it } from "vitest";
 import type { ProposalComment, ProposalEvent } from "@prismshadow/penguin-server/api";
 import {
-  commentsOn,
+  commentsInSection,
   eventDetail,
   eventLine,
   filterProposals,
   matchProposalPattern,
   orphanComments,
+  paragraphSpan,
   parseProposalHash,
   parseProposalRef,
+  projectMarkdown,
   proposalActions,
   proposalHashFor,
   proposalRefText,
+  proposalsRoute,
+  rangeOfSelection,
+  sectionSource,
   sortProposals,
   trimPatternPunctuation,
 } from "../src/features/proposals/proposals-model";
@@ -130,6 +135,9 @@ describe("matchProposalPattern", () => {
 
 const comment = (over: Partial<ProposalComment>): ProposalComment => ({
   id: "c",
+  sectionId: "s1",
+  range: { start: 0, end: 5 },
+  quote: "Alpha",
   paragraphId: "p1",
   revision: 1,
   text: "t",
@@ -139,26 +147,94 @@ const comment = (over: Partial<ProposalComment>): ProposalComment => ({
   ...over,
 });
 
-describe("comments under a paragraph", () => {
-  it("lists a paragraph's comments pending first, then by time", () => {
-    const list = commentsOn(
-      [
-        comment({ id: "a", batchId: "b1", at: "2026-09-21T00:00:01Z" }),
-        comment({ id: "b", batchId: null, at: "2026-09-21T00:00:03Z" }),
-        comment({ id: "c", paragraphId: "p2" }),
-        comment({ id: "d", batchId: "b1", at: "2026-09-21T00:00:00Z" }),
-      ],
-      "p1",
+describe("a section's source and its paragraphs", () => {
+  const section = {
+    paragraphs: [
+      { id: "p1", text: "Alpha one" },
+      { id: "p2", text: "Beta two" },
+    ],
+  };
+  it("joins the paragraphs by a blank line and spans each paragraph in it", () => {
+    expect(sectionSource(section)).toBe("Alpha one\n\nBeta two");
+    expect(paragraphSpan(section, "p2")).toEqual({ start: 11, end: 19 });
+    expect(paragraphSpan(section, "p9")).toBeNull();
+  });
+});
+
+describe("projectMarkdown", () => {
+  it("drops the syntax the reader never sees and maps every kept character to its source offset", () => {
+    const source = "## Change\n\n`notifyTicket` **writes** to [the queue](proposals.md).";
+    const { plain, map } = projectMarkdown(source);
+    expect(plain).toBe("Change\n\nnotifyTicket writes to the queue.");
+    // `n` of notifyTicket sits after the opening backtick in the source.
+    expect(source[map[plain.indexOf("notifyTicket")]!]).toBe("n");
+    expect(source.slice(map[plain.indexOf("queue")]!, map[plain.indexOf("queue")]! + 5)).toBe(
+      "queue",
     );
-    expect(list.map((c) => c.id)).toEqual(["b", "d", "a"]);
   });
 
-  it("names the comments whose paragraph the current revision no longer has", () => {
-    const gone = orphanComments(
-      [comment({ id: "a" }), comment({ id: "b", paragraphId: "p9" })],
-      sections,
+  it("skips a fence line and a list marker but keeps the text", () => {
+    const { plain } = projectMarkdown("- first\n\n```ts\nconst a = 1;\n```");
+    expect(plain).toBe("first\n\nconst a = 1;\n");
+  });
+});
+
+describe("rangeOfSelection", () => {
+  const source =
+    "`notifyTicket` writes the change to `org_desk_notices`;\nthe queue is taken later.";
+  it("places rendered words in the source, across the syntax the rendering dropped", () => {
+    const range = rangeOfSelection(source, "notifyTicket writes the change");
+    expect(range).not.toBeNull();
+    expect(source.slice(range!.start, range!.end)).toBe("`notifyTicket` writes the change");
+  });
+
+  it("ignores the whitespace differences a rendered selection carries", () => {
+    const range = rangeOfSelection(source, "org_desk_notices;   the queue");
+    expect(source.slice(range!.start, range!.end)).toBe("`org_desk_notices`;\nthe queue");
+  });
+
+  it("falls back to the paragraph the selection began in, else to nothing", () => {
+    const section = {
+      paragraphs: [
+        { id: "p1", text: "Alpha" },
+        { id: "p2", text: "Beta" },
+      ],
+    };
+    expect(rangeOfSelection("Alpha\n\nBeta", "zzz", { section, paragraphId: "p2" })).toEqual({
+      start: 7,
+      end: 11,
+    });
+    expect(rangeOfSelection("Alpha", "zzz")).toBeNull();
+  });
+});
+
+describe("comments in a section", () => {
+  it("lists a section's comments of the current revision by position", () => {
+    const list = commentsInSection(
+      [
+        comment({ id: "a", range: { start: 20, end: 25 } }),
+        comment({ id: "b", range: { start: 2, end: 9 } }),
+        comment({ id: "c", sectionId: "s2" }),
+        comment({ id: "d", revision: 0 }),
+      ],
+      "s1",
+      1,
     );
+    expect(list.map((c) => c.id)).toEqual(["b", "a"]);
+  });
+
+  it("names the comments whose passage the current revision no longer has", () => {
+    const gone = orphanComments([comment({ id: "a" }), comment({ id: "b", revision: 0 })], 1);
     expect(gone.map((c) => c.id)).toEqual(["b"]);
+  });
+});
+
+describe("proposalsRoute", () => {
+  it("shows the queue without a number, and one proposal with a positive integer", () => {
+    expect(proposalsRoute(undefined)).toEqual({ queue: true });
+    expect(proposalsRoute("12")).toEqual({ number: 12 });
+    expect(proposalsRoute("0")).toEqual({ queue: true });
+    expect(proposalsRoute("x")).toEqual({ queue: true });
   });
 });
 

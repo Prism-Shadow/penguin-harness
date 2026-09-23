@@ -559,10 +559,6 @@ export interface Messages {
     proposalMaterials(): string;
     proposalComments(): string;
     proposalEvents(): string;
-    /** A comment whose paragraph is no longer in the current revision. */
-    proposalCommentOnRevision(paragraphId: string, revision: number): string;
-    proposalPendingMark(): string;
-    proposalResolvedMark(text: string): string;
     colNumber(): string;
     colRevision(): string;
     colAuthor(): string;
@@ -1382,7 +1378,8 @@ const en: Messages = {
       "Attach material as <kind>=<url> (pr, issue, branch, doc, ticket, url)",
     proposalFeedbackDesc:
       "Send the author feedback from the implementation (or, with --runtime, from testing the dev branch)",
-    proposalCommentsDesc: "List the comments a person left on the paragraphs",
+    proposalCommentsDesc:
+      "Print the proposal's text with each commented passage marked ⟦<id>⟧…⟦/<id>⟧, then the comments by id",
     proposalResolveDesc: "Resolve one comment, with a note on what changed",
     proposalStatusFilter:
       "Only proposals in this state (drafting, ready, approved, merged, rejected)",
@@ -1430,10 +1427,6 @@ const en: Messages = {
     proposalMaterials: () => "Materials:",
     proposalComments: () => "Comments:",
     proposalEvents: () => "Events:",
-    proposalCommentOnRevision: (paragraphId, revision) =>
-      `paragraph ${paragraphId} of revision ${revision} (no longer in the current one)`,
-    proposalPendingMark: () => "[pending]",
-    proposalResolvedMark: (text) => `[resolved${text === "" ? "" : `: ${text}`}]`,
     colNumber: () => "#",
     colRevision: () => "REV",
     colAuthor: () => "AUTHOR",
@@ -2206,7 +2199,7 @@ const zh: Messages = {
     proposalMaterialDesc: "关联材料：PR、issue、分支、文档、工单",
     proposalMaterialAddDesc: "以 <kind>=<url> 挂上材料（pr、issue、branch、doc、ticket、url）",
     proposalFeedbackDesc: "把实施中的发现反馈给作者（加 --runtime 则是测试 dev 分支的发现）",
-    proposalCommentsDesc: "列出人在各段上留下的评论",
+    proposalCommentsDesc: "打印提案正文，把每段被评论的文字标成 ⟦<id>⟧…⟦/<id>⟧，再按 id 列出评论",
     proposalResolveDesc: "解决一条评论，并说明改了什么",
     proposalStatusFilter: "只列这一状态的提案（drafting、ready、approved、merged、rejected）",
     proposalAuthor: "写提案的员工（其 Agent id）；缺省为你自己（当你是员工时）",
@@ -2248,10 +2241,6 @@ const zh: Messages = {
     proposalMaterials: () => "材料：",
     proposalComments: () => "评论：",
     proposalEvents: () => "事件：",
-    proposalCommentOnRevision: (paragraphId, revision) =>
-      `第 ${revision} 次修订的段落 ${paragraphId}（已不在当前修订里）`,
-    proposalPendingMark: () => "[待发]",
-    proposalResolvedMark: (text) => `[已解决${text === "" ? "" : `：${text}`}]`,
     colNumber: () => "#",
     colRevision: () => "修订",
     colAuthor: () => "作者",

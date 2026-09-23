@@ -14,6 +14,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { locateQuote, paragraphAtOffset, paragraphSpan, sectionSource } from "./comments.js";
 import type {
   ProposalComment,
   ProposalEvent,
@@ -63,12 +64,22 @@ export type LedgerEntry =
       by: string;
     }
   | { kind: "feedback"; number: number; text: string; runtime: boolean; by: string }
-  /** A pending comment: the person's own until a `batch` line names it. */
+  /**
+   * A pending comment: the person's own until a `batch` line names it. Anchored to
+   * `[start, end)` of `sectionId`'s source at `revision`, with the passage as `quote` (what
+   * re-anchors it after a revision). Lines written before ranges name a `paragraphId`
+   * instead; the fold anchors those to the whole paragraph (see applyLine).
+   */
   | {
       kind: "comment";
       number: number;
       id: string;
-      paragraphId: string;
+      sectionId?: string;
+      start?: number;
+      end?: number;
+      quote?: string;
+      /** The pre-range form: the paragraph the comment stood on. */
+      paragraphId?: string;
       revision: number;
       text: string;
       by: string;
@@ -155,6 +166,9 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       p.title = line.title;
       p.scope = line.scope;
       p.sections = line.sections;
+      // Every comment follows its passage into the new text; one whose passage is gone keeps
+      // the revision it was last found in and is listed as a comment on that revision.
+      for (const c of p.comments) reanchor(c, p.sections, p.revision);
       event("revised", line.by, { text: line.title, revision: line.revision });
       return;
     case "status":
@@ -177,17 +191,20 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
     case "feedback":
       event(line.runtime ? "runtime_feedback" : "feedback", line.by, { text: line.text });
       return;
-    case "comment":
+    case "comment": {
+      const anchor = commentAnchor(line, p.sections);
       p.comments.push({
         id: line.id,
-        paragraphId: line.paragraphId,
-        revision: line.revision,
+        ...anchor,
+        // A passage that is not in the current text is a comment on the revision it names.
+        revision: anchor.paragraphId === undefined ? line.revision : p.revision,
         text: line.text,
         by: line.by,
         at: line.at,
         batchId: null,
       });
       return;
+    }
     case "batch": {
       const ids = new Set(line.commentIds);
       for (const c of p.comments) if (ids.has(c.id)) c.batchId = line.id;
@@ -203,6 +220,62 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       return;
     }
   }
+}
+
+/**
+ * A comment line's anchor in the sections current at that line. A range line anchors as
+ * written (its paragraph derived); a paragraph line — the pre-range form, in ledgers written
+ * before ranges — anchors to the whole paragraph when the current text still has it, and to
+ * nothing otherwise. Legacy handling to keep until every organization's ledger predates no
+ * range line, i.e. indefinitely cheap: one branch, no migration.
+ */
+function commentAnchor(
+  line: Extract<LedgerEntry, { kind: "comment" }>,
+  sections: readonly ProposalSection[],
+): Pick<ProposalComment, "sectionId" | "range" | "quote" | "paragraphId"> {
+  if (line.sectionId !== undefined && line.start !== undefined && line.end !== undefined) {
+    const section = sections.find((s) => s.id === line.sectionId);
+    const paragraphId = section === undefined ? null : paragraphAtOffset(section, line.start);
+    return {
+      sectionId: line.sectionId,
+      range: { start: line.start, end: line.end },
+      quote:
+        line.quote ??
+        (section === undefined ? "" : sectionSource(section).slice(line.start, line.end)),
+      ...(paragraphId === null ? {} : { paragraphId }),
+    };
+  }
+  const paragraphId = line.paragraphId ?? "";
+  for (const section of sections) {
+    const span = paragraphSpan(section, paragraphId);
+    if (span === null) continue;
+    return {
+      sectionId: section.id,
+      range: span,
+      quote: sectionSource(section).slice(span.start, span.end),
+      paragraphId,
+    };
+  }
+  return { sectionId: "", range: { start: 0, end: 0 }, quote: "" };
+}
+
+/** Moves a comment to where its quote now stands; a quote not found leaves it on its last revision, paragraph-less. */
+function reanchor(
+  c: ProposalComment,
+  sections: readonly ProposalSection[],
+  revision: number,
+): void {
+  const section = sections.find((s) => s.id === c.sectionId);
+  const found = section === undefined ? null : locateQuote(sectionSource(section), c.quote);
+  if (section === undefined || found === null) {
+    delete c.paragraphId;
+    return;
+  }
+  c.range = found;
+  c.revision = revision;
+  const paragraphId = paragraphAtOffset(section, found.start);
+  if (paragraphId === null) delete c.paragraphId;
+  else c.paragraphId = paragraphId;
 }
 
 /** The pure fold: the lines, in file order, to the state they describe. */

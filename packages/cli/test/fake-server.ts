@@ -170,6 +170,54 @@ function mentionsOf(text: string): string[] {
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value !== "";
 
+/**
+ * The plugin's agent-facing rendering, small enough to keep in step here: each section's
+ * source (paragraphs joined by a blank line) with every listed comment's range wrapped in
+ * `⟦<id>⟧…⟦/<id>⟧`, then the comments by id.
+ */
+function markedProposalText(
+  proposal: Record<string, Json>,
+  comments: ReadonlyArray<Record<string, Json>>,
+): string {
+  const out: string[] = [];
+  for (const section of (proposal.sections ?? []) as Array<Record<string, Json>>) {
+    const source = ((section.paragraphs ?? []) as Array<Record<string, Json>>)
+      .map((p) => String(p.text))
+      .join("\n\n");
+    const marks = comments
+      .filter((c) => c.sectionId === section.id && c.revision === proposal.revision)
+      .flatMap((c) => {
+        const range = c.range as { start: number; end: number };
+        return [
+          { at: range.start, open: true, id: String(c.id) },
+          { at: range.end, open: false, id: String(c.id) },
+        ];
+      })
+      .sort((a, b) => a.at - b.at || (a.open === b.open ? 0 : a.open ? 1 : -1));
+    let text = "";
+    let at = 0;
+    for (const m of marks) {
+      text += source.slice(at, m.at) + (m.open ? `⟦${m.id}⟧` : `⟦/${m.id}⟧`);
+      at = m.at;
+    }
+    out.push(`## ${section.heading}`, "", text + source.slice(at), "");
+  }
+  if (comments.length > 0) {
+    out.push("### Comments", "");
+    for (const c of comments) {
+      const resolved = c.resolved as { text?: string } | undefined;
+      const state =
+        resolved !== undefined
+          ? `resolved: ${resolved.text === "" ? "(no note)" : resolved.text}`
+          : c.batchId === null
+            ? "pending"
+            : "open";
+      out.push(`⟦${c.id}⟧ ${c.by} (${state}): ${c.text}`);
+    }
+  }
+  return `${out.join("\n").trimEnd()}\n`;
+}
+
 export class FakeServer {
   /** Every request, in order: the path without its query, the query on its own, and the parsed body. */
   readonly requests: Array<{ method: string; path: string; search: string; body?: Json }> = [];
@@ -1134,6 +1182,20 @@ export class FakeServer {
         Object.assign(proposal, { revision, sections, ...(title !== undefined ? { title } : {}) });
         return this.json(bump("revised", { revision }));
       }
+    }
+    if (method === "GET" && c === "comments" && d === undefined) {
+      // The comments the caller may see, with the text marked the way the plugin marks it
+      // for an agent: `⟦<id>⟧…⟦/<id>⟧` around each passage, then the comments by id.
+      const pending = url.searchParams.get("pending") === "1";
+      const all = proposal.comments as Array<Record<string, Json>>;
+      const comments = pending
+        ? all.filter((x) => x.batchId !== null && x.resolved === undefined)
+        : all;
+      return this.json({
+        number,
+        comments,
+        text: markedProposalText(proposal as Record<string, Json>, comments),
+      });
     }
     if (method !== "POST") return this.error(404, "not_found", "No such route.");
     switch (c) {

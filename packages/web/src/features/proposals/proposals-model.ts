@@ -214,28 +214,164 @@ export function eventDetail(ev: ProposalEvent): string | null {
     : null;
 }
 
-/** The comments on one paragraph, pending first, then by time; a resolved one keeps its place. */
-export function commentsOn<T extends { paragraphId: string; at: string; batchId: string | null }>(
-  comments: readonly T[],
-  paragraphId: string,
-): T[] {
-  return comments
-    .filter((c) => c.paragraphId === paragraphId)
-    .sort((a, b) => {
-      const aPending = a.batchId === null ? 0 : 1;
-      const bPending = b.batchId === null ? 0 : 1;
-      if (aPending !== bPending) return aPending - bPending;
-      return a.at < b.at ? -1 : a.at > b.at ? 1 : 0;
-    });
+/** The separator between a section's paragraphs in its source — the plugin's `PARAGRAPH_GAP`, the one text a comment's offsets index. */
+export const PARAGRAPH_GAP = "\n\n";
+
+/** A section's Markdown source: its paragraphs joined by a blank line (the plugin's `sectionSource`). */
+export function sectionSource(section: { paragraphs: readonly { text: string }[] }): string {
+  return section.paragraphs.map((p) => p.text).join(PARAGRAPH_GAP);
 }
 
-/** The comments whose paragraph no longer exists in the current revision, by the section they are listed under (the last one). */
-export function orphanComments<T extends { paragraphId: string }>(
+/** The span a paragraph occupies in its section's source, or null when the section has no such paragraph. */
+export function paragraphSpan(
+  section: { paragraphs: readonly { id: string; text: string }[] },
+  paragraphId: string,
+): { start: number; end: number } | null {
+  let at = 0;
+  for (const p of section.paragraphs) {
+    if (p.id === paragraphId) return { start: at, end: at + p.text.length };
+    at += p.text.length + PARAGRAPH_GAP.length;
+  }
+  return null;
+}
+
+/**
+ * A section's source as the reader sees it — the Markdown syntax that renders to nothing
+ * dropped (fences, inline code marks, emphasis, heading and list marks, a link's target) —
+ * with, for every kept character, the source offset it came from. What a selection of the
+ * rendered text is matched against, so the match names a range of the source.
+ */
+export function projectMarkdown(source: string): { plain: string; map: number[] } {
+  const plain: string[] = [];
+  const map: number[] = [];
+  const keep = (i: number) => {
+    plain.push(source[i]!);
+    map.push(i);
+  };
+  let i = 0;
+  let lineStart = true;
+  while (i < source.length) {
+    const ch = source[i]!;
+    if (lineStart) {
+      // A fence line, a heading's marks, a blockquote's bar, a list marker: syntax only.
+      const rest = source.slice(i);
+      const fence = /^(`{3,}|~{3,})[^\n]*\n?/.exec(rest);
+      if (fence !== null) {
+        i += fence[0].length;
+        continue;
+      }
+      const lead = /^(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/.exec(rest);
+      if (lead !== null) {
+        i += lead[0].length;
+        lineStart = false;
+        continue;
+      }
+      lineStart = false;
+    }
+    if (ch === "\n") {
+      keep(i);
+      i++;
+      lineStart = true;
+      continue;
+    }
+    // A link or image: its text stays, its target goes.
+    const link = /^!?\[([^\]]*)\]\(([^)]*)\)/.exec(source.slice(i));
+    if (link !== null) {
+      const textAt = i + (source[i] === "!" ? 2 : 1);
+      for (let k = 0; k < link[1]!.length; k++) keep(textAt + k);
+      i += link[0].length;
+      continue;
+    }
+    if (ch === "`" || ch === "*" || ch === "_" || ch === "~") {
+      i++;
+      continue;
+    }
+    keep(i);
+    i++;
+  }
+  return { plain: plain.join(""), map };
+}
+
+const collapse = (text: string): string => text.replace(/\s+/g, " ").trim();
+
+/** `needle` in `haystack` with whitespace collapsed on both sides: the haystack range of the first match, or null. What places a quote in rendered text as well as in source. */
+export function findPassage(
+  haystack: string,
+  needle: string,
+): { start: number; end: number } | null {
+  const target = collapse(needle);
+  if (target === "") return null;
+  const chars: string[] = [];
+  const map: number[] = [];
+  let pendingSpace = false;
+  for (let i = 0; i < haystack.length; i++) {
+    const ch = haystack[i]!;
+    if (/\s/.test(ch)) {
+      pendingSpace = chars.length > 0;
+      continue;
+    }
+    if (pendingSpace) {
+      chars.push(" ");
+      map.push(i);
+      pendingSpace = false;
+    }
+    chars.push(ch);
+    map.push(i);
+  }
+  const hit = chars.join("").indexOf(target);
+  if (hit < 0) return null;
+  return { start: map[hit]!, end: map[hit + target.length - 1]! + 1 };
+}
+
+/**
+ * The source range a selection of the rendered text names: the selection found in the
+ * source's plain projection (whitespace collapsed), else in the raw source, else — when the
+ * words cannot be placed — the whole paragraph the selection began in, else null.
+ */
+export function rangeOfSelection(
+  source: string,
+  selectedText: string,
+  fallback?: {
+    section: { paragraphs: readonly { id: string; text: string }[] };
+    paragraphId: string;
+  },
+): { start: number; end: number } | null {
+  const { plain, map } = projectMarkdown(source);
+  const inPlain = findPassage(plain, selectedText);
+  if (inPlain !== null) return { start: map[inPlain.start]!, end: map[inPlain.end - 1]! + 1 };
+  const raw = findPassage(source, selectedText);
+  if (raw !== null) return raw;
+  if (fallback !== undefined) return paragraphSpan(fallback.section, fallback.paragraphId);
+  return null;
+}
+
+/** Whether a comment's passage is in the current revision (else it is listed as one on its own revision). */
+export function isStaleComment(comment: { revision: number }, currentRevision: number): boolean {
+  return comment.revision !== currentRevision;
+}
+
+/** The comments on one section in the current revision, by position; pending ones keep their place. */
+export function commentsInSection<
+  T extends { sectionId: string; revision: number; range: { start: number } },
+>(comments: readonly T[], sectionId: string, currentRevision: number): T[] {
+  return comments
+    .filter((c) => c.sectionId === sectionId && c.revision === currentRevision)
+    .sort((a, b) => a.range.start - b.range.start);
+}
+
+/** The comments whose passage the current revision no longer has: listed after the sections with their revision. */
+export function orphanComments<T extends { revision: number }>(
   comments: readonly T[],
-  sections: ProposalDetail["sections"],
+  currentRevision: number,
 ): T[] {
-  const live = new Set(sections.flatMap((s) => s.paragraphs.map((p) => p.id)));
-  return comments.filter((c) => !live.has(c.paragraphId));
+  return comments.filter((c) => isStaleComment(c, currentRevision));
+}
+
+/** What the `proposals/:number?` page shows: the queue, or one proposal. */
+export function proposalsRoute(param: string | undefined): { queue: true } | { number: number } {
+  if (param === undefined) return { queue: true };
+  const n = Number(param);
+  return Number.isSafeInteger(n) && n > 0 ? { number: n } : { queue: true };
 }
 
 /** The queue's search: number or title, case-insensitively. */
