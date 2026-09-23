@@ -19,13 +19,16 @@ export {
 } from "./connection.js";
 export type { MachineChannel } from "./connection.js";
 export {
+  MACHINE_SESSION_IFACE,
   SESSION_GROUP,
+  SESSION_SHAPE_ID,
   attachSessionRegistry,
   forwardKey,
   sessionOf,
   useControlSockets,
 } from "./ssh-session.js";
 export type { ForwardFact, HeldSession } from "./ssh-session.js";
+export { MachineSession } from "./ssh-session.js";
 export type { ShellSession } from "./ssh-session.js";
 export { execFailureText, looksLikeAuthFailure, runBytes } from "./exec.js";
 export type { ExecResult } from "./exec.js";
