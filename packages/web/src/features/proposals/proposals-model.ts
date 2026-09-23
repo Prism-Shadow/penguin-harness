@@ -1,3 +1,4 @@
+import { toWorkspaceRelative } from "../../lib/file-path";
 /**
  * The proposals page's pure shaping (unit tested, no React): the queue's order, a status's
  * tone, the `proposal:<n>[#<pattern>]` reference grammar every Markdown surface recognizes,
@@ -403,4 +404,27 @@ export function filterProposals(items: readonly ProposalItem[], query: string): 
     (p) =>
       `#${p.number}`.includes(q) || String(p.number) === q || p.title.toLowerCase().includes(q),
   );
+}
+
+/**
+ * Where a scope file may be inside one session's Workspace: the file as written (a path
+ * relative to the Workspace itself), and the file under the organization's shared workspace
+ * (what the scope is written against) when that lands inside the session's Workspace. Both
+ * as Workspace-relative paths, deduplicated, in that order; empty when neither can be there.
+ */
+export function scopeFileCandidates(
+  file: string,
+  sessionWorkspace: string,
+  orgWorkspace: string | null,
+): string[] {
+  const out: string[] = [];
+  const push = (rel: string | null) => {
+    if (rel !== null && rel !== "" && !out.includes(rel)) out.push(rel);
+  };
+  push(toWorkspaceRelative(file, sessionWorkspace));
+  if (orgWorkspace !== null && orgWorkspace !== "") {
+    const root = orgWorkspace.replace(/[\\/]+$/, "");
+    push(toWorkspaceRelative(`${root}/${file}`, sessionWorkspace));
+  }
+  return out;
 }
