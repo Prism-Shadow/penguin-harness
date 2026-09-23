@@ -349,9 +349,12 @@ export function PluginsPage() {
   } | null>(null);
 
   /**
-   * Asks this Project for a module plugin (or drops it); the server lists it and re-assembles
-   * the App, so the row's state afterwards is what the running process has — including a
-   * load that failed, which is reported as such rather than toasted as installed.
+   * Installs the package into the data root (fetched from npm unless this build ships it) and
+   * lists it for this Project — writing the list alone would name a package that is not on
+   * the machine, which is exactly the state the row would then have to report as broken. The
+   * server re-assembles the App where it can, so the row's state afterwards is what the
+   * running process has — including a load that failed, which is reported as such rather than
+   * toasted as installed; otherwise the row waits for a restart.
    */
   const runDeploymentInstall = async (
     specifier: string,
