@@ -44,6 +44,20 @@ const REFUSED_RETRY_MS = 250;
 const REISSUE_MS = 1_000;
 /** The server's heartbeat cadence (socket/serve.ts); a socket silent for two beats is dead and is closed to reconnect. */
 const HEARTBEAT_MS = 20_000;
+/**
+ * A handshake still not open after this is closed and tried again: the browser reports
+ * nothing about a handshake that neither completes nor fails, and every call waits behind it.
+ */
+const HANDSHAKE_TIMEOUT_MS = 10_000;
+/**
+ * A one-shot call the server has not answered after this is given up on — with a warning
+ * saying so, because a socket that keeps its heartbeat while answering nothing is otherwise
+ * invisible: no error, no closed connection, nothing in the network log. The caller then
+ * makes the call over HTTP (api/client.ts).
+ */
+export const ANSWER_TIMEOUT_MS = 20_000;
+/** A stream the server has not opened after this is issued again, with the same warning. */
+const STREAM_OPEN_TIMEOUT_MS = 20_000;
 
 export interface SocketCallResult {
   status: number;
@@ -52,8 +66,11 @@ export interface SocketCallResult {
 }
 
 interface PendingCall {
+  method: string;
+  path: string;
   resolve: (r: SocketCallResult) => void;
   reject: (err: Error) => void;
+  deadline: ReturnType<typeof setTimeout>;
 }
 
 interface StreamEntry {
@@ -62,6 +79,8 @@ interface StreamEntry {
   fallback: () => StreamConnection;
   /** The call id while the stream is issued on the live socket; null between issues. */
   id: number | null;
+  /** Fires when the server has not opened the issued stream in time. */
+  openDeadline: ReturnType<typeof setTimeout> | null;
   lastEventId: string | null;
   retry: ReturnType<typeof setTimeout> | null;
   /** Set once the entry has been handed to EventSource; the socket never touches it again. */
@@ -70,6 +89,17 @@ interface StreamEntry {
 }
 
 type State = "closed" | "connecting" | "open" | "unavailable";
+
+/** What the socket is doing right now, for a caller that has waited too long and wants to say why. */
+export interface SocketReport {
+  state: State;
+  /** Milliseconds since the server's last frame on the open socket; null when it is not open. */
+  lastFrameAgoMs: number | null;
+  /** One-shot calls awaiting an answer, as `METHOD path`. */
+  pendingCalls: string[];
+  /** Streams issued on the socket, by path. */
+  streams: string[];
+}
 
 /** Answers the socket cannot make useful: the endpoint refused, and will keep refusing. */
 function fatal(status: number): boolean {
@@ -105,6 +135,10 @@ export class ApiSocket {
   #closingOnPurpose = false;
   /** Fires when the server has said nothing for two beats. */
   #watchdog: ReturnType<typeof setTimeout> | null = null;
+  /** Fires when a handshake has neither opened nor failed in time. */
+  #handshakeDeadline: ReturnType<typeof setTimeout> | null = null;
+  /** When the server's last frame arrived on the open socket (performance.now()). */
+  #lastFrameAt = 0;
 
   /**
    * `urlFor` spells the socket's address for a user; `whoAmI` finds out who is signed in
@@ -118,6 +152,17 @@ export class ApiSocket {
 
   isOpen(): boolean {
     return this.#state === "open";
+  }
+
+  /** The socket's state and what is waiting on it — for the warning a caller prints when it has waited too long. */
+  report(): SocketReport {
+    return {
+      state: this.#state,
+      lastFrameAgoMs:
+        this.#state === "open" ? Math.round(performance.now() - this.#lastFrameAt) : null,
+      pendingCalls: [...this.#calls.values()].map((c) => `${c.method} ${c.path}`),
+      streams: [...this.#streams.values()].map((s) => s.path),
+    };
   }
 
   /** The socket is not coming: callers use HTTP and EventSource. */
@@ -219,9 +264,24 @@ export class ApiSocket {
     const id = this.#next++;
     const frame: Record<string, unknown> = { id, call: { method, path, ...opts } };
     return new Promise<SocketCallResult>((resolve, reject) => {
-      this.#calls.set(id, { resolve, reject });
+      const deadline = setTimeout(() => {
+        if (this.#calls.get(id)?.reject !== reject) return;
+        this.#calls.delete(id);
+        console.warn(
+          `[api-socket] ${method} ${path}: no answer in ${ANSWER_TIMEOUT_MS} ms over a socket that is ${this.#describeLiveness()}; ` +
+            `the call is made over HTTP instead`,
+        );
+        reject(new Error("socket_timeout"));
+      }, ANSWER_TIMEOUT_MS);
+      this.#calls.set(id, { method, path, resolve, reject, deadline });
       this.#ws!.send(JSON.stringify(frame));
     });
+  }
+
+  /** "open (last frame N ms ago)" or the state — the one fact that separates a dead socket from a silent endpoint. */
+  #describeLiveness(): string {
+    const r = this.report();
+    return r.lastFrameAgoMs === null ? r.state : `open (last frame ${r.lastFrameAgoMs} ms ago)`;
   }
 
   /**
@@ -238,6 +298,7 @@ export class ApiSocket {
       handlers,
       fallback,
       id: null,
+      openDeadline: null,
       lastEventId: null,
       retry: null,
       fallen: null,
@@ -255,6 +316,7 @@ export class ApiSocket {
         entry.closed = true;
         entry.fallen?.close();
         if (entry.retry !== null) clearTimeout(entry.retry);
+        this.#clearOpenDeadline(entry);
         this.#waiting.delete(entry);
         if (entry.id !== null) {
           this.#streams.delete(entry.id);
@@ -288,26 +350,43 @@ export class ApiSocket {
     }
     this.#ws = ws;
     this.#openedFor = userId;
+    this.#handshakeDeadline = setTimeout(() => {
+      this.#handshakeDeadline = null;
+      if (this.#ws !== ws || this.#state !== "connecting") return;
+      // Neither opened nor failed: close it ourselves. It counts as a handshake that never
+      // opened (onclose below), so a server that keeps doing this is given up on like one
+      // that keeps refusing — with the reason on record.
+      this.#lastClose = `the handshake neither opened nor failed in ${HANDSHAKE_TIMEOUT_MS} ms`;
+      console.warn(`[api-socket] ${this.#lastClose}; closing it to try again — ${url}`);
+      ws.close();
+    }, HANDSHAKE_TIMEOUT_MS);
     ws.onopen = () => {
       if (this.#ws !== ws) return;
+      this.#clearHandshakeDeadline();
       this.#state = "open";
       this.#attempts = 0;
       this.#neverOpened = 0;
+      this.#lastFrameAt = performance.now();
       this.#armWatchdog();
       this.#settleReady(true);
       for (const entry of [...this.#waiting]) this.#issue(entry);
     };
     ws.onmessage = (e: MessageEvent<string>) => {
       if (this.#ws !== ws) return;
+      this.#lastFrameAt = performance.now();
       this.#armWatchdog();
       this.#frame(e.data);
     };
     ws.onclose = (event?: CloseEvent) => {
       if (this.#ws !== ws) return;
+      this.#clearHandshakeDeadline();
       // The browser's one word on a refused handshake: 1006 with no reason is a handshake the
       // server answered with a status (401, 404, 503…), which the WebSocket API never shows.
-      this.#lastClose =
-        event === undefined
+      // A handshake this client gave up on keeps the reason it recorded.
+      const timedOut = this.#lastClose.startsWith("the handshake neither");
+      this.#lastClose = timedOut
+        ? this.#lastClose
+        : event === undefined
           ? "closed"
           : `close code ${event.code}${event.reason ? ` (${event.reason})` : ""}${event.wasClean ? "" : ", not clean"}`;
       const opened = this.#state === "open";
@@ -352,11 +431,34 @@ export class ApiSocket {
     this.#streams.set(id, entry);
     const headers: Record<string, string> = { accept: "text/event-stream" };
     if (entry.lastEventId !== null) headers["last-event-id"] = entry.lastEventId;
+    this.#clearOpenDeadline(entry);
+    entry.openDeadline = setTimeout(() => {
+      entry.openDeadline = null;
+      if (entry.id !== id || this.#streams.get(id) !== entry) return;
+      console.warn(
+        `[api-socket] stream ${entry.path}: not opened in ${STREAM_OPEN_TIMEOUT_MS} ms over a socket that is ${this.#describeLiveness()}; issuing it again`,
+      );
+      if (this.#ws !== null && this.#state === "open") {
+        this.#ws.send(JSON.stringify({ id, cancel: true }));
+      }
+      this.#reissue(entry, REISSUE_MS);
+    }, STREAM_OPEN_TIMEOUT_MS);
     this.#ws.send(JSON.stringify({ id, call: { method: "GET", path: entry.path, headers } }));
+  }
+
+  #clearOpenDeadline(entry: StreamEntry): void {
+    if (entry.openDeadline !== null) clearTimeout(entry.openDeadline);
+    entry.openDeadline = null;
+  }
+
+  #clearHandshakeDeadline(): void {
+    if (this.#handshakeDeadline !== null) clearTimeout(this.#handshakeDeadline);
+    this.#handshakeDeadline = null;
   }
 
   /** The stream is off the socket for now; issue it again after a pause (or at once on reconnect). */
   #reissue(entry: StreamEntry, delayMs: number): void {
+    this.#clearOpenDeadline(entry);
     if (entry.id !== null) {
       this.#streams.delete(entry.id);
       entry.id = null;
@@ -382,6 +484,8 @@ export class ApiSocket {
     const id = frame.id;
     const stream = this.#streams.get(id);
     if (stream !== undefined) {
+      // Any frame for the id is the server's answer to the issue, opened or not.
+      this.#clearOpenDeadline(stream);
       if ("event" in frame) {
         const eventId = (frame.eventId as string | null) ?? null;
         if (eventId !== null) stream.lastEventId = eventId;
@@ -419,6 +523,7 @@ export class ApiSocket {
     const pending = this.#calls.get(id);
     if (pending === undefined) return;
     this.#calls.delete(id);
+    clearTimeout(pending.deadline);
     pending.resolve({
       status: frame.status as number,
       headers: (frame.headers as Record<string, string> | undefined) ?? {},
@@ -428,9 +533,13 @@ export class ApiSocket {
 
   /** The socket is gone: fail the calls, park the streams, and decide whether to come back. */
   #dropped(wasOpen: boolean): void {
-    for (const pending of this.#calls.values()) pending.reject(new Error("socket_closed"));
+    for (const pending of this.#calls.values()) {
+      clearTimeout(pending.deadline);
+      pending.reject(new Error("socket_closed"));
+    }
     this.#calls.clear();
     for (const entry of this.#streams.values()) {
+      this.#clearOpenDeadline(entry);
       entry.id = null;
       entry.handlers.onError?.(false);
       this.#waiting.add(entry);

@@ -362,3 +362,64 @@ describe("robustness", () => {
     expect(socket.isUnavailable()).toBe(false);
   });
 });
+
+describe("deadlines", () => {
+  it("closes a handshake that neither opens nor fails, and counts it towards giving up", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ready = socket.ready();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(FakeSocket.instances).toHaveLength(1);
+    vi.advanceTimersByTime(9_999);
+    expect(socket.isOpen()).toBe(false);
+    vi.advanceTimersByTime(1); // the handshake deadline: the client closes it itself
+    await expect(ready).resolves.toBe(false); // the waiting call goes over HTTP
+    expect(warn.mock.calls.some(([m]) => String(m).includes("neither opened nor failed"))).toBe(
+      true,
+    );
+    expect(socket.isUnavailable()).toBe(false); // one stuck handshake is retried, not given up
+    warn.mockRestore();
+  });
+
+  it("gives up on a one-shot call the server never answers, saying so, while the socket stays open", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await openViaReady();
+    const answer = socket.call("GET", "/api/sessions/s1/messages");
+    last().receive({ heartbeat: true }); // the server is alive, just not answering this
+    vi.advanceTimersByTime(19_999);
+    expect(socket.report().pendingCalls).toEqual(["GET /api/sessions/s1/messages"]);
+    vi.advanceTimersByTime(1);
+    await expect(answer).rejects.toThrow("socket_timeout");
+    expect(socket.report().pendingCalls).toEqual([]);
+    expect(socket.isOpen()).toBe(true);
+    const line = String(warn.mock.calls.find(([m]) => String(m).includes("no answer"))?.[0]);
+    expect(line).toContain("GET /api/sessions/s1/messages");
+    expect(line).toContain("open (last frame");
+    // A late answer for the given-up id is ignored, not crashed on.
+    last().receive({ id: 1, status: 200, headers: {}, body: {} });
+    warn.mockRestore();
+  });
+
+  it("issues a stream again when the server has not opened it in time", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const h = handlers();
+    socket.stream("/api/sessions/s1/stream", h, () => ({ close: () => undefined }));
+    await Promise.resolve();
+    await Promise.resolve();
+    last().open();
+    expect(last().frames()).toHaveLength(1);
+    vi.advanceTimersByTime(20_000); // no `stream` frame came back
+    expect(last().frames()[1]).toEqual({ id: 1, cancel: true });
+    vi.advanceTimersByTime(1_000); // re-issued after the usual pause
+    const again = last().frames()[2] as { id: number; call: { path: string } };
+    expect(again.id).toBe(2);
+    expect(again.call.path).toBe("/api/sessions/s1/stream");
+    expect(warn.mock.calls.some(([m]) => String(m).includes("not opened in"))).toBe(true);
+    // Once opened, the deadline is off: a long quiet stream is not re-issued.
+    last().receive({ id: 2, status: 200, stream: true, headers: {} });
+    expect(h.opens).toBe(1);
+    vi.advanceTimersByTime(20_000);
+    expect(last().frames()).toHaveLength(3);
+    warn.mockRestore();
+  });
+});
