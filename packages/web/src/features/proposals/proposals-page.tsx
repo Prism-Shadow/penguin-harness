@@ -28,7 +28,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import type {
   ProposalComment,
   ProposalDetail,
@@ -44,7 +44,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
-import { toneInk, toneStrip, toneSurface } from "../../lib/tone";
+import { toneDot, toneInk, toneStrip, toneSurface } from "../../lib/tone";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
@@ -78,7 +78,11 @@ import {
   commentsInSection,
   eventDetail,
   eventLine,
+  DEFAULT_PROPOSAL_QUERY,
   filterProposals,
+  hasToken,
+  withToken,
+  withoutToken,
   findPassage,
   matchProposalPattern,
   orphanComments,
@@ -160,7 +164,42 @@ function QueuePage() {
   const t = S.company.proposals;
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.proposals}` : S.nav.org.proposals);
 
-  const [query, setQuery] = useState("");
+  // The query lives in the URL (`?q=`, omitted at the default), so a filter can be linked
+  // and survives a reload; the box edits it debounced, Enter applies at once, Esc resets.
+  const [params, setParams] = useSearchParams();
+  const query = params.get("q") ?? DEFAULT_PROPOSAL_QUERY;
+  const setQuery = useCallback(
+    (next: string) => {
+      setParams(
+        (prev) => {
+          const out = new URLSearchParams(prev);
+          if (next.trim() === DEFAULT_PROPOSAL_QUERY || next.trim() === "") out.delete("q");
+          else out.set("q", next.trim());
+          return out;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+  const [draft, setDraft] = useState(query);
+  const draftTimer = useRef<number | null>(null);
+  useEffect(() => {
+    setDraft(query);
+  }, [query]);
+  const editDraft = (next: string) => {
+    setDraft(next);
+    if (draftTimer.current !== null) window.clearTimeout(draftTimer.current);
+    draftTimer.current = window.setTimeout(() => setQuery(next), 150);
+  };
+  const applyDraft = useCallback(
+    (next: string) => {
+      if (draftTimer.current !== null) window.clearTimeout(draftTimer.current);
+      setDraft(next);
+      setQuery(next);
+    },
+    [setQuery],
+  );
   const [createOpen, setCreateOpen] = useState(false);
 
   // The empty-queue note goes away for good once read; the page's "?" carries the same
@@ -176,6 +215,46 @@ function QueuePage() {
       company.proposals === null ? null : sortProposals(filterProposals(company.proposals, query)),
     [company.proposals, query],
   );
+  // The chips: one per lifecycle state (replacing the `is:` tokens), All (none), and an
+  // Unread toggle. Each counts what it would show, with the query's other tokens kept.
+  const chips = useMemo(() => {
+    const all = company.proposals ?? [];
+    const rest = withoutToken(query, "is");
+    const count = (q: string) => filterProposals(all, q).length;
+    const state = (value: string, label: string) => ({
+      key: value,
+      label,
+      on: hasToken(query, "is", value),
+      count: count(withToken(rest, "is", value)),
+      apply: () => applyDraft(withToken(query, "is", value, { replace: true })),
+    });
+    return {
+      states: [
+        state("open", t.chip.open),
+        state("ready", t.chip.ready),
+        state("approved", t.chip.approved),
+        state("merged", t.chip.merged),
+        state("rejected", t.chip.rejected),
+        {
+          key: "all",
+          label: t.chip.all,
+          on: !hasToken(query, "is"),
+          count: count(rest),
+          apply: () => applyDraft(rest),
+        },
+      ],
+      unread: {
+        on: hasToken(query, "unread", "yes"),
+        count: count(withToken(withoutToken(query, "unread"), "unread", "yes")),
+        apply: () =>
+          applyDraft(
+            hasToken(query, "unread", "yes")
+              ? withoutToken(query, "unread")
+              : withToken(withoutToken(query, "unread"), "unread", "yes"),
+          ),
+      },
+    };
+  }, [applyDraft, company.proposals, query, t]);
   const open = (number: number) => navigate(orgProposalPath(projectId, orgId, number));
 
   return (
@@ -218,14 +297,42 @@ function QueuePage() {
         </div>
       )}
 
-      <div className="mb-3 max-w-sm">
+      <div className="mb-2 max-w-lg">
         <Input
           size="sm"
-          value={query}
-          aria-label={t.queue}
-          placeholder={t.queue}
-          onChange={(e) => setQuery(e.target.value)}
+          value={draft}
+          aria-label={t.search}
+          placeholder={t.searchPlaceholder}
+          className="font-mono text-xs"
+          onChange={(e) => editDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") applyDraft(draft);
+            else if (e.key === "Escape") applyDraft(DEFAULT_PROPOSAL_QUERY);
+          }}
         />
+      </div>
+      {/* The chips: a pill group for the lifecycle, an Unread toggle apart from it. A chip
+          carries its count so the hidden halves of the queue are never a surprise. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <div
+          role="group"
+          aria-label={t.chip.group}
+          className="inline-flex flex-wrap gap-0.5 rounded-md bg-gray-100 p-0.5 dark:bg-gray-800"
+        >
+          {chips.states.map((chip) => (
+            <QueueChip key={chip.key} on={chip.on} count={chip.count} onClick={chip.apply}>
+              {chip.label}
+            </QueueChip>
+          ))}
+        </div>
+        <QueueChip
+          on={chips.unread.on}
+          count={chips.unread.count}
+          onClick={chips.unread.apply}
+          toggle
+        >
+          {t.chip.unread}
+        </QueueChip>
       </div>
       {queue === null ? (
         <div className="space-y-2" aria-busy="true">
@@ -234,7 +341,16 @@ function QueuePage() {
           <Skeleton className="h-14" />
         </div>
       ) : queue.length === 0 ? (
-        <OrgEmptyLine>{t.queueEmpty}</OrgEmptyLine>
+        company.proposals?.length === 0 ? (
+          <OrgEmptyLine>{t.queueEmpty}</OrgEmptyLine>
+        ) : (
+          <OrgEmptyLine>
+            {t.noMatch(query)}{" "}
+            <TitleButton onClick={() => applyDraft("")} className="text-xs">
+              {t.showAll}
+            </TitleButton>
+          </OrgEmptyLine>
+        )
       ) : (
         <ul className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
           {queue.map((item) => (
@@ -266,9 +382,46 @@ function QueuePage() {
 }
 
 /**
+ * One chip of the queue's filter bar: a small pill that is "on" when its token is in the
+ * query, with the count it would show. In the group it selects a lifecycle state; alone
+ * (`toggle`) it is the Unread switch. The count is tabular so the chips do not jitter.
+ */
+function QueueChip({
+  on,
+  count,
+  toggle = false,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  count: number;
+  toggle?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  const shape = toggle ? "rounded-md border border-gray-200 dark:border-gray-800" : "rounded";
+  const ink = on
+    ? "bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-gray-100"
+    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100";
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:outline-none ${shape} ${ink}`}
+    >
+      <span>{children}</span>
+      <span className="tabular-nums text-[10px] text-gray-400 dark:text-gray-500">{count}</span>
+    </button>
+  );
+}
+
+/**
  * One row of the queue. The title is the link (a text button, underlined on hover); the
- * row itself is inert. The unread count rides at the right in the attention tone, the
- * status as a text pill beside the title, the author's avatar and when it last moved under it.
+ * row itself is inert, tinting a little under the pointer. A row with unread events wears a
+ * 2px bar on its left edge in the attention tone and its count at the right; the status is a
+ * text pill after the title; the author, the implementer when another, and when it last
+ * moved sit on a quiet second line.
  */
 function QueueRow({
   item,
@@ -282,14 +435,33 @@ function QueueRow({
   onOpen: () => void;
 }) {
   const t = S.company.proposals;
+  const author = names.get(item.author) ?? item.author;
+  const implementer =
+    item.implementer !== null && item.implementer !== item.author
+      ? (names.get(item.implementer) ?? item.implementer)
+      : null;
   return (
-    <li className="flex items-start gap-3 px-3 py-2.5">
-      <span className="mt-0.5 w-10 shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+    <li
+      className={`relative flex items-start gap-3 px-3 py-2.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-900 ${
+        item.unread > 0 ? "pl-4" : ""
+      }`}
+    >
+      {item.unread > 0 && (
+        <span
+          aria-hidden="true"
+          className={`absolute top-2 bottom-2 left-0 w-0.5 rounded-r ${toneDot.attention}`}
+        />
+      )}
+      <span className="mt-0.5 w-10 shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
         #{item.number}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <TitleButton onClick={onOpen} title={t.openProposal} className="text-sm font-medium">
+          <TitleButton
+            onClick={onOpen}
+            title={t.openProposal}
+            className="text-sm font-medium focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:outline-none"
+          >
             <span className="line-clamp-2">{item.title}</span>
           </TitleButton>
           <ProposalStatusPill status={item.status} />
@@ -299,11 +471,19 @@ function QueueRow({
         >
           <EmployeeAvatar
             id={item.author}
-            name={names.get(item.author) ?? item.author}
+            name={author}
             size={ICON_SIZE.rowLead}
             className="shrink-0 rounded"
           />
-          <span className="truncate">{names.get(item.author) ?? item.author}</span>
+          <span className="truncate">{author}</span>
+          {implementer !== null && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="truncate" title={t.implementer}>
+                {t.implementer} {implementer}
+              </span>
+            </>
+          )}
           <span aria-hidden="true">·</span>
           <span title={formatDateTime(item.updatedAt)}>
             {t.updated} {formatRelativeShort(item.updatedAt, locale)}

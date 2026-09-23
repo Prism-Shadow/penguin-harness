@@ -4655,6 +4655,21 @@ Benchmark：
       titleHint: "作者写提案时定",
       created: (n: number): string => `提案 #${n} 已创建`,
       queue: "队列",
+      search: "搜索提案",
+      searchPlaceholder: "搜索：is:open author:… 关键词",
+      /** The filter chips under the search box: lifecycle states, all, and the unread toggle. */
+      chip: {
+        group: "按状态筛选",
+        open: "进行中",
+        ready: "就绪",
+        approved: "已认可",
+        merged: "已合并",
+        rejected: "已拒绝",
+        all: "全部",
+        unread: "有未读",
+      },
+      noMatch: (q: string): string => `没有匹配「${q}」的提案`,
+      showAll: "显示全部",
       queueEmpty: "还没有提案",
       queueEmptyHint:
         "点右上角「新建提案」，把一件改动委托给一名员工：它写提案，另一名员工同时实施。",

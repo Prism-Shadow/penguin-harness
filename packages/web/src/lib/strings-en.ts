@@ -4669,6 +4669,21 @@ Scenarios:
       titleHint: "The author names it when writing",
       created: (n: number): string => `Proposal #${n} created`,
       queue: "Queue",
+      search: "Search proposals",
+      searchPlaceholder: "Search: is:open author:… text",
+      /** The filter chips under the search box: lifecycle states, all, and the unread toggle. */
+      chip: {
+        group: "Filter by state",
+        open: "Open",
+        ready: "Ready",
+        approved: "Approved",
+        merged: "Merged",
+        rejected: "Rejected",
+        all: "All",
+        unread: "Unread",
+      },
+      noMatch: (q: string): string => `No proposal matches "${q}"`,
+      showAll: "Show all",
       queueEmpty: "No proposals yet",
       queueEmptyHint:
         "Click New proposal at the top right to delegate a change to an employee: it writes the proposal while another employee builds it.",

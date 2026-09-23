@@ -396,14 +396,165 @@ export function proposalsRoute(param: string | undefined): { queue: true } | { n
   return Number.isSafeInteger(n) && n > 0 ? { number: n } : { queue: true };
 }
 
-/** The queue's search: number or title, case-insensitively. */
-export function filterProposals(items: readonly ProposalItem[], query: string): ProposalItem[] {
-  const q = query.trim().toLowerCase();
-  if (q === "") return [...items];
-  return items.filter(
-    (p) =>
-      `#${p.number}`.includes(q) || String(p.number) === q || p.title.toLowerCase().includes(q),
+// ---------------------------------------------------------------------------
+// The queue's search: GitHub's grammar over the fields a proposal row carries
+// ---------------------------------------------------------------------------
+
+/** The query the queue opens on: what is still moving. Merged and rejected proposals are a chip away. */
+export const DEFAULT_PROPOSAL_QUERY = "is:open";
+
+/** The keys a token may carry; `status` is spelled the GitHub way too. */
+export type ProposalQueryKey = "is" | "author" | "implementer" | "by" | "unread" | "no";
+
+const QUERY_KEYS: ReadonlySet<string> = new Set([
+  "is",
+  "status",
+  "author",
+  "implementer",
+  "by",
+  "unread",
+  "no",
+]);
+
+export interface ProposalQueryToken {
+  key: ProposalQueryKey;
+  value: string;
+  negated: boolean;
+}
+
+export interface ProposalQuery {
+  tokens: ProposalQueryToken[];
+  /** Free text, lower-cased; every word (or quoted phrase) must match. */
+  text: string[];
+}
+
+/** The states `is:` accepts; `open` and `closed` are the two halves of the lifecycle. */
+const STATE_GROUPS: Record<string, readonly ProposalStatus[]> = {
+  open: ["drafting", "ready", "approved"],
+  closed: ["merged", "rejected"],
+  drafting: ["drafting"],
+  ready: ["ready"],
+  approved: ["approved"],
+  merged: ["merged"],
+  rejected: ["rejected"],
+};
+
+/** Splits on whitespace, keeping `"a phrase"` (and `key:"a phrase"`) as one word. */
+function splitQuery(q: string): string[] {
+  const out: string[] = [];
+  const re = /"([^"]*)"|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(q)) !== null) {
+    const word = m[1] !== undefined ? m[1] : m[2]!;
+    // A key glued to an opening quote: `author:"a b` — the regex took the key as a bare word;
+    // glue the next phrase back on. Rare, and the plain split is what GitHub does too.
+    out.push(word);
+  }
+  return out;
+}
+
+/** `is:open -author:x "two words" text` → tokens and free text. Unknown keys are free text. */
+export function parseProposalQuery(q: string): ProposalQuery {
+  const tokens: ProposalQueryToken[] = [];
+  const text: string[] = [];
+  for (const raw of splitQuery(q)) {
+    const negated = raw.startsWith("-") && raw.length > 1;
+    const word = negated ? raw.slice(1) : raw;
+    const at = word.indexOf(":");
+    const key = at > 0 ? word.slice(0, at).toLowerCase() : "";
+    const value = at > 0 ? word.slice(at + 1).replace(/^"|"$/g, "") : "";
+    if (QUERY_KEYS.has(key) && value !== "") {
+      tokens.push({
+        key: (key === "status" ? "is" : key) as ProposalQueryKey,
+        value: value.toLowerCase(),
+        negated,
+      });
+    } else if (raw.trim() !== "") {
+      text.push(raw.toLowerCase());
+    }
+  }
+  return { tokens, text };
+}
+
+/** One token against one row. */
+function tokenMatches(item: ProposalItem, token: ProposalQueryToken): boolean {
+  const v = token.value;
+  switch (token.key) {
+    case "is": {
+      const states = STATE_GROUPS[v];
+      return states !== undefined && states.includes(item.status);
+    }
+    case "author":
+      return item.author.toLowerCase() === v;
+    case "implementer":
+      return item.implementer !== null && item.implementer.toLowerCase() === v;
+    case "by": {
+      const by = item.delegatedBy.toLowerCase();
+      return by === v || by === `user:${v}` || by === `agent:${v}`;
+    }
+    case "unread":
+      return v === "yes" || v === "true" ? item.unread > 0 : item.unread === 0;
+    case "no":
+      return v === "implementer" ? item.implementer === null : false;
+  }
+}
+
+/**
+ * Same key = OR (`is:ready is:approved` is either), different keys = AND; a negated token
+ * excludes; free text must all appear in `#<number>` or the title, case-insensitively.
+ */
+export function matchesProposalQuery(item: ProposalItem, query: ProposalQuery): boolean {
+  const byKey = new Map<ProposalQueryKey, ProposalQueryToken[]>();
+  for (const t of query.tokens) {
+    const list = byKey.get(t.key) ?? [];
+    list.push(t);
+    byKey.set(t.key, list);
+  }
+  for (const list of byKey.values()) {
+    const positive = list.filter((t) => !t.negated);
+    if (positive.length > 0 && !positive.some((t) => tokenMatches(item, t))) return false;
+    if (list.some((t) => t.negated && tokenMatches(item, t))) return false;
+  }
+  const hay = `#${item.number} ${item.title.toLowerCase()}`;
+  return query.text.every((word) => hay.includes(word));
+}
+
+/** The rows a query keeps, in the queue's order. */
+export function filterProposals(items: readonly ProposalItem[], q: string): ProposalItem[] {
+  const query = parseProposalQuery(q);
+  return items.filter((p) => matchesProposalQuery(p, query));
+}
+
+const tokenText = (key: ProposalQueryKey, value: string): string => `${key}:${value}`;
+
+/** Whether the query carries `key:value` (un-negated); with no value, whether it carries any `key:`. */
+export function hasToken(q: string, key: ProposalQueryKey, value?: string): boolean {
+  return parseProposalQuery(q).tokens.some(
+    (t) => !t.negated && t.key === key && (value === undefined || t.value === value.toLowerCase()),
   );
+}
+
+/** The query with every `key:` token (or just `key:value`) removed; free text and other keys stay in place. */
+export function withoutToken(q: string, key: ProposalQueryKey, value?: string): string {
+  const keep = splitQuery(q).filter((raw) => {
+    const parsed = parseProposalQuery(raw).tokens[0];
+    if (parsed === undefined) return true;
+    return !(parsed.key === key && (value === undefined || parsed.value === value.toLowerCase()));
+  });
+  return keep.map((w) => (/\s/.test(w) ? `"${w}"` : w)).join(" ");
+}
+
+/** The query with `key:value` added once (a chip going on); with `replace`, every other `key:` token goes first. */
+export function withToken(
+  q: string,
+  key: ProposalQueryKey,
+  value: string,
+  opts: { replace?: boolean } = {},
+): string {
+  const base = opts.replace === true ? withoutToken(q, key) : q;
+  if (hasToken(base, key, value)) return base;
+  const stripped = base.trim();
+  return stripped === "" ? tokenText(key, value) : `${stripped} ${tokenText(key, value)}`;
 }
 
 /**

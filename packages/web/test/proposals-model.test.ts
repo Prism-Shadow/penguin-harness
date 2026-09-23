@@ -7,13 +7,18 @@
  * event lines in both languages.
  */
 import { describe, expect, it } from "vitest";
-import type { ProposalComment, ProposalEvent } from "@prismshadow/penguin-server/api";
+import type { ProposalComment, ProposalEvent, ProposalItem } from "@prismshadow/penguin-server/api";
 import {
   scopeFileCandidates,
   commentsInSection,
   eventDetail,
   eventLine,
+  DEFAULT_PROPOSAL_QUERY,
   filterProposals,
+  hasToken,
+  parseProposalQuery,
+  withToken,
+  withoutToken,
   matchProposalPattern,
   orphanComments,
   paragraphSpan,
@@ -239,18 +244,91 @@ describe("proposalsRoute", () => {
   });
 });
 
-describe("filterProposals", () => {
+describe("the queue's search grammar", () => {
+  const item = (over: Partial<ProposalItem>): ProposalItem => ({
+    number: 1,
+    title: "Batch the desk notices",
+    status: "ready",
+    revision: 1,
+    author: "acme_dev",
+    implementer: null,
+    delegatedBy: "user:alice",
+    createdAt: "2026-09-21T00:00:00Z",
+    updatedAt: "2026-09-21T00:00:00Z",
+    unread: 0,
+    pendingComments: 0,
+    materials: [],
+    ...over,
+  });
   const items = [
-    { number: 12, title: "Batch the desk notices", unread: 0 },
-    { number: 3, title: "Rename the runner", unread: 1 },
+    item({ number: 12, status: "drafting", unread: 2 }),
+    item({
+      number: 3,
+      title: "Rename the runner",
+      status: "merged",
+      author: "acme_qa",
+      implementer: "acme_dev",
+      delegatedBy: "agent:acme_qa",
+    }),
+    item({ number: 7, status: "approved", implementer: "acme_dev" }),
+    item({ number: 9, status: "rejected" }),
   ];
-  it("matches the number or the title, case-insensitively, and returns everything for a blank query", () => {
-    const filter = (q: string) => filterProposals(items as never, q).map((p) => p.number);
-    expect(filter("")).toEqual([12, 3]);
-    expect(filter("#12")).toEqual([12]);
-    expect(filter("3")).toEqual([3]);
-    expect(filter("RENAME")).toEqual([3]);
-    expect(filter("nothing")).toEqual([]);
+  const numbers = (q: string) => filterProposals(items, q).map((p) => p.number);
+
+  it("parses key:value tokens, negation, quoted phrases and free text", () => {
+    expect(parseProposalQuery('is:open -author:acme_qa "desk notices" rename')).toEqual({
+      tokens: [
+        { key: "is", value: "open", negated: false },
+        { key: "author", value: "acme_qa", negated: true },
+      ],
+      text: ["desk notices", "rename"],
+    });
+    expect(parseProposalQuery("status:Merged").tokens).toEqual([
+      { key: "is", value: "merged", negated: false },
+    ]);
+    // An unknown key is just text; a bare dash is text too.
+    expect(parseProposalQuery("foo:bar -").text).toEqual(["foo:bar", "-"]);
+  });
+
+  it("hides the closed half by default and opens it a state at a time", () => {
+    expect(numbers(DEFAULT_PROPOSAL_QUERY)).toEqual([12, 7]);
+    expect(numbers("is:closed")).toEqual([3, 9]);
+    expect(numbers("is:merged")).toEqual([3]);
+    expect(numbers("is:ready is:approved")).toEqual([7]);
+    expect(numbers("")).toEqual([12, 3, 7, 9]);
+    expect(numbers("-is:merged -is:rejected")).toEqual([12, 7]);
+  });
+
+  it("filters by author, implementer, delegator, unread and no:implementer, ANDed across keys", () => {
+    expect(numbers("author:acme_qa")).toEqual([3]);
+    expect(numbers("implementer:acme_dev")).toEqual([3, 7]);
+    expect(numbers("implementer:acme_dev is:open")).toEqual([7]);
+    expect(numbers("by:alice")).toEqual([12, 7, 9]);
+    expect(numbers("by:agent:acme_qa")).toEqual([3]);
+    expect(numbers("unread:yes")).toEqual([12]);
+    expect(numbers("unread:no is:open")).toEqual([7]);
+    expect(numbers("no:implementer")).toEqual([12, 9]);
+  });
+
+  it("matches free text against the number and the title, case-insensitively", () => {
+    expect(numbers("#12")).toEqual([12]);
+    expect(numbers("RENAME")).toEqual([3]);
+    expect(numbers('"desk notices" is:open')).toEqual([12, 7]);
+    expect(numbers("nothing")).toEqual([]);
+  });
+
+  it("edits tokens for the chips without touching the rest of the query", () => {
+    expect(hasToken("is:open author:x", "is", "open")).toBe(true);
+    expect(hasToken("-is:open", "is", "open")).toBe(false);
+    expect(hasToken("author:x", "is")).toBe(false);
+    expect(withoutToken("is:open is:ready author:x rename", "is")).toBe("author:x rename");
+    expect(withoutToken("is:open is:ready", "is", "ready")).toBe("is:open");
+    expect(withToken("author:x", "is", "merged")).toBe("author:x is:merged");
+    expect(withToken("is:open is:ready author:x", "is", "merged", { replace: true })).toBe(
+      "author:x is:merged",
+    );
+    expect(withToken("is:open", "is", "open")).toBe("is:open");
+    expect(withoutToken('unread:yes "two words"', "unread")).toBe('"two words"');
   });
 });
 
