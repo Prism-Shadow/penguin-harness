@@ -4,5 +4,10 @@
   "short_description": "Fine-tune, run and serve models locally.",
   "short_description_zh": "本地微调、运行与部署模型。",
   "version": "2026.09.02.1",
-  "category": "ai-app-development"
+  "category": "ai-app-development",
+  "quick_start": {
+    "prompt": "Check whether Ollama is installed on this machine. If it is, list the local models and show a request to one of them through the OpenAI-compatible endpoint. Do not pull any model without asking me.",
+    "prompt_zh": "检查这台机器上是否装了 Ollama。如果装了，列出本地模型，并演示通过 OpenAI 兼容端点向其中一个发请求。未经我同意不要拉取任何模型。",
+    "skills": ["ollama"]
+  }
 }
