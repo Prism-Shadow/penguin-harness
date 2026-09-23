@@ -186,6 +186,16 @@ export const en: Strings = {
     backToMachines: "Machines",
     machineEmpty:
       "No port forwards on this machine yet. Add one from the Ports panel of a conversation on it.",
+    statusExposureRefused: (mode: "exposes" | "unknown"): string =>
+      mode === "exposes"
+        ? "Not on the session: this machine's sshd would bind it on every interface (GatewayPorts yes). Allow it under Settings › Ports"
+        : "Not on the session: where this machine's sshd would bind it could not be found out. Allow it under Settings › Ports",
+    exposureAskTitle: "This forward would be open on the machine's network",
+    exposureAskExposes: (alias: string) =>
+      `${alias}'s sshd has GatewayPorts yes: a here → machine forward is bound on every interface there, and anyone on that network can connect. To go on, allow this machine under Settings › Ports first.`,
+    exposureAskUnknown: (alias: string) =>
+      `Where ${alias}'s sshd would bind a here → machine forward could not be found out. To be safe it is not forwarded; to go on, allow this machine under Settings › Ports first.`,
+    openSettings: "Open Settings",
     verb: "Ports",
     verbTitle: "Every port forward of this machine",
   },
@@ -356,6 +366,18 @@ export const en: Strings = {
     pluginConfigMachine: "Machine",
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "Must be a number",
+    portsTitle: "Ports",
+    portsInfo:
+      "A here → machine forward opens a listening port on the machine, and where it binds is the machine's sshd's call: GatewayPorts no or clientspecified keeps it on the loopback, yes puts it on every interface, where anyone on that network can connect. The server forwards on its own only when a probe confirms the loopback; everything else needs to be allowed here, machine by machine.",
+    portsDesc:
+      "One row per machine: the last probe's verdict, and whether to forward anyway when its sshd exposes (or cannot be read).",
+    exposureAllow: "Forward even when exposed",
+    exposureLoopback: "Loopback only",
+    exposureExposes: "Every interface (GatewayPorts yes)",
+    exposureUnknown: (detail: string) => `Could not be read: ${detail}`,
+    exposureNotProbed: "Not probed yet",
+    exposureProbe: "Probe",
+    exposureEmpty: "No machines yet.",
     sharingTitle: "Sharing",
     sharingInfo:
       "Publish an Agent's definition (system config, prompt, skills, tools, workflows) as a GitHub gist, or install one from a gist. Publishing needs a GitHub token with the gist scope, kept by the server; installing a public gist needs none.",

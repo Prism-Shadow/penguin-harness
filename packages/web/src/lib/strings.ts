@@ -219,6 +219,18 @@ export const zh = {
     /** The verb on a machine's card. */
     verb: "端口",
     verbTitle: "查看这台机器的全部端口转发",
+    /** An `out` forward the server holds back: where the machine's sshd would bind it. */
+    statusExposureRefused: (mode: "exposes" | "unknown"): string =>
+      mode === "exposes"
+        ? "未加到会话上：这台机器的 sshd 会把它绑到所有网卡（GatewayPorts yes）。在设置 › 端口里允许后生效"
+        : "未加到会话上：无法确认这台机器的 sshd 会把它绑到哪里。在设置 › 端口里允许后生效",
+    /** The dialog a refused `out` forward opens: what would happen, and where consent lives. */
+    exposureAskTitle: "这条转发会暴露到机器的网络",
+    exposureAskExposes: (alias: string) =>
+      `${alias} 的 sshd 设置了 GatewayPorts yes：本地 → 机器的转发会被绑到它的所有网卡上，同一网络里的任何人都能连。要继续，先在设置 › 端口里允许这台机器。`,
+    exposureAskUnknown: (alias: string) =>
+      `无法确认 ${alias} 的 sshd 会把本地 → 机器的转发绑到哪里。为安全起见先不转发；要继续，先在设置 › 端口里允许这台机器。`,
+    openSettings: "打开设置",
   },
 
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
@@ -392,6 +404,18 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
+    /** Admin-only sub-page (server-global): which machines may carry `out` forwards their sshd exposes. */
+    portsTitle: "端口",
+    portsInfo:
+      "本地 → 机器的转发在机器上开一个监听端口，绑在哪里由机器的 sshd 决定：GatewayPorts 为 no 或 clientspecified 时只绑本机，为 yes 时绑所有网卡、同一网络里的任何人都能连。服务器只在探测确认为本机时自动转发；其余情况要在这里逐台允许。",
+    portsDesc: "每台机器一行：上次探测的结果，以及它的 sshd 会暴露（或无法确认）时是否仍然转发。",
+    exposureAllow: "暴露时仍转发",
+    exposureLoopback: "只绑本机",
+    exposureExposes: "绑到所有网卡（GatewayPorts yes）",
+    exposureUnknown: (detail: string) => `无法确认：${detail}`,
+    exposureNotProbed: "尚未探测",
+    exposureProbe: "探测",
+    exposureEmpty: "还没有机器。",
     /** Admin-only sub-page (server-global). */
     sharingTitle: "分享",
     sharingInfo:

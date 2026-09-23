@@ -60,6 +60,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "sharing",
+      "ports",
       "plugins",
       "users",
     ]);
@@ -85,6 +86,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "sharing",
+      "ports",
       "plugins",
     ]);
   });
@@ -101,6 +103,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "sharing",
+      "ports",
       "plugins",
     ]);
   });

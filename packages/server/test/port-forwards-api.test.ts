@@ -8,7 +8,13 @@ import net from "node:net";
 import type { AddressInfo } from "node:net";
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { PortForwardInfo, PortForwardsResponse } from "../src/api/types.js";
+import type {
+  ForwardExposureResponse,
+  MachineExposureResponse,
+  PortForwardInfo,
+  PortForwardsResponse,
+} from "../src/api/types.js";
+import type { ForwardExposure } from "../src/machines/commands.js";
 import { openDatabase } from "../src/db/database.js";
 import { MachinesRepo } from "../src/db/repos/machines.js";
 import { MachinesService } from "../src/machines/service.js";
@@ -18,6 +24,8 @@ import type { TestApp } from "./helpers.js";
 const LOCAL_ID = "TESTlocalID00000";
 const MACHINE = "QS7J4YVgSovi-Z2c";
 const WORKSPACE = "/home/dev/site";
+/** What the fake machine's sshd does with an out forward's bind; a test sets it. */
+let exposure: ForwardExposure = { mode: "loopback" };
 
 async function freePort(): Promise<number> {
   const probe = net.createServer();
@@ -44,8 +52,10 @@ describe("port forwarding API", () => {
         session: () => null,
         setForwards: async () => {},
         forwardFacts: () => new Map(),
+        forwardExposure: async () => exposure,
       }),
     });
+    exposure = { mode: "loopback" };
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
   });
 
@@ -142,6 +152,52 @@ describe("port forwarding API", () => {
     expect((await admin.post("/api/port-forwards", { ...body, localPort: 80 })).status).toBe(400);
     expect((await admin.post("/api/port-forwards", { ...body, workspace: "" })).status).toBe(400);
     expect((await admin.get("/api/port-forwards?workspace=%2Fx")).status).toBe(400);
+  });
+  it("refuses an out forward its machine would expose, until an admin allows that machine", async () => {
+    exposure = { mode: "exposes" };
+    const body = {
+      machineId: MACHINE,
+      workspace: WORKSPACE,
+      direction: "out",
+      remotePort: 5432,
+      localPort: 5432,
+    };
+    const refused = await admin.post("/api/port-forwards", body);
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+      "forward_exposes",
+    );
+    const listed = await admin.get("/api/port-forwards/exposure");
+    expect(listed.status).toBe(200);
+    expect(((await listed.json()) as ForwardExposureResponse).machines).toEqual([
+      { machineId: MACHINE, alias: "build-box", allowed: false, exposure: { mode: "exposes" } },
+    ]);
+    // The verdict stands until the machine is asked again; an unknown one is refused too.
+    exposure = { mode: "unknown", detail: "ssh exited 255" };
+    await admin.post(`/api/port-forwards/exposure/${MACHINE}/probe`);
+    const unknown = await admin.post("/api/port-forwards", body);
+    expect(unknown.status).toBe(409);
+    expect(((await unknown.json()) as { error: { code: string } }).error.code).toBe(
+      "forward_exposure_unknown",
+    );
+
+    const allowed = await admin.put(`/api/port-forwards/exposure/${MACHINE}`, { allowed: true });
+    expect(allowed.status).toBe(200);
+    expect(((await allowed.json()) as MachineExposureResponse).machine.allowed).toBe(true);
+    expect((await admin.post("/api/port-forwards", body)).status).toBe(201);
+    expect((await admin.put("/api/port-forwards/exposure/nobody", { allowed: true })).status).toBe(
+      404,
+    );
+    expect(
+      (await admin.put(`/api/port-forwards/exposure/${MACHINE}`, { allowed: "yes" })).status,
+    ).toBe(400);
+
+    // Asked again on request: the fresh verdict is the row's.
+    exposure = { mode: "loopback" };
+    const probed = await admin.post(`/api/port-forwards/exposure/${MACHINE}/probe`);
+    expect(((await probed.json()) as MachineExposureResponse).machine.exposure).toEqual({
+      mode: "loopback",
+    });
   });
 });
 

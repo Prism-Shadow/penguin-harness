@@ -324,6 +324,91 @@ export function forwardControlArgs(
   ];
 }
 
+/**
+ * What a machine's sshd does with the loopback bind an `out` forward asks for. A `-R` names
+ * `127.0.0.1` as its listen address, and sshd is free to ignore that: with `GatewayPorts yes`
+ * it binds every interface and only says so in a debug message (measured on OpenSSH 10: the
+ * client prints "overridden by server GatewayPorts" under -v and reports success), with `no`
+ * and `clientspecified` the loopback is honoured. So an `out` forward on a machine whose
+ * sshd widens it is an open door on that machine's network, and nothing on this side can
+ * close it — the verdict has to be found out, and found out BEFORE a real port is asked.
+ */
+export type ForwardExposure =
+  { mode: "loopback" } | { mode: "exposes" } | { mode: "unknown"; detail: string };
+
+/**
+ * The machine's TCP listeners in whichever spelling it has — `ss` where it exists, `netstat`
+ * elsewhere (Linux, macOS, Windows all print it) — and a last word for a machine with neither.
+ */
+export const LISTENERS_COMMAND =
+  "ss -Hltn 2>/dev/null || netstat -an 2>/dev/null || echo penguin-no-listing";
+
+/**
+ * One connection that asks sshd for a listener of its own choosing — port 0, bound as every
+ * `out` forward asks, delivering to a closed port here — lists the machine's listeners while
+ * it is up, and ends, taking the listener with it. Verbose for one line: sshd's word that it
+ * overrode the address is a debug message. readExposure reads the answer.
+ */
+export function exposureProbeArgs(target: RemoteTarget): string[] {
+  return [
+    ...connectionOptions(target),
+    "-T",
+    "-v",
+    "-o",
+    "ExitOnForwardFailure=yes",
+    "-R",
+    "127.0.0.1:0:127.0.0.1:1",
+    target.alias,
+    LISTENERS_COMMAND,
+  ];
+}
+
+/** How a listing spells "every interface" and "this host only", brackets included. */
+const WILDCARD_HOSTS = new Set(["", "*", "0.0.0.0", "::", "[::]"]);
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
+
+/**
+ * The probe's answer. sshd's own word counts first; otherwise the listener it allocated is
+ * looked up in the listing (`0.0.0.0:N`, `[::]:N`, `*.N`, `:::N` = every interface;
+ * `127.0.0.1:N`, `[::1]:N` = loopback). Anything that cannot be read — the connection
+ * failed, no port was reported, the listing has no tool or no such port — is `unknown`,
+ * with the reason: a forward is refused on unknown, so the reason is what the person acts on.
+ */
+export function readExposure(result: {
+  code: number;
+  stdout: string;
+  stderr: string;
+}): ForwardExposure {
+  if (/overridden by server GatewayPorts/.test(result.stderr)) return { mode: "exposes" };
+  const said =
+    result.stderr
+      .trim()
+      .split("\n")
+      .filter((line) => !line.startsWith("debug"))
+      .pop() ?? "";
+  if (result.code !== 0) {
+    return { mode: "unknown", detail: said === "" ? `ssh exited ${result.code}` : said };
+  }
+  const allocated = /Allocated port (\d+) for remote forward/.exec(result.stderr);
+  if (allocated === null) {
+    return { mode: "unknown", detail: "ssh did not report the port it allocated for the probe" };
+  }
+  const port = allocated[1]!;
+  let loopback = false;
+  for (const line of result.stdout.split("\n")) {
+    if (!/LISTEN/i.test(line)) continue;
+    for (const token of line.trim().split(/\s+/)) {
+      const m = /^(.*)[:.](\d+)$/.exec(token);
+      if (m === null || m[2] !== port) continue;
+      if (WILDCARD_HOSTS.has(m[1]!)) return { mode: "exposes" };
+      if (LOOPBACK_HOSTS.has(m[1]!)) loopback = true;
+    }
+  }
+  return loopback
+    ? { mode: "loopback" }
+    : { mode: "unknown", detail: "the probe's listener is not in the machine's listing" };
+}
+
 /** Marker separating the resolved path from the entries in a directory listing. */
 export const DIR_LIST_MARK = "---penguin-dirs---";
 

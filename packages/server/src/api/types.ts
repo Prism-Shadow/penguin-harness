@@ -4483,7 +4483,45 @@ export interface PortForwardInfo {
     /** The machine's session is down; the forward is wanted and waits for it. */
     | { kind: "not-connected" }
     /** ssh said no — in its own words. */
-    | { kind: "failed"; detail: string };
+    | { kind: "failed"; detail: string }
+    /**
+     * An `out` forward not handed to the session: the machine's sshd would bind it on every
+     * interface (`exposes`, GatewayPorts yes), or where it would bind could not be found out
+     * (`unknown`). Carried once an admin allows that machine under Settings > Ports.
+     */
+    | { kind: "exposure-refused"; mode: "exposes" | "unknown" };
+}
+
+/**
+ * What a machine's sshd does with the loopback bind an `out` forward asks for, as one probe
+ * connection found out: honoured (`loopback`), widened to every interface (`exposes`), or
+ * not readable (`unknown`, with why). Null: never asked.
+ */
+export type ForwardExposure =
+  { mode: "loopback" } | { mode: "exposes" } | { mode: "unknown"; detail: string };
+
+/** A machine on the Ports settings page: its consent to exposed `out` forwards, and the last verdict. */
+export interface MachineExposureInfo {
+  machineId: string;
+  alias: string;
+  /** An admin allowed `out` forwards there whatever its sshd does with them. */
+  allowed: boolean;
+  exposure: ForwardExposure | null;
+}
+
+/** `GET /api/port-forwards/exposure` — every machine on record with an id of its own. */
+export interface ForwardExposureResponse {
+  machines: MachineExposureInfo[];
+}
+
+/** `PUT /api/port-forwards/exposure/:machineId` (`{allowed}`) and `POST …/probe` — that machine after. */
+export interface MachineExposureResponse {
+  machine: MachineExposureInfo;
+}
+
+/** `PUT /api/port-forwards/exposure/:machineId`. */
+export interface ForwardExposureUpdateRequest {
+  allowed: boolean;
 }
 
 /** `GET /api/port-forwards?machine=&workspace=` — both filters optional. */

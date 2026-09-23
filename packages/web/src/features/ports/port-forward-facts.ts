@@ -12,6 +12,7 @@ import type { Tone } from "../../lib/tone";
 export function forwardTone(forward: PortForwardInfo): Tone {
   switch (forward.status.kind) {
     case "failed":
+    case "exposure-refused":
       return "danger";
     case "not-connected":
       return "attention";
@@ -27,6 +28,8 @@ export function statusLine(forward: PortForwardInfo): string {
   switch (forward.status.kind) {
     case "failed":
       return S.ports.statusFailed(forward.status.detail);
+    case "exposure-refused":
+      return S.ports.statusExposureRefused(forward.status.mode);
     case "not-connected":
       return S.ports.statusNotConnected;
     case "pending":

@@ -41,6 +41,8 @@ case "$*" in *:65002:*) if [ ! -f "$once" ]; then touch "$once"
   case "$*" in *" -O "*) echo "Port forwarding failed: bind: Address already in use" >&2; exit 255 ;;
   *) echo "Warning: remote port forwarding failed for listen port 65002" >&2 ;; esac
 fi ;; esac
+# The exposure probe: sshd allocates a port, bound on the loopback, and the listing shows it.
+case "$*" in *" -R 127.0.0.1:0:"*) echo "Allocated port 45001 for remote forward to 127.0.0.1:1" >&2; echo "LISTEN 0 128 127.0.0.1:45001 0.0.0.0:*"; exit 0 ;; esac
 # The master answering a control request: port 65001 will not bind, every other one does.
 case "$*" in *" -O "*:65001:*) echo "Port forwarding failed: bind: Address already in use" >&2; exit 255 ;; *" -O "*) exit 0 ;; esac
 # A session started WITH forwards (the Windows path): ssh warns about the one it could not bind and goes on.
@@ -279,6 +281,24 @@ exit 1
       closeConnectionTo("ssh:nas");
       attachSessionRegistry(null);
     }
+  });
+
+  it("asks a machine where its sshd binds an out forward, on a connection of its own", async () => {
+    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    expect(await conn.probeForwardExposure()).toEqual({ mode: "loopback" });
+    expect(spawns()).toHaveLength(1);
+    expect(spawns()[0]).toContain(
+      "-v -o ExitOnForwardFailure=yes -R 127.0.0.1:0:127.0.0.1:1 nas ss -Hltn",
+    );
+    // Nothing kept: no session was opened for it.
+    expect(sessionOf("ssh:nas")).toBeNull();
+    // A machine that refuses is unknown, in ssh's words.
+    expect(await connectionTo({ alias: "refused", user: "deploy" }).probeForwardExposure()).toEqual(
+      {
+        mode: "unknown",
+        detail: "deploy@refused: Permission denied (publickey).",
+      },
+    );
   });
 
   it("asks again for a forward ssh refused — a port the replaced session still held — and stops after the last wait", async () => {

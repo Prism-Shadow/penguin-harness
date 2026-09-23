@@ -19,13 +19,23 @@
  *
  * FACTS, NOT A FLAG. A forward's status names which layer speaks: the session is down, ssh has
  * not been asked yet, ssh said yes, or ssh said no and why.
+ *
+ * AN `out` FORWARD IS CLEARED FIRST. Its listener is on the machine, and the machine's sshd
+ * decides where that listener binds (commands.ts ForwardExposure): a sshd that widens the
+ * loopback bind to every interface makes the forward an open door on that machine's network.
+ * So before an `out` forward is ever handed to a session, the machine is asked — one probe
+ * connection, cached — and the forward is carried only when the answer is `loopback`, or when
+ * an admin consented to that machine under Settings > Ports (exposure.ts). `exposes` and
+ * `unknown` alike are refused: a machine that cannot be read is not assumed safe. A refused
+ * forward stays on record and reads `exposure-refused`; consent hands it over.
  */
 import net from "node:net";
 import { randomBytes } from "node:crypto";
-import type { ForwardDirection, ForwardSpec } from "../machines/commands.js";
+import type { ForwardDirection, ForwardExposure, ForwardSpec } from "../machines/commands.js";
 import { forwardKey } from "../machines/transport/index.js";
 import type { ForwardFact } from "../machines/transport/index.js";
 import type { PortForwardRow, PortForwardsRepo } from "../db/repos/port-forwards.js";
+import type { ExposureConsent } from "./exposure.js";
 
 /** The lowest local port a forward may take: below it a bind needs privileges this server should not have. */
 export const MIN_LOCAL_PORT = 1024;
@@ -33,11 +43,24 @@ const MAX_PORT = 65535;
 /** How far above the asked port the automatic choice looks before giving up. */
 const LOCAL_PORT_SEARCH = 200;
 
+/**
+ * How long a definite exposure verdict stands before the machine is asked again. sshd's
+ * configuration changes rarely; the probe is a whole connection. `unknown` is never kept:
+ * a machine that was down answers differently the moment it is up.
+ */
+const EXPOSURE_TTL_MS = 10 * 60_000;
+/** How often a read may retry the hand-over of forwards withheld for lack of a verdict. */
+const WITHHELD_RETRY_MS = 30_000;
+
+/** Why an `out` forward is not carried: the machine's sshd widens the bind, or could not be read. */
+export type ExposureRefusal = "exposes" | "unknown";
+
 export type ForwardStatus =
   | { kind: "active" }
   | { kind: "pending" }
   | { kind: "not-connected" }
-  | { kind: "failed"; detail: string };
+  | { kind: "failed"; detail: string }
+  | { kind: "exposure-refused"; mode: ExposureRefusal };
 
 export interface PortForwardInfo extends PortForwardRow {
   status: ForwardStatus;
@@ -47,16 +70,27 @@ export type CreateRefusal =
   | { error: "unknown_machine" }
   | { error: "forward_exists"; existing: PortForwardInfo }
   | { error: "local_port_in_use"; localPort: number }
-  | { error: "no_free_local_port" };
+  | { error: "no_free_local_port" }
+  | { error: "exposure_refused"; mode: ExposureRefusal };
+
+/** A machine as the Ports settings page lists it: its consent, and the last verdict if any. */
+export interface MachineExposure {
+  machineId: string;
+  alias: string;
+  allowed: boolean;
+  exposure: ForwardExposure | null;
+}
 
 /** What the service needs from the machines feature. */
 export interface ForwardCarrier {
   knows(machineId: string): boolean;
+  known(): { machineId: string; alias: string }[];
   setForwards(
     machineId: string,
     specs: readonly ForwardSpec[],
   ): Promise<{ ok: true } | { ok: false; detail: string }>;
   forwardFacts(machineId: string): { connected: boolean; facts: ReadonlyMap<string, ForwardFact> };
+  forwardExposure(machineId: string): Promise<ForwardExposure>;
 }
 
 export function isPort(value: unknown): value is number {
@@ -85,9 +119,17 @@ function bindable(port: number): Promise<boolean> {
 }
 
 export class PortForwardService {
+  /** The last definite verdict per machine, and when it was found out. */
+  readonly #exposure = new Map<string, { at: number; exposure: ForwardExposure }>();
+  /** Machines whose `out` forwards are on record but not handed over, with why, and when last tried. */
+  readonly #withheld = new Map<string, { mode: ExposureRefusal; at: number }>();
+  /** One probe per machine at a time: a second ask waits for the first. */
+  readonly #probing = new Map<string, Promise<ForwardExposure>>();
+
   constructor(
     private readonly repo: PortForwardsRepo,
     private readonly carrier: ForwardCarrier,
+    private readonly consent: ExposureConsent,
     private readonly now: () => Date = () => new Date(),
   ) {}
 
@@ -98,6 +140,15 @@ export class PortForwardService {
   }
 
   list(filter: { machineId?: string; workspace?: string } = {}): PortForwardInfo[] {
+    // A withheld machine whose verdict was `unknown` is tried again from here, at most every
+    // WITHHELD_RETRY_MS: nothing else would — a machine that was down at boot comes up on
+    // its own, and the page polling this is the one place that keeps looking.
+    for (const [machineId, held] of this.#withheld) {
+      if (held.mode !== "unknown" || held.at + WITHHELD_RETRY_MS > this.now().getTime()) continue;
+      if (!this.carrier.forwardFacts(machineId).connected) continue;
+      held.at = this.now().getTime();
+      void this.#sync(machineId);
+    }
     return this.repo
       .all()
       .filter(
@@ -123,6 +174,10 @@ export class PortForwardService {
       input.remotePort,
     );
     if (existing !== null) return { error: "forward_exists", existing: this.#info(existing) };
+    if (input.direction === "out") {
+      const cleared = await this.#cleared(input.machineId);
+      if (!cleared.ok) return { error: "exposure_refused", mode: cleared.mode };
+    }
 
     // The local port. Asked for: taken or refused. Automatic: the remote port's own number —
     // the address a person would guess — or the first above it that is free here. An `out`
@@ -166,13 +221,85 @@ export class PortForwardService {
     return true;
   }
 
-  /** The machine's wanted set, as the record has it, handed to its session. */
+  /** The machines an admin may consent for, each with its consent and last verdict. */
+  exposure(): MachineExposure[] {
+    return this.carrier.known().map(({ machineId, alias }) => ({
+      machineId,
+      alias,
+      allowed: this.consent.allowed(machineId),
+      exposure: this.#exposure.get(machineId)?.exposure ?? null,
+    }));
+  }
+
+  /** Records the consent and hands the machine its set again under it. Null: no such machine. */
+  async setAllowed(machineId: string, allowed: boolean): Promise<MachineExposure | null> {
+    if (!this.carrier.knows(machineId)) return null;
+    this.consent.setAllowed(machineId, allowed);
+    await this.#sync(machineId);
+    return this.exposure().find((m) => m.machineId === machineId) ?? null;
+  }
+
+  /** Asks the machine afresh — the settings page's own button — and re-evaluates its forwards. Null: no such machine. */
+  async probe(machineId: string): Promise<MachineExposure | null> {
+    if (!this.carrier.knows(machineId)) return null;
+    this.#exposure.delete(machineId);
+    await this.#exposureOf(machineId);
+    await this.#sync(machineId);
+    return this.exposure().find((m) => m.machineId === machineId) ?? null;
+  }
+
+  /** The machine's verdict: the cached one while it stands, else asked now — once at a time. */
+  async #exposureOf(machineId: string): Promise<ForwardExposure> {
+    const cached = this.#exposure.get(machineId);
+    if (cached !== undefined && cached.at + EXPOSURE_TTL_MS > this.now().getTime()) {
+      return cached.exposure;
+    }
+    let pending = this.#probing.get(machineId);
+    if (pending === undefined) {
+      pending = this.carrier.forwardExposure(machineId).finally(() => {
+        this.#probing.delete(machineId);
+      });
+      this.#probing.set(machineId, pending);
+    }
+    const exposure = await pending;
+    if (exposure.mode !== "unknown") {
+      this.#exposure.set(machineId, { at: this.now().getTime(), exposure });
+    }
+    return exposure;
+  }
+
+  /** Whether `out` forwards may go to this machine: consented, or its sshd keeps them on the loopback. */
+  async #cleared(machineId: string): Promise<{ ok: true } | { ok: false; mode: ExposureRefusal }> {
+    if (this.consent.allowed(machineId)) return { ok: true };
+    const exposure = await this.#exposureOf(machineId);
+    return exposure.mode === "loopback" ? { ok: true } : { ok: false, mode: exposure.mode };
+  }
+
+  /**
+   * The machine's wanted set, as the record has it, handed to its session — its `out` rows
+   * only once the machine is cleared for them; withheld otherwise, and said so.
+   */
   async #sync(machineId: string): Promise<void> {
     const rows = this.repo.all().filter((row) => row.machineId === machineId);
-    await this.carrier.setForwards(machineId, rows.map(specOf));
+    let wanted = rows;
+    if (rows.some((row) => row.direction === "out")) {
+      const cleared = await this.#cleared(machineId);
+      if (cleared.ok) this.#withheld.delete(machineId);
+      else {
+        this.#withheld.set(machineId, { mode: cleared.mode, at: this.now().getTime() });
+        wanted = rows.filter((row) => row.direction === "in");
+      }
+    } else {
+      this.#withheld.delete(machineId);
+    }
+    await this.carrier.setForwards(machineId, wanted.map(specOf));
   }
 
   #info(row: PortForwardRow): PortForwardInfo {
+    const withheld = this.#withheld.get(row.machineId);
+    if (row.direction === "out" && withheld !== undefined) {
+      return { ...row, status: { kind: "exposure-refused", mode: withheld.mode } };
+    }
     const { connected, facts } = this.carrier.forwardFacts(row.machineId);
     const fact = facts.get(forwardKey(specOf(row)));
     const status: ForwardStatus = !connected
