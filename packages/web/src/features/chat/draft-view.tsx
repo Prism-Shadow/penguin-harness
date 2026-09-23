@@ -48,6 +48,7 @@ import type {
   ModelsResponse,
   SessionCreateRequest,
   SessionSandbox,
+  SessionSurfaceSummary,
   SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
@@ -60,6 +61,9 @@ import { rememberSessionMachine } from "../../lib/session-machines";
 import { cachedMachineAgents, rememberMachineAgents } from "../../lib/machine-cache";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
+import type { Locale } from "../../state/locale";
+import { surfaceLabel, useContributions } from "../../state/contributions";
+import { SurfaceComposer } from "./surface-composer";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
@@ -292,7 +296,20 @@ export function DraftView({
     agentId?: string;
     workspace?: string;
     machineId?: string;
+    /** A surface Session to open (the sidebar's surface entries) instead of a conversation to compose. */
+    surface?: string;
   } | null;
+  /**
+   * What this draft opens: the built-in conversation, or one of the surfaces a plugin
+   * contributes. Chosen on this page beside the Agent and the Workspace, so a surface always
+   * opens in a Workspace the user picked rather than one an entry point guessed. A deep link
+   * may seed it (`/chat/new` with `state.surface`); the picker owns it from then on.
+   */
+  const { surfaces } = useContributions();
+  const [surfaceKind, setSurfaceKind] = useState<string | null>(routeState?.surface ?? null);
+  const surfaceEntry =
+    surfaceKind === null ? null : (surfaces.find((s) => s.kind === surfaceKind) ?? null);
+  const uiLocale = useLocale().locale;
   const stateAgentId = routeState?.agentId;
   // Read here rather than beside their own effect below: the Agent resolution waits on them
   // (see `routeMachineSettled`), and a dependency array is evaluated during the render that
@@ -738,6 +755,48 @@ export function DraftView({
   // a racing navigation. A ref rather than state — the composer disables its own send button
   // off its `busy` state, and nothing else on this page renders differently mid-send.
   const sendingRef = useRef(false);
+  const [openingSurface, setOpeningSurface] = useState(false);
+  /**
+   * Surface mode: create the Session OF that kind (no model, the chosen Agent and
+   * Workspace), open its surface with the prompt, and land on it. A surface that fails to
+   * open takes the empty Session with it, like a first message that fails to send.
+   */
+  const onOpenSurface = useCallback(
+    async (prompt: string): Promise<void> => {
+      if (!agentId || surfaceKind === null || sendingRef.current) return;
+      sendingRef.current = true;
+      setOpeningSurface(true);
+      let createdId: string | null = null;
+      try {
+        const body: SessionCreateRequest = { approvalMode, surface: surfaceKind };
+        if (Object.keys(sandboxPick).length > 0) body.sandbox = sandboxPick;
+        if (workspace.trim()) body.workspace = workspace.trim();
+        const created = await api.createSession(projectId, agentId, body, workspaceMachine);
+        createdId = created.session.sessionId;
+        await api.openSessionSurface(createdId, prompt.trim() === "" ? {} : { prompt });
+        add(created.session);
+        adoptDockScope(createdId);
+        navigate(`/chat/${createdId}`, { replace: true });
+      } catch (e) {
+        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        toastError(apiErrorText(e));
+      } finally {
+        sendingRef.current = false;
+        setOpeningSurface(false);
+      }
+    },
+    [
+      projectId,
+      agentId,
+      approvalMode,
+      sandboxPick,
+      workspace,
+      workspaceMachine,
+      surfaceKind,
+      add,
+      navigate,
+    ],
+  );
 
   // First message sent: only now is the Session created (Agent / Workspace / Model / approval
   // mode are all locked in together), then the route jumps once sent; returns false on any
@@ -881,34 +940,43 @@ export function DraftView({
           <VersionLine />
         </div>
 
-        <ChatInput
-          status="idle"
-          controlRef={composerRef}
-          onSend={onSend}
-          onStop={async () => undefined}
-          modelRef={modelRef}
-          models={models?.models ?? []}
-          onChangeModel={setModelRef}
-          thinkingLevel={thinkingLevel}
-          onChangeThinkingLevel={onChangeThinkingLevel}
-          {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
-          {...(contextWindow !== undefined ? { contextWindow } : {})}
-          contextNow={0}
-          vision={vision}
-          approvalMode={approvalMode}
-          onChangeApprovalMode={changeApprovalMode}
-          sandbox={{ ...(chatDefaults?.sandbox ?? UNCONFINED), ...sandboxPick }}
-          onChangeSandbox={changeSandbox}
-          modeSaving={false}
-          autoFocus
-          agents={agents}
-          {...(agentId ? { currentAgentId: agentId } : {})}
-          skills={agentSkills}
-          {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
-          onSkillsChange={onSkillsChange}
-          initialText={cached.text ?? ""}
-          onTextChange={onTextChange}
-        />
+        {surfaceKind !== null ? (
+          <SurfaceComposer
+            label={surfaceEntry === null ? surfaceKind : surfaceLabel(surfaceEntry, uiLocale)}
+            unavailable={surfaceEntry === null}
+            busy={openingSurface}
+            onOpen={(prompt) => void onOpenSurface(prompt)}
+          />
+        ) : (
+          <ChatInput
+            status="idle"
+            controlRef={composerRef}
+            onSend={onSend}
+            onStop={async () => undefined}
+            modelRef={modelRef}
+            models={models?.models ?? []}
+            onChangeModel={setModelRef}
+            thinkingLevel={thinkingLevel}
+            onChangeThinkingLevel={onChangeThinkingLevel}
+            {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
+            {...(contextWindow !== undefined ? { contextWindow } : {})}
+            contextNow={0}
+            vision={vision}
+            approvalMode={approvalMode}
+            onChangeApprovalMode={changeApprovalMode}
+            sandbox={{ ...(chatDefaults?.sandbox ?? UNCONFINED), ...sandboxPick }}
+            onChangeSandbox={changeSandbox}
+            modeSaving={false}
+            autoFocus
+            agents={agents}
+            {...(agentId ? { currentAgentId: agentId } : {})}
+            skills={agentSkills}
+            {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
+            onSkillsChange={onSkillsChange}
+            initialText={cached.text ?? ""}
+            onTextChange={onTextChange}
+          />
+        )}
 
         {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -929,6 +997,16 @@ export function DraftView({
             onChange={changeWorkspace}
             chooseMachine
           />
+          {/* Only when a plugin contributes one: with nothing to choose between, a picker
+              offering "conversation" alone is a control that cannot be used. */}
+          {surfaces.length > 0 && (
+            <KindSelect
+              surfaces={surfaces}
+              selected={surfaceKind}
+              onSelect={setSurfaceKind}
+              locale={uiLocale}
+            />
+          )}
         </div>
 
         {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
@@ -1073,6 +1151,74 @@ function VersionBadge() {
 }
 
 /** Agent selection (pill dropdown): avatar + name, menu opens downward with an internal scroll cap. */
+/**
+ * What the draft opens: the conversation, or a contributed surface. The same pill dropdown
+ * as the Agent and Workspace pickers it sits beside.
+ */
+function KindSelect({
+  surfaces,
+  selected,
+  onSelect,
+  locale,
+}: {
+  surfaces: readonly SessionSurfaceSummary[];
+  /** null = the built-in conversation. */
+  selected: string | null;
+  onSelect: (kind: string | null) => void;
+  locale: Locale;
+}) {
+  const [open, setOpen] = useState(false);
+  const rows: Array<{ kind: string | null; label: string }> = [
+    { kind: null, label: S.chat.surface.conversation },
+    ...surfaces.map((s) => ({ kind: s.kind, label: surfaceLabel(s, locale) })),
+  ];
+  const current = rows.find((r) => r.kind === selected) ?? rows[0]!;
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      menuClass="left-0 top-full mt-1 w-56 max-w-[calc(100vw-2rem)] origin-top-left"
+      button={
+        <button
+          type="button"
+          data-testid="draft-kind"
+          title={S.chat.surface.chooseKind}
+          aria-label={S.chat.surface.chooseKind}
+          onClick={() => setOpen(!open)}
+          className={pillClass}
+        >
+          <span className="min-w-0 truncate">{current.label}</span>
+          <Chevron open={open} size={12} className="shrink-0 text-gray-400" />
+        </button>
+      }
+    >
+      <div className="max-h-56 overflow-y-auto">
+        {rows.map((row) => {
+          const active = row.kind === selected;
+          return (
+            <button
+              key={row.kind ?? "conversation"}
+              type="button"
+              aria-pressed={active}
+              onClick={() => {
+                onSelect(row.kind);
+                setOpen(false);
+              }}
+              className={`flex w-full items-center ${ICON_GAP.menu} px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                active
+                  ? "font-medium text-gray-900 dark:text-gray-100"
+                  : "text-gray-700 dark:text-gray-300"
+              }`}
+            >
+              <span className="min-w-0 flex-1 truncate">{row.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </Dropdown>
+  );
+}
+
 function AgentSelect({
   agents,
   selected,

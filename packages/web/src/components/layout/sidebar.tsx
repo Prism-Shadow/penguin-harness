@@ -1216,7 +1216,11 @@ export function Sidebar({
     agentId,
     workspace,
     machineId,
-  }: { agentId?: string; workspace?: string; machineId?: string } = {}) => {
+  }: {
+    agentId?: string;
+    workspace?: string;
+    machineId?: string;
+  } = {}) => {
     // Typed-but-unsent text in the ACTIVE new-chat draft becomes a parked draft
     // conversation first (a row in the list below, sendable anytime — draft-sessions.ts),
     // so this click always lands on an empty composer and never silently shelves content;

@@ -614,7 +614,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/agents/:agentId/sessions` | Lists the agent's Sessions with their run state, whichever client created them, unless `excludeOrg=1` asks for the user's own rows only |
-| POST | `/agents/:agentId/sessions` | Creates a Session: `{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201 `{session}` |
+| POST | `/agents/:agentId/sessions` | Creates a Session: `{modelId?, provider?, workspace?, approvalMode?, client?, source?, surface?}` → 201 `{session}`. `surface` creates a **surface Session** of that kind — one a plugin contributes (`GET /api/contributions`), `400` `unknown_surface` otherwise: it carries no model reference, the surface draws it instead of a conversation, and the route below opens it |
 | GET | `/dirs?path=` | Server-side directory browser behind the Workspace picker |
 | GET | `/dir-skills?path=` | The Skills a directory carries, for importing them into a new agent |
 
@@ -676,6 +676,7 @@ Two conventions apply to every route here. A Session the caller cannot access al
 | GET | `/stream` | The SSE event stream; see [Streaming (SSE)](#streaming-sse) |
 | GET | `/context` | What the current model context is made of, and where compaction will start |
 | GET | `/goal` | The Session's most recent goal run |
+| GET / POST / DELETE | `/surface` | A **surface Session**'s surface. `GET` reports `{kind, status, opened, alive, view?}`; `POST {prompt?, cols?, rows?}` opens it — idempotent, a live one is returned, and `prompt` reaches it only on a fresh open — and answers the same; `DELETE` closes it. A Session with no surface, or one whose plugin is not loaded, is `404` `not_a_surface_session`; a surface Session takes no Tasks (`409` `surface_session`) |
 
 - `GET /` returns the Session's info. Unlike the list rows, the single-Session response also carries `tracePath`, the absolute path of the latest Trace file. `orgId` marks a Session that company mode's caches own (a desk session, or a session contributing to one of that organization's tickets); it is absent on every ordinary Session, and the list route sets it too.
 - `PATCH /` with `thinkingLevel` pins the level on this Session durably, from its very next LLM request. The thinking level is soft-limited: it can change mid-context, at the cost of the provider's cached context, which is why the level picker advises compacting first. The pinned level comes back as `SessionInfo.thinkingLevel`; when that is absent, no level was ever pinned and the agent config applies.
