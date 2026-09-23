@@ -44,7 +44,7 @@
  * forward it could not bind is read off its stderr.
  *
  * A HOT PUSH keeps a held session. The shell object is registered in the runtime's resource
- * registry under `machineSession:<address>` and claimed back by the next generation, the way
+ * registry under `machineSession.v2:<address>` and claimed back by the next generation, the way
  * a pty is: the ssh child, its SOCKS channels, its forwards and its relays all outlive the
  * swap. A transient session is not: it belongs to the generation that opened it.
  */
@@ -92,8 +92,22 @@ export function forwardKey(spec: ForwardSpec): string {
   return `${spec.direction}:${spec.localPort}:${spec.remotePort}`;
 }
 
-/** The registry id a held session is delivered under. */
-const sessionResourceId = (address: string): string => `machineSession:${address}`;
+/**
+ * The registry group a held session is delivered under — VERSIONED, because a delivered
+ * object keeps the CODE of the generation that made it: a successor that claims it runs the
+ * predecessor's methods, whatever this file says now. The resource-interface check
+ * (hmr/platform.ts DECLARED_RESOURCES) refuses a group whose declared members the successor
+ * cannot find, never one whose members merely BEHAVE differently — so whenever this class
+ * changes in a way an old object must not keep (how forwards are carried, what a fact means),
+ * bump the suffix here and in DECLARED_RESOURCES: the successor then declares a group the
+ * predecessor did not, the predecessor's group is disposed (its sessions closed), and the
+ * successor re-holds each machine with objects of its own. One reconnect per machine, once.
+ *
+ * v2 (2026-09-22): forwards ride the session on a Windows hub too (start arguments, reopen
+ * on change); a v1 object recorded the wanted set and never asked ssh for it.
+ */
+export const SESSION_GROUP = "machineSession.v2";
+const sessionResourceId = (address: string): string => `${SESSION_GROUP}:${address}`;
 
 /**
  * Where the control socket goes: the temp directory, under a short name — a unix socket path

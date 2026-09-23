@@ -222,8 +222,8 @@ exit 1
       const held = await connectionTo({ alias: "nas", user: "deploy" }).hold();
       const transient = await connectionTo({ alias: "build-box", user: "deploy" }).open();
       expect(held.ok && transient.ok).toBe(true);
-      expect(store.has("machineSession:ssh:nas")).toBe(true);
-      expect(store.has("machineSession:ssh:build-box")).toBe(false);
+      expect(store.has("machineSession.v2:ssh:nas")).toBe(true);
+      expect(store.has("machineSession.v2:ssh:build-box")).toBe(false);
 
       // The generation goes: its transient session ends, its held one stays up.
       closeAllConnections();
@@ -235,7 +235,7 @@ exit 1
       expect(spawns().filter((line) => line.endsWith(" build-box sh"))).toHaveLength(1);
       // A disconnect closes it for good, registry entry included.
       closeConnectionTo("ssh:nas");
-      expect(store.has("machineSession:ssh:nas")).toBe(false);
+      expect(store.has("machineSession.v2:ssh:nas")).toBe(false);
     } finally {
       attachSessionRegistry(null);
     }

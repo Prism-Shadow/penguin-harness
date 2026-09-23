@@ -566,7 +566,7 @@ export const MIGRATIONS: readonly Migration[] = [
     down() {},
   },
   {
-    version: 13,
+    version: 15,
     name: "port-forwards",
     // One new table, nothing existing touched: a platform rolled back to one without port
     // forwarding never queries it.
