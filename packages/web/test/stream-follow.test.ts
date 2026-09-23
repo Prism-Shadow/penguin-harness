@@ -19,6 +19,20 @@ import { createStreamFollow, stickToBottom } from "../src/features/chat/stream-f
 const SHORT = { scrollHeight: 500, clientHeight: 460 };
 
 describe("createStreamFollow", () => {
+  it("park exits following without a gesture, and the next scroll event initializes from position again", () => {
+    const f = createStreamFollow();
+    f.scrolled({ ...SHORT, scrollTop: 40 });
+    expect(f.stick).toBe(true);
+    f.park();
+    expect(f.stick).toBe(false);
+    // Parked at what turned out not to be the bottom: a later event far from the bottom
+    // reads as a historical position, one near it resumes — as the very first event would.
+    f.scrolled({ scrollHeight: 5000, clientHeight: 460, scrollTop: 100 });
+    expect(f.stick).toBe(false);
+    f.scrolled({ scrollHeight: 5000, clientHeight: 460, scrollTop: 4500 });
+    expect(f.stick).toBe(true);
+  });
+
   it("short scroll area: wheel-up exits following immediately, even at the top (position no longer changes)", () => {
     const f = createStreamFollow();
     expect(f.stick).toBe(true);
@@ -244,8 +258,18 @@ describe("hold", () => {
     );
     expect(stream).toContain("const menuOpen = selectionMenu.open;");
     expect(stream).toContain("follow.hold(menuOpen);");
-    const snaps = stream.match(/if \(([^)]*?)\) stickToBottom\(el, follow\);/g) ?? [];
+    // Every snap the stream makes asks `snaps`, whatever shape the guard takes: the windowed
+    // run puts statements beside some of them, so the guard is not always one line. The guard
+    // is the `if` the snap sits under — the text between it and the snap carries no other one.
+    const snaps = [...stream.matchAll(/stickToBottom\(el, follow\)/g)];
     expect(snaps.length).toBeGreaterThanOrEqual(3);
-    for (const snap of snaps) expect(snap).toContain("follow.snaps");
+    for (const snap of snaps) {
+      const guard = stream.slice(0, snap.index);
+      const since = guard.slice(guard.lastIndexOf("if ("));
+      // The one snap that does not ask: the reader pressed "jump to latest", which resumes
+      // following first — an explicit request is not held by anything.
+      if (since.includes("follow.resume()")) continue;
+      expect(since).toContain("follow.snaps");
+    }
   });
 });
