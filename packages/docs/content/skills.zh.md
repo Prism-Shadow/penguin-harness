@@ -204,6 +204,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent |
 | | `agent-tuning` | 用四个 Skill 构成调优闭环：`agent-initialization`（根据需求搭建 Agent）、`benchmark-design`（设计和校准能力 Benchmark）、`agent-evaluation`（隔离执行单个题目并打分）和 `agent-optimization`（根据实测结果改进 Agent） |
 | Agent 公司 | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
+| Agent 公司提案 | `agent-company-proposals` | 公司模式的提案（`company-proposals` 插件的协议）——三个 Skill：`proposal-author`（写一份短小、抽象、可逐段评论的提案，按反馈修订）、`proposal-implementer`（在 `proposal/<n>-<slug>` 分支上实施、开 PR、把提案没料到的事反馈回去）、`proposal-tester`（分批测试 dev 分支：已合并的提案开修复工单，尚未认可的请求整改）（不预装：装到组织委托提案的员工上） |
 
 ## 工作原理
 

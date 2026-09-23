@@ -1157,9 +1157,12 @@ export class FakeServer {
         return this.json(bump(status));
       }
       case "implement": {
-        if (!isNonEmptyString(body?.agentId)) return this.badRequest("agentId is required.");
-        const s = this.addSession({ agentId: body.agentId });
-        proposal.implementer = isNonEmptyString(body?.agentId) ? body.agentId : proposal.author;
+        // No implementer named = the author builds its own proposal.
+        const implementer = isNonEmptyString(body?.agentId)
+          ? body.agentId
+          : String(proposal.author);
+        const s = this.addSession({ agentId: implementer });
+        proposal.implementer = implementer;
         proposal.sessions = [...(proposal.sessions as string[]), String(s.sessionId)];
         return this.json(bump("implementation_started"));
       }

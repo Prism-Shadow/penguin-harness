@@ -508,6 +508,7 @@ describe("applyUserEvent forwarding", () => {
         tickets: 0,
         runs: 1,
         budget: 0,
+        proposals: 0,
       });
     } finally {
       stop();
