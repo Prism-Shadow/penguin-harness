@@ -534,7 +534,9 @@ describe("ProposalService", () => {
     const followed = afterMove.comments.find((c) => c.id === firstComment!.id)!;
     expect(followed.revision).toBe(2);
     expect(followed.range.start).toBe(first.start + "Added first.\n\n".length);
-    const gone = DOC.replace("notifyTicket", "somethingElse");
+    // The body's token, not the scope's `name:` — a replace of the first occurrence would
+    // hit the frontmatter and leave the passage where it was.
+    const gone = DOC.replace("`notifyTicket`", "`somethingElse`");
     const afterGone = await service.publish(PROJECT, ORG, n, gone, author);
     const orphan = afterGone.comments.find((c) => c.id === firstComment!.id)!;
     expect(orphan.revision).toBe(2);
