@@ -59,8 +59,17 @@ export function unpackedAssetsDir(dir: string): string {
     fs.renameSync(tmp, out);
   } catch (err) {
     // Another process unpacked the same content first: theirs is as good as ours.
-    fs.rmSync(tmp, { recursive: true, force: true });
-    if (!fs.existsSync(path.join(out, COMPLETE))) throw err;
+    if (fs.existsSync(path.join(out, COMPLETE))) {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      return out;
+    }
+    // The old tree could not be cleared — on Windows the App being replaced still holds
+    // files under it open (node-pty's binary, a plugin's modules), so the rm above left
+    // them and the rename onto the remainder is refused (EPERM). Nothing in that remainder
+    // is complete; this attempt's tree is, so it is served from where it was extracted.
+    // Throwing here failed the boot of every push whose assets resolved to this directory.
+    if (fs.existsSync(path.join(tmp, COMPLETE))) return tmp;
+    throw err;
   }
   return out;
 }
