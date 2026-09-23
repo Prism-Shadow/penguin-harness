@@ -15,6 +15,8 @@ export abstract class Settings {
   abstract getProxyUrl(): string | null;
   abstract setProxyUrl(value: string | null): void;
   abstract hasGithubToken(): boolean;
+  /** The stored GitHub token, or null when none. */
+  abstract getGithubToken(): string | null;
   abstract setGithubToken(value: string): void;
   abstract getAttachmentMaxMb(): number;
   abstract setAttachmentMaxMb(value: number): void;
