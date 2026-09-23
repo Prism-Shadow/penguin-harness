@@ -4689,6 +4689,13 @@ Benchmark：
         ticket: "工单",
         url: "链接",
       } as Record<string, string>,
+      /** A `pr` material's state on GitHub. */
+      materialStatus: {
+        draft: "草稿",
+        open: "待合并",
+        merged: "已合并",
+        closed: "已关闭",
+      } as Record<string, string>,
       scope: "范围",
       scopeEmpty: "作者尚未列出拟改的文件。",
       scopeFile: "文件",

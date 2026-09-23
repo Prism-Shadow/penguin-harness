@@ -4703,6 +4703,13 @@ Scenarios:
         ticket: "Ticket",
         url: "Link",
       } as Record<string, string>,
+      /** A `pr` material's state on GitHub. */
+      materialStatus: {
+        draft: "Draft",
+        open: "Open",
+        merged: "Merged",
+        closed: "Closed",
+      } as Record<string, string>,
       scope: "Scope",
       scopeEmpty: "The author has not listed the files yet.",
       scopeFile: "File",

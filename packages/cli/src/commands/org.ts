@@ -586,7 +586,10 @@ function renderProposal(d: ProposalDetail, t: Messages, marked: string | null): 
       : [
           [
             t.org.proposalMaterials(),
-            ...d.materials.map((m) => `  ${m.kind}  ${m.label}  ${m.url}`),
+            ...d.materials.map(
+              (m) =>
+                `  ${m.kind}  ${m.label}  ${m.url}${m.status === undefined ? "" : `  (${m.status})`}`,
+            ),
           ].join("\n"),
         ];
   // The sections are the document itself: what `show` prints is what `publish --file` sent —

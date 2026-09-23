@@ -27,12 +27,14 @@ import type {
   ProposalCommentsResponse,
   ProposalDetail,
   ProposalItem,
+  ProposalMaterial,
   ProposalMaterialKind,
   ProposalPluginEvent,
   ProposalStatus,
   ProposalsResponse,
 } from "@prismshadow/penguin-server/api";
 import { renderForAgent, sectionSource } from "./comments.js";
+import { PrStatusReader } from "./pr-status.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
 import {
   ProposalDocumentError,
@@ -76,9 +78,11 @@ export interface ServiceDeps {
   agents: Pick<AgentLifecycle, "pluginVersion" | "updatePlugin">;
   /** The data root (Paths.root). */
   root: string;
-  settings: Pick<Settings, "get" | "set">;
+  settings: Pick<Settings, "get" | "set" | "getGithubToken">;
   log: Pick<Log, "line">;
   now?: () => number;
+  /** The fetch the PR status lookup uses; the platform's by default (a test feeds answers). */
+  fetch?: typeof fetch;
 }
 
 /** The caller, resolved: the principal the write is recorded under, and the person behind it when there is one. */
@@ -115,7 +119,17 @@ export function slugOf(title: string): string {
 export class ProposalService {
   private readonly ledgers = new Map<string, Ledger>();
 
-  constructor(private readonly deps: ServiceDeps) {}
+  /** GitHub's word on each `pr` material, read when a proposal is read (pr-status.ts). */
+  private readonly prStatus: PrStatusReader;
+
+  constructor(private readonly deps: ServiceDeps) {
+    this.prStatus = new PrStatusReader({
+      ...(deps.fetch !== undefined ? { fetch: deps.fetch } : {}),
+      token: () => deps.settings.getGithubToken(),
+      log: (line) => deps.log.line(line),
+      ...(deps.now !== undefined ? { now: deps.now } : {}),
+    });
+  }
 
   private now(): number {
     return this.deps.now?.() ?? Date.now();
@@ -266,7 +280,19 @@ export class ProposalService {
   ): Promise<ProposalDetail> {
     const { ledger, caller } = await this.open(projectId, orgId, actor);
     const p = this.requireProposal(ledger, number);
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    const detail = this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    return { ...detail, materials: await this.withPrStatus(detail.materials) };
+  }
+
+  /** The `pr` materials with GitHub's word on them, the rest as they are; nothing here fails the read. */
+  private async withPrStatus(materials: ProposalMaterial[]): Promise<ProposalMaterial[]> {
+    return Promise.all(
+      materials.map(async (m) => {
+        if (m.kind !== "pr") return m;
+        const read = await this.prStatus.read(m.url);
+        return read === null ? m : { ...m, status: read.status, statusCheckedAt: read.checkedAt };
+      }),
+    );
   }
 
   // ---------------------------------------------------------------------------

@@ -145,13 +145,30 @@ class FakeAgents {
   }
 }
 
+/** GitHub as the service sees it: every pull request asked about is merged; the URLs asked are recorded. */
+const githubCalls: string[] = [];
+const githubFetch = (async (input: string | URL | Request) => {
+  githubCalls.push(String(input));
+  return new Response(
+    JSON.stringify({ state: "closed", merged: true, merged_at: "2026-09-23T00:00:00Z" }),
+    {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    },
+  );
+}) as unknown as typeof fetch;
+
 class FakeSettings {
   readonly values = new Map<string, string>();
+  githubToken: string | null = null;
   get(key: string): string | null {
     return this.values.get(key) ?? null;
   }
   set(key: string, value: string): void {
     this.values.set(key, value);
+  }
+  getGithubToken(): string | null {
+    return this.githubToken;
   }
 }
 
@@ -180,7 +197,8 @@ describe("ProposalService", () => {
     agents = new FakeAgents();
     settings = new FakeSettings();
     lines.length = 0;
-    service = new ProposalService({ gateway, agents, root, settings, log });
+    githubCalls.length = 0;
+    service = new ProposalService({ gateway, agents, root, settings, log, fetch: githubFetch });
   });
   afterEach(async () => {
     await fs.rm(root, { recursive: true, force: true });
@@ -209,7 +227,8 @@ describe("ProposalService", () => {
       code: "org_not_found",
     });
     gateway = new FakeGateway();
-    service = new ProposalService({ gateway, agents, root, settings, log });
+    githubCalls.length = 0;
+    service = new ProposalService({ gateway, agents, root, settings, log, fetch: githubFetch });
     expect(await refused(() => service.list(PROJECT, ORG, OUTSIDER))).toEqual({
       status: 403,
       code: "project_access",
@@ -636,6 +655,12 @@ describe("ProposalService", () => {
         by: "agent:acme_impl",
       }),
     ]);
+    // The write's answer carries no status; a READ asks GitHub (the injected fetch) and adds it.
+    expect(withPr.materials[0]!.status).toBeUndefined();
+    const read = await service.get(PROJECT, ORG, n, BOSS);
+    expect(read.materials[0]).toMatchObject({ status: "merged" });
+    expect(typeof read.materials[0]!.statusCheckedAt).toBe("string");
+    expect(githubCalls).toEqual(["https://api.github.com/repos/x/y/pulls/42"]);
     expect(
       await refused(() => service.addMaterial(PROJECT, ORG, n, { kind: "pr", url: "  " }, impl)),
     ).toEqual({

@@ -34,6 +34,7 @@ import type {
   ProposalDetail,
   ProposalItem,
   ProposalMaterial,
+  ProposalPrStatus,
   ProposalMaterialKind,
   ProposalSection,
   ProposalStatus,
@@ -49,6 +50,7 @@ import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
 import { Badge } from "../../components/ui/badge";
+import type { BadgeTone } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -758,11 +760,9 @@ function ProposalView({
         {detail.materials.length === 0 ? (
           <OrgEmptyLine>{t.materialsEmpty}</OrgEmptyLine>
         ) : (
-          <ul className="flex flex-wrap gap-2">
+          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {detail.materials.map((m) => (
-              <li key={`${m.kind}:${m.url}`}>
-                <MaterialChip material={m} onOpenTicket={onOpenTicket} />
-              </li>
+              <MaterialRow key={`${m.kind}:${m.url}`} material={m} onOpenTicket={onOpenTicket} />
             ))}
           </ul>
         )}
@@ -772,35 +772,31 @@ function ProposalView({
         {detail.scope.length === 0 ? (
           <OrgEmptyLine>{t.scopeEmpty}</OrgEmptyLine>
         ) : (
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                <th className="py-1 pr-3 font-medium">{t.scopeFile}</th>
-                <th className="py-1 font-medium">{t.scopePattern}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.scope.map((entry, i) => (
-                <tr
-                  key={`${entry.file}-${i}`}
-                  className="border-t border-gray-100 dark:border-gray-800"
-                >
-                  <td className="py-1 pr-3 font-mono break-all">
-                    <TitleButton
-                      onClick={() => void onOpenFile(entry.file)}
-                      title={t.openFile}
-                      className="font-mono"
-                    >
-                      {entry.file}
-                    </TitleButton>
-                  </td>
-                  <td className="py-1 font-mono text-gray-600 dark:text-gray-300">
-                    {entry.name ?? "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className="divide-y divide-gray-100 text-xs dark:divide-gray-800">
+            {detail.scope.map((entry, i) => (
+              // A list, not a table: a long name pattern wraps under its file instead of
+              // squeezing the file column to a character a line.
+              <li key={`${entry.file}-${i}`} className="py-1.5">
+                <div className="font-mono break-all">
+                  <TitleButton
+                    onClick={() => void onOpenFile(entry.file)}
+                    title={t.openFile}
+                    className="font-mono"
+                  >
+                    {entry.file}
+                  </TitleButton>
+                </div>
+                {entry.name !== undefined && (
+                  <div className="mt-0.5 font-mono whitespace-pre-wrap break-all text-gray-500 dark:text-gray-400">
+                    <span className="mr-1 text-[11px] uppercase tracking-wide">
+                      {t.scopePattern}
+                    </span>
+                    {entry.name}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
       </OrgSection>
 
@@ -922,11 +918,11 @@ function Meta({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /**
- * A material as a chip: the kind's glyph, the label, and a link out (a new tab — it is a PR
- * or an issue on another site). A ticket material names one of this organization's tickets
- * and opens its dialog in place, the way a channel's ticket reference does.
+ * A material as one row: the kind's glyph and word, the label as the link (a bare ticket id
+ * opens the ticket dialog, a URL opens in a new tab), a pull request's state on GitHub as a
+ * pill when the server could read it, and the URL's own text muted at the right.
  */
-function MaterialChip({
+function MaterialRow({
   material,
   onOpenTicket,
 }: {
@@ -934,37 +930,58 @@ function MaterialChip({
   onOpenTicket: (ticketId: string) => void;
 }) {
   const t = S.company.proposals;
-  const chip = `inline-flex items-center ${ICON_GAP.row} rounded-md border border-gray-200 px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/60`;
   const kind = t.materialKind[material.kind] ?? material.kind;
-  const body = (
-    <>
+  const isTicket = material.kind === "ticket" && !/^[a-z][a-z0-9+.-]*:/i.test(material.url);
+  const link = "font-medium hover:underline";
+  return (
+    <li className={`flex items-center ${ICON_GAP.row} py-1.5 text-xs`}>
       <GlyphIcon
         d={MATERIAL_ICONS[material.kind]}
         size={ICON_SIZE.inlineGlyph}
-        className="text-gray-500 dark:text-gray-400"
+        className="shrink-0 text-gray-500 dark:text-gray-400"
       />
-      <span className="text-gray-500 dark:text-gray-400">{kind}</span>
-      <span className="max-w-64 truncate font-medium">{material.label}</span>
-    </>
-  );
-  if (material.kind === "ticket" && !/^[a-z][a-z0-9+.-]*:/i.test(material.url)) {
-    return (
-      <button
-        type="button"
-        className={chip}
-        title={material.url}
-        onClick={() => onOpenTicket(material.url)}
-      >
-        {body}
-      </button>
-    );
-  }
-  return (
-    <a href={material.url} target="_blank" rel="noreferrer" title={material.url} className={chip}>
-      {body}
-    </a>
+      <span className="shrink-0 text-gray-500 dark:text-gray-400">{kind}</span>
+      {isTicket ? (
+        <button
+          type="button"
+          className={link}
+          title={material.url}
+          onClick={() => onOpenTicket(material.url)}
+        >
+          {material.label}
+        </button>
+      ) : (
+        <a
+          href={material.url}
+          target="_blank"
+          rel="noreferrer"
+          title={material.url}
+          className={link}
+        >
+          {material.label}
+        </a>
+      )}
+      {material.status !== undefined && (
+        <Badge tone={MATERIAL_STATUS_TONE[material.status]}>
+          {t.materialStatus[material.status] ?? material.status}
+        </Badge>
+      )}
+      {!isTicket && (
+        <span className="ml-auto min-w-0 truncate pl-3 text-gray-400 dark:text-gray-500">
+          {material.url.replace(/^https?:\/\//, "")}
+        </span>
+      )}
+    </li>
   );
 }
+
+/** A pull request's state as a badge tone: merged is done, open is a link to follow, draft is not there yet, closed went nowhere. */
+const MATERIAL_STATUS_TONE: Record<ProposalPrStatus, BadgeTone> = {
+  draft: "gray",
+  open: "brand",
+  merged: "green",
+  closed: "red",
+};
 
 // ---------------------------------------------------------------------------
 // The body: sections, passage marks, the selection chip and the composer

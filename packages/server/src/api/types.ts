@@ -5344,6 +5344,9 @@ export interface ProposalSection {
 
 export type ProposalMaterialKind = "pr" | "issue" | "branch" | "doc" | "ticket" | "url";
 
+/** Where a GitHub pull request stands, as read from GitHub when the proposal is read. */
+export type ProposalPrStatus = "draft" | "open" | "merged" | "closed";
+
 export interface ProposalMaterial {
   kind: ProposalMaterialKind;
   label: string;
@@ -5351,6 +5354,10 @@ export interface ProposalMaterial {
   /** `agent:<id>` or `user:<id>`. */
   by: string;
   at: string;
+  /** A `pr` material on GitHub: its state, looked up on read and cached briefly — never stored; absent when unknown. */
+  status?: ProposalPrStatus;
+  /** When `status` was read. */
+  statusCheckedAt?: string;
 }
 
 /** A person's comment on one paragraph. Pending (`batchId` null) until the person requests changes; then part of a batch the author works through. */
