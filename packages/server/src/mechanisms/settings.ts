@@ -13,6 +13,8 @@ export abstract class Settings extends Interface<{
   setProxyForAgent(value: boolean): void;
   getProxyUrl(): string | null;
   setProxyUrl(value: string | null): void;
+  hasGithubToken(): boolean;
+  setGithubToken(value: string): void;
   getAttachmentMaxMb(): number;
   setAttachmentMaxMb(value: number): void;
   getAttachmentTotalMb(): number;

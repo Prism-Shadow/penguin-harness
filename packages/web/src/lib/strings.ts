@@ -331,6 +331,19 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
+    /** Admin-only sub-page (server-global). */
+    sharingTitle: "分享",
+    sharingInfo:
+      "把 Agent 的定义（系统配置、提示词、技能、工具、工作流）发布为 GitHub gist，或从 gist 安装。发布需要一个带 gist 权限的 GitHub token，由服务器保存；安装公开 gist 不需要 token。",
+    sharingDesc:
+      "服务器优先用它所在机器上 gh CLI 的登录身份发布；没有 gh 时才用这个 token。它只写不读，界面只显示是否已配置。",
+    githubToken: "GitHub token",
+    githubTokenHint:
+      "需要 gist 权限（Fine-grained token: Gists → Read and write）。留空并保存不会改动。",
+    githubTokenStored: "已配置 token。",
+    githubTokenMissing: "尚未配置 token：Agent 可以从 gist 安装，但不能发布。",
+    githubTokenReplace: "输入新 token 以替换",
+    githubTokenClear: "清除 token",
     /** Admin-only sub-page (server-global): the options loaded plugins declare. */
     pluginsTitle: "插件",
     /** An enum option this machine cannot honour, listed greyed out. */
@@ -969,6 +982,45 @@ export const zh = {
     /** The list's call to action while the Project has no agent beyond the built-in default. */
     firstAgentTitle: "还没有自己的智能体",
     firstAgentDesc: "描述你想要的智能体，让 AI 帮你创建；也可以手动配置。",
+    installFromGist: "安装 Agent",
+    installTitle: "安装 Agent",
+    installDesc: "粘贴来源，先读取并检查，再选择新 Agent 的 id 安装。安装的是定义，不带任何状态。",
+    installGist: "来源",
+    installSourceHint:
+      "支持：gist 链接或 id；npm:<包名>[@版本]；GitHub 仓库链接（默认分支，或 /tree/<分支>）；GitHub release 链接；git 地址（git+…、git@…、以 .git 结尾）；指向 tar.gz 的 http(s) 链接。仓库本身是一个 Agent 目录（有 agent_state/、workflows/）即可，不必带清单。",
+    installKind: "来源类型",
+    installKindAuto: "自动识别",
+    installKindGithub: "GitHub 仓库",
+    installKindRelease: "GitHub release",
+    installKindUrl: "tar.gz 链接",
+    installRead: "读取",
+    installReading: "读取中…",
+    installChangeGist: "换一个来源",
+    install: "安装",
+    installing: "安装中…",
+    installed: (agentId: string) => `已安装 Agent ${agentId}`,
+    packageSummary: (files: number, size: string) => `${files} 个文件 · ${size}`,
+    packagedBy: (version: string) => `由 PenguinHarness ${version} 打包`,
+    packageExcludes: "不包含：记忆、工作区、工作流的 state.json、版本历史、密钥库。",
+    publishToGist: "发布到 gist",
+    publishTitle: "发布到 GitHub gist",
+    publishDesc:
+      "把这个 Agent 的定义作为一组可读的文本文件发布到 gist；别人（或另一台机器）可以从它安装出一个干净的同款 Agent。",
+    publishNoToken:
+      "服务器还没有 GitHub 身份，无法发布：在服务器上用 `gh auth login`（需要 gist 权限）登录，或由管理员在 设置 → 分享 里存一个 token。",
+    publishGistId: "改发布到另一个 gist",
+    publishGistIdPlaceholder: "留空即可",
+    publishGistIdHint:
+      "留空时：内容有变化才更新这个 Agent 自己的 gist，没变化则不发请求；从未发布过则新建。填入链接或 id 会改用那个 gist，并强制发布一次（gist 被删或被手改时用它）。",
+    publishPublic: "公开 gist",
+    publishViaGh: "将以服务器上 gh CLI 已登录的身份发布。",
+    publishViaToken: "将以服务器保存的 GitHub token 发布。",
+    publishUpdates: "将更新：",
+    publishUnchanged: "gist 已经是这个内容，未做改动（也没有调用 API）。",
+    publish: "发布",
+    publishUpdate: "更新 gist",
+    publishing: "发布中…",
+    published: (files: number, size: string) => `已发布 ${files} 个文件（${size}）。`,
     sessionCount: (n: number): string => `${n} 个 Session`,
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,

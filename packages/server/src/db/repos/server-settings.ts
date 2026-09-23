@@ -37,6 +37,13 @@ const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
 /** Key of the company-mode master switch; default off (see getCompanyMode). */
 const COMPANY_MODE_KEY = "companyMode";
 
+/**
+ * Key of the GitHub token used to publish Agent packages as gists. Plaintext at rest, like
+ * the messaging connectors' credentials and the proxy address; every API surface reports
+ * only whether one is set, never the value.
+ */
+const GITHUB_TOKEN_KEY = "github_token";
+
 @Component()
 export class ServerSettingsRepo implements Settings {
   @Use() private readonly db!: Db;
@@ -120,6 +127,23 @@ export class ServerSettingsRepo implements Settings {
   }
 
   /** Per-file composer attachment cap, in whole MB. */
+  /** Whether a GitHub token is stored (the value itself is read by the package service). */
+  hasGithubToken(): boolean {
+    const raw = this.get(GITHUB_TOKEN_KEY);
+    if (raw === null) return false;
+    try {
+      const value = JSON.parse(raw) as unknown;
+      return typeof value === "string" && value !== "";
+    } catch {
+      return false;
+    }
+  }
+
+  /** Stores the token; an empty string clears it. */
+  setGithubToken(value: string): void {
+    this.set(GITHUB_TOKEN_KEY, JSON.stringify(value));
+  }
+
   getAttachmentMaxMb(): number {
     return this.getAttachmentMb(ATTACHMENT_MAX_MB_KEY, DEFAULT_ATTACHMENT_MAX_MB);
   }
