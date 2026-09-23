@@ -39,16 +39,24 @@ export interface ServerConfig {
    * derived per request instead.
    */
   previewOrigin: string | null;
-  /** Trusted Penguin Go origin; never supplied by a browser request. */
-  penguinGoOrigin: string;
+  /**
+   * Trusted Penguin Go origin (PENGUIN_GO_ORIGIN); never supplied by a browser request.
+   *
+   * OPTIONAL like cliEntry: a runtime older than this field publishes none, and a pushed
+   * platform must still boot there — its consumer (PlatformAuthProvider) then uses the
+   * default `normalizePenguinGoOrigin(undefined)` returns.
+   */
+  penguinGoOrigin?: string;
   /**
    * Base URL of the ModelScope authorization bridge (MODELSCOPE_BRIDGE_URL), without a
    * trailing slash — e.g. `https://go.penguin.ooo/modelscope`. The harness sends the
    * start/poll exchange here and never to ModelScope itself: the bridge holds the OAuth
    * client secret. Unlike `penguinGoOrigin` this value carries a path prefix in production,
    * because the bridge is mounted under one and strips it from the incoming request.
+   *
+   * OPTIONAL for the same reason as penguinGoOrigin; ModelScopeAuthProvider defaults it.
    */
-  modelscopeBridgeUrl: string;
+  modelscopeBridgeUrl?: string;
   /**
    * Fixed initial password for the seeded built-in admin (PENGUIN_SEED_ADMIN_PASSWORD),
    * used by automated tests and e2e. Null is the norm: the seed then generates a random

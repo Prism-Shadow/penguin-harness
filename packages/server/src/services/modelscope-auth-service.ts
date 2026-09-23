@@ -19,6 +19,7 @@ import { randomBytes } from "node:crypto";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 import { HttpError } from "../http/errors.js";
+import { normalizeModelScopeBridgeUrl } from "../config.js";
 import { Config } from "../hmr/capabilities.js";
 import type {
   ModelProviderAuthToken,
@@ -633,7 +634,8 @@ export class ModelScopeAuthProvider {
 
   setup() {
     this.auth = new ModelScopeAuthService({
-      bridgeUrl: this.config.modelscopeBridgeUrl,
+      // A runtime older than the field publishes none; the default is the production bridge.
+      bridgeUrl: this.config.modelscopeBridgeUrl ?? normalizeModelScopeBridgeUrl(undefined),
       applyCredential: async (projectId, credential, options) => {
         if (credential.refreshToken !== undefined) {
           return this.projectConfig.setGroupApiKeyWithProviderAuthToken(
