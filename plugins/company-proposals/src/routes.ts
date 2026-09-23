@@ -11,7 +11,8 @@
  *   POST   /:number/implement        { agentId?, message?, workspace? } → an implementation session (default: the author's own)
  *   POST   /:number/materials        { kind, url, label? }
  *   POST   /:number/feedback         { text, runtime? }
- *   POST   /:number/comments         { paragraphId, text } (pending)
+ *   GET    /:number/comments[?pending=1]  the comments (pending: batched, unresolved) with the text marked for an agent
+ *   POST   /:number/comments         { sectionId, start, end, quote, text } (pending)
  *   POST   /:number/comments/request send the caller's pending comments as one batch
  *   POST   /:number/comments/:id/resolve { text? }
  *   POST   /:number/read             { upTo }
@@ -296,14 +297,40 @@ export function proposalRoutes(service: ProposalService): Hono {
     );
   });
 
+  app.get("/:number/comments", async (c) => {
+    const pending = c.req.query("pending");
+    return c.json(
+      await service.comments(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        { pending: pending === "1" || pending === "true" },
+        actorOfQuery(c),
+      ),
+    );
+  });
+
   app.post("/:number/comments", async (c) => {
     const body = await jsonBody(c);
+    const offset = (key: "start" | "end"): number => {
+      const value = body[key];
+      if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+        throw new ProposalError(400, "bad_request", `${key} must be a non-negative integer.`);
+      }
+      return value;
+    };
     return c.json(
       await service.comment(
         param(c, "projectId"),
         param(c, "orgId"),
         numberParam(c),
-        { paragraphId: requireString(body, "paragraphId", 64), text: requireString(body, "text") },
+        {
+          sectionId: requireString(body, "sectionId", 64),
+          start: offset("start"),
+          end: offset("end"),
+          quote: requireString(body, "quote"),
+          text: requireString(body, "text"),
+        },
         actorOf(c, body),
       ),
     );
