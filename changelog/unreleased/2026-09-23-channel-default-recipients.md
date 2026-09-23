@@ -18,5 +18,5 @@ A company-mode channel can now name default recipients: members that a message w
 
 - `PATCH /api/projects/:projectId/organizations/:orgId/channels/:channelId` takes `notify` (any member; `[]` clears; a non-member refuses the request with `notify_not_member`), and channel items carry `notify`.
 - `penguin org channel notify <channel_id> <principal>...` sets the list, `--none` clears it; `penguin org channel show` prints it.
-- The channel header's menu gains **Default recipients**, a dialog that ticks members off the channel's own list; the header's "?" names the current recipients.
+- The channel header's member list carries an **Always notify** toggle on every row (any member of a live channel may flip it); the header's "?" names the current recipients.
 - The organization handbook explains the list to employees.

@@ -10,17 +10,15 @@
  * different questions.
  */
 import { useEffect, useState } from "react";
-import type { OrgChannelItem, OrgChannelMember } from "@prismshadow/penguin-server/api";
+import type { OrgChannelItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { channelIdProblem } from "./channel-list";
 import type { ChannelIdProblem } from "./channel-list";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
@@ -259,125 +257,6 @@ export function ChannelTextDialog({
               }
             }}
           />
-        )}
-        {formError !== null && <ErrorLine message={formError} onRetry={() => void submit()} />}
-      </div>
-    </Modal>
-  );
-}
-
-/**
- * The default recipients: the members a message with no @ at all counts as mentioning,
- * ticked off the channel's own member list — the server refuses anyone else, so the dialog
- * offers nobody else. The list is saved whole; unticking everyone clears it.
- */
-export function ChannelNotifyDialog({
-  open,
-  members,
-  initial,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  members: readonly OrgChannelMember[];
-  /** The principals currently on the list. */
-  initial: readonly string[];
-  onClose: () => void;
-  onSubmit: (notify: string[]) => Promise<void>;
-}) {
-  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
-  const [formError, setFormError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setPicked(new Set(initial));
-    setFormError(null);
-  }, [open, initial]);
-
-  const toggle = (principal: string, on: boolean) =>
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(principal);
-      else next.delete(principal);
-      return next;
-    });
-
-  const submit = async () => {
-    setBusy(true);
-    setFormError(null);
-    try {
-      // In member order, so the stored list reads like the member list.
-      await onSubmit(members.map((m) => m.principal).filter((p) => picked.has(p)));
-    } catch (e) {
-      setFormError(apiErrorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal
-      open={open}
-      title={S.company.channels.notifyTitle}
-      onClose={busy ? () => undefined : onClose}
-      footer={
-        <>
-          <Button size="sm" onClick={onClose} disabled={busy}>
-            {S.common.cancel}
-          </Button>
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
-            {busy ? S.common.saving : S.common.save}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-3">
-        <p className="text-xs text-gray-500 dark:text-gray-400">{S.company.channels.notifyHint}</p>
-        {members.length === 0 ? (
-          <p className="text-xs text-gray-400 dark:text-gray-500">
-            {S.company.channels.notifyEmpty}
-          </p>
-        ) : (
-          <div className="max-h-64 space-y-1 overflow-y-auto">
-            {members.map((m) => (
-              <label
-                key={m.principal}
-                className={`flex cursor-pointer items-center ${ICON_GAP.row} rounded px-1.5 py-1 text-sm hover:bg-gray-50 dark:hover:bg-gray-800`}
-              >
-                <input
-                  type="checkbox"
-                  checked={picked.has(m.principal)}
-                  disabled={busy}
-                  onChange={(e) => toggle(m.principal, e.target.checked)}
-                />
-                {m.kind === "agent" ? (
-                  <AgentAvatar
-                    id={m.principal.slice("agent:".length)}
-                    name={m.name}
-                    size={ICON_SIZE.rowLead}
-                    className="shrink-0 rounded"
-                  />
-                ) : (
-                  <span
-                    aria-hidden
-                    style={{
-                      width: ICON_SIZE.rowLead,
-                      height: ICON_SIZE.rowLead,
-                      fontSize: Math.round(ICON_SIZE.rowLead * 0.55),
-                    }}
-                    className="flex shrink-0 items-center justify-center rounded-full bg-gray-900 font-bold text-white dark:bg-gray-200 dark:text-gray-900"
-                  >
-                    {m.name.slice(0, 1).toUpperCase()}
-                  </span>
-                )}
-                <span className="min-w-0 flex-1 truncate">{m.name}</span>
-                <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                  {m.kind === "agent" ? S.company.channels.employees : S.company.channels.members}
-                </span>
-              </label>
-            ))}
-          </div>
         )}
         {formError !== null && <ErrorLine message={formError} onRetry={() => void submit()} />}
       </div>

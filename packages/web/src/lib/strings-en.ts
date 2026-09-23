@@ -4284,11 +4284,9 @@ Scenarios:
       renameTitle: "Rename the channel",
       editPurpose: "Edit purpose",
       purposeTitle: "Edit the channel's purpose",
-      editNotify: "Default recipients",
-      notifyTitle: "Default recipients",
-      notifyHint:
-        "A message with no @ counts as mentioning whoever is ticked: an employee's desk is triggered, a person sees it under @me. Members of this channel only.",
-      notifyEmpty: "Nobody is in this channel yet",
+      alwaysNotify: "Always notify",
+      alwaysNotifyHint:
+        "a message with no @ counts as mentioning this member too: an employee's desk is triggered, a person sees it under @me",
       notifyLine: (names: string): string => `A message with no @ reaches: ${names}`,
       archive: "Archive",
       unarchive: "Unarchive",
