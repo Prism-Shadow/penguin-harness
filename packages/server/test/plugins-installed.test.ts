@@ -297,6 +297,30 @@ describe("installed plugins", () => {
     expect((await admin.get("/api/projects/default_project/plugins/installed")).status).toBe(200);
   });
 
+  it("a plugin change moves the runtime's tree to the re-assembled App, with no push", async () => {
+    // The runtime (index.ts) holds `boot.tree` for the socket's auth, the hot-update gate and
+    // the process error record. A plugin change rebuilds the App INSIDE the platform instance
+    // (hmr/platform.ts reassemble) — no push, so no replace hook fires. Read through the
+    // instance, the tree is the re-assembled App's; a snapshot would be the disposed one,
+    // and the next socket handshake would throw `no api 'Auth'`.
+    await ship({ name: "@acme/fine", module: "Fine" });
+    const before = t.boot.tree.api("IdentityModule", "Auth");
+    expect(
+      (
+        await admin.post("/api/projects/default_project/plugins/installed", {
+          specifier: "@acme/fine",
+        })
+      ).status,
+    ).toBe(200);
+    const after = t.boot.tree.api("IdentityModule", "Auth");
+    expect(after).not.toBe(before);
+    const instance = await t.boot.hmr.ensure();
+    expect(t.boot.tree).toBe(instance.api.business());
+    // The first generation's tree, as the flattened test view still holds it, is disposed:
+    // this is what the runtime used to keep answering from.
+    expect(() => t.deps.tree.api("IdentityModule", "Auth")).toThrow(/no api/);
+  });
+
   it("reports a list file that cannot be read, rather than an empty deployment", async () => {
     await fs.writeFile(listFile(), "{ not json");
     const res = await admin.get("/api/projects/default_project/plugins/installed");

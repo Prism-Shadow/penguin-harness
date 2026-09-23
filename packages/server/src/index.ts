@@ -112,6 +112,24 @@ class PenguinServer {
     return this.deps.tree.api<Auth>("IdentityModule", "Auth");
   }
 
+  /**
+   * The process-level handlers' record of an error. A tree that cannot answer (mid-swap, a
+   * generation without one) must not turn the record into a second failure: the console
+   * line above the call is the record then, and a rejection stays the localized failure it
+   * was instead of becoming the exception that exits the process.
+   */
+  private recordProcessError(err: Error, code: "uncaught_exception" | "unhandled_rejection"): void {
+    try {
+      this.deps.tree
+        .api<Errors>("ObservabilityModule", "Errors")
+        .record({ source: "process", err, code });
+    } catch (recordErr) {
+      console.error(
+        `[server] the error above could not be recorded: ${recordErr instanceof Error ? recordErr.message : String(recordErr)}`,
+      );
+    }
+  }
+
   /** `.env` may itself define HTTP_PROXY, so it is loaded before the dispatcher reads one. */
   loadEnv(): void {
     loadDotenv({ quiet: true });
@@ -198,13 +216,15 @@ class PenguinServer {
   }
 
   /**
-   * What the layer refreshes once a generation is current (hmrMain's replace): the tree it
-   * resolves nodes from. Everything read through `deps.tree` — the auth for the socket and
-   * the hot-update gate, the settings, the error recorder — is the new generation's from here.
+   * What the layer refreshes once a generation is current (hmrMain's replace): the instance
+   * it resolves nodes from. Everything read through `deps.tree` — the auth for the socket
+   * and the hot-update gate, the settings, the error recorder — is the new generation's from
+   * here; and because `tree` is read off the instance each time, an App that re-assembles
+   * itself inside that instance (a plugin change, no push) is followed too — a snapshot of
+   * the tree would keep answering from the disposed App.
    */
   replace(instance: Instance<PlatformApi>): void {
-    const tree = typeof instance.api.business === "function" ? instance.api.business() : null;
-    if (tree !== null && this.deps !== undefined) this.deps.tree = tree;
+    if (this.deps !== undefined) this.deps.instance = instance;
   }
 
   /**
@@ -337,9 +357,7 @@ class PenguinServer {
     // according to its nature.
     process.on("uncaughtException", (err) => {
       console.error(`[server] Uncaught exception: ${err.stack ?? err.message}`);
-      this.deps.tree
-        .api<Errors>("ObservabilityModule", "Errors")
-        .record({ source: "process", err, code: "uncaught_exception" });
+      this.recordProcessError(err, "uncaught_exception");
       // From this point the process state can't be trusted (the error was never converged
       // by any catch): don't swallow it — wrap up per existing shutdown semantics and exit
       // with a nonzero code (equivalent to Node's default crash exit, just with an extra
@@ -351,9 +369,7 @@ class PenguinServer {
     process.on("unhandledRejection", (reason) => {
       const err = reason instanceof Error ? reason : new Error(String(reason));
       console.error(`[server] Unhandled promise rejection: ${err.stack ?? err.message}`);
-      this.deps.tree
-        .api<Errors>("ObservabilityModule", "Errors")
-        .record({ source: "process", err, code: "unhandled_rejection" });
+      this.recordProcessError(err, "unhandled_rejection");
       // Unlike uncaughtException, this **doesn't** exit: a rejected promise is a localized
       // failure of some background task, and the process state isn't compromised; dragging
       // down the entire service for it (Node's default behavior) isn't worth it — persist +

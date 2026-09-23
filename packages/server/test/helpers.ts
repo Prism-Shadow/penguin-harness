@@ -254,6 +254,8 @@ export function flattenForTests(boot: ServerBoot): TestDeps {
 export interface TestApp {
   app: Hono<AppEnv>;
   deps: TestDeps;
+  /** The boot as the runtime holds it: `boot.tree` follows the App across swaps and re-assemblies, where `deps.tree` is the first generation's. */
+  boot: ServerBoot;
   root: string;
   /** Initial password of the seeded admin (TEST_ADMIN_PASSWORD unless overridden via `config.seedAdminPassword`). */
   adminPassword: string;
@@ -415,6 +417,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   return {
     app,
     deps,
+    boot,
     root,
     adminPassword,
     cleanup: async () => {

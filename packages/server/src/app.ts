@@ -23,7 +23,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
-import type { ModuleTree } from "@prismshadow/penguin-core/kernel";
+import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
@@ -190,7 +190,33 @@ export interface ServerBoot {
   desktop: DesktopService | null;
   /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
   lifecycle: LifecycleService;
-  tree: ModuleTree;
+  /**
+   * The current platform instance: re-pointed by the replace hooks at every push. The
+   * instance outlives an App re-assembly (a plugin change rebuilds the tree INSIDE it, see
+   * hmr/platform.ts), which is why `tree` is derived from it on every read rather than held.
+   */
+  instance: Instance<PlatformApi>;
+  /**
+   * The tree the running App serves — read through `instance` each time, so a plugin
+   * change's re-assembly is seen without any push. A generation that has no tree to answer
+   * with (a bare kernel, a swap mid-flight) keeps the last one resolved, as createApp's
+   * per-node resolvers do.
+   */
+  readonly tree: ModuleTree;
+}
+
+/** The boot's tree accessor: the instance's business tree of the moment, the last known one while it has none. */
+function liveTree(boot: Omit<ServerBoot, "tree">, initial: ModuleTree): ServerBoot {
+  let last = initial;
+  return Object.defineProperty(boot, "tree", {
+    enumerable: true,
+    get(): ModuleTree {
+      const next =
+        typeof boot.instance.api.business === "function" ? boot.instance.api.business() : null;
+      if (next !== null) last = next;
+      return last;
+    },
+  }) as ServerBoot;
 }
 
 /**
@@ -225,14 +251,13 @@ export async function bootAppDeps(
   // against it. index.ts builds both and hands them in (hmrMain owns them there); a test
   // that boots without an entry gets the same pair here.
   const hmr = host ?? new HmrHost<PlatformApi>(config.root, packagedPlatform);
-  // The default replace does what index.ts's does: point the boot's tree at the new
-  // generation, so what createApp resolves from it is the current generation's.
+  // The default replace does what index.ts's does: point the boot at the new generation's
+  // instance, so what createApp resolves from `boot.tree` is the current generation's.
   let booted: ServerBoot | null = null;
   const ctl =
     control ??
     hmrControl(hmr, (instance) => {
-      const next = typeof instance.api.business === "function" ? instance.api.business() : null;
-      if (next !== null && booted !== null) booted.tree = next;
+      if (booted !== null) booted.instance = instance;
     });
 
   // Channel idle reclamation must skip active Sessions, but "is this session busy" is a
@@ -317,9 +342,13 @@ export async function bootAppDeps(
     throw new Error("the packaged platform built no business surface");
   }
   // Callers that outlive swaps (index.ts, the runtime app) may only touch the swap-stable
-  // members: the runtime singletons published above. The tree is THIS generation's and
-  // goes stale at the next push — per-request business dispatch rides the seam.
-  booted = { config, db, channels, hmr, control: ctl, desktop, lifecycle, tree };
+  // members: the runtime singletons published above, and `tree` — which follows the
+  // instance of the moment, so a re-assembly (a plugin change, no push) is never missed.
+  // Per-request business dispatch rides the seam.
+  booted = liveTree(
+    { config, db, channels, hmr, control: ctl, desktop, lifecycle, instance },
+    tree,
+  );
   return booted;
 }
 
