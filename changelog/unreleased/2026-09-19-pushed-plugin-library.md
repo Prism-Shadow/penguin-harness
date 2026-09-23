@@ -14,3 +14,11 @@ A machine that installed a program older than company mode and was then hot-push
 - When the runtime loads the platform from a hot push, the platform finds the library among the unpacked assets (`pushedLibraryDir`) and hands it to core before anything reads the plugin library.
 - A push without the asset, or a platform that was not pushed at all (a regular install, the desktop app, dev mode), behaves as before. The pushed library outranks the one beside the program even when the program is newer: the platform that runs is the pushed one, and the library that goes with it is its own. The lookup lives in the pushed core, so it works on runtimes that predate this change.
 - An Agent's installed Skills and hooks are copies and are not rewritten: once the library is newer, the plugin shows *Update* on the Agent, and the user decides when to update.
+
+## Unpacking beside a tree the previous App holds open
+
+The archives are extracted beside the unpacked tree and renamed in. On Windows the App being
+replaced still holds files under the old tree open (node-pty's binary, a plugin's modules): the
+removal left them, the rename onto the remainder was refused, and the boot of every push whose
+assets resolved to that directory failed — the runtime restarted on each. This attempt's complete
+tree is now served from where it was extracted instead.
