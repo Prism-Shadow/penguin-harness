@@ -695,6 +695,53 @@ for (const project of projects) {
     }
   }
   /** `<package>#<name>`: an opaque identity, never a bare name. */
+  /**
+   * The interface table a package generated for itself, found from a file that package
+   * declares. A built `.d.ts` keeps an interface class but NOT the `@Interface()` decorator
+   * that marks one — decorators are erased — so for a class declared in another package this
+   * table is the marker: it lists exactly the interfaces that package published.
+   */
+  const packageTables = new Map();
+  function packageTableOf(fileName) {
+    let dir;
+    try {
+      dir = path.dirname(fs.realpathSync(fileName));
+    } catch {
+      dir = path.dirname(fileName);
+    }
+    for (;;) {
+      if (packageTables.has(dir)) return packageTables.get(dir);
+      if (fs.existsSync(path.join(dir, "package.json"))) {
+        let table = null;
+        for (const rel of ["src/ifaces.json", "ifaces.json", "dist/ifaces.json"]) {
+          const file = path.join(dir, rel);
+          if (!fs.existsSync(file)) continue;
+          try {
+            table = JSON.parse(fs.readFileSync(file, "utf8"));
+          } catch {
+            table = null;
+          }
+          if (table) break;
+        }
+        packageTables.set(dir, table);
+        return table;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) return null;
+      dir = parent;
+    }
+  }
+
+  /** An interface class of ANOTHER package, recognised by that package's own table. */
+  const isPublishedInterfaceDecl = (d) => {
+    if (!ts.isClassDeclaration(d) || d.name === undefined) return false;
+    const sf = d.getSourceFile();
+    if (!sf.isDeclarationFile) return false;
+    if (!(d.modifiers ?? []).some((m) => m.kind === ts.SyntaxKind.AbstractKeyword)) return false;
+    const table = packageTableOf(sf.fileName);
+    return table?.ifaces?.[`${packageOf(sf.fileName)}#${d.name.text}`] !== undefined;
+  };
+
   const opaqueId = (name, fileName) => `${packageOf(fileName)}#${name}`;
 
   /**
@@ -1005,7 +1052,9 @@ for (const project of projects) {
         : undefined;
     const sym = sym0 && sym0.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym0) : sym0;
     if (sym && componentKeyBySymbol.has(sym)) return componentKeyBySymbol.get(sym);
-    const decl = sym?.declarations?.find((d) => isInterfaceClassDecl(d));
+    const decl = sym?.declarations?.find(
+      (d) => isInterfaceClassDecl(d) || isPublishedInterfaceDecl(d),
+    );
     if (!decl) {
       errors.push(
         `${file}: a @Use/@Provide field's type must be a @Component class or an interface class (@Interface(), or extends Interface<…>()) (got '${typeNode?.getText() ?? "?"}')`,
@@ -1068,7 +1117,10 @@ for (const project of projects) {
         const req = { iface: ifaceKeyOfType(member.type, file) };
         if (componentOfType(member.type) !== undefined)
           implementationDeps.push(`${m.name}.${field} → ${member.type.getText()}`);
-        if (use.arguments.length > 0) {
+        if (use.arguments.length > 0 && ts.isStringLiteral(use.arguments[0])) {
+          // By name: a plugin's requirement of a host module it cannot reference as a class.
+          req.from = use.arguments[0].text;
+        } else if (use.arguments.length > 0) {
           const ref = refLiteral(use.arguments[0], file);
           const fromName = moduleNameBySymbol.get(ref?.$id);
           if (fromName === undefined)

@@ -232,6 +232,14 @@ export interface MessagingClient {
 export interface MessagingChannelConnector {
   readonly channel: MessagingChannel;
   /**
+   * This channel's per-message text cap, where it sits UNDER the shared chunk size
+   * (MESSAGING_TEXT_CHUNK_CHARS), or undefined where the shared one already fits. The bridge
+   * cuts a reply at the smaller of the two; the shared size was chosen under the tightest
+   * cap of the first channels, and a channel with a tighter one (Discord's is 2000) says so
+   * here rather than lowering the size for everyone.
+   */
+  readonly textChunkChars?: number;
+  /**
    * How many outbound messages this channel will accept in answer to ONE inbound message,
    * or undefined where no such limit exists (Feishu and Telegram both send freely).
    *
