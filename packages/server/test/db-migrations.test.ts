@@ -62,6 +62,17 @@ function dropCompanyModeTables(db: DatabaseSync): void {
 }
 
 /**
+ * Takes the port-forwards table off a database built from the current declaration. Every
+ * fixture standing for a database OLDER than port forwarding needs it: a round trip that
+ * rolls back through 13 drops the table, and would otherwise land on less than it began with.
+ */
+function dropPortForwards(db: DatabaseSync): void {
+  db.exec(
+    "DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP INDEX IF EXISTS idx_port_forwards_machine; DROP TABLE IF EXISTS port_forwards;",
+  );
+}
+
+/**
  * The v0.2.4 schema, as a frozen excerpt: today's declaration minus exactly what 0.2.4
  * lacked, plus the one table it had that today's declaration dropped. Derived from
  * SCHEMA_SQL, not by hand-copying 15 tables that would fork from reality.
@@ -71,6 +82,7 @@ function open024(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  dropPortForwards(db);
   dropCompanyModeTables(db);
   db.exec("DROP TABLE messaging_bindings");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
@@ -113,6 +125,7 @@ function open6(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  dropPortForwards(db);
   db.exec(PRE_CHANNEL_CHAT_DDL);
   // SCHEMA_SQL declares the CURRENT shape; migration 8's queue came after 6.
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
@@ -124,6 +137,7 @@ function open6(): DatabaseSync {
 function open7(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  dropPortForwards(db);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   db.exec("DROP TABLE IF EXISTS model_promotions");
@@ -156,6 +170,7 @@ function open029(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  dropPortForwards(db);
   dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
   // SCHEMA_SQL declares the CURRENT shape, and a 0.2.9 database has no machines tables —
@@ -177,6 +192,7 @@ function openPreProfile(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  dropPortForwards(db);
   dropProfileColumns(db);
   // Version 4 predates company mode as well: its three migrations (6–8) come after the
   // profile's, so a database at 4 has none of their tables.
@@ -616,7 +632,7 @@ describe("migration 8 → current: model-promotions", () => {
         "sessions-surface",
         "user-profile-adoption",
       ]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(schemaVersion(db)).toBe(15);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
 
@@ -640,7 +656,7 @@ describe("migration 8 → current: model-promotions", () => {
         "sessions-surface",
         "user-profile-adoption",
       ]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(schemaVersion(db)).toBe(15);
     } finally {
       db.close();
     }
@@ -664,7 +680,7 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         "sessions-surface",
         "user-profile-adoption",
       ]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(schemaVersion(db)).toBe(15);
       expect(tableExists()).toEqual({ "1": 1 });
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +

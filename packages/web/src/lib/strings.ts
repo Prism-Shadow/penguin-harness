@@ -160,6 +160,48 @@ export const zh = {
     adminOnly: "只有管理员可以管理机器。",
   },
 
+  /** Port forwarding: the dock's Ports panel, and a machine's Ports page. */
+  ports: {
+    panelTitle: "端口",
+    /** The right-hand plug of every cable: this server, where the browser is talking to. */
+    here: "本地",
+    /** The left-hand plug while the machine's name is not known yet. */
+    machine: "机器",
+    /** The form's own cable reads "<machine> :[port] ──▶ 本地 :[port]"; these name the two fields. */
+    formTitle: "新的转发",
+    autoPort: "自动",
+    /** A Workspace on this server has nothing to forward. */
+    localNote: "此 Workspace 在本服务端上，端口可直接经 localhost 访问。",
+    adminOnly: "只有管理员可以转发机器的端口。",
+    empty: "还没有转发的端口。",
+    remotePort: "远端端口",
+    localPort: "本地端口（自动）",
+    forward: "转发",
+    copyAddress: "复制本地地址",
+    open: "在浏览器中打开",
+    remove: "删除转发",
+    invalidRemotePort: "远端端口须为 1–65535 的整数。",
+    invalidLocalPort: "本地端口须为 1024–65535 的整数。",
+    /** The status, in the words of whoever carries the forward. */
+    statusOnSession: "已加到 ssh 会话上",
+    statusPending: "等待 ssh 应答",
+    statusNotConnected: "机器未连接——连接后自动生效",
+    statusFailed: (detail: string) => `失败：${detail}`,
+    /** The form's arrow, which flips the direction; the titles say which way it points now. */
+    flipDirection: "切换方向",
+    directionIn: "机器 → 本地：把机器上的端口带到本地",
+    directionOut: "本地 → 机器：把本地端口送到机器上",
+    /** An out forward's machine port, left blank: the same number as ours. */
+    samePort: "同号",
+    /** A machine's Ports page. */
+    machineTitle: (alias: string) => `${alias} 的端口转发`,
+    backToMachines: "机器",
+    machineEmpty: "这台机器还没有端口转发。在位于它上面的对话里，从「端口」面板添加。",
+    /** The verb on a machine's card. */
+    verb: "端口",
+    verbTitle: "查看这台机器的全部端口转发",
+  },
+
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "终端",

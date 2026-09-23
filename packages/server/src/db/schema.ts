@@ -184,6 +184,18 @@ CREATE TABLE IF NOT EXISTS machine_project (   -- which machines a Project uses;
   project_id TEXT PRIMARY KEY REFERENCES projects(project_id) ON DELETE CASCADE,
   addresses  TEXT NOT NULL                     -- JSON array of 'ssh:<alias>'
 );
+CREATE TABLE IF NOT EXISTS port_forwards (     -- a port forward on a machine's ssh session, per Workspace (port-forwards/service.ts)
+  id          TEXT PRIMARY KEY,
+  machine_id  TEXT NOT NULL,                   -- that machine's own id (machines.machine_id); no FK — a machine row is keyed by address, and one id may have two
+  workspace   TEXT NOT NULL,                   -- the Workspace directory ON that machine; a forward belongs to (machine, directory), not to a Session
+  direction   TEXT NOT NULL,                   -- 'in': the machine's port comes here (ssh -L); 'out': our port goes there (ssh -R)
+  remote_port INTEGER NOT NULL,                -- 127.0.0.1:<remote_port> over there
+  local_port  INTEGER NOT NULL,                -- 127.0.0.1:<local_port> here; fixed once given, so an address a person saved stays true across restarts
+  created_at  TEXT NOT NULL,
+  UNIQUE (machine_id, workspace, direction, remote_port)
+);
+CREATE INDEX IF NOT EXISTS idx_port_forwards_machine ON port_forwards(machine_id, workspace);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_port_forwards_local_in ON port_forwards(local_port) WHERE direction = 'in';  -- two 'in' forwards cannot share a local port; 'out' ones may name any
 CREATE TABLE IF NOT EXISTS trace_files (       -- DERIVED CACHE of the on-disk Trace tree (services/trace-index.ts): the directories stay the single source of truth, every row is rebuildable from disk, and a row is never authority for absence — consumers reconcile + retry on a miss, so a stale index costs one extra scan, never a false 404
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,

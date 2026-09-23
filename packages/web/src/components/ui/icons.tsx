@@ -360,6 +360,12 @@ export const HAND_ICON =
 export const SCHEDULE_ICON =
   "M12 19.5a6.7 6.7 0 1 0 0-13.4 6.7 6.7 0 0 0 0 13.4zM12 8.9v3.9l2.6 1.8M3.1 7.7A3.5 3.5 0 0 1 7.7 4.3M16.3 4.3a3.5 3.5 0 0 1 4.6 3.4M7.8 18.8 5.4 21.6M16.2 18.8l2.4 2.8";
 
+/**
+ * Port forwarding: two opposed arrows, one line each way — bytes going out to a machine and
+ * coming back. Arrows rather than a plug, which the Machines page already reads as "use".
+ */
+export const PORTS_ICON = "M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4";
+
 export const NAV_ICONS = {
   agents: AGENT_GROUP_ICON,
   /** Plugin library (the puzzle piece). */

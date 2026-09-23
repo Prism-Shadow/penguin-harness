@@ -78,6 +78,9 @@ import type {
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
   MachinesUseResponse,
+  PortForwardCreateRequest,
+  PortForwardInfo,
+  PortForwardsResponse,
   SshHostRequest,
   SshHostResponse,
   ModelsResponse,
@@ -1690,6 +1693,24 @@ export const stopUsingMachines = (projectId: string, machineIds: string[]) =>
     method: "POST",
     body: { machines: machineIds },
   });
+
+// Port forwarding (admin only) ---------------------------------------------------------
+//
+// Always THIS server's: a forward is a listener on the server the browser is talking to,
+// reaching into a machine — never a request for that machine's own server to answer.
+
+/** A Workspace's forwards (`workspace` given) or every forward of a machine, with what is known of each. */
+export const listPortForwards = (machineId: string, workspace?: string) =>
+  apiFetch<PortForwardsResponse>(
+    `/api/port-forwards?machine=${encodeURIComponent(machineId)}` +
+      (workspace === undefined ? "" : `&workspace=${encodeURIComponent(workspace)}`),
+  );
+
+export const createPortForward = (forward: PortForwardCreateRequest) =>
+  apiFetch<PortForwardInfo>("/api/port-forwards", { method: "POST", body: forward });
+
+export const deletePortForward = (id: string) =>
+  apiFetch<void>(`/api/port-forwards/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 export const installOnMachine = (projectId: string, machineId: string, replaceProgram = false) =>
   apiFetch<MachinesResponse>(

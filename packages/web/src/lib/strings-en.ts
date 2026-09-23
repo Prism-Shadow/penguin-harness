@@ -138,6 +138,41 @@ export const en: Strings = {
     adminOnly: "Only an admin can manage machines.",
   },
 
+  /** Port forwarding: the dock's Ports panel, and a machine's Ports page. */
+  ports: {
+    panelTitle: "Ports",
+    here: "here",
+    machine: "machine",
+    formTitle: "New forward",
+    autoPort: "auto",
+    localNote:
+      "This Workspace is on this server: its ports are reachable on localhost as they are.",
+    adminOnly: "Only an admin can forward a machine's port.",
+    empty: "No forwarded ports yet.",
+    remotePort: "Remote port",
+    localPort: "Local port (auto)",
+    forward: "Forward",
+    copyAddress: "Copy local address",
+    open: "Open in browser",
+    remove: "Remove forward",
+    invalidRemotePort: "The remote port must be a whole number from 1 to 65535.",
+    invalidLocalPort: "The local port must be a whole number from 1024 to 65535.",
+    statusOnSession: "On the ssh session",
+    statusPending: "Waiting for ssh to answer",
+    statusNotConnected: "Machine not connected — applied once it is",
+    statusFailed: (detail: string) => `Failed: ${detail}`,
+    flipDirection: "Flip direction",
+    directionIn: "Machine → here: bring a port of the machine's here",
+    directionOut: "Here → machine: send a port of ours there",
+    samePort: "same",
+    machineTitle: (alias: string) => `Port forwards of ${alias}`,
+    backToMachines: "Machines",
+    machineEmpty:
+      "No port forwards on this machine yet. Add one from the Ports panel of a conversation on it.",
+    verb: "Ports",
+    verbTitle: "Every port forward of this machine",
+  },
+
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",

@@ -83,6 +83,17 @@
         }
       },
       {
+        "id": "web.machine-ports",
+        "key": "machine-ports",
+        "path": "/machines/:machineId/ports",
+        "nav": "none",
+        "admin": true,
+        "released": true,
+        "renderer": {
+          "builtin": "MachinePortsPage"
+        }
+      },
+      {
         "id": "web.usage",
         "key": "usage",
         "path": "/usage",

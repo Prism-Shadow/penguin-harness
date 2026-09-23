@@ -12,6 +12,7 @@ import {
   MEMORY_ICON,
   MESSAGING_RELAY_ICON,
   NAV_ICONS,
+  PORTS_ICON,
   SCHEDULE_ICON,
 } from "../../components/ui/icons";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -32,6 +33,8 @@ export function panelLabel(kind: PanelKind): string {
       return S.messaging.panelTitle;
     case "schedules":
       return S.schedule.panelTitle;
+    case "ports":
+      return S.ports.panelTitle;
   }
 }
 
@@ -49,5 +52,7 @@ export function panelGlyph(kind: PanelKind, size: number = ICON_SIZE.iconButton)
       return <GlyphIcon d={MESSAGING_RELAY_ICON} size={size} />;
     case "schedules":
       return <GlyphIcon d={SCHEDULE_ICON} size={size} />;
+    case "ports":
+      return <GlyphIcon d={PORTS_ICON} size={size} />;
   }
 }

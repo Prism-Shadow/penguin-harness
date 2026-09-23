@@ -18,7 +18,14 @@ export {
   connectionTo,
 } from "./connection.js";
 export type { MachineChannel } from "./connection.js";
-export { sessionOf } from "./ssh-session.js";
+export {
+  SESSION_GROUP,
+  attachSessionRegistry,
+  forwardKey,
+  sessionOf,
+  useControlSockets,
+} from "./ssh-session.js";
+export type { ForwardFact, HeldSession } from "./ssh-session.js";
 export type { ShellSession } from "./ssh-session.js";
 export { execFailureText, looksLikeAuthFailure, runBytes } from "./exec.js";
 export type { ExecResult } from "./exec.js";

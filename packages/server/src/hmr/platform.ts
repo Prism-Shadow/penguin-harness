@@ -46,6 +46,8 @@ import {
 import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
 import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
+import { SESSION_GROUP } from "../machines/transport/index.js";
+import type { HeldSession } from "../machines/transport/index.js";
 import type { RemoteTerminals } from "../machines/terminal-relay.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
@@ -200,6 +202,8 @@ function parkedSelf(modules: Record<string, Json>, node: string): Record<string,
 interface ParkedInterfaces extends Interfaces {
   family: string;
   terminal: MembersOf<TerminalSession>;
+  /** Versioned in its NAME (transport/ssh-session.ts SESSION_GROUP): a delivered object runs old code. */
+  [SESSION_GROUP]: MembersOf<HeldSession>;
 }
 
 /**
@@ -249,6 +253,13 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "kill",
     "dispose",
   ],
+  // A held ssh session to a machine, as the successor's transport claims it back
+  // (machines/transport/ssh-session.ts): commands, the SOCKS port, and the forwards it
+  // carries. Every member the adopter calls, for the same reason as `terminal` — and the
+  // group's NAME carries a version, because a member that exists on an old object still runs
+  // the old object's code: a behavior change bumps the name, so the old group is disposed
+  // here (its sessions closed) and the machines are re-held fresh.
+  [SESSION_GROUP]: ["hold", "held", "run", "session", "close", "setForwards", "forwardFacts"],
 };
 
 /**
@@ -393,13 +404,14 @@ async function createInner(
   //
   // DELIVERED (survives the swap; the successor adopts it at load):
   //   - pty sessions        registry `terminal:*` + the terminal module's parked ids
-  //   - machine tunnels     ssh children + machines-connect.json (pid/port) → adopted by
-  //                         the successor's tunnelPortFor, which checks the pid is alive
+  //   - machine sessions    registry `machineSession.v2:*` — the held `ssh -T -D` child, its
+  //                         SOCKS channels and its port forwards; the successor's transport
+  //                         claims each by address (transient sessions are closed instead)
   //   - runtime singletons  db / auth-state / channels / config / proxy / desktop —
   //                         runtime-owned, re-claimed by every App
   // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
-  //   - scheduler, messaging bridge, machine connections   their modules' dispose effects
-  //                         stop them; each successor's setup starts over from the record
+  //   - scheduler, messaging bridge   their modules' dispose effects stop them; each
+  //                         successor's setup starts over from the record
   //   - agent runs          approvals → deny, drives → abort (manager.shutdown below)
   //   - session environments dispose() after the drive settles
   //   - reap timers         the terminal module's effect quiesces them
@@ -423,9 +435,8 @@ async function createInner(
   // the registry.
   let drained: Promise<void> | undefined;
   ctx.effect(() => {
-    // Forwards to machines are DELIVERED, not suspended: the ssh children are separate
-    // processes that keep forwarding across the swap, and the successor adopts them by the
-    // pid recorded in web.db (machines/service.ts).
+    // Held machine sessions are DELIVERED, not suspended: the machines module's own dispose
+    // effect closes only its transient sessions and leaves the held ones in the registry.
     const drains: Promise<unknown>[] = [];
     if (manager !== null) drains.push(manager.shutdown(DRAIN_GRACE_MS));
     tree.dispose();

@@ -4455,6 +4455,54 @@ export interface MachinesStopUsingRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Port forwarding (a machine's TCP port on this server's loopback, per Workspace)
+// ---------------------------------------------------------------------------
+
+/**
+ * One forward, its record and what is known of it right now. The status names which layer
+ * speaks — the session, or ssh — and is never one "working" flag.
+ */
+export interface PortForwardInfo {
+  id: string;
+  /** That machine's own id. */
+  machineId: string;
+  /** The Workspace directory on that machine the forward belongs to. */
+  workspace: string;
+  /** `in`: the machine's port comes here (ssh -L). `out`: our port goes there (ssh -R). */
+  direction: "in" | "out";
+  /** `127.0.0.1:<remotePort>` over there. */
+  remotePort: number;
+  /** `127.0.0.1:<localPort>` on this server; fixed once given. */
+  localPort: number;
+  createdAt: string;
+  status:
+    /** ssh has it. */
+    | { kind: "active" }
+    /** The session is up and ssh has not answered yet. */
+    | { kind: "pending" }
+    /** The machine's session is down; the forward is wanted and waits for it. */
+    | { kind: "not-connected" }
+    /** ssh said no — in its own words. */
+    | { kind: "failed"; detail: string };
+}
+
+/** `GET /api/port-forwards?machine=&workspace=` — both filters optional. */
+export interface PortForwardsResponse {
+  forwards: PortForwardInfo[];
+}
+
+/** `POST /api/port-forwards`; 201 with the forward. `localPort` omitted = chosen here, starting at `remotePort`. */
+export interface PortForwardCreateRequest {
+  machineId: string;
+  workspace: string;
+  /** Default `in`. */
+  direction?: "in" | "out";
+  remotePort: number;
+  /** `in`: omitted = chosen here, starting at `remotePort`. `out`: required — the service being sent. */
+  localPort?: number;
+}
+
+// ---------------------------------------------------------------------------
 // Company mode: organizations (files are the truth; every DTO here is a projection)
 // ---------------------------------------------------------------------------
 

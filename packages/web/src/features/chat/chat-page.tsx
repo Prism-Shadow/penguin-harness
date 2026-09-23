@@ -128,6 +128,7 @@ import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { MessagingPanel } from "../messaging/messaging-panel";
 import { SchedulePanel } from "../schedules/schedule-panel";
+import { PortsPanel } from "../ports/ports-panel";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
 import { DockLauncher } from "../dock/dock-launcher";
@@ -1914,6 +1915,17 @@ export function ChatPage() {
             session={selected}
             active={active}
             onPrefillComposer={prefillComposer}
+          />
+        );
+      case "ports":
+        return (
+          <PortsPanel
+            // Keyed by the Workspace, not the Session: a forward belongs to the directory on
+            // its machine, and two conversations there are looking at the same rows.
+            key={`${machineForSession(selected.sessionId) ?? ""}:${selected.workspace}`}
+            machineId={machineForSession(selected.sessionId)}
+            workspace={selected.workspace}
+            active={active}
           />
         );
     }

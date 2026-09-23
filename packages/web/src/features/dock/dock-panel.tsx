@@ -301,6 +301,7 @@ function DockPicker({
         {row("trace")}
         {row("messaging")}
         {row("schedules")}
+        {row("ports")}
       </div>
     </div>
   );
