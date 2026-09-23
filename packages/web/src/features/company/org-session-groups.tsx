@@ -32,7 +32,7 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
-import { useLiveSessionStatuses, useSessions } from "../../state/sessions";
+import { useLiveSessionStatuses } from "../../state/sessions";
 import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { Button } from "../../components/ui/button";
 import { useRowContextMenu } from "../../components/ui/context-menu";

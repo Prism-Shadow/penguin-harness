@@ -42,7 +42,6 @@ import { formatMoney, formatPercent } from "../../lib/format";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { Badge } from "../../components/ui/badge";
 import { EmployeeAvatar } from "./employee-avatar";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
