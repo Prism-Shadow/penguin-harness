@@ -3,6 +3,7 @@
 - **Date:** 2026-09-23
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`
+- **PR:** [#840](https://github.com/Prism-Shadow/penguin-harness/pull/840)
 
 [中文版](2026-09-23-channel-default-recipients.zh.md)
 
