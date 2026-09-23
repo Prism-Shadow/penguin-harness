@@ -12,7 +12,7 @@
  * aren't highlighted together).
  */
 import { Fragment, useState } from "react";
-import { HOOK_ICON } from "../../components/ui/icons";
+import { ARROW_LEFT_ICON, ARROW_RIGHT_ICON, HOOK_ICON } from "../../components/ui/icons";
 import ReactMarkdown from "react-markdown";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { S } from "../../lib/strings";
@@ -38,8 +38,8 @@ const TYPE_ICON: Record<string, string> = {
   tool_call: "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
   tool_call_output: "M4 6l4 4-4 4M12 18h8",
   token_usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
-  request_begin: "M5 12h14M13 6l6 6-6 6",
-  request_end: "M19 12H5M11 6l-6 6 6 6",
+  request_begin: ARROW_RIGHT_ICON,
+  request_end: ARROW_LEFT_ICON,
   approval_decision: "M9 12l2 2 4-4M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z",
   compaction_begin: "M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4M9 12h6",
   compaction_end: "M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4M9 12h6",

@@ -56,6 +56,15 @@ describe("isLocalSurfaceUrl", () => {
     expect(isLocalSurfaceUrl("http://localhost:7364/chat", origin)).toBe(true);
     expect(isLocalSurfaceUrl("http://127.0.0.1:7364/preview/tok/x.html", origin)).toBe(true);
   });
+  it("accepts a Browser site's host on the same port — a popup from a browsed page stays in the app", () => {
+    expect(
+      isLocalSurfaceUrl("http://abcdefghijklmnopqrstuvwxyz.localhost:7364/oauth/callback", origin),
+    ).toBe(true);
+    expect(isLocalSurfaceUrl("http://abcdefghijklmnopqrstuvwxyz.localhost:7365/", origin)).toBe(
+      false,
+    );
+    expect(isLocalSurfaceUrl("http://evil.localhost.example.com:7364/", origin)).toBe(false);
+  });
   it("rejects other ports, other hosts, other schemes, and junk", () => {
     expect(isLocalSurfaceUrl("http://127.0.0.1:7365/preview/x", origin)).toBe(false);
     expect(isLocalSurfaceUrl("http://example.com:7364/", origin)).toBe(false);

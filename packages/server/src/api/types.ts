@@ -4503,6 +4503,29 @@ export interface PortForwardCreateRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Browser (a dock tab showing a site on a host of its own)
+// ---------------------------------------------------------------------------
+
+/**
+ * `POST /api/browser/sites`. `url` is the address as typed (`localhost:3000`, `example.com`,
+ * a full URL). A loopback name means the loopback of the machine the Workspace is on —
+ * `machineId`, null for this server; any other name is a public address and ignores it.
+ */
+export interface BrowserSiteRequest {
+  machineId: string | null;
+  url: string;
+}
+
+export interface BrowserSiteResponse {
+  /** The host this site is served on: `http://<label>.localhost:<port>`. */
+  origin: string;
+  /** What the panel's frame loads: `origin` plus the typed path, query and fragment. */
+  url: string;
+  /** The address normalized, as the address bar shows it. */
+  address: string;
+}
+
+// ---------------------------------------------------------------------------
 // Company mode: organizations (files are the truth; every DTO here is a projection)
 // ---------------------------------------------------------------------------
 

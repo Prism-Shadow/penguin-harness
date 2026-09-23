@@ -39,6 +39,7 @@ import type {
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import {
+  BROWSER_ICON,
   COLLAPSE_ICON,
   EXPAND_ICON,
   HIDDEN_ICON,
@@ -53,10 +54,12 @@ import { scrollMovesAnchor } from "../../lib/context-menu";
 import { SPRING_DEFAULT, SPRING_MOMENTUM, createSpringDriver } from "../../lib/spring";
 import type { SpringDriver } from "../../lib/spring";
 import { subscribeTerminals, terminalApiSupported } from "../terminal/terminal-list";
+import { newBrowserTab } from "../browser/browser-tabs";
 import { openTerminalInDock } from "./dock-terminal";
 import { panelGlyph, panelLabel } from "./panel-meta";
 import {
   PANEL_KINDS,
+  addBrowserTab,
   dockVersion,
   isDockVisible,
   isNarrow,
@@ -453,6 +456,17 @@ function LauncherBall({
       },
     });
   }
+  entries.push({
+    key: "browser",
+    label: S.browser.title,
+    glyphAt: (size) => <GlyphIcon d={BROWSER_ICON} size={size} />,
+    badge: false,
+    testId: "dock-launcher-open-browser",
+    choose: () => {
+      closeFan(false);
+      addBrowserTab(newBrowserTab(), target);
+    },
+  });
   entries.push({
     key: "hide",
     label: S.dock.launcherHide,

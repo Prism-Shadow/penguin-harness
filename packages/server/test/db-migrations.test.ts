@@ -70,6 +70,8 @@ function dropPortForwards(db: DatabaseSync): void {
   db.exec(
     "DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP INDEX IF EXISTS idx_port_forwards_machine; DROP TABLE IF EXISTS port_forwards;",
   );
+  // And the Browser's own table, which every database older than that is older than too.
+  db.exec("DROP TABLE IF EXISTS browser_sites;");
 }
 
 /**
@@ -288,6 +290,13 @@ function shape(db: DatabaseSync): string {
     })),
   );
 }
+
+/** Every migration above `from`, in the order `migrate` applies them: what a root at `from` takes. */
+const namesAfter = (from: number): string[] =>
+  [...(MIGRATIONS as readonly { version: number; name: string }[])]
+    .filter((m) => m.version > from)
+    .sort((a, b) => a.version - b.version)
+    .map((m) => m.name);
 
 describe("migration mechanism", () => {
   it("versions are contiguous from 1, so a stamp names an unambiguous state", () => {
@@ -624,15 +633,8 @@ describe("migration 8 → current: model-promotions", () => {
         )
         .get();
     try {
-      expect(migrate(db).applied).toEqual([
-        "model-promotions",
-        "model-provider-auth-tokens",
-        "sessions-sandbox",
-        "machines-columns",
-        "sessions-surface",
-        "user-profile-adoption",
-      ]);
-      expect(schemaVersion(db)).toBe(15);
+      expect(migrate(db).applied).toEqual(namesAfter(8));
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
 
@@ -648,15 +650,8 @@ describe("migration 8 → current: model-promotions", () => {
   it("is safe to create while a pushed platform boots", () => {
     const db = open8();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual([
-        "model-promotions",
-        "model-provider-auth-tokens",
-        "sessions-sandbox",
-        "machines-columns",
-        "sessions-surface",
-        "user-profile-adoption",
-      ]);
-      expect(schemaVersion(db)).toBe(15);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(namesAfter(8));
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
       db.close();
     }
@@ -673,14 +668,8 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         )
         .get();
     try {
-      expect(migrate(db).applied).toEqual([
-        "model-provider-auth-tokens",
-        "sessions-sandbox",
-        "machines-columns",
-        "sessions-surface",
-        "user-profile-adoption",
-      ]);
-      expect(schemaVersion(db)).toBe(15);
+      expect(migrate(db).applied).toEqual(namesAfter(9));
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(tableExists()).toEqual({ "1": 1 });
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -786,6 +775,156 @@ describe("a machines table from before migration 4", () => {
       ).run("ssh:nas", null, "9.9.9", "2026-09-04T00:00:00.000Z", 42, 7364, "linux");
       // Idempotent: a table that already has them is left as it is.
       expect(migrate(db).applied).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("a root stamped by the closed #797 line: port-forwards-adoption", () => {
+  it("brings back port_forwards on the swap path, and a root that has it migrates the same", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(SCHEMA_SQL);
+      // Exactly the broken root: every table but port_forwards, stamped past this line's
+      // port-forwards migration — what a hand-over onto a root the other line stamped leaves behind.
+      db.exec("DROP TABLE port_forwards");
+      db.exec("PRAGMA user_version = 15");
+      const list = () => db.prepare("SELECT * FROM port_forwards").all();
+      expect(list).toThrow(/no such table/);
+
+      migrate(db, { swapPath: true });
+      expect(list()).toEqual([]);
+      expect(
+        (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
+      ).toBe(MIGRATIONS.length);
+
+      // A root that took port-forwards in its proper place: the adoption finds its work done.
+      const fresh = new sqlite.DatabaseSync(":memory:");
+      try {
+        fresh.exec(SCHEMA_SQL);
+        fresh.exec("PRAGMA user_version = 15");
+        migrate(fresh, { swapPath: true });
+        expect(fresh.prepare("SELECT * FROM port_forwards").all()).toEqual([]);
+      } finally {
+        fresh.close();
+      }
+    } finally {
+      db.close();
+    }
+  });
+});
+
+/**
+ * The first form of `port_forwards`: what the port-forwards migration created on the roots
+ * that ran it before its DDL was changed in place, and what the adoption still creates on the
+ * roots it adopts — no direction, one local port per forward.
+ */
+const PORT_FORWARDS_V1_DDL = `
+  CREATE TABLE port_forwards (
+    id          TEXT PRIMARY KEY,
+    machine_id  TEXT NOT NULL,
+    workspace   TEXT NOT NULL,
+    remote_port INTEGER NOT NULL,
+    local_port  INTEGER NOT NULL UNIQUE,
+    created_at  TEXT NOT NULL,
+    UNIQUE (machine_id, workspace, remote_port)
+  );
+  CREATE INDEX IF NOT EXISTS idx_port_forwards_machine ON port_forwards(machine_id, workspace);
+`;
+
+describe("the first form of port_forwards → current: port-forwards-direction", () => {
+  /** A root that ran port-forwards in its first form and has a forward saved, stamped at the adoption. */
+  function openFirstForm(): DatabaseSync {
+    const db = new sqlite.DatabaseSync(":memory:");
+    db.exec(SCHEMA_SQL);
+    db.exec("DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP TABLE port_forwards;");
+    db.exec(PORT_FORWARDS_V1_DDL);
+    db.prepare(
+      "INSERT INTO port_forwards (id, machine_id, workspace, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("f1", "m1", "/home/dev/site", 3000, 3000, "2026-09-21T00:00:00.000Z");
+    db.exec("PRAGMA user_version = 16");
+    return db;
+  }
+  const columns = (db: DatabaseSync): string[] =>
+    (db.prepare("PRAGMA table_info(port_forwards)").all() as { name: string }[]).map((c) => c.name);
+  const insertNew = (
+    db: DatabaseSync,
+    id: string,
+    ws: string,
+    dir: string,
+    rp: number,
+    lp: number,
+  ) =>
+    db
+      .prepare(
+        "INSERT INTO port_forwards (id, machine_id, workspace, direction, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(id, "m1", ws, dir, rp, lp, "2026-09-21T00:00:00.000Z");
+  const insertOld = (db: DatabaseSync, id: string, ws: string, rp: number, lp: number) =>
+    db
+      .prepare(
+        "INSERT INTO port_forwards (id, machine_id, workspace, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .run(id, "m1", ws, rp, lp, "2026-09-21T00:00:00.000Z");
+
+  it("gives the table its direction on the swap path, keeps the forward as `in`, and takes an `out` sharing its port", () => {
+    const db = openFirstForm();
+    try {
+      migrate(db, { swapPath: true });
+      expect(columns(db)).toContain("direction");
+      expect(db.prepare("SELECT id, direction, local_port FROM port_forwards").all()).toEqual([
+        { id: "f1", direction: "in", local_port: 3000 },
+      ]);
+      // What the platform writes now…
+      insertNew(db, "f2", "/home/dev/site", "out", 5432, 3000);
+      // …and what a predecessor rolled back to would still write: no direction named.
+      insertOld(db, "f3", "/home/dev/other", 8080, 8080);
+      expect(db.prepare("SELECT direction FROM port_forwards WHERE id = 'f3'").get()).toEqual({
+        direction: "in",
+      });
+      // Two `in` forwards still cannot share a local port.
+      expect(() => insertOld(db, "f4", "/home/dev/third", 9000, 3000)).toThrow(/UNIQUE/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("brings a table the adoption created — the same first form — to the current shape too", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(SCHEMA_SQL);
+      db.exec("DROP TABLE port_forwards");
+      db.exec("PRAGMA user_version = 15");
+      migrate(db, { swapPath: true });
+      expect(columns(db)).toContain("direction");
+      insertNew(db, "f1", "/home/dev/site", "out", 5432, 5432);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("leaves a table that already has the column alone", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(SCHEMA_SQL);
+      db.exec("PRAGMA user_version = 16");
+      const before = shape(db);
+      migrate(db);
+      expect(shape(db)).toBe(before);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down puts the first form back, without the `out` forwards it cannot hold", () => {
+    const db = openFirstForm();
+    try {
+      migrate(db);
+      insertNew(db, "f2", "/home/dev/site", "out", 5432, 3000);
+      rollbackTo(db, 15);
+      expect(columns(db)).not.toContain("direction");
+      expect(db.prepare("SELECT id FROM port_forwards").all()).toEqual([{ id: "f1" }]);
     } finally {
       db.close();
     }

@@ -357,6 +357,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.browser.tabs",
+    scope: "install",
+    why: "The address each Browser tab shows, keyed by the tab ids the dock layout holds; a Workspace port only means something on this install's machines.",
+  },
+  {
+    kind: "exact",
     key: "penguin.terminal.page.id",
     scope: "install",
     why: "The terminal (shell) id the standalone terminal page reattaches to.",

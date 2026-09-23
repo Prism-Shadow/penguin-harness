@@ -1,6 +1,5 @@
 /**
- * Ports panel — the conversation's Workspace's port forwards, as a dock tab beside the
- * terminal. A forward brings a TCP port of the machine the Workspace is on to THIS
+ * Ports panel — the conversation's Workspace's port forwards, as a dock tab. A forward brings a TCP port of the machine the Workspace is on to THIS
  * server's loopback; it belongs to the Workspace (machine + directory), so every
  * conversation there sees the same rows, and they are still there after a restart.
  *
@@ -18,13 +17,16 @@ import { Button } from "../../components/ui/button";
 import { CopyButton } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon, EXTERNAL_LINK_ICON } from "../../components/ui/icons";
+import { BROWSER_ICON, CloseIcon, EXTERNAL_LINK_ICON } from "../../components/ui/icons";
 import { noAutofill } from "../../components/ui/input";
 import { Skeleton } from "../../components/ui/skeleton";
 import { apiErrorText } from "../../lib/api-error";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
+import { newBrowserTab } from "../browser/browser-tabs";
+import { addBrowserTab } from "../dock/dock-state";
 import { parsePort } from "./port-forward-facts";
 import { Cable, ForwardRow, Plug } from "./forward-cable";
 import { useMachineName } from "./use-machine-name";
@@ -183,6 +185,19 @@ function MachinePorts({
                   machineName={machineName}
                   actions={
                     <>
+                      <button
+                        type="button"
+                        title={S.browser.openInBrowser}
+                        aria-label={S.browser.openInBrowser}
+                        // The Browser's localhost is the MACHINE's: the remote port, not the
+                        // local one — it reaches the same server through the same connection.
+                        onClick={() =>
+                          addBrowserTab(newBrowserTab(`localhost:${forward.remotePort}`))
+                        }
+                        className={ROW_BUTTON}
+                      >
+                        <GlyphIcon d={BROWSER_ICON} size={ICON_SIZE.inlineGlyph} />
+                      </button>
                       <CopyButton
                         text={address}
                         label={S.ports.copyAddress}

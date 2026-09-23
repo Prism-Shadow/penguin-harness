@@ -196,6 +196,15 @@ CREATE TABLE IF NOT EXISTS port_forwards (     -- a port forward on a machine's 
 );
 CREATE INDEX IF NOT EXISTS idx_port_forwards_machine ON port_forwards(machine_id, workspace);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_port_forwards_local_in ON port_forwards(local_port) WHERE direction = 'in';  -- two 'in' forwards cannot share a local port; 'out' ones may name any
+CREATE TABLE IF NOT EXISTS browser_sites (     -- one origin the Browser shows, on the host of its own it is served from (browser/sites.ts)
+  label        TEXT PRIMARY KEY,               -- 26 base32 characters: the '<label>.localhost' host, and a capability — whoever names it is served
+  user_id      TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  machine_id   TEXT NOT NULL,                  -- the machine the Workspace is on; '' = this server (NULL would not be unique below)
+  origin       TEXT NOT NULL,                  -- the upstream origin: 'http://localhost:<port>' on that machine, or a public origin
+  created_at   TEXT NOT NULL,
+  last_used_at TEXT NOT NULL,                  -- what the per-user cap ages out by
+  UNIQUE (user_id, machine_id, origin)
+);
 CREATE TABLE IF NOT EXISTS trace_files (       -- DERIVED CACHE of the on-disk Trace tree (services/trace-index.ts): the directories stay the single source of truth, every row is rebuildable from disk, and a row is never authority for absence — consumers reconcile + retry on a miss, so a stale index costs one extra scan, never a false 404
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,

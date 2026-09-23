@@ -597,6 +597,122 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     },
   },
+  {
+    version: 16,
+    name: "port-forwards-adoption",
+    // A data root that ran the closed #797 line is stamped 13 under THAT line's numbering
+    // (13 = company-mode-org-caches-adoption), so on this line's numbering port-forwards
+    // (13) reads as already applied and only browser-sites (14) runs. Such a root reaches
+    // the latest version without `port_forwards`, and the port-forwards module's start —
+    // which lists the table — throws at boot: the server exits before it listens. Seen on
+    // every machine a server on the old line handed this build to.
+    //
+    // Re-runs migration 13's own `up` — the frozen DDL, all `IF NOT EXISTS`, so a root that
+    // took it in its proper place finds its work done. Remove together with migration 13's
+    // numbering hazard, once no root can still be stamped by that line.
+    swapSafe: true,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS port_forwards (
+          id          TEXT PRIMARY KEY,
+          machine_id  TEXT NOT NULL,
+          workspace   TEXT NOT NULL,
+          remote_port INTEGER NOT NULL,
+          local_port  INTEGER NOT NULL UNIQUE,
+          created_at  TEXT NOT NULL,
+          UNIQUE (machine_id, workspace, remote_port)
+        );
+        CREATE INDEX IF NOT EXISTS idx_port_forwards_machine ON port_forwards(machine_id, workspace);
+      `);
+    },
+    // Nothing to undo: the table is migration 13's, and 13's own down drops it.
+    down() {},
+  },
+  {
+    version: 17,
+    name: "port-forwards-direction",
+    // ADOPTION of a mistake: migration 13's DDL was changed in place (a `direction` column,
+    // uniqueness per direction) while a few data roots had already run its first form — a
+    // stamped migration is never re-run, so those roots kept a `port_forwards` the platform
+    // can no longer write to (every insert names `direction`) and answered 500. Migration 15
+    // creates that same first form on the roots it adopts, so its tables arrive here too.
+    // This brings such a table to the current shape, rows kept as `in` forwards; a root
+    // whose table already has the column is left alone.
+    //
+    // Swap-safe although it rebuilds: the rebuilt table is a superset the predecessor still
+    // writes to — `direction` defaults to 'in', which is the one direction the predecessor
+    // knew — and reads from unchanged. A rollback loses nothing.
+    swapSafe: true,
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info(port_forwards)").all() as { name: string }[];
+      if (cols.length === 0 || cols.some((c) => c.name === "direction")) return;
+      db.exec(`
+        CREATE TABLE port_forwards_v2 (
+          id          TEXT PRIMARY KEY,
+          machine_id  TEXT NOT NULL,
+          workspace   TEXT NOT NULL,
+          direction   TEXT NOT NULL DEFAULT 'in',
+          remote_port INTEGER NOT NULL,
+          local_port  INTEGER NOT NULL,
+          created_at  TEXT NOT NULL,
+          UNIQUE (machine_id, workspace, direction, remote_port)
+        );
+        INSERT INTO port_forwards_v2 (id, machine_id, workspace, direction, remote_port, local_port, created_at)
+          SELECT id, machine_id, workspace, 'in', remote_port, local_port, created_at FROM port_forwards;
+        DROP TABLE port_forwards;
+        ALTER TABLE port_forwards_v2 RENAME TO port_forwards;
+        CREATE INDEX IF NOT EXISTS idx_port_forwards_machine ON port_forwards(machine_id, workspace);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_port_forwards_local_in ON port_forwards(local_port) WHERE direction = 'in';
+      `);
+    },
+    // Puts the first form back — and LOSES every `out` forward, which that form cannot hold.
+    down(db) {
+      const cols = db.prepare("PRAGMA table_info(port_forwards)").all() as { name: string }[];
+      if (!cols.some((c) => c.name === "direction")) return;
+      db.exec(`
+        CREATE TABLE port_forwards_v1 (
+          id          TEXT PRIMARY KEY,
+          machine_id  TEXT NOT NULL,
+          workspace   TEXT NOT NULL,
+          remote_port INTEGER NOT NULL,
+          local_port  INTEGER NOT NULL UNIQUE,
+          created_at  TEXT NOT NULL,
+          UNIQUE (machine_id, workspace, remote_port)
+        );
+        INSERT INTO port_forwards_v1 (id, machine_id, workspace, remote_port, local_port, created_at)
+          SELECT id, machine_id, workspace, remote_port, local_port, created_at FROM port_forwards WHERE direction = 'in';
+        DROP TABLE port_forwards;
+        ALTER TABLE port_forwards_v1 RENAME TO port_forwards;
+        CREATE INDEX IF NOT EXISTS idx_port_forwards_machine ON port_forwards(machine_id, workspace);
+      `);
+    },
+  },
+  {
+    version: 18,
+    name: "browser-sites",
+    // One new table, nothing existing touched: a platform rolled back to one without the
+    // Browser never queries it.
+    swapSafe: true,
+    up(db) {
+      // Frozen copy of the DDL as of the Browser feature; do not re-derive from schema.ts.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS browser_sites (
+          label        TEXT PRIMARY KEY,
+          user_id      TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+          machine_id   TEXT NOT NULL,
+          origin       TEXT NOT NULL,
+          created_at   TEXT NOT NULL,
+          last_used_at TEXT NOT NULL,
+          UNIQUE (user_id, machine_id, origin)
+        );
+      `);
+    },
+    // LOSES which host each site was served on: every site gets a new one the next time it is
+    // opened, so what a page kept in that host's storage and cookies is orphaned.
+    down(db) {
+      db.exec(`DROP TABLE IF EXISTS browser_sites;`);
+    },
+  },
 ];
 
 /** The highest version this build knows how to reach. */

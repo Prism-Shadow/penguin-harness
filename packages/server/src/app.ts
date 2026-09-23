@@ -442,8 +442,17 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   // 300MB bodies on a server whose limits were left at 10MB. It is re-derived per request, so an
   // admin's change takes effect immediately; the middleware itself is memoized on the resulting
   // size so the steady state allocates nothing.
+  // A host of the platform's own — the Browser's `<label>.localhost` sites — is not the App:
+  // its `/api/*` is a browsed site's, whose writes are that site's business (a form post,
+  // a multipart upload), so the two App defenses below step aside there. The one path that
+  // is never a site's is the upgrade channel, which keeps its defenses on every host.
+  const siteHost = (c: Context): boolean => {
+    const host = hostOnly(requestAuthority(c.req.url, c.req.header("host"))).toLowerCase();
+    return host.endsWith(".localhost") && !c.req.path.startsWith("/api/hmr");
+  };
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
+    if (siteHost(c)) return next();
     const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
@@ -465,7 +474,7 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     return capped.mw(c, next);
   });
   app.use("/api/*", sameOriginWrites);
-  app.use("/api/*", jsonOnlyWrites);
+  app.use("/api/*", (c, next) => (siteHost(c) ? next() : jsonOnlyWrites(c, next)));
 
   // THE seam: every route is one the platform may take over by push — the upgrade channel
   // included, which the platform declares and contributes like any other group

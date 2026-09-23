@@ -160,6 +160,25 @@ export const zh = {
     adminOnly: "只有管理员可以管理机器。",
   },
 
+  /** The Browser: a dock tab showing a page on a host of its own. */
+  browser: {
+    title: "浏览器",
+    newTab: "新建浏览器标签",
+    address: "地址",
+    addressPlaceholder: "localhost:3000 或网址",
+    back: "后退",
+    forward: "前进",
+    reload: "重新加载",
+    /** The dock header's detach for a Browser tab: the page moves to a tab of the web browser's own and comes back when it closes. */
+    detach: "弹出到新标签页",
+    /** The blank tab says what `localhost` means here — it is not the viewer's own machine. */
+    startLocal: "输入地址后回车。localhost:<端口> 指本服务端上的端口；也可以输入公网网址。",
+    startMachine:
+      "输入地址后回车。localhost:<端口> 指此 Workspace 所在机器上的端口；也可以输入公网网址。",
+    /** The Ports panel's row action. */
+    openInBrowser: "在浏览器标签中打开",
+  },
+
   /** Port forwarding: the dock's Ports panel, and a machine's Ports page. */
   ports: {
     panelTitle: "端口",

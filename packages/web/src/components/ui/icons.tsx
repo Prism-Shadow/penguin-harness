@@ -360,6 +360,14 @@ export const HAND_ICON =
 export const SCHEDULE_ICON =
   "M12 19.5a6.7 6.7 0 1 0 0-13.4 6.7 6.7 0 0 0 0 13.4zM12 8.9v3.9l2.6 1.8M3.1 7.7A3.5 3.5 0 0 1 7.7 4.3M16.3 4.3a3.5 3.5 0 0 1 4.6 3.4M7.8 18.8 5.4 21.6M16.2 18.8l2.4 2.8";
 
+/** Back and forward — arrows with a shaft, so neither is mistaken for the collapse chevron. */
+export const ARROW_LEFT_ICON = "M19 12H5M11 6l-6 6 6 6";
+export const ARROW_RIGHT_ICON = "M5 12h14M13 6l6 6-6 6";
+
+/** The Browser: a globe — the meridian and two parallels are what still read as one at 14px. */
+export const BROWSER_ICON =
+  "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.500 5.600 12 3z";
+
 /**
  * Port forwarding: two opposed arrows, one line each way — bytes going out to a machine and
  * coming back. Arrows rather than a plug, which the Machines page already reads as "use".

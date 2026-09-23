@@ -1,12 +1,14 @@
 /**
  * Terminal stream transport: `GET /api/terminals/:id/stream` (Upgrade).
  *
- * Runtime, and only the transport. A WebSocket cannot cross the platform seam — a seam
- * handler returns one whole Response — so the runtime keeps what an upgrade needs: the
- * handshake itself, the Origin check, and the session-cookie authentication it already
- * owns. The moment the socket is live it is handed to the platform, which owns the
- * protocol that flows over it (terminal/stream.ts): frames, coalescing, restore
- * and backpressure are all pushable, the socket plumbing is not.
+ * Runtime, and only the transport. A WebSocket cannot cross the HTTP seam — a seam handler
+ * returns one whole Response — so upgrades have a seam of their own: every one is offered
+ * to the platform first (`PlatformApi.upgrade`, the Browser's tunnels), and one the platform
+ * does not claim is the terminal stream's, for which the runtime keeps what the handshake
+ * needs: the Origin check and the session-cookie authentication it already owns. The
+ * moment the socket is live it is handed to the platform, which owns the protocol that
+ * flows over it (terminal/stream.ts): frames, coalescing, restore and backpressure are all
+ * pushable, the socket plumbing is not.
  *
  * Auth: the session cookie rides along on the upgrade request, so the same credential as
  * the REST API is used, plus an Origin check — a WebSocket handshake is not subject to
@@ -50,6 +52,22 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
   });
 
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    void (async () => {
+      // THE UPGRADE SEAM. Every upgrade is offered to the platform before this handler's
+      // own — the HTTP seam's rule, for the one kind of request a Response cannot carry. A
+      // platform that claims none (one from before the seam, or a bare kernel) answers
+      // false or has no member, and the socket is this handler's as before.
+      try {
+        const platform = await deps.hmr.ensure();
+        if (await platform.api.upgrade?.(req, socket, head)) return;
+      } catch (err) {
+        deps.log(`[ws] upgrade seam failed: ${err instanceof Error ? err.message : err}`);
+      }
+      handleTerminalUpgrade(req, socket, head);
+    })();
+  });
+
+  function handleTerminalUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
     const url = new URL(req.url ?? "/", "http://localhost");
     const match = STREAM_PATH.exec(url.pathname);
     // Not ours: leave the socket alone so another upgrade handler (or the default
@@ -82,7 +100,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
         deps.log(`[terminal] stream upgrade failed: ${err instanceof Error ? err.message : err}`);
         refuse(socket, 500, "Internal Server Error");
       });
-  });
+  }
 }
 
 /**
