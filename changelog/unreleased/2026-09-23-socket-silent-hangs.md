@@ -44,3 +44,9 @@ socket looking healthy. The browser did not reconnect because the socket never c
   doubling to 30 s), with a warning listing the answers it got.
 - A conversation whose history is still loading after 15 s logs where the call went (this
   server or which machine) and what the socket is doing, so the next report can name the cause.
+- The same silence one hop further: this server relays a machine's streams over one socket
+  it holds to that machine, and waited without limit for the machine to open each stream. A
+  machine's own hot push left that socket bound to its disposed App — heartbeat kept, nothing
+  answered — so every stream through the machine hung, and every re-issue hung the same way.
+  A stream not opened within 20 s now tears that socket down (every stream on it ends and is
+  re-issued, the next dial reaches the machine's current App) and is forwarded over HTTP.

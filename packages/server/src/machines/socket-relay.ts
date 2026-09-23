@@ -39,6 +39,14 @@ export interface MachineSocketTarget {
 
 /** How long a refused handshake keeps the machine on the HTTP path before another try. */
 const REFUSED_FOR_MS = 60_000;
+/**
+ * A stream the machine has not opened (or answered) after this rides a socket that is not
+ * serving: one the machine's own hot push left bound to its disposed App, which keeps the
+ * heartbeat going and answers nothing — the silence watchdog never fires. The socket is
+ * terminated, which ends every stream on it so the browser re-issues each, this request is
+ * forwarded over HTTP instead, and the next stream dials the machine's current App.
+ */
+export const STREAM_OPEN_TIMEOUT_MS = 20_000;
 
 interface Sink {
   onStart(status: number): void;
@@ -140,6 +148,11 @@ class MachineSocket {
     if (!this.#calls.delete(id)) return;
     if (this.#ws.readyState === this.#ws.OPEN) this.#ws.send(JSON.stringify({ id, cancel: true }));
   }
+
+  /** Tears the socket down as dead: every stream on it ends, and the relay dials again next time. */
+  terminate(): void {
+    this.#ws.terminate();
+  }
 }
 
 /**
@@ -150,7 +163,14 @@ export class MachineSocketRelay {
   readonly #sockets = new Map<string, Promise<MachineSocket>>();
   readonly #refusedUntil = new Map<string, number>();
 
-  constructor(private readonly log: (line: string) => void) {}
+  readonly #openTimeoutMs: number;
+
+  constructor(
+    private readonly log: (line: string) => void,
+    options: { openTimeoutMs?: number } = {},
+  ) {
+    this.#openTimeoutMs = options.openTimeoutMs ?? STREAM_OPEN_TIMEOUT_MS;
+  }
 
   /**
    * Relays one streaming request; null when this machine has no socket to relay over (the
@@ -167,10 +187,22 @@ export class MachineSocketRelay {
     const headers: Record<string, string> = { accept: "text/event-stream" };
     if (request.lastEventId !== null) headers["last-event-id"] = request.lastEventId;
 
-    return new Promise<Response>((resolve) => {
+    return new Promise<Response | null>((resolve) => {
       let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
       let ended = false;
       const encoder = new TextEncoder();
+      // Issued, but neither opened nor answered nor ended in time: the socket is not serving.
+      const opening = setTimeout(() => {
+        if (ended || controller !== null) return;
+        ended = true;
+        this.log(
+          `[machines] stream ${request.path} on ${machineId}: not opened in ${this.#openTimeoutMs} ms over a socket that is alive; terminating the socket, forwarding this stream over HTTP`,
+        );
+        socket.cancel(id);
+        socket.terminate();
+        resolve(null);
+      }, this.#openTimeoutMs);
+      opening.unref?.();
       const finish = () => {
         if (ended) return;
         ended = true;
@@ -183,6 +215,8 @@ export class MachineSocketRelay {
       let id = -1;
       const sink: Sink = {
         onStart: (status) => {
+          clearTimeout(opening);
+          if (ended) return; // given up on above; the machine's late answer is not this request's
           resolve(
             new Response(
               new ReadableStream<Uint8Array>({
@@ -214,6 +248,8 @@ export class MachineSocketRelay {
           );
         },
         onEnd: () => {
+          clearTimeout(opening);
+          if (ended) return;
           if (controller === null) {
             // Ended before it began: the socket dropped mid-handshake of the call.
             resolve(
@@ -233,6 +269,8 @@ export class MachineSocketRelay {
           finish();
         },
         onResponse: (status, body) => {
+          clearTimeout(opening);
+          if (ended) return;
           // The endpoint answered without streaming (404, 403, …): pass its answer through.
           resolve(Response.json(body ?? null, { status }));
         },
