@@ -305,7 +305,7 @@ function QueuePage() {
           value={draft}
           aria-label={t.search}
           placeholder={t.searchPlaceholder}
-          className="font-mono text-xs"
+          className="font-mono"
           onChange={(e) => editDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") applyDraft(draft);
