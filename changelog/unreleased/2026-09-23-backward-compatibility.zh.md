@@ -3,7 +3,7 @@
 - **Date:** 2026-09-23
 - **Type:** process
 - **Scope:** `server`
-- **PR:** [#TBD](https://github.com/Prism-Shadow/penguin-harness/pull/TBD)
+- **PR:** [#842](https://github.com/Prism-Shadow/penguin-harness/pull/842)
 
 [English](2026-09-23-backward-compatibility.md)
 
