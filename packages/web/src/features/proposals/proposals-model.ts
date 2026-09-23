@@ -282,7 +282,13 @@ export function projectMarkdown(source: string): { plain: string; map: number[] 
       i += link[0].length;
       continue;
     }
-    if (ch === "`" || ch === "*" || ch === "_" || ch === "~") {
+    // Emphasis and code marks are syntax; an underscore or asterisk INSIDE a word
+    // (`org_desk_notices`, `a*b`) is the word's own and is kept — what the rendering shows.
+    if (
+      ch === "`" ||
+      (isMark(ch) && !isWordChar(source[i - 1])) ||
+      (isMark(ch) && !isWordChar(source[i + 1]))
+    ) {
       i++;
       continue;
     }
@@ -291,6 +297,12 @@ export function projectMarkdown(source: string): { plain: string; map: number[] 
   }
   return { plain: plain.join(""), map };
 }
+
+const isMark = (ch: string | undefined): boolean => ch === "*" || ch === "_" || ch === "~";
+const isWordChar = (ch: string | undefined): boolean =>
+  ch !== undefined && /[\p{L}\p{N}]/u.test(ch);
+/** Inline syntax the projection drops; a placed range grows over the ones touching it so the quote is a whole `` `token` `` / `*word*`. */
+const isInlineSyntax = (ch: string | undefined): boolean => ch === "`" || isMark(ch);
 
 const collapse = (text: string): string => text.replace(/\s+/g, " ").trim();
 
@@ -338,7 +350,16 @@ export function rangeOfSelection(
 ): { start: number; end: number } | null {
   const { plain, map } = projectMarkdown(source);
   const inPlain = findPassage(plain, selectedText);
-  if (inPlain !== null) return { start: map[inPlain.start]!, end: map[inPlain.end - 1]! + 1 };
+  if (inPlain !== null) {
+    let start = map[inPlain.start]!;
+    let end = map[inPlain.end - 1]! + 1;
+    // Grow over the syntax the projection dropped right at the edges: a selection of the
+    // rendered `notifyTicket` names the whole `` `notifyTicket` `` in the source.
+    const kept = new Set(map);
+    while (start > 0 && isInlineSyntax(source[start - 1]) && !kept.has(start - 1)) start--;
+    while (end < source.length && isInlineSyntax(source[end]) && !kept.has(end)) end++;
+    return { start, end };
+  }
   const raw = findPassage(source, selectedText);
   if (raw !== null) return raw;
   if (fallback !== undefined) return paragraphSpan(fallback.section, fallback.paragraphId);
