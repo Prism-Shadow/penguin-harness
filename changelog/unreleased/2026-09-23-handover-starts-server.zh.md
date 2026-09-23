@@ -3,7 +3,7 @@
 - **Date:** 2026-09-23
 - **Type:** fix
 - **Scope:** `server`
-- **PR:** [#TBD](https://github.com/Prism-Shadow/penguin-harness/pull/TBD)
+- **PR:** [#839](https://github.com/Prism-Shadow/penguin-harness/pull/839)
 
 [English](2026-09-23-handover-starts-server.md)
 
