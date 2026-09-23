@@ -191,6 +191,30 @@ describe("extendsExpr", () => {
       false,
     );
   });
+
+  it("a Map or a Set is compared by its element types, like an array", () => {
+    expect(extendsExpr({ map: [str, num] }, { map: [str, num] })).toBe(true);
+    expect(extendsExpr({ map: [str, num] }, { map: [str, str] })).toBe(false);
+    expect(extendsExpr({ map: [num, str] }, { map: [str, str] })).toBe(false);
+    expect(extendsExpr({ set: str }, { set: str })).toBe(true);
+    expect(extendsExpr({ set: str }, { set: num })).toBe(false);
+    // Neither is the other, nor an array of the same element.
+    expect(extendsExpr({ set: str }, { array: str })).toBe(false);
+    expect(extendsExpr({ map: [str, str] }, { set: str })).toBe(false);
+  });
+
+  it("a Map's value may be a live object, checked through the table", () => {
+    const t: IfaceTable = {
+      "a#A": { name: "A", methods: { x: { params: [], returns: str } }, slots: {} },
+      "a#B": { name: "B", methods: { x: { params: [], returns: num } }, slots: {} },
+    };
+    expect(extendsExpr({ map: [str, { iface: "a#A" }] }, { map: [str, { iface: "a#A" }] }, t)).toBe(
+      true,
+    );
+    expect(extendsExpr({ map: [str, { iface: "a#A" }] }, { map: [str, { iface: "a#B" }] }, t)).toBe(
+      false,
+    );
+  });
 });
 
 describe("checkTree", () => {
