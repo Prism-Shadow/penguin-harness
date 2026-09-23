@@ -1,8 +1,8 @@
 /**
  * Organization routes over the real app: the admin master switch starts off, 404s the whole
  * group while it is off, and is reported by /api/me and /api/admin/settings; Project
- * authorization gates reads and writes (an outsider gets 404, a member may write), and no
- * route deletes an organization; bodies are validated before the service is asked; and the
+ * authorization gates reads and writes (an outsider gets 404, a member may write) and only
+ * the owner deletes an organization; bodies are validated before the service is asked; and the
  * calling session and employee ride write bodies as `sessionId` / `agentId` (a read's query
  * string), but only from the control environment's API token — a signed-in member's claim is
  * dropped. The service itself is a recording fake here — its semantics have their
@@ -185,13 +185,17 @@ describe("organization routes", () => {
     });
   });
 
-  it("has no route that deletes an organization", async () => {
-    // Pause is the whole lifecycle. DELETE is not a route, so the Project's own owner gets 404
-    // and the service is never asked; pausing is a PATCH like any other setting.
-    expect((await owner.delete(`/api/projects/${ownerProject}/organizations/acme`)).status).toBe(
-      404,
-    );
+  it("deletes an organization for the Project's owner only; pausing stays a setting", async () => {
+    // A Project-level management operation, like deleting an Agent: a member who can write
+    // everything else in the organization cannot make it go away.
+    const path = `/api/projects/${ownerProject}/organizations/acme`;
+    const mia = await provisionUser(t.app, "mia");
+    await owner.post(`/api/projects/${ownerProject}/members`, { userId: "mia" });
+    calls.length = 0;
+    expect((await apiClient(t.app, mia.cookie).delete(path)).status).toBe(403);
     expect(calls).toEqual([]);
+    expect((await owner.delete(path)).status).toBe(204);
+    expect(calls.at(-1)).toEqual({ method: "delete", args: [ownerProject, "acme"] });
     const patch = await owner.patch(`/api/projects/${ownerProject}/organizations/acme`, {
       status: "paused",
     });

@@ -112,6 +112,9 @@ async function writeText(p: string, text: string): Promise<void> {
   await fs.writeFile(p, text, "utf8");
 }
 
+/** Where deleted organizations go, under a Project's `organizations/`. */
+export const TRASH_DIR = ".trash";
+
 export class OrgStore {
   constructor(readonly root: string) {}
 
@@ -177,6 +180,20 @@ export class OrgStore {
 
   async remove(dir: string): Promise<void> {
     await fs.rm(dir, { recursive: true, force: true });
+  }
+
+  /**
+   * Takes an organization out of the Project without destroying it: its directory moves to
+   * `organizations/.trash/<orgId>-<stamp>/`, whole. Nothing lists a dot-directory, so the
+   * organization is gone from every surface; moving the directory
+   * back is how it is restored. Returns where it went.
+   */
+  async trash(projectId: string, orgId: string, stamp: string): Promise<string> {
+    const bin = path.join(organizationsDir(this.root, projectId), TRASH_DIR);
+    await fs.mkdir(bin, { recursive: true });
+    const target = path.join(bin, `${orgId}-${stamp.replace(/[^0-9A-Za-z]/g, "")}`);
+    await fs.rename(this.dir(projectId, orgId), target);
+    return target;
   }
 
   // ---- org_config.toml / org_chart.yaml / desks.toml / handbook/ ----

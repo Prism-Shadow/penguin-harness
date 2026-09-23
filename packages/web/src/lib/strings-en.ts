@@ -3775,6 +3775,13 @@ Scenarios:
     statusPaused: "Paused",
     pause: "Pause organization",
     resume: "Resume organization",
+    deleteOrg: "Delete organization",
+    deleteOrgDesc:
+      "Moves the organization to the Project's trash. Its employees stay as Agents and its conversations are kept.",
+    deleteOrgConfirm:
+      "The organization disappears from company mode. Its files go to the Project's trash (organizations/.trash) and can be moved back by hand. Its employees remain Agents of the Project; its desk and ticket conversations are kept, but with the organization gone no page lists them any more. Its id can be reused only after the old CEO's Agent is deleted. To stop an organization without losing anything, pause it instead.",
+    deleteOrgTypeId: (orgId: string) => `Type ${orgId} to confirm`,
+    deleted: (orgId: string) => `Organization ${orgId} deleted`,
     pauseInfo:
       "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. An organization is paused, never deleted: its conversations, employees and tickets stay reachable.",
     settingsLoadFailed: "The organization's settings could not be read",

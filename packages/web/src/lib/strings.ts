@@ -3756,6 +3756,12 @@ Benchmark：
     statusPaused: "已暂停",
     pause: "暂停组织",
     resume: "恢复组织",
+    deleteOrg: "删除组织",
+    deleteOrgDesc: "把组织移入 Project 的回收目录。员工保留为 Agent，对话也保留。",
+    deleteOrgConfirm:
+      "组织会从公司模式里消失。组织的文件移入 Project 的回收目录（organizations/.trash），可以手工移回来恢复。员工仍是 Project 的 Agent；工位与工单的对话会保留，但组织不在了，就没有页面再列出它们。要再次使用这个 id，需先删除旧 CEO 的 Agent。只是想让组织停下来而不丢任何东西，请改用暂停。",
+    deleteOrgTypeId: (orgId: string) => `输入 ${orgId} 以确认`,
+    deleted: (orgId: string) => `组织 ${orgId} 已删除`,
     pauseInfo:
       "暂停后所有自动触发停止——日程不再到点、@ 不再送达员工；你仍可以打开任意工位会话直接对话。组织只会被暂停，不会被删除：它的对话、员工与工单始终可以回去看。",
     settingsLoadFailed: "组织设置读取失败",
