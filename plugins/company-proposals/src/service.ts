@@ -843,6 +843,85 @@ export class ProposalService {
     return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
   }
 
+  /**
+   * A pending comment is the person's own until it is sent: reworded or withdrawn by the
+   * one who wrote it, and by nobody else; once a batch names it, it stands as sent.
+   */
+  private requireOwnPending(
+    p: Proposal,
+    caller: Caller,
+    commentId: string,
+    what: string,
+  ): ProposalComment {
+    const c = p.comments.find((x) => x.id === commentId);
+    if (c === undefined) {
+      throw new ProposalError(
+        404,
+        "comment_not_found",
+        `No comment ${commentId} on proposal #${p.number}.`,
+      );
+    }
+    if (c.batchId !== null) {
+      throw new ProposalError(
+        409,
+        "comment_sent",
+        `Comment ${commentId} has been sent to the author; it can no longer be ${what}.`,
+      );
+    }
+    if (c.by !== caller.principal) {
+      throw new ProposalError(
+        403,
+        "not_commenter",
+        `Only the one who wrote comment ${commentId} can have it ${what}.`,
+      );
+    }
+    return c;
+  }
+
+  async editComment(
+    projectId: string,
+    orgId: string,
+    number: number,
+    commentId: string,
+    text: string,
+    actor: OrgActor,
+  ): Promise<ProposalDetail> {
+    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(ledger, number);
+    this.requireOwnPending(p, caller, commentId, "reworded");
+    const next = text.trim();
+    if (next === "") throw badRequest("text must not be empty.");
+    const line = await ledger.append({
+      kind: "comment_edited",
+      number,
+      commentId,
+      text: next,
+      by: caller.principal,
+    });
+    this.notify(org, number, line.seq, "comment");
+    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+  }
+
+  async deleteComment(
+    projectId: string,
+    orgId: string,
+    number: number,
+    commentId: string,
+    actor: OrgActor,
+  ): Promise<ProposalDetail> {
+    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(ledger, number);
+    this.requireOwnPending(p, caller, commentId, "withdrawn");
+    const line = await ledger.append({
+      kind: "comment_deleted",
+      number,
+      commentId,
+      by: caller.principal,
+    });
+    this.notify(org, number, line.seq, "comment");
+    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+  }
+
   /** Moves the person's read position forward (never back); an employee's call is a no-op. */
   async read(
     projectId: string,

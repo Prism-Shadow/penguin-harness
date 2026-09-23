@@ -150,14 +150,34 @@ describe("foldLedger", () => {
         },
         { kind: "batch", number: 1, id: "b1", commentIds: ["c1", "c2"], by: "user:boss" },
         { kind: "resolved", number: 1, commentId: "c1", text: "added", by: "agent:dev" },
+        // A pending comment is reworded and, later, one withdrawn; a sent one is untouched by both.
+        {
+          kind: "comment_edited",
+          number: 1,
+          commentId: "c3",
+          text: "later, reworded",
+          by: "user:boss",
+        },
+        { kind: "comment_edited", number: 1, commentId: "c2", text: "no effect", by: "user:boss" },
+        { kind: "comment_deleted", number: 1, commentId: "c2", by: "user:boss" },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c4",
+          paragraphId: "p2",
+          revision: 1,
+          text: "gone soon",
+          by: "user:boss",
+        },
+        { kind: "comment_deleted", number: 1, commentId: "c4", by: "user:boss" },
       ),
     );
     const p = state.proposals.get(1)!;
     expect(p.status).toBe("drafting");
-    expect(p.comments.map((c) => [c.id, c.batchId, c.resolved?.text ?? null])).toEqual([
-      ["c1", "b1", "added"],
-      ["c2", "b1", null],
-      ["c3", null, null],
+    expect(p.comments.map((c) => [c.id, c.batchId, c.resolved?.text ?? null, c.text])).toEqual([
+      ["c1", "b1", "added", expect.any(String)],
+      ["c2", "b1", null, expect.any(String)],
+      ["c3", null, null, "later, reworded"],
     ]);
     const requested = p.events.find((e) => e.kind === "changes_requested");
     expect(requested).toMatchObject({ by: "user:boss", text: "2" });

@@ -14,6 +14,8 @@
  *   GET    /:number/comments[?pending=1]  the comments (pending: batched, unresolved) with the text marked for an agent
  *   POST   /:number/comments         { sectionId, start, end, quote, text } (pending)
  *   POST   /:number/comments/request send the caller's pending comments as one batch
+ *   PATCH  /:number/comments/:id     { text }   reword a pending comment (its writer only)
+ *   DELETE /:number/comments/:id                withdraw a pending comment (its writer only)
  *   POST   /:number/comments/:id/resolve { text? }
  *   POST   /:number/read             { upTo }
  *
@@ -343,6 +345,41 @@ export function proposalRoutes(service: ProposalService): Hono {
         param(c, "projectId"),
         param(c, "orgId"),
         numberParam(c),
+        actorOf(c, body),
+      ),
+    );
+  });
+
+  app.patch("/:number/comments/:id", async (c) => {
+    const body = await jsonBody(c);
+    const commentId = c.req.param("id");
+    if (commentId === undefined || commentId === "") {
+      throw new ProposalError(404, "comment_not_found", "Missing comment id.");
+    }
+    return c.json(
+      await service.editComment(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        commentId,
+        requireString(body, "text"),
+        actorOf(c, body),
+      ),
+    );
+  });
+
+  app.delete("/:number/comments/:id", async (c) => {
+    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
+    const commentId = c.req.param("id");
+    if (commentId === undefined || commentId === "") {
+      throw new ProposalError(404, "comment_not_found", "Missing comment id.");
+    }
+    return c.json(
+      await service.deleteComment(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        commentId,
         actorOf(c, body),
       ),
     );

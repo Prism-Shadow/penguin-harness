@@ -327,6 +327,7 @@ function QueueRow({
 
 function DetailPage({ number }: { number: number }) {
   const { projectId, orgId, org } = useOrg();
+  const { user } = useAuth();
   const company = useCompany();
   const { locale } = useLocale();
   const navigate = useNavigate();
@@ -518,6 +519,23 @@ function DetailPage({ number }: { number: number }) {
     await navigator.clipboard?.writeText(file).catch(() => undefined);
   };
 
+  /** The person's own pending comments are theirs to reword or withdraw until sent. */
+  const me = user == null ? null : `user:${user.userId}`;
+  const editComment = (commentId: string, text: string): Promise<boolean> =>
+    detail === null
+      ? Promise.resolve(false)
+      : write(
+          () => api.editOrgProposalComment(projectId, orgId, detail.number, commentId, { text }),
+          t.commentEdited,
+        );
+  const deleteComment = (commentId: string): Promise<boolean> =>
+    detail === null
+      ? Promise.resolve(false)
+      : write(
+          () => api.deleteOrgProposalComment(projectId, orgId, detail.number, commentId),
+          t.commentDeleted,
+        );
+
   const actions = detail === null ? null : proposalActions(detail.status, detail.pendingComments);
   const crumb = (
     <nav aria-label={S.nav.org.proposals} className="mb-3 text-xs text-gray-500 dark:text-gray-400">
@@ -557,6 +575,9 @@ function DetailPage({ number }: { number: number }) {
           onOpenSession={(sessionId) => navigate(`/chat/${sessionId}`)}
           onOpenTicket={(ticketId) => company.openTicket(projectId, orgId, ticketId)}
           onOpenFile={openScopeFile}
+          me={me}
+          onEditComment={editComment}
+          onDeleteComment={deleteComment}
           actions={
             actions === null ? null : (
               <>
@@ -655,6 +676,9 @@ function ProposalView({
   onOpenSession,
   onOpenTicket,
   onOpenFile,
+  me,
+  onEditComment,
+  onDeleteComment,
   actions,
 }: {
   detail: ProposalDetail;
@@ -673,6 +697,10 @@ function ProposalView({
   onOpenTicket: (ticketId: string) => void;
   /** A scope file: opened in the Files tab of a session that has it (the implementation's, else the author's desk). */
   onOpenFile: (file: string) => Promise<void>;
+  /** The signed-in person's principal: whose pending comments carry Edit / Delete. */
+  me: string | null;
+  onEditComment: (commentId: string, text: string) => Promise<boolean>;
+  onDeleteComment: (commentId: string) => Promise<boolean>;
   actions: ReactNode;
 }) {
   const t = S.company.proposals;
@@ -792,6 +820,9 @@ function ProposalView({
               busy={busy}
               closed={closed}
               onComment={onComment}
+              me={me}
+              onEditComment={onEditComment}
+              onDeleteComment={onDeleteComment}
             />
           </>
         )}
@@ -802,7 +833,17 @@ function ProposalView({
             </h4>
             <div className="space-y-2">
               {stale.map((c) => (
-                <CommentLine key={c.id} comment={c} names={names} locale={locale} stale />
+                <CommentLine
+                  key={c.id}
+                  comment={c}
+                  names={names}
+                  locale={locale}
+                  stale
+                  mine={me !== null && c.by === me}
+                  busy={busy}
+                  onEdit={onEditComment}
+                  onDelete={onDeleteComment}
+                />
               ))}
             </div>
           </div>
@@ -954,6 +995,9 @@ function ProposalBody({
   busy,
   closed,
   onComment,
+  me,
+  onEditComment,
+  onDeleteComment,
 }: {
   detail: ProposalDetail;
   names: ReadonlyMap<string, string>;
@@ -961,6 +1005,9 @@ function ProposalBody({
   highlightId: string | null;
   busy: boolean;
   closed: boolean;
+  me: string | null;
+  onEditComment: (commentId: string, text: string) => Promise<boolean>;
+  onDeleteComment: (commentId: string) => Promise<boolean>;
   onComment: (
     section: ProposalSection,
     selectedText: string,
@@ -1161,6 +1208,10 @@ function ProposalBody({
                           names={names}
                           locale={locale}
                           focused={focusedComment === c.id}
+                          mine={me !== null && c.by === me}
+                          busy={busy}
+                          onEdit={onEditComment}
+                          onDelete={onDeleteComment}
                         />
                       ))}
                     </div>
@@ -1257,6 +1308,10 @@ function CommentLine({
   locale,
   focused = false,
   stale = false,
+  mine = false,
+  busy = false,
+  onEdit,
+  onDelete,
 }: {
   comment: ProposalComment;
   names: ReadonlyMap<string, string>;
@@ -1265,9 +1320,27 @@ function CommentLine({
   focused?: boolean;
   /** Its passage is not in the current revision. */
   stale?: boolean;
+  /** Written by the signed-in person: pending, it can still be reworded or withdrawn. */
+  mine?: boolean;
+  busy?: boolean;
+  onEdit?: (commentId: string, text: string) => Promise<boolean>;
+  onDelete?: (commentId: string) => Promise<boolean>;
 }) {
   const t = S.company.proposals;
   const [showResolved, setShowResolved] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  // Only a pending comment is still the writer's own; sent, it stands as the author read it.
+  const editable =
+    mine && comment.batchId === null && onEdit !== undefined && onDelete !== undefined;
+  const saveEdit = async () => {
+    if (editing === null || onEdit === undefined) return;
+    const next = editing.trim();
+    if (next === "" || next === comment.text) {
+      setEditing(null);
+      return;
+    }
+    if (await onEdit(comment.id, next)) setEditing(null);
+  };
   return (
     <div
       id={`comment-${comment.id}`}
@@ -1281,6 +1354,26 @@ function CommentLine({
         </span>
         <span title={formatDateTime(comment.at)}>{formatRelativeShort(comment.at, locale)}</span>
         {comment.batchId === null && <Badge tone="amber">{t.pending}</Badge>}
+        {editable && editing === null && (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setEditing(comment.text)}
+              className="rounded px-1 text-gray-500 underline-offset-2 hover:underline disabled:opacity-50 dark:text-gray-400"
+            >
+              {S.common.edit}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onDelete?.(comment.id)}
+              className={`rounded px-1 underline-offset-2 hover:underline disabled:opacity-50 ${toneInk.danger}`}
+            >
+              {S.common.delete}
+            </button>
+          </>
+        )}
         {stale && <span>{t.fromRevision(comment.revision)}</span>}
         {comment.resolved !== undefined && (
           <button
@@ -1298,7 +1391,38 @@ function CommentLine({
           {comment.quote}
         </blockquote>
       )}
-      <p className="mt-0.5 whitespace-pre-wrap text-gray-800 dark:text-gray-100">{comment.text}</p>
+      {editing !== null ? (
+        <div className="mt-1 flex items-end gap-2">
+          <div className="min-w-0 flex-1">
+            <Textarea
+              size="sm"
+              rows={2}
+              aria-label={S.common.edit}
+              value={editing}
+              autoFocus
+              onChange={(e) => setEditing(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void saveEdit();
+                if (e.key === "Escape") setEditing(null);
+              }}
+            />
+          </div>
+          <Button
+            size="sm"
+            disabled={busy || editing.trim() === ""}
+            onClick={() => void saveEdit()}
+          >
+            {S.common.save}
+          </Button>
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => setEditing(null)}>
+            {S.common.cancel}
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-0.5 whitespace-pre-wrap text-gray-800 dark:text-gray-100">
+          {comment.text}
+        </p>
+      )}
       {comment.resolved !== undefined && showResolved && (
         <p className="mt-1 text-gray-600 dark:text-gray-300">
           {t.resolvedNote(comment.resolved.text)} · {principalLabel(comment.resolved.by, names)}
