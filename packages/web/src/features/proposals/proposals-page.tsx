@@ -85,6 +85,7 @@ import {
   proposalsRoute,
   paragraphSpan,
   rangeOfSelection,
+  scopeFileCandidates,
   sectionSource,
   sortProposals,
 } from "./proposals-model";
@@ -478,6 +479,45 @@ function DetailPage({ number }: { number: number }) {
     );
   };
 
+  /**
+   * A scope file opens in the Files tab of a session that has it — the implementation
+   * sessions (newest first), then the author's desk — at the path it has there: as
+   * written, or under the organization's shared workspace. None has it: say so, and leave
+   * the path on the clipboard.
+   */
+  const openScopeFile = async (file: string): Promise<void> => {
+    if (detail === null) return;
+    const candidates = [...detail.sessions].reverse();
+    try {
+      candidates.push((await api.getOrgDesk(projectId, orgId, detail.author)).sessionId);
+    } catch {
+      // No desk to fall back to; the implementation sessions may still have it.
+    }
+    let orgWorkspace: string | null = null;
+    try {
+      orgWorkspace = (await api.getOrganization(projectId, orgId)).settings.workspace ?? null;
+    } catch {
+      // The scope is then read only as Workspace-relative.
+    }
+    for (const sessionId of candidates) {
+      let workspace: string;
+      try {
+        workspace = (await api.getSession(sessionId)).session.workspace;
+      } catch {
+        continue;
+      }
+      for (const rel of scopeFileCandidates(file, workspace, orgWorkspace)) {
+        const stat = await api.statSessionFiles(sessionId, [rel]).catch(() => null);
+        if (stat?.existing.includes(rel)) {
+          navigate(`/chat/${sessionId}?file=${encodeURIComponent(rel)}`);
+          return;
+        }
+      }
+    }
+    toastError(t.fileNotInWorkspace);
+    await navigator.clipboard?.writeText(file).catch(() => undefined);
+  };
+
   const actions = detail === null ? null : proposalActions(detail.status, detail.pendingComments);
   const crumb = (
     <nav aria-label={S.nav.org.proposals} className="mb-3 text-xs text-gray-500 dark:text-gray-400">
@@ -516,6 +556,7 @@ function DetailPage({ number }: { number: number }) {
           onComment={addComment}
           onOpenSession={(sessionId) => navigate(`/chat/${sessionId}`)}
           onOpenTicket={(ticketId) => company.openTicket(projectId, orgId, ticketId)}
+          onOpenFile={openScopeFile}
           actions={
             actions === null ? null : (
               <>
@@ -613,6 +654,7 @@ function ProposalView({
   onComment,
   onOpenSession,
   onOpenTicket,
+  onOpenFile,
   actions,
 }: {
   detail: ProposalDetail;
@@ -629,6 +671,8 @@ function ProposalView({
   ) => Promise<boolean>;
   onOpenSession: (sessionId: string) => void;
   onOpenTicket: (ticketId: string) => void;
+  /** A scope file: opened in the Files tab of a session that has it (the implementation's, else the author's desk). */
+  onOpenFile: (file: string) => Promise<void>;
   actions: ReactNode;
 }) {
   const t = S.company.proposals;
@@ -713,7 +757,15 @@ function ProposalView({
                   key={`${entry.file}-${i}`}
                   className="border-t border-gray-100 dark:border-gray-800"
                 >
-                  <td className="py-1 pr-3 font-mono break-all">{entry.file}</td>
+                  <td className="py-1 pr-3 font-mono break-all">
+                    <TitleButton
+                      onClick={() => void onOpenFile(entry.file)}
+                      title={t.openFile}
+                      className="font-mono"
+                    >
+                      {entry.file}
+                    </TitleButton>
+                  </td>
                   <td className="py-1 font-mono text-gray-600 dark:text-gray-300">
                     {entry.name ?? "—"}
                   </td>

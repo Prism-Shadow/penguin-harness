@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProposalComment, ProposalEvent } from "@prismshadow/penguin-server/api";
 import {
+  scopeFileCandidates,
   commentsInSection,
   eventDetail,
   eventLine,
@@ -281,5 +282,21 @@ describe("eventLine", () => {
     expect(eventDetail(ev({ kind: "rejected", text: "not now" }))).toBe("not now");
     expect(eventDetail(ev({ kind: "material_added", text: "PR #5" }))).toBeNull();
     expect(eventDetail(ev({ kind: "feedback" }))).toBeNull();
+  });
+});
+
+describe("scopeFileCandidates", () => {
+  it("offers the file as written and the file under the shared workspace, inside the session's Workspace", () => {
+    expect(scopeFileCandidates("packages/a.ts", "/w/shared", "/w/shared")).toEqual([
+      "packages/a.ts",
+    ]);
+    expect(scopeFileCandidates("packages/a.ts", "/w/shared/dev", "/w/shared")).toEqual([
+      "packages/a.ts",
+    ]);
+    expect(scopeFileCandidates("packages/a.ts", "/w/shared", "/w/shared/dev")).toEqual([
+      "packages/a.ts",
+      "dev/packages/a.ts",
+    ]);
+    expect(scopeFileCandidates("../x.ts", "/w/shared", null)).toEqual([]);
   });
 });

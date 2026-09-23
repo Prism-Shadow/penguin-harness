@@ -4692,6 +4692,8 @@ Benchmark：
       scope: "范围",
       scopeEmpty: "作者尚未列出拟改的文件。",
       scopeFile: "文件",
+      openFile: "在会话的 Files 面板里打开",
+      fileNotInWorkspace: "这个文件不在提案任何会话的工作区里；路径已复制",
       scopePattern: "名称模式",
       sections: "正文",
       sectionsEmpty: "作者还没有发布正文。",

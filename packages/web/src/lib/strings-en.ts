@@ -4706,6 +4706,8 @@ Scenarios:
       scope: "Scope",
       scopeEmpty: "The author has not listed the files yet.",
       scopeFile: "File",
+      openFile: "Open in a session's Files tab",
+      fileNotInWorkspace: "This file is in no session's Workspace of the proposal; path copied",
       scopePattern: "Name pattern",
       sections: "Body",
       sectionsEmpty: "The author has not published a body yet.",
