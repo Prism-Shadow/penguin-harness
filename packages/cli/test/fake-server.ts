@@ -59,6 +59,8 @@ export interface FakeChannelState {
   /** What a person is told is unread here; an employee caller is always told 0, as on the server. */
   unread: number;
   mentionsMe: number;
+  /** The default recipients, as the server stores them: members only, each once. */
+  notify?: string[];
 }
 
 /**
@@ -1056,6 +1058,7 @@ export class FakeServer {
       createdBy: channel.createdBy,
       createdAt: channel.createdAt,
       memberCount: members.length,
+      notify: channel.notify ?? [],
       isMember: members.includes(caller.principal),
       // Read cursors belong to people; an employee reads its channel through its trigger.
       unread: caller.agentId === null ? channel.unread : 0,
@@ -1236,10 +1239,29 @@ export class FakeServer {
     }
     // Everything but lifting the archive itself is refused while the channel is archived.
     if (channel.archived && archived !== false) return this.channelArchived(channel.channelId);
-    if (body?.name !== undefined || body?.purpose !== undefined) {
+    if (body?.name !== undefined || body?.purpose !== undefined || body?.notify !== undefined) {
       if (!this.channelMembers(org, channel).includes(actor.principal)) {
         return this.notAMember(channel.channelId, actor.principal);
       }
+    }
+    if (body?.notify !== undefined) {
+      if (!Array.isArray(body.notify) || !body.notify.every((n) => typeof n === "string")) {
+        return this.badRequest("notify must be an array of strings.");
+      }
+      const members = this.channelMembers(org, channel);
+      const notify: string[] = [];
+      for (const entry of body.notify) {
+        if (!members.includes(entry)) {
+          return this.error(
+            400,
+            "notify_not_member",
+            `Not a member of ${channel.channelId}: ${entry}. Only members of the channel can be its default recipients.`,
+          );
+        }
+        if (!notify.includes(entry)) notify.push(entry);
+      }
+      if (notify.length > 0) channel.notify = notify;
+      else delete channel.notify;
     }
     if (body?.name !== undefined) {
       if (!isNonEmptyString(body.name) || body.name.trim() === "") {

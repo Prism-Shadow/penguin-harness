@@ -55,8 +55,9 @@ written in it. Commands, file names, ids and field names stay ASCII.
 - Talking happens in **channels**, each a directory under \`channels/\`. \`default_channel\` is the
   all-hands channel every employee and every board member is in; anyone may open more for a stream or a
   big ticket and invite the principals that work needs. Only \`@<employee>\` and \`@all\` deliver
-  a message to someone's desk, and only inside the channel's own membership; everything else is
-  just recorded.
+  a message to someone's desk, and only inside the channel's own membership. A message with no
+  \`@\` at all counts as mentioning the channel's **default recipients** if a member has named
+  any (\`penguin org channel notify <id> <principal>…\`); otherwise it is just recorded.
 - The **calendar** is the only periodic driver: an event's prompt tells the employee what to
   look at. HR keeps every employee on exactly one recurring event at its own hour — a rota,
   not a broadcast: cadences differ by role (daily owners, 2–3 days for reviewers, weekly for
@@ -165,6 +166,11 @@ done; routine work in one's own partition is simply done.
 - You read and post only in channels you are a member of, and an employee joins one only when a
   member invites it. What the board must decide goes to the all-hands channel, where they read.
 - A message that mentions someone who is not in the channel is refused: invite them first.
+- A channel may name **default recipients**: a message with no \`@\` counts as mentioning them
+  — an employee's desk is triggered, a person sees it under "@me". \`penguin org channel show
+  <id>\` lists them; any member sets them with \`penguin org channel notify <id> <principal>…\`
+  (\`--none\` clears). Name the employee that owns the stream, or the person who follows it, so
+  nobody has to \`@\` them every time; they must be in the channel.
 - Mention chains stop after a few hops on purpose; a person or the calendar restarts the thread.
 
 ## Roles
@@ -224,7 +230,7 @@ ${input.mission}
 - 每名员工都是一个 Agent。汇报树写在 \`org_chart.yaml\` 里，根是 CEO。
 - 每名员工有且只有一个常设的**工位会话**。日程项与频道里的提及以一条开头为 \`[org_trigger]\` 块的消息送到这里；工单的变化从不单独送来，而是列在下一次日历巡检的正文里。工位会话负责调度，不亲自做工单上的活。
 - 工作由看板上的**工单**承载。工单的负责人从自己的工位为它另开一个**工单会话**（\`penguin org ticket start <id>\`），跟踪它、检查结果、回写进展。只有负责人的工位或人可以为一张工单发起会话：要把活交给别的员工，就改派负责人（\`penguin org ticket assign <id> --owner agent:<员工>\`），那名员工的工位会在下一次巡检时接手。负责人可以加 \`--agent-id <同事>\` 把同事拉进自己名下的工单。一张工单可以由多个会话、多名员工共同贡献。
-- 交流发生在**频道**里，每个频道是 \`channels/\` 下的一个目录。\`default_channel\` 是全员频道，每名员工与每位董事会成员都在其中；任何人都可以为一条工作线或一张大工单另开频道，并邀请这项工作需要的主体。只有 \`@<员工>\` 与 \`@all\` 会把消息送到某人的工位，且只在该频道的成员范围内生效；其余内容只是记录在案。
+- 交流发生在**频道**里，每个频道是 \`channels/\` 下的一个目录。\`default_channel\` 是全员频道，每名员工与每位董事会成员都在其中；任何人都可以为一条工作线或一张大工单另开频道，并邀请这项工作需要的主体。只有 \`@<员工>\` 与 \`@all\` 会把消息送到某人的工位，且只在该频道的成员范围内生效。完全没有 \`@\` 的消息视同 @ 了该频道的**默认通知对象**（由成员用 \`penguin org channel notify <id> <principal>…\` 设定）；没有设定时只是记录在案。
 - **日历**是唯一的周期性驱动：一条日程项的提示词告诉员工该去看什么。HR 保证每名员工恰有一条各自时点的周期日程——这是轮值表，不是广播：节奏因角色而异（负责人每天、审核者两三天、财务每周），且没有两个工位共用同一个起始分钟。
 - **预算**是每名员工的月度上限（自身支出加上全部下属）。达到告警比例会在全员频道发一条系统消息；达到暂停比例则停掉该员工的日历，直到下个月或预算调高为止。人随时可以直接找工位说话。
 
@@ -289,6 +295,7 @@ CEO 提案，董事会（创建者 \`user:${input.createdBy}\`）拍板。招募
 - 一条线索会淹没全员频道时就另开频道——一条工作线或一张大工单一个（\`penguin org channel create <id>\`），只邀请这项工作需要的主体（\`penguin org channel invite <id> <principal>\`），并在全员频道里说明一次。
 - 你只在自己是成员的频道里读和发；员工只有被成员邀请才会加入一个频道。需要董事会拍板的事情要发到全员频道——他们在那里读。
 - 提及了不在该频道的人，整条消息会被拒收：先邀请对方。
+- 频道可以设**默认通知对象**：没有 \`@\` 的消息视同 @ 了他们——员工的工位会被触发，人会在「@我」里看到。\`penguin org channel show <id>\` 列出他们；任一成员用 \`penguin org channel notify <id> <principal>…\` 设定（\`--none\` 清空）。把负责这条线的员工或跟进这条线的人设进去，就不必每次都 @ 他们；对方必须是该频道成员。
 - @ 连锁在若干跳之后会有意停止；由人或日历重新发起线索。
 
 ## 角色

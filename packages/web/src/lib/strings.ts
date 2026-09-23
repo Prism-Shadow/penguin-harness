@@ -4244,6 +4244,10 @@ Benchmark：
       renameTitle: "重命名频道",
       editPurpose: "改主题",
       purposeTitle: "修改频道主题",
+      /** The member popover's per-row toggle (the channel's default recipients), and the "?" line naming them. */
+      alwaysNotify: "总是通知",
+      alwaysNotifyHint: "没有 @ 的消息也视同 @ 了这位成员：员工的工位会被触发，人会在「@我」里看到",
+      notifyLine: (names: string): string => `没有 @ 的消息默认送给：${names}`,
       archive: "归档",
       unarchive: "取消归档",
       archiveTitle: "归档频道",

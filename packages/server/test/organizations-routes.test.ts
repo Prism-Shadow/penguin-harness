@@ -383,12 +383,27 @@ describe("organization routes", () => {
       args: [ownerProject, "acme", "site", "agent:acme_dev", { userId: "olivia" }],
     });
 
+    const notify = await owner.patch(`${base}/site`, { notify: ["agent:acme_dev", "user:olivia"] });
+    expect(notify.status).toBe(200);
+    expect(calls.at(-1)).toEqual({
+      method: "patchChannel",
+      args: [
+        ownerProject,
+        "acme",
+        "site",
+        { notify: ["agent:acme_dev", "user:olivia"] },
+        { userId: "olivia" },
+      ],
+    });
+
     // A path id no channel could carry names no channel, and neither reaches the service.
     calls.length = 0;
     expect((await owner.get(`${base}/Site`)).status).toBe(404);
     expect((await owner.post(base, { channelId: "Site" })).status).toBe(400);
     expect((await owner.post(base, { name: "no id" })).status).toBe(400);
     expect((await owner.patch(`${base}/site`, { archived: "yes" })).status).toBe(400);
+    expect((await owner.patch(`${base}/site`, { notify: "agent:acme_dev" })).status).toBe(400);
+    expect((await owner.patch(`${base}/site`, { notify: [""] })).status).toBe(400);
     expect((await owner.post(`${base}/site/members`, { principal: "acme_dev" })).status).toBe(400);
     expect((await owner.delete(`${base}/site/members/all`)).status).toBe(400);
     expect(calls).toEqual([]);

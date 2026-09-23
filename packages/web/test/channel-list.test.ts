@@ -24,6 +24,7 @@ const channel = (over: Partial<OrgChannelItem> & { channelId: string }): OrgChan
   createdBy: "user:alice",
   createdAt: "2026-09-03T00:00:00Z",
   memberCount: 1,
+  notify: [],
   isMember: true,
   unread: 0,
   mentionsMe: 0,

@@ -748,6 +748,7 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const name = optionalString(body, "name", { minLen: 1, maxLen: 100 });
     const purpose = optionalString(body, "purpose", { maxLen: 2000 });
     const archived = optionalBoolean(body, "archived");
+    const notify = optionalStringArray(body, "notify");
     return c.json(
       await deps.orgService.patchChannel(
         projectId,
@@ -757,6 +758,7 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
           ...(name !== undefined ? { name } : {}),
           ...(purpose !== undefined ? { purpose } : {}),
           ...(archived !== undefined ? { archived } : {}),
+          ...(notify !== undefined ? { notify } : {}),
         },
         actorOf(c, body),
       ),

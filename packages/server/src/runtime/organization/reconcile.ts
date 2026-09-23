@@ -534,8 +534,10 @@ function channelAgents(org: LoadedOrg, channel: ChannelConfig): Set<string> {
 
 /**
  * Tail-scans each channel's recent day files, publishes every new message and delivers its
- * mentions inside that channel's membership. Archived channels take no posts, so there is
- * nothing new to find in them; an invalid `channel.toml` is reported and the channel skipped.
+ * mentions inside that channel's membership; a message that names nobody goes to the
+ * channel's default recipients (`notify`) instead, the same way. Archived channels take no
+ * posts, so there is nothing new to find in them; an invalid `channel.toml` is reported and
+ * the channel skipped.
  */
 export async function scanChannels(
   deps: OrgDeps,
@@ -595,6 +597,15 @@ export async function scanChannels(
         if (msg.hop >= org.config.mentionChainLimit) continue;
         const senderAgent = principalAgentId(msg.sender);
         const targets = new Set<string>();
+        if (msg.mentions.length === 0) {
+          // No @ at all: the default recipients take it, inside the membership like a
+          // mention — an entry that has left the channel or the chart is not one. A person
+          // on the list has no desk; the read counts treat the line as addressed to them.
+          for (const n of channel.notify ?? []) {
+            const id = principalAgentId(n);
+            if (id !== null && members.has(id)) targets.add(id);
+          }
+        }
         for (const m of msg.mentions) {
           const p = parsePrincipal(m);
           // A mention only reaches a member: the send path refuses the rest, and a

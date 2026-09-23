@@ -71,6 +71,7 @@ import { OrgStore } from "../../organization/store.js";
 import { badRequest } from "../../http/validate.js";
 import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";
 import {
+  messageAddresses,
   BUDGET_RATIO_MAX,
   DEFAULT_CEO_BUDGET,
   MENTION_CHAIN_LIMIT_MAX,
@@ -432,7 +433,14 @@ export class OrganizationService {
         blockedByMe: items.filter((t) => t.blockedBy === me),
       },
       recentMessages: recent?.messages.slice(-20) ?? [],
-      inbox: this.inbox(spend, items, tickets, recent?.messages ?? [], me),
+      inbox: this.inbox(
+        spend,
+        items,
+        tickets,
+        recent?.messages ?? [],
+        me,
+        allHands?.parsed.ok === true ? allHands.parsed.value.notify : undefined,
+      ),
       alerts: this.alerts(org, spend.period),
       ...(ceoDesk !== undefined ? { ceoDeskSessionId: ceoDesk.sessionId } : {}),
     };
@@ -443,7 +451,8 @@ export class OrganizationService {
    * files `detail` already loaded:
    *
    * - `mentions`: the all-hands messages of the window `recentMessages` reads (the
-   *   organization's current day) that name the caller or `all`, newest first.
+   *   organization's current day) that name the caller or `all` — or name nobody while the
+   *   caller is one of that channel's default recipients — newest first.
    * - `blockedTickets`: every ticket carrying a `blocked` reason, whoever it waits on —
    *   uncapped, because a blocked ticket is work nobody is doing.
    * - `doneTickets`: tickets in `done` that closed in the current budget period, `closedAt`
@@ -460,9 +469,10 @@ export class OrganizationService {
     tickets: readonly LoadedTicket[],
     windowMessages: readonly OrgChannelMessage[],
     me: string,
+    allHandsNotify: readonly string[] | undefined,
   ): OrgInbox {
     const mentions = windowMessages
-      .filter((m) => m.mentions.includes(me) || m.mentions.includes("all"))
+      .filter((m) => messageAddresses(m, me, allHandsNotify) || m.mentions.includes("all"))
       .reverse()
       .slice(0, INBOX_PAGE);
     const newestFirst = <T extends { ticketId: string }>(a: T, b: T): number =>
@@ -500,7 +510,8 @@ export class OrganizationService {
     for (const file of await this.deps.store.listChannels(org.dir)) {
       if (!file.parsed.ok) continue;
       if (!this.channelMemberPrincipals(org, file.parsed.value).includes(me)) continue;
-      mentions += (await this.channelActivity(org, file.channelId, userId)).mentionsMe;
+      mentions += (await this.channelActivity(org, file.channelId, file.parsed.value, userId))
+        .mentionsMe;
     }
     return mentions;
   }
@@ -1867,6 +1878,7 @@ export class OrganizationService {
   private async channelActivity(
     org: LoadedOrg,
     channelId: string,
+    cfg: ChannelConfig,
     userId: string | null,
   ): Promise<{ unread: number; mentionsMe: number; lastMessageAt: string | null }> {
     const days = await this.deps.store.listMessageDays(org.dir, channelId);
@@ -1881,13 +1893,21 @@ export class OrganizationService {
     // Read cursors belong to people; an employee reads its channel through its trigger.
     if (userId === null) return { unread: 0, mentionsMe: 0, lastMessageAt };
     const lastReadId = this.deps.cache.readCursor(org.projectId, org.orgId, channelId, userId);
-    const counts = await this.countUnread(org, channelId, days, userPrincipal(userId), lastReadId);
+    const counts = await this.countUnread(
+      org,
+      channelId,
+      cfg,
+      days,
+      userPrincipal(userId),
+      lastReadId,
+    );
     return { ...counts, lastMessageAt };
   }
 
   /**
-   * What one person has not read in a channel, and how much of it names them. Two rules the
-   * loop is here to keep in one place:
+   * What one person has not read in a channel, and how much of it names them — by an `@`,
+   * or by the channel's default recipients when a message names nobody. Two rules the loop
+   * is here to keep in one place:
    *
    * A person's own lines are never unread. Only `markRead` moves the cursor, so posting from
    * the CLI — or from the Web App when the read that follows a post does not land — would
@@ -1905,6 +1925,7 @@ export class OrganizationService {
   private async countUnread(
     org: LoadedOrg,
     channelId: string,
+    cfg: ChannelConfig,
     days: readonly string[],
     me: string,
     lastReadId: string | null,
@@ -1925,7 +1946,7 @@ export class OrganizationService {
         }
         if (m.sender === me) continue;
         unread++;
-        if (m.mentions.includes(me)) mentionsMe++;
+        if (messageAddresses(m, me, cfg.notify)) mentionsMe++;
       }
       if (reachedCursor) break;
     }
@@ -1948,8 +1969,9 @@ export class OrganizationService {
       createdBy: cfg.createdBy,
       createdAt: cfg.createdAt,
       memberCount: members.length,
+      notify: cfg.notify ?? [],
       isMember: members.includes(caller.principal),
-      ...(await this.channelActivity(org, channelId, caller.userId)),
+      ...(await this.channelActivity(org, channelId, cfg, caller.userId)),
     };
   }
 
@@ -2089,8 +2111,9 @@ export class OrganizationService {
       }
       // Everything but lifting the archive itself is refused while the channel is archived.
       if (cfg.archived && req.archived !== false) throw channelArchived(channelId);
-      const renaming = req.name !== undefined || req.purpose !== undefined;
-      if (renaming && !members.includes(caller.principal)) {
+      const editing =
+        req.name !== undefined || req.purpose !== undefined || req.notify !== undefined;
+      if (editing && !members.includes(caller.principal)) {
         throw notAMember(channelId, caller.principal);
       }
       const next: ChannelConfig = { ...cfg };
@@ -2099,6 +2122,11 @@ export class OrganizationService {
         next.name = req.name.trim();
       }
       if (req.purpose !== undefined) next.purpose = req.purpose.trim();
+      if (req.notify !== undefined) {
+        const notify = this.channelNotifyList(channelId, req.notify, members);
+        if (notify.length > 0) next.notify = notify;
+        else delete next.notify;
+      }
       const archiveChanged = req.archived !== undefined && req.archived !== cfg.archived;
       // The notice is written before the flag: an archived channel is skipped by the scan,
       // so a line written after it would wait for the unarchive to reach the event stream.
@@ -2116,6 +2144,34 @@ export class OrganizationService {
     });
     await this.scheduler.reconcile(projectId, orgId);
     return item;
+  }
+
+  /**
+   * The default recipients as stored: `agent:<id>` employees and `user:<id>` people that are
+   * in the channel (everyone is in the all-hands one), deduplicated, in the order given. An
+   * outsider or a stranger refuses the whole list — a list that silently dropped an entry
+   * would leave the caller believing someone is notified who is not.
+   */
+  private channelNotifyList(channelId: string, raw: string[], members: string[]): string[] {
+    const out: string[] = [];
+    for (const entry of raw) {
+      const parsed = parsePrincipal(entry);
+      const principal =
+        parsed?.kind === "agent"
+          ? agentPrincipal(parsed.id)
+          : parsed?.kind === "user"
+            ? userPrincipal(parsed.id)
+            : null;
+      if (principal === null || !members.includes(principal)) {
+        throw new HttpError(
+          400,
+          "notify_not_member",
+          `Not a member of ${channelId}: ${entry}. Only members of the channel can be its default recipients.`,
+        );
+      }
+      if (!out.includes(principal)) out.push(principal);
+    }
+    return out;
   }
 
   /** `agent:<id>` must be an employee and `user:<id>` a Project member — nobody else can be in a channel. */
@@ -2207,10 +2263,12 @@ export class OrganizationService {
       }
       const members = cfg.members ?? [];
       if (!members.includes(principal)) return;
-      await this.deps.store.writeChannel(org.dir, channelId, {
-        ...cfg,
-        members: members.filter((m) => m !== principal),
-      });
+      // A departed member cannot stay a default recipient: the list names members only.
+      const next: ChannelConfig = { ...cfg, members: members.filter((m) => m !== principal) };
+      const notify = (cfg.notify ?? []).filter((n) => n !== principal);
+      if (notify.length > 0) next.notify = notify;
+      else delete next.notify;
+      await this.deps.store.writeChannel(org.dir, channelId, next);
       await appendChannelMessage(
         this.deps,
         org,
@@ -2248,7 +2306,7 @@ export class OrganizationService {
     const { unread, mentionsMe } =
       me === null
         ? { unread: 0, mentionsMe: 0 }
-        : await this.countUnread(org, channelId, days, me, lastReadId, { date, messages });
+        : await this.countUnread(org, channelId, cfg, days, me, lastReadId, { date, messages });
     return {
       channelId,
       date,

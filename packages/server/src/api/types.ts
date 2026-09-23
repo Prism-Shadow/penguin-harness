@@ -4472,6 +4472,12 @@ export interface OrgChannelItem {
   createdAt: string;
   /** Implicit membership counted for the all-hands channel. */
   memberCount: number;
+  /**
+   * The default recipients, `agent:<id>` / `user:<id>` each: a message with no @ at all is
+   * treated as if it had mentioned them — an employee's desk is triggered, a person sees it
+   * counted under "@me". Empty when the channel has none.
+   */
+  notify: string[];
   /** Whether the caller (person or employee) is a member. */
   isMember: boolean;
   /** People only; 0 for an employee caller. */
@@ -4508,6 +4514,12 @@ export interface OrgChannelPatchRequest {
   name?: string;
   purpose?: string;
   archived?: boolean;
+  /**
+   * Replaces the default recipients; `[]` clears them. Each entry must be a member of the
+   * channel (`agent:<id>` / `user:<id>`), or the whole request is refused with
+   * `notify_not_member`.
+   */
+  notify?: string[];
 }
 
 export interface OrgChannelMemberRequest {

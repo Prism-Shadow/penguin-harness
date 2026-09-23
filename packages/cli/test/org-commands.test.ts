@@ -1147,6 +1147,35 @@ describe("penguin org channel", () => {
     expect(err()).toContain("Only people archive a channel.");
   });
 
+  it("notify sets a channel's default recipients from its members, --none clears them, show prints them", async () => {
+    server.addChannel("acme", "site", { members: ["user:admin", "agent:dev1"] });
+    expect(await cli(["org", "channel", "notify", "site", "agent:dev1", "user:admin"])).toBe(0);
+    expect(lastRequest("PATCH", "/channels/site")?.body).toEqual({
+      notify: ["agent:dev1", "user:admin"],
+    });
+    expect(org().channels.get("site")!.notify).toEqual(["agent:dev1", "user:admin"]);
+    expect(out()).toBe(`${t.org.channelNotifySet("site", "agent:dev1, user:admin")}\n`);
+
+    stdout.length = 0;
+    expect(await cli(["org", "channel", "show", "site"])).toBe(0);
+    expect(out()).toContain(t.org.channelNotifyLine("agent:dev1, user:admin"));
+
+    // An outsider refuses the whole list; the old one stands.
+    expect(await cli(["org", "channel", "notify", "site", "agent:ghost"])).toBe(1);
+    expect(err()).toContain("notify_not_member");
+    expect(org().channels.get("site")!.notify).toEqual(["agent:dev1", "user:admin"]);
+
+    // A bare `notify <id>` is not a request to clear.
+    expect(await cli(["org", "channel", "notify", "site"])).toBe(1);
+    expect(err()).toContain(t.org.channelNotifyNeedsList);
+
+    stdout.length = 0;
+    expect(await cli(["org", "channel", "notify", "site", "--none"])).toBe(0);
+    expect(lastRequest("PATCH", "/channels/site")?.body).toEqual({ notify: [] });
+    expect(org().channels.get("site")!.notify).toBeUndefined();
+    expect(out()).toBe(`${t.org.channelNotifyCleared("site")}\n`);
+  });
+
   it("tail prints the day's last messages as `time  sender  text`; -n limits, --date picks the day, --json carries it", async () => {
     for (let i = 1; i <= 3; i++) {
       server.addMessage("acme", {

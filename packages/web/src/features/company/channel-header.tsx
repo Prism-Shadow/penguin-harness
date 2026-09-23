@@ -3,8 +3,10 @@
  * channel, never its stored name) with the "?" that says what kind of channel this is and how
  * far an @-chain relays, the channel's own purpose beside it — nothing when the all-hands
  * channel has none, since what that channel is for is in the "?" — the members as a stack of
- * avatars opening a member popover — an employee row there opens its desk session — and the
- * actions: invite, leave, and the overflow menu with rename, purpose, archive and unarchive.
+ * avatars opening a member popover — each row there carries the "always notify" toggle
+ * (the channel's default recipients: a message with no @ counts as mentioning them), and an
+ * employee row opens its desk session — and the actions: invite, leave, and the overflow
+ * menu with rename, purpose, archive and unarchive.
  *
  * Who may do what is the server's rule, not this file's: everything here is shown to a
  * person, who is a Project member and therefore may join, archive and unarchive — and may
@@ -56,6 +58,9 @@ const LEAVE_ICON = "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H
 /** Purpose (lucide text): the menu row that edits what the channel is for. */
 const PURPOSE_ICON = "M4 6h16M4 12h12M4 18h8";
 
+/** Always notify (lucide bell): the member row's toggle for being a default recipient. */
+const NOTIFY_ICON = "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0";
+
 /** Opening a desk session (lucide door-open): the member popover's employee rows, and the org chart's node menu. */
 export const DESK_ICON = "M13 4h3v16h-3M3 20h11V4L3 6zM10 12h.01";
 
@@ -83,13 +88,29 @@ function MemberAvatar({ member, size }: { member: OrgChannelMember; size: number
   );
 }
 
-/** The member list: who is in the channel, with an employee's desk session one click away. */
+/**
+ * The member list: who is in the channel, each with the "always notify" toggle — on for the
+ * channel's default recipients, whom a message with no @ counts as mentioning — and, for an
+ * employee, its desk session one click away. The toggle is a member's action on a live
+ * channel; a reader who is not in the channel, or an archived channel, sees it disabled.
+ */
 function MemberPopover({
   members,
+  notify,
+  canEditNotify,
+  onToggleNotify,
+  togglingNotify,
   onOpenDesk,
   openingDesk,
 }: {
   members: readonly OrgChannelMember[];
+  /** The default recipients' principals. */
+  notify: readonly string[];
+  canEditNotify: boolean;
+  /** Puts a member on the default recipients or takes it off; takes the member's principal. */
+  onToggleNotify: (principal: string, on: boolean) => void;
+  /** The principal whose toggle is in flight, so a row does not fire twice. */
+  togglingNotify: string | null;
   /** Opens an employee's desk session; takes the member's principal. */
   onOpenDesk: (principal: string) => void;
   /** The principal whose desk is being opened, so the rows do not fire twice. */
@@ -156,6 +177,27 @@ function MemberPopover({
                 >
                   <MemberAvatar member={m} size={ICON_SIZE.rowLead} />
                   <Truncated text={m.name} className="min-w-0 flex-1" />
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={notify.includes(m.principal)}
+                    aria-label={`${S.company.channels.alwaysNotify}: ${m.name}`}
+                    title={`${S.company.channels.alwaysNotify} — ${S.company.channels.alwaysNotifyHint}`}
+                    disabled={!canEditNotify || togglingNotify !== null}
+                    onClick={() => onToggleNotify(m.principal, !notify.includes(m.principal))}
+                    className={`flex shrink-0 items-center ${ICON_GAP.tight} rounded px-1.5 py-0.5 text-[11px] transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800 ${
+                      notify.includes(m.principal)
+                        ? "text-[var(--accent-bg)]"
+                        : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                    }`}
+                  >
+                    <GlyphIcon
+                      d={NOTIFY_ICON}
+                      size={ICON_SIZE.inlineGlyph}
+                      filled={notify.includes(m.principal)}
+                    />
+                    {S.company.channels.alwaysNotify}
+                  </button>
                   {m.kind === "agent" && (
                     <button
                       type="button"
@@ -286,6 +328,7 @@ export function ChannelHeader({
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [openingDesk, setOpeningDesk] = useState<string | null>(null);
+  const [togglingNotify, setTogglingNotify] = useState<string | null>(null);
 
   // A channel switch must not leave the previous one's dialogs standing.
   const channelId = detail?.channelId ?? null;
@@ -382,6 +425,29 @@ export function ChannelHeader({
     onChanged();
   };
 
+  // The list is saved whole, in member order, so the file reads like the member list.
+  const toggleNotify = async (principal: string, on: boolean) => {
+    if (togglingNotify !== null) return;
+    setTogglingNotify(principal);
+    try {
+      const notify = detail.members
+        .map((m) => m.principal)
+        .filter((p) => (p === principal ? on : detail.notify.includes(p)));
+      await api.patchOrgChannel(projectId, orgId, detail.channelId, { notify });
+      toastSuccess(S.common.saved);
+      onChanged();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setTogglingNotify(null);
+    }
+  };
+
+  // The list names principals; the "?" reads them out by name, as the member list does.
+  const notifyNames = detail.notify.map(
+    (p) => detail.members.find((m) => m.principal === p)?.name ?? p,
+  );
+
   return (
     <>
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
@@ -406,6 +472,11 @@ export function ChannelHeader({
                 {allHands ? S.company.channels.allHandsInfo : S.company.channels.channelInfo}
               </span>
               <span className="mt-1.5 block">{S.company.channels.hopSummary}</span>
+              {notifyNames.length > 0 && (
+                <span className="mt-1.5 block">
+                  {S.company.channels.notifyLine(notifyNames.join(", "))}
+                </span>
+              )}
             </InfoPopover>
           </h1>
           {/* The purpose reads as a subtitle on the same line, so the header stays one row. */}
@@ -421,6 +492,10 @@ export function ChannelHeader({
         <div className="flex shrink-0 items-center gap-1.5">
           <MemberPopover
             members={detail.members}
+            notify={detail.notify}
+            canEditNotify={detail.isMember && !detail.archived}
+            onToggleNotify={(principal, on) => void toggleNotify(principal, on)}
+            togglingNotify={togglingNotify}
             onOpenDesk={(principal) => void openDesk(principal)}
             openingDesk={openingDesk}
           />

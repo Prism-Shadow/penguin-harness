@@ -1980,6 +1980,85 @@ describe("organization runtime", () => {
       ).toBe(0);
     });
 
+    it("default recipients take a message that names nobody: a desk for an employee, @me for a person", async () => {
+      await service.createChannel(P, ORG, { channelId: "site" }, { userId: "alice" });
+      await service.addChannelMember(P, ORG, "site", `agent:${HR}`, { userId: "alice" });
+      // The list holds members only, people and employees alike, and refuses whole.
+      await expect(
+        service.patchChannel(P, ORG, "site", { notify: [`agent:${CEO}`] }, { userId: "alice" }),
+      ).rejects.toMatchObject({ status: 400, code: "notify_not_member" });
+      await expect(
+        service.patchChannel(P, ORG, "site", { notify: ["all"] }, { userId: "alice" }),
+      ).rejects.toMatchObject({ status: 400, code: "notify_not_member" });
+      const set = await service.patchChannel(
+        P,
+        ORG,
+        "site",
+        { notify: [`agent:${HR}`, "user:alice", `agent:${HR}`] },
+        { userId: "alice" },
+      );
+      expect(set.notify).toEqual([`agent:${HR}`, "user:alice"]);
+
+      // A plain line reaches HR's desk as a mention would.
+      const plain = await service.sendChannelMessage(P, ORG, "alice", "site", {
+        text: "shipping today",
+      });
+      expect(plain.mentions).toEqual([]);
+      expect(started).toHaveLength(1);
+      expect(parseOrgTriggerMessage(started[0]!.text)?.origin).toMatchObject({
+        kind: "mention",
+        message: `${plain.id} from user:alice`,
+        channel: "site",
+      });
+      // A line that names someone is theirs alone: the list steps aside.
+      await service.sendChannelMessage(P, ORG, "alice", "site", { text: "@alice note to self" });
+      expect(started).toHaveLength(1);
+      // The sender is never its own recipient; alice, on the list, sees HR's line under @me.
+      const fromHr = await service.sendChannelMessage(P, ORG, "alice", "site", {
+        text: "on it",
+        sessionId: started[0]!.sessionId,
+      });
+      expect(fromHr.sender).toBe(`agent:${HR}`);
+      expect(started).toHaveLength(1);
+      const read = await service.channelMessages(P, ORG, { userId: "alice" }, "site", {});
+      expect(read.mentionsMe).toBe(1);
+      expect(read.messages.filter((m) => m.sender === "system").length).toBeGreaterThan(0);
+
+      // Leaving the channel leaves the list; an empty list clears it.
+      await service.removeChannelMember(P, ORG, "site", `agent:${HR}`, { userId: "alice" });
+      expect((await service.channel(P, ORG, "site", { userId: "alice" })).notify).toEqual([
+        "user:alice",
+      ]);
+      const cleared = await service.patchChannel(
+        P,
+        ORG,
+        "site",
+        { notify: [] },
+        { userId: "alice" },
+      );
+      expect(cleared.notify).toEqual([]);
+    });
+
+    it("the all-hands list counts a plain line into a person's overview inbox", async () => {
+      const hrDesk = (await service.desk(P, ORG, HR, {})).sessionId;
+      started.length = 0;
+      await service.patchChannel(
+        P,
+        ORG,
+        DEFAULT_CHANNEL_ID,
+        { notify: ["user:alice", `agent:${CEO}`] },
+        { userId: "alice" },
+      );
+      const m = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: "fyi, the calendar is audited",
+        sessionId: hrDesk,
+      });
+      expect(started.map((s) => cache.ownerOfSession(s.sessionId)?.agentId)).toEqual([CEO]);
+      const detail = await service.detail(P, ORG, "alice");
+      expect(detail.pending.mentions).toBe(1);
+      expect(detail.inbox?.mentions.map((x) => x.id)).toEqual([m.id]);
+    });
+
     it("the system's own lines and a paused organization deliver nothing", async () => {
       await service.patch(P, ORG, { status: "paused" }, "alice");
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {

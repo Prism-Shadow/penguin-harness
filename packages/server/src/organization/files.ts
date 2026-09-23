@@ -914,6 +914,42 @@ export interface ChannelConfig {
   members?: string[];
   /** True only on the all-hands channel: membership is implicit and there is no list. */
   everyone?: boolean;
+  /**
+   * The default recipients, `agent:<id>` / `user:<id>` each: a message that names nobody at
+   * all is treated as if it had mentioned them — an employee's desk is triggered, a person
+   * sees it counted under "@me". Absent or empty, such a message is only recorded. An entry
+   * must be in the channel to take delivery; one that is not is skipped, not an error, since
+   * the chart and the members list move.
+   */
+  notify?: string[];
+}
+
+/**
+ * Whether a message is addressed to `principal`: it names them, or it names nobody at all
+ * and they are one of the channel's default recipients (`notify`). A `system` line reaches
+ * nobody this way — its `mentions` say who it is for.
+ */
+export function messageAddresses(
+  msg: Pick<OrgChannelMessage, "sender" | "mentions">,
+  principal: string,
+  notify: readonly string[] | undefined,
+): boolean {
+  if (msg.mentions.includes(principal)) return true;
+  return msg.mentions.length === 0 && msg.sender !== "system" && (notify ?? []).includes(principal);
+}
+
+/** `notify`: a list of `agent:<id>` / `user:<id>` principals with no duplicates, or nothing. */
+function parseChannelNotify(raw: unknown): ParseResult<string[] | undefined> {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (!Array.isArray(raw)) return fail("notify must be a list of principals");
+  const out: string[] = [];
+  for (const n of raw) {
+    if (typeof n !== "string" || !isPersonPrincipal(n))
+      return fail(`notify entry is not a principal: ${String(n)}`);
+    if (out.includes(n)) return fail(`duplicate notify entry: ${n}`);
+    out.push(n);
+  }
+  return { ok: true, value: out.length > 0 ? out : undefined };
 }
 
 /**
@@ -954,6 +990,8 @@ export function parseChannelConfig(channelId: string, raw: string): ParseResult<
         : `the all-hands channel ${DEFAULT_CHANNEL_ID} must be everyone = true`,
     );
   }
+  const notify = parseChannelNotify(table["notify"]);
+  if (!notify.ok) return notify;
   const rawMembers = table["members"];
   if (everyone) {
     if (rawMembers !== undefined) return fail("an everyone channel keeps no members list");
@@ -966,6 +1004,7 @@ export function parseChannelConfig(channelId: string, raw: string): ParseResult<
         createdAt: new Date(createdAt).toISOString(),
         archived,
         everyone: true,
+        ...(notify.value !== undefined ? { notify: notify.value } : {}),
       },
     };
   }
@@ -986,6 +1025,7 @@ export function parseChannelConfig(channelId: string, raw: string): ParseResult<
       createdAt: new Date(createdAt).toISOString(),
       archived,
       members,
+      ...(notify.value !== undefined ? { notify: notify.value } : {}),
     },
   };
 }
@@ -998,6 +1038,7 @@ export function serializeChannelConfig(cfg: ChannelConfig): string {
     created_at: cfg.createdAt,
     archived: cfg.archived,
     ...(cfg.everyone === true ? { everyone: true } : { members: cfg.members ?? [] }),
+    ...(cfg.notify !== undefined && cfg.notify.length > 0 ? { notify: cfg.notify } : {}),
   };
   return [
     "# channel.toml — a channel (the id is the directory name under channels/).",
@@ -1005,6 +1046,9 @@ export function serializeChannelConfig(cfg: ChannelConfig): string {
     "# mention reaches a desk. everyone = true marks the all-hands channel instead: every",
     "# employee and every Project member belongs to it and there is no list to keep.",
     "# archived: read-only, folded away in the UI, until a person unarchives it.",
+    "# notify: members (agent:<id> / user:<id>) a message with no @ at all is treated as",
+    "# mentioning — an employee's desk is triggered, a person sees it under @me; absent,",
+    "# such a message is only recorded.",
     stringifyToml(table),
     "",
   ].join("\n");

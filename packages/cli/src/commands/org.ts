@@ -521,6 +521,7 @@ function renderChannelDetail(d: OrgChannelDetail, t: Messages): string {
   const lines = [
     t.org.channelHead(channelLabel(d, t), d.channelId, d.memberCount, d.archived),
     ...(d.purpose !== "" ? [t.org.channelPurposeLine(d.purpose)] : []),
+    ...(d.notify.length > 0 ? [t.org.channelNotifyLine(d.notify.join(", "))] : []),
     t.org.channelCreatedBy(d.createdBy, d.createdAt),
     ...(d.lastMessageAt !== null ? [t.org.channelLastMessage(d.lastMessageAt)] : []),
   ];
@@ -1391,6 +1392,33 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     );
     if (opts.json === true) printJson({ channelId, principal });
     else printLine(t.org.channelMemberRemoved(channelId, principal));
+  });
+
+  scoped(
+    channel
+      .command("notify <channel_id> [principals...]")
+      .description(t.org.channelNotifyDesc)
+      .option("--none", t.org.channelNotifyNone),
+    t,
+  ).action(async (channelId: string, principals: string[], opts) => {
+    if (refuseDotSegments(channelId, t)) return;
+    // The list replaces the old one whole, so an empty list is only ever meant with --none:
+    // a bare `notify <id>` is a typo, not a request to clear.
+    if (opts.none !== true && principals.length === 0) {
+      fail(t, t.org.channelNotifyNeedsList);
+      return;
+    }
+    const notify = opts.none === true ? [] : principals;
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const item = await scope.client.request<OrgChannelItem>(
+      "PATCH",
+      `${scope.base}/channels/${enc(channelId)}`,
+      { notify, ...actorFields() },
+    );
+    if (opts.json === true) printJson(item);
+    else if (item.notify.length === 0) printLine(t.org.channelNotifyCleared(item.channelId));
+    else printLine(t.org.channelNotifySet(item.channelId, item.notify.join(", ")));
   });
 
   scoped(channel.command("archive <channel_id>").description(t.org.channelArchiveDesc), t).action(
