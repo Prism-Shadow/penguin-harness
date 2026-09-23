@@ -19,10 +19,11 @@
  * the whole block each time would be O(n^2) main-thread cost, and an in-progress highlight can't
  * be canceled; once streaming settles, highlight flips true and a single final highlight is done.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { CopyButton } from "../../components/ui/copy-button";
+import { runtimeLanguageGeneration, subscribeToRuntimeLanguages } from "./code-languages";
 
 /**
  * The highlighted code, with no box around it.
@@ -62,6 +63,14 @@ export function CodeSurface({
   children?: ReactNode;
 }) {
   const [highlighted, setHighlighted] = useState<{ code: string; html: string }>();
+  // An extension's languages arrive after the first paint, so a block rendered before them
+  // resolved to "no grammar" and would stay unhighlighted for the life of the page. The
+  // generation is part of the effect's deps, so a registration re-runs the highlight once.
+  const languageGeneration = useSyncExternalStore(
+    subscribeToRuntimeLanguages,
+    runtimeLanguageGeneration,
+    runtimeLanguageGeneration,
+  );
 
   useEffect(() => {
     if (!highlight) {
@@ -90,7 +99,7 @@ export function CodeSurface({
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [code, language, highlight, lineNumbers, settleMs]);
+  }, [code, language, highlight, lineNumbers, settleMs, languageGeneration]);
 
   // Split once per code change, and only where a gutter needs it: the digit count sizes the
   // gutter, and the unhighlighted fallback renders the lines it returns.

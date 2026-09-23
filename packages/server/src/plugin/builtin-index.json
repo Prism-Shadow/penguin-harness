@@ -40,6 +40,16 @@
     "categories": ["sandbox"]
   },
   {
+    "name": "@prismshadow/penguin-plugin-languages",
+    "version": "0.1.0",
+    "description": "Syntax highlighting for Typst, Swift, Kotlin, C# and Dart in PenguinHarness.",
+    "authors": ["Prism Shadow"],
+    "license": "MIT",
+    "repository": "https://github.com/Prism-Shadow/penguin-harness",
+    "keywords": ["syntax-highlighting", "typst", "swift", "kotlin", "csharp", "dart"],
+    "categories": ["languages"]
+  },
+  {
     "name": "@prismshadow/penguin-plugin-claude-code",
     "version": "0.1.0",
     "description": "Claude Code as a session surface for PenguinHarness: a New chat entry that opens the Claude Code TUI in the Session's Workspace.",
