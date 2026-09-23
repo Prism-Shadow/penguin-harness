@@ -44,6 +44,7 @@ import { SESSION_COOKIE } from "../auth/middleware.js";
 import http from "node:http";
 import type net from "node:net";
 import {
+  SESSION_GROUP,
   attachSessionRegistry,
   appendHostBlock,
   closeAllConnections,
@@ -91,7 +92,7 @@ import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { DatabaseSync } from "node:sqlite";
-import type { Db, Hmr, Paths } from "../hmr/capabilities.js";
+import type { Db, Hmr, Paths, ResourceGroups } from "../hmr/capabilities.js";
 import { currentRemoteLayout } from "./layout.js";
 import type { RemoteLayout } from "./layout.js";
 
@@ -1604,6 +1605,8 @@ export class MachinesModule {
   @Use() private readonly db!: Db;
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly access!: Access;
+  /** Whether the predecessor's delivered sessions may be claimed (hmr/platform.ts judged their contract). */
+  @Use() private readonly resourceGroups!: ResourceGroups;
   @Provide() machines!: Machines;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
   @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
@@ -1615,7 +1618,7 @@ export class MachinesModule {
     // Held sessions are delivered across a hot push through the registry; the transport
     // needs it before start() re-holds anything, or a delivered session would be opened
     // again beside itself.
-    attachSessionRegistry(this.hmr.resources);
+    attachSessionRegistry(this.hmr.resources, this.resourceGroups.adoptable(SESSION_GROUP));
     const machines = new MachinesService(this.paths.root, repo.ownId(), repo, {}, () =>
       this.hmr.assetsDir(),
     );

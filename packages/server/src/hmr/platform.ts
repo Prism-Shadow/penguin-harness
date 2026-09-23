@@ -49,7 +49,11 @@ import { TerminalManager } from "../terminal/manager.js";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type { TerminalSession } from "../terminal/session.js";
-import { SESSION_GROUP } from "../machines/transport/index.js";
+import {
+  MACHINE_SESSION_IFACE,
+  SESSION_GROUP,
+  SESSION_SHAPE_ID,
+} from "../machines/transport/index.js";
 import type { HeldSession } from "../machines/transport/index.js";
 import type { RemoteTerminals } from "../machines/terminal-relay.js";
 import { identityFrom } from "../terminal/identity.js";
@@ -213,7 +217,11 @@ function parkedSelf(modules: Record<string, Json>, node: string): Record<string,
 interface ParkedInterfaces extends Interfaces {
   family: string;
   terminal: MembersOf<TerminalSession>;
-  /** Versioned in its NAME (transport/ssh-session.ts SESSION_GROUP): a delivered object runs old code. */
+  /**
+   * Versioned in its NAME (transport/ssh-session.ts SESSION_GROUP): a delivered object runs old
+   * code. Judged by STRUCTURE too, at create(): the closed shape of MachineSession registered
+   * beside the sessions (SESSION_SHAPE_ID) must equal this build's, or the group is doomed.
+   */
   [SESSION_GROUP]: MembersOf<HeldSession>;
   agentState: MembersOf<HandedAgentState>;
 }
@@ -380,6 +388,20 @@ async function createInner(
   ) {
     doomedGroups.push("agentState");
   }
+  // The delivered machine sessions, by structure too: the leaving build registered the
+  // closed shape of MachineSession beside them; equal means the objects answer the calls
+  // this build's transport makes, as this build types them. Anything else dooms the group —
+  // the sessions are closed at the commit and every machine is re-held with objects of this
+  // build. (A behavior change behind an unchanged shape is the group NAME's version to catch.)
+  const handedSessionShape = ctx.resources.claim<string | null>(SESSION_SHAPE_ID);
+  const sessionShape = closedShape(ifaceTable as unknown as IfaceTable, MACHINE_SESSION_IFACE);
+  if (
+    inherited?.[SESSION_GROUP] !== undefined &&
+    !doomedGroups.includes(SESSION_GROUP) &&
+    (sessionShape === null || handedSessionShape !== sessionShape)
+  ) {
+    doomedGroups.push(SESSION_GROUP);
+  }
   const adoptable = (group: string) => !doomedGroups.includes(group);
   const takenOver = handed !== undefined && adoptable("agentState");
 
@@ -515,6 +537,10 @@ async function createInner(
   // doc) so the NEXT App reads this build's.
   for (const group of doomedGroups) ctx.resources.disposeGroup?.(group);
   ctx.resources.register(RESOURCE_IFACES_RESOURCE_ID, DECLARED_RESOURCES);
+  // What THIS build's machine sessions look like, for the next build to compare against —
+  // in the sessions' own group, so it is disposed with them. The sessions themselves are
+  // registered by the transport as each is held.
+  ctx.resources.register(SESSION_SHAPE_ID, sessionShape);
   // The Agent state changes hands here and not a line earlier, for the reason the plugin
   // host below does: a create() that threw leaves the previous App's entry, and the runs
   // behind it, exactly as they were. The disposer is THIS App's way of stopping — it runs
