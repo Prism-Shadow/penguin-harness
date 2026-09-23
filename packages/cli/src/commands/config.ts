@@ -58,6 +58,7 @@ import {
   setVisionModel,
 } from "@prismshadow/penguin-core";
 import { parseApprovalAnswer } from "../approval.js";
+import { promptPassword } from "../auth-session.js";
 import { resolveRootOption } from "../root-option.js";
 import { getMessages, maskApiKey, type Messages } from "../i18n.js";
 import { applyLanguageToRc, restartShell } from "../lang-config.js";
@@ -186,6 +187,18 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       if (opts.priceCacheRead !== undefined) pricing.cache_read = opts.priceCacheRead;
       if (opts.priceCacheWrite !== undefined) pricing.cache_write = opts.priceCacheWrite;
       if (opts.priceOutput !== undefined) pricing.output = opts.priceOutput;
+      // Same credential channels as `auth login`'s password, for the same reason: a command
+      // line is world-readable through ps. An explicit --api-key still wins (scripts that
+      // pass it keep working); otherwise the key comes from PENGUIN_MODEL_API_KEY, and an
+      // interactive terminal is prompted (input not echoed — see promptPassword). A bare
+      // Enter at the prompt declines, and a non-interactive run without the env var writes
+      // the entry without a key, exactly as omitting the flag always has.
+      const apiKey: string | undefined =
+        opts.apiKey ??
+        process.env.PENGUIN_MODEL_API_KEY ??
+        (process.stdin.isTTY === true
+          ? (await promptPassword(t.config.apiKeyPrompt(formatModelRef(ref)))) || undefined
+          : undefined);
       const cfg = await addModel(
         root,
         opts.projectId,
@@ -198,7 +211,7 @@ export function registerConfigCommand(program: Command, t: Messages): void {
           ...(opts.vision !== undefined ? { vision: opts.vision } : {}),
           ...(opts.fastMode !== undefined ? { fast_mode: opts.fastMode } : {}),
           ...(Object.keys(pricing).length > 0 ? { pricing } : {}),
-          ...(opts.apiKey !== undefined ? { api_key: opts.apiKey } : {}),
+          ...(apiKey !== undefined ? { api_key: apiKey } : {}),
           ...(baseUrl !== undefined ? { base_url: baseUrl } : {}),
         },
         { setDefault: Boolean(opts.setDefault) },

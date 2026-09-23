@@ -71,6 +71,8 @@ export interface Messages {
     addModelId: string;
     addProvider: string;
     addApiKey: string;
+    /** `model add`'s interactive prompt: names the (provider, model_id) pair, as `auth login`'s prompt names the account. */
+    apiKeyPrompt: (ref: string) => string;
     addBaseUrl: string;
     addContextWindow: string;
     addMaxTokens: string;
@@ -893,7 +895,9 @@ const en: Messages = {
     addModelId: "Upstream model id sent to AgentHub as-is (e.g. claude-sonnet-4-6)",
     addProvider:
       "Provider group stored alongside model_id; required, never inferred (use custom for anything without a vendor group)",
-    addApiKey: "API key, stored inline in the Project's hidden .project_config.toml",
+    addApiKey:
+      "API key, stored inline in the Project's hidden .project_config.toml; prefer the PENGUIN_MODEL_API_KEY environment variable or the interactive prompt — a key on the command line is world-readable through ps (the flag still works)",
+    apiKeyPrompt: (ref: string): string => `API key for ${ref} (input hidden, Enter to skip): `,
     addBaseUrl: "Custom base URL",
     addContextWindow: "Context window size (tokens)",
     addMaxTokens:
@@ -1680,7 +1684,9 @@ const zh: Messages = {
     addDesc: "新增或更新一个模型，并可写入 credential",
     addModelId: "上游模型 id（如 claude-sonnet-4-6，原样发给 AgentHub）",
     addProvider: "与 model_id 分列存储的 provider 分组；必填，不作推断（无厂商分组时填 custom）",
-    addApiKey: "API key，内联存入 Project 的隐藏文件 .project_config.toml",
+    addApiKey:
+      "API key，内联存入 Project 的隐藏文件 .project_config.toml；建议改用 PENGUIN_MODEL_API_KEY 环境变量或交互提示输入——命令行参数经 ps 全局可读（本旗标仍可用）",
+    apiKeyPrompt: (ref: string): string => `请输入 ${ref} 的 API key（输入不回显，回车跳过）：`,
     addBaseUrl: "自定义 base url",
     addContextWindow: "上下文窗口大小（token 数）",
     addMaxTokens:

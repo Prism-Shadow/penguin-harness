@@ -11,6 +11,7 @@
  * model_id as separate columns); list displays provider and model_id as separate
  * columns.
  */
+import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -77,6 +78,38 @@ async function runModel(args: string[]): Promise<{ out: string; err: string; cod
     errSpy.mockRestore();
     process.exitCode = prevExitCode;
   }
+}
+
+type FakeStdin = EventEmitter & {
+  isTTY: boolean | undefined;
+  setRawMode: (mode: boolean) => void;
+  resume: () => void;
+  pause: () => void;
+};
+
+/**
+ * Replaces `process.stdin` with a scripted fake so a prompt can be answered without a real
+ * terminal: `isTTY` decides raw mode inside promptPassword, and `input` is delivered as one
+ * keystroke chunk once the command has attached its data listener (promptPassword resumes
+ * stdin before listening, so a zero-delay timer lands after). Restores the real descriptor.
+ */
+function fakeStdin(isTTY: boolean, input: string): { stdin: FakeStdin; restore: () => void } {
+  const real = Object.getOwnPropertyDescriptor(process, "stdin");
+  const stdin: FakeStdin = Object.assign(new EventEmitter(), {
+    isTTY: isTTY ? true : undefined,
+    setRawMode: vi.fn(),
+    resume: () => {
+      setTimeout(() => stdin.emit("data", Buffer.from(input, "utf8")), 0);
+    },
+    pause: () => {},
+  });
+  Object.defineProperty(process, "stdin", { value: stdin, configurable: true });
+  return {
+    stdin,
+    restore: () => {
+      if (real !== undefined) Object.defineProperty(process, "stdin", real);
+    },
+  };
 }
 
 describe("penguin config model add/list (--root plus provider / model_id stored as separate fields)", () => {
@@ -753,5 +786,120 @@ describe("penguin config model remove", () => {
     expect(
       parsed.models.find((m) => m.provider === "custom" && m.model_id === "guard-me"),
     ).toBeDefined();
+  });
+});
+
+describe("penguin config model add --api-key credential channels (argv / PENGUIN_MODEL_API_KEY / prompt)", () => {
+  /** Reads back the persisted config for one (provider, model_id) entry. */
+  const entryOf = async (provider: string, id: string): Promise<Record<string, unknown>> => {
+    const parsed = parseToml(
+      await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
+    ) as unknown as { models: Array<Record<string, unknown>> };
+    return parsed.models.find((m) => m.provider === provider && m.model_id === id) ?? {};
+  };
+
+  let prevKey: string | undefined;
+  beforeEach(() => {
+    prevKey = process.env.PENGUIN_MODEL_API_KEY;
+  });
+  afterEach(() => {
+    if (prevKey === undefined) delete process.env.PENGUIN_MODEL_API_KEY;
+    else process.env.PENGUIN_MODEL_API_KEY = prevKey;
+  });
+
+  it("without --api-key the key comes from the PENGUIN_MODEL_API_KEY environment variable", async () => {
+    process.env.PENGUIN_MODEL_API_KEY = "sk-from-env-1";
+    const add = await runModel([
+      "add",
+      "--model-id",
+      "env-keyed",
+      "--provider",
+      "custom",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(add.code).toBe(0);
+    expect((await entryOf("custom", "env-keyed")).api_key).toBe("sk-from-env-1");
+  });
+
+  it("an explicit --api-key still works and wins over the environment (existing scripts unchanged)", async () => {
+    process.env.PENGUIN_MODEL_API_KEY = "sk-from-env-2";
+    const add = await runModel([
+      "add",
+      "--model-id",
+      "argv-keyed",
+      "--provider",
+      "custom",
+      "--api-key",
+      "sk-from-argv",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(add.code).toBe(0);
+    expect((await entryOf("custom", "argv-keyed")).api_key).toBe("sk-from-argv");
+  });
+
+  it("an interactive terminal is prompted with input hidden, the prompt naming the (provider, model_id) pair", async () => {
+    delete process.env.PENGUIN_MODEL_API_KEY;
+    const fake = fakeStdin(true, "sk-typed-secret\r");
+    try {
+      const add = await runModel([
+        "add",
+        "--model-id",
+        "typed-key",
+        "--provider",
+        "custom",
+        "--root",
+        tmpRoot,
+      ]);
+      expect(add.code).toBe(0);
+      expect((await entryOf("custom", "typed-key")).api_key).toBe("sk-typed-secret");
+      // Like `auth login` naming the account, so one entry's key is not typed at another's.
+      expect(add.err).toContain("(provider=custom, model_id=typed-key)");
+    } finally {
+      fake.restore();
+    }
+  });
+
+  it("a bare Enter at the prompt declines: the entry is written without a key", async () => {
+    delete process.env.PENGUIN_MODEL_API_KEY;
+    const fake = fakeStdin(true, "\r");
+    try {
+      const add = await runModel([
+        "add",
+        "--model-id",
+        "declined-key",
+        "--provider",
+        "custom",
+        "--root",
+        tmpRoot,
+      ]);
+      expect(add.code).toBe(0);
+      expect("api_key" in (await entryOf("custom", "declined-key"))).toBe(false);
+    } finally {
+      fake.restore();
+    }
+  });
+
+  it("a non-interactive run without the env var keeps the old shape: no prompt, no key", async () => {
+    delete process.env.PENGUIN_MODEL_API_KEY;
+    // A stdin that would answer if asked — the point is that it is never asked.
+    const fake = fakeStdin(false, "sk-never-read\r");
+    try {
+      const add = await runModel([
+        "add",
+        "--model-id",
+        "headless",
+        "--provider",
+        "custom",
+        "--root",
+        tmpRoot,
+      ]);
+      expect(add.code).toBe(0);
+      expect(add.err).toBe("");
+      expect("api_key" in (await entryOf("custom", "headless"))).toBe(false);
+    } finally {
+      fake.restore();
+    }
   });
 });
