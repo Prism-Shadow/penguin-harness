@@ -11,3 +11,9 @@ core 通过 Node 从一个「宿主包」读取 Skill 与 hook 插件库——�
 `scripts/deploy.mjs` 现在把 core 声明的库——13 个插件、约 0.4 MB，与其他资产一样按内容寻址——打成 `archives/library.tgz`，布局即一个宿主包（`library/package.json` 点名各包，`library/node_modules/@penguinharness/<name>/…`）。平台启动时让 core 指向它（`usePushedPluginLibrary`），core 先在那里找，再看自己模块的上方与正在运行的程序的上方。不带该归档的推送、以及根本不是推送来的平台，仍在原来的位置读取库。
 
 Agent 已安装的 Skill 仍是副本：更新的库表现为 Agent 上该插件的「更新」按钮，不会改写已安装的内容。
+
+## 在前一个 App 仍占用的目录旁解包
+
+归档在解包目录旁边解出后再改名进去。Windows 上被替换的 App 仍打开着旧目录下的文件（node-pty 的二进制、插件的模块）：
+删除留下了它们，改名到残余目录上被拒绝，凡资产落在这个目录的推送都启动失败——运行时每次都随之重启。现在本次解出的
+完整目录直接从解出的位置提供。
