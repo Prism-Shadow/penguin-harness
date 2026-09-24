@@ -2587,7 +2587,8 @@ export type ServerEvent =
     }
   | ScheduleServerEvent
   | GoalServerEvent
-  | CompanyServerEvent;
+  | CompanyServerEvent
+  | BuiltinBrowserServerEvent;
 
 /** Goal-mode progress on the session channel (the chat page drives its goal banner from these). */
 export type GoalServerEvent =
@@ -5111,4 +5112,230 @@ export interface InstalledPluginsResponse {
   machineId: string;
   /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Built-in Browser (desktop only): Electron <webview> guests in the persist:penguin-browser
+// partition, driven over CDP by the shell on the server's behalf. See builtin-browser/.
+// ---------------------------------------------------------------------------
+
+/** One guest page of the built-in browser; `id` is the guest's webContents id. */
+export interface BuiltinBrowserTab {
+  id: number;
+  url: string;
+  title: string;
+  loading: boolean;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  favicon?: string;
+}
+
+/** Why the built-in browser cannot be driven: not under the desktop shell, a shell too old to host it, or no app window to host a new tab. */
+export type BuiltinBrowserUnavailableReason = "not_desktop" | "shell_unsupported" | "no_window";
+
+/** GET /api/builtin-browser/status. */
+export interface BuiltinBrowserStatus {
+  available: boolean;
+  reason?: BuiltinBrowserUnavailableReason;
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+}
+
+/** GET /api/builtin-browser/tabs. */
+export interface BuiltinBrowserTabsResponse {
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/scan — GenericAgent's web_scan. */
+export interface BuiltinBrowserScanResult {
+  tab: BuiltinBrowserTab;
+  tabs: BuiltinBrowserTab[];
+  activeTabId: number | null;
+  /** Simplified HTML, or plain text with `textOnly`. */
+  content?: string;
+  truncated?: boolean;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/exec (and click / type) — GenericAgent's web_execute_js. */
+export interface BuiltinBrowserExecResult {
+  status: "success" | "failed";
+  tabId: number;
+  /** The script's JSON-safe return value. */
+  value?: unknown;
+  error?: string;
+  /** The page navigated or reloaded while the script ran. */
+  reloaded?: boolean;
+  /** Tabs opened while the call ran (popups, target=_blank). */
+  newTabs?: { id: number; url: string }[];
+  /** Text that appeared during the call and may be gone again (toasts, flashes). */
+  transients?: string[];
+  diff?: { changed: number; topChange?: string };
+  suggestion?: string;
+  /** click only: where the trusted click landed. */
+  clicked?: { x: number; y: number; tag?: string; text?: string };
+  /** The page's dialogs the call answered, in order (see BuiltinBrowserDialog). */
+  dialogs?: BuiltinBrowserDialog[];
+}
+
+/**
+ * A dialog the page opened during an exec, click or type, which the call answered so the page
+ * would not block: an alert is accepted, and a confirm, prompt or leave-page dialog dismissed
+ * unless the request said `acceptDialogs`.
+ */
+export interface BuiltinBrowserDialog {
+  type: "alert" | "confirm" | "prompt" | "beforeunload";
+  message: string;
+  accepted: boolean;
+}
+
+/** POST /api/builtin-browser/tabs/:tab/screenshot. */
+export interface BuiltinBrowserScreenshot {
+  mime: "image/png";
+  /** Base64. */
+  data: string;
+}
+
+export type BuiltinBrowserImportBrowser =
+  "chrome" | "edge" | "brave" | "chromium" | "vivaldi" | "opera" | "arc" | "firefox";
+
+/** One profile of a system browser that can be imported from. */
+export interface BuiltinBrowserImportSource {
+  /** `<browser>:<profile dir>`, e.g. `chrome:Default`. */
+  id: string;
+  browser: BuiltinBrowserImportBrowser;
+  browserName: string;
+  /** The profile's directory name. */
+  profile: string;
+  /** The profile's display name. */
+  profileName: string;
+  hasCookies: boolean;
+  hasHistory: boolean;
+}
+
+export interface BuiltinBrowserImportSourcesResponse {
+  sources: BuiltinBrowserImportSource[];
+}
+
+/** POST /api/builtin-browser/import. */
+export interface BuiltinBrowserImportRequest {
+  sourceId: string;
+  cookies?: boolean;
+  history?: boolean;
+  /** Only cookies of these sites (a domain matches itself and its subdomains). */
+  domains?: string[];
+}
+
+export interface BuiltinBrowserImportResult {
+  sourceId: string;
+  cookies?: { found: number; imported: number; skipped: number; failed: number };
+  history?: { found: number; imported: number };
+  warnings: string[];
+}
+
+export interface BuiltinBrowserHistoryEntry {
+  url: string;
+  title: string;
+  visitCount: number;
+  /** Epoch ms. */
+  lastVisitAt: number;
+  /** `builtin` for pages visited in the built-in browser, else the browser it was imported from. */
+  source: string;
+}
+
+export interface BuiltinBrowserHistoryResponse {
+  entries: BuiltinBrowserHistoryEntry[];
+}
+
+export type BuiltinBrowserAction =
+  "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
+
+/** User-channel events of the built-in browser (admins only). */
+export type BuiltinBrowserServerEvent =
+  | { type: "builtin_browser_tabs"; tabs: BuiltinBrowserTab[]; activeTabId: number | null }
+  /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
+  | {
+      type: "builtin_browser_open";
+      requestId: string;
+      url: string;
+      activate: boolean;
+      openerTabId?: number;
+      sessionId?: string;
+    }
+  | { type: "builtin_browser_close"; tabId: number }
+  | {
+      type: "builtin_browser_activity";
+      tabId: number;
+      busy: boolean;
+      action: BuiltinBrowserAction;
+      sessionId?: string;
+    };
+
+/** A cookie as the shell writes it (Electron's CookiesSetDetails). */
+export interface DesktopBrowserCookie {
+  url: string;
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  secure?: boolean;
+  httpOnly?: boolean;
+  /** Unix seconds; absent = session cookie. */
+  expirationDate?: number;
+  sameSite?: "unspecified" | "no_restriction" | "lax" | "strict";
+}
+
+/** Server → shell: what the shell does with its guests. Mechanism only — the product logic stays on the server. */
+export type DesktopBrowserCommand =
+  /** Reply: `{ version: 1, partition: string }`. An older shell never answers. */
+  | { op: "hello" }
+  /** Reply: `{ tabs: BuiltinBrowserTab[] }`. */
+  | { op: "tabs" }
+  /**
+   * Reply: the CDP method's result object. `events` names the tab's CDP events the shell relays
+   * from then on, as `cdp-event`s: it replaces the list before (empty relays none), and is set
+   * before the command runs, so an event the command itself causes is not missed. Without it
+   * the list stays as it is.
+   */
+  | {
+      op: "cdp";
+      tabId: number;
+      method: string;
+      params?: Record<string, unknown>;
+      events?: string[];
+    }
+  /** Reply: `{ set: number; failed: number; errors: string[] }` (at most 10 errors). */
+  | { op: "set-cookies"; cookies: DesktopBrowserCookie[] }
+  /** Reply: `{}`. */
+  | { op: "clear-data"; storages: ("cookies" | "cache" | "storage")[] };
+
+export interface DesktopBrowserCommandMessage {
+  type: "desktop-browser-command";
+  id: string;
+  command: DesktopBrowserCommand;
+}
+
+export interface DesktopBrowserReplyMessage {
+  type: "desktop-browser-reply";
+  id: string;
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+export type DesktopBrowserEvent =
+  | { kind: "tab"; tab: BuiltinBrowserTab }
+  | { kind: "tab-closed"; tabId: number }
+  /**
+   * window.open / target=_blank inside a guest (the shell denied it and asks for a tab instead),
+   * or the context menu's "Open link in new tab". `background`: the tab should open behind the
+   * current one, as a middle-click or that menu entry does in Chrome.
+   */
+  | { kind: "open-request"; url: string; openerTabId: number; background?: boolean }
+  /** One of the tab's CDP events a `cdp` command's `events` asked for. */
+  | { kind: "cdp-event"; tabId: number; method: string; params: Record<string, unknown> };
+
+export interface DesktopBrowserEventMessage {
+  type: "desktop-browser-event";
+  event: DesktopBrowserEvent;
 }

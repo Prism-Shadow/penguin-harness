@@ -53,6 +53,7 @@ import { scrollMovesAnchor } from "../../lib/context-menu";
 import { SPRING_DEFAULT, SPRING_MOMENTUM, createSpringDriver } from "../../lib/spring";
 import type { SpringDriver } from "../../lib/spring";
 import { subscribeTerminals, terminalApiSupported } from "../terminal/terminal-list";
+import { isBrowserOffered, subscribeBrowser } from "../builtin-browser/browser-store";
 import { openTerminalInDock } from "./dock-terminal";
 import { panelGlyph, panelLabel } from "./panel-meta";
 import {
@@ -112,6 +113,7 @@ export function DockLauncher({ agentsPending }: DockLauncherProps) {
   useSyncExternalStore(subscribeDock, dockVersion);
   useSyncExternalStore(subscribeLauncherHidden, launcherHiddenVersion);
   const terminalSupported = useSyncExternalStore(subscribeTerminals, terminalApiSupported);
+  const browserOffered = useSyncExternalStore(subscribeBrowser, isBrowserOffered);
   const narrow = isNarrow();
   const visible = shouldShowLauncher({
     rightDockVisible: isDockVisible("right"),
@@ -124,6 +126,7 @@ export function DockLauncher({ agentsPending }: DockLauncherProps) {
     <LauncherBall
       agentsPending={agentsPending}
       terminalSupported={terminalSupported}
+      browserOffered={browserOffered}
       narrow={narrow}
     />
   );
@@ -166,10 +169,13 @@ const BALL_CLASS =
 function LauncherBall({
   agentsPending,
   terminalSupported,
+  browserOffered,
   narrow,
 }: {
   agentsPending: boolean;
   terminalSupported: boolean;
+  /** The built-in browser can be shown (the desktop app's own window, with a shell that hosts it). */
+  browserOffered: boolean;
   /** Below the breakpoint the docks merge, so an entry names no dock and lets the store pick. */
   narrow: boolean;
 }) {
@@ -429,7 +435,8 @@ function LauncherBall({
   // render as one merged surface, so it names none and the store lands the tab where the
   // toolbar's own panel buttons land it.
   const target = narrow ? undefined : "right";
-  const entries: FanEntry[] = PANEL_KINDS.map((kind) => ({
+  const kinds = PANEL_KINDS.filter((kind) => kind !== "builtin-browser" || browserOffered);
+  const entries: FanEntry[] = kinds.map((kind) => ({
     key: kind,
     label: panelLabel(kind),
     glyphAt: (size) => panelGlyph(kind, size),

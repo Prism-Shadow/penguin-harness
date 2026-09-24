@@ -25,6 +25,14 @@
  * stop). Settings › Appearance turns the icon off and on, reaching the shell over the same
  * utilityProcess relay the client updater uses.
  *
+ * Built-in browser: the main window (and no other) may host <webview> guests in the
+ * `persist:penguin-browser` partition, and builtin-browser.ts relays raw CDP and cookie writes
+ * for them over that same port. That relay is the only part of the browser the shell carries,
+ * and it lives here because it has to: a guest's `webContents.debugger` and the partition's
+ * session are main-process APIs that neither the page nor the server process can reach. The
+ * tab registry, the page scripts, scan / exec / click, import and history are the server
+ * platform's, delivered by push like any other product behavior.
+ *
  * Dev isolation: the dev profile — an unpackaged run, or any build launched with `--dev`
  * — takes a dev-suffixed identity (own userData, and with it the single-instance lock and
  * sticky port) and defaults to the ~/.penguin/dev-data root, so it runs beside an
@@ -47,6 +55,7 @@ import { appIdentity, desktopDataRoot, resolveProfile } from "./app-identity.js"
 import { embeddedCliEntry } from "./launcher.js";
 import { webDistEntry, webDistFor } from "./web-dist.js";
 import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
+import { createBuiltinBrowserShell } from "./builtin-browser.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
@@ -103,6 +112,15 @@ let trayLocale: TrayLocale = "en";
 let server: EmbeddedServer | null = null;
 /** The live server child, for pushes that are not answers to one of its messages. */
 let relayChild: EmbeddedServer["child"] | null = null;
+/**
+ * The built-in browser's guests and their relay (see the header). Frames for the server go to
+ * whichever child is live; with none, a push is dropped and the next server asks for the tabs.
+ */
+const builtinBrowser = createBuiltinBrowserShell({
+  post: (message) => relayChild?.postMessage(message),
+  locale: () => trayLocale,
+  log: (line) => process.stdout.write(`[shell] ${line}\n`),
+});
 /** App origin (embedded or attached); null until boot resolves. */
 let appOrigin: string | null = null;
 let quitting = false;
@@ -132,8 +150,12 @@ function createWindow(url: string): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // The built-in browser's tabs are <webview> guests of this page. This window only:
+      // windows it opens are built from their own preferences, which leave the tag off.
+      webviewTag: true,
     },
   });
+  builtinBrowser.host(win);
   win.once("ready-to-show", () => win?.show());
   // Close-to-tray: the window goes away, the app and its embedded server stay, and the tray
   // icon is the way back. Every real exit — the tray's Quit, the app menu's, an OS logout —
@@ -168,7 +190,12 @@ function createWindow(url: string): void {
         action: "allow",
         overrideBrowserWindowOptions: {
           show: false,
-          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+            webviewTag: false,
+          },
         },
       };
     }
@@ -204,8 +231,16 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
           autoHideMenuBar: true,
           ...(iconPath !== null ? { icon: iconPath } : {}),
           // Same hardening as the main window: a preview is Agent-written, untrusted HTML
-          // and must never get Node.
-          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+          // and must never get Node. Nor <webview>, the main window's alone: Electron copies
+          // an opener's preference only when it is the safe one, so without this line the
+          // main window's `webviewTag: true` leaves a features string (`webviewTag=yes`) in
+          // charge.
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+            webviewTag: false,
+          },
         },
       };
     case "external":
@@ -356,14 +391,15 @@ function setTrayLocale(next: TrayLocale): void {
 
 /**
  * Shell relay over the utilityProcess port: forward the account-menu row's check/install
- * frames to the updater and the Appearance switch's frames to the tray, push every updater
- * status fold back, and push both current states now — the fresh child, restarts included,
- * must not start blind. The subscription dies with the child; the next start wires the next
- * one.
+ * frames to the updater, the Appearance switch's frames to the tray and the built-in browser's
+ * commands to its guests, push every updater status fold back, and push both current states
+ * now — the fresh child, restarts included, must not start blind. The subscription dies with
+ * the child; the next start wires the next one.
  */
 function wireShellRelay(child: EmbeddedServer["child"]): void {
   relayChild = child;
   child.on("message", (message: unknown) => {
+    if (builtinBrowser.handle(message)) return;
     const action = parseUpdaterCommand(message);
     if (action !== null) {
       handleUpdaterCommand(action);
