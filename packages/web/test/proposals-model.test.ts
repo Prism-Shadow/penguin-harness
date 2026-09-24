@@ -9,8 +9,11 @@
 import { describe, expect, it } from "vitest";
 import type { ProposalComment, ProposalEvent, ProposalItem } from "@prismshadow/penguin-server/api";
 import {
-  diffLines,
-  sectionDiffs,
+  diffParagraphs,
+  diffWords,
+  inlineSections,
+  scopeChanges,
+  tokenizeWords,
   revisedAfterApproval,
   scopeFileCandidates,
   commentsInSection,
@@ -383,45 +386,75 @@ describe("scopeFileCandidates", () => {
 });
 
 describe("the diff since the approved revision", () => {
-  it("diffs lines by their longest common subsequence", () => {
-    expect(diffLines("a\nb\nc", "a\nx\nc\nd")).toEqual([
-      { kind: "same", text: "a" },
-      { kind: "del", text: "b" },
-      { kind: "add", text: "x" },
-      { kind: "same", text: "c" },
-      { kind: "add", text: "d" },
-    ]);
-    expect(diffLines("", "one")).toEqual([{ kind: "add", text: "one" }]);
-    expect(diffLines("one", "")).toEqual([{ kind: "del", text: "one" }]);
-    expect(diffLines("same", "same")).toEqual([{ kind: "same", text: "same" }]);
+  it("tokenises words with their whitespace, and CJK text a character at a time", () => {
+    expect(tokenizeWords("a  b\nc")).toEqual(["a", "  ", "b", "\n", "c"]);
+    expect(tokenizeWords("批量送达，notices")).toEqual(["批", "量", "送", "达", "，", "notices"]);
+    expect(tokenizeWords("")).toEqual([]);
   });
 
-  it("matches sections by heading: unchanged, changed, added and removed", () => {
-    const section = (id: string, heading: string, text: string) => ({
-      id,
-      heading,
-      paragraphs: [{ id: `${id}p`, text }],
-    });
-    const before = [
-      section("a", "Change", "old"),
-      section("b", "Purpose", "why"),
-      section("c", "Test", "t"),
-    ];
-    const after = [
-      section("a", "Change", "new"),
-      section("b", "Purpose", "why"),
-      section("d", "Risks", "r"),
-    ];
-    expect(sectionDiffs(before, after).map((d) => [d.heading, d.kind])).toEqual([
-      ["Change", "changed"],
-      ["Purpose", "same"],
-      ["Risks", "added"],
-      ["Test", "removed"],
-    ]);
-    expect(sectionDiffs(before, after)[0]!.lines).toEqual([
+  it("diffs words inline, keeping whitespace and merging runs of one kind", () => {
+    expect(diffWords("the old digest runs", "the new digest runs daily")).toEqual([
+      { kind: "same", text: "the " },
       { kind: "del", text: "old" },
       { kind: "add", text: "new" },
+      { kind: "same", text: " digest runs" },
+      { kind: "add", text: " daily" },
     ]);
+    expect(diffWords("按员工批量送达", "按员工逐条送达")).toEqual([
+      { kind: "same", text: "按员工" },
+      { kind: "del", text: "批量" },
+      { kind: "add", text: "逐条" },
+      { kind: "same", text: "送达" },
+    ]);
+    expect(diffWords("same", "same")).toEqual([{ kind: "same", text: "same" }]);
+  });
+
+  it("diffs paragraphs, pairing an edited paragraph into one replacement", () => {
+    const steps = diffParagraphs(
+      ["intro", "the old digest runs weekly", "gone entirely", "outro"],
+      ["intro", "the new digest runs weekly", "brand new paragraph", "outro"],
+    );
+    expect(steps.map((s) => s.kind)).toEqual(["same", "replace", "del", "add", "same"]);
+    const replaced = steps[1]!;
+    expect(replaced.kind === "replace" && replaced.index).toBe(1);
+    expect(replaced.kind === "replace" && replaced.before).toBe("the old digest runs weekly");
+    expect(steps[2]).toEqual({ kind: "del", text: "gone entirely" });
+    expect(steps[3]).toEqual({ kind: "add", index: 2 });
+    // Unlike paragraphs are a removal and an addition, not a replacement.
+    expect(diffParagraphs(["alpha beta"], ["gamma delta"]).map((s) => s.kind)).toEqual([
+      "del",
+      "add",
+    ]);
+    expect(diffParagraphs([], ["x"])).toEqual([{ kind: "add", index: 0 }]);
+  });
+
+  it("lays the body out with removed sections where they stood", () => {
+    const section = (id: string, heading: string) => ({
+      id,
+      heading,
+      paragraphs: [{ id: `${id}p`, text: heading }],
+    });
+    const before = [section("a", "Change"), section("t", "Test"), section("b", "Purpose")];
+    const after = [section("a", "Change"), section("b", "Purpose"), section("r", "Risks")];
+    expect(
+      inlineSections(before, after).map((e) =>
+        e.kind === "removed"
+          ? `-${e.section.heading}`
+          : `${e.section.heading}${e.before === null ? "+" : ""}`,
+      ),
+    ).toEqual(["Change", "-Test", "Purpose", "Risks+"]);
+    expect(
+      inlineSections([section("x", "Gone")], [section("a", "Change")]).map((e) => e.kind),
+    ).toEqual(["removed", "current"]);
+  });
+
+  it("names the scope's added, removed and re-patterned files", () => {
+    expect(
+      scopeChanges(
+        [{ file: "a.ts", name: "f" }, { file: "b.ts" }],
+        [{ file: "a.ts", name: "g" }, { file: "c.ts" }],
+      ),
+    ).toEqual({ added: ["c.ts"], removed: ["b.ts"], changed: ["a.ts"] });
   });
 
   it("has a diff to show only while an older approval stands and the proposal is open again", () => {

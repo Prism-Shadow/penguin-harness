@@ -36,6 +36,7 @@ import type {
   ProposalMaterial,
   ProposalPrStatus,
   ProposalMaterialKind,
+  ProposalParagraph,
   ProposalRevision,
   ProposalSection,
   ProposalStatus,
@@ -46,6 +47,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk, toneStrip, toneSurface } from "../../lib/tone";
+import { Switch } from "../../components/ui/switch";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
@@ -92,13 +94,15 @@ import {
   proposalsRoute,
   paragraphSpan,
   rangeOfSelection,
+  diffParagraphs,
+  inlineSections,
   revisedAfterApproval,
+  scopeChanges,
   scopeFileCandidates,
-  sectionDiffs,
   sectionSource,
   sortProposals,
 } from "./proposals-model";
-import type { SectionDiff } from "./proposals-model";
+import type { ParagraphChange, WordChange } from "./proposals-model";
 
 /** Speech bubble (lucide message-square): the comment chip's mark. */
 const COMMENT_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
@@ -898,6 +902,10 @@ function ProposalView({
   );
   const events = useMemo(() => [...detail.events].reverse(), [detail.events]);
   const closed = detail.status === "merged" || detail.status === "rejected";
+  const approved = useApprovedRevision(detail);
+  // Changes show by default while an older approval stands; the toggle is this view's only.
+  const [showChanges, setShowChanges] = useState(true);
+  const changes = showChanges && approved.revision !== null ? approved.revision : null;
   return (
     <div className="space-y-6">
       <header>
@@ -987,10 +995,14 @@ function ProposalView({
       </OrgSection>
 
       {revisedAfterApproval(detail) && detail.approvedRevision !== null && (
-        <RevisionDiffPanel
+        <ChangesBar
           detail={detail}
           approvedRevision={detail.approvedRevision}
+          approved={approved.revision}
+          error={approved.error}
           names={names}
+          shown={showChanges}
+          onToggle={() => setShowChanges((v) => !v)}
         />
       )}
 
@@ -1013,6 +1025,7 @@ function ProposalView({
               me={me}
               onEditComment={onEditComment}
               onDeleteComment={onDeleteComment}
+              changes={changes}
             />
           </>
         )}
@@ -1103,32 +1116,26 @@ function ProposalView({
 }
 
 /**
- * What changed since the approved revision. An approval covers ONE revision: once the author
- * publishes again the proposal is `ready` once more, and the approver reads the difference, not
- * the whole text. Section diffs are line-level against the sections' Markdown source.
+ * The approved revision, read while the page has something to compare it with: an approval
+ * covers ONE revision, so once the author publishes again the approver reads what changed.
  */
-function RevisionDiffPanel({
-  detail,
-  approvedRevision,
-  names,
-}: {
-  detail: ProposalDetail;
-  approvedRevision: number;
-  names: ReadonlyMap<string, string>;
-}) {
-  const t = S.company.proposals.diff;
+function useApprovedRevision(detail: ProposalDetail): {
+  revision: ProposalRevision | null;
+  error: string | null;
+} {
   const { projectId, orgId } = useOrg();
-  const [approved, setApproved] = useState<ProposalRevision | null>(null);
+  const wanted = revisedAfterApproval(detail) ? detail.approvedRevision : null;
+  const [revision, setRevision] = useState<ProposalRevision | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hidden, setHidden] = useState(false);
   useEffect(() => {
-    let alive = true;
-    setApproved(null);
+    setRevision(null);
     setError(null);
+    if (wanted === null) return;
+    let alive = true;
     api
-      .getOrgProposalRevision(projectId, orgId, detail.number, approvedRevision)
+      .getOrgProposalRevision(projectId, orgId, detail.number, wanted)
       .then((r) => {
-        if (alive) setApproved(r);
+        if (alive) setRevision(r);
       })
       .catch((e: unknown) => {
         if (alive) setError(apiErrorText(e));
@@ -1136,106 +1143,134 @@ function RevisionDiffPanel({
     return () => {
       alive = false;
     };
-  }, [projectId, orgId, detail.number, approvedRevision]);
+  }, [projectId, orgId, detail.number, wanted]);
+  return { revision, error };
+}
+
+/**
+ * The one line above the body while an older approval stands: since which revision, who
+ * approved it, the title and scope changes (the body shows the rest inline), and the toggle
+ * between the tracked-changes body and the plain one.
+ */
+function ChangesBar({
+  detail,
+  approvedRevision,
+  approved,
+  error,
+  names,
+  shown,
+  onToggle,
+}: {
+  detail: ProposalDetail;
+  approvedRevision: number;
+  approved: ProposalRevision | null;
+  error: string | null;
+  names: ReadonlyMap<string, string>;
+  shown: boolean;
+  onToggle: () => void;
+}) {
+  const t = S.company.proposals.diff;
   const approval = useMemo(
     () => [...detail.events].reverse().find((e) => e.kind === "approved") ?? null,
     [detail.events],
   );
-  const diffs = useMemo(
-    () => (approved === null ? [] : sectionDiffs(approved.sections, detail.sections)),
-    [approved, detail.sections],
-  );
-  const scopeChanged =
-    approved !== null &&
-    JSON.stringify(approved.scope.map((s) => [s.file, s.name ?? ""])) !==
-      JSON.stringify(detail.scope.map((s) => [s.file, s.name ?? ""]));
+  const scope = approved === null ? null : scopeChanges(approved.scope, detail.scope);
+  const scopeParts =
+    scope === null
+      ? []
+      : [
+          ...scope.added.map((f) => `+${f}`),
+          ...scope.removed.map((f) => `−${f}`),
+          ...scope.changed.map((f) => `~${f}`),
+        ];
   return (
-    <section className={`rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}>
+    <div className={`rounded-md border px-3 py-1.5 text-xs ${toneStrip.attention}`}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="font-medium">{t.title(approvedRevision, detail.revision)}</span>
+        <span className="font-medium" title={t.hint}>
+          {t.title(approvedRevision, detail.revision)}
+        </span>
         {approval !== null && (
           <span className="text-gray-500 dark:text-gray-400">
             · {t.approvedBy(principalLabel(approval.by, names), formatDateTime(approval.at))}
           </span>
         )}
-        <button
-          type="button"
-          className="ml-auto underline-offset-2 hover:underline"
-          aria-expanded={!hidden}
-          onClick={() => setHidden((h) => !h)}
-        >
-          {hidden ? t.show : t.hide}
-        </button>
+        <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5">
+          <Switch checked={shown} onChange={onToggle} aria-label={t.showChanges} />
+          <span>{t.showChanges}</span>
+        </label>
       </div>
-      {!hidden && (
-        <div className="mt-2 space-y-2">
-          <p className="text-gray-500 dark:text-gray-400">{t.hint}</p>
-          {error !== null && <p className={toneInk.danger}>{`${t.loadFailed}: ${error}`}</p>}
-          {approved === null && error === null && <Skeleton className="h-12 w-full" />}
-          {approved !== null && approved.title !== detail.title && (
-            <p>{t.titleChanged(approved.title, detail.title)}</p>
-          )}
-          {scopeChanged && <p>{t.scopeChanged}</p>}
-          {diffs.map((d) => (
-            <SectionDiffView key={d.heading} diff={d} />
-          ))}
-        </div>
+      {error !== null && <p className={`mt-1 ${toneInk.danger}`}>{`${t.loadFailed}: ${error}`}</p>}
+      {shown && approved !== null && approved.title !== detail.title && (
+        <p className="mt-1 break-words">{t.titleChanged(approved.title, detail.title)}</p>
       )}
-    </section>
+      {shown && scopeParts.length > 0 && (
+        <p className="mt-1 font-mono break-all">{t.scopeChanged(scopeParts.join("  "))}</p>
+      )}
+    </div>
   );
 }
 
-function SectionDiffView({ diff }: { diff: SectionDiff }) {
-  const t = S.company.proposals.diff;
-  const [open, setOpen] = useState(diff.kind !== "same");
-  const note =
-    diff.kind === "same"
-      ? t.unchanged
-      : diff.kind === "added"
-        ? t.sectionAdded
-        : diff.kind === "removed"
-          ? t.sectionRemoved
-          : null;
+/** A small word after a section heading: the section is new, or gone, since the approved revision. */
+function DiffTag({ tone, label }: { tone: "success" | "danger"; label: string }) {
   return (
-    <div className="rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 px-2 py-1 text-left"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span className="font-medium">{diff.heading}</span>
-        {note !== null && (
-          <span
-            className={
-              diff.kind === "same"
-                ? "text-gray-400 dark:text-gray-500"
-                : `rounded-sm px-1 ${diff.kind === "removed" ? toneSurface.danger : toneSurface.success}`
-            }
-          >
-            {note}
-          </span>
+    <span
+      className={`ml-2 rounded-sm px-1 align-middle text-[11px] font-normal ${toneSurface[tone]}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+/** The thin bar at a changed block's left edge: added, removed or edited, by tone. */
+function ChangeEdge({ tone }: { tone: "success" | "danger" | "attention" }) {
+  return (
+    <span
+      aria-hidden
+      className={`absolute inset-y-0 -left-1.5 w-0.5 rounded-full ${toneDot[tone]}`}
+    />
+  );
+}
+
+/**
+ * A paragraph the head no longer has, or a whole removed section's paragraph: plain text,
+ * struck and muted. Marked `data-diff-static` so no selection, comment mark or hover button
+ * ever lands on text that is not in the head.
+ */
+function RemovedParagraph({ text }: { text: string }) {
+  const t = S.company.proposals.diff;
+  return (
+    <div data-diff-static className={`relative rounded ${toneSurface.danger}`}>
+      <ChangeEdge tone="danger" />
+      <span className="sr-only">{t.removedLabel}: </span>
+      <p className="px-1 text-sm whitespace-pre-wrap line-through decoration-1 opacity-80">
+        {text}
+      </p>
+    </div>
+  );
+}
+
+/** A paragraph edited since the approved revision: one block, its words changed inline. Not commentable while changes show. */
+function ReplacedParagraph({ words }: { words: WordChange[] }) {
+  const t = S.company.proposals.diff;
+  return (
+    <div data-diff-static className="relative rounded">
+      <ChangeEdge tone="attention" />
+      <span className="sr-only">{t.changedLabel}: </span>
+      <p className="px-1 text-sm whitespace-pre-wrap text-gray-800 dark:text-gray-100">
+        {words.map((w, i) =>
+          w.kind === "same" ? (
+            <span key={i}>{w.text}</span>
+          ) : w.kind === "del" ? (
+            <del key={i} className={`decoration-1 ${toneSurface.danger}`}>
+              {w.text}
+            </del>
+          ) : (
+            <ins key={i} className={`no-underline ${toneSurface.success}`}>
+              {w.text}
+            </ins>
+          ),
         )}
-      </button>
-      {open && (
-        <pre className="max-h-96 overflow-auto border-t border-gray-200 px-2 py-1 font-mono text-xs whitespace-pre-wrap dark:border-gray-800">
-          {diff.lines.map((line, i) => (
-            <span
-              key={i}
-              className={`block ${
-                line.kind === "add"
-                  ? toneSurface.success
-                  : line.kind === "del"
-                    ? `line-through decoration-1 ${toneSurface.danger}`
-                    : ""
-              }`}
-            >
-              {line.kind === "add" ? "+ " : line.kind === "del" ? "- " : "  "}
-              {line.text}
-            </span>
-          ))}
-        </pre>
-      )}
+      </p>
     </div>
   );
 }
@@ -1347,6 +1382,7 @@ function ProposalBody({
   me,
   onEditComment,
   onDeleteComment,
+  changes,
 }: {
   detail: ProposalDetail;
   names: ReadonlyMap<string, string>;
@@ -1354,6 +1390,8 @@ function ProposalBody({
   highlightId: string | null;
   busy: boolean;
   closed: boolean;
+  /** The approved revision to show the head's changes against, inline; null draws the plain body. */
+  changes: ProposalRevision | null;
   me: string | null;
   onEditComment: (commentId: string, text: string) => Promise<boolean>;
   onDeleteComment: (commentId: string) => Promise<boolean>;
@@ -1387,7 +1425,7 @@ function ProposalBody({
       }
     }
     return () => clearMarks(root);
-  }, [detail.sections, detail.comments, detail.revision, names]);
+  }, [detail.sections, detail.comments, detail.revision, names, changes]);
 
   const readSelection = () => {
     const root = rootRef.current;
@@ -1399,7 +1437,13 @@ function ProposalBody({
     const range = sel.getRangeAt(0);
     const startBlock = sectionOf(range.startContainer);
     const endBlock = sectionOf(range.endContainer);
-    if (startBlock === null || startBlock !== endBlock || !root.contains(startBlock)) {
+    if (
+      startBlock === null ||
+      startBlock !== endBlock ||
+      !root.contains(startBlock) ||
+      staticOf(range.startContainer) ||
+      staticOf(range.endContainer)
+    ) {
       setSelection(null);
       return;
     }
@@ -1443,133 +1487,206 @@ function ProposalBody({
 
   const sectionById = (id: string) => detail.sections.find((s) => s.id === id) ?? null;
 
+  // One paragraph of the head as the body draws it: Markdown, comment marks, the hover
+  // Comment button. `added` tints it as new since the approved revision.
+  const renderParagraph = (
+    section: ProposalSection,
+    paragraph: ProposalParagraph,
+    added = false,
+  ) => (
+    // A paragraph is a hover target: its surface tints and a Comment button
+    // appears at its right edge, commenting on the whole paragraph — the
+    // no-aim way; a drag-select still names a narrower passage.
+    <div
+      key={paragraph.id}
+      id={domId(paragraph.id)}
+      data-paragraph-id={paragraph.id}
+      className={`group relative scroll-mt-4 rounded transition-colors duration-150 ${
+        highlightId === paragraph.id
+          ? toneSurface.attention
+          : added
+            ? toneSurface.success
+            : closed
+              ? ""
+              : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
+      }`}
+    >
+      {added && <ChangeEdge tone="success" />}
+      {added && (
+        <span data-diff-static className="sr-only">
+          {t.diff.addedLabel}:{" "}
+        </span>
+      )}
+      <div
+        className={`md-body md-compact px-1 text-sm text-gray-800 dark:text-gray-100 ${
+          closed ? "" : "pr-8"
+        }`}
+      >
+        <Md
+          text={paragraph.text}
+          extraPlugins={PROPOSAL_REMARK_PLUGINS}
+          components={PROPOSAL_COMPONENTS}
+        />
+      </div>
+      {!closed && (
+        <button
+          type="button"
+          aria-label={t.commentParagraph}
+          title={t.commentParagraph}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            setSelection(null);
+            window.getSelection()?.removeAllRanges();
+            setComposer({
+              sectionId: section.id,
+              paragraphId: paragraph.id,
+              text: paragraph.text,
+              top: 0,
+              left: 0,
+              whole: true,
+            });
+          }}
+          className="absolute top-0.5 right-1 flex h-6 w-6 items-center justify-center rounded text-gray-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:bg-gray-200 hover:text-gray-700 focus-visible:opacity-100 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d={COMMENT_ICON} size={ICON_SIZE.inlineGlyph} />
+        </button>
+      )}
+    </div>
+  );
+
+  const renderChange = (section: ProposalSection, change: ParagraphChange, i: number) => {
+    if (change.kind === "del") return <RemovedParagraph key={`del-${i}`} text={change.text} />;
+    const paragraph = section.paragraphs[change.index]!;
+    if (change.kind === "replace")
+      return <ReplacedParagraph key={paragraph.id} words={change.words} />;
+    return renderParagraph(section, paragraph, change.kind === "add");
+  };
+
+  const renderSection = (
+    section: ProposalSection,
+    paragraphs: ReactNode,
+    headingNote: ReactNode = null,
+  ) => {
+    const comments = commentsInSection(detail.comments, section.id, detail.revision);
+    const isOpen = openSections.has(section.id);
+    return (
+      <div key={section.id} id={domId(section.id)} className="scroll-mt-4">
+        <h3
+          className={`mb-2 text-sm font-semibold ${
+            highlightId === section.id ? `rounded px-1 ${toneSurface.attention}` : ""
+          }`}
+        >
+          {section.heading}
+          {headingNote}
+        </h3>
+        <div data-section-id={section.id} className="space-y-2">
+          {paragraphs}
+        </div>
+        {composer !== null && composer.sectionId === section.id && (
+          <CommentComposer
+            quote={composer.text}
+            busy={busy}
+            onCancel={() => setComposer(null)}
+            onSubmit={async (text) => {
+              const ok = await onComment(
+                section,
+                composer.text,
+                composer.paragraphId,
+                text,
+                composer.whole === true,
+              );
+              if (ok) {
+                setComposer(null);
+                setOpenSections((prev) => new Set([...prev, section.id]));
+              }
+              return ok;
+            }}
+          />
+        )}
+        {comments.length > 0 && (
+          <div className="mt-2">
+            <button
+              type="button"
+              aria-expanded={isOpen}
+              onClick={() => toggleSection(section.id)}
+              className={`inline-flex items-center gap-1 text-[11px] ${
+                comments.some((c) => c.batchId === null)
+                  ? toneInk.attention
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              <GlyphIcon d={COMMENT_ICON} size={ICON_SIZE.inlineGlyph} />
+              {t.sectionComments(comments.length)}
+            </button>
+            {isOpen && (
+              <div className="mt-1 space-y-2 border-l-2 border-gray-200 pl-3 dark:border-gray-800">
+                {comments.map((c) => (
+                  <CommentLine
+                    key={c.id}
+                    comment={c}
+                    names={names}
+                    locale={locale}
+                    focused={focusedComment === c.id}
+                    mine={me !== null && c.by === me}
+                    busy={busy}
+                    onEdit={onEditComment}
+                    onDelete={onDeleteComment}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div ref={rootRef} className="relative" onMouseUp={onMouseUp}>
       <div className="space-y-5">
-        {detail.sections.map((section) => {
-          const comments = commentsInSection(detail.comments, section.id, detail.revision);
-          const isOpen = openSections.has(section.id);
-          return (
-            <div key={section.id} id={domId(section.id)} className="scroll-mt-4">
-              <h3
-                className={`mb-2 text-sm font-semibold ${
-                  highlightId === section.id ? `rounded px-1 ${toneSurface.attention}` : ""
-                }`}
-              >
-                {section.heading}
-              </h3>
-              <div data-section-id={section.id} className="space-y-2">
-                {section.paragraphs.map((paragraph) => (
-                  // A paragraph is a hover target: its surface tints and a Comment button
-                  // appears at its right edge, commenting on the whole paragraph — the
-                  // no-aim way; a drag-select still names a narrower passage.
-                  <div
-                    key={paragraph.id}
-                    id={domId(paragraph.id)}
-                    data-paragraph-id={paragraph.id}
-                    className={`group relative scroll-mt-4 rounded transition-colors duration-150 ${
-                      highlightId === paragraph.id
-                        ? toneSurface.attention
-                        : closed
-                          ? ""
-                          : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
-                    }`}
-                  >
-                    <div
-                      className={`md-body md-compact px-1 text-sm text-gray-800 dark:text-gray-100 ${
-                        closed ? "" : "pr-8"
-                      }`}
-                    >
-                      <Md
-                        text={paragraph.text}
-                        extraPlugins={PROPOSAL_REMARK_PLUGINS}
-                        components={PROPOSAL_COMPONENTS}
-                      />
-                    </div>
-                    {!closed && (
-                      <button
-                        type="button"
-                        aria-label={t.commentParagraph}
-                        title={t.commentParagraph}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          setSelection(null);
-                          window.getSelection()?.removeAllRanges();
-                          setComposer({
-                            sectionId: section.id,
-                            paragraphId: paragraph.id,
-                            text: paragraph.text,
-                            top: 0,
-                            left: 0,
-                            whole: true,
-                          });
-                        }}
-                        className="absolute top-0.5 right-1 flex h-6 w-6 items-center justify-center rounded text-gray-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:bg-gray-200 hover:text-gray-700 focus-visible:opacity-100 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-                      >
-                        <GlyphIcon d={COMMENT_ICON} size={ICON_SIZE.inlineGlyph} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {composer !== null && composer.sectionId === section.id && (
-                <CommentComposer
-                  quote={composer.text}
-                  busy={busy}
-                  onCancel={() => setComposer(null)}
-                  onSubmit={async (text) => {
-                    const ok = await onComment(
-                      section,
-                      composer.text,
-                      composer.paragraphId,
-                      text,
-                      composer.whole === true,
-                    );
-                    if (ok) {
-                      setComposer(null);
-                      setOpenSections((prev) => new Set([...prev, section.id]));
-                    }
-                    return ok;
-                  }}
-                />
-              )}
-              {comments.length > 0 && (
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    aria-expanded={isOpen}
-                    onClick={() => toggleSection(section.id)}
-                    className={`inline-flex items-center gap-1 text-[11px] ${
-                      comments.some((c) => c.batchId === null)
-                        ? toneInk.attention
-                        : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                    }`}
-                  >
-                    <GlyphIcon d={COMMENT_ICON} size={ICON_SIZE.inlineGlyph} />
-                    {t.sectionComments(comments.length)}
-                  </button>
-                  {isOpen && (
-                    <div className="mt-1 space-y-2 border-l-2 border-gray-200 pl-3 dark:border-gray-800">
-                      {comments.map((c) => (
-                        <CommentLine
-                          key={c.id}
-                          comment={c}
-                          names={names}
-                          locale={locale}
-                          focused={focusedComment === c.id}
-                          mine={me !== null && c.by === me}
-                          busy={busy}
-                          onEdit={onEditComment}
-                          onDelete={onDeleteComment}
-                        />
+        {changes === null
+          ? detail.sections.map((section) =>
+              renderSection(
+                section,
+                section.paragraphs.map((p) => renderParagraph(section, p)),
+              ),
+            )
+          : inlineSections(changes.sections, detail.sections).map((entry) => {
+              if (entry.kind === "removed") {
+                // A section the head no longer has: struck, where it stood, never commentable.
+                return (
+                  <div key={`removed-${entry.section.id}`} data-diff-static>
+                    <h3 className="mb-2 text-sm font-semibold">
+                      <span className="line-through decoration-1 opacity-70">
+                        {entry.section.heading}
+                      </span>
+                      <DiffTag tone="danger" label={t.diff.sectionRemoved} />
+                    </h3>
+                    <div className="space-y-2">
+                      {entry.section.paragraphs.map((p) => (
+                        <RemovedParagraph key={p.id} text={p.text} />
                       ))}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+                  </div>
+                );
+              }
+              const { section, before } = entry;
+              if (before === null) {
+                return renderSection(
+                  section,
+                  section.paragraphs.map((p) => renderParagraph(section, p, true)),
+                  <DiffTag tone="success" label={t.diff.sectionAdded} />,
+                );
+              }
+              const steps = diffParagraphs(
+                before.paragraphs.map((p) => p.text),
+                section.paragraphs.map((p) => p.text),
+              );
+              return renderSection(
+                section,
+                steps.map((step, i) => renderChange(section, step, i)),
+              );
+            })}
       </div>
 
       {/* The chip: offered while a selection lies in one section, gone once it is taken. */}
@@ -1788,6 +1905,12 @@ function sectionOf(node: Node | null): HTMLElement | null {
 }
 
 /** The paragraph a node lies in, or null. */
+/** Whether a node lies in text that is not the head's (a removed or word-diffed block). */
+function staticOf(node: Node | null): boolean {
+  const el = node instanceof Element ? node : (node?.parentElement ?? null);
+  return el?.closest("[data-diff-static]") != null;
+}
+
 function paragraphOf(node: Node | null): string | null {
   const el = node instanceof HTMLElement ? node : node?.parentElement;
   return el?.closest<HTMLElement>("[data-paragraph-id]")?.dataset.paragraphId ?? null;
@@ -1812,7 +1935,13 @@ function clearMarks(root: HTMLElement): void {
  * code fence's syntax, say) gets no mark and keeps its listing under the section.
  */
 function markPassage(block: HTMLElement, comment: ProposalComment, by: string): void {
-  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  // Text that is not the head's (a removed or word-diffed paragraph) is never marked.
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) =>
+      n.parentElement?.closest("[data-diff-static]")
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+  });
   const nodes: Text[] = [];
   const starts: number[] = [];
   let text = "";
