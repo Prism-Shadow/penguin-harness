@@ -45,6 +45,11 @@ export function mayAttachGuest(params: { partition?: string; src?: string }): bo
  * no nested <webview>, and no background throttling — the agent works in tabs nobody is
  * looking at. Mutates, as `will-attach-webview` expects.
  *
+ * Opaque, too: Electron makes a guest transparent by default, which lets the app's own surface
+ * show through a page that sets no background of its own — dark text on the dark theme. An
+ * opaque guest gets the canvas Chrome paints: white, or dark for a page that declares a dark
+ * color scheme.
+ *
  * Popups are let through to the guest's window-open handler (`disablePopups: false`, which is
  * what the `allowpopups` attribute would set): with them disabled Chromium refuses window.open
  * and target=_blank before any handler runs, so a popup could never become a tab. The handler
@@ -64,6 +69,7 @@ export function hardenGuestPreferences(prefs: Record<string, unknown>): void {
   prefs.webviewTag = false;
   prefs.backgroundThrottling = false;
   prefs.disablePopups = false;
+  prefs.transparent = false;
 }
 
 /** Schemes a guest's main frame may navigate to on its own (a link, a form, script). */

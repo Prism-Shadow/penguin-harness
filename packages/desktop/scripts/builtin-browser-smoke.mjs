@@ -11,8 +11,8 @@
  * hosts the module in it, and loads a page holding one good guest, two the module must refuse
  * (another partition, a file: start page) and a cross-origin iframe that tries to create a
  * guest of its own. It then drives the relay the way the server does — hello, tabs, cdp, the
- * page's icon, a popup, DevTools opened and closed around a command, cookies set and cleared —
- * and prints `BUILTIN-BROWSER-SMOKE {json}`, exiting non-zero when a check failed.
+ * page's canvas and icon, a popup, DevTools opened and closed around a command, cookies set and
+ * cleared — and prints `BUILTIN-BROWSER-SMOKE {json}`, exiting non-zero when a check failed.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -95,7 +95,7 @@ async function run() {
   const appOrigin = `http://localhost:${port}`;
   const otherOrigin = `http://127.0.0.1:${port}`;
 
-  // Two pages of one site sharing an icon.
+  // Two pages of one site sharing an icon, neither setting a background of its own.
   const iconUrl = `${appOrigin}/icon.png`;
   const guestPage = `<!doctype html><title>Guest</title><link rel="icon" href="${iconUrl}">
 <body><h1>Guest page</h1><a id="blank" href="${appOrigin}/from-link" target="_blank">new tab</a></body>`;
@@ -236,6 +236,17 @@ async function run() {
   );
   check("cdp evaluates in the guest", (await evaluate(tabId, "document.title")) === "Guest");
 
+  // The guest is opaque: a page with no background of its own is drawn on a browser's white
+  // canvas, where a transparent guest would show the app behind it (its dark theme, say).
+  const shot = await webContents.fromId(tabId).capturePage();
+  const { width: shotWidth, height: shotHeight } = shot.getSize();
+  const blankAt = ((shotHeight - 10) * shotWidth + Math.floor(shotWidth / 2)) * 4;
+  const canvas = [...shot.toBitmap().subarray(blankAt, blankAt + 4)];
+  check(
+    "a page with no background is drawn on an opaque white canvas",
+    canvas.every((value) => value === 255),
+    canvas,
+  );
   const lastTab = (url) =>
     events.filter((e) => e.kind === "tab" && e.tab.id === tabId && e.tab.url === url).at(-1)?.tab;
   const firstPage = lastTab(`${appOrigin}/guest`);

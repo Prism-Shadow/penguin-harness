@@ -54,6 +54,7 @@ describe("hardenGuestPreferences", () => {
       webSecurity: false,
       webviewTag: true,
       disablePopups: true,
+      transparent: true,
       plugins: true,
     };
     hardenGuestPreferences(prefs);
@@ -70,6 +71,8 @@ describe("hardenGuestPreferences", () => {
       backgroundThrottling: false,
       // Popups reach the window-open handler (which denies each one into an open request).
       disablePopups: false,
+      // An opaque page: the app's surface never shows through one without a background.
+      transparent: false,
       // Untouched: not a security preference.
       plugins: true,
     });
