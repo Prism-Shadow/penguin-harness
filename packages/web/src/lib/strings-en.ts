@@ -339,6 +339,12 @@ export const en: Strings = {
     hint: "Ctrl+P / Ctrl+Shift+P (⌘P) to toggle · ↑↓ to select · Enter to run",
     harnessHistory: "Harness history",
   },
+  modelPicker: {
+    groups: "Model groups",
+    hideModelsWithoutKey: "Hide models without a key",
+    hint: (mod: string): string =>
+      `↑↓ to select · ←→ between groups and models · ${mod}1–9 to jump to a group · Enter to choose · Esc to close`,
+  },
   workflows: {
     tabsLabel: "Chat and workflows",
     chatTab: "Chat",
