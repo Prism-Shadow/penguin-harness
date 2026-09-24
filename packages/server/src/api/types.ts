@@ -5174,6 +5174,19 @@ export interface BuiltinBrowserExecResult {
   suggestion?: string;
   /** click only: where the trusted click landed. */
   clicked?: { x: number; y: number; tag?: string; text?: string };
+  /** The page's dialogs the call answered, in order (see BuiltinBrowserDialog). */
+  dialogs?: BuiltinBrowserDialog[];
+}
+
+/**
+ * A dialog the page opened during an exec, click or type, which the call answered so the page
+ * would not block: an alert is accepted, and a confirm, prompt or leave-page dialog dismissed
+ * unless the request said `acceptDialogs`.
+ */
+export interface BuiltinBrowserDialog {
+  type: "alert" | "confirm" | "prompt" | "beforeunload";
+  message: string;
+  accepted: boolean;
 }
 
 /** POST /api/builtin-browser/tabs/:tab/screenshot. */
@@ -5278,8 +5291,19 @@ export type DesktopBrowserCommand =
   | { op: "hello" }
   /** Reply: `{ tabs: BuiltinBrowserTab[] }`. */
   | { op: "tabs" }
-  /** Reply: the CDP method's result object. */
-  | { op: "cdp"; tabId: number; method: string; params?: Record<string, unknown> }
+  /**
+   * Reply: the CDP method's result object. `events` names the tab's CDP events the shell relays
+   * from then on, as `cdp-event`s: it replaces the list before (empty relays none), and is set
+   * before the command runs, so an event the command itself causes is not missed. Without it
+   * the list stays as it is.
+   */
+  | {
+      op: "cdp";
+      tabId: number;
+      method: string;
+      params?: Record<string, unknown>;
+      events?: string[];
+    }
   /** Reply: `{ set: number; failed: number; errors: string[] }` (at most 10 errors). */
   | { op: "set-cookies"; cookies: DesktopBrowserCookie[] }
   /** Reply: `{}`. */
@@ -5307,7 +5331,9 @@ export type DesktopBrowserEvent =
    * or the context menu's "Open link in new tab". `background`: the tab should open behind the
    * current one, as a middle-click or that menu entry does in Chrome.
    */
-  | { kind: "open-request"; url: string; openerTabId: number; background?: boolean };
+  | { kind: "open-request"; url: string; openerTabId: number; background?: boolean }
+  /** One of the tab's CDP events a `cdp` command's `events` asked for. */
+  | { kind: "cdp-event"; tabId: number; method: string; params: Record<string, unknown> };
 
 export interface DesktopBrowserEventMessage {
   type: "desktop-browser-event";

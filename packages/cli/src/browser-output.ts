@@ -4,9 +4,10 @@
  *
  *   scan         a one-line header naming the tab, the tab list, a `---` rule, then the page
  *   exec, click, type
- *                labelled lines — status and tab, the return value, how many elements changed
- *                (the most significant change indented beneath), transient messages, new tabs
- *                and a note — each line present only when it has something to say
+ *                labelled lines — status and tab, the page's dialogs and how they were answered,
+ *                the return value, how many elements changed (the most significant change
+ *                indented beneath), transient messages, new tabs and a note — each line present
+ *                only when it has something to say
  *
  * A return value longer than {@link RETURN_LIMIT} is cut with a pointer at `--save`. Pure
  * functions over the API's DTOs; commands/browser.ts does the I/O. Docs: /docs/cli §
@@ -33,6 +34,8 @@ export const SAVED_PREVIEW = 170;
 const LIST_TITLE = 40;
 /** A title in the `tabs` table is cut to this length. */
 const TABLE_TITLE = 60;
+/** A dialog's message on its `dialog:` line is cut to this length. */
+const DIALOG_MESSAGE = 200;
 
 /** `tab 12 · Your Orders · https://www.amazon.com/your-orders/orders`. */
 export function tabHead(tab: BuiltinBrowserTab, t: Messages): string {
@@ -114,6 +117,10 @@ export function renderExec(
     const { tag, text, x, y } = res.clicked;
     const shown = text === undefined ? undefined : shorten(oneLine(text), LIST_TITLE);
     out.push(line(label.clicked, t.browser.clickedAt(tag, shown, Math.round(x), Math.round(y))));
+  }
+  for (const dialog of res.dialogs ?? []) {
+    const message = shorten(oneLine(dialog.message), DIALOG_MESSAGE);
+    out.push(line(label.dialog, t.browser.dialogAnswered(dialog.type, message, dialog.accepted)));
   }
   const failedEmpty = res.status === "failed" && res.value === undefined;
   if (!failedEmpty && (opts.alwaysReturn || res.value !== undefined)) {

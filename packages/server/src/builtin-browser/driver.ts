@@ -100,21 +100,41 @@ export class BrowserDriver {
     this.now = opts.now ?? Date.now;
   }
 
-  /** One raw CDP command on a tab; resolves with CDP's result object. */
+  /**
+   * One raw CDP command on a tab; resolves with CDP's result object. `events`, when given, is
+   * the list of the tab's CDP events the shell relays from then on (`onCdpEvent` hears them).
+   */
   async cdp(
     tabId: number,
     method: string,
     params?: Record<string, unknown>,
     timeoutMs = CDP_TIMEOUT_MS,
+    events?: string[],
   ): Promise<unknown> {
     try {
       return await this.link.request(
-        { op: "cdp", tabId, method, ...(params !== undefined ? { params } : {}) },
+        {
+          op: "cdp",
+          tabId,
+          method,
+          ...(params !== undefined ? { params } : {}),
+          ...(events !== undefined ? { events } : {}),
+        },
         timeoutMs,
       );
     } catch (err) {
       throw mapLinkError(err, tabId);
     }
+  }
+
+  /** The CDP events the shell relays for one tab. Returns the unsubscribe. */
+  onCdpEvent(
+    tabId: number,
+    listener: (method: string, params: Record<string, unknown>) => void,
+  ): () => void {
+    return this.link.onEvent((event) => {
+      if (event.kind === "cdp-event" && event.tabId === tabId) listener(event.method, event.params);
+    });
   }
 
   /** Evaluates `code` as the body of an async function in the tab's page (see the module doc). */

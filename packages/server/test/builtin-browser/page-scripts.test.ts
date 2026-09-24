@@ -144,13 +144,20 @@ function findChromium(): string | null {
 
 const CHROMIUM = findChromium();
 
-/** A DevTools socket: one command at a time per id, flat sessions. */
+type CdpEventListener = (
+  method: string,
+  params: Record<string, unknown>,
+  sessionId?: string,
+) => void;
+
+/** A DevTools socket: one command at a time per id, flat sessions, events to listeners. */
 class Cdp {
   private seq = 0;
   private readonly pending = new Map<
     number,
     { resolve(v: unknown): void; reject(e: Error): void }
   >();
+  private readonly eventListeners = new Set<CdpEventListener>();
 
   private constructor(private readonly ws: WebSocket) {
     ws.addEventListener("message", (event) => {
@@ -158,8 +165,17 @@ class Cdp {
         id?: number;
         result?: unknown;
         error?: { message: string };
+        method?: string;
+        params?: Record<string, unknown>;
+        sessionId?: string;
       };
-      if (msg.id === undefined) return;
+      if (msg.id === undefined) {
+        if (msg.method === undefined) return;
+        for (const listener of this.eventListeners) {
+          listener(msg.method, msg.params ?? {}, msg.sessionId);
+        }
+        return;
+      }
       const pending = this.pending.get(msg.id);
       if (pending === undefined) return;
       this.pending.delete(msg.id);
@@ -185,19 +201,36 @@ class Cdp {
     });
   }
 
+  onEvent(listener: CdpEventListener): void {
+    this.eventListeners.add(listener);
+  }
+
   close(): void {
     this.ws.close();
   }
 }
 
-/** The shell, played by a forwarder: `cdp` goes to the page's session, as a guest's debugger would. */
+/**
+ * The shell, played by a forwarder: `cdp` goes to the page's session, as a guest's debugger
+ * would, and the page's events that a command's `events` named come back as `cdp-event`s.
+ */
 class ForwardingPort implements BrowserShellPort {
   private readonly listeners = new Set<(e: { data: unknown }) => void>();
+  private relayed = new Set<string>();
+  private tabId = 0;
 
   constructor(
     private readonly cdp: Cdp,
     private readonly sessionId: string,
-  ) {}
+  ) {
+    cdp.onEvent((method, params, sessionId) => {
+      if (sessionId !== this.sessionId || !this.relayed.has(method)) return;
+      const event = { kind: "cdp-event", tabId: this.tabId, method, params };
+      for (const listener of this.listeners) {
+        listener({ data: { type: "desktop-browser-event", event } });
+      }
+    });
+  }
 
   on(_event: "message", listener: (e: { data: unknown }) => void): void {
     this.listeners.add(listener);
@@ -218,6 +251,10 @@ class ForwardingPort implements BrowserShellPort {
     if (command.op !== "cdp") {
       answer({ ok: true, result: command.op === "tabs" ? { tabs: [] } : { version: 1 } });
       return;
+    }
+    if (command.events !== undefined) {
+      this.relayed = new Set(command.events);
+      this.tabId = command.tabId;
     }
     this.cdp.send(command.method, command.params ?? {}, this.sessionId).then(
       (result) => answer({ ok: true, result }),
@@ -269,6 +306,13 @@ ${Array.from(
 </script>
 </body></html>`;
 
+/** Buttons that open dialogs, and where the page writes what the dialog answered. */
+const DIALOGS = `<!doctype html><html><head><title>Dialogs</title></head><body>
+<button id="save" onclick="alert('Saved'); document.getElementById('answer').textContent = 'after the alert'">Save</button>
+<button id="delete" onclick="document.getElementById('answer').textContent = String(confirm('Delete this item?'))">Delete</button>
+<div id="answer"></div>
+</body></html>`;
+
 /** Images whose addresses the scan shortens: a long file name, and a data: URL. */
 const IMAGES = `<!doctype html><html><head><title>Images</title></head><body><main>
 <h1>Pictures</h1>
@@ -307,6 +351,7 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
       if (/__(url|img|link|data)__/.test(req.url ?? "")) placeholderRequests.push(req.url!);
       res.setHeader("content-type", "text/html; charset=utf-8");
       if (req.url === "/images") return res.end(IMAGES);
+      if (req.url === "/dialogs") return res.end(DIALOGS);
       if (req.url === "/strict") {
         // No script of its own, no eval, and Trusted Types enforced with no policy allowed.
         res.setHeader(
@@ -519,6 +564,31 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
       },
     );
     expect(read.value).toBe("Submitted: abc");
+  }, 60_000);
+
+  it("answers the page's dialogs: an alert accepted, a confirm dismissed unless told", async () => {
+    await actions.navigate(TAB, `${origin}/dialogs`);
+    const answer = async () =>
+      (
+        await actions.exec(TAB, "return document.getElementById('answer').textContent", {
+          noMonitor: true,
+        })
+      ).value;
+    const saved = await actions.click(TAB, { selector: "#save" });
+    expect(saved.dialogs).toEqual([{ type: "alert", message: "Saved", accepted: true }]);
+    expect(await answer()).toBe("after the alert");
+    const kept = await actions.click(TAB, { selector: "#delete" });
+    expect(kept.dialogs).toEqual([
+      { type: "confirm", message: "Delete this item?", accepted: false },
+    ]);
+    expect(await answer()).toBe("false");
+    const deleted = await actions.exec(TAB, "document.getElementById('delete').click()\nreturn 1", {
+      acceptDialogs: true,
+    });
+    expect(deleted.dialogs).toEqual([
+      { type: "confirm", message: "Delete this item?", accepted: true },
+    ]);
+    expect(await answer()).toBe("true");
   }, 60_000);
 
   it("reports a navigation the script caused as a reload", async () => {

@@ -224,6 +224,14 @@ describe("parseBrowserCommand", () => {
       id: "c1",
       command: { op: "cdp", tabId: 7, method: "Page.reload" },
     });
+    // The events it relays from then on: a list of names, or an empty one for none.
+    const events = ["Page.javascriptDialogOpening"];
+    expect(
+      parseBrowserCommand(frame({ op: "cdp", tabId: 7, method: "Page.enable", events })),
+    ).toEqual({ id: "c1", command: { op: "cdp", tabId: 7, method: "Page.enable", events } });
+    expect(
+      parseBrowserCommand(frame({ op: "cdp", tabId: 7, method: "Page.disable", events: [] })),
+    ).toEqual({ id: "c1", command: { op: "cdp", tabId: 7, method: "Page.disable", events: [] } });
     const cookies = [{ url: "https://a.test/", name: "sid", value: "v", httpOnly: true }];
     expect(parseBrowserCommand(frame({ op: "set-cookies", cookies }))).toEqual({
       id: "c1",
@@ -246,6 +254,12 @@ describe("parseBrowserCommand", () => {
       id: "c1",
       error: "bad_command",
     });
+    for (const events of ["Page.javascriptDialogOpening", [1], ["not an event"]]) {
+      expect(parseBrowserCommand(frame({ op: "cdp", tabId: 7, method: "x", events }))).toEqual({
+        id: "c1",
+        error: "bad_command",
+      });
+    }
     expect(parseBrowserCommand(frame({ op: "set-cookies", cookies: [{ url: "x" }] }))).toEqual({
       id: "c1",
       error: "bad_command",

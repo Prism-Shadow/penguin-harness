@@ -178,6 +178,15 @@ export type ParsedBrowserCommand =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** The CDP events a tab relays: `Domain.event` names, at most a handful. */
+function isEventList(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 16 &&
+    value.every((name) => typeof name === "string" && /^[A-Za-z]+\.[A-Za-z]+$/.test(name))
+  );
+}
+
 function isCookie(value: unknown): value is DesktopBrowserCookie {
   return (
     isRecord(value) &&
@@ -205,12 +214,22 @@ export function parseBrowserCommand(data: unknown): ParsedBrowserCommand | null 
     case "tabs":
       return { id, command: { op: "tabs" } };
     case "cdp": {
-      const { tabId, method, params } = command;
+      const { tabId, method, params, events } = command;
       if (typeof tabId !== "number" || typeof method !== "string" || method === "") {
         return { id, error: "bad_command" };
       }
       if (params !== undefined && !isRecord(params)) return { id, error: "bad_command" };
-      return { id, command: { op: "cdp", tabId, method, ...(params ? { params } : {}) } };
+      if (events !== undefined && !isEventList(events)) return { id, error: "bad_command" };
+      return {
+        id,
+        command: {
+          op: "cdp",
+          tabId,
+          method,
+          ...(params ? { params } : {}),
+          ...(events !== undefined ? { events } : {}),
+        },
+      };
     }
     case "set-cookies": {
       const { cookies } = command;

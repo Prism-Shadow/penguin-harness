@@ -35,6 +35,8 @@ The panel follows the app's light or dark theme; the pages themselves keep their
 
 While an agent is working in a tab, a slow pulsing ring runs around the page and an icon in the toolbar says so. The agent's commands act on the page through the browser's developer tools, not through your mouse and keyboard, so you can watch without anything moving on your screen. Avoid clicking inside the page while the agent is working on it: your clicks change the page under the agent.
 
+A dialog the page opens while an agent acts is answered for it, so the page does not wait on you: an alert is accepted, and a confirmation, a prompt or a leave-page dialog is dismissed unless the agent asked to accept it. Dialogs that appear while you browse show as usual.
+
 The page keeps a desktop-sized layout even when the dock is closed or the panel is small, so what the agent reads does not depend on how you arranged your windows.
 
 ## Sign in

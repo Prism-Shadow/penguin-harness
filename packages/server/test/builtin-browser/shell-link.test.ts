@@ -206,6 +206,25 @@ describe("wire parsing", () => {
     ).toEqual({ kind: "open-request", url: "https://a.test/", openerTabId: 2 });
   });
 
+  it("reads a relayed CDP event, its params an object whatever arrived", () => {
+    const event = (value: Record<string, unknown>) =>
+      parseBrowserEvent({ type: "desktop-browser-event", event: { kind: "cdp-event", ...value } });
+    const params = { type: "confirm", message: "Delete?" };
+    expect(event({ tabId: 3, method: "Page.javascriptDialogOpening", params })).toEqual({
+      kind: "cdp-event",
+      tabId: 3,
+      method: "Page.javascriptDialogOpening",
+      params,
+    });
+    expect(event({ tabId: 3, method: "Page.frameNavigated", params: null })).toEqual({
+      kind: "cdp-event",
+      tabId: 3,
+      method: "Page.frameNavigated",
+      params: {},
+    });
+    expect(event({ tabId: "3", method: "Page.frameNavigated" })).toBeNull();
+  });
+
   it("reads replies and ignores everything else", () => {
     expect(
       parseBrowserReply({ type: "desktop-browser-reply", id: "1", ok: true, result: 2 }),

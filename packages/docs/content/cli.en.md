@@ -437,9 +437,9 @@ penguin browser open <url> [--new-tab]                   # in the active tab (a 
 penguin browser switch <tab-id>
 penguin browser close [<tab-id>]                         # default: the active tab
 penguin browser scan [--text] [--max-chars <n>]          # the page as simplified HTML, or text
-penguin browser exec [<script> | -] [--file <f>] [--save <f>] [--no-monitor] [--timeout <s>]
-penguin browser click <selector> [--index <n>] | --at <x>,<y>
-penguin browser type <text> [--selector <css>] [--submit]
+penguin browser exec [<script> | -] [--file <f>] [--save <f>] [--no-monitor] [--timeout <s>] [--accept-dialogs]
+penguin browser click <selector> [--index <n>] | --at <x>,<y> [--accept-dialogs]
+penguin browser type <text> [--selector <css>] [--submit] [--accept-dialogs]
 penguin browser screenshot [-o <file.png>] [--full-page]
 penguin browser cdp <Domain.method> [--params '<json>']
 penguin browser import --list | --from <source-id|browser> [--cookies] [--history] [--domain <d>]...
@@ -486,6 +486,7 @@ note: No visible change on the page.
 - `--save <file>` writes the whole value to the file, a string as-is and anything else as indented JSON, and prints only its first 170 characters and `[saved to <absolute path>]`.
 - `transients:` lists text that appeared during the call and may be gone again, such as a toast. `new tabs:` lists tabs the page opened.
 - `--no-monitor` skips the change tracking, so no `diff:` or `transients:`; it is faster for scripts that only read.
+- A dialog the page opens during the call is answered, so the page does not block: an alert is accepted, and a confirm, a prompt or a leave-page dialog is dismissed unless `--accept-dialogs` is given (a prompt then gets its default text). Each prints a line after the status, `dialog: confirm "Delete this item?" → dismissed (rerun with --accept-dialogs to accept)`. `click` and `type` do the same. Outside these calls the browser shows dialogs to the user as usual.
 - `--timeout` bounds the script: `30s`, `2m` or bare seconds, 15 seconds by default.
 - A script that throws prints `status: failed` and an `error:` line, and the command exits 1.
 

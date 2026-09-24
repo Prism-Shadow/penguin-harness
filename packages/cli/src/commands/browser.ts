@@ -8,6 +8,8 @@
  *   penguin browser exec [<script> | -] [--file <f>] [--save <f>] [--no-monitor] [--timeout <s>]
  *   penguin browser click <selector> [--index <n>] | click --at <x>,<y>
  *   penguin browser type <text> [--selector <css>] [--submit]
+ *     (exec, click and type answer the page's dialogs: alerts accepted, the others dismissed
+ *     unless --accept-dialogs)
  *   penguin browser screenshot [-o <file.png>] [--full-page]
  *   penguin browser cdp <Domain.method> [--params <json>]
  *   penguin browser import --list | --from <source-id|browser> [--cookies] [--history] [--domain <d>]...
@@ -497,13 +499,20 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
       .option("--file <file>", t.browser.file)
       .option("--save <file>", t.browser.save)
       .option("--no-monitor", t.browser.noMonitor)
-      .option("--timeout <duration>", t.browser.timeout),
+      .option("--timeout <duration>", t.browser.timeout)
+      .option("--accept-dialogs", t.browser.acceptDialogs),
   ).action(
     action(
       t,
       async (
         arg: string | undefined,
-        opts: CommonOpts & { file?: string; save?: string; monitor?: boolean; timeout?: string },
+        opts: CommonOpts & {
+          file?: string;
+          save?: string;
+          monitor?: boolean;
+          timeout?: string;
+          acceptDialogs?: boolean;
+        },
       ) => {
         const tab = tabRef(opts.tab, t);
         const timeoutMs = opts.timeout !== undefined ? parseTimeout(opts.timeout, t) : undefined;
@@ -516,6 +525,7 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
             script,
             ...(opts.monitor === false ? { noMonitor: true } : {}),
             ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+            ...(opts.acceptDialogs === true ? { acceptDialogs: true } : {}),
             ...session(),
           },
         );
@@ -536,11 +546,15 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
       .description(t.browser.clickDesc)
       .argument("[selector]", t.browser.selectorArg)
       .option("--index <n>", t.browser.index)
-      .option("--at <x,y>", t.browser.at),
+      .option("--at <x,y>", t.browser.at)
+      .option("--accept-dialogs", t.browser.acceptDialogs),
   ).action(
     action(
       t,
-      async (selector: string | undefined, opts: CommonOpts & { index?: string; at?: string }) => {
+      async (
+        selector: string | undefined,
+        opts: CommonOpts & { index?: string; at?: string; acceptDialogs?: boolean },
+      ) => {
         const tab = tabRef(opts.tab, t);
         const byPoint = opts.at !== undefined;
         if ((selector === undefined) !== byPoint || (byPoint && opts.index !== undefined)) {
@@ -556,7 +570,11 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
         const res = await client.request<BuiltinBrowserExecResult>(
           "POST",
           `${BASE}/tabs/${tab}/click`,
-          { ...target, ...session() },
+          {
+            ...target,
+            ...(opts.acceptDialogs === true ? { acceptDialogs: true } : {}),
+            ...session(),
+          },
         );
         if (opts.json === true) printJson(res);
         else print(renderExec(res, t, { alwaysReturn: false }));
@@ -571,25 +589,33 @@ export function registerBrowserCommand(program: Command, t: Messages): void {
       .description(t.browser.typeDesc)
       .argument("<text>", t.browser.textArg)
       .option("--selector <css>", t.browser.selector)
-      .option("--submit", t.browser.submit),
+      .option("--submit", t.browser.submit)
+      .option("--accept-dialogs", t.browser.acceptDialogs),
   ).action(
-    action(t, async (text: string, opts: CommonOpts & { selector?: string; submit?: boolean }) => {
-      const tab = tabRef(opts.tab, t);
-      const client = await connect(opts, t);
-      const res = await client.request<BuiltinBrowserExecResult>(
-        "POST",
-        `${BASE}/tabs/${tab}/type`,
-        {
-          text,
-          ...(opts.selector !== undefined ? { selector: opts.selector } : {}),
-          ...(opts.submit === true ? { submit: true } : {}),
-          ...session(),
-        },
-      );
-      if (opts.json === true) printJson(res);
-      else print(renderExec(res, t, { alwaysReturn: false }));
-      if (res.status === "failed") process.exitCode = 1;
-    }),
+    action(
+      t,
+      async (
+        text: string,
+        opts: CommonOpts & { selector?: string; submit?: boolean; acceptDialogs?: boolean },
+      ) => {
+        const tab = tabRef(opts.tab, t);
+        const client = await connect(opts, t);
+        const res = await client.request<BuiltinBrowserExecResult>(
+          "POST",
+          `${BASE}/tabs/${tab}/type`,
+          {
+            text,
+            ...(opts.selector !== undefined ? { selector: opts.selector } : {}),
+            ...(opts.submit === true ? { submit: true } : {}),
+            ...(opts.acceptDialogs === true ? { acceptDialogs: true } : {}),
+            ...session(),
+          },
+        );
+        if (opts.json === true) printJson(res);
+        else print(renderExec(res, t, { alwaysReturn: false }));
+        if (res.status === "failed") process.exitCode = 1;
+      },
+    ),
   );
 
   onTab(

@@ -391,8 +391,8 @@ describe("agent actions", () => {
     h.shell.show(tab(2));
     let script = "";
     h.shell.cdp = page(
-      (_t, _m, params) => {
-        script = expressionOf(params);
+      (_t, method, params) => {
+        if (method === "Runtime.evaluate") script = expressionOf(params);
         return evaluated({ ok: true, data: { rows: 3 } });
       },
       { transients: ["Added to cart"], changed: 14, topChange: "<div>Cart (1)</div>" },
@@ -411,6 +411,85 @@ describe("agent actions", () => {
     });
     // The script travels to the page inside GenericAgent's executor, as a JSON string.
     expect(script).toContain('const jsCode = "return {rows: 3}".trim();');
+  });
+
+  /** The shell relaying a dialog the page opened; the page is blocked until it is answered. */
+  async function openDialog(
+    h: Harness,
+    answers: unknown[],
+    params: { type: string; message: string; defaultPrompt?: string },
+  ): Promise<void> {
+    const count = answers.length;
+    h.shell.event({
+      kind: "cdp-event",
+      tabId: 2,
+      method: "Page.javascriptDialogOpening",
+      params: { url: "https://example.test/2", hasBrowserHandler: true, ...params },
+    });
+    await until(() => answers.length > count, `the ${params.type} answered`);
+  }
+
+  it("answers the page's dialogs during an action: alerts accepted, the rest dismissed", async () => {
+    const h = mount();
+    h.shell.show(tab(2));
+    const answers: unknown[] = [];
+    h.shell.cdp = page(async (_t, method, params) => {
+      if (method === "Page.handleJavaScriptDialog") {
+        answers.push(params);
+        return {};
+      }
+      if (method !== "Runtime.evaluate") return {};
+      await openDialog(h, answers, { type: "alert", message: "Saved" });
+      await openDialog(h, answers, { type: "confirm", message: "Delete this item?" });
+      return evaluated({ ok: true, data: "done" });
+    });
+    const result = await json<BuiltinBrowserExecResult>(
+      await h.call("POST", "/tabs/2/exec", { script: "go()" }),
+    );
+    expect(result.value).toBe("done");
+    expect(result.dialogs).toEqual([
+      { type: "alert", message: "Saved", accepted: true },
+      { type: "confirm", message: "Delete this item?", accepted: false },
+    ]);
+    expect(answers).toEqual([{ accept: true }, { accept: false }]);
+    // Page events are on for the span of the action, the dialog's relayed, and off again after.
+    const switches = h.shell.commands.filter(
+      (c) => c.op === "cdp" && (c.method === "Page.enable" || c.method === "Page.disable"),
+    );
+    expect(switches).toEqual([
+      {
+        op: "cdp",
+        tabId: 2,
+        method: "Page.enable",
+        params: {},
+        events: ["Page.javascriptDialogOpening"],
+      },
+      { op: "cdp", tabId: 2, method: "Page.disable", params: {}, events: [] },
+    ]);
+  });
+
+  it("accepts every dialog with acceptDialogs, a prompt with its default text", async () => {
+    const h = mount();
+    h.shell.show(tab(2));
+    const answers: unknown[] = [];
+    h.shell.cdp = page(async (_t, method, params) => {
+      if (method === "Page.handleJavaScriptDialog") {
+        answers.push(params);
+        return {};
+      }
+      if (expressionOf(params).includes("document.querySelectorAll(sel)")) {
+        return evaluated({ x: 10, y: 10, tag: "button", text: "Ask" });
+      }
+      if (method === "Input.dispatchMouseEvent" && params?.type === "mouseReleased") {
+        await openDialog(h, answers, { type: "prompt", message: "How many?", defaultPrompt: "3" });
+      }
+      return {};
+    });
+    const result = await json<BuiltinBrowserExecResult>(
+      await h.call("POST", "/tabs/2/click", { selector: "#ask", acceptDialogs: true }),
+    );
+    expect(result.dialogs).toEqual([{ type: "prompt", message: "How many?", accepted: true }]);
+    expect(answers).toEqual([{ accept: true, promptText: "3" }]);
   });
 
   it("runs one action at a time on a tab, so their measurements never overlap", async () => {

@@ -11,9 +11,9 @@
  * scripts/builtin-browser-smoke.mjs runs this module under Electron itself.
  *
  * The wire is the server's api contract (DesktopBrowserCommand and the three message types),
- * imported type-only. Every command gets exactly one reply; tab changes, closes and popups are
- * pushed as events whenever a server is there to hear them — a server that starts later asks
- * for the tab list itself.
+ * imported type-only. Every command gets exactly one reply; tab changes, closes, popups and the
+ * CDP events a `cdp` command asked for are pushed as events whenever a server is there to hear
+ * them — a server that starts later asks for the tab list itself.
  */
 import { BrowserWindow, Menu, app, clipboard, session } from "electron";
 import type { ContextMenuParams, MenuItemConstructorOptions, Session, WebContents } from "electron";
@@ -71,6 +71,8 @@ interface Guest {
   id: number;
   wc: WebContents;
   favicon?: string;
+  /** The CDP events relayed to the server, as the last `cdp` command's `events` set them. */
+  relayed: ReadonlySet<string>;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -149,8 +151,19 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
   function adopt(wc: WebContents): void {
     const id = wc.id;
     if (guests.has(id)) return;
-    const guest: Guest = { id, wc };
+    const guest: Guest = { id, wc, relayed: new Set() };
     guests.set(id, guest);
+    // The CDP events the server asked for, and only those: the debugger's session sees every
+    // event of the domains enabled on it.
+    wc.debugger.on("message", (_event, method: string, params: unknown) => {
+      if (!guest.relayed.has(method)) return;
+      emit({
+        kind: "cdp-event",
+        tabId: id,
+        method,
+        params: (params ?? {}) as Record<string, unknown>,
+      });
+    });
 
     // Every popup is denied; a web one becomes a request for a tab, which the server turns
     // into a <webview> in the Web App like any other.
@@ -262,8 +275,11 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
         return {
           tabs: [...guests.values()].filter((g) => !g.wc.isDestroyed()).map((g) => tabOf(g)),
         };
-      case "cdp":
-        return sendCdp(liveGuest(command.tabId), command.method, command.params);
+      case "cdp": {
+        const guest = liveGuest(command.tabId);
+        if (command.events !== undefined) guest.relayed = new Set(command.events);
+        return sendCdp(guest, command.method, command.params);
+      }
       case "set-cookies":
         return setCookies(command.cookies);
       case "clear-data":

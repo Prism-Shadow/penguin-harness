@@ -18,9 +18,10 @@ The desktop app gained a web browser in its dock. People browse in it as in any 
 
 ## Automation over the DevTools Protocol
 
-- The desktop shell hosts the guest pages and relays raw Chrome DevTools Protocol commands and cookie writes to them through `webContents.debugger`, and nothing more. It admits a guest only in the browser's partition, on `http`, `https` or `about:blank`, without a preload, Node integration or pop-ups; a page's attempt to open a window becomes a request for a new tab.
+- The desktop shell hosts the guest pages and relays raw Chrome DevTools Protocol commands, the CDP events a command asks for, and cookie writes to them through `webContents.debugger`, and nothing more. It admits a guest only in the browser's partition, on `http`, `https` or `about:blank`, without a preload, Node integration or pop-ups; a page's attempt to open a window becomes a request for a new tab.
 - The server's new `builtin-browser` module holds the product logic, delivered with the server: the tab registry, the driver, and the page scripts ported from GenericAgent's `simphtml` — the DOM simplification (hidden, floating and covered elements dropped, attributes trimmed, long lists cut to three items with a `[FAKE ELEMENT] N more items hidden, selector: "…"` hint, the text truncated to a budget) and the change monitor behind an exec (the number of changed elements, the most significant change, and transient text such as toasts).
 - Trusted input: a click is a CDP mouse move, press and release at the element's center after scrolling it into view; typing inserts the text through CDP and fires `input` and `change`.
+- A dialog the page opens during an exec, click or type is answered so the page does not block: an alert is accepted, and a confirm, a prompt or a leave-page dialog is dismissed unless the call asks to accept it; the result lists each dialog. The tab's Page events are on only while an agent acts, so the user's own dialogs stay the browser's.
 - `/api/builtin-browser` serves status and tabs, open, activate, navigate and close, scan, exec, click, type, screenshot, raw CDP, import, history and clearing browsing data, all to administrators only. Without the desktop app it answers `503 browser_unavailable` with the reason: `not_desktop`, `shell_unsupported` or `no_window`.
 - The history of the built-in browser is kept in `<data root>/builtin-browser/history.json`, up to the newest 5,000 pages.
 
@@ -29,6 +30,7 @@ The desktop app gained a web browser in its dock. People browse in it as in any 
 - `status`, `tabs`, `open`, `switch`, `close`, `scan`, `exec`, `click`, `type`, `screenshot`, `cdp`, `import` and `history`, each with `--json` and `--server`, and `--tab` on the commands that act on a page.
 - The output is written for a model to read. `scan` prints a one-line tab header, the tab list and a `---` rule before the page. `exec`, `click` and `type` print labelled lines: `status:` and `tab:`, `return:`, `diff:` with the largest change indented beneath, `transients:`, `new tabs:` and `note:`. A return value longer than 8,000 characters is cut with a pointer at `--save`, which writes the whole value to a file and prints its first 170 characters and the file's path.
 - An exec script comes from the argument, from `--file`, or from stdin (`-`, or a heredoc when no argument is given).
+- `--accept-dialogs` on `exec`, `click` and `type` accepts every dialog, not only alerts. Each answered dialog prints a line, such as `dialog: confirm "Delete this item?" → dismissed (rerun with --accept-dialogs to accept)`.
 - An error is one line, `error: <code>: <message>`, with exit code 1. The commands never auto-start a server; with none running they answer `browser_unavailable`. Inside a session they send `PENGUIN_SESSION_ID` with the calls that act on a page.
 
 ## The browser-automation plugin

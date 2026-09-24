@@ -104,6 +104,14 @@ export function parseBrowserEvent(data: unknown): DesktopBrowserEvent | null {
         openerTabId: event.openerTabId,
         ...(event.background === true ? { background: true } : {}),
       };
+    case "cdp-event":
+      if (typeof event.tabId !== "number" || typeof event.method !== "string") return null;
+      return {
+        kind: "cdp-event",
+        tabId: event.tabId,
+        method: event.method,
+        params: isRecord(event.params) ? event.params : {},
+      };
     default:
       return null;
   }

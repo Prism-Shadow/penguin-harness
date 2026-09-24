@@ -11,9 +11,10 @@
  * hosts the module in it, and loads a page holding one good guest, two the module must refuse
  * (another partition, a file: start page) and a cross-origin iframe that tries to create a
  * guest of its own. It then drives the relay the way the server does — hello, tabs, cdp, the
- * page's canvas and icon, a popup, DevTools opened and closed around a command, cookies set and
- * cleared — checks that a window the page opens with `webviewTag=yes` cannot attach a guest, and
- * prints `BUILTIN-BROWSER-SMOKE {json}`, exiting non-zero when a check failed.
+ * page's canvas and icon, a dialog relayed as a CDP event and answered, a popup, DevTools opened
+ * and closed around a command, cookies set and cleared — checks that a window the page opens
+ * with `webviewTag=yes` cannot attach a guest, and prints `BUILTIN-BROWSER-SMOKE {json}`,
+ * exiting non-zero when a check failed.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -270,6 +271,47 @@ async function run() {
     events.filter((e) => e.kind === "tab" && e.tab.id === tabId && e.tab.url === url).at(-1)?.tab;
   const firstPage = lastTab(`${appOrigin}/guest`);
   check("the page's icon rides its tab events", firstPage?.favicon === iconUrl, { firstPage });
+
+  // A cdp command's `events` relays those CDP events of the tab and no others: the dialog the
+  // page opens arrives as a cdp-event, and answering it through the relay lets the page go on.
+  const cdpEvents = () => events.filter((e) => e.kind === "cdp-event");
+  const watching = await send({
+    op: "cdp",
+    tabId,
+    method: "Page.enable",
+    params: {},
+    events: ["Page.javascriptDialogOpening"],
+  });
+  await evaluate(tabId, 'setTimeout(() => { window.__answer = confirm("Leave the test?"); }); 1');
+  for (let i = 0; i < 30 && cdpEvents().length === 0; i++) await sleep(100);
+  const opened = cdpEvents()[0];
+  const answered = await send({
+    op: "cdp",
+    tabId,
+    method: "Page.handleJavaScriptDialog",
+    params: { accept: false },
+  });
+  const answer = await evaluate(tabId, "window.__answer");
+  const unwatched = await send({
+    op: "cdp",
+    tabId,
+    method: "Page.disable",
+    params: {},
+    events: [],
+  });
+  check(
+    "a cdp command's events relay the page's dialog, and that event only",
+    watching.ok &&
+      opened?.tabId === tabId &&
+      opened.method === "Page.javascriptDialogOpening" &&
+      opened.params.type === "confirm" &&
+      opened.params.message === "Leave the test?" &&
+      cdpEvents().every((e) => e.method === "Page.javascriptDialogOpening") &&
+      answered.ok &&
+      answer === false &&
+      unwatched.ok,
+    { opened, answer, relayed: cdpEvents().map((e) => e.method) },
+  );
 
   const windowsBefore = BrowserWindow.getAllWindows().length;
   const contentsBefore = webContents.getAllWebContents().length;

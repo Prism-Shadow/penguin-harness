@@ -556,6 +556,8 @@ export interface Messages {
     textArg: string;
     selector: string;
     submit: string;
+    /** exec / click / type --accept-dialogs: accept every dialog, not only alerts. */
+    acceptDialogs: string;
     output: string;
     fullPage: string;
     methodArg: string;
@@ -585,6 +587,7 @@ export interface Messages {
       history: string;
       warning: string;
       screenshot: string;
+      dialog: string;
     };
     /** `label: value`, in the language's punctuation. */
     line(label: string, value: string): string;
@@ -602,6 +605,8 @@ export interface Messages {
     reloaded(): string;
     elementsChanged(count: number): string;
     clickedAt(tag: string | undefined, text: string | undefined, x: number, y: number): string;
+    /** The value of `dialog:`: the dialog and how the call answered it (a dismissal says how to accept). */
+    dialogAnswered(type: string, message: string, accepted: boolean): string;
     /** Appended to a `return:` value cut at the display limit. */
     truncatedSave(): string;
     /** Appended to a `cdp` result cut at the display limit. */
@@ -1469,6 +1474,8 @@ const en: Messages = {
     textArg: "Text to type",
     selector: "Focus this element first (CSS selector)",
     submit: "Press Enter afterwards",
+    acceptDialogs:
+      "Accept the page's confirm, prompt and leave-page dialogs too (alerts always are; without this the others are dismissed)",
     output: "PNG file to write (default: screenshot-<time>.png in the working directory)",
     fullPage: "Capture the whole page, not only the viewport",
     methodArg: "CDP method, e.g. DOM.getDocument",
@@ -1497,6 +1504,7 @@ const en: Messages = {
       history: "history",
       warning: "warning",
       screenshot: "screenshot",
+      dialog: "dialog",
     },
     line: (label, value) => `${label}: ${value}`,
     tabHead: (id, title, url, loading) =>
@@ -1518,6 +1526,8 @@ const en: Messages = {
     reloaded: () => "reloaded",
     elementsChanged: (count) => (count === 1 ? "1 element changed" : `${count} elements changed`),
     clickedAt: (tag, text, x, y) => `${tag ?? "element"}${text ? ` "${text}"` : ""} at ${x},${y}`,
+    dialogAnswered: (type, message, accepted) =>
+      `${type} "${message}" → ${accepted ? "accepted" : "dismissed (rerun with --accept-dialogs to accept)"}`,
     truncatedSave: () => "[truncated — use --save]",
     truncatedJson: () => "[truncated — use --json]",
     savedTo: (path) => `[saved to ${path}]`,
@@ -2346,6 +2356,8 @@ const zh: Messages = {
     textArg: "要输入的文字",
     selector: "先聚焦这个元素（CSS 选择器）",
     submit: "输入后按下回车",
+    acceptDialogs:
+      "同时接受页面的确认、输入和离开页面对话框（提示框总会接受；不加此选项时其余一律拒绝）",
     output: "要写入的 PNG 文件（缺省为工作目录下的 screenshot-<时间>.png）",
     fullPage: "截取整个页面，而不只是视口",
     methodArg: "CDP 方法，例如 DOM.getDocument",
@@ -2374,6 +2386,7 @@ const zh: Messages = {
       history: "历史记录",
       warning: "警告",
       screenshot: "截图",
+      dialog: "对话框",
     },
     line: (label, value) => `${label}：${value}`,
     tabHead: (id, title, url, loading) =>
@@ -2393,6 +2406,8 @@ const zh: Messages = {
     reloaded: () => "已重新加载",
     elementsChanged: (count) => `${count} 个元素有变化`,
     clickedAt: (tag, text, x, y) => `${tag ?? "元素"}${text ? `「${text}」` : ""}，位于 ${x},${y}`,
+    dialogAnswered: (type, message, accepted) =>
+      `${type}「${message}」→ ${accepted ? "已接受" : "已拒绝（加 --accept-dialogs 重新运行即可接受）"}`,
     truncatedSave: () => "[已截断——完整内容请用 --save]",
     truncatedJson: () => "[已截断——完整结果请用 --json]",
     savedTo: (path) => `[已保存到 ${path}]`,

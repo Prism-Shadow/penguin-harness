@@ -437,9 +437,9 @@ penguin browser open <url> [--new-tab]                   # in the active tab (a 
 penguin browser switch <tab-id>
 penguin browser close [<tab-id>]                         # default: the active tab
 penguin browser scan [--text] [--max-chars <n>]          # the page as simplified HTML, or text
-penguin browser exec [<script> | -] [--file <f>] [--save <f>] [--no-monitor] [--timeout <s>]
-penguin browser click <selector> [--index <n>] | --at <x>,<y>
-penguin browser type <text> [--selector <css>] [--submit]
+penguin browser exec [<script> | -] [--file <f>] [--save <f>] [--no-monitor] [--timeout <s>] [--accept-dialogs]
+penguin browser click <selector> [--index <n>] | --at <x>,<y> [--accept-dialogs]
+penguin browser type <text> [--selector <css>] [--submit] [--accept-dialogs]
 penguin browser screenshot [-o <file.png>] [--full-page]
 penguin browser cdp <Domain.method> [--params '<json>']
 penguin browser import --list | --from <source-id|browser> [--cookies] [--history] [--domain <d>]...
@@ -486,6 +486,7 @@ note: No visible change on the page.
 - `--save <file>` 把完整返回值写入文件（字符串原样写入，其他值写成缩进的 JSON），终端只打印前 170 个字符和 `[saved to <absolute path>]`。
 - `transients:` 列出调用期间出现、之后可能又消失的文字，例如一条弹出提示。`new tabs:` 列出页面新打开的标签页。
 - `--no-monitor` 跳过变化追踪，因此没有 `diff:` 和 `transients:`；对只读取的脚本来说更快。
+- 调用期间页面弹出的对话框会被自动应答，页面不会因此卡住：提示框（alert）一律接受；确认框、输入框和离开页面对话框默认拒绝，加 `--accept-dialogs` 才接受（输入框填入它的默认文本）。每个对话框在状态行之后打印一行，例如 `dialog: confirm "Delete this item?" → dismissed (rerun with --accept-dialogs to accept)`。`click` 和 `type` 同样如此。这些调用之外，浏览器照常把对话框显示给用户。
 - `--timeout` 限定脚本的运行时间：`30s`、`2m` 或纯数字秒数，默认 15 秒。
 - 脚本抛出异常时打印 `status: failed` 和一行 `error:`，命令以退出码 1 结束。
 

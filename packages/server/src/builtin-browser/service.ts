@@ -303,7 +303,7 @@ export class BuiltinBrowser {
   exec(
     tab: string,
     script: string,
-    opts: { noMonitor?: boolean; timeoutMs?: number },
+    opts: { noMonitor?: boolean; timeoutMs?: number; acceptDialogs?: boolean },
     sessionId?: string,
   ): Promise<BuiltinBrowserExecResult> {
     return this.act(tab, "exec", sessionId, (tabId, actions) => actions.exec(tabId, script, opts));
@@ -312,14 +312,17 @@ export class BuiltinBrowser {
   click(
     tab: string,
     target: { selector: string; index?: number } | { x: number; y: number },
+    opts: { acceptDialogs?: boolean },
     sessionId?: string,
   ): Promise<BuiltinBrowserExecResult> {
-    return this.act(tab, "click", sessionId, (tabId, actions) => actions.click(tabId, target));
+    return this.act(tab, "click", sessionId, (tabId, actions) =>
+      actions.click(tabId, target, opts),
+    );
   }
 
   type(
     tab: string,
-    opts: { text: string; selector?: string; submit?: boolean },
+    opts: { text: string; selector?: string; submit?: boolean; acceptDialogs?: boolean },
     sessionId?: string,
   ): Promise<BuiltinBrowserExecResult> {
     return this.act(tab, "type", sessionId, (tabId, actions) => actions.type(tabId, opts));
@@ -576,6 +579,9 @@ export class BuiltinBrowser {
             ...(sessionId !== undefined ? { sessionId } : {}),
           });
         }
+        break;
+      case "cdp-event":
+        // An action's own subscription (driver.onCdpEvent); nothing for the registry.
         break;
     }
     // An event proves the shell speaks the protocol. A link that has not shaken hands yet (a

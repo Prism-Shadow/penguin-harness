@@ -7,8 +7,14 @@
  * monitor, act, give the page a second (or wait out a reload), then report the new tabs the
  * action opened, the transient texts, and the change against the baseline — with a note when
  * nothing visible happened. `noMonitor` skips the measuring for a read that changes nothing.
+ * Meanwhile the page's dialogs are answered and reported, since one would block it (see
+ * `watchDialogs`); and a tab runs one of them at a time.
  */
-import type { BuiltinBrowserExecResult, BuiltinBrowserScreenshot } from "../api/types.js";
+import type {
+  BuiltinBrowserDialog,
+  BuiltinBrowserExecResult,
+  BuiltinBrowserScreenshot,
+} from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { PageScriptError } from "./driver.js";
 import type { BrowserDriver, EvaluateOutcome } from "./driver.js";
@@ -64,6 +70,17 @@ const MAX_FULL_PAGE_HEIGHT = 16_384;
 
 const NEW_TABS_NOTE = "New tabs opened while this ran; address one by its id to work in it.";
 const NO_CHANGE_NOTE = "No visible change on the page.";
+
+/** The CDP event of a page's dialog opening, and the dialogs it names. */
+const DIALOG_EVENT = "Page.javascriptDialogOpening";
+const DIALOG_TYPES: readonly BuiltinBrowserDialog["type"][] = [
+  "alert",
+  "confirm",
+  "prompt",
+  "beforeunload",
+];
+/** Turning a tab's Page events on or off: a page that is not blocked answers at once. */
+const PAGE_EVENTS_TIMEOUT_MS = 3_000;
 
 /** What an action did before it is measured. */
 interface ActOutcome {
@@ -156,11 +173,14 @@ export class BrowserActions {
     }
   }
 
-  /** web_execute_js. */
+  /**
+   * web_execute_js. With `acceptDialogs`, every dialog the page opens meanwhile is accepted;
+   * without, only alerts are (see `watchDialogs`). The same goes for click and type.
+   */
   exec(
     tabId: number,
     script: string,
-    opts: { noMonitor?: boolean; timeoutMs?: number } = {},
+    opts: { noMonitor?: boolean; timeoutMs?: number; acceptDialogs?: boolean } = {},
   ): Promise<BuiltinBrowserExecResult> {
     return this.serial(tabId, () => this.execNow(tabId, script, opts));
   }
@@ -169,14 +189,15 @@ export class BrowserActions {
   click(
     tabId: number,
     target: { selector: string; index?: number } | { x: number; y: number },
+    opts: { acceptDialogs?: boolean } = {},
   ): Promise<BuiltinBrowserExecResult> {
-    return this.serial(tabId, () => this.clickNow(tabId, target));
+    return this.serial(tabId, () => this.clickNow(tabId, target, opts.acceptDialogs === true));
   }
 
   /** Typing (see `typeNow`). */
   type(
     tabId: number,
-    opts: { text: string; selector?: string; submit?: boolean },
+    opts: { text: string; selector?: string; submit?: boolean; acceptDialogs?: boolean },
   ): Promise<BuiltinBrowserExecResult> {
     return this.serial(tabId, () => this.typeNow(tabId, opts));
   }
@@ -204,10 +225,14 @@ export class BrowserActions {
   private async execNow(
     tabId: number,
     script: string,
-    opts: { noMonitor?: boolean; timeoutMs?: number },
+    opts: { noMonitor?: boolean; timeoutMs?: number; acceptDialogs?: boolean },
   ): Promise<BuiltinBrowserExecResult> {
     const timeoutMs = opts.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS;
-    return this.observed(tabId, opts.noMonitor === true, async () => {
+    const observe = {
+      noMonitor: opts.noMonitor === true,
+      acceptDialogs: opts.acceptDialogs === true,
+    };
+    return this.observed(tabId, observe, async () => {
       let outcome: EvaluateOutcome;
       try {
         outcome = await this.driver.evaluate(tabId, `return ${execExpression(script)};`, {
@@ -240,6 +265,7 @@ export class BrowserActions {
   private async clickNow(
     tabId: number,
     target: { selector: string; index?: number } | { x: number; y: number },
+    acceptDialogs: boolean,
   ): Promise<BuiltinBrowserExecResult> {
     let clicked: { x: number; y: number; tag?: string; text?: string };
     if ("selector" in target) {
@@ -253,7 +279,7 @@ export class BrowserActions {
       clicked = { x: target.x, y: target.y, ...found };
     }
     const { x, y } = clicked;
-    const result = await this.observed(tabId, false, async () => {
+    const result = await this.observed(tabId, { noMonitor: false, acceptDialogs }, async () => {
       try {
         await this.driver.cdp(tabId, "Input.dispatchMouseEvent", {
           type: "mouseMoved",
@@ -295,10 +321,11 @@ export class BrowserActions {
    */
   private async typeNow(
     tabId: number,
-    opts: { text: string; selector?: string; submit?: boolean },
+    opts: { text: string; selector?: string; submit?: boolean; acceptDialogs?: boolean },
   ): Promise<BuiltinBrowserExecResult> {
     if (opts.selector !== undefined) await this.helper(tabId, focusScript(opts.selector));
-    return this.observed(tabId, false, async () => {
+    const observe = { noMonitor: false, acceptDialogs: opts.acceptDialogs === true };
+    return this.observed(tabId, observe, async () => {
       try {
         if (opts.text !== "") {
           await this.driver.cdp(tabId, "Input.insertText", { text: opts.text });
@@ -422,8 +449,70 @@ export class BrowserActions {
     return outcome.value;
   }
 
-  /** execute_js_rich: measure around `act` (see the module doc). */
+  /** execute_js_rich: measure around `act` (see the module doc), answering the page's dialogs. */
   private async observed(
+    tabId: number,
+    opts: { noMonitor: boolean; acceptDialogs: boolean },
+    act: () => Promise<ActOutcome>,
+  ): Promise<BuiltinBrowserExecResult> {
+    const dialogs: BuiltinBrowserDialog[] = [];
+    const unwatch = await this.watchDialogs(tabId, opts.acceptDialogs, dialogs);
+    try {
+      const result = await this.measured(tabId, opts.noMonitor, act);
+      if (dialogs.length > 0) result.dialogs = dialogs;
+      return result;
+    } finally {
+      await unwatch();
+    }
+  }
+
+  /**
+   * Answers the page's dialogs while an action runs. An alert, confirm, prompt or leave-page
+   * dialog blocks the page until someone answers it, and nobody is there to: so the tab's Page
+   * events are on for the span of the action (the shell relays the dialog's), an alert is
+   * accepted and the others dismissed unless `accept`, and each is recorded. They go off again
+   * after, and the user's own dialogs show as the browser's. A tab that cannot turn them on
+   * (its page is blocked already) goes unwatched. Returns what turns them off.
+   */
+  private async watchDialogs(
+    tabId: number,
+    accept: boolean,
+    into: BuiltinBrowserDialog[],
+  ): Promise<() => Promise<void>> {
+    const stop = this.driver.onCdpEvent(tabId, (method, params) => {
+      if (method !== DIALOG_EVENT) return;
+      const type = DIALOG_TYPES.find((t) => t === params.type) ?? "alert";
+      const accepted = type === "alert" || accept;
+      const message = typeof params.message === "string" ? params.message : "";
+      into.push({ type, message, accepted });
+      const answer: Record<string, unknown> = { accept: accepted };
+      if (accepted && type === "prompt" && typeof params.defaultPrompt === "string") {
+        answer.promptText = params.defaultPrompt;
+      }
+      void this.driver.cdp(tabId, "Page.handleJavaScriptDialog", answer).catch(() => undefined);
+    });
+    const off = () =>
+      this.driver.cdp(tabId, "Page.disable", {}, PAGE_EVENTS_TIMEOUT_MS, []).then(
+        () => undefined,
+        () => undefined,
+      );
+    try {
+      await this.driver.cdp(tabId, "Page.enable", {}, PAGE_EVENTS_TIMEOUT_MS, [DIALOG_EVENT]);
+    } catch (err) {
+      stop();
+      // A blocked page takes the enable once it is free: the disable queues behind it.
+      void off();
+      if (err instanceof HttpError && err.code === "no_such_tab") throw err;
+      return async () => {};
+    }
+    return async () => {
+      await off();
+      stop();
+    };
+  }
+
+  /** execute_js_rich's measuring around `act`. */
+  private async measured(
     tabId: number,
     noMonitor: boolean,
     act: () => Promise<ActOutcome>,

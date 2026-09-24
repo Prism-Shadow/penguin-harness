@@ -381,6 +381,32 @@ describe("click, type, screenshot, cdp", () => {
     expect(lastBody()).toEqual({ x: 10, y: 20.5 });
   });
 
+  it("prints the dialogs a call answered, and --accept-dialogs asks to accept them all", async () => {
+    const dialogs = [
+      { type: "alert" as const, message: "Saved", accepted: true },
+      { type: "confirm" as const, message: "Delete this\nitem?", accepted: false },
+    ];
+    routes["POST /tabs/active/click"] = () => ({ body: execResult({ dialogs }) });
+    routes["POST /tabs/active/exec"] = () => ({ body: execResult({}) });
+    routes["POST /tabs/active/type"] = () => ({ body: execResult({}) });
+    expect(await cli(["browser", "click", "#delete"])).toBe(0);
+    expect(lastBody()).toEqual({ selector: "#delete" });
+    expect(out()).toBe(
+      [
+        "status: success   tab: 12",
+        'dialog: alert "Saved" → accepted',
+        'dialog: confirm "Delete this item?" → dismissed (rerun with --accept-dialogs to accept)',
+        "",
+      ].join("\n"),
+    );
+    await cli(["browser", "click", "#delete", "--accept-dialogs"]);
+    expect(lastBody()).toEqual({ selector: "#delete", acceptDialogs: true });
+    await cli(["browser", "exec", "go()", "--accept-dialogs"]);
+    expect(lastBody()).toEqual({ script: "go()", acceptDialogs: true });
+    await cli(["browser", "type", "x", "--accept-dialogs"]);
+    expect(lastBody()).toEqual({ text: "x", acceptDialogs: true });
+  });
+
   it("click needs exactly one target", async () => {
     expect(await cli(["browser", "click"])).toBe(1);
     expect(await cli(["browser", "click", "#a", "--at", "1,2"])).toBe(1);

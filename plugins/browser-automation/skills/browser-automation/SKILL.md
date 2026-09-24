@@ -59,6 +59,7 @@ EOF
 - Setting a field from JavaScript needs the native value setter and an `input` event, or React and Vue will not notice (recipe in [reference/page-recipes.md](reference/page-recipes.md)).
 - Check `disabled` before clicking a button; a disabled button's click does nothing.
 - Popups and `target=_blank` links open as new tabs: exec and click list them under `new tabs:`. Continue there with `--tab <id>` or `penguin browser switch <id>`.
+- **Dialogs** are answered for you during exec, click and type: an alert is accepted; a confirm, a prompt or a leave-page dialog is dismissed and printed as `dialog: confirm "…" → dismissed (rerun with --accept-dialogs to accept)`. Rerun with `--accept-dialogs` only when accepting is what the task asks for, never to confirm a purchase, a payment or a deletion the user has not approved.
 - File uploads, cross-origin iframes and closed shadow roots: see [reference/page-recipes.md](reference/page-recipes.md) (`DataTransfer`, and raw DevTools Protocol commands through `penguin browser cdp`).
 - When layout matters or text is drawn in a canvas or an image, `penguin browser screenshot -o shot.png` (`--full-page` for the whole page), then look at the file.
 - Verify figures on the detail page rather than a summary or a list: a list's total can differ from the order's.

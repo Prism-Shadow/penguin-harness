@@ -181,12 +181,14 @@ export function builtinBrowserRoutes(browser: BuiltinBrowser): Hono<AppEnv> {
     const script = requiredString(body, "script");
     const noMonitor = optBool(body, "noMonitor");
     const timeoutMs = optInt(body, "timeoutMs", 1_000, 600_000);
+    const acceptDialogs = optBool(body, "acceptDialogs");
     const result = await browser.exec(
       c.req.param("tab"),
       script,
       {
         ...(noMonitor !== undefined ? { noMonitor } : {}),
         ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+        ...(acceptDialogs !== undefined ? { acceptDialogs } : {}),
       },
       sessionIdOf(body),
     );
@@ -209,7 +211,15 @@ export function builtinBrowserRoutes(browser: BuiltinBrowser): Hono<AppEnv> {
         "Name the element to click with selector (and index), or a point with x and y.",
       );
     }
-    return c.json(await browser.click(c.req.param("tab"), target, sessionIdOf(body)));
+    const acceptDialogs = optBool(body, "acceptDialogs");
+    return c.json(
+      await browser.click(
+        c.req.param("tab"),
+        target,
+        acceptDialogs !== undefined ? { acceptDialogs } : {},
+        sessionIdOf(body),
+      ),
+    );
   });
 
   app.post("/tabs/:tab/type", async (c) => {
@@ -217,6 +227,7 @@ export function builtinBrowserRoutes(browser: BuiltinBrowser): Hono<AppEnv> {
     const text = requiredString(body, "text", true);
     const selector = optString(body, "selector");
     const submit = optBool(body, "submit");
+    const acceptDialogs = optBool(body, "acceptDialogs");
     return c.json(
       await browser.type(
         c.req.param("tab"),
@@ -224,6 +235,7 @@ export function builtinBrowserRoutes(browser: BuiltinBrowser): Hono<AppEnv> {
           text,
           ...(selector !== undefined && selector.trim() !== "" ? { selector } : {}),
           ...(submit !== undefined ? { submit } : {}),
+          ...(acceptDialogs !== undefined ? { acceptDialogs } : {}),
         },
         sessionIdOf(body),
       ),
