@@ -131,6 +131,10 @@ export const en: Strings = {
       tooMany: "A product can have at most 20 tags.",
       invalid: "A tag cannot contain control characters.",
     },
+    recent: {
+      title: "Recently opened",
+      all: "All activities",
+    },
     deleteActivity: {
       action: "Delete activity",
       confirmTitle: "Delete activity",

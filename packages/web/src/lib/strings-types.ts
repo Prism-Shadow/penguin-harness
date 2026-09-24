@@ -121,6 +121,11 @@ export type Strings = {
       tooMany: string;
       invalid: string;
     };
+    /** The list page's row of the activities opened most recently in this browser, and the heading of the full list under it. */
+    recent: {
+      title: string;
+      all: string;
+    };
     /** Deleting an activity: it is archived, so it leaves the list and its files stay. */
     deleteActivity: {
       action: string;

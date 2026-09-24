@@ -1613,7 +1613,10 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   page.on("dialog", (dialog) => dialog.accept());
   await page.goBack();
   await expect(page).toHaveURL(/\/activities$/);
-  await page.getByRole("link", { name: /Sight words/ }).click();
+  await page
+    .getByRole("region", { name: "All activities" })
+    .getByRole("link", { name: /Sight words/ })
+    .click();
   await openSection(page, "Scenes and media");
   await openSection(page, "Description");
   await description.fill("Another edit");
@@ -3498,8 +3501,10 @@ test("tags a product, filters the list by tag, and deletes an activity after con
     "math · 1",
     "Phonics · 1",
   ]);
-  const cards = page.getByRole("listitem").filter({ has: page.getByRole("link") });
-  const sight = page.getByRole("link", { name: /Sight words/ });
+  // The activity just opened also sits under Recently opened; the full list is its own region.
+  const all = page.getByRole("region", { name: "All activities" });
+  const cards = all.getByRole("listitem").filter({ has: page.getByRole("link") });
+  const sight = all.getByRole("link", { name: /Sight words/ });
   await expect(sight).toContainText("Phonics");
   await expect(sight).toContainText("grade 1");
   await filter.getByRole("button", { name: "math · 1", exact: true }).click();
@@ -3536,5 +3541,90 @@ test("tags a product, filters the list by tag, and deletes an activity after con
   await expect(sight).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Letter hunt/ })).toBeVisible();
   expect(deletes).toHaveLength(2);
+  expect(f.errors).toEqual([]);
+});
+
+test("shows the activity just opened under Recently opened", async ({ page }) => {
+  const f = await fixture(page);
+  const record = (id, productCode, refNum, title) => ({
+    id,
+    collectionId: "col_test",
+    productId: `prd_${productCode}`,
+    productCode,
+    refNum,
+    title,
+    displayName: null,
+    stable: false,
+    activityType: "standard",
+    createdAt: "2026-09-25T00:00:00.000Z",
+    updatedAt: "2026-09-25T00:00:00.000Z",
+    archived: false,
+    tags: [],
+  });
+  const list = () => [
+    record("act_test", "words", 12, "Sight words"),
+    record("act_letters", "letters", 1, "Letter hunt"),
+    record("act_count", "count", 3, "Counting"),
+  ];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname === base && request.method() === "GET")
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ activities: list() }),
+      });
+    return route.fallback();
+  });
+  // Opened earlier in this browser: Letter hunt, then one since deleted, and one in another
+  // project.
+  await page.goto(`${origin}/activities`);
+  await page.evaluate(
+    ([key, projectId]) =>
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          [projectId]: [
+            { id: "act_gone", at: "2026-09-25T09:00:00.000Z" },
+            { id: "act_letters", at: "2026-09-25T08:00:00.000Z" },
+          ],
+          other: [{ id: "act_count", at: "2026-09-25T09:30:00.000Z" }],
+        }),
+      ),
+    ["penguin.activities.recent", projectId],
+  );
+  await create(page);
+  await page.getByRole("link", { name: "All activities", exact: true }).click();
+  await expect(page).toHaveURL(/\/activities$/);
+  const recent = page.getByRole("region", { name: "Recently opened" });
+  await expect(recent.getByRole("link")).toHaveCount(2);
+  await expect(recent.getByRole("link").nth(0)).toContainText("Sight words");
+  await expect(recent.getByRole("link").nth(1)).toContainText("Letter hunt");
+  await expect(page.getByRole("region", { name: "All activities" }).getByRole("link")).toHaveCount(
+    3,
+  );
+
+  // Searching is looking for something else, so the row steps aside.
+  const search = page.getByRole("textbox", { name: "Search activities", exact: true });
+  await search.fill("count");
+  await expect(recent).toHaveCount(0);
+  await search.fill("");
+  await expect(recent.getByRole("link")).toHaveCount(2);
+
+  // Opening it again from the row keeps it once, first.
+  await recent.getByRole("link", { name: /Sight words/ }).click();
+  await expect(page).toHaveURL(/activities\/act_test$/);
+  await page.getByRole("link", { name: "All activities", exact: true }).click();
+  await expect(recent.getByRole("link")).toHaveCount(2);
+  await expect(recent.getByRole("link").nth(0)).toContainText("Sight words");
+
+  // What this browser stored is unreadable: no row, no error.
+  await page.evaluate((key) => localStorage.setItem(key, "{not json"), "penguin.activities.recent");
+  await page.reload();
+  await expect(page.getByRole("region", { name: "All activities" }).getByRole("link")).toHaveCount(
+    3,
+  );
+  await expect(recent).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "All activities" })).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });

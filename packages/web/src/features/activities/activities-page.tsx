@@ -65,6 +65,7 @@ import { SceneReview } from "./scene-review";
 import { SpecDiffView } from "./spec-diff-view";
 import { latestModuleRun } from "./preview";
 import { ActivityList } from "./activity-list";
+import { pushRecent, readRecent } from "./recent-activities";
 
 const basePath = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/activities`;
 const pretty = (value: unknown) => (value ? JSON.stringify(value, null, 2) : "");
@@ -170,6 +171,8 @@ function ActivityWorkspace({
     () => registerProjectChangeGuard(canLeave),
     [registerProjectChangeGuard, canLeave],
   );
+  // Read again whenever the author comes back from an activity, which recorded itself.
+  const recent = useMemo(() => (activityId ? [] : readRecent(projectId)), [projectId, activityId]);
   if (activityId) {
     // The workspace fills this pane and scrolls inside itself, so nothing may wrap it
     // in a scroller or a max-width column.
@@ -205,6 +208,7 @@ function ActivityWorkspace({
         editable={editable}
         available={available}
         createDisabled={!canLeave()}
+        recent={recent}
         search={search}
         onSearch={setSearch}
         tag={tag}
@@ -254,6 +258,14 @@ function ActivityEditor({
 }) {
   const { agents, currentAgent } = useProject();
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
+  // Opening counts once the activity has loaded (a missing one never does), once per
+  // activity: the editor is keyed by it, and polling reloads it.
+  const recorded = useRef(false);
+  useEffect(() => {
+    if (!detail || detail.id !== activityId || recorded.current) return;
+    recorded.current = true;
+    pushRecent(projectId, activityId, new Date().toISOString());
+  }, [detail, activityId, projectId]);
   const [description, setDescription] = useState("");
   const [spec, setSpec] = useState("");
   const [specOpen, setSpecOpen] = useState(false);
