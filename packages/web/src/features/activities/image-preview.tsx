@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "../../components/ui/button";
+import { ZoomableImage } from "../../components/ui/image-zoom";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 
@@ -34,7 +35,7 @@ export function ImagePreview({ src, description }: { src: string; description: s
               {S.activities.loadingImage}
             </p>
           )}
-          <img
+          <ZoomableImage
             key={url}
             src={url}
             alt={description}
@@ -46,6 +47,7 @@ export function ImagePreview({ src, description }: { src: string; description: s
             }
             onError={() => setFailed(true)}
           />
+          {dimensions && <p className="text-xs text-gray-500">{S.activities.imageZoomHint}</p>}
           {dimensions && (
             <div className="flex flex-wrap items-center gap-3 text-xs">
               <span className="text-gray-500">{S.activities.imageDimensions(dimensions)}</span>

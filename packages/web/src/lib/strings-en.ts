@@ -638,6 +638,7 @@ export const en: Strings = {
     previewImage: "Preview image",
     loadingImage: "Loading image…",
     fullImage: "Open full-size image",
+    imageZoomHint: "Select the image to see it full size.",
     reloadImage: "Reload image",
     imageDimensions: (dimensions: string) => `${dimensions} pixels`,
     imageUnbound: "Assign and save a media path to preview this image.",

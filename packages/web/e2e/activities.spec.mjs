@@ -3059,3 +3059,56 @@ test("filters narration by instruction type, as main instructions or scaffolding
   await expect(row("welcome")).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });
+
+test("opens an image full size and closes it with Escape", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  await page.getByRole("textbox", { name: /^Media path/ }).fill("media/images/cat.png");
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await page.getByRole("button", { name: "Preview image", exact: true }).click();
+  await expect(page.getByText("1 × 1 pixels", { exact: true })).toBeVisible();
+  await expect(page.getByText("Select the image to see it full size.")).toBeVisible();
+  const thumbnail = page.getByRole("button", { name: "A cat", exact: true });
+  const source = await thumbnail.locator("img").getAttribute("src");
+  expect(source).toMatch(/media-image\?/);
+
+  await thumbnail.click();
+  const dialog = page.getByRole("dialog", { name: "A cat", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("img", { name: "A cat", exact: true })).toHaveAttribute(
+    "src",
+    source,
+  );
+  await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(thumbnail).toBeFocused();
+  // The page behind is still where it was: the preview and its dimensions stayed.
+  await expect(page.getByText("1 × 1 pixels", { exact: true })).toBeVisible();
+
+  await thumbnail.click();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await thumbnail.click();
+  await expect(dialog).toBeVisible();
+  // Clicking the full-size image keeps focus in the dialog, so Tab stays on its close button.
+  await dialog.getByRole("img", { name: "A cat", exact: true }).click();
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+  await page.mouse.click(5, 5);
+  await expect(dialog).toHaveCount(0);
+  await expect(thumbnail).toBeFocused();
+  // The new-tab link stays as a second way to open (and save) the image.
+  await expect(page.getByRole("link", { name: "Open full-size image" })).toHaveAttribute(
+    "href",
+    source,
+  );
+  expect(f.errors).toEqual([]);
+});

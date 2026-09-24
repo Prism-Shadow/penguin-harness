@@ -499,6 +499,7 @@ export type Strings = {
     previewImage: string;
     loadingImage: string;
     fullImage: string;
+    imageZoomHint: string;
     reloadImage: string;
     imageDimensions: (dimensions: string) => string;
     imageUnbound: string;
