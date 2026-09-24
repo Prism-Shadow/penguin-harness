@@ -88,10 +88,12 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 | 分类        | 插件                                                                            |
 | ----------- | ------------------------------------------------------------------------------- |
-| 办公效率    | `data-analysis`、`use-firecrawl`、`use-bento-slides`、`humanizer`、`goal`、`continual-learning` |
+| 办公效率    | `data-analysis`、`use-firecrawl`、`browser-automation`、`use-bento-slides`、`humanizer`、`goal`、`continual-learning` |
 | 软件开发    | `software-development`、`use-claude-code`                                |
 | AI 应用开发 | `agent-development`、`model-development`、`skill-porting`、`agent-tuning`       |
 | Agent 公司  | `agent-company`                                                                 |
+
+桌面应用的侧边停靠栏里还内置了一个浏览器。Agent 通过 `penguin browser` 和 `browser-automation` 插件驱动它：读取页面、点击和输入，并提取亚马逊订单这样的数据，登录用的是从你自己的浏览器导入的账号。
 
 ## 支持的模型
 
@@ -280,6 +282,10 @@ pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，
   license = {Apache-2.0}
 }
 ```
+
+## 致谢
+
+内置浏览器的自动化改编自 [GenericAgent](https://github.com/lsdefine/genericagent)（MIT 协议），包括它的 DOM 简化（simphtml）以及 web_scan / web_execute_js 的设计。详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 ## 协议
 

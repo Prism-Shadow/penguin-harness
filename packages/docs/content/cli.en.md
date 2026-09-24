@@ -7,7 +7,7 @@ This page documents every `penguin` command. It opens with how the CLI reaches a
 
 The CLI ships as the npm package `@prismshadow/penguin-cli`, and the command is `penguin`. Bare `penguin` prints help. `-v, --version` prints the running build's one-line identity, and `penguin version --json` prints all of it. On startup the CLI loads a `.env` file from the working directory.
 
-The CLI is a thin client of the server. Every session-facing command (`run`, `chat`, `ls`, `input`, `logs`, `agent`, `project`, `cost`, `schedule`, `org`) sends HTTP requests to a PenguinHarness server and renders the replies. Tasks run on the server, Sessions live in its index, and the Web App sees everything the CLI creates, and the other way round. Only `config` still edits the Project's files directly, and `server` / `web` start the service itself.
+The CLI is a thin client of the server. Every session-facing command (`run`, `chat`, `ls`, `input`, `logs`, `agent`, `project`, `cost`, `schedule`, `org`, `browser`) sends HTTP requests to a PenguinHarness server and renders the replies. Tasks run on the server, Sessions live in its index, and the Web App sees everything the CLI creates, and the other way round. Only `config` still edits the Project's files directly, and `server` / `web` start the service itself.
 
 ## Server connection
 
@@ -425,6 +425,96 @@ Paths that contain `..` segments are refused.
 ### finance
 
 `finance` prints the period's spend per employee (own and cumulative along the reporting line, against the budget, with `warned` and `paused` marks) and per ticket, then the total. When some usage ran on a model without pricing, a note on stderr says the figures are a lower bound.
+
+## penguin browser
+
+Drives the desktop app's [Built-in Browser](/builtin-browser), a thin client over the server's `/api/builtin-browser` routes. The commands follow GenericAgent's `web_scan` / `web_execute_js` design: `scan` reads the page, and `exec` runs JavaScript in it and reports what changed. The output is written for an agent to read: short labelled lines, nothing decorative. The preinstalled `browser-automation` plugin teaches agents to use it.
+
+```bash
+penguin browser status                                   # available? and the open tabs
+penguin browser tabs                                     # id (* = active), title, URL
+penguin browser open <url> [--new-tab]                   # in the active tab (a new one when none is open), or a new tab
+penguin browser switch <tab-id>
+penguin browser close [<tab-id>]                         # default: the active tab
+penguin browser scan [--text] [--max-chars <n>]          # the page as simplified HTML, or text
+penguin browser exec [<script> | -] [--file <f>] [--save <f>] [--no-monitor] [--timeout <s>]
+penguin browser click <selector> [--index <n>] | --at <x>,<y>
+penguin browser type <text> [--selector <css>] [--submit]
+penguin browser screenshot [-o <file.png>] [--full-page]
+penguin browser cdp <Domain.method> [--params '<json>']
+penguin browser import --list | --from <source-id|browser> [--cookies] [--history] [--domain <d>]...
+penguin browser history [<query>] [-n <count>]
+```
+
+### Tabs, output and the calling session
+
+- `--tab <id>` names the tab that `open`, `scan`, `exec`, `click`, `type`, `screenshot` and `cdp` act on: a tab id from `tabs`, or `active`, the default.
+- `--json` prints the response as one line of JSON, and `--server` works as everywhere.
+- Inside a session, `open`, `exec`, `click` and `type` send `PENGUIN_SESSION_ID`, so the app opens the Browser panel in the conversation that is driving it.
+- These commands never auto-start a server, because a server started that way would have no desktop app to host the browser. With no server running they fail with `browser_unavailable`.
+- The labels and messages follow the CLI's language. The examples here are the English output; with `PENGUIN_LANG=zh` they are in Chinese.
+
+`status` prints `status: available` and the tab list, or `status: unavailable (<reason>)` followed by a note, and then exits 1. The reason is `not_desktop` (the server is not the desktop app's), `shell_unsupported` (the desktop app is too old for the browser) or `no_window` (the app has no window open).
+
+### scan
+
+```text
+tab 12 · Your Orders · https://www.amazon.com/your-orders/orders
+tabs: *12 Your Orders | 15 Google
+---
+<simplified HTML, or text with --text>
+```
+
+The first line names the tab, the second lists every tab with the active one starred, and the page follows the rule. Simplifying drops hidden, floating and covered elements, keeps a short list of attributes and shortens long `src` and `href` values. A long list is cut to three items plus `[FAKE ELEMENT] N more items hidden, selector: "…"`, whose selector reaches the rest from `exec`. The body stops at `--max-chars`, 35,000 characters by default.
+
+### exec
+
+The script runs in the page as the body of an async function, so `await` works and only `return` produces a value; the value must survive JSON. The script comes from exactly one place: the argument, `--file`, or stdin. Stdin is read when the argument is `-`, or when there is no argument and stdin is not a terminal, as with a heredoc (`penguin browser exec <<'EOF'`), which needs no escaping. An implicit stdin that stays silent for a second counts as no script.
+
+```text
+status: success   tab: 12
+return: {"added":true}
+diff: 14 elements changed
+  <the most significant change, indented>
+transients: "Added to cart"
+new tabs: 16 https://www.amazon.com/cart
+note: No visible change on the page.
+```
+
+- A line appears only when it has something to say, except `return:`, which `exec` always prints: `return: undefined` usually means a missing `return`. `page: reloaded` joins the status line when the page navigated during the call.
+- A string return value prints as-is, and one spanning lines prints as an indented block; any other value prints as compact JSON. The value is cut at 8,000 characters with `[truncated — use --save]`.
+- `--save <file>` writes the whole value to the file, a string as-is and anything else as indented JSON, and prints only its first 170 characters and `[saved to <absolute path>]`.
+- `transients:` lists text that appeared during the call and may be gone again, such as a toast. `new tabs:` lists tabs the page opened.
+- `--no-monitor` skips the change tracking, so no `diff:` or `transients:`; it is faster for scripts that only read.
+- `--timeout` bounds the script: `30s`, `2m` or bare seconds, 15 seconds by default.
+- A script that throws prints `status: failed` and an `error:` line, and the command exits 1.
+
+### click and type
+
+- `click <selector>` scrolls the `--index`-th match into view (counting from 0) and clicks its center with trusted mouse events: a move, a press and a release. `click --at <x>,<y>` clicks a point of the viewport, in CSS pixels. Either prints `clicked: <tag> "<text>" at <x>,<y>` after the status line, then the same lines as `exec`.
+- `type <text>` inserts the text into the focused element, or into `--selector` after focusing it, and fires `input` and `change`. `--submit` presses Enter afterwards.
+
+### screenshot and cdp
+
+- `screenshot` writes a PNG to `-o`, by default `screenshot-<time>.png` in the working directory, and prints `screenshot: <path> (<width>x<height>, <size> KB)`. `--full-page` captures the whole page instead of the viewport. With `--json` it prints the response, `{mime, data}` with the image in base64, and writes a file only when `-o` is given.
+- `cdp` sends one Chrome DevTools Protocol command to the tab and prints its result as compact JSON, cut at 8,000 characters (the whole result with `--json`). It reaches what page JavaScript cannot: a file input's files (`DOM.setFileInputFiles`), a cross-origin frame (`Page.createIsolatedWorld`), a closed shadow root.
+
+### import
+
+- `--list` lists the browser profiles on this machine: the source id, the browser, the profile's name, and whether it holds cookies and history.
+- `--from` takes a source id from that list, or a browser (`chrome`, `edge`, `brave`, `arc`, `vivaldi`, `opera`, `chromium` or `firefox`) for its `Default` profile, or its only one.
+- `--cookies` and `--history` choose what to import; neither means both.
+- `--domain` keeps only the cookies of a site and its subdomains. Repeat it, or separate sites with commas.
+
+The result names the source, then prints `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`, `history: <n> imported (<n> found)` and a `warning:` line for each warning. Platform details, such as the macOS Keychain prompt and Chrome's app-bound cookies on Windows, are in [Import from your browser](/builtin-browser#import-from-your-browser).
+
+### history
+
+`history` searches the titles and URLs of the built-in browser's history, imported pages included, without regard to case. It lists the most visited and most recent pages first, 20 unless `-n` says otherwise, one per line: `2026-09-23 14:03 · Your Orders · https://…`.
+
+### Errors
+
+An error is one line on stderr, `error: <code>: <message>`, and the command exits 1. The server's codes are `browser_unavailable`, `no_tab` (no tab is open), `no_such_tab`, `script_error`, `timeout`, `invalid_url`, `source_not_found` and `import_failed`; the CLI adds `invalid_argument` for a command typed wrong, `io_error` for a file it cannot read or write, and `request_failed` when the server cannot be reached. For `browser_unavailable` the message explains that the built-in browser needs the PenguinHarness desktop app, and that the app must be open.
 
 ## Approval modes (--approve)
 
