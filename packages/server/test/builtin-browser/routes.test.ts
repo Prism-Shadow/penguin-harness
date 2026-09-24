@@ -786,6 +786,33 @@ describe("agent actions", () => {
     expect(bad.status).toBe(400);
   });
 
+  it("keeps raw CDP within the browser: no Target domain, no navigation off the web", async () => {
+    const h = mount();
+    h.shell.show(tab(2));
+    const sent: string[] = [];
+    h.shell.cdp = (_t, method) => {
+      sent.push(method);
+      return {};
+    };
+    const target = await h.call("POST", "/tabs/2/cdp", {
+      method: "Target.createTarget",
+      params: { url: "https://example.test/" },
+    });
+    expect(target.status).toBe(403);
+    expect((await errorOf(target)).error.code).toBe("cdp_refused");
+    for (const url of ["file:///etc/passwd", "chrome://settings", "javascript:alert(1)"]) {
+      const res = await h.call("POST", "/tabs/2/cdp", { method: "Page.navigate", params: { url } });
+      expect(res.status).toBe(400);
+      expect((await errorOf(res)).error.code).toBe("invalid_url");
+    }
+    const web = await h.call("POST", "/tabs/2/cdp", {
+      method: "Page.navigate",
+      params: { url: "https://example.test/next" },
+    });
+    expect(web.status).toBe(200);
+    expect(sent).toEqual(["Page.navigate"]);
+  });
+
   it("drops a tab the shell no longer has", async () => {
     const h = mount();
     h.shell.show(tab(2));

@@ -498,7 +498,7 @@ note: No visible change on the page.
 ### screenshot 和 cdp
 
 - `screenshot` 把 PNG 写入 `-o` 指定的文件（默认是工作目录下的 `screenshot-<time>.png`），并打印 `screenshot: <path> (<width>x<height>, <size> KB)`。`--full-page` 截取整个页面而不只是视口。加 `--json` 时打印响应本身，即 `{mime, data}`，图片以 base64 编码；此时只有给了 `-o` 才写文件。
-- `cdp` 向标签页发送一条 Chrome DevTools Protocol 命令，并把结果打印为紧凑 JSON，超过 8,000 个字符时截断（加 `--json` 打印完整结果）。页面 JavaScript 够不到的地方都靠它：文件输入框的文件（`DOM.setFileInputFiles`）、跨域 iframe（`Page.createIsolatedWorld`）、封闭的 shadow root。
+- `cdp` 向标签页发送一条 Chrome DevTools Protocol 命令，并把结果打印为紧凑 JSON，超过 8,000 个字符时截断（加 `--json` 打印完整结果）。页面 JavaScript 够不到的地方都靠它：文件输入框的文件（`DOM.setFileInputFiles`）、跨域 iframe（`Page.createIsolatedWorld`）、封闭的 shadow root。它只作用于当前标签页：`Target` 域的命令一律拒绝（`cdp_refused`），`Page.navigate` 只能前往网页或 `about:blank`（`invalid_url`）。
 
 ### import
 

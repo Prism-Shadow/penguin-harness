@@ -498,7 +498,7 @@ note: No visible change on the page.
 ### screenshot and cdp
 
 - `screenshot` writes a PNG to `-o`, by default `screenshot-<time>.png` in the working directory, and prints `screenshot: <path> (<width>x<height>, <size> KB)`. `--full-page` captures the whole page instead of the viewport. With `--json` it prints the response, `{mime, data}` with the image in base64, and writes a file only when `-o` is given.
-- `cdp` sends one Chrome DevTools Protocol command to the tab and prints its result as compact JSON, cut at 8,000 characters (the whole result with `--json`). It reaches what page JavaScript cannot: a file input's files (`DOM.setFileInputFiles`), a cross-origin frame (`Page.createIsolatedWorld`), a closed shadow root.
+- `cdp` sends one Chrome DevTools Protocol command to the tab and prints its result as compact JSON, cut at 8,000 characters (the whole result with `--json`). It reaches what page JavaScript cannot: a file input's files (`DOM.setFileInputFiles`), a cross-origin frame (`Page.createIsolatedWorld`), a closed shadow root. It stays within the tab: the `Target` domain is refused (`cdp_refused`), and `Page.navigate` goes only to a web page or `about:blank` (`invalid_url`).
 
 ### import
 

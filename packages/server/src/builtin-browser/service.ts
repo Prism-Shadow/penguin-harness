@@ -129,6 +129,23 @@ export function browserUrl(raw: unknown, blankWhenEmpty: boolean): string {
   return url.toString();
 }
 
+/**
+ * What raw CDP may not do: reach other targets (`Target.*`: open, attach to or close pages the
+ * browser does not know), or navigate the tab where the browser would not go. The shell guards
+ * the page's own navigations only; one that CDP makes passes it, so `Page.navigate` gets the
+ * address bar's rule here: a web page or about:blank.
+ */
+function checkRawCdp(method: string, params: Record<string, unknown> | undefined): void {
+  if (method.startsWith("Target.")) {
+    throw new HttpError(
+      403,
+      "cdp_refused",
+      `${method} is not available through the built-in browser; open, switch and close tabs with penguin browser open, switch and close.`,
+    );
+  }
+  if (method === "Page.navigate") browserUrl(params?.url, false);
+}
+
 export interface BuiltinBrowserDeps {
   /** The shell's message port; null when this server is not the desktop shell's child. */
   port: BrowserShellPort | null;
@@ -361,6 +378,7 @@ export class BuiltinBrowser {
     params: Record<string, unknown> | undefined,
     sessionId?: string,
   ): Promise<unknown> {
+    checkRawCdp(method, params);
     return this.act(tab, "cdp", sessionId, (tabId, actions) => actions.cdp(tabId, method, params));
   }
 
