@@ -465,7 +465,7 @@ tabs: *12 Your Orders | 15 Google
 <simplified HTML, or text with --text>
 ```
 
-The first line names the tab, the second lists every tab with the active one starred, and the page follows the rule. Simplifying drops hidden, floating and covered elements, keeps a short list of attributes and shortens long `src` and `href` values. A long list is cut to three items plus `[FAKE ELEMENT] N more items hidden, selector: "…"`, whose selector reaches the rest from `exec`. The body stops at `--max-chars`, 35,000 characters by default.
+The first line names the tab, the second lists every tab with the active one starred, and the page follows the rule. Simplifying drops hidden, floating and covered elements, keeps a short list of attributes and shortens long `src` and `href` values. A long list is cut to three items plus `[FAKE ELEMENT] N more items hidden, selector: "…"`, whose selector reaches the rest from `exec`. The body stops at `--max-chars`, 35,000 characters by default; `--text` gets a third of it, as GenericAgent's `web_scan` does.
 
 ### exec
 

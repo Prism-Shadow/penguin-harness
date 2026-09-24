@@ -465,7 +465,7 @@ tabs: *12 Your Orders | 15 Google
 <simplified HTML, or text with --text>
 ```
 
-第一行指明标签页，第二行列出所有标签页并用星号标出当前标签页，分隔线之后是页面内容。简化时会去掉隐藏、浮动和被遮挡的元素，只保留少数属性，并缩短过长的 `src` 和 `href`。长列表只保留三项，再加一行 `[FAKE ELEMENT] N more items hidden, selector: "…"`，用其中的选择器可以在 `exec` 里取到其余条目。正文长度以 `--max-chars` 为上限，默认 35,000 个字符。
+第一行指明标签页，第二行列出所有标签页并用星号标出当前标签页，分隔线之后是页面内容。简化时会去掉隐藏、浮动和被遮挡的元素，只保留少数属性，并缩短过长的 `src` 和 `href`。长列表只保留三项，再加一行 `[FAKE ELEMENT] N more items hidden, selector: "…"`，用其中的选择器可以在 `exec` 里取到其余条目。正文长度以 `--max-chars` 为上限，默认 35,000 个字符；`--text` 取其三分之一，与 GenericAgent 的 `web_scan` 一致。
 
 ### exec
 

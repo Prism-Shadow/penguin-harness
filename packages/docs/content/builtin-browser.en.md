@@ -106,7 +106,7 @@ Every command and its output format are in the [CLI Reference](/cli#penguin-brow
 | Limit | Value |
 | --- | --- |
 | Where it works | The desktop app only |
-| `scan` body | 35,000 characters by default (`--max-chars`) |
+| `scan` body | 35,000 characters by default (`--max-chars`); a third of that with `--text` |
 | `exec` return value shown | 8,000 characters; `--save` writes all of it to a file |
 | `exec` script time | 15 seconds by default (`--timeout`) |
 | Page load wait | 15 seconds for `open` |

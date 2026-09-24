@@ -1456,7 +1456,7 @@ const en: Messages = {
     tabIdArg: "Tab id",
     closeTabArg: 'Tab id, or "active" (default)',
     textOnly: "Plain text instead of simplified HTML (fewer tokens)",
-    maxChars: "Longest body to return, in characters (default 35000)",
+    maxChars: "Longest body to return, in characters (default 35000; a third of it with --text)",
     scriptArg:
       'JavaScript, run as the body of an async function: end with `return <value>`. "-" reads it from stdin',
     file: "Read the script from this file",
@@ -2333,7 +2333,7 @@ const zh: Messages = {
     tabIdArg: "标签页 id",
     closeTabArg: "标签页 id，或 active（缺省）",
     textOnly: "输出纯文本而非简化 HTML（更省 Token）",
-    maxChars: "正文最多返回多少个字符（缺省 35000）",
+    maxChars: "正文最多返回多少个字符（缺省 35000；加 --text 时取其三分之一）",
     scriptArg:
       "JavaScript，作为一个 async 函数的函数体运行：以 `return <值>` 结尾；写 - 则从 stdin 读取",
     file: "从这个文件读取脚本",

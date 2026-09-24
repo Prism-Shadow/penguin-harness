@@ -27,7 +27,7 @@ import {
 } from "./page-scripts/monitor.js";
 import { scanScript } from "./page-scripts/simplify.js";
 
-/** web_scan's content budget. The text form defaults to a third of it, as GenericAgent's does. */
+/** web_scan's content budget. The text form gets a third of it, as GenericAgent's does. */
 export const DEFAULT_SCAN_MAX_CHARS = 35_000;
 export const DEFAULT_EXEC_TIMEOUT_MS = 15_000;
 
@@ -120,8 +120,9 @@ export class BrowserActions {
     opts: { textOnly?: boolean; maxChars?: number; instruction?: string },
   ): Promise<{ content: string; truncated: boolean }> {
     const textOnly = opts.textOnly === true;
-    const maxChars =
-      opts.maxChars ?? (textOnly ? Math.floor(DEFAULT_SCAN_MAX_CHARS / 3) : DEFAULT_SCAN_MAX_CHARS);
+    // GenericAgent's web_scan gives the text form a third of the budget, whichever it is.
+    const budget = opts.maxChars ?? DEFAULT_SCAN_MAX_CHARS;
+    const maxChars = textOnly ? Math.floor(budget / 3) : budget;
     const script = scanScript({
       textOnly,
       maxChars,

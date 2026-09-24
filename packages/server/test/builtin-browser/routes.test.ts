@@ -372,7 +372,7 @@ describe("agent actions", () => {
     );
   });
 
-  it("gives the text scan a third of the budget unless told otherwise", async () => {
+  it("gives the text scan a third of the budget, as GenericAgent's web_scan does", async () => {
     const h = mount();
     h.shell.show(tab(5));
     const seen: string[] = [];
@@ -383,7 +383,7 @@ describe("agent actions", () => {
     await h.call("POST", "/tabs/5/scan", { textOnly: true });
     await h.call("POST", "/tabs/5/scan", { textOnly: true, maxChars: 5000 });
     expect(seen[0]).toContain('"maxChars":11666');
-    expect(seen[1]).toContain('"maxChars":5000');
+    expect(seen[1]).toContain('"maxChars":1666');
   });
 
   it("answers exec with the value, the transients and the diff", async () => {
