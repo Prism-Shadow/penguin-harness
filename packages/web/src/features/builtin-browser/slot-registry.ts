@@ -58,6 +58,12 @@ export function setSlotVisible(id: symbol, visible: boolean): void {
   notify();
 }
 
+/** Whether a browser panel is on screen, without measuring anything (safe during render). */
+export function hasVisibleSlot(): boolean {
+  for (const entry of slots.values()) if (entry.visible) return true;
+  return false;
+}
+
 /** Every ancestor whose overflow clips its content — what can hide part of a slot from view. */
 function clippingAncestors(element: HTMLElement): HTMLElement[] {
   const found: HTMLElement[] = [];

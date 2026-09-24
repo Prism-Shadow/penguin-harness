@@ -47,7 +47,7 @@ import {
   type Rect,
   type Size,
 } from "./geometry";
-import { slotsVersion, subscribeSlots, visibleSlot } from "./slot-registry";
+import { hasVisibleSlot, slotsVersion, subscribeSlots, visibleSlot } from "./slot-registry";
 import {
   BROWSER_PARTITION,
   registerWebview,
@@ -203,13 +203,21 @@ const GuestPage = memo(function GuestPage({ guest }: { guest: BrowserGuest }) {
         const tabId = guestByKey(browserState(), key)?.tabId ?? null;
         if (tabId !== null) closeBrowserTab(tabId);
       };
+      // A press inside the page reaches the page alone, yet to the app it is a press outside
+      // every open menu: replayed on the element as the page takes focus, the app's own
+      // outside-press handlers close whatever was open.
+      const pressedInside = () => {
+        view.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      };
       view.addEventListener("did-attach", claim);
       view.addEventListener("dom-ready", claim);
       view.addEventListener("close", close);
+      view.addEventListener("focus", pressedInside);
       return () => {
         view.removeEventListener("did-attach", claim);
         view.removeEventListener("dom-ready", claim);
         view.removeEventListener("close", close);
+        view.removeEventListener("focus", pressedInside);
         registerWebview(key, null);
         host.view = null;
       };
@@ -234,7 +242,7 @@ export function BuiltinBrowserLayer() {
 function LayerHost() {
   const state = useSyncExternalStore(subscribeBrowser, browserState);
   useSyncExternalStore(subscribeSlots, slotsVersion);
-  const slotShown = visibleSlot() !== null;
+  const slotShown = hasVisibleSlot();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const ringRef = useRef<HTMLDivElement | null>(null);
 

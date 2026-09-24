@@ -1,9 +1,13 @@
 /**
- * The built-in browser's own tab strip, under the dock's header: one compact pill per page —
- * favicon, title, an always-visible × — and a "+" for a new tab. The tabs are the server's
- * registry, shared by every conversation, so every dock that shows the browser shows the
- * same strip. A page still loading shows a spinner where its icon goes, and a page an agent
- * is working in carries the busy dot, named in its tooltip.
+ * The built-in browser's own tab strip, under the dock's header: one tab per page — favicon,
+ * title, an always-visible × — and a "+" for a new tab. The tabs are the server's registry,
+ * shared by every conversation, so every dock that shows the browser shows the same strip.
+ *
+ * It is shaped like a browser's rather than like the dock's pills right above it, so the two
+ * strips never read as one: it sits on the sidebar's surface, and the active tab takes the
+ * toolbar's surface and joins it. Tabs shrink to a minimum before the strip scrolls. A page
+ * still loading shows a spinner where its icon goes, and a page an agent is working in
+ * carries the busy dot, named in its tooltip.
  */
 import { useState } from "react";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
@@ -12,7 +16,7 @@ import { CloseIcon, GLOBE_ICON, PlusIcon } from "../../components/ui/icons";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot } from "../../lib/tone";
-import { faviconSrc, tabLabel } from "./address";
+import { faviconSrc, isBlankUrl, tabLabel } from "./address";
 
 function TabIcon({ tab }: { tab: BuiltinBrowserTab }) {
   // A favicon that fails to load falls back to the globe, and stays there for that address.
@@ -21,7 +25,8 @@ function TabIcon({ tab }: { tab: BuiltinBrowserTab }) {
     return (
       <span
         aria-hidden
-        className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent text-gray-400 dark:text-gray-500"
+        style={{ width: ICON_SIZE.inlineGlyph, height: ICON_SIZE.inlineGlyph }}
+        className="inline-block shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent text-gray-400 dark:text-gray-500"
       />
     );
   }
@@ -63,29 +68,31 @@ export function BrowserTabStrip({
   onNew: () => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-1 px-2 pt-1.5">
+    <div className="flex shrink-0 items-end gap-0.5 bg-gray-50 px-1.5 pt-1.5 dark:bg-gray-900">
       <div
         role="tablist"
         aria-label={S.builtinBrowser.tabs}
-        className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
+        className="no-scrollbar flex min-w-0 items-end gap-0.5 overflow-x-auto"
       >
         {tabs.map((tab) => {
           const active = tab.id === activeTabId;
           const label = tabLabel(tab, S.builtinBrowser.untitled);
           const working = busy(tab.id);
-          // The title attribute carries the full name and address a truncated pill cannot.
-          const title = [label, tab.url, working ? S.builtinBrowser.agentBusyTab : null]
-            .filter((part): part is string => part !== null && part !== "" && part !== label)
-            .reduce((all, part) => `${all}\n${part}`, label);
+          // The tooltip carries what a truncated tab cannot: the whole title, the address, and
+          // the agent at work in it.
+          const lines = [label];
+          if (!isBlankUrl(tab.url) && tab.url !== label) lines.push(tab.url);
+          if (working) lines.push(S.builtinBrowser.agentBusyTab);
+          const title = lines.join("\n");
           return (
             <div
               key={tab.id}
               data-testid="builtin-browser-tab"
               data-tab-id={tab.id}
               data-active={active}
-              className={`flex h-6 max-w-44 shrink-0 items-center rounded-md pr-0.5 transition-colors duration-150 ${
+              className={`flex h-7 w-48 min-w-20 items-center rounded-t-md pr-1 transition-colors duration-150 ${
                 active
-                  ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                  ? "bg-white text-gray-800 dark:bg-gray-950 dark:text-gray-200"
                   : "text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300"
               }`}
             >
@@ -129,7 +136,7 @@ export function BrowserTabStrip({
         aria-label={S.builtinBrowser.newTab}
         data-testid="builtin-browser-new-tab"
         onClick={onNew}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+        className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
       >
         <PlusIcon size={ICON_SIZE.rowLead} />
       </button>

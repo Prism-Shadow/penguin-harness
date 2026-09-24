@@ -100,7 +100,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
       : null;
 
   return (
-    <div className="flex shrink-0 items-center gap-1 border-b border-gray-200 px-2 py-1 dark:border-gray-800">
+    <div className="flex shrink-0 items-center gap-1 border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800 dark:bg-gray-950">
       <ToolButton
         label={S.builtinBrowser.back}
         disabled={tab?.canGoBack !== true}

@@ -9,7 +9,7 @@
  * waiting, rather than a white page. Where the browser cannot run (outside the desktop app,
  * an older shell) the panel says so instead.
  */
-import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -64,13 +64,12 @@ function unavailableDetail(state: BrowserState): string | undefined {
 export function BuiltinBrowserPanel({ active }: { active: boolean }) {
   const state = useSyncExternalStore(subscribeBrowser, browserState);
   if (!browserOffered(state)) {
+    const detail = unavailableDetail(state);
     return (
-      <div className="flex h-full min-h-0 items-center justify-center p-4">
+      <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
         <EmptyState
           title={S.builtinBrowser.unavailableTitle}
-          {...(unavailableDetail(state) !== undefined
-            ? { description: unavailableDetail(state) }
-            : {})}
+          {...(detail !== undefined ? { description: detail } : {})}
         />
       </div>
     );
@@ -95,10 +94,16 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
   }, [slotId]);
   useLayoutEffect(() => setSlotVisible(slotId, active), [slotId, active]);
 
+  // A new tab from "+" waits for an address. The field is keyed by tab, so it is focused once
+  // the new tab is the one on screen — the request can come back before that happens.
+  const [focusFor, setFocusFor] = useState<number | null>(null);
+  useEffect(() => {
+    if (focusFor === null || focusFor !== tabId) return;
+    addressRef.current?.focus();
+    setFocusFor(null);
+  }, [focusFor, tabId]);
   const newTab = () => {
-    void openBrowserTab().then((id) => {
-      if (id !== null) addressRef.current?.focus();
-    });
+    void openBrowserTab().then(setFocusFor);
   };
 
   const navigate = (url: string) => {
@@ -151,7 +156,7 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
         className="relative min-h-0 flex-1 overflow-hidden"
       >
         {state.tabs.length === 0 && (
-          <div className="flex h-full items-center justify-center p-4">
+          <div className="flex h-full items-center justify-center overflow-y-auto p-4">
             <EmptyState
               title={S.builtinBrowser.emptyTitle}
               description={S.builtinBrowser.emptyBody}
