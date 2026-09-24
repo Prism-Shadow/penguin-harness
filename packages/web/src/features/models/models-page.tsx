@@ -858,9 +858,10 @@ export function ModelsPage() {
   const searching = query.trim() !== "";
 
   /**
-   * "Sync presets": merge the built-in catalog into the current table (union; the catalog
-   * wins on differing preset entries, local additions and API keys stay untouched — see
-   * catalog-sync.ts). No-op with a toast when everything is already up to date.
+   * "Sync presets": merge the built-in catalog into the current table (union; the catalog wins
+   * on the facts it tracks about a model, while base URLs, keys and output caps stay as this
+   * install has them, and local additions are untouched — see catalog-sync.ts). No-op with a
+   * toast when everything is already up to date.
    */
   const syncPresets = async () => {
     if (!rows) return;
