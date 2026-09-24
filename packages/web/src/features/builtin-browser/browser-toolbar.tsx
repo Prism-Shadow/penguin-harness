@@ -94,9 +94,12 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
     setMenuOpen(false);
     run();
   };
+  // A server newer than this Web App may name an action the dictionary does not know yet;
+  // the raw name still says more than nothing.
+  const actions = S.builtinBrowser.actions as Record<string, string | undefined>;
   const busyLabel =
     activity !== null
-      ? S.builtinBrowser.agentBusy(S.builtinBrowser.actions[activity.action])
+      ? S.builtinBrowser.agentBusy(actions[activity.action] ?? activity.action)
       : null;
 
   return (
