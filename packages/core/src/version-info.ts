@@ -109,15 +109,6 @@ export interface IfacesSummary {
 }
 
 /**
- * What `penguin version --json` prints and what GET /api/version returns: the running
- * build's identity, plus the harness this machine has in its HMR store.
- *
- * The two halves come from different places and neither can supply the other. {@link
- * BuildInfo} describes the artifact this process is executing and core resolves it alone;
- * `harness` describes the data root's store, so only a caller that knows which root is in
- * play can fill it.
- */
-/**
  * One harness version, as the platform that WAS that version recorded it at its boot: the
  * runtime's commit record (provenance, commit time, bundles) plus the interface table the
  * platform was built from. The runtime only commits; what was pushed is written by the
@@ -160,6 +151,15 @@ export interface RollbackFailure {
   at: string;
 }
 
+/**
+ * What `penguin version --json` prints and what GET /api/version returns: the running
+ * build's identity, plus the harness this machine has in its HMR store.
+ *
+ * The two halves come from different places and neither can supply the other. {@link
+ * BuildInfo} describes the artifact this process is executing and core resolves it alone;
+ * `harness` describes the data root's store, so only a caller that knows which root is in
+ * play can fill it.
+ */
 export interface VersionReport extends BuildInfo {
   harness: HarnessInfo | null;
 }
