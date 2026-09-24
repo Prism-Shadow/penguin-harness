@@ -103,6 +103,8 @@ export class BrowserActions {
   private readonly timing: ActionTiming;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => number;
+  /** Per tab, the exec, click or type under way; the next one starts when it has ended. */
+  private readonly lanes = new Map<number, Promise<void>>();
 
   constructor(deps: ActionDeps) {
     this.driver = deps.driver;
@@ -154,10 +156,54 @@ export class BrowserActions {
   }
 
   /** web_execute_js. */
-  async exec(
+  exec(
     tabId: number,
     script: string,
     opts: { noMonitor?: boolean; timeoutMs?: number } = {},
+  ): Promise<BuiltinBrowserExecResult> {
+    return this.serial(tabId, () => this.execNow(tabId, script, opts));
+  }
+
+  /** A trusted click (see `clickNow`). */
+  click(
+    tabId: number,
+    target: { selector: string; index?: number } | { x: number; y: number },
+  ): Promise<BuiltinBrowserExecResult> {
+    return this.serial(tabId, () => this.clickNow(tabId, target));
+  }
+
+  /** Typing (see `typeNow`). */
+  type(
+    tabId: number,
+    opts: { text: string; selector?: string; submit?: boolean },
+  ): Promise<BuiltinBrowserExecResult> {
+    return this.serial(tabId, () => this.typeNow(tabId, opts));
+  }
+
+  /**
+   * Runs one exec, click or type on a tab once the one before it has ended. Their measuring
+   * keeps its state in the page's window (the transient monitor, the diff's baseline), so two
+   * at once on one tab would overwrite each other's; and a type must not lose its focus to a
+   * click in between.
+   */
+  private serial<T>(tabId: number, run: () => Promise<T>): Promise<T> {
+    const before = this.lanes.get(tabId) ?? Promise.resolve();
+    const result = before.then(run);
+    const done = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.lanes.set(tabId, done);
+    void done.then(() => {
+      if (this.lanes.get(tabId) === done) this.lanes.delete(tabId);
+    });
+    return result;
+  }
+
+  private async execNow(
+    tabId: number,
+    script: string,
+    opts: { noMonitor?: boolean; timeoutMs?: number },
   ): Promise<BuiltinBrowserExecResult> {
     const timeoutMs = opts.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS;
     return this.observed(tabId, opts.noMonitor === true, async () => {
@@ -190,7 +236,7 @@ export class BrowserActions {
    * mouseMoved → mousePressed → mouseReleased with a short gap — the full sequence, since
    * hover-driven components ignore a press that no move preceded.
    */
-  async click(
+  private async clickNow(
     tabId: number,
     target: { selector: string; index?: number } | { x: number; y: number },
   ): Promise<BuiltinBrowserExecResult> {
@@ -246,7 +292,7 @@ export class BrowserActions {
    * replaces it) or wherever focus already is; CDP insertText, then input and change events
    * for controlled components; Enter (keyDown / keyUp) with `submit`.
    */
-  async type(
+  private async typeNow(
     tabId: number,
     opts: { text: string; selector?: string; submit?: boolean },
   ): Promise<BuiltinBrowserExecResult> {

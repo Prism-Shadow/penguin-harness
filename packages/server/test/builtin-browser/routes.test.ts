@@ -413,6 +413,46 @@ describe("agent actions", () => {
     expect(script).toContain('const jsCode = "return {rows: 3}".trim();');
   });
 
+  it("runs one action at a time on a tab, so their measurements never overlap", async () => {
+    const h = mount();
+    h.shell.show(tab(2));
+    const order: string[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = () => resolve();
+    });
+    h.shell.cdp = async (_t, method, params) => {
+      const expression = expressionOf(params);
+      if (method !== "Runtime.evaluate") return {};
+      if (expression.includes("startStrMonitor(450);")) {
+        order.push("begin");
+        return evaluated(true);
+      }
+      if (expression.includes("findChangedElements(snap,")) {
+        order.push("end");
+        return evaluated({ transients: [], changed: 0 });
+      }
+      if (expression.includes("'first'")) {
+        order.push("first");
+        await gate;
+        return evaluated({ ok: true, data: 1 });
+      }
+      if (expression.includes("'second'")) {
+        order.push("second");
+        return evaluated({ ok: true, data: 2 });
+      }
+      return evaluated("complete");
+    };
+    const first = h.call("POST", "/tabs/2/exec", { script: "return 'first'" });
+    await until(() => order.includes("first"), "the first script");
+    const second = h.call("POST", "/tabs/2/exec", { script: "return 'second'" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(order).toEqual(["begin", "first"]);
+    release();
+    await Promise.all([first, second]);
+    expect(order).toEqual(["begin", "first", "end", "begin", "second", "end"]);
+  });
+
   it("keeps the keys of a returned object in the order the page built them", async () => {
     const h = mount();
     h.shell.show(tab(2));
