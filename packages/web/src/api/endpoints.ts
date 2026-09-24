@@ -133,6 +133,7 @@ import type {
   ProposalCommentRequest,
   ProposalCreateRequest,
   ProposalDetail,
+  ProposalRevision,
   ProposalFeedbackRequest,
   ProposalImplementRequest,
   ProposalItem,
@@ -2367,6 +2368,14 @@ export const createOrgProposal = (projectId: string, orgId: string, body: Propos
 
 export const getOrgProposal = (projectId: string, orgId: string, number: number) =>
   apiFetch<ProposalDetail>(proposalBase(projectId, orgId, number));
+
+/** One revision as it was published — what the page diffs the head against after an approval. */
+export const getOrgProposalRevision = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  revision: number,
+) => apiFetch<ProposalRevision>(`${proposalBase(projectId, orgId, number)}/revisions/${revision}`);
 
 export const publishOrgProposal = (
   projectId: string,

@@ -6,6 +6,8 @@
  *   GET    /                         the queue (each with the caller's unread count)
  *   POST   /                         start one: { author?, brief, title? } (author defaults to the calling employee)
  *   GET    /:number                  the proposal
+ *   GET    /:number/revisions        every revision published: { revisions: [{ revision, by, at }] }
+ *   GET    /:number/revisions/:rev   one revision as published (title, scope, sections)
  *   PUT    /:number                  publish a revision: { markdown }
  *   POST   /:number/ready | approve | reject { reason } | merged
  *   POST   /:number/implement        { agentId?, message?, workspace? } → an implementation session (default: the author's own)
@@ -295,6 +297,34 @@ export function proposalRoutes(service: ProposalService): Hono {
         numberParam(c),
         { text: requireString(body, "text"), ...(runtime !== undefined ? { runtime } : {}) },
         actorOf(c, body),
+      ),
+    );
+  });
+
+  app.get("/:number/revisions", async (c) =>
+    c.json(
+      await service.revisions(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        actorOfQuery(c),
+      ),
+    ),
+  );
+
+  app.get("/:number/revisions/:rev", async (c) => {
+    const raw = c.req.param("rev");
+    const rev = /^[1-9]\d{0,8}$/.test(raw ?? "") ? Number(raw) : null;
+    if (rev === null) {
+      throw new ProposalError(404, "revision_not_found", `Not a revision number: ${raw}`);
+    }
+    return c.json(
+      await service.revision(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        rev,
+        actorOfQuery(c),
       ),
     );
   });

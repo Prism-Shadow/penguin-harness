@@ -10,6 +10,7 @@ import type {
   ProposalDetail,
   ProposalEvent,
   ProposalItem,
+  ProposalSection,
   ProposalStatus,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
@@ -578,4 +579,110 @@ export function scopeFileCandidates(
     push(toWorkspaceRelative(`${root}/${file}`, sessionWorkspace));
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// What changed since the approved revision
+// ---------------------------------------------------------------------------
+
+export interface DiffLine {
+  kind: "same" | "add" | "del";
+  text: string;
+}
+
+/**
+ * A line diff of two texts: the longest common subsequence of lines, so an inserted or
+ * removed line shows as itself and the rest as `same`. Small on purpose — a proposal's
+ * section is a few paragraphs, so the O(n·m) table is nothing.
+ */
+export function diffLines(before: string, after: string): DiffLine[] {
+  const a = before === "" ? [] : before.split("\n");
+  const b = after === "" ? [] : after.split("\n");
+  const n = a.length;
+  const m = b.length;
+  // lcs[i][j] = length of the LCS of a[i..] and b[j..]
+  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      lcs[i]![j] =
+        a[i] === b[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
+    }
+  }
+  const out: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      out.push({ kind: "same", text: a[i]! });
+      i++;
+      j++;
+    } else if (lcs[i + 1]![j]! >= lcs[i]![j + 1]!) {
+      out.push({ kind: "del", text: a[i]! });
+      i++;
+    } else {
+      out.push({ kind: "add", text: b[j]! });
+      j++;
+    }
+  }
+  while (i < n) out.push({ kind: "del", text: a[i++]! });
+  while (j < m) out.push({ kind: "add", text: b[j++]! });
+  return out;
+}
+
+export interface SectionDiff {
+  heading: string;
+  /** `same`: nothing changed; `changed`: lines differ; `added` / `removed`: the whole section is new or gone. */
+  kind: "same" | "changed" | "added" | "removed";
+  lines: DiffLine[];
+}
+
+/**
+ * The sections of the approved revision against the head's, matched by heading (a section
+ * keeps its heading across revisions; a renamed one reads as removed + added), in the
+ * head's order with the removed ones after. Each compares the section's Markdown source.
+ */
+export function sectionDiffs(
+  before: readonly ProposalSection[],
+  after: readonly ProposalSection[],
+): SectionDiff[] {
+  const out: SectionDiff[] = [];
+  const seen = new Set<string>();
+  for (const section of after) {
+    const old = before.find((s) => s.heading === section.heading && !seen.has(s.heading));
+    const source = sectionSource(section);
+    if (old === undefined) {
+      out.push({
+        heading: section.heading,
+        kind: "added",
+        lines: diffLines("", source),
+      });
+      continue;
+    }
+    seen.add(old.heading);
+    const lines = diffLines(sectionSource(old), source);
+    out.push({
+      heading: section.heading,
+      kind: lines.every((l) => l.kind === "same") ? "same" : "changed",
+      lines,
+    });
+  }
+  for (const old of before) {
+    if (seen.has(old.heading)) continue;
+    seen.add(old.heading);
+    out.push({ heading: old.heading, kind: "removed", lines: diffLines(sectionSource(old), "") });
+  }
+  return out;
+}
+
+/** Whether the page has a diff to show: an approval stands for an older revision than the head, and the proposal is open again. */
+export function revisedAfterApproval(detail: {
+  status: ProposalStatus;
+  revision: number;
+  approvedRevision: number | null;
+}): boolean {
+  return (
+    detail.approvedRevision !== null &&
+    detail.approvedRevision < detail.revision &&
+    (detail.status === "ready" || detail.status === "drafting")
+  );
 }

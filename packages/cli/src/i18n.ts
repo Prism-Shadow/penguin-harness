@@ -552,6 +552,8 @@ export interface Messages {
     proposalCommentResolved(number: number, commentId: string): string;
     /** `proposal show`: the head lines above the document. */
     proposalHead(number: number, title: string, status: string, revision: number): string;
+    proposalApproved(revision: number): string;
+    proposalRevisedAfterApproval(approved: number, head: number): string;
     proposalPeople(author: string, implementer: string | null, delegatedBy: string): string;
     proposalBrief(brief: string): string;
     proposalSessions(sessions: string): string;
@@ -1419,6 +1421,9 @@ const en: Messages = {
       `Resolved comment ${commentId} on proposal #${number}.`,
     proposalHead: (number, title, status, revision) =>
       `Proposal #${number}: ${title} — ${status}, revision ${revision}`,
+    proposalApproved: (revision) => `Approved: r${revision}`,
+    proposalRevisedAfterApproval: (approved, head) =>
+      `Revised after approval (r${approved} → r${head}): needs approving again`,
     proposalPeople: (author, implementer, delegatedBy) =>
       `Author ${author}, implementer ${implementer ?? "-"}, delegated by ${delegatedBy}`,
     proposalBrief: (brief) => `Brief: ${brief}`,
@@ -2233,6 +2238,9 @@ const zh: Messages = {
     proposalCommentResolved: (number, commentId) => `已解决提案 #${number} 的评论 ${commentId}。`,
     proposalHead: (number, title, status, revision) =>
       `提案 #${number}：${title}——${status}，第 ${revision} 次修订`,
+    proposalApproved: (revision) => `已认可：第 ${revision} 次修订`,
+    proposalRevisedAfterApproval: (approved, head) =>
+      `认可后又有修订（第 ${approved} → 第 ${head} 次）：需要重新认可`,
     proposalPeople: (author, implementer, delegatedBy) =>
       `作者 ${author}，实施者 ${implementer ?? "-"}，委托人 ${delegatedBy}`,
     proposalBrief: (brief) => `委托：${brief}`,

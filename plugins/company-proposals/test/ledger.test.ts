@@ -116,6 +116,110 @@ describe("foldLedger", () => {
     expect(state.lastSeq).toBe(7);
   });
 
+  it("an approval covers one revision: it records the revision, a later revision puts the proposal back to ready, and a line written before the field reads as the revision current then", () => {
+    const section = (text: string) => [
+      { id: "s1", heading: "Change", paragraphs: [{ id: "p1", text }] },
+    ];
+    const state = foldLedger(
+      lines(
+        {
+          kind: "created",
+          number: 1,
+          title: "T",
+          author: "dev",
+          delegatedBy: "user:boss",
+          brief: "B",
+        },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 1,
+          title: "T",
+          scope: [],
+          sections: section("one"),
+          by: "agent:dev",
+        },
+        { kind: "status", number: 1, status: "ready", by: "agent:dev" },
+        // Written before the field existed: covers the revision current when it was written.
+        { kind: "status", number: 1, status: "approved", by: "user:boss" },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 2,
+          title: "T",
+          scope: [],
+          sections: section("two"),
+          by: "agent:dev",
+        },
+        {
+          kind: "status",
+          number: 1,
+          status: "ready",
+          by: "agent:dev",
+          reason: "revision 2 — approval of revision 1 no longer covers it",
+        },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 3,
+          title: "T3",
+          scope: [],
+          sections: section("three"),
+          by: "agent:dev",
+        },
+        { kind: "status", number: 1, status: "approved", by: "user:boss", revision: 3 },
+      ),
+    );
+    const p = state.proposals.get(1)!;
+    expect(p.status).toBe("approved");
+    expect(p.approvedRevision).toBe(3);
+    expect([...p.revisions.keys()]).toEqual([1, 2, 3]);
+    expect(p.revisions.get(2)).toMatchObject({
+      revision: 2,
+      sections: section("two"),
+      by: "agent:dev",
+    });
+    // The events: the first approval names revision 1; the ready after revision 2 carries the reason.
+    expect(p.events.filter((e) => e.kind === "approved").map((e) => e.revision)).toEqual([1, 3]);
+    expect(p.events.find((e) => e.kind === "ready" && e.text !== undefined)?.text).toBe(
+      "revision 2 — approval of revision 1 no longer covers it",
+    );
+    // Half-way through: after revision 2 the approval of 1 stood but the status did not.
+    const upToRevision2 = foldLedger(
+      lines(
+        {
+          kind: "created",
+          number: 1,
+          title: "T",
+          author: "dev",
+          delegatedBy: "user:boss",
+          brief: "B",
+        },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 1,
+          title: "T",
+          scope: [],
+          sections: section("one"),
+          by: "agent:dev",
+        },
+        { kind: "status", number: 1, status: "approved", by: "user:boss", revision: 1 },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 2,
+          title: "T",
+          scope: [],
+          sections: section("two"),
+          by: "agent:dev",
+        },
+      ),
+    ).proposals.get(1)!;
+    expect(upToRevision2.status).toBe("ready");
+    expect(upToRevision2.approvedRevision).toBe(1);
+  });
+
   it("a batch gathers the comments it names, and puts a ready proposal back to drafting", () => {
     const state = foldLedger(
       lines(

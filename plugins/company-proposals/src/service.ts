@@ -28,6 +28,8 @@ import type {
   ProposalDetail,
   ProposalItem,
   ProposalMaterial,
+  ProposalRevision,
+  ProposalRevisionsResponse,
   ProposalMaterialKind,
   ProposalPluginEvent,
   ProposalStatus,
@@ -258,8 +260,46 @@ export class ProposalService {
       comments: this.visibleComments(p, caller),
       events: p.events,
       sessions: p.sessions,
+      approvedRevision: p.approvedRevision,
       seq: p.seq,
     };
+  }
+
+  /** Every revision published, oldest first — the head included. */
+  async revisions(
+    projectId: string,
+    orgId: string,
+    number: number,
+    actor: OrgActor,
+  ): Promise<ProposalRevisionsResponse> {
+    const { ledger } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(ledger, number);
+    return {
+      revisions: [...p.revisions.values()]
+        .sort((a, b) => a.revision - b.revision)
+        .map((r) => ({ revision: r.revision, by: r.by, at: r.at })),
+    };
+  }
+
+  /** One revision as it was published — what the page diffs the head against. */
+  async revision(
+    projectId: string,
+    orgId: string,
+    number: number,
+    rev: number,
+    actor: OrgActor,
+  ): Promise<ProposalRevision> {
+    const { ledger } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(ledger, number);
+    const found = p.revisions.get(rev);
+    if (found === undefined) {
+      throw new ProposalError(
+        404,
+        "revision_not_found",
+        `Proposal #${number} has no revision ${rev}.`,
+      );
+    }
+    return found;
   }
 
   async list(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalsResponse> {
@@ -460,6 +500,10 @@ export class ProposalService {
       if (err instanceof ProposalDocumentError) throw new ProposalError(400, err.code, err.message);
       throw err;
     }
+    // An approval covers ONE revision. Read before the append: the fold puts an approved
+    // proposal back to ready as the line lands, and the record of which revision was
+    // approved stays for the diff the page shows.
+    const approvedRevision = p.status === "approved" ? p.approvedRevision : null;
     const line = await ledger.append({
       kind: "revised",
       number,
@@ -470,6 +514,27 @@ export class ProposalService {
       by: caller.principal,
     });
     this.notify(org, number, line.seq, "revised");
+    if (approvedRevision !== null) {
+      // The status line is what the timeline shows; the fold already moved the status.
+      await this.setStatus(
+        org,
+        ledger,
+        p,
+        "ready",
+        caller,
+        `revision ${p.revision} — approval of revision ${approvedRevision} no longer covers it`,
+      );
+      // The person learns through the unread event; the one who must not merge yet is told.
+      if (p.implementer !== null) {
+        await this.say(
+          org,
+          p,
+          actor,
+          [agentPrincipal(p.implementer)],
+          `@agent:${p.implementer} proposal:${number} was revised after approval (revision ${approvedRevision} → ${p.revision}); wait for a new approval before merging.`,
+        );
+      }
+    }
     return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
   }
 
@@ -487,6 +552,9 @@ export class ProposalService {
       status,
       by: caller.principal,
       ...(reason !== undefined ? { reason } : {}),
+      // An approval names the revision it covers; a later publish puts the proposal back
+      // to ready and the page diffs the head against this one.
+      ...(status === "approved" ? { revision: p.revision } : {}),
     });
     this.notify(org, p.number, line.seq, status === "drafting" ? "revised" : status);
     return line.seq;

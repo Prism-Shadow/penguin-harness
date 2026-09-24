@@ -4689,6 +4689,21 @@ Benchmark：
         rejected: "已拒绝",
       } as Record<string, string>,
       revision: (n: number): string => `第 ${n} 修订`,
+      /** The panel above the body while an older approval stands: what changed since it. */
+      diff: {
+        title: (approved: number, head: number): string =>
+          `自认可的修订以来的改动（第 ${approved} → 第 ${head} 修订）`,
+        approvedBy: (who: string, when: string): string => `第 ${who} 认可于 ${when}`,
+        hint: "认可只覆盖一个修订：作者又发了新修订，需要重新认可。",
+        titleChanged: (before: string, after: string): string => `标题：「${before}」→「${after}」`,
+        scopeChanged: "范围有改动。",
+        unchanged: "未改动",
+        sectionAdded: "新增的节",
+        sectionRemoved: "删去的节",
+        hide: "收起",
+        show: "展开",
+        loadFailed: "读取认可的修订失败",
+      },
       noRevision: "尚未发布",
       implementer: "实施者",
       noImplementer: "尚未指定",

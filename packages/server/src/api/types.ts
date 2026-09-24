@@ -5448,8 +5448,30 @@ export interface ProposalDetail extends ProposalItem {
   events: ProposalEvent[];
   /** Implementation sessions, in the order they were opened. */
   sessions: string[];
+  /**
+   * The revision the standing approval covers, or null. An approval covers ONE revision: a
+   * later publish puts the proposal back to `ready`, and this stays at the approved one so
+   * the page can show what changed since.
+   */
+  approvedRevision: number | null;
   /** The ledger's latest `seq`: what `POST …/read` should carry to mark everything read. */
   seq: number;
+}
+
+/** One revision as it was published: `GET …/:number/revisions/:rev`. */
+export interface ProposalRevision {
+  revision: number;
+  title: string;
+  scope: ProposalScopeEntry[];
+  sections: ProposalSection[];
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  at: string;
+}
+
+/** `GET …/:number/revisions`: every revision published, oldest first. */
+export interface ProposalRevisionsResponse {
+  revisions: Array<{ revision: number; by: string; at: string }>;
 }
 
 export interface ProposalsResponse {

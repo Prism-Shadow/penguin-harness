@@ -567,6 +567,10 @@ function renderProposals(items: readonly ProposalItem[], t: Messages): string {
 function renderProposal(d: ProposalDetail, t: Messages, marked: string | null): string {
   const head = [
     t.org.proposalHead(d.number, d.title, d.status, d.revision),
+    ...(d.approvedRevision !== null ? [t.org.proposalApproved(d.approvedRevision)] : []),
+    ...(d.approvedRevision !== null && d.approvedRevision < d.revision
+      ? [t.org.proposalRevisedAfterApproval(d.approvedRevision, d.revision)]
+      : []),
     t.org.proposalPeople(d.author, d.implementer, d.delegatedBy),
     ...(d.brief.trim() !== "" ? [t.org.proposalBrief(d.brief)] : []),
     ...(d.sessions.length > 0 ? [t.org.proposalSessions(d.sessions.join(", "))] : []),

@@ -4703,6 +4703,21 @@ Scenarios:
         rejected: "Rejected",
       } as Record<string, string>,
       revision: (n: number): string => `Revision ${n}`,
+      /** The panel above the body while an older approval stands: what changed since it. */
+      diff: {
+        title: (approved: number, head: number): string =>
+          `Changed since the approved revision (r${approved} → r${head})`,
+        approvedBy: (who: string, when: string): string => `Approved by ${who} ${when}`,
+        hint: "An approval covers one revision; the author has published since, so it needs approving again.",
+        titleChanged: (before: string, after: string): string => `Title: “${before}” → “${after}”`,
+        scopeChanged: "The scope changed.",
+        unchanged: "unchanged",
+        sectionAdded: "added section",
+        sectionRemoved: "removed section",
+        hide: "Hide",
+        show: "Show",
+        loadFailed: "Could not read the approved revision",
+      },
       noRevision: "Not published yet",
       implementer: "Implementer",
       noImplementer: "Not yet named",

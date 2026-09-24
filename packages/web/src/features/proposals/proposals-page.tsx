@@ -36,6 +36,7 @@ import type {
   ProposalMaterial,
   ProposalPrStatus,
   ProposalMaterialKind,
+  ProposalRevision,
   ProposalSection,
   ProposalStatus,
 } from "@prismshadow/penguin-server/api";
@@ -91,10 +92,13 @@ import {
   proposalsRoute,
   paragraphSpan,
   rangeOfSelection,
+  revisedAfterApproval,
   scopeFileCandidates,
+  sectionDiffs,
   sectionSource,
   sortProposals,
 } from "./proposals-model";
+import type { SectionDiff } from "./proposals-model";
 
 /** Speech bubble (lucide message-square): the comment chip's mark. */
 const COMMENT_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
@@ -982,6 +986,14 @@ function ProposalView({
         )}
       </OrgSection>
 
+      {revisedAfterApproval(detail) && detail.approvedRevision !== null && (
+        <RevisionDiffPanel
+          detail={detail}
+          approvedRevision={detail.approvedRevision}
+          names={names}
+        />
+      )}
+
       <OrgSection title={t.sections}>
         {detail.sections.length === 0 ? (
           <OrgEmptyLine>{t.sectionsEmpty}</OrgEmptyLine>
@@ -1085,6 +1097,144 @@ function ProposalView({
         <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-end gap-2 border-t border-gray-200 bg-white/95 px-1 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
           {actions}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What changed since the approved revision. An approval covers ONE revision: once the author
+ * publishes again the proposal is `ready` once more, and the approver reads the difference, not
+ * the whole text. Section diffs are line-level against the sections' Markdown source.
+ */
+function RevisionDiffPanel({
+  detail,
+  approvedRevision,
+  names,
+}: {
+  detail: ProposalDetail;
+  approvedRevision: number;
+  names: ReadonlyMap<string, string>;
+}) {
+  const t = S.company.proposals.diff;
+  const { projectId, orgId } = useOrg();
+  const [approved, setApproved] = useState<ProposalRevision | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setApproved(null);
+    setError(null);
+    api
+      .getOrgProposalRevision(projectId, orgId, detail.number, approvedRevision)
+      .then((r) => {
+        if (alive) setApproved(r);
+      })
+      .catch((e: unknown) => {
+        if (alive) setError(apiErrorText(e));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [projectId, orgId, detail.number, approvedRevision]);
+  const approval = useMemo(
+    () => [...detail.events].reverse().find((e) => e.kind === "approved") ?? null,
+    [detail.events],
+  );
+  const diffs = useMemo(
+    () => (approved === null ? [] : sectionDiffs(approved.sections, detail.sections)),
+    [approved, detail.sections],
+  );
+  const scopeChanged =
+    approved !== null &&
+    JSON.stringify(approved.scope.map((s) => [s.file, s.name ?? ""])) !==
+      JSON.stringify(detail.scope.map((s) => [s.file, s.name ?? ""]));
+  return (
+    <section className={`rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="font-medium">{t.title(approvedRevision, detail.revision)}</span>
+        {approval !== null && (
+          <span className="text-gray-500 dark:text-gray-400">
+            · {t.approvedBy(principalLabel(approval.by, names), formatDateTime(approval.at))}
+          </span>
+        )}
+        <button
+          type="button"
+          className="ml-auto underline-offset-2 hover:underline"
+          aria-expanded={!hidden}
+          onClick={() => setHidden((h) => !h)}
+        >
+          {hidden ? t.show : t.hide}
+        </button>
+      </div>
+      {!hidden && (
+        <div className="mt-2 space-y-2">
+          <p className="text-gray-500 dark:text-gray-400">{t.hint}</p>
+          {error !== null && <p className={toneInk.danger}>{`${t.loadFailed}: ${error}`}</p>}
+          {approved === null && error === null && <Skeleton className="h-12 w-full" />}
+          {approved !== null && approved.title !== detail.title && (
+            <p>{t.titleChanged(approved.title, detail.title)}</p>
+          )}
+          {scopeChanged && <p>{t.scopeChanged}</p>}
+          {diffs.map((d) => (
+            <SectionDiffView key={d.heading} diff={d} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SectionDiffView({ diff }: { diff: SectionDiff }) {
+  const t = S.company.proposals.diff;
+  const [open, setOpen] = useState(diff.kind !== "same");
+  const note =
+    diff.kind === "same"
+      ? t.unchanged
+      : diff.kind === "added"
+        ? t.sectionAdded
+        : diff.kind === "removed"
+          ? t.sectionRemoved
+          : null;
+  return (
+    <div className="rounded border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-2 py-1 text-left"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="font-medium">{diff.heading}</span>
+        {note !== null && (
+          <span
+            className={
+              diff.kind === "same"
+                ? "text-gray-400 dark:text-gray-500"
+                : `rounded-sm px-1 ${diff.kind === "removed" ? toneSurface.danger : toneSurface.success}`
+            }
+          >
+            {note}
+          </span>
+        )}
+      </button>
+      {open && (
+        <pre className="max-h-96 overflow-auto border-t border-gray-200 px-2 py-1 font-mono text-xs whitespace-pre-wrap dark:border-gray-800">
+          {diff.lines.map((line, i) => (
+            <span
+              key={i}
+              className={`block ${
+                line.kind === "add"
+                  ? toneSurface.success
+                  : line.kind === "del"
+                    ? `line-through decoration-1 ${toneSurface.danger}`
+                    : ""
+              }`}
+            >
+              {line.kind === "add" ? "+ " : line.kind === "del" ? "- " : "  "}
+              {line.text}
+            </span>
+          ))}
+        </pre>
       )}
     </div>
   );
