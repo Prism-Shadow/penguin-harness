@@ -111,18 +111,23 @@ function action<A extends unknown[]>(
 function describeError(err: unknown, t: Messages): { code: string; message: string } {
   if (err instanceof BrowserCliError) return { code: err.code, message: err.message };
   if (err instanceof ApiError) {
-    const body = err.body as
-      { error?: { message?: unknown; reason?: unknown }; reason?: unknown } | undefined;
-    if (err.code === "browser_unavailable") {
-      const reason = body?.error?.reason ?? body?.reason;
+    // The repo's `{error: {code, message}}`, and the flat `{error: code, message, reason}` too.
+    const body = (err.body ?? {}) as { error?: unknown; message?: unknown; reason?: unknown };
+    const nested =
+      typeof body.error === "object" && body.error !== null
+        ? (body.error as { message?: unknown; reason?: unknown })
+        : {};
+    const code = typeof body.error === "string" ? body.error : err.code;
+    if (code === "browser_unavailable") {
+      const reason = nested.reason ?? body.reason;
       return {
-        code: err.code,
+        code,
         message: t.browser.unavailableHint(typeof reason === "string" ? reason : undefined),
       };
     }
     // A 401's own words are the CLI's (they name the token to check); otherwise the server's.
-    const own = typeof body?.error?.message === "string" ? body.error.message : "";
-    return { code: err.code, message: err.status !== 401 && own !== "" ? own : err.message };
+    const own = [nested.message, body.message].find((m) => typeof m === "string" && m !== "");
+    return { code, message: err.status !== 401 && typeof own === "string" ? own : err.message };
   }
   const cause = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
   const message = err instanceof Error ? err.message : String(err);
@@ -192,7 +197,7 @@ function printJson(value: unknown): void {
  * spares a model all escaping). An implicit stdin that stays silent is "no script": a caller
  * whose stdin is an idle pipe gets the error instead of a hang.
  */
-export async function resolveScript(
+async function resolveScript(
   arg: string | undefined,
   file: string | undefined,
   t: Messages,
@@ -346,12 +351,8 @@ async function resolveSource(client: ServerClient, from: string, t: Messages): P
   const chosen =
     matching.length === 1 ? matching[0] : matching.find((s) => s.profile === "Default");
   if (chosen === undefined) {
-    throw invalid(
-      t.browser.sourceAmbiguous(
-        from,
-        matching.map((s) => s.id),
-      ),
-    );
+    const ids = matching.map((s) => s.id);
+    throw invalid(t.browser.sourceAmbiguous(from, ids));
   }
   return chosen.id;
 }

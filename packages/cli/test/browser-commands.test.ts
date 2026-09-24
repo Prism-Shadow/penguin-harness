@@ -565,6 +565,18 @@ describe("import and history", () => {
     ]);
   });
 
+  it("a browser with several profiles and no Default needs a source id", async () => {
+    const [work, personal] = [SOURCES[0]!, SOURCES[1]!];
+    routes["GET /import/sources"] = () => ({
+      body: { sources: [{ ...work, id: "chrome:Profile 2", profile: "Profile 2" }, personal] },
+    });
+    expect(await cli(["browser", "import", "--from", "chrome", "--cookies"])).toBe(1);
+    expect(err()).toBe(
+      `error: invalid_argument: ${t.browser.sourceAmbiguous("chrome", ["chrome:Profile 2", "chrome:Profile 1"])}\n`,
+    );
+    expect(browserRequests().some((r) => r.path.endsWith("/import"))).toBe(false);
+  });
+
   it("history searches with the query and count and prints one line per page", async () => {
     const visited = Date.UTC(2026, 8, 23, 14, 3);
     routes["GET /history"] = (_body, query) => ({
@@ -610,6 +622,15 @@ describe("errors", () => {
       `error: browser_unavailable: ${t.browser.unavailableHint("shell_unsupported")}\n`,
     );
     expect(out()).toBe("");
+  });
+
+  it("reads the flat error body too: {error: code, reason}", async () => {
+    server.builtinBrowser = () => ({
+      status: 503,
+      body: { error: "browser_unavailable", reason: "no_window" },
+    });
+    expect(await cli(["browser", "tabs"])).toBe(1);
+    expect(err()).toBe(`error: browser_unavailable: ${t.browser.unavailableHint("no_window")}\n`);
   });
 
   it("any other API error is one line with the server's code and message", async () => {
