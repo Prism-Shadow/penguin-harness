@@ -142,6 +142,34 @@ describe("HistoryStore file", () => {
     expect(await fs.readdir(path.dirname(file))).toEqual(["history.json"]);
   });
 
+  it("keeps both stores' visits when two share the file across a hot swap", async () => {
+    const previous = new HistoryStore(file, { now: () => 100 });
+    previous.visit("https://a.test/", "A");
+    // The next App's store reads the file before the previous one has written its visit.
+    const next = new HistoryStore(file, { now: () => 200 });
+    next.visit("https://b.test/", "B");
+    await previous.dispose();
+    await next.flush();
+    const urls = new HistoryStore(file).search("", 5).map((e) => e.url);
+    expect(urls.sort()).toEqual(["https://a.test/", "https://b.test/"]);
+  });
+
+  it("counts a visit both stores saw once, and a clear stays clear", async () => {
+    const one = new HistoryStore(file, { now: () => 100 });
+    const two = new HistoryStore(file, { now: () => 100 });
+    one.visit("https://a.test/", "A");
+    two.visit("https://a.test/", "A");
+    await one.flush();
+    await two.flush();
+    expect(new HistoryStore(file).search("", 5)).toEqual([
+      { url: "https://a.test/", title: "A", visitCount: 1, lastVisitAt: 100, source: "builtin" },
+    ]);
+    const three = new HistoryStore(file, { now: () => 300 });
+    three.clear();
+    await three.flush();
+    expect(new HistoryStore(file).search("", 5)).toEqual([]);
+  });
+
   it("starts empty over a file it cannot read", async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, "{ not json");

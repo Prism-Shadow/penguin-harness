@@ -5,6 +5,10 @@
  * One JSON file, `<root>/builtin-browser/history.json`, read on first use and written
  * atomically a moment after the last change (a page load produces a burst of tab events).
  * At most 5000 entries are kept, the most recently visited ones.
+ *
+ * Two stores can share the file for a moment: across a hot swap, the previous App's store makes
+ * its last write while the next App's has already read the file. So a write merges what is on
+ * disk rather than overwriting it, and neither loses the other's visits (see `mergeDisk`).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -46,6 +50,8 @@ export class HistoryStore {
   private entries: Map<string, BuiltinBrowserHistoryEntry> | null = null;
   private timer: NodeJS.Timeout | null = null;
   private dirty = false;
+  /** When this store was last cleared: pages on disk visited before then are not taken back. */
+  private clearedAt = Number.NEGATIVE_INFINITY;
   private writing: Promise<void> = Promise.resolve();
   private readonly now: () => number;
   private readonly log: (line: string) => void;
@@ -136,6 +142,7 @@ export class HistoryStore {
 
   clear(): void {
     this.entries = new Map();
+    this.clearedAt = this.now();
     this.changed();
   }
 
@@ -147,10 +154,10 @@ export class HistoryStore {
     }
     if (!this.dirty || this.entries === null) return this.writing;
     this.dirty = false;
-    const kept = this.capped([...this.entries.values()]);
-    const body = `${JSON.stringify({ version: 1, entries: kept })}\n`;
     this.writing = this.writing
       .then(async () => {
+        const kept = this.capped([...this.mergeDisk().values()]);
+        const body = `${JSON.stringify({ version: 1, entries: kept })}\n`;
         await fs.promises.mkdir(path.dirname(this.file), { recursive: true });
         await atomicWriteFile(this.file, body);
       })
@@ -188,21 +195,47 @@ export class HistoryStore {
   private load(): Map<string, BuiltinBrowserHistoryEntry> {
     if (this.entries !== null) return this.entries;
     const entries = new Map<string, BuiltinBrowserHistoryEntry>();
-    try {
-      const parsed = JSON.parse(fs.readFileSync(this.file, "utf8")) as { entries?: unknown };
-      if (Array.isArray(parsed.entries)) {
-        for (const raw of parsed.entries) {
-          const entry = parseEntry(raw);
-          if (entry !== null) entries.set(entry.url, entry);
-        }
-      }
-    } catch (err) {
-      // No file yet is the normal first run; anything else is logged and starts over.
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-        this.log(`builtin browser: the history could not be read, starting empty: ${String(err)}`);
-      }
-    }
+    for (const entry of this.readFile(true)) entries.set(entry.url, entry);
     this.entries = entries;
     return entries;
+  }
+
+  /**
+   * Folds the file as it is now into memory, before a write: a page either side knows is kept,
+   * with the larger visit count and the later visit (a visit both stores saw counts once), and
+   * the title of the later visit. What this store cleared stays cleared: a page on disk last
+   * visited before the clear is not taken back.
+   */
+  private mergeDisk(): Map<string, BuiltinBrowserHistoryEntry> {
+    const entries = this.load();
+    for (const disk of this.readFile(false)) {
+      if (disk.lastVisitAt <= this.clearedAt) continue;
+      const mine = entries.get(disk.url);
+      if (mine === undefined) {
+        entries.set(disk.url, disk);
+        continue;
+      }
+      if (disk.lastVisitAt > mine.lastVisitAt && disk.title !== "") mine.title = disk.title;
+      mine.visitCount = Math.max(mine.visitCount, disk.visitCount);
+      mine.lastVisitAt = Math.max(mine.lastVisitAt, disk.lastVisitAt);
+    }
+    return entries;
+  }
+
+  /** The file's entries; none when it does not exist or cannot be read (logged when `report`). */
+  private readFile(report: boolean): BuiltinBrowserHistoryEntry[] {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(this.file, "utf8")) as { entries?: unknown };
+      if (!Array.isArray(parsed.entries)) return [];
+      return parsed.entries
+        .map(parseEntry)
+        .filter((entry): entry is BuiltinBrowserHistoryEntry => entry !== null);
+    } catch (err) {
+      // No file yet is the normal first run; anything else is logged and starts over.
+      if (report && (err as NodeJS.ErrnoException).code !== "ENOENT") {
+        this.log(`builtin browser: the history could not be read, starting empty: ${String(err)}`);
+      }
+      return [];
+    }
   }
 }
