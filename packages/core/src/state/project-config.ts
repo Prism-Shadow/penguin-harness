@@ -364,9 +364,14 @@ export const PLUGIN_MACHINE_ID = /^[A-Za-z0-9_-]{16}$/;
 
 /**
  * Whether a `[plugins]` member is a machine's table rather than a plugin's requirement: a
- * key shaped like a machine id whose value is a table without `version`. The writer below
- * spells every requirement without fields as `"*"`, so a table of that shape is never one of
- * its requirements.
+ * key shaped like a machine id whose value is a non-empty table without `version`. The
+ * writer below spells every requirement without fields as `"*"`, so a table of that shape
+ * is never one of its requirements — but the pre-machines parser did read a version-less
+ * table as a requirement ("any version"), and an empty table is exactly that legacy
+ * spelling: it must keep reading as a requirement, or the entry would be swallowed into a
+ * machine table that the writer then drops (an empty machine table saves as nothing) and
+ * vanish from the file on the next save. A non-empty table of the same shape stays a
+ * machine's — the ambiguity there is announced by parsePluginTables, not resolved here.
  */
 function isMachineTable(key: string, value: unknown): boolean {
   return (
@@ -374,7 +379,8 @@ function isMachineTable(key: string, value: unknown): boolean {
     value !== null &&
     typeof value === "object" &&
     !Array.isArray(value) &&
-    !("version" in value)
+    !("version" in value) &&
+    Object.keys(value).length > 0
   );
 }
 
@@ -415,7 +421,15 @@ export function parsePluginTables(value: unknown): PluginTables | undefined {
   if (all === undefined) return undefined;
   const machines: Record<string, PluginTable> = {};
   for (const [key, spec] of Object.entries(value as Record<string, unknown>)) {
-    if (isMachineTable(key, spec)) machines[key] = parsePluginTable(spec) ?? {};
+    if (isMachineTable(key, spec)) {
+      // An id-shaped key with a version-less table is read as a machine's own table; a
+      // handwritten plugin requirement of that shape would silently lose its meaning, so
+      // say so rather than reclassify in silence.
+      process.stderr.write(
+        `[plugins] ${key} is shaped like a machine id and read as that machine's table, not a plugin requirement\n`,
+      );
+      machines[key] = parsePluginTable(spec) ?? {};
+    }
   }
   return { all, machines };
 }

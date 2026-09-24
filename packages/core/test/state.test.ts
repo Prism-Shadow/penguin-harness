@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clampYield } from "../src/environment/tools/background/index.js";
 import { DEFAULT_EMPTY_POLL_YIELD_MS } from "../src/environment/tools/command/index.js";
 import {
@@ -1544,6 +1544,43 @@ describe("plugins (shared and per-machine tables)", () => {
       all: { abcdefghijklmnop: { version: "1" } },
       machines: {},
     });
+  });
+
+  it("an empty table on an id-shaped package name is still a requirement (the legacy spelling)", () => {
+    // The pre-machines parser read a version-less table as "any version"; the heuristic
+    // must not swallow it — an empty machine table saves as nothing, so a swallowed entry
+    // would vanish from the file on the next save.
+    expect(parsePluginTables({ abcdefghijklmnop: {} })).toEqual({
+      all: { abcdefghijklmnop: {} },
+      machines: {},
+    });
+  });
+
+  it("announces an id-shaped key it reads as a machine's table", () => {
+    const stderr: string[] = [];
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: unknown) => (stderr.push(String(chunk)), true));
+    try {
+      expect(parsePluginTables({ Xk3v9Qa_bT2mLp0z: { "@acme/only-there": {} } })).toEqual({
+        all: {},
+        machines: { Xk3v9Qa_bT2mLp0z: { "@acme/only-there": {} } },
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(stderr.join("")).toContain("Xk3v9Qa_bT2mLp0z");
+  });
+
+  it("a handwritten version-less table on an id-shaped name survives a load → save round trip", async () => {
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, "[plugins]\nabcdefghijklmnop = {}\n", "utf8");
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.plugins!.all).toEqual({ abcdefghijklmnop: {} });
+    expect(loaded.plugins!.machines).toEqual({});
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, loaded);
+    expect(await fs.readFile(file, "utf8")).toContain("abcdefghijklmnop");
   });
 });
 
