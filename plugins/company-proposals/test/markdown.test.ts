@@ -39,12 +39,15 @@ describe("parseProposalDocument", () => {
   it("reads the frontmatter, the sections and the paragraphs", () => {
     const doc = parseProposalDocument(DOC);
     expect(doc.title).toBe("Ticket notices reach an employee in one batch");
+    expect(doc.root).toBe("");
+    // An entry written without a kind is an edit.
     expect(doc.scope).toEqual([
       {
+        kind: "edit",
         file: "packages/server/src/runtime/organization/reconcile.ts",
         name: "notifyTicket|reconcileCalendar",
       },
-      { file: "packages/server/src/runtime/organization/digest.ts" },
+      { kind: "edit", file: "packages/server/src/runtime/organization/digest.ts" },
     ]);
     expect(doc.sections.map((s) => [s.id, s.heading, s.paragraphs.length])).toEqual([
       ["s1", "Change", 2],
@@ -119,6 +122,66 @@ describe("parseProposalDocument", () => {
     ).toBe("ok");
   });
 
+  it("reads a root and the four scope kinds, a rename with its source", () => {
+    const text = `---
+title: t
+root: ./typst.ts/
+scope:
+  - kind: edit
+    file: packages/a.ts
+  - kind: new
+    file: packages/b.ts
+  - kind: delete
+    file: .\\packages\\c.ts
+  - kind: rename
+    from: packages/old.ts
+    file: packages/new.ts
+    name: "Old|New"
+---
+
+## Change
+
+x
+
+## Purpose
+
+y
+
+## Test
+
+z
+`;
+    const doc = parseProposalDocument(text);
+    expect(doc.root).toBe("typst.ts");
+    expect(doc.scope).toEqual([
+      { kind: "edit", file: "packages/a.ts" },
+      { kind: "new", file: "packages/b.ts" },
+      { kind: "delete", file: "packages/c.ts" },
+      { kind: "rename", file: "packages/new.ts", from: "packages/old.ts", name: "Old|New" },
+    ]);
+  });
+
+  it("refuses a rename without its source, a source on anything else, a duplicate, an unknown kind and a root outside the workspace", () => {
+    const code = (front: string): string => {
+      try {
+        parseProposalDocument(
+          `---\ntitle: t\n${front}\n---\n\n## Change\n\nx\n\n## Purpose\n\ny\n\n## Test\n\nz\n`,
+        );
+      } catch (err) {
+        if (err instanceof ProposalDocumentError) return err.code;
+        throw err;
+      }
+      return "ok";
+    };
+    expect(code("scope:\n  - kind: rename\n    file: b.ts")).toBe("scope_invalid");
+    expect(code("scope:\n  - kind: edit\n    from: a.ts\n    file: b.ts")).toBe("scope_invalid");
+    expect(code("scope:\n  - file: a.ts\n  - kind: delete\n    file: a.ts")).toBe("scope_invalid");
+    expect(code("scope:\n  - kind: move\n    file: a.ts")).toBe("scope_invalid");
+    expect(code("root: ../outside\nscope:\n  - file: a.ts")).toBe("scope_invalid");
+    expect(code("root: /abs\nscope:\n  - file: a.ts")).toBe("scope_invalid");
+    expect(code("scope:\n  - file: a.ts\n    colour: red")).toBe("proposal_frontmatter");
+  });
+
   it("carries paragraph ids over a revision by text, and section ids by heading", () => {
     const first = parseProposalDocument(DOC);
     const revised = DOC.replace(
@@ -155,5 +218,22 @@ describe("renderProposalDocument", () => {
     ).toBe(true);
     const again = parseProposalDocument(text);
     expect(again).toEqual(doc);
+  });
+
+  it("round-trips a root and every kind, writing each entry's kind out", () => {
+    const doc = parseProposalDocument(
+      DOC.replace(
+        "scope:\n",
+        "root: repo\nscope:\n  - kind: rename\n    from: old.ts\n    file: renamed.ts\n  - kind: new\n    file: fresh.ts\n",
+      ),
+    );
+    const text = renderProposalDocument(doc);
+    expect(text).toContain(
+      "root: repo\nscope:\n  - kind: rename\n    from: old.ts\n    file: renamed.ts\n",
+    );
+    expect(text).toContain(
+      "  - kind: edit\n    file: packages/server/src/runtime/organization/digest.ts\n",
+    );
+    expect(parseProposalDocument(text)).toEqual(doc);
   });
 });

@@ -79,6 +79,10 @@ class FakeGateway implements OrgGateway {
   sessions: Array<{ agentId: string; title: string; body: string; workspace?: string }> = [];
   events: ServerEvent[] = [];
   failChannel = false;
+  /** The proposals channel is archived (a person archived it by hand). */
+  archived = false;
+  unarchivedBy: OrgActor[] = [];
+  failSend = false;
 
   companyModeEnabled(): boolean {
     return this.enabled;
@@ -99,15 +103,21 @@ class FakeGateway implements OrgGateway {
     _p: string,
     _o: string,
     channelId: string,
-    _opts: { name: string; purpose: string },
+    _opts: { name: string; purpose: string; unarchive?: boolean },
     by: OrgActor,
     principals: readonly string[],
   ): Promise<void> {
     if (this.failChannel) throw new Error("channel unavailable");
+    if (this.archived) {
+      if (_opts.unarchive !== true || by.agentId !== undefined)
+        throw new Error(`Channel ${channelId} is archived: unarchive it before writing to it.`);
+      this.archived = false;
+      this.unarchivedBy.push(by);
+    }
     this.channels.push({ channelId, by, principals: [...principals] });
   }
   async sendChannelMessage(_p: string, _o: string, by: OrgActor, channelId: string, text: string) {
-    if (this.failChannel) throw new Error("channel unavailable");
+    if (this.failChannel || this.failSend) throw new Error("channel unavailable");
     this.messages.push({ by, channelId, text });
     return { id: `msg-${this.messages.length}` };
   }
@@ -133,15 +143,23 @@ class FakeAgents {
   /** The plugin's version in the library; null = the library does not carry it. */
   library: string | null = "2026.09.21.1";
   installed = new Set<string>();
+  /** Employees whose installed copy is older than the library's. */
+  outdated = new Set<string>();
   updates: string[] = [];
   failInstall = false;
   async pluginVersion(_p: string, agentId: string, _name: string) {
-    return { installed: this.installed.has(agentId) ? this.library : null, library: this.library };
+    const installed = !this.installed.has(agentId)
+      ? null
+      : this.outdated.has(agentId)
+        ? "2026.09.01.1"
+        : this.library;
+    return { installed, library: this.library };
   }
   async updatePlugin(_p: string, agentId: string, _name: string): Promise<void> {
     if (this.failInstall) throw new Error("library unreadable");
     this.updates.push(agentId);
     this.installed.add(agentId);
+    this.outdated.delete(agentId);
   }
 }
 
@@ -194,6 +212,16 @@ describe("ProposalService", () => {
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "proposals-service-"));
     gateway = new FakeGateway();
+    // The shared workspace the scope is checked against: the file DOC's scope names exists.
+    const workspace = path.join(root, "workspace");
+    await fs.mkdir(path.join(workspace, "packages/server/src/runtime/organization"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(workspace, "packages/server/src/runtime/organization/reconcile.ts"),
+      "export {};\n",
+    );
+    gateway.org!.workspace = workspace;
     agents = new FakeAgents();
     settings = new FakeSettings();
     lines.length = 0;
@@ -340,6 +368,15 @@ describe("ProposalService", () => {
     );
   });
 
+  it("an installed copy older than the library's is updated, so the author works from the current protocol", async () => {
+    agents.installed.add("acme_dev");
+    agents.outdated.add("acme_dev");
+    await service.create(PROJECT, ORG, { author: "acme_dev", brief: "Old copy" }, BOSS);
+    expect(agents.updates).toEqual(["acme_dev"]);
+    await service.create(PROJECT, ORG, { author: "acme_dev", brief: "Current now" }, BOSS);
+    expect(agents.updates).toEqual(["acme_dev"]);
+  });
+
   it("the author publishes, marks ready, and nobody else but a person may", async () => {
     const n = await delegated();
     expect(await refused(() => service.ready(PROJECT, ORG, n, author))).toEqual({
@@ -363,8 +400,15 @@ describe("ProposalService", () => {
       status: "drafting",
     });
     expect(published.scope).toEqual([
-      { file: "packages/server/src/runtime/organization/reconcile.ts", name: "notifyTicket" },
+      {
+        kind: "edit",
+        file: "packages/server/src/runtime/organization/reconcile.ts",
+        name: "notifyTicket",
+        state: "exists",
+      },
     ]);
+    expect(published.root).toBe("");
+    expect(published.base).toBe(gateway.org!.workspace);
     expect(published.sections.map((s) => s.heading)).toEqual(["Change", "Purpose", "Test"]);
     const ready = await service.ready(PROJECT, ORG, n, author);
     expect(ready.status).toBe("ready");
@@ -388,6 +432,167 @@ describe("ProposalService", () => {
     expect(second.sections[1]!.paragraphs[0]!.id).not.toBe(
       published.sections[1]!.paragraphs[0]!.id,
     );
+  });
+
+  it("the scope is checked at publish: an edit must exist under root, a missing path is refused with the likely one", async () => {
+    const n = await delegated();
+    const ws = gateway.org!.workspace;
+    await fs.mkdir(path.join(ws, "repo/pkg/ctl/app"), { recursive: true });
+    await fs.writeFile(path.join(ws, "repo/pkg/ctl/app/task_liveness.go"), "package app\n");
+    await fs.mkdir(path.join(ws, "repo/deep/elsewhere"), { recursive: true });
+    await fs.writeFile(path.join(ws, "repo/deep/elsewhere/runtime.go"), "package x\n");
+    await fs.mkdir(path.join(ws, "repo/old"), { recursive: true });
+    await fs.writeFile(path.join(ws, "repo/old/obsolete.go"), "package old\n");
+    const doc = (root: string, scope: string) =>
+      DOC.replace(
+        /scope:\n[\s\S]*?---/,
+        `${root === "" ? "" : `root: ${root}\n`}scope:\n${scope}\n---`,
+      );
+    // Not a directory of the workspace.
+    expect(
+      await refused(() => service.publish(PROJECT, ORG, n, doc("nope", "  - file: a.go"), author)),
+    ).toEqual({ status: 400, code: "scope_root_missing" });
+    // Missing edits: one moved out of `legacy/`, one found by name elsewhere.
+    let message = "";
+    try {
+      await service.publish(
+        PROJECT,
+        ORG,
+        n,
+        doc(
+          "repo",
+          "  - file: pkg/legacy/ctl/app/task_liveness.go\n  - kind: delete\n    file: pkg/domain/runtime.go",
+        ),
+        author,
+      );
+    } catch (err) {
+      expect(err).toMatchObject({ status: 400, code: "scope_missing" });
+      message = (err as Error).message;
+    }
+    expect(message).toContain(
+      "pkg/legacy/ctl/app/task_liveness.go — did you mean `pkg/ctl/app/task_liveness.go`?",
+    );
+    expect(message).toContain("pkg/domain/runtime.go — did you mean `deep/elsewhere/runtime.go`?");
+    // A rename needs its source; a new file needs nothing, and one that exists already is a hint.
+    expect(
+      await refused(() =>
+        service.publish(PROJECT, ORG, n, doc("repo", "  - kind: rename\n    file: b.go"), author),
+      ),
+    ).toEqual({ status: 400, code: "scope_invalid" });
+    const published = await service.publish(
+      PROJECT,
+      ORG,
+      n,
+      doc(
+        "repo",
+        [
+          "  - file: pkg/ctl/app/task_liveness.go",
+          "  - kind: new",
+          "    file: pkg/ctl/app/fresh.go",
+          "  - kind: new",
+          "    file: deep/elsewhere/runtime.go",
+          "  - kind: rename",
+          "    from: pkg/ctl/app/task_liveness.go",
+          "    file: pkg/ctl/app/liveness.go",
+          "  - kind: delete",
+          "    file: old/obsolete.go",
+        ].join("\n"),
+      ),
+      author,
+    );
+    expect(published.root).toBe("repo");
+    expect(published.base).toBe(path.join(ws, "repo"));
+    expect(published.hints).toEqual([
+      "deep/elsewhere/runtime.go is listed as new but already exists — is it an edit?",
+    ]);
+    expect(published.scope.map((e) => [e.kind, e.file, e.from ?? null, e.state])).toEqual([
+      ["edit", "pkg/ctl/app/task_liveness.go", null, "exists"],
+      ["new", "pkg/ctl/app/fresh.go", null, "new"],
+      ["new", "deep/elsewhere/runtime.go", null, "exists"],
+      ["rename", "pkg/ctl/app/liveness.go", "pkg/ctl/app/task_liveness.go", "renamed"],
+      ["delete", "old/obsolete.go", null, "exists"],
+    ]);
+    // The states move with the tree: the rename done, the delete done.
+    await fs.rename(
+      path.join(ws, "repo/pkg/ctl/app/task_liveness.go"),
+      path.join(ws, "repo/pkg/ctl/app/liveness.go"),
+    );
+    await fs.rm(path.join(ws, "repo/old/obsolete.go"));
+    const read = await service.get(PROJECT, ORG, n, BOSS);
+    expect(read.scope.map((e) => e.state)).toEqual([
+      "missing",
+      "new",
+      "exists",
+      "exists",
+      "deleted",
+    ]);
+    expect(read.hints).toBeUndefined();
+    // A merged proposal is history: its scope is not checked again.
+    await service.ready(PROJECT, ORG, n, author);
+    await service.approve(PROJECT, ORG, n, BOSS);
+    await service.merged(PROJECT, ORG, n, BOSS);
+    const late = await service.publish(
+      PROJECT,
+      ORG,
+      n,
+      doc("repo", "  - file: gone/entirely.go"),
+      author,
+    );
+    expect(late.revision).toBe(2);
+  });
+
+  it("the author's ready answers a request for changes: a revision after it, and every comment resolved", async () => {
+    const n = await delegated();
+    await service.publish(PROJECT, ORG, n, DOC, author);
+    await service.ready(PROJECT, ORG, n, author);
+    const detail = await service.get(PROJECT, ORG, n, BOSS);
+    const change = detail.sections[0]!;
+    const source = sectionSource(change);
+    const start = source.indexOf("notifyTicket");
+    const commented = await service.comment(
+      PROJECT,
+      ORG,
+      n,
+      { sectionId: change.id, start, end: start + 12, quote: "notifyTicket", text: "why?" },
+      BOSS,
+    );
+    const commentId = commented.comments[0]!.id;
+    await service.requestChanges(PROJECT, ORG, n, BOSS);
+    // Straight back to ready: refused, naming the command to run.
+    let message = "";
+    try {
+      await service.ready(PROJECT, ORG, n, author);
+    } catch (err) {
+      expect(err).toMatchObject({ status: 409, code: "changes_pending" });
+      message = (err as Error).message;
+    }
+    expect(message).toContain(commentId);
+    expect(message).toMatch(/`penguin org proposal comments \d+ --pending`$/);
+    // A revision alone is not enough while a comment stands unresolved.
+    await service.publish(PROJECT, ORG, n, DOC.replace("One sweep", "A single sweep"), author);
+    expect(await refused(() => service.ready(PROJECT, ORG, n, author))).toEqual({
+      status: 409,
+      code: "changes_pending",
+    });
+    await service.resolve(PROJECT, ORG, n, commentId, "Named the caller.", author);
+    expect((await service.ready(PROJECT, ORG, n, author)).status).toBe("ready");
+  });
+
+  it("a person may mark ready past unanswered changes", async () => {
+    const n = await delegated();
+    await service.publish(PROJECT, ORG, n, DOC, author);
+    await service.ready(PROJECT, ORG, n, author);
+    const change = (await service.get(PROJECT, ORG, n, BOSS)).sections[0]!;
+    const start = sectionSource(change).indexOf("notifyTicket");
+    await service.comment(
+      PROJECT,
+      ORG,
+      n,
+      { sectionId: change.id, start, end: start + 12, quote: "notifyTicket", text: "x" },
+      BOSS,
+    );
+    await service.requestChanges(PROJECT, ORG, n, BOSS);
+    expect((await service.ready(PROJECT, ORG, n, BOSS)).status).toBe("ready");
   });
 
   it("comments are the person's own until requested; one request is one batch and one channel message", async () => {
@@ -916,12 +1121,52 @@ describe("ProposalService", () => {
     );
     expect(created.number).toBe(1);
     expect(gateway.messages).toEqual([]);
-    expect(
-      lines.some(
-        // The channel step fails at its first stop, preparing the channel; a later failure would say "message not sent".
-        (l) => l.includes("channel not prepared") && l.includes("channel unavailable"),
-      ),
-    ).toBe(true);
+    expect(lines.some((l) => l.includes("not notified") && l.includes("channel unavailable"))).toBe(
+      true,
+    );
+    // Not silent: the answer carries it, and the timeline records it.
+    expect(created.hints).toEqual(["agent:acme_dev not notified: channel unavailable"]);
+    const read = await service.get(PROJECT, ORG, created.number, BOSS);
+    expect(read.events.map((e) => e.kind)).toEqual(["created", "notify_failed"]);
+    expect(read.events[1]!.text).toBe("agent:acme_dev not notified: channel unavailable");
+  });
+
+  it("an archived channel is opened again when a person acts, and an employee's step records the failure", async () => {
+    gateway.archived = true;
+    const n = await delegated();
+    // The person's delegation lifted the archive and delivered.
+    expect(gateway.unarchivedBy).toEqual([BOSS]);
+    expect(gateway.messages).toHaveLength(1);
+    // Archived again; the author's own action cannot lift it.
+    gateway.archived = true;
+    const own = await service.create(PROJECT, ORG, { brief: "My own idea" }, author);
+    expect(own.hints?.[0]).toMatch(/not notified: Channel proposals is archived/);
+    expect((await service.get(PROJECT, ORG, own.number, BOSS)).events.at(-1)).toMatchObject({
+      kind: "notify_failed",
+      by: "agent:acme_dev",
+    });
+    expect(n).toBe(1);
+  });
+
+  it("a message that cannot be sent is recorded as a failed delivery", async () => {
+    const n = await delegated();
+    await service.publish(PROJECT, ORG, n, DOC, author);
+    await service.ready(PROJECT, ORG, n, author);
+    const detail = await service.get(PROJECT, ORG, n, BOSS);
+    const change = detail.sections[0]!;
+    const source = sectionSource(change);
+    const start = source.indexOf("notifyTicket");
+    await service.comment(
+      PROJECT,
+      ORG,
+      n,
+      { sectionId: change.id, start, end: start + 12, quote: "notifyTicket", text: "why?" },
+      BOSS,
+    );
+    gateway.failSend = true;
+    const requested = await service.requestChanges(PROJECT, ORG, n, BOSS);
+    expect(requested.hints).toEqual(["agent:acme_dev not notified: channel unavailable"]);
+    expect(requested.events.at(-1)?.kind).toBe("notify_failed");
   });
 
   it("stands again from the file: a new service over the same root sees the same proposals", async () => {

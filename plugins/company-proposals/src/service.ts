@@ -38,6 +38,7 @@ import type {
 import { renderForAgent, sectionSource } from "./comments.js";
 import { PrStatusReader } from "./pr-status.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
+import { checkScope, missingMessage, scopeBase, scopeStates } from "./scope-check.js";
 import {
   ProposalDocumentError,
   parseProposalDocument,
@@ -85,6 +86,12 @@ export interface ServiceDeps {
   now?: () => number;
   /** The fetch the PR status lookup uses; the platform's by default (a test feeds answers). */
   fetch?: typeof fetch;
+}
+
+/** One write's channel steps: the ledger a failed delivery is recorded in, and the reasons collected for the answer. */
+interface Delivery {
+  ledger: Ledger;
+  hints: string[];
 }
 
 /** The caller, resolved: the principal the write is recorded under, and the person behind it when there is one. */
@@ -141,7 +148,11 @@ export class ProposalService {
     const key = `${projectId}/${orgId}`;
     let ledger = this.ledgers.get(key);
     if (ledger === undefined) {
-      ledger = new Ledger(ledgerPath(this.deps.root, projectId, orgId), () => this.now());
+      ledger = new Ledger(
+        ledgerPath(this.deps.root, projectId, orgId),
+        () => this.now(),
+        (line) => this.deps.log.line(line),
+      );
       this.ledgers.set(key, ledger);
     }
     return ledger;
@@ -255,6 +266,7 @@ export class ProposalService {
     return {
       ...this.item(p, caller, reads),
       brief: p.brief,
+      root: p.root,
       scope: p.scope,
       sections: p.sections,
       comments: this.visibleComments(p, caller),
@@ -318,10 +330,20 @@ export class ProposalService {
     number: number,
     actor: OrgActor,
   ): Promise<ProposalDetail> {
-    const { ledger, caller } = await this.open(projectId, orgId, actor);
+    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
     const p = this.requireProposal(ledger, number);
-    const detail = this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    const detail = await this.withScope(
+      org,
+      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+    );
     return { ...detail, materials: await this.withPrStatus(detail.materials) };
+  }
+
+  /** The detail with where its scope resolves on this server, and each entry's state there. */
+  private async withScope(org: OrgView, detail: ProposalDetail): Promise<ProposalDetail> {
+    const base = scopeBase(org.workspace, detail.root);
+    const states = await scopeStates(base, detail.scope);
+    return { ...detail, base, scope: detail.scope.map((e, i) => ({ ...e, state: states[i]! })) };
   }
 
   /** The `pr` materials with GitHub's word on them, the rest as they are; nothing here fails the read. */
@@ -343,7 +365,62 @@ export class ProposalService {
    * The proposals channel with these principals in it, arranged by the actor (an employee's
    * own membership rides along). A failure is logged, never raised — the ledger write stands.
    */
+  /** What one write's channel steps report back: the ledger a failed delivery is recorded in, and the reasons, for the answer. */
+  private delivery(ledger: Ledger): Delivery {
+    return { ledger, hints: [] };
+  }
+
+  /** The write's answer, carrying any delivery that failed as a hint the page shows. */
+  private answer(delivery: Delivery, detail: ProposalDetail): ProposalDetail {
+    return delivery.hints.length > 0
+      ? { ...detail, hints: [...(detail.hints ?? []), ...delivery.hints] }
+      : detail;
+  }
+
+  /**
+   * A delivery that failed is not silent: the channel is the only way the plugin reaches an
+   * employee, so a failure is logged, recorded as a `notify_failed` event (the timeline and
+   * the unread count show it) and handed back on the write's answer.
+   */
+  private async deliveryFailed(
+    delivery: Delivery,
+    org: OrgView,
+    p: Proposal,
+    by: OrgActor,
+    principals: readonly string[],
+    err: unknown,
+  ): Promise<void> {
+    const message = err instanceof Error ? err.message : String(err);
+    const target = principals.length > 0 ? principals.join(", ") : "the channel";
+    const reason = `${target} not notified: ${message}`;
+    this.deps.log.line(`[${PLUGIN_NAME}] proposal #${p.number}: ${reason}`);
+    delivery.hints.push(reason);
+    try {
+      const principal = await this.deps.gateway.principalOf(org.projectId, org.orgId, by);
+      const line = await delivery.ledger.append({
+        kind: "notify_failed",
+        number: p.number,
+        reason,
+        target: [...principals],
+        by: principal,
+      });
+      this.notify(org, p.number, line.seq, "notify_failed");
+    } catch (recordErr) {
+      this.deps.log.line(
+        `[${PLUGIN_NAME}] proposal #${p.number}: the failed delivery was not recorded: ${
+          recordErr instanceof Error ? recordErr.message : String(recordErr)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * The proposals channel with these members. The channel is the plugin's only drive, so it
+   * is kept open: an archived one is opened again when a person acts (an employee cannot, and
+   * the failure is recorded).
+   */
   private async prepareChannel(
+    delivery: Delivery,
     org: OrgView,
     p: Proposal,
     by: OrgActor,
@@ -354,30 +431,27 @@ export class ProposalService {
         org.projectId,
         org.orgId,
         PROPOSALS_CHANNEL,
-        { name: PROPOSALS_CHANNEL_NAME, purpose: PROPOSALS_CHANNEL_PURPOSE },
+        { name: PROPOSALS_CHANNEL_NAME, purpose: PROPOSALS_CHANNEL_PURPOSE, unarchive: true },
         by,
         principals,
       );
       return true;
     } catch (err) {
-      this.deps.log.line(
-        `[${PLUGIN_NAME}] proposal #${p.number}: channel not prepared: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
+      await this.deliveryFailed(delivery, org, p, by, principals, err);
       return false;
     }
   }
 
-  /** A message in the actor's name — the person's, or the employee's when it speaks from its session; a failure is logged, never raised. */
+  /** A message in the actor's name — the person's, or the employee's when it speaks from its session; a failure is recorded, never raised. */
   private async say(
+    delivery: Delivery,
     org: OrgView,
     p: Proposal,
     by: OrgActor,
     principals: readonly string[],
     text: string,
   ): Promise<void> {
-    if (!(await this.prepareChannel(org, p, by, principals))) return;
+    if (!(await this.prepareChannel(delivery, org, p, by, principals))) return;
     try {
       await this.deps.gateway.sendChannelMessage(
         org.projectId,
@@ -387,11 +461,7 @@ export class ProposalService {
         text,
       );
     } catch (err) {
-      this.deps.log.line(
-        `[${PLUGIN_NAME}] proposal #${p.number}: channel message not sent: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
+      await this.deliveryFailed(delivery, org, p, by, principals, err);
     }
   }
 
@@ -419,7 +489,14 @@ export class ProposalService {
   private async ensureSkills(projectId: string, agentId: string): Promise<void> {
     try {
       const version = await this.deps.agents.pluginVersion(projectId, agentId, SKILLS_PLUGIN);
-      if (version.installed !== null || version.library === null) return;
+      if (version.library === null) return;
+      // Missing, or older than the library's: the protocol changes (scope kinds, the ready
+      // guard), and an author working from an old copy would write what the server refuses.
+      if (
+        version.installed !== null &&
+        compareDatedVersions(version.installed, version.library) >= 0
+      )
+        return;
       await this.deps.agents.updatePlugin(projectId, agentId, SKILLS_PLUGIN);
     } catch (err) {
       this.deps.log.line(
@@ -446,6 +523,7 @@ export class ProposalService {
     actor: OrgActor,
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(ledger);
     const brief = req.brief.trim();
     if (brief === "") throw badRequest("brief must not be empty.");
     const author = req.author ?? caller.agentId;
@@ -467,9 +545,10 @@ export class ProposalService {
     if (caller.agentId === author) {
       // Its own proposal: nothing to tell it, and an @ of itself would only start a work run
       // on its own desk. The channel is prepared so a batch or an approval can reach it.
-      await this.prepareChannel(org, p, actor, [agentPrincipal(author)]);
+      await this.prepareChannel(delivery, org, p, actor, [agentPrincipal(author)]);
     } else {
       await this.say(
+        delivery,
         org,
         p,
         actor,
@@ -477,7 +556,10 @@ export class ProposalService {
         `@agent:${author} proposal:${number} — ${brief}\n\nWrite the proposal: \`penguin org proposal publish ${number} --file <markdown>\`, then \`penguin org proposal ready ${number}\` when a person can read it.`,
       );
     }
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    return this.answer(
+      delivery,
+      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+    );
   }
 
   async publish(
@@ -488,6 +570,7 @@ export class ProposalService {
     actor: OrgActor,
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(ledger);
     const p = this.requireProposal(ledger, number);
     this.requireAuthorOrPerson(p, caller, "publish a revision");
     if (p.status === "rejected") {
@@ -503,12 +586,30 @@ export class ProposalService {
     // An approval covers ONE revision. Read before the append: the fold puts an approved
     // proposal back to ready as the line lands, and the record of which revision was
     // approved stays for the diff the page shows.
+    // The scope against the working tree: what the change edits, deletes or renames from must
+    // be there. A merged proposal is history — its tree has moved on — so it is not checked.
+    let hints: string[] = [];
+    if (p.status !== "merged") {
+      const check = await checkScope(scopeBase(org.workspace, doc.root), doc.scope);
+      if (check.rootMissing) {
+        throw new ProposalError(
+          400,
+          "scope_root_missing",
+          `\`root: ${doc.root}\` is not a directory of the shared workspace (${org.workspace}).`,
+        );
+      }
+      if (check.missing.length > 0) {
+        throw new ProposalError(400, "scope_missing", missingMessage(doc.root, check.missing));
+      }
+      hints = check.hints;
+    }
     const approvedRevision = p.status === "approved" ? p.approvedRevision : null;
     const line = await ledger.append({
       kind: "revised",
       number,
       revision: p.revision + 1,
       title: doc.title,
+      ...(doc.root !== "" ? { root: doc.root } : {}),
       scope: doc.scope,
       sections: doc.sections,
       by: caller.principal,
@@ -527,6 +628,7 @@ export class ProposalService {
       // The person learns through the unread event; the one who must not merge yet is told.
       if (p.implementer !== null) {
         await this.say(
+          delivery,
           org,
           p,
           actor,
@@ -535,7 +637,11 @@ export class ProposalService {
         );
       }
     }
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    const detail = await this.withScope(
+      org,
+      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+    );
+    return this.answer(delivery, hints.length > 0 ? { ...detail, hints } : detail);
   }
 
   private async setStatus(
@@ -583,6 +689,27 @@ export class ProposalService {
         `Proposal #${number} has no revision yet: publish it first.`,
       );
     }
+    // The author's ready answers the requested changes: a revision after the batch, and every
+    // comment of it resolved. A person may mark ready regardless.
+    if (!this.isPerson(caller) && p.openBatches.length > 0) {
+      const needRevision = Math.max(...p.openBatches.map((b) => b.revision));
+      const unresolved = p.openBatches
+        .flatMap((b) => b.commentIds)
+        .filter((id) => p.comments.find((c) => c.id === id)?.resolved === undefined);
+      if (p.revision <= needRevision || unresolved.length > 0) {
+        const why = [
+          ...(p.revision <= needRevision
+            ? [`no revision has been published since the request (still revision ${p.revision})`]
+            : []),
+          ...(unresolved.length > 0 ? [`unresolved comments: ${unresolved.join(", ")}`] : []),
+        ];
+        throw new ProposalError(
+          409,
+          "changes_pending",
+          `Proposal #${number} has requested changes not answered yet — ${why.join("; ")}. Read them, revise, resolve each, publish, then mark ready: \`penguin org proposal comments ${number} --pending\``,
+        );
+      }
+    }
     await this.setStatus(org, ledger, p, "ready", caller);
     return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
   }
@@ -594,6 +721,7 @@ export class ProposalService {
     actor: OrgActor,
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(ledger);
     const p = this.requireProposal(ledger, number);
     this.requirePerson(caller, "approve a proposal");
     if (p.status !== "ready" && p.status !== "drafting") {
@@ -605,6 +733,7 @@ export class ProposalService {
     await this.setStatus(org, ledger, p, "approved", caller);
     const to = p.implementer ?? p.author;
     await this.say(
+      delivery,
       org,
       p,
       actor,
@@ -613,7 +742,10 @@ export class ProposalService {
         ? `@agent:${to} proposal:${number} is approved — merge it and run \`penguin org proposal merged ${number}\`.`
         : `@agent:${to} proposal:${number} is approved with nobody building it yet — name an implementer with \`penguin org proposal implement ${number} --agent <id>\`, or merge it yourself and run \`penguin org proposal merged ${number}\`.`,
     );
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    return this.answer(
+      delivery,
+      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+    );
   }
 
   async reject(
@@ -624,6 +756,7 @@ export class ProposalService {
     actor: OrgActor,
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(ledger);
     const p = this.requireProposal(ledger, number);
     this.requirePerson(caller, "reject a proposal");
     if (reason.trim() === "") throw badRequest("reason must not be empty.");
@@ -632,6 +765,7 @@ export class ProposalService {
     }
     await this.setStatus(org, ledger, p, "rejected", caller, reason.trim());
     await this.say(
+      delivery,
       org,
       p,
       actor,
@@ -641,7 +775,10 @@ export class ProposalService {
       ],
       `@agent:${p.author}${p.implementer !== null ? ` @agent:${p.implementer}` : ""} proposal:${number} is rejected: ${reason.trim()}`,
     );
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    return this.answer(
+      delivery,
+      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+    );
   }
 
   async merged(
@@ -677,6 +814,7 @@ export class ProposalService {
     actor: OrgActor,
   ): Promise<ProposalDetail & { sessionId: string }> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(ledger);
     const p = this.requireProposal(ledger, number);
     this.requireAuthorOrPerson(p, caller, "ask for an implementation");
     // Nobody is hired to build: the author builds its own proposal unless it names a colleague.
@@ -711,12 +849,15 @@ export class ProposalService {
     this.notify(org, number, line.seq, "implementation_started");
     await this.ensureSkills(projectId, implementer);
     // The implementer joins the channel now, so the messages that follow can reach it.
-    await this.prepareChannel(org, p, actor, [
+    await this.prepareChannel(delivery, org, p, actor, [
       agentPrincipal(p.author),
       agentPrincipal(implementer),
     ]);
     return {
-      ...this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+      ...this.answer(
+        delivery,
+        this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+      ),
       sessionId: opened.sessionId,
     };
   }
@@ -736,7 +877,7 @@ export class ProposalService {
         `- When the proposal is approved (you are @-mentioned in the proposals channel), merge the pull request and run \`penguin org proposal merged ${n}\`.`,
       ].join("\n"),
       ...(note !== "" ? [`Note from the author: ${note}`] : []),
-      `The proposal, revision ${p.revision}:\n\n${renderProposalDocument({ title: p.title, scope: p.scope, sections: p.sections }).trimEnd()}`,
+      `The proposal, revision ${p.revision}:\n\n${renderProposalDocument({ title: p.title, root: p.root, scope: p.scope, sections: p.sections }).trimEnd()}`,
     ].join("\n\n");
   }
 
@@ -772,6 +913,7 @@ export class ProposalService {
     actor: OrgActor,
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(ledger);
     const p = this.requireProposal(ledger, number);
     const text = req.text.trim();
     if (text === "") throw badRequest("text must not be empty.");
@@ -789,6 +931,7 @@ export class ProposalService {
       to.push(agentPrincipal(p.implementer));
     const mentions = to.map((x) => `@${x}`).join(" ");
     await this.say(
+      delivery,
       org,
       p,
       actor,
@@ -797,7 +940,10 @@ export class ProposalService {
         ? `${mentions} proposal:${number} runtime feedback from ${caller.principal}: ${text}\n\nRevise together — the author updates the proposal (\`penguin org proposal publish ${number} --file …\`), the implementer the branch.`
         : `${mentions} proposal:${number} feedback from ${caller.principal}: ${text}\n\nRevise the proposal if it changes what is proposed: \`penguin org proposal publish ${number} --file …\`.`,
     );
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    return this.answer(
+      delivery,
+      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+    );
   }
 
   /**
@@ -881,6 +1027,7 @@ export class ProposalService {
     actor: OrgActor,
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(ledger);
     const p = this.requireProposal(ledger, number);
     this.requirePerson(caller, "request changes");
     const pending = p.comments.filter((c) => c.batchId === null && c.by === caller.principal);
@@ -892,16 +1039,21 @@ export class ProposalService {
       id,
       commentIds: pending.map((c) => c.id),
       by: caller.principal,
+      revision: p.revision,
     });
     this.notify(org, number, line.seq, "changes_requested");
     await this.say(
+      delivery,
       org,
       p,
       actor,
       [agentPrincipal(p.author)],
       `@agent:${p.author} proposal:${number} has a batch of ${pending.length} comment${pending.length === 1 ? "" : "s"}: \`penguin org proposal comments ${number} --pending\`, resolve each (\`penguin org proposal resolve ${number} <commentId> -m …\`), then publish the revision and mark it ready again.`,
     );
-    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
+    return this.answer(
+      delivery,
+      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+    );
   }
 
   async resolve(
@@ -1047,4 +1199,20 @@ function defaultLabel(kind: ProposalMaterialKind, url: string): string {
   } catch {
     return url;
   }
+}
+
+/**
+ * Orders two dated plugin versions (`YYYY.MM.DD.N`, or the legacy `YYYY-MM-DD.N`): by date,
+ * then numerically by sequence. What is not a version sorts first, so the library wins.
+ */
+export function compareDatedVersions(a: string, b: string): number {
+  const parse = (v: string): [string, number] | null => {
+    const m = /^(\d{4})[.-](\d{2})[.-](\d{2})\.(\d+)$/.exec(v.trim());
+    return m === null ? null : [`${m[1]}${m[2]}${m[3]}`, Number(m[4])];
+  };
+  const va = parse(a);
+  const vb = parse(b);
+  if (va === null || vb === null) return Number(va !== null) - Number(vb !== null);
+  if (va[0] !== vb[0]) return va[0] < vb[0] ? -1 : 1;
+  return va[1] - vb[1];
 }

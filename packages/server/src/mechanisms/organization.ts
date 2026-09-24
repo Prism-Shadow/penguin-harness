@@ -71,13 +71,15 @@ export abstract class OrgGateway extends Interface<{
    * or an employee may create a channel), the person behind `by` joined when they are not in
    * it (a person may join any channel; an employee is in what it created or was invited to),
    * then `by`'s own employee (when it is one) and the other principals invited by that
-   * person. Idempotent.
+   * person. Idempotent. With `unarchive`, an archived channel is opened again when `by` is a
+   * person (the channel's own patch path, so the system line is written); an employee cannot
+   * lift an archive, and the call fails with `channel_archived`.
    */
   ensureChannel(
     projectId: string,
     orgId: string,
     channelId: string,
-    opts: { name: string; purpose: string },
+    opts: { name: string; purpose: string; unarchive?: boolean },
     by: OrgActor,
     principals: readonly string[],
   ): Promise<void>;
