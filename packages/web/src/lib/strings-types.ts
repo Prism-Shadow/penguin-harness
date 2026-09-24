@@ -358,6 +358,14 @@ export type Strings = {
       "all" | "needs" | "translate" | "ready" | "failed" | "blocked",
       string
     >;
+    /** Narration sorted into main instructions and scaffolding by its words (instruction-type.ts). */
+    instructionType: {
+      title: string;
+      filterLabel: string;
+      filter: Record<"all" | "main" | "scaffolding", string>;
+      badge: Record<"main" | "scaffolding", string>;
+      about: string;
+    };
     /** One narration across the activity's languages, as Loom's audio panel lists it. */
     narrationLanguages: {
       title: string;

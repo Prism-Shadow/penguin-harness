@@ -3,8 +3,9 @@
  * and the button are driven by the same pure model, so the count an author reads is
  * exactly the work the button starts.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ActivityRunSummary, AssetManifest } from "@prismshadow/penguin-server/api";
+import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Select } from "../../components/ui/select";
@@ -19,6 +20,12 @@ import {
   type SpeechFilter,
   type SpeechState,
 } from "./bulk-speech";
+import {
+  inInstructionFilter,
+  instructionTypes,
+  type InstructionFilter,
+  type InstructionType,
+} from "./instruction-type";
 import { SEGMENT, SEGMENTS, SEGMENT_OFF, SEGMENT_ON } from "./segment-styles";
 
 const STATE_TONE: Record<SpeechState, Tone | null> = {
@@ -38,6 +45,8 @@ const FILTERS: readonly SpeechFilter[] = [
   "ready",
   "blocked",
 ];
+
+const INSTRUCTION_FILTERS: readonly InstructionFilter[] = ["all", "main", "scaffolding"];
 
 // The app's segmented control (`components/ui/segmented.tsx`), laid out to wrap: these
 // choices carry counts and can number more than the control's four columns.
@@ -105,6 +114,10 @@ export function SpeechCoverage({
   const [confirming, setConfirming] = useState(false);
   const [filter, setFilter] = useState<SpeechFilter>("all");
   const [adding, setAdding] = useState("");
+  const [instruction, setInstruction] = useState<InstructionFilter>("all");
+  // Derived from each line's words on every change, never stored (see instruction-type.ts).
+  const types = useMemo(() => instructionTypes(assets, sources), [assets, sources]);
+  const typeOf = (key: string): InstructionType => types.get(key) ?? "other";
   const statuses = speechStatuses(assets, runs, language, sources);
   const toTranslate = statuses.filter(
     (status) => status.translation === "missing" || status.translation === "outdated",
@@ -112,10 +125,28 @@ export function SpeechCoverage({
   const unscripted = statuses.filter((status) => status.translation === "missing").length;
   const tally = speechTally(assets, runs, language);
   const pending = pendingSpeechKeys(assets, runs, language);
+  const inType = (status: (typeof statuses)[number], entry: InstructionFilter) =>
+    inInstructionFilter(typeOf(status.key), entry);
+  // Each row's counts are taken within the other row's choice, so every count matches the
+  // lines its chip would show.
+  const typeCounts = Object.fromEntries(
+    INSTRUCTION_FILTERS.map((entry) => [
+      entry,
+      statuses.filter((s) => inSpeechFilter(s, filter) && inType(s, entry)).length,
+    ]),
+  ) as Record<InstructionFilter, number>;
+  // The instruction row appears when a line under the state filter is a main instruction or
+  // scaffolding, and stays while a type is chosen, so a choice never narrows the list unseen.
+  const sorted = instruction !== "all" || typeCounts.main + typeCounts.scaffolding > 0;
   const counts = Object.fromEntries(
-    FILTERS.map((entry) => [entry, statuses.filter((s) => inSpeechFilter(s, entry)).length]),
+    FILTERS.map((entry) => [
+      entry,
+      statuses.filter((s) => inSpeechFilter(s, entry) && inType(s, instruction)).length,
+    ]),
   ) as Record<SpeechFilter, number>;
-  const shown = statuses.filter((status) => inSpeechFilter(status, filter));
+  const shown = statuses.filter(
+    (status) => inSpeechFilter(status, filter) && inType(status, instruction),
+  );
   if (!tally.total) return <p className="text-sm text-gray-500">{S.activities.bulkSpeechNone}</p>;
   return (
     <section className="space-y-3">
@@ -211,22 +242,53 @@ export function SpeechCoverage({
         </div>
       )}
       <div role="group" aria-label={S.activities.bulkSpeechFilters} className={SEGMENTS}>
-        {FILTERS.filter((entry) => entry === "all" || counts[entry] > 0).map((entry) => (
-          <button
-            key={entry}
-            type="button"
-            aria-pressed={filter === entry}
-            onClick={() => setFilter(entry)}
-            className={`${SEGMENT} ${filter === entry ? SEGMENT_ON : SEGMENT_OFF}`}
-          >
-            {S.activities.bulkSpeechFilter[entry]}{" "}
-            <span className="tabular-nums opacity-70">{counts[entry]}</span>
-          </button>
-        ))}
+        {FILTERS.filter((entry) => entry === "all" || entry === filter || counts[entry] > 0).map(
+          (entry) => (
+            <button
+              key={entry}
+              type="button"
+              aria-pressed={filter === entry}
+              onClick={() => setFilter(entry)}
+              className={`${SEGMENT} ${filter === entry ? SEGMENT_ON : SEGMENT_OFF}`}
+            >
+              {S.activities.bulkSpeechFilter[entry]}{" "}
+              <span className="tabular-nums opacity-70">{counts[entry]}</span>
+            </button>
+          ),
+        )}
       </div>
+      {sorted && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex items-center gap-1 text-xs text-gray-500">
+            {S.activities.instructionType.title}
+            <InfoPopover label={S.activities.instructionType.title}>
+              <p>{S.activities.instructionType.about}</p>
+            </InfoPopover>
+          </span>
+          <div
+            role="group"
+            aria-label={S.activities.instructionType.filterLabel}
+            className={SEGMENTS}
+          >
+            {INSTRUCTION_FILTERS.map((entry) => (
+              <button
+                key={entry}
+                type="button"
+                aria-pressed={instruction === entry}
+                onClick={() => setInstruction(entry)}
+                className={`${SEGMENT} ${instruction === entry ? SEGMENT_ON : SEGMENT_OFF}`}
+              >
+                {S.activities.instructionType.filter[entry]}{" "}
+                <span className="tabular-nums opacity-70">{typeCounts[entry]}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <ul className="space-y-1">
         {shown.map((status) => {
           const tone = STATE_TONE[status.state];
+          const type = typeOf(status.key);
           return (
             <li key={status.key} className="flex items-center gap-1">
               <button
@@ -238,6 +300,12 @@ export function SpeechCoverage({
                 <span className="min-w-0 break-all">
                   <span className="font-medium">{status.key}</span>
                   <span className="text-gray-500"> · {status.sceneIds.join(", ")}</span>
+                  {type !== "other" && (
+                    <>
+                      {" "}
+                      <Badge tone="gray">{S.activities.instructionType.badge[type]}</Badge>
+                    </>
+                  )}
                 </span>
                 <span
                   className={`shrink-0 ${

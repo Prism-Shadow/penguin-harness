@@ -448,6 +448,14 @@ export const en: Strings = {
       blocked: "Needs a script",
     },
     bulkSpeechLanguages: "Languages",
+    instructionType: {
+      title: "Instruction",
+      filterLabel: "Show by instruction type",
+      filter: { all: "All", main: "Main instructions", scaffolding: "Scaffolding" },
+      badge: { main: "Main instruction", scaffolding: "Scaffolding" },
+      about:
+        "Sorted by the words in each line's key, description and script: lines that tell the learner to tap, select, or press and hold are main instructions; hints, retries and corrections are scaffolding. Everything else shows only under All.",
+    },
     narrationLanguages: {
       title: "In every language",
       absent: "Not in this language's media plan.",

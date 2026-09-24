@@ -2977,3 +2977,85 @@ test("marks an audio asset as music or a sound effect, with how the module plays
   await expect(page.getByRole("button", { name: "Generate speech", exact: true })).toBeVisible();
   expect(f.errors).toEqual([]);
 });
+
+test("filters narration by instruction type, as main instructions or scaffolding", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+
+  const narration = (key, script) => ({
+    key,
+    type: "audio",
+    description: "",
+    script,
+    usages: [{ sceneId: "intro", sourceKey: key, occurrence: 1, sceneOccurrenceCount: 1 }],
+  });
+  await openManifest(page);
+  await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(
+    JSON.stringify({
+      productCode: "words",
+      refNum: 12,
+      assets: {
+        "en-US": [
+          narration("tap_rock", "Tap the rock"),
+          narration("hint_1", "Try again"),
+          narration("welcome", "Hello"),
+          narration("retry_2", ""),
+        ],
+      },
+    }),
+  );
+  await openSection(page, "Scenes and media");
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+
+  await openSection(page, "Speech coverage");
+  const row = (key) => page.getByRole("button", { name: new RegExp(`^${key} · `) });
+  const types = page.getByRole("group", { name: "Show by instruction type", exact: true });
+  const states = page.getByRole("group", { name: "Show", exact: true });
+  await expect(types.getByRole("button", { name: "All 4", exact: true })).toBeVisible();
+  // Every line stays under All; each instruction names its type in text.
+  await expect(row("welcome")).toBeVisible();
+  await expect(row("tap_rock").getByText("Main instruction", { exact: true })).toBeVisible();
+  await expect(row("hint_1").getByText("Scaffolding", { exact: true })).toBeVisible();
+  await expect(row("welcome").getByText(/Main instruction|Scaffolding/)).toHaveCount(0);
+
+  await types.getByRole("button", { name: "Scaffolding 2", exact: true }).click();
+  await expect(row("hint_1")).toBeVisible();
+  await expect(row("retry_2")).toBeVisible();
+  await expect(row("tap_rock")).toHaveCount(0);
+  await expect(row("welcome")).toHaveCount(0);
+  // The state chips count within the chosen type.
+  await expect(states.getByRole("button", { name: "All 2", exact: true })).toBeVisible();
+  await expect(states.getByRole("button", { name: "Needs a script 1", exact: true })).toBeVisible();
+
+  // Both filters narrow the list together, and the type chips count within the state.
+  await states.getByRole("button", { name: "Needs a script 1", exact: true }).click();
+  await expect(row("retry_2")).toBeVisible();
+  await expect(row("hint_1")).toHaveCount(0);
+  await expect(types.getByRole("button", { name: "All 1", exact: true })).toBeVisible();
+  await expect(
+    types.getByRole("button", { name: "Main instructions 0", exact: true }),
+  ).toBeVisible();
+  await expect(types.getByRole("button", { name: "Scaffolding 1", exact: true })).toBeVisible();
+
+  // A chosen state chip stays while the type leaves it empty.
+  await types.getByRole("button", { name: "Main instructions 0", exact: true }).click();
+  await expect(row("retry_2")).toHaveCount(0);
+  await expect(
+    states.getByRole("button", { name: "Needs a script 0", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await states.getByRole("button", { name: "All 1", exact: true }).click();
+  await expect(row("tap_rock")).toBeVisible();
+  await expect(row("hint_1")).toHaveCount(0);
+  await expect(row("welcome")).toHaveCount(0);
+  expect(f.errors).toEqual([]);
+});
