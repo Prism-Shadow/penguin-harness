@@ -9,8 +9,10 @@
  * - `optHTML(text_only)` and `findMainList` are GenericAgent's page JS verbatim, except that
  *   their console logging is gone (it kept a reference to every analyzed node in the page's
  *   console for the life of the page), a page with nothing visible yields nothing instead of a
- *   TypeError, optHTML leaves the tree it serialized on `optHTML.lastRoot`, and their comments
- *   and one visible string are in English. As upstream, `nodeInfo` is never filled, so the
+ *   TypeError, optHTML leaves the tree it serialized on `optHTML.lastRoot`, the copy is made in
+ *   an inert document (upstream clones into the page's own, where a copied <img> fetches the
+ *   `__url__` the post-processing writes into its src), and their comments and one visible
+ *   string are in English. As upstream, `nodeInfo` is never filled, so the
  *   layout analysis after the copy (partition / overlay marks, dialog hoisting) returns at once;
  *   it is kept as it is, since parity with GenericAgent's output is the point.
  * - The rest ports what simphtml.py did to that output in Python — optimize_html_for_tokens,
@@ -25,6 +27,9 @@ function createEnhancedDOMCopy() {
   const nodeInfo = new WeakMap();
   const ignoreTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'META', 'LINK', 'COLGROUP', 'COL', 'TEMPLATE', 'PARAM', 'SOURCE'];
   const ignoreIds = ['ljq-ind'];
+  // The copy lives in a document with no browsing context: nothing in it loads, whatever the
+  // post-processing writes into an image's src (added: see the header).
+  const inert = document.implementation.createHTMLDocument('');
   function cloneNode(sourceNode, keep=false) {
     if (sourceNode.nodeType === 8 ||
         (sourceNode.nodeType === 1 && (
@@ -33,8 +38,8 @@ function createEnhancedDOMCopy() {
         ))) {
       return null;
     }
-    if (sourceNode.nodeType === 3) return sourceNode.cloneNode(false);
-    const clone = sourceNode.cloneNode(false);
+    if (sourceNode.nodeType === 3) return inert.importNode(sourceNode, false);
+    const clone = inert.importNode(sourceNode, false);
     if ((sourceNode.tagName === 'INPUT' || sourceNode.tagName === 'TEXTAREA') && sourceNode.value) clone.setAttribute('value', sourceNode.value);
     if (sourceNode.tagName === 'INPUT' && (sourceNode.type === 'radio' || sourceNode.type === 'checkbox') && sourceNode.checked) clone.setAttribute('checked', '');
     else if (sourceNode.tagName === 'SELECT' && sourceNode.value) clone.setAttribute('data-selected', sourceNode.value);
@@ -54,7 +59,7 @@ function createEnhancedDOMCopy() {
       try {
         const iDoc = sourceNode.contentDocument || sourceNode.contentWindow?.document;
         if (iDoc && iDoc.body && iDoc.body.children.length > 0) {
-          const wrapper = document.createElement('div');
+          const wrapper = inert.createElement('div');
           wrapper.setAttribute('data-iframe-content', sourceNode.src || '');
           for (const ch of iDoc.body.childNodes) {
             const c = cloneNode(ch, keep);
@@ -327,7 +332,7 @@ root.querySelectorAll('[data-mark]').forEach(e => e.removeAttribute('data-mark')
 root.removeAttribute('data-mark');
 root.querySelectorAll('iframe').forEach(f => {
   if (f.children.length) {
-    const d = document.createElement('div');
+    const d = root.ownerDocument.createElement('div');
     for (const a of f.attributes) d.setAttribute(a.name, a.value);
     d.setAttribute('data-tag', 'iframe');
     while (f.firstChild) d.appendChild(f.firstChild);

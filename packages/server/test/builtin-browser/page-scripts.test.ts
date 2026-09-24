@@ -225,6 +225,14 @@ ${Array.from(
 </script>
 </body></html>`;
 
+/** Images whose addresses the scan shortens: a long file name, and a data: URL. */
+const IMAGES = `<!doctype html><html><head><title>Images</title></head><body><main>
+<h1>Pictures</h1>
+<img src="/img/a-product-photo-with-a-file-name-long-enough.png" width="40" height="40" alt="photo">
+<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" width="40" height="40" alt="pixel">
+<p id="note">Two pictures.</p>
+</main></body></html>`;
+
 const STRICT = `<!doctype html><html><head><title>Strict</title></head><body>
 <h1>Strict page</h1>
 <ul id="items">
@@ -247,10 +255,14 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
   let actions: BrowserActions;
   let driver: BrowserDriver;
   const TAB = 1;
+  /** Requests for the placeholders the scan writes into a copy's addresses. */
+  const placeholderRequests: string[] = [];
 
   beforeAll(async () => {
     server = http.createServer((req, res) => {
+      if (/__(url|img|link|data)__/.test(req.url ?? "")) placeholderRequests.push(req.url!);
       res.setHeader("content-type", "text/html; charset=utf-8");
+      if (req.url === "/images") return res.end(IMAGES);
       if (req.url === "/strict") {
         // No script of its own, no eval, and Trusted Types enforced with no policy allowed.
         res.setHeader(
@@ -352,6 +364,22 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
       },
     );
     expect(counted.value).toBe(ORDER_COUNT);
+  }, 60_000);
+
+  it("reads a page without making it load anything: shortened addresses are never requested", async () => {
+    await actions.navigate(TAB, `${origin}/images`);
+    placeholderRequests.length = 0;
+    const { content } = await actions.scan(TAB, {});
+    expect(content).toContain('src="__url__"');
+    expect(content).toContain('src="__img__"');
+    // exec takes the same simplified copy twice, for its diff.
+    const changed = await actions.exec(
+      TAB,
+      "document.getElementById('note').textContent = 'Two pictures, one changed.'\nreturn 1",
+    );
+    expect(changed.diff?.topChange).toContain("one changed");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(placeholderRequests).toEqual([]);
   }, 60_000);
 
   it("keeps the items that match the instruction when it folds the list", async () => {
