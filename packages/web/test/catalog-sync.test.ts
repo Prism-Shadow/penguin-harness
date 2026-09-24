@@ -1,10 +1,12 @@
 /**
  * catalog-sync.ts unit tests: the "sync presets" merge — union of the local model table and
- * the built-in catalog, catalog winning on differing preset entries (their promotion included,
- * outside the Penguin Go group), local additions and credentials untouched, the display name
- * filled but never overwritten, a retired catalog row updated where the table carries it and
- * never added — plus `catalogDelta`, the same question asked of a saved table so the Models nav
- * badge can answer it before the page has loaded any rows.
+ * the built-in catalog, the catalog winning on the facts it tracks about a model (pricing, the
+ * context window, the protocol pin, vision, and the promotion outside the Penguin Go group),
+ * this install's own deployment fields never overwritten (base URL, key, output cap), the
+ * display name and an empty base URL filled, local additions untouched, a retired catalog row
+ * updated where the table carries it and never added — plus `catalogDelta`, the same question
+ * asked of a saved table so the Models nav badge can answer it before the page has loaded any
+ * rows.
  *
  * The last block is the one that matters most: the badge and the button must never disagree
  * about whether there is anything to do, so every case above is replayed through both.
@@ -159,17 +161,16 @@ describe("syncRowsWithCatalog", () => {
     expect(rows.find((r) => r.modelId === "qwen3.8-max-preview")!.displayName).toBeUndefined();
   });
 
-  it("resets differing preset rows to the catalog's fields, keeping identity and credentials", () => {
+  it("updates the catalog's facts on a differing preset row, keeping identity and credentials", () => {
     const local = makeRow({
       provider: "deepseek",
       modelId: "deepseek-v4-pro",
       vision: true, // user flipped it
       contextWindow: "500000", // stale
+      clientType: "", // saved before the catalog pinned the protocol
       cacheRead: "1",
       cacheWrite: "2",
       output: "3",
-      baseUrl: "http://my-proxy", // user override -> catalog wins (cleared)
-      originalBaseUrl: "http://my-proxy",
       credential: { hasApiKey: true } as RowState["credential"],
     });
     const { rows, added, updated } = syncRowsWithCatalog([local], PRESET);
@@ -180,13 +181,100 @@ describe("syncRowsWithCatalog", () => {
     expect(row.displayName).toBe(catalogName("deepseek", "deepseek-v4-pro"));
     expect(row.vision).toBe(false);
     expect(row.cacheRead).toBe("0.003571");
-    expect(row.baseUrl).toBe(""); // catalog has no base_url; differs from originalBaseUrl -> cleared on PUT
-    expect(row.originalBaseUrl).toBe("http://my-proxy");
     // Identity and credential state untouched: no rename, no key input, credential kept.
     expect(row.original).toEqual({ provider: "deepseek", modelId: "deepseek-v4-pro" });
     expect(row.apiKeyInput).toBe("");
     expect(row.clearApiKey).toBe(false);
     expect(row.credential).toEqual({ hasApiKey: true });
+  });
+
+  it("re-pins the protocol a stale preset row is missing (the documented repair)", () => {
+    const local = makeRow({
+      provider: "qwen-token-plan",
+      modelId: "glm-5.3",
+      displayName: catalogName("qwen-token-plan", "glm-5.3"),
+      vision: false,
+      contextWindow: "1048576",
+      clientType: "", // stored before the catalog pinned openai-chat
+      cacheRead: "0.285714",
+      cacheWrite: "1.142857",
+      output: "4",
+      baseUrl: PRESET[1]!.base_url!,
+      originalBaseUrl: PRESET[1]!.base_url!,
+    });
+    const { rows, updated } = syncRowsWithCatalog([local], PRESET);
+    expect(updated).toBe(1);
+    expect(rows[0]!.clientType).toBe("openai-chat");
+  });
+
+  it("never overwrites a base URL the row already carries, whatever the catalog says", () => {
+    // A first-party vendor row the user points at their own proxy: the catalog carries no URL
+    // for it, and the reset that used to apply here wiped the endpoint the model was reached
+    // through. Nothing the sync does may touch it.
+    const proxied = inSyncRow({
+      baseUrl: "http://my-proxy",
+      originalBaseUrl: "http://my-proxy",
+      contextWindow: "500000", // stale, so the row IS rewritten — the URL still survives it
+    });
+    const vendor = syncRowsWithCatalog([proxied], PRESET);
+    expect(vendor.updated).toBe(1);
+    expect(vendor.rows[0]!.contextWindow).toBe("1000000");
+    expect(vendor.rows[0]!.baseUrl).toBe("http://my-proxy");
+    // Unchanged against what was loaded, so the PUT says nothing about the base URL at all and
+    // the stored one stands.
+    expect(rowToEntry(vendor.rows[0]!).baseUrl).toBeUndefined();
+
+    // Same for a gateway row, where the catalog does carry a URL of its own.
+    const gateway = makeRow({
+      provider: "qwen-token-plan",
+      modelId: "glm-5.3",
+      baseUrl: "http://my-gateway",
+      originalBaseUrl: "http://my-gateway",
+    });
+    const merged = syncRowsWithCatalog([gateway], PRESET);
+    expect(merged.rows[0]!.baseUrl).toBe("http://my-gateway");
+    expect(rowToEntry(merged.rows[0]!).baseUrl).toBeUndefined();
+  });
+
+  it("counts a base URL of the user's own as nothing to do, in the merge and the badge", () => {
+    // In line with the catalog on every fact, differing only in the endpoint the sync will not
+    // touch. Counting it would leave a dot over a button that can only answer "already up to
+    // date", which is exactly the nagging the reset used to hide.
+    const row = inSyncRow({ baseUrl: "http://my-proxy", originalBaseUrl: "http://my-proxy" });
+    const merged = syncRowsWithCatalog([row], [PRESET[0]!]);
+    expect(merged.updated).toBe(0);
+    const dto = inSyncDto(PRESET[0]!, {
+      credential: { baseUrl: "http://my-proxy" } as ModelDto["credential"],
+    });
+    expect(catalogDelta([dto], [PRESET[0]!])).toEqual({ added: 0, updated: 0, refs: [] });
+  });
+
+  it("fills an empty base URL from the catalog, which is a row that could not reach anything", () => {
+    // A gateway row saved without its endpoint: the group implies none and the protocol implies
+    // none, so the model is unreachable until something puts the URL back. Nothing is destroyed
+    // by writing it, so the sync repairs it the way it repairs a blank display name.
+    const blank = makeRow({
+      provider: "qwen-token-plan",
+      modelId: "glm-5.3",
+      displayName: catalogName("qwen-token-plan", "glm-5.3"),
+      vision: false,
+      contextWindow: "1048576",
+      clientType: "openai-chat",
+      cacheRead: "0.285714",
+      cacheWrite: "1.142857",
+      output: "4",
+    });
+    const merged = syncRowsWithCatalog([blank], PRESET);
+    expect(merged.updated).toBe(1);
+    expect(merged.rows[0]!.baseUrl).toBe(PRESET[1]!.base_url);
+    // Differing from what was loaded, so this one does travel to the server.
+    expect(rowToEntry(merged.rows[0]!).baseUrl).toBe(PRESET[1]!.base_url);
+
+    // A blank base URL on a row the catalog gives no URL for stays blank and counts as nothing:
+    // a first-party vendor model reaches its own official endpoint.
+    const vendor = syncRowsWithCatalog([inSyncRow()], [PRESET[0]!]);
+    expect(vendor.updated).toBe(0);
+    expect(vendor.rows[0]!.baseUrl).toBe("");
   });
 
   it("leaves up-to-date rows unchanged (updated not counted), declaring their catalog promotion", () => {
@@ -435,6 +523,24 @@ describe("catalogDelta", () => {
     expect(catalogDelta([local], PRESET).refs).not.toContain("custom/my-own");
   });
 
+  it("raises a blank base URL and stays silent about one the user set", () => {
+    // The dot has to mean the same thing the button does. A gateway row with no endpoint is a
+    // repair the button performs, so it counts; a row pointed somewhere of the user's own is a
+    // row the button leaves alone, so it must not.
+    const gateway = PRESET[1]!;
+    expect(catalogDelta([inSyncDto(gateway, { credential: undefined })], [gateway])).toEqual({
+      added: 0,
+      updated: 1,
+      refs: ["qwen-token-plan/glm-5.3"],
+    });
+    expect(
+      catalogDelta(
+        [inSyncDto(gateway, { credential: { baseUrl: "http://mine" } as ModelDto["credential"] })],
+        [gateway],
+      ).updated,
+    ).toBe(0);
+  });
+
   it("counts a promotion-only difference as an update, outside the Penguin Go group", () => {
     expect(catalogDelta([inSyncDto(PROMOTED)], [PROMOTED]).updated).toBe(1);
     expect(
@@ -466,6 +572,19 @@ describe("catalogDelta", () => {
         }),
       ],
       [makeDto({ provider: "custom", modelId: "my-own", contextWindow: 8192 })],
+      // The base URL: the user's own on a vendor row and on a gateway row (neither is touched),
+      // and blank where the catalog carries one (filled).
+      [
+        inSyncDto(PRESET[0]!, {
+          credential: { baseUrl: "http://my-proxy" } as ModelDto["credential"],
+        }),
+      ],
+      [
+        inSyncDto(PRESET[1]!, {
+          credential: { baseUrl: "http://my-gateway" } as ModelDto["credential"],
+        }),
+      ],
+      [inSyncDto(PRESET[1]!, { credential: undefined })],
       // The display name: in sync, blank (an earlier sync's damage), and the user's own.
       [inSyncDto(PRESET[0]!)],
       [inSyncDto(PRESET[0]!, { displayName: "" })],

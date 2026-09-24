@@ -1158,7 +1158,7 @@ export const zh = {
     noSearchResults: "没有匹配的模型",
     syncCatalog: "同步预置",
     syncCatalogHint:
-      "用内置目录更新预置模型：新增缺失条目、以目录字段为准刷新差异；本地新增模型与 API key 保持不变",
+      "用内置目录更新预置模型：新增缺失条目，并按目录刷新已有条目的上下文、定价、协议与视觉标志；base URL、API key 与输出上限一律不覆盖，本地新增模型保持不变",
     syncDone: (added: number, updated: number) => `预置模型已同步：新增 ${added}、更新 ${updated}`,
     syncUpToDate: "预置模型已是最新",
     /**

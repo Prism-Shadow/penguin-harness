@@ -1159,7 +1159,7 @@ export const en: Strings = {
     noSearchResults: "No matching models",
     syncCatalog: "Sync presets",
     syncCatalogHint:
-      "Update preset models from the built-in catalog: add missing entries and reset differing ones to the catalog's fields; locally added models and API keys are left untouched",
+      "Update preset models from the built-in catalog: add missing entries, and refresh context window, pricing, protocol and vision on the ones already here. Your base URL, API key and output cap are never overwritten, and locally added models are left untouched",
     syncDone: (added: number, updated: number) =>
       `Presets synced: ${added} added, ${updated} updated`,
     syncUpToDate: "Presets are already up to date",
