@@ -3,6 +3,7 @@
 - **Date:** 2026-09-21
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#844](https://github.com/Prism-Shadow/penguin-harness/pull/844)
 
 [中文版](2026-09-21-sync-presets-keeps-deployment-fields.zh.md)
 
