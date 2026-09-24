@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/use-spexcode",
-  "version": "0.2.11",
+  "version": "0.2.13",
   "description": "Draw a spec atlas for a repository: choose the spec nodes worth a picture and draw each one's diagram with SpexCode, checked until it passes, then hand over the whole tree as one page.",
   "license": "Apache-2.0",
   "repository": {
