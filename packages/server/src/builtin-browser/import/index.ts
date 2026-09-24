@@ -12,6 +12,8 @@
  *   firefox-cookies.ts   a Firefox profile's cookies
  *   history.ts           either family's history
  *   cookie-rules.ts      the domain filter and the shell's cookie shape
+ *   sqlite-copy.ts       reading a store through a private copy
+ *   system-env.ts        the ImportEnv of the machine the server runs on
  */
 import type {
   BuiltinBrowserHistoryEntry,
