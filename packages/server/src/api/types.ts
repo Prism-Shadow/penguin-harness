@@ -5024,3 +5024,8 @@ export type CodingAgentConfigOption =
 export type { AudioTarget, AudioResult } from "../activities/audio.js";
 export type { MediaAsset, AssetManifest } from "../activities/media.js";
 export type { UploadedMedia, UploadKind } from "../activities/upload.js";
+export type {
+  LibraryFile,
+  ProjectMediaListing,
+  BundleItem,
+} from "../activities/media-library-types.js";

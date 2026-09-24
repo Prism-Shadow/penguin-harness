@@ -3628,3 +3628,191 @@ test("shows the activity just opened under Recently opened", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "All activities" })).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });
+
+/** Files uploaded across the project, as `GET /media-library` reports them. */
+function libraryFile(name, activityId, productCode, refNum, activityTitle, overrides = {}) {
+  return {
+    path: `media/uploads/${name}`,
+    name,
+    kind: "image",
+    mimeType: "image/png",
+    byteLength: 2048,
+    updatedAt: "2026-09-24T10:00:00.000Z",
+    activityId,
+    activityTitle,
+    productCode,
+    refNum,
+    ...overrides,
+  };
+}
+
+test("browses the project's media, switches to the table, and downloads two files as a zip", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  const files = [
+    libraryFile("cat-1111222233334444.png", "act_words", "words", 1, "Sight words"),
+    libraryFile("bell-5555666677778888.wav", "act_letters", "letters", 3, "Letter hunt", {
+      kind: "audio",
+      mimeType: "audio/wav",
+      byteLength: 512,
+    }),
+    libraryFile("sun-9999aaaabbbbcccc.png", "act_letters", "letters", 3, "Letter hunt", {
+      updatedAt: "2026-09-25T10:00:00.000Z",
+    }),
+  ];
+  const bundles = [];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    if (p === `${base}/media-library` && request.method() === "GET")
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ files, truncated: false }),
+      });
+    if (p === `${base}/media-library/bundle` && request.method() === "POST") {
+      bundles.push(request.postDataJSON());
+      return route.fulfill({
+        contentType: "application/zip",
+        headers: {
+          "Content-Disposition": "attachment; filename*=UTF-8''media-library-selection.zip",
+        },
+        // An empty zip: the end-of-central-directory record alone.
+        body: Buffer.concat([Buffer.from([0x50, 0x4b, 0x05, 0x06]), Buffer.alloc(18)]),
+      });
+    }
+    if (/\/act_(words|letters)\/media-upload$/.test(p))
+      return route.fulfill({ contentType: "image/png", body: PIXEL });
+    return route.fallback();
+  });
+  await page.goto(`${origin}/activities`);
+  await page.getByRole("button", { name: "Media library", exact: true }).click();
+  await expect(page).toHaveURL(/\/activities\?view=media$/);
+  await expect(page.getByRole("heading", { name: /^Project media library/ })).toBeVisible();
+
+  // The grid shows every file; the type chips and the search narrow it.
+  const list = page.getByRole("region", { name: "Files", exact: true });
+  await expect(list.getByRole("listitem")).toHaveCount(3);
+  const kinds = page.getByRole("group", { name: "Media type", exact: true });
+  await kinds.getByRole("button", { name: "Audio", exact: true }).click();
+  await expect(list.getByRole("listitem")).toHaveCount(1);
+  await expect(list).toContainText("bell-5555666677778888.wav");
+  await kinds.getByRole("button", { name: "All", exact: true }).click();
+  const search = page.getByRole("searchbox", { name: "Search files", exact: true });
+  await search.fill("letter hunt");
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+  await search.fill("zebra");
+  await expect(page.getByText("No file matches these filters.")).toBeVisible();
+  await search.fill("");
+
+  // A file opens in the details beside the list.
+  await list.getByRole("button", { name: /sun-9999aaaabbbbcccc\.png/ }).click();
+  const details = page.getByRole("region", { name: "File details", exact: true });
+  await expect(details).toContainText("letters / 3 · Letter hunt");
+  await expect(details.getByRole("img", { name: "sun-9999aaaabbbbcccc.png" })).toBeVisible();
+
+  // The table has the same files, one row each, linked to their activity.
+  await page.getByRole("button", { name: "Table", exact: true }).click();
+  await expect(list.getByRole("row")).toHaveCount(4);
+  await expect(list.getByRole("link", { name: "words / 1 · Sight words" })).toHaveAttribute(
+    "href",
+    "/activities/act_words",
+  );
+
+  // Two chosen files download as one zip, asked for by activity and path.
+  await expect(page.getByRole("button", { name: "Download (0)", exact: true })).toBeDisabled();
+  await list.getByRole("checkbox", { name: "Select cat-1111222233334444.png" }).check();
+  // One file downloads as itself.
+  await expect(page.getByRole("link", { name: "Download (1)", exact: true })).toHaveAttribute(
+    "href",
+    `${base}/act_words/media-upload?path=media%2Fuploads%2Fcat-1111222233334444.png`,
+  );
+  await list.getByRole("checkbox", { name: "Select bell-5555666677778888.wav" }).check();
+  const saved = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download (2)", exact: true }).click();
+  expect((await saved).suggestedFilename()).toBe("media-library-selection.zip");
+  expect(bundles).toEqual([
+    {
+      items: [
+        { activityId: "act_letters", path: "media/uploads/bell-5555666677778888.wav" },
+        { activityId: "act_words", path: "media/uploads/cat-1111222233334444.png" },
+      ],
+    },
+  ]);
+  await page.getByRole("button", { name: "Clear selection", exact: true }).click();
+  await expect(page.getByText("0 files selected")).toBeVisible();
+  await page.getByRole("link", { name: "All activities", exact: true }).click();
+  await expect(page).toHaveURL(/\/activities$/);
+  expect(f.errors).toEqual([]);
+});
+
+test("picks a file uploaded to another activity", async ({ page }) => {
+  const f = await fixture(page);
+  const copies = [];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    if (p === `${base}/media-library` && request.method() === "GET")
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          files: [
+            // This activity's own upload is not offered again from here.
+            libraryFile("own-0000111122223333.png", "act_test", "words", 12, "Sight words"),
+            libraryFile("sun-9999aaaabbbbcccc.png", "act_letters", "letters", 3, "Letter hunt"),
+            libraryFile("bell-5555666677778888.wav", "act_letters", "letters", 3, "Letter hunt", {
+              kind: "audio",
+              mimeType: "audio/wav",
+            }),
+          ],
+          truncated: false,
+        }),
+      });
+    if (p === `${base}/act_test/media-uploads/copy` && request.method() === "POST") {
+      copies.push(request.postDataJSON());
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path: "media/uploads/sun-9999aaaabbbbcccc.png",
+          name: "sun-9999aaaabbbbcccc.png",
+          kind: "image",
+          mimeType: "image/png",
+          byteLength: 2048,
+          sha256: "b".repeat(64),
+          updatedAt: "2026-09-25T10:00:00.000Z",
+        }),
+      });
+    }
+    if (p === `${base}/act_letters/media-upload`)
+      return route.fulfill({ contentType: "image/png", body: PIXEL });
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  const binding = page.getByRole("textbox", { name: /^Media path/ });
+  await expect(binding).toHaveValue("");
+
+  await page.getByRole("button", { name: "Choose from media library", exact: true }).click();
+  const scope = page.getByRole("group", { name: "Show files from", exact: true });
+  await scope.getByRole("button", { name: "Other activities", exact: true }).click();
+  // Only images, from other activities, with the activity each one comes from.
+  const sun = page.getByRole("button", { name: /^sun-9999aaaabbbbcccc\.png/ });
+  await expect(sun).toContainText("letters / 3 · Letter hunt");
+  await expect(page.getByRole("button", { name: /^own-/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^bell-/ })).toHaveCount(0);
+  await sun.click();
+  await page.getByRole("button", { name: "Use this file", exact: true }).click();
+  await expect(binding).toHaveValue("media/uploads/sun-9999aaaabbbbcccc.png");
+  await expect(page.getByText("Stored with this activity.")).toBeVisible();
+  expect(copies).toEqual([
+    { fromActivityId: "act_letters", path: "media/uploads/sun-9999aaaabbbbcccc.png" },
+  ]);
+  expect(f.errors).toEqual([]);
+});

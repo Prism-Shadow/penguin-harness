@@ -27,8 +27,18 @@ import {
   listUploads,
   readUpload,
   storeUpload,
+  uploadFile,
   type UploadedMedia,
 } from "./upload.js";
+import { zipSync } from "fflate";
+import {
+  BUNDLE_MAX_BYTES,
+  BUNDLE_MAX_ITEMS,
+  PROJECT_MEDIA_LIMIT,
+  bundleEntryNames,
+  copiedUploadName,
+} from "./media-bundle.js";
+import type { BundleItem, LibraryFile, ProjectMediaListing } from "./media-library-types.js";
 import { readBoundImage, type ImageRequest } from "./image.js";
 import {
   applyImport,
@@ -209,6 +219,109 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<{ bytes: Buffer; mimeType: string }> {
     const activity = await this.getActivity(projectId, activityId);
     return readUpload(this.activityWorkspace(projectId, activity), reference);
+  }
+  /**
+   * Every file uploaded to a live activity of this project, newest first. Only metadata is
+   * read, as `listUploads` does for one activity. An archived activity is left out, and an
+   * activity whose draft index is missing contributes nothing rather than failing the list.
+   */
+  async projectMedia(projectId: string): Promise<ProjectMediaListing> {
+    const files: LibraryFile[] = [];
+    for (const activity of await this.listActivities(projectId)) {
+      const draftId = this.latestDraftId(activity.id);
+      if (!draftId) continue;
+      const workspace = this.draftWorkspace(projectId, activity.collectionId, activity.id, draftId);
+      for (const upload of await listUploads(workspace))
+        files.push({
+          ...upload,
+          activityId: activity.id,
+          activityTitle: activity.displayName || activity.title,
+          productCode: activity.productCode,
+          refNum: activity.refNum,
+        });
+    }
+    files.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return {
+      files: files.slice(0, PROJECT_MEDIA_LIMIT),
+      truncated: files.length > PROJECT_MEDIA_LIMIT,
+    };
+  }
+  /**
+   * Copy a file uploaded to another activity of this project into this one. The copy is an
+   * ordinary upload, checked as a browser upload is, so each activity keeps owning its own
+   * files and archiving one never breaks the other.
+   */
+  async copyUpload(
+    projectId: string,
+    activityId: string,
+    fromActivityId: string,
+    reference: string,
+  ): Promise<UploadedMedia> {
+    const { bytes } = await this.uploadContent(projectId, fromActivityId, reference);
+    return this.uploadMedia(projectId, activityId, copiedUploadName(reference), bytes);
+  }
+  /**
+   * Several uploads of this project as one zip. Every file's size is checked before any is
+   * read, so a bundle over the limit costs a few stats, not the bytes.
+   */
+  async mediaBundle(projectId: string, items: BundleItem[]): Promise<Uint8Array> {
+    if (!items.length || items.length > BUNDLE_MAX_ITEMS)
+      throw new HttpError(400, "bad_request", `A bundle holds 1 to ${BUNDLE_MAX_ITEMS} files.`);
+    const unique = [
+      ...new Map(items.map((item) => [`${item.activityId}\n${item.path}`, item])).values(),
+    ];
+    const workspaces = new Map<string, string>();
+    const files: { file: string; workspace: string; path: string }[] = [];
+    let total = 0;
+    for (const item of unique) {
+      let workspace = workspaces.get(item.activityId);
+      if (!workspace) {
+        workspace = this.activityWorkspace(
+          projectId,
+          await this.getActivity(projectId, item.activityId),
+        );
+        workspaces.set(item.activityId, workspace);
+      }
+      // A path that is not an upload of this activity is simply not one of its files.
+      let file: string | null = null;
+      try {
+        file = uploadFile(workspace, item.path);
+      } catch {
+        file = null;
+      }
+      const stat = file ? await fs.lstat(file).catch(() => null) : null;
+      if (!file || !stat || stat.isSymbolicLink() || !stat.isFile())
+        throw new HttpError(
+          404,
+          "media_missing",
+          "This uploaded file is no longer in the workspace.",
+        );
+      total += stat.size;
+      if (total > BUNDLE_MAX_BYTES)
+        throw new HttpError(
+          413,
+          "bundle_too_large",
+          "The chosen files are more than 200 MiB together.",
+        );
+      files.push({ file, workspace, path: item.path });
+    }
+    const names = bundleEntryNames(files.map((entry) => path.basename(entry.file)));
+    const entries: Record<string, Uint8Array> = {};
+    for (const [index, entry] of files.entries()) {
+      const { bytes } = await readUpload(entry.workspace, entry.path);
+      entries[names[index]!] = bytes;
+    }
+    // Images, sound and video are compressed already; storing them is as small and faster.
+    return zipSync(entries, { level: 0 });
+  }
+  private latestDraftId(activityId: string): string | undefined {
+    return (
+      this.db
+        .prepare(
+          "SELECT draft_id FROM activity_drafts WHERE activity_id = ? ORDER BY updated_at DESC, draft_id LIMIT 1",
+        )
+        .get(activityId) as { draft_id: string } | undefined
+    )?.draft_id;
   }
   /** Stage every uploaded binding beside the generated ones, for assembly. */
   async prepareUploadedMedia(

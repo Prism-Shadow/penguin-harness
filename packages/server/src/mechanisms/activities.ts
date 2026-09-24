@@ -5,6 +5,7 @@ import type { ImageTarget, ImageResult } from "../activities/generated-image.js"
 import type { MediaTextTarget } from "../activities/media-text.js";
 import type { AssistFocus, AssistProposal, ProposalChange } from "../activities/assist.js";
 import type { UploadedMedia } from "../activities/upload.js";
+import type { BundleItem, ProjectMediaListing } from "../activities/media-library-types.js";
 import type { ImportOutcome } from "../activities/import-apply.js";
 import type { ImportedActivity } from "../activities/loom-import.js";
 import type { ImplementationFeature } from "../activities/implementation-features.js";
@@ -163,6 +164,17 @@ export abstract class ActivityAuthoring extends Interface<{
     activityId: string,
     reference: string,
   ): Promise<{ bytes: Buffer; mimeType: string }>;
+  /** Every upload of the project's live activities, newest first, with the activity that owns it. */
+  projectMedia(projectId: string): Promise<ProjectMediaListing>;
+  /** Copy another activity's upload into this activity's own uploads. */
+  copyUpload(
+    projectId: string,
+    activityId: string,
+    fromActivityId: string,
+    reference: string,
+  ): Promise<UploadedMedia>;
+  /** Several uploads of the project as one zip. */
+  mediaBundle(projectId: string, items: BundleItem[]): Promise<Uint8Array>;
   planMedia(
     projectId: string,
     activityId: string,

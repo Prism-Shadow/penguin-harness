@@ -52,6 +52,7 @@ export function AssetEditor({
   onGenerateText,
   onAcceptText,
   onUpload,
+  onMediaCopied,
   sceneNav,
   onTranslate,
   defaultLanguage = "en-US",
@@ -87,6 +88,8 @@ export function AssetEditor({
   onGenerateText: (language: string, assetKey: string) => void;
   onAcceptText: (runId: string) => void;
   onUpload: (file: File) => Promise<UploadedMedia>;
+  /** A file was copied in from another activity of the project. */
+  onMediaCopied?: () => void;
   /** Translate a narration from the default language; absent where there is nothing to translate from. */
   onTranslate?: (language: string, assetKey: string) => void;
   defaultLanguage?: string;
@@ -373,6 +376,7 @@ export function AssetEditor({
               editable={editable}
               disabled={disabled}
               onUpload={onUpload}
+              onCopied={onMediaCopied}
               onUploaded={(stored) => {
                 if (asset.path && asset.path !== stored.path)
                   setPendingUpload({ language, key: asset.key, stored });

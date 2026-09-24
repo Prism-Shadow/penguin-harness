@@ -16,6 +16,8 @@ import { findWafRoot } from "./waf-module.js";
 import { SPEECH_MODEL, SPEECH_VOICES } from "./audio.js";
 import { IMAGE_MODEL } from "./generated-image.js";
 import { UPLOAD_MAX_BYTES } from "./upload.js";
+import { BUNDLE_FILE_NAME, BUNDLE_MAX_ITEMS } from "./media-bundle.js";
+import type { BundleItem } from "./media-library-types.js";
 import { ActivityPipelines, parseSelection } from "./pipeline-run.js";
 import {
   badRequest,
@@ -43,6 +45,9 @@ function stageRunner(body: Record<string, unknown>): {
   return { agentId: requireString(body, "agentId", { minLen: 1, maxLen: 128 }) };
 }
 
+/** The one write-method path that only reads: a zip of files any member may already fetch. */
+const BUNDLE_PATH = /^\/api\/projects\/[^/]+\/activities\/media-library\/bundle$/;
+
 @Component({
   contributes: {
     "HttpModule.routes": [
@@ -65,7 +70,10 @@ export class ActivityRoutes {
       const projectId = requireValidId(c, "projectId");
       // Collections created by this slice are project-local. No implicit cross-project
       // attachment; collection sharing needs its own explicit grants in a later slice.
-      if (c.req.method === "GET") this.access.requireProjectAccess(c.var.user.userId, projectId);
+      // Downloading a bundle of the project's media is a read, even though the list of
+      // files travels as a POST body: any project member may do it, as they may GET each file.
+      if (c.req.method === "GET" || (c.req.method === "POST" && BUNDLE_PATH.test(c.req.path)))
+        this.access.requireProjectAccess(c.var.user.userId, projectId);
       else this.access.requireProjectOwner(c.var.user.userId, projectId);
       await next();
     });
@@ -90,6 +98,47 @@ export class ActivityRoutes {
           optionalString(body, "collectionId"),
         ),
       );
+    });
+    // The project's media library: every activity's uploads, read across the project.
+    app.get("/media-library", async (c) =>
+      c.json(await this.activities.projectMedia(requireValidId(c, "projectId"))),
+    );
+    app.post("/media-library/bundle", async (c) => {
+      const body = await readJson(c);
+      if (
+        !Array.isArray(body.items) ||
+        body.items.length < 1 ||
+        body.items.length > BUNDLE_MAX_ITEMS ||
+        body.items.some(
+          (item: unknown) =>
+            !item ||
+            typeof item !== "object" ||
+            typeof (item as BundleItem).activityId !== "string" ||
+            typeof (item as BundleItem).path !== "string" ||
+            !(item as BundleItem).activityId ||
+            (item as BundleItem).activityId.length > 128 ||
+            !(item as BundleItem).path ||
+            (item as BundleItem).path.length > 1024,
+        )
+      )
+        throw badRequest(
+          `items must be 1 to ${BUNDLE_MAX_ITEMS} files, each an activityId and a path.`,
+        );
+      const items = (body.items as BundleItem[]).map(({ activityId, path }) => ({
+        activityId,
+        path,
+      }));
+      const zip = await this.activities.mediaBundle(requireValidId(c, "projectId"), items);
+      // Sent as is: copying a zip of up to 200 MiB would double the peak memory.
+      return new Response(zip as Uint8Array<ArrayBuffer>, {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Length": String(zip.byteLength),
+          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(BUNDLE_FILE_NAME)}`,
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
     });
     // The language table: what an activity may be authored and translated in.
     app.get("/language-setup", (c) =>
@@ -403,6 +452,19 @@ export class ActivityRoutes {
           pathParam(c, "activityId"),
           name,
           bytes,
+        ),
+        201,
+      );
+    });
+    // A file uploaded to another activity of this project, copied into this one's uploads.
+    app.post("/:activityId/media-uploads/copy", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.activities.copyUpload(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          requireString(body, "fromActivityId", { minLen: 1, maxLen: 128 }),
+          requireString(body, "path", { minLen: 1, maxLen: 1024 }),
         ),
         201,
       );

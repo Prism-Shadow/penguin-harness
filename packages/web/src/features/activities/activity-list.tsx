@@ -30,6 +30,7 @@ export function ActivityList({
   onRefresh,
   onImport,
   onCreate,
+  onMedia,
 }: {
   items: readonly ActivityRecord[];
   loading: boolean;
@@ -48,6 +49,8 @@ export function ActivityList({
   onRefresh: () => void;
   onImport: () => void;
   onCreate: () => void;
+  /** Open the project media library: every activity's uploads in one place. */
+  onMedia: () => void;
 }) {
   const counts = useMemo(() => tagCounts(items), [items]);
   // A tag that no activity carries any more (deleted, or retagged elsewhere) stops filtering.
@@ -73,6 +76,9 @@ export function ActivityList({
           <div className="flex items-center gap-2">
             <Button size="sm" disabled={!available} onClick={onRefresh}>
               {S.activities.refresh}
+            </Button>
+            <Button size="sm" disabled={!available} onClick={onMedia}>
+              {S.activities.projectMedia.open}
             </Button>
             {editable && (
               <Button size="sm" disabled={!available} onClick={onImport}>

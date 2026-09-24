@@ -126,6 +126,51 @@ export type Strings = {
       title: string;
       all: string;
     };
+    /** The project media library: every activity's uploads, browsed and downloaded together. */
+    projectMedia: {
+      title: string;
+      about: string;
+      open: string;
+      back: string;
+      search: string;
+      kind: string;
+      kinds: { all: string; image: string; audio: string; video: string };
+      product: string;
+      anyProduct: string;
+      sort: string;
+      sorts: { name: string; newest: string; size: string; activity: string };
+      view: string;
+      views: { grid: string; table: string };
+      selectAll: string;
+      clear: string;
+      selectFile: (name: string) => string;
+      selectedCount: (count: number) => string;
+      download: (count: number) => string;
+      downloading: string;
+      downloadLimit: (max: number) => string;
+      columns: {
+        select: string;
+        name: string;
+        type: string;
+        size: string;
+        activity: string;
+        updated: string;
+      };
+      loading: string;
+      empty: string;
+      noMatches: string;
+      truncated: (count: number) => string;
+      details: string;
+      detailsEmpty: string;
+      openActivity: string;
+      files: string;
+      scope: { label: string; here: string; all: string };
+      otherEmpty: string;
+      copyHint: string;
+      copying: string;
+      copied: (name: string) => string;
+      tooLarge: string;
+    };
     /** Deleting an activity: it is archived, so it leaves the list and its files stay. */
     deleteActivity: {
       action: string;

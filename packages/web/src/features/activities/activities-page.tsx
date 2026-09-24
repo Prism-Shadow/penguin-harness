@@ -65,6 +65,7 @@ import { SceneReview } from "./scene-review";
 import { SpecDiffView } from "./spec-diff-view";
 import { latestModuleRun } from "./preview";
 import { ActivityList } from "./activity-list";
+import { ProjectMediaView } from "./project-media-view";
 import { pushRecent, readRecent } from "./recent-activities";
 
 const basePath = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/activities`;
@@ -116,6 +117,7 @@ function ActivityWorkspace({
 }) {
   const { registerProjectChangeGuard } = useProject();
   const { activityId } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [items, setItems] = useState<ActivityRecord[]>([]);
   const [error, setError] = useState("");
@@ -173,6 +175,8 @@ function ActivityWorkspace({
   );
   // Read again whenever the author comes back from an activity, which recorded itself.
   const recent = useMemo(() => (activityId ? [] : readRecent(projectId)), [projectId, activityId]);
+  if (!activityId && searchParams.get("view") === "media")
+    return <ProjectMediaView projectId={projectId} available={available} />;
   if (activityId) {
     // The workspace fills this pane and scrolls inside itself, so nothing may wrap it
     // in a scroller or a max-width column.
@@ -216,6 +220,7 @@ function ActivityWorkspace({
         onRefresh={() => void reload()}
         onImport={() => setImportOpen(true)}
         onCreate={() => setCreateOpen(true)}
+        onMedia={() => navigate("/activities?view=media")}
       />
       {importOpen && (
         <ImportDialog
@@ -1186,6 +1191,7 @@ function ActivityEditor({
           media={uploads}
           mediaLoading={uploadsLoading}
           onUpload={upload}
+          onMediaCopied={() => void loadUploads()}
           runs={runs}
           endpoint={endpoint}
           editable={editable}
