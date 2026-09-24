@@ -161,11 +161,11 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
     };
     wc.on("did-start-loading", push);
     wc.on("did-stop-loading", push);
-    wc.on("did-navigate", () => {
-      // A new document: the previous page's icon no longer applies until this one names its own.
-      delete guest.favicon;
-      push();
-    });
+    // A new document keeps the icon the tab shows: Chromium announces a document's icons only
+    // when they differ from the previous document's, so the icon changes exactly when
+    // `page-favicon-updated` says so — and a page on the same site, which shares its icon with
+    // the one before it, is never announced at all.
+    wc.on("did-navigate", push);
     wc.on("did-navigate-in-page", (_event, _url, isMainFrame) => {
       if (isMainFrame) push();
     });

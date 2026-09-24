@@ -10,9 +10,9 @@
  * and starts Electron on this same file. Inside Electron it opens a window like the main one,
  * hosts the module in it, and loads a page holding one good guest, two the module must refuse
  * (another partition, a file: start page) and a cross-origin iframe that tries to create a
- * guest of its own. It then drives the relay the way the server does — hello, tabs, cdp, a
- * popup, DevTools opened and closed around a command, cookies set and cleared — and prints
- * `BUILTIN-BROWSER-SMOKE {json}`, exiting non-zero when a check failed.
+ * guest of its own. It then drives the relay the way the server does — hello, tabs, cdp, the
+ * page's icon, a popup, DevTools opened and closed around a command, cookies set and cleared —
+ * and prints `BUILTIN-BROWSER-SMOKE {json}`, exiting non-zero when a check failed.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -87,6 +87,7 @@ async function run() {
     if (url.pathname === "/app") return res.end(appPage);
     if (url.pathname === "/frame") return res.end(framePage);
     if (url.pathname === "/guest") return res.end(guestPage);
+    if (url.pathname === "/guest2") return res.end(guest2Page);
     return res.end(`<title>${url.pathname}</title>`);
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -94,8 +95,12 @@ async function run() {
   const appOrigin = `http://localhost:${port}`;
   const otherOrigin = `http://127.0.0.1:${port}`;
 
-  const guestPage = `<!doctype html><title>Guest</title><body><h1>Guest page</h1>
-<a id="blank" href="${appOrigin}/from-link" target="_blank">new tab</a></body>`;
+  // Two pages of one site sharing an icon.
+  const iconUrl = `${appOrigin}/icon.png`;
+  const guestPage = `<!doctype html><title>Guest</title><link rel="icon" href="${iconUrl}">
+<body><h1>Guest page</h1><a id="blank" href="${appOrigin}/from-link" target="_blank">new tab</a></body>`;
+  const guest2Page = `<!doctype html><title>Guest 2</title><link rel="icon" href="${iconUrl}">
+<body><h1>Second guest page</h1></body>`;
   // Electron defines <webview> once the document leaves "loading" (readystatechange), so both
   // frames look after load; the frame also tries to create a guest then.
   const framePage = `<!doctype html><title>Frame</title><body><script>
@@ -230,6 +235,11 @@ async function run() {
     (await evaluate(tabId, "typeof require + ':' + typeof process")) === "undefined:undefined",
   );
   check("cdp evaluates in the guest", (await evaluate(tabId, "document.title")) === "Guest");
+
+  const lastTab = (url) =>
+    events.filter((e) => e.kind === "tab" && e.tab.id === tabId && e.tab.url === url).at(-1)?.tab;
+  const firstPage = lastTab(`${appOrigin}/guest`);
+  check("the page's icon rides its tab events", firstPage?.favicon === iconUrl, { firstPage });
 
   const windowsBefore = BrowserWindow.getAllWindows().length;
   const contentsBefore = webContents.getAllWebContents().length;
@@ -403,6 +413,17 @@ async function run() {
   );
   guest.closeDevTools();
   Menu.buildFromTemplate = buildFromTemplate;
+
+  // A page on the same site keeps the tab's icon: Chromium announces no icons for a document
+  // whose icons are the ones the tab already shows.
+  await send({ op: "cdp", tabId, method: "Page.navigate", params: { url: `${appOrigin}/guest2` } });
+  for (let i = 0; i < 50 && lastTab(`${appOrigin}/guest2`)?.loading !== false; i++)
+    await sleep(100);
+  await sleep(500);
+  const secondPage = lastTab(`${appOrigin}/guest2`);
+  check("a page on the same site keeps the tab's icon", secondPage?.favicon === iconUrl, {
+    secondPage,
+  });
 
   // Closing the guest (the page removes its element) reports the tab closed.
   await win.webContents.executeJavaScript('document.getElementById("good").remove()');
