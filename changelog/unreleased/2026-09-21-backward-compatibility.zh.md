@@ -3,6 +3,7 @@
 - **Date:** 2026-09-21
 - **Type:** process
 - **Scope:** `server`, `cli`, `web`, `core`
+- **PR:** [#843](https://github.com/Prism-Shadow/penguin-harness/pull/843)
 - **Breaking:** yes — 模型表 PUT 与 `penguin config model add` 若要把一方厂商分组无法路由的模型 id 写进去，一律拒绝（`400 model_not_routable` / 退出码 1）；已存的条目照常工作，也从不被改写
 
 [English](2026-09-21-backward-compatibility.md)

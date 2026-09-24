@@ -3,6 +3,7 @@
 - **Date:** 2026-09-21
 - **Type:** fix
 - **Scope:** `web`, `server`, `cli`, `core`
+- **PR:** [#843](https://github.com/Prism-Shadow/penguin-harness/pull/843)
 
 [中文版](2026-09-21-vendor-group-presets-only.zh.md)
 

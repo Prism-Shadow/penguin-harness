@@ -3,6 +3,7 @@
 - **Date:** 2026-09-21
 - **Type:** process
 - **Scope:** `server`, `cli`, `web`, `core`
+- **PR:** [#843](https://github.com/Prism-Shadow/penguin-harness/pull/843)
 - **Breaking:** yes — a models PUT, or `penguin config model add`, that writes a model id a first-party vendor group cannot route is refused (`400 model_not_routable` / exit code 1); entries already stored keep working and are never rewritten
 
 [中文版](2026-09-21-backward-compatibility.zh.md)
