@@ -37,7 +37,7 @@ While an agent is working in a tab, a slow pulsing ring runs around the page and
 
 A dialog the page opens while an agent acts is answered for it, so the page does not wait on you: an alert is accepted, and a confirmation, a prompt or a leave-page dialog is dismissed unless the agent asked to accept it. Dialogs that appear while you browse show as usual.
 
-The page keeps a desktop-sized layout even when the dock is closed or the panel is small, so what the agent reads does not depend on how you arranged your windows.
+The page on screen is laid out at the size of the panel, so in a narrow panel a site may show its mobile layout. A page you are not looking at, in another tab or while the dock is closed, stays loaded at the size it was last shown at, or at 1280×800 if it was never shown, and the agent keeps working in it.
 
 ## Sign in
 
