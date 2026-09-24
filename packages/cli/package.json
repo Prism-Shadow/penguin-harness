@@ -37,6 +37,7 @@
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*",
+    "@penguinharness/use-spexcode": "workspace:*",
     "@prismshadow/agenthub": "^0.4.15",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
