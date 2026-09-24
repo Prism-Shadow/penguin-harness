@@ -2301,6 +2301,144 @@ test("the player draws the module's behavior map and follows the phase it report
   expect(f.errors).toEqual([]);
 });
 
+test("lists the live tap targets on the current state and resizes the map", async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  const f = await fixture(page);
+  await create(page);
+  const machine = {
+    version: "1.1",
+    id: "letters",
+    initial: "rocks",
+    states: {
+      rocks: {
+        initial: "prompt",
+        states: {
+          prompt: { invoke: { src: "say", onDone: "waiting" } },
+          waiting: { on: { CORRECT: "correct", WRONG: "retry" } },
+          retry: { invoke: { src: "say", onDone: "waiting" } },
+          correct: { invoke: { src: "chest", onDone: "#next" } },
+        },
+      },
+    },
+  };
+  // A stand-in for the played module: it reports five tap targets in "waiting" and keeps
+  // every outline it is asked for, so the test can read what the App sent.
+  const playerPage = `<!doctype html><body><script>
+    window.seen = [];
+    addEventListener("message", (event) => {
+      if (event.data && event.data.type === "penguin-sandbox:highlight-interactable")
+        window.seen.push(event.data.id);
+    });
+    setInterval(() => parent.postMessage({
+      type: "penguin-sandbox:activity-state",
+      detail: { index: 1, phase: "waiting", sceneId: "rocks", state: "rocks.waiting" },
+      interactables: [
+        { id: "rock-a", inputType: "CLICK", description: "First rock" },
+        { id: "rock-b", inputType: "CLICK" },
+        { id: "rock-c", inputType: "DRAG" },
+        { id: "rock-d", inputType: "SELECT" },
+        { id: "rock-e", inputType: "SELECT_CLICK" },
+      ],
+    }, "*"), 100);
+  </script></body>`;
+  await page.route("**/*", (route) => {
+    const p = new URL(route.request().url()).pathname;
+    const json = (value) =>
+      route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/act_test/sandbox/status`)
+      return json({
+        state: "ready",
+        playable: true,
+        buildable: true,
+        message: "Ready.",
+        buildLog: null,
+      });
+    if (p === `${base}/act_test/sandbox/payload`)
+      return json({ configuration: { stateMachine: machine } });
+    if (p === `${base}/act_test/sandbox/play`)
+      return route.fulfill({ contentType: "text/html", body: playerPage });
+    return route.fallback();
+  });
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify({ ...spec, scenes: [{ id: "rocks", description: "Find d" }] }));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  const play = async () => {
+    await openSection(page, "Module preview");
+    await page.getByRole("button", { name: "Play", exact: true }).click();
+  };
+  await play();
+
+  // The live phase names how many targets it has and lists the first three.
+  const map = page.getByRole("group", { name: "Behavior of rocks", exact: true });
+  await expect(map.locator('[aria-current="step"]')).toContainText("waiting");
+  await expect(map.locator('[aria-current="step"]')).toContainText("5 live");
+  const live = page.getByRole("group", { name: "What can be tapped in waiting", exact: true });
+  await expect(live.getByRole("button")).toHaveCount(3);
+  await expect(live).toContainText("+2 more");
+  const first = live.getByRole("button", { name: "First rock", exact: true });
+  await expect(first).toHaveAttribute("title", "rock-a, tap");
+
+  // Pointing at one outlines it in the player; leaving clears the outline.
+  const player = () => page.frames().find((frame) => frame.url().includes("/sandbox/play"));
+  const seen = () => player().evaluate(() => window.seen);
+  await first.hover();
+  await expect.poll(async () => (await seen()).at(-1)).toBe("rock-a");
+  await page.mouse.move(0, 0);
+  await expect.poll(async () => (await seen()).at(-1)).toBe(null);
+
+  // Wide enough: the map sits beside the player behind a divider.
+  const divider = page.getByRole("separator", { name: "Resize the behavior map", exact: true });
+  await expect(divider).toHaveAttribute("aria-valuenow", "360");
+  await divider.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(divider).toHaveAttribute("aria-valuenow", "380");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(divider).toHaveAttribute("aria-valuenow", "340");
+  const box = await divider.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - 100, box.y + 40, { steps: 5 });
+  await page.mouse.up();
+  await expect(divider).toHaveAttribute("aria-valuenow", "440");
+  // Dragging far past the end holds the map at its maximum.
+  const moved = await divider.boundingBox();
+  await page.mouse.move(moved.x + moved.width / 2, moved.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(0, moved.y + 40, { steps: 5 });
+  await page.mouse.up();
+  const widest = Number(await divider.getAttribute("aria-valuenow"));
+  expect(widest).toBeLessThanOrEqual(880);
+  expect(widest).toBe(Number(await divider.getAttribute("aria-valuemax")));
+  const frameBox = await page.locator('iframe[title="Player"]').boundingBox();
+  expect(frameBox.width).toBeGreaterThanOrEqual(320);
+
+  // The width survives a reload.
+  await page.reload();
+  await play();
+  await expect(divider).toHaveAttribute("aria-valuenow", String(widest));
+
+  // Hiding the map survives a reload too, and a hidden map needs no divider.
+  const toggle = page.getByRole("button", { name: "Behavior map", exact: true });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(divider).toHaveCount(0);
+  await page.reload();
+  await play();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(map).toHaveCount(0);
+
+  // Narrower than side by side allows: the map goes back under the player.
+  await toggle.click();
+  await expect(divider).toBeVisible();
+  await page.setViewportSize({ width: 1000, height: 1000 });
+  await expect(divider).toHaveCount(0);
+  await expect(map).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
 test("the Build stage lists what stands between the draft and a module", async ({ page }) => {
   const f = await fixture(page);
   await create(page);

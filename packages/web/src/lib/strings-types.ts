@@ -60,6 +60,12 @@ export type Strings = {
         exit: (phase: string, event: string, target: string) => string;
         live: (phase: string) => string;
         graph: (scene: string) => string;
+        liveCount: (count: number) => string;
+        liveTargets: (phase: string) => string;
+        more: (count: number) => string;
+        targetTitle: (id: string, inputType: string) => string;
+        inputTypes: { CLICK: string; SELECT: string; SELECT_CLICK: string; DRAG: string };
+        resizeMap: string;
         zoom: string;
         zoomIn: string;
         zoomOut: string;
