@@ -88,6 +88,26 @@ export class BrowserUnavailableError extends HttpError {
   }
 }
 
+/** No such profile on this machine, as the import routes answer it. */
+function sourceNotFound(sourceId: string): HttpError {
+  return new HttpError(
+    404,
+    "source_not_found",
+    `No browser profile '${sourceId}' was found on this machine.`,
+  );
+}
+
+/**
+ * Why an import could not read a store: the profile gone since it was listed (the importer's
+ * ImportSourceNotFoundError) is the same 404 as one never listed; anything else is 422.
+ */
+function importError(err: unknown, sourceId: string, what: "cookies" | "history"): HttpError {
+  if ((err as { code?: unknown } | null)?.code === "source_not_found") {
+    return sourceNotFound(sourceId);
+  }
+  return new HttpError(422, "import_failed", `The ${what} could not be read: ${messageOf(err)}`);
+}
+
 function invalidUrl(url: unknown): HttpError {
   return new HttpError(
     400,
@@ -397,13 +417,7 @@ export class BuiltinBrowser {
     const sources = this.importer.listImportSources();
     const source =
       sources.find((s) => s.id === req.sourceId) ?? sources.find((s) => s.browser === req.sourceId);
-    if (source === undefined) {
-      throw new HttpError(
-        404,
-        "source_not_found",
-        `No browser profile '${req.sourceId}' was found on this machine.`,
-      );
-    }
+    if (source === undefined) throw sourceNotFound(req.sourceId);
     const both = req.cookies === undefined && req.history === undefined;
     const result: BuiltinBrowserImportResult = { sourceId: source.id, warnings: [] };
     if (both || req.cookies === true) {
@@ -414,11 +428,7 @@ export class BuiltinBrowser {
           ...(req.domains !== undefined ? { domains: req.domains } : {}),
         });
       } catch (err) {
-        throw new HttpError(
-          422,
-          "import_failed",
-          `The cookies could not be read: ${messageOf(err)}`,
-        );
+        throw importError(err, source.id, "cookies");
       }
       let written = { set: 0, failed: 0, errors: [] as string[] };
       if (read.cookies.length > 0) {
@@ -450,11 +460,7 @@ export class BuiltinBrowser {
       try {
         read = await this.importer.readHistory(source);
       } catch (err) {
-        throw new HttpError(
-          422,
-          "import_failed",
-          `The history could not be read: ${messageOf(err)}`,
-        );
+        throw importError(err, source.id, "history");
       }
       result.history = { found: read.entries.length, imported: this.history.merge(read.entries) };
       result.warnings.push(...read.warnings);

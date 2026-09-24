@@ -22,6 +22,7 @@ import type {
 import type { AppEnv } from "../../src/auth/middleware.js";
 import type { UserRow } from "../../src/db/repos/users.js";
 import { handleError } from "../../src/http/errors.js";
+import { ImportSourceNotFoundError } from "../../src/builtin-browser/import/index.js";
 import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";
 import { BuiltinBrowser, browserUrl } from "../../src/builtin-browser/service.js";
 import type { Importer } from "../../src/builtin-browser/service.js";
@@ -917,6 +918,31 @@ describe("import, history and data", () => {
     const failed = await failing.call("POST", "/import", { sourceId: "chrome", cookies: true });
     expect(failed.status).toBe(422);
     expect((await errorOf(failed)).error).toMatchObject({ code: "import_failed" });
+  });
+
+  it("answers source_not_found for a profile gone since it was listed", async () => {
+    const gone = mount({
+      importer: {
+        ...importer,
+        readHistory: async (source) => Promise.reject(new ImportSourceNotFoundError(source.id)),
+      },
+    });
+    const res = await gone.call("POST", "/import", { sourceId: "chrome", history: true });
+    expect(res.status).toBe(404);
+    expect((await errorOf(res)).error.code).toBe("source_not_found");
+  });
+
+  it("imports history without the desktop shell; cookies still need it", async () => {
+    const h = mount({ shell: null, importer });
+    const history = await h.call("POST", "/import", { sourceId: "chrome", history: true });
+    expect(history.status).toBe(200);
+    expect((await json<BuiltinBrowserImportResult>(history)).history).toEqual({
+      found: 1,
+      imported: 1,
+    });
+    const cookies = await h.call("POST", "/import", { sourceId: "chrome", cookies: true });
+    expect(cookies.status).toBe(503);
+    expect((await errorOf(cookies)).error.reason).toBe("not_desktop");
   });
 
   it("clears the browser's data through the shell", async () => {
