@@ -619,6 +619,8 @@ export interface Messages {
     importHistory(h: { found: number; imported: number }): string;
     noSources(): string;
     noHistory(): string;
+    /** A history line's visit count, the order the lines come in. */
+    visits(count: number): string;
     colId(): string;
     colTitle(): string;
     colUrl(): string;
@@ -1454,7 +1456,7 @@ const en: Messages = {
     cdpDesc: "Send a raw Chrome DevTools Protocol command to the tab",
     importDesc:
       "Import cookies (sign-ins) and history from a browser installed on this machine (neither flag: both)",
-    historyDesc: "Search the built-in browser's history (newest and most visited first)",
+    historyDesc: "Search the built-in browser's history (most visited first, then most recent)",
     tab: 'Tab id, or "active" (default)',
     urlArg: "URL to open; https:// is added to a bare host",
     newTab: "Open it in a new tab",
@@ -1539,6 +1541,7 @@ const en: Messages = {
     importHistory: (h) => `${h.imported} imported (${h.found} found)`,
     noSources: () => "No browser profiles to import from were found on this machine.",
     noHistory: () => "No history matches.",
+    visits: (count) => (count === 1 ? "1 visit" : `${count} visits`),
     colId: () => "ID",
     colTitle: () => "TITLE",
     colUrl: () => "URL",
@@ -2336,7 +2339,7 @@ const zh: Messages = {
     screenshotDesc: "把标签页截图保存为 PNG",
     cdpDesc: "向标签页发送一条原始的 Chrome DevTools Protocol 命令",
     importDesc: "从本机安装的浏览器导入 Cookie（登录状态）与历史记录（两个开关都不给时两者都导入）",
-    historyDesc: "搜索内置浏览器的历史记录（访问多、时间近的在前）",
+    historyDesc: "搜索内置浏览器的历史记录（访问次数多的在前，次数相同时较近的在前）",
     tab: "标签页 id，或 active（缺省）",
     urlArg: "要打开的 URL；只写主机名时自动补上 https://",
     newTab: "在新标签页中打开",
@@ -2419,6 +2422,7 @@ const zh: Messages = {
     importHistory: (h) => `导入 ${h.imported}（共找到 ${h.found}）`,
     noSources: () => "本机没有找到可导入的浏览器个人资料。",
     noHistory: () => "没有匹配的历史记录。",
+    visits: (count) => `${count} 次访问`,
     colId: () => "ID",
     colTitle: () => "标题",
     colUrl: () => "URL",

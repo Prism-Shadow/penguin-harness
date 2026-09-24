@@ -511,7 +511,7 @@ The result names the source, then prints `cookies: <n> imported, <n> skipped, <n
 
 ### history
 
-`history` searches the titles and URLs of the built-in browser's history, imported pages included, without regard to case. It lists the most visited and most recent pages first, 20 unless `-n` says otherwise, one per line: `2026-09-23 14:03 · Your Orders · https://…`.
+`history` searches the titles and URLs of the built-in browser's history, imported pages included, without regard to case. It lists the most visited pages first, the most recent first among equals, 20 unless `-n` says otherwise, one per line: `4 visits · 2026-09-23 14:03 · Your Orders · https://…`.
 
 ### Errors
 

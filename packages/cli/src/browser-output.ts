@@ -209,12 +209,21 @@ export function renderImportResult(res: BuiltinBrowserImportResult, t: Messages)
   ]);
 }
 
-/** One entry per line: `2026-09-23 14:03 · Your Orders · https://…` (local time). */
+/**
+ * One entry per line, in the server's order (most visited first, then most recent), the visit
+ * count first so the order reads: `4 visits · 2026-09-23 14:03 · Your Orders · https://…`
+ * (local time).
+ */
 export function renderHistory(entries: readonly BuiltinBrowserHistoryEntry[], t: Messages): string {
   if (entries.length === 0) return lines([t.browser.noHistory()]);
   return lines(
     entries.map((e) =>
-      [localMinute(e.lastVisitAt), ...(e.title ? [oneLine(e.title)] : []), e.url].join(" · "),
+      [
+        t.browser.visits(e.visitCount),
+        localMinute(e.lastVisitAt),
+        ...(e.title ? [oneLine(e.title)] : []),
+        e.url,
+      ].join(" · "),
     ),
   );
 }

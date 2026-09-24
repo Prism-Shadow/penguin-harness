@@ -629,7 +629,7 @@ describe("import and history", () => {
     expect(browserRequests().at(-1)?.search).toBe("?q=amazon%20orders&limit=5");
     const stamp = localMinute(visited);
     expect(out()).toBe(
-      `${stamp} · Your Orders · https://www.amazon.com/your-orders/orders\n${stamp} · https://www.amazon.com/\n`,
+      `4 visits · ${stamp} · Your Orders · https://www.amazon.com/your-orders/orders\n1 visit · ${stamp} · https://www.amazon.com/\n`,
     );
   });
 });
