@@ -15,7 +15,7 @@
  * pushed as events whenever a server is there to hear them — a server that starts later asks
  * for the tab list itself.
  */
-import { BrowserWindow, Menu, clipboard, session } from "electron";
+import { BrowserWindow, Menu, app, clipboard, session } from "electron";
 import type { ContextMenuParams, MenuItemConstructorOptions, Session, WebContents } from "electron";
 import type {
   BuiltinBrowserTab,
@@ -52,7 +52,10 @@ export interface BuiltinBrowserShellOptions {
 }
 
 export interface BuiltinBrowserShell {
-  /** Lets this window's page host guests. The main window only: no other window gets `webviewTag`. */
+  /**
+   * Lets this window's page host guests. The main window only: every other page is refused a
+   * guest, even one that was given `webviewTag`.
+   */
   host(win: BrowserWindow): void;
   /** Runs one frame from the server if it is a browser command; false when it is not one. */
   handle(message: unknown): boolean;
@@ -75,7 +78,21 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
 export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): BuiltinBrowserShell {
   const guests = new Map<number, Guest>();
   const hosted = new WeakSet<BrowserWindow>();
+  /** The pages of the hosted windows: the only embedders a guest may attach to. */
+  const embedders = new WeakSet<WebContents>();
   let partitionSession: Session | null = null;
+
+  // No page but a hosted window's may attach a guest, whatever its own preferences say. Any
+  // other window's are built from options its opener can reach (a `webviewTag=yes` in
+  // window.open's features), and a <webview> there would attach past every check below: in any
+  // partition, the app's own signed-in session included.
+  app.on("web-contents-created", (_event, wc) => {
+    wc.on("will-attach-webview", (event) => {
+      if (embedders.has(wc)) return;
+      event.preventDefault();
+      opts.log(`builtin browser: refused a <webview> in ${urlForLog(wc.getURL())}`);
+    });
+  });
 
   /**
    * The guests' session, set up once before the first guest is created: the user agent sites
@@ -335,6 +352,7 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
       if (hosted.has(win)) return;
       hosted.add(win);
       const embedder = win.webContents;
+      embedders.add(embedder);
       // Every <webview> the page creates passes here first: the browser's partition and a web
       // or blank start page, or it is refused; then its preferences are forced into the
       // hardened shape. Electron only defines the element in the main frame of a window with

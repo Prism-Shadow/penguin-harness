@@ -190,7 +190,12 @@ function createWindow(url: string): void {
         action: "allow",
         overrideBrowserWindowOptions: {
           show: false,
-          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+            webviewTag: false,
+          },
         },
       };
     }
@@ -226,8 +231,16 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
           autoHideMenuBar: true,
           ...(iconPath !== null ? { icon: iconPath } : {}),
           // Same hardening as the main window: a preview is Agent-written, untrusted HTML
-          // and must never get Node.
-          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+          // and must never get Node. Nor <webview>, the main window's alone: Electron copies
+          // an opener's preference only when it is the safe one, so without this line the
+          // main window's `webviewTag: true` leaves a features string (`webviewTag=yes`) in
+          // charge.
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+            webviewTag: false,
+          },
         },
       };
     case "external":

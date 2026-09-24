@@ -12,7 +12,8 @@
  * (another partition, a file: start page) and a cross-origin iframe that tries to create a
  * guest of its own. It then drives the relay the way the server does — hello, tabs, cdp, the
  * page's canvas and icon, a popup, DevTools opened and closed around a command, cookies set and
- * cleared — and prints `BUILTIN-BROWSER-SMOKE {json}`, exiting non-zero when a check failed.
+ * cleared — checks that a window the page opens with `webviewTag=yes` cannot attach a guest, and
+ * prints `BUILTIN-BROWSER-SMOKE {json}`, exiting non-zero when a check failed.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -88,6 +89,7 @@ async function run() {
     if (url.pathname === "/frame") return res.end(framePage);
     if (url.pathname === "/guest") return res.end(guestPage);
     if (url.pathname === "/guest2") return res.end(guest2Page);
+    if (url.pathname === "/child") return res.end(childPage);
     return res.end(`<title>${url.pathname}</title>`);
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -101,6 +103,20 @@ async function run() {
 <body><h1>Guest page</h1><a id="blank" href="${appOrigin}/from-link" target="_blank">new tab</a></body>`;
   const guest2Page = `<!doctype html><title>Guest 2</title><link rel="icon" href="${iconUrl}">
 <body><h1>Second guest page</h1></body>`;
+  // A window the app page opens with `webviewTag=yes` in window.open's features tries a guest of
+  // its own, with no partition: the app's own session.
+  const childPage = `<!doctype html><title>Child</title><body><script>
+  addEventListener("load", () => {
+    const has = customElements.get("webview") !== undefined;
+    const el = document.createElement("webview");
+    el.setAttribute("src", location.origin + "/guest?from=child");
+    el.style.cssText = "width:200px;height:100px";
+    let attached = false;
+    el.addEventListener("did-attach", () => { attached = true; });
+    document.body.appendChild(el);
+    setTimeout(() => opener.postMessage({ childHasWebview: has, childAttached: attached }, "*"), 1500);
+  });
+</script></body>`;
   // Electron defines <webview> once the document leaves "loading" (readystatechange), so both
   // frames look after load; the frame also tries to create a guest then.
   const framePage = `<!doctype html><title>Frame</title><body><script>
@@ -120,9 +136,12 @@ async function run() {
 <webview partition="persist:penguin-browser" src="file:///etc/hostname" style="width:10px;height:10px"></webview>
 <iframe src="${otherOrigin}/frame" style="width:300px;height:150px"></iframe>
 <script>
-  window.__smoke = { mainHasWebview: null, frame: null };
+  window.__smoke = { mainHasWebview: null, frame: null, child: null };
   addEventListener("load", () => { window.__smoke.mainHasWebview = customElements.get("webview") !== undefined; });
-  addEventListener("message", (e) => { window.__smoke.frame = e.data; });
+  addEventListener("message", (e) => {
+    if (e.data && "childHasWebview" in e.data) window.__smoke.child = e.data;
+    else window.__smoke.frame = e.data;
+  });
 </script></body>`;
 
   const replies = new Map();
@@ -435,6 +454,28 @@ async function run() {
   check("a page on the same site keeps the tab's icon", secondPage?.favicon === iconUrl, {
     secondPage,
   });
+
+  // A window the page opens with `webviewTag=yes` in its features gets the element (Electron
+  // hands the features to a window no handler shapes), but no guest attaches in it.
+  const windowsNow = new Set(BrowserWindow.getAllWindows());
+  await win.webContents.executeJavaScript(
+    `window.open("${appOrigin}/child", "_blank", "webviewTag=yes,width=400,height=300"); true`,
+    true,
+  );
+  let child = null;
+  for (let i = 0; i < 50 && child === null; i++) {
+    await sleep(100);
+    child = await win.webContents.executeJavaScript("window.__smoke.child");
+  }
+  const fromChild = webContents
+    .getAllWebContents()
+    .filter((w) => w.getURL().includes("from=child"));
+  check(
+    "a window given webviewTag=yes by its opener cannot attach a guest",
+    child !== null && child.childAttached === false && fromChild.length === 0,
+    { child, guestsFromChild: fromChild.length, logs: logs.filter((l) => l.includes("refused")) },
+  );
+  for (const opened of BrowserWindow.getAllWindows()) if (!windowsNow.has(opened)) opened.close();
 
   // Closing the guest (the page removes its element) reports the tab closed.
   await win.webContents.executeJavaScript('document.getElementById("good").remove()');
