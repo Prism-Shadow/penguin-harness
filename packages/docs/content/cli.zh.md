@@ -7,7 +7,7 @@ description: 所有 penguin 命令和子命令的选项、默认值、输出结�
 
 CLI 以 npm 包 `@prismshadow/penguin-cli` 发布，命令名为 `penguin`。直接运行 `penguin` 会打印帮助。`-v, --version` 打印当前构建的一行标识信息，`penguin version --json` 则打印完整信息。启动时，CLI 会从工作目录加载 `.env` 文件。
 
-CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`、`ls`、`input`、`logs`、`agent`、`project`、`cost`、`schedule`、`org`）都向 PenguinHarness 服务器发送 HTTP 请求，并渲染返回结果。Task 在服务器上运行，Session 存放在服务器的索引里；CLI 创建的一切 Web App 都能看到，反过来也一样。只有 `config` 仍直接编辑 Project 的文件，`server` / `web` 则负责启动服务本身。
+CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`、`ls`、`input`、`logs`、`agent`、`project`、`cost`、`schedule`、`org`、`browser`）都向 PenguinHarness 服务器发送 HTTP 请求，并渲染返回结果。Task 在服务器上运行，Session 存放在服务器的索引里；CLI 创建的一切 Web App 都能看到，反过来也一样。只有 `config` 仍直接编辑 Project 的文件，`server` / `web` 则负责启动服务本身。
 
 ## 服务器连接
 
@@ -425,6 +425,96 @@ penguin org finance [--period <YYYY-MM>] [--json]
 ### finance
 
 `finance` 打印本期支出：按员工（自身支出与沿汇报线的累计支出，与预算对比，带 `warned` 和 `paused` 标记）和按工单分别列出，最后是总额。如果有用量发生在未配置价格的模型上，stderr 会提示这些数字只是下限。
+
+## penguin browser
+
+驱动桌面应用的[内置浏览器](/builtin-browser)，是服务器 `/api/builtin-browser` 路由之上的瘦客户端。命令沿用 GenericAgent 的 `web_scan` / `web_execute_js` 设计：`scan` 读取页面，`exec` 在页面中运行 JavaScript 并报告发生了什么变化。输出是写给 Agent 读的：简短的带标签的行，没有任何装饰。预装的 `browser-automation` 插件会教 Agent 如何使用它。
+
+```bash
+penguin browser status                                   # available? and the open tabs
+penguin browser tabs                                     # id (* = active), title, URL
+penguin browser open <url> [--new-tab]                   # in the active tab (a new one when none is open), or a new tab
+penguin browser switch <tab-id>
+penguin browser close [<tab-id>]                         # default: the active tab
+penguin browser scan [--text] [--max-chars <n>]          # the page as simplified HTML, or text
+penguin browser exec [<script> | -] [--file <f>] [--save <f>] [--no-monitor] [--timeout <s>]
+penguin browser click <selector> [--index <n>] | --at <x>,<y>
+penguin browser type <text> [--selector <css>] [--submit]
+penguin browser screenshot [-o <file.png>] [--full-page]
+penguin browser cdp <Domain.method> [--params '<json>']
+penguin browser import --list | --from <source-id|browser> [--cookies] [--history] [--domain <d>]...
+penguin browser history [<query>] [-n <count>]
+```
+
+### 标签页、输出与调用方会话
+
+- `--tab <id>` 指定 `open`、`scan`、`exec`、`click`、`type`、`screenshot` 和 `cdp` 作用的标签页：取 `tabs` 列出的标签页 id，或 `active`（默认值）。
+- `--json` 把响应打印为一行 JSON；`--server` 与其他命令相同。
+- 在会话内部，`open`、`exec`、`click` 和 `type` 会发送 `PENGUIN_SESSION_ID`，应用据此在正在驱动浏览器的那个对话里打开浏览器面板。
+- 这些命令从不自动启动服务器，因为这样启动的服务器没有桌面应用来承载浏览器。没有服务器在运行时，命令以 `browser_unavailable` 失败。
+- 输出的标签与提示跟随 CLI 的语言。本节示例是英文输出；`PENGUIN_LANG=zh` 时改用中文，例如 `状态：success   标签页：12`。
+
+`status` 打印 `status: available` 和标签页列表；不可用时打印 `status: unavailable (<reason>)` 和一行说明，并以退出码 1 结束。原因有三种：`not_desktop`（服务器不属于桌面应用）、`shell_unsupported`（桌面应用版本过旧，无法承载浏览器）和 `no_window`（应用没有打开的窗口）。
+
+### scan
+
+```text
+tab 12 · Your Orders · https://www.amazon.com/your-orders/orders
+tabs: *12 Your Orders | 15 Google
+---
+<simplified HTML, or text with --text>
+```
+
+第一行指明标签页，第二行列出所有标签页并用星号标出当前标签页，分隔线之后是页面内容。简化时会去掉隐藏、浮动和被遮挡的元素，只保留少数属性，并缩短过长的 `src` 和 `href`。长列表只保留三项，再加一行 `[FAKE ELEMENT] N more items hidden, selector: "…"`，用其中的选择器可以在 `exec` 里取到其余条目。正文长度以 `--max-chars` 为上限，默认 35,000 个字符。
+
+### exec
+
+脚本作为一个 async 函数的函数体在页面中运行，因此可以使用 `await`，只有 `return` 才能产出返回值；返回值必须能转成 JSON。脚本只能来自一处：参数、`--file` 或 stdin。参数为 `-` 时，或者没有参数且 stdin 不是终端（例如 heredoc：`penguin browser exec <<'EOF'`，无需任何转义）时读取 stdin。隐式读取的 stdin 一秒内没有任何输入，视为没有给出脚本。
+
+```text
+status: success   tab: 12
+return: {"added":true}
+diff: 14 elements changed
+  <the most significant change, indented>
+transients: "Added to cart"
+new tabs: 16 https://www.amazon.com/cart
+note: No visible change on the page.
+```
+
+- 每一行只在有内容时出现，只有 `return:` 例外：`exec` 总会打印它，`return: undefined` 通常意味着漏写了 `return`。调用期间页面发生跳转时，状态行末尾会加上 `page: reloaded`。
+- 字符串返回值原样打印，跨多行时打印为缩进的块；其他值打印为紧凑 JSON。返回值超过 8,000 个字符时截断，并附上 `[truncated — use --save]`。
+- `--save <file>` 把完整返回值写入文件（字符串原样写入，其他值写成缩进的 JSON），终端只打印前 170 个字符和 `[saved to <absolute path>]`。
+- `transients:` 列出调用期间出现、之后可能又消失的文字，例如一条弹出提示。`new tabs:` 列出页面新打开的标签页。
+- `--no-monitor` 跳过变化追踪，因此没有 `diff:` 和 `transients:`；对只读取的脚本来说更快。
+- `--timeout` 限定脚本的运行时间：`30s`、`2m` 或纯数字秒数，默认 15 秒。
+- 脚本抛出异常时打印 `status: failed` 和一行 `error:`，命令以退出码 1 结束。
+
+### click 和 type
+
+- `click <selector>` 把第 `--index` 个匹配（从 0 开始计数）滚动到视野内，再用可信的鼠标事件点击它的中心：依次是移动、按下和松开。`click --at <x>,<y>` 点击视口中的一个坐标（CSS 像素）。两者都会在状态行之后打印 `clicked: <tag> "<text>" at <x>,<y>`，其余各行与 `exec` 相同。
+- `type <text>` 把文字插入当前聚焦的元素，或先聚焦 `--selector` 指定的元素再插入，并触发 `input` 和 `change` 事件。`--submit` 在输入后按下回车。
+
+### screenshot 和 cdp
+
+- `screenshot` 把 PNG 写入 `-o` 指定的文件（默认是工作目录下的 `screenshot-<time>.png`），并打印 `screenshot: <path> (<width>x<height>, <size> KB)`。`--full-page` 截取整个页面而不只是视口。加 `--json` 时打印响应本身，即 `{mime, data}`，图片以 base64 编码；此时只有给了 `-o` 才写文件。
+- `cdp` 向标签页发送一条 Chrome DevTools Protocol 命令，并把结果打印为紧凑 JSON，超过 8,000 个字符时截断（加 `--json` 打印完整结果）。页面 JavaScript 够不到的地方都靠它：文件输入框的文件（`DOM.setFileInputFiles`）、跨域 iframe（`Page.createIsolatedWorld`）、封闭的 shadow root。
+
+### import
+
+- `--list` 列出本机的浏览器个人资料：来源 id、浏览器、个人资料名称，以及其中是否有 Cookie 和历史记录。
+- `--from` 接受列表中的来源 id，或浏览器名（`chrome`、`edge`、`brave`、`arc`、`vivaldi`、`opera`、`chromium` 或 `firefox`），后者表示该浏览器的 `Default` 个人资料，或它唯一的个人资料。
+- `--cookies` 和 `--history` 选择导入什么；两者都不给时全部导入。
+- `--domain` 只保留某个网站及其子域名的 Cookie。可以重复给出，也可以用逗号分隔多个网站。
+
+结果先给出来源，再打印 `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`、`history: <n> imported (<n> found)`，每条警告各占一行 `warning:`。各平台的细节（如 macOS 的钥匙串提示、Windows 上 Chrome 的应用绑定 Cookie）见[从你的浏览器导入](/builtin-browser#从你的浏览器导入)。
+
+### history
+
+`history` 在内置浏览器的历史记录（含导入的页面）中按标题和 URL 搜索，不区分大小写。访问次数多、时间近的页面排在前面，默认显示 20 条，可用 `-n` 调整，每行一个页面：`2026-09-23 14:03 · Your Orders · https://…`。
+
+### 错误
+
+出错时在 stderr 打印一行 `error: <code>: <message>`，命令以退出码 1 结束。服务器的错误码有 `browser_unavailable`、`no_tab`（没有打开的标签页）、`no_such_tab`、`script_error`、`timeout`、`invalid_url`、`source_not_found` 和 `import_failed`；CLI 自己还有三种：命令写错时的 `invalid_argument`、文件读写失败时的 `io_error`，以及连不上服务器时的 `request_failed`。对于 `browser_unavailable`，错误信息会说明内置浏览器需要 PenguinHarness 桌面应用，并且应用必须处于打开状态。
 
 ## 审批模式（--approve）
 

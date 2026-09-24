@@ -60,6 +60,9 @@ importers:
       '@penguinharness/agent-tuning':
         specifier: workspace:*
         version: link:../../plugins/agent-tuning
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -142,6 +145,9 @@ importers:
       '@penguinharness/agent-tuning':
         specifier: workspace:*
         version: link:../../plugins/agent-tuning
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -221,6 +227,9 @@ importers:
       '@penguinharness/agent-tuning':
         specifier: workspace:*
         version: link:../../plugins/agent-tuning
+      '@penguinharness/browser-automation':
+        specifier: workspace:*
+        version: link:../../plugins/browser-automation
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -569,6 +578,8 @@ importers:
   plugins/agent-development: {}
 
   plugins/agent-tuning: {}
+
+  plugins/browser-automation: {}
 
   plugins/continual-learning: {}
 
@@ -1499,6 +1510,9 @@ packages:
 
   '@penguinharness/agent-tuning@file:plugins/agent-tuning':
     resolution: {directory: plugins/agent-tuning, type: directory}
+
+  '@penguinharness/browser-automation@file:plugins/browser-automation':
+    resolution: {directory: plugins/browser-automation, type: directory}
 
   '@penguinharness/continual-learning@file:plugins/continual-learning':
     resolution: {directory: plugins/continual-learning, type: directory}
@@ -5410,6 +5424,8 @@ snapshots:
 
   '@penguinharness/agent-tuning@file:plugins/agent-tuning': {}
 
+  '@penguinharness/browser-automation@file:plugins/browser-automation': {}
+
   '@penguinharness/continual-learning@file:plugins/continual-learning': {}
 
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
@@ -5470,6 +5486,7 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/goal': file:plugins/goal
@@ -5502,6 +5519,7 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/goal': file:plugins/goal
@@ -5530,6 +5548,7 @@ snapshots:
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/goal': file:plugins/goal
@@ -5577,6 +5596,7 @@ snapshots:
       remark-parse: 11.0.0(supports-color@10.2.2)
       smol-toml: 1.6.1
       tar: 7.5.22
+      typescript: 5.9.3
       undici: 7.29.0
       unified: 11.0.5
       ws: 8.21.0
@@ -5603,6 +5623,7 @@ snapshots:
       remark-parse: 11.0.0(supports-color@10.2.2)
       smol-toml: 1.6.1
       tar: 7.5.22
+      typescript: 5.9.3
       undici: 7.29.0
       unified: 11.0.5
       ws: 8.21.0

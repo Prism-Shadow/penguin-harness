@@ -41,7 +41,7 @@ describe("loadLibraryPlugins", () => {
   it("loads every plugin directory sorted by name, each with a date-sequence version and a category", () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    expect(plugins.length).toBe(13);
+    expect(plugins.length).toBe(14);
     for (const plugin of plugins) {
       expect(plugin.version, plugin.name).toMatch(PLUGIN_VERSION_PATTERN);
       expect(
@@ -182,6 +182,7 @@ describe("groupPlugins / loadPluginGroups", () => {
     expect(groups.map((g) => g.id)).toEqual(PLUGIN_CATEGORIES.map((c) => c.id));
     const names = (id: string) => groups.find((g) => g.id === id)?.plugins.map((p) => p.name);
     expect(names("office-productivity")).toEqual([
+      "browser-automation",
       "continual-learning",
       "data-analysis",
       "goal",

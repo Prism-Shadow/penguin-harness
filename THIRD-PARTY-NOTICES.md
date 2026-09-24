@@ -4,15 +4,17 @@ PenguinHarness itself is licensed under Apache-2.0 (see [LICENSE](LICENSE)). Som
 release artifacts** additionally bundle third-party programs and files, which keep their own
 licenses. This file records those, and how to obtain their source.
 
-Nothing listed here is source code of this repository. The programs below are downloaded by the
-release workflow (`.github/workflows/release.yml`) and placed alongside the application inside the
-release archives; the fonts are copied out of an npm dependency into the built web assets.
-Installing from npm (`@prismshadow/penguin-cli`) bundles none of them.
+The programs below are downloaded by the release workflow (`.github/workflows/release.yml`) and
+placed alongside the application inside the release archives; the fonts are copied out of an npm
+dependency into the built web assets. Installing from npm (`@prismshadow/penguin-cli`) bundles none
+of those programs or fonts.
 
-What earns an entry is a third-party work redistributed **as its own file**. An npm package whose
-JavaScript is compiled and minified into the application bundle (React, Shiki, xterm.js, KaTeX's own
-code, ...) is not listed: its license travels with it in `node_modules` and in the lockfile, and
-repeating every one of them here would be a second, staler copy of `pnpm-lock.yaml`.
+What earns an entry is a third-party work redistributed **as its own file**, or third-party code
+**adapted into this repository's own source**, whose license asks for its notice to go with every
+copy; the last section lists that code. An npm package whose JavaScript is compiled and minified
+into the application bundle (React, Shiki, xterm.js, KaTeX's own code, ...) is not listed: its
+license travels with it in `node_modules` and in the lockfile, and repeating every one of them here
+would be a second, staler copy of `pnpm-lock.yaml`.
 
 ## Node.js runtime — `node/`
 
@@ -69,3 +71,42 @@ truetype fallbacks KaTeX also ships are dropped at build time (`dropNonWoff2Font
 
 Source: <https://github.com/KaTeX/KaTeX> — the tag matching the `katex` version resolved in
 `pnpm-lock.yaml`. The font sources and the script that builds them live in that repository.
+
+## GenericAgent — the built-in browser's page scripts
+
+Adapted into this repository's source, so present wherever the server ships: every release archive,
+the desktop application, and the `@prismshadow/penguin-server` npm package.
+
+The built-in browser's page scripts under `packages/server/src/builtin-browser/page-scripts/` (the
+DOM simplification that `penguin browser scan` returns, and the change monitor behind
+`penguin browser exec`) are ported from GenericAgent's `simphtml.py`; each ported file says so at
+its top. The `penguin browser` commands and the `browser-automation` skill follow GenericAgent's
+`web_scan` / `web_execute_js` tools and its browser operating notes.
+
+**License: MIT**, reproduced in full:
+
+```text
+MIT License
+
+Copyright (c) 2025 lsdefine
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+Source: <https://github.com/lsdefine/genericagent>

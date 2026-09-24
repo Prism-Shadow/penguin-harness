@@ -88,10 +88,12 @@ Four plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills))
 
 | Category             | Plugins                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
-| Office Productivity  | `data-analysis`, `use-firecrawl`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
+| Office Productivity  | `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
 | Software Development | `software-development`, `use-claude-code`                              |
 | AI App Development   | `agent-development`, `model-development`, `skill-porting`, `agent-tuning`     |
 | Agent Company        | `agent-company`                                                               |
+
+The desktop app also has a built-in browser in its side dock. Agents drive it with `penguin browser` and the `browser-automation` plugin: they read pages, click and type, and pull out data such as your Amazon orders, signed in with the accounts you import from your own browser.
 
 ## Supported Models
 
@@ -280,6 +282,10 @@ If you use PenguinHarness in your research, please cite:
   license = {Apache-2.0}
 }
 ```
+
+## Acknowledgements
+
+The built-in browser's automation is adapted from [GenericAgent](https://github.com/lsdefine/genericagent) (MIT): its DOM simplification (simphtml) and its web_scan / web_execute_js design. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## License
 

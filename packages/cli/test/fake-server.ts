@@ -2,7 +2,8 @@
  * In-process fake PenguinHarness server for CLI tests: stubs `globalThis.fetch` with a
  * handler covering exactly the endpoints the server-backed commands touch (the current
  * user, session create/get/patch, tasks/steer/compact/abort, SSE stream, messages, agents,
- * projects, usage, schedules, organizations and their channels). Connection resolution is pinned via PENGUIN_API_URL
+ * projects, usage, schedules, organizations and their channels, and — through the
+ * `builtinBrowser` handler a test sets — the built-in browser). Connection resolution is pinned via PENGUIN_API_URL
  * (a loopback URL, so no token gate) and PENGUIN_HOME points at a scratch directory so
  * nothing of the developer's real data root is read.
  *
@@ -218,6 +219,24 @@ export class FakeServer {
   readonly scheduleItems = new Map<string, Json>();
   /** Company mode: organizations keyed by org id. */
   readonly orgs = new Map<string, FakeOrgState>();
+  /**
+   * The built-in browser (`/api/builtin-browser/*`): answers each request from its method, its
+   * path below that prefix, its query and its body. The default is what a server outside the
+   * desktop app answers.
+   */
+  builtinBrowser: (req: { method: string; path: string; query: URLSearchParams; body?: Json }) => {
+    status?: number;
+    body?: unknown;
+  } = () => ({
+    status: 503,
+    body: {
+      error: {
+        code: "browser_unavailable",
+        message: "The built-in browser is only available in the desktop app.",
+        reason: "not_desktop",
+      },
+    },
+  });
 
   private nextSessionOrdinal = 1;
   private nextEventId = 1;
@@ -1587,6 +1606,17 @@ export class FakeServer {
       search: url.search,
       ...(body !== undefined ? { body } : {}),
     });
+
+    if (apiPath.startsWith("/api/builtin-browser/")) {
+      const answer = this.builtinBrowser({
+        method,
+        path: apiPath.slice("/api/builtin-browser".length),
+        query: url.searchParams,
+        ...(body !== undefined ? { body } : {}),
+      });
+      const status = answer.status ?? 200;
+      return status === 204 ? new Response(null, { status }) : this.json(answer.body ?? {}, status);
+    }
 
     // Session create
     let m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/sessions$/.exec(apiPath);
