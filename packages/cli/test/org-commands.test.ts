@@ -1462,6 +1462,44 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(text).toContain("revised r1");
   });
 
+  it("show prints the root and each scope entry as its kind, file and state; publish prints the server's hints", async () => {
+    server.addProposal("acme", {
+      number: 4,
+      root: "typst.ts",
+      scope: [
+        { kind: "edit", file: "src/a.ts", state: "exists" },
+        { kind: "new", file: "src/b.ts", state: "new", name: "Batch" },
+        { kind: "delete", file: "src/c.ts", state: "deleted" },
+        { kind: "rename", from: "src/d.ts", file: "src/e.ts", state: "renamed" },
+      ],
+      hints: ["src/b.ts is listed as new but already exists — is it an edit?"],
+    });
+    expect(await cli(["org", "proposal", "show", "4"])).toBe(0);
+    const text = out();
+    expect(text).toContain(
+      [
+        t.org.proposalScope("typst.ts"),
+        "  edit src/a.ts  [exists]",
+        "  new src/b.ts  [new]  /Batch/",
+        "  delete src/c.ts  [deleted]",
+        "  rename src/d.ts → src/e.ts  [renamed]",
+      ].join("\n"),
+    );
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-org-test-"));
+    const file = path.join(dir, "proposal.md");
+    fs.writeFileSync(file, "---\ntitle: T\n---\n\n## Change\n\nOne.\n");
+    try {
+      stdout.length = 0;
+      expect(await cli(["org", "proposal", "publish", "4", "--file", file])).toBe(0);
+      expect(out()).toBe(
+        `${t.org.proposalPublished(4, 1)}\n${t.org.proposalHint("src/b.ts is listed as new but already exists — is it an edit?")}\n`,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("implement names the implementer as agentId and the caller as callerAgentId, and prints the session", async () => {
     server.addProposal("acme", { number: 2 });
     expect(

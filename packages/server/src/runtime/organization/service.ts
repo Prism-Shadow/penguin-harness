@@ -2619,14 +2619,27 @@ export class OrganizationService {
     projectId: string,
     orgId: string,
     channelId: string,
-    opts: { name: string; purpose: string },
+    opts: { name: string; purpose: string; unarchive?: boolean },
     by: Actor,
     principals: readonly string[],
   ): Promise<void> {
     const org = await this.requireOrg(projectId, orgId);
-    if ((await this.deps.store.readChannel(org.dir, channelId)) === null) {
+    const existing = await this.deps.store.readChannel(org.dir, channelId);
+    if (existing === null) {
       // The creator is a member from the start, employee or person.
-      await this.createChannel(projectId, orgId, { channelId, ...opts }, by);
+      await this.createChannel(
+        projectId,
+        orgId,
+        { channelId, name: opts.name, purpose: opts.purpose },
+        by,
+      );
+    } else if (existing.parsed.ok && existing.parsed.value.archived && opts.unarchive === true) {
+      // A channel a plugin drives through must be open. A person may lift the archive (the
+      // channel patch path writes the system line); an employee may not, and says so.
+      if (this.actorPrincipal(org, by).startsWith("agent:")) {
+        throw channelArchived(channelId);
+      }
+      await this.patchChannel(projectId, orgId, channelId, { archived: false }, by);
     }
     // Memberships are the person's to arrange: joining is theirs by right, an employee may not
     // invite itself, and only a member may invite the rest — so the person behind the actor

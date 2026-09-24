@@ -40,6 +40,7 @@ import type {
   ProposalRevision,
   ProposalSection,
   ProposalStatus,
+  ProposalScopeKind,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -50,6 +51,7 @@ import { toneDot, toneInk, toneStrip, toneSurface } from "../../lib/tone";
 import { Switch } from "../../components/ui/switch";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useAuth } from "../../state/auth";
+import { rememberSessionMachine } from "../../lib/session-machines";
 import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
 import { Badge } from "../../components/ui/badge";
@@ -98,11 +100,19 @@ import {
   inlineSections,
   revisedAfterApproval,
   scopeChanges,
-  scopeFileCandidates,
+  scopeFileTarget,
   sectionSource,
   sortProposals,
 } from "./proposals-model";
 import type { ParagraphChange, WordChange } from "./proposals-model";
+
+/** A scope entry's kind as a tag: an edit recedes, a new file is an addition, a delete a removal, a rename a move. */
+const SCOPE_KIND_TONE: Record<ProposalScopeKind, "muted" | "success" | "danger" | "link"> = {
+  edit: "muted",
+  new: "success",
+  delete: "danger",
+  rename: "link",
+};
 
 /** Speech bubble (lucide message-square): the comment chip's mark. */
 const COMMENT_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
@@ -603,6 +613,8 @@ function DetailPage({ number }: { number: number }) {
       setDetail(next);
       company.proposalsChanged();
       toastSuccess(done);
+      // A write that could not reach an employee says so: the channel is the only way there.
+      for (const hint of next.hints ?? []) toastError(hint);
       return true;
     } catch (e) {
       toastError(apiErrorText(e));
@@ -673,38 +685,40 @@ function DetailPage({ number }: { number: number }) {
   };
 
   /**
-   * A scope file opens in the Files tab of a session that has it — the implementation
-   * sessions (newest first), then the author's desk — at the path it has there: as
-   * written, or under the organization's shared workspace. None has it: say so, and leave
-   * the path on the clipboard.
+   * A scope file opens in the Files tab of a session whose Workspace holds it — the
+   * implementation sessions (newest first), then the author's desk — at the path the server
+   * resolved it under (`detail.base`). Those sessions live where the organization runs, so
+   * every call about them goes to that machine, and the chat page is told so too. None
+   * holds it: say so, and leave the path on the clipboard.
    */
   const openScopeFile = async (file: string): Promise<void> => {
-    if (detail === null) return;
-    const candidates = [...detail.sessions].reverse();
+    if (detail === null || detail.base === undefined) return;
+    const machine = org?.machineId ?? null;
+    const ids = [...detail.sessions].reverse();
     try {
-      candidates.push((await api.getOrgDesk(projectId, orgId, detail.author)).sessionId);
+      ids.push((await api.getOrgDesk(projectId, orgId, detail.author)).sessionId);
     } catch {
-      // No desk to fall back to; the implementation sessions may still have it.
+      // No desk to fall back to; the implementation sessions may still hold it.
     }
-    let orgWorkspace: string | null = null;
-    try {
-      orgWorkspace = (await api.getOrganization(projectId, orgId)).settings.workspace ?? null;
-    } catch {
-      // The scope is then read only as Workspace-relative.
-    }
-    for (const sessionId of candidates) {
-      let workspace: string;
+    const sessions: Array<{ sessionId: string; workspace: string }> = [];
+    for (const sessionId of ids) {
+      rememberSessionMachine(sessionId, machine);
       try {
-        workspace = (await api.getSession(sessionId)).session.workspace;
+        sessions.push({
+          sessionId,
+          workspace: (await api.getSession(sessionId)).session.workspace,
+        });
       } catch {
-        continue;
+        // A session that cannot be read is skipped.
       }
-      for (const rel of scopeFileCandidates(file, workspace, orgWorkspace)) {
-        const stat = await api.statSessionFiles(sessionId, [rel]).catch(() => null);
-        if (stat?.existing.includes(rel)) {
-          navigate(`/chat/${sessionId}?file=${encodeURIComponent(rel)}`);
-          return;
-        }
+    }
+    for (const session of sessions) {
+      const target = scopeFileTarget(detail.base, file, [session]);
+      if (target === null) continue;
+      const stat = await api.statSessionFiles(target.sessionId, [target.rel]).catch(() => null);
+      if (stat?.existing.includes(target.rel)) {
+        navigate(`/chat/${target.sessionId}?file=${encodeURIComponent(target.rel)}`);
+        return;
       }
     }
     toastError(t.fileNotInWorkspace);
@@ -963,6 +977,12 @@ function ProposalView({
       </OrgSection>
 
       <OrgSection title={t.scope} count={detail.scope.length}>
+        {detail.root !== "" && (
+          <p className="mb-1 font-mono text-xs text-gray-500 dark:text-gray-400">
+            <span className="mr-1 text-[11px] uppercase tracking-wide">{t.scopeRoot}</span>
+            {detail.root}
+          </p>
+        )}
         {detail.scope.length === 0 ? (
           <OrgEmptyLine>{t.scopeEmpty}</OrgEmptyLine>
         ) : (
@@ -971,14 +991,38 @@ function ProposalView({
               // A list, not a table: a long name pattern wraps under its file instead of
               // squeezing the file column to a character a line.
               <li key={`${entry.file}-${i}`} className="py-1.5">
-                <div className="font-mono break-all">
-                  <TitleButton
-                    onClick={() => void onOpenFile(entry.file)}
-                    title={t.openFile}
-                    className="font-mono"
+                <div className="flex flex-wrap items-baseline gap-1.5 font-mono break-all">
+                  <span
+                    className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface[SCOPE_KIND_TONE[entry.kind]]}`}
                   >
-                    {entry.file}
-                  </TitleButton>
+                    {t.scopeKind[entry.kind]}
+                  </span>
+                  {entry.kind === "rename" && entry.from !== undefined && (
+                    <span className="text-gray-500 dark:text-gray-400">{entry.from} →</span>
+                  )}
+                  {entry.state === "exists" ? (
+                    <TitleButton
+                      onClick={() => void onOpenFile(entry.file)}
+                      title={t.openFile}
+                      className="font-mono"
+                    >
+                      {entry.file}
+                    </TitleButton>
+                  ) : (
+                    <span>{entry.file}</span>
+                  )}
+                  {entry.state !== undefined && entry.state !== "exists" && (
+                    <span
+                      className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface[entry.state === "missing" ? "danger" : "muted"]}`}
+                      title={
+                        entry.state === "missing"
+                          ? t.scopeMissingHint(detail.root === "" ? t.scopeWorkspace : detail.root)
+                          : undefined
+                      }
+                    >
+                      {t.scopeState[entry.state]}
+                    </span>
+                  )}
                 </div>
                 {entry.name !== undefined && (
                   <div className="mt-0.5 font-mono whitespace-pre-wrap break-all text-gray-500 dark:text-gray-400">

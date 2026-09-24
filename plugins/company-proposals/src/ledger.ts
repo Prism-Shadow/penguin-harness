@@ -52,6 +52,9 @@ export type LedgerEntry =
       number: number;
       revision: number;
       title: string;
+      /** The repository's directory in the shared workspace; absent = "" (the workspace itself). */
+      root?: string;
+      /** Every entry carries its `kind` (ledgers written before kinds are migrated on load — see migrateScopeKinds). */
       scope: ProposalScopeEntry[];
       sections: ProposalSection[];
       by: string;
@@ -99,9 +102,23 @@ export type LedgerEntry =
   /** A pending comment reworded, or withdrawn, by the person who wrote it — its own until sent, so neither is an event. */
   | { kind: "comment_edited"; number: number; commentId: string; text: string; by: string }
   | { kind: "comment_deleted"; number: number; commentId: string; by: string }
-  /** A request for changes: the pending comments it gathers, in one batch. */
-  | { kind: "batch"; number: number; id: string; commentIds: string[]; by: string }
-  | { kind: "resolved"; number: number; commentId: string; text: string; by: string };
+  /**
+   * A request for changes: the pending comments it gathers, in one batch, and the `revision`
+   * they were written against (a line written before that field reads as the revision current
+   * when it was written) — the author's `ready` is refused until a later revision is out and
+   * every comment of the batch is resolved.
+   */
+  | {
+      kind: "batch";
+      number: number;
+      id: string;
+      commentIds: string[];
+      by: string;
+      revision?: number;
+    }
+  | { kind: "resolved"; number: number; commentId: string; text: string; by: string }
+  /** A channel message the plugin had to send did not go out: to whom, and why. */
+  | { kind: "notify_failed"; number: number; reason: string; target: string[]; by: string };
 
 /** A proposal as the fold produces it: every fact the ledger holds about it, before any caller-specific view. */
 export interface Proposal {
@@ -115,12 +132,16 @@ export interface Proposal {
   brief: string;
   createdAt: string;
   updatedAt: string;
+  /** The scope's root at the head revision ("" = the shared workspace). */
+  root: string;
   scope: ProposalScopeEntry[];
   sections: ProposalSection[];
   materials: ProposalMaterial[];
   sessions: string[];
   comments: ProposalComment[];
   events: ProposalEvent[];
+  /** The batches of requested changes since the last `ready` (or creation): what the author's next `ready` must have answered. */
+  openBatches: Array<{ id: string; revision: number; commentIds: string[] }>;
   /** The revision the standing approval covers; null until approved. Kept across a later publish (the status is not). */
   approvedRevision: number | null;
   /** Every revision as published, by number — what a diff against the approved one reads. */
@@ -158,11 +179,13 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       brief: line.brief,
       createdAt: line.at,
       updatedAt: line.at,
+      root: "",
       scope: [],
       sections: [],
       materials: [],
       sessions: [],
       comments: [],
+      openBatches: [],
       events: [{ seq: line.seq, at: line.at, kind: "created", by: delegatedBy }],
       approvedRevision: null,
       revisions: new Map(),
@@ -185,11 +208,13 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
     case "revised":
       p.revision = line.revision;
       p.title = line.title;
+      p.root = line.root ?? "";
       p.scope = line.scope;
       p.sections = line.sections;
       p.revisions.set(line.revision, {
         revision: line.revision,
         title: line.title,
+        root: line.root ?? "",
         scope: line.scope,
         sections: line.sections,
         by: line.by,
@@ -205,9 +230,11 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       return;
     case "status":
       p.status = line.status;
-      if (line.status === "ready")
+      if (line.status === "ready") {
+        // A ready answers every batch before it.
+        p.openBatches = [];
         event("ready", line.by, line.reason !== undefined ? { text: line.reason } : {});
-      else if (line.status === "approved") {
+      } else if (line.status === "approved") {
         p.approvedRevision = line.revision ?? p.revision;
         event("approved", line.by, { revision: p.approvedRevision });
       } else if (line.status === "merged") event("merged", line.by);
@@ -253,6 +280,11 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
     case "batch": {
       const ids = new Set(line.commentIds);
       for (const c of p.comments) if (ids.has(c.id)) c.batchId = line.id;
+      p.openBatches.push({
+        id: line.id,
+        revision: line.revision ?? p.revision,
+        commentIds: [...line.commentIds],
+      });
       // A request for changes puts a ready proposal back to the author's desk.
       if (p.status === "ready") p.status = "drafting";
       event("changes_requested", line.by, { text: String(line.commentIds.length) });
@@ -264,6 +296,9 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       event("resolved", line.by, { text: line.text });
       return;
     }
+    case "notify_failed":
+      event("notify_failed", line.by, { text: line.reason });
+      return;
   }
 }
 
@@ -330,6 +365,40 @@ export function foldLedger(lines: Iterable<LedgerLine>): LedgerState {
   return state;
 }
 
+/**
+ * The one-time migration of a ledger written before scope kinds: every `revised` line's scope
+ * entries without a `kind` get `kind: "edit"` (what every such entry meant). Lines that need
+ * nothing are returned as they were, byte for byte; a changed line is the same JSON with the
+ * key added first in each entry. `changed` counts the entries given a kind — 0 means the text
+ * is untouched and nothing is to be written.
+ *
+ * Backward compatibility (changelog/unreleased/2026-09-24-backward-compatibility.md): to be
+ * removed once every data root that ran a pre-kind build has loaded one with this.
+ */
+export function migrateScopeKinds(text: string): { text: string; changed: number } {
+  let changed = 0;
+  const lines = text.split("\n").map((raw) => {
+    if (!raw.includes('"revised"')) return raw;
+    let value: unknown;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+    const line = value as { kind?: unknown; scope?: unknown };
+    if (line.kind !== "revised" || !Array.isArray(line.scope)) return raw;
+    let touched = false;
+    line.scope = (line.scope as Array<Record<string, unknown>>).map((entry) => {
+      if (typeof entry !== "object" || entry === null || "kind" in entry) return entry;
+      touched = true;
+      changed++;
+      return { kind: "edit", ...entry };
+    });
+    return touched ? JSON.stringify(line) : raw;
+  });
+  return { text: changed === 0 ? text : lines.join("\n"), changed };
+}
+
 /** Parses the file's text; a line that is not JSON, or not a ledger line, is skipped. */
 export function parseLedger(text: string): LedgerLine[] {
   const out: LedgerLine[] = [];
@@ -366,9 +435,10 @@ export class Ledger {
   constructor(
     readonly file: string,
     private readonly now: () => number = () => Date.now(),
+    private readonly log: (line: string) => void = () => {},
   ) {}
 
-  /** Replays the file (once). */
+  /** Replays the file (once), migrating a pre-kind ledger in place first (see migrateScopeKinds). */
   load(): Promise<void> {
     if (this.loaded === null) {
       this.loaded = (async () => {
@@ -377,6 +447,19 @@ export class Ledger {
           text = await fs.readFile(this.file, "utf8");
         } catch (err) {
           if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        }
+        const migrated = migrateScopeKinds(text);
+        if (migrated.changed > 0) {
+          const stamp = new Date(this.now()).toISOString().replace(/[:.]/g, "-");
+          const backup = `${this.file}.before-scope-kinds-${stamp}.bak`;
+          await fs.copyFile(this.file, backup);
+          const temp = `${this.file}.migrating-${process.pid}`;
+          await fs.writeFile(temp, migrated.text, "utf8");
+          await fs.rename(temp, this.file);
+          this.log(
+            `[company-proposals] migrated ${migrated.changed} scope entries to kind "edit" in ${this.file} (backup ${backup})`,
+          );
+          text = migrated.text;
         }
         this.state = foldLedger(parseLedger(text));
       })();

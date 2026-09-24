@@ -20,10 +20,16 @@ One Markdown file: YAML frontmatter, then the sections. Write it in the organiza
 ```markdown
 ---
 title: Ticket notices reach a desk in one batch
+root: penguin-harness
 scope:
-  - file: packages/server/src/runtime/organization/reconcile.ts
+  - kind: edit
+    file: packages/server/src/runtime/organization/reconcile.ts
     name: "notifyTicket|reconcileCalendar"
-  - file: packages/server/src/runtime/organization/digest.ts
+  - kind: new
+    file: packages/server/src/runtime/organization/digest.ts
+  - kind: rename
+    from: packages/server/src/runtime/organization/notices.ts
+    file: packages/server/src/runtime/organization/desk-notices.ts
 ---
 
 ## Change
@@ -39,7 +45,9 @@ Every ticket change woke the desk, a dozen times a day for one employee, each ru
 `reconcile.test.ts` "a blocked ticket reaches its owner at the next sweep, once": block a ticket, reconcile twice, assert the first sweep's body carries the line and the second does not.
 ```
 
-- **`scope` is the only place a file path appears.** Each entry is a file and, optionally, a `name` — a regular expression, capture groups allowed, over the names the change touches in that file. The scope is a **subset**: the files and names the change is meant to touch, not everything it might. When the implementer finds it needs more, it tells you and you widen it; never write a scope you have not read.
+- **`root` is the repository.** The directory, relative to the shared workspace, that the scope's paths start from — `root: typst.ts` when the repository sits in that folder. Leave it out only when the repository is the workspace itself. Look before you write it: `ls` the workspace.
+- **`scope` is the only place a file path appears.** Each entry has a `kind` and a `file` (relative to `root`) and, optionally, a `name` — a regular expression, capture groups allowed, over the names the change touches in that file. The kind says what happens to the file: `edit` (it exists and changes), `new` (the change creates it), `delete` (the change removes it), `rename` (it moves: `from` is where it is now, `file` where it goes). The scope is a **subset**: the files and names the change is meant to touch, not everything it might. When the implementer finds it needs more, it tells you and you widen it; never write a scope you have not read.
+- **The server checks the scope against the working tree.** `publish` refuses a scope whose `edit` or `delete` file, or whose `rename` source, is not under `root`, and names the likely path (the same path without a `legacy` segment, or files of that name elsewhere). Fix the path, or — if the change creates the file — list it as `kind: new`. A `new` file that already exists and a `rename` target that already exists are published with a hint; read it and correct the kind if it is right. Once a proposal is merged the check stops: its files have moved on.
 - **The sections speak in interfaces.** `## Change` (or `## 改动`) says what is changed, naming functions, classes, routes and fields — never a path, never a link to a file; the server refuses a body with a file link. `## Purpose` (`## 目的`) says why, in one paragraph. `## Test` (`## 测试`) names one test case and says what it asserts. Add a section when the change needs one; do not pad the three.
 - **Short.** A paragraph per section is the norm. A person comments on any passage they select, so every sentence should be one they can point at.
 - **Where the body lives is the company's choice.** If the handbook keeps proposals as issues or as `rfcs/<n>-<slug>.md` in the workspace, write the file there and publish from it; the ledger the page renders is what you publish, and the issue or file is material you attach (`material add issue=<url>` / `doc=<url>`).
@@ -64,9 +72,9 @@ Every write is attributed to you from your environment; there is nothing to pass
 
 1. **Read the brief and the code.** `show <n>`, then the handbook and the code the brief points at. Decide the smallest change that does what was asked; that is the scope.
 2. **Publish the first revision** and **open the implementation at once**: `implement <n> -m "<what to start with>"` opens a session of your own on the proposal; `--agent <colleague>` hands the build to a colleague instead. Do not wait for the person to read — the whole point is that reading and building overlap. The implementation session opens with the proposal text; it works on a `proposal/<n>-<slug>` branch against `dev` and reports through `feedback`.
-3. **Mark it ready** as soon as it says what it should: `ready <n>`. The person sees a ready event; further revisions do not undo it.
+3. **Mark it ready** as soon as it says what it should: `ready <n>`. The person sees a ready event; further revisions do not undo it. After a person has requested changes, `ready` is refused until you have answered them (step 5).
 4. **A feedback event** (`@you proposal:<n> …` in the channel) means the implementation found something the text does not say — a file outside the scope, an interface that behaves differently, a test that cannot be written as described. Change the proposal to match reality: widen the scope, rewrite the paragraph, replace the test — then `publish` again. If the finding changes the purpose, say so in the channel and let the person decide.
-5. **A batch of comments** (`@you proposal:<n> has a batch of <k> comments`) is one revision, not `k`: `comments <n> --pending` prints the proposal with every commented passage wrapped in `⟦<id>⟧…⟦/<id>⟧` and the comments listed by that id under it — the marks say exactly which words the person means; read the passage, not the id. Work through all of them, `publish` once (a comment whose passage you kept follows it; one whose passage you rewrote is listed as a comment on the earlier revision — that is fine, it is answered by your `resolve` note), then `resolve <n> <id>` each with one line saying what changed (or why nothing did). A person may send several batches; each is handled the same way.
+5. **A batch of comments** (`@you proposal:<n> has a batch of <k> comments`) is one revision, not `k`: `comments <n> --pending` prints the proposal with every commented passage wrapped in `⟦<id>⟧…⟦/<id>⟧` and the comments listed by that id under it — the marks say exactly which words the person means; read the passage, not the id. Then, in this order: revise the file for all of them; `resolve <n> <id>` each with one line saying what changed (or why nothing did); `publish` once (a comment whose passage you kept follows it; one whose passage you rewrote is listed as a comment on the earlier revision — that is fine, it is answered by your `resolve` note); then `ready <n>`. The server refuses `ready` until a revision was published after the batch and every comment in it is resolved, and says which comments are still open. A person may send several batches; each is handled the same way.
 6. **Runtime feedback** (`--runtime`, from the test team) on a proposal that is not yet approved is yours and the implementer's together: agree in the channel who changes what, revise the text where the behaviour changed, and let the implementer fix the branch.
 7. **Approval** is the person's: they approve and request the merge, the implementer merges and reports `merged`. Your part ends when the text matches what was merged; if the merge diverged from the text, publish one last revision.
 

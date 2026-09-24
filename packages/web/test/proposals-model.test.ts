@@ -15,7 +15,7 @@ import {
   scopeChanges,
   tokenizeWords,
   revisedAfterApproval,
-  scopeFileCandidates,
+  scopeFileTarget,
   commentsInSection,
   eventDetail,
   eventLine,
@@ -369,19 +369,31 @@ describe("eventLine", () => {
   });
 });
 
-describe("scopeFileCandidates", () => {
-  it("offers the file as written and the file under the shared workspace, inside the session's Workspace", () => {
-    expect(scopeFileCandidates("packages/a.ts", "/w/shared", "/w/shared")).toEqual([
-      "packages/a.ts",
-    ]);
-    expect(scopeFileCandidates("packages/a.ts", "/w/shared/dev", "/w/shared")).toEqual([
-      "packages/a.ts",
-    ]);
-    expect(scopeFileCandidates("packages/a.ts", "/w/shared", "/w/shared/dev")).toEqual([
-      "packages/a.ts",
-      "dev/packages/a.ts",
-    ]);
-    expect(scopeFileCandidates("../x.ts", "/w/shared", null)).toEqual([]);
+describe("scopeFileTarget", () => {
+  it("opens the file in the first session whose Workspace holds the scope's base", () => {
+    const sessions = [
+      { sessionId: "impl", workspace: "/w/shared/other" },
+      { sessionId: "desk", workspace: "/w/shared" },
+    ];
+    expect(scopeFileTarget("/w/shared/repo", "pkg/a.go", sessions)).toEqual({
+      sessionId: "desk",
+      rel: "repo/pkg/a.go",
+    });
+    expect(
+      scopeFileTarget("/w/shared/repo", "pkg/a.go", [
+        { sessionId: "s", workspace: "/w/shared/repo/" },
+      ]),
+    ).toEqual({ sessionId: "s", rel: "pkg/a.go" });
+    expect(scopeFileTarget("/w/shared/repo", "pkg/a.go", [sessions[0]!])).toBeNull();
+  });
+
+  it("reads a Windows base against a Windows Workspace", () => {
+    expect(
+      scopeFileTarget("C:\\Users\\k\\work\\general\\typst.ts", "packages/a/package.json", [
+        { sessionId: "desk", workspace: "C:\\Users\\k\\work\\general\\ceo" },
+        { sessionId: "root", workspace: "C:\\Users\\k\\work\\general" },
+      ]),
+    ).toEqual({ sessionId: "root", rel: "typst.ts/packages/a/package.json" });
   });
 });
 

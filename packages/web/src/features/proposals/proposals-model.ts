@@ -200,6 +200,8 @@ export function eventLine(ev: ProposalEvent, names: ReadonlyMap<string, string>)
       return t.merged;
     case "rejected":
       return t.rejected;
+    case "notify_failed":
+      return t.notify_failed;
     default:
       return ev.kind;
   }
@@ -211,7 +213,8 @@ export function eventDetail(ev: ProposalEvent): string | null {
   return ev.kind === "feedback" ||
     ev.kind === "runtime_feedback" ||
     ev.kind === "rejected" ||
-    ev.kind === "resolved"
+    ev.kind === "resolved" ||
+    ev.kind === "notify_failed"
     ? ev.text
     : null;
 }
@@ -559,26 +562,23 @@ export function withToken(
 }
 
 /**
- * Where a scope file may be inside one session's Workspace: the file as written (a path
- * relative to the Workspace itself), and the file under the organization's shared workspace
- * (what the scope is written against) when that lands inside the session's Workspace. Both
- * as Workspace-relative paths, deduplicated, in that order; empty when neither can be there.
+ * Where a scope file opens: the first session (in the order given — the implementation
+ * sessions newest first, then the author's desk) whose Workspace holds the file's absolute
+ * path, as `base` (the directory the scope resolves under, on the server that owns the
+ * organization) joined with the file, and the path relative to that Workspace. Null when no
+ * session's Workspace contains it.
  */
-export function scopeFileCandidates(
+export function scopeFileTarget(
+  base: string,
   file: string,
-  sessionWorkspace: string,
-  orgWorkspace: string | null,
-): string[] {
-  const out: string[] = [];
-  const push = (rel: string | null) => {
-    if (rel !== null && rel !== "" && !out.includes(rel)) out.push(rel);
-  };
-  push(toWorkspaceRelative(file, sessionWorkspace));
-  if (orgWorkspace !== null && orgWorkspace !== "") {
-    const root = orgWorkspace.replace(/[\\/]+$/, "");
-    push(toWorkspaceRelative(`${root}/${file}`, sessionWorkspace));
+  sessions: ReadonlyArray<{ sessionId: string; workspace: string }>,
+): { sessionId: string; rel: string } | null {
+  const absolute = `${base.replace(/[\\/]+$/, "")}/${file}`;
+  for (const s of sessions) {
+    const rel = toWorkspaceRelative(absolute, s.workspace);
+    if (rel !== null && rel !== "") return { sessionId: s.sessionId, rel };
   }
-  return out;
+  return null;
 }
 
 // ---------------------------------------------------------------------------

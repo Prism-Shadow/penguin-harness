@@ -4733,6 +4733,17 @@ Benchmark：
       openFile: "在会话的 Files 面板里打开",
       fileNotInWorkspace: "这个文件不在提案任何会话的工作区里；路径已复制",
       scopePattern: "名称模式",
+      scopeRoot: "仓库目录",
+      scopeWorkspace: "共享工作区",
+      scopeKind: { edit: "修改", new: "新建", delete: "删除", rename: "改名" },
+      scopeState: {
+        exists: "存在",
+        new: "未创建",
+        missing: "不存在",
+        deleted: "已删除",
+        renamed: "待改名",
+      },
+      scopeMissingHint: (where: string): string => `在 ${where} 下找不到这个文件`,
       sections: "正文",
       sectionsEmpty: "作者还没有发布正文。",
       events: "事件",
@@ -4780,6 +4791,7 @@ Benchmark：
       merged: "已标记为已合并",
       /** One line per event on the timeline, by kind. */
       event: {
+        notify_failed: "有人没收到通知",
         created: "创建了提案",
         revised: (n: number): string => `发布了第 ${n} 修订`,
         ready: "标记为已就绪",

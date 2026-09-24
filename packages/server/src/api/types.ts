@@ -5325,9 +5325,29 @@ export type CompanyServerEvent =
 export type ProposalStatus = "drafting" | "ready" | "approved" | "merged" | "rejected";
 
 /** One pair of the scope: a file, and optionally a pattern (a regular expression, with capture groups) over the names it touches. */
+/** What a scope entry does to its file: edit or delete one that exists, create a new one, or rename `from` to `file`. */
+export type ProposalScopeKind = "edit" | "new" | "delete" | "rename";
+
+/**
+ * A scope file's state in the working tree, as the owning server finds it when the proposal
+ * is read (under the proposal's `root`): `exists`, `missing` (an edit, a delete or a rename's
+ * source that is not there), `new` (a new file not written yet), `deleted` (a delete done),
+ * `renamed` (a rename whose source is still there and whose target is not yet).
+ */
+export type ProposalScopeState = "exists" | "new" | "missing" | "deleted" | "renamed";
+
+/**
+ * One entry of the scope: a file (relative to the proposal's `root`), what the change does to
+ * it, and optionally a pattern (a regular expression, capture groups allowed) over the names
+ * it touches. `from` is a rename's old path and appears on renames only.
+ */
 export interface ProposalScopeEntry {
+  kind: ProposalScopeKind;
   file: string;
+  from?: string;
   name?: string;
+  /** Computed on read (`GET …/:number`), never stored. */
+  state?: ProposalScopeState;
 }
 
 /** One paragraph of a section: the unit a comment anchors to. `id` is stable across revisions for unchanged text. */
@@ -5402,7 +5422,9 @@ export type ProposalEventKind =
   | "resolved"
   | "approved"
   | "merged"
-  | "rejected";
+  | "rejected"
+  /** A channel message the plugin had to send did not go out (the text says to whom, and why). */
+  | "notify_failed";
 
 /** One thing that happened to a proposal; `seq` orders the whole ledger and is what a read position points at. */
 export interface ProposalEvent {
@@ -5441,6 +5463,12 @@ export interface ProposalItem {
 export interface ProposalDetail extends ProposalItem {
   /** The delegation, as the person wrote it. */
   brief: string;
+  /** The repository's directory relative to the organization's shared workspace ("" = the workspace itself); scope paths are relative to it. */
+  root: string;
+  /** The absolute directory the scope resolves under, on the server that owns the organization — present on a read and on a publish answer. */
+  base?: string;
+  /** Notes on the scope a publish accepted but that deserve a look (a `new` file that already exists, a rename target already there) — on the publish answer only. */
+  hints?: string[];
   scope: ProposalScopeEntry[];
   sections: ProposalSection[];
   /** Pending comments are the commenter's own until requested: an employee sees only batched ones. */
@@ -5462,6 +5490,8 @@ export interface ProposalDetail extends ProposalItem {
 export interface ProposalRevision {
   revision: number;
   title: string;
+  /** The scope's root at this revision ("" = the shared workspace). */
+  root: string;
   scope: ProposalScopeEntry[];
   sections: ProposalSection[];
   /** `agent:<id>` or `user:<id>`. */

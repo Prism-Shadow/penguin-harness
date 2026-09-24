@@ -557,7 +557,8 @@ export interface Messages {
     proposalPeople(author: string, implementer: string | null, delegatedBy: string): string;
     proposalBrief(brief: string): string;
     proposalSessions(sessions: string): string;
-    proposalScope(): string;
+    proposalScope(root: string): string;
+    proposalHint(hint: string): string;
     proposalMaterials(): string;
     proposalComments(): string;
     proposalEvents(): string;
@@ -1428,7 +1429,9 @@ const en: Messages = {
       `Author ${author}, implementer ${implementer ?? "-"}, delegated by ${delegatedBy}`,
     proposalBrief: (brief) => `Brief: ${brief}`,
     proposalSessions: (sessions) => `Implementation sessions: ${sessions}`,
-    proposalScope: () => "Scope (file, name pattern):",
+    proposalScope: (root) =>
+      `Scope under ${root === "" ? "the shared workspace" : `root ${root}`} (kind, file, state, name pattern):`,
+    proposalHint: (hint) => `Hint: ${hint}`,
     proposalMaterials: () => "Materials:",
     proposalComments: () => "Comments:",
     proposalEvents: () => "Events:",
@@ -2245,7 +2248,9 @@ const zh: Messages = {
       `作者 ${author}，实施者 ${implementer ?? "-"}，委托人 ${delegatedBy}`,
     proposalBrief: (brief) => `委托：${brief}`,
     proposalSessions: (sessions) => `实施会话：${sessions}`,
-    proposalScope: () => "范围（文件，名称模式）：",
+    proposalScope: (root) =>
+      `范围（${root === "" ? "共享工作区" : `根目录 ${root}`}；类型、文件、状态、名称模式）：`,
+    proposalHint: (hint) => `提示：${hint}`,
     proposalMaterials: () => "材料：",
     proposalComments: () => "评论：",
     proposalEvents: () => "事件：",

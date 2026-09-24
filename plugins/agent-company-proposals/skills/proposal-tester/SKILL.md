@@ -17,7 +17,7 @@ If the message only names this skill without a concrete request, ask whether to 
 
 1. **What is on the branch.** `penguin org proposal ls --json` — every proposal with its status and materials; `git log origin/dev` in the shared workspace for what was merged since the last batch (the handbook says where the last batch's note is; write this batch's there when you are done).
 2. **Run it.** Check out `origin/dev` in a ticket session (a batch is work, not desk work — open one with `penguin org ticket start` on the batch ticket the handbook names, or attach your session to it), build, run the test suite, then the runtime checks the handbook lists: start the program, exercise the paths the merged proposals touch, read the logs.
-3. **Trace every finding to a proposal.** A failing test names files; the proposals' scopes name files — `penguin org proposal show <n>` for the candidates. A finding with no proposal is a plain ticket.
+3. **Trace every finding to a proposal.** A failing test names files; the proposals' scopes name files, relative to each proposal's `root` — `penguin org proposal show <n>` for the candidates. A finding with no proposal is a plain ticket.
 4. **Sort by state and act:**
    - **`merged`** — the change is in `main`; the finding is a bug there. File a fix ticket and attach it to the proposal so the page shows it:
      ```bash

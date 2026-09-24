@@ -1,19 +1,22 @@
 /**
  * A proposal's document form — what `penguin org proposal publish --file` sends — and the
- * way back. One Markdown file: a frontmatter block with `title` and `scope` (the files the
- * change touches, each with an optional name pattern), then the sections, `## ` headings
+ * way back. One Markdown file: a frontmatter block with `title`, an optional `root` (the
+ * repository's directory in the shared workspace) and `scope` (the files the change touches:
+ * each with its kind — edit, new, delete, or rename `from` an old path — and an optional name
+ * pattern; an entry written without a kind is an edit), then the sections, `## ` headings
  * over paragraphs. Three sections are required — 改动 / 目的 / 测试, or Change / Purpose /
  * Test — and the body may not link to files: a proposal is read as "what changes and why",
  * in terms of interfaces; the paths live in the scope, the diff in the PR it links as material.
  *
  * Paragraphs are the unit a comment anchors to, so their ids have to survive a revision: a
  * paragraph whose text is unchanged keeps the id it had, a new one takes the next free
- * number. The frontmatter is read by a parser of its own — the two keys it has do not
+ * number. The frontmatter is read by a parser of its own — the few keys it has do not
  * justify a YAML dependency in the bundle.
  */
 import type {
   ProposalParagraph,
   ProposalScopeEntry,
+  ProposalScopeKind,
   ProposalSection,
 } from "@prismshadow/penguin-server/api";
 
@@ -30,6 +33,8 @@ export class ProposalDocumentError extends Error {
 
 export interface ProposalDocument {
   title: string;
+  /** The repository's directory relative to the shared workspace ("" = the workspace itself). */
+  root: string;
   scope: ProposalScopeEntry[];
   sections: ProposalSection[];
 }
@@ -72,9 +77,19 @@ function splitFrontmatter(text: string): { head: string[]; body: string } {
   return { head: lines.slice(1, end), body: lines.slice(end + 1).join("\n") };
 }
 
-function parseFrontmatter(head: string[]): { title: string; scope: ProposalScopeEntry[] } {
+/** A scope entry as written: `kind` may be left out (read as `edit`, so older skill copies keep working). */
+type WrittenEntry = { kind?: string; file: string; from?: string; name?: string };
+
+const SCOPE_KINDS: readonly ProposalScopeKind[] = ["edit", "new", "delete", "rename"];
+
+function parseFrontmatter(head: string[]): {
+  title: string;
+  root: string;
+  scope: WrittenEntry[];
+} {
   let title = "";
-  const scope: ProposalScopeEntry[] = [];
+  let root = "";
+  const scope: WrittenEntry[] = [];
   let inScope = false;
   for (const raw of head) {
     if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
@@ -82,53 +97,113 @@ function parseFrontmatter(head: string[]): { title: string; scope: ProposalScope
     if (top !== null && !raw.startsWith(" ")) {
       inScope = false;
       if (top[1] === "title") title = unquote(top[2] ?? "");
+      else if (top[1] === "root") root = unquote(top[2] ?? "");
       else if (top[1] === "scope") inScope = true;
       continue;
     }
     if (!inScope) continue;
-    const item = /^\s*-\s*(?:file:\s*(.*))?$/.exec(raw);
+    // An item opens with `- <field>: <value>` (any of the entry's fields) or a bare `-`.
+    const item = /^\s*-\s*(?:([a-z]+):\s*(.*))?$/.exec(raw);
     if (item !== null) {
-      scope.push({ file: unquote(item[1] ?? "") });
+      scope.push({ file: "" });
+      if (item[1] !== undefined) setField(scope[scope.length - 1]!, item[1], item[2] ?? "", raw);
       continue;
     }
     const field = /^\s+([a-z]+):\s*(.*)$/.exec(raw);
     if (field !== null && scope.length > 0) {
-      const last = scope[scope.length - 1]!;
-      if (field[1] === "file") last.file = unquote(field[2] ?? "");
-      else if (field[1] === "name") last.name = unquote(field[2] ?? "");
+      setField(scope[scope.length - 1]!, field[1]!, field[2] ?? "", raw);
       continue;
     }
     throw new ProposalDocumentError("proposal_frontmatter", `Unreadable scope line: ${raw.trim()}`);
   }
-  return { title, scope };
+  return { title, root, scope };
 }
 
-function validateScope(scope: ProposalScopeEntry[]): void {
-  for (const entry of scope) {
-    const file = entry.file.trim();
-    if (
-      file === "" ||
-      file.startsWith("/") ||
-      /^[A-Za-z]:[\\/]/.test(file) ||
-      file.split(/[\\/]/).includes("..")
-    ) {
+function setField(entry: WrittenEntry, key: string, raw: string, line: string): void {
+  const value = unquote(raw);
+  if (key === "file") entry.file = value;
+  else if (key === "kind") entry.kind = value;
+  else if (key === "from") entry.from = value;
+  else if (key === "name") entry.name = value;
+  else
+    throw new ProposalDocumentError(
+      "proposal_frontmatter",
+      `Unknown scope field \`${key}\` (file, kind, from, name): ${line.trim()}`,
+    );
+}
+
+/** A relative path inside the repository, with forward slashes; null when it is not one. */
+function relativePath(raw: string): string | null {
+  const p = raw.trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+  if (p === "" || p.startsWith("/") || /^[A-Za-z]:\//.test(p) || p.split("/").includes("..")) {
+    return null;
+  }
+  return p;
+}
+
+/** The frontmatter's `root`: "" (the shared workspace itself) or a relative directory. */
+function validateRoot(raw: string): string {
+  if (raw.trim() === "" || raw.trim() === ".") return "";
+  const root = relativePath(raw);
+  if (root === null) {
+    throw new ProposalDocumentError(
+      "scope_invalid",
+      `\`root\` must be a directory relative to the shared workspace, without \`..\`: ${raw}`,
+    );
+  }
+  return root;
+}
+
+function validateScope(written: WrittenEntry[]): ProposalScopeEntry[] {
+  const seen = new Set<string>();
+  return written.map((entry) => {
+    const kind = (entry.kind ?? "edit").trim().toLowerCase() as ProposalScopeKind;
+    if (!SCOPE_KINDS.includes(kind)) {
+      throw new ProposalDocumentError(
+        "scope_invalid",
+        `Scope kind must be edit, new, delete or rename: ${entry.kind} (${entry.file})`,
+      );
+    }
+    const file = relativePath(entry.file);
+    if (file === null) {
       throw new ProposalDocumentError(
         "proposal_scope",
         `Scope file must be a relative path inside the repository: ${entry.file || "(empty)"}`,
       );
     }
-    entry.file = file;
-    if (entry.name !== undefined) {
+    if (seen.has(file)) {
+      throw new ProposalDocumentError("scope_invalid", `The scope lists ${file} twice.`);
+    }
+    seen.add(file);
+    const out: ProposalScopeEntry = { kind, file };
+    if (kind === "rename") {
+      const from = entry.from === undefined ? null : relativePath(entry.from);
+      if (from === null) {
+        throw new ProposalDocumentError(
+          "scope_invalid",
+          `A rename needs \`from:\` — the old path, relative to root: ${file}`,
+        );
+      }
+      out.from = from;
+    } else if (entry.from !== undefined) {
+      throw new ProposalDocumentError(
+        "scope_invalid",
+        `\`from:\` belongs to a rename only (${kind} ${file}).`,
+      );
+    }
+    if (entry.name !== undefined) out.name = entry.name;
+    if (out.name !== undefined) {
       try {
-        new RegExp(entry.name);
+        new RegExp(out.name);
       } catch {
         throw new ProposalDocumentError(
           "proposal_scope",
-          `Scope name pattern is not a regular expression: ${entry.name}`,
+          `Scope name pattern is not a regular expression: ${out.name}`,
         );
       }
     }
-  }
+    return out;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -258,11 +333,13 @@ export function parseProposalDocument(
   previous: Previous = { sections: [] },
 ): ProposalDocument {
   const { head, body } = splitFrontmatter(text);
-  const { title, scope } = parseFrontmatter(head);
+  const written = parseFrontmatter(head);
+  const title = written.title;
   if (title.trim() === "") {
     throw new ProposalDocumentError("proposal_title", "Frontmatter needs a non-empty `title`.");
   }
-  validateScope(scope);
+  const root = validateRoot(written.root);
+  const scope = validateScope(written.scope);
   const fileLink = linksToFile(body);
   if (fileLink !== null) {
     throw new ProposalDocumentError(
@@ -307,7 +384,7 @@ export function parseProposalDocument(
     }));
     return { id, heading: s.heading, paragraphs };
   });
-  return { title: title.trim(), scope, sections };
+  return { title: title.trim(), root, scope, sections };
 }
 
 function idNumber(id: string, prefix: string): number {
@@ -322,10 +399,13 @@ function quote(value: string): string {
 /** The document again, from the record: what an implementation session is handed. */
 export function renderProposalDocument(doc: ProposalDocument): string {
   const head = ["---", `title: ${quote(doc.title)}`];
+  if (doc.root !== "") head.push(`root: ${doc.root}`);
   if (doc.scope.length > 0) {
     head.push("scope:");
     for (const entry of doc.scope) {
-      head.push(`  - file: ${entry.file}`);
+      head.push(`  - kind: ${entry.kind}`);
+      if (entry.from !== undefined) head.push(`    from: ${entry.from}`);
+      head.push(`    file: ${entry.file}`);
       if (entry.name !== undefined) head.push(`    name: ${quote(entry.name)}`);
     }
   }

@@ -32,7 +32,15 @@ import type {
 import { ProposalService } from "./service.js";
 import { ROUTES_ID, proposalRoutes } from "./routes.js";
 
-export { Ledger, LEDGER_FILE, applyLine, foldLedger, ledgerPath, parseLedger } from "./ledger.js";
+export {
+  Ledger,
+  LEDGER_FILE,
+  applyLine,
+  foldLedger,
+  ledgerPath,
+  migrateScopeKinds,
+  parseLedger,
+} from "./ledger.js";
 export type { LedgerEntry, LedgerLine, LedgerState, Proposal } from "./ledger.js";
 export {
   ProposalDocumentError,
@@ -49,11 +57,13 @@ export {
   PROPOSALS_CHANNEL_PURPOSE,
   SKILLS_PLUGIN,
   ProposalError,
+  compareDatedVersions,
   ProposalService,
   slugOf,
 } from "./service.js";
 export type { ServiceDeps } from "./service.js";
 export { ROUTES_ID, proposalRoutes } from "./routes.js";
+export { checkScope, scopeBase, scopeStates, suggestPaths } from "./scope-check.js";
 export {
   PARAGRAPH_GAP,
   locateQuote,

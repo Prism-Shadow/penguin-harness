@@ -3,7 +3,7 @@
   "description_zh": "公司提案的协议（Project 须先装上 company-proposals 插件），任何员工都照做的三份手册——不设专门岗位：写一份短小、抽象、可逐段评论的提案并按反馈修订；同时在提案分支上实施（自己做，或交给同事）、向 dev 开 PR 并反馈；分批测试 dev 分支，已合并的提案开修复工单，其余发运行时反馈。插件会自动装到写或做提案的员工上。",
   "short_description": "The proposal protocol for company mode: write, build, test — any employee.",
   "short_description_zh": "公司模式的提案协议：写、做、测——任何员工都可以。",
-  "version": "2026.09.21.1",
+  "version": "2026.09.24.1",
   "category": "agent-company",
   "preinstall": false,
   "quick_start": {

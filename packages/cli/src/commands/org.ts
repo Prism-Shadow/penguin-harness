@@ -580,8 +580,12 @@ function renderProposal(d: ProposalDetail, t: Messages, marked: string | null): 
       ? []
       : [
           [
-            t.org.proposalScope(),
-            ...d.scope.map((s) => `  ${s.file}${s.name !== undefined ? `  /${s.name}/` : ""}`),
+            t.org.proposalScope(d.root),
+            // Kinds and states stay in English: they are field values, like the events' kinds.
+            ...d.scope.map(
+              (s) =>
+                `  ${s.kind === "rename" && s.from !== undefined ? `rename ${s.from} → ${s.file}` : `${s.kind} ${s.file}`}${s.state !== undefined ? `  [${s.state}]` : ""}${s.name !== undefined ? `  /${s.name}/` : ""}`,
+            ),
           ].join("\n"),
         ];
   const materials =
@@ -1870,7 +1874,10 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     });
     if (detail === null) return;
     if (opts.json === true) printJson(detail);
-    else printLine(t.org.proposalPublished(detail.number, detail.revision));
+    else {
+      printLine(t.org.proposalPublished(detail.number, detail.revision));
+      for (const hint of detail.hints ?? []) printLine(t.org.proposalHint(hint));
+    }
   });
 
   statusCommand("ready", t.org.proposalReadyDesc, "ready");

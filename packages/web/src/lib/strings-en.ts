@@ -4747,6 +4747,17 @@ Scenarios:
       openFile: "Open in a session's Files tab",
       fileNotInWorkspace: "This file is in no session's Workspace of the proposal; path copied",
       scopePattern: "Name pattern",
+      scopeRoot: "Root",
+      scopeWorkspace: "the shared workspace",
+      scopeKind: { edit: "edit", new: "new", delete: "delete", rename: "rename" },
+      scopeState: {
+        exists: "exists",
+        new: "not created yet",
+        missing: "missing",
+        deleted: "deleted",
+        renamed: "rename pending",
+      },
+      scopeMissingHint: (where: string): string => `Not found under ${where}`,
       sections: "Body",
       sectionsEmpty: "The author has not published a body yet.",
       events: "Events",
@@ -4794,6 +4805,7 @@ Scenarios:
       merged: "Marked as merged",
       /** One line per event on the timeline, by kind. */
       event: {
+        notify_failed: "a notification did not go out",
         created: "created the proposal",
         revised: (n: number): string => `published revision ${n}`,
         ready: "marked it ready",

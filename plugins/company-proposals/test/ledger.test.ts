@@ -13,6 +13,7 @@ import {
   applyLine,
   foldLedger,
   ledgerPath,
+  migrateScopeKinds,
   parseLedger,
   type LedgerEntry,
   type LedgerLine,
@@ -70,7 +71,7 @@ describe("foldLedger", () => {
           number: 1,
           revision: 1,
           title: "Batch the notices",
-          scope: [{ file: "a.ts" }],
+          scope: [{ kind: "edit", file: "a.ts" }],
           sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: "x" }] }],
           by: "agent:dev",
         },
@@ -414,6 +415,54 @@ describe("foldLedger", () => {
     expect(onNothing!.paragraphId).toBeUndefined();
   });
 
+  it("keeps the batches since the last ready: a batch written before the field reads as the revision current then", () => {
+    const revised = (revision: number): LedgerEntry => ({
+      kind: "revised",
+      number: 1,
+      revision,
+      title: "T",
+      scope: [{ kind: "edit", file: "a.go" }],
+      sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: `r${revision}` }] }],
+      by: "agent:dev",
+    });
+    const state = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        revised(1),
+        { kind: "status", number: 1, status: "ready", by: "agent:dev" },
+        { kind: "batch", number: 1, id: "b1", commentIds: ["c1"], by: "user:boss" },
+        revised(2),
+        { kind: "batch", number: 1, id: "b2", commentIds: ["c2"], by: "user:boss", revision: 2 },
+        {
+          kind: "notify_failed",
+          number: 1,
+          reason: "agent:dev not notified: archived",
+          target: ["agent:dev"],
+          by: "user:boss",
+        },
+      ),
+    );
+    const p = state.proposals.get(1)!;
+    expect(p.openBatches).toEqual([
+      { id: "b1", revision: 1, commentIds: ["c1"] },
+      { id: "b2", revision: 2, commentIds: ["c2"] },
+    ]);
+    expect(p.events.at(-1)).toMatchObject({
+      kind: "notify_failed",
+      text: "agent:dev not notified: archived",
+    });
+    // A ready answers them all.
+    applyLine(state, {
+      seq: 99,
+      at,
+      kind: "status",
+      number: 1,
+      status: "ready",
+      by: "user:boss",
+    });
+    expect(p.openBatches).toEqual([]);
+  });
+
   it("skips a line about a proposal that does not exist, and keeps counting seq", () => {
     const state = foldLedger(
       lines(
@@ -507,5 +556,78 @@ describe("Ledger", () => {
     expect(written.map((l) => l.seq)).toEqual([1, 2, 3]);
     const text = await fs.readFile(ledger.file, "utf8");
     expect(text.trim().split("\n")).toHaveLength(3);
+  });
+
+  it("migrates a ledger written before scope kinds once: every kind-less entry becomes an edit, a backup is kept", async () => {
+    const file = ledgerPath(root, "proj", "acme");
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const old = [
+      {
+        seq: 1,
+        at,
+        kind: "created",
+        number: 1,
+        title: "T",
+        author: "dev",
+        delegatedBy: "boss",
+        brief: "b",
+      },
+      {
+        seq: 2,
+        at,
+        kind: "revised",
+        number: 1,
+        revision: 1,
+        title: "T",
+        scope: [{ file: "a.go", name: "X" }, { file: "b.go" }],
+        sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: "x" }] }],
+        by: "agent:dev",
+      },
+      { seq: 3, at, kind: "status", number: 1, status: "ready", by: "agent:dev" },
+    ]
+      .map((l) => JSON.stringify(l))
+      .join("\n");
+    const original = `${old}\n`;
+    await fs.writeFile(file, original, "utf8");
+    const logged: string[] = [];
+    const ledger = new Ledger(
+      file,
+      () => Date.parse("2026-09-24T01:02:03.004Z"),
+      (l) => logged.push(l),
+    );
+    await ledger.load();
+    expect(ledger.get(1)?.scope).toEqual([
+      { kind: "edit", file: "a.go", name: "X" },
+      { kind: "edit", file: "b.go" },
+    ]);
+    const migrated = await fs.readFile(file, "utf8");
+    const [first, second, third] = migrated.split("\n");
+    const [o1, o2, o3] = original.split("\n");
+    expect(first).toBe(o1);
+    expect(third).toBe(o3);
+    expect(second).toBe(
+      o2!
+        .replace('{"file":"a.go"', '{"kind":"edit","file":"a.go"')
+        .replace('{"file":"b.go"}', '{"kind":"edit","file":"b.go"}'),
+    );
+    const files = await fs.readdir(path.dirname(file));
+    const backup = files.find((f) => f.startsWith("proposals.jsonl.before-scope-kinds-"));
+    expect(backup).toBe("proposals.jsonl.before-scope-kinds-2026-09-24T01-02-03-004Z.bak");
+    expect(await fs.readFile(path.join(path.dirname(file), backup!), "utf8")).toBe(original);
+    expect(logged).toEqual([
+      `[company-proposals] migrated 2 scope entries to kind "edit" in ${file} (backup ${path.join(path.dirname(file), backup!)})`,
+    ]);
+    // A second load finds nothing to do.
+    const again = new Ledger(
+      file,
+      () => 0,
+      (l) => logged.push(l),
+    );
+    await again.load();
+    expect(logged).toHaveLength(1);
+    expect((await fs.readdir(path.dirname(file))).filter((f) => f.endsWith(".bak"))).toHaveLength(
+      1,
+    );
+    expect(migrateScopeKinds(migrated)).toEqual({ text: migrated, changed: 0 });
   });
 });

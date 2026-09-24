@@ -24,7 +24,7 @@ gh pr create --base dev --title "<proposal title>" --body "Implements proposal:<
 penguin org proposal material <n> add pr=<pr url> --label "PR <number>"
 ```
 
-- **Stay inside the scope.** The proposal's `scope` lists the files and names the change is meant to touch. Touching another file is a finding, not a decision: report it (`feedback`) and let the author widen the scope before you rely on it. A one-line edit the change cannot do without is fine to make and report in the same breath.
+- **Stay inside the scope.** The proposal's `scope` lists the files and names the change is meant to touch, each with its kind — `edit`, `new`, `delete`, or `rename` (from `from` to `file`) — and every path is relative to the proposal's `root`, the repository's directory in the shared workspace. Touching another file is a finding, not a decision: report it (`feedback`) and let the author widen the scope before you rely on it. A one-line edit the change cannot do without is fine to make and report in the same breath.
 - **The PR body links the proposal by number** — `proposal:<n>` — and nothing else needs to be said twice; the proposal is the description.
 - **The test the proposal names is the test you write.** If it cannot be written as described, that is feedback.
 
