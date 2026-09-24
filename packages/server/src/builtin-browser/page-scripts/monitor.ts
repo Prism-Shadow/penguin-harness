@@ -4,7 +4,9 @@
  *
  * - The transient-text monitor (`startStrMonitor` / `stopStrMonitor`): text that appears while
  *   the action runs and may be gone again by the time anyone looks — a toast, a flash, a
- *   "Saved". It samples the page's text every 450 ms and reports what was new.
+ *   "Saved". It samples the page's text every 450 ms and reports what was new. Texts are
+ *   still told apart by their first 20 characters, as upstream, but reported with up to 80
+ *   (upstream reports the 20, which rarely says which item a toast was about).
  * - The change diff: a baseline of the simplified page is kept in the page itself
  *   (`window.__penguinSnap`) before the action, and compared with the page after it —
  *   find_changed_elements, on the simplified trees themselves instead of BeautifulSoup's parse
@@ -20,29 +22,29 @@ import { SIMPLIFY_LIBRARY } from "./simplify.js";
 const STR_MONITOR = String.raw`function startStrMonitor(interval) {
   if (window.__penguinTm && window.__penguinTm.id) clearInterval(window.__penguinTm.id);
   window.__penguinTm = {extract: () => {
-    const texts = new Set(), walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+    const texts = new Map(), walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
     let node, t, s; while (node = walker.nextNode())
-      ((t = node.textContent.trim()) && t.length > 10 && !(s = t.substring(0, 20)).includes('_')) && texts.add(s);
+      ((t = node.textContent.trim()) && t.length > 10 && !(s = t.substring(0, 20)).includes('_')) && !texts.has(s) && texts.set(s, t.substring(0, 80));
     return texts;
   }};
   window.__penguinTm.init = window.__penguinTm.extract();
-  window.__penguinTm.all = new Set();
-  window.__penguinTm.id = setInterval(() => window.__penguinTm.extract().forEach(t => window.__penguinTm.all.add(t)), interval);
+  window.__penguinTm.all = new Map();
+  window.__penguinTm.id = setInterval(() => window.__penguinTm.extract().forEach((text, key) => window.__penguinTm.all.has(key) || window.__penguinTm.all.set(key, text)), interval);
 }
 function stopStrMonitor() {
   const tm = window.__penguinTm;
   if (!tm) return null;
   clearInterval(tm.id);
   const final = tm.extract();
-  const newlySeen = [...tm.all].filter(t => !tm.init.has(t));
+  const newlySeen = [...tm.all].filter(([key]) => !tm.init.has(key));
   let result;
   if (newlySeen.length < 8) {
     result = newlySeen;
   } else {
-    result = newlySeen.filter(t => !final.has(t));
+    result = newlySeen.filter(([key]) => !final.has(key));
   }
   delete window.__penguinTm;
-  return result;
+  return result.map(([, text]) => text);
 }`;
 
 const FIND_CHANGED = String.raw`function findChangedElements(before, after) {

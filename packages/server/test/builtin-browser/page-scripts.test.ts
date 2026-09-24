@@ -476,7 +476,15 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     expect(changed.diff?.topChange).toContain("Changed by the script");
 
     const toast = await actions.exec(TAB, "document.getElementById('toast').click()");
-    expect(toast.transients?.some((t) => "Added to cart successfully".startsWith(t))).toBe(true);
+    expect(toast.transients).toContain("Added to cart successfully");
+    // A longer message is reported with its first 80 characters.
+    const message =
+      "Your order of wireless headphones has shipped and should arrive by Thursday, 2 October, at your door";
+    const shipped = await actions.exec(
+      TAB,
+      `const t = document.createElement('div');\nt.textContent = ${JSON.stringify(message)};\ndocument.body.appendChild(t);\nsetTimeout(() => t.remove(), 700);\nreturn 1`,
+    );
+    expect(shipped.transients).toContain(message.slice(0, 80));
 
     const quiet = await actions.exec(TAB, "return 1 + 1");
     expect(quiet.value).toBe(2);
