@@ -155,7 +155,7 @@ export function Dropdown({
 
   /**
    * Up/Down walk the panel's items, wrapping at both ends (the standard menu idiom) —
-   * but only for plain menus. Two panels own their own keyboard model (model-select and
+   * but only for plain menus. Some panels own their own keyboard model (PickerList and
    * the slash/skill pickers drive a highlighted-index list from an autofocused search
    * box), so this yields whenever an inner handler already consumed the key, and
    * whenever focus sits in a text field where the arrows belong to the caret.

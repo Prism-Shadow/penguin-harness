@@ -127,7 +127,7 @@ export function groupModelRows<T extends ModelRowLike>(
 }
 
 /**
- * Flattens the library grouping into one ordered list (the chat model dropdown uses this):
+ * Flattens the library grouping into one ordered list (the chat model picker uses this):
  * rows ordered exactly as the model page shows them — built-in provider groups in
  * MODEL_PROVIDERS order (custom last), then user-defined groups, with `groupOrder` applied
  * on top; in-group row order preserved. Passing the page's stored order here is what keeps
@@ -354,10 +354,10 @@ export interface VisibleChatModelsOptions {
 }
 
 /**
- * Candidate list for the chat model dropdown: library order → keep only models with a key
+ * Candidate list for the chat model picker: library order → keep only models with a key
  * (hasConfiguredKey: stored or env-backed; plus the selected and the default model, unless
  * showAll) → the query then filters whatever is visible. When NO model has a key, the filter
- * degrades to showAll (everything listed), so the dropdown is never uselessly empty.
+ * degrades to showAll (everything listed), so the picker is never uselessly empty.
  */
 export function visibleChatModels<T extends ModelCredentialRowLike>(
   models: T[],

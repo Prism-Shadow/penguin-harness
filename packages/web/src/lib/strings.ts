@@ -371,6 +371,15 @@ export const zh = {
     hint: "Ctrl+P / Ctrl+Shift+P（⌘P）切换 · ↑↓ 选择 · Enter 执行",
     harnessHistory: "Harness 历史",
   },
+  modelPicker: {
+    /** Accessible name of the dialog's provider-group rail. */
+    groups: "模型分组",
+    /** Footer toggle while models without a key are listed: turns the listing back off. */
+    hideModelsWithoutKey: "隐藏未配置 key 的模型",
+    /** Footer keyboard legend; `mod` is "⌘" on macOS and "Ctrl+" elsewhere. */
+    hint: (mod: string): string =>
+      `↑↓ 选择 · ←→ 切换分组与列表 · ${mod}1–9 跳到分组 · Enter 确认 · Esc 关闭`,
+  },
   workflows: {
     tabsLabel: "聊天与工作流",
     chatTab: "聊天",
@@ -1450,7 +1459,7 @@ export const zh = {
      * which is what identifies the key to the reader.
      */
     readFromEnv: "读取自环境变量",
-    /** Chat model dropdown's bottom expander row: reveals the models hidden by the configured-key filter. */
+    /** Model picker's footer toggle: lists the models hidden by the configured-key filter. */
     showModelsWithoutKey: (n: number): string => `显示未配置 key 的模型（${n} 个）`,
     modelIdExists: "该模型 id 已存在",
     pricingAllOrNone: "三项价格需一并填写",
