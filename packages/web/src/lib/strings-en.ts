@@ -955,11 +955,8 @@ export const en: Strings = {
     addToGroup: "Add model",
     editTitle: "Model settings",
     addTitle: "Add model (OpenAI protocol)",
-    addTitleVendor: "Add model",
     addProtocolHint:
       "New models use the OpenAI Chat Completions protocol; set the base URL to a compatible endpoint",
-    vendorProtocolHint: (vendor: string): string =>
-      `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     addProtocolHintPinned: (protocol: string): string =>
       `Models in this group always use the ${protocol} protocol; set the base URL to your own server`,
     addProtocolHintPinnedGateway: (protocol: string): string =>
@@ -967,6 +964,25 @@ export const en: Strings = {
     autoRouteNone:
       "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
     useCustomGroup: "Move to Custom",
+    /** Warning on a hand-added vendor-group row whose model id AgentHub cannot route (such a row can no longer be created, only inherited). */
+    vendorRowUnroutable:
+      "This model ID cannot be routed and will fail at request time: a vendor group carries built-in models only.",
+    /** The way out offered beside that warning: opens the config dialog with the row already in the custom group. */
+    moveToCustomGroup: "Move to a custom group",
+    /**
+     * Warning on a built-in row saved before the catalog pinned the protocol its id needs:
+     * re-merging the catalog repairs it, and a move would be the wrong advice. It never
+     * quotes the sync button's own label — a member sees this sentence with no button beside
+     * it, and the owner who does have one reads the label right there.
+     */
+    vendorRowStalePin:
+      "This built-in model's entry predates the protocol the catalog now pins for it, so it cannot be routed; re-syncing the built-in catalog restores that pin.",
+    /** Connectivity test on a hand-added row: replaces the upstream "is not supported" sentence, which names client types the user has no way to act on. */
+    testNotRoutable:
+      "Failed: this model ID cannot be routed. A vendor group carries built-in models only — move it to a custom group and pick or detect its protocol.",
+    /** Connectivity test on a built-in row missing its pin: the same split the card makes, so the two never give opposite advice. */
+    testStalePin:
+      "Failed: this built-in model's entry predates the protocol the catalog now pins for it, so it cannot be routed. Re-syncing the built-in catalog restores that pin; it does not belong in a custom group.",
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
@@ -4211,6 +4227,8 @@ Scenarios:
         "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
+      model_not_routable:
+        "This model ID cannot be routed by a vendor group's protocol. Vendor groups carry built-in models only — add the model under a custom group and pick or detect its protocol.",
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
       goal_plugin_not_installed:

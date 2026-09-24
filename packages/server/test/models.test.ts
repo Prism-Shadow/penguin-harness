@@ -21,6 +21,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type {
+  ErrorBody,
   ModelsResponse,
   ModelTestResponse,
   ModelVisionDetectResponse,
@@ -300,6 +301,90 @@ describe("models preset & catalog enrichment", () => {
     // Missing provider → 400 (refs are always a pair; neither half may be omitted).
     const noProvider = await api.put(url(), { models: [{ modelId: "my-model" }] });
     expect(noProvider.status).toBe(400);
+  });
+
+  it("PUT refuses an id a vendor group cannot route when the request introduces it, and carries a stored one through", async () => {
+    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    // A row in the shape a vendor-group add used to produce: no client_type, and an id
+    // AgentHub places nowhere, so it fails at request time with its "is not supported"
+    // sentence. Rows like this exist in configs written before the rule below.
+    await writeFile(
+      cfgFile,
+      ["[[models]]", 'provider = "deepseek"', 'model_id = "qwen/qwen3.8-flash-next"'].join("\n"),
+      "utf8",
+    );
+
+    // Already stored: the whole-table PUT writes it back untouched. The models page sends the
+    // entire table on every save, so refusing it here would make one legacy row block every
+    // later edit of every other row.
+    const kept = await api.put(url(), {
+      models: [
+        { provider: "deepseek", modelId: "qwen/qwen3.8-flash-next", contextWindow: 65536 },
+        { provider: "custom", modelId: "mine", clientType: "openai-chat" },
+      ],
+    });
+    expect(kept.status).toBe(200);
+    const keptBody = (await kept.json()) as ModelsResponse;
+    expect(pick(keptBody, "deepseek", "qwen/qwen3.8-flash-next").contextWindow).toBe(65536);
+
+    // New in this request: refused, by a code the frontend can localize and a message naming
+    // the entry and the way out.
+    const added = await api.put(url(), {
+      models: [
+        { provider: "deepseek", modelId: "qwen/qwen3.8-flash-next" },
+        { provider: "deepseek", modelId: "another-fine-tune" },
+      ],
+    });
+    expect(added.status).toBe(400);
+    const error = ((await added.json()) as ErrorBody).error;
+    expect(error.code).toBe("model_not_routable");
+    expect(error.message).toContain("another-fine-tune");
+    expect(error.message).toContain("custom group");
+
+    // A changed id is a different entry, so the rename is judged like a new one.
+    const renamed = await api.put(url(), {
+      models: [
+        {
+          provider: "deepseek",
+          modelId: "qwen/qwen3.8-flash-next-preview",
+          renamedFrom: { provider: "deepseek", modelId: "qwen/qwen3.8-flash-next" },
+        },
+      ],
+    });
+    expect(renamed.status).toBe(400);
+    expect(((await renamed.json()) as ErrorBody).error.code).toBe("model_not_routable");
+
+    // So is moving a model into a vendor group: the group is the half of the key that changed.
+    const moved = await api.put(url(), {
+      models: [
+        { provider: "deepseek", modelId: "qwen/qwen3.8-flash-next" },
+        {
+          provider: "deepseek",
+          modelId: "mine",
+          renamedFrom: { provider: "custom", modelId: "mine" },
+        },
+      ],
+    });
+    expect(moved.status).toBe(400);
+
+    // Nothing above was written: the stored table is still the one the accepted PUT left.
+    const stored = (await (await api.get(url())).json()) as ModelsResponse;
+    const expected = ["custom\0mine", "deepseek\0qwen/qwen3.8-flash-next"];
+    expect(stored.models.map(pairKey).sort()).toEqual(expected.sort());
+
+    // The same id is accepted wherever the group answers the protocol question itself.
+    const custom = await api.put(url(), {
+      models: [
+        { provider: "deepseek", modelId: "qwen/qwen3.8-flash-next" },
+        {
+          provider: "custom",
+          modelId: "qwen/qwen3.8-flash-next",
+          clientType: "openai-chat",
+          baseUrl: "https://gateway.example/v1",
+        },
+      ],
+    });
+    expect(custom.status).toBe(200);
   });
 
   it('a config stored before the AgentHub 0.4.2 rename (client_type = "openai") keeps working: GET reports the canonical openai-chat', async () => {

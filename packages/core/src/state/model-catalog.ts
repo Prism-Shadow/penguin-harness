@@ -2419,6 +2419,55 @@ export function providerClientType(providerId: string): string | undefined {
   return providerInfo(providerId)?.clientType;
 }
 
+/**
+ * A first-party vendor group: one this catalog knows, that is not `custom`, carries no
+ * gateway endpoint and pins no protocol of its own — DeepSeek, Google, OpenAI, Anthropic,
+ * Z.AI, Moonshot, MiniMax, and the Penguin Go relay.
+ *
+ * What distinguishes it is that nothing in it decides a protocol: its entries persist no
+ * `client_type`, so AgentHub places every one of them by the spelling of the upstream model
+ * id alone. That makes the group's contents a closed set — the ids this catalog ships, plus
+ * the few whose preset pins a protocol because their own id would not route — and an id
+ * outside it cannot be started at all, whatever else is configured on the entry. Every
+ * surface that has to answer "may a model be added here, and is this one routable?" reads
+ * the group's shape through this one predicate rather than re-deriving it: the models page's
+ * group actions and its config dialog, the models PUT, and the CLI's `config model add`.
+ *
+ * Every other group answers the protocol question by itself and therefore takes any id the
+ * endpoint serves: `custom` and user-defined groups detect or pick it, a gateway inherits its
+ * preset's, and a group-level pin (OpenRouter, vLLM) hands it to every entry.
+ */
+export function isVendorGroup(providerId: string): boolean {
+  const info = providerInfo(providerId);
+  return (
+    info !== undefined &&
+    info.id !== "custom" &&
+    info.gatewayBaseUrl === undefined &&
+    info.clientType === undefined
+  );
+}
+
+/**
+ * Whether this entry would be written into a vendor group with an id AgentHub cannot place
+ * — the configuration that produces `"<id> is not supported. Supported client types: …"` on
+ * the first request, and nothing before it.
+ *
+ * `resolveModelEnv` is the authority: it mirrors AutoLLMClient's routing rules branch for
+ * branch and returns undefined on exactly the ids that client rejects. A blank id is not a
+ * routing failure — the entry is still being typed, and the required-field validation is
+ * what has something to say about it.
+ */
+export function unroutableVendorModel(
+  provider: string,
+  modelId: string,
+  clientType?: string,
+): boolean {
+  const id = modelId.trim();
+  if (id === "" || !isVendorGroup(provider)) return false;
+  const pinned = clientType?.trim();
+  return resolveModelEnv(id, pinned === "" ? undefined : pinned) === undefined;
+}
+
 /** Env var fallback for a single model (the var names AgentHub's client actually reads when api_key / base_url is blank). */
 export interface ModelEnvInfo {
   envKey: string;

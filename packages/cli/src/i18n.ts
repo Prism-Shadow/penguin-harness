@@ -805,6 +805,8 @@ export interface Messages {
   modelRemoved(model: string, defaultModel: string | undefined): string;
   /** `model remove` on a pair the Project config doesn't have. */
   modelNotConfigured(model: string): string;
+  /** `model add` refused: a new entry in a first-party vendor group under a model id AgentHub cannot route. */
+  modelNotRoutable(model: string): string;
   /** Follows modelRemoved when the removed entry was also the vision model. */
   visionModelCleared(): string;
   modelListTitle(): string;
@@ -1611,6 +1613,10 @@ const en: Messages = {
   visionModelSet: (model) => `Vision model set to ${model}.`,
   modelRemoved: (model, def) => `Removed model ${model}. Default model: ${def ?? "(unset)"}`,
   modelNotConfigured: (model) => `Model ${model} is not in the Project config.`,
+  modelNotRoutable: (model) =>
+    `Model ${model} cannot be routed: a vendor group carries built-in models only. ` +
+    `Add it under a custom group (--provider custom) with --client-type and --base-url, ` +
+    `or pass --client-type to pin the protocol this model speaks.`,
   visionModelCleared: () => "It was also the vision model; that setting is now unset.",
   modelListTitle: () => "Configured models:",
   modelListEmpty: () => "No models configured yet. Add one with `penguin config model add`.",
@@ -2342,6 +2348,10 @@ const zh: Messages = {
   visionModelSet: (model) => `视觉模型已设为 ${model}。`,
   modelRemoved: (model, def) => `已删除模型 ${model}。当前默认模型：${def ?? "(未设置)"}`,
   modelNotConfigured: (model) => `模型 ${model} 不在当前 Project 配置中。`,
+  modelNotRoutable: (model) =>
+    `模型 ${model} 无法路由：厂商分组只承载内置模型。` +
+    `请改用自定义分组（--provider custom）并附上 --client-type 与 --base-url，` +
+    `或用 --client-type 指定该模型所用的协议。`,
   visionModelCleared: () => "它同时是视觉模型，该设置已一并清空。",
   modelListTitle: () => "已配置的模型：",
   modelListEmpty: () => "尚未配置任何模型。用 `penguin config model add` 添加。",

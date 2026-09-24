@@ -940,11 +940,7 @@ export const zh = {
     addToGroup: "添加模型",
     editTitle: "模型配置",
     addTitle: "新增模型（OpenAI 协议）",
-    addTitleVendor: "新增模型",
     addProtocolHint: "新增模型走 OpenAI Chat Completions 兼容协议，base URL 填其兼容端点",
-    /** Add-dialog note for preset direct-vendor groups (fed the provider label): states whose protocol the group speaks — the in-field suffix on the base URL shows which path. */
-    vendorProtocolHint: (vendor: string): string =>
-      `仅支持 ${vendor} 官方接口协议，OpenAI 兼容接口请使用自定义模型分组`,
     /** Add-dialog note for a group that pins one protocol on every entry (fed the client type): the protocol is not a choice here, and the endpoint is the user's own. */
     addProtocolHintPinned: (protocol: string): string =>
       `本分组的模型固定使用 ${protocol} 协议，base URL 填你自己的服务地址`,
@@ -953,6 +949,24 @@ export const zh = {
       `本分组的模型固定使用 ${protocol} 协议，base URL 已预填网关端点`,
     autoRouteNone: "该模型 ID 无法按当前厂商协议识别；若使用 OpenAI 兼容接口，可转为自定义模型。",
     useCustomGroup: "转为自定义模型",
+    /** Warning on a hand-added vendor-group row whose model id AgentHub cannot route (such a row can no longer be created, only inherited). */
+    vendorRowUnroutable: "该模型 ID 无法路由，运行时会失败：厂商分组只承载内置模型。",
+    /** The way out offered beside that warning: opens the config dialog with the row already in the custom group. */
+    moveToCustomGroup: "移到自定义分组",
+    /**
+     * Warning on a built-in row saved before the catalog pinned the protocol its id needs:
+     * re-merging the catalog repairs it, and a move would be the wrong advice. It never
+     * quotes the sync button's own label — a member sees this sentence with no button beside
+     * it, and the owner who does have one reads the label right there.
+     */
+    vendorRowStalePin:
+      "该内置模型的条目早于目录为它钉下的协议，当前无法路由；重新同步内置目录即可补回。",
+    /** Connectivity test on a hand-added row: replaces the upstream "is not supported" sentence, which names client types the user has no way to act on. */
+    testNotRoutable:
+      "连通失败：该模型 ID 无法路由。厂商分组只承载内置模型；把它移到自定义分组，并选择或检测其接口协议。",
+    /** Connectivity test on a built-in row missing its pin: the same split the card makes, so the two never give opposite advice. */
+    testStalePin:
+      "连通失败：该内置模型的条目早于目录为它钉下的协议，当前无法路由。重新同步内置目录即可补回该协议，它不属于自定义分组。",
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
@@ -4171,6 +4185,8 @@ Benchmark：
       memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
+      model_not_routable:
+        "该模型 ID 无法按厂商分组的协议路由。厂商分组只承载内置模型；请在自定义分组中添加该模型，并选择或检测其接口协议。",
       unknown_skill: "所选目录下没有这个技能。",
       unknown_plugin: "该插件不在插件库中。",
       goal_plugin_not_installed:

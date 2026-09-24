@@ -50,7 +50,7 @@ import {
   resolveProviderModelEnv,
   userText,
 } from "@prismshadow/penguin-core";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { providerInfo, unroutableVendorModel } from "@prismshadow/penguin-core/model-catalog";
 import type {
   PluginTable,
   CommandPolicyRule,
@@ -79,6 +79,7 @@ import type {
   ModelVisionDetectResponse,
 } from "../api/types.js";
 import { badRequest } from "../http/validate.js";
+import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";
 import type {
   PlatformCatalogPricing,
@@ -1232,6 +1233,10 @@ export class ProjectConfigService implements ProjectConfigStore {
    * `discount` is stored (null clears it); an omitted one keeps the stored promotion unless
    * the entry renames the row or changes its pricing; a row left out of the table takes its
    * promotion with it. A `discount` outside (0, 1) rejects the request before any write.
+   *
+   * An entry the request adds to a first-party vendor group under a model id AgentHub cannot
+   * route is rejected as well (`model_not_routable`); one already stored under that key is
+   * written as it stands. See the loop below for why the two differ.
    */
   async updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse> {
     req.models.forEach((entry, i) => {
@@ -1243,6 +1248,26 @@ export class ProjectConfigService implements ProjectConfigStore {
     });
     const raw = await this.readRaw(projectId);
     const prevModels = asArray(raw.models);
+
+    // A vendor group carries the built-in catalog and nothing else: its entries persist no
+    // client_type, so AgentHub places each one by the spelling of the model id alone, and an
+    // id it cannot place fails at request time with a sentence listing client types the user
+    // never chose. Refused here, while the request can still be sent somewhere that works.
+    //
+    // Only an entry this request introduces is judged. The models page replaces the whole
+    // table on every save, so an id written before this rule existed would otherwise block
+    // every later edit of every other row; such a row is left exactly as it is, and the page
+    // marks it. A key change is a different entry — moving a model into a vendor group, or
+    // renaming one inside it, is the act of writing it there — so it is judged like a new one.
+    for (const entry of req.models) {
+      if (!unroutableVendorModel(entry.provider, entry.modelId, entry.clientType)) continue;
+      if (prevModels.some((m) => entryMatches(m, entry.provider, entry.modelId))) continue;
+      throw new HttpError(
+        400,
+        "model_not_routable",
+        `Model ${showRef(entry.provider, entry.modelId)} cannot be routed: a vendor group carries built-in models only. Add it under a custom group, where its protocol can be picked or detected.`,
+      );
+    }
 
     const seen = new Set<string>();
     const nextModels: RawTable[] = [];

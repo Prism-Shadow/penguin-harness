@@ -22,8 +22,10 @@ import {
   providerClientType,
   providerInfo,
   fastModeProtocol,
+  isVendorGroup,
   resolveModelEnv,
   resolveProviderModelEnv,
+  unroutableVendorModel,
 } from "../src/state/index.js";
 
 describe("model-catalog", () => {
@@ -1326,6 +1328,54 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
       expect(env!.envKey, m.modelId).toBe(provider.envKey);
       expect(env!.envBaseUrlKey, m.modelId).toBe(provider.envBaseUrlKey);
     }
+  });
+
+  it("catalog invariant: every built-in row in a vendor group is routable, by its pinned protocol or by its id", () => {
+    const vendorRows = MODEL_CATALOG.filter((m) => isVendorGroup(m.provider));
+    // A guard is only a guard if it is looking at something: the vendor groups are where
+    // ids alone decide routing, and they hold a large part of the catalog.
+    expect(vendorRows.length).toBeGreaterThan(20);
+    for (const m of vendorRows) {
+      expect(
+        unroutableVendorModel(m.provider, m.modelId, m.clientType),
+        `${m.provider}/${m.modelId}`,
+      ).toBe(false);
+    }
+  });
+
+  it("unroutableVendorModel judges only the groups that route by id, and only once an id is typed", () => {
+    // A vendor group: nothing carries a protocol, so the id has to be one AgentHub places.
+    expect(unroutableVendorModel("deepseek", "qwen/qwen3.8-flash-next")).toBe(true);
+    expect(unroutableVendorModel("deepseek", "deepseek-v4-pro")).toBe(false);
+    // The same id becomes routable the moment the entry pins the protocol itself, which is
+    // what the two vendor presets whose own ids do not route rely on.
+    expect(unroutableVendorModel("deepseek", "deepseek-flash")).toBe(true);
+    expect(unroutableVendorModel("deepseek", "deepseek-flash", "deepseek-v4")).toBe(false);
+    // Every other group decides the protocol without consulting the id.
+    expect(unroutableVendorModel("custom", "qwen/qwen3.8-flash-next")).toBe(false);
+    expect(unroutableVendorModel("openrouter", "qwen/qwen3.8-flash-next")).toBe(false);
+    expect(unroutableVendorModel("tokendance", "qwen/qwen3.8-flash-next")).toBe(false);
+    expect(unroutableVendorModel("vllm", "qwen/qwen3.8-flash-next")).toBe(false);
+    expect(unroutableVendorModel("my-own-group", "qwen/qwen3.8-flash-next")).toBe(false);
+    // An entry still being typed is not a routing failure.
+    expect(unroutableVendorModel("deepseek", "")).toBe(false);
+    expect(unroutableVendorModel("deepseek", "   ")).toBe(false);
+  });
+
+  it("isVendorGroup: catalog-known, not custom, no gateway endpoint and no group-level protocol pin", () => {
+    const vendors = ["deepseek", "google", "openai", "anthropic", "zhipu", "moonshot", "minimax"];
+    for (const id of vendors) {
+      expect(isVendorGroup(id), id).toBe(true);
+    }
+    // The Penguin Go relay pins its protocol per row rather than per group, so a model added
+    // there by hand would be routed by its id exactly as in any other vendor group.
+    expect(isVendorGroup("penguin-go")).toBe(true);
+    // Gateways carry an endpoint, two groups pin a protocol, and custom / user-defined
+    // groups exist precisely so the protocol can be chosen.
+    for (const id of ["tokendance", "openrouter", "fireworks", "siliconflow", "vllm", "custom"]) {
+      expect(isVendorGroup(id), id).toBe(false);
+    }
+    expect(isVendorGroup("my-own-group")).toBe(false);
   });
 
   it("modelHomepageUrl: gateway per-model pages, vendor docs fallback, none for custom groups", () => {

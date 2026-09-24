@@ -21,7 +21,9 @@
  * (provider, model_id) pair when one pins them, and otherwise default according to the
  * group's semantics (not set for first-party vendors; the protocol a group pins where it
  * pins one, and otherwise openai-chat for custom / self-hosted groups / gateways, with the
- * gateway's endpoint base URL pre-filled). For `model default` / `model vision`, core
+ * gateway's endpoint base URL pre-filled); adding a NEW entry to a first-party vendor group
+ * under a model id AgentHub cannot route is refused, since nothing there would carry a
+ * protocol for it. For `model default` / `model vision`, core
  * validation raises an error when the reference is not
  * found in models; `model remove` reports the same condition itself, since removal is
  * idempotent in core, and clears the default / vision pointers that named the removed entry.
@@ -46,6 +48,7 @@ import {
   fastModeProtocol,
   formatModelRef,
   getModel,
+  isVendorGroup,
   loadAgentVault,
   loadProjectConfig,
   providerClientType,
@@ -56,6 +59,7 @@ import {
   setDefaultModel,
   setVaultEntry,
   setVisionModel,
+  unroutableVendorModel,
 } from "@prismshadow/penguin-core";
 import { parseApprovalAnswer } from "../approval.js";
 import { resolveRootOption } from "../root-option.js";
@@ -172,8 +176,10 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       // normalizes the deprecated bare "openai" alias.)
       const pInfo = providerInfo(provider);
       const catalogEntry = catalogEntryFor(provider, modelId);
-      const openAiDefault =
-        pInfo === undefined || pInfo.id === "custom" || pInfo.gatewayBaseUrl !== undefined;
+      // Every group but a vendor one ends up on the compatible client when nothing above has
+      // answered: a group-level pin is consumed first, so the two groups that carry one never
+      // reach this term at all.
+      const openAiDefault = !isVendorGroup(provider);
       const groupClientType = providerClientType(provider);
       const defaultClientType =
         catalogEntry?.clientType ?? groupClientType ?? (openAiDefault ? "openai-chat" : undefined);
@@ -181,6 +187,20 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       const clientType: string | undefined =
         opts.clientType ?? (!existed ? defaultClientType : undefined);
       const baseUrl: string | undefined = opts.baseUrl ?? (!existed ? defaultBaseUrl : undefined);
+      // This command writes the config file directly rather than through the server's models
+      // route, so the rule that route enforces is enforced again here — otherwise the door
+      // the Web App closed is still open from the shell, and an agent following the
+      // "add models with AI" prompt walks straight through it. A first-party vendor group
+      // persists no client_type, so AgentHub places its entries by the model id alone; an id
+      // it cannot place is refused before anything is written. Judged on the protocol the
+      // entry would actually be saved with, so a preset that pins one (MiniMax M3, the direct
+      // `deepseek-flash`) and an explicit --client-type both pass. An entry that is already
+      // stored is left alone: updating it is not the act that put it there.
+      if (!existed && unroutableVendorModel(provider, modelId, clientType)) {
+        process.stderr.write(`${t.error(t.modelNotRoutable(formatModelRef(ref)))}\n`);
+        process.exitCode = 1;
+        return;
+      }
       // Only collect explicitly given price fields, letting addModel merge them with the existing pricing per-field.
       const pricing: Partial<ModelPricing> = {};
       if (opts.priceCacheRead !== undefined) pricing.cache_read = opts.priceCacheRead;
