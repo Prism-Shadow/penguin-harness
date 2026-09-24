@@ -1946,6 +1946,156 @@ test("runs every stage from the hierarchy and follows the run in its panel", asy
   expect(f.errors).toEqual([]);
 });
 
+test("hides reasoning in the run log and expands a long tool output", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const f = await fixture(page);
+  await create(page);
+  let started = false;
+  const running = {
+    pipelineId: "pipeline_1",
+    projectId,
+    activityId: "act_test",
+    selection: "all",
+    status: "running",
+    steps: ["spec", "media", "speech", "images", "module"].map((step, index) => ({
+      step,
+      status: index === 0 ? "running" : "pending",
+      detail: null,
+      note: null,
+      done: 0,
+      total: 0,
+      runIds: [],
+    })),
+    currentRunId: "run_spec",
+    currentSessionId: "session_run",
+    error: null,
+    startedAt: "2026-09-23T12:00:00Z",
+    finishedAt: null,
+  };
+  const at = (second) => `2026-09-23T12:00:${String(second).padStart(2, "0")}.000Z`;
+  const modelMsg = (second, payload) => ({ timestamp: at(second), type: "model_msg", payload });
+  const lines = (count, prefix) =>
+    Array.from({ length: count }, (_, index) => `${prefix} ${index + 1}`).join("\n");
+  // The long output is coloured, as a terminal program's often is; Copy takes the plain text.
+  const longOutput = `\u001b[32m${lines(20, "row")}\u001b[0m`;
+  const messages = [
+    modelMsg(1, { type: "text", role: "user", text: "Write the spec.", stop_reason: "completed" }),
+    modelMsg(2, {
+      type: "thinking",
+      role: "assistant",
+      thinking: "Weighing which scenes come first.",
+      stop_reason: "completed",
+    }),
+    modelMsg(3, {
+      type: "tool_call",
+      role: "assistant",
+      name: "exec_command",
+      arguments: JSON.stringify({ cmd: "ls" }),
+      tool_call_id: "call_long",
+      stop_reason: "completed",
+    }),
+    modelMsg(4, {
+      type: "tool_call_output",
+      role: "user",
+      output: longOutput,
+      tool_call_id: "call_long",
+      stop_reason: "completed",
+    }),
+    modelMsg(5, {
+      type: "tool_call",
+      role: "assistant",
+      name: "exec_command",
+      arguments: JSON.stringify({ cmd: "pwd" }),
+      tool_call_id: "call_short",
+      stop_reason: "completed",
+    }),
+    modelMsg(6, {
+      type: "tool_call_output",
+      role: "user",
+      output: lines(3, "short"),
+      tool_call_id: "call_short",
+      stop_reason: "completed",
+    }),
+    modelMsg(7, {
+      type: "thinking",
+      role: "assistant",
+      thinking: "Checking the last scene.",
+      stop_reason: "completed",
+    }),
+  ];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/act_test/pipeline`) {
+      if (request.method() === "POST") {
+        started = true;
+        return json(running, 202);
+      }
+      return json({ pipeline: started ? running : null });
+    }
+    if (p === "/api/sessions/session_run/messages") return json({ messages });
+    return route.fallback();
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Stages", exact: true });
+  const reasoning = panel.getByRole("switch", { name: "Show reasoning", exact: true });
+  await expect(reasoning).toHaveAttribute("aria-checked", "true");
+  await expect(panel.getByText("Weighing which scenes come first.")).toHaveCount(0);
+  await expect(panel.getByText("Thinking", { exact: true })).toHaveCount(2);
+
+  // Off: only what the agent did remains, and the latest reasoning says it is still thinking.
+  await reasoning.click();
+  await expect(reasoning).toHaveAttribute("aria-checked", "false");
+  await expect(panel.getByText("Thinking", { exact: true })).toHaveCount(0);
+  await expect(panel.getByText("Thinking…", { exact: true })).toBeVisible();
+
+  // The switch is remembered.
+  await page.reload();
+  const again = page.getByRole("complementary", { name: "Stages", exact: true });
+  // The run is still going, so the page offers Stop once it has read it.
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  if (!(await again.isVisible()))
+    await page.getByRole("button", { name: "Stages", exact: true }).click();
+  await expect(again.getByRole("switch", { name: "Show reasoning", exact: true })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await expect(again.getByText("Thinking", { exact: true })).toHaveCount(0);
+
+  // A long output offers Copy and Show all; a short one only Copy.
+  const tools = again.getByRole("button", { name: /^Done exec/ });
+  await tools.first().click();
+  const copy = again.getByRole("button", { name: "Copy output", exact: true });
+  await expect(copy).toHaveCount(1);
+  const showAll = again.getByRole("button", { name: "Show all", exact: true });
+  await expect(showAll).toHaveAttribute("aria-expanded", "false");
+  const output = again.locator("pre", { hasText: "row 20" });
+  await expect(output).toHaveClass(/max-h-72/);
+  await copy.click();
+  // The system clipboard may hand line ends back as CRLF.
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied.replace(/\r\n/g, "\n")).toBe(lines(20, "row"));
+  await showAll.click();
+  const showLess = again.getByRole("button", { name: "Show less", exact: true });
+  await expect(showLess).toHaveAttribute("aria-expanded", "true");
+  await expect(output).not.toHaveClass(/max-h-72/);
+  // Flipping the switch leaves the opened card open and its output at full length.
+  const againSwitch = again.getByRole("switch", { name: "Show reasoning", exact: true });
+  for (const checked of ["true", "false"]) {
+    await againSwitch.click();
+    await expect(againSwitch).toHaveAttribute("aria-checked", checked);
+    await expect(showLess).toHaveAttribute("aria-expanded", "true");
+    await expect(output).not.toHaveClass(/max-h-72/);
+  }
+  await tools.nth(1).click();
+  await expect(again.getByRole("button", { name: "Copy output", exact: true })).toHaveCount(2);
+  await expect(again.getByRole("button", { name: /^Show (all|less)$/ })).toHaveCount(1);
+  expect(f.errors).toEqual([]);
+});
+
 test("the storyboard shows every scene, and walks into its media scene by scene", async ({
   page,
 }) => {

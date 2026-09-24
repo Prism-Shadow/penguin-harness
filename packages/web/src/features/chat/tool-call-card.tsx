@@ -25,9 +25,13 @@ import type { ToolCallItem } from "../../lib/omni/stream-model";
 import { Chevron } from "../../components/ui/chevron";
 import {
   DISCLOSURE_OUTPUT_PRE_CLASS,
+  DISCLOSURE_OUTPUT_PRE_FULL_CLASS,
   DISCLOSURE_ROW_CLASS,
   DISCLOSURE_ROW_STICKY_CLASS,
+  outputExpandable,
 } from "./disclosure-row";
+import { Button } from "../../components/ui/button";
+import { CopyButton } from "../../components/ui/copy-button";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { toneInk } from "../../lib/tone";
 import { StatusIcon } from "../../components/ui/status-icon";
@@ -297,6 +301,8 @@ function extractStringField(argsJson: string, field: string): PartialField | nul
 
 export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRenderContext }) {
   const [open, setOpen] = useState(false);
+  // A run log's "Show all": the output block without its height cap.
+  const [outputFull, setOutputFull] = useState(false);
   const userToggled = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const { toolAliases } = useTheme();
@@ -562,8 +568,20 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               {item.argumentsText}
             </pre>
           )}
+          <ToolOutputActions
+            output={output}
+            ctx={ctx}
+            full={outputFull}
+            onToggleFull={() => setOutputFull((full) => !full)}
+          />
           {(item.output || item.outputStreaming) && (
-            <pre className={DISCLOSURE_OUTPUT_PRE_CLASS}>
+            <pre
+              className={
+                ctx.toolOutputActions && outputFull
+                  ? DISCLOSURE_OUTPUT_PRE_FULL_CLASS
+                  : DISCLOSURE_OUTPUT_PRE_CLASS
+              }
+            >
               {output}
               {item.outputStreaming && <span className="animate-pulse">▌</span>}
             </pre>
@@ -595,6 +613,34 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             ctx={ctx}
           />
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A run log's Copy and Show all above an expanded tool output. Only a stream that asks for them
+ * (ctx.toolOutputActions) gets them, so Chat's tool cards stay as they were.
+ */
+export function ToolOutputActions({
+  output,
+  ctx,
+  full,
+  onToggleFull,
+}: {
+  output: string;
+  ctx: Pick<StreamRenderContext, "toolOutputActions">;
+  full: boolean;
+  onToggleFull: () => void;
+}) {
+  if (!ctx.toolOutputActions || !output) return null;
+  return (
+    <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-3 py-1 dark:border-gray-800">
+      <CopyButton text={output} label={S.chat.copyToolOutput} />
+      {outputExpandable(output) && (
+        <Button size="sm" variant="secondary" aria-expanded={full} onClick={onToggleFull}>
+          {full ? S.chat.showLessOutput : S.chat.showAllOutput}
+        </Button>
       )}
     </div>
   );

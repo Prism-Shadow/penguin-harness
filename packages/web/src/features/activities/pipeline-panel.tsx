@@ -3,6 +3,7 @@
  * the run. What it follows is the running stage's own Session, so its approvals can be
  * answered where it is shown rather than in a separate chat.
  */
+import { useMemo } from "react";
 import { Link } from "react-router";
 import type {
   PipelineSelection,
@@ -12,6 +13,8 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
+import { ShowReasoningSwitch } from "./show-reasoning-switch";
+import { useShowReasoning } from "./run-log-prefs";
 import { S } from "../../lib/strings";
 import { toneDot, toneInk, type Tone } from "../../lib/tone";
 import { MessageStream } from "../chat/message-stream";
@@ -160,10 +163,16 @@ function LiveSession({
 }) {
   const words = S.activities.studioRun;
   const transcript = useSessionTranscript(sessionId, "running");
+  const [showReasoning, setShowReasoning] = useShowReasoning();
+  const ctx = useMemo(
+    () => ({ ...transcript.ctx, hideReasoning: !showReasoning, toolOutputActions: true }),
+    [transcript.ctx, showReasoning],
+  );
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 dark:border-gray-800">
       <div className="flex items-center gap-3 px-4 py-2 text-sm">
         <span className="min-w-0 flex-1 text-xs font-semibold text-gray-500">{words.live}</span>
+        <ShowReasoningSwitch checked={showReasoning} onChange={setShowReasoning} />
         <Link
           to={`/chat/${encodeURIComponent(sessionId)}`}
           className="text-brand-600 hover:text-brand-700 dark:text-brand-300"
@@ -180,7 +189,7 @@ function LiveSession({
         <MessageStream
           items={transcript.items}
           version={transcript.stream.version}
-          ctx={transcript.ctx}
+          ctx={ctx}
           older={transcript.older}
           onAddExcerpt={(excerpt) => onAddExcerpt(excerpt.text)}
         />

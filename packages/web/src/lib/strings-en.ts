@@ -167,6 +167,9 @@ export const en: Strings = {
       openSession: "Open session",
       noRun: "This activity has not been assembled yet.",
     },
+    runLog: {
+      showReasoning: "Show reasoning",
+    },
     studioRun: {
       stage: "Stage",
       all: "All stages",
@@ -3042,6 +3045,10 @@ Scenarios:
     decisionAuto: "auto",
     decisionPolicy: "policy",
     thinking: "Thinking",
+    thinkingHidden: "Thinking…",
+    copyToolOutput: "Copy output",
+    showAllOutput: "Show all",
+    showLessOutput: "Show less",
     subagent: "Subagent",
     subagentRunning: "Running",
     /**

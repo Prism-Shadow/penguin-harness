@@ -146,6 +146,9 @@ export type Strings = {
       noRun: string;
     };
     /** Running the stages: Loom's stage picker and Run, and the panel that follows a run. */
+    runLog: {
+      showReasoning: string;
+    };
     studioRun: {
       stage: string;
       all: string;
@@ -1962,6 +1965,11 @@ export type Strings = {
     decisionAuto: string;
     decisionPolicy: string;
     thinking: string;
+    /** Stands in for reasoning a run log hides, while the agent is still thinking. */
+    thinkingHidden: string;
+    copyToolOutput: string;
+    showAllOutput: string;
+    showLessOutput: string;
     subagent: string;
     subagentRunning: string;
     aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => string;

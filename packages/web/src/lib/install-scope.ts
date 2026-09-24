@@ -163,6 +163,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.activityRunLog.showReasoning",
+    scope: "browser",
+    why: "Whether an activity's run log shows the agent's reasoning; a view preference, holds no entity.",
+  },
+  {
+    kind: "exact",
     key: "penguin.dock.launcherY",
     scope: "browser",
     why: "Where the floating dock launcher rests along the chat body's edge; chrome layout, holds no entity.",

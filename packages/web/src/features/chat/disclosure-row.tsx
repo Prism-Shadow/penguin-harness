@@ -51,6 +51,24 @@ export const DISCLOSURE_HEADER_TITLE_CLASS =
 export const DISCLOSURE_OUTPUT_PRE_CLASS =
   "max-h-72 overflow-auto whitespace-pre-wrap border-t border-gray-100 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:text-gray-300";
 
+/** The output block at its full length (a run log's "Show all"): the same block without the height cap. */
+export const DISCLOSURE_OUTPUT_PRE_FULL_CLASS =
+  "overflow-auto whitespace-pre-wrap border-t border-gray-100 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:text-gray-300";
+
+/** Lines past which an output block offers "Show all" (Loom's run log limit). */
+export const OUTPUT_EXPANDABLE_LINES = 8;
+
+/**
+ * Whether an output is long enough to offer "Show all". Lines are counted as Loom's run log
+ * counts them: CRLF and CR end a line too, and the newline that ends the last line (normal for
+ * shell output) does not start another.
+ */
+export function outputExpandable(text: string): boolean {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines.length > OUTPUT_EXPANDABLE_LINES;
+}
+
 /**
  * Expanded Markdown body — the thinking and compaction sections. The block
  * DISCLOSURE_OUTPUT_PRE_CLASS wears, minus the parts that only fit command output:

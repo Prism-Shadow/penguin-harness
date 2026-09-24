@@ -17,7 +17,7 @@ import { CopyButton } from "../../components/ui/copy-button";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";
-import { ThinkingBlock } from "./thinking-block";
+import { ThinkingBlock, ThinkingHiddenLine } from "./thinking-block";
 import { ToolCallCard } from "./tool-call-card";
 import { SubagentChip } from "./subagent-chip";
 import { CompactionBanner } from "./compaction-banner";
@@ -382,7 +382,9 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
         </div>
       );
     case "thinking":
-      return <ThinkingBlock item={item} />;
+      // A hidden-reasoning stream only keeps the running Task's latest thinking item
+      // (MessageItems drops the rest), and shows it as one line rather than its text.
+      return ctx.hideReasoning ? <ThinkingHiddenLine /> : <ThinkingBlock item={item} />;
     case "tool_call":
       return <ToolCallCard item={item} ctx={ctx} />;
     case "subagent":
