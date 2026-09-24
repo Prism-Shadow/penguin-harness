@@ -162,6 +162,7 @@ import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
+import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 
 /**
  * The platform's module tree: the root module and its children, in one place.
@@ -469,6 +470,7 @@ export class WorkflowsModule {}
     MachinesModule,
     TerminalRelay,
     WorkflowsModule,
+    BuiltinBrowserModule,
     Startup,
   ],
 })
