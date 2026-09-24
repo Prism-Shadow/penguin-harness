@@ -200,6 +200,14 @@ export class TabRegistry {
     });
   }
 
+  /** The open requests no window has claimed yet: tabs on their way. */
+  pendingOpens(): number {
+    this.prune();
+    let pending = 0;
+    for (const state of this.opens.values()) if (state.claimedTabId === null) pending += 1;
+    return pending;
+  }
+
   /** One open request as it stands, or undefined once it expired. */
   openRequest(requestId: string): OpenRequest | undefined {
     const state = this.opens.get(requestId);

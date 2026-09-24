@@ -50,6 +50,12 @@ export interface BrowserTiming extends ShellLinkTiming, ActionTiming {
   publishDelayMs: number;
 }
 
+/** The most tabs the browser holds; an agent's new tab beyond them is refused. */
+export const MAX_TABS = 30;
+/** A page may open this many tabs (popups, target=_blank) in any POPUP_WINDOW_MS; more are dropped. */
+const POPUP_LIMIT = 3;
+const POPUP_WINDOW_MS = 5_000;
+
 const DEFAULT_TIMING: Pick<
   BrowserTiming,
   "openClaimMs" | "closeWaitMs" | "tabsTimeoutMs" | "publishDelayMs"
@@ -153,11 +159,15 @@ export class BuiltinBrowser {
   private readonly importer: Importer;
   /** Agent actions in flight per tab, and the session the latest one came from. */
   private readonly inflight = new Map<number, { count: number; sessionId?: string }>();
+  /** Per opener tab, when its recent popups were let through (see `openFromPage`). */
+  private readonly popups = new Map<number, number[]>();
+  private readonly now: () => number;
   private publishTimer: NodeJS.Timeout | null = null;
   private disposed = false;
 
   constructor(private readonly deps: BuiltinBrowserDeps) {
     const now = deps.now ?? Date.now;
+    this.now = now;
     this.timing = { ...DEFAULT_TIMING, ...deps.timing };
     this.loadWaitMs = deps.timing?.loadWaitMs ?? DEFAULT_ACTION_TIMING.loadWaitMs;
     this.importer = deps.importer ?? { listImportSources, readCookies, readHistory };
@@ -211,6 +221,13 @@ export class BuiltinBrowser {
   }): Promise<BuiltinBrowserTab> {
     const { driver } = await this.ready();
     const url = browserUrl(opts.url, true);
+    if (this.tabsHeld() >= MAX_TABS) {
+      throw new HttpError(
+        409,
+        "too_many_tabs",
+        `The built-in browser holds ${MAX_TABS} tabs, the most it keeps; close some first (penguin browser close <tab-id>).`,
+      );
+    }
     const request = this.requestOpen({
       url,
       activate: opts.activate !== false,
@@ -557,6 +574,42 @@ export class BuiltinBrowser {
     return request;
   }
 
+  /**
+   * A popup, or "Open link in new tab". The session of an action running in the opener is the
+   * one that caused it. A page gets at most POPUP_LIMIT tabs in any POPUP_WINDOW_MS, and none
+   * while the browser holds MAX_TABS: one looping on window.open would otherwise open tabs
+   * without end. What goes over is dropped, with a log line.
+   */
+  private openFromPage(event: { url: string; openerTabId: number; background?: boolean }): void {
+    const now = this.now();
+    const recent = (this.popups.get(event.openerTabId) ?? []).filter(
+      (at) => now - at < POPUP_WINDOW_MS,
+    );
+    const full = this.tabsHeld() >= MAX_TABS;
+    if (full || recent.length >= POPUP_LIMIT) {
+      this.popups.set(event.openerTabId, recent);
+      this.deps.log(
+        `builtin browser: dropped a popup of tab ${event.openerTabId}: ${
+          full ? `the browser holds ${MAX_TABS} tabs` : `more than ${POPUP_LIMIT} in 5 s`
+        }`,
+      );
+      return;
+    }
+    this.popups.set(event.openerTabId, [...recent, now]);
+    const sessionId = this.inflight.get(event.openerTabId)?.sessionId;
+    this.requestOpen({
+      url: event.url,
+      activate: event.background !== true,
+      openerTabId: event.openerTabId,
+      ...(sessionId !== undefined ? { sessionId } : {}),
+    });
+  }
+
+  /** The tabs open, and those on their way (asked of a window, not yet claimed). */
+  private tabsHeld(): number {
+    return this.tabs.list().length + this.tabs.pendingOpens();
+  }
+
   private onShellEvent(event: DesktopBrowserEvent): void {
     switch (event.kind) {
       case "tab":
@@ -566,19 +619,10 @@ export class BuiltinBrowser {
       case "tab-closed":
         if (this.tabs.remove(event.tabId)) this.schedulePublish();
         this.inflight.delete(event.tabId);
+        this.popups.delete(event.tabId);
         break;
       case "open-request":
-        // A popup, or "Open link in new tab": the session of an action running in the opener
-        // is the one that caused it.
-        if (isWebUrl(event.url)) {
-          const sessionId = this.inflight.get(event.openerTabId)?.sessionId;
-          this.requestOpen({
-            url: event.url,
-            activate: event.background !== true,
-            openerTabId: event.openerTabId,
-            ...(sessionId !== undefined ? { sessionId } : {}),
-          });
-        }
+        if (isWebUrl(event.url)) this.openFromPage(event);
         break;
       case "cdp-event":
         // An action's own subscription (driver.onCdpEvent); nothing for the registry.

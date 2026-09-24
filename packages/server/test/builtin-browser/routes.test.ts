@@ -63,7 +63,13 @@ interface Harness {
 }
 
 function mount(
-  opts: { shell?: FakeShell | null; admin?: boolean; importer?: Importer } = {},
+  opts: {
+    shell?: FakeShell | null;
+    admin?: boolean;
+    importer?: Importer;
+    now?: () => number;
+    log?: (line: string) => void;
+  } = {},
 ): Harness {
   const shell = opts.shell === undefined ? new FakeShell() : opts.shell;
   const events: BuiltinBrowserServerEvent[] = [];
@@ -71,10 +77,11 @@ function mount(
     port: shell?.port ?? null,
     root,
     publish: (event) => events.push(event),
-    log: () => {},
+    log: opts.log ?? (() => {}),
     sleep: async () => {},
     timing: FAST,
     ...(opts.importer ? { importer: opts.importer } : {}),
+    ...(opts.now ? { now: opts.now } : {}),
   });
   browsers.push(browser);
   const app = new Hono<AppEnv>();
@@ -252,6 +259,35 @@ describe("tabs", () => {
       expect(res.status).toBe(400);
       expect((await errorOf(res)).error.code).toBe("invalid_url");
     }
+  });
+
+  it("lets a page open at most 3 tabs in 5 seconds, and drops the rest", async () => {
+    let clock = 1_000_000;
+    const logs: string[] = [];
+    const h = mount({ now: () => clock, log: (line) => logs.push(line) });
+    h.shell.show(tab(2));
+    const popup = (n: number) =>
+      h.shell.event({ kind: "open-request", url: `https://popup.test/${n}`, openerTabId: 2 });
+    const opens = () => h.events.filter((e) => e.type === "builtin_browser_open").length;
+    for (let n = 0; n < 5; n++) popup(n);
+    await flush();
+    expect(opens()).toBe(3);
+    expect(logs.filter((line) => line.includes("dropped a popup of tab 2"))).toHaveLength(2);
+    clock += 5_000;
+    popup(5);
+    await flush();
+    expect(opens()).toBe(4);
+  });
+
+  it("holds at most 30 tabs: an agent's new tab is refused, a page's popup dropped", async () => {
+    const h = mount();
+    for (let id = 1; id <= 30; id++) h.shell.show(tab(id));
+    const res = await h.call("POST", "/tabs", { url: "https://example.test/" });
+    expect(res.status).toBe(409);
+    expect((await errorOf(res)).error.code).toBe("too_many_tabs");
+    h.shell.event({ kind: "open-request", url: "https://popup.test/", openerTabId: 1 });
+    await flush();
+    expect(h.events.some((e) => e.type === "builtin_browser_open")).toBe(false);
   });
 
   it("activates, closes through the window, and resolves `active`", async () => {

@@ -14,6 +14,7 @@ The desktop app gained a web browser in its dock. People browse in it as in any 
 - A tab strip (icon, title, close, new tab) and a toolbar: back, forward, reload or stop, and an address bar that opens a URL, opens a bare domain over `https://` and searches anything else with Bing, with suggestions from the browser's history. The toolbar's menu holds **Import from browser…**, **Clear browsing data…**, **Open in system browser** and **Developer tools**.
 - While an agent works in a tab, a pulsing ring runs around the page and an icon in the toolbar says so. When the conversation on screen is the one driving the browser, the dock switches to the panel by itself.
 - Each tab is an Electron `<webview>` in its own persistent partition, `persist:penguin-browser`, so the browser keeps its sign-ins and site data apart from the app and from the system browser. Pages see a plain Chrome user agent. A tab stays mounted at a desktop size while the dock is closed, so what an agent reads does not depend on the window layout.
+- A page can open at most three tabs every five seconds (pop-ups, `target=_blank`); more are dropped. The browser holds at most 30 tabs, and a new tab beyond them is refused with `too_many_tabs`.
 - The panel exists only in the desktop app. The Web App served by `penguin web`, Docker or a remote server does not offer it.
 
 ## Automation over the DevTools Protocol

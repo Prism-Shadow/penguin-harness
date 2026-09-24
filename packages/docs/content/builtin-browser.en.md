@@ -26,7 +26,7 @@ When an agent opens a page from a conversation you are looking at, the dock swit
 - The tab strip shows each tab's icon and title. Select **+** to open a new tab and **×** to close one.
 - The toolbar has **Back**, **Forward**, **Reload** (**Stop** while a page loads) and the address bar. Type a URL to open it. A bare domain such as `amazon.com` opens over `https://`. Anything else is searched with Bing. While you type, pages from the browser's history are suggested; use the arrow keys and Enter to pick one.
 - The toolbar's menu holds **Import from browser…**, **Clear browsing data…**, **Open in system browser** and **Developer tools**.
-- A link that opens a new window, and a page's pop-up, open as new tabs.
+- A link that opens a new window, and a page's pop-up, open as new tabs. A page can open at most three tabs every five seconds; more are ignored.
 - A download asks where to save the file, as the system browser does.
 
 The panel follows the app's light or dark theme; the pages themselves keep their own colors.
@@ -108,6 +108,7 @@ Every command and its output format are in the [CLI Reference](/cli#penguin-brow
 | Limit | Value |
 | --- | --- |
 | Where it works | The desktop app only |
+| Tabs | 30 at most; a new tab beyond them is refused (`too_many_tabs`) |
 | `scan` body | 35,000 characters by default (`--max-chars`); a third of that with `--text` |
 | `exec` return value shown | 8,000 characters; `--save` writes all of it to a file |
 | `exec` script time | 15 seconds by default (`--timeout`) |
