@@ -469,7 +469,7 @@ tabs: *12 Your Orders | 15 Google
 
 ### exec
 
-脚本作为一个 async 函数的函数体在页面中运行，因此可以使用 `await`，只有 `return` 才能产出返回值；返回值必须能转成 JSON。脚本只能来自一处：参数、`--file` 或 stdin。参数为 `-` 时，或者没有参数且 stdin 不是终端（例如 heredoc：`penguin browser exec <<'EOF'`，无需任何转义）时读取 stdin。隐式读取的 stdin 一秒内没有任何输入，视为没有给出脚本。
+脚本按 GenericAgent 的 `web_execute_js` 的方式在页面中运行：返回值是显式 `return` 的值，没有 `return` 时是最后一个表达式的值，顶层可以使用 `await`；返回值必须能转成 JSON。把显式的 `return` 单独写在最后一行，在任何脚本里含义都一样。脚本只能来自一处：参数、`--file` 或 stdin。参数为 `-` 时，或者没有参数且 stdin 不是终端（例如 heredoc：`penguin browser exec <<'EOF'`，无需任何转义）时读取 stdin。隐式读取的 stdin 一秒内没有任何输入，视为没有给出脚本。
 
 ```text
 status: success   tab: 12

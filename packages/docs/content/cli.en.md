@@ -469,7 +469,7 @@ The first line names the tab, the second lists every tab with the active one sta
 
 ### exec
 
-The script runs in the page as the body of an async function, so `await` works and only `return` produces a value; the value must survive JSON. The script comes from exactly one place: the argument, `--file`, or stdin. Stdin is read when the argument is `-`, or when there is no argument and stdin is not a terminal, as with a heredoc (`penguin browser exec <<'EOF'`), which needs no escaping. An implicit stdin that stays silent for a second counts as no script.
+The script runs in the page the way GenericAgent's `web_execute_js` runs it: its value is its explicit `return`, or else its last expression, and top-level `await` works; the value must survive JSON. An explicit `return` on its own last line means the same in every script. The script comes from exactly one place: the argument, `--file`, or stdin. Stdin is read when the argument is `-`, or when there is no argument and stdin is not a terminal, as with a heredoc (`penguin browser exec <<'EOF'`), which needs no escaping. An implicit stdin that stays silent for a second counts as no script.
 
 ```text
 status: success   tab: 12
