@@ -8,7 +8,9 @@
  *   of a longer script — is the value (`document.title` returns the title).
  * - When that is a syntax error about `return` or `await` (a top-level `await`, an early
  *   `return`), it runs as an async function body instead, with `return` put in front of its
- *   last line when that line is an expression.
+ *   last line when that line is an expression. Added: a last line that already returns after
+ *   a statement (`a(); return b`) runs as it is; upstream put a second `return` in front of it
+ *   and handed back `a()`'s value.
  * - DOM results come back as HTML (an element as its outerHTML, a NodeList as a list of them),
  *   everything else as JSON.
  *
@@ -45,7 +47,8 @@ const EXEC_TAIL = String.raw`.trim();
     const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
     const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
     let r;
-    function _air(c) { const ls = c.split(/\r?\n/); let i = ls.length - 1; while (i >= 0 && !ls[i].trim()) i--; if (i < 0) return c; const t = ls[i].trim(); if (/^(return |return;|return$|let |const |var |if |if\(|for |for\(|while |while\(|switch|try |throw |class |function |async |import |export |\/\/|})/.test(t)) return c; ls[i] = ls[i].match(/^(\s*)/)[1] + 'return ' + t; return ls.join('\n'); }
+    function _returns(t) { let depth = 0, q = null; for (let i = 0; i < t.length; i++) { const ch = t[i]; if (q) { if (ch === '\\') i++; else if (ch === q) q = null; continue; } if (ch === '"' || ch === "'" || ch === '\x60') q = ch; else if (ch === '/' && t[i + 1] === '/') return false; else if ('([{'.includes(ch)) depth++; else if (')]}'.includes(ch)) depth--; else if (depth === 0 && ch === 'r' && !/[\w$.]/.test(t[i - 1] || '') && /^return\b/.test(t.slice(i))) return true; } return false; }
+    function _air(c) { const ls = c.split(/\r?\n/); let i = ls.length - 1; while (i >= 0 && !ls[i].trim()) i--; if (i < 0) return c; const t = ls[i].trim(); if (/^(return |return;|return$|let |const |var |if |if\(|for |for\(|while |while\(|switch|try |throw |class |function |async |import |export |\/\/|})/.test(t) || _returns(t)) return c; ls[i] = ls[i].match(/^(\s*)/)[1] + 'return ' + t; return ls.join('\n'); }
     if (lastLine.startsWith('return')) {
       r = await (new AsyncFunction(jsCode))();
     } else {

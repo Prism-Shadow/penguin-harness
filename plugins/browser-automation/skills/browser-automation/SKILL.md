@@ -40,7 +40,7 @@ return JSON.stringify(cards.map((c) => ({
 EOF
 ```
 
-- The script is the body of an async function: `await` works, and **only an explicit `return` yields a value**. Without one the result reads `return: undefined`.
+- The value is the script's explicit `return`, or else its last expression: `penguin browser exec 'document.title'` prints the title. Top-level `await` works. **Put an explicit `return` on its own last line**: it is the one form that means the same in every script. A last line that is a statement (`el.click();`) gives `return: undefined`.
 - Quote the heredoc delimiter (`<<'EOF'`) so the shell leaves `$`, backticks and quotes alone. `--file script.js` works too, and so does a one-liner argument.
 - `return:` is cut at 8000 characters. For more, add `--save out.json`: the whole value goes to the file (a string as-is, anything else as JSON) and only its start is printed. Then read the file.
 - `--no-monitor` skips change tracking: faster, for scripts that only read.

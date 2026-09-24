@@ -60,6 +60,33 @@ describe("page scripts parse", () => {
   });
 });
 
+describe("exec's rules, run in Node (the parts that need no page)", () => {
+  const run = (code: string) =>
+    (new Function(`return ${execExpression(code)};`) as () => Promise<unknown>)();
+
+  it("hands back the explicit return, or else the last expression", async () => {
+    expect(await run("1 + 1")).toEqual({ ok: true, data: 2 });
+    expect(await run("const x = 3;\nx * 2")).toEqual({ ok: true, data: 6 });
+    expect(await run("return 'early'")).toEqual({ ok: true, data: "early" });
+    expect(await run("await null;\n'after await'")).toEqual({ ok: true, data: "after await" });
+  });
+
+  it("runs a last line that returns after a statement as it is written", async () => {
+    expect(await run("globalThis.__bbSide = 1; return 2")).toEqual({ ok: true, data: 2 });
+    expect(await run("if (true) return 'yes'")).toEqual({ ok: true, data: "yes" });
+    expect(await run("await null; return 'awaited'")).toEqual({ ok: true, data: "awaited" });
+  });
+
+  it("still returns the last line when its return is in a callback, a string or a comment", async () => {
+    expect(await run("await Promise.resolve(2).then((v) => { return v * 2 })")).toEqual({
+      ok: true,
+      data: 4,
+    });
+    expect(await run("await 'x; return y'")).toEqual({ ok: true, data: "x; return y" });
+    expect(await run("await 5 // return 6")).toEqual({ ok: true, data: 5 });
+  });
+});
+
 // --- a real Chromium -------------------------------------------------------
 
 function findChromium(): string | null {
@@ -412,6 +439,7 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
       "Fixture",
     );
     expect((await run("document.querySelector('h1')")).value).toBe("<h1>Your Orders</h1>");
+    expect((await run("document.title; return 'explicit'")).value).toBe("explicit");
     const failed = await run("null.foo");
     expect(failed.status).toBe("failed");
     expect(failed.error).toMatch(/^TypeError: /);
