@@ -575,7 +575,8 @@ export function scopeFileTarget(
 ): { sessionId: string; rel: string } | null {
   const absolute = `${base.replace(/[\\/]+$/, "")}/${file}`;
   for (const s of sessions) {
-    const rel = toWorkspaceRelative(absolute, s.workspace);
+    // A Workspace recorded with a trailing separator is the same directory.
+    const rel = toWorkspaceRelative(absolute, s.workspace.replace(/(.)[\\/]+$/, "$1"));
     if (rel !== null && rel !== "") return { sessionId: s.sessionId, rel };
   }
   return null;

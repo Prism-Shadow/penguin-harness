@@ -2640,6 +2640,9 @@ export class OrganizationService {
         throw channelArchived(channelId);
       }
       await this.patchChannel(projectId, orgId, channelId, { archived: false }, by);
+    } else if (existing.parsed.ok && existing.parsed.value.archived) {
+      // Not asked to reopen it: an archived channel is left exactly as it is.
+      return;
     }
     // Memberships are the person's to arrange: joining is theirs by right, an employee may not
     // invite itself, and only a member may invite the rest — so the person behind the actor
