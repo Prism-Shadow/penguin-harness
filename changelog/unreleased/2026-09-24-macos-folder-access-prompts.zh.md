@@ -3,6 +3,7 @@
 - **Date:** 2026-09-24
 - **Type:** fix
 - **Scope:** `desktop`
+- **PR:** [#846](https://github.com/Prism-Shadow/penguin-harness/pull/846)
 
 [English](2026-09-24-macos-folder-access-prompts.md)
 
