@@ -225,6 +225,18 @@ ${Array.from(
 </script>
 </body></html>`;
 
+const STRICT = `<!doctype html><html><head><title>Strict</title></head><body>
+<h1>Strict page</h1>
+<ul id="items">
+${Array.from(
+  { length: 30 },
+  (_, i) =>
+    `  <li class="item"><b>Item ${i}</b> <span>${"a sentence of filler text ".repeat(9)}</span> <a href="/i/${i}">more</a></li>`,
+).join("\n")}
+</ul>
+<div id="out"></div>
+</body></html>`;
+
 describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
   let browserProcess: ChildProcess | undefined;
   let profileDir = "";
@@ -239,6 +251,14 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
   beforeAll(async () => {
     server = http.createServer((req, res) => {
       res.setHeader("content-type", "text/html; charset=utf-8");
+      if (req.url === "/strict") {
+        // No script of its own, no eval, and Trusted Types enforced with no policy allowed.
+        res.setHeader(
+          "content-security-policy",
+          "script-src 'none'; require-trusted-types-for 'script'; trusted-types 'none'",
+        );
+        return res.end(STRICT);
+      }
       res.end(req.url === "/other" ? "<title>Other</title><p>Another page entirely</p>" : FIXTURE);
     });
     await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
@@ -423,6 +443,24 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     expect(result.reloaded).toBe(true);
     const title = await actions.exec(TAB, "return document.title", { noMonitor: true });
     expect(title.value).toBe("Other");
+  }, 60_000);
+
+  it("works on a page that enforces Trusted Types and forbids eval", async () => {
+    await actions.navigate(TAB, `${origin}/strict`);
+    const scan = await actions.scan(TAB, {});
+    expect(scan.content).toContain("Strict page");
+    expect(scan.content).toMatch(/\[FAKE ELEMENT\] 27 more items hidden, selector: "#items > /);
+    const small = await actions.scan(TAB, { maxChars: 700 });
+    expect(small.truncated).toBe(true);
+    expect(small.content.length).toBeLessThanOrEqual(1_400);
+    const run = (script: string) => actions.exec(TAB, script, { noMonitor: true });
+    expect((await run("document.title")).value).toBe("Strict");
+    expect((await run("await Promise.resolve(1);\ndocument.title")).value).toBe("Strict");
+    const changed = await actions.exec(
+      TAB,
+      "document.getElementById('out').textContent = 'Changed on the strict page'; return 1",
+    );
+    expect(changed.diff?.topChange).toContain("Changed on the strict page");
   }, 60_000);
 
   it("takes screenshots", async () => {

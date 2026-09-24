@@ -8,11 +8,14 @@
  *
  * - `optHTML(text_only)` and `findMainList` are GenericAgent's page JS verbatim, except that
  *   their console logging is gone (it kept a reference to every analyzed node in the page's
- *   console for the life of the page) and their comments and one visible string are in
- *   English.
+ *   console for the life of the page), a page with nothing visible yields nothing instead of a
+ *   TypeError, optHTML leaves the tree it serialized on `optHTML.lastRoot`, and their comments
+ *   and one visible string are in English. As upstream, `nodeInfo` is never filled, so the
+ *   layout analysis after the copy (partition / overlay marks, dialog hoisting) returns at once;
+ *   it is kept as it is, since parity with GenericAgent's output is the point.
  * - The rest ports what simphtml.py did to that output in Python — optimize_html_for_tokens,
  *   the cutlist (the main list folded to three items plus a `[FAKE ELEMENT]` hint naming the
- *   selector of the rest) and smart_truncate — onto a DOMParser document inside the page, so
+ *   selector of the rest) and smart_truncate — onto the tree optHTML built, inside the page, so
  *   the server needs no HTML parser. Lengths are the serialized HTML's, as `len(str(tag))` was.
  */
 
@@ -331,6 +334,7 @@ root.querySelectorAll('iframe').forEach(f => {
     f.parentNode.replaceChild(d, f);
   }
 });
+optHTML.lastRoot = root; // the tree itself, for the post-processing (added: see POST_PROCESS)
 return root.outerHTML;
 }`;
 
@@ -590,7 +594,12 @@ const FIND_MAIN_LIST = String.raw`function findMainList(startElement = null) {
 
 /**
  * simphtml.py's Python half, in the page: optimize_html_for_tokens, the cutlist, smart_truncate
- * and get_html's two entry points (the scan, and the full snapshot the change monitor diffs).
+ * and get_html's two entry points (the scan, and the snapshot the change monitor diffs).
+ *
+ * It works on the detached clone optHTML built — the tree its `root.outerHTML` serializes, kept
+ * on `optHTML.lastRoot` — rather than parsing that string again: parsing HTML (DOMParser,
+ * innerHTML) is a Trusted Types sink, and a page that enforces them would refuse every scan.
+ * Python's soup of `str(root)` has that root as its one top-level tag, so the tree is the soup.
  */
 const POST_PROCESS = String.raw`const __PENGUIN_HINT = '[FAKE ELEMENT]';
 const __PENGUIN_KEEP_ATTRS = new Set(['id', 'class', 'name', 'src', 'href', 'alt', 'value', 'type', 'placeholder',
@@ -598,62 +607,75 @@ const __PENGUIN_KEEP_ATTRS = new Set(['id', 'class', 'name', 'src', 'href', 'alt
   'role', 'aria-label', 'aria-expanded', 'aria-hidden', 'contenteditable',
   'title', 'for', 'action', 'method', 'target', 'colspan', 'rowspan']);
 
-// optHTML's root is usually <body>; a DOMParser document holds that as its own body, so the
-// output keeps the body tag exactly when the input had it.
-function __penguinParse(html) {
-  return { doc: new DOMParser().parseFromString(html, 'text/html'), wrapped: /^\s*<body[\s>]/i.test(html) };
+function __penguinTags(root) {
+  return [root, ...root.querySelectorAll('*')];
 }
-function __penguinSerialize(parsed) {
-  const html = parsed.wrapped ? parsed.doc.body.outerHTML : parsed.doc.body.innerHTML;
-  // A text node serializes '>' as '&gt;', which would hand the reader a selector that does not
-  // match ("#list &gt; li"); inside a hint it is written out, which is still valid HTML.
-  return html.replace(/\[FAKE ELEMENT\][^<]*/g, (hint) => hint.replace(/&gt;/g, '>'));
-}
-function __penguinTags(parsed) {
-  return [parsed.doc.body, ...parsed.doc.body.querySelectorAll('*')];
+// A Trusted Types page may refuse an attribute write (an <embed> src); that attribute stays.
+function __penguinSet(el, name, value) {
+  try { el.setAttribute(name, value); } catch (e) {}
 }
 
 // optimize_html_for_tokens
-function __penguinOptimize(parsed) {
-  for (const svg of Array.from(parsed.doc.body.querySelectorAll('svg'))) {
+function __penguinOptimize(root) {
+  for (const svg of Array.from(root.querySelectorAll('svg'))) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     for (const a of Array.from(svg.attributes)) svg.removeAttribute(a.name);
   }
-  const tags = __penguinTags(parsed);
+  const tags = __penguinTags(root);
   for (const tag of tags) tag.removeAttribute('style');
   for (const tag of tags) {
     const src = tag.getAttribute('src');
     if (src !== null) {
-      if (src.startsWith('data:')) tag.setAttribute('src', '__img__');
-      else if (src.length > 30) tag.setAttribute('src', '__url__');
+      if (src.startsWith('data:')) __penguinSet(tag, 'src', '__img__');
+      else if (src.length > 30) __penguinSet(tag, 'src', '__url__');
     }
     const href = tag.getAttribute('href');
-    if (href !== null && href.length > 30) tag.setAttribute('href', '__link__');
+    if (href !== null && href.length > 30) __penguinSet(tag, 'href', '__link__');
     const action = tag.getAttribute('action');
-    if (action !== null && action.length > 30) tag.setAttribute('action', '__url__');
+    if (action !== null && action.length > 30) __penguinSet(tag, 'action', '__url__');
     for (const a of ['value', 'title', 'alt']) {
       const v = tag.getAttribute(a);
-      if (v !== null && v.length > 100) tag.setAttribute(a, v.slice(0, 50) + ' ...');
+      if (v !== null && v.length > 100) __penguinSet(tag, a, v.slice(0, 50) + ' ...');
     }
     for (const attr of Array.from(tag.attributes).map((a) => a.name)) {
       if (__PENGUIN_KEEP_ATTRS.has(attr)) continue;
       if (attr.startsWith('data-v')) tag.removeAttribute(attr);
       else if (attr.startsWith('data-')) {
-        if (tag.getAttribute(attr).length > 20) tag.setAttribute(attr, '__data__');
+        if (tag.getAttribute(attr).length > 20) __penguinSet(tag, attr, '__data__');
       } else tag.removeAttribute(attr);
     }
   }
 }
 
-// optHTML hands iframes with content over as div[data-tag=iframe]; they are iframes again here.
-function __penguinIframes(parsed) {
-  const doc = parsed.doc;
-  for (const div of Array.from(doc.body.querySelectorAll('div[data-tag="iframe"]'))) {
-    const frame = doc.createElement('iframe');
+// optHTML hands an iframe with content over as div[data-tag=iframe]; it is an iframe again here.
+// (A detached element loads nothing.) Returns the root, which is new when it was one of them.
+function __penguinIframes(root) {
+  let out = root;
+  for (const div of __penguinTags(root).filter((el) => el.matches('div[data-tag="iframe"]'))) {
+    const frame = div.ownerDocument.createElement('iframe');
     for (const a of Array.from(div.attributes)) if (a.name !== 'data-tag') frame.setAttribute(a.name, a.value);
     while (div.firstChild) frame.appendChild(div.firstChild);
-    div.replaceWith(frame);
+    if (div === out) out = frame;
+    else div.replaceWith(frame);
   }
+  return out;
+}
+
+// get_html(cutlist=False): the simplified page as a tree, or null for a page with none.
+function __penguinSimplified() {
+  if (!document.body) return null;
+  optHTML.lastRoot = null;
+  optHTML(false);
+  const root = optHTML.lastRoot;
+  if (!root) return null;
+  __penguinOptimize(root);
+  return __penguinIframes(root);
+}
+
+// str(soup). A text node serializes '>' as '&gt;', which would hand the reader a selector that
+// does not match ("#list &gt; li"); inside a hint it is written out, which is still valid HTML.
+function __penguinSerialize(root) {
+  return root.outerHTML.replace(/\[FAKE ELEMENT\][^<]*/g, (hint) => hint.replace(/&gt;/g, '>'));
 }
 
 // BeautifulSoup's get_text(" ", strip=True)
@@ -686,13 +708,12 @@ function __penguinIsHint(el) {
 
 // get_html's cutlist: each long main list keeps 3 items (or up to 6 that contain the
 // instruction), and a hint names the selector that finds the rest.
-function __penguinCutlist(parsed, lists, instruction) {
-  const doc = parsed.doc;
+function __penguinCutlist(root, lists, instruction) {
   for (const entry of lists) {
     const sel = entry && typeof entry === 'object' ? entry.selector : null;
     if (!sel) continue;
     let items;
-    try { items = Array.from(doc.body.querySelectorAll(sel)); } catch (e) { continue; }
+    try { items = Array.from(root.querySelectorAll(sel)); } catch (e) { continue; }
     if (items.length < 5) continue;
     const total = items.reduce((n, it) => n + it.outerHTML.length, 0);
     const avg = total / items.length;
@@ -707,20 +728,20 @@ function __penguinCutlist(parsed, lists, instruction) {
     }
     let hint = __PENGUIN_HINT + ' ' + removed.length + ' more items hidden, selector: "' + sel + '"';
     if (samples.length) hint += ' Hidden items: ' + samples.map((t) => '"' + t + '"').join(',');
-    const div = doc.createElement('div');
+    const div = root.ownerDocument.createElement('div');
     div.textContent = hint;
     if (keep.length) keep[keep.length - 1].after(div);
     for (const it of removed) it.remove();
   }
 }
 
-// smart_truncate: bring the document close to the budget. Pass through single children to
-// the first fork; there, if the three largest children can absorb the excess they share it in
+// smart_truncate: bring the tree close to the budget. Pass through single children to the
+// first fork; there, if the three largest children can absorb the excess they share it in
 // proportion (recursing into big ones, cutting small ones), otherwise children go from the end.
 // A list's [FAKE ELEMENT] hint is never cut.
-function __penguinSmartTruncate(parsed, budget) {
+function __penguinSmartTruncate(root, budget) {
   const CUT_THRESHOLD = 8000;
-  const doc = parsed.doc;
+  const doc = root.ownerDocument;
   const cut = (ele, keep) => {
     let s = ele.outerHTML.length;
     let over = s - keep;
@@ -734,18 +755,23 @@ function __penguinSmartTruncate(parsed, budget) {
     const inner = ele.innerHTML;
     const overhead = s - inner.length;
     const innerKeep = Math.max(keep - overhead - marker.length, 0);
-    ele.innerHTML = innerKeep > 0 ? inner.slice(0, innerKeep) : '';
+    try {
+      ele.innerHTML = innerKeep > 0 ? inner.slice(0, innerKeep) : '';
+    } catch (e) {
+      // A Trusted Types page refuses markup from a string: the element keeps its text instead.
+      ele.textContent = ele.textContent.slice(0, innerKeep);
+    }
     ele.appendChild(doc.createTextNode(marker));
     for (const p of kept) ele.appendChild(p);
   };
-  const walk = (node, budget, isRoot) => {
-    const total = isRoot ? node.innerHTML.length : node.outerHTML.length;
+  const walk = (node, budget) => {
+    const total = node.outerHTML.length;
     if (total <= budget) return;
     const kids = Array.from(node.children).filter((c) => !__penguinIsHint(c)).map((c) => [c, c.outerHTML.length]);
     if (!kids.length) return;
     const kidsTotal = kids.reduce((n, k) => n + k[1], 0);
     const remaining = Math.max(budget - (total - kidsTotal), 0);
-    if (kids.length === 1) { walk(kids[0][0], remaining, false); return; }
+    if (kids.length === 1) { walk(kids[0][0], remaining); return; }
     const over = kidsTotal - remaining;
     if (over <= 0) return;
     const ranked = kids.map((_, i) => i).sort((a, b) => kids[b][1] - kids[a][1]);
@@ -767,21 +793,11 @@ function __penguinSmartTruncate(parsed, budget) {
     const actions = tops.map((i) => [kids[i][0], kids[i][1] - Math.floor(over * kids[i][1] / topTotal)]);
     for (const [c, keep] of actions) {
       if (keep <= 0) c.remove();
-      else if (keep > CUT_THRESHOLD) walk(c, keep, false);
+      else if (keep > CUT_THRESHOLD) walk(c, keep);
       else cut(c, keep);
     }
   };
-  // A wrapped document is BeautifulSoup's soup with <body> as its one child: the same budget, one level down.
-  walk(parsed.doc.body, budget, !parsed.wrapped);
-}
-
-// get_html(cutlist=False): the full simplified page, the change monitor's snapshot.
-function __penguinSnapshotHtml() {
-  if (!document.body) return '';
-  const parsed = __penguinParse(optHTML(false));
-  __penguinOptimize(parsed);
-  __penguinIframes(parsed);
-  return __penguinSerialize(parsed);
+  walk(root, budget);
 }
 
 // web_scan: get_html(cutlist=True, maxchars) or its text form, which keeps the head and the
@@ -798,15 +814,14 @@ function __penguinScan(opts) {
   }
   let lists = [];
   try { lists = findMainList(document.body) || []; } catch (e) { lists = []; }
-  const parsed = __penguinParse(optHTML(false));
-  __penguinOptimize(parsed);
-  __penguinIframes(parsed);
-  if (Array.isArray(lists) && lists.length) __penguinCutlist(parsed, lists, opts.instruction || '');
-  let content = __penguinSerialize(parsed);
+  const root = __penguinSimplified();
+  if (!root) return { content: '', truncated: false };
+  if (Array.isArray(lists) && lists.length) __penguinCutlist(root, lists, opts.instruction || '');
+  let content = __penguinSerialize(root);
   let truncated = false;
   if (content.length > opts.maxChars) {
-    __penguinSmartTruncate(parsed, opts.maxChars);
-    content = __penguinSerialize(parsed);
+    __penguinSmartTruncate(root, opts.maxChars);
+    content = __penguinSerialize(root);
     truncated = true;
   }
   // smart_truncate cannot shorten one element whose bulk is its own text; no page reaches the

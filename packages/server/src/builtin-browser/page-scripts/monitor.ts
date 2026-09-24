@@ -7,8 +7,9 @@
  *   "Saved". It samples the page's text every 450 ms and reports what was new.
  * - The change diff: a baseline of the simplified page is kept in the page itself
  *   (`window.__penguinSnap`) before the action, and compared with the page after it —
- *   find_changed_elements, on DOMParser instead of BeautifulSoup. It reports how many elements
- *   changed and the largest changed subtree (at most 2000 characters).
+ *   find_changed_elements, on the simplified trees themselves instead of BeautifulSoup's parse
+ *   of their HTML (parsing is a Trusted Types sink, see simplify.ts). It reports how many
+ *   elements changed and the largest changed subtree (at most 2000 characters).
  *
  * Both live in the page's window, so a navigation takes them with it: the end script then
  * answers `{ lost: true }`, which the action reports as a reload. JavaScript SOURCE STRINGS,
@@ -44,11 +45,9 @@ function stopStrMonitor() {
   return result;
 }`;
 
-const FIND_CHANGED = String.raw`function findChangedElements(beforeHtml, afterHtml) {
-  const before = __penguinParse(beforeHtml), after = __penguinParse(afterHtml);
+const FIND_CHANGED = String.raw`function findChangedElements(before, after) {
   const directText = (el) => Array.from(el.childNodes).filter((n) => n.nodeType === 3).map((n) => n.data.trim()).join('').trim();
   const sig = (el) => el.localName + ':' + JSON.stringify(Array.from(el.attributes).filter((a) => a.name !== 'data-track-id').map((a) => [a.name, a.value])) + ':' + directText(el);
-  const elements = (parsed) => parsed.wrapped ? __penguinTags(parsed) : Array.from(parsed.doc.body.querySelectorAll('*'));
   const bySig = (els) => {
     const map = new Map();
     for (const el of els) {
@@ -58,7 +57,7 @@ const FIND_CHANGED = String.raw`function findChangedElements(beforeHtml, afterHt
     }
     return map;
   };
-  const beforeEls = elements(before), afterEls = elements(after);
+  const beforeEls = __penguinTags(before), afterEls = __penguinTags(after);
   const beforeSigs = bySig(beforeEls), afterSigs = bySig(afterEls);
   const changed = [];
   for (const [key, els] of afterSigs) {
@@ -66,7 +65,7 @@ const FIND_CHANGED = String.raw`function findChangedElements(beforeHtml, afterHt
     if (!prev) changed.push(...els);
     else if (els.length > prev.length) changed.push(...els.slice(0, els.length - prev.length));
   }
-  if (changed.length === 0 && __penguinSerialize(before) !== __penguinSerialize(after)) {
+  if (changed.length === 0 && before.outerHTML !== after.outerHTML) {
     for (let i = 0; i < Math.min(beforeEls.length, afterEls.length); i++) {
       if (sig(beforeEls[i]) !== sig(afterEls[i])) changed.push(afterEls[i]);
     }
@@ -88,14 +87,15 @@ const FIND_CHANGED = String.raw`function findChangedElements(beforeHtml, afterHt
 }`;
 
 /**
- * Before an action: start the transient monitor, then keep the baseline. The monitor starts
- * even when the baseline cannot be taken; the end then reports transients without a diff.
+ * Before an action: start the transient monitor, then keep the baseline — the simplified tree
+ * itself, a detached copy that nothing renders. The monitor starts even when the baseline cannot
+ * be taken; the end then reports transients without a diff.
  */
 export const MONITOR_BEGIN_SCRIPT = [
   SIMPLIFY_LIBRARY,
   STR_MONITOR,
   "startStrMonitor(450);",
-  "try { window.__penguinSnap = __penguinSnapshotHtml(); } catch (e) { window.__penguinSnap = null; }",
+  "try { window.__penguinSnap = __penguinSimplified(); } catch (e) { window.__penguinSnap = null; }",
   "return true;",
 ].join("\n");
 
@@ -112,11 +112,14 @@ delete window.__penguinSnap;
 const transients = stopStrMonitor();
 if (transients === null) return { lost: true };
 const out = { transients };
-if (typeof snap === 'string') {
+if (snap) {
   try {
-    const diff = findChangedElements(snap, __penguinSnapshotHtml());
-    out.changed = diff.changed;
-    if (diff.topChange) out.topChange = diff.topChange;
+    const now = __penguinSimplified();
+    if (now) {
+      const diff = findChangedElements(snap, now);
+      out.changed = diff.changed;
+      if (diff.topChange) out.topChange = diff.topChange;
+    }
   } catch (e) {}
 }
 return out;`,
