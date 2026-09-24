@@ -139,15 +139,15 @@ describe("status and tabs", () => {
 });
 
 describe("open, switch, close", () => {
-  it("open navigates the active tab, adding https:// to a bare host and the calling session", async () => {
+  it("open navigates the active tab, a bare host as typed (the server picks its scheme)", async () => {
     process.env.PENGUIN_SESSION_ID = SESSION;
     routes["POST /tabs/active/navigate"] = () => ({ body: { tab: ORDERS } });
-    expect(await cli(["browser", "open", "amazon.com/your-orders/orders"])).toBe(0);
-    expect(lastBody()).toEqual({
-      url: "https://amazon.com/your-orders/orders",
-      sessionId: SESSION,
-    });
+    expect(await cli(["browser", "open", " amazon.com/your-orders/orders "])).toBe(0);
+    expect(lastBody()).toEqual({ url: "amazon.com/your-orders/orders", sessionId: SESSION });
     expect(out()).toBe("tab 12 · Your Orders · https://www.amazon.com/your-orders/orders\n");
+    // A development server on this machine is http, which only the server's rule knows.
+    await cli(["browser", "open", "localhost:5173"]);
+    expect(lastBody()).toEqual({ url: "localhost:5173", sessionId: SESSION });
   });
 
   it("open --new-tab creates an active tab; --tab with it is refused before any request", async () => {

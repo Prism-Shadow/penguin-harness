@@ -167,12 +167,12 @@ function parseIndex(raw: string, t: Messages): number {
   return value;
 }
 
-/** A URL as typed: one naming no scheme is a host, so it gets https://. */
+/**
+ * A URL as typed. One naming no scheme goes as it is: the server gives it one the way the
+ * address bar does (https, or http for this machine's own servers such as `localhost:5173`).
+ */
 function normalizeUrl(raw: string): string {
-  const url = raw.trim();
-  return /^[a-z][a-z0-9+.-]*:\/\//i.test(url) || /^(about|data|blob):/i.test(url)
-    ? url
-    : `https://${url}`;
+  return raw.trim();
 }
 
 /** The calling session (PENGUIN_SESSION_ID), for the bodies that accept one. */
