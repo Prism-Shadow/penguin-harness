@@ -20,6 +20,7 @@ import type {
   ProposalEvent,
   ProposalMaterial,
   ProposalMaterialKind,
+  ProposalRevision,
   ProposalScopeEntry,
   ProposalSection,
   ProposalStatus,
@@ -55,7 +56,18 @@ export type LedgerEntry =
       sections: ProposalSection[];
       by: string;
     }
-  | { kind: "status"; number: number; status: ProposalStatus; by: string; reason?: string }
+  /**
+   * A status change. An `approved` line carries the `revision` it covers (lines written
+   * before that field read as the revision current when they were written).
+   */
+  | {
+      kind: "status";
+      number: number;
+      status: ProposalStatus;
+      by: string;
+      reason?: string;
+      revision?: number;
+    }
   | { kind: "implementation"; number: number; implementer: string; sessionId: string; by: string }
   | {
       kind: "material";
@@ -109,6 +121,10 @@ export interface Proposal {
   sessions: string[];
   comments: ProposalComment[];
   events: ProposalEvent[];
+  /** The revision the standing approval covers; null until approved. Kept across a later publish (the status is not). */
+  approvedRevision: number | null;
+  /** Every revision as published, by number — what a diff against the approved one reads. */
+  revisions: Map<number, ProposalRevision>;
   /** The `seq` of the last line about this proposal. */
   seq: number;
 }
@@ -148,6 +164,8 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       sessions: [],
       comments: [],
       events: [{ seq: line.seq, at: line.at, kind: "created", by: delegatedBy }],
+      approvedRevision: null,
+      revisions: new Map(),
       seq: line.seq,
     });
     return;
@@ -169,6 +187,17 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       p.title = line.title;
       p.scope = line.scope;
       p.sections = line.sections;
+      p.revisions.set(line.revision, {
+        revision: line.revision,
+        title: line.title,
+        scope: line.scope,
+        sections: line.sections,
+        by: line.by,
+        at: line.at,
+      });
+      // An approval covers one revision: the text it was given for is no longer the head, so
+      // the proposal is back to ready — the approved revision stays recorded for the diff.
+      if (p.status === "approved") p.status = "ready";
       // Every comment follows its passage into the new text; one whose passage is gone keeps
       // the revision it was last found in and is listed as a comment on that revision.
       for (const c of p.comments) reanchor(c, p.sections, p.revision);
@@ -176,9 +205,12 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       return;
     case "status":
       p.status = line.status;
-      if (line.status === "ready") event("ready", line.by);
-      else if (line.status === "approved") event("approved", line.by);
-      else if (line.status === "merged") event("merged", line.by);
+      if (line.status === "ready")
+        event("ready", line.by, line.reason !== undefined ? { text: line.reason } : {});
+      else if (line.status === "approved") {
+        p.approvedRevision = line.revision ?? p.revision;
+        event("approved", line.by, { revision: p.approvedRevision });
+      } else if (line.status === "merged") event("merged", line.by);
       else if (line.status === "rejected")
         event("rejected", line.by, line.reason !== undefined ? { text: line.reason } : {});
       return;

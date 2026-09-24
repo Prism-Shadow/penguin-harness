@@ -759,6 +759,65 @@ describe("ProposalService", () => {
     });
   });
 
+  it("an approval covers one revision: a later publish puts the proposal back to ready, keeps the approved revision, tells the implementer, and the revisions can be read back", async () => {
+    const n = await delegated();
+    await service.publish(PROJECT, ORG, n, DOC, author);
+    await service.implement(PROJECT, ORG, n, { agentId: "acme_impl" }, author);
+    const approved = await service.approve(PROJECT, ORG, n, BOSS);
+    expect(approved).toMatchObject({ status: "approved", revision: 1, approvedRevision: 1 });
+    expect(approved.events.at(-1)).toMatchObject({ kind: "approved", revision: 1 });
+
+    const revised = await service.publish(
+      PROJECT,
+      ORG,
+      n,
+      DOC.replace("One sweep", "Two sweeps"),
+      author,
+    );
+    expect(revised).toMatchObject({ status: "ready", revision: 2, approvedRevision: 1 });
+    expect(revised.events.at(-1)).toMatchObject({
+      kind: "ready",
+      text: "revision 2 — approval of revision 1 no longer covers it",
+    });
+    expect(gateway.messages.at(-1)!.text).toBe(
+      `@agent:acme_impl proposal:${n} was revised after approval (revision 1 → 2); wait for a new approval before merging.`,
+    );
+    // The implementer may not merge on the old approval.
+    expect(await refused(() => service.merged(PROJECT, ORG, n, impl))).toEqual({
+      status: 409,
+      code: "proposal_status",
+    });
+    // Approving again covers the head.
+    const again = await service.approve(PROJECT, ORG, n, BOSS);
+    expect(again).toMatchObject({ status: "approved", approvedRevision: 2 });
+
+    // Every revision as published, and one of them in full.
+    const listing = await service.revisions(PROJECT, ORG, n, BOSS);
+    expect(listing.revisions.map((r) => r.revision)).toEqual([1, 2]);
+    expect(listing.revisions[0]).toMatchObject({ by: "agent:acme_dev" });
+    const first = await service.revision(PROJECT, ORG, n, 1, BOSS);
+    expect(first.revision).toBe(1);
+    expect(sectionSource(first.sections[1]!)).toContain("One sweep");
+    const second = await service.revision(PROJECT, ORG, n, 2, BOSS);
+    expect(sectionSource(second.sections[1]!)).toContain("Two sweeps");
+    expect(await refused(() => service.revision(PROJECT, ORG, n, 9, BOSS))).toEqual({
+      status: 404,
+      code: "revision_not_found",
+    });
+    // Replayed from the file, the same facts stand.
+    const replay = new ProposalService({
+      gateway,
+      root,
+      settings,
+      log: { line: () => {} },
+      agents,
+    });
+    expect(await replay.get(PROJECT, ORG, n, BOSS)).toMatchObject({
+      status: "approved",
+      approvedRevision: 2,
+    });
+  });
+
   it("unread counts what happened since the person's read position, never their own doing; employees count nothing", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);

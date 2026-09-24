@@ -9,6 +9,9 @@
 import { describe, expect, it } from "vitest";
 import type { ProposalComment, ProposalEvent, ProposalItem } from "@prismshadow/penguin-server/api";
 import {
+  diffLines,
+  sectionDiffs,
+  revisedAfterApproval,
   scopeFileCandidates,
   commentsInSection,
   eventDetail,
@@ -376,5 +379,64 @@ describe("scopeFileCandidates", () => {
       "dev/packages/a.ts",
     ]);
     expect(scopeFileCandidates("../x.ts", "/w/shared", null)).toEqual([]);
+  });
+});
+
+describe("the diff since the approved revision", () => {
+  it("diffs lines by their longest common subsequence", () => {
+    expect(diffLines("a\nb\nc", "a\nx\nc\nd")).toEqual([
+      { kind: "same", text: "a" },
+      { kind: "del", text: "b" },
+      { kind: "add", text: "x" },
+      { kind: "same", text: "c" },
+      { kind: "add", text: "d" },
+    ]);
+    expect(diffLines("", "one")).toEqual([{ kind: "add", text: "one" }]);
+    expect(diffLines("one", "")).toEqual([{ kind: "del", text: "one" }]);
+    expect(diffLines("same", "same")).toEqual([{ kind: "same", text: "same" }]);
+  });
+
+  it("matches sections by heading: unchanged, changed, added and removed", () => {
+    const section = (id: string, heading: string, text: string) => ({
+      id,
+      heading,
+      paragraphs: [{ id: `${id}p`, text }],
+    });
+    const before = [
+      section("a", "Change", "old"),
+      section("b", "Purpose", "why"),
+      section("c", "Test", "t"),
+    ];
+    const after = [
+      section("a", "Change", "new"),
+      section("b", "Purpose", "why"),
+      section("d", "Risks", "r"),
+    ];
+    expect(sectionDiffs(before, after).map((d) => [d.heading, d.kind])).toEqual([
+      ["Change", "changed"],
+      ["Purpose", "same"],
+      ["Risks", "added"],
+      ["Test", "removed"],
+    ]);
+    expect(sectionDiffs(before, after)[0]!.lines).toEqual([
+      { kind: "del", text: "old" },
+      { kind: "add", text: "new" },
+    ]);
+  });
+
+  it("has a diff to show only while an older approval stands and the proposal is open again", () => {
+    expect(revisedAfterApproval({ status: "ready", revision: 3, approvedRevision: 1 })).toBe(true);
+    expect(revisedAfterApproval({ status: "drafting", revision: 2, approvedRevision: 1 })).toBe(
+      true,
+    );
+    expect(revisedAfterApproval({ status: "approved", revision: 2, approvedRevision: 2 })).toBe(
+      false,
+    );
+    expect(revisedAfterApproval({ status: "ready", revision: 2, approvedRevision: null })).toBe(
+      false,
+    );
+    expect(revisedAfterApproval({ status: "merged", revision: 3, approvedRevision: 1 })).toBe(
+      false,
+    );
   });
 });
