@@ -166,16 +166,19 @@ export interface ChromiumCookieFixture {
   secure?: boolean;
   httpOnly?: boolean;
   sameSite?: number;
+  /** A partitioned (CHIPS) cookie's top-level site; needs the store's `partitioned` column. */
+  topFrameSiteKey?: string;
 }
 
 /**
  * A Chromium `Cookies` store. `legacy` writes the pre-2019 columns (secure / httponly, no
- * samesite); `version` is `meta.version` (omitted: no meta table at all).
+ * samesite); `version` is `meta.version` (omitted: no meta table at all); `partitioned` adds
+ * the `top_frame_site_key` column of stores since Chrome 108.
  */
 export function writeChromiumCookies(
   file: string,
   cookies: ChromiumCookieFixture[],
-  opts: { version?: number; legacy?: boolean } = {},
+  opts: { version?: number; legacy?: boolean; partitioned?: boolean } = {},
 ): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new sqlite.DatabaseSync(file);
@@ -187,7 +190,8 @@ export function writeChromiumCookies(
     expires_utc INTEGER NOT NULL, ${secure} INTEGER NOT NULL, ${httpOnly} INTEGER NOT NULL,
     last_access_utc INTEGER NOT NULL, has_expires INTEGER NOT NULL DEFAULT 1,
     is_persistent INTEGER NOT NULL DEFAULT 1, priority INTEGER NOT NULL DEFAULT 1
-    ${opts.legacy ? "" : ", samesite INTEGER NOT NULL DEFAULT -1"})`);
+    ${opts.legacy ? "" : ", samesite INTEGER NOT NULL DEFAULT -1"}
+    ${opts.partitioned ? ", top_frame_site_key TEXT NOT NULL DEFAULT ''" : ""})`);
   if (opts.version !== undefined) {
     db.exec("CREATE TABLE meta (key LONGVARCHAR NOT NULL UNIQUE PRIMARY KEY, value LONGVARCHAR)");
     db.prepare("INSERT INTO meta (key, value) VALUES ('version', ?)").run(String(opts.version));
@@ -212,6 +216,13 @@ export function writeChromiumCookies(
       created,
       ...(opts.legacy ? [] : [c.sameSite ?? -1]),
     );
+    if (c.topFrameSiteKey !== undefined) {
+      db.prepare("UPDATE cookies SET top_frame_site_key = ? WHERE host_key = ? AND name = ?").run(
+        c.topFrameSiteKey,
+        c.host,
+        c.name,
+      );
+    }
   }
   db.close();
 }

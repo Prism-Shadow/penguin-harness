@@ -42,7 +42,10 @@ export interface CookieReadResult {
   cookies: DesktopBrowserCookie[];
   /** Rows read from the store that fall within `domains`, before any other filtering. */
   found: number;
-  /** Rows that could not be decrypted, were expired, or belong to a single context (Firefox containers). */
+  /**
+   * Rows that could not be decrypted, were expired, or belong to a single context: a Firefox
+   * container, or one top-level site (Chromium's partitioned cookies).
+   */
   skipped: number;
   warnings: string[];
 }

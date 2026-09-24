@@ -33,6 +33,8 @@ interface CookieRow {
   secure: number;
   http_only: number;
   same_site: number;
+  /** A partitioned (CHIPS) cookie's top-level site; empty for an ordinary cookie. */
+  partition_key: string | null;
 }
 
 export async function readChromiumCookies(
@@ -75,7 +77,9 @@ export async function readChromiumCookies(
       expires: Math.max(0, Math.floor(row.expires)),
       sameSite: chromiumSameSite(row.same_site),
     };
-    if (isExpired(stored, now)) {
+    // A partitioned cookie belongs to its host only under one top-level site; written without
+    // that site it would reach the host everywhere, so it stays behind.
+    if (row.partition_key || isExpired(stored, now)) {
       result.skipped++;
       continue;
     }
@@ -130,11 +134,14 @@ function readStore(db: DatabaseSync): { rows: CookieRow[]; version: number } {
   const secure = columns.has("is_secure") ? "is_secure" : "secure";
   const httpOnly = columns.has("is_httponly") ? "is_httponly" : "httponly";
   const sameSite = columns.has("samesite") ? "samesite" : "-1";
+  // Partitioned (CHIPS) cookies carry their top-level site since Chrome 108.
+  const partition = columns.has("top_frame_site_key") ? "top_frame_site_key" : "''";
   const rows = db
     .prepare(
       `SELECT host_key, name, value, encrypted_value, path,
          CASE WHEN expires_utc = 0 THEN 0 ELSE expires_utc / 1000000 - 11644473600 END AS expires,
-         ${secure} AS secure, ${httpOnly} AS http_only, ${sameSite} AS same_site
+         ${secure} AS secure, ${httpOnly} AS http_only, ${sameSite} AS same_site,
+         ${partition} AS partition_key
        FROM cookies`,
     )
     .all() as unknown as CookieRow[];

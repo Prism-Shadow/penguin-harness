@@ -238,6 +238,27 @@ describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
     expect(machine.calls).toEqual([]);
   });
 
+  it("leaves partitioned (CHIPS) cookies behind, counted as skipped", async () => {
+    machine = new FakeMachine("linux");
+    const profile = machine.path(".config", "google-chrome", "Default");
+    writeChromiumCookies(
+      path.join(profile, "Cookies"),
+      [
+        { host: ".a.com", name: "first-party", value: "kept" },
+        {
+          host: ".widgets.test",
+          name: "embedded",
+          value: "partitioned",
+          topFrameSiteKey: "https://a.com",
+        },
+      ],
+      { version: 24, partitioned: true },
+    );
+    const result = await importAll();
+    expect(result.cookies.map((c) => c.name)).toEqual(["first-party"]);
+    expect(result).toMatchObject({ found: 2, skipped: 1 });
+  });
+
   it("decrypts v11 with the password secret-tool returns", async () => {
     linuxChrome(
       [
