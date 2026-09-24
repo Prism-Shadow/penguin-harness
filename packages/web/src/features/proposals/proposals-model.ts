@@ -585,19 +585,15 @@ export function scopeFileCandidates(
 // What changed since the approved revision
 // ---------------------------------------------------------------------------
 
-export interface DiffLine {
-  kind: "same" | "add" | "del";
-  text: string;
-}
-
 /**
- * A line diff of two texts: the longest common subsequence of lines, so an inserted or
- * removed line shows as itself and the rest as `same`. Small on purpose — a proposal's
- * section is a few paragraphs, so the O(n·m) table is nothing.
+ * The edit script of two sequences under the longest common subsequence: `same` pairs an
+ * item of each, `del` takes one of `a`, `add` one of `b`. O(n·m) — a proposal's paragraphs
+ * and words are few, and callers cap what they hand in.
  */
-export function diffLines(before: string, after: string): DiffLine[] {
-  const a = before === "" ? [] : before.split("\n");
-  const b = after === "" ? [] : after.split("\n");
+function lcsScript<T>(
+  a: readonly T[],
+  b: readonly T[],
+): Array<{ kind: "same" | "add" | "del"; i: number; j: number }> {
   const n = a.length;
   const m = b.length;
   // lcs[i][j] = length of the LCS of a[i..] and b[j..]
@@ -608,70 +604,184 @@ export function diffLines(before: string, after: string): DiffLine[] {
         a[i] === b[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
     }
   }
-  const out: DiffLine[] = [];
+  const out: Array<{ kind: "same" | "add" | "del"; i: number; j: number }> = [];
   let i = 0;
   let j = 0;
   while (i < n && j < m) {
-    if (a[i] === b[j]) {
-      out.push({ kind: "same", text: a[i]! });
-      i++;
-      j++;
-    } else if (lcs[i + 1]![j]! >= lcs[i]![j + 1]!) {
-      out.push({ kind: "del", text: a[i]! });
-      i++;
-    } else {
-      out.push({ kind: "add", text: b[j]! });
-      j++;
-    }
+    if (a[i] === b[j]) out.push({ kind: "same", i: i++, j: j++ });
+    else if (lcs[i + 1]![j]! >= lcs[i]![j + 1]!) out.push({ kind: "del", i: i++, j });
+    else out.push({ kind: "add", i, j: j++ });
   }
-  while (i < n) out.push({ kind: "del", text: a[i++]! });
-  while (j < m) out.push({ kind: "add", text: b[j++]! });
+  while (i < n) out.push({ kind: "del", i: i++, j });
+  while (j < m) out.push({ kind: "add", i, j: j++ });
   return out;
 }
 
-export interface SectionDiff {
-  heading: string;
-  /** `same`: nothing changed; `changed`: lines differ; `added` / `removed`: the whole section is new or gone. */
-  kind: "same" | "changed" | "added" | "removed";
-  lines: DiffLine[];
+/** Past this many table cells a word diff is not attempted: the paragraph shows as removed + added. */
+const WORD_DIFF_CELLS = 200_000;
+
+/**
+ * A paragraph's words for the inline diff: whitespace runs are tokens of their own (so the
+ * text joins back exactly), each CJK character and CJK punctuation mark is a token (those
+ * scripts write no spaces), and every other run of characters is one word.
+ */
+export function tokenizeWords(text: string): string[] {
+  return (
+    text.match(
+      /\s+|[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303f\uff00-\uffef]|[^\s\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303f\uff00-\uffef]+/gu,
+    ) ?? []
+  );
+}
+
+const isSpace = (token: string): boolean => /^\s+$/.test(token);
+
+/** How much two paragraphs share, 0..1: twice the common words over all their words (whitespace not counted). */
+export function wordSimilarity(before: string, after: string): number {
+  const a = tokenizeWords(before).filter((w) => !isSpace(w));
+  const b = tokenizeWords(after).filter((w) => !isSpace(w));
+  if (a.length === 0 && b.length === 0) return 1;
+  if (a.length * b.length > WORD_DIFF_CELLS) return 0;
+  const common = lcsScript(a, b).filter((op) => op.kind === "same").length;
+  return (2 * common) / (a.length + b.length);
+}
+
+export interface WordChange {
+  kind: "same" | "add" | "del";
+  text: string;
+}
+
+/** The words of one paragraph against its successor, adjacent runs of one kind merged — what an inline `<del>` / `<ins>` rendering draws. */
+export function diffWords(before: string, after: string): WordChange[] {
+  const a = tokenizeWords(before);
+  const b = tokenizeWords(after);
+  const out: WordChange[] = [];
+  const push = (kind: WordChange["kind"], text: string) => {
+    if (text === "") return;
+    const last = out[out.length - 1];
+    if (last !== undefined && last.kind === kind) last.text += text;
+    else out.push({ kind, text });
+  };
+  if (a.length * b.length > WORD_DIFF_CELLS) {
+    push("del", before);
+    push("add", after);
+    return out;
+  }
+  for (const op of lcsScript(a, b)) {
+    push(op.kind, op.kind === "add" ? b[op.j]! : a[op.i]!);
+  }
+  return out;
+}
+
+/** Two paragraphs this alike are one paragraph edited, shown with its words changed inline; less alike, a removal and an addition. */
+export const REPLACE_SIMILARITY = 0.5;
+
+/**
+ * One section's paragraphs against the approved revision's. `same` / `add` / `replace` name a
+ * paragraph of the head by index (it renders as the head renders it); `del` carries the text
+ * that is gone. Within each run of changes, removed and added paragraphs are paired in order,
+ * and a pair at least REPLACE_SIMILARITY alike becomes one `replace` with its word diff.
+ */
+export type ParagraphChange =
+  | { kind: "same"; index: number }
+  | { kind: "add"; index: number }
+  | { kind: "del"; text: string }
+  | { kind: "replace"; index: number; before: string; words: WordChange[] };
+
+export function diffParagraphs(
+  before: readonly string[],
+  after: readonly string[],
+): ParagraphChange[] {
+  const out: ParagraphChange[] = [];
+  let dels: number[] = [];
+  let adds: number[] = [];
+  const flush = () => {
+    const pairs = Math.max(dels.length, adds.length);
+    for (let k = 0; k < pairs; k++) {
+      const d = dels[k];
+      const a = adds[k];
+      if (d !== undefined && a !== undefined) {
+        if (wordSimilarity(before[d]!, after[a]!) >= REPLACE_SIMILARITY) {
+          out.push({
+            kind: "replace",
+            index: a,
+            before: before[d]!,
+            words: diffWords(before[d]!, after[a]!),
+          });
+          continue;
+        }
+      }
+      if (d !== undefined) out.push({ kind: "del", text: before[d]! });
+      if (a !== undefined) out.push({ kind: "add", index: a });
+    }
+    dels = [];
+    adds = [];
+  };
+  for (const op of lcsScript(before, after)) {
+    if (op.kind === "same") {
+      flush();
+      out.push({ kind: "same", index: op.j });
+    } else if (op.kind === "del") dels.push(op.i);
+    else adds.push(op.j);
+  }
+  flush();
+  return out;
 }
 
 /**
- * The sections of the approved revision against the head's, matched by heading (a section
- * keeps its heading across revisions; a renamed one reads as removed + added), in the
- * head's order with the removed ones after. Each compares the section's Markdown source.
+ * The body as it reads with the changes since the approved revision inline: every section of
+ * the head, each with the approved revision's section of the same heading (null: the section
+ * is new), and each section the head no longer has, placed after the section it followed.
+ * A section keeps its heading across revisions; a renamed one reads as removed + added.
  */
-export function sectionDiffs(
+export type InlineSection =
+  | { kind: "current"; section: ProposalSection; before: ProposalSection | null }
+  | { kind: "removed"; section: ProposalSection };
+
+export function inlineSections(
   before: readonly ProposalSection[],
   after: readonly ProposalSection[],
-): SectionDiff[] {
-  const out: SectionDiff[] = [];
-  const seen = new Set<string>();
-  for (const section of after) {
-    const old = before.find((s) => s.heading === section.heading && !seen.has(s.heading));
-    const source = sectionSource(section);
-    if (old === undefined) {
-      out.push({
-        heading: section.heading,
-        kind: "added",
-        lines: diffLines("", source),
-      });
-      continue;
+): InlineSection[] {
+  const taken = new Map<number, number>(); // index in before → index in after
+  after.forEach((section, j) => {
+    const i = before.findIndex((s, k) => s.heading === section.heading && !taken.has(k));
+    if (i >= 0) taken.set(i, j);
+  });
+  // A removed section follows the head section its nearest surviving predecessor became.
+  const removedAfter = new Map<number, ProposalSection[]>(); // -1 = before everything
+  let anchor = -1;
+  before.forEach((section, i) => {
+    const j = taken.get(i);
+    if (j !== undefined) {
+      anchor = j;
+      return;
     }
-    seen.add(old.heading);
-    const lines = diffLines(sectionSource(old), source);
-    out.push({
-      heading: section.heading,
-      kind: lines.every((l) => l.kind === "same") ? "same" : "changed",
-      lines,
-    });
-  }
-  for (const old of before) {
-    if (seen.has(old.heading)) continue;
-    seen.add(old.heading);
-    out.push({ heading: old.heading, kind: "removed", lines: diffLines(sectionSource(old), "") });
-  }
+    const list = removedAfter.get(anchor) ?? [];
+    list.push(section);
+    removedAfter.set(anchor, list);
+  });
+  const oldOf = new Map<number, ProposalSection>();
+  for (const [i, j] of taken) oldOf.set(j, before[i]!);
+  const out: InlineSection[] = [];
+  for (const s of removedAfter.get(-1) ?? []) out.push({ kind: "removed", section: s });
+  after.forEach((section, j) => {
+    out.push({ kind: "current", section, before: oldOf.get(j) ?? null });
+    for (const s of removedAfter.get(j) ?? []) out.push({ kind: "removed", section: s });
+  });
   return out;
+}
+
+/** The scope's files the head added, removed, or kept with another name pattern. */
+export function scopeChanges(
+  before: readonly { file: string; name?: string }[],
+  after: readonly { file: string; name?: string }[],
+): { added: string[]; removed: string[]; changed: string[] } {
+  const was = new Map(before.map((e) => [e.file, e.name ?? ""]));
+  const now = new Map(after.map((e) => [e.file, e.name ?? ""]));
+  return {
+    added: [...now.keys()].filter((f) => !was.has(f)),
+    removed: [...was.keys()].filter((f) => !now.has(f)),
+    changed: [...now.keys()].filter((f) => was.has(f) && was.get(f) !== now.get(f)),
+  };
 }
 
 /** Whether the page has a diff to show: an approval stands for an older revision than the head, and the proposal is open again. */
