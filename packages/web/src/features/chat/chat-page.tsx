@@ -127,6 +127,7 @@ import { SchedulePanel } from "../schedules/schedule-panel";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
 import { DockLauncher } from "../dock/dock-launcher";
+import { BuiltinBrowserPanel } from "../builtin-browser/browser-panel";
 import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
 // importing it also registers the global Ctrl+` hotkey with the app bundle
@@ -1778,6 +1779,9 @@ export function ChatPage() {
    * its own handled-once request guard is what the conversation-switch e2e covers.
    */
   const renderPanel = (kind: PanelKind, active: boolean): ReactNode => {
+    // The browser is one set of pages shared by every conversation, not a Session's view,
+    // so it needs no Session and works on the draft page too.
+    if (kind === "builtin-browser") return <BuiltinBrowserPanel active={active} />;
     if (!selected)
       return (
         <EmptyState

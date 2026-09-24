@@ -223,6 +223,94 @@ export const zh = {
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
   },
 
+  /** The built-in browser (desktop app only): its dock panel, toolbar and dialogs. */
+  builtinBrowser: {
+    /** The dock tab's name, also in the dock's menus and the launcher. */
+    panelTitle: "浏览器",
+    /** The browser's own tab strip (its accessible name). */
+    tabs: "标签页",
+    newTab: "新建标签页",
+    closeTab: "关闭标签页",
+    /** A tab with no title yet — a blank new tab. */
+    untitled: "新标签页",
+    back: "后退",
+    forward: "前进",
+    reload: "重新加载",
+    stop: "停止加载",
+    /** The address bar's accessible name, and its placeholder. */
+    address: "地址栏",
+    addressPlaceholder: "搜索或输入网址",
+    /** The history suggestions under the address bar (their accessible name). */
+    suggestions: "历史记录",
+    /** The toolbar's overflow menu. */
+    more: "更多",
+    importAction: "从浏览器导入…",
+    clearDataAction: "清除浏览数据…",
+    openExternal: "在系统浏览器中打开",
+    devTools: "开发者工具",
+    /** The toolbar's mark while an agent drives the browser; `action` is one of `actions`. */
+    agentBusy: (action: string): string => `智能体正在使用浏览器：${action}`,
+    /** A busy tab's tooltip in the strip, after its title. */
+    agentBusyTab: "智能体正在使用此标签页",
+    actions: {
+      navigate: "打开网页",
+      scan: "读取页面",
+      exec: "运行脚本",
+      click: "点击页面",
+      type: "输入文字",
+      screenshot: "截取屏幕",
+      cdp: "发送调试命令",
+    },
+    /** The panel with no tab open. */
+    emptyTitle: "没有打开的网页",
+    emptyBody: "打开一个网页，或让智能体替你浏览。在这里登录的账号只保存在内置浏览器中。",
+    /** The panel where the browser cannot run; the title, then why. */
+    unavailableTitle: "内置浏览器不可用",
+    unavailableDesktop: "内置浏览器只能在 PenguinHarness 桌面应用中使用。",
+    unavailableShell: "当前桌面应用版本过旧，请更新后使用内置浏览器。",
+    unavailableWindow: "没有可以显示浏览器的应用窗口。",
+    openFailed: (reason: string): string => `无法打开标签页：${reason}`,
+    /** The import dialog: copies sign-ins and history from a browser installed on this computer. */
+    importTitle: "从浏览器导入",
+    importIntro: "把系统浏览器里的登录状态和历史记录复制到内置浏览器，原浏览器中的数据不会改变。",
+    importLoading: "正在查找浏览器…",
+    importNone: "这台电脑上没有找到可以导入的浏览器。",
+    importSourcesFailed: (reason: string): string => `无法读取浏览器列表：${reason}`,
+    importSource: "导入来源",
+    importWhat: "导入内容",
+    importCookies: "Cookie 与登录状态",
+    importHistory: "历史记录",
+    importDomains: "仅限这些网站",
+    importDomainsHint: "用逗号分隔，例如 amazon.com, github.com；留空则导入全部网站",
+    importDomainsPlaceholder: "amazon.com, github.com",
+    importKeychainNote: "Mac 可能会请求钥匙串访问权限。",
+    importRun: "导入",
+    importRunning: "正在导入…",
+    importDone: "完成",
+    importCookiesResult: (c: {
+      found: number;
+      imported: number;
+      skipped: number;
+      failed: number;
+    }): string =>
+      `Cookie：已导入 ${c.imported} / ${c.found}` +
+      (c.skipped > 0 ? `，跳过 ${c.skipped}` : "") +
+      (c.failed > 0 ? `，失败 ${c.failed}` : ""),
+    importHistoryResult: (h: { found: number; imported: number }): string =>
+      `历史记录：已导入 ${h.imported} / ${h.found} 条`,
+    importFailed: (reason: string): string => `导入失败：${reason}`,
+    /** The clear-browsing-data confirmation. */
+    clearTitle: "清除浏览数据",
+    clearBody: "选择要从内置浏览器中删除的数据，此操作无法撤销。",
+    clearCookies: "Cookie 与登录状态",
+    clearCache: "缓存的图片和文件",
+    clearStorage: "网站存储的数据",
+    clearHistory: "历史记录",
+    clearConfirm: "清除",
+    clearDone: "已清除浏览数据",
+    clearFailed: (reason: string): string => `清除失败：${reason}`,
+  },
+
   /** The Trace dock panel (the current conversation's Trace files). */
   tracePanel: {
     empty: "暂无轨迹",
@@ -4489,6 +4577,8 @@ Benchmark：
       ticket_session_failed: "无法发起工单会话。",
       handbook_file_not_found: "该文档已不存在。",
       handbook_index_required: "手册索引（README.md）不能删除。",
+      browser_unavailable: "内置浏览器不可用：它需要 PenguinHarness 桌面应用处于打开状态。",
+      source_not_found: "找不到这个浏览器配置文件。",
     },
   },
 };

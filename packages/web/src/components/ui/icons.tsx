@@ -177,6 +177,20 @@ export const EXTERNAL_LINK_ICON =
   "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3";
 
 /**
+ * A globe — the app's 9-radius circle, its equator and one meridian: the built-in browser,
+ * wherever the dock names it, and the stand-in for a page that has no favicon of its own.
+ */
+export const GLOBE_ICON =
+  "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a13 13 0 0 1 0 18 13 13 0 0 1 0-18z";
+
+/** Arrows pointing back and forward along one line: a browser's history buttons. */
+export const ARROW_BACK_ICON = "M19 12H5m6-6-6 6 6 6";
+export const ARROW_FORWARD_ICON = "M5 12h14m-6-6 6 6-6 6";
+
+/** Angle brackets: developer tools. */
+export const CODE_ICON = "M16 18l6-6-6-6M8 6l-6 6 6 6";
+
+/**
  * Window with a bottom pane / a right pane: the two dock edges. Drawn by the chat toolbar's
  * pull-open buttons and the dock header's move-dock buttons, so one mark stands for one edge
  * everywhere.

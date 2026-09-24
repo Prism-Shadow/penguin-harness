@@ -38,6 +38,7 @@ import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
 import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
 import { toneStrip } from "../../lib/tone";
@@ -518,6 +519,10 @@ export function AppLayout() {
             views live in this pool and are adopted into dock tab bodies by DOM handoff,
             so navigating between pages never reconnects a terminal. */}
         <TerminalDockRuntime />
+        {/* The built-in browser's pages (desktop app only): they live here, outside every page,
+            and are laid over the dock's browser tab by coordinates — a webview moved in the DOM
+            reloads, so navigating the app must never re-parent one. */}
+        <BuiltinBrowserLayer />
         <AppPalette />
       </div>
 
