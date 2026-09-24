@@ -61,8 +61,25 @@ describe("page scripts parse", () => {
 });
 
 describe("exec's rules, run in Node (the parts that need no page)", () => {
-  const run = (code: string) =>
-    (new Function(`return ${execExpression(code)};`) as () => Promise<unknown>)();
+  const run = async (code: string) =>
+    JSON.parse(
+      await (new Function(`return ${execExpression(code)};`) as () => Promise<string>)(),
+    ) as unknown;
+
+  it("hands back its outcome as JSON text", async () => {
+    const text = await (
+      new Function(`return ${execExpression("return 'x'")};`) as () => Promise<string>
+    )();
+    expect(text).toBe('{"ok":true,"data":"x"}');
+    expect(await run("throw new TypeError('no')")).toEqual({
+      ok: false,
+      error: { name: "TypeError", message: "no" },
+    });
+    expect(await run("return 10n")).toEqual({
+      ok: true,
+      data: "[unserializable: Do not know how to serialize a BigInt]",
+    });
+  });
 
   it("hands back the explicit return, or else the last expression", async () => {
     expect(await run("1 + 1")).toEqual({ ok: true, data: 2 });
@@ -440,6 +457,9 @@ describe.skipIf(CHROMIUM === null)("page scripts in a real Chromium", () => {
     );
     expect((await run("document.querySelector('h1')")).value).toBe("<h1>Your Orders</h1>");
     expect((await run("document.title; return 'explicit'")).value).toBe("explicit");
+    // An object keeps its keys in the order the script built them.
+    const row = (await run("return { total: '$1', date: '2026-09-20', items: ['a'] }")).value;
+    expect(Object.keys(row as object)).toEqual(["total", "date", "items"]);
     const failed = await run("null.foo");
     expect(failed.status).toBe("failed");
     expect(failed.error).toMatch(/^TypeError: /);

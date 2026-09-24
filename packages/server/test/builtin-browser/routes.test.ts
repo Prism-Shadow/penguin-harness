@@ -413,6 +413,17 @@ describe("agent actions", () => {
     expect(script).toContain('const jsCode = "return {rows: 3}".trim();');
   });
 
+  it("keeps the keys of a returned object in the order the page built them", async () => {
+    const h = mount();
+    h.shell.show(tab(2));
+    // The page's executor answers with JSON text, which crosses the shell unsorted.
+    h.shell.cdp = page(() =>
+      evaluated(JSON.stringify({ ok: true, data: { total: "$19.99", date: "2026-09-20" } })),
+    );
+    const res = await h.call("POST", "/tabs/2/exec", { script: "return row", noMonitor: true });
+    expect(await res.text()).toContain('"value":{"total":"$19.99","date":"2026-09-20"}');
+  });
+
   it("notes when nothing visible happened, and skips measuring with noMonitor", async () => {
     const h = mount();
     h.shell.show(tab(2));

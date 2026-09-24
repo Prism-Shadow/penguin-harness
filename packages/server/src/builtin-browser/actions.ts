@@ -13,8 +13,7 @@ import { HttpError } from "../http/errors.js";
 import { PageScriptError } from "./driver.js";
 import type { BrowserDriver, EvaluateOutcome } from "./driver.js";
 import type { TabRegistry } from "./tabs.js";
-import { execExpression } from "./page-scripts/exec.js";
-import type { ExecOutcome } from "./page-scripts/exec.js";
+import { execExpression, parseExecOutcome } from "./page-scripts/exec.js";
 import {
   DISPATCH_INPUT_EVENTS_SCRIPT,
   clickTargetScript,
@@ -178,7 +177,7 @@ export class BrowserActions {
         throw err;
       }
       if ("reloaded" in outcome) return { ok: true, reloaded: true };
-      const result = (outcome.value ?? { ok: true }) as ExecOutcome;
+      const result = parseExecOutcome(outcome.value);
       if (!result.ok) {
         return { ok: false, error: `${result.error.name}: ${result.error.message}` };
       }

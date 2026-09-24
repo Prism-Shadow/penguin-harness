@@ -17,6 +17,10 @@
  * A thrown error is caught and returned as `{ ok: false, error: { name, message } }`, so the
  * caller can tell "the script failed" from "the page could not run it". A JavaScript SOURCE
  * STRING, for the reason simplify.ts gives; the script travels inside it as a JSON string.
+ *
+ * Added: the outcome comes back as JSON text for the server to parse, not as an object by
+ * value. An object crosses Electron's debugger as a Chromium dictionary, which sorts its keys,
+ * so a row built as `{date, total, order}` would read `{date, order, total}`.
  */
 
 const EXEC_HEAD = String.raw`(async () => {
@@ -39,6 +43,10 @@ const EXEC_HEAD = String.raw`(async () => {
     }
     try { return JSON.parse(JSON.stringify(result, function(key, value) { if (typeof value === 'object' && value !== null) { if (value.nodeType === 1) return value.outerHTML; if (value === window || value === document) return '[Object]'; try { if (value.window === value && value.document) return '[Window]'; } catch(_){} } return value; })); } catch (e) { return '[unserializable: ' + e.message + ']'; }
   }
+  // Added: the outcome leaves the page as JSON text (see the module doc).
+  function __penguinOut(outcome) {
+    try { return JSON.stringify(outcome); } catch (e) { return JSON.stringify({ ok: true, data: '[unserializable: ' + e.message + ']' }); }
+  }
   try {
     const jsCode = `;
 
@@ -56,9 +64,9 @@ const EXEC_TAIL = String.raw`.trim();
         if (e instanceof SyntaxError && (/return/i.test(e.message) || /await/i.test(e.message))) { r = await (new AsyncFunction(_air(jsCode)))(); } else throw e;
       }
     }
-    return { ok: true, data: smartProcessResult(r) };
+    return __penguinOut({ ok: true, data: smartProcessResult(r) });
   } catch (e) {
-    return { ok: false, error: { name: (e && e.name) || 'Error', message: (e && e.message) || String(e) } };
+    return __penguinOut({ ok: false, error: { name: (e && e.name) || 'Error', message: (e && e.message) || String(e) } });
   }
 })()`;
 
@@ -67,6 +75,16 @@ export function execExpression(code: string): string {
   return EXEC_HEAD + JSON.stringify(code) + EXEC_TAIL;
 }
 
-/** What `execExpression` resolves to. */
+/** What `execExpression` resolves to, once parsed. */
 export type ExecOutcome =
   { ok: true; data?: unknown } | { ok: false; error: { name: string; message: string } };
+
+/** The outcome from what the evaluation returned: its JSON text, or an outcome given by value. */
+export function parseExecOutcome(value: unknown): ExecOutcome {
+  if (typeof value !== "string") return (value ?? { ok: true }) as ExecOutcome;
+  try {
+    return JSON.parse(value) as ExecOutcome;
+  } catch {
+    return { ok: true, data: value };
+  }
+}
