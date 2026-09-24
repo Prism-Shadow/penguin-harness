@@ -3,6 +3,7 @@
 - **Date:** 2026-09-24
 - **Type:** feature
 - **Scope:** `desktop`, `server`, `web`, `cli`, `plugins`
+- **PR:** [#848](https://github.com/Prism-Shadow/penguin-harness/pull/848)
 
 [中文版](2026-09-24-builtin-browser.zh.md)
 
