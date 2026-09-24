@@ -214,6 +214,13 @@ import type {
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
   ContributionsResponse,
+  BuiltinBrowserHistoryResponse,
+  BuiltinBrowserImportRequest,
+  BuiltinBrowserImportResult,
+  BuiltinBrowserImportSourcesResponse,
+  BuiltinBrowserStatus,
+  BuiltinBrowserTab,
+  DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
@@ -2109,3 +2116,70 @@ export const uninstallPlugin = (
     }`,
     { method: "DELETE" },
   );
+
+// ---- The built-in browser (desktop app only; every route is admin-only) ----
+/**
+ * Always this server's: the pages live in the desktop shell this server was spawned by, so a
+ * machine's browser routes would drive a shell that is not on this screen.
+ */
+const builtinBrowserPath = (rest: string) => `/api/builtin-browser${rest}`;
+
+/** What the storage-clearing route takes (the shell's own clear-data command). */
+export type BuiltinBrowserStorage = Extract<
+  DesktopBrowserCommand,
+  { op: "clear-data" }
+>["storages"][number];
+
+/** Whether the browser can be driven at all, and its tabs as they stand. */
+export const getBuiltinBrowserStatus = () =>
+  apiFetch<BuiltinBrowserStatus>(builtinBrowserPath("/status"), { server: null });
+/**
+ * A new tab. The server asks this window (over the user channel) to create the page, and
+ * answers once the page is claimed — so this resolves after the tab exists.
+ */
+export const openBuiltinBrowserTab = (body: { url?: string; activate?: boolean }) =>
+  apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath("/tabs"), {
+    method: "POST",
+    body,
+    server: null,
+  });
+/** Ties a page this window created to the open request it answers; 409 when another window was first. */
+export const claimBuiltinBrowserTab = (requestId: string, tabId: number) =>
+  apiFetch<void>(builtinBrowserPath("/tabs/claim"), {
+    method: "POST",
+    body: { requestId, tabId },
+    server: null,
+  });
+/** The user brought a tab to the front: it is also the one an agent's next command acts on. */
+export const activateBuiltinBrowserTab = (tabId: number) =>
+  apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath(`/tabs/${tabId}/activate`), {
+    method: "POST",
+    server: null,
+  });
+export const closeBuiltinBrowserTab = (tabId: number) =>
+  apiFetch<void>(builtinBrowserPath(`/tabs/${tabId}`), { method: "DELETE", server: null });
+/** The system browsers' profiles on this computer that can be imported from. */
+export const getBuiltinBrowserImportSources = () =>
+  apiFetch<BuiltinBrowserImportSourcesResponse>(builtinBrowserPath("/import/sources"), {
+    server: null,
+  });
+export const importIntoBuiltinBrowser = (body: BuiltinBrowserImportRequest) =>
+  apiFetch<BuiltinBrowserImportResult>(builtinBrowserPath("/import"), {
+    method: "POST",
+    body,
+    server: null,
+  });
+/** History matching `q` (address and title), most visited first. */
+export const searchBuiltinBrowserHistory = (q: string, limit: number) =>
+  apiFetch<BuiltinBrowserHistoryResponse>(builtinBrowserPath("/history"), {
+    query: { q, limit },
+    server: null,
+  });
+export const clearBuiltinBrowserHistory = () =>
+  apiFetch<void>(builtinBrowserPath("/history"), { method: "DELETE", server: null });
+export const clearBuiltinBrowserData = (storages: BuiltinBrowserStorage[]) =>
+  apiFetch<void>(builtinBrowserPath("/clear-data"), {
+    method: "POST",
+    body: { storages },
+    server: null,
+  });

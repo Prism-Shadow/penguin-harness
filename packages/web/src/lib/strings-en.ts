@@ -186,6 +186,84 @@ export const en: Strings = {
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
   },
 
+  builtinBrowser: {
+    panelTitle: "Browser",
+    tabs: "Tabs",
+    newTab: "New tab",
+    closeTab: "Close tab",
+    untitled: "New tab",
+    back: "Back",
+    forward: "Forward",
+    reload: "Reload",
+    stop: "Stop loading",
+    address: "Address",
+    addressPlaceholder: "Search or enter address",
+    suggestions: "History",
+    more: "More",
+    importAction: "Import from browser…",
+    clearDataAction: "Clear browsing data…",
+    openExternal: "Open in system browser",
+    devTools: "Developer tools",
+    agentBusy: (action: string): string => `An agent is using the browser: ${action}`,
+    agentBusyTab: "An agent is using this tab",
+    actions: {
+      navigate: "opening a page",
+      scan: "reading the page",
+      exec: "running a script",
+      click: "clicking",
+      type: "typing",
+      screenshot: "taking a screenshot",
+      cdp: "sending a DevTools command",
+    },
+    emptyTitle: "No pages open",
+    emptyBody:
+      "Open a page, or let an agent browse for you. Sign-ins made here stay in the built-in browser.",
+    unavailableTitle: "Built-in browser unavailable",
+    unavailableDesktop: "The built-in browser runs in the PenguinHarness desktop app.",
+    unavailableShell: "This desktop app is too old for the built-in browser. Update it to use it.",
+    unavailableWindow: "No app window is available to show the browser.",
+    openFailed: (reason: string): string => `Could not open a tab: ${reason}`,
+    importTitle: "Import from browser",
+    importIntro:
+      "Copies sign-ins and history from a browser on this computer into the built-in browser. The browser you import from is left unchanged.",
+    importLoading: "Looking for browsers…",
+    importNone: "No browser to import from was found on this computer.",
+    importSourcesFailed: (reason: string): string => `Could not list the browsers: ${reason}`,
+    importSource: "Import from",
+    importWhat: "What to import",
+    importCookies: "Cookies and sign-ins",
+    importHistory: "History",
+    importDomains: "Only these sites",
+    importDomainsHint:
+      "Comma separated, for example amazon.com, github.com. Leave empty to import every site.",
+    importDomainsPlaceholder: "amazon.com, github.com",
+    importKeychainNote: "Your Mac may ask for Keychain access.",
+    importRun: "Import",
+    importRunning: "Importing…",
+    importDone: "Done",
+    importCookiesResult: (c: {
+      found: number;
+      imported: number;
+      skipped: number;
+      failed: number;
+    }): string =>
+      `Cookies: ${c.imported} of ${c.found} imported` +
+      (c.skipped > 0 ? `, ${c.skipped} skipped` : "") +
+      (c.failed > 0 ? `, ${c.failed} failed` : ""),
+    importHistoryResult: (h: { found: number; imported: number }): string =>
+      `History: ${h.imported} of ${h.found} entries imported`,
+    importFailed: (reason: string): string => `Import failed: ${reason}`,
+    clearTitle: "Clear browsing data",
+    clearBody: "Choose what to remove from the built-in browser. This cannot be undone.",
+    clearCookies: "Cookies and sign-ins",
+    clearCache: "Cached images and files",
+    clearStorage: "Site storage",
+    clearHistory: "History",
+    clearConfirm: "Clear",
+    clearDone: "Browsing data cleared",
+    clearFailed: (reason: string): string => `Could not clear the data: ${reason}`,
+  },
+
   tracePanel: {
     empty: "No traces yet",
     emptyHint: "This session has not produced a Trace file yet",
@@ -4532,6 +4610,9 @@ Scenarios:
       ticket_session_failed: "The ticket session could not be started.",
       handbook_file_not_found: "That document no longer exists.",
       handbook_index_required: "The handbook index (README.md) cannot be deleted.",
+      browser_unavailable:
+        "The built-in browser is unavailable: it needs the PenguinHarness desktop app to be open.",
+      source_not_found: "That browser profile was not found.",
     },
   },
 };
