@@ -5184,14 +5184,7 @@ export interface BuiltinBrowserScreenshot {
 }
 
 export type BuiltinBrowserImportBrowser =
-  | "chrome"
-  | "edge"
-  | "brave"
-  | "chromium"
-  | "vivaldi"
-  | "opera"
-  | "arc"
-  | "firefox";
+  "chrome" | "edge" | "brave" | "chromium" | "vivaldi" | "opera" | "arc" | "firefox";
 
 /** One profile of a system browser that can be imported from. */
 export interface BuiltinBrowserImportSource {
@@ -5242,13 +5235,7 @@ export interface BuiltinBrowserHistoryResponse {
 }
 
 export type BuiltinBrowserAction =
-  | "navigate"
-  | "scan"
-  | "exec"
-  | "click"
-  | "type"
-  | "screenshot"
-  | "cdp";
+  "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
 
 /** User-channel events of the built-in browser (admins only). */
 export type BuiltinBrowserServerEvent =
@@ -5315,8 +5302,12 @@ export interface DesktopBrowserReplyMessage {
 export type DesktopBrowserEvent =
   | { kind: "tab"; tab: BuiltinBrowserTab }
   | { kind: "tab-closed"; tabId: number }
-  /** window.open / target=_blank inside a guest; the shell denied it and asks for a tab instead. */
-  | { kind: "open-request"; url: string; openerTabId: number };
+  /**
+   * window.open / target=_blank inside a guest (the shell denied it and asks for a tab instead),
+   * or the context menu's "Open link in new tab". `background`: the tab should open behind the
+   * current one, as a middle-click or that menu entry does in Chrome.
+   */
+  | { kind: "open-request"; url: string; openerTabId: number; background?: boolean };
 
 export interface DesktopBrowserEventMessage {
   type: "desktop-browser-event";
