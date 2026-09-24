@@ -22,7 +22,7 @@
 - 桌面端外壳承载这些访客页面，并通过 `webContents.debugger` 转发原始的 Chrome DevTools Protocol 命令、命令所要求的 CDP 事件以及 Cookie 写入，仅此而已。只有位于浏览器分区、地址为 `http`、`https` 或 `about:blank`、不带 preload、不开 Node 集成、不允许弹窗的访客才会被接纳；页面打开新窗口的请求会变成新建标签页的请求。
 - 服务器新增的 `builtin-browser` 模块承担全部产品逻辑，随服务器一起交付：标签页登记、驱动器，以及从 GenericAgent 的 `simphtml` 移植的页面脚本——DOM 简化（去掉隐藏、浮动和被遮挡的元素，精简属性，长列表只保留三项并附上 `[FAKE ELEMENT] N more items hidden, selector: "…"` 提示，文本按预算截断），以及 exec 背后的变化监视（变化的元素数、最显著的变化，以及弹出提示之类的瞬时文字）。
 - 可信输入：点击是先把元素滚动到视野内，再在其中心依次发送 CDP 的鼠标移动、按下和松开；输入是通过 CDP 插入文字，再触发 `input` 和 `change` 事件。
-- exec、click 或 type 期间页面弹出的对话框会被自动应答，页面不会因此卡住：提示框一律接受；确认框、输入框和离开页面对话框默认拒绝，除非调用要求接受；结果里逐一列出这些对话框。标签页的 Page 事件只在 Agent 操作期间打开，因此用户自己触发的对话框仍由浏览器照常显示。
+- exec、click 或 type 期间页面弹出的对话框会被自动应答，页面不会因此卡住：提示框一律接受；确认框和离开页面对话框默认拒绝，除非调用要求接受（Electron 不支持 `prompt()`）；结果里逐一列出这些对话框。标签页的 Page 事件只在 Agent 操作期间打开，因此用户自己触发的对话框仍由浏览器照常显示。
 - `/api/builtin-browser` 提供状态与标签页、打开、激活、导航与关闭、scan、exec、click、type、截图、原始 CDP、导入、历史记录以及清除浏览数据，全部只对管理员开放。没有桌面应用时，它返回 `503 browser_unavailable` 并附上原因：`not_desktop`、`shell_unsupported` 或 `no_window`。
 - 内置浏览器的历史记录保存在 `<数据根目录>/builtin-browser/history.json`，最多保留最近的 5,000 个页面。
 
