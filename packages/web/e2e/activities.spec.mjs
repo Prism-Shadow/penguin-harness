@@ -3816,3 +3816,85 @@ test("picks a file uploaded to another activity", async ({ page }) => {
   ]);
   expect(f.errors).toEqual([]);
 });
+
+test("renumbers a ref from the header, and refuses while it is stable", async ({ page }) => {
+  const f = await fixture(page);
+  // The fixture's activity as last served, so the stub can serve it under a new number.
+  let current = null;
+  page.on("response", async (response) => {
+    if (
+      new URL(response.url()).pathname === `${base}/act_test` &&
+      response.request().method() === "GET"
+    )
+      current = await response.json().catch(() => current);
+  });
+  await create(page);
+  const state = { refNum: 12, stable: true };
+  const posts = [];
+  let refuseCheckout = true;
+  const ref = { productCode: "words", collectionId: "col_test", archived: false };
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (url.pathname === base && request.method() === "GET" && url.searchParams.get("collectionId"))
+      return json({
+        activities: [
+          { ...ref, id: "act_test", refNum: state.refNum, displayName: null, stable: state.stable },
+          { ...ref, id: "act_other", refNum: 13, displayName: null, stable: false },
+        ],
+      });
+    if (url.pathname === `${base}/act_test` && request.method() === "GET" && current)
+      return json({ ...current, refNum: state.refNum, stable: state.stable });
+    if (url.pathname === `${base}/act_test/ref-number` && request.method() === "POST") {
+      const body = request.postDataJSON();
+      posts.push(body);
+      // The server refuses a stable ref and a taken number as the dialog does.
+      if (state.stable) return json({ error: { code: "ref_stable", message: "Stable." } }, 409);
+      if (refuseCheckout) {
+        refuseCheckout = false;
+        return json({ error: { code: "checkout_ref", message: "Checkout." } }, 409);
+      }
+      state.refNum = body.refNum;
+      return json({ ...current, refNum: state.refNum, stable: state.stable });
+    }
+    return route.fallback();
+  });
+  await page.reload();
+
+  const change = page.getByRole("button", { name: "Change number", exact: true });
+  await change.click();
+  let dialog = page.getByRole("dialog", { name: "Change the number of words, ref 12" });
+  await expect(dialog.getByText(/^This ref is marked stable/)).toBeVisible();
+  await expect(dialog.getByRole("spinbutton", { name: /^New number/ })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Renumber", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+
+  state.stable = false;
+  await page.reload();
+  await change.click();
+  dialog = page.getByRole("dialog", { name: "Change the number of words, ref 12" });
+  const number = dialog.getByRole("spinbutton", { name: /^New number/ });
+  await expect(number).toBeEnabled();
+  // A number another listed ref uses is refused before anything is sent.
+  await number.fill("13");
+  await dialog.getByRole("button", { name: "Renumber", exact: true }).click();
+  await expect(dialog.getByText("Ref 13 of this product already exists.")).toBeVisible();
+  expect(posts).toEqual([]);
+
+  // A refusal from the server is worded in the dialog, which stays open.
+  await number.fill("14");
+  await dialog.getByRole("button", { name: "Renumber", exact: true }).click();
+  await expect(dialog.getByText(/read-only WAF checkout/)).toBeVisible();
+  expect(posts).toHaveLength(1);
+
+  await dialog.getByRole("button", { name: "Renumber", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(posts).toHaveLength(2);
+  expect(posts[1]).toEqual({ refNum: 14, expectedRevision: current.draft.contentRevision });
+  await expect(page.getByText("Ref 12 is now ref 14.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ref", exact: true })).toContainText("Ref 14");
+  expect(f.errors).toEqual([]);
+});

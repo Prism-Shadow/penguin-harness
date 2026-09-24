@@ -1,14 +1,15 @@
 /**
  * A product's refs, in the activity's header: which ref is open, the others to
  * move to, and what this one is called and whether others may build against it. Its
- * settings also carry the product's tags and the way to delete the activity.
+ * settings also carry the product's tags and the way to delete the activity, and a ref
+ * numbered wrongly can be given another number here.
  *
  * A ref is an activity of its own here, so moving to another is navigation, and the page's
  * guard against leaving unsaved edits applies to it as to any other way out.
  */
 import { useEffect, useId, useState } from "react";
 import { useNavigate } from "react-router";
-import type { ActivityRecord } from "@prismshadow/penguin-server/api";
+import type { ActivityDetail, ActivityRecord } from "@prismshadow/penguin-server/api";
 import { ApiError, apiFetch } from "../../api/client";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -25,6 +26,7 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { normalizeTagInput } from "./activity-tags";
+import { checkRefNumber } from "./ref-number";
 
 /** Whether two tag lists hold the same tags in the same order. */
 const sameTags = (left: readonly string[], right: readonly string[]) =>
@@ -50,18 +52,32 @@ function saveErrorText(cause: unknown): string {
   return reason ? S.activities.tags[reason] : apiErrorText(cause);
 }
 
+/** Why a renumber was refused, in the author's words where the reason is one of ours. */
+function renumberErrorText(cause: unknown): string {
+  const words = S.activities.studioRefs;
+  if (cause instanceof ApiError && cause.code === "ref_stable") return words.stableBlocks;
+  const reasons = words.renumberErrors as Record<string, string | undefined>;
+  return (cause instanceof ApiError && reasons[cause.code]) || apiErrorText(cause);
+}
+
 export function RefSwitcher({
   base,
   activity,
   editable,
+  revision,
   onIdentity,
+  onRenumbered,
   onDeleted,
 }: {
   /** The project's activities API path. */
   base: string;
   activity: ActivityRecord;
   editable: boolean;
+  /** The saved draft's revision; a renumber is refused if the draft moved past it. */
+  revision: string;
   onIdentity: (record: ActivityRecord) => void;
+  /** The ref has a new number; `detail` is the activity as the server now holds it. */
+  onRenumbered: (detail: ActivityDetail, from: number) => void;
   /** The activity was deleted (archived); the caller leaves it. */
   onDeleted: () => void;
 }) {
@@ -81,6 +97,10 @@ export function RefSwitcher({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [renumbering, setRenumbering] = useState(false);
+  const [numberText, setNumberText] = useState("");
+  const [numberError, setNumberError] = useState<string | null>(null);
+  const [numberBusy, setNumberBusy] = useState(false);
   const stableId = useId();
 
   useEffect(() => {
@@ -102,7 +122,14 @@ export function RefSwitcher({
     return () => {
       cancelled = true;
     };
-  }, [base, activity.collectionId, activity.productCode, activity.displayName, activity.stable]);
+  }, [
+    base,
+    activity.collectionId,
+    activity.productCode,
+    activity.displayName,
+    activity.stable,
+    activity.refNum,
+  ]);
 
   const label = (entry: ActivityRecord) =>
     words.option(entry.refNum, entry.displayName, entry.stable);
@@ -152,6 +179,35 @@ export function RefSwitcher({
       setError(saveErrorText(cause));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function renumber() {
+    const from = activity.refNum;
+    const check = checkRefNumber(
+      numberText,
+      from,
+      refs.filter((entry) => entry.id !== activity.id).map((entry) => entry.refNum),
+    );
+    if (!check.ok) {
+      setNumberError(
+        check.problem === "taken" ? words.numberTaken(check.refNum) : words.numberHint,
+      );
+      return;
+    }
+    setNumberBusy(true);
+    setNumberError(null);
+    try {
+      const detail = await apiFetch<ActivityDetail>(
+        `${base}/${encodeURIComponent(activity.id)}/ref-number`,
+        { method: "POST", body: { refNum: check.refNum, expectedRevision: revision } },
+      );
+      setRenumbering(false);
+      onRenumbered(detail, from);
+    } catch (cause) {
+      setNumberError(renumberErrorText(cause));
+    } finally {
+      setNumberBusy(false);
     }
   }
 
@@ -210,6 +266,73 @@ export function RefSwitcher({
           {words.settings}
         </Button>
       )}
+      {editable && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setNumberText(String(activity.refNum));
+            setNumberError(null);
+            setRenumbering(true);
+          }}
+        >
+          {words.changeNumber}
+        </Button>
+      )}
+      <Modal
+        open={renumbering}
+        title={words.changeNumberTitle(activity.productCode, activity.refNum)}
+        onClose={() => setRenumbering(false)}
+        footer={
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setRenumbering(false)}
+              disabled={numberBusy}
+            >
+              {S.common.cancel}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => void renumber()}
+              disabled={
+                numberBusy || activity.stable || numberText.trim() === String(activity.refNum)
+              }
+            >
+              {words.renumber}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Input
+            size="sm"
+            type="number"
+            min={0}
+            step={1}
+            label={words.newNumber}
+            hint={words.numberHint}
+            value={numberText}
+            disabled={activity.stable || numberBusy}
+            error={numberError ?? undefined}
+            onChange={(event) => {
+              setNumberText(event.target.value);
+              setNumberError(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !activity.stable) {
+                event.preventDefault();
+                void renumber();
+              }
+            }}
+          />
+          {activity.stable && (
+            <p className={`text-xs ${toneInk.attention}`}>{words.stableBlocks}</p>
+          )}
+        </div>
+      </Modal>
       <Modal
         open={editing}
         title={words.settingsTitle(activity.productCode, activity.refNum)}

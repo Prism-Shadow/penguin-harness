@@ -581,6 +581,30 @@ export class ActivityRoutes {
         ),
       );
     });
+    // A ref's number, changed when it was given the wrong one.
+    app.post("/:activityId/ref-number", async (c) => {
+      const projectId = requireValidId(c, "projectId");
+      const activityId = pathParam(c, "activityId");
+      const body = await readJson(c);
+      const expectedRevision = requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 });
+      // Loom's module in the checkout names its files by the current number, and the
+      // checkout is never written; renaming the ref alone would leave the preview behind.
+      if ((await this.sandbox.moduleDocuments(projectId, activityId)).source === "checkout")
+        throw new HttpError(
+          409,
+          "checkout_ref",
+          "This ref's module lives in the read-only WAF checkout under its current number, so it cannot be renumbered here.",
+        );
+      if ((await this.pipelines.status(projectId, activityId))?.status === "running")
+        throw new HttpError(
+          409,
+          "pipeline_running",
+          "This activity is running its stages. Stop them before renumbering the ref.",
+        );
+      return c.json(
+        await this.activities.changeRefNum(projectId, activityId, body.refNum, expectedRevision),
+      );
+    });
     // The product's tags, reached through any of its refs; every ref lists the same ones.
     app.put("/:activityId/tags", async (c) => {
       const body = await readJson(c);

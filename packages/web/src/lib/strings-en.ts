@@ -117,6 +117,26 @@ export const en: Strings = {
       settingsTitle: (productCode: string, refNum: number) => `${productCode}, ref ${refNum}`,
       displayName: "Display name",
       displayNameHint: "Up to 64 characters. Leave empty to show the ref's number.",
+      changeNumber: "Change number",
+      changeNumberTitle: (productCode: string, refNum: number) =>
+        `Change the number of ${productCode}, ref ${refNum}`,
+      newNumber: "New number",
+      numberHint: "A whole number, 0 or more, not used by another ref of this product.",
+      stableBlocks:
+        "This ref is marked stable, so others may build against its number. Clear Stable in Ref settings before renumbering.",
+      numberTaken: (refNum: number) => `Ref ${refNum} of this product already exists.`,
+      renumber: "Renumber",
+      renumbered: (from: number, to: number) => `Ref ${from} is now ref ${to}.`,
+      reassemble: "Assemble the module again so the preview plays under the new number.",
+      renumberErrors: {
+        checkout_ref:
+          "This ref's module lives in the read-only WAF checkout under its current number, so it cannot be renumbered here.",
+        draft_conflict:
+          "The draft changed since it was loaded. Reload the activity, then try again.",
+        run_active: "A run is working on this ref. Stop it before renumbering.",
+        pipeline_running: "This activity is running its stages. Stop them before renumbering.",
+        activity_exists: "Another ref of this product, or a deleted one, already uses that number.",
+      },
     },
     tags: {
       label: "Tags",

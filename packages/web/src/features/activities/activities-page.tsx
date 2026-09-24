@@ -53,6 +53,7 @@ import { BuildPanel } from "./build-panel";
 import { ModuleDocumentView } from "./module-document-view";
 import { ActivityStatsView } from "./activity-stats-view";
 import { RefSwitcher } from "./ref-switcher";
+import { renumberManifestText } from "./ref-number";
 import { ImplementationFeaturesView } from "./implementation-features-view";
 import { GenerationHistory } from "./history-section";
 import { useAssistProposal } from "./use-assist-proposal";
@@ -1048,6 +1049,27 @@ function ActivityEditor({
                   setDetail((current) => (current ? { ...current, ...record } : current));
                   // A name or tags change shows on the list's cards, for every ref of the
                   // product; the list is kept while an activity is open, so refresh it now.
+                  void onSaved();
+                }}
+                revision={detail.draft.contentRevision}
+                onRenumbered={(value, from) => {
+                  // Only the number and the manifest's address changed; unsaved script or
+                  // specification text stays in its editor. The manifest editor follows the
+                  // new address, and unsaved manifest edits are moved to the new number so
+                  // they can still be saved.
+                  setMedia(
+                    media === pretty(detail.draft.mediaPlan?.manifest)
+                      ? pretty(value.draft.mediaPlan?.manifest)
+                      : renumberManifestText(media, from, value.refNum),
+                  );
+                  setDetail(value);
+                  announce({
+                    kind: "success",
+                    text: S.activities.studioRefs.renumbered(from, value.refNum),
+                  });
+                  // An assembled module keeps the old number in its file names.
+                  if (latestModuleRun(runs) || sandboxModule)
+                    announce({ kind: "attention", text: S.activities.studioRefs.reassemble });
                   void onSaved();
                 }}
                 onDeleted={() => onDeleted(detail.title)}

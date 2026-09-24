@@ -107,6 +107,23 @@ export type Strings = {
       settingsTitle: (productCode: string, refNum: number) => string;
       displayName: string;
       displayNameHint: string;
+      /** Renumbering a ref from the header, and why the server refused it. */
+      changeNumber: string;
+      changeNumberTitle: (productCode: string, refNum: number) => string;
+      newNumber: string;
+      numberHint: string;
+      stableBlocks: string;
+      numberTaken: (refNum: number) => string;
+      renumber: string;
+      renumbered: (from: number, to: number) => string;
+      reassemble: string;
+      renumberErrors: {
+        checkout_ref: string;
+        draft_conflict: string;
+        run_active: string;
+        pipeline_running: string;
+        activity_exists: string;
+      };
     };
     /** Product tags: edited in ref settings, shown on list cards, and the list's tag filter. */
     tags: {

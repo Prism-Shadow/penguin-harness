@@ -65,6 +65,7 @@ import {
   normalizeModuleFolder,
   normalizeProductCode,
   normalizeRefNum,
+  type ActivityDetail,
   type ActivityDraft,
   type ActivityProduct,
   type ActivityRecord,
@@ -723,7 +724,7 @@ export class ActivityService implements ActivityAuthoring {
       )
       .get(activityId) as { draft_id: string } | undefined;
     if (!draftRow) throw new Error("Activity draft index is missing.");
-    const file = JSON.parse(
+    const stored = JSON.parse(
       await fs.readFile(
         path.join(
           this.draftWorkspace(projectId, activity.collectionId, activityId, draftRow.draft_id),
@@ -732,6 +733,7 @@ export class ActivityService implements ActivityAuthoring {
         "utf8",
       ),
     ) as ActivityDraft;
+    let file = stored;
     if (
       file.draftId !== draftRow.draft_id ||
       file.activityId !== activityId ||
@@ -752,7 +754,27 @@ export class ActivityService implements ActivityAuthoring {
         )
       )
         throw new Error("Media requirements are corrupt.");
-      validateManifest(file.mediaPlan.manifest, activity);
+      const manifest = file.mediaPlan.manifest as unknown;
+      // The row owns the ref's address. A renumber indexes the new number before it
+      // rewrites draft.json, so a read in between (or after a crash there) finds the old
+      // number in the manifest; it is read under the row's number, and the next save
+      // writes it that way.
+      if (
+        manifest &&
+        typeof manifest === "object" &&
+        !Array.isArray(manifest) &&
+        (manifest as { productCode?: unknown }).productCode === activity.productCode &&
+        (manifest as { refNum?: unknown }).refNum !== activity.refNum &&
+        Number.isSafeInteger((manifest as { refNum?: unknown }).refNum)
+      )
+        file = {
+          ...file,
+          mediaPlan: {
+            ...file.mediaPlan,
+            manifest: { ...file.mediaPlan.manifest, refNum: activity.refNum },
+          },
+        };
+      validateManifest(file.mediaPlan!.manifest, activity);
     }
     // The file is authoritative. Never substitute the index for missing/corrupt content.
     const revision = draftRevision(file);
@@ -761,7 +783,7 @@ export class ActivityService implements ActivityAuthoring {
       draft: {
         ...file,
         contentRevision: revision,
-        status: revision === file.contentRevision ? file.status : "draft",
+        status: draftRevision(stored) === stored.contentRevision ? stored.status : "draft",
       },
     };
   }
@@ -1346,6 +1368,141 @@ export class ActivityService implements ActivityAuthoring {
           )
           .run(next.displayName, next.stable ? 1 : 0, now, activityId);
         return next;
+      }),
+    );
+  }
+
+  /**
+   * Give a ref another number within its product.
+   *
+   * Everything Penguin keeps for a ref is keyed by its id, so only the number itself, the
+   * product's canonical number when this ref owns the module, and the media manifest's
+   * address change. Module runs already assembled keep the old name as history; the next
+   * assembly writes the new one.
+   */
+  async changeRefNum(
+    projectId: string,
+    activityId: string,
+    refNum: unknown,
+    expectedRevision: string,
+  ): Promise<ActivityDetail> {
+    let next: number;
+    try {
+      next = normalizeRefNum(refNum);
+    } catch (error) {
+      throw new HttpError(400, "activity_invalid", (error as Error).message);
+    }
+    return this.projectWork.run(projectId, () =>
+      this.locks.run(activityId, async () => {
+        const collectionId = (await this.getActivity(projectId, activityId)).collectionId;
+        // The create lock keeps a new ref from taking the number between check and write.
+        return this.locks.run(`create:${collectionId}`, async () => {
+          const current = await this.getActivity(projectId, activityId);
+          if (next === current.refNum)
+            throw new HttpError(400, "ref_unchanged", "The ref already has this number.");
+          if (current.stable)
+            throw new HttpError(
+              409,
+              "ref_stable",
+              "This ref is marked stable, so others may build against its number. Clear Stable before renumbering.",
+            );
+          if (expectedRevision !== current.draft.contentRevision)
+            throw new HttpError(
+              409,
+              "draft_conflict",
+              "Draft changed. Reload it before renumbering the ref.",
+            );
+          if (
+            this.db
+              .prepare("SELECT 1 FROM activity_runs WHERE activity_id = ? AND status = 'running'")
+              .get(activityId)
+          )
+            throw new HttpError(
+              409,
+              "run_active",
+              "A run is still working on this ref under its current number. Stop it before renumbering.",
+            );
+          // Archived rows count: they keep their number, as creating a ref already honours.
+          const taken = this.db
+            .prepare(
+              "SELECT archived FROM activities WHERE collection_id = ? AND product_code = ? AND ref_num = ? AND id != ?",
+            )
+            .get(current.collectionId, current.productCode, next, activityId) as
+            { archived: number } | undefined;
+          if (taken)
+            throw new HttpError(
+              409,
+              "activity_exists",
+              taken.archived
+                ? `A deleted ref of this product keeps number ${next}.`
+                : `Another ref of this product already uses number ${next}.`,
+            );
+          const product = this.productOf(current);
+          const wasCanonical = !!product && product.canonicalRefNum === current.refNum;
+          const previous = current.draft;
+          const now = new Date().toISOString();
+          const draft: ActivityDraft = { ...previous, updatedAt: now };
+          if (previous.mediaPlan) {
+            const manifest = structuredClone(previous.mediaPlan.manifest);
+            manifest.refNum = next;
+            try {
+              validateManifest(manifest, { productCode: current.productCode, refNum: next });
+            } catch (error) {
+              throw new HttpError(422, "media_invalid", (error as Error).message);
+            }
+            draft.mediaPlan = { ...previous.mediaPlan, manifest };
+          }
+          draft.contentRevision = draftRevision(draft);
+          const index = (state: {
+            refNum: number;
+            draft: ActivityDraft;
+            activityUpdatedAt: string;
+            productUpdatedAt: string;
+          }) => {
+            this.db.exec("BEGIN");
+            try {
+              this.db
+                .prepare("UPDATE activities SET ref_num = ?, updated_at = ? WHERE id = ?")
+                .run(state.refNum, state.activityUpdatedAt, activityId);
+              if (wasCanonical)
+                this.db
+                  .prepare(
+                    "UPDATE activity_products SET canonical_ref_num = ?, updated_at = ? WHERE product_id = ?",
+                  )
+                  .run(state.refNum, state.productUpdatedAt, product!.productId);
+              this.db
+                .prepare(
+                  "UPDATE activity_drafts SET content_revision = ?, status = ?, updated_at = ? WHERE draft_id = ?",
+                )
+                .run(
+                  state.draft.contentRevision,
+                  state.draft.status,
+                  state.draft.updatedAt,
+                  state.draft.draftId,
+                );
+              this.db.exec("COMMIT");
+            } catch (error) {
+              this.db.exec("ROLLBACK");
+              throw error;
+            }
+          };
+          index({ refNum: next, draft, activityUpdatedAt: now, productUpdatedAt: now });
+          try {
+            await this.writeDraft(projectId, draft, current.collectionId);
+          } catch (error) {
+            // draft.json is written last, so on disk the draft still names the old number;
+            // the index goes back to it, and the exports are rewritten to match.
+            index({
+              refNum: current.refNum,
+              draft: previous,
+              activityUpdatedAt: current.updatedAt,
+              productUpdatedAt: product?.updatedAt ?? now,
+            });
+            await this.writeDraft(projectId, previous, current.collectionId).catch(() => {});
+            throw error;
+          }
+          return { ...current, refNum: next, updatedAt: now, draft };
+        });
       }),
     );
   }

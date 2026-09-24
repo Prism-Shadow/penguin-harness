@@ -231,6 +231,16 @@ export abstract class ActivityAuthoring extends Interface<{
     activityId: string,
     identity: { displayName?: unknown; stable?: boolean },
   ): Promise<ActivityRecord>;
+  /**
+   * Give a ref another number in its product; refused while it is stable, when the number is
+   * taken (archived refs keep theirs), or when the draft changed since `expectedRevision`.
+   */
+  changeRefNum(
+    projectId: string,
+    activityId: string,
+    refNum: unknown,
+    expectedRevision: string,
+  ): Promise<ActivityRecord & { draft: ActivityDraft }>;
   /** Replace a product's tags through any of its refs; returns them as stored. */
   setProductTags(projectId: string, activityId: string, tags: unknown): Promise<string[]>;
   /** Delete an activity from every list by archiving it; nothing on disk is removed. */
