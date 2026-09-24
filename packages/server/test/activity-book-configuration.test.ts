@@ -48,6 +48,7 @@ function bookActivity(): ActivityDetail {
     title: "Penguin book",
     activityType: "book",
     archived: false,
+    tags: [],
     createdAt: "",
     updatedAt: "",
     draft: {

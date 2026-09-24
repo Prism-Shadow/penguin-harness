@@ -61,6 +61,7 @@ import {
   type CollectionManifest,
   validateActivitySpec,
 } from "./domain.js";
+import { normalizeTags } from "./tags.js";
 
 /** Serializes compare-and-publish operations within the server's single-writer lifetime. */
 export class ActivityLocks {
@@ -470,13 +471,20 @@ export class ActivityService implements ActivityAuthoring {
     return this.projectWork.run(projectId, async () => {
       const collection = await this.ensureCollectionFiles(projectId, input.collectionId);
       return this.locks.run(`create:${collection.collectionId}`, async () => {
-        if (
-          this.db
-            .prepare(
-              "SELECT id FROM activities WHERE collection_id = ? AND product_code = ? AND ref_num = ?",
-            )
-            .get(collection.collectionId, productCode, refNum)
-        )
+        const taken = this.db
+          .prepare(
+            "SELECT archived FROM activities WHERE collection_id = ? AND product_code = ? AND ref_num = ?",
+          )
+          .get(collection.collectionId, productCode, refNum) as { archived: number } | undefined;
+        // A deleted ref keeps its row, and with it the number: its files are still on disk
+        // under that address, and a new ref reusing it would read as the old one.
+        if (taken?.archived)
+          throw new HttpError(
+            409,
+            "activity_archived",
+            `An archived activity already uses ref ${refNum} of this product.`,
+          );
+        if (taken)
           throw new HttpError(
             409,
             "activity_exists",
@@ -508,6 +516,7 @@ export class ActivityService implements ActivityAuthoring {
           createdAt: now,
           updatedAt: now,
           archived: false,
+          tags: this.productTags(product.productId),
         };
         const draft: ActivityDraft = {
           draftId: newId("draft"),
@@ -560,6 +569,16 @@ export class ActivityService implements ActivityAuthoring {
   }
 
   async listActivities(projectId: string, collectionId?: string): Promise<ActivityRecord[]> {
+    // Every tag of the project's products in one query, rather than one per listed ref.
+    const tags = new Map<string, string[]>();
+    for (const row of this.db
+      .prepare(
+        `SELECT t.product_id AS productId, t.tag AS tag FROM activity_product_tags t
+      JOIN activity_products p ON p.product_id = t.product_id
+      WHERE p.project_id = ? ORDER BY t.product_id, t.position`,
+      )
+      .all(projectId) as { productId: string; tag: string }[])
+      tags.set(row.productId, [...(tags.get(row.productId) ?? []), row.tag]);
     return (
       this.db
         .prepare(
@@ -569,7 +588,7 @@ export class ActivityService implements ActivityAuthoring {
       ORDER BY a.product_code, a.ref_num, a.id`,
         )
         .all(projectId, collectionId ?? null, collectionId ?? null) as Record<string, unknown>[]
-    ).map((row) => this.mapActivity(row));
+    ).map((row) => this.mapActivity(row, tags.get((row.product_id as string | null) ?? "") ?? []));
   }
 
   async getActivity(
@@ -584,7 +603,7 @@ export class ActivityService implements ActivityAuthoring {
       )
       .get(activityId, projectId) as Record<string, unknown> | undefined;
     if (!row) throw new HttpError(404, "activity_not_found", "Activity not found.");
-    const activity = this.mapActivity(row);
+    const activity = this.mapActivity(row, this.productTags(row.product_id as string | null));
     const draftRow = this.db
       .prepare(
         "SELECT draft_id FROM activity_drafts WHERE activity_id = ? ORDER BY updated_at DESC, draft_id LIMIT 1",
@@ -1044,7 +1063,7 @@ export class ActivityService implements ActivityAuthoring {
     await fs.writeFile(path.join(dir, "description.md"), draft.description, "utf8");
     await atomicJson(path.join(dir, "draft.json"), draft);
   }
-  private mapActivity(row: Record<string, unknown>): ActivityRecord {
+  private mapActivity(row: Record<string, unknown>, tags: string[]): ActivityRecord {
     return {
       id: row.id as string,
       collectionId: row.collection_id as string,
@@ -1058,7 +1077,18 @@ export class ActivityService implements ActivityAuthoring {
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
       archived: Boolean(row.archived),
+      tags,
     };
+  }
+
+  /** A product's tags in the order the author gave them; none for a ref with no product. */
+  private productTags(productId: string | null): string[] {
+    if (!productId) return [];
+    return (
+      this.db
+        .prepare("SELECT tag FROM activity_product_tags WHERE product_id = ? ORDER BY position")
+        .all(productId) as { tag: string }[]
+    ).map((row) => row.tag);
   }
 
   private mapProduct(row: Record<string, unknown>): ActivityProduct {
@@ -1158,11 +1188,12 @@ export class ActivityService implements ActivityAuthoring {
     if (!product) return null;
     const refs = this.db
       .prepare(
-        "SELECT ref_num AS refNum FROM activities WHERE collection_id = ? AND product_code = ? ORDER BY ref_num",
+        "SELECT ref_num AS refNum, archived FROM activities WHERE collection_id = ? AND product_code = ? ORDER BY ref_num",
       )
-      .all(collectionId, productCode) as { refNum: number }[];
+      .all(collectionId, productCode) as { refNum: number; archived: number }[];
     return {
-      refNums: refs.map((ref) => ref.refNum),
+      refNums: refs.filter((ref) => !ref.archived).map((ref) => ref.refNum),
+      archivedRefNums: refs.filter((ref) => ref.archived).map((ref) => ref.refNum),
       canonicalRefNum: this.mapProduct(product).canonicalRefNum,
     };
   }
@@ -1202,6 +1233,85 @@ export class ActivityService implements ActivityAuthoring {
           )
           .run(next.displayName, next.stable ? 1 : 0, now, activityId);
         return next;
+      }),
+    );
+  }
+
+  /**
+   * Replace a product's tags, reached through any of its refs.
+   *
+   * Tags belong to the product, so every ref of it lists the same ones afterwards. A ref
+   * predating the product level has nowhere to keep them.
+   */
+  async setProductTags(projectId: string, activityId: string, tags: unknown): Promise<string[]> {
+    const next = normalizeTags(tags);
+    return this.projectWork.run(projectId, async () => {
+      const activity = await this.getActivity(projectId, activityId);
+      if (!activity.productId)
+        throw new HttpError(409, "no_product", "This activity has no product to tag.");
+      const productId = activity.productId;
+      const now = new Date().toISOString();
+      // One synchronous transaction: nothing else can interleave between the delete and
+      // the inserts, so the product never shows half its tags.
+      this.db.exec("BEGIN");
+      try {
+        this.db.prepare("DELETE FROM activity_product_tags WHERE product_id = ?").run(productId);
+        const insert = this.db.prepare(
+          "INSERT INTO activity_product_tags (product_id, tag, position) VALUES (?, ?, ?)",
+        );
+        next.forEach((tag, position) => insert.run(productId, tag, position));
+        this.db
+          .prepare("UPDATE activity_products SET updated_at = ? WHERE product_id = ?")
+          .run(now, productId);
+        this.db.exec("COMMIT");
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
+      return next;
+    });
+  }
+
+  /**
+   * Delete an activity from the author's view by archiving it.
+   *
+   * Nothing on disk is removed: the row stays (every reader already skips archived ones)
+   * and its drafts and media stay where they are, so a delete loses no work. A running
+   * run is refused rather than orphaned, and a canonical ref is refused while other refs
+   * still build on the module it owns.
+   */
+  async archiveActivity(projectId: string, activityId: string): Promise<void> {
+    return this.projectWork.run(projectId, () =>
+      this.locks.run(activityId, async () => {
+        const activity = await this.getActivity(projectId, activityId);
+        if (
+          this.db
+            .prepare("SELECT 1 FROM activity_runs WHERE activity_id = ? AND status = 'running'")
+            .get(activityId)
+        )
+          throw new HttpError(
+            409,
+            "run_active",
+            "A run is still working on this activity. Stop it before deleting the activity.",
+          );
+        const product = this.productOf(activity);
+        if (
+          product &&
+          product.canonicalRefNum === activity.refNum &&
+          this.db
+            .prepare(
+              "SELECT 1 FROM activities WHERE product_id = ? AND id != ? AND archived = 0 LIMIT 1",
+            )
+            .get(product.productId, activityId)
+        )
+          throw new HttpError(
+            409,
+            "canonical_has_refs",
+            "Other refs of this product build on the module this one owns. Delete them first.",
+          );
+        this.db
+          .prepare("UPDATE activities SET archived = 1, updated_at = ? WHERE id = ?")
+          .run(new Date().toISOString(), activityId);
       }),
     );
   }

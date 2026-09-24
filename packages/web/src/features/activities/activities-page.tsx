@@ -63,7 +63,8 @@ import { SandboxPanel } from "./sandbox-panel";
 import { sandboxHasModule, type SandboxStatusLike } from "./sandbox";
 import { SceneReview } from "./scene-review";
 import { SpecDiffView } from "./spec-diff-view";
-import { activityInitials, filterActivities, latestModuleRun } from "./preview";
+import { latestModuleRun } from "./preview";
+import { ActivityList } from "./activity-list";
 
 const basePath = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/activities`;
 const pretty = (value: unknown) => (value ? JSON.stringify(value, null, 2) : "");
@@ -118,7 +119,9 @@ function ActivityWorkspace({
   const [items, setItems] = useState<ActivityRecord[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  // Kept here rather than in the list, so opening an activity and coming back keeps them.
   const [search, setSearch] = useState("");
+  const [tag, setTag] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const dirty = useRef(false);
@@ -167,7 +170,6 @@ function ActivityWorkspace({
     () => registerProjectChangeGuard(canLeave),
     [registerProjectChangeGuard, canLeave],
   );
-  const visible = useMemo(() => filterActivities(items, search), [items, search]);
   if (activityId) {
     // The workspace fills this pane and scrolls inside itself, so nothing may wrap it
     // in a scroller or a max-width column.
@@ -183,102 +185,34 @@ function ActivityWorkspace({
             dirty.current = value;
           }}
           onSaved={reload}
+          onDeleted={(title) => {
+            // Nothing unsaved is worth keeping in an activity that is gone.
+            dirty.current = false;
+            announce({ kind: "success", text: S.activities.deleteActivity.deleted(title) });
+            void reload();
+            navigate("/activities");
+          }}
         />
       </div>
     );
   }
   return (
-    <div className="h-full overflow-auto">
-      <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-lg font-semibold">{S.activities.title}</h1>
-          <div className="flex items-center gap-2">
-            <Button size="sm" disabled={!available} onClick={() => void reload()}>
-              {S.activities.refresh}
-            </Button>
-            {editable && (
-              <Button size="sm" disabled={!available} onClick={() => setImportOpen(true)}>
-                {S.activities.importFromLoom}
-              </Button>
-            )}
-            {editable && (
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={!available || !canLeave()}
-                onClick={() => setCreateOpen(true)}
-              >
-                {S.activities.newActivity}
-              </Button>
-            )}
-          </div>
-        </header>
-        {!available && (
-          <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
-            {S.activities.unavailable}
-          </p>
-        )}
-        {available && !editable && (
-          <p className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
-            {S.activities.readOnly}
-          </p>
-        )}
-        {error && (
-          <p role="alert" className={`text-sm ${toneInk.danger}`}>
-            {error}
-          </p>
-        )}
-        {items.length > 0 && (
-          <Input
-            size="sm"
-            aria-label={S.activities.search}
-            placeholder={S.activities.search}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="max-w-sm"
-          />
-        )}
-        {loading ? (
-          <p role="status" className="text-xs text-gray-500">
-            {S.activities.loading}
-          </p>
-        ) : visible.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            {items.length === 0 ? S.activities.empty : S.activities.noMatches}
-          </p>
-        ) : (
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {visible.map((item) => (
-              <li key={item.id}>
-                <Link
-                  to={`/activities/${item.id}`}
-                  className="flex h-full flex-col gap-2 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
-                >
-                  <span className="flex items-center gap-3">
-                    <span
-                      aria-hidden
-                      className="flex h-9 w-9 flex-none items-center justify-center rounded-md bg-gray-100 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-                    >
-                      {activityInitials(item.title, item.productCode)}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{item.title}</span>
-                      <span className="block truncate text-xs text-gray-500">
-                        {item.productCode} / {item.refNum}
-                      </span>
-                    </span>
-                  </span>
-                  <span className="mt-auto flex flex-wrap gap-1.5">
-                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-800">
-                      {item.activityType === "book" ? S.activities.book : S.activities.standard}
-                    </span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+    <>
+      <ActivityList
+        items={items}
+        loading={loading}
+        error={error}
+        editable={editable}
+        available={available}
+        createDisabled={!canLeave()}
+        search={search}
+        onSearch={setSearch}
+        tag={tag}
+        onTag={setTag}
+        onRefresh={() => void reload()}
+        onImport={() => setImportOpen(true)}
+        onCreate={() => setCreateOpen(true)}
+      />
       {importOpen && (
         <ImportDialog
           projectId={projectId}
@@ -297,7 +231,7 @@ function ActivityWorkspace({
           }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -308,6 +242,7 @@ function ActivityEditor({
   available,
   onDirty,
   onSaved,
+  onDeleted,
 }: {
   projectId: string;
   activityId: string;
@@ -315,6 +250,7 @@ function ActivityEditor({
   available: boolean;
   onDirty: (value: boolean) => void;
   onSaved: () => Promise<void>;
+  onDeleted: (title: string) => void;
 }) {
   const { agents, currentAgent } = useProject();
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
@@ -1091,9 +1027,13 @@ function ActivityEditor({
                 base={basePath(projectId)}
                 activity={detail}
                 editable={editable && available}
-                onIdentity={(record) =>
-                  setDetail((current) => (current ? { ...current, ...record } : current))
-                }
+                onIdentity={(record) => {
+                  setDetail((current) => (current ? { ...current, ...record } : current));
+                  // A name or tags change shows on the list's cards, for every ref of the
+                  // product; the list is kept while an activity is open, so refresh it now.
+                  void onSaved();
+                }}
+                onDeleted={() => onDeleted(detail.title)}
               />
               <span className="truncate">
                 {S.activities.collection}: {detail.collectionId}

@@ -1591,6 +1591,10 @@ describe("activity generation through Harness sessions", () => {
     const again = await client.post(`${endpoint}/pipeline`, { agentId: "default_agent" });
     expect(again.status).toBe(409);
     expect(await again.json()).toMatchObject({ error: { code: "pipeline_running" } });
+    // Deleting is refused while the sequence runs, even between two of its runs.
+    const deleting = await client.delete(endpoint);
+    expect(deleting.status).toBe(409);
+    expect(await deleting.json()).toMatchObject({ error: { code: "pipeline_running" } });
 
     // The sequence starts the same spec run an author would, visible in the history.
     let run: ActivityRun | undefined;

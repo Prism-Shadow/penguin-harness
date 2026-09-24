@@ -108,6 +108,33 @@ export type Strings = {
       displayName: string;
       displayNameHint: string;
     };
+    /** Product tags: edited in ref settings, shown on list cards, and the list's tag filter. */
+    tags: {
+      label: string;
+      about: string;
+      add: string;
+      placeholder: string;
+      removeTag: (tag: string) => string;
+      all: string;
+      filter: string;
+      tooLong: string;
+      tooMany: string;
+      invalid: string;
+    };
+    /** Deleting an activity: it is archived, so it leaves the list and its files stay. */
+    deleteActivity: {
+      action: string;
+      confirmTitle: string;
+      deleteConfirm: (title: string, ref: number) => string;
+      deleted: (title: string) => string;
+      errors: {
+        canonical_has_refs: string;
+        run_active: string;
+        pipeline_running: string;
+      };
+    };
+    /** Creating a ref whose number a deleted activity still holds. */
+    archivedConflict: string;
     /** The storyboard: every scene as a frame, the Scenes section's first view. */
     studioBoard: {
       title: string;

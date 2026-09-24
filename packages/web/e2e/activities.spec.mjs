@@ -3400,3 +3400,141 @@ test("opens an image full size and closes it with Escape", async ({ page }) => {
   );
   expect(f.errors).toEqual([]);
 });
+
+test("tags a product, filters the list by tag, and deletes an activity after confirming", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  // The list and the two routes this feature adds, with the server's rules: tags belong to
+  // the product, and deleting archives the ref so it leaves every list.
+  const record = (id, productCode, refNum, title, tags) => ({
+    id,
+    collectionId: "col_test",
+    productId: `prd_${productCode}`,
+    productCode,
+    refNum,
+    title,
+    displayName: null,
+    stable: false,
+    activityType: "standard",
+    createdAt: "2026-09-25T00:00:00.000Z",
+    updatedAt: "2026-09-25T00:00:00.000Z",
+    archived: false,
+    tags,
+  });
+  let wordTags = [];
+  let deleted = false;
+  let refuseDelete = true;
+  const tagWrites = [];
+  const deletes = [];
+  const list = () =>
+    [
+      record("act_test", "words", 12, "Sight words", wordTags),
+      record("act_letters", "letters", 1, "Letter hunt", ["math"]),
+    ].filter((entry) => !(deleted && entry.id === "act_test"));
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (url.pathname === base && request.method() === "GET") return json({ activities: list() });
+    if (url.pathname === `${base}/act_test/identity`)
+      return json({ ...list()[0], ...request.postDataJSON() });
+    if (url.pathname === `${base}/act_test/tags` && request.method() === "PUT") {
+      const body = request.postDataJSON();
+      tagWrites.push(body);
+      wordTags = body.tags;
+      return json({ tags: wordTags });
+    }
+    if (url.pathname === `${base}/act_test` && request.method() === "DELETE") {
+      deletes.push(url.pathname);
+      // The first attempt meets a sibling that still builds on this ref's module.
+      if (refuseDelete) {
+        refuseDelete = false;
+        return json(
+          { error: { code: "canonical_has_refs", message: "Delete the other refs first." } },
+          409,
+        );
+      }
+      deleted = true;
+      return route.fulfill({ status: 204 });
+    }
+    return route.fallback();
+  });
+  await page.reload();
+
+  await page.getByRole("button", { name: "Ref settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "words, ref 12" });
+  const tagInput = settings.getByRole("textbox", { name: /^Tags/ });
+  await tagInput.fill("Phonics");
+  await settings.getByRole("button", { name: "Add", exact: true }).click();
+  await tagInput.fill("  grade   1 ");
+  await tagInput.press("Enter");
+  await tagInput.fill("phonics");
+  await tagInput.press("Enter");
+  await tagInput.fill("pilot");
+  await settings.getByRole("button", { name: "Add", exact: true }).click();
+  await settings.getByRole("button", { name: "Remove tag pilot", exact: true }).click();
+  await tagInput.fill("x".repeat(33));
+  await tagInput.press("Enter");
+  await expect(settings.getByText("A tag can be at most 32 characters.")).toBeVisible();
+  await tagInput.fill("");
+  await expect(settings.getByRole("list", { name: "Tags" }).getByRole("listitem")).toHaveText([
+    "Phonics",
+    "grade 1",
+  ]);
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(settings).toHaveCount(0);
+  expect(tagWrites).toEqual([{ tags: ["Phonics", "grade 1"] }]);
+
+  // Back through the app, not a page load: the list open behind the activity must show the
+  // tags just saved.
+  await page.getByRole("link", { name: "All activities" }).click();
+  const filter = page.getByRole("group", { name: "Filter by tag" });
+  await expect(filter.getByRole("button")).toHaveText([
+    "All · 2",
+    "grade 1 · 1",
+    "math · 1",
+    "Phonics · 1",
+  ]);
+  const cards = page.getByRole("listitem").filter({ has: page.getByRole("link") });
+  const sight = page.getByRole("link", { name: /Sight words/ });
+  await expect(sight).toContainText("Phonics");
+  await expect(sight).toContainText("grade 1");
+  await filter.getByRole("button", { name: "math · 1", exact: true }).click();
+  await expect(filter.getByRole("button", { name: "math · 1", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(sight).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Letter hunt/ })).toBeVisible();
+  // The tag and the search narrow together.
+  await page.getByRole("textbox", { name: "Search activities", exact: true }).fill("sight");
+  await expect(page.getByText("No activities match this search.")).toBeVisible();
+  await filter.getByRole("button", { name: "Phonics · 1", exact: true }).click();
+  await expect(sight).toBeVisible();
+  await page.getByRole("textbox", { name: "Search activities", exact: true }).fill("");
+  await filter.getByRole("button", { name: "All · 2", exact: true }).click();
+  await expect(cards).toHaveCount(2);
+
+  await sight.click();
+  await expect(page).toHaveURL(/activities\/act_test$/);
+  await page.getByRole("button", { name: "Ref settings", exact: true }).click();
+  await settings.getByRole("button", { name: "Delete activity", exact: true }).click();
+  const confirm = page.getByRole("dialog", { name: "Delete activity" });
+  await expect(confirm).toContainText('Delete "Sight words" (ref 12)?');
+  await expect(confirm).toContainText("Its drafts and media stay on disk.");
+  await confirm.getByRole("button", { name: "Delete activity", exact: true }).click();
+  await expect(confirm.getByRole("alert")).toHaveText(
+    "Other refs of this product build on this ref's module. Delete them first.",
+  );
+  await expect(page).toHaveURL(/activities\/act_test$/);
+  await confirm.getByRole("button", { name: "Delete activity", exact: true }).click();
+  await expect(page).toHaveURL(/\/activities$/);
+  await expect(page.getByText('Deleted "Sight words".')).toBeVisible();
+  await expect(sight).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Letter hunt/ })).toBeVisible();
+  expect(deletes).toHaveLength(2);
+  expect(f.errors).toEqual([]);
+});

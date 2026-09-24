@@ -118,6 +118,33 @@ export const en: Strings = {
       displayName: "Display name",
       displayNameHint: "Up to 64 characters. Leave empty to show the ref's number.",
     },
+    tags: {
+      label: "Tags",
+      about:
+        "Shared by every ref of this product. Use them to group activities, then filter the list by one.",
+      add: "Add",
+      placeholder: "grade 1, phonics…",
+      removeTag: (tag: string) => `Remove tag ${tag}`,
+      all: "All",
+      filter: "Filter by tag",
+      tooLong: "A tag can be at most 32 characters.",
+      tooMany: "A product can have at most 20 tags.",
+      invalid: "A tag cannot contain control characters.",
+    },
+    deleteActivity: {
+      action: "Delete activity",
+      confirmTitle: "Delete activity",
+      deleteConfirm: (title: string, ref: number) =>
+        `Delete "${title}" (ref ${ref})? It disappears from the Activities list. Its drafts and media stay on disk.`,
+      deleted: (title: string) => `Deleted "${title}".`,
+      errors: {
+        canonical_has_refs:
+          "Other refs of this product build on this ref's module. Delete them first.",
+        run_active: "A run is still working on this activity. Stop it, then delete.",
+        pipeline_running: "This activity is running its stages. Stop them, then delete.",
+      },
+    },
+    archivedConflict: "A deleted activity already uses this ref number. Choose another number.",
     studioBoard: {
       title: "Storyboard",
       count: (n: number) => `${n} ${n === 1 ? "scene" : "scenes"}`,

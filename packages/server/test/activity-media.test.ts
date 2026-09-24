@@ -21,6 +21,7 @@ function activity(): ActivityDetail {
     title: "Words",
     activityType: "standard",
     archived: false,
+    tags: [],
     createdAt: "",
     updatedAt: "",
     draft: {

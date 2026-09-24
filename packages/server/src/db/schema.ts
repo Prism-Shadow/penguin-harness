@@ -304,6 +304,13 @@ updated_at TEXT NOT NULL,
 UNIQUE (collection_id, product_code)
 );
 CREATE INDEX IF NOT EXISTS idx_activity_products_collection ON activity_products(collection_id, product_code);
+-- Free-text labels shared by every ref of a product; position keeps the author's order.
+CREATE TABLE IF NOT EXISTS activity_product_tags (
+product_id TEXT NOT NULL REFERENCES activity_products(product_id) ON DELETE CASCADE,
+tag TEXT NOT NULL,
+position INTEGER NOT NULL,
+PRIMARY KEY (product_id, tag)
+);
 CREATE TABLE IF NOT EXISTS activities (
 id TEXT PRIMARY KEY,
 collection_id TEXT NOT NULL,

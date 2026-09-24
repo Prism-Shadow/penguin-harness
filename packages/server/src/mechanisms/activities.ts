@@ -219,6 +219,10 @@ export abstract class ActivityAuthoring extends Interface<{
     activityId: string,
     identity: { displayName?: unknown; stable?: boolean },
   ): Promise<ActivityRecord>;
+  /** Replace a product's tags through any of its refs; returns them as stored. */
+  setProductTags(projectId: string, activityId: string, tags: unknown): Promise<string[]>;
+  /** Delete an activity from every list by archiving it; nothing on disk is removed. */
+  archiveActivity(projectId: string, activityId: string): Promise<void>;
   /** A book product's reading mode; it belongs to the product, not to a ref. */
   setProductBookMode(
     projectId: string,

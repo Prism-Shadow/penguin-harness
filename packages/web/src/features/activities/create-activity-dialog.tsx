@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ActivityDetail } from "@prismshadow/penguin-server/api";
-import { apiFetch } from "../../api/client";
+import { ApiError, apiFetch } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -42,7 +42,12 @@ export function CreateActivityDialog({
       setTitle("");
       onCreated(result.id);
     } catch (e) {
-      setError(apiErrorText(e));
+      // A deleted ref still holds its number; say so rather than "already reserved".
+      setError(
+        e instanceof ApiError && e.code === "activity_archived"
+          ? S.activities.archivedConflict
+          : apiErrorText(e),
+      );
     } finally {
       setCreating(false);
     }

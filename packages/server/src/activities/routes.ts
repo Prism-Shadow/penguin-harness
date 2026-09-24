@@ -519,6 +519,32 @@ export class ActivityRoutes {
         ),
       );
     });
+    // The product's tags, reached through any of its refs; every ref lists the same ones.
+    app.put("/:activityId/tags", async (c) => {
+      const body = await readJson(c);
+      return c.json({
+        tags: await this.activities.setProductTags(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          body.tags,
+        ),
+      });
+    });
+    // Delete archives: the activity leaves every list and its files stay on disk.
+    app.delete("/:activityId", async (c) => {
+      const projectId = requireValidId(c, "projectId");
+      const activityId = pathParam(c, "activityId");
+      // A stage sequence drives runs one after another, so between two of them no run is
+      // marked running; the sequence itself is what has to be stopped first.
+      if ((await this.pipelines.status(projectId, activityId))?.status === "running")
+        throw new HttpError(
+          409,
+          "pipeline_running",
+          "This activity is running its stages. Stop them before deleting the activity.",
+        );
+      await this.activities.archiveActivity(projectId, activityId);
+      return c.body(null, 204);
+    });
     app.patch("/:activityId/description", async (c) => {
       const body = await readJson(c);
       return c.json(
