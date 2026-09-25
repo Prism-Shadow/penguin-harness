@@ -54,7 +54,7 @@ export type LedgerEntry =
       title: string;
       /** The repository's directory in the shared workspace; absent = "" (the workspace itself). */
       root?: string;
-      /** Every entry carries its `kind` (ledgers written before kinds are migrated on load — see migrateScopeKinds). */
+      /** Every entry carries its `kind` (a ledger written before kinds is read as "edit" on load — see migrateScopeKinds). */
       scope: ProposalScopeEntry[];
       sections: ProposalSection[];
       by: string;
@@ -366,7 +366,7 @@ export function foldLedger(lines: Iterable<LedgerLine>): LedgerState {
 }
 
 /**
- * The one-time migration of a ledger written before scope kinds: every `revised` line's scope
+ * How a ledger written before scope kinds is read: every `revised` line's scope
  * entries without a `kind` get `kind: "edit"` (what every such entry meant). Lines that need
  * nothing are returned as they were, byte for byte; a changed line is the same JSON with the
  * key added first in each entry. `changed` counts the entries given a kind — 0 means the text
@@ -438,7 +438,7 @@ export class Ledger {
     private readonly log: (line: string) => void = () => {},
   ) {}
 
-  /** Replays the file (once), migrating a pre-kind ledger in place first (see migrateScopeKinds). */
+  /** Replays the file (once); a pre-kind ledger is read as kind "edit" without touching the file (see migrateScopeKinds). */
   load(): Promise<void> {
     if (this.loaded === null) {
       this.loaded = (async () => {
@@ -448,19 +448,10 @@ export class Ledger {
         } catch (err) {
           if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
         }
+        // A ledger written before scope kinds is read with `kind: "edit"` on its kind-less
+        // entries — in memory only; the file on disk is never rewritten.
         const migrated = migrateScopeKinds(text);
-        if (migrated.changed > 0) {
-          const stamp = new Date(this.now()).toISOString().replace(/[:.]/g, "-");
-          const backup = `${this.file}.before-scope-kinds-${stamp}.bak`;
-          await fs.copyFile(this.file, backup);
-          const temp = `${this.file}.migrating-${process.pid}`;
-          await fs.writeFile(temp, migrated.text, "utf8");
-          await fs.rename(temp, this.file);
-          this.log(
-            `[company-proposals] migrated ${migrated.changed} scope entries to kind "edit" in ${this.file} (backup ${backup})`,
-          );
-          text = migrated.text;
-        }
+        if (migrated.changed > 0) text = migrated.text;
         this.state = foldLedger(parseLedger(text));
       })();
     }

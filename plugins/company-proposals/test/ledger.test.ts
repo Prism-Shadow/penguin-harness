@@ -558,7 +558,7 @@ describe("Ledger", () => {
     expect(text.trim().split("\n")).toHaveLength(3);
   });
 
-  it("migrates a ledger written before scope kinds once: every kind-less entry becomes an edit, a backup is kept", async () => {
+  it("reads a ledger written before scope kinds as edits, and never rewrites the file", async () => {
     const file = ledgerPath(root, "proj", "acme");
     await fs.mkdir(path.dirname(file), { recursive: true });
     const old = [
@@ -600,34 +600,10 @@ describe("Ledger", () => {
       { kind: "edit", file: "a.go", name: "X" },
       { kind: "edit", file: "b.go" },
     ]);
-    const migrated = await fs.readFile(file, "utf8");
-    const [first, second, third] = migrated.split("\n");
-    const [o1, o2, o3] = original.split("\n");
-    expect(first).toBe(o1);
-    expect(third).toBe(o3);
-    expect(second).toBe(
-      o2!
-        .replace('{"file":"a.go"', '{"kind":"edit","file":"a.go"')
-        .replace('{"file":"b.go"}', '{"kind":"edit","file":"b.go"}'),
-    );
-    const files = await fs.readdir(path.dirname(file));
-    const backup = files.find((f) => f.startsWith("proposals.jsonl.before-scope-kinds-"));
-    expect(backup).toBe("proposals.jsonl.before-scope-kinds-2026-09-24T01-02-03-004Z.bak");
-    expect(await fs.readFile(path.join(path.dirname(file), backup!), "utf8")).toBe(original);
-    expect(logged).toEqual([
-      `[company-proposals] migrated 2 scope entries to kind "edit" in ${file} (backup ${path.join(path.dirname(file), backup!)})`,
-    ]);
-    // A second load finds nothing to do.
-    const again = new Ledger(
-      file,
-      () => 0,
-      (l) => logged.push(l),
-    );
-    await again.load();
-    expect(logged).toHaveLength(1);
-    expect((await fs.readdir(path.dirname(file))).filter((f) => f.endsWith(".bak"))).toHaveLength(
-      1,
-    );
-    expect(migrateScopeKinds(migrated)).toEqual({ text: migrated, changed: 0 });
+    // The file on disk is untouched: no rewrite, no backup, nothing logged.
+    expect(await fs.readFile(file, "utf8")).toBe(original);
+    expect((await fs.readdir(path.dirname(file))).filter((f) => f.endsWith(".bak"))).toEqual([]);
+    expect(logged).toEqual([]);
+    expect(migrateScopeKinds(original).changed).toBe(2);
   });
 });
