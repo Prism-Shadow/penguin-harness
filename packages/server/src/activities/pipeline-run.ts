@@ -15,6 +15,8 @@
  *           default-language line changed since it was translated
  *   speech  generate and accept every unbound narration with a usable script
  *   images  generate and accept every unbound image with a description
+ *   assessment  write and accept the assessment, when the specification uses one and this
+ *           is the canonical ref that owns it
  *   module  assemble the WAF module (scaffold, configuration and behavior in one run)
  *
  * State lives in memory only: a sequence belongs to the server that runs it, and its runs
@@ -24,6 +26,7 @@
 import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../http/errors.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
+import type { ActivitySandbox } from "./sandbox-service.js";
 import { SPEECH_VOICES, isSpeechVoice } from "./voice-catalogue.js";
 import { DEFAULT_LANGUAGE_CODE } from "./languages.js";
 import { contentRevision, type ActivityRun } from "./domain.js";
@@ -152,6 +155,11 @@ class Stopped extends Error {}
 export interface PipelineDeps {
   generation: ActivityGeneration;
   activities: ActivityAuthoring;
+  /** The assessment in effect for a ref, which an assessment run updates; none when absent. */
+  currentAssessment?: (
+    projectId: string,
+    activityId: string,
+  ) => Promise<Record<string, unknown> | null>;
   /** How long to wait between looks at a run; injected so tests do not wait. */
   pause?: (ms: number) => Promise<void>;
   now?: () => string;
@@ -411,6 +419,43 @@ export class PipelineRunner {
       return;
     }
 
+    if (step.step === "assessment") {
+      const activity = await current();
+      if (!activity.draft.spec || activity.draft.status !== "valid")
+        throw new Error("Save a valid specification before generating the assessment.");
+      const specRuntime = activity.draft.spec.runtime as { usesAssessment?: unknown } | undefined;
+      if (specRuntime?.usesAssessment !== true) {
+        step.status = "skipped";
+        step.note = "noAssessment";
+        return;
+      }
+      if (!activities.isCanonicalRef(activity)) {
+        step.status = "skipped";
+        step.note = "notCanonical";
+        return;
+      }
+      const assessment = {
+        current: (await this.deps.currentAssessment?.(projectId, activityId)) ?? null,
+      };
+      const run = await generation.start(
+        projectId,
+        activityId,
+        input.agentId,
+        activity.draft.contentRevision,
+        { assessment },
+        runtime,
+      );
+      await this.follow(state, step, run);
+      const after = await current();
+      await generation.acceptAssessment(
+        projectId,
+        activityId,
+        run.runId,
+        after.draft.contentRevision,
+      );
+      return;
+    }
+
     const activity = await current();
     await this.follow(
       state,
@@ -464,12 +509,19 @@ export abstract class ActivityPipelines extends Interface<{
 export class ActivityPipelineService implements ActivityPipelines {
   @Use() private readonly generation!: ActivityGeneration;
   @Use() private readonly activities!: ActivityAuthoring;
+  @Use() private readonly sandbox!: ActivitySandbox;
   private runner: PipelineRunner | null = null;
 
   setup({ effect }: ClassCtx) {
     const runner = new PipelineRunner({
       generation: this.generation,
       activities: this.activities,
+      currentAssessment: async (projectId, activityId) => {
+        const value = (await this.sandbox.moduleDocuments(projectId, activityId)).assessment?.value;
+        return value && typeof value === "object" && !Array.isArray(value)
+          ? (value as Record<string, unknown>)
+          : null;
+      },
     });
     this.runner = runner;
     effect(() => runner.dispose());

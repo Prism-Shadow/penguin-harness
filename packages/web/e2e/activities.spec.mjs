@@ -2847,6 +2847,189 @@ test("shows the shared assessment read-only on a ref that is not canonical", asy
   expect(f.errors).toEqual([]);
 });
 
+test("generates an assessment, accepts it, and edits a question and its correct choice", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  const choice = (id, text, isCorrect) => ({
+    id,
+    isCorrect,
+    score: isCorrect ? 1 : 0,
+    value: { text },
+  });
+  const item = (n, question, choices) => ({
+    title: `words-12-${n}`,
+    interactionKey: "SIMPLE_CHOICE",
+    configuration: { shuffle: false, question: { text: question }, simpleChoice: choices },
+  });
+  const own = {
+    title: "words-12",
+    configuration: { maxItems: 1, nextItemsSize: 1 },
+    behavior: "LINEAR",
+    items: [item(1, "Which is cat?", [choice("a", "cat", true), choice("b", "cot", false)])],
+  };
+  const generated = {
+    ...own,
+    configuration: { maxItems: 2, nextItemsSize: 1 },
+    items: [
+      own.items[0],
+      item(2, "Which is dog?", [choice("a", "dog", true), choice("b", "dig", false)]),
+    ],
+  };
+  // The server's state, mirrored: the draft, its assessment edit, and the one run.
+  let detail = null;
+  let edit = null;
+  let run = null;
+  const starts = [];
+  const accepts = [];
+  const saves = [];
+  const bump = () => {
+    detail = {
+      ...detail,
+      draft: { ...detail.draft, contentRevision: `${detail.draft.contentRevision}+` },
+    };
+    return detail.draft;
+  };
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    const conflict = () =>
+      json({ error: { code: "draft_conflict", message: "Draft changed." } }, 409);
+    if (p === `${base}/act_test` && request.method() === "GET" && detail) return json(detail);
+    if (p === `${base}/act_test/sandbox/status`)
+      return json({
+        state: "ready",
+        playable: true,
+        buildable: true,
+        message: "Ready.",
+        buildLog: null,
+      });
+    if (p === `${base}/act_test/runs` && request.method() === "GET")
+      return json({ runs: run ? [{ ...run, hasCandidate: run.status === "succeeded" }] : [] });
+    if (p === `${base}/act_test/generate-assessment`) {
+      const body = request.postDataJSON();
+      starts.push(body);
+      if (body.expectedRevision !== detail.draft.contentRevision) return conflict();
+      if (run?.status === "running")
+        return json({ error: { code: "generation_running", message: "Running." } }, 409);
+      run = {
+        runId: "run_assess",
+        kind: "assessment",
+        activityId: "act_test",
+        projectId,
+        draftId: detail.draft.draftId,
+        inputRevision: body.expectedRevision,
+        agentId: body.agentId,
+        sessionId: "session_assess",
+        status: "running",
+        createdAt: "2026-09-25T10:00:00Z",
+        finishedAt: null,
+        error: null,
+        candidate: null,
+      };
+      const started = { ...run };
+      // The agent finishes by the next look at the history.
+      run = { ...run, status: "succeeded", finishedAt: "2026-09-25T10:01:00Z" };
+      return json(started, 202);
+    }
+    if (p === `${base}/act_test/runs/run_assess/candidate`)
+      return json({ candidate: JSON.stringify(generated) });
+    if (p === `${base}/act_test/runs/run_assess/accept-assessment`) {
+      const body = request.postDataJSON();
+      accepts.push(body);
+      if (body.expectedRevision !== run.inputRevision) return conflict();
+      edit = generated;
+      return json(bump());
+    }
+    if (p === `${base}/act_test/module-documents` && request.method() === "GET")
+      return json({
+        source: "checkout",
+        canonicalRefNum: 12,
+        configuration: null,
+        assessment: {
+          file: "assessments/words-12.json",
+          value: edit ?? own,
+          edited: !!edit,
+          stale: false,
+          editable: true,
+        },
+      });
+    if (p === `${base}/act_test/module-documents/assessment` && request.method() === "PUT") {
+      const body = request.postDataJSON();
+      saves.push(body);
+      if (body.expectedRevision !== detail.draft.contentRevision) return conflict();
+      edit = body.value;
+      return json(bump());
+    }
+    return route.fallback();
+  });
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify({ ...spec, runtime: { ...spec.runtime, usesAssessment: true } }));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.reload();
+  detail = await page.evaluate((url) => fetch(url).then((r) => r.json()), `${base}/act_test`);
+  const saved = detail.draft.contentRevision;
+
+  await openSection(page, "Assessment Data");
+  await expect(page.getByText("1 item.", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Generate assessment", exact: true }).click();
+  await expect.poll(() => starts.length).toBe(1);
+  expect(starts[0]).toEqual({ agentId: "default_agent", expectedRevision: saved });
+
+  // The result waits beside the current assessment until the author uses it.
+  const candidate = page.getByRole("region", { name: "Generated assessment", exact: true });
+  await expect(candidate.getByText("Current: 1 item · Generated: 2 items")).toBeVisible();
+  await candidate.getByRole("button", { name: "Use it", exact: true }).click();
+  await expect.poll(() => accepts.length).toBe(1);
+  expect(accepts[0]).toEqual({ expectedRevision: saved });
+  await expect(candidate).toHaveCount(0);
+  const second = page.getByRole("listitem", { name: "Item 2 · words-12-2", exact: true });
+  await expect(second.getByRole("textbox", { name: "Question", exact: true })).toHaveValue(
+    "Which is dog?",
+  );
+
+  // Editing without JSON: the question, and which choice is right.
+  const save = page.getByRole("button", { name: "Save items", exact: true });
+  await expect(save).toBeDisabled();
+  await second.getByRole("textbox", { name: "Question", exact: true }).fill("Which one is dig?");
+  const correct = second.getByRole("radio", { name: "Choice 2 is correct", exact: true });
+  await correct.check();
+  await expect(
+    second.getByRole("radio", { name: "Choice 1 is correct", exact: true }),
+  ).not.toBeChecked();
+  // Removing down to one choice is not offered.
+  await expect(second.getByRole("button", { name: "Remove choice 1", exact: true })).toBeDisabled();
+  // A blocker names the item and holds the save until it is fixed.
+  await second.getByRole("textbox", { name: "Choice 1", exact: true }).fill("");
+  await expect(
+    page.getByRole("alert").getByText("Item 2 has a choice with no text."),
+  ).toBeVisible();
+  await expect(save).toBeDisabled();
+  await second.getByRole("textbox", { name: "Choice 1", exact: true }).fill("dog");
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect.poll(() => saves.length).toBe(1);
+  expect(saves[0].expectedRevision).toBe(`${saved}+`);
+  expect(saves[0].value.title).toBe("words-12");
+  expect(saves[0].value.items[1]).toEqual({
+    title: "words-12-2",
+    interactionKey: "SIMPLE_CHOICE",
+    configuration: {
+      shuffle: false,
+      question: { text: "Which one is dig?" },
+      simpleChoice: [choice("a", "dog", false), choice("b", "dig", true)],
+    },
+  });
+  await expect(page.getByText("Saved the document.")).toBeVisible();
+  await expect(save).toBeDisabled();
+  expect(f.errors).toEqual([]);
+});
+
 test("speech coverage says what failed, filters the list, and tries one again", async ({
   page,
 }) => {

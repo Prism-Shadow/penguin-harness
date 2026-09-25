@@ -35,17 +35,22 @@ export interface WrittenItem {
 /**
  * Choice text reduced to what is comparable.
  *
- * Case-folded, punctuation collapsed to single spaces, trimmed. The two passes are
- * separate agent calls, so the second writes `"The cat."` where the first enumerated
- * `"the cat"` — comparing raw strings would report a question as missing because a full
- * stop moved.
+ * Case-folded, accents dropped, everything but letters and digits (in any script) collapsed
+ * to single spaces, trimmed. The two passes are separate agent calls, so the second writes
+ * `"The cat."` where the first enumerated `"the cat"` — comparing raw strings would report a
+ * question as missing because a full stop moved.
+ *
+ * A choice with no letters or digits at all (`">"`, `"="`) keeps its trimmed text, so a
+ * comparison activity's symbols still compare exactly instead of all becoming empty.
  */
 export function normalizeChoiceText(value: string): string {
-  return value
+  const folded = value
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
+  return folded || value.trim().replace(/\s+/g, " ");
 }
 
 /**

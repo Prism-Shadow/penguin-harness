@@ -252,7 +252,10 @@ export type Strings = {
     studioRun: {
       stage: string;
       all: string;
-      steps: Record<"spec" | "media" | "translations" | "speech" | "images" | "module", string>;
+      steps: Record<
+        "spec" | "media" | "translations" | "speech" | "images" | "assessment" | "module",
+        string
+      >;
       narration: string;
       status: Record<
         "pending" | "running" | "succeeded" | "skipped" | "failed" | "cancelled",
@@ -263,7 +266,13 @@ export type Strings = {
       idle: string;
       progress: (done: number, total: number) => string;
       notes: Record<
-        "planCurrent" | "allTranslated" | "needsPenguinAgent" | "noNarration" | "noImages",
+        | "planCurrent"
+        | "allTranslated"
+        | "needsPenguinAgent"
+        | "noNarration"
+        | "noImages"
+        | "noAssessment"
+        | "notCanonical",
         string
       >;
       running: (step: string) => string;
@@ -389,6 +398,49 @@ export type Strings = {
       kbps: (n: number) => string;
       pixels: (width: number, height: number) => string;
     };
+    /** Generating the assessment, and editing its items without JSON. */
+    assessment: {
+      generate: string;
+      generating: string;
+      /** What generating does; shown in the Assessment Data title's popover. */
+      generateAbout: string;
+      useIt: string;
+      keepCurrent: string;
+      candidateTitle: string;
+      /** The candidate's size beside the current assessment's. */
+      candidate: (n: number) => string;
+      current: (n: number | null) => string;
+      candidateUnreadable: string;
+      failed: (reason: string) => string;
+      accepted: string;
+      unused: string;
+      items: string;
+      itemTitle: (n: number, title: string) => string;
+      interaction: Record<"SIMPLE_CHOICE" | "MULTIPLE_RESPONSE_CHOICE", string>;
+      question: string;
+      shuffle: string;
+      choice: (n: number) => string;
+      correct: string;
+      correctOf: (n: number) => string;
+      addItem: string;
+      addChoice: string;
+      removeItem: string;
+      removeChoice: string;
+      removeChoiceOf: (n: number) => string;
+      reset: string;
+      save: string;
+      editAsJson: string;
+      unsupported: string;
+      blockers: {
+        noItems: string;
+        fewChoices: (item: number) => string;
+        correctCount: (item: number) => string;
+        emptyQuestion: (item: number) => string;
+        emptyChoice: (item: number) => string;
+        duplicateChoiceId: (item: number) => string;
+      };
+    };
+    assessmentRun: string;
     /** Loom's Configuration Data and Assessment Data: the module's own documents, editable in place. */
     moduleDocuments: {
       loading: string;

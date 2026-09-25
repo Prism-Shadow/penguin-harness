@@ -32,6 +32,11 @@ export interface WorkspaceState {
   hasPlan: boolean;
   /** An assembled module exists, so a preview can be shown. */
   hasModule: boolean;
+  /**
+   * The saved specification says the activity asks an assessment, which can be generated
+   * before any module is assembled.
+   */
+  usesAssessment?: boolean;
 }
 
 /**
@@ -47,7 +52,7 @@ export function workspaceSections(state: WorkspaceState): WorkspaceSectionEntry[
     { key: "features", enabled: true },
     // The module's own documents, read from whichever module the player would play.
     { key: "configuration", enabled: state.hasModule },
-    { key: "assessment", enabled: state.hasModule },
+    { key: "assessment", enabled: state.hasModule || !!state.usesAssessment },
     // Always reachable: the action that builds the media plan lives inside this
     // section, so gating the section would hide its own entry point. The pane says
     // what is missing instead.

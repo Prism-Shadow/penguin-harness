@@ -31,14 +31,34 @@ describe("comparing choice text", () => {
     expect(normalizeChoiceText("Number 7")).toBe("number 7");
   });
 
-  it("reduces text with nothing comparable to an empty string", () => {
-    expect(normalizeChoiceText("!!!")).toBe("");
+  it("compares letters in any script, without their accents", () => {
+    expect(normalizeChoiceText("Sí.")).toBe(normalizeChoiceText("si"));
+    expect(normalizeChoiceText("猫!")).toBe("猫");
+    expect(normalizeChoiceText("猫")).not.toBe(normalizeChoiceText("狗"));
+  });
+
+  it("keeps a choice with no letters or digits as its trimmed text", () => {
+    // A comparison activity's choices are symbols; they must not all become the same "".
+    expect(normalizeChoiceText(" > ")).toBe(">");
+    expect(normalizeChoiceText("<")).not.toBe(normalizeChoiceText("="));
+    expect(normalizeChoiceText("   ")).toBe("");
   });
 });
 
 describe("whether one item satisfies one hint", () => {
   it("matches when the choices are the same", () => {
     expect(itemSatisfiesHint(item(["cat"], ["dog"]), hint(["cat", "dog"]))).toBe(true);
+  });
+
+  it("matches symbol and non-Latin choices, and their correct answer", () => {
+    expect(itemSatisfiesHint(item([">", true], ["<"], ["="]), hint([">", "<", "="], ">"))).toBe(
+      true,
+    );
+    expect(itemSatisfiesHint(item([">"], ["<", true], ["="]), hint([">", "<", "="], ">"))).toBe(
+      false,
+    );
+    expect(itemSatisfiesHint(item(["猫", true], ["狗"]), hint(["猫", "狗"], "猫"))).toBe(true);
+    expect(itemSatisfiesHint(item(["猫", true], ["鸟"]), hint(["猫", "狗"], "猫"))).toBe(false);
   });
 
   it("matches despite punctuation and case differences", () => {

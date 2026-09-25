@@ -887,15 +887,22 @@ function ActivityEditor({
   }
   // The rail and the detail pane read one derivation, so they cannot disagree about
   // which language, which scene, or which asset is being shown.
+  // A saved specification that asks an assessment can have one generated before any module.
+  const usesAssessment =
+    detail?.draft.status === "valid" &&
+    (detail.draft.spec?.runtime as { usesAssessment?: unknown } | undefined)?.usesAssessment ===
+      true;
   const sections = workspaceSections({
     hasSpec: !!detail?.draft.spec,
     hasPlan: !!detail?.draft.mediaPlan,
     hasModule: !!latestModuleRun(runs) || sandboxModule,
+    usesAssessment,
   });
   const section = resolveSection(sectionChoice, {
     hasSpec: !!detail?.draft.spec,
     hasPlan: !!detail?.draft.mediaPlan,
     hasModule: !!latestModuleRun(runs) || sandboxModule,
+    usesAssessment,
   });
   // The saved draft's media stats, read once per revision while the scenes are open, for
   // the file details of a bound clip. Null when they could not be read.
@@ -1651,6 +1658,36 @@ function ActivityEditor({
                     setDetail((current) => (current ? { ...current, draft } : current));
                     announce({ kind: "success", text });
                   }}
+                  generation={
+                    section === "assessment"
+                      ? {
+                          refNum: detail.refNum,
+                          usesAssessment,
+                          runs,
+                          blocked:
+                            running || pipelineRunning
+                              ? S.activities.studioRun.otherRun
+                              : !selectedAgent
+                                ? S.activities.studioRun.noAgent
+                                : null,
+                          onGenerate: () => startRun("generate-assessment", {}),
+                          onAccept: (runId) =>
+                            void action(async () => {
+                              const draft = await apiFetch<ActivityDraft>(
+                                `${endpoint}/runs/${encodeURIComponent(runId)}/accept-assessment`,
+                                {
+                                  method: "POST",
+                                  body: { expectedRevision: detail.draft.contentRevision },
+                                },
+                              );
+                              if (!alive.current) return;
+                              // Only the draft changed; unsaved script or specification text stays.
+                              setDetail((current) => (current ? { ...current, draft } : current));
+                              announce({ kind: "success", text: S.activities.assessment.accepted });
+                            }),
+                        }
+                      : undefined
+                  }
                 />
               )}
               {section === "module" && (

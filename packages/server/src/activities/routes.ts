@@ -70,6 +70,17 @@ export class ActivityRoutes {
   @Use() private readonly config!: Config;
   @Bind("activities") routes!: Hono<AppEnv>;
 
+  /** The assessment in effect for a ref (an author's edit, else the module's own), or null. */
+  private async currentAssessment(
+    projectId: string,
+    activityId: string,
+  ): Promise<Record<string, unknown> | null> {
+    const value = (await this.sandbox.moduleDocuments(projectId, activityId)).assessment?.value;
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
   setup() {
     const app = new HonoApp<AppEnv>();
     app.use("*", async (c, next) => {
@@ -256,6 +267,37 @@ export class ActivityRoutes {
           runner.runtime,
         ),
         202,
+      );
+    });
+    // The questions the activity's screens imply, written by an agent and checked for
+    // coverage; the candidate waits for the author to accept it.
+    app.post("/:activityId/generate-assessment", async (c) => {
+      const body = await readJson(c);
+      const runner = stageRunner(body);
+      const projectId = requireValidId(c, "projectId");
+      const activityId = pathParam(c, "activityId");
+      const expectedRevision = requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 });
+      return c.json(
+        await this.generation.start(
+          projectId,
+          activityId,
+          runner.agentId,
+          expectedRevision,
+          { assessment: { current: await this.currentAssessment(projectId, activityId) } },
+          runner.runtime,
+        ),
+        202,
+      );
+    });
+    app.post("/:activityId/runs/:runId/accept-assessment", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.generation.acceptAssessment(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          pathParam(c, "runId"),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        ),
       );
     });
     app.get("/:activityId/runs/:runId/image", async (c) => {

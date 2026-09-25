@@ -8,6 +8,7 @@ export const PIPELINE_STEPS = [
   "translations",
   "speech",
   "images",
+  "assessment",
   "module",
 ] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
@@ -21,7 +22,15 @@ export type PipelineStepStatus =
   "pending" | "running" | "succeeded" | "skipped" | "failed" | "cancelled";
 
 export type PipelineNote =
-  "planCurrent" | "allTranslated" | "needsPenguinAgent" | "noNarration" | "noImages";
+  | "planCurrent"
+  | "allTranslated"
+  | "needsPenguinAgent"
+  | "noNarration"
+  | "noImages"
+  /** The specification says the activity has no assessment. */
+  | "noAssessment"
+  /** Only the canonical ref writes the assessment every ref shares. */
+  | "notCanonical";
 
 export interface PipelineStepState {
   step: PipelineStep;

@@ -36,6 +36,7 @@ export const PIPELINE_CHOICES: readonly PipelineSelection[] = [
   "translations",
   "speech",
   "images",
+  "assessment",
   "module",
 ];
 

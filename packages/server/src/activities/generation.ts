@@ -43,6 +43,9 @@ import {
   type AssistProposal,
 } from "./assist.js";
 import { mediaTextPrompt, mediaTextTarget, parseMediaTextCandidate } from "./media-text.js";
+import { coverageProblem } from "./assessment-hints.js";
+import { normalizeAssessment, parseHints, writtenItems } from "./assessment-document.js";
+import { validateAssessment } from "./module-overrides.js";
 import {
   newId,
   contentRevision,
@@ -267,6 +270,8 @@ export class ActivityGenerationService implements ActivityGeneration {
       image?: { language: string; assetKey: string };
       mediaText?: { language: string; assetKey: string };
       assist?: { message: string; focus: AssistFocus | null };
+      /** An assessment run, given the assessment in effect now (null when there is none). */
+      assessment?: { current: Record<string, unknown> | null };
     },
     runtime?: { codingAgentId?: string },
   ): Promise<ActivityRun> {
@@ -283,9 +288,10 @@ export class ActivityGenerationService implements ActivityGeneration {
               "Save or reload the draft before generating.",
             );
           const assist = module?.assist;
+          const assessment = module?.assessment;
           // An author may ask for help writing the script, so an empty one is no reason
-          // to refuse a conversation.
-          if (!assist && !activity.draft.description.trim())
+          // to refuse a conversation; an assessment is written from the specification.
+          if (!assist && !assessment && !activity.draft.description.trim())
             throw new HttpError(
               400,
               "description_required",
@@ -295,7 +301,9 @@ export class ActivityGenerationService implements ActivityGeneration {
           let bookMode: BookMode | undefined;
           if (
             module &&
-            [module.audio, module.image, module.mediaText, module.assist].filter(Boolean).length > 1
+            [module.audio, module.image, module.mediaText, module.assist, module.assessment].filter(
+              Boolean,
+            ).length > 1
           )
             throw new HttpError(400, "generation_invalid", "Choose one media generation type.");
           const audio = module?.audio ? audioTarget(activity, module.audio) : undefined;
@@ -303,7 +311,29 @@ export class ActivityGenerationService implements ActivityGeneration {
           const mediaText = module?.mediaText
             ? mediaTextTarget(activity, module.mediaText)
             : undefined;
-          if (module && !audio && !image && !mediaText && !assist) {
+          if (assessment) {
+            if (!activity.draft.spec || activity.draft.status !== "valid")
+              throw new HttpError(
+                400,
+                "assessment_spec_required",
+                "Save a valid specification before generating the assessment.",
+              );
+            const runtime = activity.draft.spec.runtime as { usesAssessment?: unknown } | undefined;
+            if (runtime?.usesAssessment !== true)
+              throw new HttpError(
+                409,
+                "assessment_unused",
+                "The specification says this activity has no assessment.",
+              );
+            // Every ref of the product shares one assessment, and only the canonical ref owns it.
+            if (!this.activities.isCanonicalRef(activity))
+              throw new HttpError(
+                409,
+                "not_canonical",
+                "The assessment is shared by every ref of this product. Generate it on the canonical ref.",
+              );
+          }
+          if (module && !audio && !image && !mediaText && !assist && !assessment) {
             if (!activity.draft.spec || activity.draft.status !== "valid")
               throw new HttpError(
                 400,
@@ -381,15 +411,17 @@ export class ActivityGenerationService implements ActivityGeneration {
           const run: ActivityRun = {
             kind: assist
               ? "assist"
-              : mediaText
-                ? "media-text"
-                : image
-                  ? "image"
-                  : audio
-                    ? "audio"
-                    : module
-                      ? "module"
-                      : "spec",
+              : assessment
+                ? "assessment"
+                : mediaText
+                  ? "media-text"
+                  : image
+                    ? "image"
+                    : audio
+                      ? "audio"
+                      : module
+                        ? "module"
+                        : "spec",
             ...(audio ? { audio } : {}),
             ...(image ? { image } : {}),
             ...(mediaText ? { mediaText } : {}),
@@ -498,9 +530,29 @@ export class ActivityGenerationService implements ActivityGeneration {
             }
             if (mediaText)
               await atomicJson(path.join(workspace, "media-text-input.json"), mediaText);
+            if (assessment) {
+              const skill = libraryPlugin("waf-authoring")?.skills.find(
+                (entry) => entry.name === ASSESSMENT_SKILL,
+              )?.content;
+              if (!skill)
+                throw new HttpError(
+                  500,
+                  "assessment_skill_missing",
+                  "The installed assessment skill is missing. Rebuild the bundled plugins.",
+                );
+              await atomicJson(path.join(workspace, "activity-spec.json"), activity.draft.spec);
+              if (assessment.current)
+                await atomicJson(
+                  path.join(workspace, "current-assessment.json"),
+                  assessment.current,
+                );
+              await fs.writeFile(path.join(workspace, ASSESSMENT_SKILL_FILE), skill, {
+                flag: "wx",
+              });
+            }
             // An assembly is handed the implementation features its ref selected.
             let features: ImplementationFeature[] = [];
-            if (module && !audio && !image && !mediaText && !assist) {
+            if (module && !audio && !image && !mediaText && !assist && !assessment) {
               const chosen = await this.activities.implementationFeatures(projectId, activityId);
               features = chosen.features.filter((feature) =>
                 chosen.selectedIds.includes(feature.id),
@@ -514,15 +566,17 @@ export class ActivityGenerationService implements ActivityGeneration {
             }
             const prompt = assist
               ? assistPrompt(assist.message, assist.focus)
-              : mediaText
-                ? mediaTextPrompt(mediaText)
-                : image
-                  ? imagePrompt
-                  : audio
-                    ? audioPrompt
-                    : module
-                      ? modulePrompt + featureClause(features)
-                      : generationPrompt;
+              : assessment
+                ? assessmentPrompt
+                : mediaText
+                  ? mediaTextPrompt(mediaText)
+                  : image
+                    ? imagePrompt
+                    : audio
+                      ? audioPrompt
+                      : module
+                        ? modulePrompt + featureClause(features)
+                        : generationPrompt;
             const session = await this.sessionService.createSession({
               projectId,
               agentId: owner,
@@ -689,6 +743,40 @@ export class ActivityGenerationService implements ActivityGeneration {
             activityId,
             run.mediaText,
             text,
+            expectedRevision,
+          );
+        }),
+      ),
+    );
+  }
+
+  /**
+   * Keep a generated assessment as the product's assessment edit, the way an author's own
+   * save keeps one: only a successful run, and only on the draft it was generated from.
+   */
+  acceptAssessment(projectId: string, activityId: string, runId: string, expectedRevision: string) {
+    return this.track(
+      this.projectWork.run(projectId, () =>
+        this.locks.run(activityId, async () => {
+          if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+          const run = await this.getRun(projectId, activityId, runId);
+          if (run.kind !== "assessment" || run.status !== "succeeded" || !run.candidate)
+            throw new HttpError(
+              409,
+              "assessment_changed",
+              "Only a successful assessment candidate can be accepted.",
+            );
+          if (run.inputRevision !== expectedRevision)
+            throw new HttpError(
+              409,
+              "draft_conflict",
+              "The draft changed since the assessment was generated. Generate a new one.",
+            );
+          return this.activities.setModuleDocument(
+            projectId,
+            activityId,
+            "assessment",
+            JSON.parse(run.candidate) as unknown,
             expectedRevision,
           );
         }),
@@ -867,6 +955,51 @@ export class ActivityGenerationService implements ActivityGeneration {
                 });
                 return;
               }
+              if (run.kind === "assessment") {
+                const observer = this.observers.get(run.runId);
+                if (!observer?.completed)
+                  throw new Error(observer?.error ?? "Assessment Session did not complete.");
+                const workspace = this.workspace(run);
+                const parse = (text: string, name: string): unknown => {
+                  try {
+                    return JSON.parse(text);
+                  } catch {
+                    throw new Error(`${name} is not valid JSON.`);
+                  }
+                };
+                const hints = parseHints(
+                  parse(
+                    await readCandidate(path.join(workspace, ASSESSMENT_HINTS_FILE), 256 * 1024),
+                    ASSESSMENT_HINTS_FILE,
+                  ),
+                );
+                const input = await this.activities.getActivity(run.projectId, run.activityId);
+                const data = normalizeAssessment(
+                  parse(
+                    await readCandidate(path.join(workspace, ASSESSMENT_FILE)),
+                    ASSESSMENT_FILE,
+                  ),
+                  input.productCode,
+                  this.activities.productOf(input)?.canonicalRefNum ?? input.refNum,
+                );
+                validateAssessment(data);
+                const missing = coverageProblem(writtenItems(data), hints);
+                if (missing) throw new Error(missing);
+                run.candidate = JSON.stringify(data);
+                this.save(run);
+                if (this.stopped) return;
+                await this.projectWork.run(run.projectId, async () => {
+                  const current = await this.activities.getActivity(run.projectId, run.activityId);
+                  if (current.draft.contentRevision !== run.inputRevision)
+                    throw new HttpError(
+                      409,
+                      "draft_conflict",
+                      "The draft changed during assessment generation.",
+                    );
+                  this.finish(run, "succeeded");
+                });
+                return;
+              }
               run.candidate = await readCandidate(file);
               this.save(run);
               if (this.stopped) return;
@@ -941,7 +1074,9 @@ export class ActivityGenerationService implements ActivityGeneration {
                             ? "module-result.json or a required artifact"
                             : run.kind === "media-text"
                               ? "media-text.json"
-                              : "activity-spec.json"
+                              : run.kind === "assessment"
+                                ? `${ASSESSMENT_FILE} or ${ASSESSMENT_HINTS_FILE}`
+                                : "activity-spec.json"
                     }.`
                   : error instanceof Error
                     ? error.message
@@ -962,6 +1097,24 @@ export class ActivityGenerationService implements ActivityGeneration {
 export async function readCandidate(file: string, maxBytes = MAX_CANDIDATE_BYTES): Promise<string> {
   return (await readArtifactBytes(file, maxBytes)).toString("utf8");
 }
+
+/** The assessment skill a run follows, staged into its workspace under a file name of its own. */
+const ASSESSMENT_SKILL = "waf-assessment-patterns";
+const ASSESSMENT_SKILL_FILE = "assessment-skill.md";
+const ASSESSMENT_FILE = "assessment.json";
+const ASSESSMENT_HINTS_FILE = "assessment-hints.json";
+
+/**
+ * One run writes both the questions the screens imply and the assessment. The collector
+ * checks the second covers the first.
+ */
+export const assessmentPrompt = `Write the WAF assessment for this activity. Work in this workspace.
+Read and follow the WAF assessment skill in ${ASSESSMENT_SKILL_FILE}. The activity is described by description.md, input.json and activity-spec.json. If current-assessment.json exists, it is the assessment in use now: update it to match the specification rather than replacing it, and keep what still fits.
+Write two files, each a JSON object without Markdown fences:
+1. ${ASSESSMENT_HINTS_FILE}: {"items": [{"sceneId": "scene id", "source": "loading|speaker|selection", "question": "what the learner answers", "choices": ["exact on-screen choice", "..."], "correct": "the correct choice text"}]}. List every learner answer or selection screen, in the order the screens appear, including intermediate loading screens, speaker or choice screens and final answer screens. Skip screens marked instructional-only and screens that never ask the learner to choose. Use the exact on-screen text for each choice and for correct; leave correct out when the screen does not settle it. If description.md contains <items><item>...</item></items> blocks, each non-empty <item> block is one question, in order.
+2. ${ASSESSMENT_FILE}: {"items": [...]} with one item per entry of ${ASSESSMENT_HINTS_FILE}, in the same order, each keeping that entry's choices and correct answer. An item is {"interactionKey": "SIMPLE_CHOICE" or "MULTIPLE_RESPONSE_CHOICE", "configuration": {"shuffle": boolean, "question": {"text": "..."}, "simpleChoice" or "multipleResponseChoice": [{"id": "string id", "isCorrect": boolean, "value": {"text": "..."}}]}}. Use only those two interactions. Every item needs non-empty question text and at least two choices with unique non-empty string ids and non-empty text; a SIMPLE_CHOICE item has exactly one correct choice, a MULTIPLE_RESPONSE_CHOICE item at least one. Do not copy <items> or <item> tags into the assessment. Do not include qa_, prod_ or dev_ keys. Titles, scores and the assessment's configuration are derived; you may leave them out.
+Do not edit the input files. Do not delegate this task.
+Use Harness's normal approval flow for tool actions. Finish only after writing both files as valid JSON.`;
 
 const generationPrompt = `Generate a WAF HTML activity specification from description.md and input.json.
 Work in this workspace. Write activity-spec.json as a JSON object, without Markdown fences.

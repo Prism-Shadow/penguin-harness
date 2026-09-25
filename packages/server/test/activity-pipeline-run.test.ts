@@ -59,6 +59,7 @@ describe("choosing the work", () => {
       "translations",
       "speech",
       "images",
+      "assessment",
       "module",
     ]);
     expect(stepsFor(parseSelection("speech"))).toEqual(["speech"]);
@@ -69,10 +70,26 @@ describe("choosing the work", () => {
 
 /** An activity and the two services, faked closely enough to show what the sequence does. */
 function world(
-  options: { fail?: ActivityRun["kind"]; description?: string; romanian?: boolean } = {},
+  options: {
+    fail?: ActivityRun["kind"];
+    description?: string;
+    romanian?: boolean;
+    usesAssessment?: boolean;
+    canonical?: boolean;
+  } = {},
 ) {
   let revision = 1;
-  const spec = { id: "words", title: "Words", activityDescription: "d", scenes: [] };
+  const spec = {
+    id: "words",
+    title: "Words",
+    activityDescription: "d",
+    scenes: [],
+    ...(options.usesAssessment !== undefined
+      ? { runtime: { usesAssessment: options.usesAssessment } }
+      : {}),
+  };
+  const accepted: string[] = [];
+  const assessmentInputs: unknown[] = [];
   const activity = {
     id: "act",
     productCode: "words",
@@ -104,15 +121,18 @@ function world(
       runtime?: any,
     ) {
       if (expected !== activity.draft.contentRevision) throw new Error("draft_conflict");
-      const kind: ActivityRun["kind"] = module?.audio
-        ? "audio"
-        : module?.image
-          ? "image"
-          : module?.mediaText
-            ? "media-text"
-            : module
-              ? "module"
-              : "spec";
+      if (module?.assessment) assessmentInputs.push(module.assessment);
+      const kind: ActivityRun["kind"] = module?.assessment
+        ? "assessment"
+        : module?.audio
+          ? "audio"
+          : module?.image
+            ? "image"
+            : module?.mediaText
+              ? "media-text"
+              : module
+                ? "module"
+                : "spec";
       const run = {
         kind,
         runId: `run_${runs.length + 1}`,
@@ -162,6 +182,11 @@ function world(
       asset(run.image!.language, run.image!.assetKey).path = `${runId}.png`;
       bump();
     },
+    async acceptAssessment(_p: string, _a: string, runId: string, expected: string) {
+      if (expected !== activity.draft.contentRevision) throw new Error("draft_conflict");
+      accepted.push(runId);
+      bump();
+    },
     async acceptMediaText(_p: string, _a: string, runId: string, expected: string) {
       if (expected !== activity.draft.contentRevision) throw new Error("draft_conflict");
       const run = runs.find((item) => item.runId === runId)! as ActivityRun & {
@@ -186,6 +211,9 @@ function world(
     async getActivity() {
       return structuredClone(activity);
     },
+    isCanonicalRef() {
+      return options.canonical ?? true;
+    },
     async planMedia(_p: string, _a: string, expected: string) {
       if (expected !== activity.draft.contentRevision) throw new Error("draft_conflict");
       plans++;
@@ -201,12 +229,24 @@ function world(
   const runner = new PipelineRunner({
     generation,
     activities,
+    currentAssessment: async () => ({ items: ["current"] }),
     // Yield to the timer queue, as a real wait does, so a held run cannot starve the test.
     pause: () => new Promise((resolve) => setImmediate(resolve)),
     now: () => "2026-09-23T12:00:00Z",
     newId: () => "pipeline_1",
   });
-  return { runner, activity, runs, started, cancelled, plans: () => plans, generation, asset };
+  return {
+    runner,
+    activity,
+    runs,
+    started,
+    cancelled,
+    plans: () => plans,
+    generation,
+    asset,
+    accepted,
+    assessmentInputs,
+  };
 }
 
 describe("running the stages", () => {
@@ -214,6 +254,7 @@ describe("running the stages", () => {
     const w = world();
     const { state, done } = w.runner.start("proj", "act", { selection: "all", agentId: "agent" });
     expect(state.steps.map((step) => step.status)).toEqual([
+      "pending",
       "pending",
       "pending",
       "pending",
@@ -230,6 +271,7 @@ describe("running the stages", () => {
       ["translations", "skipped"],
       ["speech", "succeeded"],
       ["images", "succeeded"],
+      ["assessment", "skipped"],
       ["module", "succeeded"],
     ]);
     expect(w.started).toEqual([
@@ -268,6 +310,7 @@ describe("running the stages", () => {
       "succeeded",
       "skipped",
       "failed",
+      "cancelled",
       "cancelled",
       "cancelled",
     ]);
@@ -321,6 +364,7 @@ describe("running the stages", () => {
     expect(final.status).toBe("cancelled");
     expect(final.error).toBeNull();
     expect(final.steps.map((step) => step.status)).toEqual([
+      "cancelled",
       "cancelled",
       "cancelled",
       "cancelled",
@@ -412,6 +456,52 @@ describe("running the stages", () => {
       ["en-US", "Fenrir"],
       ["es-MX", "Puck"],
     ]);
+  });
+
+  it("writes and accepts the assessment when the specification uses one, handing it the current one", async () => {
+    const w = world({ usesAssessment: true });
+    await w.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    const final = w.runner.status("act")!;
+    expect(final.status).toBe("succeeded");
+    expect(final.steps.find((step) => step.step === "assessment")).toMatchObject({
+      status: "succeeded",
+      note: null,
+      runIds: ["run_5"],
+    });
+    expect(w.started).toEqual([
+      "spec",
+      "audio:en-US:hello",
+      "audio:es-MX:hello",
+      "image:en-US:cat",
+      "assessment",
+      "module",
+    ]);
+    expect(w.accepted).toEqual(["run_5"]);
+    expect(w.assessmentInputs).toEqual([{ current: { items: ["current"] } }]);
+  });
+
+  it("skips the assessment with a worded note when it is unused or the ref does not own it", async () => {
+    const unused = world({ usesAssessment: false });
+    await unused.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    expect(
+      unused.runner.status("act")!.steps.find((step) => step.step === "assessment"),
+    ).toMatchObject({ status: "skipped", note: "noAssessment" });
+    const shared = world({ usesAssessment: true, canonical: false });
+    await shared.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    expect(
+      shared.runner.status("act")!.steps.find((step) => step.step === "assessment"),
+    ).toMatchObject({ status: "skipped", note: "notCanonical" });
+    expect(shared.accepted).toEqual([]);
+    expect(shared.started).not.toContain("assessment");
+  });
+
+  it("stops at a failed assessment run with its own reason", async () => {
+    const w = world({ usesAssessment: true, fail: "assessment" });
+    await w.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    const final = w.runner.status("act")!;
+    expect(final.status).toBe("failed");
+    expect(final.error).toBe("assessment broke");
+    expect(final.steps.at(-1)!.status).toBe("cancelled");
   });
 
   it("limits targets to the scope's language and asset", () => {

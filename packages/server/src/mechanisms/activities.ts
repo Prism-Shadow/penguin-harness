@@ -38,6 +38,11 @@ export abstract class ActivityGeneration extends Interface<{
       mediaText?: { language: string; assetKey: string; translate?: boolean };
       /** An assist run: the author's first message and what they had open. */
       assist?: { message: string; focus: AssistFocus | null };
+      /**
+       * An assessment run on the canonical ref of a specification that uses one, given the
+       * assessment in effect now (the author's edit, else the module's own; null for none).
+       */
+      assessment?: { current: Record<string, unknown> | null };
     },
     /** Run on an external coding agent instead of the Penguin agent `agentId` names. */
     runtime?: { codingAgentId?: string },
@@ -71,6 +76,13 @@ export abstract class ActivityGeneration extends Interface<{
     expectedRevision: string,
   ): Promise<ActivityDraft>;
   acceptMediaText(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
+  /** Keep a successful assessment run's candidate as the product's assessment edit. */
+  acceptAssessment(
     projectId: string,
     activityId: string,
     runId: string,
