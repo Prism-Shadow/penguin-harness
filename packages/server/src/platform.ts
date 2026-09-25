@@ -104,6 +104,7 @@ import { ActivityService } from "./activities/service.js";
 import { ActivityRoutes } from "./activities/routes.js";
 import { ActivitySandboxService } from "./activities/sandbox-service.js";
 import { ActivityPipelineService } from "./activities/pipeline-run.js";
+import { ActivityVersionService, ActivityVersions } from "./activities/version-service.js";
 import { ActivityPlayRoutes } from "./activities/play-routes.js";
 import { ActivityGenerationService } from "./activities/generation.js";
 import { ActivityAuthoring, ActivityGeneration } from "./mechanisms/activities.js";
@@ -366,10 +367,11 @@ export class CodingAgentsModule {}
     ActivityGenerationService,
     ActivitySandboxService,
     ActivityPipelineService,
+    ActivityVersionService,
     ActivityRoutes,
     ActivityPlayRoutes,
   ],
-  exports: [ActivityAuthoring, ActivityGeneration],
+  exports: [ActivityAuthoring, ActivityGeneration, ActivityVersions],
 })
 export class ActivitiesModule {}
 

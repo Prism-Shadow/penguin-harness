@@ -1,8 +1,8 @@
 /**
  * Review of specification edits before they are saved. The raw JSON box stays the thing
  * an author types into; this is the reading of it, against the specification currently
- * saved. A draft has no version history, so that is the only base there is, and it is
- * the one the save decision is actually about.
+ * saved. That is the base the save decision is actually about; saved versions are listed in
+ * the History.
  */
 import { useMemo, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";

@@ -1250,6 +1250,13 @@ export class ActivityService implements ActivityAuthoring {
       copied.add(asset.path!);
     }
   }
+  async exclusive<T>(
+    projectId: string,
+    activityId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.projectWork.run(projectId, () => this.locks.run(activityId, operation));
+  }
   private async change(
     projectId: string,
     activityId: string,

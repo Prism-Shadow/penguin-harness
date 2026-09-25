@@ -356,4 +356,10 @@ export abstract class ActivityAuthoring extends Interface<{
     activityId: string,
     draftId: string,
   ): string;
+  /**
+   * Run `operation` while no other change to this activity's draft or files can start, as the
+   * project's activity work. Not re-entrant: `operation` must not call a method that changes
+   * the same activity.
+   */
+  exclusive<T>(projectId: string, activityId: string, operation: () => Promise<T>): Promise<T>;
 }>() {}

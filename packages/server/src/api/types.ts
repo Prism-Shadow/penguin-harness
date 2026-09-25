@@ -4863,6 +4863,12 @@ export type {
 export type { ReadinessCheck, ReadinessLevel } from "../activities/readiness-types.js";
 export type { VoiceOption } from "../activities/voice-catalogue.js";
 export type {
+  VersionKind,
+  VersionReason,
+  VersionSaveResult,
+  VersionSummary,
+} from "../activities/version-types.js";
+export type {
   RefAssetAction,
   RefAssetDecision,
   RefNumberSuggestion,

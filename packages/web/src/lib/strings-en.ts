@@ -187,6 +187,43 @@ export const en: Strings = {
       tooMany: "A product can have at most 20 tags.",
       invalid: "A tag cannot contain control characters.",
     },
+    versions: {
+      title: "Versions",
+      about:
+        "A version keeps the activity as it is when you save it: the script, the specification, the media plan, edited module documents, the implementation features, and a copy of every generated or uploaded media file. Saving again without a change keeps the latest version instead of making a new one.",
+      aboutMedia:
+        "Media in the WAF checkout is not copied: a version records its path only, so it shows whatever the checkout holds.",
+      save: "Save version",
+      saving: "Saving…",
+      saveTitle: "Save a version",
+      name: "Name",
+      nameHint: "Optional, up to 80 characters.",
+      nameTooLong: (max: number) => `A name can be at most ${max} characters.`,
+      saved: (seq: number) => `Saved version v${seq}.`,
+      unchanged: (seq: number) => `Nothing changed since v${seq}, so no new version was saved.`,
+      loading: "Loading versions…",
+      empty: "No versions yet. Save one to keep the activity as it is now.",
+      loadFailed: "Could not load the versions.",
+      number: (seq: number) => `v${seq}`,
+      unnamed: "Unnamed",
+      noMedia: "None",
+      noAuthor: "Penguin",
+      current: "Current",
+      columns: {
+        version: "Version",
+        name: "Name",
+        kind: "Kind",
+        created: "Created",
+        author: "By",
+        media: "Media",
+        current: "Draft",
+      },
+      kinds: { manual: "Saved", auto: "Automatic", restore: "Restore", deploy: "Deploy" },
+      reasons: {
+        before_restore: "Before a restore",
+        before_proposal: "Before an agent's proposal",
+      },
+    },
     createRef: {
       title: "New ref from this template",
       about:
@@ -813,7 +850,7 @@ export const en: Strings = {
     diffHide: "Hide changes",
     diffTitle: "Changes since the last save",
     diffHelp:
-      "A draft specification has no version history, so the comparison is always against the specification currently saved.",
+      "The comparison is always against the specification currently saved. Saved versions are listed in the Generation History.",
     diffNone: "No changes since the last save.",
     diffStats: (added: number, removed: number, regions: number) =>
       `+${added} −${removed} in ${regions} ${regions === 1 ? "region" : "regions"}`,
@@ -5491,6 +5528,10 @@ Scenarios:
       already_compacted:
         "The context was just compacted and nothing has been said since — no need to compact again.",
       version_conflict: "The snapshot's version is not newer than the current one.",
+      version_media_changed:
+        "A generated or uploaded file changed since it was made. Generate or upload it again before saving a version.",
+      version_media_missing:
+        "A generated or uploaded file is missing. Generate or upload it again before saving a version.",
       invalid_title: "The title is invalid.",
       invalid_proxy_url:
         "Invalid proxy address — use an http(s):// or socks5:// proxy URL, or host[:port].",

@@ -1855,6 +1855,7 @@ function ActivityEditor({
                         );
                     })
                   }
+                  onAnnounce={announce}
                   onUseCandidate={(candidate) => {
                     if (!dirty || window.confirm(S.activities.discard)) {
                       setSpec(candidate);

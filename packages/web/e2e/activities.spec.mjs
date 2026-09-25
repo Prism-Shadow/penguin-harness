@@ -4816,3 +4816,91 @@ test("switches the studio to the Reviewing layout and saves a layout of its own"
   await expect(item("Audio pass")).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });
+
+test("saves a named version and lists it", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  // The version routes, with the server's rules: saving without a change since the latest
+  // version returns that version, and a changed script makes the next one.
+  const versions = [];
+  const saves = [];
+  let changed = true;
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (url.pathname === `${base}/act_test/description` && request.method() === "PATCH") {
+      changed = true;
+      for (const version of versions) version.current = false;
+      return route.fallback();
+    }
+    if (url.pathname !== `${base}/act_test/versions`) return route.fallback();
+    if (request.method() === "GET") return json({ versions: [...versions].reverse() });
+    const body = request.postDataJSON();
+    saves.push(body);
+    if (!changed && versions.length) return json({ version: versions.at(-1), created: false });
+    changed = false;
+    for (const version of versions) version.current = false;
+    const seq = versions.length + 1;
+    versions.push({
+      versionId: `ver_${seq}`,
+      seq,
+      label: body.label,
+      kind: "manual",
+      reason: null,
+      createdAt: "2026-09-25T10:00:00.000Z",
+      author: "author",
+      mediaBytes: seq === 1 ? 0 : 2048,
+      current: true,
+      deployed: { qa: null, prod: null },
+    });
+    return json({ version: versions.at(-1), created: true }, 201);
+  });
+  await openSection(page, "Generation history");
+  await expect(page.getByRole("heading", { name: "Versions" })).toBeVisible();
+  await expect(page.getByText(/^No versions yet/)).toBeVisible();
+
+  // Save one with a name.
+  await page.getByRole("button", { name: "Save version", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Save a version", exact: true });
+  await dialog.getByRole("textbox", { name: /^Name/ }).fill("  Before review  ");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved version v1.", { exact: true })).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  expect(saves).toEqual([{ label: "Before review" }]);
+  const first = page.getByRole("row", { name: /^v1\b/ });
+  await expect(first).toContainText("Before review");
+  await expect(first).toContainText("Saved");
+  await expect(first).toContainText("author");
+  await expect(first).toContainText("None");
+  await expect(first).toContainText("Current");
+
+  // Saving again with nothing changed keeps v1 and says so.
+  await page.getByRole("button", { name: "Save version", exact: true }).click();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByText("Nothing changed since v1, so no new version was saved.", { exact: true }),
+  ).toBeVisible();
+  expect(saves.at(-1)).toEqual({ label: null });
+  await expect(page.getByRole("row", { name: /^v\d/ })).toHaveCount(1);
+
+  // A changed script leaves v1 behind; the next save is v2 and is the current one.
+  await openSection(page, "Description");
+  await page
+    .getByRole("textbox", { name: "Activity Script", exact: true })
+    .fill("A changed script");
+  await page.getByRole("button", { name: "Save script", exact: true }).click();
+  await openSection(page, "Generation history");
+  await expect(page.getByRole("row", { name: /^v1\b/ })).not.toContainText("Current");
+  await page.getByRole("button", { name: "Save version", exact: true }).click();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved version v2.", { exact: true })).toBeVisible();
+  const rows = page.getByRole("row", { name: /^v\d/ });
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("v2");
+  await expect(rows.first()).toContainText("Unnamed");
+  await expect(rows.first()).toContainText("2.0 KB");
+  await expect(rows.first()).toContainText("Current");
+  expect(f.errors).toEqual([]);
+});

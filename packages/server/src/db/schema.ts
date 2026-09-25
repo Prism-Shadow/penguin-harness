@@ -339,6 +339,29 @@ status TEXT NOT NULL CHECK (status IN ('draft', 'valid', 'invalid')),
 updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_activity_drafts_activity ON activity_drafts(activity_id, updated_at);
+-- Saved versions of an activity; their files are content-addressed blobs in the
+-- activity's versions/blobs directory, not rows.
+CREATE TABLE IF NOT EXISTS activity_versions (
+version_id TEXT PRIMARY KEY,
+activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+seq INTEGER NOT NULL,
+label TEXT,
+kind TEXT NOT NULL CHECK (kind IN ('manual', 'auto', 'restore', 'deploy')),
+-- Why an automatic version was kept: 'before_restore' or 'before_proposal'.
+reason TEXT,
+-- SHA-256 of the canonical version manifest, which is also the manifest blob's name.
+content_hash TEXT NOT NULL,
+manifest_sha TEXT NOT NULL,
+media_bytes INTEGER NOT NULL,
+module_run_id TEXT,
+source_version_id TEXT,
+author_user_id TEXT,
+deployed_qa_at TEXT,
+deployed_prod_at TEXT,
+created_at TEXT NOT NULL,
+UNIQUE (activity_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_activity_versions_activity ON activity_versions(activity_id, seq);
 CREATE TABLE IF NOT EXISTS activity_runs (
 run_id TEXT PRIMARY KEY,
 project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,

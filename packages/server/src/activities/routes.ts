@@ -19,6 +19,7 @@ import { UPLOAD_MAX_BYTES } from "./upload.js";
 import { BUNDLE_FILE_NAME, BUNDLE_MAX_ITEMS } from "./media-bundle.js";
 import type { BundleItem } from "./media-library-types.js";
 import { ActivityPipelines, parseSelection } from "./pipeline-run.js";
+import { ActivityVersions, VERSION_LABEL_MAX } from "./version-service.js";
 import { parseRefDecisions } from "./ref-template.js";
 import {
   badRequest,
@@ -68,6 +69,7 @@ export class ActivityRoutes {
   @Use() private readonly generation!: ActivityGeneration;
   @Use() private readonly sandbox!: ActivitySandbox;
   @Use() private readonly pipelines!: ActivityPipelines;
+  @Use() private readonly versions!: ActivityVersions;
   @Use() private readonly config!: Config;
   @Bind("activities") routes!: Hono<AppEnv>;
 
@@ -720,6 +722,31 @@ export class ActivityRoutes {
       return c.json(
         await this.activities.changeRefNum(projectId, activityId, body.refNum, expectedRevision),
       );
+    });
+    // Saved versions: any member may list them; saving one needs the owner (the guard above).
+    app.get("/:activityId/versions", async (c) =>
+      c.json({
+        versions: await this.versions.list(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+        ),
+      }),
+    );
+    app.post("/:activityId/versions", async (c) => {
+      const body = await readJson(c);
+      const label =
+        body.label === null
+          ? null
+          : (optionalString(body, "label", { maxLen: VERSION_LABEL_MAX })?.trim() ?? null);
+      if (label && /[\u0000-\u001f\u007f]/.test(label))
+        throw badRequest("label cannot contain control characters.");
+      const result = await this.versions.save(
+        requireValidId(c, "projectId"),
+        pathParam(c, "activityId"),
+        { label, kind: "manual", author: c.var.user.userId },
+      );
+      // 201 when this save made a version; 200 when nothing changed and the latest is returned.
+      return c.json(result, result.created ? 201 : 200);
     });
     // The product's tags, reached through any of its refs; every ref lists the same ones.
     app.put("/:activityId/tags", async (c) => {

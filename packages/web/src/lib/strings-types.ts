@@ -174,6 +174,39 @@ export type Strings = {
       tooMany: string;
       invalid: string;
     };
+    /** Saved versions of the activity, listed in its History. */
+    versions: {
+      title: string;
+      about: string;
+      aboutMedia: string;
+      save: string;
+      saving: string;
+      saveTitle: string;
+      name: string;
+      nameHint: string;
+      nameTooLong: (max: number) => string;
+      saved: (seq: number) => string;
+      unchanged: (seq: number) => string;
+      loading: string;
+      empty: string;
+      loadFailed: string;
+      number: (seq: number) => string;
+      unnamed: string;
+      noMedia: string;
+      noAuthor: string;
+      current: string;
+      columns: {
+        version: string;
+        name: string;
+        kind: string;
+        created: string;
+        author: string;
+        media: string;
+        current: string;
+      };
+      kinds: { manual: string; auto: string; restore: string; deploy: string };
+      reasons: { before_restore: string; before_proposal: string };
+    };
     /** A new ref made from the product's template ref, deciding about each of its assets. */
     createRef: {
       title: string;
@@ -3603,6 +3636,8 @@ export type Strings = {
       nothing_to_compact: string;
       already_compacted: string;
       version_conflict: string;
+      version_media_changed: string;
+      version_media_missing: string;
       invalid_title: string;
       invalid_proxy_url: string;
       invalid_attachment_limit: string;
