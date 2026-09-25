@@ -1845,6 +1845,42 @@ describe("organization runtime", () => {
       ).toBeUndefined();
     });
 
+    it("holds a blocking ticket's by principal to the chart: a shape-valid id that names nobody is refused", async () => {
+      const t = await service.createTicket(P, ORG, { title: "Launch" }, { userId: "alice" });
+      // A principal that names no employee, or a person outside the Project, is refused
+      // instead of landing on the digest and the board as an unanswerable "(by …)".
+      await expect(
+        service.blockTicket(P, ORG, t.ticketId, "waiting", "agent:acme_ghost", {
+          userId: "alice",
+        }),
+      ).rejects.toMatchObject({ status: 400, code: "invalid_principal" });
+      await expect(
+        service.blockTicket(P, ORG, t.ticketId, "waiting", "user:stranger", { userId: "alice" }),
+      ).rejects.toMatchObject({ status: 400, code: "invalid_principal" });
+      // Real employees and Project members keep working, and a blocking ticket id needs
+      // no principal check at all.
+      await service.blockTicket(P, ORG, t.ticketId, "waiting on review", `agent:${CEO}`, {
+        userId: "alice",
+      });
+      expect((await service.ticket(P, ORG, t.ticketId)).blockedBy).toBe(`agent:${CEO}`);
+      await service.unblockTicket(P, ORG, t.ticketId, { userId: "alice" });
+      await service.blockTicket(P, ORG, t.ticketId, "waiting on review", "user:alice", {
+        userId: "alice",
+      });
+      expect((await service.ticket(P, ORG, t.ticketId)).blockedBy).toBe("user:alice");
+      const blocker = await service.createTicket(
+        P,
+        ORG,
+        { title: "The blocker" },
+        { userId: "alice" },
+      );
+      await service.unblockTicket(P, ORG, t.ticketId, { userId: "alice" });
+      await service.blockTicket(P, ORG, t.ticketId, "waiting for it", blocker.ticketId, {
+        userId: "alice",
+      });
+      expect((await service.ticket(P, ORG, t.ticketId)).blockedBy).toBe(blocker.ticketId);
+    });
+
     it("reports a `# Ticket:` file as an invalid file: listed nowhere, refused on write, never rewritten", async () => {
       const valid = await service.createTicket(
         P,
