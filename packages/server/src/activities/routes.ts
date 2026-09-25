@@ -1,6 +1,7 @@
 import { ASSIST_MESSAGE_MAX, parseAssistFocus } from "./assist.js";
 import { ACTIVITY_LANGUAGES, DEFAULT_LANGUAGE_CODE } from "./languages.js";
 import { HttpError } from "../http/errors.js";
+import { isValidId } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Hono } from "hono";
 import { Hono as HonoApp } from "hono";
@@ -13,7 +14,6 @@ import { hostOnly, requestAuthority, resolvePreviewTarget } from "../services/pr
 import { playBase } from "./play-routes.js";
 import { requestOrigin } from "../http/routes/model-oauth.js";
 import { findWafRoot } from "./waf-module.js";
-import { SPEECH_CATALOGUE, SPEECH_MODEL, SPEECH_VOICES } from "./voice-catalogue.js";
 import { IMAGE_MODEL } from "./generated-image.js";
 import { audioMimeType } from "./sound.js";
 import { UPLOAD_MAX_BYTES } from "./upload.js";
@@ -231,18 +231,18 @@ export class ActivityRoutes {
         202,
       );
     });
-    app.get("/speech-setup", (c) =>
-      c.json({
-        provider: "Gemini",
-        model: SPEECH_MODEL,
-        voices: SPEECH_VOICES,
-        catalogue: SPEECH_CATALOGUE,
-        vaultKey: "GEMINI_API_KEY",
-      }),
-    );
+    // With an agent, also which speech providers its Vault has keys for.
+    app.get("/speech-setup", async (c) => {
+      const agentId = c.req.query("agentId");
+      // An id, checked before it names a path, like every other agent id.
+      if (agentId !== undefined && (!agentId || agentId.length > 128 || !isValidId(agentId)))
+        throw badRequest("agentId must be an id of 1-128 letters, digits, _ or -.");
+      return c.json(await this.generation.speechSetup(requireValidId(c, "projectId"), agentId));
+    });
     app.get("/sound-setup", async (c) => {
       const agentId = c.req.query("agentId") ?? "";
-      if (!agentId || agentId.length > 128) throw badRequest("agentId is required.");
+      if (!agentId || agentId.length > 128 || !isValidId(agentId))
+        throw badRequest("agentId must be an id of 1-128 letters, digits, _ or -.");
       return c.json(await this.generation.soundSetup(requireValidId(c, "projectId"), agentId));
     });
     app.get("/image-setup", (c) =>
@@ -602,6 +602,9 @@ export class ActivityRoutes {
     });
     app.post("/:activityId/generate-audio", async (c) => {
       const body = await readJson(c);
+      // Absent: the narration's own provider, else Gemini; that provider's default model.
+      const provider = optionalString(body, "provider", { minLen: 1, maxLen: 32 });
+      const model = optionalString(body, "model", { minLen: 1, maxLen: 64 });
       return c.json(
         await this.generation.start(
           requireValidId(c, "projectId"),
@@ -613,6 +616,8 @@ export class ActivityRoutes {
               language: requireString(body, "language", { minLen: 5, maxLen: 5 }),
               assetKey: requireString(body, "assetKey", { minLen: 1, maxLen: 128 }),
               voice: requireString(body, "voice", { minLen: 1, maxLen: 128 }),
+              ...(provider ? { provider } : {}),
+              ...(model ? { model } : {}),
             },
           },
         ),

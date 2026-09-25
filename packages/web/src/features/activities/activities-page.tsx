@@ -13,6 +13,9 @@ import type {
   SoundProviderId,
   SoundProviderStatus,
   SoundSetup,
+  SpeechProviderId,
+  SpeechProviderStatus,
+  SpeechSetup,
   UploadedMedia,
   VoiceOption,
 } from "@prismshadow/penguin-server/api";
@@ -77,7 +80,14 @@ import { latestModuleRun } from "./preview";
 import { ActivityList } from "./activity-list";
 import { ProjectMediaView } from "./project-media-view";
 import { pushRecent, readRecent } from "./recent-activities";
-import { applyVoice, optionsFromVoices, voiceFor } from "./voice-catalogue";
+import { applyVoice, optionsFromVoices } from "./voice-catalogue";
+import {
+  applyProvider,
+  isElevenLabsVoiceId,
+  sharedProvider,
+  speechChoice,
+  wordCatalogue,
+} from "./speech-provider";
 
 const basePath = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/activities`;
 const pretty = (value: unknown) => (value ? JSON.stringify(value, null, 2) : "");
@@ -431,21 +441,6 @@ function ActivityEditor({
   useEffect(() => {
     if (!available || !editable) return;
     let cancelled = false;
-    void apiFetch<{ voices: string[]; model?: string; catalogue?: VoiceOption[] }>(
-      `${basePath(projectId)}/speech-setup`,
-    )
-      .then((value) => {
-        // An older server sends the bare names only.
-        if (!cancelled)
-          setVoiceOptions(
-            Array.isArray(value.catalogue)
-              ? value.catalogue
-              : optionsFromVoices(value.voices, value.model),
-          );
-      })
-      .catch((e) => {
-        if (!cancelled) setError(apiErrorText(e));
-      });
     void loadUploads();
     void apiFetch<{ wafRoot: string | null }>(`${basePath(projectId)}/module-setup`)
       .then((value) => {
@@ -645,6 +640,42 @@ function ActivityEditor({
     soundSetup && !codingAgentId && soundSetup.agentId === selectedAgent
       ? soundSetup.providers
       : null;
+  // The voices, and with a Penguin agent chosen, which speech providers its Vault has keys
+  // for and whether it names a default ElevenLabs voice.
+  const speechAgent = selectedAgent && !codingAgentId ? selectedAgent : "";
+  const [speechSetup, setSpeechSetup] = useState<{
+    agentId: string;
+    providers: SpeechProviderStatus[] | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!available || !editable) return;
+    let cancelled = false;
+    void apiFetch<Partial<SpeechSetup> & { voices: string[] }>(
+      `${basePath(projectId)}/speech-setup${
+        speechAgent ? `?${new URLSearchParams({ agentId: speechAgent })}` : ""
+      }`,
+    )
+      .then((value) => {
+        if (cancelled) return;
+        // An older server sends the bare names only.
+        setVoiceOptions(
+          Array.isArray(value.catalogue)
+            ? wordCatalogue(value.catalogue)
+            : optionsFromVoices(value.voices, value.model),
+        );
+        setSpeechSetup({ agentId: speechAgent, providers: value.providers ?? null });
+      })
+      .catch((e) => {
+        if (!cancelled) setError(apiErrorText(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, available, editable, speechAgent]);
+  const speechProviders =
+    speechSetup && speechAgent && speechSetup.agentId === speechAgent
+      ? speechSetup.providers
+      : null;
   const running = runs.some((run) => run.status === "running");
   const pipelineRunning = pipeline?.status === "running";
   // The script saves itself a few seconds after typing stops, and holds off while
@@ -739,8 +770,9 @@ function ActivityEditor({
             expectedRevision: detail.draft.contentRevision,
             language: speechQueue!.language,
             assetKey: next,
-            // A narration speaks in its own saved voice; the queue's voice fills the rest.
-            voice: voiceFor(
+            // A narration speaks with its own provider and saved voice; the queue's voice
+            // fills the rest where that provider speaks with it.
+            ...speechChoice(
               detail.draft.mediaPlan?.manifest.assets[speechQueue!.language]?.find(
                 (asset) => asset.key === next,
               ),
@@ -1351,10 +1383,11 @@ function ActivityEditor({
           voices={voiceOptions}
           defaultVoice={bulkVoice}
           onChange={(value) => setMedia(pretty(value))}
-          onGenerateAudio={(lang, assetKey, voice) =>
-            startRun("generate-audio", { language: lang, assetKey, voice })
+          onGenerateAudio={(lang, assetKey, voice, provider) =>
+            startRun("generate-audio", { language: lang, assetKey, voice, provider })
           }
           soundProviders={soundProviders}
+          speechProviders={speechProviders}
           onGenerateSound={(lang, assetKey, provider, model) =>
             startRun("generate-sound", {
               language: lang,
@@ -1606,9 +1639,33 @@ function ActivityEditor({
                   voice={bulkVoice}
                   onVoice={setBulkVoice}
                   voiceDisabled={busy || !available || running || pipelineRunning}
+                  speechProviders={speechProviders}
+                  onApplyProviderToAll={(provider: SpeechProviderId) => {
+                    const updated = structuredClone(editedManifest);
+                    const count = applyProvider(
+                      updated.assets[language] ?? [],
+                      provider,
+                      voiceOptions,
+                    );
+                    if (!count) return;
+                    setMedia(pretty(updated));
+                    void save("media", true, updated).then((ok) => {
+                      if (ok && alive.current)
+                        announce({
+                          kind: "success",
+                          text: S.activities.speechProvider.applied(count),
+                        });
+                    });
+                  }}
                   onApplyVoiceToAll={(voice) => {
                     const updated = structuredClone(editedManifest);
-                    const count = applyVoice(updated.assets[language] ?? [], voice);
+                    const group = updated.assets[language] ?? [];
+                    // A voice belongs to one provider, which comes with it.
+                    const owner =
+                      voiceOptions.find((option) => option.id === voice)?.providerId ??
+                      (isElevenLabsVoiceId(voice) ? "elevenlabs" : "gemini");
+                    if (sharedProvider(group) !== owner) applyProvider(group, owner, voiceOptions);
+                    const count = applyVoice(group, voice);
                     if (!count) return;
                     // The choice shows at once and stays in the editor if the save fails.
                     setMedia(pretty(updated));
@@ -1667,7 +1724,7 @@ function ActivityEditor({
                     startRun("generate-audio", {
                       language,
                       assetKey: key,
-                      voice: voiceFor(
+                      ...speechChoice(
                         editedManifest.assets[language]?.find((asset) => asset.key === key),
                         voiceOptions,
                         bulkVoice,

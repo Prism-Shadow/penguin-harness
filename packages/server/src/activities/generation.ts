@@ -18,11 +18,29 @@ import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 import { HttpError } from "../http/errors.js";
 import { ActivityLocks, atomicJson } from "./service.js";
-import { AUDIO_MAX_BYTES, audioTarget, audioPrompt, type AudioResult } from "./audio.js";
+import {
+  AUDIO_MAX_BYTES,
+  SPEECH_OUTPUT_FILES,
+  SPEECH_TIMINGS_FILE,
+  audioTarget,
+  speechPrompt,
+  speechProviderOf,
+  type AudioResult,
+  type AudioTarget,
+} from "./audio.js";
 import { SOUND_OUTPUT_FILES, soundPrompt, soundTarget } from "./sound.js";
 import { AGENTHUB_VERSION, SoundModelPorts } from "./sound-models.js";
-import { soundProviderFor, soundSetup } from "./audio-providers.js";
+import { soundProviderFor, soundSetup, speechProviderFor, speechSetup } from "./audio-providers.js";
 import type { SoundFormat, SoundSetup } from "./sound-types.js";
+import type { SpeechSetup } from "./speech-types.js";
+import {
+  ELEVENLABS_DEFAULT_VOICE,
+  ELEVENLABS_VOICE_KEY,
+  SPEECH_MODEL,
+  SPEECH_VOICES,
+  speechCatalogue,
+} from "./voice-catalogue.js";
+import { alignmentProblems, normalizeAlignment } from "./word-timings.js";
 import { readArtifactBytes } from "./artifact.js";
 import { soundPromptOf } from "./playback.js";
 import {
@@ -122,6 +140,62 @@ async function soundOutputFormat(workspace: string, expected: SoundFormat): Prom
     );
   return expected;
 }
+/**
+ * The clip a speech run must collect: its provider's file. The other provider's file being
+ * present fails the run, as for sounds, so a clip the chosen provider did not make is never
+ * bound as its recording.
+ */
+async function speechOutputFile(workspace: string, target: AudioTarget): Promise<string> {
+  const provider = speechProviderOf(target);
+  const other = SPEECH_OUTPUT_FILES[provider === "gemini" ? "elevenlabs" : "gemini"];
+  const stray = await fs
+    .lstat(path.join(workspace, other))
+    .then(() => true)
+    .catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    });
+  if (stray)
+    throw new Error(
+      `The speech run wrote ${other}, but its provider returns ${SPEECH_OUTPUT_FILES[provider]}.`,
+    );
+  return SPEECH_OUTPUT_FILES[provider];
+}
+
+/** Word timings are small; a sidecar past this is not one. */
+const SPEECH_TIMINGS_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * The word timings a speech helper wrote beside its clip, checked against the script it
+ * spoke, or undefined when it wrote none (a provider without timestamps). Timings that do
+ * not fit the script fail the run rather than bind a read-along that highlights the wrong
+ * words.
+ */
+async function speechTimings(workspace: string, script: string) {
+  let text: string;
+  try {
+    text = (
+      await readArtifactBytes(path.join(workspace, SPEECH_TIMINGS_FILE), SPEECH_TIMINGS_MAX_BYTES)
+    ).toString("utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`${SPEECH_TIMINGS_FILE} is not JSON.`);
+  }
+  if (!Array.isArray(parsed)) throw new Error(`${SPEECH_TIMINGS_FILE} must be a list of timings.`);
+  const timings = normalizeAlignment(script, parsed);
+  if (!timings)
+    throw new Error(
+      `The provider's word timings do not fit the script: ${alignmentProblems(script, parsed)[0]}`,
+    );
+  return timings;
+}
+
 interface Observer {
   unsubscribe: () => void;
   completed: boolean;
@@ -329,6 +403,24 @@ export class ActivityGenerationService implements ActivityGeneration {
     return { providers: soundSetup(keys, this.soundModels.agenthubModels) };
   }
 
+  /**
+   * The voices and speech providers the picker offers. With an agent, which providers its
+   * Vault has keys for and whether it names a default ElevenLabs voice: key names only, a
+   * value is never read.
+   */
+  async speechSetup(projectId: string, agentId?: string): Promise<SpeechSetup> {
+    const base = {
+      provider: "Gemini",
+      model: SPEECH_MODEL,
+      voices: SPEECH_VOICES,
+      vaultKey: "GEMINI_API_KEY",
+    };
+    if (!agentId) return { ...base, catalogue: speechCatalogue(null) };
+    await this.agents.requireExists(projectId, agentId);
+    const keys = (await this.agents.getVault(projectId, agentId)).entries.map((entry) => entry.key);
+    return { ...base, catalogue: speechCatalogue(keys), providers: speechSetup(keys) };
+  }
+
   async candidate(projectId: string, activityId: string, runId: string): Promise<string | null> {
     return (await this.getRun(projectId, activityId, runId)).candidate;
   }
@@ -341,7 +433,13 @@ export class ActivityGenerationService implements ActivityGeneration {
     module?: {
       wafRoot?: string;
       bookMode?: string;
-      audio?: { language: string; assetKey: string; voice: string };
+      audio?: {
+        language: string;
+        assetKey: string;
+        voice: string;
+        provider?: string;
+        model?: string;
+      };
       sound?: { language: string; assetKey: string; provider: string; model?: string };
       image?: { language: string; assetKey: string };
       mediaText?: { language: string; assetKey: string };
@@ -495,16 +593,41 @@ export class ActivityGenerationService implements ActivityGeneration {
           await this.agents.requireExists(projectId, owner);
           if (
             !codingAgentId &&
-            (audio || image) &&
+            image &&
             !(await this.agents.getVault(projectId, agentId)).entries.some(
               (entry) => entry.key === "GEMINI_API_KEY",
             )
           )
             throw new HttpError(
               400,
-              image ? "image_credential_missing" : "speech_credential_missing",
-              `Add GEMINI_API_KEY to the selected Agent's Vault before generating ${image ? "an image" : "speech"}.`,
+              "image_credential_missing",
+              "Add GEMINI_API_KEY to the selected Agent's Vault before generating an image.",
             );
+          if (audio) {
+            const keys = (await this.agents.getVault(projectId, agentId)).entries.map(
+              (entry) => entry.key,
+            );
+            // The provider the run names is honoured strictly: without its key the run is
+            // refused, naming the key, and never spoken by another provider instead.
+            const choice = speechProviderFor({ speechProvider: speechProviderOf(audio) }, keys);
+            if ("problem" in choice) {
+              const credential = "credential" in choice ? choice.credential : undefined;
+              // The key travels as data too, so the App names it in its own words.
+              throw new HttpError(
+                400,
+                "speech_credential_missing",
+                `Add ${credential ?? "the provider's key"} to the selected Agent's Vault before generating speech.`,
+                undefined,
+                credential ? { credential } : undefined,
+              );
+            }
+            if (audio.voice === ELEVENLABS_DEFAULT_VOICE && !keys.includes(ELEVENLABS_VOICE_KEY))
+              throw new HttpError(
+                400,
+                "speech_voice_missing",
+                `Add ${ELEVENLABS_VOICE_KEY} to the selected Agent's Vault, or type an ElevenLabs voice id, before generating speech.`,
+              );
+          }
           if (sound) {
             const keys = (await this.agents.getVault(projectId, agentId)).entries.map(
               (entry) => entry.key,
@@ -667,10 +790,14 @@ export class ActivityGenerationService implements ActivityGeneration {
                 path.join(workspace, image ? "image-input.json" : "speech-input.json"),
                 image ?? audio,
               );
+              // ElevenLabs is called with Node's own fetch, so nothing is installed for it;
+              // images and Gemini speech go through agenthub.
               await atomicJson(path.join(workspace, "package.json"), {
                 private: true,
                 type: "module",
-                dependencies: { "@prismshadow/agenthub": AGENTHUB_VERSION },
+                ...(audio && speechProviderOf(audio) === "elevenlabs"
+                  ? {}
+                  : { dependencies: { "@prismshadow/agenthub": AGENTHUB_VERSION } }),
               });
               await fs.writeFile(path.join(workspace, helperName), helper, {
                 flag: "wx",
@@ -786,7 +913,7 @@ export class ActivityGenerationService implements ActivityGeneration {
                     : image
                       ? imagePrompt
                       : audio
-                        ? audioPrompt
+                        ? speechPrompt(audio)
                         : sound
                           ? soundPrompt
                           : module
@@ -1243,14 +1370,27 @@ export class ActivityGenerationService implements ActivityGeneration {
                   throw new Error(
                     observer?.error ?? `${sound ? "Sound" : "Speech"} Session did not complete.`,
                   );
-                const format = run.audio?.sound
+                if (!run.audio) throw new Error("Audio target is missing.");
+                const soundFormat = run.audio.sound
                   ? await soundOutputFormat(this.workspace(run), run.audio.sound.format ?? "mp3")
                   : undefined;
+                const file = soundFormat
+                  ? SOUND_OUTPUT_FILES[soundFormat]
+                  : await speechOutputFile(this.workspace(run), run.audio);
+                const format =
+                  soundFormat ?? (speechProviderOf(run.audio) === "elevenlabs" ? "mp3" : undefined);
+                // Checked before the clip is kept, so a mismatch leaves nothing stored. Only a
+                // provider that returns timings is read; a timings file on any other run is
+                // not its provider's and is ignored.
+                const speech = run.audio.sound
+                  ? undefined
+                  : speechProviderFor({ speechProvider: speechProviderOf(run.audio) }, null);
+                const timings =
+                  speech && "provider" in speech && speech.timings
+                    ? await speechTimings(this.workspace(run), run.audio.script)
+                    : undefined;
                 const bytes = await readArtifactBytes(
-                  path.join(
-                    this.workspace(run),
-                    format ? SOUND_OUTPUT_FILES[format] : "speech.wav",
-                  ),
+                  path.join(this.workspace(run), file),
                   AUDIO_MAX_BYTES,
                 );
                 const result = await this.activities.storeAudio(
@@ -1260,7 +1400,9 @@ export class ActivityGenerationService implements ActivityGeneration {
                   bytes,
                   format,
                 );
-                run.candidate = JSON.stringify(result);
+                run.candidate = JSON.stringify(
+                  timings?.length ? { ...result, wordTimings: timings } : result,
+                );
                 this.save(run);
                 await this.projectWork.run(run.projectId, async () => {
                   const current = await this.activities.getActivity(run.projectId, run.activityId);
@@ -1447,7 +1589,7 @@ export class ActivityGenerationService implements ActivityGeneration {
                         : run.kind === "audio"
                           ? run.audio?.sound
                             ? SOUND_OUTPUT_FILES[run.audio.sound.format ?? "mp3"]
-                            : "speech.wav"
+                            : SPEECH_OUTPUT_FILES[speechProviderOf(run.audio ?? {})]
                           : run.kind === "module"
                             ? "module-result.json or a required artifact"
                             : run.kind === "media-text"

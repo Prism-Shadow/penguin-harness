@@ -10,6 +10,7 @@ import type {
   SoundProviderStatus,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
+import { ELEVENLABS_DEFAULT_VOICE, elevenLabsDefaultLabel } from "./speech-provider";
 
 export const SOUND_PROMPT_MAX = 2000;
 const MIN_SECONDS = 1;
@@ -172,7 +173,14 @@ export function canGenerateSound(
 /** How a sound candidate is described in its list: provider and requested length. */
 export function soundCandidateLabel(run: ActivityRunSummary): string {
   const sound = run.audio?.sound;
-  if (!sound) return run.audio?.voice ?? "";
+  if (!sound) {
+    const voice = run.audio?.voice ?? "";
+    if (run.audio?.provider !== "elevenlabs") return voice;
+    // The Vault's default voice has no name here; ElevenLabs says whose recording it is.
+    return voice === ELEVENLABS_DEFAULT_VOICE
+      ? elevenLabsDefaultLabel()
+      : `${S.activities.speechProvider.elevenlabs} · ${voice}`;
+  }
   return S.activities.sound.candidate(
     providerLabel(sound.provider),
     sound.targetDurationMs !== undefined ? lengthText(sound.targetDurationMs) : null,

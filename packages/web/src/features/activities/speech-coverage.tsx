@@ -8,6 +8,8 @@ import type {
   ActivityRunSummary,
   AssetManifest,
   SoundProviderId,
+  SpeechProviderId,
+  SpeechProviderStatus,
   VoiceOption,
 } from "@prismshadow/penguin-server/api";
 import { Badge } from "../../components/ui/badge";
@@ -35,6 +37,7 @@ import { SEGMENT, SEGMENTS, SEGMENT_OFF, SEGMENT_ON } from "./segment-styles";
 import { soundStatuses, soundTally, type SoundState } from "./bulk-sound";
 import { providerLabel } from "./sound-model";
 import { mixedVoice } from "./voice-catalogue";
+import { SPEECH_PROVIDERS, providerStatus, sharedProvider, voicesFor } from "./speech-provider";
 import { VoicePicker } from "./voice-picker";
 
 const STATE_TONE: Record<SpeechState, Tone | null> = {
@@ -93,6 +96,8 @@ export function SpeechCoverage({
   voice = "",
   onVoice,
   onApplyVoiceToAll,
+  speechProviders = null,
+  onApplyProviderToAll,
   voiceDisabled = false,
   soundProvider,
   onGenerateSounds,
@@ -126,6 +131,10 @@ export function SpeechCoverage({
   onVoice?: (voice: string) => void;
   /** Save one voice on every narration of this language. */
   onApplyVoiceToAll?: (voice: string) => void;
+  /** The speech providers the chosen agent can use; null while unknown or without one. */
+  speechProviders?: readonly SpeechProviderStatus[] | null;
+  /** Save one speech provider on every narration of this language. */
+  onApplyProviderToAll?: (provider: SpeechProviderId) => void;
   /** Hold the voice choice while a save or a run could move the draft under it. */
   voiceDisabled?: boolean;
   /** Who the sounds stage asks for music and effects, and whether the agent can use it. */
@@ -177,6 +186,10 @@ export function SpeechCoverage({
   const shown = statuses.filter(
     (status) => inSpeechFilter(status, filter) && inType(status, instruction),
   );
+  // The provider the narrations share picks the voices offered; with several, every voice.
+  const provider = sharedProvider(assets);
+  const bulkVoices =
+    provider && provider !== "mixed" ? voicesFor(voices, provider, assets) : voices;
   const sounds = (
     <SoundCoverage
       assets={assets}
@@ -231,6 +244,39 @@ export function SpeechCoverage({
         )}
         {editable && (toTranslate > 0 || addable.length > 0 || (voices.length > 0 && onVoice)) && (
           <div className="flex flex-wrap items-center gap-2">
+            {onApplyProviderToAll && provider && (
+              <div className="w-56">
+                <Select
+                  size="sm"
+                  aria-label={S.activities.speechProvider.applyToAll}
+                  value={provider === "mixed" ? "" : provider}
+                  disabled={voiceDisabled}
+                  onChange={(event) =>
+                    event.target.value &&
+                    onApplyProviderToAll(event.target.value as SpeechProviderId)
+                  }
+                >
+                  {provider === "mixed" && (
+                    <option value="">{S.activities.speechProvider.mixed}</option>
+                  )}
+                  {SPEECH_PROVIDERS.map((id) => {
+                    const status = providerStatus(speechProviders, id);
+                    const name = S.activities.speechProvider[id];
+                    return (
+                      <option
+                        key={id}
+                        value={id}
+                        disabled={!!status && !status.available && id !== provider}
+                      >
+                        {status && !status.available
+                          ? `${name} (${S.activities.speechProvider.keyMissing(status.credential)})`
+                          : name}
+                      </option>
+                    );
+                  })}
+                </Select>
+              </div>
+            )}
             {voices.length > 0 && onVoice && (
               <div className="flex items-center gap-2">
                 <span aria-hidden className="text-xs text-gray-500 dark:text-gray-400">
@@ -238,10 +284,10 @@ export function SpeechCoverage({
                 </span>
                 <div className="w-40">
                   <VoicePicker
-                    options={voices}
+                    options={bulkVoices}
                     // The voice the narrations share, or the default where none names one
                     // Penguin can speak (generation falls back to the default for those).
-                    value={mixedVoice(assets, voices) ?? (voice || null)}
+                    value={mixedVoice(assets, bulkVoices) ?? (voice || null)}
                     label={S.activities.voicePicker.applyToAll}
                     showLabel={false}
                     disabled={voiceDisabled}

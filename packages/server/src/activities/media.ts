@@ -7,6 +7,7 @@ import {
   readPlayback,
   type AudioKind,
 } from "./playback.js";
+import type { SpeechProviderId } from "./speech-types.js";
 
 export interface MediaAsset {
   key: string;
@@ -24,6 +25,11 @@ export interface MediaAsset {
    * whatever voice it was recorded with, so choosing a voice leaves timings alone.
    */
   voice?: string;
+  /**
+   * Who speaks a narration the next time it is generated; absent is Gemini. Like the voice,
+   * the bound clip keeps whatever provider recorded it.
+   */
+  speechProvider?: SpeechProviderId;
   /**
    * When each spoken word of a narration's clip starts and ends, which a read-along
    * highlights by, and the clip's length. They describe one recording of one script, so
@@ -118,6 +124,7 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
               "script",
               "translatedFrom",
               "voice",
+              "speechProvider",
               "wordTimings",
               "durationMs",
               "kind",
@@ -168,6 +175,13 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           asset.kind !== undefined)
       )
         throw new Error("Only a narration may name a voice.");
+      if (
+        asset.speechProvider !== undefined &&
+        (!["gemini", "elevenlabs"].includes(String(asset.speechProvider)) ||
+          asset.type !== "audio" ||
+          asset.kind !== undefined)
+      )
+        throw new Error("Only a narration names a speech provider: gemini or elevenlabs.");
       if (
         asset.wordTimings !== undefined &&
         (asset.type !== "audio" ||
@@ -293,6 +307,9 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           ? { translatedFrom: String(asset.translatedFrom) }
           : {}),
         ...(asset.voice !== undefined ? { voice: String(asset.voice) } : {}),
+        ...(asset.speechProvider !== undefined
+          ? { speechProvider: asset.speechProvider as SpeechProviderId }
+          : {}),
         ...(asset.wordTimings !== undefined
           ? {
               wordTimings: (asset.wordTimings as Record<string, unknown>[]).map((timing) => ({

@@ -2,6 +2,7 @@ import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AudioTarget, AudioResult } from "../activities/audio.js";
 import type { GeneratedAudioFormat } from "../activities/media.js";
 import type { SoundSetup } from "../activities/sound-types.js";
+import type { SpeechSetup } from "../activities/speech-types.js";
 import type { ImageRequest } from "../activities/image.js";
 import type { ImageTarget, ImageResult } from "../activities/generated-image.js";
 import type { MediaTextTarget } from "../activities/media-text.js";
@@ -38,7 +39,17 @@ export abstract class ActivityGeneration extends Interface<{
     module?: {
       wafRoot?: string;
       bookMode?: string;
-      audio?: { language: string; assetKey: string; voice: string };
+      /**
+       * A narration run: its voice, and the provider (Gemini, or the narration's own, when
+       * absent) and model that speak it.
+       */
+      audio?: {
+        language: string;
+        assetKey: string;
+        voice: string;
+        provider?: string;
+        model?: string;
+      };
       /** A music or sound-effect run for one asset, made by the named provider. */
       sound?: { language: string; assetKey: string; provider: string; model?: string };
       image?: { language: string; assetKey: string };
@@ -115,6 +126,8 @@ export abstract class ActivityGeneration extends Interface<{
   audioContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array>;
   /** The sound providers an agent can use, judged by the keys its Vault holds. */
   soundSetup(projectId: string, agentId: string): Promise<SoundSetup>;
+  /** The voices and, for an agent, the speech providers its Vault has keys for. */
+  speechSetup(projectId: string, agentId?: string): Promise<SpeechSetup>;
   imageCandidateContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array>;
   acceptImage(
     projectId: string,

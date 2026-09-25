@@ -24,6 +24,7 @@ import { mediaTextField, type MediaTextTarget } from "./media-text.js";
 import { AUDIO_MAX_BYTES, type AudioResult, type AudioTarget } from "./audio.js";
 import { inspectGeneratedAudio } from "./sound.js";
 import { soundPromptOf } from "./playback.js";
+import { normalizeAlignment, timingManifestFields } from "./word-timings.js";
 import { readArtifactBytes } from "./artifact.js";
 import {
   isUploadReference,
@@ -1250,6 +1251,12 @@ export class ActivityService implements ActivityAuthoring {
       // The timings and length described the recording this replaces; playback stays.
       delete asset.wordTimings;
       delete asset.durationMs;
+      // A provider that timed the words (ElevenLabs) leaves its timings and the clip's length;
+      // one that did not (Gemini) records nothing rather than an empty alignment.
+      const timings = result.wordTimings?.length
+        ? normalizeAlignment(asset.script ?? "", result.wordTimings)
+        : null;
+      if (timings) Object.assign(asset, timingManifestFields(timings, result.durationMs));
       return { ...draft, mediaPlan: { ...plan, manifest } };
     });
   }

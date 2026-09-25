@@ -5,6 +5,8 @@ import type {
   SoundProviderId,
   SoundProviderStatus,
 } from "./sound-types.js";
+import type { SpeechProviderId, SpeechProviderStatus } from "./speech-types.js";
+import { SPEECH_PROVIDER_IDS } from "./voice-catalogue.js";
 import {
   AGENTHUB_SOUND_MODELS,
   AGENTHUB_VERSION,
@@ -188,6 +190,56 @@ export function describeAudioCapability(setup: AudioSetup): string {
   if (!problems.length) return "Speech, music, effects and word timings are all available.";
   if (!available.length) return `No audio can be produced. ${problems.join(" ")}`;
   return `Available: ${available.join(", ")}. ${problems.join(" ")}`;
+}
+
+/** The provider that speaks a narration, with the Vault key it reads. */
+export type SpeechChoice = { provider: SpeechProviderId; credential: string; timings: boolean };
+
+/**
+ * Who speaks one narration, or why nobody can: its own `speechProvider`, Gemini when it names
+ * none. The choice is honoured strictly, so a narration set to ElevenLabs on an agent
+ * without `ELEVENLABS_API_KEY` is refused with that key's name rather than spoken by Gemini.
+ * `vaultKeys` are the keys the chosen agent's Vault holds; null skips the key check.
+ */
+export function speechProviderFor(
+  asset: { speechProvider?: string },
+  vaultKeys: readonly string[] | null,
+):
+  | SpeechChoice
+  | { problem: "provider_unknown" }
+  | {
+      problem: "credential_missing";
+      credential: string;
+    } {
+  const id = asset.speechProvider ?? "gemini";
+  if (!(SPEECH_PROVIDER_IDS as readonly string[]).includes(id))
+    return { problem: "provider_unknown" };
+  const provider = AUDIO_PROVIDERS.find((entry) => entry.id === id)!;
+  const checked = checkProvider("speech", id, new Set(vaultKeys ?? [provider.credential]));
+  if ("problem" in checked)
+    return checked.problem === "credential_missing"
+      ? { problem: "credential_missing", credential: checked.credential }
+      : { problem: "provider_unknown" };
+  return {
+    provider: id as SpeechProviderId,
+    credential: checked.provider.credential,
+    timings: !!checked.provider.nativeTimings,
+  };
+}
+
+/** Every speech provider as the Provider picker shows it, for an agent holding `vaultKeys`. */
+export function speechSetup(vaultKeys: readonly string[]): SpeechProviderStatus[] {
+  return SPEECH_PROVIDER_IDS.map((id) => {
+    const provider = AUDIO_PROVIDERS.find((entry) => entry.id === id)!;
+    const choice = speechProviderFor({ speechProvider: id }, vaultKeys);
+    return {
+      id,
+      credential: provider.credential,
+      available: "provider" in choice,
+      ...("provider" in choice ? {} : { problem: "credential_missing" as const }),
+      timings: !!provider.nativeTimings,
+    };
+  });
 }
 
 /**

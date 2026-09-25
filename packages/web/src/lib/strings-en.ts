@@ -1065,6 +1065,27 @@ export const en: Strings = {
       appliesNext: "The new voice is used the next time this line is generated.",
       noMatches: "No voice matches these filters.",
     },
+    speechProvider: {
+      label: "Provider",
+      gemini: "Gemini",
+      elevenlabs: "ElevenLabs",
+      keyMissing: (key: string) => `needs ${key}`,
+      timings: "Word timings",
+      timingsAbout:
+        "When each word of the accepted recording starts and ends. The book highlights each word as it is spoken from these. ElevenLabs returns them with the recording; Gemini returns none, so a Gemini recording plays without highlighting.",
+      noTimings: "This recording has no word timings, so words are not highlighted as it plays.",
+      timingsList: "Words, highlighted as the recording plays",
+      word: (word: string, start: string) => `${word}, at ${start} s`,
+      voiceId: "ElevenLabs voice ID",
+      voiceIdHint: "10 to 40 letters and digits, from your ElevenLabs voice library",
+      useVoiceId: "Use this voice",
+      noVoice:
+        "No ElevenLabs voice yet. Add ELEVENLABS_VOICE_ID to the agent's Vault, or enter a voice ID.",
+      applyToAll: "Provider for every narration",
+      mixed: "Several providers",
+      applied: (n: number) =>
+        n === 1 ? "Provider set on 1 narration." : `Provider set on ${n} narrations.`,
+    },
     audioPlayback: {
       type: "Audio type",
       kinds: { speech: "Narration", music: "Music", sfx: "Sound effect" },
@@ -5647,6 +5668,8 @@ Scenarios:
     networkError: "Network error, please check your connection",
     modelCredentialMissing: (modelId: string) =>
       `Model ${modelId} has no API key yet — configure it on the Models page first`,
+    speechCredentialMissing: (key: string) =>
+      `Add ${key} to the selected Agent’s Vault before generating speech.`,
     noDefaultModel: "This project has no default model yet — add one on the Models page first",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
@@ -5667,7 +5690,7 @@ Scenarios:
       media_stale:
         "Rebuild the media plan from the saved specification before saving bindings or assembling a module.",
       speech_credential_missing:
-        "Add GEMINI_API_KEY to the selected Agent’s Vault before generating speech.",
+        "Add the speech provider’s key to the selected Agent’s Vault before generating speech.",
       speech_helper_missing:
         "The speech helper is missing. Rebuild the bundled plugins and restart the server.",
       audio_invalid:

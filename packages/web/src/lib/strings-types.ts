@@ -908,6 +908,27 @@ export type Strings = {
       appliesNext: string;
       noMatches: string;
     };
+    /** Who speaks a narration: Gemini or ElevenLabs, and the word timings ElevenLabs returns. */
+    speechProvider: {
+      label: string;
+      gemini: string;
+      elevenlabs: string;
+      /** An option the chosen agent cannot use, naming the Vault key it lacks. */
+      keyMissing: (key: string) => string;
+      /** The accepted clip's word timings, as the highlighting preview shows them. */
+      timings: string;
+      timingsAbout: string;
+      noTimings: string;
+      timingsList: string;
+      word: (word: string, start: string) => string;
+      voiceId: string;
+      voiceIdHint: string;
+      useVoiceId: string;
+      noVoice: string;
+      applyToAll: string;
+      mixed: string;
+      applied: (n: number) => string;
+    };
     audioPlayback: {
       type: string;
       kinds: Record<"speech" | "music" | "sfx", string>;
@@ -3754,6 +3775,7 @@ export type Strings = {
   errors: {
     networkError: string;
     modelCredentialMissing: (modelId: string) => string;
+    speechCredentialMissing: (key: string) => string;
     noDefaultModel: string;
     byCode: {
       activity_invalid: string;

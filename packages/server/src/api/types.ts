@@ -5080,6 +5080,12 @@ export type {
   SoundRequest,
   SoundSetup,
 } from "../activities/sound-types.js";
+export type {
+  SpeechProblem,
+  SpeechProviderId,
+  SpeechProviderStatus,
+  SpeechSetup,
+} from "../activities/speech-types.js";
 export type { MediaAsset, AssetManifest } from "../activities/media.js";
 export type { UploadedMedia, UploadKind } from "../activities/upload.js";
 export type {

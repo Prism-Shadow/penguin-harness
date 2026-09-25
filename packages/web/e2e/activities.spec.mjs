@@ -5892,3 +5892,262 @@ test("generates the missing sounds from Audios", async ({ page }) => {
   await expect(panel).toContainText("whoosh");
   expect(f.errors).toEqual([]);
 });
+
+test("speaks a narration with ElevenLabs and keeps its word timings", async ({ page }) => {
+  const f = await fixture(page);
+  const clip = silentMp3(40);
+  const generated = [];
+  const speechRuns = [];
+  const savedManifests = [];
+  const setupQueries = [];
+  let draft = null;
+  let accepted = null;
+  const timings = [
+    { word: "Hello", startMs: 0, endMs: 300 },
+    { word: "big", startMs: 350, endMs: 500 },
+    { word: "cat", startMs: 600, endMs: 900 },
+  ];
+  page.on("response", async (response) => {
+    const p = new URL(response.url()).pathname;
+    if ([`${base}/act_test/plan-media`, `${base}/act_test/media`].includes(p) && response.ok())
+      draft = await response.json().catch(() => draft);
+  });
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === `${base}/act_test/media` && request.method() === "PUT")
+      savedManifests.push(request.postDataJSON().manifest);
+  });
+  const usage = { sceneId: "intro", sourceKey: "hello", occurrence: 1, sceneOccurrenceCount: 1 };
+  await page.route(`**${base}/act_test/plan-media`, (route) =>
+    route.fallback({
+      postData: JSON.stringify({
+        ...route.request().postDataJSON(),
+        manifest: {
+          productCode: "words",
+          refNum: 12,
+          assets: {
+            "en-US": [
+              {
+                key: "hello",
+                type: "audio",
+                description: "Greeting",
+                script: "Hello, big cat!",
+                usages: [usage],
+              },
+            ],
+          },
+        },
+      }),
+    }),
+  );
+  const gemini = (id) => ({
+    id,
+    label: id,
+    provider: "Gemini",
+    providerId: "gemini",
+    model: "gemini-3.1-flash-tts-preview",
+    languages: [],
+    previewUrl: null,
+  });
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const p = url.pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/speech-setup`) {
+      const agent = url.searchParams.get("agentId");
+      setupQueries.push(agent);
+      return json({
+        provider: "Gemini",
+        model: "gemini-3.1-flash-tts-preview",
+        voices: ["Kore", "Puck"],
+        catalogue: [
+          gemini("Kore"),
+          gemini("Puck"),
+          ...(agent
+            ? [
+                {
+                  id: "elevenlabs-default",
+                  label: "ElevenLabs default",
+                  provider: "ElevenLabs",
+                  providerId: "elevenlabs",
+                  model: "eleven_v3",
+                  languages: [],
+                  previewUrl: null,
+                },
+              ]
+            : []),
+        ],
+        vaultKey: "GEMINI_API_KEY",
+        ...(agent
+          ? {
+              providers: [
+                {
+                  id: "gemini",
+                  credential: "GEMINI_API_KEY",
+                  available: false,
+                  problem: "credential_missing",
+                  timings: false,
+                },
+                {
+                  id: "elevenlabs",
+                  credential: "ELEVENLABS_API_KEY",
+                  available: true,
+                  timings: true,
+                },
+              ],
+            }
+          : {}),
+      });
+    }
+    if (/\/runs\/[^/]+\/audio$/.test(p)) {
+      // Served with byte ranges, as a real file is, so the player can seek in it.
+      const range = /bytes=(\d+)-(\d*)/.exec(request.headers()["range"] ?? "");
+      if (!range)
+        return route.fulfill({
+          contentType: "audio/mpeg",
+          headers: { "accept-ranges": "bytes" },
+          body: clip,
+        });
+      const start = Number(range[1]);
+      const end = range[2] ? Math.min(Number(range[2]), clip.length - 1) : clip.length - 1;
+      return route.fulfill({
+        status: 206,
+        contentType: "audio/mpeg",
+        headers: {
+          "accept-ranges": "bytes",
+          "content-range": `bytes ${start}-${end}/${clip.length}`,
+        },
+        body: clip.subarray(start, end + 1),
+      });
+    }
+    if (p === `${base}/act_test/generate-audio`) {
+      const body = request.postDataJSON();
+      // One generation at a time, as the server allows.
+      if (speechRuns.some((run) => run.status === "running"))
+        return json({ error: { code: "generation_running", message: "Running." } }, 409);
+      generated.push(body);
+      speechRuns.unshift({
+        kind: "audio",
+        audio: {
+          language: body.language,
+          assetKey: body.assetKey,
+          script: "Hello, big cat!",
+          voice: body.voice,
+          provider: body.provider,
+          model: "eleven_v3",
+        },
+        runId: `run_speech_${speechRuns.length + 1}`,
+        inputRevision: body.expectedRevision,
+        activityId: "act_test",
+        projectId,
+        sessionId: "session_speech",
+        status: "running",
+        createdAt: "2026-09-25T10:00:00Z",
+        hasCandidate: false,
+        error: null,
+      });
+      return json(speechRuns[0], 202);
+    }
+    if (p === `${base}/act_test/runs` && request.method() === "GET")
+      return json({ runs: speechRuns });
+    if (/\/runs\/run_speech_\d+\/accept-audio$/.test(p)) {
+      const run = speechRuns.find((entry) => p.includes(`/${entry.runId}/`));
+      const manifest = structuredClone(draft.mediaPlan.manifest);
+      const asset = manifest.assets["en-US"][0];
+      // What the server records from ElevenLabs' timestamps: the words and the clip's length.
+      asset.path = `media/generated/${run.runId}.mp3`;
+      asset.generatedAudio = { runId: run.runId, sha256: "d".repeat(64), format: "mp3" };
+      asset.wordTimings = timings;
+      asset.durationMs = 1045;
+      accepted = {
+        ...draft,
+        contentRevision: `${draft.contentRevision}-speech`,
+        mediaPlan: { ...draft.mediaPlan, manifest },
+      };
+      return json(accepted);
+    }
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  // The editor asks which providers the chosen agent can use.
+  await expect.poll(() => setupQueries.includes("default_agent")).toBe(true);
+
+  // The narration names no provider, so Gemini, which this agent has no key for.
+  const provider = page.getByRole("button", { name: "Provider", exact: true });
+  await expect(provider).toContainText("Gemini (needs GEMINI_API_KEY)");
+  const generate = page.getByRole("button", { name: "Generate speech", exact: true });
+  await expect(generate).toBeDisabled();
+  // Bring the picker into view first: a scroll while its menu is open closes the menu.
+  await provider.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(200);
+  await provider.click();
+  await page.getByRole("option", { name: "ElevenLabs", exact: true }).click();
+  await expect(provider).toContainText("ElevenLabs");
+  // The voice picker offers ElevenLabs' voices, and the Vault's default is the one used.
+  await expect(page.getByRole("button", { name: /^Voice/ }).first()).toContainText(
+    "ElevenLabs · Default voice",
+  );
+  await expect(page.getByRole("textbox", { name: /^ElevenLabs voice ID/ })).toBeVisible();
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await expect.poll(() => savedManifests.length).toBe(1);
+  expect(savedManifests[0].assets["en-US"][0]).toMatchObject({
+    key: "hello",
+    speechProvider: "elevenlabs",
+  });
+  await expect(generate).toBeEnabled();
+  await generate.click();
+  await expect.poll(() => generated.length).toBe(1);
+  expect(generated[0]).toMatchObject({
+    agentId: "default_agent",
+    language: "en-US",
+    assetKey: "hello",
+    provider: "elevenlabs",
+    voice: "elevenlabs-default",
+  });
+
+  speechRuns[0] = { ...speechRuns[0], status: "succeeded", hasCandidate: true };
+  await expect(page.getByText(/^ElevenLabs · Default voice · /)).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Accept this audio", exact: true }).click();
+  await expect
+    .poll(() => accepted?.mediaPlan.manifest.assets["en-US"][0].path)
+    .toBe("media/generated/run_speech_1.mp3");
+
+  // The accepted recording lists its words, marking the one spoken where the player is.
+  const words = page.getByRole("list", {
+    name: "Words, highlighted as the recording plays",
+    exact: true,
+  });
+  await expect(words.getByRole("listitem")).toHaveText(["Hello", "big", "cat"]);
+  const player = page.locator('audio[aria-label="Accepted audio"]');
+  await expect(player).toHaveAttribute("src", `${base}/act_test/runs/run_speech_1/audio`);
+  const seekedTo = await player.evaluate(
+    (audio) =>
+      new Promise((resolve) => {
+        const seek = () => {
+          audio.addEventListener("seeked", () => resolve(audio.currentTime), { once: true });
+          audio.currentTime = 0.4;
+        };
+        if (audio.readyState >= 1) seek();
+        else {
+          // The player loads nothing until asked.
+          audio.addEventListener("loadedmetadata", seek, { once: true });
+          audio.preload = "metadata";
+          audio.load();
+        }
+      }),
+  );
+  expect(seekedTo).toBeCloseTo(0.4, 1);
+  await expect(words.getByRole("listitem", { name: "big, at 0.35 s" })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  expect(f.errors).toEqual([]);
+});

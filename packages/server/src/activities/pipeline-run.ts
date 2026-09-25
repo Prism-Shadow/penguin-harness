@@ -33,7 +33,12 @@ import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activi
 import type { ActivitySandbox } from "./sandbox-service.js";
 import type { ActivityAcceptance } from "./acceptance-service.js";
 import { acceptanceCriteria } from "./acceptance-collect.js";
-import { SPEECH_VOICES, isSpeechVoice } from "./voice-catalogue.js";
+import {
+  ELEVENLABS_DEFAULT_VOICE,
+  SPEECH_VOICES,
+  isSpeechVoice,
+  isVoiceOf,
+} from "./voice-catalogue.js";
 import { DEFAULT_LANGUAGE_CODE } from "./languages.js";
 import { contentRevision, type ActivityRun } from "./domain.js";
 import type { AssetManifest } from "./media.js";
@@ -421,11 +426,23 @@ export class PipelineRunner {
       }
       const fallbackVoice = isSpeechVoice(input.voice) ? input.voice : SPEECH_VOICES[0];
       for (const target of targets) {
-        // Each narration speaks in its own saved voice; the run's choice fills the rest.
-        const saved = manifest.assets[target.language]?.find(
+        // Each narration speaks with its own provider and saved voice; the run's choice fills
+        // the rest for Gemini, and the Vault's default voice for ElevenLabs.
+        const narration = manifest.assets[target.language]?.find(
           (item) => item.key === target.assetKey,
-        )?.voice;
-        const voice = isSpeechVoice(saved) ? saved : fallbackVoice;
+        );
+        const provider = narration?.speechProvider ?? "gemini";
+        const saved = narration?.voice;
+        const voice =
+          provider === "elevenlabs"
+            ? isVoiceOf("elevenlabs", saved)
+              ? saved
+              : isVoiceOf("elevenlabs", input.voice)
+                ? input.voice
+                : ELEVENLABS_DEFAULT_VOICE
+            : isSpeechVoice(saved)
+              ? saved
+              : fallbackVoice;
         step.detail = target.assetKey;
         const before = await current();
         const run = await generation.start(

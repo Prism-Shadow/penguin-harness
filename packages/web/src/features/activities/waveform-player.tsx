@@ -40,6 +40,7 @@ export function WaveformPlayer({
   autoLoad = false,
   onTrim,
   onDecoded,
+  onTime,
 }: {
   src: string;
   label: string;
@@ -51,6 +52,8 @@ export function WaveformPlayer({
   onTrim?: (wav: Uint8Array) => Promise<void>;
   /** Told the clip's length in seconds once it is decoded, so a caller need not measure it again. */
   onDecoded?: (seconds: number) => void;
+  /** Told where playback is, in seconds, as it plays and after a seek (word highlighting). */
+  onTime?: (seconds: number) => void;
 }) {
   // Read at decode time, so a new callback each render never restarts the decode.
   const onDecodedRef = useRef(onDecoded);
@@ -348,8 +351,12 @@ export function WaveformPlayer({
             event.currentTarget.currentTime = skipping.end;
           // Reduced motion keeps the picture still; the native player still reads out time.
           if (!reducedMotion) setPosition(event.currentTarget.currentTime);
+          onTime?.(event.currentTarget.currentTime);
         }}
-        onSeeked={(event) => setPosition(event.currentTarget.currentTime)}
+        onSeeked={(event) => {
+          setPosition(event.currentTarget.currentTime);
+          onTime?.(event.currentTarget.currentTime);
+        }}
       />
       {duration > 0 && (
         <p className="text-xs text-gray-500">

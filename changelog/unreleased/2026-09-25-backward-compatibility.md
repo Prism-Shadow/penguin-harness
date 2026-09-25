@@ -24,3 +24,8 @@ Two optional media-plan fields arrived with [sound generation](2026-09-25-activi
 a bound sound. Neither rewrote an existing record, and a bound clip without `format` is read
 as WAV, as before. An older build rejects a media plan that carries either field, so rolling
 back needs them removed from the plans that have them.
+
+A narration's optional `speechProvider` arrived with [speech providers](2026-09-25-activity-speech-providers.md).
+It did not rewrite any existing record. A narration or a run without a provider is read as
+Gemini's, as before. An older build rejects a media plan that names a speech provider, so
+rolling back needs the field removed from the plans that have it.
