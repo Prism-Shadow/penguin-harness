@@ -25,7 +25,15 @@ import type { AccountMenuSession } from "./account-menu";
 
 /** A page of the System settings dialog. */
 export type SettingsSectionKey =
-  "profile" | "general" | "appearance" | "account" | "proxy" | "uploads" | "company" | "users";
+  | "profile"
+  | "general"
+  | "appearance"
+  | "account"
+  | "proxy"
+  | "uploads"
+  | "company"
+  | "testBrowser"
+  | "users";
 
 /** Rail heading a page sits under: the viewer's own preferences vs. the whole server's. */
 export type SettingsGroupKey = "personal" | "server";
@@ -59,6 +67,9 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     { key: "uploads", group: "server", visible: (v) => v.isAdmin },
     // The company-mode master switch: server-global like the proxy and upload limits.
     { key: "company", group: "server", visible: (v) => v.isAdmin },
+    // The browser quality checks and tests open activities in: installing it downloads onto
+    // the server, so it is the admin's, like the other server-global pages.
+    { key: "testBrowser", group: "server", visible: (v) => v.isAdmin },
     // Single-user under the desktop shell: the server rejects the admin user routes there.
     { key: "users", group: "server", visible: (v) => v.isAdmin && !v.desktopMode },
   ];

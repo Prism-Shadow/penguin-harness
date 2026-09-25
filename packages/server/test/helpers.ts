@@ -79,6 +79,7 @@ import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/servi
 import { OrganizationModule } from "../src/runtime/organization/service.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
 import type { Access } from "../src/mechanisms/projects.js";
+import { DefaultTestBrowserPorts, type TestBrowserPorts } from "../src/activities/test-browser.js";
 
 export async function makeTempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
@@ -264,6 +265,8 @@ export interface TestAppOptions {
   wechatRetryDelayMs?: (failures: number) => number;
   /** Test double: machines service whose ssh effects are faked. */
   machines?: MachinesService;
+  /** Test double: the test browser's installer and lookup, so a test never downloads a browser. */
+  testBrowserPorts?: TestBrowserPorts;
   /** Test double: company mode's organization service, for the route suite (its semantics have their own suites). */
   orgService?: OrganizationService;
   /** Test double: the desktop reveal, so a test never opens a file manager. */
@@ -353,6 +356,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
       },
     ]);
   }
+  if (o.testBrowserPorts) out.push([DefaultTestBrowserPorts, o.testBrowserPorts]);
   return out;
 }
 

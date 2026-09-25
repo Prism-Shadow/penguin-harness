@@ -155,6 +155,7 @@ import type {
   ProxyProbeResponse,
   ProxyProbeTargetsResponse,
   ServerSettingsResponse,
+  TestBrowserStatusResponse,
   ServerSettingsUpdateRequest,
   SessionCategory,
   SessionContextResponse,
@@ -282,6 +283,14 @@ export const adminGetProxyProbeTargets = () =>
  */
 export const adminProbeProxy = (provider: ProxyProbeProvider) =>
   apiFetch<ProxyProbeResponse>(`/api/admin/settings/proxy-probe/${provider}`, { method: "POST" });
+
+/** Whether the test browser (the Chromium quality checks and tests use) is installed (admin only). */
+export const adminGetTestBrowser = () =>
+  apiFetch<TestBrowserStatusResponse>("/api/admin/test-browser");
+
+/** Starts installing the test browser (admin only); 409 while an install is already running. */
+export const adminInstallTestBrowser = () =>
+  apiFetch<TestBrowserStatusResponse>("/api/admin/test-browser/install", { method: "POST" });
 
 // Project & members --------------------------------------------------------------
 

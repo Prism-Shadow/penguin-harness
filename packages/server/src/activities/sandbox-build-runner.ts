@@ -40,7 +40,7 @@ export function clampLog(log: string, max = BUILD_LOG_MAX): string {
  * build finishes on its own, and a timeout that waits for it is not a timeout. Found by the
  * timeout test, which took the full sixty seconds it was meant to cut short.
  */
-function stopTree(child: { pid?: number; kill(signal?: NodeJS.Signals): boolean }): void {
+export function stopTree(child: { pid?: number; kill(signal?: NodeJS.Signals): boolean }): void {
   if (process.platform === "win32" && child.pid) {
     try {
       spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });

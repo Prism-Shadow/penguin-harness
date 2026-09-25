@@ -1461,6 +1461,26 @@ export const en: Strings = {
     companyModeServer: "Enable company mode",
     companyModeServerInfo:
       "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger. Beta: it may be unstable; please report what you hit.",
+    testBrowser: {
+      title: "Test browser",
+      about:
+        "The browser that quality checks and tests open an activity's player in: a copy of Chromium kept on this server for that use only. The Linux, macOS and Windows release packages include it. Anywhere else, install it here: it downloads once, a few hundred MB.",
+      installed: (version) => (version ? `Installed, Chromium ${version}` : "Installed"),
+      missing: "Not installed",
+      unavailable:
+        "Not available in this copy of Penguin. The desktop app does not include Playwright, which installs and runs the test browser. A Penguin server installed from a release package, Docker or source has it.",
+      location: (path) => `Location: ${path}`,
+      install: "Install test browser",
+      installing: "Installing the test browser. This can take several minutes.",
+      failed: (reason) => `The install did not finish: ${reason}`,
+      reasons: {
+        failed: "the installer stopped with an error.",
+        timed_out: "it took longer than 15 minutes and was stopped.",
+        not_started: "the installer could not start.",
+        incomplete: "the installer finished, but the browser is not where it should be.",
+      },
+      logLabel: "Installer output",
+    },
     accentNames: {
       neutral: "Neutral",
       blue: "Blue",

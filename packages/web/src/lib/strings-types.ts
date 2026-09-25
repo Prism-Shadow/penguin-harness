@@ -1184,6 +1184,27 @@ export type Strings = {
     companyModePersonalInfo: string;
     companyModeServer: string;
     companyModeServerInfo: string;
+    /** The test browser page (admin): the Chromium quality checks and tests open players in. */
+    testBrowser: {
+      title: string;
+      about: string;
+      /** `version` is the Chromium version, or null when the server could not tell. */
+      installed: (version: string | null) => string;
+      missing: string;
+      /** This copy of Penguin cannot install or run it (the desktop app ships no Playwright). */
+      unavailable: string;
+      location: (path: string) => string;
+      install: string;
+      installing: string;
+      failed: (reason: string) => string;
+      reasons: {
+        failed: string;
+        timed_out: string;
+        not_started: string;
+        incomplete: string;
+      };
+      logLabel: string;
+    };
     accentNames: Record<string, string>;
   };
   update: {

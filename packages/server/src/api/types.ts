@@ -4867,6 +4867,11 @@ export type {
 export type { ReadinessCheck, ReadinessLevel } from "../activities/readiness-types.js";
 export type { VoiceOption } from "../activities/voice-catalogue.js";
 export type {
+  TestBrowserInstallError,
+  TestBrowserStatus,
+  TestBrowserStatusResponse,
+} from "../activities/test-browser-types.js";
+export type {
   VersionDiff,
   VersionFileDiff,
   VersionFileName,

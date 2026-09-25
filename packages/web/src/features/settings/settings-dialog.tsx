@@ -27,6 +27,7 @@ import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
+import { TestBrowserSection } from "./test-browser-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
 /** Rail glyphs, on the shared 24x24 stroke grid (see NAV_ICONS' conventions). */
@@ -47,6 +48,9 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   uploads: "M12 15V4m0 0L7 9m5-5l5 5M4 20h16",
   /** The building the mode switch wears: company mode. */
   company: COMPANY_MODE_ICON,
+  /** A browser window: the test browser. */
+  testBrowser:
+    "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 9h18M7 6h.01M10 6h.01",
   /** Two people: user management. */
   users:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
@@ -81,6 +85,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
     company: S.settings.companyModeTitle,
+    testBrowser: S.settings.testBrowser.title,
     users: S.admin.users,
   };
   const groupLabel: Record<SettingsGroupKey, string> = {
@@ -93,6 +98,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
+    testBrowser: S.settings.testBrowser.about,
   };
 
   const groups: Array<PagedDialogGroup<SettingsSectionKey>> = settingsGroups(sections).map(
@@ -126,6 +132,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
       {current === "company" && <CompanySection />}
+      {current === "testBrowser" && <TestBrowserSection />}
       {current === "users" && <AdminUsersSection />}
     </PagedDialog>
   );

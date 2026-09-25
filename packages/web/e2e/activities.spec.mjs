@@ -5013,3 +5013,77 @@ test("compares a version with the current script and restores it", async ({ page
   );
   expect(f.errors).toEqual([]);
 });
+
+test("an admin installs the test browser from System settings", async ({ page }) => {
+  const f = await fixture(page);
+  let browser = {
+    available: true,
+    installed: false,
+    version: "149.0.7827.55",
+    path: "/penguin/browsers",
+    installing: false,
+    error: null,
+    log: null,
+  };
+  let installs = 0;
+  let readsWhileInstalling = 0;
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === "/api/me")
+      return json({
+        user: { userId: "author", isAdmin: true, passwordIsInitial: false },
+        previewIsolated: true,
+        desktopMode: false,
+        companyMode: false,
+        sessionVia: "password",
+        uploadLimits: {
+          attachmentMaxMb: 100,
+          attachmentTotalMb: 120,
+          attachmentMaxCount: 20,
+          imageMaxMb: 20,
+          attachmentLimitMinMb: 1,
+          attachmentLimitMaxMb: 200,
+        },
+      });
+    if (p === "/api/admin/test-browser/install" && request.method() === "POST") {
+      // The server allows one install at a time.
+      if (browser.installing)
+        return json({ error: { code: "test_browser_installing", message: "busy" } }, 409);
+      installs++;
+      browser = { ...browser, installing: true };
+      return json({ browser }, 202);
+    }
+    if (p === "/api/admin/test-browser") {
+      // The first read while it runs fails (a server blip): the page keeps asking, and the
+      // install finishes after it has asked once more.
+      if (browser.installing) {
+        readsWhileInstalling++;
+        if (readsWhileInstalling === 1)
+          return json({ error: { code: "internal", message: "Temporary failure." } }, 503);
+        if (readsWhileInstalling > 2) browser = { ...browser, installing: false, installed: true };
+      }
+      return json({ browser });
+    }
+    return route.fallback();
+  });
+  await page.goto(`${origin}/activities`);
+  await page.locator('button[aria-haspopup="menu"]').filter({ hasText: "author" }).click();
+  await page.getByRole("button", { name: "System settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "System settings" });
+  await dialog.getByRole("button", { name: "Test browser" }).click();
+  const status = dialog.getByTestId("test-browser-status");
+  await expect(status).toHaveText("Not installed");
+  await dialog.getByRole("button", { name: "Install test browser", exact: true }).click();
+  await expect(status).toHaveText("Installing the test browser. This can take several minutes.");
+  await expect(
+    dialog.getByRole("button", { name: "Install test browser", exact: true }),
+  ).toBeDisabled();
+  // Three reads two seconds apart, one of them failed.
+  await expect(status).toHaveText("Installed, Chromium 149.0.7827.55", { timeout: 15_000 });
+  expect(readsWhileInstalling).toBe(3);
+  expect(installs).toBe(1);
+  expect(f.errors).toEqual([]);
+});

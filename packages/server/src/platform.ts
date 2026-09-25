@@ -106,6 +106,12 @@ import { ActivitySandboxService } from "./activities/sandbox-service.js";
 import { ActivityPipelineService } from "./activities/pipeline-run.js";
 import { ActivityVersionService, ActivityVersions } from "./activities/version-service.js";
 import { ActivityPlayRoutes } from "./activities/play-routes.js";
+import {
+  DefaultTestBrowserPorts,
+  TestBrowser,
+  TestBrowserService,
+} from "./activities/test-browser.js";
+import { TestBrowserRoutes } from "./activities/test-browser-routes.js";
 import { ActivityGenerationService } from "./activities/generation.js";
 import { ActivityAuthoring, ActivityGeneration } from "./mechanisms/activities.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
@@ -370,8 +376,11 @@ export class CodingAgentsModule {}
     ActivityVersionService,
     ActivityRoutes,
     ActivityPlayRoutes,
+    DefaultTestBrowserPorts,
+    TestBrowserService,
+    TestBrowserRoutes,
   ],
-  exports: [ActivityAuthoring, ActivityGeneration, ActivityVersions],
+  exports: [ActivityAuthoring, ActivityGeneration, ActivityVersions, TestBrowser],
 })
 export class ActivitiesModule {}
 
