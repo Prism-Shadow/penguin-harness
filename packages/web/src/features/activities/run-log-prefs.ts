@@ -28,7 +28,7 @@ export function writeShowReasoning(show: boolean, storage?: Pick<Storage, "setIt
 let sessionValue: boolean | null = null;
 const listeners = new Set<() => void>();
 
-function currentShowReasoning(): boolean {
+export function currentShowReasoning(): boolean {
   return sessionValue ?? readShowReasoning();
 }
 
@@ -56,7 +56,8 @@ export function useShowReasoning(): [boolean, (show: boolean) => void] {
   return [show, setShowReasoning];
 }
 
-function setShowReasoning(show: boolean): void {
+/** Sets the switch for every panel on the page, as a layout does when it is applied. */
+export function setShowReasoning(show: boolean): void {
   sessionValue = show;
   writeShowReasoning(show);
   for (const listener of listeners) listener();

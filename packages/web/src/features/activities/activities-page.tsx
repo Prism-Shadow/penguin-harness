@@ -1096,6 +1096,7 @@ function ActivityEditor({
     <WorkspaceShell
       panels={panels}
       showPanel={showPanel}
+      layout={{ section, onSection: setSection }}
       header={
         <>
           <Link

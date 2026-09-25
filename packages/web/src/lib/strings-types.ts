@@ -89,6 +89,42 @@ export type Strings = {
         };
       };
     };
+    /** Named workspace layouts, from the Layout menu in the activity header. */
+    layouts: {
+      menu: string;
+      current: string;
+      saveAs: string;
+      saveTitle: string;
+      save: string;
+      name: string;
+      nameHint: string;
+      manage: string;
+      manageTitle: string;
+      manageEmpty: string;
+      nameColumn: string;
+      kindColumn: string;
+      actionsColumn: string;
+      builtInTag: string;
+      savedTag: string;
+      rename: string;
+      renameTitle: (name: string) => string;
+      renameLabel: (name: string) => string;
+      deleteLabel: (name: string) => string;
+      delete: string;
+      deleteTitle: string;
+      deleteConfirm: (name: string) => string;
+      builtIn: Record<"writing" | "reviewing" | "media", string>;
+      shortcuts: string;
+      shortcutsHint: string;
+      shortcutKey: (n: number) => string;
+      saved: (name: string) => string;
+      renamed: (name: string) => string;
+      deleted: (name: string) => string;
+      limit: string;
+      duplicate: string;
+      tooLong: string;
+      empty: string;
+    };
     /** The icon rail on the right and the panels it opens. */
     studioPanels: {
       rail: string;

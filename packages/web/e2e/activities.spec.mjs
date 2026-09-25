@@ -67,6 +67,8 @@ async function fixture(page) {
     if (p.startsWith(base)) activityRequests++;
     const json = (value, status = 200) =>
       route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    // One stable data root, so the install-scope sweep keeps what a test seeds.
+    if (p === "/api/install") return json({ installId: "install_e2e" });
     if (p === "/api/me")
       return json({
         user: { userId: "author", isAdmin: false, passwordIsInitial: false },
@@ -4719,5 +4721,98 @@ test("makes a ref from the template, keeping one image and regenerating a narrat
   expect(pipelines).toEqual([
     { agentId: "default_agent", stage: "assets", language: "en-US", voice: "Puck" },
   ]);
+  expect(f.errors).toEqual([]);
+});
+
+test("switches the studio to the Reviewing layout and saves a layout of its own", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1700, height: 1000 });
+  const f = await fixture(page);
+  await create(page);
+  const layoutMenu = page.getByRole("button", { name: "Layout", exact: true });
+  const item = (name) => page.getByRole("menuitem", { name: new RegExp(`^${name}`) });
+
+  // Reviewing collapses the rail, opens the player and the Scenes section.
+  await layoutMenu.click();
+  await item("Reviewing").click();
+  await expect(page).toHaveURL(/section=scenes/);
+  await expect(
+    page.getByRole("button", { name: "Expand the activity rail", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Player", exact: true })).toBeVisible();
+  await layoutMenu.click();
+  await expect(item("Reviewing")).toContainText("Current");
+  await expect(item("Writing")).not.toContainText("Current");
+
+  // Writing brings the rail back at 300 beside the conversation.
+  await item("Writing").click();
+  await expect(page).toHaveURL(/section=description/);
+  await expect(
+    page.getByRole("separator", { name: "Activity rail width", exact: true }),
+  ).toHaveAttribute("aria-valuenow", "300");
+  await expect(
+    page.getByRole("complementary", { name: "Conversation", exact: true }),
+  ).toBeVisible();
+
+  // Save the arrangement under a name of the author's own; the same name twice is refused.
+  await page.getByRole("button", { name: "Close the panel", exact: true }).click();
+  await layoutMenu.click();
+  await page.getByRole("menuitem", { name: "Save current as…", exact: true }).click();
+  const nameBox = page
+    .getByRole("dialog", { name: "Save the current layout", exact: true })
+    .getByRole("textbox", { name: /^Name/ });
+  await nameBox.fill("Audio pass");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved the layout Audio pass.", { exact: true })).toBeVisible();
+  await layoutMenu.click();
+  await expect(item("Audio pass")).toContainText("Current");
+  await page.getByRole("menuitem", { name: "Save current as…", exact: true }).click();
+  await nameBox.fill("audio PASS");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByText("Another layout already has this name.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  // After a reload it is still listed, and applying it brings the arrangement back.
+  await page.reload();
+  await layoutMenu.click();
+  await item("Reviewing").click();
+  await expect(page).toHaveURL(/section=scenes/);
+  await layoutMenu.click();
+  await item("Audio pass").click();
+  await expect(page).toHaveURL(/section=description/);
+  await expect(page.getByRole("complementary", { name: "Player", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("separator", { name: "Activity rail width", exact: true }),
+  ).toBeVisible();
+
+  // Shortcuts are off until ticked: Alt+2 does nothing, then applies Reviewing, but not
+  // while typing in a field.
+  await page.keyboard.press("Alt+2");
+  await expect(page).toHaveURL(/section=description/);
+  await layoutMenu.click();
+  await page.getByRole("menuitemcheckbox", { name: /^Keyboard shortcuts/ }).click();
+  await page.keyboard.press("Escape");
+  await page.getByRole("textbox", { name: "Activity Script", exact: true }).focus();
+  await page.keyboard.press("Alt+2");
+  await expect(page).toHaveURL(/section=description/);
+  await page.getByRole("heading", { name: "Sight words", exact: true }).click();
+  await page.keyboard.press("Alt+2");
+  await expect(page).toHaveURL(/section=scenes/);
+
+  // Built-ins cannot be renamed or deleted; a saved layout can be deleted after asking.
+  await layoutMenu.click();
+  await page.getByRole("menuitem", { name: "Manage…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Layouts", exact: true });
+  await expect(dialog.getByRole("row", { name: /Writing/ })).toContainText("Built-in");
+  await expect(dialog.getByRole("button", { name: "Delete Writing", exact: true })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Delete Audio pass", exact: true }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByText("Deleted the layout Audio pass.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await layoutMenu.click();
+  await expect(item("Audio pass")).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });

@@ -169,6 +169,24 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.activityMapWidth",
+    scope: "browser",
+    why: "Width in px of the behavior map beside the activity player; layout preference of this browser, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.activityMapVisible",
+    scope: "browser",
+    why: "Whether the behavior map shows beside the activity player; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.activityLayouts",
+    scope: "browser",
+    why: "An author's named activity workspace layouts and whether their Alt+number shortcuts are on; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
     key: "penguin.dock.launcherY",
     scope: "browser",
     why: "Where the floating dock launcher rests along the chat body's edge; chrome layout, holds no entity.",
@@ -235,6 +253,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
 
   // --------------------------------------------------------------- install-scoped state
+  {
+    kind: "exact",
+    key: "penguin.activities.recent",
+    scope: "install",
+    why: "Activities each Project opened most recently, keyed by Project id and naming Activity ids; a new root has neither.",
+  },
   {
     kind: "family",
     key: "penguin.chatDraft.",

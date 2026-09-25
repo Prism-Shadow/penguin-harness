@@ -23,13 +23,15 @@ import {
   PLAYER_MIN,
   clampMapWidth,
   mapMaxFor,
-  readMapVisible,
-  readMapWidth,
   sideBySide,
   stepMapWidth,
-  writeMapVisible,
-  writeMapWidth,
 } from "./map-split";
+import {
+  setMapVisible,
+  setMapWidth as rememberMapWidth,
+  useMapVisible,
+  useMapWidth,
+} from "./map-prefs";
 
 /**
  * Opens what an author picked in the player, answering the name of what it opened, or null
@@ -213,8 +215,11 @@ function SandboxPlayer({
   const [picked, setPicked] = useState<string | null>(null);
   // The behavior map is shown until an author hides it: it is how a state is read. Both
   // whether it is shown and how wide it is beside the player outlast the page.
-  const [showMap, setShowMap] = useState(() => readMapVisible());
-  const [mapWidth, setMapWidth] = useState(() => readMapWidth());
+  // Shared with the workspace's layouts, which may change either while the player is open.
+  const showMap = useMapVisible();
+  const storedMapWidth = useMapWidth();
+  const [mapWidth, setMapWidth] = useState(storedMapWidth);
+  useEffect(() => setMapWidth(storedMapWidth), [storedMapWidth]);
   const [dragging, setDragging] = useState(false);
   // A tap target pointed at in the map, outlined while the pointer or focus stays on it.
   const [previewed, setPreviewed] = useState<string | null>(null);
@@ -295,9 +300,7 @@ function SandboxPlayer({
     frameRef.current?.contentWindow?.postMessage(highlightMessage(outlined), "*");
   }, [report, previewed, outlined]);
   function toggleMap() {
-    const next = !showMap;
-    setShowMap(next);
-    writeMapVisible(next);
+    setMapVisible(!showMap);
   }
   const [boxWidth, setBoxWidth] = useState(0);
   useLayoutEffect(() => {
@@ -344,7 +347,7 @@ function SandboxPlayer({
     } catch {
       // The element may already be gone, and its capture with it.
     }
-    if (keep) writeMapWidth(drag.width);
+    if (keep) rememberMapWidth(drag.width);
   }, []);
   // A drag cut short by the player stopping, or the panel closing, lets the pointer go.
   useEffect(() => () => endDrag(false), [endDrag]);
@@ -388,7 +391,7 @@ function SandboxPlayer({
     if (next === null) return;
     event.preventDefault();
     setMapWidth(next);
-    writeMapWidth(next);
+    rememberMapWidth(next);
   }
   const scale = fitScale(viewport, { width: boxWidth, height: viewport.height });
   const url = playUrl(projectId, activityId, {
