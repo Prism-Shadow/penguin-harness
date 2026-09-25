@@ -421,10 +421,31 @@ describe("the payload a preview serves", () => {
     await fs.mkdir(path.join(checkout, "media", "images"), { recursive: true });
     await fs.writeFile(path.join(checkout, "media", "images", "cat.png"), Buffer.alloc(30));
     expect(await service.mediaStats(PROJECT, ACTIVITY)).toEqual([
-      { language: "en-US", key: "hi", type: "audio", bound: true, bytes: 120 },
-      { language: "en-US", key: "cat", type: "image", bound: true, bytes: 30 },
-      { language: "en-US", key: "gone", type: "image", bound: true, bytes: null },
-      { language: "en-US", key: "bye", type: "audio", bound: false, bytes: null },
+      {
+        language: "en-US",
+        key: "hi",
+        type: "audio",
+        bound: true,
+        bytes: 120,
+        mimeType: "audio/wav",
+      },
+      {
+        language: "en-US",
+        key: "cat",
+        type: "image",
+        bound: true,
+        bytes: 30,
+        mimeType: "image/png",
+      },
+      {
+        language: "en-US",
+        key: "gone",
+        type: "image",
+        bound: true,
+        bytes: null,
+        mimeType: "image/png",
+      },
+      { language: "en-US", key: "bye", type: "audio", bound: false, bytes: null, mimeType: null },
     ]);
   });
 

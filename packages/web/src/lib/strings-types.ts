@@ -375,6 +375,20 @@ export type Strings = {
       total: string;
       missing: (n: number) => string;
     };
+    /** A bound audio or video file's format, size, length, bitrate and dimensions. */
+    mediaDetails: {
+      title: string;
+      format: string;
+      size: string;
+      length: string;
+      bitrate: string;
+      dimensions: string;
+      measuring: string;
+      unknown: string;
+      formats: Record<"wav" | "mp3" | "ogg" | "mp4" | "webm" | "other", string>;
+      kbps: (n: number) => string;
+      pixels: (width: number, height: number) => string;
+    };
     /** Loom's Configuration Data and Assessment Data: the module's own documents, read-only. */
     moduleDocuments: {
       loading: string;

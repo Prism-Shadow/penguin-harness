@@ -346,6 +346,11 @@ export class ActivitySandboxService implements ActivitySandbox {
       }
       return null;
     };
+    // Named from the extension, as the media origin names it when it serves the file.
+    const mediaMimeType = (bound: string): string | null => {
+      const type = mediaContentType(bound);
+      return /^(audio|video|image)\//.test(type) ? type : null;
+    };
     const stats: MediaStat[] = [];
     for (const [language, assets] of Object.entries(
       activity.draft.mediaPlan?.manifest.assets ?? {},
@@ -357,6 +362,7 @@ export class ActivitySandboxService implements ActivitySandbox {
           type: asset.type,
           bound: !!asset.path,
           bytes: asset.path ? await sizeOf(asset.path) : null,
+          mimeType: asset.path ? mediaMimeType(asset.path) : null,
         });
     return stats;
   }

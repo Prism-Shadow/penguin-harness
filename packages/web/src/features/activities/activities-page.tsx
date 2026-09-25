@@ -7,6 +7,7 @@ import type {
   ActivityRun,
   ActivityRunSummary,
   AssetManifest,
+  MediaStat,
   PipelineSelection,
   PipelineState,
   UploadedMedia,
@@ -896,6 +897,31 @@ function ActivityEditor({
     hasPlan: !!detail?.draft.mediaPlan,
     hasModule: !!latestModuleRun(runs) || sandboxModule,
   });
+  // The saved draft's media stats, read once per revision while the scenes are open, for
+  // the file details of a bound clip. Null when they could not be read.
+  const statsRevision = detail?.draft.contentRevision ?? "";
+  const wantMediaStats = section === "scenes" && !!detail?.draft.mediaPlan;
+  const [mediaStats, setMediaStats] = useState<{
+    key: string;
+    media: MediaStat[] | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!wantMediaStats) return;
+    const key = `${endpoint}@${statsRevision}`;
+    let cancelled = false;
+    apiFetch<{ media: MediaStat[] }>(`${endpoint}/media-stats`)
+      .then((value) => {
+        if (!cancelled) setMediaStats({ key, media: value.media });
+      })
+      .catch(() => {
+        if (!cancelled) setMediaStats({ key, media: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [endpoint, statsRevision, wantMediaStats]);
+  const currentMediaStats =
+    mediaStats?.key === `${endpoint}@${statsRevision}` ? mediaStats.media : undefined;
   const language = editedManifest?.assets[languageChoice]
     ? languageChoice
     : (Object.keys(editedManifest?.assets ?? {})[0] ?? "en-US");
@@ -1274,6 +1300,8 @@ function ActivityEditor({
             !codingAgentId
           }
           revision={detail.draft.contentRevision}
+          mediaStats={currentMediaStats}
+          savedManifest={detail.draft.mediaPlan?.manifest}
           canAccept={editable && available && !busy && !running && !dirty}
           canPreview={editable && available && !busy && !dirty}
           wafRoot={wafRoot}

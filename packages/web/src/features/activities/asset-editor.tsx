@@ -7,6 +7,7 @@ import { useState, type ReactNode } from "react";
 import type {
   AssetManifest,
   ActivityRunSummary,
+  MediaStat,
   UploadedMedia,
   VoiceOption,
 } from "@prismshadow/penguin-server/api";
@@ -26,6 +27,8 @@ import { MediaTextReview } from "./media-text-review";
 import type { SceneAssetSelection } from "./scene-asset-tree";
 import { VoicePicker } from "./voice-picker";
 import { voiceFor } from "./voice-catalogue";
+import { MediaDetailsView } from "./media-details-view";
+import { fileFactsFor } from "./media-details";
 
 export function AssetEditor({
   manifest,
@@ -60,6 +63,8 @@ export function AssetEditor({
   onTranslate,
   defaultLanguage = "en-US",
   onLanguage,
+  mediaStats,
+  savedManifest,
 }: {
   manifest: AssetManifest;
   /** The language group the rail is showing. */
@@ -101,6 +106,10 @@ export function AssetEditor({
   defaultLanguage?: string;
   /** Open this asset in another language. */
   onLanguage?: (language: string) => void;
+  /** The server's media stats for the saved draft: undefined while loading, null if unreadable. */
+  mediaStats?: readonly MediaStat[] | null;
+  /** The media plan as saved, which is what `mediaStats` describes. */
+  savedManifest?: AssetManifest;
   /**
    * Where this asset's scene sits on the storyboard: its name, the way back to the board,
    * and the scenes either side. Absent for media no scene uses.
@@ -120,6 +129,8 @@ export function AssetEditor({
   } | null>(null);
   // New takes the author chose to keep the current media over; they stay in the candidates.
   const [kept, setKept] = useState<ReadonlySet<string>>(new Set());
+  // A clip's length, once a waveform on this page has decoded it.
+  const [decoded, setDecoded] = useState<{ src: string; seconds: number } | null>(null);
   const group = manifest.assets[language] ?? [];
   const asset = group.find((entry) => entry.key === selection?.key);
   // A narration speaks in its own saved voice; one naming none uses the page's default.
@@ -235,6 +246,39 @@ export function AssetEditor({
   const narration = asset?.type === "audio" && !asset.kind;
   const acceptedImage = runs.find((run) => run.runId === asset?.generatedImage?.runId)?.image;
   const acceptedAudio = runs.find((run) => run.runId === asset?.generatedAudio?.runId)?.audio;
+  const uploadSrc = asset?.path ? uploadUrl(asset.path) : "";
+  const acceptedSrc = asset?.generatedAudio ? audioUrl(asset.generatedAudio.runId) : "";
+  // Where the bound file plays from, which is where its details are read.
+  const detailsSrc = !asset?.path
+    ? null
+    : asset.type === "audio" && asset.generatedAudio
+      ? acceptedSrc
+      : isUploadPath(asset.path)
+        ? uploadSrc
+        : asset.path.startsWith("media/")
+          ? `${endpoint}/sandbox/media/${asset.path
+              .slice("media/".length)
+              .split("/")
+              .map(encodeURIComponent)
+              .join("/")}`
+          : null;
+  const details =
+    asset?.path && detailsSrc && (asset.type === "audio" || asset.type === "video") ? (
+      <MediaDetailsView
+        key={detailsSrc}
+        kind={asset.type}
+        src={detailsSrc}
+        file={fileFactsFor({
+          path: asset.path,
+          language,
+          assetKey: asset.key,
+          uploads: media,
+          stats: mediaStats,
+          saved: savedManifest,
+        })}
+        seconds={decoded?.src === detailsSrc ? decoded.seconds : undefined}
+      />
+    ) : null;
   return (
     <section aria-label={S.activities.sceneAssets} className="flex min-h-0 min-w-0 flex-1 flex-col">
       {sceneNav && (
@@ -432,11 +476,13 @@ export function AssetEditor({
             )}
             {asset.type === "audio" && !asset.generatedAudio && isUploadPath(asset.path) && (
               <WaveformPlayer
-                src={`${endpoint}/media-upload?path=${encodeURIComponent(asset.path!)}`}
+                src={uploadSrc}
                 label={asset.key}
                 onTrim={editable && !disabled ? trimTo : undefined}
+                onDecoded={(seconds) => setDecoded({ src: uploadSrc, seconds })}
               />
             )}
+            {asset.type === "audio" && !asset.generatedAudio && details}
             {(asset.type === "video" || asset.type === "animation") &&
               (isUploadPath(asset.path) ? (
                 <MediaPlayer
@@ -447,6 +493,7 @@ export function AssetEditor({
               ) : (
                 <p className="text-xs text-gray-500">{S.activities.noInAppPreview}</p>
               ))}
+            {asset.type === "video" && details}
             {asset.type === "audio" && (
               <>
                 <AudioPlaybackFields
@@ -519,11 +566,13 @@ export function AssetEditor({
                     )}
                     <WaveformPlayer
                       key={asset.generatedAudio.runId}
-                      src={audioUrl(asset.generatedAudio.runId)}
+                      src={acceptedSrc}
                       label={S.activities.acceptedAudio}
                       autoLoad
                       onTrim={editable && !disabled ? trimTo : undefined}
+                      onDecoded={(seconds) => setDecoded({ src: acceptedSrc, seconds })}
                     />
+                    {details}
                   </div>
                 )}
                 {narration && editable && (

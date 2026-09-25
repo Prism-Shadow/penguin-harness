@@ -39,6 +39,7 @@ export function WaveformPlayer({
   /** Drawn straight away, for the one clip an author is working on. */
   autoLoad = false,
   onTrim,
+  onDecoded,
 }: {
   src: string;
   label: string;
@@ -48,7 +49,12 @@ export function WaveformPlayer({
    * place of this one. Absent where the clip cannot be replaced, which leaves no trimming.
    */
   onTrim?: (wav: Uint8Array) => Promise<void>;
+  /** Told the clip's length in seconds once it is decoded, so a caller need not measure it again. */
+  onDecoded?: (seconds: number) => void;
 }) {
+  // Read at decode time, so a new callback each render never restarts the decode.
+  const onDecodedRef = useRef(onDecoded);
+  onDecodedRef.current = onDecoded;
   const audioRef = useRef<HTMLAudioElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Always mounted, unlike the canvas, so there is something to measure before the
@@ -126,6 +132,7 @@ export function WaveformPlayer({
           // Stored at a resolution finer than any column count the layout will ask for.
           setEnvelope(waveformPeaks(decoded.getChannelData(0), ENVELOPE_COLUMNS));
           setDuration(decoded.duration);
+          onDecodedRef.current?.(decoded.duration);
         } finally {
           void context.close();
         }

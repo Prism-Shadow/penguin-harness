@@ -7,6 +7,7 @@ const stat = (over: Partial<MediaStat> & Pick<MediaStat, "key">): MediaStat => (
   type: "audio",
   bound: true,
   bytes: 100,
+  mimeType: null,
   ...over,
 });
 

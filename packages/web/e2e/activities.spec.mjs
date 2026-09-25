@@ -3043,6 +3043,164 @@ test("trims a stretch out of a narration and binds the shorter clip", async ({ p
   expect(f.errors).toEqual([]);
 });
 
+test("shows a narration's file details", async ({ page }) => {
+  const f = await fixture(page);
+  const clip = toneWav(2);
+  const path = "media/audio/hello.wav";
+  const uploadPath = "media/uploads/clip-1234abcd.wav";
+  // Stubbed before the activity opens, so its first upload listing holds the clip.
+  let statsReads = 0;
+  await page.route("**/*", (route) => {
+    const p = new URL(route.request().url()).pathname;
+    if (p === `${base}/act_test/sandbox/media/audio/hello.wav`)
+      return route.fulfill({ contentType: "audio/wav", body: clip });
+    if (p === `${base}/act_test/sandbox/media/audio/lost.wav`)
+      return route.fulfill({ status: 404, contentType: "text/plain", body: "Not found" });
+    if (p === `${base}/act_test/media-upload`)
+      return route.fulfill({ contentType: "audio/wav", body: clip });
+    if (p === `${base}/act_test/media-uploads` && route.request().method() === "GET")
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          media: [
+            {
+              path: uploadPath,
+              name: "clip.wav",
+              kind: "audio",
+              mimeType: "audio/wav",
+              byteLength: clip.byteLength,
+              sha256: "c".repeat(64),
+              updatedAt: "2026-09-25T10:00:00.000Z",
+            },
+          ],
+        }),
+      });
+    if (p !== `${base}/act_test/media-stats`) return route.fallback();
+    statsReads += 1;
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        media: [
+          {
+            language: "en-US",
+            key: "hello",
+            type: "audio",
+            bound: true,
+            bytes: clip.byteLength,
+            mimeType: "audio/wav",
+          },
+          {
+            language: "en-US",
+            key: "bye",
+            type: "audio",
+            bound: false,
+            bytes: null,
+            mimeType: null,
+          },
+          {
+            language: "en-US",
+            key: "lost",
+            type: "audio",
+            bound: true,
+            bytes: null,
+            mimeType: "audio/wav",
+          },
+          {
+            language: "en-US",
+            key: "clip",
+            type: "audio",
+            bound: true,
+            bytes: null,
+            mimeType: null,
+          },
+        ],
+      }),
+    });
+  });
+  await create(page);
+  await page.route(`**${base}/act_test/plan-media`, (route) =>
+    route.fallback({
+      postData: JSON.stringify({
+        ...route.request().postDataJSON(),
+        manifest: {
+          productCode: "words",
+          refNum: 12,
+          assets: {
+            "en-US": [
+              {
+                key: "hello",
+                type: "audio",
+                description: "Greeting",
+                script: "Hello",
+                path,
+                usages: [
+                  { sceneId: "intro", sourceKey: "hello", occurrence: 1, sceneOccurrenceCount: 1 },
+                ],
+              },
+              {
+                key: "bye",
+                type: "audio",
+                description: "Farewell",
+                script: "Bye",
+                usages: [
+                  { sceneId: "intro", sourceKey: "bye", occurrence: 1, sceneOccurrenceCount: 1 },
+                ],
+              },
+              {
+                key: "lost",
+                type: "audio",
+                description: "Missing file",
+                script: "Lost",
+                path: "media/audio/lost.wav",
+                usages: [
+                  { sceneId: "intro", sourceKey: "lost", occurrence: 1, sceneOccurrenceCount: 1 },
+                ],
+              },
+              {
+                key: "clip",
+                type: "audio",
+                description: "Uploaded clip",
+                script: "Clip",
+                path: uploadPath,
+                usages: [
+                  { sceneId: "intro", sourceKey: "clip", occurrence: 1, sceneOccurrenceCount: 1 },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    }),
+  );
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  const details = page.getByRole("region", { name: "File details", exact: true });
+  await expect(details.getByRole("term")).toHaveText(["Format", "Size", "Length", "Bitrate"]);
+  await expect(details.getByRole("definition")).toHaveText(["WAV", "31 KB", "0:02.0", "128 kbps"]);
+  expect(statsReads).toBe(1);
+
+  // An unbound narration has no file, so no details.
+  await page.getByRole("treeitem", { name: /bye/ }).first().click();
+  await expect(page.getByRole("heading", { name: "bye", exact: true })).toBeVisible();
+  await expect(details).toHaveCount(0);
+
+  // A bound file that is missing shows dashes, not an error or an endless "Measuring…".
+  await page.getByRole("treeitem", { name: /lost/ }).first().click();
+  await expect(page.getByRole("heading", { name: "lost", exact: true })).toBeVisible();
+  await expect(details.getByRole("definition")).toHaveText(["WAV", "—", "—", "—"]);
+
+  // An upload's size and format come from the upload listing, and it plays from media-upload.
+  await page.getByRole("treeitem", { name: /clip/ }).first().click();
+  await expect(page.getByRole("heading", { name: "clip", exact: true })).toBeVisible();
+  await expect(details.getByRole("definition")).toHaveText(["WAV", "31 KB", "0:02.0", "128 kbps"]);
+  expect(f.errors).toEqual([]);
+});
+
 test("Activity Stats counts and weighs the media plan by type and language", async ({ page }) => {
   const f = await fixture(page);
   await create(page);
@@ -3053,9 +3211,30 @@ test("Activity Stats counts and weighs the media plan by type and language", asy
       contentType: "application/json",
       body: JSON.stringify({
         media: [
-          { language: "en-US", key: "cat", type: "image", bound: true, bytes: 2048 },
-          { language: "en-US", key: "hi", type: "audio", bound: true, bytes: 1024 },
-          { language: "es-MX", key: "hi", type: "audio", bound: true, bytes: null },
+          {
+            language: "en-US",
+            key: "cat",
+            type: "image",
+            bound: true,
+            bytes: 2048,
+            mimeType: "image/png",
+          },
+          {
+            language: "en-US",
+            key: "hi",
+            type: "audio",
+            bound: true,
+            bytes: 1024,
+            mimeType: "audio/wav",
+          },
+          {
+            language: "es-MX",
+            key: "hi",
+            type: "audio",
+            bound: true,
+            bytes: null,
+            mimeType: "audio/wav",
+          },
         ],
       }),
     });

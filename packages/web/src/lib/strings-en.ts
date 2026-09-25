@@ -452,6 +452,19 @@ export const en: Strings = {
       missing: (n: number) =>
         `${n} bound ${n === 1 ? "file was" : "files were"} not found, so ${n === 1 ? "its size is" : "their sizes are"} not counted.`,
     },
+    mediaDetails: {
+      title: "File details",
+      format: "Format",
+      size: "Size",
+      length: "Length",
+      bitrate: "Bitrate",
+      dimensions: "Dimensions",
+      measuring: "Measuring…",
+      unknown: "—",
+      formats: { wav: "WAV", mp3: "MP3", ogg: "Ogg", mp4: "MP4", webm: "WebM", other: "Other" },
+      kbps: (n: number) => `${n} kbps`,
+      pixels: (width: number, height: number) => `${width} × ${height}`,
+    },
     moduleDocuments: {
       loading: "Reading the module…",
       unreadable: (reason: string) => `The module could not be read: ${reason}`,
