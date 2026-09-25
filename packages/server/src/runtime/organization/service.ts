@@ -1652,6 +1652,13 @@ export class OrganizationService {
         if (isTicket && (await this.deps.store.findTicket(org.dir, by)) === null) {
           throw badRequest(`Blocking ticket does not exist: ${by}`);
         }
+        if (p?.kind === "agent" || p?.kind === "user") {
+          // A named principal is held to the same chart as a channel member: an
+          // agent:<id> that names no employee, or a user:<id> outside the Project,
+          // would still render as "(by …)" in the digest and on the board — an
+          // attribution nobody can answer for.
+          this.requireChannelPrincipal(org, by);
+        }
       }
       const d = t.doc;
       d.blocked = reason.trim();
