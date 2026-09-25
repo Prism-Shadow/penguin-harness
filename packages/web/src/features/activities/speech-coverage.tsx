@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import type {
   ActivityRunSummary,
   AssetManifest,
+  SoundProviderId,
   VoiceOption,
 } from "@prismshadow/penguin-server/api";
 import { Badge } from "../../components/ui/badge";
@@ -31,6 +32,8 @@ import {
   type InstructionType,
 } from "./instruction-type";
 import { SEGMENT, SEGMENTS, SEGMENT_OFF, SEGMENT_ON } from "./segment-styles";
+import { soundStatuses, soundTally, type SoundState } from "./bulk-sound";
+import { providerLabel } from "./sound-model";
 import { mixedVoice } from "./voice-catalogue";
 import { VoicePicker } from "./voice-picker";
 
@@ -41,6 +44,14 @@ const STATE_TONE: Record<SpeechState, Tone | null> = {
   missing: "attention",
   scriptMissing: "attention",
   scriptTooLong: "attention",
+};
+
+const SOUND_TONE: Record<SoundState, Tone | null> = {
+  ready: null,
+  generating: "busy",
+  failed: "danger",
+  missing: "attention",
+  noPrompt: "attention",
 };
 
 const FILTERS: readonly SpeechFilter[] = [
@@ -83,6 +94,8 @@ export function SpeechCoverage({
   onVoice,
   onApplyVoiceToAll,
   voiceDisabled = false,
+  soundProvider,
+  onGenerateSounds,
 }: {
   assets: readonly MediaAsset[];
   language: string;
@@ -115,6 +128,10 @@ export function SpeechCoverage({
   onApplyVoiceToAll?: (voice: string) => void;
   /** Hold the voice choice while a save or a run could move the draft under it. */
   voiceDisabled?: boolean;
+  /** Who the sounds stage asks for music and effects, and whether the agent can use it. */
+  soundProvider?: { id: SoundProviderId; available: boolean };
+  /** Run the sounds stage for this language. */
+  onGenerateSounds?: (provider: SoundProviderId) => void;
   editable: boolean;
   canGenerate: boolean;
   /** Open one narration in the workbench's detail panel. */
@@ -160,257 +177,367 @@ export function SpeechCoverage({
   const shown = statuses.filter(
     (status) => inSpeechFilter(status, filter) && inType(status, instruction),
   );
-  if (!tally.total) return <p className="text-sm text-gray-500">{S.activities.bulkSpeechNone}</p>;
-  return (
-    <section className="space-y-3">
-      <h4 className="flex items-center gap-2 text-sm font-semibold">
-        {S.activities.bulkSpeechTitle}
-        <InfoPopover label={S.activities.bulkSpeechTitle}>
-          <p>{S.activities.bulkSpeechHelp}</p>
-        </InfoPopover>
-      </h4>
-      <p className="text-xs text-gray-500">
-        {S.activities.bulkSpeechTally(tally.ready, tally.total)}
-        {tally.pending > 0 ? ` · ${S.activities.bulkSpeechPending(tally.pending)}` : ""}
-      </p>
-      {tally.blocked > 0 && (
-        <p className={`text-xs ${toneInk.attention}`}>
-          {S.activities.bulkSpeechBlocked(tally.blocked)}
-        </p>
-      )}
-      {languages.length > 1 && onLanguage && (
-        <div role="group" aria-label={S.activities.bulkSpeechLanguages} className={SEGMENTS}>
-          {languages.map((entry) => (
-            <button
-              key={entry.language}
-              type="button"
-              aria-pressed={entry.language === language}
-              onClick={() => onLanguage(entry.language)}
-              className={`${SEGMENT} tabular-nums ${entry.language === language ? SEGMENT_ON : SEGMENT_OFF}`}
-            >
-              {S.activities.bulkSpeechLanguage(entry.language, entry.ready, entry.total)}
-            </button>
-          ))}
-        </div>
-      )}
-      {editable && (toTranslate > 0 || addable.length > 0 || (voices.length > 0 && onVoice)) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {voices.length > 0 && onVoice && (
-            <div className="flex items-center gap-2">
-              <span aria-hidden className="text-xs text-gray-500 dark:text-gray-400">
-                {S.activities.voicePicker.applyToAll}
-              </span>
-              <div className="w-40">
-                <VoicePicker
-                  options={voices}
-                  // The voice the narrations share, or the default where none names one
-                  // Penguin can speak (generation falls back to the default for those).
-                  value={mixedVoice(assets, voices) ?? (voice || null)}
-                  label={S.activities.voicePicker.applyToAll}
-                  showLabel={false}
-                  disabled={voiceDisabled}
-                  onChange={(id) => {
-                    onVoice(id);
-                    onApplyVoiceToAll?.(id);
-                  }}
-                />
-              </div>
-            </div>
-          )}
-          {unscripted > 0 && onTranslateAndSpeak ? (
-            <Button size="sm" disabled={!canGenerate} onClick={() => onTranslateAndSpeak()}>
-              {S.activities.speechTranslation.translateAndSpeakAll(toTranslate)}
-            </Button>
-          ) : (
-            toTranslate > 0 &&
-            onTranslateAll && (
-              <Button size="sm" disabled={!canGenerate} onClick={onTranslateAll}>
-                {S.activities.speechTranslation.translateAll(toTranslate)}
-              </Button>
-            )
-          )}
-          {addable.length > 0 && onAddLanguage && (
-            <>
-              <div className="w-44">
-                <Select
-                  size="sm"
-                  aria-label={S.activities.speechTranslation.addLanguage}
-                  value={adding}
-                  onChange={(event) => setAdding(event.target.value)}
-                >
-                  <option value="">{S.activities.speechTranslation.addLanguage}</option>
-                  {addable.map((entry) => (
-                    <option key={entry.code} value={entry.code}>
-                      {entry.label}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <Button
-                size="sm"
-                disabled={!adding}
-                onClick={() => {
-                  onAddLanguage(adding);
-                  setAdding("");
-                }}
-              >
-                {S.activities.speechTranslation.add}
-              </Button>
-            </>
-          )}
-        </div>
-      )}
-      <div role="group" aria-label={S.activities.bulkSpeechFilters} className={SEGMENTS}>
-        {FILTERS.filter((entry) => entry === "all" || entry === filter || counts[entry] > 0).map(
-          (entry) => (
-            <button
-              key={entry}
-              type="button"
-              aria-pressed={filter === entry}
-              onClick={() => setFilter(entry)}
-              className={`${SEGMENT} ${filter === entry ? SEGMENT_ON : SEGMENT_OFF}`}
-            >
-              {S.activities.bulkSpeechFilter[entry]}{" "}
-              <span className="tabular-nums opacity-70">{counts[entry]}</span>
-            </button>
-          ),
-        )}
+  const sounds = (
+    <SoundCoverage
+      assets={assets}
+      runs={runs}
+      language={language}
+      editable={editable}
+      canGenerate={canGenerate}
+      provider={soundProvider}
+      onSelect={onSelect}
+      onGenerate={onGenerateSounds}
+    />
+  );
+  if (!tally.total)
+    return (
+      <div className="space-y-6">
+        <p className="text-sm text-gray-500">{S.activities.bulkSpeechNone}</p>
+        {sounds}
       </div>
-      {sorted && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="flex items-center gap-1 text-xs text-gray-500">
-            {S.activities.instructionType.title}
-            <InfoPopover label={S.activities.instructionType.title}>
-              <p>{S.activities.instructionType.about}</p>
-            </InfoPopover>
-          </span>
-          <div
-            role="group"
-            aria-label={S.activities.instructionType.filterLabel}
-            className={SEGMENTS}
-          >
-            {INSTRUCTION_FILTERS.map((entry) => (
+    );
+  return (
+    <div className="space-y-6">
+      <section className="space-y-3">
+        <h4 className="flex items-center gap-2 text-sm font-semibold">
+          {S.activities.bulkSpeechTitle}
+          <InfoPopover label={S.activities.bulkSpeechTitle}>
+            <p>{S.activities.bulkSpeechHelp}</p>
+          </InfoPopover>
+        </h4>
+        <p className="text-xs text-gray-500">
+          {S.activities.bulkSpeechTally(tally.ready, tally.total)}
+          {tally.pending > 0 ? ` · ${S.activities.bulkSpeechPending(tally.pending)}` : ""}
+        </p>
+        {tally.blocked > 0 && (
+          <p className={`text-xs ${toneInk.attention}`}>
+            {S.activities.bulkSpeechBlocked(tally.blocked)}
+          </p>
+        )}
+        {languages.length > 1 && onLanguage && (
+          <div role="group" aria-label={S.activities.bulkSpeechLanguages} className={SEGMENTS}>
+            {languages.map((entry) => (
               <button
-                key={entry}
+                key={entry.language}
                 type="button"
-                aria-pressed={instruction === entry}
-                onClick={() => setInstruction(entry)}
-                className={`${SEGMENT} ${instruction === entry ? SEGMENT_ON : SEGMENT_OFF}`}
+                aria-pressed={entry.language === language}
+                onClick={() => onLanguage(entry.language)}
+                className={`${SEGMENT} tabular-nums ${entry.language === language ? SEGMENT_ON : SEGMENT_OFF}`}
               >
-                {S.activities.instructionType.filter[entry]}{" "}
-                <span className="tabular-nums opacity-70">{typeCounts[entry]}</span>
+                {S.activities.bulkSpeechLanguage(entry.language, entry.ready, entry.total)}
               </button>
             ))}
           </div>
-        </div>
-      )}
-      <ul className="space-y-1">
-        {shown.map((status) => {
-          const tone = STATE_TONE[status.state];
-          const type = typeOf(status.key);
-          return (
-            <li key={status.key} className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => onSelect(status.key)}
-                title={status.error}
-                className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-900"
-              >
-                <span className="min-w-0 break-all">
-                  <span className="font-medium">{status.key}</span>
-                  <span className="text-gray-500"> · {status.sceneIds.join(", ")}</span>
-                  {type !== "other" && (
-                    <>
-                      {" "}
-                      <Badge tone="gray">{S.activities.instructionType.badge[type]}</Badge>
-                    </>
-                  )}
+        )}
+        {editable && (toTranslate > 0 || addable.length > 0 || (voices.length > 0 && onVoice)) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {voices.length > 0 && onVoice && (
+              <div className="flex items-center gap-2">
+                <span aria-hidden className="text-xs text-gray-500 dark:text-gray-400">
+                  {S.activities.voicePicker.applyToAll}
                 </span>
-                <span
-                  className={`shrink-0 ${
-                    status.translation === "translating"
-                      ? toneInk.busy
-                      : status.translation
-                        ? toneInk.attention
-                        : tone
-                          ? toneInk[tone]
-                          : "text-gray-500"
-                  }`}
-                >
-                  {status.translation === "missing" || status.translation === "translating"
-                    ? S.activities.speechTranslation[status.translation]
-                    : status.translation === "outdated"
-                      ? `${S.activities.speechState[status.state]} · ${S.activities.speechTranslation.outdated}`
-                      : S.activities.speechState[status.state]}
-                </span>
-              </button>
-              {status.translation === "missing" && editable && onTranslateAndSpeak ? (
+                <div className="w-40">
+                  <VoicePicker
+                    options={voices}
+                    // The voice the narrations share, or the default where none names one
+                    // Penguin can speak (generation falls back to the default for those).
+                    value={mixedVoice(assets, voices) ?? (voice || null)}
+                    label={S.activities.voicePicker.applyToAll}
+                    showLabel={false}
+                    disabled={voiceDisabled}
+                    onChange={(id) => {
+                      onVoice(id);
+                      onApplyVoiceToAll?.(id);
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+            {unscripted > 0 && onTranslateAndSpeak ? (
+              <Button size="sm" disabled={!canGenerate} onClick={() => onTranslateAndSpeak()}>
+                {S.activities.speechTranslation.translateAndSpeakAll(toTranslate)}
+              </Button>
+            ) : (
+              toTranslate > 0 &&
+              onTranslateAll && (
+                <Button size="sm" disabled={!canGenerate} onClick={onTranslateAll}>
+                  {S.activities.speechTranslation.translateAll(toTranslate)}
+                </Button>
+              )
+            )}
+            {addable.length > 0 && onAddLanguage && (
+              <>
+                <div className="w-44">
+                  <Select
+                    size="sm"
+                    aria-label={S.activities.speechTranslation.addLanguage}
+                    value={adding}
+                    onChange={(event) => setAdding(event.target.value)}
+                  >
+                    <option value="">{S.activities.speechTranslation.addLanguage}</option>
+                    {addable.map((entry) => (
+                      <option key={entry.code} value={entry.code}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
                 <Button
                   size="sm"
-                  variant="ghost"
-                  disabled={!canGenerate}
-                  onClick={() => onTranslateAndSpeak(status.key)}
+                  disabled={!adding}
+                  onClick={() => {
+                    onAddLanguage(adding);
+                    setAdding("");
+                  }}
                 >
-                  {S.activities.speechTranslation.translateAndSpeak}
+                  {S.activities.speechTranslation.add}
                 </Button>
-              ) : (
-                (status.translation === "missing" || status.translation === "outdated") &&
-                editable &&
-                onTranslate && (
+              </>
+            )}
+          </div>
+        )}
+        <div role="group" aria-label={S.activities.bulkSpeechFilters} className={SEGMENTS}>
+          {FILTERS.filter((entry) => entry === "all" || entry === filter || counts[entry] > 0).map(
+            (entry) => (
+              <button
+                key={entry}
+                type="button"
+                aria-pressed={filter === entry}
+                onClick={() => setFilter(entry)}
+                className={`${SEGMENT} ${filter === entry ? SEGMENT_ON : SEGMENT_OFF}`}
+              >
+                {S.activities.bulkSpeechFilter[entry]}{" "}
+                <span className="tabular-nums opacity-70">{counts[entry]}</span>
+              </button>
+            ),
+          )}
+        </div>
+        {sorted && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1 text-xs text-gray-500">
+              {S.activities.instructionType.title}
+              <InfoPopover label={S.activities.instructionType.title}>
+                <p>{S.activities.instructionType.about}</p>
+              </InfoPopover>
+            </span>
+            <div
+              role="group"
+              aria-label={S.activities.instructionType.filterLabel}
+              className={SEGMENTS}
+            >
+              {INSTRUCTION_FILTERS.map((entry) => (
+                <button
+                  key={entry}
+                  type="button"
+                  aria-pressed={instruction === entry}
+                  onClick={() => setInstruction(entry)}
+                  className={`${SEGMENT} ${instruction === entry ? SEGMENT_ON : SEGMENT_OFF}`}
+                >
+                  {S.activities.instructionType.filter[entry]}{" "}
+                  <span className="tabular-nums opacity-70">{typeCounts[entry]}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <ul className="space-y-1">
+          {shown.map((status) => {
+            const tone = STATE_TONE[status.state];
+            const type = typeOf(status.key);
+            return (
+              <li key={status.key} className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onSelect(status.key)}
+                  title={status.error}
+                  className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-900"
+                >
+                  <span className="min-w-0 break-all">
+                    <span className="font-medium">{status.key}</span>
+                    <span className="text-gray-500"> · {status.sceneIds.join(", ")}</span>
+                    {type !== "other" && (
+                      <>
+                        {" "}
+                        <Badge tone="gray">{S.activities.instructionType.badge[type]}</Badge>
+                      </>
+                    )}
+                  </span>
+                  <span
+                    className={`shrink-0 ${
+                      status.translation === "translating"
+                        ? toneInk.busy
+                        : status.translation
+                          ? toneInk.attention
+                          : tone
+                            ? toneInk[tone]
+                            : "text-gray-500"
+                    }`}
+                  >
+                    {status.translation === "missing" || status.translation === "translating"
+                      ? S.activities.speechTranslation[status.translation]
+                      : status.translation === "outdated"
+                        ? `${S.activities.speechState[status.state]} · ${S.activities.speechTranslation.outdated}`
+                        : S.activities.speechState[status.state]}
+                  </span>
+                </button>
+                {status.translation === "missing" && editable && onTranslateAndSpeak ? (
                   <Button
                     size="sm"
                     variant="ghost"
                     disabled={!canGenerate}
-                    onClick={() => onTranslate(status.key)}
+                    onClick={() => onTranslateAndSpeak(status.key)}
                   >
-                    {S.activities.speechTranslation.translate}
+                    {S.activities.speechTranslation.translateAndSpeak}
                   </Button>
-                )
-              )}
-              {status.state === "failed" && editable && onRetry && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={!canGenerate}
-                  onClick={() => onRetry(status.key)}
-                >
-                  {S.activities.bulkSpeechRetry}
-                </Button>
-              )}
+                ) : (
+                  (status.translation === "missing" || status.translation === "outdated") &&
+                  editable &&
+                  onTranslate && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={!canGenerate}
+                      onClick={() => onTranslate(status.key)}
+                    >
+                      {S.activities.speechTranslation.translate}
+                    </Button>
+                  )
+                )}
+                {status.state === "failed" && editable && onRetry && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!canGenerate}
+                    onClick={() => onRetry(status.key)}
+                  >
+                    {S.activities.bulkSpeechRetry}
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        {editable && queued > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <p role="status" className={`text-xs ${toneInk.busy}`}>
+              {S.activities.bulkSpeechQueued(queued)}
+            </p>
+            <Button size="sm" onClick={onCancelQueue}>
+              {S.activities.bulkSpeechStop}
+            </Button>
+          </div>
+        ) : (
+          editable &&
+          pending.length > 0 && (
+            <Button size="sm" disabled={!canGenerate} onClick={() => setConfirming(true)}>
+              {S.activities.bulkSpeechGenerate(pending.length)}
+            </Button>
+          )
+        )}
+        {confirming && (
+          <ConfirmModal
+            open
+            tone="primary"
+            title={S.activities.bulkSpeechTitle}
+            confirmLabel={S.activities.bulkSpeechGenerate(pending.length)}
+            onClose={() => setConfirming(false)}
+            onConfirm={() => {
+              setConfirming(false);
+              onGenerateAll(pending);
+            }}
+          >
+            <p>{S.activities.bulkSpeechConfirm(pending.length, language)}</p>
+          </ConfirmModal>
+        )}
+      </section>
+      {sounds}
+    </div>
+  );
+}
+
+/**
+ * Music and sound effects in one language: how many are bound, each one's state, and one
+ * press that runs the sounds stage for the language. Absent when the language has none.
+ */
+function SoundCoverage({
+  assets,
+  runs,
+  language,
+  editable,
+  canGenerate,
+  provider,
+  onSelect,
+  onGenerate,
+}: {
+  assets: readonly MediaAsset[];
+  runs: readonly ActivityRunSummary[];
+  language: string;
+  editable: boolean;
+  canGenerate: boolean;
+  provider?: { id: SoundProviderId; available: boolean };
+  onSelect: (key: string) => void;
+  onGenerate?: (provider: SoundProviderId) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const words = S.activities.sound;
+  const statuses = soundStatuses(assets, runs, language);
+  const tally = soundTally(assets, runs, language);
+  if (!statuses.length) return null;
+  const name = provider ? providerLabel(provider.id) : "";
+  return (
+    <section aria-label={words.bulkTitle} className="space-y-3">
+      <h4 className="flex items-center gap-2 text-sm font-semibold">
+        {words.bulkTitle}
+        <InfoPopover label={words.bulkTitle}>
+          <p>{words.bulkHelp}</p>
+        </InfoPopover>
+      </h4>
+      <p className="text-xs text-gray-500">{words.bulkTally(tally.ready, tally.total)}</p>
+      <ul className="space-y-1">
+        {statuses.map((status) => {
+          const tone = SOUND_TONE[status.state];
+          return (
+            <li key={status.key}>
+              <button
+                type="button"
+                onClick={() => onSelect(status.key)}
+                title={status.error}
+                className="flex w-full flex-wrap items-baseline justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-900"
+              >
+                <span className="min-w-0 font-medium break-all">{status.key}</span>
+                <span className={`shrink-0 ${tone ? toneInk[tone] : "text-gray-500"}`}>
+                  {words.statuses[status.state]}
+                </span>
+              </button>
             </li>
           );
         })}
       </ul>
-      {editable && queued > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <p role="status" className={`text-xs ${toneInk.busy}`}>
-            {S.activities.bulkSpeechQueued(queued)}
-          </p>
-          <Button size="sm" onClick={onCancelQueue}>
-            {S.activities.bulkSpeechStop}
-          </Button>
-        </div>
-      ) : (
-        editable &&
-        pending.length > 0 && (
-          <Button size="sm" disabled={!canGenerate} onClick={() => setConfirming(true)}>
-            {S.activities.bulkSpeechGenerate(pending.length)}
-          </Button>
-        )
+      {editable && provider && !provider.available && tally.pending > 0 && (
+        <p className={`text-xs ${toneInk.attention}`}>{words.bulkUnavailable(name)}</p>
       )}
-      {confirming && (
+      {editable && onGenerate && provider && tally.pending > 0 && (
+        <Button
+          size="sm"
+          disabled={!canGenerate || !provider.available}
+          onClick={() => setConfirming(true)}
+        >
+          {words.bulk(tally.pending)}
+        </Button>
+      )}
+      {confirming && provider && onGenerate && (
         <ConfirmModal
           open
           tone="primary"
-          title={S.activities.bulkSpeechTitle}
-          confirmLabel={S.activities.bulkSpeechGenerate(pending.length)}
+          title={words.bulkTitle}
+          confirmLabel={words.bulk(tally.pending)}
           onClose={() => setConfirming(false)}
           onConfirm={() => {
             setConfirming(false);
-            onGenerateAll(pending);
+            onGenerate(provider.id);
           }}
         >
-          <p>{S.activities.bulkSpeechConfirm(pending.length, language)}</p>
+          <p>{words.bulkConfirm(tally.pending, name, language)}</p>
         </ConfirmModal>
       )}
     </section>

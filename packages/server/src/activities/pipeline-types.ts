@@ -2,11 +2,14 @@
  * The shapes of "Run all stages", on their own so the App can import them without
  * pulling in the service that runs the stages (see `pipeline-run.ts`).
  */
+import type { SoundProviderId } from "./sound-types.js";
+
 export const PIPELINE_STEPS = [
   "spec",
   "media",
   "translations",
   "speech",
+  "sounds",
   "images",
   "assessment",
   "module",
@@ -29,6 +32,10 @@ export type PipelineNote =
   | "needsPenguinAgent"
   | "noNarration"
   | "noImages"
+  /** No music or sound effect has a prompt and no file. */
+  | "noSounds"
+  /** The sound provider cannot be used by the chosen agent (no key, or no model). */
+  | "soundProviderUnavailable"
   /** The specification says the activity has no assessment. */
   | "noAssessment"
   /** Only the canonical ref writes the assessment every ref shares. */
@@ -81,6 +88,8 @@ export interface PipelineInput {
   agentId: string;
   codingAgentId?: string;
   voice?: string;
+  /** Who makes the music and sound effects the sounds step generates; ElevenLabs when absent. */
+  soundProvider?: SoundProviderId;
   wafRoot?: string;
   bookMode?: "readAlong" | "decodable";
 }

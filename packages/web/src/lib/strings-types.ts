@@ -525,7 +525,15 @@ export type Strings = {
       stage: string;
       all: string;
       steps: Record<
-        "spec" | "media" | "translations" | "speech" | "images" | "assessment" | "module" | "test",
+        | "spec"
+        | "media"
+        | "translations"
+        | "speech"
+        | "sounds"
+        | "images"
+        | "assessment"
+        | "module"
+        | "test",
         string
       >;
       narration: string;
@@ -545,6 +553,8 @@ export type Strings = {
         | "needsPenguinAgent"
         | "noNarration"
         | "noImages"
+        | "noSounds"
+        | "soundProviderUnavailable"
         | "noAssessment"
         | "notCanonical"
         | "noCriteria"
@@ -934,6 +944,14 @@ export type Strings = {
       candidate: (provider: string, seconds: string | null) => string;
       candidates: string;
       player: string;
+      /** The Audios section's block for music and effects, and the stage it starts. */
+      bulkTitle: string;
+      bulkHelp: string;
+      bulkTally: (ready: number, total: number) => string;
+      bulk: (count: number) => string;
+      bulkConfirm: (count: number, provider: string, language: string) => string;
+      bulkUnavailable: (provider: string) => string;
+      statuses: Record<"ready" | "missing" | "failed" | "generating" | "noPrompt", string>;
     };
     assetLibrary: {
       kind: string;

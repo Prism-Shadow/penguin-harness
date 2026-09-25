@@ -4,6 +4,7 @@ import {
   imageTargets,
   inScope,
   parseSelection,
+  soundTargets,
   speechTargets,
   stepsFor,
   translationTargets,
@@ -58,6 +59,7 @@ describe("choosing the work", () => {
       "media",
       "translations",
       "speech",
+      "sounds",
       "images",
       "assessment",
       "module",
@@ -84,6 +86,19 @@ function world(
     criteria?: string[];
     /** Whether the test browser is installed. */
     browser?: boolean;
+    /** Add two sound effects to the plan: one bound, one with a prompt and no file. */
+    sounds?: boolean;
+    /** Whether the chosen agent can use each sound provider (all can when absent). */
+    soundProviders?: Partial<Record<"elevenlabs" | "agenthub", boolean>>;
+    /** The model hub's sound models, as its setup lists them (none when absent). */
+    hubModels?: {
+      id: string;
+      kinds: ("music" | "sfx")[];
+      credential: string;
+      available: boolean;
+    }[];
+    /** Add an unbound music asset with a prompt to the plan, next to the sound effects. */
+    music?: boolean;
   } = {},
 ) {
   let revision = 1;
@@ -117,6 +132,7 @@ function world(
   const runs: ActivityRun[] = [];
   const started: string[] = [];
   const cancelled: string[] = [];
+  const soundSetups: string[] = [];
   const asset = (language: string, key: string) =>
     activity.draft.mediaPlan!.manifest.assets[language]!.find((item) => item.key === key)!;
 
@@ -133,7 +149,7 @@ function world(
       if (module?.assessment) assessmentInputs.push(module.assessment);
       const kind: ActivityRun["kind"] = module?.assessment
         ? "assessment"
-        : module?.audio
+        : module?.audio || module?.sound
           ? "audio"
           : module?.image
             ? "image"
@@ -150,16 +166,22 @@ function world(
         error: null,
         agentId,
         codingAgentId: runtime?.codingAgentId,
-        audio: module?.audio,
+        // A sound run keeps its target as the run's audio, as the real service does.
+        audio: module?.audio ?? module?.sound,
         image: module?.image,
         mediaText: module?.mediaText,
       } as unknown as ActivityRun;
       runs.push(run);
-      started.push(
-        kind === "audio" || kind === "image" || kind === "media-text"
-          ? `${kind}:${(module.audio ?? module.image ?? module.mediaText).language}:${(module.audio ?? module.image ?? module.mediaText).assetKey}`
-          : kind,
-      );
+      if (module?.sound)
+        started.push(
+          `sound:${module.sound.provider}:${module.sound.language}:${module.sound.assetKey}`,
+        );
+      else
+        started.push(
+          kind === "audio" || kind === "image" || kind === "media-text"
+            ? `${kind}:${(module.audio ?? module.image ?? module.mediaText).language}:${(module.audio ?? module.image ?? module.mediaText).assetKey}`
+            : kind,
+        );
       return run;
     },
     async list() {
@@ -179,10 +201,35 @@ function world(
       }
       return runs.map((run) => ({ ...run, hasCandidate: false }));
     },
+    async soundSetup(_p: string, agentId: string) {
+      soundSetups.push(agentId);
+      return {
+        providers: (["elevenlabs", "agenthub"] as const).map((id) => ({
+          id,
+          kinds: ["music", "sfx"],
+          available: options.soundProviders?.[id] ?? true,
+          ...(id === "agenthub"
+            ? {
+                modelChoices: options.hubModels ?? [
+                  {
+                    id: "hub-sound",
+                    kinds: ["music", "sfx"],
+                    credential: "HUB_KEY",
+                    available: options.soundProviders?.agenthub ?? true,
+                  },
+                ],
+              }
+            : {}),
+        })),
+      };
+    },
     async acceptAudio(_p: string, _a: string, runId: string, expected: string) {
       if (expected !== activity.draft.contentRevision) throw new Error("draft_conflict");
       const run = runs.find((item) => item.runId === runId)!;
-      asset(run.audio!.language, run.audio!.assetKey).path = `${runId}.wav`;
+      asset(run.audio!.language, run.audio!.assetKey).path = (run.audio as { provider?: string })
+        .provider
+        ? `${runId}.mp3`
+        : `${runId}.wav`;
       bump();
     },
     async acceptImage(_p: string, _a: string, runId: string, expected: string) {
@@ -231,6 +278,35 @@ function world(
         requirements: {},
         manifest: manifest(options.romanian),
       };
+      if (options.sounds)
+        activity.draft.mediaPlan.manifest.assets["en-US"]!.push(
+          {
+            key: "chime",
+            type: "audio",
+            kind: "sfx",
+            description: "Correct answer",
+            script: "bright chime",
+            path: "media/chime.mp3",
+            usages: usage,
+          },
+          {
+            key: "whoosh",
+            type: "audio",
+            kind: "sfx",
+            description: "Page turn",
+            script: '<audio kind="sfx" duration="2">soft paper whoosh</audio>',
+            usages: usage,
+          },
+        );
+      if (options.music)
+        activity.draft.mediaPlan.manifest.assets["en-US"]!.push({
+          key: "tune",
+          type: "audio",
+          kind: "music",
+          description: "Background",
+          script: "gentle marimba loop",
+          usages: usage,
+        });
       bump();
     },
   } as unknown as ActivityAuthoring;
@@ -271,6 +347,7 @@ function world(
     asset,
     accepted,
     assessmentInputs,
+    soundSetups,
   };
 }
 
@@ -279,6 +356,7 @@ describe("running the stages", () => {
     const w = world();
     const { state, done } = w.runner.start("proj", "act", { selection: "all", agentId: "agent" });
     expect(state.steps.map((step) => step.status)).toEqual([
+      "pending",
       "pending",
       "pending",
       "pending",
@@ -296,6 +374,7 @@ describe("running the stages", () => {
       ["media", "succeeded"],
       ["translations", "skipped"],
       ["speech", "succeeded"],
+      ["sounds", "skipped"],
       ["images", "succeeded"],
       ["assessment", "skipped"],
       ["module", "succeeded"],
@@ -338,6 +417,7 @@ describe("running the stages", () => {
       "succeeded",
       "skipped",
       "failed",
+      "cancelled",
       "cancelled",
       "cancelled",
       "cancelled",
@@ -393,6 +473,7 @@ describe("running the stages", () => {
     expect(final.status).toBe("cancelled");
     expect(final.error).toBeNull();
     expect(final.steps.map((step) => step.status)).toEqual([
+      "cancelled",
       "cancelled",
       "cancelled",
       "cancelled",
@@ -580,5 +661,167 @@ describe("running the stages", () => {
     expect(inScope(targets, undefined)).toEqual(targets);
     expect(inScope(targets, { language: "ro-RO" })).toEqual(targets.slice(0, 2));
     expect(inScope(targets, { language: "ro-RO", assetKey: "b" })).toEqual([targets[1]]);
+  });
+});
+
+describe("the sounds step", () => {
+  it("finds unbound music and effects with a usable prompt, and no narration", () => {
+    const plan = manifest();
+    plan.assets["en-US"]!.push(
+      {
+        key: "bound",
+        type: "audio",
+        kind: "sfx",
+        description: "b",
+        script: "x",
+        path: "a.mp3",
+        usages: usage,
+      },
+      {
+        key: "tune",
+        type: "audio",
+        kind: "music",
+        description: "m",
+        script: "marimba loop",
+        usages: usage,
+      },
+      {
+        key: "empty",
+        type: "audio",
+        kind: "sfx",
+        description: "e",
+        script: '<audio kind="sfx"> </audio>',
+        usages: usage,
+      },
+      {
+        key: "long",
+        type: "audio",
+        kind: "sfx",
+        description: "l",
+        script: "x".repeat(2001),
+        usages: usage,
+      },
+    );
+    expect(soundTargets(plan)).toEqual([{ language: "en-US", assetKey: "tune" }]);
+  });
+
+  it("generates and accepts the one sound with a prompt and no file, after speech, leaving narration as it was", async () => {
+    const w = world({ sounds: true });
+    await w.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    const final = w.runner.status("act")!;
+    expect(final.status).toBe("succeeded");
+    expect(final.steps.find((step) => step.step === "sounds")).toMatchObject({
+      status: "succeeded",
+      note: null,
+      done: 1,
+      total: 1,
+      runIds: ["run_4"],
+    });
+    expect(w.started).toEqual([
+      "spec",
+      "audio:en-US:hello",
+      "audio:es-MX:hello",
+      "sound:elevenlabs:en-US:whoosh",
+      "image:en-US:cat",
+      "module",
+    ]);
+    expect(w.asset("en-US", "whoosh").path).toBe("run_4.mp3");
+    expect(w.asset("en-US", "chime").path).toBe("media/chime.mp3");
+    expect(w.soundSetups).toEqual(["agent"]);
+  });
+
+  it("uses the provider the sequence names", async () => {
+    const w = world({ sounds: true });
+    await w.runner.start("proj", "act", { selection: "spec", agentId: "agent" }).done;
+    await w.runner.start("proj", "act", { selection: "media", agentId: "agent" }).done;
+    await w.runner.start("proj", "act", {
+      selection: "sounds",
+      agentId: "agent",
+      soundProvider: "agenthub",
+    }).done;
+    expect(w.started.at(-1)).toBe("sound:agenthub:en-US:whoosh");
+  });
+
+  it("skips with noSounds when nothing is missing, without asking about providers", async () => {
+    const w = world();
+    await w.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    expect(w.runner.status("act")!.steps.find((step) => step.step === "sounds")).toMatchObject({
+      status: "skipped",
+      note: "noSounds",
+    });
+    expect(w.soundSetups).toEqual([]);
+  });
+
+  it("skips, not fails, when the provider cannot be used, and runs the stages after it", async () => {
+    const w = world({ sounds: true, soundProviders: { elevenlabs: false } });
+    await w.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    const final = w.runner.status("act")!;
+    expect(final.status).toBe("succeeded");
+    expect(final.steps.find((step) => step.step === "sounds")).toMatchObject({
+      status: "skipped",
+      note: "soundProviderUnavailable",
+      runIds: [],
+    });
+    expect(w.started).not.toContain("sound:elevenlabs:en-US:whoosh");
+    expect(w.started.at(-1)).toBe("module");
+  });
+
+  it("makes only the kinds the provider can make now, and skips when it can make none", async () => {
+    // The hub's one usable model makes effects only; its music model has no key.
+    const hubModels = [
+      { id: "fx", kinds: ["sfx" as const], credential: "FX_KEY", available: true },
+      { id: "tunes", kinds: ["music" as const], credential: "MUSIC_KEY", available: false },
+    ];
+    const w = world({ sounds: true, music: true, hubModels });
+    await w.runner.start("proj", "act", { selection: "spec", agentId: "agent" }).done;
+    await w.runner.start("proj", "act", { selection: "media", agentId: "agent" }).done;
+    await w.runner.start("proj", "act", {
+      selection: "sounds",
+      agentId: "agent",
+      soundProvider: "agenthub",
+    }).done;
+    expect(w.runner.status("act")!.steps[0]).toMatchObject({
+      status: "succeeded",
+      done: 1,
+      total: 1,
+    });
+    expect(w.started.filter((entry) => entry.startsWith("sound:"))).toEqual([
+      "sound:agenthub:en-US:whoosh",
+    ]);
+    expect(w.asset("en-US", "tune").path).toBeUndefined();
+
+    // With only the music left, the provider can make nothing: skipped, not failed.
+    await w.runner.start("proj", "act", {
+      selection: "sounds",
+      agentId: "agent",
+      soundProvider: "agenthub",
+    }).done;
+    expect(w.runner.status("act")!.steps[0]).toMatchObject({
+      status: "skipped",
+      note: "soundProviderUnavailable",
+    });
+    expect(w.started.filter((entry) => entry.startsWith("sound:"))).toHaveLength(1);
+  });
+
+  it("keeps to the scope's language, and skips for a coding agent", async () => {
+    const w = world({ sounds: true });
+    await w.runner.start("proj", "act", { selection: "spec", agentId: "agent" }).done;
+    await w.runner.start("proj", "act", { selection: "media", agentId: "agent" }).done;
+    await w.runner.start("proj", "act", {
+      selection: "sounds",
+      agentId: "agent",
+      scope: { language: "es-MX" },
+    }).done;
+    expect(w.runner.status("act")!.steps[0]).toMatchObject({ status: "skipped", note: "noSounds" });
+    await w.runner.start("proj", "act", {
+      selection: "sounds",
+      agentId: "",
+      codingAgentId: "codex",
+    }).done;
+    expect(w.runner.status("act")!.steps[0]).toMatchObject({
+      status: "skipped",
+      note: "needsPenguinAgent",
+    });
+    expect(w.started).toEqual(["spec"]);
   });
 });

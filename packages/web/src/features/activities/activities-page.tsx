@@ -10,6 +10,7 @@ import type {
   MediaStat,
   PipelineSelection,
   PipelineState,
+  SoundProviderId,
   SoundProviderStatus,
   SoundSetup,
   UploadedMedia,
@@ -36,6 +37,7 @@ import { ActivityWorkspace as WorkspaceShell, type StudioPanelEntry } from "./ac
 import { AssetEditor } from "./asset-editor";
 import { SpeechCoverage } from "./speech-coverage";
 import { speechTally } from "./bulk-speech";
+import { bulkSoundProvider, pendingSoundKinds } from "./bulk-sound";
 import { buildSceneTree, filterTree, treeSelections, type SceneAssetType } from "./scene-assets";
 import { firstSelection, sameSelection, type SceneAssetSelection } from "./scene-asset-tree";
 import {
@@ -693,6 +695,7 @@ function ActivityEditor({
   function runStages(
     stage: PipelineSelection = pipelineChoice,
     scope?: { language: string; assetKey?: string },
+    soundProvider?: SoundProviderId,
   ) {
     void action(async () => {
       if (!detail) return;
@@ -702,6 +705,7 @@ function ActivityEditor({
           ...runner,
           stage,
           ...scope,
+          ...(soundProvider ? { soundProvider } : {}),
           ...(bulkVoice ? { voice: bulkVoice } : {}),
           ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
           ...(detail.activityType === "book" && bookMode ? { bookMode } : {}),
@@ -1629,6 +1633,15 @@ function ActivityEditor({
                     startRun("generate-media-text", { language, assetKey: key, translate: true })
                   }
                   onTranslateAll={() => runStages("translations", { language })}
+                  soundProvider={
+                    soundProviders
+                      ? bulkSoundProvider(
+                          soundProviders,
+                          pendingSoundKinds(editedManifest.assets[language] ?? [], runs, language),
+                        )
+                      : undefined
+                  }
+                  onGenerateSounds={(provider) => runStages("sounds", { language }, provider)}
                   onTranslateAndSpeak={(key) =>
                     runStages("narration", { language, ...(key ? { assetKey: key } : {}) })
                   }

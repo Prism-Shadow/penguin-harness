@@ -601,6 +601,7 @@ export const en: Strings = {
         media: "Plan media",
         translations: "Translate",
         speech: "Generate speech",
+        sounds: "Generate sounds",
         images: "Generate images",
         assessment: "Generate assessment",
         module: "Assemble module",
@@ -626,6 +627,9 @@ export const en: Strings = {
         needsPenguinAgent: "Media generation needs a Penguin agent, not a coding agent.",
         noNarration: "No narration is missing.",
         noImages: "No image is missing.",
+        noSounds: "No music or sound effect is missing.",
+        soundProviderUnavailable:
+          "The sound provider cannot be used by this agent. Add its key to the agent's Vault.",
         noAssessment: "The specification says this activity has no assessment.",
         notCanonical: "The assessment is shared by every ref and is written on the canonical ref.",
         noCriteria: "The specification has no acceptance criteria to test.",
@@ -1100,6 +1104,22 @@ export const en: Strings = {
         seconds ? `${provider} · ${seconds} s` : provider,
       candidates: "Sound candidates",
       player: "Sound candidate",
+      bulkTitle: "Sounds",
+      bulkHelp:
+        "Music and sound effects in this language. Generate missing sounds runs the Generate sounds stage: it makes every sound that has a prompt and no file, one run each, and keeps each result. Upload a file or choose one from the library in the asset's editor instead when you have one.",
+      bulkTally: (ready: number, total: number) => `${ready} of ${total} sounds bound`,
+      bulk: (count: number) => `Generate missing sounds (${count})`,
+      bulkConfirm: (count: number, provider: string, language: string) =>
+        `Generate ${count} ${count === 1 ? "sound" : "sounds"} in ${language} with ${provider}? Each sound is a paid request to ${provider}, made by the selected agent, and each result is kept on its sound.`,
+      bulkUnavailable: (provider: string) =>
+        `${provider} cannot be used by the selected agent. Add its key to the agent's Vault, or choose a Penguin agent that has it.`,
+      statuses: {
+        ready: "Bound",
+        missing: "Missing",
+        failed: "Failed",
+        generating: "Generating…",
+        noPrompt: "No prompt",
+      },
     },
     assetLibrary: {
       kind: "Media type",

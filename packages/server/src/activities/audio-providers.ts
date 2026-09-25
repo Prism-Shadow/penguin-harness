@@ -309,6 +309,17 @@ export function soundProviderFor(
   return { provider: sound.id, model: fixed };
 }
 
+/**
+ * Whether a provider, as `soundSetup` reported it, can make `kind` now: a hub model that
+ * serves the kind and whose key the agent holds, or a fixed provider that is usable and makes
+ * the kind. A provider usable for one kind may still be unable to make the other.
+ */
+export function servesSoundKind(status: SoundProviderStatus, kind: SoundKind): boolean {
+  if (status.modelChoices)
+    return status.modelChoices.some((choice) => choice.available && choice.kinds.includes(kind));
+  return status.available && status.kinds.includes(kind);
+}
+
 /** Every sound provider as the picker shows it, for an agent holding `vaultKeys`. */
 export function soundSetup(
   vaultKeys: readonly string[],

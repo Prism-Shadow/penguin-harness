@@ -14,6 +14,8 @@
  *   translations  translate and accept every narration another language lacks, or whose
  *           default-language line changed since it was translated
  *   speech  generate and accept every unbound narration with a usable script
+ *   sounds  generate and accept every music and sound effect with a prompt and no file,
+ *           with the chosen sound provider (ElevenLabs unless the sequence names another)
  *   images  generate and accept every unbound image with a description
  *   assessment  write and accept the assessment, when the specification uses one and this
  *           is the canonical ref that owns it
@@ -35,6 +37,10 @@ import { SPEECH_VOICES, isSpeechVoice } from "./voice-catalogue.js";
 import { DEFAULT_LANGUAGE_CODE } from "./languages.js";
 import { contentRevision, type ActivityRun } from "./domain.js";
 import type { AssetManifest } from "./media.js";
+import { soundPromptOf } from "./playback.js";
+import { SOUND_PROMPT_MAX } from "./sound.js";
+import type { SoundProviderId } from "./sound-types.js";
+import { servesSoundKind } from "./audio-providers.js";
 import {
   PIPELINE_STEPS,
   type PipelineInput,
@@ -102,6 +108,22 @@ export function speechTargets(manifest: AssetManifest): { language: string; asse
         (asset: MediaAsset) =>
           asset.type === "audio" && !asset.kind && !asset.path && usable(asset.script),
       )
+      .map((asset) => ({ language, assetKey: asset.key })),
+  );
+}
+
+/**
+ * Unbound music and sound effects with a prompt a sound run accepts (1 to 2 000 characters),
+ * in every language, in manifest order.
+ */
+export function soundTargets(manifest: AssetManifest): { language: string; assetKey: string }[] {
+  return Object.entries(manifest.assets).flatMap(([language, assets]) =>
+    assets
+      .filter((asset: MediaAsset) => {
+        if (asset.type !== "audio" || !asset.kind || asset.path) return false;
+        const prompt = soundPromptOf(asset.script);
+        return !!prompt && prompt.length <= SOUND_PROMPT_MAX;
+      })
       .map((asset) => ({ language, assetKey: asset.key })),
   );
 }
@@ -429,6 +451,63 @@ export class PipelineRunner {
             run.runId,
             after.draft.contentRevision,
           );
+        step.done += 1;
+      }
+      step.detail = null;
+      return;
+    }
+
+    if (step.step === "sounds") {
+      // Music and effects are made by a Penguin agent's helper; a coding agent writes code.
+      if (input.codingAgentId || !input.agentId) {
+        step.status = "skipped";
+        step.note = "needsPenguinAgent";
+        return;
+      }
+      const activity = await current();
+      const manifest = activity.draft.mediaPlan?.manifest;
+      if (!manifest) throw new Error("Plan media before generating it.");
+      const targets = inScope(soundTargets(manifest), input.scope);
+      step.total = targets.length;
+      if (!targets.length) {
+        step.status = "skipped";
+        step.note = "noSounds";
+        return;
+      }
+      const provider: SoundProviderId = input.soundProvider ?? "elevenlabs";
+      // Asked once: a missing key or model is the same for every sound of a kind, and is not a
+      // failure of the sequence, only of this provider for this agent. A sound whose kind the
+      // provider cannot make now is left for another provider rather than failing the stages.
+      const status = (await generation.soundSetup(projectId, input.agentId)).providers.find(
+        (entry) => entry.id === provider,
+      );
+      const served = status
+        ? targets.filter((target) => {
+            const kind = manifest.assets[target.language]?.find(
+              (item) => item.key === target.assetKey,
+            )?.kind;
+            return !!kind && servesSoundKind(status, kind);
+          })
+        : [];
+      step.total = served.length;
+      if (!served.length) {
+        step.status = "skipped";
+        step.note = "soundProviderUnavailable";
+        return;
+      }
+      for (const target of served) {
+        step.detail = target.assetKey;
+        const before = await current();
+        const run = await generation.start(
+          projectId,
+          activityId,
+          input.agentId,
+          before.draft.contentRevision,
+          { sound: { ...target, provider } },
+        );
+        await this.follow(state, step, run);
+        const after = await current();
+        await generation.acceptAudio(projectId, activityId, run.runId, after.draft.contentRevision);
         step.done += 1;
       }
       step.detail = null;

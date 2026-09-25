@@ -1576,6 +1576,12 @@ describe("activity generation through Harness sessions", () => {
       stage: "deploy",
     });
     expect(unknown.status).toBe(400);
+    const badProvider = await client.post(`${endpoint}/pipeline`, {
+      agentId: "default_agent",
+      stage: "sounds",
+      soundProvider: "somewhere",
+    });
+    expect(badProvider.status).toBe(400);
     expect(
       await (await client.get(`${endpoint.replace(/[^/]+$/, "act_missing")}/pipeline`)).json(),
     ).toEqual({ pipeline: null });

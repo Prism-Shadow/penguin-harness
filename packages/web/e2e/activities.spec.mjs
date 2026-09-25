@@ -5747,3 +5747,148 @@ test("lists the model hub as a sound provider, disabled until it offers a model"
   await expect(page.getByRole("button", { name: "Generating…", exact: true })).toBeDisabled();
   expect(f.errors).toEqual([]);
 });
+
+test("generates the missing sounds from Audios", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  const usage = (key) => [
+    { sceneId: "intro", sourceKey: key, occurrence: 1, sceneOccurrenceCount: 1 },
+  ];
+  await page.route(`**${base}/act_test/plan-media`, (route) =>
+    route.fallback({
+      postData: JSON.stringify({
+        ...route.request().postDataJSON(),
+        manifest: {
+          productCode: "words",
+          refNum: 12,
+          assets: {
+            "en-US": [
+              {
+                key: "hello",
+                type: "audio",
+                description: "Greeting",
+                script: "Hello",
+                usages: usage("hello"),
+              },
+              {
+                key: "chime",
+                type: "audio",
+                description: "Correct answer",
+                script: "bright chime",
+                kind: "sfx",
+                path: "media/uploads/chime-00000000.mp3",
+                usages: usage("chime"),
+              },
+              {
+                key: "whoosh",
+                type: "audio",
+                description: "Page turn",
+                script: '<audio kind="sfx">soft paper whoosh</audio>',
+                kind: "sfx",
+                usages: usage("whoosh"),
+              },
+            ],
+          },
+        },
+      }),
+    }),
+  );
+  // The sequence the server answers with while the sounds stage runs.
+  const running = () => ({
+    pipelineId: "pipeline_1",
+    projectId,
+    activityId: "act_test",
+    selection: "sounds",
+    scope: { language: "en-US" },
+    status: "running",
+    steps: [
+      {
+        step: "sounds",
+        status: "running",
+        detail: "whoosh",
+        note: null,
+        done: 0,
+        total: 1,
+        runIds: [],
+      },
+    ],
+    currentRunId: null,
+    currentSessionId: null,
+    error: null,
+    startedAt: "2026-09-25T12:00:00Z",
+    finishedAt: null,
+  });
+  const stages = [];
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/sound-setup`)
+      return json({
+        providers: [
+          {
+            id: "elevenlabs",
+            kinds: ["music", "sfx"],
+            credential: "ELEVENLABS_API_KEY",
+            models: { music: "music_v1", sfx: "sound-generation" },
+            available: true,
+          },
+          {
+            id: "agenthub",
+            kinds: ["music", "sfx"],
+            credential: "",
+            models: {},
+            available: false,
+            problem: "no_model",
+            modelChoices: [],
+          },
+        ],
+      });
+    if (p === `${base}/act_test/pipeline` && request.method() === "POST") {
+      // One sequence at a time, as the server allows.
+      if (stages.length)
+        return json({ error: { code: "pipeline_running", message: "Running." } }, 409);
+      stages.push(request.postDataJSON());
+      return json(running(), 202);
+    }
+    // Following the sequence, as the panel does after starting it.
+    if (p === `${base}/act_test/pipeline`)
+      return json({ pipeline: stages.length ? running() : null });
+    return route.fallback();
+  });
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  await page.reload();
+  await openSection(page, "Speech coverage");
+
+  const sounds = page.getByRole("region", { name: "Sounds", exact: true });
+  await expect(sounds).toContainText("1 of 2 sounds bound");
+  await expect(sounds.getByRole("button", { name: /^chime/ })).toContainText("Bound");
+  await expect(sounds.getByRole("button", { name: /^whoosh/ })).toContainText("Missing");
+  // Narration is still counted on its own, unchanged.
+  await expect(page.getByText("0 of 1 narrations bound")).toBeVisible();
+
+  await sounds.getByRole("button", { name: "Generate missing sounds (1)", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  // Asking first, because every sound is a paid request to the provider.
+  await expect(dialog).toContainText("paid request to ElevenLabs");
+  await dialog.getByRole("button", { name: "Generate missing sounds (1)", exact: true }).click();
+  await expect.poll(() => stages.length).toBe(1);
+  expect(stages[0]).toMatchObject({
+    stage: "sounds",
+    language: "en-US",
+    soundProvider: "elevenlabs",
+  });
+  expect(stages[0].assetKey).toBeUndefined();
+  // The Stages panel follows the run.
+  const panel = page.getByRole("complementary", { name: "Stages" });
+  await expect(panel.getByText("Generate sounds", { exact: true })).toBeVisible();
+  await expect(panel).toContainText("whoosh");
+  expect(f.errors).toEqual([]);
+});

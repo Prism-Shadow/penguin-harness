@@ -20,6 +20,7 @@ import { UPLOAD_MAX_BYTES } from "./upload.js";
 import { BUNDLE_FILE_NAME, BUNDLE_MAX_ITEMS } from "./media-bundle.js";
 import type { BundleItem } from "./media-library-types.js";
 import { ActivityPipelines, parseSelection } from "./pipeline-run.js";
+import type { SoundProviderId } from "./sound-types.js";
 import { ActivityVersions, VERSION_LABEL_MAX } from "./version-service.js";
 import type { ActivityQuality } from "./quality-check.js";
 import type { QualityStateResponse } from "./quality-types.js";
@@ -937,6 +938,9 @@ export class ActivityRoutes {
       const language = optionalString(body, "language", { maxLen: 35 });
       const assetKey = optionalString(body, "assetKey", { maxLen: 200 });
       if (assetKey && !language) throw badRequest("assetKey needs a language.");
+      const soundProvider = optionalString(body, "soundProvider", { maxLen: 32 });
+      if (soundProvider && soundProvider !== "elevenlabs" && soundProvider !== "agenthub")
+        throw badRequest("soundProvider must be elevenlabs or agenthub.");
       const state = await this.pipelines.start(projectId, activityId, {
         selection: parseSelection(body.stage),
         ...(language ? { scope: { language, ...(assetKey ? { assetKey } : {}) } } : {}),
@@ -949,6 +953,7 @@ export class ActivityRoutes {
           ? { wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) }
           : {}),
         ...(bookMode ? { bookMode: bookMode as "readAlong" | "decodable" } : {}),
+        ...(soundProvider ? { soundProvider: soundProvider as SoundProviderId } : {}),
       });
       return c.json(state, 202);
     });
