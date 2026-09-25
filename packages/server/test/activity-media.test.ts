@@ -308,3 +308,86 @@ describe("activity media planning", () => {
     expect(scaffoldModule(a)["assessments/P-1.json"]).toBeUndefined();
   });
 });
+
+describe("sound fields in the media manifest", () => {
+  const address = { productCode: "words", refNum: 1 };
+  const usage = { sceneId: "intro", sourceKey: "door", occurrence: 1, sceneOccurrenceCount: 1 };
+  const effect = {
+    key: "door",
+    type: "audio",
+    description: "A door",
+    script: "a door creaks",
+    kind: "sfx",
+    channel: "sfx",
+    loop: false,
+    volume: 1,
+    usages: [usage],
+  };
+  const check = (asset: Record<string, unknown>) =>
+    validateManifest({ ...address, assets: { "en-US": [asset] } }, address).assets["en-US"]![0]!;
+  const runId = `run_${"a".repeat(32)}`;
+  const sha256 = "b".repeat(64);
+
+  it("keeps a requested length on music or an effect, and only there", () => {
+    expect(check({ ...effect, targetDurationMs: 3000 }).targetDurationMs).toBe(3000);
+    for (const targetDurationMs of [999, 60001, 2.5, "3000"])
+      expect(() => check({ ...effect, targetDurationMs })).toThrow(/requested length/);
+    const { kind: _k, channel: _c, loop: _l, volume: _v, ...narration } = effect;
+    expect(() => check({ ...narration, targetDurationMs: 3000 })).toThrow(/requested length/);
+  });
+
+  it("binds an MP3 clip at its own path and a WAV clip as before", () => {
+    const mp3 = check({
+      ...effect,
+      path: `media/generated/${runId}.mp3`,
+      generatedAudio: { runId, sha256, format: "mp3" },
+    });
+    expect(mp3.generatedAudio).toEqual({ runId, sha256, format: "mp3" });
+    expect(
+      check({ ...effect, path: `media/generated/${runId}.wav`, generatedAudio: { runId, sha256 } })
+        .generatedAudio,
+    ).toEqual({ runId, sha256 });
+    expect(
+      check({
+        ...effect,
+        path: `media/generated/${runId}.wav`,
+        generatedAudio: { runId, sha256, format: "wav" },
+      }).generatedAudio?.format,
+    ).toBe("wav");
+    // The path must match the recorded format, and only the two formats exist.
+    expect(() =>
+      check({
+        ...effect,
+        path: `media/generated/${runId}.wav`,
+        generatedAudio: { runId, sha256, format: "mp3" },
+      }),
+    ).toThrow(/generated audio/);
+    expect(() =>
+      check({ ...effect, path: `media/generated/${runId}.mp3`, generatedAudio: { runId, sha256 } }),
+    ).toThrow(/generated audio/);
+    expect(() =>
+      check({
+        ...effect,
+        path: `media/generated/${runId}.ogg`,
+        generatedAudio: { runId, sha256, format: "ogg" },
+      }),
+    ).toThrow(/generated audio/);
+  });
+
+  it("plans a Loom tag's duration as the requested length", () => {
+    const value = activity();
+    (value.draft.spec!.scenes as { audio?: unknown }[])[0]!.audio = {
+      tracks: [
+        { key: "voice", description: "Say cat", script: "Cat" },
+        {
+          key: "door",
+          description: "A door",
+          script: '<audio kind="sfx" duration="2">creak</audio>',
+        },
+      ],
+    };
+    const assets = planMedia(value).manifest.assets["en-US"]!;
+    expect(assets.find((asset) => asset.key === "door")?.targetDurationMs).toBe(2000);
+    expect(assets.find((asset) => asset.key === "voice")).not.toHaveProperty("targetDurationMs");
+  });
+});

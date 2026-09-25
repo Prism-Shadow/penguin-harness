@@ -19,7 +19,11 @@ import type { Sessions, SessionServiceIface } from "../runtime/session-manager.j
 import { HttpError } from "../http/errors.js";
 import { ActivityLocks, atomicJson } from "./service.js";
 import { AUDIO_MAX_BYTES, audioTarget, audioPrompt, type AudioResult } from "./audio.js";
+import { SOUND_OUTPUT_FILE, soundPrompt, soundTarget } from "./sound.js";
+import { soundProviderFor, soundSetup } from "./audio-providers.js";
+import type { SoundSetup } from "./sound-types.js";
 import { readArtifactBytes } from "./artifact.js";
+import { soundPromptOf } from "./playback.js";
 import {
   GENERATED_IMAGE_MAX_BYTES,
   imageTarget,
@@ -294,6 +298,13 @@ export class ActivityGenerationService implements ActivityGeneration {
       });
   }
 
+  /** Which sound providers the agent can use now, judged by the keys its Vault holds. */
+  async soundSetup(projectId: string, agentId: string): Promise<SoundSetup> {
+    await this.agents.requireExists(projectId, agentId);
+    const keys = (await this.agents.getVault(projectId, agentId)).entries.map((entry) => entry.key);
+    return { providers: soundSetup(keys) };
+  }
+
   async candidate(projectId: string, activityId: string, runId: string): Promise<string | null> {
     return (await this.getRun(projectId, activityId, runId)).candidate;
   }
@@ -307,6 +318,7 @@ export class ActivityGenerationService implements ActivityGeneration {
       wafRoot?: string;
       bookMode?: string;
       audio?: { language: string; assetKey: string; voice: string };
+      sound?: { language: string; assetKey: string; provider: string };
       image?: { language: string; assetKey: string };
       mediaText?: { language: string; assetKey: string };
       assist?: { message: string; focus: AssistFocus | null };
@@ -347,6 +359,7 @@ export class ActivityGenerationService implements ActivityGeneration {
             module &&
             [
               module.audio,
+              module.sound,
               module.image,
               module.mediaText,
               module.assist,
@@ -356,6 +369,7 @@ export class ActivityGenerationService implements ActivityGeneration {
           )
             throw new HttpError(400, "generation_invalid", "Choose one media generation type.");
           const audio = module?.audio ? audioTarget(activity, module.audio) : undefined;
+          const sound = module?.sound ? soundTarget(activity, module.sound) : undefined;
           const image = module?.image ? imageTarget(activity, module.image) : undefined;
           const mediaText = module?.mediaText
             ? mediaTextTarget(activity, module.mediaText)
@@ -388,7 +402,16 @@ export class ActivityGenerationService implements ActivityGeneration {
               "test_spec_required",
               "Save a valid specification before running the acceptance tests.",
             );
-          if (module && !audio && !image && !mediaText && !assist && !assessment && !test) {
+          if (
+            module &&
+            !audio &&
+            !sound &&
+            !image &&
+            !mediaText &&
+            !assist &&
+            !assessment &&
+            !test
+          ) {
             if (!activity.draft.spec || activity.draft.status !== "valid")
               throw new HttpError(
                 400,
@@ -432,13 +455,13 @@ export class ActivityGenerationService implements ActivityGeneration {
                 "WAF checkout not found. Select a root containing framework, modules and media.",
               );
           }
-          if (codingAgentId && (audio || image))
-            // Both call Gemini through a helper that reads the key from a Penguin agent's
-            // Vault, which an external agent's process never sees.
+          if (codingAgentId && (audio || image || sound))
+            // Each calls its provider through a helper that reads the key from a Penguin
+            // agent's Vault, which an external agent's process never sees.
             throw new HttpError(
               400,
               "runtime_unsupported",
-              `${image ? "Image" : "Speech"} generation runs on a Penguin agent. Choose one instead of a coding agent.`,
+              `${image ? "Image" : sound ? "Sound" : "Speech"} generation runs on a Penguin agent. Choose one instead of a coding agent.`,
             );
           // A coding agent's run is still a Session, filed under a Penguin Agent: the one
           // named, or the Project's default Agent when only the coding agent was.
@@ -456,6 +479,18 @@ export class ActivityGenerationService implements ActivityGeneration {
               image ? "image_credential_missing" : "speech_credential_missing",
               `Add GEMINI_API_KEY to the selected Agent's Vault before generating ${image ? "an image" : "speech"}.`,
             );
+          if (sound) {
+            const keys = (await this.agents.getVault(projectId, agentId)).entries.map(
+              (entry) => entry.key,
+            );
+            const choice = soundProviderFor(sound.sound.kind, sound.sound.provider, keys);
+            if ("problem" in choice)
+              throw new HttpError(
+                400,
+                "sound_credential_missing",
+                `Add ${choice.credential ?? "the provider's key"} to the selected Agent's Vault before generating a sound.`,
+              );
+          }
           if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
           if (this.running().some((run) => run.activityId === activityId))
             throw new HttpError(
@@ -474,12 +509,12 @@ export class ActivityGenerationService implements ActivityGeneration {
                     ? "media-text"
                     : image
                       ? "image"
-                      : audio
+                      : audio || sound
                         ? "audio"
                         : module
                           ? "module"
                           : "spec",
-            ...(audio ? { audio } : {}),
+            ...(audio ? { audio } : sound ? { audio: sound } : {}),
             ...(image ? { image } : {}),
             ...(mediaText ? { mediaText } : {}),
             ...(assist ? { assist: { focus: assist.focus } } : {}),
@@ -598,6 +633,26 @@ export class ActivityGenerationService implements ActivityGeneration {
                 flag: "wx",
               });
             }
+            if (sound) {
+              const helper = libraryPlugin("agent-development")?.skills.find(
+                (skill) => skill.name === "unified-llm-api",
+              )?.files?.["scripts/generate-sound.mjs"];
+              if (!helper)
+                throw new HttpError(
+                  500,
+                  "sound_helper_missing",
+                  "The installed media helper is missing. Rebuild the bundled plugins.",
+                );
+              await atomicJson(path.join(workspace, "sound-input.json"), sound.sound);
+              // The helper calls the provider with Node's own fetch; nothing to install.
+              await atomicJson(path.join(workspace, "package.json"), {
+                private: true,
+                type: "module",
+              });
+              await fs.writeFile(path.join(workspace, "generate-sound.mjs"), helper, {
+                flag: "wx",
+              });
+            }
             if (mediaText)
               await atomicJson(path.join(workspace, "media-text-input.json"), mediaText);
             if (assessment) {
@@ -650,7 +705,16 @@ export class ActivityGenerationService implements ActivityGeneration {
             }
             // An assembly is handed the implementation features its ref selected.
             let features: ImplementationFeature[] = [];
-            if (module && !audio && !image && !mediaText && !assist && !assessment && !test) {
+            if (
+              module &&
+              !audio &&
+              !sound &&
+              !image &&
+              !mediaText &&
+              !assist &&
+              !assessment &&
+              !test
+            ) {
               const chosen = await this.activities.implementationFeatures(projectId, activityId);
               features = chosen.features.filter((feature) =>
                 chosen.selectedIds.includes(feature.id),
@@ -676,9 +740,11 @@ export class ActivityGenerationService implements ActivityGeneration {
                       ? imagePrompt
                       : audio
                         ? audioPrompt
-                        : module
-                          ? modulePrompt + featureClause(features)
-                          : generationPrompt;
+                        : sound
+                          ? soundPrompt
+                          : module
+                            ? modulePrompt + featureClause(features)
+                            : generationPrompt;
             const session = await this.sessionService.createSession({
               projectId,
               agentId: owner,
@@ -864,12 +930,12 @@ export class ActivityGenerationService implements ActivityGeneration {
         .flat()
         .find((asset) => asset.generatedAudio?.runId === runId)?.generatedAudio;
       if (!bound) throw new HttpError(404, "run_not_found", "Speech candidate not available.");
-      return this.activities.readAudio(projectId, activityId, runId, bound.sha256);
+      return this.activities.readAudio(projectId, activityId, runId, bound.sha256, bound.format);
     }
     if (run.kind !== "audio" || !run.candidate || !["succeeded", "conflict"].includes(run.status))
       throw new HttpError(404, "run_not_found", "Speech candidate not available.");
     const result = JSON.parse(run.candidate) as AudioResult;
-    return this.activities.readAudio(projectId, activityId, runId, result.sha256);
+    return this.activities.readAudio(projectId, activityId, runId, result.sha256, result.format);
   }
   async imageCandidateContent(
     projectId: string,
@@ -1007,12 +1073,28 @@ export class ActivityGenerationService implements ActivityGeneration {
               "audio_changed",
               "Only a successful speech candidate can be accepted.",
             );
-          if (run.inputRevision !== expectedRevision)
+          if (run.inputRevision !== expectedRevision) {
+            // A sound whose prompt was edited is not this take, whatever else changed.
+            if (run.audio.sound) {
+              const current = await this.activities.getActivity(projectId, activityId);
+              const asset = current.draft.mediaPlan?.manifest.assets[run.audio.language]?.find(
+                (entry) => entry.key === run.audio!.assetKey,
+              );
+              if (!asset || soundPromptOf(asset.script) !== run.audio.sound.prompt)
+                throw new HttpError(
+                  409,
+                  "audio_changed",
+                  "The sound's prompt changed. Generate a new candidate.",
+                );
+            }
             throw new HttpError(
               409,
               "draft_conflict",
-              "The draft changed since speech generation. Generate a new candidate.",
+              run.audio.sound
+                ? "The draft changed since the sound was generated. Generate a new candidate."
+                : "The draft changed since speech generation. Generate a new candidate.",
             );
+          }
           return this.activities.applyAudio(
             projectId,
             activityId,
@@ -1108,11 +1190,14 @@ export class ActivityGenerationService implements ActivityGeneration {
                 return;
               }
               if (run.kind === "audio") {
+                const sound = !!run.audio?.sound;
                 const observer = this.observers.get(run.runId);
                 if (!observer?.completed)
-                  throw new Error(observer?.error ?? "Speech Session did not complete.");
+                  throw new Error(
+                    observer?.error ?? `${sound ? "Sound" : "Speech"} Session did not complete.`,
+                  );
                 const bytes = await readArtifactBytes(
-                  path.join(this.workspace(run), "speech.wav"),
+                  path.join(this.workspace(run), sound ? SOUND_OUTPUT_FILE : "speech.wav"),
                   AUDIO_MAX_BYTES,
                 );
                 const result = await this.activities.storeAudio(
@@ -1120,6 +1205,7 @@ export class ActivityGenerationService implements ActivityGeneration {
                   run.activityId,
                   run.runId,
                   bytes,
+                  sound ? "mp3" : undefined,
                 );
                 run.candidate = JSON.stringify(result);
                 this.save(run);
@@ -1129,7 +1215,9 @@ export class ActivityGenerationService implements ActivityGeneration {
                     throw new HttpError(
                       409,
                       "draft_conflict",
-                      "The draft changed during speech generation.",
+                      sound
+                        ? "The draft changed while the sound was being generated."
+                        : "The draft changed during speech generation.",
                     );
                   this.finish(run, "succeeded");
                 });
@@ -1304,7 +1392,9 @@ export class ActivityGenerationService implements ActivityGeneration {
                       run.kind === "image"
                         ? "image.png"
                         : run.kind === "audio"
-                          ? "speech.wav"
+                          ? run.audio?.sound
+                            ? SOUND_OUTPUT_FILE
+                            : "speech.wav"
                           : run.kind === "module"
                             ? "module-result.json or a required artifact"
                             : run.kind === "media-text"

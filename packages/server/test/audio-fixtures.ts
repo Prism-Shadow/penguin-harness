@@ -14,3 +14,14 @@ export function speechWave(samples = 48): Buffer {
   bytes.writeUInt32LE(samples * 2, 40);
   return bytes;
 }
+
+/**
+ * A structurally valid MP3: an optional empty ID3v2 tag, then MPEG-1 Layer III frames at
+ * 128 kbps and 44.1 kHz (417 bytes each, silent). Each frame lasts 1152 / 44100 s.
+ */
+export function soundMp3(frames = 20, id3 = true): Buffer {
+  const frame = Buffer.alloc(417);
+  frame.set([0xff, 0xfb, 0x90, 0x64]);
+  const tag = Buffer.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0]);
+  return Buffer.concat([...(id3 ? [tag] : []), ...Array.from({ length: frames }, () => frame)]);
+}

@@ -5393,3 +5393,201 @@ test("runs the tests and lists each criterion's result", async ({ page }) => {
   );
   expect(f.errors).toEqual([]);
 });
+
+/** Silent MPEG-1 Layer III frames (128 kbps, 44.1 kHz): a playable MP3 of `frames` x 26 ms. */
+function silentMp3(frames = 40) {
+  const frame = Buffer.alloc(417);
+  frame.set([0xff, 0xfb, 0x90, 0x64]);
+  return Buffer.concat(Array.from({ length: frames }, () => frame));
+}
+
+test("writes a prompt for a sound effect, generates it, and keeps the new clip", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  const clip = silentMp3();
+  let keyed = false;
+  const generated = [];
+  const soundRuns = [];
+  const savedManifests = [];
+  // The draft as the fixture last served it; acceptance binds the clip on top of it.
+  let draft = null;
+  let accepted = null;
+  page.on("response", async (response) => {
+    const p = new URL(response.url()).pathname;
+    if ([`${base}/act_test/plan-media`, `${base}/act_test/media`].includes(p) && response.ok())
+      draft = await response.json().catch(() => draft);
+  });
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === `${base}/act_test/media` && request.method() === "PUT")
+      savedManifests.push(request.postDataJSON().manifest);
+  });
+  const usage = { sceneId: "intro", sourceKey: "door", occurrence: 1, sceneOccurrenceCount: 1 };
+  await page.route(`**${base}/act_test/plan-media`, (route) =>
+    route.fallback({
+      postData: JSON.stringify({
+        ...route.request().postDataJSON(),
+        manifest: {
+          productCode: "words",
+          refNum: 12,
+          assets: {
+            "en-US": [
+              {
+                key: "door",
+                type: "audio",
+                description: "A door opens",
+                script: '<audio kind="sfx">a door</audio>',
+                kind: "sfx",
+                channel: "sfx",
+                loop: false,
+                volume: 1,
+                path: "media/uploads/door-00000000.mp3",
+                usages: [usage],
+              },
+            ],
+          },
+        },
+      }),
+    }),
+  );
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/sound-setup`)
+      return json({
+        providers: [
+          {
+            id: "elevenlabs",
+            kinds: ["music", "sfx"],
+            credential: "ELEVENLABS_API_KEY",
+            models: { music: "music_v1", sfx: "sound-generation" },
+            available: keyed,
+            ...(keyed ? {} : { problem: "credential_missing" }),
+          },
+        ],
+      });
+    if (p === `${base}/act_test/media-upload` || /\/runs\/[^/]+\/audio$/.test(p))
+      return route.fulfill({ contentType: "audio/mpeg", body: clip });
+    if (p === `${base}/act_test/generate-sound`) {
+      const body = request.postDataJSON();
+      // One generation at a time, as the server allows.
+      if (soundRuns.some((run) => run.status === "running"))
+        return json({ error: { code: "generation_running", message: "Running." } }, 409);
+      generated.push(body);
+      const asset = draft.mediaPlan.manifest.assets[body.language][0];
+      soundRuns.unshift({
+        kind: "audio",
+        audio: {
+          language: body.language,
+          assetKey: body.assetKey,
+          script: asset.script,
+          model: "sound-generation",
+          sound: {
+            provider: body.provider,
+            model: "sound-generation",
+            kind: "sfx",
+            prompt: "a heavy wooden door creaks open",
+            targetDurationMs: asset.targetDurationMs,
+          },
+        },
+        runId: `run_sound_${soundRuns.length + 1}`,
+        inputRevision: body.expectedRevision,
+        activityId: "act_test",
+        projectId,
+        sessionId: "session_sound",
+        status: "running",
+        createdAt: "2026-09-25T10:00:00Z",
+        hasCandidate: false,
+        error: null,
+      });
+      return json(soundRuns[0], 202);
+    }
+    if (p === `${base}/act_test/runs` && request.method() === "GET")
+      return json({ runs: soundRuns });
+    if (/\/runs\/run_sound_\d+\/accept-audio$/.test(p)) {
+      const run = soundRuns.find((entry) => p.includes(`/${entry.runId}/`));
+      const manifest = structuredClone(draft.mediaPlan.manifest);
+      const asset = manifest.assets["en-US"][0];
+      asset.path = `media/generated/${run.runId}.mp3`;
+      asset.generatedAudio = { runId: run.runId, sha256: "c".repeat(64), format: "mp3" };
+      accepted = {
+        ...draft,
+        contentRevision: `${draft.contentRevision}-sound`,
+        mediaPlan: { ...draft.mediaPlan, manifest },
+      };
+      return json(accepted);
+    }
+    return route.fallback();
+  });
+  // The editor asks which providers the agent can use as it opens, so the stubs come first.
+  await create(page);
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+
+  // Without the key, the editor names the Vault key to add and will not generate.
+  const prompt = page.getByRole("textbox", { name: /^Prompt/ });
+  await expect(prompt).toHaveValue("a door");
+  await expect(
+    page.getByText("Add ELEVENLABS_API_KEY to the selected agent's Vault.", { exact: true }),
+  ).toBeVisible();
+  const generate = page.getByRole("button", { name: "Generate", exact: true });
+  await expect(generate).toBeDisabled();
+  // Uploading and the library stay available.
+  await expect(
+    page.getByText(
+      "Music and effects are not spoken: generate one from a prompt, or upload a file.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  keyed = true;
+  await page.reload();
+  await openSection(page, "Scenes and media");
+  await prompt.fill("a heavy wooden door creaks open");
+  await page.getByRole("spinbutton", { name: /^Length/ }).fill("3");
+  await expect(generate).toBeDisabled();
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await expect.poll(() => savedManifests.length).toBe(1);
+  expect(savedManifests[0].assets["en-US"][0]).toMatchObject({
+    script: '<audio kind="sfx">a heavy wooden door creaks open</audio>',
+    targetDurationMs: 3000,
+    kind: "sfx",
+  });
+  await expect(generate).toBeEnabled();
+  await generate.click();
+  await expect.poll(() => generated.length).toBe(1);
+  expect(generated[0]).toMatchObject({
+    agentId: "default_agent",
+    language: "en-US",
+    assetKey: "door",
+    provider: "elevenlabs",
+  });
+  await expect(page.getByRole("button", { name: "Generating…", exact: true })).toBeDisabled();
+
+  soundRuns[0] = { ...soundRuns[0], status: "succeeded", hasCandidate: true };
+  // The take plays beside the current file, and replaces it only on request.
+  const comparison = page.getByRole("region", { name: "Current and new", exact: true });
+  await expect(comparison).toBeVisible({ timeout: 15_000 });
+  await expect(comparison.locator('audio[aria-label="New"]')).toHaveAttribute(
+    "src",
+    `${base}/act_test/runs/run_sound_1/audio`,
+  );
+  await expect(page.getByText(/^ElevenLabs · 3 s · /)).toBeVisible();
+  await comparison.getByRole("button", { name: "Use new", exact: true }).click();
+  await expect
+    .poll(() => accepted?.mediaPlan.manifest.assets["en-US"][0].path)
+    .toBe("media/generated/run_sound_1.mp3");
+  await expect(page.locator('audio[aria-label="Accepted audio"]')).toHaveAttribute(
+    "src",
+    `${base}/act_test/runs/run_sound_1/audio`,
+  );
+  await expect(page.getByText("media/generated/run_sound_1.mp3", { exact: true })).toBeVisible();
+  expect(f.errors).toEqual([]);
+});

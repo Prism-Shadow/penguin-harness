@@ -13,7 +13,12 @@
 import { validateActivitySpec } from "./domain.js";
 import { DEFAULT_LANGUAGE_CODE, findLanguage } from "./languages.js";
 import { normalizeAlignment, type WordTiming } from "./word-timings.js";
-import { importedPlayback, type AudioPlayback } from "./playback.js";
+import {
+  clampSoundDuration,
+  durationFromScript,
+  importedPlayback,
+  type AudioPlayback,
+} from "./playback.js";
 
 /** A Loom product, as the reader found it. */
 export interface SourceProduct {
@@ -71,6 +76,8 @@ export interface CarriedBinding {
   wordTimings?: WordTiming[];
   durationMs?: number;
   playback?: AudioPlayback;
+  /** Music and sound effects: the length Loom's `duration` asked for, in milliseconds. */
+  targetDurationMs?: number;
 }
 
 /** A path Penguin's manifest accepts: relative, under media/, no traversal. */
@@ -139,6 +146,16 @@ export function carriedBindings(
         binding.durationMs = asset.durationMs as number;
       const playback = asset.type === "audio" ? importedPlayback(asset) : null;
       if (playback) binding.playback = playback;
+      // Loom asks for a length with its tag's `duration`, in seconds; a manifest entry may
+      // carry it as a field too.
+      if (playback) {
+        const seconds = typeof asset.duration === "number" ? asset.duration : NaN;
+        const length =
+          Number.isFinite(seconds) && seconds > 0
+            ? clampSoundDuration(seconds * 1000)
+            : durationFromScript(binding.script);
+        if (length !== undefined) binding.targetDurationMs = length;
+      }
       return [binding];
     });
   }

@@ -1,5 +1,12 @@
 import { contentRevision, type ActivityDetail, type ActivityAddress } from "./domain.js";
-import { playbackFromScript, readPlayback, type AudioKind } from "./playback.js";
+import {
+  SOUND_MAX_DURATION_MS,
+  SOUND_MIN_DURATION_MS,
+  durationFromScript,
+  playbackFromScript,
+  readPlayback,
+  type AudioKind,
+} from "./playback.js";
 
 export interface MediaAsset {
   key: string;
@@ -32,9 +39,18 @@ export interface MediaAsset {
   channel?: string;
   loop?: boolean;
   volume?: number;
+  /**
+   * Music and sound effects: how long a generated clip should be, in whole milliseconds
+   * (1 000 to 60 000). Absent lets the provider choose.
+   */
+  targetDurationMs?: number;
   /** A reference in the WAF media checkout, never a server filesystem path. */
   path?: string;
-  generatedAudio?: { runId: string; sha256: string };
+  /**
+   * A clip a run made and the author accepted. `format` is absent for every WAV clip (all
+   * speech, and every record older than sound generation); a sound run's MP3 says "mp3".
+   */
+  generatedAudio?: { runId: string; sha256: string; format?: GeneratedAudioFormat };
   generatedImage?: { runId: string; sha256: string };
   usages: {
     sceneId: string;
@@ -43,6 +59,13 @@ export interface MediaAsset {
     sceneOccurrenceCount: number;
   }[];
 }
+export type GeneratedAudioFormat = "wav" | "mp3";
+
+/** Where an accepted clip is bound: `media/generated/<runId>.<format>`, WAV when unnamed. */
+export function generatedAudioPath(generated: { runId: string; format?: GeneratedAudioFormat }) {
+  return `media/generated/${generated.runId}.${generated.format ?? "wav"}`;
+}
+
 export interface AssetManifest extends ActivityAddress {
   assets: Record<string, MediaAsset[]>;
 }
@@ -101,6 +124,7 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
               "channel",
               "loop",
               "volume",
+              "targetDurationMs",
               "path",
               "usages",
               "generatedAudio",
@@ -172,6 +196,17 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           (asset.durationMs as number) < 0)
       )
         throw new Error("A duration belongs to a narration, in whole milliseconds.");
+      if (
+        asset.targetDurationMs !== undefined &&
+        (asset.type !== "audio" ||
+          asset.kind === undefined ||
+          !Number.isSafeInteger(asset.targetDurationMs) ||
+          (asset.targetDurationMs as number) < SOUND_MIN_DURATION_MS ||
+          (asset.targetDurationMs as number) > SOUND_MAX_DURATION_MS)
+      )
+        throw new Error(
+          "A requested length belongs to music or a sound effect, from 1000 to 60000 milliseconds.",
+        );
       const playback = readPlayback(asset);
       if (playback === "invalid" || (playback && asset.type !== "audio"))
         throw new Error(
@@ -201,12 +236,17 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         const generated = object(asset.generatedAudio);
         if (
           asset.type !== "audio" ||
-          Object.keys(generated).some((key) => !["runId", "sha256"].includes(key)) ||
+          Object.keys(generated).some((key) => !["runId", "sha256", "format"].includes(key)) ||
           typeof generated.runId !== "string" ||
           !/^run_[a-f0-9]{32}$/.test(generated.runId) ||
           typeof generated.sha256 !== "string" ||
           !/^[a-f0-9]{64}$/.test(generated.sha256) ||
-          asset.path !== `media/generated/${generated.runId}.wav`
+          (generated.format !== undefined && !["wav", "mp3"].includes(String(generated.format))) ||
+          asset.path !==
+            generatedAudioPath({
+              runId: generated.runId,
+              format: generated.format as GeneratedAudioFormat | undefined,
+            })
         )
           throw new Error("Invalid generated audio binding.");
       }
@@ -264,6 +304,9 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           : {}),
         ...(asset.durationMs !== undefined ? { durationMs: Number(asset.durationMs) } : {}),
         ...(playback ?? {}),
+        ...(asset.targetDurationMs !== undefined
+          ? { targetDurationMs: Number(asset.targetDurationMs) }
+          : {}),
         ...(asset.path !== undefined ? { path: String(asset.path) } : {}),
         ...(asset.generatedAudio !== undefined
           ? { generatedAudio: asset.generatedAudio as MediaAsset["generatedAudio"] }
@@ -302,6 +345,12 @@ export function planMedia(activity: ActivityDetail): MediaPlan {
           ...(type === "audio" && item.script !== undefined ? { script: String(item.script) } : {}),
           ...(type === "audio" && typeof item.script === "string"
             ? (playbackFromScript(item.script) ?? {})
+            : {}),
+          // A Loom tag's `duration` is the length its music or effect asks for.
+          ...(type === "audio" &&
+          playbackFromScript(item.script as string | undefined) &&
+          durationFromScript(item.script as string | undefined) !== undefined
+            ? { targetDurationMs: durationFromScript(item.script as string)! }
             : {}),
           usages: [],
         };

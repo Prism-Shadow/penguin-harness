@@ -5070,6 +5070,14 @@ export type CodingAgentEvent = import("@prismshadow/penguin-coding-agents").Agen
 export type CodingAgentConfigOption =
   import("@prismshadow/penguin-coding-agents").AgentSessionConfigOption;
 export type { AudioTarget, AudioResult } from "../activities/audio.js";
+export type {
+  SoundKind,
+  SoundProblem,
+  SoundProviderId,
+  SoundProviderStatus,
+  SoundRequest,
+  SoundSetup,
+} from "../activities/sound-types.js";
 export type { MediaAsset, AssetManifest } from "../activities/media.js";
 export type { UploadedMedia, UploadKind } from "../activities/upload.js";
 export type {

@@ -18,3 +18,9 @@ earlier reader already skips, so an older build does not list deleted activities
 Migration 21 is swap-safe in the same way: an older build neither reads nor writes the table.
 Rolling it back drops the table and loses the version list; the version blobs stay on disk,
 where nothing reads them.
+
+Two optional media-plan fields arrived with [sound generation](2026-09-25-activity-sound-generation.md):
+`targetDurationMs` on a music or sound-effect asset, and `generatedAudio.format` (`"mp3"`) on
+a bound sound. Neither rewrote an existing record, and a bound clip without `format` is read
+as WAV, as before. An older build rejects a media plan that carries either field, so rolling
+back needs them removed from the plans that have them.

@@ -1072,8 +1072,31 @@ export const en: Strings = {
           `Plays in the background on the ${channel} channel, under narration.`,
         sfx: (channel: string) => `Plays on the ${channel} channel, over whatever else plays.`,
       },
-      notSpoken:
-        "Music and sound effects are not spoken: upload a file or choose one from the library.",
+      notSpoken: "Music and effects are not spoken: generate one from a prompt, or upload a file.",
+    },
+    sound: {
+      prompt: "Prompt",
+      promptHint: "Describe the sound, e.g. gentle marimba loop, playful. Up to 2000 characters.",
+      length: "Length (seconds)",
+      lengthHint: "1 to 60 seconds; empty lets the model choose",
+      lengthInvalid: "Enter a length from 1 to 60 seconds, or leave it empty.",
+      provider: "Provider",
+      generate: "Generate",
+      regenerate: "Generate again",
+      generating: "Generating…",
+      providers: { elevenlabs: "ElevenLabs", agenthub: "Model" },
+      problems: {
+        credential_missing: (key: string) => `Add ${key} to the selected agent's Vault.`,
+        kind_unsupported: "This provider does not make this kind of sound.",
+        provider_unknown: "This provider is not available in this version.",
+      },
+      unavailable: (provider: string, problem: string) => `${provider}: ${problem}`,
+      noProvider: "Choose a Penguin agent to see which sound providers it can use.",
+      refused: "The provider refused the request: check the plan or the key.",
+      candidate: (provider: string, seconds: string | null) =>
+        seconds ? `${provider} · ${seconds} s` : provider,
+      candidates: "Sound candidates",
+      player: "Sound candidate",
     },
     assetLibrary: {
       kind: "Media type",

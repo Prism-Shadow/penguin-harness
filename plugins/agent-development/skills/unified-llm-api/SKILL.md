@@ -177,6 +177,8 @@ Images arrive as `inline_data` content items (`data` is a Buffer, with `mime_typ
 
 For an activity speech candidate, run `scripts/generate-speech.mjs` in the Session workspace with `speech-input.json` containing `model`, `voice`, `language`, and `script`. The helper uses AgentHub, requires `GEMINI_API_KEY` in the Agent Vault environment, and writes a new `speech.wav` without replacing an existing file. Run through normal tool approval; do not print credentials or retry a billable request automatically. Listen and explicitly accept through the Activities view.
 
+For an activity music or sound-effect candidate, run `scripts/generate-sound.mjs` in the Session workspace with `sound-input.json` containing `provider` (`elevenlabs`), `model` (`music_v1` or `sound-generation`), `kind` (`music` or `sfx`), `prompt`, and optionally `targetDurationMs` (1000 to 60000). The helper makes one ElevenLabs request with Node's built-in `fetch`, requires `ELEVENLABS_API_KEY` in the Agent Vault environment, and writes a new `sound.mp3` without replacing an existing file. A refused key or plan is reported as "provider refused: plan or key". Run through normal tool approval; do not print credentials or retry a billable request automatically. Listen and explicitly accept through the Activities view.
+
 Use a Gemini TTS model (`gemini-3.1-flash-tts-preview`) and set `config.tts_config`:
 
 ```ts

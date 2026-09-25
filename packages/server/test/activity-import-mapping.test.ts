@@ -294,3 +294,39 @@ describe("word timings", () => {
     expect(lost).toEqual({ "word timings that did not match their script": 1 });
   });
 });
+
+describe("a sound's requested length", () => {
+  it("carries Loom's duration, from the tag or the entry, clamped to 1-60 seconds", () => {
+    const { media } = carriedBindings(
+      {
+        assets: {
+          "en-US": [
+            {
+              key: "door",
+              type: "audio",
+              kind: "sfx",
+              script: '<audio kind="sfx" duration="4s">a door creaks</audio>',
+            },
+            { key: "theme", type: "audio", kind: "music", script: "marimba", duration: 90 },
+            { key: "tick", type: "audio", kind: "sfx", script: "tick", duration: 0.25 },
+            { key: "bed", type: "audio", kind: "music", script: "rain" },
+            {
+              key: "hi",
+              type: "audio",
+              script: '<audio kind="speech" duration="3">Hello</audio>',
+            },
+          ],
+        },
+      },
+      ["en-US"],
+    );
+    const length = (key: string) =>
+      media["en-US"]!.find((binding) => binding.key === key)!.targetDurationMs;
+    expect(length("door")).toBe(4000);
+    expect(length("theme")).toBe(60000);
+    expect(length("tick")).toBe(1000);
+    expect(length("bed")).toBeUndefined();
+    // Narration asks for no length.
+    expect(length("hi")).toBeUndefined();
+  });
+});

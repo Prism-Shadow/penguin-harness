@@ -10,6 +10,8 @@ import type {
   MediaStat,
   PipelineSelection,
   PipelineState,
+  SoundProviderStatus,
+  SoundSetup,
   UploadedMedia,
   VoiceOption,
 } from "@prismshadow/penguin-server/api";
@@ -618,6 +620,29 @@ function ActivityEditor({
   const runner = codingAgentId
     ? { codingAgentId, ...(penguinAgent !== undefined ? { agentId: penguinAgent } : {}) }
     : { agentId: selectedAgent };
+  // Which sound providers the chosen Penguin agent can use; a coding agent can use none.
+  const [soundSetup, setSoundSetup] = useState<{
+    agentId: string;
+    providers: SoundProviderStatus[];
+  } | null>(null);
+  useEffect(() => {
+    if (!available || !editable || !selectedAgent || codingAgentId) return;
+    let cancelled = false;
+    void apiFetch<SoundSetup>(
+      `${basePath(projectId)}/sound-setup?${new URLSearchParams({ agentId: selectedAgent })}`,
+    )
+      .then((value) => {
+        if (!cancelled) setSoundSetup({ agentId: selectedAgent, providers: value.providers });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [available, editable, selectedAgent, codingAgentId, projectId]);
+  const soundProviders =
+    soundSetup && !codingAgentId && soundSetup.agentId === selectedAgent
+      ? soundSetup.providers
+      : null;
   const running = runs.some((run) => run.status === "running");
   const pipelineRunning = pipeline?.status === "running";
   // The script saves itself a few seconds after typing stops, and holds off while
@@ -1324,6 +1349,10 @@ function ActivityEditor({
           onChange={(value) => setMedia(pretty(value))}
           onGenerateAudio={(lang, assetKey, voice) =>
             startRun("generate-audio", { language: lang, assetKey, voice })
+          }
+          soundProviders={soundProviders}
+          onGenerateSound={(lang, assetKey, provider) =>
+            startRun("generate-sound", { language: lang, assetKey, provider })
           }
           onGenerateImage={(lang, assetKey) =>
             startRun("generate-image", { language: lang, assetKey })

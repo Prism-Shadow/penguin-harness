@@ -51,7 +51,7 @@ function mediaSlots(manifest: VersionManifest): Map<string, VersionMedia> {
   for (const [language, assets] of Object.entries(manifest.draft.mediaPlan?.manifest.assets ?? {}))
     for (const asset of assets) {
       const file = asset.generatedAudio
-        ? byPath.get(`audio/${asset.generatedAudio.runId}.wav`)
+        ? byPath.get(`audio/${asset.generatedAudio.runId}.${asset.generatedAudio.format ?? "wav"}`)
         : asset.generatedImage
           ? byPath.get(`images/${asset.generatedImage.runId}.png`)
           : undefined;

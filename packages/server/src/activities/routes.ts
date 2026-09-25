@@ -15,6 +15,7 @@ import { requestOrigin } from "../http/routes/model-oauth.js";
 import { findWafRoot } from "./waf-module.js";
 import { SPEECH_CATALOGUE, SPEECH_MODEL, SPEECH_VOICES } from "./voice-catalogue.js";
 import { IMAGE_MODEL } from "./generated-image.js";
+import { audioMimeType } from "./sound.js";
 import { UPLOAD_MAX_BYTES } from "./upload.js";
 import { BUNDLE_FILE_NAME, BUNDLE_MAX_ITEMS } from "./media-bundle.js";
 import type { BundleItem } from "./media-library-types.js";
@@ -238,6 +239,11 @@ export class ActivityRoutes {
         vaultKey: "GEMINI_API_KEY",
       }),
     );
+    app.get("/sound-setup", async (c) => {
+      const agentId = c.req.query("agentId") ?? "";
+      if (!agentId || agentId.length > 128) throw badRequest("agentId is required.");
+      return c.json(await this.generation.soundSetup(requireValidId(c, "projectId"), agentId));
+    });
     app.get("/image-setup", (c) =>
       c.json({ provider: "Gemini", model: IMAGE_MODEL, vaultKey: "GEMINI_API_KEY" }),
     );
@@ -612,6 +618,26 @@ export class ActivityRoutes {
         202,
       );
     });
+    app.post("/:activityId/generate-sound", async (c) => {
+      const body = await readJson(c);
+      const provider = requireString(body, "provider", { minLen: 1, maxLen: 64 });
+      return c.json(
+        await this.generation.start(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          requireString(body, "agentId", { minLen: 1, maxLen: 128 }),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+          {
+            sound: {
+              language: requireString(body, "language", { minLen: 5, maxLen: 5 }),
+              assetKey: requireString(body, "assetKey", { minLen: 1, maxLen: 128 }),
+              provider,
+            },
+          },
+        ),
+        202,
+      );
+    });
     app.get("/:activityId/runs/:runId/audio", async (c) => {
       const bytes = await this.generation.audioContent(
         requireValidId(c, "projectId"),
@@ -620,7 +646,7 @@ export class ActivityRoutes {
       );
       return new Response(new Uint8Array(bytes), {
         headers: {
-          "Content-Type": "audio/wav",
+          "Content-Type": audioMimeType(bytes),
           "Content-Length": String(bytes.byteLength),
           "Cache-Control": "private, no-store",
           "X-Content-Type-Options": "nosniff",

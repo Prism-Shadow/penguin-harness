@@ -1,5 +1,7 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AudioTarget, AudioResult } from "../activities/audio.js";
+import type { GeneratedAudioFormat } from "../activities/media.js";
+import type { SoundSetup } from "../activities/sound-types.js";
 import type { ImageRequest } from "../activities/image.js";
 import type { ImageTarget, ImageResult } from "../activities/generated-image.js";
 import type { MediaTextTarget } from "../activities/media-text.js";
@@ -37,6 +39,8 @@ export abstract class ActivityGeneration extends Interface<{
       wafRoot?: string;
       bookMode?: string;
       audio?: { language: string; assetKey: string; voice: string };
+      /** A music or sound-effect run for one asset, made by the named provider. */
+      sound?: { language: string; assetKey: string; provider: string };
       image?: { language: string; assetKey: string };
       mediaText?: { language: string; assetKey: string; translate?: boolean };
       /** An assist run: the author's first message and what they had open. */
@@ -109,6 +113,8 @@ export abstract class ActivityGeneration extends Interface<{
     expectedRevision: string,
   ): Promise<ActivityDraft>;
   audioContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array>;
+  /** The sound providers an agent can use, judged by the keys its Vault holds. */
+  soundSetup(projectId: string, agentId: string): Promise<SoundSetup>;
   imageCandidateContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array>;
   acceptImage(
     projectId: string,
@@ -176,17 +182,20 @@ export abstract class ActivityAuthoring extends Interface<{
     activityId: string,
     input: ImageRequest,
   ): Promise<{ bytes: Uint8Array; mimeType: string }>;
+  /** Keep a run's clip; `format` absent is WAV. */
   storeAudio(
     projectId: string,
     activityId: string,
     runId: string,
     bytes: Uint8Array,
+    format?: GeneratedAudioFormat,
   ): Promise<AudioResult>;
   readAudio(
     projectId: string,
     activityId: string,
     runId: string,
     sha256: string,
+    format?: GeneratedAudioFormat,
   ): Promise<Uint8Array>;
   applyAudio(
     projectId: string,

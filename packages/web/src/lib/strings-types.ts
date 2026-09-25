@@ -907,6 +907,30 @@ export type Strings = {
       hint: Record<"music" | "sfx", (channel: string) => string>;
       notSpoken: string;
     };
+    /** Music and sound effects generated from a prompt. */
+    sound: {
+      prompt: string;
+      promptHint: string;
+      length: string;
+      lengthHint: string;
+      lengthInvalid: string;
+      provider: string;
+      generate: string;
+      regenerate: string;
+      generating: string;
+      providers: Record<"elevenlabs" | "agenthub", string>;
+      problems: {
+        credential_missing: (key: string) => string;
+        kind_unsupported: string;
+        provider_unknown: string;
+      };
+      unavailable: (provider: string, problem: string) => string;
+      noProvider: string;
+      refused: string;
+      candidate: (provider: string, seconds: string | null) => string;
+      candidates: string;
+      player: string;
+    };
     assetLibrary: {
       kind: string;
       binding: string;

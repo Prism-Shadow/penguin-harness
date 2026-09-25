@@ -1,3 +1,10 @@
+import type {
+  SoundKind,
+  SoundProblem,
+  SoundProviderId,
+  SoundProviderStatus,
+} from "./sound-types.js";
+
 /**
  * Which audio a run can actually produce, and what to say when it cannot.
  *
@@ -72,6 +79,28 @@ export type ProviderChoice =
   { kind: AudioKind; provider: AudioProvider } | { kind: AudioKind; problem: string };
 
 /**
+ * Whether one named provider can serve one kind with the keys present, as a code. Both the
+ * worded capability report below and the sound seam decide through this, so they never
+ * disagree about what a provider can do.
+ */
+function checkProvider(
+  kind: AudioKind,
+  id: string,
+  have: ReadonlySet<string>,
+):
+  | { provider: AudioProvider }
+  | { problem: "provider_unknown" }
+  | { problem: "kind_unsupported" }
+  | { problem: "credential_missing"; credential: string } {
+  const provider = AUDIO_PROVIDERS.find((entry) => entry.id === id);
+  if (!provider) return { problem: "provider_unknown" };
+  if (!provider.kinds.includes(kind)) return { problem: "kind_unsupported" };
+  if (!have.has(provider.credential))
+    return { problem: "credential_missing", credential: provider.credential };
+  return { provider };
+}
+
+/**
  * The provider that will serve one kind, or why none will.
  *
  * A configured choice is honoured strictly: asking for a provider this build does not carry
@@ -94,16 +123,16 @@ export function providerFor(kind: AudioKind, setup: AudioSetup): ProviderChoice 
             .join(", ") || "none"
         }.`,
       };
-    const provider = AUDIO_PROVIDERS.find((entry) => entry.id === wanted);
-    if (!provider) return { kind, problem: `${kind}: there is no provider called "${wanted}".` };
-    if (!provider.kinds.includes(kind))
+    const checked = checkProvider(kind, wanted, have);
+    if ("provider" in checked) return { kind, provider: checked.provider };
+    if (checked.problem === "provider_unknown")
+      return { kind, problem: `${kind}: there is no provider called "${wanted}".` };
+    if (checked.problem === "kind_unsupported")
       return { kind, problem: `${kind}: "${wanted}" does not produce ${kind}.` };
-    if (!have.has(provider.credential))
-      return {
-        kind,
-        problem: `${kind}: "${wanted}" needs ${provider.credential} in the Agent's vault.`,
-      };
-    return { kind, provider };
+    return {
+      kind,
+      problem: `${kind}: "${wanted}" needs ${checked.credential} in the Agent's vault.`,
+    };
   }
 
   const usable = AUDIO_PROVIDERS.filter(
@@ -153,4 +182,76 @@ export function describeAudioCapability(setup: AudioSetup): string {
   if (!problems.length) return "Speech, music, effects and word timings are all available.";
   if (!available.length) return `No audio can be produced. ${problems.join(" ")}`;
   return `Available: ${available.join(", ")}. ${problems.join(" ")}`;
+}
+
+/**
+ * Music and sound effects made from a prompt: the providers this build carries for them, the
+ * model each uses per kind, and the Vault key it needs. An asset's `sfx` is this file's
+ * `effect`.
+ *
+ * Only ElevenLabs is listed. A model reached through the model hub is a provider id the
+ * seam knows, but this build has no such model, so asking for it is `provider_unknown`
+ * rather than a quiet substitution.
+ */
+export interface SoundProvider {
+  id: SoundProviderId;
+  kinds: readonly SoundKind[];
+  credential: string;
+  models: Partial<Record<SoundKind, string>>;
+}
+
+export const SOUND_PROVIDERS: readonly SoundProvider[] = [
+  {
+    id: "elevenlabs",
+    kinds: ["music", "sfx"],
+    credential: "ELEVENLABS_API_KEY",
+    models: { music: "music_v1", sfx: "sound-generation" },
+  },
+];
+
+const AUDIO_KIND_OF: Record<SoundKind, AudioKind> = { music: "music", sfx: "effect" };
+
+/**
+ * The provider and model that will make one sound, or why they cannot. `vaultKeys` are the
+ * keys the chosen agent's Vault holds; null skips the key check (an asset is being checked,
+ * not a run started).
+ */
+export function soundProviderFor(
+  kind: SoundKind,
+  provider: string,
+  vaultKeys: readonly string[] | null,
+): { provider: SoundProviderId; model: string } | { problem: SoundProblem; credential?: string } {
+  const sound = SOUND_PROVIDERS.find((entry) => entry.id === provider);
+  if (!sound) return { problem: "provider_unknown" };
+  const model = sound.models[kind];
+  if (!sound.kinds.includes(kind) || !model) return { problem: "kind_unsupported" };
+  const checked = checkProvider(
+    AUDIO_KIND_OF[kind],
+    sound.id,
+    new Set(vaultKeys ?? [sound.credential]),
+  );
+  if ("problem" in checked)
+    return checked.problem === "credential_missing"
+      ? { problem: "credential_missing", credential: checked.credential }
+      : { problem: checked.problem };
+  return { provider: sound.id, model };
+}
+
+/** Every sound provider as the picker shows it, for an agent holding `vaultKeys`. */
+export function soundSetup(vaultKeys: readonly string[]): SoundProviderStatus[] {
+  return SOUND_PROVIDERS.map((provider) => {
+    // A provider is usable when it can make at least one kind; the kinds it cannot make
+    // are simply absent from its list.
+    const problems = provider.kinds.map((kind) => soundProviderFor(kind, provider.id, vaultKeys));
+    const usable = problems.some((choice) => "model" in choice);
+    const problem = problems.find((choice) => "problem" in choice);
+    return {
+      id: provider.id,
+      kinds: [...provider.kinds],
+      credential: provider.credential,
+      models: { ...provider.models },
+      available: usable,
+      ...(!usable && problem && "problem" in problem ? { problem: problem.problem } : {}),
+    };
+  });
 }

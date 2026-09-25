@@ -15,7 +15,8 @@ import {
 import { isUploadReference } from "./upload.js";
 import { HttpError } from "../http/errors.js";
 import { readArtifactBytes } from "./artifact.js";
-import { AUDIO_MAX_BYTES, inspectWave } from "./audio.js";
+import { AUDIO_MAX_BYTES } from "./audio.js";
+import { inspectGeneratedAudio } from "./sound.js";
 import { GENERATED_IMAGE_MAX_BYTES, inspectPng } from "./generated-image.js";
 import { validateBookSpec } from "./book.js";
 import { bookStateMachineDefinition } from "./book-machine.js";
@@ -425,7 +426,8 @@ export async function verifyMediaArtifacts(
       throw new Error("Assembly changed the accepted image.");
     if (
       asset.generatedAudio &&
-      inspectWave(bytes, asset.generatedAudio.runId).sha256 !== asset.generatedAudio.sha256
+      inspectGeneratedAudio(bytes, asset.generatedAudio.runId, asset.generatedAudio.format)
+        .sha256 !== asset.generatedAudio.sha256
     )
       throw new Error("Assembly changed the accepted speech audio.");
   }

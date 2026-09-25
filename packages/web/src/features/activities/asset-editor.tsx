@@ -8,6 +8,7 @@ import type {
   AssetManifest,
   ActivityRunSummary,
   MediaStat,
+  SoundProviderStatus,
   UploadedMedia,
   VoiceOption,
 } from "@prismshadow/penguin-server/api";
@@ -29,6 +30,8 @@ import { VoicePicker } from "./voice-picker";
 import { voiceFor } from "./voice-catalogue";
 import { MediaDetailsView } from "./media-details-view";
 import { fileFactsFor } from "./media-details";
+import { SoundFields } from "./sound-fields";
+import { soundCandidateLabel, soundFailure } from "./sound-model";
 
 export function AssetEditor({
   manifest,
@@ -52,6 +55,8 @@ export function AssetEditor({
   onChange,
   onSaveMedia,
   onGenerateAudio,
+  onGenerateSound,
+  soundProviders = null,
   onGenerateImage,
   onAcceptAudio,
   onAcceptImage,
@@ -93,6 +98,10 @@ export function AssetEditor({
   onChange: (manifest: AssetManifest) => void;
   onSaveMedia: () => void;
   onGenerateAudio: (language: string, assetKey: string, voice: string) => void;
+  /** Make a music or sound-effect candidate with the named provider. */
+  onGenerateSound?: (language: string, assetKey: string, provider: string) => void;
+  /** The sound providers the chosen agent can use; null while unknown or without one. */
+  soundProviders?: readonly SoundProviderStatus[] | null;
   onGenerateImage: (language: string, assetKey: string) => void;
   onAcceptAudio: (runId: string) => void;
   onAcceptImage: (runId: string) => void;
@@ -506,27 +515,40 @@ export function AssetEditor({
                       delete entry.loop;
                       delete entry.volume;
                       if (playback) Object.assign(entry, playback);
+                      // Only music and effects ask for a length.
+                      else delete entry.targetDurationMs;
                     })
                   }
                 />
-                {!narration && (
-                  <p className="text-xs text-gray-500">{S.activities.audioPlayback.notSpoken}</p>
+                {asset.kind ? (
+                  <SoundFields
+                    key={`${language}/${asset.key}`}
+                    asset={{ ...asset, kind: asset.kind }}
+                    editable={editable}
+                    disabled={disabled}
+                    canGenerate={canGenerateMedia && !!onGenerateSound}
+                    generating={audioCandidates.some((run) => run.status === "running")}
+                    providers={soundProviders}
+                    onEdit={edit}
+                    onGenerate={(provider) => onGenerateSound?.(language, asset.key, provider)}
+                  />
+                ) : (
+                  <Textarea
+                    size="sm"
+                    label={S.activities.speechScript}
+                    hint={S.activities.speechScriptHint}
+                    rows={4}
+                    maxLength={5000}
+                    value={asset.script ?? ""}
+                    disabled={!editable || disabled}
+                    onChange={(event) =>
+                      edit((entry) => {
+                        entry.script = event.target.value;
+                        delete entry.wordTimings;
+                      })
+                    }
+                  />
                 )}
-                <Textarea
-                  size="sm"
-                  label={S.activities.speechScript}
-                  hint={S.activities.speechScriptHint}
-                  rows={4}
-                  maxLength={5000}
-                  value={asset.script ?? ""}
-                  disabled={!editable || disabled}
-                  onChange={(event) =>
-                    edit((entry) => {
-                      entry.script = event.target.value;
-                      delete entry.wordTimings;
-                    })
-                  }
-                />
                 {narration && editable && (
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -605,24 +627,39 @@ export function AssetEditor({
                   </>
                 )}
                 {audioCandidates.length > 0 && (
-                  <section className="space-y-3" aria-label={S.activities.speechCandidates}>
-                    <h5 className="text-xs font-semibold">{S.activities.speechCandidates}</h5>
+                  <section
+                    className="space-y-3"
+                    aria-label={
+                      narration ? S.activities.speechCandidates : S.activities.sound.candidates
+                    }
+                  >
+                    <h5 className="text-xs font-semibold">
+                      {narration ? S.activities.speechCandidates : S.activities.sound.candidates}
+                    </h5>
                     {audioCandidates.map((run) => (
                       <div
                         key={run.runId}
                         className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800"
                       >
                         <p className="text-xs">
-                          {run.audio?.voice} · {new Date(run.createdAt).toLocaleString()} ·{" "}
+                          {soundCandidateLabel(run)} · {new Date(run.createdAt).toLocaleString()} ·{" "}
                           {S.activities.speechStatus[run.status]}
                         </p>
-                        {run.error && <p className="break-words text-xs">{run.error}</p>}
+                        {run.error && (
+                          <p className="break-words text-xs">
+                            {run.audio?.sound ? soundFailure(run.error) : run.error}
+                          </p>
+                        )}
                         {run.hasCandidate &&
                           (run.status === "succeeded" || run.status === "conflict") && (
                             <WaveformPlayer
                               key={run.runId}
                               src={audioUrl(run.runId)}
-                              label={S.activities.speechCandidate}
+                              label={
+                                run.audio?.sound
+                                  ? S.activities.sound.player
+                                  : S.activities.speechCandidate
+                              }
                             />
                           )}
                         {editable &&

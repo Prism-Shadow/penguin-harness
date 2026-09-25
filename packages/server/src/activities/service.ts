@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs/promises";
 import { buildReadiness } from "./build-readiness.js";
-import type { MediaAsset } from "./media.js";
+import type { GeneratedAudioFormat, MediaAsset } from "./media.js";
 import type { CarriedBinding } from "./import-mapping.js";
 import {
   IMPLEMENTATION_FEATURES,
@@ -19,9 +19,11 @@ import type { Config, Db } from "../hmr/capabilities.js";
 import type { ActivityAuthoring } from "../mechanisms/activities.js";
 import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import { HttpError } from "../http/errors.js";
-import { planMedia, validateManifest, validateMediaCoverage } from "./media.js";
+import { generatedAudioPath, planMedia, validateManifest, validateMediaCoverage } from "./media.js";
 import { mediaTextField, type MediaTextTarget } from "./media-text.js";
-import { AUDIO_MAX_BYTES, inspectWave, type AudioResult, type AudioTarget } from "./audio.js";
+import { AUDIO_MAX_BYTES, type AudioResult, type AudioTarget } from "./audio.js";
+import { inspectGeneratedAudio } from "./sound.js";
+import { soundPromptOf } from "./playback.js";
 import { readArtifactBytes } from "./artifact.js";
 import {
   isUploadReference,
@@ -1095,6 +1097,9 @@ export class ActivityService implements ActivityAuthoring {
             ? { durationMs: binding.durationMs }
             : {}),
           ...(asset.type === "audio" && binding.playback ? binding.playback : {}),
+          ...(asset.type === "audio" && binding.playback && binding.targetDurationMs !== undefined
+            ? { targetDurationMs: binding.targetDurationMs }
+            : {}),
         };
       });
     }
@@ -1160,11 +1165,12 @@ export class ActivityService implements ActivityAuthoring {
     activityId: string,
     runId: string,
     bytes: Uint8Array,
+    format?: GeneratedAudioFormat,
   ): Promise<AudioResult> {
     return this.projectWork.run(projectId, async () => {
       const activity = await this.getActivity(projectId, activityId);
-      const result = inspectWave(bytes, runId);
-      const file = this.audioPath(projectId, activity, runId);
+      const result = inspectGeneratedAudio(bytes, runId, format);
+      const file = this.audioPath(projectId, activity, runId, format);
       await fs.mkdir(path.dirname(file), { recursive: true });
       await fs.writeFile(file, bytes, { flag: "wx" });
       return result;
@@ -1174,13 +1180,14 @@ export class ActivityService implements ActivityAuthoring {
     projectId: string,
     activity: ActivityRecord & { draft: ActivityDraft },
     runId: string,
+    format: GeneratedAudioFormat | undefined,
   ): string {
     if (!/^run_[a-f0-9]{32}$/.test(runId))
       throw new HttpError(404, "run_not_found", "Audio candidate not found.");
     return path.join(
       this.draftWorkspace(projectId, activity.collectionId, activity.id, activity.draft.draftId),
       "audio",
-      `${runId}.wav`,
+      `${runId}.${format ?? "wav"}`,
     );
   }
   async readAudio(
@@ -1188,13 +1195,14 @@ export class ActivityService implements ActivityAuthoring {
     activityId: string,
     runId: string,
     sha256: string,
+    format?: GeneratedAudioFormat,
   ): Promise<Uint8Array> {
     const activity = await this.getActivity(projectId, activityId);
     const bytes = await readArtifactBytes(
-      this.audioPath(projectId, activity, runId),
+      this.audioPath(projectId, activity, runId, format),
       AUDIO_MAX_BYTES,
     );
-    if (inspectWave(bytes, runId).sha256 !== sha256)
+    if (inspectGeneratedAudio(bytes, runId, format).sha256 !== sha256)
       throw new HttpError(409, "audio_changed", "Stored audio changed. Generate a new candidate.");
     return bytes;
   }
@@ -1206,7 +1214,7 @@ export class ActivityService implements ActivityAuthoring {
     expectedRevision: string,
   ): Promise<ActivityDraft> {
     // Verify immutable bytes before the same compare-and-publish lock used by all draft edits.
-    await this.readAudio(projectId, activityId, result.runId, result.sha256);
+    await this.readAudio(projectId, activityId, result.runId, result.sha256, result.format);
     return this.change(projectId, activityId, expectedRevision, (draft) => {
       const plan = draft.mediaPlan;
       if (!plan || plan.specRevision !== contentRevision(draft.spec) || draft.status !== "valid")
@@ -1219,11 +1227,25 @@ export class ActivityService implements ActivityAuthoring {
         throw new HttpError(
           409,
           "audio_changed",
-          "The speech requirement changed. Generate a new candidate.",
+          target.sound
+            ? "The sound's prompt changed. Generate a new candidate."
+            : "The speech requirement changed. Generate a new candidate.",
         );
-      asset.path = `media/generated/${result.runId}.wav`;
-      asset.generatedAudio = { runId: result.runId, sha256: result.sha256 };
-      // The timings described the recording this replaces.
+      // A sound was made for music or an effect; an asset that has become narration is not it.
+      if (target.sound && (!asset.kind || soundPromptOf(asset.script) !== target.sound.prompt))
+        throw new HttpError(
+          409,
+          "audio_changed",
+          "The sound's prompt changed. Generate a new candidate.",
+        );
+      const generated = {
+        runId: result.runId,
+        sha256: result.sha256,
+        ...(result.format === "mp3" ? { format: "mp3" as const } : {}),
+      };
+      asset.path = generatedAudioPath(generated);
+      asset.generatedAudio = generated;
+      // The timings and length described the recording this replaces; playback stays.
       delete asset.wordTimings;
       delete asset.durationMs;
       return { ...draft, mediaPlan: { ...plan, manifest } };
@@ -1246,6 +1268,7 @@ export class ActivityService implements ActivityAuthoring {
         activityId,
         asset.generatedAudio.runId,
         asset.generatedAudio.sha256,
+        asset.generatedAudio.format,
       );
       const file = path.join(workspace, asset.path!);
       await fs.mkdir(path.dirname(file), { recursive: true });

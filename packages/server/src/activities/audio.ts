@@ -2,20 +2,28 @@ import { createHash } from "node:crypto";
 import { contentRevision, type ActivityDetail } from "./domain.js";
 import { HttpError } from "../http/errors.js";
 import { SPEECH_MODEL, isSpeechVoice } from "./voice-catalogue.js";
+import type { SoundRequest } from "./sound-types.js";
+import type { GeneratedAudioFormat } from "./media.js";
 
 export interface AudioTarget {
   language: string;
   assetKey: string;
+  /** The asset's script when the run started; accepting requires it unchanged. */
   script: string;
-  voice: string;
+  /** The narration's voice. A sound run has none. */
+  voice?: string;
   model: string;
+  /** Present on a music or sound-effect run: what its provider is asked for. */
+  sound?: SoundRequest;
 }
 export interface AudioResult {
   runId: string;
   sha256: string;
   bytes: number;
   durationMs: number;
-  mimeType: "audio/wav";
+  mimeType: "audio/wav" | "audio/mpeg";
+  /** Absent for WAV, which every speech run and every older record is. */
+  format?: GeneratedAudioFormat;
 }
 export const AUDIO_MAX_BYTES = 20 * 1024 * 1024;
 export { SPEECH_MODEL, SPEECH_VOICES } from "./voice-catalogue.js";
