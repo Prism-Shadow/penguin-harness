@@ -308,6 +308,21 @@ async function reconcileCalendar(
       // back on the queue in their order, so the slot that does fire still carries them.
       for (const row of notices) deps.cache.queueDeskNotice(row);
       mark("error");
+      // A one-shot event unwinds its consumed slot, or the failure would be the last word:
+      // this dispatch is the only thing that drains the desk notices just re-queued, and a
+      // consumed one-shot slot never comes again. Retrying is safe — the run never started —
+      // and a persistent failure keeps surfacing as mark("error") every pass instead of
+      // stranding the notices with nothing on the errors panel. A periodic event needs no
+      // unwind: its next slot fires regardless.
+      if (def.periodMs === undefined) {
+        deps.cache.markCalendarSlot(
+          key.projectId,
+          key.orgId,
+          key.agentId,
+          key.name,
+          state.lastSlotMs,
+        );
+      }
       continue;
     }
     deps.cache.markCalendarFired(
