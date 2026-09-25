@@ -38,6 +38,7 @@ export const PIPELINE_CHOICES: readonly PipelineSelection[] = [
   "images",
   "assessment",
   "module",
+  "test",
 ];
 
 function choiceLabel(choice: PipelineSelection) {

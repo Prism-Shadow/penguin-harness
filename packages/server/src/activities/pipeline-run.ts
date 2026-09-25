@@ -18,6 +18,8 @@
  *   assessment  write and accept the assessment, when the specification uses one and this
  *           is the canonical ref that owns it
  *   module  assemble the WAF module (scaffold, configuration and behavior in one run)
+ *   test    run the acceptance tests against the assembled module, when the specification
+ *           has acceptance criteria and the test browser is installed
  *
  * State lives in memory only: a sequence belongs to the server that runs it, and its runs
  * outlive it in the history either way. A step that fails stops the sequence; nothing is
@@ -27,6 +29,8 @@ import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-c
 import { HttpError } from "../http/errors.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import type { ActivitySandbox } from "./sandbox-service.js";
+import type { ActivityAcceptance } from "./acceptance-service.js";
+import { acceptanceCriteria } from "./acceptance-collect.js";
 import { SPEECH_VOICES, isSpeechVoice } from "./voice-catalogue.js";
 import { DEFAULT_LANGUAGE_CODE } from "./languages.js";
 import { contentRevision, type ActivityRun } from "./domain.js";
@@ -162,6 +166,16 @@ export interface PipelineDeps {
     projectId: string,
     activityId: string,
   ) => Promise<Record<string, unknown> | null>;
+  /** Starts an acceptance test run; the step fails without one. */
+  startTest?: (
+    projectId: string,
+    activityId: string,
+    agentId: string,
+    expectedRevision: string,
+    runtime?: { codingAgentId?: string },
+  ) => Promise<ActivityRun>;
+  /** Whether the test browser is installed; the test step is skipped without it. */
+  testBrowserInstalled?: () => Promise<boolean>;
   /** How long to wait between looks at a run; injected so tests do not wait. */
   pause?: (ms: number) => Promise<void>;
   now?: () => string;
@@ -458,6 +472,33 @@ export class PipelineRunner {
       return;
     }
 
+    if (step.step === "test") {
+      const activity = await current();
+      if (!acceptanceCriteria(activity.draft.spec).length) {
+        step.status = "skipped";
+        step.note = "noCriteria";
+        return;
+      }
+      if (!(await this.deps.testBrowserInstalled?.())) {
+        step.status = "skipped";
+        step.note = "noBrowser";
+        return;
+      }
+      if (!this.deps.startTest) throw new Error("Acceptance tests are not available.");
+      await this.follow(
+        state,
+        step,
+        await this.deps.startTest(
+          projectId,
+          activityId,
+          input.agentId,
+          activity.draft.contentRevision,
+          runtime,
+        ),
+      );
+      return;
+    }
+
     const activity = await current();
     await this.follow(
       state,
@@ -512,6 +553,7 @@ export class ActivityPipelineService implements ActivityPipelines {
   @Use() private readonly generation!: ActivityGeneration;
   @Use() private readonly activities!: ActivityAuthoring;
   @Use() private readonly sandbox!: ActivitySandbox;
+  @Use() private readonly acceptance!: ActivityAcceptance;
   private runner: PipelineRunner | null = null;
 
   setup({ effect }: ClassCtx) {
@@ -524,6 +566,9 @@ export class ActivityPipelineService implements ActivityPipelines {
           ? (value as Record<string, unknown>)
           : null;
       },
+      startTest: (projectId, activityId, agentId, expectedRevision, runtime) =>
+        this.acceptance.start(projectId, activityId, agentId, expectedRevision, runtime),
+      testBrowserInstalled: () => this.acceptance.browserInstalled(),
     });
     this.runner = runner;
     effect(() => runner.dispose());

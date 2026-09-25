@@ -500,6 +500,43 @@ export const en: Strings = {
         captions: "Not blocking: captions are reported only.",
       },
     },
+    tests: {
+      title: "Test results",
+      about:
+        "Run tests has the chosen agent write one check for each acceptance criterion in the specification (acceptance_criterias). The checks play the assembled module in the test browser: they tap, hold and drag like a learner, and wait for the states and sounds the criterion names. When neither the criteria nor the rest of the specification has changed, the checks written last time are reused. A failed test does not stop you assembling or deploying.",
+      run: "Run tests",
+      running: "Running tests…",
+      browserMissing:
+        "The test browser is not installed. An admin installs it in System settings, under Test browser.",
+      noCriteria:
+        "The specification has no acceptance criteria, so there is nothing to test. Add them to acceptance_criterias.",
+      stale:
+        "Out of date: the specification changed since these tests ran. Run tests again to check it.",
+      noAgent: "Choose an agent under the Activity Script first.",
+      saveFirst: "Save your edits before running the tests.",
+      loadFailed: "Could not load the test results.",
+      lastRun: (when: string) => `Last run ${when}`,
+      notRun: "No tests have run yet.",
+      lastFailed: (reason: string) => `The last test run did not finish: ${reason}`,
+      count: (passed: number, total: number) =>
+        `${passed} of ${total} ${total === 1 ? "criterion" : "criteria"} passed`,
+      reused: "Reused the checks written for these criteria last time.",
+      status: { passed: "Passed", failed: "Failed", skipped: "Skipped" },
+      skipped: {
+        no_criteria: "The specification has no acceptance criteria.",
+      },
+      codes: { not_run: "No check ran for this criterion." },
+      resultsLabel: "Acceptance criteria results",
+      columns: {
+        criterion: "Criterion",
+        test: "Test",
+        status: "Status",
+        duration: "Time",
+        error: "Why it failed",
+      },
+      duration: (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`),
+      noTestName: "None",
+    },
     studioBuild: {
       title: "Build",
       checking: "Checking what the module needs…",
@@ -567,6 +604,7 @@ export const en: Strings = {
         images: "Generate images",
         assessment: "Generate assessment",
         module: "Assemble module",
+        test: "Run tests",
       },
       narration: "Translate and speak",
       assets: "Generate speech and images",
@@ -590,6 +628,8 @@ export const en: Strings = {
         noImages: "No image is missing.",
         noAssessment: "The specification says this activity has no assessment.",
         notCanonical: "The assessment is shared by every ref and is written on the canonical ref.",
+        noCriteria: "The specification has no acceptance criteria to test.",
+        noBrowser: "The test browser is not installed.",
       },
       running: (step: string) => `${step}…`,
       finished: "All chosen stages finished.",
@@ -1162,6 +1202,7 @@ export const en: Strings = {
     assemble: "Assemble WAF module",
     moduleRun: "Module assembly",
     qualityRun: "Quality check",
+    testRun: "Acceptance tests",
     moduleReady: "Assembled",
     specRun: "Specification",
     assistRun: "Conversation",

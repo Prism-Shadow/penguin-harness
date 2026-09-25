@@ -118,6 +118,10 @@ import {
   DefaultQualityCheckPorts,
 } from "./activities/quality-check.js";
 import { QualityAdminRoutes } from "./activities/quality-routes.js";
+import {
+  ActivityAcceptanceService,
+  DefaultAcceptancePorts,
+} from "./activities/acceptance-service.js";
 import { ActivityGenerationService } from "./activities/generation.js";
 import { ActivityAuthoring, ActivityGeneration } from "./mechanisms/activities.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
@@ -388,6 +392,8 @@ export class CodingAgentsModule {}
     DefaultQualityCheckPorts,
     ActivityQualityService,
     QualityAdminRoutes,
+    DefaultAcceptancePorts,
+    ActivityAcceptanceService,
   ],
   exports: [ActivityAuthoring, ActivityGeneration, ActivityVersions, TestBrowser, ActivityQuality],
 })

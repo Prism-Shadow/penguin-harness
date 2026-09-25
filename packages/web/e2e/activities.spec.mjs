@@ -5251,3 +5251,145 @@ test("checks quality and lists what must be fixed", async ({ page }) => {
   await expect(check).toBeEnabled();
   expect(f.errors).toEqual([]);
 });
+
+test("runs the tests and lists each criterion's result", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  const checkedAt = "2026-09-25T10:00:00.000Z";
+  const criteria = ["Tapping the cat plays its name.", "The end screen says well done."];
+  const report = {
+    overallStatus: "failed",
+    checkedAt,
+    specRevision: "rev",
+    reused: false,
+    results: [
+      {
+        criterion: criteria[0],
+        testName: "tap the cat",
+        status: "passed",
+        durationMs: 1540,
+        error: null,
+      },
+      {
+        criterion: criteria[1],
+        testName: "",
+        status: "failed",
+        durationMs: 0,
+        error: null,
+        code: "not_run",
+      },
+    ],
+  };
+  // The test routes, with the server's rules: one run per activity at a time, a test browser
+  // for criteria to be tested, and the report once the run has settled.
+  let browserInstalled = false;
+  let testRun = null;
+  let current = null;
+  let starts = 0;
+  let body = null;
+  let runReadsWhileRunning = 0;
+  let stale = false;
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/act_test/test` && request.method() === "POST") {
+      if (!browserInstalled)
+        return json({ error: { code: "test_browser_missing", message: "missing" } }, 409);
+      if (testRun?.status === "running")
+        return json({ error: { code: "generation_running", message: "busy" } }, 409);
+      starts++;
+      body = request.postDataJSON();
+      testRun = {
+        kind: "test",
+        runId: "run_tests",
+        activityId: "act_test",
+        projectId,
+        draftId: "draft_test",
+        inputRevision: "1",
+        agentId: body.agentId ?? "",
+        sessionId: "session_tests",
+        status: "running",
+        createdAt: "2026-09-25T09:59:00.000Z",
+        finishedAt: null,
+        error: null,
+        candidate: null,
+      };
+      return json(testRun, 202);
+    }
+    if (p === `${base}/act_test/test-report`)
+      return json({
+        report: current,
+        runId: current ? "run_tests" : null,
+        criteria: criteria.length,
+        stale,
+        browserInstalled,
+      });
+    if (p === `${base}/act_test/runs` && request.method() === "GET" && testRun) {
+      if (testRun.status === "running" && ++runReadsWhileRunning > 1) {
+        testRun = { ...testRun, status: "succeeded", finishedAt: checkedAt };
+        current = report;
+      }
+      const { candidate, ...summary } = testRun;
+      return json({ runs: [{ ...summary, hasCandidate: false }] });
+    }
+    return route.fallback();
+  });
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify({ ...spec, acceptance_criterias: criteria }));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+
+  // Without the test browser, Run tests is not offered, and the page says why.
+  await openSection(page, "Module preview");
+  await expect(page.getByRole("heading", { name: /^Test results/ })).toBeVisible();
+  const runTests = page.getByRole("button", { name: "Run tests", exact: true });
+  await expect(runTests).toBeDisabled();
+  await expect(
+    page
+      .getByText(
+        "The test browser is not installed. An admin installs it in System settings, under Test browser.",
+        { exact: true },
+      )
+      .first(),
+  ).toBeVisible();
+  await expect(page.getByText("No tests have run yet.", { exact: true })).toBeVisible();
+
+  // Installed, it runs; the results appear once the run settles.
+  browserInstalled = true;
+  await openSection(page, "Description");
+  await openSection(page, "Module preview");
+  await expect(runTests).toBeEnabled();
+  await runTests.click();
+  await expect(page.getByText("Running tests…", { exact: true })).toBeVisible();
+  await expect(runTests).toBeDisabled();
+  await expect(page.getByText("Acceptance tests finished.", { exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  expect(starts).toBe(1);
+  expect(body.expectedRevision).toBeTruthy();
+
+  await expect(page.getByTestId("tests-status")).toHaveText("Failed · 1 of 2 criteria passed");
+  const table = page.getByRole("table", { name: "Acceptance criteria results", exact: true });
+  const passed = table.getByRole("row", { name: /Tapping the cat/ });
+  await expect(passed).toContainText("tap the cat");
+  await expect(passed).toContainText("Passed");
+  await expect(passed).toContainText("1.5 s");
+  const missing = table.getByRole("row", { name: /The end screen/ });
+  await expect(missing).toContainText("Failed");
+  await expect(missing).toContainText("No check ran for this criterion.");
+  await expect(page.getByText(/^Last run /)).toBeVisible();
+  await expect(runTests).toBeEnabled();
+  await expect(page.getByTestId("tests-stale")).toHaveCount(0);
+
+  // Once the specification changes, the old results are marked out of date.
+  stale = true;
+  await openSection(page, "Description");
+  await openSection(page, "Module preview");
+  await expect(page.getByTestId("tests-stale")).toHaveText(
+    "Out of date: the specification changed since these tests ran. Run tests again to check it.",
+  );
+  expect(f.errors).toEqual([]);
+});

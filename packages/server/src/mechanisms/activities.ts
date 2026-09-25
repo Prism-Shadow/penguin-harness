@@ -24,6 +24,7 @@ import type {
   ModuleDocumentKind,
   ModuleDocumentOverride,
 } from "../activities/domain.js";
+import type { AcceptanceStage } from "../activities/acceptance-types.js";
 
 export abstract class ActivityGeneration extends Interface<{
   shutdown(): Promise<void>;
@@ -45,6 +46,11 @@ export abstract class ActivityGeneration extends Interface<{
        * assessment in effect now (the author's edit, else the module's own; null for none).
        */
       assessment?: { current: Record<string, unknown> | null };
+      /**
+       * An acceptance test run, prepared by the acceptance service: what to test, where, and
+       * an earlier run's tests when they fit the same criteria.
+       */
+      test?: AcceptanceStage;
     },
     /** Run on an external coding agent instead of the Penguin agent `agentId` names. */
     runtime?: { codingAgentId?: string },

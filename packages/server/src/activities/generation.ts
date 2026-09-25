@@ -47,6 +47,28 @@ import { coverageProblem } from "./assessment-hints.js";
 import { normalizeAssessment, parseHints, writtenItems } from "./assessment-document.js";
 import { validateAssessment } from "./module-overrides.js";
 import {
+  ACCEPTANCE_HARNESS_FILE,
+  ACCEPTANCE_INPUT_FILE,
+  ACCEPTANCE_REPORT_DIR,
+  ACCEPTANCE_REPORT_FILE,
+  ACCEPTANCE_RESULTS_FILE,
+  ACCEPTANCE_RUNNER_FILE,
+  ACCEPTANCE_TEST_FILE,
+  HARNESS_VERSION,
+  TEST_FILE_MAX_BYTES,
+  acceptancePrompt,
+  acceptanceReusePrompt,
+  activityHarnessSource,
+  runAcceptanceSource,
+} from "./acceptance-harness.js";
+import {
+  RESULTS_MAX_BYTES,
+  acceptanceReport,
+  parseAcceptanceResults,
+  testFileHash,
+} from "./acceptance-collect.js";
+import type { AcceptanceStage } from "./acceptance-types.js";
+import {
   newId,
   contentRevision,
   validateActivitySpec,
@@ -56,6 +78,23 @@ import {
 } from "./domain.js";
 
 const MAX_CANDIDATE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Whether a test run left the test file it was handed as it was: only then did it reuse the
+ * earlier checks. False when it was handed none, or the file is gone or changed.
+ */
+async function testFileUnchanged(workspace: string, hash: string | undefined): Promise<boolean> {
+  if (!hash) return false;
+  try {
+    const bytes = await readArtifactBytes(
+      path.join(workspace, ACCEPTANCE_TEST_FILE),
+      TEST_FILE_MAX_BYTES,
+    );
+    return testFileHash(bytes) === hash;
+  } catch {
+    return false;
+  }
+}
 interface Observer {
   unsubscribe: () => void;
   completed: boolean;
@@ -273,6 +312,8 @@ export class ActivityGenerationService implements ActivityGeneration {
       assist?: { message: string; focus: AssistFocus | null };
       /** An assessment run, given the assessment in effect now (null when there is none). */
       assessment?: { current: Record<string, unknown> | null };
+      /** An acceptance test run, as the acceptance service prepared it. */
+      test?: AcceptanceStage;
     },
     runtime?: { codingAgentId?: string },
   ): Promise<ActivityRun> {
@@ -290,9 +331,11 @@ export class ActivityGenerationService implements ActivityGeneration {
             );
           const assist = module?.assist;
           const assessment = module?.assessment;
+          const test = module?.test;
           // An author may ask for help writing the script, so an empty one is no reason
-          // to refuse a conversation; an assessment is written from the specification.
-          if (!assist && !assessment && !activity.draft.description.trim())
+          // to refuse a conversation; an assessment is written from the specification, and
+          // tests from its acceptance criteria.
+          if (!assist && !assessment && !test && !activity.draft.description.trim())
             throw new HttpError(
               400,
               "description_required",
@@ -302,9 +345,14 @@ export class ActivityGenerationService implements ActivityGeneration {
           let bookMode: BookMode | undefined;
           if (
             module &&
-            [module.audio, module.image, module.mediaText, module.assist, module.assessment].filter(
-              Boolean,
-            ).length > 1
+            [
+              module.audio,
+              module.image,
+              module.mediaText,
+              module.assist,
+              module.assessment,
+              module.test,
+            ].filter(Boolean).length > 1
           )
             throw new HttpError(400, "generation_invalid", "Choose one media generation type.");
           const audio = module?.audio ? audioTarget(activity, module.audio) : undefined;
@@ -334,7 +382,13 @@ export class ActivityGenerationService implements ActivityGeneration {
                 "The assessment is shared by every ref of this product. Generate it on the canonical ref.",
               );
           }
-          if (module && !audio && !image && !mediaText && !assist && !assessment) {
+          if (test && (!activity.draft.spec || activity.draft.status !== "valid"))
+            throw new HttpError(
+              400,
+              "test_spec_required",
+              "Save a valid specification before running the acceptance tests.",
+            );
+          if (module && !audio && !image && !mediaText && !assist && !assessment && !test) {
             if (!activity.draft.spec || activity.draft.status !== "valid")
               throw new HttpError(
                 400,
@@ -410,23 +464,38 @@ export class ActivityGenerationService implements ActivityGeneration {
               "This activity already has a running generation.",
             );
           const run: ActivityRun = {
-            kind: assist
-              ? "assist"
-              : assessment
-                ? "assessment"
-                : mediaText
-                  ? "media-text"
-                  : image
-                    ? "image"
-                    : audio
-                      ? "audio"
-                      : module
-                        ? "module"
-                        : "spec",
+            kind: test
+              ? "test"
+              : assist
+                ? "assist"
+                : assessment
+                  ? "assessment"
+                  : mediaText
+                    ? "media-text"
+                    : image
+                      ? "image"
+                      : audio
+                        ? "audio"
+                        : module
+                          ? "module"
+                          : "spec",
             ...(audio ? { audio } : {}),
             ...(image ? { image } : {}),
             ...(mediaText ? { mediaText } : {}),
             ...(assist ? { assist: { focus: assist.focus } } : {}),
+            ...(test
+              ? {
+                  test: {
+                    criteria: test.input.criteria,
+                    specRevision: test.input.specRevision,
+                    harnessVersion: HARNESS_VERSION,
+                    reused: test.cachedTest !== null,
+                    ...(test.cachedTest !== null
+                      ? { cachedTestHash: testFileHash(test.cachedTest) }
+                      : {}),
+                  },
+                }
+              : {}),
             ...(bookMode ? { bookMode } : {}),
             runId: newId("run"),
             activityId,
@@ -551,9 +620,37 @@ export class ActivityGenerationService implements ActivityGeneration {
                 flag: "wx",
               });
             }
+            if (test) {
+              await atomicJson(path.join(workspace, "activity-spec.json"), activity.draft.spec);
+              await atomicJson(path.join(workspace, ACCEPTANCE_INPUT_FILE), test.input);
+              await atomicJson(path.join(workspace, "package.json"), {
+                private: true,
+                type: "module",
+                dependencies: { "playwright-core": test.playwrightVersion },
+              });
+              await fs.writeFile(
+                path.join(workspace, ACCEPTANCE_HARNESS_FILE),
+                activityHarnessSource,
+                {
+                  flag: "wx",
+                },
+              );
+              await fs.writeFile(
+                path.join(workspace, ACCEPTANCE_RUNNER_FILE),
+                runAcceptanceSource,
+                {
+                  flag: "wx",
+                },
+              );
+              // The same criteria as a run that already wrote their tests: reuse them as they are.
+              if (test.cachedTest !== null)
+                await fs.writeFile(path.join(workspace, ACCEPTANCE_TEST_FILE), test.cachedTest, {
+                  flag: "wx",
+                });
+            }
             // An assembly is handed the implementation features its ref selected.
             let features: ImplementationFeature[] = [];
-            if (module && !audio && !image && !mediaText && !assist && !assessment) {
+            if (module && !audio && !image && !mediaText && !assist && !assessment && !test) {
               const chosen = await this.activities.implementationFeatures(projectId, activityId);
               features = chosen.features.filter((feature) =>
                 chosen.selectedIds.includes(feature.id),
@@ -565,19 +662,23 @@ export class ActivityGenerationService implements ActivityGeneration {
               this.finish(run, "interrupted", "Server stopped before generation started.");
               return run;
             }
-            const prompt = assist
-              ? assistPrompt(assist.message, assist.focus)
-              : assessment
-                ? assessmentPrompt
-                : mediaText
-                  ? mediaTextPrompt(mediaText)
-                  : image
-                    ? imagePrompt
-                    : audio
-                      ? audioPrompt
-                      : module
-                        ? modulePrompt + featureClause(features)
-                        : generationPrompt;
+            const prompt = test
+              ? test.cachedTest !== null
+                ? acceptanceReusePrompt
+                : acceptancePrompt
+              : assist
+                ? assistPrompt(assist.message, assist.focus)
+                : assessment
+                  ? assessmentPrompt
+                  : mediaText
+                    ? mediaTextPrompt(mediaText)
+                    : image
+                      ? imagePrompt
+                      : audio
+                        ? audioPrompt
+                        : module
+                          ? modulePrompt + featureClause(features)
+                          : generationPrompt;
             const session = await this.sessionService.createSession({
               projectId,
               agentId: owner,
@@ -1065,6 +1166,30 @@ export class ActivityGenerationService implements ActivityGeneration {
                 });
                 return;
               }
+              if (run.kind === "test") {
+                const observer = this.observers.get(run.runId);
+                if (!observer?.completed)
+                  throw new Error(observer?.error ?? "Test Session did not complete.");
+                if (!run.test) throw new Error("The test run has no criteria recorded.");
+                const workspace = this.workspace(run);
+                const reported = parseAcceptanceResults(
+                  await readCandidate(
+                    path.join(workspace, ACCEPTANCE_RESULTS_FILE),
+                    RESULTS_MAX_BYTES,
+                  ),
+                );
+                const report = acceptanceReport(run.test.criteria, reported, {
+                  checkedAt: new Date().toISOString(),
+                  specRevision: run.test.specRevision,
+                  reused: await testFileUnchanged(workspace, run.test.cachedTestHash),
+                });
+                const reports = path.join(workspace, ACCEPTANCE_REPORT_DIR);
+                await fs.mkdir(reports, { recursive: true });
+                await atomicJson(path.join(reports, ACCEPTANCE_REPORT_FILE), report);
+                if (this.stopped) return;
+                this.finish(run, "succeeded");
+                return;
+              }
               if (run.kind === "assessment") {
                 const observer = this.observers.get(run.runId);
                 if (!observer?.completed)
@@ -1186,7 +1311,9 @@ export class ActivityGenerationService implements ActivityGeneration {
                               ? "media-text.json"
                               : run.kind === "assessment"
                                 ? `${ASSESSMENT_FILE} or ${ASSESSMENT_HINTS_FILE}`
-                                : "activity-spec.json"
+                                : run.kind === "test"
+                                  ? ACCEPTANCE_RESULTS_FILE
+                                  : "activity-spec.json"
                     }.`
                   : error instanceof Error
                     ? error.message

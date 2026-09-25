@@ -22,6 +22,8 @@ import { ActivityPipelines, parseSelection } from "./pipeline-run.js";
 import { ActivityVersions, VERSION_LABEL_MAX } from "./version-service.js";
 import type { ActivityQuality } from "./quality-check.js";
 import type { QualityStateResponse } from "./quality-types.js";
+import type { ActivityAcceptance } from "./acceptance-service.js";
+import type { AcceptanceStateResponse } from "./acceptance-types.js";
 import { parseRefDecisions } from "./ref-template.js";
 import {
   badRequest,
@@ -75,6 +77,7 @@ export class ActivityRoutes {
   @Use() private readonly pipelines!: ActivityPipelines;
   @Use() private readonly versions!: ActivityVersions;
   @Use() private readonly quality!: ActivityQuality;
+  @Use() private readonly acceptance!: ActivityAcceptance;
   @Use() private readonly config!: Config;
   @Bind("activities") routes!: Hono<AppEnv>;
 
@@ -934,6 +937,31 @@ export class ActivityRoutes {
           requireValidId(c, "projectId"),
           pathParam(c, "activityId"),
         )) satisfies QualityStateResponse,
+      ),
+    );
+    // Run tests: each acceptance criterion checked against the played activity by an agent's
+    // tests. It answers at once with the run (already finished when there is nothing to test);
+    // the report comes when the run settles.
+    app.post("/:activityId/test", async (c) => {
+      const body = await readJson(c);
+      const runner = stageRunner(body);
+      return c.json(
+        await this.acceptance.start(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          runner.agentId,
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+          runner.runtime,
+        ),
+        202,
+      );
+    });
+    app.get("/:activityId/test-report", async (c) =>
+      c.json(
+        (await this.acceptance.state(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+        )) satisfies AcceptanceStateResponse,
       ),
     );
     // What stands between the draft and an assembled module, checked where the facts live.

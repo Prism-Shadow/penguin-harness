@@ -61,8 +61,10 @@ describe("choosing the work", () => {
       "images",
       "assessment",
       "module",
+      "test",
     ]);
     expect(stepsFor(parseSelection("speech"))).toEqual(["speech"]);
+    expect(stepsFor(parseSelection("test"))).toEqual(["test"]);
     expect(stepsFor(parseSelection("narration"))).toEqual(["translations", "speech"]);
     // A ref made from its template speaks and draws what it cleared, and nothing else.
     expect(stepsFor(parseSelection("assets"))).toEqual(["speech", "images"]);
@@ -78,6 +80,10 @@ function world(
     romanian?: boolean;
     usesAssessment?: boolean;
     canonical?: boolean;
+    /** The specification's acceptance criteria. */
+    criteria?: string[];
+    /** Whether the test browser is installed. */
+    browser?: boolean;
   } = {},
 ) {
   let revision = 1;
@@ -86,6 +92,7 @@ function world(
     title: "Words",
     activityDescription: "d",
     scenes: [],
+    ...(options.criteria ? { acceptance_criterias: options.criteria } : {}),
     ...(options.usesAssessment !== undefined
       ? { runtime: { usesAssessment: options.usesAssessment } }
       : {}),
@@ -232,6 +239,22 @@ function world(
     generation,
     activities,
     currentAssessment: async () => ({ items: ["current"] }),
+    startTest: async (_p, _a, agentId, expected, runtime) => {
+      if (expected !== activity.draft.contentRevision) throw new Error("draft_conflict");
+      const run = {
+        kind: "test",
+        runId: `run_${runs.length + 1}`,
+        sessionId: `session_${runs.length + 1}`,
+        status: "running",
+        error: null,
+        agentId,
+        codingAgentId: runtime?.codingAgentId,
+      } as unknown as ActivityRun;
+      runs.push(run);
+      started.push("test");
+      return run;
+    },
+    testBrowserInstalled: async () => options.browser ?? true,
     // Yield to the timer queue, as a real wait does, so a held run cannot starve the test.
     pause: () => new Promise((resolve) => setImmediate(resolve)),
     now: () => "2026-09-23T12:00:00Z",
@@ -263,6 +286,7 @@ describe("running the stages", () => {
       "pending",
       "pending",
       "pending",
+      "pending",
     ]);
     await done;
     const final = w.runner.status("act")!;
@@ -275,7 +299,9 @@ describe("running the stages", () => {
       ["images", "succeeded"],
       ["assessment", "skipped"],
       ["module", "succeeded"],
+      ["test", "skipped"],
     ]);
+    expect(final.steps.at(-1)!.note).toBe("noCriteria");
     expect(w.started).toEqual([
       "spec",
       "audio:en-US:hello",
@@ -312,6 +338,7 @@ describe("running the stages", () => {
       "succeeded",
       "skipped",
       "failed",
+      "cancelled",
       "cancelled",
       "cancelled",
       "cancelled",
@@ -366,6 +393,7 @@ describe("running the stages", () => {
     expect(final.status).toBe("cancelled");
     expect(final.error).toBeNull();
     expect(final.steps.map((step) => step.status)).toEqual([
+      "cancelled",
       "cancelled",
       "cancelled",
       "cancelled",
@@ -504,6 +532,43 @@ describe("running the stages", () => {
     expect(final.status).toBe("failed");
     expect(final.error).toBe("assessment broke");
     expect(final.steps.at(-1)!.status).toBe("cancelled");
+  });
+
+  it("runs the acceptance tests after assembly when there are criteria and a test browser", async () => {
+    const w = world({ criteria: ["Tapping the cat plays its name."] });
+    await w.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    const final = w.runner.status("act")!;
+    expect(final.status).toBe("succeeded");
+    expect(final.steps.at(-1)).toMatchObject({ step: "test", status: "succeeded", note: null });
+    expect(w.started.slice(-2)).toEqual(["module", "test"]);
+    expect(final.steps.at(-1)!.runIds).toEqual([w.runs.at(-1)!.runId]);
+  });
+
+  it("skips the tests with a worded note without criteria or without the test browser", async () => {
+    const none = world();
+    await none.runner.start("proj", "act", { selection: "spec", agentId: "agent" }).done;
+    await none.runner.start("proj", "act", { selection: "test", agentId: "agent" }).done;
+    expect(none.runner.status("act")!.steps[0]).toMatchObject({
+      status: "skipped",
+      note: "noCriteria",
+    });
+    const noBrowser = world({ criteria: ["It starts."], browser: false });
+    await noBrowser.runner.start("proj", "act", { selection: "spec", agentId: "agent" }).done;
+    await noBrowser.runner.start("proj", "act", { selection: "test", agentId: "agent" }).done;
+    expect(noBrowser.runner.status("act")!.steps[0]).toMatchObject({
+      status: "skipped",
+      note: "noBrowser",
+    });
+    expect([...none.started, ...noBrowser.started]).not.toContain("test");
+  });
+
+  it("stops at a failed test run with its own reason", async () => {
+    const w = world({ criteria: ["It starts."], fail: "test" });
+    await w.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    const final = w.runner.status("act")!;
+    expect(final.status).toBe("failed");
+    expect(final.error).toBe("test broke");
+    expect(final.steps.at(-1)!.status).toBe("failed");
   });
 
   it("limits targets to the scope's language and asset", () => {

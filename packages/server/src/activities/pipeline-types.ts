@@ -10,6 +10,7 @@ export const PIPELINE_STEPS = [
   "images",
   "assessment",
   "module",
+  "test",
 ] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
 /**
@@ -31,7 +32,11 @@ export type PipelineNote =
   /** The specification says the activity has no assessment. */
   | "noAssessment"
   /** Only the canonical ref writes the assessment every ref shares. */
-  | "notCanonical";
+  | "notCanonical"
+  /** The specification has no acceptance criteria to test. */
+  | "noCriteria"
+  /** The test browser is not installed, so the tests cannot run. */
+  | "noBrowser";
 
 export interface PipelineStepState {
   step: PipelineStep;

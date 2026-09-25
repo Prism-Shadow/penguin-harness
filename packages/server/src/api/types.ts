@@ -4872,6 +4872,16 @@ export type {
   TestBrowserStatusResponse,
 } from "../activities/test-browser-types.js";
 export type {
+  AcceptanceOverallStatus,
+  AcceptanceReport,
+  AcceptanceResult,
+  AcceptanceResultCode,
+  AcceptanceResultStatus,
+  AcceptanceRunRecord,
+  AcceptanceSkipReason,
+  AcceptanceStateResponse,
+} from "../activities/acceptance-types.js";
+export type {
   QualityFinding,
   QualityReport,
   QualityResults,

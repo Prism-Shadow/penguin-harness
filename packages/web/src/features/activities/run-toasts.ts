@@ -21,6 +21,7 @@ export function runKindLabel(run: Pick<ActivityRunSummary, "kind">): string {
   if (run.kind === "assist") return words.assistRun;
   if (run.kind === "assessment") return words.assessmentRun;
   if (run.kind === "quality") return words.qualityRun;
+  if (run.kind === "test") return words.testRun;
   return words.specRun;
 }
 

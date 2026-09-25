@@ -53,6 +53,7 @@ import { storyboardFrames, type StoryboardFrame } from "./storyboard";
 import { Storyboard } from "./storyboard-view";
 import { BuildPanel } from "./build-panel";
 import { QualityChecksView } from "./quality-checks-view";
+import { TestResultsView } from "./test-results-view";
 import { ModuleDocumentView } from "./module-document-view";
 import { ActivityStatsView } from "./activity-stats-view";
 import { RefSwitcher } from "./ref-switcher";
@@ -1787,6 +1788,23 @@ function ActivityEditor({
                       endpoint={endpoint}
                       runs={runs}
                       editable={editable}
+                      onStarted={(run) => {
+                        setRuns((previous) => [
+                          summarize(run),
+                          ...previous.filter((item) => item.runId !== run.runId),
+                        ]);
+                        setRefreshVersion((value) => value + 1);
+                      }}
+                    />
+                  )}
+                  {available && (
+                    <TestResultsView
+                      endpoint={endpoint}
+                      runs={runs}
+                      editable={editable}
+                      runner={selectedAgent ? runner : null}
+                      revision={detail.draft.contentRevision}
+                      unsaved={dirty}
                       onStarted={(run) => {
                         setRuns((previous) => [
                           summarize(run),

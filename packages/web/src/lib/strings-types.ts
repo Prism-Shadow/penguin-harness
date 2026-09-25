@@ -451,6 +451,40 @@ export type Strings = {
       };
       waived: { vpat: string; captions: string };
     };
+    /** Run tests, in the Module section: each acceptance criterion checked against the player. */
+    tests: {
+      title: string;
+      about: string;
+      run: string;
+      running: string;
+      /** Why Run tests is not offered: the test browser is missing. */
+      browserMissing: string;
+      noCriteria: string;
+      /** The report tested an earlier revision of the specification. */
+      stale: string;
+      noAgent: string;
+      saveFirst: string;
+      loadFailed: string;
+      lastRun: (when: string) => string;
+      notRun: string;
+      lastFailed: (reason: string) => string;
+      /** How many criteria passed, of how many. */
+      count: (passed: number, total: number) => string;
+      reused: string;
+      status: Record<"passed" | "failed" | "skipped", string>;
+      skipped: Record<"no_criteria", string>;
+      codes: Record<"not_run", string>;
+      resultsLabel: string;
+      columns: {
+        criterion: string;
+        test: string;
+        status: string;
+        duration: string;
+        error: string;
+      };
+      duration: (ms: number) => string;
+      noTestName: string;
+    };
     /** The Build stage: what stands between the draft and an assembled module. */
     studioBuild: {
       title: string;
@@ -491,7 +525,7 @@ export type Strings = {
       stage: string;
       all: string;
       steps: Record<
-        "spec" | "media" | "translations" | "speech" | "images" | "assessment" | "module",
+        "spec" | "media" | "translations" | "speech" | "images" | "assessment" | "module" | "test",
         string
       >;
       narration: string;
@@ -512,7 +546,9 @@ export type Strings = {
         | "noNarration"
         | "noImages"
         | "noAssessment"
-        | "notCanonical",
+        | "notCanonical"
+        | "noCriteria"
+        | "noBrowser",
         string
       >;
       running: (step: string) => string;
@@ -966,6 +1002,7 @@ export type Strings = {
     assemble: string;
     moduleRun: string;
     qualityRun: string;
+    testRun: string;
     moduleReady: string;
     specRun: string;
     assistRun: string;
