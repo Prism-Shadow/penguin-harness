@@ -47,6 +47,7 @@ export function MediaLibraryModal({
   loading,
   onClose,
   onPick,
+  localOnly = false,
 }: {
   media: readonly UploadedMedia[];
   type: SceneAssetType;
@@ -56,6 +57,11 @@ export function MediaLibraryModal({
   onClose: () => void;
   /** The chosen reference; `copied` is set when the file was just copied from another activity. */
   onPick: (path: string, copied?: UploadedMedia) => void;
+  /**
+   * Offer this activity's own uploads only. Picking another activity's file copies it into
+   * this one, which a caller only reading from this activity must not cause.
+   */
+  localOnly?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [chosen, setChosen] = useState("");
@@ -166,23 +172,25 @@ export function MediaLibraryModal({
         <p className="text-xs text-gray-500">
           {scope === "here" ? S.activities.libraryHint : words.copyHint}
         </p>
-        <div role="group" aria-label={words.scope.label} className={SEGMENTS}>
-          {(["here", "all"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={option === scope}
-              onClick={() => {
-                setScope(option);
-                setChosen("");
-                setCopyError("");
-              }}
-              className={`${SEGMENT} ${option === scope ? SEGMENT_ON : SEGMENT_OFF}`}
-            >
-              {words.scope[option]}
-            </button>
-          ))}
-        </div>
+        {!localOnly && (
+          <div role="group" aria-label={words.scope.label} className={SEGMENTS}>
+            {(["here", "all"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={option === scope}
+                onClick={() => {
+                  setScope(option);
+                  setChosen("");
+                  setCopyError("");
+                }}
+                className={`${SEGMENT} ${option === scope ? SEGMENT_ON : SEGMENT_OFF}`}
+              >
+                {words.scope[option]}
+              </button>
+            ))}
+          </div>
+        )}
         <Input
           size="sm"
           label={S.activities.librarySearch}

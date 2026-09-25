@@ -45,6 +45,8 @@ export function focusFor(
   selection: SceneAssetSelection | null,
   language: string,
 ): AssistFocus {
+  // Making a new ref reviews this ref's media; the agent knows that part as the scenes.
+  if (section === "newRef") return { section: "scenes" };
   if (section === "scenes" && selection)
     return {
       section,

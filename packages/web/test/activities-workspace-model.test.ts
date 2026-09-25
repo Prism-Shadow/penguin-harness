@@ -45,6 +45,7 @@ describe("workspace sections", () => {
       "library",
       "module",
       "history",
+      "newRef",
     ]);
   });
 
@@ -60,6 +61,8 @@ describe("workspace sections", () => {
       module: false,
       library: true,
       history: true,
+      // Making a ref walks the media plan, so it waits for one.
+      newRef: false,
     });
   });
 

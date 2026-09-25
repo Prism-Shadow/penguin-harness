@@ -11,6 +11,7 @@ import type { ImportedActivity } from "../activities/loom-import.js";
 import type { ImplementationFeature } from "../activities/implementation-features.js";
 import type { ReadinessCheck } from "../activities/build-readiness.js";
 import type { ImportMapping } from "../activities/import-mapping.js";
+import type { RefAssetDecision, RefNumberSuggestion } from "../activities/ref-template-types.js";
 import type {
   ActivityDetail,
   ActivityDraft,
@@ -256,6 +257,21 @@ export abstract class ActivityAuthoring extends Interface<{
     refNum: unknown,
     expectedRevision: string,
   ): Promise<ActivityRecord & { draft: ActivityDraft }>;
+  /**
+   * The number a new ref of this ref's product would take, every number its refs hold, and
+   * whether this ref is the template new refs are made from.
+   */
+  nextRefNumber(projectId: string, activityId: string): Promise<RefNumberSuggestion>;
+  /**
+   * A new ref made from the product's template (its canonical ref, marked stable): the
+   * template's draft and files, with each asset kept, cleared for regeneration or bound to one
+   * of the template's uploads. Nothing is left behind when it is refused.
+   */
+  createRefFromTemplate(
+    projectId: string,
+    templateId: string,
+    input: { refNum: unknown; displayName?: unknown; decisions: RefAssetDecision[] },
+  ): Promise<ActivityDetail>;
   /** Replace a product's tags through any of its refs; returns them as stored. */
   setProductTags(projectId: string, activityId: string, tags: unknown): Promise<string[]>;
   /** Delete an activity from every list by archiving it; nothing on disk is removed. */

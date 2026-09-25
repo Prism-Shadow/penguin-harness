@@ -138,6 +138,70 @@ export type Strings = {
       tooMany: string;
       invalid: string;
     };
+    /** A new ref made from the product's template ref, deciding about each of its assets. */
+    createRef: {
+      title: string;
+      about: string;
+      newRef: string;
+      refNum: string;
+      refNumHint: string;
+      name: string;
+      nameHint: string;
+      language: string;
+      voiceForAll: string;
+      voiceUnchanged: string;
+      keepAll: string;
+      regenerateImages: string;
+      agent: string;
+      noAgent: string;
+      columns: { asset: string; type: string; current: string; action: string; details: string };
+      actions: { keep: string; regenerate: string; upload: string; library: string };
+      actionsFor: (key: string) => string;
+      types: {
+        image: string;
+        narration: string;
+        sound: string;
+        video: string;
+        animation: string;
+      };
+      scenes: (ids: string) => string;
+      noScene: string;
+      copied: string;
+      unbound: string;
+      bound: string;
+      script: string;
+      description: string;
+      chooseFile: string;
+      chosenFile: (name: string) => string;
+      choose: string;
+      chosenUpload: (name: string) => string;
+      create: string;
+      creating: string;
+      created: (refNum: number) => string;
+      createdWithProblem: (refNum: number, reason: string) => string;
+      notStable: (refNum: number) => string;
+      markStable: string;
+      notCanonical: string;
+      assessmentShared: (refNum: number) => string;
+      openAssessment: string;
+      blockersTitle: string;
+      blockers: {
+        missingRefNum: string;
+        refNumTaken: (refNum: number) => string;
+        uploadMissing: (key: string) => string;
+        libraryMissing: (key: string) => string;
+        scriptMissing: (key: string) => string;
+        descriptionMissing: (key: string) => string;
+        scriptTooLong: (key: string, max: number) => string;
+        descriptionTooLong: (key: string, max: number) => string;
+      };
+      errors: {
+        not_canonical: string;
+        template_not_stable: string;
+        activity_exists: string;
+        activity_archived: string;
+      };
+    };
     /** The list page's row of the activities opened most recently in this browser, and the heading of the full list under it. */
     recent: {
       title: string;
@@ -257,6 +321,8 @@ export type Strings = {
         string
       >;
       narration: string;
+      /** Speech, then images: what a ref made from its template generates next. */
+      assets: string;
       status: Record<
         "pending" | "running" | "succeeded" | "skipped" | "failed" | "cancelled",
         string
@@ -361,7 +427,8 @@ export type Strings = {
       | "speech"
       | "library"
       | "module"
-      | "history",
+      | "history"
+      | "newRef",
       string
     >;
     /** Loom's Implementation Features: patterns the module assembly reproduces exactly. */

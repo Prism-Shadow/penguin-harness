@@ -17,7 +17,8 @@ export type WorkspaceSection =
   | "speech"
   | "library"
   | "module"
-  | "history";
+  | "history"
+  | "newRef";
 
 export interface WorkspaceSectionEntry {
   key: WorkspaceSection;
@@ -64,6 +65,9 @@ export function workspaceSections(state: WorkspaceState): WorkspaceSectionEntry[
     // assembles the first module lives in this section, as planning media lives in Scenes.
     { key: "module", enabled: state.hasModule || state.hasSpec },
     { key: "history", enabled: true },
+    // Making a ref from this one, reached from the ref header rather than the tree: its
+    // table walks the media plan, so it waits for one.
+    { key: "newRef", enabled: state.hasPlan },
   ];
 }
 

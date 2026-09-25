@@ -4537,3 +4537,177 @@ test("renumbers a ref from the header, and refuses while it is stable", async ({
   await expect(page.getByRole("button", { name: "Ref", exact: true })).toContainText("Ref 14");
   expect(f.errors).toEqual([]);
 });
+
+test("makes a ref from the template, keeping one image and regenerating a narration", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  const usages = (key) => [
+    { sceneId: "intro", sourceKey: key, occurrence: 1, sceneOccurrenceCount: 1 },
+  ];
+  const run = `run_${"a".repeat(32)}`;
+  const record = {
+    id: "act_test",
+    collectionId: "col_test",
+    productId: "prd_test",
+    productCode: "words",
+    refNum: 12,
+    title: "Sight words",
+    displayName: null,
+    stable: true,
+    activityType: "standard",
+    createdAt: "2026-09-19",
+    updatedAt: "2026-09-19",
+    archived: false,
+    tags: [],
+  };
+  const template = {
+    ...record,
+    draft: {
+      draftId: "draft_test",
+      activityId: "act_test",
+      baseVersionId: null,
+      contentRevision: "rev_template",
+      status: "valid",
+      description: "Practice common sight words",
+      spec,
+      mediaPlan: {
+        specRevision: "spec-revision",
+        requirements: {},
+        manifest: {
+          productCode: "words",
+          refNum: 12,
+          assets: {
+            "en-US": [
+              {
+                key: "cat",
+                type: "image",
+                description: "A cat",
+                path: `media/generated/${run}.png`,
+                generatedImage: { runId: run, sha256: "b".repeat(64) },
+                usages: usages("cat"),
+              },
+              {
+                key: "hello",
+                type: "audio",
+                description: "Greeting",
+                script: "Hello",
+                path: `media/generated/${run}.wav`,
+                generatedAudio: { runId: run, sha256: "c".repeat(64) },
+                usages: usages("hello"),
+              },
+            ],
+          },
+        },
+      },
+      updatedAt: "2026-09-19",
+    },
+  };
+  const made = {
+    ...template,
+    id: "act_new",
+    refNum: 13,
+    stable: false,
+    draft: { ...template.draft, draftId: "draft_new", activityId: "act_new" },
+  };
+  const creates = [];
+  const pipelines = [];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === base && request.method() === "GET") return json({ activities: [record] });
+    if (p === `${base}/act_test` && request.method() === "GET") return json(template);
+    if (p === `${base}/act_test/refs/next-number`)
+      return json({ refNum: 13, canonical: true, taken: [12] });
+    if (p === `${base}/act_test/refs` && request.method() === "POST") {
+      creates.push(request.postDataJSON());
+      return json(made, 201);
+    }
+    if (p === `${base}/act_new` && request.method() === "GET") return json(made);
+    if (p === `${base}/act_new/runs`) return json({ runs: [] });
+    if (p === `${base}/act_new/pipeline` && request.method() === "POST") {
+      pipelines.push(request.postDataJSON());
+      // One running sequence per activity, as the server allows.
+      if (pipelines.length > 1)
+        return json({ error: { code: "pipeline_running", message: "Running." } }, 409);
+      return json(
+        {
+          pipelineId: "pipe_new",
+          projectId,
+          activityId: "act_new",
+          selection: "assets",
+          scope: null,
+          status: "running",
+          steps: [],
+          currentRunId: null,
+          currentSessionId: null,
+          error: null,
+          startedAt: "2026-09-25T10:00:00Z",
+          finishedAt: null,
+        },
+        202,
+      );
+    }
+    if (p === `${base}/act_new/pipeline`) return json({ pipeline: null });
+    return route.fallback();
+  });
+  await page.goto(`${origin}/activities/act_test`);
+
+  await page.getByRole("button", { name: "New ref", exact: true }).click();
+  await expect(page).toHaveURL(/section=newRef/);
+  await expect(page.getByRole("heading", { name: /^New ref from this template/ })).toBeVisible();
+  await expect(page.getByRole("spinbutton", { name: /^Ref number/ })).toHaveValue("13");
+  // The image is kept, as every asset starts.
+  await expect(
+    page
+      .getByRole("group", { name: "What to do with cat", exact: true })
+      .getByRole("button", { name: "Keep", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  // A taken number is refused before anything is sent.
+  const number = page.getByRole("spinbutton", { name: /^Ref number/ });
+  await number.fill("12");
+  await expect(page.getByText("Ref 12 of this product already exists.")).toBeVisible();
+  const createButton = page.getByRole("button", { name: "Create ref", exact: true });
+  await expect(createButton).toBeDisabled();
+  await number.fill("13");
+
+  // One voice for all narration marks the narration to regenerate in it.
+  await page.getByRole("button", { name: "Voice for all narration", exact: true }).click();
+  await page.getByRole("option", { name: "Puck", exact: true }).click();
+  await expect(
+    page
+      .getByRole("group", { name: "What to do with hello", exact: true })
+      .getByRole("button", { name: "Regenerate", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  const script = page.getByRole("textbox", { name: "Script", exact: true });
+  await script.fill("");
+  await expect(page.getByText("Write a script for hello.")).toBeVisible();
+  await expect(createButton).toBeDisabled();
+  await script.fill("Hi there");
+  await expect(createButton).toBeEnabled();
+  await createButton.click();
+
+  await expect(page).toHaveURL(/activities\/act_new\?section=scenes/);
+  await expect(page.getByText("Ref 13 was made from the template.")).toBeVisible();
+  expect(creates).toEqual([
+    {
+      refNum: 13,
+      decisions: [
+        {
+          language: "en-US",
+          assetKey: "hello",
+          action: "clear",
+          script: "Hi there",
+          voice: "Puck",
+        },
+      ],
+    },
+  ]);
+  expect(pipelines).toEqual([
+    { agentId: "default_agent", stage: "assets", language: "en-US", voice: "Puck" },
+  ]);
+  expect(f.errors).toEqual([]);
+});

@@ -13,10 +13,11 @@ export const PIPELINE_STEPS = [
 ] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
 /**
- * Every step, one step, or "narration": translating what a language lacks and then speaking
- * it, so a language with empty scripts is voiced in one go.
+ * Every step, one step, "narration": translating what a language lacks and then speaking
+ * it, so a language with empty scripts is voiced in one go, or "assets": speaking and drawing
+ * every unbound narration and image, as a ref made from its template does next.
  */
-export type PipelineSelection = "all" | "narration" | PipelineStep;
+export type PipelineSelection = "all" | "narration" | "assets" | PipelineStep;
 
 export type PipelineStepStatus =
   "pending" | "running" | "succeeded" | "skipped" | "failed" | "cancelled";

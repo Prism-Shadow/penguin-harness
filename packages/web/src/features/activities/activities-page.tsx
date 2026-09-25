@@ -55,6 +55,7 @@ import { BuildPanel } from "./build-panel";
 import { ModuleDocumentView } from "./module-document-view";
 import { ActivityStatsView } from "./activity-stats-view";
 import { RefSwitcher } from "./ref-switcher";
+import { CreateRefView } from "./create-ref-view";
 import { renumberManifestText } from "./ref-number";
 import { ImplementationFeaturesView } from "./implementation-features-view";
 import { GenerationHistory } from "./history-section";
@@ -266,6 +267,7 @@ function ActivityEditor({
   onDeleted: (title: string) => void;
 }) {
   const { agents, currentAgent } = useProject();
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
   // Opening counts once the activity has loaded (a missing one never does), once per
   // activity: the editor is keyed by it, and polling reloads it.
@@ -1140,6 +1142,8 @@ function ActivityEditor({
                   void onSaved();
                 }}
                 onDeleted={() => onDeleted(detail.title)}
+                // The new-ref table walks the media plan, so the way in waits for one.
+                onNewRef={detail.draft.mediaPlan ? () => setSection("newRef") : undefined}
               />
               <span className="truncate">
                 {S.activities.collection}: {detail.collectionId}
@@ -1796,6 +1800,38 @@ function ActivityEditor({
                     />
                   )}
                 </>
+              )}
+              {section === "newRef" && available && (
+                <CreateRefView
+                  key={detail.id}
+                  base={basePath(projectId)}
+                  endpoint={endpoint}
+                  template={detail}
+                  editable={editable}
+                  voices={voiceOptions}
+                  uploads={uploads}
+                  uploadsLoading={uploadsLoading}
+                  agents={agents}
+                  defaultAgent={currentAgent?.agentId ?? ""}
+                  wafRoot={wafRoot}
+                  onIdentity={(record) => {
+                    setDetail((current) => (current ? { ...current, ...record } : current));
+                    void onSaved();
+                  }}
+                  onOpenAssessment={() => setSection("assessment")}
+                  onCreated={(made, problem) => {
+                    announce(
+                      problem
+                        ? {
+                            kind: "attention",
+                            text: S.activities.createRef.createdWithProblem(made.refNum, problem),
+                          }
+                        : { kind: "success", text: S.activities.createRef.created(made.refNum) },
+                    );
+                    void onSaved();
+                    navigate(`/activities/${encodeURIComponent(made.id)}?section=scenes`);
+                  }}
+                />
               )}
               {section === "history" && available && (
                 <GenerationHistory

@@ -68,6 +68,7 @@ export function RefSwitcher({
   onIdentity,
   onRenumbered,
   onDeleted,
+  onNewRef,
 }: {
   /** The project's activities API path. */
   base: string;
@@ -80,6 +81,9 @@ export function RefSwitcher({
   onRenumbered: (detail: ActivityDetail, from: number) => void;
   /** The activity was deleted (archived); the caller leaves it. */
   onDeleted: () => void;
+  /** Open the page that makes a new ref from this one, the product's template; absent until
+   *  the ref has a media plan, which that page walks. */
+  onNewRef?: () => void;
 }) {
   const words = S.activities.studioRefs;
   const tagWords = S.activities.tags;
@@ -102,6 +106,22 @@ export function RefSwitcher({
   const [numberError, setNumberError] = useState<string | null>(null);
   const [numberBusy, setNumberBusy] = useState(false);
   const stableId = useId();
+  // Whether this ref is the product's template, which is where new refs are made from.
+  const [canonical, setCanonical] = useState(false);
+  useEffect(() => {
+    if (!editable) return;
+    let cancelled = false;
+    apiFetch<{ canonical?: unknown }>(`${base}/${encodeURIComponent(activity.id)}/refs/next-number`)
+      .then((value) => {
+        if (!cancelled) setCanonical(value?.canonical === true);
+      })
+      .catch(() => {
+        /* Without the answer the shortcut stays hidden; nothing else depends on it. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [base, activity.id, activity.refNum, editable]);
 
   useEffect(() => {
     let cancelled = false;
@@ -277,6 +297,11 @@ export function RefSwitcher({
           }}
         >
           {words.changeNumber}
+        </Button>
+      )}
+      {editable && canonical && onNewRef && (
+        <Button size="sm" variant="ghost" onClick={onNewRef}>
+          {S.activities.createRef.newRef}
         </Button>
       )}
       <Modal

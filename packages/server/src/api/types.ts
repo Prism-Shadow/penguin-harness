@@ -4862,6 +4862,11 @@ export type {
 } from "../activities/pipeline-types.js";
 export type { ReadinessCheck, ReadinessLevel } from "../activities/build-readiness.js";
 export type { VoiceOption } from "../activities/voice-catalogue.js";
+export type {
+  RefAssetAction,
+  RefAssetDecision,
+  RefNumberSuggestion,
+} from "../activities/ref-template-types.js";
 
 // ---------------------------------------------------------------------------
 // Coding agents (Agent Client Protocol)

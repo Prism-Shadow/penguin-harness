@@ -43,6 +43,7 @@ export const PIPELINE_CHOICES: readonly PipelineSelection[] = [
 function choiceLabel(choice: PipelineSelection) {
   const words = S.activities.studioRun;
   if (choice === "all") return words.all;
+  if (choice === "assets") return words.assets;
   return choice === "narration" ? words.narration : words.steps[choice];
 }
 

@@ -82,6 +82,12 @@ import {
   validateConfiguration,
 } from "./module-overrides.js";
 import { normalizeTags } from "./tags.js";
+import {
+  nextFreeRefNum,
+  refDraftFromTemplate,
+  type RefAssetDecision,
+  type RefNumberSuggestion,
+} from "./ref-template.js";
 
 /** Serializes compare-and-publish operations within the server's single-writer lifetime. */
 export class ActivityLocks {
@@ -1588,6 +1594,149 @@ export class ActivityService implements ActivityAuthoring {
           return { ...current, refNum: next, updatedAt: now, draft };
         });
       }),
+    );
+  }
+
+  /**
+   * The number a new ref of this ref's product would take, the numbers already held (deleted
+   * refs keep theirs), and whether this ref is the template new refs are made from.
+   */
+  async nextRefNumber(projectId: string, activityId: string): Promise<RefNumberSuggestion> {
+    const activity = await this.getActivity(projectId, activityId);
+    const taken = (
+      this.db
+        .prepare(
+          "SELECT ref_num AS refNum FROM activities WHERE collection_id = ? AND product_code = ? ORDER BY ref_num",
+        )
+        .all(activity.collectionId, activity.productCode) as { refNum: number }[]
+    ).map((row) => row.refNum);
+    return {
+      refNum: nextFreeRefNum(taken),
+      canonical: !!activity.productId && this.isCanonicalRef(activity),
+      taken,
+    };
+  }
+
+  /**
+   * A new ref of the template's product, made from the template: its description,
+   * specification and media plan (addressed to the new number, with the author's decision
+   * about each asset applied), and copies of its generated media, uploads and implementation
+   * features. Checkout media stays shared by reference, since the checkout is never written.
+   *
+   * Only the product's canonical ref, marked stable, is a template. Everything the request
+   * says is checked before the ref exists; a failure after that removes the ref's row and its
+   * files again, so a refused create leaves nothing behind.
+   */
+  async createRefFromTemplate(
+    projectId: string,
+    templateId: string,
+    input: { refNum: unknown; displayName?: unknown; decisions: RefAssetDecision[] },
+  ): Promise<ActivityDetail> {
+    let refNum: number;
+    let displayName: string | null = null;
+    try {
+      refNum = normalizeRefNum(input.refNum);
+      if (input.displayName !== undefined) displayName = normalizeDisplayName(input.displayName);
+    } catch (error) {
+      throw new HttpError(400, "activity_invalid", (error as Error).message);
+    }
+    return this.projectWork.run(projectId, () =>
+      // The template's lock keeps its draft from changing while it is read and copied.
+      this.locks.run(templateId, async () => {
+        const template = await this.getActivity(projectId, templateId);
+        if (!template.productId || !this.isCanonicalRef(template))
+          throw new HttpError(
+            409,
+            "not_canonical",
+            `Ref ${template.refNum} is not its product's template. Make new refs from the canonical ref.`,
+          );
+        if (!template.stable)
+          throw new HttpError(
+            409,
+            "template_not_stable",
+            `Ref ${template.refNum} is not marked stable. Mark it stable before making refs from it.`,
+          );
+        const planned = refDraftFromTemplate(template, refNum, input.decisions);
+        const created = await this.createActivity(projectId, {
+          collectionId: template.collectionId,
+          productCode: template.productCode,
+          refNum,
+          title: template.title,
+          activityType: template.activityType,
+        });
+        try {
+          const target = this.activityWorkspace(projectId, created);
+          await this.copyTemplateFiles(this.activityWorkspace(projectId, template), target);
+          // A bound upload must be one of the files just copied, of the asset's kind.
+          for (const decision of input.decisions) {
+            if (decision.action !== "bind") continue;
+            const asset = planned.mediaPlan?.manifest.assets[decision.language]?.find(
+              (entry) => entry.key === decision.assetKey,
+            );
+            const mimeType = await readUpload(target, decision.path!).then(
+              (file) => file.mimeType,
+              () => null,
+            );
+            if (!mimeType)
+              throw new HttpError(
+                422,
+                "ref_plan_invalid",
+                `The template has no uploaded file ${decision.path}.`,
+              );
+            const kind = mimeType.slice(0, mimeType.indexOf("/"));
+            const wanted =
+              asset?.type === "image" ? "image" : asset?.type === "audio" ? "audio" : "video";
+            if (kind !== wanted)
+              throw new HttpError(
+                422,
+                "ref_plan_invalid",
+                `Asset ${decision.assetKey} expects ${wanted} media, but ${decision.path} holds ${kind} media.`,
+              );
+          }
+          await this.change(projectId, created.id, created.draft.contentRevision, (draft) => ({
+            ...draft,
+            ...planned,
+          }));
+          if (displayName) await this.setRefIdentity(projectId, created.id, { displayName });
+          return await this.getActivity(projectId, created.id);
+        } catch (error) {
+          await this.discardCreatedRef(projectId, created).catch(() => {});
+          throw error;
+        }
+      }),
+    );
+  }
+
+  /** Copy a template's own files into a new ref's workspace, never following a link. */
+  private async copyTemplateFiles(source: string, target: string): Promise<void> {
+    await fs.mkdir(target, { recursive: true });
+    for (const name of ["audio", "images", "media", IMPLEMENTATION_FEATURES_FILE]) {
+      const from = path.join(source, name);
+      const stat = await fs.lstat(from).catch(() => null);
+      if (!stat || stat.isSymbolicLink()) continue;
+      await fs.cp(from, path.join(target, name), {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+        filter: async (entry) => !(await fs.lstat(entry)).isSymbolicLink(),
+      });
+    }
+  }
+
+  /** Remove a ref made moments ago whose making failed: its rows, then its files. */
+  private async discardCreatedRef(projectId: string, activity: ActivityRecord): Promise<void> {
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare("DELETE FROM activity_drafts WHERE activity_id = ?").run(activity.id);
+      this.db.prepare("DELETE FROM activities WHERE id = ?").run(activity.id);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    await fs.rm(
+      path.join(this.collectionDir(projectId, activity.collectionId), "activities", activity.id),
+      { recursive: true, force: true },
     );
   }
 

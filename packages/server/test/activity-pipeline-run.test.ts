@@ -64,6 +64,8 @@ describe("choosing the work", () => {
     ]);
     expect(stepsFor(parseSelection("speech"))).toEqual(["speech"]);
     expect(stepsFor(parseSelection("narration"))).toEqual(["translations", "speech"]);
+    // A ref made from its template speaks and draws what it cleared, and nothing else.
+    expect(stepsFor(parseSelection("assets"))).toEqual(["speech", "images"]);
     expect(() => parseSelection("deploy")).toThrow(/stage must be/);
   });
 });

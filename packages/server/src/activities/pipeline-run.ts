@@ -56,18 +56,20 @@ export {
 export function parseSelection(value: unknown): PipelineSelection {
   if (value === undefined || value === "all") return "all";
   if (value === "narration") return "narration";
+  if (value === "assets") return "assets";
   if (typeof value === "string" && (PIPELINE_STEPS as readonly string[]).includes(value))
     return value as PipelineStep;
   throw new HttpError(
     400,
     "invalid_request",
-    "stage must be all, narration, or one of the pipeline steps.",
+    "stage must be all, narration, assets, or one of the pipeline steps.",
   );
 }
 
 export function stepsFor(selection: PipelineSelection): PipelineStep[] {
   if (selection === "all") return [...PIPELINE_STEPS];
   if (selection === "narration") return ["translations", "speech"];
+  if (selection === "assets") return ["speech", "images"];
   return [selection];
 }
 

@@ -19,6 +19,7 @@ import { UPLOAD_MAX_BYTES } from "./upload.js";
 import { BUNDLE_FILE_NAME, BUNDLE_MAX_ITEMS } from "./media-bundle.js";
 import type { BundleItem } from "./media-library-types.js";
 import { ActivityPipelines, parseSelection } from "./pipeline-run.js";
+import { parseRefDecisions } from "./ref-template.js";
 import {
   badRequest,
   optionalString,
@@ -667,6 +668,33 @@ export class ActivityRoutes {
             ...(body.stable !== undefined ? { stable: body.stable as boolean } : {}),
           },
         ),
+      );
+    });
+    // A new ref of the product, made from the template ref (`:activityId`) in one pass.
+    app.get("/:activityId/refs/next-number", async (c) =>
+      c.json(
+        await this.activities.nextRefNumber(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+        ),
+      ),
+    );
+    app.post("/:activityId/refs", async (c) => {
+      const body = await readJson(c);
+      if (typeof body.refNum !== "number") throw badRequest("refNum must be a number.");
+      if (body.displayName !== undefined && typeof body.displayName !== "string")
+        throw badRequest("displayName must be a string.");
+      return c.json(
+        await this.activities.createRefFromTemplate(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          {
+            refNum: body.refNum,
+            ...(body.displayName !== undefined ? { displayName: body.displayName } : {}),
+            decisions: parseRefDecisions(body.decisions),
+          },
+        ),
+        201,
       );
     });
     // A ref's number, changed when it was given the wrong one.

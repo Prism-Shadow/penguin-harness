@@ -654,7 +654,20 @@ export class ActivityGenerationService implements ActivityGeneration {
   }
 
   async audioContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array> {
-    const run = await this.getRun(projectId, activityId, runId);
+    const run = await this.getRun(projectId, activityId, runId).catch((error: unknown) => {
+      if (error instanceof HttpError && error.code === "run_not_found") return null;
+      throw error;
+    });
+    if (!run) {
+      // A ref made from its template keeps the template's accepted clips, but not the runs
+      // that made them; a clip this draft binds is still this ref's to play.
+      const activity = await this.activities.getActivity(projectId, activityId);
+      const bound = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
+        .flat()
+        .find((asset) => asset.generatedAudio?.runId === runId)?.generatedAudio;
+      if (!bound) throw new HttpError(404, "run_not_found", "Speech candidate not available.");
+      return this.activities.readAudio(projectId, activityId, runId, bound.sha256);
+    }
     if (run.kind !== "audio" || !run.candidate || !["succeeded", "conflict"].includes(run.status))
       throw new HttpError(404, "run_not_found", "Speech candidate not available.");
     const result = JSON.parse(run.candidate) as AudioResult;
