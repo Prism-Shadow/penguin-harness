@@ -112,6 +112,12 @@ import {
   TestBrowserService,
 } from "./activities/test-browser.js";
 import { TestBrowserRoutes } from "./activities/test-browser-routes.js";
+import {
+  ActivityQuality,
+  ActivityQualityService,
+  DefaultQualityCheckPorts,
+} from "./activities/quality-check.js";
+import { QualityAdminRoutes } from "./activities/quality-routes.js";
 import { ActivityGenerationService } from "./activities/generation.js";
 import { ActivityAuthoring, ActivityGeneration } from "./mechanisms/activities.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
@@ -379,8 +385,11 @@ export class CodingAgentsModule {}
     DefaultTestBrowserPorts,
     TestBrowserService,
     TestBrowserRoutes,
+    DefaultQualityCheckPorts,
+    ActivityQualityService,
+    QualityAdminRoutes,
   ],
-  exports: [ActivityAuthoring, ActivityGeneration, ActivityVersions, TestBrowser],
+  exports: [ActivityAuthoring, ActivityGeneration, ActivityVersions, TestBrowser, ActivityQuality],
 })
 export class ActivitiesModule {}
 

@@ -52,6 +52,7 @@ import {
   validateActivitySpec,
   type ActivityRun,
   type ActivityRunSummary,
+  type DeterministicRunKind,
 } from "./domain.js";
 
 const MAX_CANDIDATE_BYTES = 2 * 1024 * 1024;
@@ -651,6 +652,102 @@ export class ActivityGenerationService implements ActivityGeneration {
         return run;
       }),
     );
+  }
+
+  openDeterministic(
+    projectId: string,
+    activityId: string,
+    kind: DeterministicRunKind,
+  ): Promise<ActivityRun> {
+    return this.track(
+      this.locks.run(activityId, async () => {
+        if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+        const activity = await this.activities.getActivity(projectId, activityId);
+        if (this.running().some((run) => run.activityId === activityId))
+          throw new HttpError(
+            409,
+            "generation_running",
+            "This activity already has a running generation.",
+          );
+        const run: ActivityRun = {
+          kind,
+          runId: newId("run"),
+          activityId,
+          projectId,
+          draftId: activity.draft.draftId,
+          inputRevision: activity.draft.contentRevision,
+          // Nobody's agent does this work; the server does.
+          agentId: "",
+          sessionId: null,
+          status: "running",
+          createdAt: new Date().toISOString(),
+          finishedAt: null,
+          error: null,
+          candidate: null,
+        };
+        const { candidate: _candidate, kind: _kind, ...metadata } = run;
+        this.db
+          .prepare(
+            "INSERT INTO activity_runs (run_id, project_id, activity_id, status, created_at, kind, record_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            run.runId,
+            projectId,
+            activityId,
+            run.status,
+            run.createdAt,
+            run.kind,
+            JSON.stringify({ ...metadata, hasCandidate: false }),
+          );
+        await fs.mkdir(this.workspace(run), { recursive: true });
+        return run;
+      }),
+    );
+  }
+
+  settleDeterministic(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    status: "succeeded" | "failed",
+    error: string | null,
+  ): Promise<boolean> {
+    return this.track(
+      this.locks.run(activityId, async () => {
+        if (this.stopped) return false;
+        const run = await this.getRun(projectId, activityId, runId);
+        if (run.status !== "running" || run.sessionId) return false;
+        this.finish(run, status, error);
+        return true;
+      }),
+    );
+  }
+
+  async isRunning(projectId: string, activityId: string, runId: string): Promise<boolean> {
+    const row = this.db
+      .prepare(
+        "SELECT status FROM activity_runs WHERE project_id = ? AND activity_id = ? AND run_id = ?",
+      )
+      .get(projectId, activityId, runId) as { status: string } | undefined;
+    return row?.status === "running";
+  }
+
+  async latestRun(
+    projectId: string,
+    activityId: string,
+    kind: ActivityRun["kind"],
+    status: ActivityRun["status"],
+  ): Promise<ActivityRunSummary | null> {
+    await this.activities.getActivity(projectId, activityId);
+    const row = this.db
+      .prepare(
+        "SELECT kind, record_json FROM activity_runs WHERE project_id = ? AND activity_id = ? AND kind = ? AND status = ? ORDER BY created_at DESC, run_id DESC LIMIT 1",
+      )
+      .get(projectId, activityId, kind, status) as
+      { kind: ActivityRun["kind"]; record_json: string } | undefined;
+    if (!row) return null;
+    const metadata = JSON.parse(row.record_json) as ActivityRunSummary;
+    return { ...metadata, kind: row.kind };
   }
 
   async audioContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array> {

@@ -20,6 +20,7 @@ import type {
   ActivityRun,
   ActivityRunSummary,
   CollectionManifest,
+  DeterministicRunKind,
   ModuleDocumentKind,
   ModuleDocumentOverride,
 } from "../activities/domain.js";
@@ -62,6 +63,39 @@ export abstract class ActivityGeneration extends Interface<{
    */
   discardProposal(projectId: string, activityId: string, runId: string): Promise<void>;
   cancel(projectId: string, activityId: string, runId: string): Promise<ActivityRun>;
+  /**
+   * Records a run the server does itself, with no Session or agent (a quality check), under
+   * the same one-run-per-activity rule as every other run. The caller does the work in the
+   * run's workspace (`activity-runs/<runId>`) and then settles it.
+   */
+  openDeterministic(
+    projectId: string,
+    activityId: string,
+    kind: DeterministicRunKind,
+  ): Promise<ActivityRun>;
+  /**
+   * Settles a run `openDeterministic` opened. False, and nothing changed, when it had already
+   * ended: cancelled by the author, or interrupted when the server stopped.
+   */
+  settleDeterministic(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    status: "succeeded" | "failed",
+    error: string | null,
+  ): Promise<boolean>;
+  /** Whether a run is still going: false once it has settled, been cancelled or interrupted. */
+  isRunning(projectId: string, activityId: string, runId: string): Promise<boolean>;
+  /**
+   * The activity's newest run of this kind that ended with this status, however many runs of
+   * other kinds came after it; null when there is none.
+   */
+  latestRun(
+    projectId: string,
+    activityId: string,
+    kind: ActivityRun["kind"],
+    status: ActivityRun["status"],
+  ): Promise<ActivityRunSummary | null>;
   acceptAudio(
     projectId: string,
     activityId: string,

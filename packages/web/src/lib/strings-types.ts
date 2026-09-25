@@ -391,6 +391,66 @@ export type Strings = {
       noAssets: string;
       empty: string;
     };
+    /** Check quality, in the Module section: accessibility and reading level of the played activity. */
+    quality: {
+      title: string;
+      about: string;
+      check: string;
+      checking: string;
+      /** Why Check quality is not offered: the test browser is missing. */
+      browserMissing: string;
+      loadFailed: string;
+      lastChecked: (when: string) => string;
+      notChecked: string;
+      /** The last run ended without reports. */
+      lastFailed: (reason: string) => string;
+      accessibility: { title: string; about: string };
+      readability: {
+        title: string;
+        about: string;
+        gradeBand: (band: string) => string;
+        readingGrade: (grade: number) => string;
+      };
+      status: {
+        passed: string;
+        failed: string;
+        passed_with_warnings: string;
+        skipped: string;
+      };
+      skipped: {
+        no_grade_band: string;
+        unknown_grade_band: string;
+        not_english: string;
+        no_text: string;
+      };
+      severity: { must: string; should: string; minor: string; note: string };
+      noFindings: string;
+      /** Accessible name of a check's findings table. */
+      findingsLabel: (check: string) => string;
+      columns: { severity: string; rule: string; where: string; detail: string; link: string };
+      /** Where a finding is when it is not tied to a scene or an element. */
+      nowhere: string;
+      scene: (scene: string) => string;
+      learnMore: string;
+      /** The link's accessible name. */
+      learnMoreAbout: (rule: string) => string;
+      keyboard: {
+        "keyboard-focusable": string;
+        "keyboard-focus-visible": string;
+        "keyboard-activation": string;
+      };
+      readabilityRules: {
+        sentence_long: string;
+        word_long: string;
+        word_syllables: string;
+      };
+      readabilityDetail: {
+        sentence_long: (count: number, limit: number) => string;
+        word_long: (count: number, limit: number) => string;
+        word_syllables: (count: number, limit: number) => string;
+      };
+      waived: { vpat: string; captions: string };
+    };
     /** The Build stage: what stands between the draft and an assembled module. */
     studioBuild: {
       title: string;
@@ -905,6 +965,7 @@ export type Strings = {
     decodable: string;
     assemble: string;
     moduleRun: string;
+    qualityRun: string;
     moduleReady: string;
     specRun: string;
     assistRun: string;

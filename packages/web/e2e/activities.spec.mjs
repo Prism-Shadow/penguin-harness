@@ -5087,3 +5087,167 @@ test("an admin installs the test browser from System settings", async ({ page })
   expect(installs).toBe(1);
   expect(f.errors).toEqual([]);
 });
+
+test("checks quality and lists what must be fixed", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  const checkedAt = "2026-09-25T10:00:00.000Z";
+  const reports = {
+    runId: "run_quality",
+    accessibility: {
+      check: "accessibility",
+      status: "failed",
+      checkedAt,
+      scenes: ["intro"],
+      findings: [
+        {
+          id: "color-contrast@intro",
+          severity: "must",
+          blocking: true,
+          target: "#choices > button",
+          scene: "intro",
+          code: "color-contrast",
+          detail: "Elements must meet minimum color contrast ratio thresholds",
+          helpUrl: "https://dequeuniversity.com/rules/axe/4.13/color-contrast",
+          count: 2,
+        },
+        {
+          id: "keyboard-focus-visible@intro",
+          severity: "should",
+          blocking: true,
+          target: "#repeat",
+          scene: "intro",
+          code: "keyboard-focus-visible",
+          detail: "repeat",
+          count: 1,
+        },
+      ],
+    },
+    readability: {
+      check: "readability",
+      status: "passed_with_warnings",
+      checkedAt,
+      gradeBand: "k-2",
+      readingGrade: 3.4,
+      findings: [
+        {
+          id: "word_long:0",
+          severity: "note",
+          blocking: false,
+          target: null,
+          scene: "intro",
+          code: "word_long",
+          detail: "elephant",
+          count: 8,
+          limit: 8,
+        },
+      ],
+    },
+  };
+  // The quality routes, with the server's rules: one run per activity at a time, and the
+  // reports appear once the run has settled.
+  let browserInstalled = false;
+  let qualityRun = null;
+  let quality = null;
+  let starts = 0;
+  let runReadsWhileRunning = 0;
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/act_test/quality` && request.method() === "POST") {
+      if (!browserInstalled)
+        return json({ error: { code: "test_browser_missing", message: "missing" } }, 409);
+      if (qualityRun?.status === "running")
+        return json({ error: { code: "generation_running", message: "busy" } }, 409);
+      starts++;
+      qualityRun = {
+        kind: "quality",
+        runId: "run_quality",
+        activityId: "act_test",
+        projectId,
+        draftId: "draft_test",
+        inputRevision: "1",
+        agentId: "",
+        sessionId: null,
+        status: "running",
+        createdAt: "2026-09-25T09:59:00.000Z",
+        finishedAt: null,
+        error: null,
+        candidate: null,
+      };
+      return json(qualityRun, 202);
+    }
+    if (p === `${base}/act_test/quality`) return json({ quality, browserInstalled });
+    if (p === `${base}/act_test/runs` && request.method() === "GET" && qualityRun) {
+      if (qualityRun.status === "running" && ++runReadsWhileRunning > 1) {
+        qualityRun = { ...qualityRun, status: "succeeded", finishedAt: checkedAt };
+        quality = reports;
+      }
+      const { candidate, ...summary } = qualityRun;
+      return json({ runs: [{ ...summary, hasCandidate: false }] });
+    }
+    return route.fallback();
+  });
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+
+  // Without the test browser, Check quality is not offered, and the page says why.
+  await openSection(page, "Module preview");
+  await expect(page.getByRole("heading", { name: /^Quality/ })).toBeVisible();
+  const check = page.getByRole("button", { name: "Check quality", exact: true });
+  await expect(check).toBeDisabled();
+  await expect(
+    page.getByText(
+      "The test browser is not installed. An admin installs it in System settings, under Test browser.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("Not checked yet.", { exact: true }).first()).toBeVisible();
+
+  // Installed, it checks; the reports appear once the run settles.
+  browserInstalled = true;
+  await openSection(page, "Description");
+  await openSection(page, "Module preview");
+  await expect(check).toBeEnabled();
+  await check.click();
+  await expect(page.getByText("Checking quality…", { exact: true })).toBeVisible();
+  await expect(check).toBeDisabled();
+  await expect(page.getByText("Quality check finished.", { exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  expect(starts).toBe(1);
+
+  await expect(page.getByTestId("quality-accessibility-status")).toHaveText("Failed");
+  const accessibility = page.getByRole("table", {
+    name: "Easy for everyone to use: findings",
+    exact: true,
+  });
+  const contrast = accessibility.getByRole("row", { name: /color-contrast/ });
+  await expect(contrast).toContainText("Must fix");
+  await expect(contrast).toContainText("Scene intro · #choices > button");
+  await expect(
+    contrast.getByRole("link", { name: "Learn more about color-contrast", exact: true }),
+  ).toHaveAttribute("href", "https://dequeuniversity.com/rules/axe/4.13/color-contrast");
+  const focus = accessibility.getByRole("row", { name: /keyboard-focus-visible/ });
+  await expect(focus).toContainText("Should fix");
+  await expect(focus).toContainText("Shows no focus when reached with the keyboard.");
+
+  await expect(page.getByTestId("quality-readability-status")).toHaveText("Passed with warnings");
+  await expect(
+    page.getByText("Grade band k-2 · Flesch-Kincaid grade 3.4, for information", { exact: true }),
+  ).toBeVisible();
+  const word = page
+    .getByRole("table", { name: "Right reading level: findings", exact: true })
+    .getByRole("row", { name: /elephant/ });
+  await expect(word).toContainText("Note");
+  await expect(word).toContainText("Long word");
+  await expect(word).toContainText("8 letters; up to 8 suit this grade band.");
+  await expect(page.getByText(/^Last checked /)).toBeVisible();
+  await expect(check).toBeEnabled();
+  expect(f.errors).toEqual([]);
+});

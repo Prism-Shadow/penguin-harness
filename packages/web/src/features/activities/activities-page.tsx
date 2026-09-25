@@ -52,6 +52,7 @@ import { PipelineControls, PipelinePanel } from "./pipeline-panel";
 import { storyboardFrames, type StoryboardFrame } from "./storyboard";
 import { Storyboard } from "./storyboard-view";
 import { BuildPanel } from "./build-panel";
+import { QualityChecksView } from "./quality-checks-view";
 import { ModuleDocumentView } from "./module-document-view";
 import { ActivityStatsView } from "./activity-stats-view";
 import { RefSwitcher } from "./ref-switcher";
@@ -1781,6 +1782,20 @@ function ActivityEditor({
                       )
                     }
                   </BuildPanel>
+                  {available && (
+                    <QualityChecksView
+                      endpoint={endpoint}
+                      runs={runs}
+                      editable={editable}
+                      onStarted={(run) => {
+                        setRuns((previous) => [
+                          summarize(run),
+                          ...previous.filter((item) => item.runId !== run.runId),
+                        ]);
+                        setRefreshVersion((value) => value + 1);
+                      }}
+                    />
+                  )}
                   <SandboxPanel
                     projectId={projectId}
                     activityId={detail.id}

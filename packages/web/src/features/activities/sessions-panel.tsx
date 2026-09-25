@@ -33,6 +33,8 @@ export function runTitle(kind: ActivityRunSummary["kind"]): string {
       return S.activities.assistRun;
     case "assessment":
       return S.activities.assessmentRun;
+    case "quality":
+      return S.activities.qualityRun;
     default:
       return S.activities.specRun;
   }

@@ -427,6 +427,79 @@ export const en: Strings = {
       noAssets: "This scene asks for no media.",
       empty: "The specification has no scenes yet.",
     },
+    quality: {
+      title: "Quality",
+      about:
+        "Check quality opens every scene of the played activity in the test browser and checks two things: whether it is easy for everyone to use, and whether its words suit its grade band. A failed check does not stop you assembling or deploying.",
+      check: "Check quality",
+      checking: "Checking quality…",
+      browserMissing:
+        "The test browser is not installed. An admin installs it in System settings, under Test browser.",
+      loadFailed: "Could not load the quality checks.",
+      lastChecked: (when: string) => `Last checked ${when}`,
+      notChecked: "Not checked yet.",
+      lastFailed: (reason: string) => `The last check did not finish: ${reason}`,
+      accessibility: {
+        title: "Easy for everyone to use",
+        about:
+          "Axe checks each scene against the WCAG 2.2 AA rules, and a keyboard probe checks that every control can be reached, shows focus, and works with Enter or Space. Must fix and Should fix fail the check. Captions rules, and rules an admin lists as VPAT exceptions, are reported but do not fail it.",
+      },
+      readability: {
+        title: "Right reading level",
+        about:
+          "Compares the narration and the text on screen with the grade band in the specification (audience.gradeBand). It points out long sentences and long or many-syllable words, except sight words and words quoted in the acceptance criteria. These are notes only: the check never fails. English only.",
+        gradeBand: (band: string) => `Grade band ${band}`,
+        readingGrade: (grade: number) => `Flesch-Kincaid grade ${grade}, for information`,
+      },
+      status: {
+        passed: "Passed",
+        failed: "Failed",
+        passed_with_warnings: "Passed with warnings",
+        skipped: "Skipped",
+      },
+      skipped: {
+        no_grade_band: "The specification has no grade band (audience.gradeBand).",
+        unknown_grade_band: "The grade band in the specification is not one this check knows.",
+        not_english: "The activity is not in English, and this check reads English only.",
+        no_text: "There is no narration or text on screen to read.",
+      },
+      severity: { must: "Must fix", should: "Should fix", minor: "Minor", note: "Note" },
+      noFindings: "Nothing found.",
+      findingsLabel: (check: string) => `${check}: findings`,
+      columns: {
+        severity: "Severity",
+        rule: "Rule or word",
+        where: "Where",
+        detail: "Detail",
+        link: "Link",
+      },
+      nowhere: "Whole activity",
+      scene: (scene: string) => `Scene ${scene}`,
+      learnMore: "Learn more",
+      learnMoreAbout: (rule: string) => `Learn more about ${rule}`,
+      keyboard: {
+        "keyboard-focusable": "Cannot be reached with the keyboard.",
+        "keyboard-focus-visible": "Shows no focus when reached with the keyboard.",
+        "keyboard-activation": "May not work with Enter or Space.",
+      },
+      readabilityRules: {
+        sentence_long: "Long sentence",
+        word_long: "Long word",
+        word_syllables: "Many syllables",
+      },
+      readabilityDetail: {
+        sentence_long: (count: number, limit: number) =>
+          `${count} words; up to ${limit} suit this grade band.`,
+        word_long: (count: number, limit: number) =>
+          `${count} letters; up to ${limit} suit this grade band.`,
+        word_syllables: (count: number, limit: number) =>
+          `${count} syllables; up to ${limit} suit this grade band.`,
+      },
+      waived: {
+        vpat: "Not blocking: listed as a VPAT exception.",
+        captions: "Not blocking: captions are reported only.",
+      },
+    },
     studioBuild: {
       title: "Build",
       checking: "Checking what the module needs…",
@@ -1088,6 +1161,7 @@ export const en: Strings = {
     decodable: "Decodable",
     assemble: "Assemble WAF module",
     moduleRun: "Module assembly",
+    qualityRun: "Quality check",
     moduleReady: "Assembled",
     specRun: "Specification",
     assistRun: "Conversation",

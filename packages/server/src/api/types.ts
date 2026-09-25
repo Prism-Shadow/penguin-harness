@@ -4872,6 +4872,17 @@ export type {
   TestBrowserStatusResponse,
 } from "../activities/test-browser-types.js";
 export type {
+  QualityFinding,
+  QualityReport,
+  QualityResults,
+  QualitySettingsResponse,
+  QualitySeverity,
+  QualitySkipReason,
+  QualityStateResponse,
+  QualityStatus,
+  QualityWaiver,
+} from "../activities/quality-types.js";
+export type {
   VersionDiff,
   VersionFileDiff,
   VersionFileName,

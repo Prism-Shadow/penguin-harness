@@ -24,8 +24,9 @@ export const IMAGES_STAGE = "generate_images";
 /**
  * The stages an activity is built through. Two steps are deliberately not stages:
  * `validate_activity`, because Penguin already validates the specification and the
- * manifest, and `test_activity`, whose quality checks are to run against the player in the
- * test browser (test-browser.ts) rather than as a stage of this list.
+ * manifest, and `test_activity`, whose quality checks run against the played activity in the
+ * test browser as a run of their own (quality-check.ts, the Module section's Check quality)
+ * rather than as a stage of this list.
  */
 export const PIPELINE_STAGES: readonly ActivityStage[] = [
   {

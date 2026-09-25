@@ -20,6 +20,8 @@ import { BUNDLE_FILE_NAME, BUNDLE_MAX_ITEMS } from "./media-bundle.js";
 import type { BundleItem } from "./media-library-types.js";
 import { ActivityPipelines, parseSelection } from "./pipeline-run.js";
 import { ActivityVersions, VERSION_LABEL_MAX } from "./version-service.js";
+import type { ActivityQuality } from "./quality-check.js";
+import type { QualityStateResponse } from "./quality-types.js";
 import { parseRefDecisions } from "./ref-template.js";
 import {
   badRequest,
@@ -72,6 +74,7 @@ export class ActivityRoutes {
   @Use() private readonly sandbox!: ActivitySandbox;
   @Use() private readonly pipelines!: ActivityPipelines;
   @Use() private readonly versions!: ActivityVersions;
+  @Use() private readonly quality!: ActivityQuality;
   @Use() private readonly config!: Config;
   @Bind("activities") routes!: Hono<AppEnv>;
 
@@ -917,6 +920,22 @@ export class ActivityRoutes {
       });
       return c.json(state, 202);
     });
+    // Check quality: accessibility and reading level of the played activity, in the test
+    // browser. It answers at once with the run; the reports come when the run settles.
+    app.post("/:activityId/quality", async (c) =>
+      c.json(
+        await this.quality.start(requireValidId(c, "projectId"), pathParam(c, "activityId")),
+        202,
+      ),
+    );
+    app.get("/:activityId/quality", async (c) =>
+      c.json(
+        (await this.quality.state(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+        )) satisfies QualityStateResponse,
+      ),
+    );
     // What stands between the draft and an assembled module, checked where the facts live.
     app.get("/:activityId/readiness", async (c) => {
       const wafRoot = (c.req.query("wafRoot") ?? "").trim();

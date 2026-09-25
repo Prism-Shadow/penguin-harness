@@ -20,6 +20,7 @@ export function runKindLabel(run: Pick<ActivityRunSummary, "kind">): string {
   if (run.kind === "media-text") return words.textRun;
   if (run.kind === "assist") return words.assistRun;
   if (run.kind === "assessment") return words.assessmentRun;
+  if (run.kind === "quality") return words.qualityRun;
   return words.specRun;
 }
 
