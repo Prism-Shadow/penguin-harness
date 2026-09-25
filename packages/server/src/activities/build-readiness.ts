@@ -5,28 +5,62 @@
  * "all speech bound" and "every language covers the default one".
  *
  * Checks carry codes and numbers, never sentences; the App words them. A check that fails
- * is one the assembly route itself refuses; a warning is one it allows, but that leaves the
- * module short of something an author would want.
+ * is one the App does not offer Assemble with; a warning is one it allows, but that leaves
+ * the module short of something an author would want.
  */
+import { assessmentTitle } from "./assessment-document.js";
+import { usesAssessment } from "./behavior-path.js";
 import { contentRevision, type ActivityDetail } from "./domain.js";
+import { conflictingMediaKeys } from "./media-markup.js";
+import { assessmentProblemCounts } from "./module-overrides.js";
+import type { ReadinessCheck } from "./readiness-types.js";
+import { isAssessmentData } from "./sandbox-assessment.js";
 
-export type ReadinessLevel = "ok" | "warn" | "fail";
+export type { ReadinessCheck, ReadinessLevel } from "./readiness-types.js";
 
-export type ReadinessCheck =
-  | { id: "script"; level: ReadinessLevel }
-  | { id: "spec"; level: ReadinessLevel }
-  | { id: "plan"; level: ReadinessLevel; state: "missing" | "stale" | "current" }
-  | { id: "speech"; level: ReadinessLevel; language: string; bound: number; total: number }
-  | { id: "media"; level: ReadinessLevel; bound: number; total: number }
-  | { id: "coverage"; level: ReadinessLevel; language: string; covered: number; total: number }
-  | { id: "canonical"; level: ReadinessLevel }
-  | { id: "checkout"; level: ReadinessLevel; found: boolean };
+export interface ReadinessContext {
+  canonical: boolean;
+  checkoutFound: boolean;
+  /** The assessment in effect for this ref (an author's edit, else the module's own), or null. */
+  assessment?: unknown;
+  /** The module's own assessment file, ignoring an author's edit, or null when it has none. */
+  ownAssessment?: unknown;
+  /** The product's canonical ref, whose number the shared assessment's title carries. */
+  canonicalRefNum?: number | null;
+}
 
 const DEFAULT_LANGUAGE = "en-US";
 
+/**
+ * An assessment's problems: the rules an author's save is held to, and a title that names
+ * the file it is kept in (`<product>-<ref>`, this ref's or the canonical ref's). A problem the
+ * module's own file already had is only a warning, as it is when an author saves: many real
+ * modules have some. One the assessment in effect adds, or no assessment at all, fails.
+ */
+function assessmentCheck(
+  activity: ActivityDetail,
+  context: ReadinessContext,
+): ReadinessCheck | null {
+  if (!usesAssessment(activity.draft.spec)) return null;
+  const document = context.assessment ?? null;
+  if (document === null) return { id: "assessment", level: "fail", state: "missing", problems: 0 };
+  const own = context.ownAssessment ?? null;
+  const titles = [activity.refNum, context.canonicalRefNum ?? activity.refNum].map((ref) =>
+    assessmentTitle(activity.productCode, ref),
+  );
+  const titleWrong = (value: unknown) =>
+    isAssessmentData(value) && !titles.includes(String(value.title));
+  const counts = assessmentProblemCounts(document, own);
+  const title = titleWrong(document) ? 1 : 0;
+  const problems = counts.total + title;
+  const introduced = counts.introduced + (title && !titleWrong(own) ? 1 : 0);
+  if (!problems) return { id: "assessment", level: "ok", state: "valid", problems: 0 };
+  return { id: "assessment", level: introduced ? "fail" : "warn", state: "problems", problems };
+}
+
 export function buildReadiness(
   activity: ActivityDetail,
-  context: { canonical: boolean; checkoutFound: boolean },
+  context: ReadinessContext,
 ): ReadinessCheck[] {
   const { draft } = activity;
   const checks: ReadinessCheck[] = [
@@ -91,6 +125,10 @@ export function buildReadiness(
       });
     }
   }
+  const keys = draft.spec ? conflictingMediaKeys(draft.spec) : [];
+  checks.push({ id: "mediaKeys", level: keys.length ? "warn" : "ok", keys });
+  const assessment = assessmentCheck(activity, context);
+  if (assessment) checks.push(assessment);
   checks.push({ id: "canonical", level: context.canonical ? "ok" : "fail" });
   checks.push({
     id: "checkout",

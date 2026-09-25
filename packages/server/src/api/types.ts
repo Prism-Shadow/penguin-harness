@@ -4860,7 +4860,7 @@ export type {
   PipelineStepStatus,
   PipelineNote,
 } from "../activities/pipeline-types.js";
-export type { ReadinessCheck, ReadinessLevel } from "../activities/build-readiness.js";
+export type { ReadinessCheck, ReadinessLevel } from "../activities/readiness-types.js";
 export type { VoiceOption } from "../activities/voice-catalogue.js";
 export type {
   RefAssetAction,

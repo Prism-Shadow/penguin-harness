@@ -166,13 +166,27 @@ export class ActivityService implements ActivityAuthoring {
       activity.draft.draftId,
     );
   }
-  async readiness(projectId: string, activityId: string, wafRoot: string) {
+  /**
+   * `assessment` is the assessment in effect and the module's own file, when the caller can
+   * read the built module; without it, only an author's edit counts.
+   */
+  async readiness(
+    projectId: string,
+    activityId: string,
+    wafRoot: string,
+    assessment?: { current: unknown; own: unknown },
+  ) {
     const activity = await this.getActivity(projectId, activityId);
     // The author's checkout when they typed one, or the one assembly would discover.
     const checkout = await findWafRoot(process.cwd(), wafRoot || process.env.WAF_ROOT_DIR);
     return buildReadiness(activity, {
       canonical: this.isCanonicalRef(activity),
       checkoutFound: !!checkout,
+      assessment: assessment
+        ? (assessment.current ?? null)
+        : ((await this.effectiveModuleDocument(projectId, activity, "assessment"))?.value ?? null),
+      ownAssessment: assessment?.own ?? null,
+      canonicalRefNum: this.productOf(activity)?.canonicalRefNum ?? null,
     });
   }
   async implementationFeatures(projectId: string, activityId: string) {

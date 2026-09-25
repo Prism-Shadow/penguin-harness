@@ -41,6 +41,16 @@ function checkText(check: ReadinessCheck): string {
       return words.coverage(check.language, check.covered, check.total);
     case "media":
       return words.media(check.bound, check.total);
+    case "mediaKeys":
+      return check.keys.length ? words.mediaKeys.conflicting(check.keys) : words.mediaKeys.ok;
+    case "assessment":
+      return check.state === "valid"
+        ? words.assessment.ok
+        : check.state === "missing"
+          ? words.assessment.missing
+          : check.level === "fail"
+            ? words.assessment.problems(check.problems)
+            : words.assessment.inherited(check.problems);
     case "canonical":
       return words.canonical[check.level === "ok" ? "ok" : "fail"];
     case "checkout":
@@ -82,8 +92,8 @@ export function BuildPanel({
   unsaved: boolean;
   proposalOpen: boolean;
   /**
-   * The controls that assemble: checkout, reading mode, Assemble. Told whether a check the
-   * assembly route would refuse on has failed, so Assemble is not offered in vain.
+   * The controls that assemble: checkout, reading mode, Assemble. Told whether a check has
+   * failed, so Assemble is not offered until what blocks it is fixed.
    */
   children?: (blocked: boolean) => ReactNode;
 }) {

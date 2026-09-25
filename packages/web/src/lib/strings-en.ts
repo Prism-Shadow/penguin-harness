@@ -335,6 +335,20 @@ export const en: Strings = {
         `${language} has ${covered} of ${total} narrations of the default language.`,
       media: (bound: number, total: number) =>
         `Images, video and animation: ${bound} of ${total} bound.`,
+      mediaKeys: {
+        ok: "Every media key means the same thing in every scene.",
+        conflicting: (keys: string[]) =>
+          `${keys.length === 1 ? "This media key is" : "These media keys are"} described differently in different scenes: ${keys.join(", ")}. Give different media different keys.`,
+      },
+      assessment: {
+        ok: "The assessment is valid.",
+        missing:
+          "This activity is assessed, but it has no assessment. Generate one in Assessment Data.",
+        problems: (count: number) =>
+          `The assessment has ${count} ${count === 1 ? "problem" : "problems"}. Fix ${count === 1 ? "it" : "them"} in Assessment Data.`,
+        inherited: (count: number) =>
+          `The module's assessment already had ${count} ${count === 1 ? "problem" : "problems"}. Assembly keeps ${count === 1 ? "it" : "them"}; fix ${count === 1 ? "it" : "them"} in Assessment Data.`,
+      },
       canonical: {
         ok: "This ref owns the module code.",
         fail: "Another ref owns this product's module code. Assemble from that ref.",

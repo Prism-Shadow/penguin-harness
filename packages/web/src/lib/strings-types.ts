@@ -299,6 +299,17 @@ export type Strings = {
       speech: (language: string, bound: number, total: number) => string;
       coverage: (language: string, covered: number, total: number) => string;
       media: (bound: number, total: number) => string;
+      /** Media keys one scene describes differently from another. */
+      mediaKeys: { ok: string; conflicting: (keys: string[]) => string };
+      /** Only for an assessed activity. */
+      assessment: {
+        ok: string;
+        missing: string;
+        /** Problems the assessment in effect adds to the module's own file. */
+        problems: (count: number) => string;
+        /** Problems the module's own file already had. */
+        inherited: (count: number) => string;
+      };
       canonical: Record<"ok" | "fail", string>;
       checkout: Record<"ok" | "fail", string>;
       unsaved: Record<"ok" | "fail", string>;

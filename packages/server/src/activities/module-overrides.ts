@@ -123,6 +123,43 @@ function namedProblems(value: unknown): { message: string; key: string }[] {
 }
 
 /**
+ * The problems of `value` that `baseline` did not already have, matched by item id so that
+ * moving an item does not make its problem new.
+ */
+function introducedProblems(value: unknown, baseline: unknown): { message: string; key: string }[] {
+  const known = new Map<string, number>();
+  if (baseline !== undefined && baseline !== null)
+    for (const { key } of namedProblems(baseline)) known.set(key, (known.get(key) ?? 0) + 1);
+  return namedProblems(value).filter(({ key }) => {
+    const left = known.get(key) ?? 0;
+    if (left > 0) {
+      known.set(key, left - 1);
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * How many problems an assessment has, and how many of them `baseline` (the module's own
+ * file, when it has one) did not already have. A document that is not an assessment at all
+ * is one problem, and a new one unless the baseline is not an assessment either.
+ */
+export function assessmentProblemCounts(
+  value: unknown,
+  baseline?: unknown,
+): { total: number; introduced: number } {
+  if (!isAssessmentData(value)) {
+    const inherited = baseline !== undefined && baseline !== null && !isAssessmentData(baseline);
+    return { total: 1, introduced: inherited ? 0 : 1 };
+  }
+  return {
+    total: namedProblems(value).length,
+    introduced: introducedProblems(value, isAssessmentData(baseline) ? baseline : null).length,
+  };
+}
+
+/**
  * Validate an assessment an author saves. `baseline` is the document they were editing, when
  * there is one: many real modules already break a rule (a single choice with two correct
  * answers, a repeated title), and Loom never checked, so a problem the baseline already had is
@@ -132,17 +169,7 @@ export function validateAssessment(value: unknown, baseline?: unknown): Record<s
   const document = plainObject(value);
   if (!isAssessmentData(document)) throw invalid("An assessment needs an items list.");
   withinSize(document);
-  const known = new Map<string, number>();
-  if (baseline !== undefined && baseline !== null)
-    for (const { key } of namedProblems(baseline)) known.set(key, (known.get(key) ?? 0) + 1);
-  const introduced = namedProblems(document).filter(({ key }) => {
-    const left = known.get(key) ?? 0;
-    if (left > 0) {
-      known.set(key, left - 1);
-      return false;
-    }
-    return true;
-  });
+  const introduced = introducedProblems(document, baseline);
   if (introduced.length) {
     const shown = introduced.slice(0, PROBLEMS_SHOWN).map((problem) => problem.message);
     const more = introduced.length - shown.length;

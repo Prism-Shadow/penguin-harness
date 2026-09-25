@@ -9,7 +9,7 @@ import type { BundleItem, ProjectMediaListing } from "../activities/media-librar
 import type { ImportOutcome } from "../activities/import-apply.js";
 import type { ImportedActivity } from "../activities/loom-import.js";
 import type { ImplementationFeature } from "../activities/implementation-features.js";
-import type { ReadinessCheck } from "../activities/build-readiness.js";
+import type { ReadinessCheck } from "../activities/readiness-types.js";
 import type { ImportMapping } from "../activities/import-mapping.js";
 import type { RefAssetDecision, RefNumberSuggestion } from "../activities/ref-template-types.js";
 import type {
@@ -196,8 +196,17 @@ export abstract class ActivityAuthoring extends Interface<{
     activityId: string,
     expectedRevision: string,
   ): Promise<ActivityDraft>;
-  /** What stands between the draft and an assembled module, with this checkout, if given. */
-  readiness(projectId: string, activityId: string, wafRoot: string): Promise<ReadinessCheck[]>;
+  /**
+   * What stands between the draft and an assembled module, with this checkout, if given, and
+   * the assessment in effect and the module's own file when the caller has read them (else
+   * only an author's edit counts).
+   */
+  readiness(
+    projectId: string,
+    activityId: string,
+    wafRoot: string,
+    assessment?: { current: unknown; own: unknown },
+  ): Promise<ReadinessCheck[]>;
   /** Loom's implementation features, and the ones this ref asks its assembly to reproduce. */
   implementationFeatures(
     projectId: string,

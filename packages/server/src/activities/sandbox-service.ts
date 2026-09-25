@@ -186,6 +186,8 @@ export abstract class ActivitySandbox extends Interface<{
     activityId: string,
     canEdit?: boolean,
   ): Promise<ModuleDocuments>;
+  /** The module's own assessment for a ref, as its files have it: an author's edit is ignored. */
+  ownAssessment(projectId: string, activityId: string): Promise<unknown>;
   /** Every asset of the media plan with the size of the file it is bound to. */
   mediaStats(projectId: string, activityId: string): Promise<MediaStat[]>;
   payload(projectId: string, activityId: string, options: PayloadOptions): Promise<ActivityPayload>;
@@ -370,6 +372,20 @@ export class ActivitySandboxService implements ActivitySandbox {
           mimeType: asset.path ? mediaMimeType(asset.path) : null,
         });
     return stats;
+  }
+
+  async ownAssessment(projectId: string, activityId: string): Promise<unknown> {
+    const activity = await this.activities.getActivity(projectId, activityId);
+    const source = await this.moduleSource(projectId, activity);
+    if (!source) return null;
+    const canonicalRefNum = this.activities.productOf(activity)?.canonicalRefNum ?? null;
+    for (const ref of [activity.refNum, canonicalRefNum]) {
+      if (ref == null) continue;
+      const file = path.join(source.root, "assessments", `${activity.productCode}-${ref}.json`);
+      const value = await readJsonFile(file);
+      if (value) return value;
+    }
+    return null;
   }
 
   async moduleDocuments(

@@ -865,11 +865,21 @@ export class ActivityRoutes {
     app.get("/:activityId/readiness", async (c) => {
       const wafRoot = (c.req.query("wafRoot") ?? "").trim();
       if (wafRoot.length > 4096) throw badRequest("wafRoot is too long.");
+      const projectId = requireValidId(c, "projectId");
+      const activityId = pathParam(c, "activityId");
       return c.json({
         checks: await this.activities.readiness(
-          requireValidId(c, "projectId"),
-          pathParam(c, "activityId"),
+          projectId,
+          activityId,
           wafRoot,
+          // A module that cannot be read leaves the author's edit, which the service reads.
+          await Promise.all([
+            this.currentAssessment(projectId, activityId),
+            this.sandbox.ownAssessment(projectId, activityId),
+          ]).then(
+            ([current, own]) => ({ current, own }),
+            () => undefined,
+          ),
         ),
       });
     });

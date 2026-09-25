@@ -307,4 +307,97 @@ describe("module document edits", () => {
     expect((await put(one.id, "definition", {}, "x")).status).toBe(400);
     expect((await put(one.id, "configuration", [1, 2], "x")).status).toBe(400);
   });
+
+  it("lists the assessment in the Build readiness only for an assessed activity", async () => {
+    const { client, base, create, put, specify } = await setup();
+    const one = await create(1);
+    const readiness = async () => {
+      const response = await client.get(`${base}/${one.id}/readiness`);
+      expect(response.status, await response.clone().text()).toBe(200);
+      const { checks } = (await response.json()) as { checks: { id: string }[] };
+      return checks.find((check) => check.id === "assessment");
+    };
+    const plain = await specify(one.id, one.draft.contentRevision);
+    expect(await readiness()).toBeUndefined();
+
+    const assessed = await specify(one.id, plain.contentRevision, {
+      ...spec,
+      runtime: { ...spec.runtime, usesAssessment: true },
+    });
+    expect(await readiness()).toEqual({
+      id: "assessment",
+      level: "fail",
+      state: "missing",
+      problems: 0,
+    });
+
+    const saved = await put(
+      one.id,
+      "assessment",
+      { ...assessment, title: `${PRODUCT}-1` },
+      assessed.contentRevision,
+    );
+    expect(saved.status, await saved.clone().text()).toBe(200);
+    expect(await readiness()).toEqual({
+      id: "assessment",
+      level: "ok",
+      state: "valid",
+      problems: 0,
+    });
+  });
+
+  it("only warns in the Build readiness about problems the module's own assessment had", async () => {
+    const { t, client, base, create, put, specify } = await setup();
+    const one = await create(1);
+    const twoCorrect = {
+      title: "q",
+      configuration: { simpleChoice: [choice("a", true), choice("b", true)] },
+    };
+    const runId = "run_readiness_module";
+    const moduleDir = path.join(t.root, "activity-runs", runId, "module");
+    await fs.mkdir(path.join(moduleDir, "assessments"), { recursive: true });
+    await fs.writeFile(path.join(moduleDir, "definition.json"), "{}", "utf8");
+    // Two correct answers on a single choice, and a title that does not name the file.
+    await fs.writeFile(
+      path.join(moduleDir, "assessments", `${PRODUCT}-1.json`),
+      JSON.stringify({ title: "old name", items: [twoCorrect] }),
+      "utf8",
+    );
+    t.deps.db
+      .prepare(
+        "INSERT INTO activity_runs (run_id, project_id, activity_id, status, created_at, kind, record_json) VALUES (?, 'editor-work', ?, 'succeeded', '2026-09-25', 'module', ?)",
+      )
+      .run(
+        runId,
+        one.id,
+        JSON.stringify({ runId, status: "succeeded", kind: "module", createdAt: "2026-09-25" }),
+      );
+    const assessed = await specify(one.id, one.draft.contentRevision, {
+      ...spec,
+      runtime: { ...spec.runtime, usesAssessment: true },
+    });
+    const readiness = async () => {
+      const response = await client.get(`${base}/${one.id}/readiness`);
+      expect(response.status, await response.clone().text()).toBe(200);
+      const { checks } = (await response.json()) as { checks: { id: string }[] };
+      return checks.find((check) => check.id === "assessment");
+    };
+    // A warning, not a failure, so Assemble stays on offer.
+    expect(await readiness()).toEqual({
+      id: "assessment",
+      level: "warn",
+      state: "problems",
+      problems: 2,
+    });
+
+    // An edit that keeps those problems still only warns.
+    const saved = await put(
+      one.id,
+      "assessment",
+      { title: "old name", items: [{ ...twoCorrect, prompt: "changed" }] },
+      assessed.contentRevision,
+    );
+    expect(saved.status, await saved.clone().text()).toBe(200);
+    expect(await readiness()).toMatchObject({ level: "warn", problems: 2 });
+  });
 });

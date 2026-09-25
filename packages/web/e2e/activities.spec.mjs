@@ -2596,6 +2596,8 @@ test("the Build stage lists what stands between the draft and a module", async (
           { id: "plan", level: "fail", state: "stale" },
           { id: "speech", level: "warn", language: "en-US", bound: 3, total: 5 },
           { id: "coverage", level: "warn", language: "es-MX", covered: 4, total: 5 },
+          { id: "mediaKeys", level: "warn", keys: ["welcome"] },
+          { id: "assessment", level: "fail", state: "problems", problems: 2 },
           { id: "checkout", level: "ok", found: true },
         ],
       }),
@@ -2615,8 +2617,16 @@ test("the Build stage lists what stands between the draft and a module", async (
   await expect(
     checks.getByText("es-MX has 4 of 5 narrations of the default language."),
   ).toBeVisible();
-  await expect(checks.getByRole("img", { name: "Blocks assembly" })).toHaveCount(1);
-  // Assembly would be refused on a stale plan, so it is not offered.
+  await expect(
+    checks.getByText(
+      "This media key is described differently in different scenes: welcome. Give different media different keys.",
+    ),
+  ).toBeVisible();
+  await expect(
+    checks.getByText("The assessment has 2 problems. Fix them in Assessment Data."),
+  ).toBeVisible();
+  await expect(checks.getByRole("img", { name: "Blocks assembly" })).toHaveCount(2);
+  // Assemble is not offered while a check blocks it.
   await expect(
     page.getByRole("button", { name: "Assemble WAF module", exact: true }),
   ).toBeDisabled();
