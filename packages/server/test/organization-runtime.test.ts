@@ -2785,4 +2785,75 @@ describe("organization runtime", () => {
       expect(await service.list(P)).toHaveLength(1);
     });
   });
+
+  describe("crash-window robustness in the org store", () => {
+    const ticketFile = (ticketId: string, column: string): string =>
+      path.join(orgDir(), "tickets", ticketId.slice(0, 7), column, `${ticketId}.md`);
+
+    it("keeps a ticket on the board when a crash left it in two columns", async () => {
+      await createOrg();
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Duplicated by a crash", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      const raw = await fs.readFile(ticketFile(t.ticketId, "proposed"), "utf8");
+      await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, { userId: "alice" });
+      // Recreate the crash window: the old column's file is back (its unlink never ran)
+      // and carries the older mtime, as it would in a real crash — the new column is
+      // written before the old one is removed.
+      await fs.writeFile(ticketFile(t.ticketId, "proposed"), raw, "utf8");
+      const stale = new Date(Date.now() - 60_000);
+      await fs.utimes(ticketFile(t.ticketId, "proposed"), stale, stale);
+
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.in_progress.map((x) => x.ticketId)).toContain(t.ticketId);
+      expect(board.columns.proposed.map((x) => x.ticketId)).not.toContain(t.ticketId);
+      const dup = board.invalidFiles.filter((x) => x.path.includes(t.ticketId));
+      expect(dup).toHaveLength(1);
+      expect(dup[0]?.error).toContain("keeping the newest copy");
+    });
+
+    it("does not swallow a failing removal of the old column on a move", async () => {
+      await createOrg();
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Unremovable origin", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      // Store-level (the service's own ticket lookup would trip over the directory first):
+      // a directory parked where the old column's file lives makes the unlink fail, and
+      // the move must say so instead of leaving the id in two columns in silence.
+      const found = await store.findTicket(orgDir(), t.ticketId);
+      if (!found?.parsed.ok) throw new Error("the ticket file should be there and parsable");
+      const from = ticketFile(t.ticketId, "proposed");
+      await fs.rm(from);
+      await fs.mkdir(from);
+      try {
+        await expect(
+          store.moveTicket(orgDir(), t.ticketId, "proposed", "in_progress", found.parsed.value),
+        ).rejects.toThrow();
+      } finally {
+        await fs.rmdir(from);
+      }
+    });
+
+    it("leaves no temp files behind after ticket writes", async () => {
+      await createOrg();
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "No temp litter", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, { userId: "alice" });
+      const monthDir = path.join(orgDir(), "tickets", t.ticketId.slice(0, 7));
+      const names = (await fs.readdir(monthDir, { recursive: true })).map(String);
+      expect(names.filter((n) => n.includes(t.ticketId)).map((n) => path.basename(n))).toEqual([
+        `${t.ticketId}.md`,
+      ]);
+    });
+  });
 });
