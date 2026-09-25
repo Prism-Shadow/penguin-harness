@@ -45,6 +45,12 @@ function stageRunner(body: Record<string, unknown>): {
   return { agentId: requireString(body, "agentId", { minLen: 1, maxLen: 128 }) };
 }
 
+/** Which module document a path names; anything else is a bad request. */
+function moduleDocumentKind(value: string | undefined): "configuration" | "assessment" {
+  if (value === "configuration" || value === "assessment") return value;
+  throw badRequest("kind must be configuration or assessment.");
+}
+
 /** The one write-method path that only reads: a zip of files any member may already fetch. */
 const BUNDLE_PATH = /^\/api\/projects\/[^/]+\/activities\/media-library\/bundle$/;
 
@@ -361,14 +367,53 @@ export class ActivityRoutes {
         ),
       }),
     );
-    app.get("/:activityId/module-documents", async (c) =>
-      c.json(
+    app.get("/:activityId/module-documents", async (c) => {
+      const projectId = requireValidId(c, "projectId");
+      return c.json(
         await this.sandbox.moduleDocuments(
+          projectId,
+          pathParam(c, "activityId"),
+          this.access.find(c.var.user.userId, projectId)?.role === "owner",
+        ),
+      );
+    });
+    // An author's edit of the configuration or the shared assessment, kept in the draft.
+    app.put("/:activityId/module-documents/:kind", async (c) => {
+      const kind = moduleDocumentKind(c.req.param("kind"));
+      const body = await readJson(c);
+      if (body.value === null || typeof body.value !== "object" || Array.isArray(body.value))
+        throw badRequest("value must be a JSON object.");
+      const projectId = requireValidId(c, "projectId");
+      const activityId = pathParam(c, "activityId");
+      const expectedRevision = requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 });
+      // The assessment the author was editing: a problem it already had does not refuse the save.
+      const baseline =
+        kind === "assessment"
+          ? (await this.sandbox.moduleDocuments(projectId, activityId)).assessment?.value
+          : undefined;
+      return c.json(
+        await this.activities.setModuleDocument(
+          projectId,
+          activityId,
+          kind,
+          body.value,
+          expectedRevision,
+          baseline,
+        ),
+      );
+    });
+    app.post("/:activityId/module-documents/:kind/discard", async (c) => {
+      const kind = moduleDocumentKind(c.req.param("kind"));
+      const body = await readJson(c);
+      return c.json(
+        await this.activities.discardModuleDocument(
           requireValidId(c, "projectId"),
           pathParam(c, "activityId"),
+          kind,
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
         ),
-      ),
-    );
+      );
+    });
     app.get("/:activityId/sandbox/payload", async (c) => {
       return c.json(
         await this.sandbox.payload(requireValidId(c, "projectId"), pathParam(c, "activityId"), {

@@ -12,7 +12,7 @@
  * likewise: the draft's own files first, then the checkout's media root, which is where
  * every manifest path that is not an upload points.
  */
-import type { ModuleDocuments } from "./module-documents.js";
+import type { ModuleDocument, ModuleDocuments } from "./module-documents.js";
 import type { MediaStat } from "./media-stats.js";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
@@ -180,7 +180,12 @@ type RangeRequest = { range?: string | null; ifRange?: string | null; ifNoneMatc
 /** The sandbox as its callers see it. */
 export abstract class ActivitySandbox extends Interface<{
   status(projectId: string, activityId: string): Promise<SandboxStatus>;
-  moduleDocuments(projectId: string, activityId: string): Promise<ModuleDocuments>;
+  /** The module's configuration and assessment for a ref; `canEdit` says whether the viewer owns the project. */
+  moduleDocuments(
+    projectId: string,
+    activityId: string,
+    canEdit?: boolean,
+  ): Promise<ModuleDocuments>;
   /** Every asset of the media plan with the size of the file it is bound to. */
   mediaStats(projectId: string, activityId: string): Promise<MediaStat[]>;
   payload(projectId: string, activityId: string, options: PayloadOptions): Promise<ActivityPayload>;
@@ -367,11 +372,31 @@ export class ActivitySandboxService implements ActivitySandbox {
     return stats;
   }
 
-  async moduleDocuments(projectId: string, activityId: string): Promise<ModuleDocuments> {
+  async moduleDocuments(
+    projectId: string,
+    activityId: string,
+    canEdit = true,
+  ): Promise<ModuleDocuments> {
     const activity = await this.activities.getActivity(projectId, activityId);
     const source = await this.moduleSource(projectId, activity);
-    if (!source) return { source: null, configuration: null, assessment: null };
+    const product = this.activities.productOf(activity);
+    const canonicalRefNum = product?.canonicalRefNum ?? null;
+    const edits = {
+      configuration: await this.activities.effectiveModuleDocument(
+        projectId,
+        activity,
+        "configuration",
+      ),
+      assessment: await this.activities.effectiveModuleDocument(projectId, activity, "assessment"),
+    };
+    if (!source && !edits.configuration && !edits.assessment)
+      return { source: null, configuration: null, assessment: null, canonicalRefNum };
+    const editable = {
+      configuration: canEdit,
+      assessment: canEdit && this.activities.isCanonicalRef(activity),
+    };
     const read = async (folder: string, names: string[]) => {
+      if (!source) return null;
       for (const name of names) {
         const value = await readJsonFile(path.join(source.root, folder, name));
         if (value) return { file: `${folder}/${name}`, value };
@@ -380,15 +405,37 @@ export class ActivitySandboxService implements ActivitySandbox {
     };
     const own = `${activity.productCode}-${activity.refNum}.json`;
     // The assessment falls back to the canonical ref's, as the player's does.
-    const product = this.activities.productOf(activity);
-    const shared =
-      product?.canonicalRefNum != null && product.canonicalRefNum !== activity.refNum
-        ? [`${activity.productCode}-${product.canonicalRefNum}.json`]
-        : [];
+    const sharedName =
+      canonicalRefNum != null && canonicalRefNum !== activity.refNum
+        ? `${activity.productCode}-${canonicalRefNum}.json`
+        : null;
+    const document = async (
+      kind: "configuration" | "assessment",
+      folder: string,
+      names: string[],
+    ): Promise<ModuleDocument | null> => {
+      const edit = edits[kind];
+      // An edit names the file an assembly writes it to: this ref's configuration, or the
+      // canonical ref's assessment, which every ref shares.
+      if (edit)
+        return {
+          file: `${folder}/${names.at(-1)!}`,
+          value: edit.value,
+          edited: true,
+          stale: edit.stale,
+          editable: editable[kind],
+        };
+      const found = await read(folder, names);
+      return found ? { ...found, edited: false, stale: false, editable: editable[kind] } : null;
+    };
     return {
-      source: source.kind,
-      configuration: await read("configurations", [own]),
-      assessment: await read("assessments", [own, ...shared]),
+      source: source?.kind ?? "draft",
+      configuration: await document("configuration", "configurations", [own]),
+      assessment: await document("assessment", "assessments", [
+        own,
+        ...(sharedName ? [sharedName] : []),
+      ]),
+      canonicalRefNum,
     };
   }
 
@@ -557,7 +604,13 @@ export class ActivitySandboxService implements ActivitySandbox {
       "configurations",
       `${activity.productCode}-${activity.refNum}.json`,
     );
-    const raw = (await readJsonFile(configurationFile)) ?? {};
+    // An author's edit of the configuration stands in for the module's own.
+    const edited = await this.activities.effectiveModuleDocument(
+      projectId,
+      activity,
+      "configuration",
+    );
+    const raw = edited?.value ?? (await readJsonFile(configurationFile)) ?? {};
     let configuration = unwrapModuleConfiguration(raw, declaration.id);
     configuration = applyAliasesToLanguageGroups(configuration, assets, aliases);
     configuration = versionMediaUrls(
@@ -814,6 +867,7 @@ export class ActivitySandboxService implements ActivitySandbox {
     const configurationName = `${activity.productCode}-${activity.refNum}.json`;
     if (
       source.kind === "checkout" &&
+      !(await this.activities.effectiveModuleDocument(projectId, activity, "configuration")) &&
       !(await fs
         .stat(path.join(source.root, "configurations", configurationName))
         .catch(() => null))
@@ -962,8 +1016,11 @@ export class ActivitySandboxService implements ActivitySandbox {
     const names = [`${activity.productCode}-${activity.refNum}.json`];
     if (product?.canonicalRefNum != null && product.canonicalRefNum !== activity.refNum)
       names.push(`${activity.productCode}-${product.canonicalRefNum}.json`);
-    let data: unknown = null;
-    for (const name of names) {
+    // An author's edit of the shared assessment comes first; it lives on the canonical ref.
+    let data: unknown =
+      (await this.activities.effectiveModuleDocument(projectId, activity, "assessment"))?.value ??
+      null;
+    for (const name of data ? [] : names) {
       data = await readJsonFile(path.join(source.root, "assessments", name));
       if (data) break;
     }

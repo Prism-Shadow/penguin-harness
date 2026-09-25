@@ -70,8 +70,17 @@ import {
   type ActivityProduct,
   type ActivityRecord,
   type CollectionManifest,
+  type ModuleDocumentKind,
+  type ModuleDocumentOverride,
   validateActivitySpec,
 } from "./domain.js";
+import {
+  assessmentBasis,
+  configurationBasis,
+  isStale,
+  validateAssessment,
+  validateConfiguration,
+} from "./module-overrides.js";
 import { normalizeTags } from "./tags.js";
 
 /** Serializes compare-and-publish operations within the server's single-writer lifetime. */
@@ -741,6 +750,8 @@ export class ActivityService implements ActivityAuthoring {
       (file.spec !== null && (typeof file.spec !== "object" || Array.isArray(file.spec)))
     )
       throw new Error("Activity draft is corrupt.");
+    if (file.moduleDocuments !== undefined && !validModuleDocuments(file.moduleDocuments))
+      throw new Error("Activity draft is corrupt.");
     if (file.mediaPlan) {
       if (!/^[a-f0-9]{64}$/.test(file.mediaPlan.specRevision))
         throw new Error("Media plan is corrupt.");
@@ -852,6 +863,79 @@ export class ActivityService implements ActivityAuthoring {
       }
       return next;
     });
+  }
+  /**
+   * Save an author's edit of a module document. It replaces the generated document in the
+   * preview and in every assembly until it is discarded. The assessment is shared by every
+   * ref of the product, so only the canonical ref may edit it. `baseline` is the document the
+   * author was editing; an assessment problem it already had does not refuse the save.
+   */
+  async setModuleDocument(
+    projectId: string,
+    activityId: string,
+    kind: ModuleDocumentKind,
+    value: unknown,
+    expectedRevision: string,
+    baseline?: unknown,
+  ): Promise<ActivityDraft> {
+    const document =
+      kind === "assessment" ? validateAssessment(value, baseline) : validateConfiguration(value);
+    return this.change(projectId, activityId, expectedRevision, (draft, activity) => {
+      if (kind === "assessment" && !this.isCanonicalRef(activity))
+        throw new HttpError(
+          409,
+          "not_canonical",
+          "The assessment is shared by every ref of this product. Edit it on the canonical ref.",
+        );
+      const override: ModuleDocumentOverride = {
+        value: document,
+        basis: kind === "assessment" ? assessmentBasis(draft) : configurationBasis(draft),
+        editedAt: new Date().toISOString(),
+      };
+      return { ...draft, moduleDocuments: { ...draft.moduleDocuments, [kind]: override } };
+    });
+  }
+
+  /** Remove an author's edit, so the module's own document is used again. */
+  async discardModuleDocument(
+    projectId: string,
+    activityId: string,
+    kind: ModuleDocumentKind,
+    expectedRevision: string,
+  ): Promise<ActivityDraft> {
+    return this.change(projectId, activityId, expectedRevision, (draft) => {
+      const { moduleDocuments, ...rest } = draft;
+      const { [kind]: _removed, ...kept } = moduleDocuments ?? {};
+      // With nothing left the key goes too, so the draft's revision is what it was before.
+      return Object.keys(kept).length ? { ...rest, moduleDocuments: kept } : rest;
+    });
+  }
+
+  /**
+   * The edit that applies to this ref, and whether it is stale: its own configuration, or
+   * the product's assessment, which lives in the canonical ref's draft.
+   */
+  async effectiveModuleDocument(
+    projectId: string,
+    activity: ActivityDetail,
+    kind: ModuleDocumentKind,
+  ): Promise<(ModuleDocumentOverride & { stale: boolean }) | null> {
+    let draft = activity.draft;
+    if (kind === "assessment" && !this.isCanonicalRef(activity)) {
+      const canonicalRefNum = this.productOf(activity)?.canonicalRefNum ?? null;
+      const row = this.db
+        .prepare(
+          "SELECT id FROM activities WHERE collection_id = ? AND product_code = ? AND ref_num = ? AND archived = 0",
+        )
+        .get(activity.collectionId, activity.productCode, canonicalRefNum) as
+        { id: string } | undefined;
+      if (!row) return null;
+      draft = (await this.getActivity(projectId, row.id)).draft;
+    }
+    const override = draft.moduleDocuments?.[kind];
+    if (!override) return null;
+    const basis = kind === "assessment" ? assessmentBasis(draft) : configurationBasis(draft);
+    return { ...override, stale: isStale(override, basis) };
   }
   async updateDescription(
     projectId: string,
@@ -1722,4 +1806,24 @@ export class ActivityService implements ActivityAuthoring {
     };
     return applyImport(mapping, target);
   }
+}
+
+/** Whether a stored draft's module document edits have the shape this server writes. */
+function validModuleDocuments(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  // Only the kinds this server knows are checked; another kind is kept as it is and ignored.
+  return (["configuration", "assessment"] as const).every((kind) => {
+    const entry = (value as Record<string, unknown>)[kind] as Record<string, unknown> | undefined;
+    return (
+      entry === undefined ||
+      (!!entry &&
+        typeof entry === "object" &&
+        !Array.isArray(entry) &&
+        !!entry.value &&
+        typeof entry.value === "object" &&
+        !Array.isArray(entry.value) &&
+        (entry.basis === null || typeof entry.basis === "string") &&
+        typeof entry.editedAt === "string")
+    );
+  });
 }

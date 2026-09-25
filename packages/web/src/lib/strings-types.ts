@@ -389,7 +389,7 @@ export type Strings = {
       kbps: (n: number) => string;
       pixels: (width: number, height: number) => string;
     };
-    /** Loom's Configuration Data and Assessment Data: the module's own documents, read-only. */
+    /** Loom's Configuration Data and Assessment Data: the module's own documents, editable in place. */
     moduleDocuments: {
       loading: string;
       unreadable: (reason: string) => string;
@@ -398,7 +398,21 @@ export type Strings = {
       fromRun: (file: string) => string;
       fromCheckout: (file: string) => string;
       items: (n: number) => string;
-      readOnly: string;
+      /** What editing does, per document; shown in the heading's popover. */
+      about: Record<"configuration" | "assessment", string>;
+      field: string;
+      save: string;
+      saving: string;
+      saved: string;
+      discard: string;
+      discardConfirm: string;
+      discarded: string;
+      edited: string;
+      stale: Record<"configuration" | "assessment", string>;
+      sharedOnCanonical: (ref: number) => string;
+      notJson: (reason: string) => string;
+      notObject: string;
+      fromDraft: string;
     };
     librarySectionEmpty: string;
     sceneAssetTree: string;

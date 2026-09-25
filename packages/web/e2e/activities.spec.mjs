@@ -2628,16 +2628,23 @@ test("the Build stage lists what stands between the draft and a module", async (
   expect(f.errors).toEqual([]);
 });
 
-test("shows the module's configuration and assessment, read-only, as Loom's documents", async ({
-  page,
-}) => {
+test("edits the module's configuration, saves it, and discards the edit", async ({ page }) => {
   const f = await fixture(page);
   await create(page);
   const featureWrites = [];
+  const documentWrites = [];
+  // The server's state, mirrored: the module's own documents, an edit kept in the draft,
+  // and the draft revision a write must name.
+  const own = { maxRounds: 3 };
+  let edit = null;
+  let detail = null;
+  let revision = null;
+  const draftAt = (next) => ({ ...detail.draft, contentRevision: next });
   await page.route("**/*", (route) => {
-    const p = new URL(route.request().url()).pathname;
-    const json = (value) =>
-      route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
     if (p === `${base}/act_test/sandbox/status`)
       return json({
         state: "ready",
@@ -2662,21 +2669,49 @@ test("shows the module's configuration and assessment, read-only, as Loom's docu
         feature("r2phcs03l-speaker-audio-choices", "Speaker audio choices"),
         feature("r2phcs03l-freight-conveyor", "Freight boxes and conveyor"),
       ];
-      if (route.request().method() === "PUT") {
-        featureWrites.push(route.request().postDataJSON());
-        return json({ features, selectedIds: route.request().postDataJSON().selectedIds });
+      if (request.method() === "PUT") {
+        featureWrites.push(request.postDataJSON());
+        return json({ features, selectedIds: request.postDataJSON().selectedIds });
       }
       return json({ features, selectedIds: ["r2phcs03l-speaker-audio-choices"] });
     }
     if (p === `${base}/act_test/module-documents`)
       return json({
         source: "checkout",
-        configuration: { file: "configurations/words-12.json", value: { maxRounds: 3 } },
+        canonicalRefNum: 12,
+        configuration: {
+          file: "configurations/words-12.json",
+          value: edit ?? own,
+          edited: !!edit,
+          stale: false,
+          editable: true,
+        },
         assessment: {
           file: "assessments/words-12.json",
           value: { items: [{ id: "q1" }, { id: "q2" }] },
+          edited: false,
+          stale: false,
+          editable: true,
         },
       });
+    if (p === `${base}/act_test/module-documents/configuration` && request.method() === "PUT") {
+      const body = request.postDataJSON();
+      documentWrites.push({ kind: "save", body });
+      if (body.expectedRevision !== revision)
+        return json({ error: { code: "draft_conflict", message: "Draft changed." } }, 409);
+      edit = body.value;
+      revision = `${detail.draft.contentRevision}-edited`;
+      return json(draftAt(revision));
+    }
+    if (p === `${base}/act_test/module-documents/configuration/discard`) {
+      const body = request.postDataJSON();
+      documentWrites.push({ kind: "discard", body });
+      if (body.expectedRevision !== revision)
+        return json({ error: { code: "draft_conflict", message: "Draft changed." } }, 409);
+      edit = null;
+      revision = detail.draft.contentRevision;
+      return json(draftAt(revision));
+    }
     return route.fallback();
   });
   await openSection(page, "Specification");
@@ -2685,15 +2720,66 @@ test("shows the module's configuration and assessment, read-only, as Loom's docu
     .fill(JSON.stringify(spec));
   await page.getByRole("button", { name: "Validate and save", exact: true }).click();
   await page.reload();
+  detail = await page.evaluate((url) => fetch(url).then((r) => r.json()), `${base}/act_test`);
+  revision = detail.draft.contentRevision;
+
   await openSection(page, "Configuration Data");
   await expect(
     page.getByText("configurations/words-12.json, from the module in the WAF checkout."),
   ).toBeVisible();
-  await expect(page.getByText('"maxRounds": 3')).toBeVisible();
+  const field = page.getByRole("textbox", { name: /^Document JSON/ });
+  await expect(field).toHaveValue(JSON.stringify(own, null, 2));
+  const save = page.getByRole("button", { name: "Save", exact: true });
+  // Nothing to save until the document says something else.
+  await expect(save).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Discard edit", exact: true })).toHaveCount(0);
+
+  // Text that is not JSON is refused before anything is sent.
+  await field.fill("{ maxRounds: 5 }");
+  await save.click();
+  await expect(page.getByText(/^This is not valid JSON: /)).toBeVisible();
+  expect(documentWrites).toEqual([]);
+
+  await field.fill('{ "maxRounds": 5 }');
+  await save.click();
+  await expect.poll(() => documentWrites.length).toBe(1);
+  expect(documentWrites[0]).toEqual({
+    kind: "save",
+    body: { value: { maxRounds: 5 }, expectedRevision: detail.draft.contentRevision },
+  });
+  await expect(page.getByText("Saved the document.")).toBeVisible();
+  await expect(
+    page.getByText("Edited here: the preview and the next assembly use this version."),
+  ).toBeVisible();
+  await expect(field).toHaveValue(JSON.stringify({ maxRounds: 5 }, null, 2));
+
+  // Discarding asks first, then goes back to the module's own document.
+  await page.getByRole("button", { name: "Discard edit", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByText("Go back to the generated document? Your edit is removed."),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Discard edit", exact: true }).click();
+  await expect.poll(() => documentWrites.length).toBe(2);
+  expect(documentWrites[1]).toEqual({
+    kind: "discard",
+    body: { expectedRevision: `${detail.draft.contentRevision}-edited` },
+  });
+  await expect(field).toHaveValue(JSON.stringify(own, null, 2));
+  await expect(
+    page.getByText("Edited here: the preview and the next assembly use this version."),
+  ).toHaveCount(0);
+
+  // Unsaved text in one document does not carry into the other.
+  await field.fill('{ "maxRounds": 9 }');
+  await expect(save).toBeEnabled();
   await openSection(page, "Assessment Data");
   await expect(
     page.getByText("assessments/words-12.json, from the module in the WAF checkout. 2 items."),
   ).toBeVisible();
+  await expect(field).toHaveValue(JSON.stringify({ items: [{ id: "q1" }, { id: "q2" }] }, null, 2));
+  await expect(save).toBeDisabled();
+  expect(documentWrites).toHaveLength(2);
   // Loom's third document: the features the module assembly reproduces.
   await openSection(page, "Implementation Features");
   await expect(page.getByText("1 of 2 selected", { exact: true })).toBeVisible();
@@ -2705,6 +2791,59 @@ test("shows the module's configuration and assessment, read-only, as Loom's docu
     selectedIds: ["r2phcs03l-speaker-audio-choices", "r2phcs03l-freight-conveyor"],
   });
   await expect(page.getByText("2 of 2 selected", { exact: true })).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
+test("shows the shared assessment read-only on a ref that is not canonical", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  await page.route("**/*", (route) => {
+    const p = new URL(route.request().url()).pathname;
+    const json = (value) =>
+      route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/act_test/sandbox/status`)
+      return json({
+        state: "ready",
+        playable: true,
+        buildable: true,
+        message: "Ready.",
+        buildLog: null,
+      });
+    if (p === `${base}/act_test/module-documents`)
+      return json({
+        source: "run",
+        canonicalRefNum: 3,
+        configuration: null,
+        assessment: {
+          file: "assessments/words-3.json",
+          value: { items: [{ title: "q1" }] },
+          edited: true,
+          stale: true,
+          editable: false,
+        },
+      });
+    return route.fallback();
+  });
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.reload();
+  await openSection(page, "Assessment Data");
+  await expect(page.getByText("Shared by every ref. Edit it on ref 3.")).toBeVisible();
+  await expect(
+    page.getByText(
+      "The specification changed after this was edited. Check the questions still match.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole("textbox", { name: /^Document JSON/ })).toHaveAttribute(
+    "readonly",
+    "",
+  );
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+  await openSection(page, "Configuration Data");
+  await expect(page.getByText("The module has no configuration file for this ref.")).toBeVisible();
   expect(f.errors).toEqual([]);
 });
 

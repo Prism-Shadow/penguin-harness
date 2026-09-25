@@ -279,4 +279,32 @@ describe("activity media planning", () => {
     a.draft.spec = { ...a.draft.spec, title: "New title" };
     expect(() => scaffoldModule(a)).toThrow("Rebuild the media plan");
   });
+
+  it("writes an author's edited configuration and assessment in place of the generated ones", async () => {
+    const a = activity();
+    a.draft.mediaPlan = planMedia(a);
+    const edited = { P: { telemetry: false, "en-US": { cat: "{{MEDIA}}/images/mine.png" } } };
+    const assessment = { items: [{ title: "q", configuration: { order: {} } }] };
+    a.draft.moduleDocuments = {
+      configuration: { value: edited, basis: null, editedAt: "now" },
+      assessment: { value: assessment, basis: null, editedAt: "now" },
+    };
+    const files = scaffoldModule(a);
+    expect(JSON.parse(files["configurations/P-1.json"]!)).toEqual(edited);
+    expect(JSON.parse(files["assessments/P-1.json"]!)).toEqual(assessment);
+    const read = async (name: string) =>
+      files[name.replaceAll("\\", "/").replace(/^module\//, "")]!;
+    // The edit is what is checked, not the bindings the plan would have generated.
+    await expect(verifyMediaArtifacts("", a, read)).resolves.toBeUndefined();
+    files["configurations/P-1.json"] = JSON.stringify({ P: { ...edited.P, rounds: 3 } });
+    await expect(verifyMediaArtifacts("", a, read)).resolves.toBeUndefined();
+    files["configurations/P-1.json"] = JSON.stringify({ P: { telemetry: false } });
+    await expect(verifyMediaArtifacts("", a, read)).rejects.toThrow("edited configuration");
+    files["configurations/P-1.json"] = JSON.stringify(edited);
+    files["assessments/P-1.json"] = JSON.stringify({ items: [] });
+    await expect(verifyMediaArtifacts("", a, read)).rejects.toThrow("edited assessment");
+    // Without an edit, no assessment file is written by the scaffold.
+    delete a.draft.moduleDocuments;
+    expect(scaffoldModule(a)["assessments/P-1.json"]).toBeUndefined();
+  });
 });

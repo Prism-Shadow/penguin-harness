@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import templates from "./waf-templates.json" with { type: "json" };
 import type { ActivityDetail } from "./domain.js";
 import { contentRevision, validateActivitySpec } from "./domain.js";
+import { keepsEdit } from "./module-overrides.js";
 import { DEFAULT_LANGUAGE_CODE, findLanguage } from "./languages.js";
 import {
   mediaConfiguration,
@@ -253,14 +254,21 @@ export function scaffoldModule(
   const manifest = plan ? validateManifest(plan.manifest, activity) : null;
   if (manifest) validateMediaCoverage(manifest, activity);
   if (manifest) json(`${refDir}/asset_manifest.json`, wafManifest(manifest));
+  // An author's edit replaces the generated document until they discard it. Assembly is the
+  // canonical ref's, so its assessment is the one every ref of the product shares.
+  const edits = activity.draft.moduleDocuments;
   json(
     `configurations/${activity.productCode}-${activity.refNum}.json`,
-    manifest
-      ? bookMode
-        ? compileBookConfiguration(activity, bookMode, manifest)
-        : mediaConfiguration(manifest)
-      : { [activity.productCode]: { telemetry: false } },
+    edits?.configuration
+      ? edits.configuration.value
+      : manifest
+        ? bookMode
+          ? compileBookConfiguration(activity, bookMode, manifest)
+          : mediaConfiguration(manifest)
+        : { [activity.productCode]: { telemetry: false } },
   );
+  if (edits?.assessment)
+    json(`assessments/${activity.productCode}-${activity.refNum}.json`, edits.assessment.value);
   return files;
 }
 
@@ -335,6 +343,19 @@ export async function verifyMediaArtifacts(
   read: (file: string) => Promise<string>,
   bookMode?: BookMode,
 ): Promise<void> {
+  const edits = activity.draft.moduleDocuments;
+  const moduleFile = (folder: string) =>
+    path.join(workspace, "module", folder, `${activity.productCode}-${activity.refNum}.json`);
+  // An author's edit may be added to by the assembly, never changed.
+  if (
+    edits?.assessment &&
+    !keepsEdit(JSON.parse(await read(moduleFile("assessments"))), edits.assessment.value)
+  )
+    throw new Error("Assembly changed the edited assessment.");
+  if (edits?.configuration) {
+    if (!keepsEdit(JSON.parse(await read(moduleFile("configurations"))), edits.configuration.value))
+      throw new Error("Assembly changed the edited configuration.");
+  }
   if (!activity.draft.mediaPlan) return;
   const prefix = `module/generated/${activity.productCode}/refs/${activity.productCode}-${activity.refNum}/spec`;
   const manifest = validateManifest(
@@ -355,7 +376,8 @@ export async function verifyMediaArtifacts(
   const expected = (
     bookMode ? compileBookConfiguration(activity, bookMode, manifest) : mediaConfiguration(manifest)
   )[activity.productCode] as Record<string, unknown>;
-  for (const [language, entries] of Object.entries(expected)) {
+  // An edited configuration was checked above; the generated bindings no longer apply to it.
+  for (const [language, entries] of edits?.configuration ? [] : Object.entries(expected)) {
     if (language === "telemetry") continue;
     if (language === "book") {
       if (

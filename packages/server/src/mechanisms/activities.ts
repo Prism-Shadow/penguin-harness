@@ -12,12 +12,15 @@ import type { ImplementationFeature } from "../activities/implementation-feature
 import type { ReadinessCheck } from "../activities/build-readiness.js";
 import type { ImportMapping } from "../activities/import-mapping.js";
 import type {
+  ActivityDetail,
   ActivityDraft,
   ActivityProduct,
   ActivityRecord,
   ActivityRun,
   ActivityRunSummary,
   CollectionManifest,
+  ModuleDocumentKind,
+  ModuleDocumentOverride,
 } from "../activities/domain.js";
 
 export abstract class ActivityGeneration extends Interface<{
@@ -272,6 +275,32 @@ export abstract class ActivityAuthoring extends Interface<{
     message: string;
     problems: string[];
   }>;
+  /**
+   * Save an author's edit of the module's configuration or assessment in the draft; the
+   * assessment only on the canonical ref, because every ref shares it. An assessment problem
+   * `baseline` (the document the author was editing) already had does not refuse the save.
+   */
+  setModuleDocument(
+    projectId: string,
+    activityId: string,
+    kind: ModuleDocumentKind,
+    value: unknown,
+    expectedRevision: string,
+    baseline?: unknown,
+  ): Promise<ActivityDraft>;
+  /** Remove an author's edit of a module document. */
+  discardModuleDocument(
+    projectId: string,
+    activityId: string,
+    kind: ModuleDocumentKind,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
+  /** The edit this ref uses (the assessment's lives on the canonical ref), and whether it is stale. */
+  effectiveModuleDocument(
+    projectId: string,
+    activity: ActivityDetail,
+    kind: ModuleDocumentKind,
+  ): Promise<(ModuleDocumentOverride & { stale: boolean }) | null>;
   updateDescription(
     projectId: string,
     activityId: string,

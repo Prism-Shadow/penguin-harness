@@ -1640,9 +1640,17 @@ function ActivityEditor({
               )}
               {(section === "configuration" || section === "assessment") && (
                 <ModuleDocumentView
+                  // One editor per document, so unsaved text never carries to the other kind.
+                  key={section}
                   endpoint={endpoint}
                   kind={section}
                   revision={detail.draft.contentRevision}
+                  editable={editable && available}
+                  onSaved={(draft, text) => {
+                    // Only the draft changed; unsaved script or specification text stays.
+                    setDetail((current) => (current ? { ...current, draft } : current));
+                    announce({ kind: "success", text });
+                  }}
                 />
               )}
               {section === "module" && (

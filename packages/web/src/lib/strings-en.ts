@@ -476,8 +476,29 @@ export const en: Strings = {
       fromRun: (file: string) => `${file}, from the module this activity assembled.`,
       fromCheckout: (file: string) => `${file}, from the module in the WAF checkout.`,
       items: (n: number) => `${n} ${n === 1 ? "item" : "items"}`,
-      readOnly:
-        "Read-only: the module owns this file. Change the activity and assemble again to change it.",
+      about: {
+        configuration:
+          "What the module reads for this ref: its media and settings. Your edit replaces the generated document in the preview and in every assembly until you discard it.",
+        assessment:
+          "The questions the module asks. Every ref of this product shares one assessment, so it is edited on the canonical ref. Your edit is used in the preview and in every assembly until you discard it.",
+      },
+      field: "Document JSON",
+      save: "Save",
+      saving: "Saving…",
+      saved: "Saved the document.",
+      discard: "Discard edit",
+      discardConfirm: "Go back to the generated document? Your edit is removed.",
+      discarded: "Discarded the edit.",
+      edited: "Edited here: the preview and the next assembly use this version.",
+      stale: {
+        configuration: "The media plan changed after this was edited. Check it still matches.",
+        assessment:
+          "The specification changed after this was edited. Check the questions still match.",
+      },
+      sharedOnCanonical: (ref: number) => `Shared by every ref. Edit it on ref ${ref}.`,
+      notJson: (reason: string) => `This is not valid JSON: ${reason}`,
+      notObject: "The document must be a JSON object.",
+      fromDraft: "Edited in this activity; no module has been assembled yet.",
     },
     librarySectionEmpty: "Nothing has been uploaded for this activity yet.",
     sceneAssetTree: "Scenes and their media",

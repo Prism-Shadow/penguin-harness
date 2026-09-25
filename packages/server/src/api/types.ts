@@ -4844,9 +4844,11 @@ export type {
   ActivityRun,
   ActivityRunSummary,
   ActivityRunStatus,
+  ModuleDocumentKind,
+  ModuleDocumentOverride,
 } from "../activities/domain.js";
 export type { SandboxStatus, SandboxBuildReport } from "../activities/sandbox-paths.js";
-export type { ModuleDocuments } from "../activities/module-documents.js";
+export type { ModuleDocument, ModuleDocuments } from "../activities/module-documents.js";
 export type { MediaStat } from "../activities/media-stats.js";
 export type { ImplementationFeature } from "../activities/implementation-features.js";
 export type {
