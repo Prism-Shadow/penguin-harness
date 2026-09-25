@@ -33,6 +33,8 @@ import { MachinesPage } from "./features/machines/machines-page";
 import { MachinePortsPage } from "./features/ports/machine-ports-page";
 import { DashboardPage } from "./features/dashboard/dashboard-page";
 import { WorkflowAppPage } from "./features/workflows/workflow-app-page";
+import { OrgProposalsPage } from "./features/proposals/proposals-page";
+import { orgPagesOf } from "./lib/pages";
 import type { PageEntry } from "./lib/pages";
 import { ContributionsProvider, useContributions } from "./state/contributions";
 
@@ -54,6 +56,9 @@ const BUILTIN_PAGES: Record<string, React.ComponentType> = {
   BenchmarkPage,
   BenchmarkDetailPage,
   DashboardPage,
+  // Company-mode pages a plugin contributes (`nav: "org"`): mounted under the organization
+  // layout, never at the root, so the company sidebar stays around them.
+  OrgProposalsPage,
 };
 
 function renderPage(page: PageEntry): React.ReactNode {
@@ -158,9 +163,11 @@ function RouteTree() {
           {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused
               server-side (403); the sidebar hides their row, so a member only ever reaches
               one by typing the URL. */}
-          {pages.map((page) => (
-            <Route key={page.id} path={page.path} element={renderPage(page)} />
-          ))}
+          {pages
+            .filter((page) => page.nav !== "org")
+            .map((page) => (
+              <Route key={page.id} path={page.path} element={renderPage(page)} />
+            ))}
           {/* Company mode: /org resolves to an organization (or the empty landing), and an
               organization opens on its overview — the page that says what the whole
               organization is doing; its channels are the sidebar's own list beside it. Both
@@ -175,6 +182,12 @@ function RouteTree() {
             <Route path="finance" element={<FinancePage />} />
             <Route path="handbook" element={<HandbookPage />} />
             <Route path="channels/:channelId" element={<ChannelView />} />
+            {/* The company-mode pages a plugin contributes, after the organization's own:
+                their paths are relative to this layout, and the nav row beside them is the
+                sidebar's (features/company/company-nav.ts ORG_PAGE_RENDERERS). */}
+            {orgPagesOf(pages).map((page) => (
+              <Route key={page.id} path={page.path} element={renderPage(page)} />
+            ))}
             <Route path="*" element={<Navigate to="overview" replace />} />
           </Route>
           {/* Settings and user management live in the settings dialog now (see

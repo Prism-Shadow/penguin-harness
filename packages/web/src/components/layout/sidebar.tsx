@@ -191,14 +191,17 @@ import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-
 import { BetaBadge } from "../../features/company/beta-badge";
 import { ChannelSidebar } from "../../features/company/channel-sidebar";
 import { OrgSessionGroups } from "../../features/company/org-session-groups";
-import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
+import { COMPANY_NAV_ICONS, ORG_PAGE_ICONS } from "../../features/company/company-nav-icons";
 import {
   COMPANY_NAV_KEYS,
+  ORG_PAGE_RENDERERS,
   isOrgRoute,
   orgPagePath,
+  orgPageRows,
   parseOrgKey,
 } from "../../features/company/company-nav";
 import type { WorkMode } from "../../features/company/company-nav";
+import { useContributions } from "../../state/contributions";
 import { toneInk } from "../../lib/tone";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
@@ -422,6 +425,8 @@ export function Sidebar({
   const inCompany = company.workMode === "company";
   /** The organization the company nav points at: the open one, else the one last opened (the switcher names the same). */
   const navOrg = parseOrgKey(company.currentOrgKey ?? company.lastOrgKey);
+  /** The company-mode pages plugins contribute (the proposals page): rows after the organization's six. */
+  const contributedOrgPages = useContributions().pages;
 
   /**
    * The rows this list renders: the user's OWN conversations. An organization's desk and
@@ -1756,17 +1761,35 @@ export function Sidebar({
     label: string;
     icon: string;
     note: string | null;
+    /** A count the row wears at its end (a contributed page's unread total); null for none. */
+    count?: number | null;
   }> = inCompany
-    ? COMPANY_NAV_KEYS.map((key) => ({
-        key,
-        // Company mode with no organization keeps its six rows and disables them: the pages
-        // exist, they just have no organization to show yet, and a nav that empties itself
-        // reads as a broken shell rather than as an empty one.
-        to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
-        label: S.nav.org[key],
-        icon: COMPANY_NAV_ICONS[key],
-        note: null,
-      }))
+    ? [
+        ...COMPANY_NAV_KEYS.map((key) => ({
+          key,
+          // Company mode with no organization keeps its six rows and disables them: the pages
+          // exist, they just have no organization to show yet, and a nav that empties itself
+          // reads as a broken shell rather than as an empty one.
+          to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
+          label: S.nav.org[key],
+          icon: COMPANY_NAV_ICONS[key],
+          note: null,
+        })),
+        // The pages plugins contribute, after the organization's own. The proposals row wears
+        // the unread total of the open organization's proposals, the way a channel row wears
+        // its unread count; the tooltip says what the number is.
+        ...orgPageRows(contributedOrgPages, navOrg).map((row) => {
+          const count = row.renderer === "OrgProposalsPage" ? company.unreadProposals : 0;
+          return {
+            key: row.key,
+            to: row.to,
+            label: S.nav.org[ORG_PAGE_RENDERERS[row.renderer].label],
+            icon: ORG_PAGE_ICONS[row.renderer],
+            note: count > 0 ? S.company.proposals.unreadNote(count) : null,
+            count: count > 0 ? count : null,
+          };
+        }),
+      ]
     : navKeysFor(user?.isAdmin === true).map((key) => ({
         key,
         to: `/${key}`,
@@ -1997,8 +2020,16 @@ export function Sidebar({
                         <Icon d={item.icon} />
                       </span>
                       {item.label}
-                      {note !== null && (
-                        <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />
+                      {item.count !== undefined && item.count !== null ? (
+                        /* A count rather than a dot: the number is the information, as on
+                           a channel row, and the tooltip above says what it counts. */
+                        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+                          {item.count}
+                        </span>
+                      ) : (
+                        note !== null && (
+                          <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />
+                        )
                       )}
                     </NavLink>
                   );

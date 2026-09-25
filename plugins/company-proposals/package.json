@@ -1,0 +1,44 @@
+{
+  "name": "@prismshadow/penguin-plugin-company-proposals",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Proposals for PenguinHarness company mode: an employee writes a short, paragraph-commentable proposal while another builds it, the person reads, comments in batches and approves, and a proposals page with unread counts keeps the queue in view.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/company-proposals"
+  },
+  "homepage": "https://github.com/Prism-Shadow/penguin-harness/tree/main/plugins/company-proposals",
+  "keywords": [
+    "penguin-harness-plugin",
+    "company-mode",
+    "proposals"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "ifaces.json"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && vitest run --passWithNoTests",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-plugin-test": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "hono": "^4.12.34",
+    "tsup": "^8.3.0",
+    "vitest": "^3.2.6"
+  }
+}

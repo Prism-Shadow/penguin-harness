@@ -55,7 +55,12 @@ import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { openUserEvents } from "../api/sse";
-import { isCompanyEvent, publishCompanyEvent, publishCompanyResync } from "./company";
+import {
+  isCompanyEvent,
+  isPluginEvent,
+  publishCompanyEvent,
+  publishCompanyResync,
+} from "./company";
 import { WORKFLOW_UPDATED_EVENT } from "../lib/workflow-tabs";
 import { mergeCounts, newestFirst } from "../lib/session-merge";
 import {
@@ -1097,7 +1102,7 @@ export function applyUserEvent(
   // Company-mode notifications fan out to the company store and any mounted organization page
   // (state/company.tsx); a work run additionally opened a desk or ticket Session this list has
   // not seen, so it refreshes like a schedule firing does.
-  if (isCompanyEvent(ev)) {
+  if (isCompanyEvent(ev) || isPluginEvent(ev)) {
     publishCompanyEvent(ev);
     if (ev.type === "org_run" && ev.projectId === store.getState().projectId) {
       void store.getState().reload();

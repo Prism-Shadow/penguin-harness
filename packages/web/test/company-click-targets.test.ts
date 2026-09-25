@@ -46,6 +46,7 @@ const MODULES = [
   "features/company/shared.tsx",
   "features/company/ticket-dialog.tsx",
   "features/company/tickets-page.tsx",
+  "features/proposals/proposals-page.tsx",
 ];
 
 /** Host elements that are controls already: a click on one of these is what the element is for. */

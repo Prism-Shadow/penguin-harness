@@ -412,6 +412,8 @@ export const NAV_ICONS = {
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6",
   /** The handbook, the company's knowledge base (lucide book-open: two pages meeting at the spine). */
   orgHandbook: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
+  /** Proposals (a page with a folded corner and a check on it: a change written up, waiting to be approved). */
+  orgProposals: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4",
 } as const;
 
 /** Company mode (lucide building-2: a tower with wings and windows), the settings rail, the sidebar's organization groups and the collapsed rail's toggle. */

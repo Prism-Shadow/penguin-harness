@@ -474,6 +474,23 @@ export function ChatPage() {
     selected?.agentId ?? agentId,
     selected === null ? null : machineForSession(selected.sessionId),
   );
+  // `?file=<Workspace path>` on arrival — a proposal's scope row, a link from another page —
+  // brings the Files tab up on that file, once; the parameter is consumed so a reload does
+  // not reopen it and the history keeps a clean conversation URL.
+  useEffect(() => {
+    if (selected === null) return;
+    const query = new URLSearchParams(location.search);
+    const file = query.get("file");
+    if (file === null || file === "") return;
+    openPanel("workspace");
+    setFileOpenRequest({ path: file });
+    query.delete("file");
+    const search = query.toString();
+    navigate(
+      { pathname: location.pathname, search: search === "" ? "" : `?${search}` },
+      { replace: true },
+    );
+  }, [selected?.sessionId, location.pathname, location.search, navigate]);
   // New shells start in this conversation's Workspace — its files are what a terminal
   // opened here is for. While drafting, the Workspace is the one picked in the draft and
   // DraftView publishes it instead (a child effect runs before this one, so this must

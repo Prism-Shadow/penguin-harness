@@ -4,7 +4,7 @@
  * company-nav.ts, which stays free of any icon import so the route grammar is testable alone).
  */
 import { NAV_ICONS } from "../../components/ui/icons";
-import type { CompanyNavKey } from "./company-nav";
+import type { CompanyNavKey, OrgPageRenderer } from "./company-nav";
 
 export const COMPANY_NAV_ICONS: Record<CompanyNavKey, string> = {
   overview: NAV_ICONS.orgOverview,
@@ -13,4 +13,9 @@ export const COMPANY_NAV_ICONS: Record<CompanyNavKey, string> = {
   tickets: NAV_ICONS.orgTickets,
   finance: NAV_ICONS.orgFinance,
   handbook: NAV_ICONS.orgHandbook,
+};
+
+/** The glyph of each contributed company-mode page, by the renderer its contribution names. */
+export const ORG_PAGE_ICONS: Record<OrgPageRenderer, string> = {
+  OrgProposalsPage: NAV_ICONS.orgProposals,
 };

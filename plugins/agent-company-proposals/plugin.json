@@ -1,0 +1,14 @@
+{
+  "description": "The proposal protocol of a company (the company-proposals plugin must be installed on the Project), as three playbooks any employee follows — no dedicated hires: writing a short, abstract proposal — one a person comments on passage by passage — and revising it on feedback; building it at the same time on a proposal branch (one's own, or a colleague's), opening the PR against dev and reporting back; testing the dev branch in batches and filing a fix ticket for merged proposals or a runtime feedback for the rest. The plugin installs it on whoever writes or builds a proposal.",
+  "description_zh": "公司提案的协议（Project 须先装上 company-proposals 插件），任何员工都照做的三份手册——不设专门岗位：写一份短小、抽象、可逐段评论的提案并按反馈修订；同时在提案分支上实施（自己做，或交给同事）、向 dev 开 PR 并反馈；分批测试 dev 分支，已合并的提案开修复工单，其余发运行时反馈。插件会自动装到写或做提案的员工上。",
+  "short_description": "The proposal protocol for company mode: write, build, test — any employee.",
+  "short_description_zh": "公司模式的提案协议：写、做、测——任何员工都可以。",
+  "version": "2026.09.24.1",
+  "category": "agent-company",
+  "preinstall": false,
+  "quick_start": {
+    "prompt": "Explain how a proposal moves through this organization — who may start one, how the author builds it or hands the build to a colleague, how a person comments and approves — and show the penguin org proposal commands at each step.",
+    "prompt_zh": "说明一份提案在这个组织里怎么流转——谁可以发起、作者怎么自己实施或交给同事、人怎么评论与认可——并给出每一步要用的 penguin org proposal 命令。",
+    "skills": ["proposal-author"]
+  }
+}

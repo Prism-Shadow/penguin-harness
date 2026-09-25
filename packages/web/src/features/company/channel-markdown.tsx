@@ -32,6 +32,11 @@ import {
   mentionNote,
   mentionRuns,
 } from "./channel-mentions";
+import {
+  PROPOSAL_VALUE_PREFIX,
+  ProposalCapsule,
+  remarkProposalLinks,
+} from "../proposals/proposal-links";
 
 /** The mdast shapes this pass touches, declared structurally rather than taking `@types/mdast` on. */
 interface MdNode {
@@ -113,8 +118,11 @@ export function remarkChannelMessage(options?: { names?: ReadonlyMap<string, str
   return (tree: MdParent): void => walk(tree, names);
 }
 
-/** What a channel body adds to the shared remark stage — the pass above, and nothing else. */
-export const CHANNEL_REMARK_PLUGINS: NonNullable<Options["remarkPlugins"]> = [remarkChannelMessage];
+/** What a channel body adds to the shared remark stage — the mention pass, then the proposal-reference pass, and nothing else. */
+export const CHANNEL_REMARK_PLUGINS: NonNullable<Options["remarkPlugins"]> = [
+  remarkChannelMessage,
+  remarkProposalLinks,
+];
 
 /** Who is reading, which is what decides whether a mention is highlighted. */
 export interface ChannelReader {
@@ -182,10 +190,15 @@ export function MentionChip({
   );
 }
 
-/** The `<data>` element the pass produced, as the chip. Its props are the element's, hence the width of `value`. */
+/**
+ * The `<data>` element a pass produced: a proposal capsule when the value is a `proposal:`
+ * reference (the two passes share the element and are told apart by the value), else the
+ * mention chip. Its props are the element's, hence the width of `value`.
+ */
 function MentionNode({ value }: { value?: string | number | readonly string[] }) {
   const reader = useContext(ReaderContext);
   const token = typeof value === "string" ? value : "";
+  if (token.startsWith(PROPOSAL_VALUE_PREFIX)) return <ProposalCapsule value={token} />;
   return (
     <MentionChip
       raw={`@${token}`}
@@ -204,7 +217,10 @@ export function ChannelMessageBody({ text }: { text: string }) {
   const reader = useContext(ReaderContext);
   // The plugin list is rebuilt only when the names change: a new array is a new pipeline.
   const plugins = useMemo<NonNullable<Options["remarkPlugins"]>>(
-    () => [[remarkChannelMessage, { names: mentionNameHandles(reader.names) }]],
+    () => [
+      [remarkChannelMessage, { names: mentionNameHandles(reader.names) }],
+      remarkProposalLinks,
+    ],
     [reader.names],
   );
   return <Md text={text} extraPlugins={plugins} components={CHANNEL_COMPONENTS} />;

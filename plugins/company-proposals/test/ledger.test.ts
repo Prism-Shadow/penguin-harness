@@ -1,0 +1,609 @@
+/**
+ * The ledger as pure data: lines fold to proposals, a request for changes gathers the
+ * pending comments and puts a ready proposal back to drafting, a line about a proposal that
+ * was never created is skipped, an unreadable line is skipped — and the same file replays
+ * to the same state after a restart.
+ */
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  Ledger,
+  applyLine,
+  foldLedger,
+  ledgerPath,
+  migrateScopeKinds,
+  parseLedger,
+  type LedgerEntry,
+  type LedgerLine,
+} from "../src/index.js";
+
+const at = "2026-09-21T00:00:00.000Z";
+
+function lines(...entries: LedgerEntry[]): LedgerLine[] {
+  return entries.map((e, i) => ({ seq: i + 1, at, ...e }) as LedgerLine);
+}
+
+describe("foldLedger", () => {
+  it("reads the delegator as a principal, and a bare user id written before principals were recorded as a person", () => {
+    const state = foldLedger([
+      {
+        seq: 1,
+        at: "2026-09-21T00:00:00Z",
+        kind: "created",
+        number: 1,
+        title: "A",
+        author: "dev",
+        delegatedBy: "boss",
+        brief: "b",
+      },
+      {
+        seq: 2,
+        at: "2026-09-21T00:00:01Z",
+        kind: "created",
+        number: 2,
+        title: "B",
+        author: "dev",
+        delegatedBy: "agent:dev",
+        brief: "b",
+      },
+    ]);
+    expect(state.proposals.get(1)).toMatchObject({ delegatedBy: "user:boss" });
+    expect(state.proposals.get(1)?.events[0]).toMatchObject({ kind: "created", by: "user:boss" });
+    expect(state.proposals.get(2)).toMatchObject({ delegatedBy: "agent:dev" });
+    expect(state.proposals.get(2)?.events[0]).toMatchObject({ by: "agent:dev" });
+  });
+
+  it("folds a creation, a revision and status changes into one proposal with its events", () => {
+    const state = foldLedger(
+      lines(
+        {
+          kind: "created",
+          number: 1,
+          title: "Batch notices",
+          author: "dev",
+          delegatedBy: "boss",
+          brief: "Do it",
+        },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 1,
+          title: "Batch the notices",
+          scope: [{ kind: "edit", file: "a.ts" }],
+          sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: "x" }] }],
+          by: "agent:dev",
+        },
+        { kind: "status", number: 1, status: "ready", by: "agent:dev" },
+        {
+          kind: "implementation",
+          number: 1,
+          implementer: "impl",
+          sessionId: "s-1",
+          by: "agent:dev",
+        },
+        {
+          kind: "material",
+          number: 1,
+          material: { kind: "pr", label: "PR #7", url: "https://x/pull/7" },
+          by: "agent:impl",
+        },
+        { kind: "status", number: 1, status: "approved", by: "user:boss" },
+        { kind: "status", number: 1, status: "merged", by: "agent:impl" },
+      ),
+    );
+    const p = state.proposals.get(1)!;
+    expect(p).toMatchObject({
+      title: "Batch the notices",
+      status: "merged",
+      revision: 1,
+      implementer: "impl",
+      sessions: ["s-1"],
+      seq: 7,
+    });
+    expect(p.materials).toEqual([
+      { kind: "pr", label: "PR #7", url: "https://x/pull/7", by: "agent:impl", at },
+    ]);
+    expect(p.events.map((e) => e.kind)).toEqual([
+      "created",
+      "revised",
+      "ready",
+      "implementation_started",
+      "material_added",
+      "approved",
+      "merged",
+    ]);
+    expect(state.lastSeq).toBe(7);
+  });
+
+  it("an approval covers one revision: it records the revision, a later revision puts the proposal back to ready, and a line written before the field reads as the revision current then", () => {
+    const section = (text: string) => [
+      { id: "s1", heading: "Change", paragraphs: [{ id: "p1", text }] },
+    ];
+    const state = foldLedger(
+      lines(
+        {
+          kind: "created",
+          number: 1,
+          title: "T",
+          author: "dev",
+          delegatedBy: "user:boss",
+          brief: "B",
+        },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 1,
+          title: "T",
+          scope: [],
+          sections: section("one"),
+          by: "agent:dev",
+        },
+        { kind: "status", number: 1, status: "ready", by: "agent:dev" },
+        // Written before the field existed: covers the revision current when it was written.
+        { kind: "status", number: 1, status: "approved", by: "user:boss" },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 2,
+          title: "T",
+          scope: [],
+          sections: section("two"),
+          by: "agent:dev",
+        },
+        {
+          kind: "status",
+          number: 1,
+          status: "ready",
+          by: "agent:dev",
+          reason: "revision 2 — approval of revision 1 no longer covers it",
+        },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 3,
+          title: "T3",
+          scope: [],
+          sections: section("three"),
+          by: "agent:dev",
+        },
+        { kind: "status", number: 1, status: "approved", by: "user:boss", revision: 3 },
+      ),
+    );
+    const p = state.proposals.get(1)!;
+    expect(p.status).toBe("approved");
+    expect(p.approvedRevision).toBe(3);
+    expect([...p.revisions.keys()]).toEqual([1, 2, 3]);
+    expect(p.revisions.get(2)).toMatchObject({
+      revision: 2,
+      sections: section("two"),
+      by: "agent:dev",
+    });
+    // The events: the first approval names revision 1; the ready after revision 2 carries the reason.
+    expect(p.events.filter((e) => e.kind === "approved").map((e) => e.revision)).toEqual([1, 3]);
+    expect(p.events.find((e) => e.kind === "ready" && e.text !== undefined)?.text).toBe(
+      "revision 2 — approval of revision 1 no longer covers it",
+    );
+    // Half-way through: after revision 2 the approval of 1 stood but the status did not.
+    const upToRevision2 = foldLedger(
+      lines(
+        {
+          kind: "created",
+          number: 1,
+          title: "T",
+          author: "dev",
+          delegatedBy: "user:boss",
+          brief: "B",
+        },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 1,
+          title: "T",
+          scope: [],
+          sections: section("one"),
+          by: "agent:dev",
+        },
+        { kind: "status", number: 1, status: "approved", by: "user:boss", revision: 1 },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 2,
+          title: "T",
+          scope: [],
+          sections: section("two"),
+          by: "agent:dev",
+        },
+      ),
+    ).proposals.get(1)!;
+    expect(upToRevision2.status).toBe("ready");
+    expect(upToRevision2.approvedRevision).toBe(1);
+  });
+
+  it("a batch gathers the comments it names, and puts a ready proposal back to drafting", () => {
+    const state = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        { kind: "status", number: 1, status: "ready", by: "agent:dev" },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c1",
+          paragraphId: "p1",
+          revision: 1,
+          text: "why",
+          by: "user:boss",
+        },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c2",
+          paragraphId: "p2",
+          revision: 1,
+          text: "how",
+          by: "user:boss",
+        },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c3",
+          paragraphId: "p2",
+          revision: 1,
+          text: "later",
+          by: "user:boss",
+        },
+        { kind: "batch", number: 1, id: "b1", commentIds: ["c1", "c2"], by: "user:boss" },
+        { kind: "resolved", number: 1, commentId: "c1", text: "added", by: "agent:dev" },
+        // A pending comment is reworded and, later, one withdrawn; a sent one is untouched by both.
+        {
+          kind: "comment_edited",
+          number: 1,
+          commentId: "c3",
+          text: "later, reworded",
+          by: "user:boss",
+        },
+        { kind: "comment_edited", number: 1, commentId: "c2", text: "no effect", by: "user:boss" },
+        { kind: "comment_deleted", number: 1, commentId: "c2", by: "user:boss" },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c4",
+          paragraphId: "p2",
+          revision: 1,
+          text: "gone soon",
+          by: "user:boss",
+        },
+        { kind: "comment_deleted", number: 1, commentId: "c4", by: "user:boss" },
+      ),
+    );
+    const p = state.proposals.get(1)!;
+    expect(p.status).toBe("drafting");
+    expect(p.comments.map((c) => [c.id, c.batchId, c.resolved?.text ?? null, c.text])).toEqual([
+      ["c1", "b1", "added", expect.any(String)],
+      ["c2", "b1", null, expect.any(String)],
+      ["c3", null, null, "later, reworded"],
+    ]);
+    const requested = p.events.find((e) => e.kind === "changes_requested");
+    expect(requested).toMatchObject({ by: "user:boss", text: "2" });
+    // A pending comment is not an event: nobody but its author knows it exists yet.
+    expect(p.events.map((e) => e.kind)).toEqual([
+      "created",
+      "ready",
+      "changes_requested",
+      "resolved",
+    ]);
+  });
+
+  it("anchors a range comment to its paragraph, follows the passage through a revision, and lets a lost passage keep its revision", () => {
+    const sections = (change: string) => [
+      { id: "change", heading: "Change", paragraphs: [{ id: "p1", text: change }] },
+      { id: "purpose", heading: "Purpose", paragraphs: [{ id: "p2", text: "Because." }] },
+    ];
+    const state = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 1,
+          title: "T",
+          scope: [],
+          sections: sections("The notices go out in one batch."),
+          by: "agent:dev",
+        },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c1",
+          sectionId: "change",
+          start: 4,
+          end: 11,
+          quote: "notices",
+          revision: 1,
+          text: "which?",
+          by: "user:boss",
+        },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 2,
+          title: "T",
+          scope: [],
+          sections: sections("Every ticket's  notices go out in one batch."),
+          by: "agent:dev",
+        },
+      ),
+    );
+    const c = state.proposals.get(1)!.comments[0]!;
+    // Found again with the whitespace collapsed, at the passage's new place.
+    expect(c).toMatchObject({
+      sectionId: "change",
+      range: { start: 16, end: 23 },
+      quote: "notices",
+      paragraphId: "p1",
+      revision: 2,
+    });
+    applyLine(state, {
+      seq: 5,
+      at,
+      kind: "revised",
+      number: 1,
+      revision: 3,
+      title: "T",
+      scope: [],
+      sections: sections("Every ticket's digest goes out in one batch."),
+      by: "agent:dev",
+    });
+    const lost = state.proposals.get(1)!.comments[0]!;
+    expect(lost.revision).toBe(2);
+    expect(lost.paragraphId).toBeUndefined();
+    expect(lost.quote).toBe("notices");
+  });
+
+  it("anchors a comment line written on a paragraph (the pre-range form) to that paragraph's whole span", () => {
+    const state = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 1,
+          title: "T",
+          scope: [],
+          sections: [
+            {
+              id: "change",
+              heading: "Change",
+              paragraphs: [
+                { id: "p1", text: "First." },
+                { id: "p2", text: "Second paragraph." },
+              ],
+            },
+          ],
+          by: "agent:dev",
+        },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c1",
+          paragraphId: "p2",
+          revision: 1,
+          text: "why",
+          by: "user:boss",
+        },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c2",
+          paragraphId: "p9",
+          revision: 1,
+          text: "gone",
+          by: "user:boss",
+        },
+      ),
+    );
+    const [onP2, onNothing] = state.proposals.get(1)!.comments;
+    expect(onP2).toMatchObject({
+      sectionId: "change",
+      range: { start: 8, end: 25 },
+      quote: "Second paragraph.",
+      paragraphId: "p2",
+      revision: 1,
+    });
+    expect(onNothing).toMatchObject({ sectionId: "", quote: "", revision: 1 });
+    expect(onNothing!.paragraphId).toBeUndefined();
+  });
+
+  it("keeps the batches since the last ready: a batch written before the field reads as the revision current then", () => {
+    const revised = (revision: number): LedgerEntry => ({
+      kind: "revised",
+      number: 1,
+      revision,
+      title: "T",
+      scope: [{ kind: "edit", file: "a.go" }],
+      sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: `r${revision}` }] }],
+      by: "agent:dev",
+    });
+    const state = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        revised(1),
+        { kind: "status", number: 1, status: "ready", by: "agent:dev" },
+        { kind: "batch", number: 1, id: "b1", commentIds: ["c1"], by: "user:boss" },
+        revised(2),
+        { kind: "batch", number: 1, id: "b2", commentIds: ["c2"], by: "user:boss", revision: 2 },
+        {
+          kind: "notify_failed",
+          number: 1,
+          reason: "agent:dev not notified: archived",
+          target: ["agent:dev"],
+          by: "user:boss",
+        },
+      ),
+    );
+    const p = state.proposals.get(1)!;
+    expect(p.openBatches).toEqual([
+      { id: "b1", revision: 1, commentIds: ["c1"] },
+      { id: "b2", revision: 2, commentIds: ["c2"] },
+    ]);
+    expect(p.events.at(-1)).toMatchObject({
+      kind: "notify_failed",
+      text: "agent:dev not notified: archived",
+    });
+    // A ready answers them all.
+    applyLine(state, {
+      seq: 99,
+      at,
+      kind: "status",
+      number: 1,
+      status: "ready",
+      by: "user:boss",
+    });
+    expect(p.openBatches).toEqual([]);
+  });
+
+  it("skips a line about a proposal that does not exist, and keeps counting seq", () => {
+    const state = foldLedger(
+      lines(
+        { kind: "status", number: 9, status: "ready", by: "agent:dev" },
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+      ),
+    );
+    expect([...state.proposals.keys()]).toEqual([1]);
+    expect(state.lastSeq).toBe(2);
+  });
+});
+
+describe("parseLedger", () => {
+  it("reads one JSON object per line and skips what is not a ledger line", () => {
+    const text = [
+      JSON.stringify({
+        seq: 1,
+        at,
+        kind: "created",
+        number: 1,
+        title: "T",
+        author: "a",
+        delegatedBy: "u",
+        brief: "b",
+      }),
+      "not json",
+      JSON.stringify({ hello: "world" }),
+      "",
+      JSON.stringify({ seq: 2, at, kind: "status", number: 1, status: "ready", by: "agent:a" }),
+    ].join("\n");
+    expect(parseLedger(text).map((l) => l.seq)).toEqual([1, 2]);
+  });
+});
+
+describe("Ledger", () => {
+  let root: string;
+  beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "proposals-ledger-"));
+  });
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it("lives at <root>/<project>/organizations/<org>/proposals.jsonl", () => {
+    expect(ledgerPath("/r", "proj", "acme")).toBe(
+      path.join("/r", "proj", "organizations", "acme", "proposals.jsonl"),
+    );
+  });
+
+  it("appends with the next seq, applies once written, and replays to the same state", async () => {
+    const file = ledgerPath(root, "proj", "acme");
+    let clock = 1_000;
+    const ledger = new Ledger(file, () => (clock += 1000));
+    await ledger.load();
+    expect(ledger.nextNumber()).toBe(1);
+    const a = await ledger.append({
+      kind: "created",
+      number: 1,
+      title: "T",
+      author: "dev",
+      delegatedBy: "boss",
+      brief: "b",
+    });
+    const b = await ledger.append({ kind: "status", number: 1, status: "ready", by: "agent:dev" });
+    expect([a.seq, b.seq]).toEqual([1, 2]);
+    expect(a.at).toBe(new Date(2000).toISOString());
+    expect(ledger.get(1)?.status).toBe("ready");
+    expect(ledger.nextNumber()).toBe(2);
+
+    const again = new Ledger(file);
+    await again.load();
+    expect(again.get(1)).toEqual(ledger.get(1));
+    expect(again.lastSeq()).toBe(2);
+  });
+
+  it("serializes concurrent appends: every line gets its own seq, in call order", async () => {
+    const ledger = new Ledger(ledgerPath(root, "proj", "acme"));
+    await ledger.load();
+    const written = await Promise.all(
+      [1, 2, 3].map((n) =>
+        ledger.append({
+          kind: "created",
+          number: n,
+          title: `T${n}`,
+          author: "dev",
+          delegatedBy: "boss",
+          brief: "b",
+        }),
+      ),
+    );
+    expect(written.map((l) => l.seq)).toEqual([1, 2, 3]);
+    const text = await fs.readFile(ledger.file, "utf8");
+    expect(text.trim().split("\n")).toHaveLength(3);
+  });
+
+  it("reads a ledger written before scope kinds as edits, and never rewrites the file", async () => {
+    const file = ledgerPath(root, "proj", "acme");
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const old = [
+      {
+        seq: 1,
+        at,
+        kind: "created",
+        number: 1,
+        title: "T",
+        author: "dev",
+        delegatedBy: "boss",
+        brief: "b",
+      },
+      {
+        seq: 2,
+        at,
+        kind: "revised",
+        number: 1,
+        revision: 1,
+        title: "T",
+        scope: [{ file: "a.go", name: "X" }, { file: "b.go" }],
+        sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: "x" }] }],
+        by: "agent:dev",
+      },
+      { seq: 3, at, kind: "status", number: 1, status: "ready", by: "agent:dev" },
+    ]
+      .map((l) => JSON.stringify(l))
+      .join("\n");
+    const original = `${old}\n`;
+    await fs.writeFile(file, original, "utf8");
+    const logged: string[] = [];
+    const ledger = new Ledger(
+      file,
+      () => Date.parse("2026-09-24T01:02:03.004Z"),
+      (l) => logged.push(l),
+    );
+    await ledger.load();
+    expect(ledger.get(1)?.scope).toEqual([
+      { kind: "edit", file: "a.go", name: "X" },
+      { kind: "edit", file: "b.go" },
+    ]);
+    // The file on disk is untouched: no rewrite, no backup, nothing logged.
+    expect(await fs.readFile(file, "utf8")).toBe(original);
+    expect((await fs.readdir(path.dirname(file))).filter((f) => f.endsWith(".bak"))).toEqual([]);
+    expect(logged).toEqual([]);
+    expect(migrateScopeKinds(original).changed).toBe(2);
+  });
+});

@@ -34,8 +34,18 @@ export abstract class WebShell extends Interface<{
 }>() {}
 
 export interface WebShellSlots {
-  /** A page: its route, whether it sits in the main nav, whether it is admin-only. */
-  pages: { key: string; path: string; nav: "main" | "none"; admin: boolean; renderer: RendererRef };
+  /**
+   * A page: its route, where it sits (`main` = the development nav; `org` = a company-mode
+   * page — its path is relative to `/org/:projectId/:orgId/` and it gets a nav row after the
+   * organization's own; `none` = reachable by URL only), whether it is admin-only.
+   */
+  pages: {
+    key: string;
+    path: string;
+    nav: "main" | "org" | "none";
+    admin: boolean;
+    renderer: RendererRef;
+  };
   /** A tab on the Agent settings page. */
   agentTabs: { key: string; order: number; renderer: RendererRef };
   /**

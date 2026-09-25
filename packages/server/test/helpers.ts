@@ -390,6 +390,18 @@ export function replacementsFor(o: TestAppOptions): Replacements {
       {
         orgService: o.orgService,
         orgScheduler: { start: async () => {}, stop: () => {} },
+        orgGateway: {
+          companyModeEnabled: () => false,
+          organization: async () => null,
+          principalOf: async (_p: string, _o: string, actor: { userId: string }) =>
+            `user:${actor.userId}`,
+          ensureChannel: async () => {},
+          sendChannelMessage: async () => ({ id: "msg-fake" }),
+          openEmployeeSession: async () => {
+            throw new Error("no organization in this suite");
+          },
+          notifyProject: () => {},
+        },
       },
     ]);
   }

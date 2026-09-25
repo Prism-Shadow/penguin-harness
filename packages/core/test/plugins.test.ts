@@ -41,7 +41,7 @@ describe("loadLibraryPlugins", () => {
   it("loads every plugin directory sorted by name, each with a date-sequence version and a category", () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    expect(plugins.length).toBe(13);
+    expect(plugins.length).toBe(14);
     for (const plugin of plugins) {
       expect(plugin.version, plugin.name).toMatch(PLUGIN_VERSION_PATTERN);
       expect(
@@ -152,7 +152,13 @@ describe("loadPreinstalledPlugins", () => {
     const preinstalled = loadPreinstalledPlugins().map((p) => p.name);
     expect(preinstalled).toContain("goal");
     expect(preinstalled).toContain("software-development");
-    for (const manual of ["agent-company", "continual-learning", "humanizer", "use-claude-code"]) {
+    for (const manual of [
+      "agent-company",
+      "agent-company-proposals",
+      "continual-learning",
+      "humanizer",
+      "use-claude-code",
+    ]) {
       expect(all).toContain(manual);
       expect(preinstalled).not.toContain(manual);
     }
@@ -212,7 +218,7 @@ describe("groupPlugins / loadPluginGroups", () => {
       "model-development",
       "skill-porting",
     ]);
-    expect(names("agent-company")).toEqual(["agent-company"]);
+    expect(names("agent-company")).toEqual(["agent-company", "agent-company-proposals"]);
   });
 });
 

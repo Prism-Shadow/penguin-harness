@@ -131,6 +131,20 @@ import type {
   OrgTicketStartRequest,
   OrgTicketStartResponse,
   OrgTicketUpdateRequest,
+  ProposalCommentEditRequest,
+  ProposalCommentRequest,
+  ProposalCreateRequest,
+  ProposalDetail,
+  ProposalRevision,
+  ProposalFeedbackRequest,
+  ProposalImplementRequest,
+  ProposalItem,
+  ProposalMaterialRequest,
+  ProposalPublishRequest,
+  ProposalReadRequest,
+  ProposalRejectRequest,
+  ProposalResolveRequest,
+  ProposalsResponse,
   PasswordChangeRequest,
   PluginFilesResponse,
   PluginInstallRequest,
@@ -2343,3 +2357,143 @@ export const openSessionSurface = (sessionId: string, body: SessionSurfaceOpenRe
 
 export const closeSessionSurface = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/surface`, { method: "DELETE" });
+
+// ---------------------------------------------------------------------------
+// Company proposals (the company-proposals plugin: routes/proposals under one organization).
+// None of these exist without the plugin — the page that calls them is mounted only while the
+// contributions carry it — and, like every organization-scoped call, they reach the machine
+// the organization runs on.
+// ---------------------------------------------------------------------------
+
+const proposalsBase = (projectId: string, orgId: string) =>
+  `${orgBase(projectId, orgId)}/proposals`;
+
+const proposalBase = (projectId: string, orgId: string, number: number) =>
+  `${proposalsBase(projectId, orgId)}/${number}`;
+
+const proposalAction = <T>(
+  projectId: string,
+  orgId: string,
+  number: number,
+  action: string,
+  body: unknown = {},
+) => apiFetch<T>(`${proposalBase(projectId, orgId, number)}/${action}`, { method: "POST", body });
+
+export const listOrgProposals = (projectId: string, orgId: string) =>
+  apiFetch<ProposalsResponse>(proposalsBase(projectId, orgId));
+
+export const createOrgProposal = (projectId: string, orgId: string, body: ProposalCreateRequest) =>
+  apiFetch<ProposalItem>(proposalsBase(projectId, orgId), { method: "POST", body });
+
+export const getOrgProposal = (projectId: string, orgId: string, number: number) =>
+  apiFetch<ProposalDetail>(proposalBase(projectId, orgId, number));
+
+/** One revision as it was published — what the page diffs the head against after an approval. */
+export const getOrgProposalRevision = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  revision: number,
+) => apiFetch<ProposalRevision>(`${proposalBase(projectId, orgId, number)}/revisions/${revision}`);
+
+export const publishOrgProposal = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  body: ProposalPublishRequest,
+) => apiFetch<ProposalDetail>(proposalBase(projectId, orgId, number), { method: "PUT", body });
+
+export const readyOrgProposal = (projectId: string, orgId: string, number: number) =>
+  proposalAction<ProposalDetail>(projectId, orgId, number, "ready");
+
+export const approveOrgProposal = (projectId: string, orgId: string, number: number) =>
+  proposalAction<ProposalDetail>(projectId, orgId, number, "approve");
+
+export const rejectOrgProposal = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  body: ProposalRejectRequest,
+) => proposalAction<ProposalDetail>(projectId, orgId, number, "reject", body);
+
+export const mergedOrgProposal = (projectId: string, orgId: string, number: number) =>
+  proposalAction<ProposalDetail>(projectId, orgId, number, "merged");
+
+export const implementOrgProposal = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  body: ProposalImplementRequest,
+) => proposalAction<ProposalDetail>(projectId, orgId, number, "implement", body);
+
+export const addOrgProposalMaterial = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  body: ProposalMaterialRequest,
+) => proposalAction<ProposalDetail>(projectId, orgId, number, "materials", body);
+
+export const sendOrgProposalFeedback = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  body: ProposalFeedbackRequest,
+) => proposalAction<ProposalDetail>(projectId, orgId, number, "feedback", body);
+
+/** A comment on one paragraph; pending (the commenter's own) until `requestOrgProposalChanges` batches it. */
+export const commentOrgProposal = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  body: ProposalCommentRequest,
+) => proposalAction<ProposalDetail>(projectId, orgId, number, "comments", body);
+
+/** Every pending comment of the caller becomes one batch, and the author is told in the proposals channel. */
+export const requestOrgProposalChanges = (projectId: string, orgId: string, number: number) =>
+  proposalAction<ProposalDetail>(projectId, orgId, number, "comments/request");
+
+export const editOrgProposalComment = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  commentId: string,
+  body: ProposalCommentEditRequest,
+) =>
+  apiFetch<ProposalDetail>(
+    `${orgBase(projectId, orgId)}/proposals/${number}/comments/${encodeURIComponent(commentId)}`,
+    { method: "PATCH", body },
+  );
+
+export const deleteOrgProposalComment = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  commentId: string,
+) =>
+  apiFetch<ProposalDetail>(
+    `${orgBase(projectId, orgId)}/proposals/${number}/comments/${encodeURIComponent(commentId)}`,
+    { method: "DELETE" },
+  );
+
+export const resolveOrgProposalComment = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  commentId: string,
+  body: ProposalResolveRequest,
+) =>
+  proposalAction<ProposalDetail>(
+    projectId,
+    orgId,
+    number,
+    `comments/${encodeURIComponent(commentId)}/resolve`,
+    body,
+  );
+
+/** The reader's position: everything up to `upTo` is read, so the proposal's unread count drops to what came after. */
+export const readOrgProposal = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  body: ProposalReadRequest,
+) => proposalAction<void>(projectId, orgId, number, "read", body);

@@ -91,7 +91,7 @@ Four plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills))
 | Office Productivity  | `data-analysis`, `use-firecrawl`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
 | Software Development | `software-development`, `use-claude-code`                              |
 | AI App Development   | `agent-development`, `model-development`, `skill-porting`, `agent-tuning`     |
-| Agent Company        | `agent-company`                                                               |
+| Agent Company        | `agent-company`, `agent-company-proposals`                                    |
 
 ## Supported Models
 

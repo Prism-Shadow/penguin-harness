@@ -139,6 +139,18 @@ export class ServerSettingsRepo implements Settings {
     }
   }
 
+  /** The stored token, or null when none (or an unreadable value). */
+  getGithubToken(): string | null {
+    const raw = this.get(GITHUB_TOKEN_KEY);
+    if (raw === null) return null;
+    try {
+      const value = JSON.parse(raw) as unknown;
+      return typeof value === "string" && value !== "" ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Stores the token; an empty string clears it. */
   setGithubToken(value: string): void {
     this.set(GITHUB_TOKEN_KEY, JSON.stringify(value));

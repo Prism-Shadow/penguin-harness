@@ -2,7 +2,7 @@
  * The web app's page manifest (src/module.json) and how server contributions fold in.
  */
 import { describe, expect, it } from "vitest";
-import { NAV_PAGE_KEYS, PAGES, mergePages, navPagesFor } from "../src/lib/pages";
+import { NAV_PAGE_KEYS, PAGES, mergePages, navPagesFor, orgPagesOf } from "../src/lib/pages";
 import { NAV_GROUP_KEYS } from "../src/lib/nav-group-collapse";
 import { zh } from "../src/lib/strings";
 import { NAV_ICONS } from "../src/components/ui/icons";
@@ -60,6 +60,26 @@ describe("mergePages", () => {
       admin: false,
       released: true,
     });
+  });
+
+  it("keeps a company-mode page's nav value, which the router mounts under the organization layout", () => {
+    const merged = mergePages(
+      PAGES,
+      [
+        {
+          key: "org-proposals",
+          path: "proposals/:number?",
+          nav: "org",
+          renderer: { builtin: "OrgProposalsPage" },
+        },
+      ],
+      new Set(["OrgProposalsPage"]),
+    );
+    expect(orgPagesOf(merged)).toMatchObject([
+      { key: "org-proposals", path: "proposals/:number?" },
+    ]);
+    expect(orgPagesOf(PAGES)).toEqual([]);
+    expect(navPagesFor(true).map((p) => p.key)).not.toContain("org-proposals");
   });
 
   it("skips a page with an unknown builtin renderer, and keeps a local page over a same-key remote one", () => {

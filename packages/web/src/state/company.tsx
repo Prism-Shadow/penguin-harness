@@ -33,6 +33,12 @@
  * which the pages watch to refetch — the query routes carry the durable state, the events only say
  * that it moved.
  *
+ * The proposals index lives here as well, for the same reason the channels do: the sidebar's
+ * proposals row wears the unread total, and a `proposal:<n>` capsule in any Markdown body
+ * names a proposal by its title and unread count. Both are read off one listing of the open
+ * organization, kept only while the contributions carry the proposals page (the plugin that
+ * serves the listing is what contributes the page) and refreshed on the plugin's own event.
+ *
  * State lives in a zustand vanilla store (one instance per Provider mount) like the Project
  * and Session stores; the Provider is the lifecycle component that hydrates it.
  */
@@ -45,6 +51,8 @@ import type {
   OrgChartResponse,
   OrgSessionsResponse,
   OrganizationSummary,
+  ProposalItem,
+  ProposalPluginEvent,
   ServerEvent,
 } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
@@ -69,6 +77,7 @@ import {
   storeWorkMode,
 } from "../lib/work-mode";
 import { useAuth } from "./auth";
+import { useContributions } from "./contributions";
 import { useProject } from "./project";
 
 /**
@@ -95,15 +104,47 @@ export function isCompanyEvent(ev: ServerEvent): ev is CompanyServerEvent {
   );
 }
 
+/** A plugin's own event on the user channel; the platform relays it, only the plugin's surfaces read it. */
+export type PluginServerEvent = Extract<ServerEvent, { type: "plugin" }>;
+
+export function isPluginEvent(ev: ServerEvent): ev is PluginServerEvent {
+  return ev.type === "plugin";
+}
+
+/** The plugin id the proposals page is contributed by, and whose events move the proposals index. */
+export const PROPOSALS_PLUGIN = "company-proposals";
+
+/** The page key the proposals plugin contributes; its presence is what says the plugin is installed. */
+export const PROPOSALS_PAGE_KEY = "org-proposals";
+
+/** The proposals plugin's event, once its `data` has the shape the plugin publishes. */
+export function proposalEventOf(ev: PluginServerEvent): ProposalPluginEvent | null {
+  if (ev.plugin !== PROPOSALS_PLUGIN) return null;
+  const data = ev.data as Partial<ProposalPluginEvent> | null;
+  if (
+    data === null ||
+    typeof data !== "object" ||
+    typeof data.projectId !== "string" ||
+    typeof data.orgId !== "string" ||
+    typeof data.number !== "number"
+  ) {
+    return null;
+  }
+  return data as ProposalPluginEvent;
+}
+
+/** What the company stream carries: the scheduler's families, plus what a plugin publishes about its own organization surfaces. */
+export type CompanyStreamEvent = CompanyServerEvent | PluginServerEvent;
+
 // ---------------------------------------------------------------------------
 // Event fan-out: the one SSE connection (state/sessions.tsx) publishes here, and the store
 // plus any mounted page subscribe. Module level, because the connection outlives every page.
 // ---------------------------------------------------------------------------
 
-type CompanyEventListener = (ev: CompanyServerEvent) => void;
+type CompanyEventListener = (ev: CompanyStreamEvent) => void;
 const listeners = new Set<CompanyEventListener>();
 
-export function publishCompanyEvent(ev: CompanyServerEvent): void {
+export function publishCompanyEvent(ev: CompanyStreamEvent): void {
   for (const listener of listeners) listener(ev);
 }
 
@@ -157,6 +198,13 @@ export interface CompanyVersions {
   /** A desk or ticket Session was opened by the scheduler, or a resync may have lost that news. */
   runs: number;
   budget: number;
+  /** A proposal of the open organization moved (the proposals plugin's event, or a write from this browser). */
+  proposals: number;
+}
+
+/** The two figures the sidebar's proposals row and a capsule read off the index. */
+export function proposalUnreadTotal(proposals: readonly ProposalItem[] | null): number {
+  return proposals === null ? 0 : proposals.reduce((sum, p) => sum + p.unread, 0);
 }
 
 interface CompanyStoreState {
@@ -209,6 +257,15 @@ interface CompanyStoreState {
    * followed inside the dialog. Ids only: they name tickets of the open organization.
    */
   ticketStack: readonly string[];
+  /**
+   * The open organization's proposals, as the plugin's listing last answered them — the
+   * sidebar's badge and every capsule read this one copy. Null before the first listing, and
+   * always null while the plugin is not installed (`proposalsEnabled`).
+   */
+  proposals: ProposalItem[] | null;
+  proposalsError: string | null;
+  /** The contributions carry the proposals page, so the listing exists to be read. */
+  proposalsEnabled: boolean;
   versions: CompanyVersions;
 
   setWorkMode: (mode: WorkMode) => void;
@@ -228,7 +285,11 @@ interface CompanyStoreState {
   closeTicket: () => void;
   backTicket: () => void;
   ticketsChanged: () => void;
-  applyCompanyEvent: (ev: CompanyServerEvent, userId: string | null) => void;
+  setProposalsEnabled: (enabled: boolean) => void;
+  reloadProposals: (projectId: string, orgId: string) => Promise<void>;
+  markProposalRead: (number: number) => void;
+  proposalsChanged: () => void;
+  applyCompanyEvent: (ev: CompanyStreamEvent, userId: string | null) => void;
   resync: () => void;
 }
 
@@ -292,7 +353,10 @@ export function createCompanyStore() {
     orgChartError: null,
     ticketDialog: null,
     ticketStack: [],
-    versions: { orgs: 0, messages: 0, tickets: 0, runs: 0, budget: 0 },
+    proposals: null,
+    proposalsError: null,
+    proposalsEnabled: false,
+    versions: { orgs: 0, messages: 0, tickets: 0, runs: 0, budget: 0, proposals: 0 },
 
     setWorkMode: (mode) => {
       if (mode === get().workMode) return;
@@ -347,6 +411,8 @@ export function createCompanyStore() {
         orgChartError: null,
         ticketDialog: null,
         ticketStack: [],
+        proposals: null,
+        proposalsError: null,
       });
       if (key === null || key === prev.lastOrgKey) return;
       storeLastOrgKey(key);
@@ -556,10 +622,59 @@ export function createCompanyStore() {
       set({ versions: { ...versions, tickets: versions.tickets + 1, orgs: versions.orgs + 1 } });
     },
 
+    setProposalsEnabled: (enabled) => {
+      if (enabled === get().proposalsEnabled) return;
+      // The plugin leaving takes its listing with it: a capsule must not keep naming a
+      // proposal off a page that no longer exists.
+      set(enabled ? { proposalsEnabled: true } : { proposalsEnabled: false, proposals: null });
+    },
+
+    /**
+     * Re-reads the open organization's proposals. A response for an organization the shell
+     * has since left is dropped, and a failure leaves whatever the index already holds — a
+     * capsule that names a proposal off a stale title beats one that names it by number alone.
+     */
+    reloadProposals: async (projectId, orgId) => {
+      const key = orgKey(projectId, orgId);
+      if (!get().proposalsEnabled) return;
+      try {
+        const res = await api.listOrgProposals(projectId, orgId);
+        if (get().currentOrgKey === key) set({ proposals: res.proposals, proposalsError: null });
+      } catch (e) {
+        if (get().currentOrgKey === key) set({ proposalsError: apiErrorText(e) });
+      }
+    },
+
+    /** The reader opened a proposal: its badge clears here before the server's read position is written. */
+    markProposalRead: (number) => {
+      const proposals = get().proposals;
+      if (proposals === null) return;
+      set({ proposals: proposals.map((p) => (p.number === number ? { ...p, unread: 0 } : p)) });
+    },
+
+    /** A proposal was written from this browser (a comment, an approval): the same bump the plugin's event causes. */
+    proposalsChanged: () => {
+      const versions = get().versions;
+      set({ versions: { ...versions, proposals: versions.proposals + 1 } });
+    },
+
     applyCompanyEvent: (ev, userId) => {
       const state = get();
-      const key = orgKey(ev.projectId, ev.orgId);
       const versions = { ...state.versions };
+      if (ev.type === "plugin") {
+        // Only the proposals plugin's events are read here, and only for the organization
+        // open: another organization's proposals are re-read when it is opened.
+        const proposal = proposalEventOf(ev);
+        if (
+          proposal !== null &&
+          orgKey(proposal.projectId, proposal.orgId) === state.currentOrgKey
+        ) {
+          versions.proposals += 1;
+          set({ versions });
+        }
+        return;
+      }
+      const key = orgKey(ev.projectId, ev.orgId);
       if (ev.type === "org_run") {
         versions.runs += 1;
         versions.orgs += 1;
@@ -657,6 +772,19 @@ interface CompanyContextValue {
   backTicket: () => void;
   /** Say that a ticket was written here, so every surface that lists tickets refetches. */
   ticketsChanged: () => void;
+  /** The proposals plugin contributed its page: the proposals index is read and the sidebar's row exists. */
+  proposalsEnabled: boolean;
+  /** The open organization's proposals; null until the first listing (and always null without the plugin). */
+  proposals: ProposalItem[] | null;
+  proposalsError: string | null;
+  /** Unread events summed over the open organization's proposals — the sidebar row's badge. */
+  unreadProposals: number;
+  /** The index entry a `proposal:<n>` capsule names, or null when the listing has no such number. */
+  proposalOf: (number: number) => ProposalItem | null;
+  reloadProposals: () => Promise<void>;
+  markProposalRead: (number: number) => void;
+  /** Say that a proposal was written here, so the page and the badge refetch. */
+  proposalsChanged: () => void;
   versions: CompanyVersions;
   reloadOrganizations: () => Promise<void>;
   reloadOrgSessions: () => Promise<void>;
@@ -667,6 +795,7 @@ const CompanyContext = createContext<CompanyContextValue | null>(null);
 export function CompanyProvider({ children }: { children: ReactNode }) {
   const { user, companyMode: serverEnabled } = useAuth();
   const { projects, currentProject } = useProject();
+  const { pages: contributedPages } = useContributions();
   const [store] = useState(createCompanyStore);
   const state = useStore(store);
   const userId = user?.userId ?? null;
@@ -788,6 +917,30 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   );
   useEffect(() => subscribeCompanyResync(() => store.getState().resync()), [store]);
 
+  // The proposals plugin announces itself as a contributed company-mode page; while that page
+  // is in the table the index is worth reading, and its listing is re-read when the
+  // organization changes and whenever the plugin's event says a proposal moved.
+  const proposalsEnabled = contributedPages.some(
+    (p) => p.nav === "org" && p.key === PROPOSALS_PAGE_KEY,
+  );
+  useEffect(() => {
+    store.getState().setProposalsEnabled(proposalsEnabled);
+  }, [store, proposalsEnabled]);
+  const proposalsVersion = versions.proposals;
+  useEffect(() => {
+    const open = parseOrgKey(currentOrgKey);
+    if (!serverEnabled || !proposalsEnabled || open === null || !orgsLoaded) return;
+    void store.getState().reloadProposals(open.projectId, open.orgId);
+  }, [
+    store,
+    serverEnabled,
+    proposalsEnabled,
+    currentOrgKey,
+    orgsLoaded,
+    openMachine,
+    proposalsVersion,
+  ]);
+
   const value = useMemo<CompanyContextValue>(() => {
     const available = serverEnabled && state.personalEnabled;
     const shownKey = state.currentOrgKey ?? state.lastOrgKey;
@@ -835,6 +988,19 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       closeTicket: state.closeTicket,
       backTicket: state.backTicket,
       ticketsChanged: state.ticketsChanged,
+      proposalsEnabled: state.proposalsEnabled,
+      proposals: state.proposals,
+      proposalsError: state.proposalsError,
+      unreadProposals: proposalUnreadTotal(state.proposals),
+      proposalOf: (number) => state.proposals?.find((p) => p.number === number) ?? null,
+      reloadProposals: () => {
+        const open = parseOrgKey(state.currentOrgKey);
+        return open === null
+          ? Promise.resolve()
+          : state.reloadProposals(open.projectId, open.orgId);
+      },
+      markProposalRead: state.markProposalRead,
+      proposalsChanged: state.proposalsChanged,
       versions: state.versions,
       reloadOrganizations: () =>
         state.reloadOrganizations(projectIdsKey === "" ? [] : projectIdsKey.split(",")),
@@ -850,4 +1016,9 @@ export function useCompany(): CompanyContextValue {
   const ctx = useContext(CompanyContext);
   if (!ctx) throw new Error("useCompany must be used within a CompanyProvider");
   return ctx;
+}
+
+/** The company context where there is one, null where there is not — for a Markdown element that may render outside the app's tree. */
+export function useCompanyOptional(): CompanyContextValue | null {
+  return useContext(CompanyContext);
 }

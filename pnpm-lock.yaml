@@ -136,6 +136,9 @@ importers:
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
+      '@penguinharness/agent-company-proposals':
+        specifier: workspace:*
+        version: link:../../plugins/agent-company-proposals
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
@@ -215,6 +218,9 @@ importers:
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
+      '@penguinharness/agent-company-proposals':
+        specifier: workspace:*
+        version: link:../../plugins/agent-company-proposals
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
@@ -582,6 +588,8 @@ importers:
 
   plugins/agent-company: {}
 
+  plugins/agent-company-proposals: {}
+
   plugins/agent-development: {}
 
   plugins/agent-tuning: {}
@@ -597,6 +605,27 @@ importers:
       '@prismshadow/penguin-server':
         specifier: workspace:*
         version: file:packages/server(supports-color@10.2.2)
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+
+  plugins/company-proposals:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-plugin-test':
+        specifier: workspace:*
+        version: link:../../packages/plugin-test
+      '@prismshadow/penguin-server':
+        specifier: workspace:*
+        version: file:packages/server(supports-color@10.2.2)
+      hono:
+        specifier: ^4.12.34
+        version: 4.12.34
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -1560,6 +1589,9 @@ packages:
   '@peculiar/webcrypto@1.7.1':
     resolution: {integrity: sha512-ODOov0sGMJMf3jPonOkgGqPknTsu+DdQ7kD++gz8aI+aFMOMHFbWAA2taqXXVTdP+OTOQR/znGvSpmkeI0WTYQ==}
     engines: {node: '>=14.18.0'}
+
+  '@penguinharness/agent-company-proposals@file:plugins/agent-company-proposals':
+    resolution: {directory: plugins/agent-company-proposals, type: directory}
 
   '@penguinharness/agent-company@file:plugins/agent-company':
     resolution: {directory: plugins/agent-company, type: directory}
@@ -5474,6 +5506,8 @@ snapshots:
       tslib: 2.8.1
       webcrypto-core: 1.9.2
 
+  '@penguinharness/agent-company-proposals@file:plugins/agent-company-proposals': {}
+
   '@penguinharness/agent-company@file:plugins/agent-company': {}
 
   '@penguinharness/agent-development@file:plugins/agent-development': {}
@@ -5570,6 +5604,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
       '@penguinharness/agent-company': file:plugins/agent-company
+      '@penguinharness/agent-company-proposals': file:plugins/agent-company-proposals
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
       '@penguinharness/continual-learning': file:plugins/continual-learning
@@ -5598,6 +5633,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
       '@penguinharness/agent-company': file:plugins/agent-company
+      '@penguinharness/agent-company-proposals': file:plugins/agent-company-proposals
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-tuning': file:plugins/agent-tuning
       '@penguinharness/continual-learning': file:plugins/continual-learning

@@ -15,6 +15,7 @@ export type { Terminals } from "../terminal/manager.js";
 export type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 export type { AgentService } from "../services/agent-service.js";
 export type { AgentConfigService } from "../services/agent-config-service.js";
+export type { AgentLifecycle } from "../mechanisms/agents.js";
 export type {
   Messaging,
   MessagingSlots,
@@ -38,6 +39,7 @@ export type { Settings } from "../mechanisms/settings.js";
 export type { SessionIndex } from "../mechanisms/sessions.js";
 export type { AgentIndex, Projects, ProjectConfigStore } from "../mechanisms/projects.js";
 export type { Errors } from "../mechanisms/observability.js";
+export type { OrgActor, OrgEmployeeView, OrgGateway, OrgView } from "../mechanisms/organization.js";
 export type {
   PluginConfig,
   PluginConfigField,

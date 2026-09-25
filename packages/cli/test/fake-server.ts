@@ -98,6 +98,8 @@ export interface FakeOrgState {
   desks: Map<string, Json>;
   /** The `unpriced` flag of the finance response. */
   unpriced: boolean;
+  /** The company-proposals plugin's ledger, keyed by number; absent (undefined) = the plugin is not installed, every proposals route is a plain 404. */
+  proposals?: Map<number, Json>;
 }
 
 /** Who a fake request is attributed to, or the error response that settles it. */
@@ -167,6 +169,54 @@ function mentionsOf(text: string): string[] {
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value !== "";
+
+/**
+ * The plugin's agent-facing rendering, small enough to keep in step here: each section's
+ * source (paragraphs joined by a blank line) with every listed comment's range wrapped in
+ * `⟦<id>⟧…⟦/<id>⟧`, then the comments by id.
+ */
+function markedProposalText(
+  proposal: Record<string, Json>,
+  comments: ReadonlyArray<Record<string, Json>>,
+): string {
+  const out: string[] = [];
+  for (const section of (proposal.sections ?? []) as Array<Record<string, Json>>) {
+    const source = ((section.paragraphs ?? []) as Array<Record<string, Json>>)
+      .map((p) => String(p.text))
+      .join("\n\n");
+    const marks = comments
+      .filter((c) => c.sectionId === section.id && c.revision === proposal.revision)
+      .flatMap((c) => {
+        const range = c.range as { start: number; end: number };
+        return [
+          { at: range.start, open: true, id: String(c.id) },
+          { at: range.end, open: false, id: String(c.id) },
+        ];
+      })
+      .sort((a, b) => a.at - b.at || (a.open === b.open ? 0 : a.open ? 1 : -1));
+    let text = "";
+    let at = 0;
+    for (const m of marks) {
+      text += source.slice(at, m.at) + (m.open ? `⟦${m.id}⟧` : `⟦/${m.id}⟧`);
+      at = m.at;
+    }
+    out.push(`## ${section.heading}`, "", text + source.slice(at), "");
+  }
+  if (comments.length > 0) {
+    out.push("### Comments", "");
+    for (const c of comments) {
+      const resolved = c.resolved as { text?: string } | undefined;
+      const state =
+        resolved !== undefined
+          ? `resolved: ${resolved.text === "" ? "(no note)" : resolved.text}`
+          : c.batchId === null
+            ? "pending"
+            : "open";
+      out.push(`⟦${c.id}⟧ ${c.by} (${state}): ${c.text}`);
+    }
+  }
+  return `${out.join("\n").trimEnd()}\n`;
+}
 
 export class FakeServer {
   /** Every request, in order: the path without its query, the query on its own, and the parsed body. */
@@ -390,6 +440,7 @@ export class FakeServer {
       handbook: new Map([["README.md", `# ${overrides.name ?? "Org"} — organization handbook\n`]]),
       desks: new Map(),
       unpriced: false,
+      proposals: new Map(),
       ...overrides,
     };
     this.orgs.set(org.orgId, org);
@@ -1013,7 +1064,203 @@ export class FakeServer {
       });
     }
 
+    if (a === "proposals") return this.handleProposals(method, org, b, c, segments[4], body, url);
+
     return this.error(404, "not_found", `No fake route for ${method} ${url.pathname}`);
+  }
+
+  // ---- company mode: proposals (the company-proposals plugin's routes) ----
+
+  /** Adds a proposal (ProposalDetail shape) to an organization whose plugin is installed. */
+  addProposal(orgId: string, item: Json & { number: number }): Json {
+    const org = this.orgs.get(orgId)!;
+    if (org.proposals === undefined) org.proposals = new Map();
+    const proposal: Json = {
+      title: `Proposal ${item.number}`,
+      status: "drafting",
+      revision: 0,
+      author: "dev1",
+      implementer: null,
+      delegatedBy: "admin",
+      createdAt: ORG_NOW,
+      updatedAt: ORG_NOW,
+      unread: 0,
+      pendingComments: 0,
+      materials: [],
+      approvedRevision: null,
+      brief: "",
+      root: "",
+      scope: [],
+      sections: [],
+      comments: [],
+      events: [],
+      sessions: [],
+      seq: 0,
+      ...item,
+    };
+    org.proposals.set(item.number, proposal);
+    return proposal;
+  }
+
+  /**
+   * The plugin's contract, reduced to what the CLI tests look at: every write answers the
+   * proposal's detail, `publish` splits the Markdown into `## ` sections and bumps the
+   * revision, and an organization without the plugin answers nothing but a plain 404.
+   */
+  private handleProposals(
+    method: string,
+    org: FakeOrgState,
+    b: string | undefined,
+    c: string | undefined,
+    d: string | undefined,
+    body: Json | undefined,
+    url: URL,
+  ): Response {
+    const proposals = org.proposals;
+    if (proposals === undefined) {
+      return this.error(404, "not_found", `No route for ${method} ${url.pathname}`);
+    }
+    const list = (): Json[] => [...proposals.values()];
+    if (b === undefined) {
+      if (method === "POST") {
+        if (!isNonEmptyString(body?.brief)) return this.badRequest("brief is required.");
+        // The author defaults to the calling employee; a person has to name one.
+        const author = isNonEmptyString(body?.author)
+          ? body.author
+          : isNonEmptyString(body?.agentId)
+            ? body.agentId
+            : null;
+        if (author === null) return this.badRequest("author is required.");
+        const number = proposals.size + 1;
+        const created = this.addProposal(org.orgId, {
+          number,
+          author,
+          brief: body.brief,
+          ...(isNonEmptyString(body.title) ? { title: body.title } : {}),
+          events: [{ seq: 1, at: ORG_NOW, kind: "created", by: "user:admin" }],
+          seq: 1,
+        });
+        return this.json(created, 201);
+      }
+      return this.json({ proposals: list(), channelId: "proposals" });
+    }
+    const number = Number(b);
+    const proposal = proposals.get(number);
+    if (!proposal) {
+      return this.error(404, "proposal_not_found", `Proposal does not exist: #${b}`);
+    }
+    const bump = (kind: string, extra: Json = {}): Json => {
+      const seq = Number(proposal.seq) + 1;
+      proposal.seq = seq;
+      proposal.events = [
+        ...(proposal.events as Json[]),
+        {
+          seq,
+          at: ORG_NOW,
+          kind,
+          by: isNonEmptyString(body?.agentId) ? `agent:${body.agentId}` : "user:admin",
+          ...extra,
+        },
+      ];
+      return proposal;
+    };
+    if (c === undefined) {
+      if (method === "GET") return this.json(proposal);
+      if (method === "PUT") {
+        if (!isNonEmptyString(body?.markdown)) return this.badRequest("markdown is required.");
+        const revision = Number(proposal.revision) + 1;
+        const title = /^title:\s*(.+)$/m.exec(body.markdown)?.[1]?.trim();
+        const sections = [
+          ...body.markdown.matchAll(/^## (.+)$\n+([\s\S]*?)(?=^## |$(?![\r\n]))/gm),
+        ].map((m, i) => ({
+          id: `s${i + 1}`,
+          heading: m[1]!.trim(),
+          paragraphs: m[2]!
+            .split(/\n\s*\n/)
+            .map((t) => t.trim())
+            .filter((t) => t !== "")
+            .map((text, j) => ({ id: `p${i + 1}-${j + 1}`, text })),
+        }));
+        Object.assign(proposal, { revision, sections, ...(title !== undefined ? { title } : {}) });
+        return this.json(bump("revised", { revision }));
+      }
+    }
+    if (method === "GET" && c === "comments" && d === undefined) {
+      // The comments the caller may see, with the text marked the way the plugin marks it
+      // for an agent: `⟦<id>⟧…⟦/<id>⟧` around each passage, then the comments by id.
+      const pending = url.searchParams.get("pending") === "1";
+      const all = proposal.comments as Array<Record<string, Json>>;
+      const comments = pending
+        ? all.filter((x) => x.batchId !== null && x.resolved === undefined)
+        : all;
+      return this.json({
+        number,
+        comments,
+        text: markedProposalText(proposal as Record<string, Json>, comments),
+      });
+    }
+    if (method !== "POST") return this.error(404, "not_found", "No such route.");
+    switch (c) {
+      case "ready":
+      case "approved":
+      case "approve":
+      case "merged":
+      case "reject": {
+        const status =
+          c === "approve"
+            ? "approved"
+            : c === "reject"
+              ? "rejected"
+              : c === "ready"
+                ? "ready"
+                : "merged";
+        if (c === "reject" && !isNonEmptyString(body?.reason)) {
+          return this.badRequest("reason is required.");
+        }
+        proposal.status = status;
+        return this.json(bump(status));
+      }
+      case "implement": {
+        // No implementer named = the author builds its own proposal.
+        const implementer = isNonEmptyString(body?.agentId)
+          ? body.agentId
+          : String(proposal.author);
+        const s = this.addSession({ agentId: implementer });
+        proposal.implementer = implementer;
+        proposal.sessions = [...(proposal.sessions as string[]), String(s.sessionId)];
+        return this.json(bump("implementation_started"));
+      }
+      case "materials": {
+        if (!isNonEmptyString(body?.kind) || !isNonEmptyString(body?.url)) {
+          return this.badRequest("kind and url are required.");
+        }
+        const label = isNonEmptyString(body.label) ? body.label : body.url;
+        proposal.materials = [
+          ...(proposal.materials as Json[]),
+          { kind: body.kind, label, url: body.url, by: "agent:dev1", at: ORG_NOW },
+        ];
+        return this.json(bump("material_added", { text: label }));
+      }
+      case "feedback": {
+        if (!isNonEmptyString(body?.text)) return this.badRequest("text is required.");
+        return this.json(
+          bump(body.runtime === true ? "runtime_feedback" : "feedback", { text: body.text }),
+        );
+      }
+      case "comments": {
+        if (d === "request" || d === undefined) return this.json(bump("changes_requested"));
+        const comment = (proposal.comments as Json[]).find((x) => x.id === d);
+        if (!comment) return this.error(404, "comment_not_found", `Comment does not exist: ${d}`);
+        comment.resolved = {
+          by: "agent:dev1",
+          at: ORG_NOW,
+          text: isNonEmptyString(body?.text) ? body.text : "",
+        };
+        return this.json(bump("resolved"));
+      }
+      default:
+        return this.error(404, "not_found", `No fake route for POST proposals/${c}`);
+    }
   }
 
   // ---- company mode: channels ----
