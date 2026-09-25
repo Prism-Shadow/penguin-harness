@@ -48,7 +48,7 @@ import type { SessionRow } from "../src/db/repos/sessions.js";
 import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import type { ErrorRecordArgs, ErrorSink } from "../src/runtime/error-recorder.js";
-import { SessionManager } from "../src/runtime/session-manager.js";
+import { SessionManager, FOLLOW_UP_QUEUE_LIMIT } from "../src/runtime/session-manager.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
@@ -789,6 +789,42 @@ describe("session-manager", () => {
     const states = serverEvents(events).filter((e) => e.type === "task_state");
     expect(states.some((s) => s.queued === 2)).toBe(true);
     expect(states[states.length - 1]).toMatchObject({ state: "idle", queued: 0 });
+  });
+
+  it("queueIfBusy: a full queue refuses with 429 instead of growing without bound", async () => {
+    const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
+    const first = await manager.startTask("session-1", [userText("task 1")]);
+    expect(first.queued).toBe(false);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+
+    // Fill the queue to the cap; every entry still queues as before.
+    for (let i = 0; i < FOLLOW_UP_QUEUE_LIMIT; i++) {
+      const q = await manager.startTask("session-1", [userText(`follow-up ${i}`)], {
+        queueIfBusy: true,
+      });
+      expect(q.queued).toBe(true);
+    }
+    expect(manager.pendingFollowUpCount("session-1")).toBe(FOLLOW_UP_QUEUE_LIMIT);
+
+    // The next one is refused loudly — not queued, not started, nothing dropped silently.
+    const err = await manager
+      .startTask("session-1", [userText("overflow")], { queueIfBusy: true })
+      .catch((e: unknown) => e);
+    expect((err as HttpError).status).toBe(429);
+    expect((err as HttpError).code).toBe("queue_full");
+    expect(manager.pendingFollowUpCount("session-1")).toBe(FOLLOW_UP_QUEUE_LIMIT);
+    // Without queueIfBusy the 409 mutual exclusion is unchanged.
+    const conflict = await manager.startTask("session-1", [userText("x")]).catch((e: unknown) => e);
+    expect((conflict as HttpError).code).toBe("task_in_progress");
+
+    // Draining one frees a slot for exactly one more.
+    manager.abortTask("session-1");
+    await waitFor(() => manager.pendingFollowUpCount("session-1") === FOLLOW_UP_QUEUE_LIMIT - 1);
+    const refill = await manager.startTask("session-1", [userText("refill")], {
+      queueIfBusy: true,
+    });
+    expect(refill.queued).toBe(true);
+    expect(manager.pendingFollowUpCount("session-1")).toBe(FOLLOW_UP_QUEUE_LIMIT);
   });
 
   it("queueIfBusy during compaction: the queue drains once the compaction ends", async () => {
