@@ -89,6 +89,42 @@ describe("activity media planning", () => {
     ).toThrow(/Word timings/);
   });
 
+  it("keeps a narration's chosen voice and refuses one anywhere else", () => {
+    const usage = { sceneId: "intro", sourceKey: "hi", occurrence: 1, sceneOccurrenceCount: 1 };
+    const address = { productCode: "words", refNum: 1 };
+    const narration = {
+      key: "hi",
+      type: "audio",
+      description: "Greeting",
+      script: "Hello",
+      voice: "Fenrir",
+      usages: [usage],
+    };
+    const check = (asset: Record<string, unknown>) =>
+      validateManifest({ ...address, assets: { "en-US": [asset] } }, address);
+    expect(check(narration).assets["en-US"]![0]).toEqual(narration);
+    const { voice: _voice, ...plain } = narration;
+    expect(check(plain).assets["en-US"]![0]).not.toHaveProperty("voice");
+    expect(() =>
+      check({ key: "cat", type: "image", description: "A cat", voice: "Kore", usages: [usage] }),
+    ).toThrow(/Only a narration may name a voice/);
+    expect(() =>
+      check({
+        key: "song",
+        type: "audio",
+        description: "Theme",
+        kind: "music",
+        channel: "music",
+        loop: true,
+        volume: 0.5,
+        voice: "Kore",
+        usages: [usage],
+      }),
+    ).toThrow(/Only a narration may name a voice/);
+    for (const voice of ["", "x".repeat(65), "Kore<script>", 5])
+      expect(() => check({ ...narration, voice })).toThrow(/Only a narration may name a voice/);
+  });
+
   it("coalesces reused scene assets without claiming target paths are existing media", () => {
     const plan = planMedia(activity());
     expect(plan.manifest.assets["en-US"]).toHaveLength(2);

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { contentRevision, type ActivityDetail } from "./domain.js";
 import { HttpError } from "../http/errors.js";
+import { SPEECH_MODEL, isSpeechVoice } from "./voice-catalogue.js";
 
 export interface AudioTarget {
   language: string;
@@ -17,8 +18,7 @@ export interface AudioResult {
   mimeType: "audio/wav";
 }
 export const AUDIO_MAX_BYTES = 20 * 1024 * 1024;
-export const SPEECH_MODEL = "gemini-3.1-flash-tts-preview";
-export const SPEECH_VOICES = ["Kore", "Puck", "Charon", "Fenrir", "Aoede"] as const;
+export { SPEECH_MODEL, SPEECH_VOICES } from "./voice-catalogue.js";
 
 export function audioTarget(
   activity: ActivityDetail,
@@ -38,7 +38,7 @@ export function audioTarget(
       "audio_invalid",
       "Select an audio asset with a saved script of 1–5000 characters.",
     );
-  if (!(SPEECH_VOICES as readonly string[]).includes(input.voice))
+  if (!isSpeechVoice(input.voice))
     throw new HttpError(422, "audio_invalid", "Select a supported speech voice.");
   return {
     language: input.language,

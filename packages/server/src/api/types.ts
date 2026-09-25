@@ -4859,6 +4859,7 @@ export type {
   PipelineNote,
 } from "../activities/pipeline-types.js";
 export type { ReadinessCheck, ReadinessLevel } from "../activities/build-readiness.js";
+export type { VoiceOption } from "../activities/voice-catalogue.js";
 
 // ---------------------------------------------------------------------------
 // Coding agents (Agent Client Protocol)

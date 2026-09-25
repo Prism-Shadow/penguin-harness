@@ -516,12 +516,31 @@ export type Strings = {
     speechScript: string;
     speechScriptHint: string;
     acceptedAudio: string;
-    speechVoice: string;
     regenerateSpeech: string;
     generateSpeech: string;
     speechCandidates: string;
     speechCandidate: string;
     acceptSpeech: string;
+    voicePicker: {
+      label: string;
+      search: string;
+      provider: string;
+      model: string;
+      language: string;
+      anyValue: string;
+      resetFilters: string;
+      count: (n: number) => string;
+      id: (id: string) => string;
+      allLanguages: string;
+      preview: (voice: string) => string;
+      pause: (voice: string) => string;
+      mixed: string;
+      default: string;
+      applyToAll: string;
+      applied: (n: number) => string;
+      appliesNext: string;
+      noMatches: string;
+    };
     audioPlayback: {
       type: string;
       kinds: Record<"speech" | "music" | "sfx", string>;

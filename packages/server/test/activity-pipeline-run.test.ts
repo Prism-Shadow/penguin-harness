@@ -206,7 +206,7 @@ function world(
     now: () => "2026-09-23T12:00:00Z",
     newId: () => "pipeline_1",
   });
-  return { runner, activity, runs, started, cancelled, plans: () => plans, generation };
+  return { runner, activity, runs, started, cancelled, plans: () => plans, generation, asset };
 }
 
 describe("running the stages", () => {
@@ -394,6 +394,24 @@ describe("running the stages", () => {
     await done;
     expect(w.started).toEqual(["media-text:ro-RO:hello", "audio:ro-RO:hello"]);
     expect(w.runner.status("act")!.status).toBe("succeeded");
+  });
+
+  it("speaks each narration in its own saved voice, and the run's voice where none is saved", async () => {
+    const w = world();
+    await w.runner.start("proj", "act", { selection: "all", agentId: "agent" }).done;
+    for (const language of ["en-US", "es-MX"]) delete w.asset(language, "hello").path;
+    w.asset("en-US", "hello").voice = "Fenrir";
+    w.asset("es-MX", "hello").voice = "Retired voice";
+    const before = w.runs.length;
+    await w.runner.start("proj", "act", { selection: "speech", agentId: "agent", voice: "Puck" })
+      .done;
+    expect(w.runner.status("act")!.status).toBe("succeeded");
+    expect(
+      w.runs.slice(before).map((run) => [run.audio!.language, (run.audio as any).voice]),
+    ).toEqual([
+      ["en-US", "Fenrir"],
+      ["es-MX", "Puck"],
+    ]);
   });
 
   it("limits targets to the scope's language and asset", () => {

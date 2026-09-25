@@ -13,7 +13,7 @@ import { hostOnly, requestAuthority, resolvePreviewTarget } from "../services/pr
 import { playBase } from "./play-routes.js";
 import { requestOrigin } from "../http/routes/model-oauth.js";
 import { findWafRoot } from "./waf-module.js";
-import { SPEECH_MODEL, SPEECH_VOICES } from "./audio.js";
+import { SPEECH_CATALOGUE, SPEECH_MODEL, SPEECH_VOICES } from "./voice-catalogue.js";
 import { IMAGE_MODEL } from "./generated-image.js";
 import { UPLOAD_MAX_BYTES } from "./upload.js";
 import { BUNDLE_FILE_NAME, BUNDLE_MAX_ITEMS } from "./media-bundle.js";
@@ -206,6 +206,7 @@ export class ActivityRoutes {
         provider: "Gemini",
         model: SPEECH_MODEL,
         voices: SPEECH_VOICES,
+        catalogue: SPEECH_CATALOGUE,
         vaultKey: "GEMINI_API_KEY",
       }),
     );

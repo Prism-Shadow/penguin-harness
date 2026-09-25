@@ -10,6 +10,7 @@ import type {
   PipelineSelection,
   PipelineState,
   UploadedMedia,
+  VoiceOption,
 } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
 import { toastAttention, toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
@@ -68,6 +69,7 @@ import { latestModuleRun } from "./preview";
 import { ActivityList } from "./activity-list";
 import { ProjectMediaView } from "./project-media-view";
 import { pushRecent, readRecent } from "./recent-activities";
+import { applyVoice, optionsFromVoices, voiceFor } from "./voice-catalogue";
 
 const basePath = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/activities`;
 const pretty = (value: unknown) => (value ? JSON.stringify(value, null, 2) : "");
@@ -368,8 +370,10 @@ function ActivityEditor({
   }, []);
   const [bookMode, setBookMode] = useState<"" | "readAlong" | "decodable">("");
   const [wafRoot, setWafRoot] = useState("");
-  const [voices, setVoices] = useState<string[]>([]);
-  // The voice bulk speech, retries and the stage sequence speak with; one per session.
+  const [voiceOptions, setVoiceOptions] = useState<VoiceOption[]>([]);
+  const voices = voiceOptions.map((option) => option.id);
+  // The voice bulk speech, retries and the stage sequence speak with where a narration names
+  // none of its own; one per session.
   const [bulkVoiceChoice, setBulkVoice] = useState("");
   const bulkVoice = voices.includes(bulkVoiceChoice) ? bulkVoiceChoice : (voices[0] ?? "");
   const [uploads, setUploads] = useState<UploadedMedia[]>([]);
@@ -418,9 +422,17 @@ function ActivityEditor({
   useEffect(() => {
     if (!available || !editable) return;
     let cancelled = false;
-    void apiFetch<{ voices: string[] }>(`${basePath(projectId)}/speech-setup`)
+    void apiFetch<{ voices: string[]; model?: string; catalogue?: VoiceOption[] }>(
+      `${basePath(projectId)}/speech-setup`,
+    )
       .then((value) => {
-        if (!cancelled) setVoices(value.voices);
+        // An older server sends the bare names only.
+        if (!cancelled)
+          setVoiceOptions(
+            Array.isArray(value.catalogue)
+              ? value.catalogue
+              : optionsFromVoices(value.voices, value.model),
+          );
       })
       .catch((e) => {
         if (!cancelled) setError(apiErrorText(e));
@@ -559,7 +571,12 @@ function ActivityEditor({
     }
   }
   /** Save one part of the draft. `quiet` leaves out the toast, for an autosave. */
-  async function save(kind: "description" | "spec" | "media", quiet = false): Promise<boolean> {
+  async function save(
+    kind: "description" | "spec" | "media",
+    quiet = false,
+    /** The manifest to save instead of the editor's text, which a state update has not reached yet. */
+    manifest?: AssetManifest,
+  ): Promise<boolean> {
     if (!detail) return false;
     return action(async () => {
       const draft = await apiFetch<ActivityDraft>(
@@ -571,7 +588,7 @@ function ActivityEditor({
             ...(kind === "description"
               ? { description }
               : kind === "media"
-                ? { manifest: JSON.parse(media) }
+                ? { manifest: manifest ?? JSON.parse(media) }
                 : { spec: JSON.parse(spec) }),
           },
         },
@@ -688,7 +705,14 @@ function ActivityEditor({
             expectedRevision: detail.draft.contentRevision,
             language: speechQueue!.language,
             assetKey: next,
-            voice: speechQueue!.voice,
+            // A narration speaks in its own saved voice; the queue's voice fills the rest.
+            voice: voiceFor(
+              detail.draft.mediaPlan?.manifest.assets[speechQueue!.language]?.find(
+                (asset) => asset.key === next,
+              ),
+              voiceOptions,
+              speechQueue!.voice,
+            ),
           },
         });
         if (cancelled || !alive.current) return;
@@ -714,7 +738,17 @@ function ActivityEditor({
     return () => {
       cancelled = true;
     };
-  }, [speechQueue, running, busy, dirty, selectedAgent, codingAgentId, detail, endpoint]);
+  }, [
+    speechQueue,
+    running,
+    busy,
+    dirty,
+    selectedAgent,
+    codingAgentId,
+    detail,
+    endpoint,
+    voiceOptions,
+  ]);
   let editedManifest: AssetManifest | null = null;
   try {
     const value = JSON.parse(media);
@@ -1243,7 +1277,8 @@ function ActivityEditor({
           canAccept={editable && available && !busy && !running && !dirty}
           canPreview={editable && available && !busy && !dirty}
           wafRoot={wafRoot}
-          voices={voices}
+          voices={voiceOptions}
+          defaultVoice={bulkVoice}
           onChange={(value) => setMedia(pretty(value))}
           onGenerateAudio={(lang, assetKey, voice) =>
             startRun("generate-audio", { language: lang, assetKey, voice })
@@ -1487,9 +1522,24 @@ function ActivityEditor({
                     return { language: code, ready: tally.ready, total: tally.total };
                   })}
                   onLanguage={setLanguage}
-                  voices={voices}
+                  voices={voiceOptions}
                   voice={bulkVoice}
                   onVoice={setBulkVoice}
+                  voiceDisabled={busy || !available || running || pipelineRunning}
+                  onApplyVoiceToAll={(voice) => {
+                    const updated = structuredClone(editedManifest);
+                    const count = applyVoice(updated.assets[language] ?? [], voice);
+                    if (!count) return;
+                    // The choice shows at once and stays in the editor if the save fails.
+                    setMedia(pretty(updated));
+                    void save("media", true, updated).then((ok) => {
+                      if (ok && alive.current)
+                        announce({
+                          kind: "success",
+                          text: S.activities.voicePicker.applied(count),
+                        });
+                    });
+                  }}
                   sources={
                     language === languageSetup.defaultLanguage
                       ? undefined
@@ -1525,7 +1575,15 @@ function ActivityEditor({
                     })
                   }
                   onRetry={(key) =>
-                    startRun("generate-audio", { language, assetKey: key, voice: bulkVoice })
+                    startRun("generate-audio", {
+                      language,
+                      assetKey: key,
+                      voice: voiceFor(
+                        editedManifest.assets[language]?.find((asset) => asset.key === key),
+                        voiceOptions,
+                        bulkVoice,
+                      ),
+                    })
                   }
                 />
               )}

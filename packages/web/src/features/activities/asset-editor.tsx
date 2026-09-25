@@ -8,10 +8,10 @@ import type {
   AssetManifest,
   ActivityRunSummary,
   UploadedMedia,
+  VoiceOption,
 } from "@prismshadow/penguin-server/api";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
 import { S } from "../../lib/strings";
 import { toneInk, toneSurface } from "../../lib/tone";
 import { ImagePreview } from "./image-preview";
@@ -24,6 +24,8 @@ import { WaveformPlayer } from "./waveform-player";
 import { NarrationLanguages } from "./narration-languages";
 import { MediaTextReview } from "./media-text-review";
 import type { SceneAssetSelection } from "./scene-asset-tree";
+import { VoicePicker } from "./voice-picker";
+import { voiceFor } from "./voice-catalogue";
 
 export function AssetEditor({
   manifest,
@@ -42,6 +44,7 @@ export function AssetEditor({
   wafRoot,
   revision,
   voices,
+  defaultVoice,
   mediaDirty,
   onChange,
   onSaveMedia,
@@ -76,7 +79,10 @@ export function AssetEditor({
   canPreview: boolean;
   wafRoot: string;
   revision: string;
-  voices: string[];
+  /** The voices a narration can be spoken in. */
+  voices: readonly VoiceOption[];
+  /** The voice a narration naming none of its own is generated with. */
+  defaultVoice: string;
   /** Whether the manifest holds edits the server has not seen. */
   mediaDirty: boolean;
   onChange: (manifest: AssetManifest) => void;
@@ -106,7 +112,6 @@ export function AssetEditor({
     next: { label: string; open: () => void } | null;
   };
 }) {
-  const [voiceChoice, setVoice] = useState("");
   // An upload that would replace a bound file, held beside it until the author chooses.
   const [pendingUpload, setPendingUpload] = useState<{
     language: string;
@@ -117,7 +122,8 @@ export function AssetEditor({
   const [kept, setKept] = useState<ReadonlySet<string>>(new Set());
   const group = manifest.assets[language] ?? [];
   const asset = group.find((entry) => entry.key === selection?.key);
-  const voice = voices.includes(voiceChoice) ? voiceChoice : (voices[0] ?? "");
+  // A narration speaks in its own saved voice; one naming none uses the page's default.
+  const voice = voiceFor(asset, voices, defaultVoice);
   const imageUrl = `${endpoint}/media-image?${new URLSearchParams({
     language,
     assetKey: asset?.key ?? "",
@@ -522,19 +528,19 @@ export function AssetEditor({
                 )}
                 {narration && editable && (
                   <>
-                    <Select
-                      size="sm"
-                      label={S.activities.speechVoice}
-                      value={voice}
+                    <VoicePicker
+                      options={voices}
+                      value={voice || null}
+                      label={S.activities.voicePicker.label}
                       disabled={disabled}
-                      onChange={(event) => setVoice(event.target.value)}
-                    >
-                      {voices.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                    </Select>
+                      hint={asset.path ? S.activities.voicePicker.appliesNext : undefined}
+                      onChange={(id) =>
+                        edit((entry) => {
+                          // The bound clip keeps the voice it was recorded in, and its timings.
+                          entry.voice = id;
+                        })
+                      }
+                    />
                     <Button
                       size="sm"
                       disabled={

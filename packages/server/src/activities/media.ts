@@ -13,6 +13,11 @@ export interface MediaAsset {
    */
   translatedFrom?: string;
   /**
+   * The voice a narration is spoken in the next time it is generated. The bound clip keeps
+   * whatever voice it was recorded with, so choosing a voice leaves timings alone.
+   */
+  voice?: string;
+  /**
    * When each spoken word of a narration's clip starts and ends, which a read-along
    * highlights by, and the clip's length. They describe one recording of one script, so
    * any change to either drops them.
@@ -89,6 +94,7 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
               "sourceKey",
               "script",
               "translatedFrom",
+              "voice",
               "wordTimings",
               "durationMs",
               "kind",
@@ -128,6 +134,16 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           asset.type !== "audio")
       )
         throw new Error("Only a narration may record what it was translated from.");
+      if (
+        asset.voice !== undefined &&
+        (typeof asset.voice !== "string" ||
+          asset.voice.length < 1 ||
+          asset.voice.length > 64 ||
+          !/^[A-Za-z0-9 _.-]+$/.test(asset.voice) ||
+          asset.type !== "audio" ||
+          asset.kind !== undefined)
+      )
+        throw new Error("Only a narration may name a voice.");
       if (
         asset.wordTimings !== undefined &&
         (asset.type !== "audio" ||
@@ -236,6 +252,7 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         ...(asset.translatedFrom !== undefined
           ? { translatedFrom: String(asset.translatedFrom) }
           : {}),
+        ...(asset.voice !== undefined ? { voice: String(asset.voice) } : {}),
         ...(asset.wordTimings !== undefined
           ? {
               wordTimings: (asset.wordTimings as Record<string, unknown>[]).map((timing) => ({

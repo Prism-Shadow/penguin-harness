@@ -844,6 +844,144 @@ test("reports speech coverage and generates every missing narration at once", as
   expect(f.errors).toEqual([]);
 });
 
+test("chooses a narration's voice from the picker and applies one voice to every narration", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  const model = "gemini-3.1-flash-tts-preview";
+  const catalogue = [
+    ["Kore", "Firm"],
+    ["Puck", "Upbeat"],
+    ["Charon", "Informative"],
+    ["Fenrir", "Excitable"],
+    ["Aoede", "Breezy"],
+  ].map(([id, description]) => ({
+    id,
+    label: id,
+    provider: "Gemini",
+    model,
+    languages: [],
+    previewUrl: null,
+    description,
+  }));
+  const saved = [];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    if (p === `${base}/speech-setup`)
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          provider: "Gemini",
+          model,
+          voices: catalogue.map((option) => option.id),
+          catalogue,
+          vaultKey: "GEMINI_API_KEY",
+        }),
+      });
+    if (p === `${base}/act_test/media` && request.method() === "PUT")
+      saved.push(request.postDataJSON().manifest);
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  const usages = (key) => [
+    { sceneId: "intro", sourceKey: key, occurrence: 1, sceneOccurrenceCount: 1 },
+  ];
+  await openManifest(page);
+  await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(
+    JSON.stringify({
+      productCode: "words",
+      refNum: 12,
+      assets: {
+        "en-US": [
+          {
+            key: "welcome",
+            type: "audio",
+            description: "Greeting",
+            script: "Hello",
+            usages: usages("welcome"),
+          },
+          {
+            key: "prompt",
+            type: "audio",
+            description: "Prompt",
+            script: "Pick one",
+            usages: usages("prompt"),
+          },
+          {
+            key: "theme",
+            type: "audio",
+            description: "Theme",
+            kind: "music",
+            channel: "music",
+            loop: true,
+            volume: 0.5,
+            usages: usages("theme"),
+          },
+          { key: "cat", type: "image", description: "A cat", usages: usages("cat") },
+        ],
+      },
+    }),
+  );
+  await openSection(page, "Scenes and media");
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+
+  // No narration names a voice yet, so the picker shows the one bulk speech would use.
+  await openSection(page, "Speech coverage");
+  const everyVoice = page.getByRole("button", { name: /^Voice for every narration: / });
+  await expect(everyVoice).toHaveAccessibleName("Voice for every narration: Kore");
+  await everyVoice.click();
+  const panel = page.getByRole("dialog", { name: "Voice for every narration" });
+  await expect(panel.getByText("5 voices", { exact: true })).toBeVisible();
+  // One provider and one model: nothing to filter by, and no sample to play.
+  await expect(panel.getByRole("button", { name: "Provider" })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: /^Preview/ })).toHaveCount(0);
+  await panel.getByRole("searchbox", { name: "Search name or ID" }).fill("fen");
+  await expect(panel.getByText("1 voice", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("option")).toHaveCount(1);
+  await expect(panel.getByText("ID: Fenrir", { exact: true })).toBeVisible();
+  await panel.getByRole("option", { name: /^Fenrir/ }).click();
+  await expect(page.getByText("Voice set on 2 narrations.", { exact: true })).toBeVisible();
+  await expect(everyVoice).toHaveAccessibleName("Voice for every narration: Fenrir");
+  const applied = saved.at(-1).assets["en-US"];
+  expect(Object.fromEntries(applied.map((asset) => [asset.key, asset.voice ?? null]))).toEqual({
+    welcome: "Fenrir",
+    prompt: "Fenrir",
+    theme: null,
+    cat: null,
+  });
+
+  // One narration gets a voice of its own, saved with the manifest and spoken with.
+  await page.getByRole("button", { name: /^welcome/ }).click();
+  const own = page.getByRole("button", { name: /^Voice: / });
+  await expect(own).toHaveAccessibleName("Voice: Fenrir");
+  // The trigger sits below the fold; bring it into view and let the scroll settle first,
+  // since a scroll of the pane holding it closes the panel, as it does every menu's.
+  await own.scrollIntoViewIfNeeded();
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  await own.click();
+  await page.getByRole("dialog", { name: "Voice" }).getByRole("option", { name: /^Puck/ }).click();
+  await expect(own).toHaveAccessibleName("Voice: Puck");
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await expect.poll(() => saved.at(-1).assets["en-US"][0].voice).toBe("Puck");
+  await page.getByRole("button", { name: "Generate speech", exact: true }).click();
+  await expect.poll(() => f.audioRequests.at(-1)?.voice).toBe("Puck");
+  f.completeAudio();
+
+  await openSection(page, "Speech coverage");
+  await expect(everyVoice).toHaveAccessibleName("Voice for every narration: Multiple voices");
+  expect(f.errors).toEqual([]);
+});
+
 test("uploads media into the activity workspace and binds it from the library", async ({
   page,
 }) => {

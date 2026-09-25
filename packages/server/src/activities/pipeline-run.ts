@@ -24,7 +24,7 @@
 import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../http/errors.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
-import { SPEECH_VOICES } from "./audio.js";
+import { SPEECH_VOICES, isSpeechVoice } from "./voice-catalogue.js";
 import { DEFAULT_LANGUAGE_CODE } from "./languages.js";
 import { contentRevision, type ActivityRun } from "./domain.js";
 import type { AssetManifest } from "./media.js";
@@ -373,11 +373,13 @@ export class PipelineRunner {
         step.note = step.step === "speech" ? "noNarration" : "noImages";
         return;
       }
-      const voice =
-        input.voice && (SPEECH_VOICES as readonly string[]).includes(input.voice)
-          ? input.voice
-          : SPEECH_VOICES[0];
+      const fallbackVoice = isSpeechVoice(input.voice) ? input.voice : SPEECH_VOICES[0];
       for (const target of targets) {
+        // Each narration speaks in its own saved voice; the run's choice fills the rest.
+        const saved = manifest.assets[target.language]?.find(
+          (item) => item.key === target.assetKey,
+        )?.voice;
+        const voice = isSpeechVoice(saved) ? saved : fallbackVoice;
         step.detail = target.assetKey;
         const before = await current();
         const run = await generation.start(

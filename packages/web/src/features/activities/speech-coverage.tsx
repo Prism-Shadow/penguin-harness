@@ -4,7 +4,11 @@
  * exactly the work the button starts.
  */
 import { useMemo, useState } from "react";
-import type { ActivityRunSummary, AssetManifest } from "@prismshadow/penguin-server/api";
+import type {
+  ActivityRunSummary,
+  AssetManifest,
+  VoiceOption,
+} from "@prismshadow/penguin-server/api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
@@ -27,6 +31,8 @@ import {
   type InstructionType,
 } from "./instruction-type";
 import { SEGMENT, SEGMENTS, SEGMENT_OFF, SEGMENT_ON } from "./segment-styles";
+import { mixedVoice } from "./voice-catalogue";
+import { VoicePicker } from "./voice-picker";
 
 const STATE_TONE: Record<SpeechState, Tone | null> = {
   ready: null,
@@ -75,6 +81,8 @@ export function SpeechCoverage({
   voices = [],
   voice = "",
   onVoice,
+  onApplyVoiceToAll,
+  voiceDisabled = false,
 }: {
   assets: readonly MediaAsset[];
   language: string;
@@ -98,10 +106,15 @@ export function SpeechCoverage({
   /** Languages the activity could still be translated into. */
   addable?: readonly { code: string; label: string }[];
   onAddLanguage?: (code: string) => void;
-  /** The voice bulk generation and retries use. */
-  voices?: readonly string[];
+  /** The voices a narration can be spoken in. */
+  voices?: readonly VoiceOption[];
+  /** The voice bulk generation and retries use for a narration naming none of its own. */
   voice?: string;
   onVoice?: (voice: string) => void;
+  /** Save one voice on every narration of this language. */
+  onApplyVoiceToAll?: (voice: string) => void;
+  /** Hold the voice choice while a save or a run could move the draft under it. */
+  voiceDisabled?: boolean;
   editable: boolean;
   canGenerate: boolean;
   /** Open one narration in the workbench's detail panel. */
@@ -180,22 +193,28 @@ export function SpeechCoverage({
           ))}
         </div>
       )}
-      {editable && (toTranslate > 0 || addable.length > 0 || (voices.length > 1 && onVoice)) && (
+      {editable && (toTranslate > 0 || addable.length > 0 || (voices.length > 0 && onVoice)) && (
         <div className="flex flex-wrap items-center gap-2">
-          {voices.length > 1 && onVoice && (
-            <div className="w-36">
-              <Select
-                size="sm"
-                aria-label={S.activities.speechVoice}
-                value={voice}
-                onChange={(event) => onVoice(event.target.value)}
-              >
-                {voices.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </Select>
+          {voices.length > 0 && onVoice && (
+            <div className="flex items-center gap-2">
+              <span aria-hidden className="text-xs text-gray-500 dark:text-gray-400">
+                {S.activities.voicePicker.applyToAll}
+              </span>
+              <div className="w-40">
+                <VoicePicker
+                  options={voices}
+                  // The voice the narrations share, or the default where none names one
+                  // Penguin can speak (generation falls back to the default for those).
+                  value={mixedVoice(assets, voices) ?? (voice || null)}
+                  label={S.activities.voicePicker.applyToAll}
+                  showLabel={false}
+                  disabled={voiceDisabled}
+                  onChange={(id) => {
+                    onVoice(id);
+                    onApplyVoiceToAll?.(id);
+                  }}
+                />
+              </div>
             </div>
           )}
           {unscripted > 0 && onTranslateAndSpeak ? (
