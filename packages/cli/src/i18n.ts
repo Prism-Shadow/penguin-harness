@@ -259,6 +259,12 @@ export interface Messages {
     hireDesc: string;
     employeeDesc: string;
     employeeSetDesc: string;
+    /** `employee avatar`: set or clear an employee's picture. */
+    employeeAvatarDesc: string;
+    /** `employee avatar --file`. */
+    avatarFile: string;
+    /** `employee avatar --clear`. */
+    avatarClear: string;
     leaveDesc: string;
     deskDesc: string;
     deskShowDesc: string;
@@ -406,6 +412,15 @@ export interface Messages {
     created(orgId: string, ceoDeskSessionId: string | undefined): string;
     hired(agentId: string, title: string, reportsTo: string | null): string;
     employeeUpdated(agentId: string): string;
+    /** `employee avatar` takes exactly one of --file and --clear. */
+    avatarNeedsOne(): string;
+    /** `employee avatar` without an id outside a desk or ticket session. */
+    avatarNoAgent(): string;
+    avatarUnreadable(file: string, reason: string): string;
+    avatarFormat(file: string): string;
+    avatarTooLarge(file: string, kib: number, maxKib: number): string;
+    avatarSet(agentId: string): string;
+    avatarCleared(agentId: string): string;
     left(agentId: string): string;
     desk(
       agentId: string,
@@ -1069,6 +1084,10 @@ const en: Messages = {
       "Employ an Agent: an existing one (--agent-id) or a new one (--new-agent), under --reports-to",
     employeeDesc: "Manage employees",
     employeeSetDesc: "Update an employee's entry in the tree (only the given fields change)",
+    employeeAvatarDesc:
+      "Set or clear an employee's avatar (the employee defaults to PENGUIN_AGENT_ID, so an employee can set its own)",
+    avatarFile: "Image file to use: PNG, JPEG or WebP, at most about 96 KiB",
+    avatarClear: "Remove the avatar",
     leaveDesc: "Remove an employee from the organization (not the CEO); the Agent itself stays",
     deskDesc: "Desk sessions (one standing session per employee)",
     deskShowDesc: "The employee's desk session id and Workspace (opens the desk if it has none)",
@@ -1208,6 +1227,15 @@ const en: Messages = {
     hired: (agentId, title, reportsTo) =>
       `Employee ${agentId} hired as ${title}${reportsTo !== null ? `, reporting to ${reportsTo}` : ""}.`,
     employeeUpdated: (agentId) => `Employee ${agentId} updated.`,
+    avatarNeedsOne: () => "Give exactly one of --file <path> and --clear.",
+    avatarNoAgent: () =>
+      "Name the employee: pass <agent_id>, or run inside a desk or ticket session (PENGUIN_AGENT_ID).",
+    avatarUnreadable: (file, reason) => `Cannot read ${file}: ${reason}`,
+    avatarFormat: (file) => `${file} is not a PNG, JPEG or WebP image.`,
+    avatarTooLarge: (file, kib, maxKib) =>
+      `${file} is ${kib} KiB; an avatar is at most ${maxKib} KiB. Scale it down (256×256 is plenty) and try again.`,
+    avatarSet: (agentId) => `Avatar of ${agentId} set.`,
+    avatarCleared: (agentId) => `Avatar of ${agentId} removed.`,
     left: (agentId) => `Employee ${agentId} left the organization.`,
     desk: (agentId, sessionId, workspace, openedAt, created) =>
       `Desk of ${agentId}: session ${sessionId} (workspace ${workspace}, opened ${openedAt})${created ? " — opened just now" : ""}`,
@@ -1844,6 +1872,9 @@ const zh: Messages = {
     hireDesc: "招募员工：既有 Agent（--agent-id）或新建 Agent（--new-agent），汇报给 --reports-to",
     employeeDesc: "管理员工",
     employeeSetDesc: "更新员工树条目（只改动给出的字段）",
+    employeeAvatarDesc: "设置或清除员工头像（员工缺省为 PENGUIN_AGENT_ID，员工可以给自己设）",
+    avatarFile: "要用的图片文件：PNG、JPEG 或 WebP，最大约 96 KiB",
+    avatarClear: "清除头像",
     leaveDesc: "将员工移出组织（CEO 不可）；Agent 本身保留",
     deskDesc: "工位会话（每位员工一个常设会话）",
     deskShowDesc: "员工的工位会话 id 与 Workspace（尚无工位时开一个）",
@@ -1963,6 +1994,15 @@ const zh: Messages = {
     hired: (agentId, title, reportsTo) =>
       `已招募员工 ${agentId}，头衔 ${title}${reportsTo !== null ? `，汇报给 ${reportsTo}` : ""}。`,
     employeeUpdated: (agentId) => `已更新员工 ${agentId}。`,
+    avatarNeedsOne: () => "--file <路径> 与 --clear 二者恰好给一个。",
+    avatarNoAgent: () =>
+      "请指明员工：传入 <agent_id>，或在工位 / 工单 Session 里运行（PENGUIN_AGENT_ID）。",
+    avatarUnreadable: (file, reason) => `无法读取 ${file}：${reason}`,
+    avatarFormat: (file) => `${file} 不是 PNG、JPEG 或 WebP 图片。`,
+    avatarTooLarge: (file, kib, maxKib) =>
+      `${file} 有 ${kib} KiB；头像最大 ${maxKib} KiB。请缩小后再试（256×256 足够）。`,
+    avatarSet: (agentId) => `已设置 ${agentId} 的头像。`,
+    avatarCleared: (agentId) => `已清除 ${agentId} 的头像。`,
     left: (agentId) => `员工 ${agentId} 已离开组织。`,
     desk: (agentId, sessionId, workspace, openedAt, created) =>
       `${agentId} 的工位：会话 ${sessionId}（Workspace ${workspace}，开于 ${openedAt}）${created ? "——刚刚新开" : ""}`,

@@ -822,6 +822,14 @@ export class FakeServer {
         else if (body?.model !== undefined) employee.model = body.model;
         return this.json(employee);
       }
+      if (c === "avatar" && method === "PUT") {
+        const avatar = body?.avatar;
+        if (avatar === null) delete employee.avatarRev;
+        else if (typeof avatar === "string" && /^data:image\/(png|jpeg|webp);base64,/.test(avatar))
+          employee.avatarRev = `rev-${avatar.length}`;
+        else return this.error(400, "bad_request", "avatar must be a png, jpeg or webp data URL");
+        return this.json(employee);
+      }
       if (c === undefined && method === "DELETE") {
         if (b === org.ceoAgentId)
           return this.error(409, "ceo_cannot_leave", "The CEO cannot leave.");

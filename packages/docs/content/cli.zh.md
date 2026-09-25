@@ -305,6 +305,7 @@ penguin org show [--org-id <id>] [--json]                       # overview: work
 penguin org chart [--org-id <id>] [--json]                      # the employee tree
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
 penguin org employee set <agent_id> [--title <s>] [--reports-to <agent_id>] [--workspace <path>] [--budget <usd>] [--duties <s>] [--model-id <id> --provider <p>]
+penguin org employee avatar [<agent_id>] (--file <image> | --clear)   # PNG/JPEG/WebP，≤ 约 96 KiB；id 缺省为 PENGUIN_AGENT_ID，员工可给自己设
 penguin org leave <agent_id>                                    # out of the organization (not the CEO); the Agent itself stays
 penguin org desk show [<agent_id>] [--json]                     # the desk session id and Workspace (opens the desk if there is none)
 penguin org desk renew [<agent_id>]                             # a fresh desk session (resets the context)
