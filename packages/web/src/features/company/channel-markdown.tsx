@@ -19,13 +19,19 @@
  * machine value beside its human-readable label". Who is reading comes from context rather than
  * props, because the components map has to be a module constant.
  */
-import { createContext, useContext } from "react";
+import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
 import type { Components, Options } from "react-markdown";
 import { S } from "../../lib/strings";
 import { toneSurface } from "../../lib/tone";
 import { Md } from "../chat/md";
-import { mentionIsMe, mentionLabel, mentionRuns } from "./channel-mentions";
+import {
+  mentionIsMe,
+  mentionLabel,
+  mentionNameHandles,
+  mentionNote,
+  mentionRuns,
+} from "./channel-mentions";
 
 /** The mdast shapes this pass touches, declared structurally rather than taking `@types/mdast` on. */
 interface MdNode {
@@ -62,10 +68,10 @@ function mentionNode(raw: string, token: string): MdNode {
  * One text node as the nodes that replace it — mention nodes for the `@` runs, hard breaks for
  * the newlines — or null when it holds neither and is left exactly as it is.
  */
-function splitText(value: string): MdNode[] | null {
+function splitText(value: string, names: ReadonlyMap<string, string>): MdNode[] | null {
   const out: MdNode[] = [];
   let changed = false;
-  for (const run of mentionRuns(value)) {
+  for (const run of mentionRuns(value, names)) {
     if (run.mention !== null) {
       out.push(mentionNode(run.text, run.mention));
       changed = true;
@@ -84,25 +90,27 @@ function splitText(value: string): MdNode[] | null {
 }
 
 /** Walks every parent, so a mention in a list item or a table cell is covered too. */
-function walk(parent: MdParent): void {
+function walk(parent: MdParent, names: ReadonlyMap<string, string>): void {
   const children = parent.children;
   for (let i = 0; i < children.length; i += 1) {
     const node = children[i]!;
     if (node.type === "text" && typeof node.value === "string") {
-      const split = splitText(node.value);
+      const split = splitText(node.value, names);
       if (split !== null) {
         children.splice(i, 1, ...split);
         i += split.length - 1;
       }
       continue;
     }
-    if (Array.isArray(node.children)) walk(node as MdParent);
+    if (Array.isArray(node.children)) walk(node as MdParent, names);
   }
 }
 
 /** Runs after remark-gfm, on the tree it produced. */
-export function remarkChannelMessage() {
-  return (tree: MdParent): void => walk(tree);
+export function remarkChannelMessage(options?: { names?: ReadonlyMap<string, string> }) {
+  // Employees' names (name → agent id): a mention may be written by name, in any script.
+  const names = options?.names ?? new Map<string, string>();
+  return (tree: MdParent): void => walk(tree, names);
 }
 
 /** What a channel body adds to the shared remark stage — the pass above, and nothing else. */
@@ -112,13 +120,20 @@ export const CHANNEL_REMARK_PLUGINS: NonNullable<Options["remarkPlugins"]> = [re
 export interface ChannelReader {
   /** Employee id to display name. */
   names: ReadonlyMap<string, string>;
+  /** Employee id to title, which a mention chip prints after the name. */
+  titles: ReadonlyMap<string, string>;
   /** The reading user's own id; "" while it is unknown. */
   me: string;
   /** Every employee id, so a bare `@id` an employee claims is not read as the user's. */
   employeeIds: ReadonlySet<string>;
 }
 
-const NOBODY: ChannelReader = { names: new Map(), me: "", employeeIds: new Set() };
+const NOBODY: ChannelReader = {
+  names: new Map(),
+  titles: new Map(),
+  me: "",
+  employeeIds: new Set(),
+};
 const ReaderContext = createContext<ChannelReader>(NOBODY);
 
 /** Names every mention chip rendered below against this reader. */
@@ -133,12 +148,24 @@ export function ChannelReaderProvider({
 }
 
 /**
- * A mention as a chip: the resolved name after the `@`, the raw token in the tooltip;
+ * A mention as a chip: the resolved name after the `@` — and the employee's title after it, a
+ * tone lighter, when there is one to say — with the raw token in the tooltip;
  * attention-toned when it addresses the reader. The ordinary chip sits one step deeper than
  * the app's usual grey fill, because the bubble it is printed on is that grey (channel-view's
  * BUBBLE_SURFACE) and a chip the colour of its background is not a chip.
  */
-export function MentionChip({ raw, label, me }: { raw: string; label: string; me: boolean }) {
+export function MentionChip({
+  raw,
+  label,
+  note = "",
+  me,
+}: {
+  raw: string;
+  label: string;
+  note?: string;
+  me: boolean;
+}) {
+  const noted = note !== "" && note !== label;
   return (
     <span
       title={raw}
@@ -149,6 +176,7 @@ export function MentionChip({ raw, label, me }: { raw: string; label: string; me
       }`}
     >
       @{label}
+      {noted && <span className="font-normal opacity-70"> ({note})</span>}
       {me && <span className="sr-only"> ({S.company.channels.mentionsYou})</span>}
     </span>
   );
@@ -162,6 +190,7 @@ function MentionNode({ value }: { value?: string | number | readonly string[] })
     <MentionChip
       raw={`@${token}`}
       label={mentionLabel(token, reader.names, S.company.principalAll)}
+      note={mentionNote(token, reader.titles)}
       me={mentionIsMe(token, reader.me, reader.employeeIds)}
     />
   );
@@ -172,5 +201,11 @@ export const CHANNEL_COMPONENTS: Components = { [MENTION_TAG]: MentionNode };
 
 /** A message body. The caller supplies the `md-body md-compact` container it renders into. */
 export function ChannelMessageBody({ text }: { text: string }) {
-  return <Md text={text} extraPlugins={CHANNEL_REMARK_PLUGINS} components={CHANNEL_COMPONENTS} />;
+  const reader = useContext(ReaderContext);
+  // The plugin list is rebuilt only when the names change: a new array is a new pipeline.
+  const plugins = useMemo<NonNullable<Options["remarkPlugins"]>>(
+    () => [[remarkChannelMessage, { names: mentionNameHandles(reader.names) }]],
+    [reader.names],
+  );
+  return <Md text={text} extraPlugins={plugins} components={CHANNEL_COMPONENTS} />;
 }

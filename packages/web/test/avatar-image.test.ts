@@ -10,7 +10,10 @@ import {
   AVATAR_JPEG_QUALITY,
   AVATAR_MAX_CHARS,
   AVATAR_PNG_BUDGET,
-  centreCropRect,
+  AVATAR_MAX_ZOOM,
+  clampCrop,
+  cropRect,
+  initialCrop,
   fitAvatarDataUrl,
 } from "../src/lib/avatar-image";
 import type { AvatarMimeType } from "../src/lib/avatar-image";
@@ -34,19 +37,31 @@ function encoderOf(sizes: { png: number; jpeg: number }) {
   return { encode, calls };
 }
 
-describe("centreCropRect", () => {
-  it("keeps the whole image when it is already square", () => {
-    expect(centreCropRect(200, 200)).toEqual({ x: 0, y: 0, size: 200 });
+describe("the crop", () => {
+  it("starts as the whole centre square, whatever the image's shape", () => {
+    expect(cropRect(200, 200, initialCrop(200, 200))).toEqual({ x: 0, y: 0, size: 200 });
+    expect(cropRect(400, 200, initialCrop(400, 200))).toEqual({ x: 100, y: 0, size: 200 });
+    expect(cropRect(200, 400, initialCrop(200, 400))).toEqual({ x: 0, y: 100, size: 200 });
   });
 
-  it("takes the middle square of a wide image, and of a tall one", () => {
-    // 400x200: a 200px square with 100px trimmed from each side.
-    expect(centreCropRect(400, 200)).toEqual({ x: 100, y: 0, size: 200 });
-    expect(centreCropRect(200, 400)).toEqual({ x: 0, y: 100, size: 200 });
+  it("zooms about its centre and follows it where the person drags", () => {
+    expect(cropRect(400, 200, { zoom: 2, cx: 200, cy: 100 })).toEqual({ x: 150, y: 50, size: 100 });
+    // A wide photo at zoom 1 can still be slid along its long side.
+    expect(cropRect(400, 200, { zoom: 1, cx: 300, cy: 100 })).toEqual({ x: 200, y: 0, size: 200 });
   });
 
-  it("rounds an odd offset rather than leaving a fractional source rectangle", () => {
-    expect(centreCropRect(101, 100)).toEqual({ x: 1, y: 0, size: 100 });
+  it("stops at the image's edges and at the zoom limits, so the frame never shows nothing", () => {
+    expect(clampCrop(400, 200, { zoom: 1, cx: 1000, cy: -50 })).toEqual({
+      zoom: 1,
+      cx: 300,
+      cy: 100,
+    });
+    expect(clampCrop(400, 200, { zoom: 0.2, cx: 200, cy: 100 }).zoom).toBe(1);
+    expect(clampCrop(400, 200, { zoom: 99, cx: 200, cy: 100 }).zoom).toBe(AVATAR_MAX_ZOOM);
+    // Zooming out next to an edge slides the square back inside.
+    const near = clampCrop(400, 200, { zoom: 4, cx: 390, cy: 190 });
+    expect(near).toEqual({ zoom: 4, cx: 375, cy: 175 });
+    expect(clampCrop(400, 200, { ...near, zoom: 1 })).toEqual({ zoom: 1, cx: 300, cy: 100 });
   });
 });
 

@@ -16,6 +16,7 @@ import { zh } from "../src/lib/strings";
 
 const reader = {
   names: new Map([["ceo", "Ada CEO"]]),
+  titles: new Map([["ceo", "Chief Executive"]]),
   me: "alice",
   employeeIds: new Set(["ceo"]),
 };
@@ -61,6 +62,8 @@ describe("mentions inside a message body", () => {
     const html = render("@ceo 先看一下");
     expect(html).toContain('title="@ceo"');
     expect(html).toContain("@Ada CEO");
+    // The title follows the name inside the chip, so the reader sees what the person does.
+    expect(html).toContain("(Chief Executive)");
     expect(html).not.toContain(zh.company.channels.mentionsYou);
   });
 

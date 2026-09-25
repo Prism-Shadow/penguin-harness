@@ -20,7 +20,7 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
+import { EmployeeAvatar } from "./employee-avatar";
 import { Badge } from "../../components/ui/badge";
 import type { BadgeTone } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -451,7 +451,7 @@ export function PrincipalChip({
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
       {p.kind === "agent" ? (
-        <AgentAvatar id={p.id} name={label} size={size} className="shrink-0 rounded" />
+        <EmployeeAvatar id={p.id} name={label} size={size} className="shrink-0 rounded" />
       ) : (
         <span
           aria-hidden

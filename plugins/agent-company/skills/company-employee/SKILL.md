@@ -60,7 +60,7 @@ The first three arrive at your desk session; `ticket_work` opens a ticket sessio
 
 ## Principals
 
-Structured fields — ticket fields, a message's `sender` / `mentions`, `--owner`, `--by`, `--notify` — name people and employees as `agent:<agent_id>` or `user:<user_id>`; `@all` means every member of the channel you write it in — in the all-hands channel, every employee — and `system` is only ever a message sender. In message text `@<id>` is the shorthand: the server resolves employees first, then Project members; when an agent and a user share an id, write `@agent:<id>` / `@user:<id>`.
+Structured fields — ticket fields, a message's `sender` / `mentions`, `--owner`, `--by`, `--notify` — name people and employees as `agent:<agent_id>` or `user:<user_id>`; `@all` means every member of the channel you write it in — in the all-hands channel, every employee — and `system` is only ever a message sender. In message text `@<id>` is the shorthand: the server resolves employees first, then Project members; when an agent and a user share an id, write `@agent:<id>` / `@user:<id>`. An employee also has a **name** the organization gave it (the `name` of its `org_chart.yaml` entry, any language — `penguin org chart` lists it beside the id), and `@<name>` reaches it exactly like `@<id>`: people will write `@小明`, and you may too. Two employees with the same name are listed — and addressed — as `name (id)`. In structured fields and commands, keep using ids.
 
 ## The desk session: schedule, do not do
 
@@ -198,6 +198,7 @@ penguin org show [--org-id <id>] [--json]                       # overview: empl
 penguin org chart [--org-id <id>] [--json]                      # the employee tree
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
 penguin org employee set <agent_id> [--title <s>] [--reports-to <agent_id>] [--workspace <path>] [--budget <usd>] [--duties <s>] [--model-id <id> --provider <p>]
+penguin org employee avatar [<agent_id>] (--file <image> | --clear)   # PNG/JPEG/WebP ≤ ~96 KiB; the id defaults to PENGUIN_AGENT_ID, so an employee sets its own
 penguin org leave <agent_id>                                    # remove from the organization (not the CEO); the Agent is kept
 penguin org desk show [<agent_id>] [--json]                     # desk session id and Workspace
 penguin org desk renew [<agent_id>]                             # open a fresh desk session (resets the context)

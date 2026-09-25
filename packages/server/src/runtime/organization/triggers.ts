@@ -15,7 +15,7 @@ import { orgLanguage, serializeTicket } from "../../organization/files.js";
 import { agentPrincipal } from "../../organization/principal.js";
 import type { OrgDeps } from "./deps.js";
 import type { LoadedOrg } from "./model.js";
-import { employeeLine, sharedWorkspace } from "./model.js";
+import { employeeLine, orgEmployeeNames, sharedWorkspace } from "./model.js";
 
 /** The desk session's title, in the organization's working language. */
 function deskTitle(org: LoadedOrg, name: string): string {
@@ -99,7 +99,7 @@ export async function ensureDesk(
       error: `failed to open a desk session for ${agentId}: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
-  const name = await deps.agents.displayName(org.projectId, agentId);
+  const name = (await orgEmployeeNames(deps, org)).get(agentId) ?? agentId;
   // A manual title: the auto-title pass only fills empty titles, so the desk keeps its name.
   deps.sessions.updateTitle(created.sessionId, deskTitle(org, name));
   const openedAt = new Date(deps.now?.() ?? Date.now()).toISOString();

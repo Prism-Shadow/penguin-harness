@@ -11,8 +11,9 @@
  *   penguin org show | chart
  *   penguin org hire (--agent-id <id> | --new-agent <id> [--name] [--description] [--skills <a,b>])
  *                    --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
- *   penguin org employee set <agent_id> [--title] [--reports-to] [--workspace] [--budget] [--duties]
+ *   penguin org employee set <agent_id> [--name] [--title] [--reports-to] [--workspace] [--budget] [--duties]
  *                    [--model-id <id> --provider <p>]
+ *   penguin org employee avatar [<agent_id>] (--file <image> | --clear)
  *   penguin org leave <agent_id>
  *   penguin org desk show|renew [<agent_id>]
  *   penguin org calendar ls [--agent-id] | add <name> … | update <name> … | rm <name>
@@ -115,6 +116,27 @@ interface OrgScope {
   orgId: string;
   /** `/api/projects/:p/organizations/:orgId`. */
   base: string;
+}
+
+/** The server's cap on an avatar, measured on the data URL (organization/avatars.ts). */
+const AVATAR_MAX_CHARS = 131072;
+
+/** The image type an avatar file holds, read from its first bytes; null for anything else. */
+function imageMime(bytes: Buffer): "image/png" | "image/jpeg" | "image/webp" | null {
+  if (
+    bytes.length >= 8 &&
+    bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+  )
+    return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
+    return "image/jpeg";
+  if (
+    bytes.length >= 12 &&
+    bytes.subarray(0, 4).toString("latin1") === "RIFF" &&
+    bytes.subarray(8, 12).toString("latin1") === "WEBP"
+  )
+    return "image/webp";
+  return null;
 }
 
 /** Prints a localized error line and marks the exit code; the caller returns. */
@@ -714,6 +736,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     employee
       .command("set <agent_id>")
       .description(t.org.employeeSetDesc)
+      .option("--name <name>", t.org.employeeName)
       .option("--title <title>", t.org.title)
       .option("--reports-to <agent_id>", t.org.reportsTo)
       .option("--workspace <path>", t.org.employeeWorkspace)
@@ -732,6 +755,8 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       opts.budget !== undefined ? parseBudget("--budget", String(opts.budget), t) : undefined;
     if (budget === null) return;
     const body = {
+      // An empty name clears it: back to the Agent's own display name.
+      ...(opts.name !== undefined ? { name: String(opts.name) } : {}),
       ...(opts.title !== undefined ? { title: String(opts.title) } : {}),
       ...(opts.reportsTo !== undefined ? { reportsTo: String(opts.reportsTo) } : {}),
       ...(opts.workspace !== undefined ? { workspace: String(opts.workspace) } : {}),
@@ -754,6 +779,63 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     );
     if (opts.json === true) printJson(item);
     else printLine(t.org.employeeUpdated(item.agentId));
+  });
+
+  // An employee's picture, from a file: the CLI is how an Agent sets its own (the id defaults
+  // to PENGUIN_AGENT_ID). The server takes a data URL under the same cap as a person's avatar;
+  // the format and the size are checked here so the refusal names the file and what to do.
+  scoped(
+    employee
+      .command("avatar [agent_id]")
+      .description(t.org.employeeAvatarDesc)
+      .option("--file <path>", t.org.avatarFile)
+      .option("--clear", t.org.avatarClear),
+    t,
+  ).action(async (given: string | undefined, opts) => {
+    const agentId = given?.trim() || process.env.PENGUIN_AGENT_ID?.trim() || "";
+    if (agentId === "") {
+      fail(t, t.org.avatarNoAgent());
+      return;
+    }
+    if (refuseDotSegments(agentId, t)) return;
+    const file = typeof opts.file === "string" ? opts.file : undefined;
+    if ((file === undefined) === (opts.clear !== true)) {
+      fail(t, t.org.avatarNeedsOne());
+      return;
+    }
+    let avatar: string | null = null;
+    if (file !== undefined) {
+      let bytes: Buffer;
+      try {
+        bytes = fs.readFileSync(file);
+      } catch (err) {
+        fail(t, t.org.avatarUnreadable(file, err instanceof Error ? err.message : String(err)));
+        return;
+      }
+      const mime = imageMime(bytes);
+      if (mime === null) {
+        fail(t, t.org.avatarFormat(file));
+        return;
+      }
+      avatar = `data:${mime};base64,${bytes.toString("base64")}`;
+      if (avatar.length > AVATAR_MAX_CHARS) {
+        const maxBytes = Math.floor(((AVATAR_MAX_CHARS - `data:${mime};base64,`.length) / 4) * 3);
+        fail(
+          t,
+          t.org.avatarTooLarge(file, Math.ceil(bytes.length / 1024), Math.floor(maxBytes / 1024)),
+        );
+        return;
+      }
+    }
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const item = await scope.client.request<OrgEmployeeItem>(
+      "PUT",
+      `${scope.base}/employees/${enc(agentId)}/avatar`,
+      { avatar },
+    );
+    if (opts.json === true) printJson(item);
+    else printLine(avatar === null ? t.org.avatarCleared(agentId) : t.org.avatarSet(agentId));
   });
 
   scoped(org.command("leave <agent_id>").description(t.org.leaveDesc), t).action(

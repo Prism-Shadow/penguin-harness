@@ -22,7 +22,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useProject } from "../../state/project";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
+import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
@@ -69,7 +69,12 @@ function MemberAvatar({ member, size }: { member: OrgChannelMember; size: number
   const parsed = parsePrincipal(member.principal);
   if (parsed.kind === "agent") {
     return (
-      <AgentAvatar id={parsed.id} name={member.name} size={size} className="shrink-0 rounded" />
+      <EmployeeAvatar
+        id={parsed.id}
+        name={member.name}
+        size={size}
+        className="shrink-0 rounded-md"
+      />
     );
   }
   return (
@@ -154,7 +159,7 @@ function MemberPopover({
                   key={m.principal}
                   className={`flex items-center ${ICON_GAP.row} px-2.5 py-1.5 text-xs`}
                 >
-                  <MemberAvatar member={m} size={ICON_SIZE.rowLead} />
+                  <MemberAvatar member={m} size={FACE_PX.row} />
                   <Truncated text={m.name} className="min-w-0 flex-1" />
                   {m.kind === "agent" && (
                     <button
@@ -240,7 +245,7 @@ function InvitePicker({
                 <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
                   <MemberAvatar
                     member={{ principal: c.principal, name: c.name, kind: c.kind }}
-                    size={ICON_SIZE.rowLead}
+                    size={FACE_PX.row}
                   />
                   <span className="min-w-0 truncate">{c.name}</span>
                 </span>
@@ -395,7 +400,7 @@ export function ChannelHeader({
             className={`flex min-w-0 items-center overflow-hidden whitespace-nowrap ${ICON_GAP.row} text-[15px] font-semibold`}
           >
             <span className="shrink-0 text-gray-400 dark:text-gray-500">
-              <GlyphIcon d={channelGlyph(detail.channelId)} size={ICON_SIZE.rowLead} />
+              <GlyphIcon d={channelGlyph(detail.channelId)} size={FACE_PX.row} />
             </span>
             {label}
             {/* Two paragraphs, not one string per channel kind: what a hop is has to be

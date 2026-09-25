@@ -31,7 +31,13 @@ import type { UpdateProfileRequest } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { avatarDataUrlFromFile } from "../../lib/avatar-image";
+import {
+  avatarDataUrlFromImage,
+  loadAvatarImage,
+  releaseAvatarImage,
+} from "../../lib/avatar-image";
+import type { AvatarCrop } from "../../lib/avatar-image";
+import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
 import { profileControls } from "../../lib/profile-form";
 import { useAuth } from "../../state/auth";
 import { Button, labelButtonClass } from "../../components/ui/button";
@@ -97,25 +103,35 @@ export function ProfileSection() {
     }
   };
 
+  /** The picked image, decoded and waiting for its crop to be chosen. */
+  const [cropping, setCropping] = useState<HTMLImageElement | null>(null);
+  const endCrop = (): void => {
+    if (cropping !== null) releaseAvatarImage(cropping);
+    setCropping(null);
+  };
+
   const onPickFile = (e: ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0];
     // Reset before reading so re-picking the same file fires change again.
     e.target.value = "";
     if (file === undefined) return;
-    // The encode runs inside the busy window as well as the request: it decodes the picked file
-    // and redraws it, which for a phone photograph is long enough to click twice through.
+    setError(null);
+    loadAvatarImage(file).then(setCropping, () => setError(S.profile.avatarUnreadable));
+  };
+
+  const onCropped = (crop: AvatarCrop): void => {
+    const image = cropping;
+    if (image === null) return;
+    // The encode runs inside the busy window as well as the request: it redraws the image,
+    // which for a phone photograph is long enough to click twice through.
     void run("avatar", async () => {
-      const dataUrl = await avatarDataUrlFromFile(file).catch(() => undefined);
-      if (dataUrl === undefined) {
-        setError(S.profile.avatarUnreadable);
-        return;
-      }
+      const dataUrl = avatarDataUrlFromImage(image, crop);
       if (dataUrl === null) {
         setError(S.profile.avatarTooLarge);
         return;
       }
       await send({ avatar: dataUrl });
-    });
+    }).finally(endCrop);
   };
 
   if (!user) return null;
@@ -124,6 +140,12 @@ export function ProfileSection() {
 
   return (
     <section>
+      <AvatarCropDialog
+        image={cropping}
+        busy={pending !== null}
+        onCancel={endCrop}
+        onConfirm={onCropped}
+      />
       <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
         <PrefRow label={S.profile.avatar} info={S.profile.avatarInfo}>
           <div className="flex items-center gap-3">

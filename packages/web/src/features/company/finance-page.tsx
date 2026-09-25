@@ -45,7 +45,7 @@ import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
+import { EmployeeAvatar } from "./employee-avatar";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
@@ -562,7 +562,7 @@ export function FinancePage() {
                         <td className="px-2 py-2" style={{ paddingLeft: 8 + depth * INDENT_PX }}>
                           <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
                             {depth > 0 && <TreeElbow />}
-                            <AgentAvatar
+                            <EmployeeAvatar
                               id={employee.agentId}
                               name={employee.name}
                               size={ICON_SIZE.navRow}

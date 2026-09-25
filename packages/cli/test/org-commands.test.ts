@@ -348,6 +348,52 @@ describe("penguin org hire / employee set / leave", () => {
     expect(err()).toContain(t.org.nothingToSet());
   });
 
+  it("employee avatar PUTs a file as a data URL, defaults to PENGUIN_AGENT_ID, and --clear sends null", async () => {
+    server.addEmployee("acme", { agentId: "dev1" });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-avatar-"));
+    try {
+      const png = Buffer.concat([
+        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+        Buffer.from("IHDR-and-the-rest"),
+      ]);
+      const file = path.join(dir, "me.png");
+      fs.writeFileSync(file, png);
+      // Inside a desk session the employee is the caller: an Agent setting its own picture.
+      process.env.PENGUIN_AGENT_ID = "dev1";
+      expect(await cli(["org", "employee", "avatar", "--file", file])).toBe(0);
+      expect(lastRequest("PUT", "/employees/dev1/avatar")?.body).toEqual({
+        avatar: `data:image/png;base64,${png.toString("base64")}`,
+      });
+      expect(out()).toBe(`${t.org.avatarSet("dev1")}\n`);
+
+      stdout.length = 0;
+      expect(await cli(["org", "employee", "avatar", "dev1", "--clear"])).toBe(0);
+      expect(lastRequest("PUT", "/employees/dev1/avatar")?.body).toEqual({ avatar: null });
+      expect(out()).toBe(`${t.org.avatarCleared("dev1")}\n`);
+
+      // Refused locally, before any request: not an image, too large, both or neither flag.
+      const puts = () => server.requests.filter((r) => r.method === "PUT").length;
+      const before = puts();
+      const text = path.join(dir, "note.txt");
+      fs.writeFileSync(text, "hello");
+      expect(await cli(["org", "employee", "avatar", "--file", text])).toBe(1);
+      expect(err()).toContain(t.org.avatarFormat(text));
+      const big = path.join(dir, "big.png");
+      fs.writeFileSync(big, Buffer.concat([png, Buffer.alloc(200 * 1024)]));
+      expect(await cli(["org", "employee", "avatar", "--file", big])).toBe(1);
+      expect(err()).toContain("256×256");
+      expect(await cli(["org", "employee", "avatar", "--file", file, "--clear"])).toBe(1);
+      expect(await cli(["org", "employee", "avatar"])).toBe(1);
+      expect(err()).toContain(t.org.avatarNeedsOne());
+      delete process.env.PENGUIN_AGENT_ID;
+      expect(await cli(["org", "employee", "avatar", "--clear"])).toBe(1);
+      expect(err()).toContain(t.org.avatarNoAgent());
+      expect(puts()).toBe(before);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("leave DELETEs the employee; the server's refusal for the CEO surfaces verbatim", async () => {
     server.addEmployee("acme", { agentId: "dev1" });
     expect(await cli(["org", "leave", "dev1"])).toBe(0);
