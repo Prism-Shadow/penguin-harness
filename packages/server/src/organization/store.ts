@@ -6,6 +6,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { atomicWriteFile } from "@prismshadow/penguin-core";
 import type { OrgChannelMessage, OrgTicketStatus } from "../api/types.js";
 import type {
   CalendarEvent,
@@ -109,7 +110,11 @@ async function readText(p: string): Promise<string | null> {
 
 async function writeText(p: string, text: string): Promise<void> {
   await fs.mkdir(path.dirname(p), { recursive: true });
-  await fs.writeFile(p, text, "utf8");
+  // Atomic whole-file replacement (uniquely-named temp file + rename): a crash mid-write
+  // must not leave a truncated TOML/YAML/MD behind — an unparsable org file drops its
+  // ticket from the board (reconcile's listTickets), so the core's own state-file
+  // discipline applies here too. The write lands 0600: these are the org's private files.
+  await atomicWriteFile(p, text);
 }
 
 export class OrgStore {
@@ -412,7 +417,15 @@ export class OrgStore {
     doc: TicketDoc,
   ): Promise<void> {
     await this.writeTicket(dir, ticketId, to, doc);
-    if (from !== to) await fs.unlink(ticketPath(dir, ticketId, from)).catch(() => {});
+    if (from !== to) {
+      try {
+        await fs.unlink(ticketPath(dir, ticketId, from));
+      } catch (err) {
+        // Already gone is fine; anything else must not pass in silence — a quietly kept
+        // old column would leave the id in two columns for the reader to resolve.
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      }
+    }
   }
 
   // ---- channels ----
