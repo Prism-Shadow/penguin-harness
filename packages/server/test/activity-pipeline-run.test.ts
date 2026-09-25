@@ -10,7 +10,10 @@ import {
   translationTargets,
 } from "../src/activities/pipeline-run.js";
 import { contentRevision, type ActivityRun } from "../src/activities/domain.js";
-import type { AssetManifest } from "../src/activities/media.js";
+import type { AssetManifest, MediaAsset } from "../src/activities/media.js";
+import { drawnOutScript, geminiScript, syncWordScripts } from "../src/activities/pronunciation.js";
+import type { SpeechProviderId } from "../src/activities/speech-types.js";
+import { ELEVENLABS_DEFAULT_VOICE } from "../src/activities/voice-catalogue.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../src/mechanisms/activities.js";
 
 const usage = [{ sceneId: "intro", sourceKey: "k", occurrence: 1, sceneOccurrenceCount: 1 }];
@@ -59,6 +62,7 @@ describe("choosing the work", () => {
       "media",
       "translations",
       "speech",
+      "words",
       "sounds",
       "images",
       "assessment",
@@ -66,6 +70,7 @@ describe("choosing the work", () => {
       "test",
     ]);
     expect(stepsFor(parseSelection("speech"))).toEqual(["speech"]);
+    expect(stepsFor(parseSelection("words"))).toEqual(["words"]);
     expect(stepsFor(parseSelection("test"))).toEqual(["test"]);
     expect(stepsFor(parseSelection("narration"))).toEqual(["translations", "speech"]);
     // A ref made from its template speaks and draws what it cleared, and nothing else.
@@ -355,17 +360,7 @@ describe("running the stages", () => {
   it("takes an activity from its script to an assembled module, accepting media on the way", async () => {
     const w = world();
     const { state, done } = w.runner.start("proj", "act", { selection: "all", agentId: "agent" });
-    expect(state.steps.map((step) => step.status)).toEqual([
-      "pending",
-      "pending",
-      "pending",
-      "pending",
-      "pending",
-      "pending",
-      "pending",
-      "pending",
-      "pending",
-    ]);
+    expect(state.steps.map((step) => step.status)).toEqual(Array(10).fill("pending"));
     await done;
     const final = w.runner.status("act")!;
     expect(final.status).toBe("succeeded");
@@ -374,6 +369,8 @@ describe("running the stages", () => {
       ["media", "succeeded"],
       ["translations", "skipped"],
       ["speech", "succeeded"],
+      // Not a book, so no words to record.
+      ["words", "skipped"],
       ["sounds", "skipped"],
       ["images", "succeeded"],
       ["assessment", "skipped"],
@@ -417,6 +414,7 @@ describe("running the stages", () => {
       "succeeded",
       "skipped",
       "failed",
+      "cancelled",
       "cancelled",
       "cancelled",
       "cancelled",
@@ -472,17 +470,7 @@ describe("running the stages", () => {
     expect(w.cancelled).toEqual(["run_1"]);
     expect(final.status).toBe("cancelled");
     expect(final.error).toBeNull();
-    expect(final.steps.map((step) => step.status)).toEqual([
-      "cancelled",
-      "cancelled",
-      "cancelled",
-      "cancelled",
-      "cancelled",
-      "cancelled",
-      "cancelled",
-      "cancelled",
-      "cancelled",
-    ]);
+    expect(final.steps.map((step) => step.status)).toEqual(Array(10).fill("cancelled"));
   });
 
   it("stops stepping when its component goes away, leaving the run in flight alone", async () => {
@@ -823,5 +811,212 @@ describe("the sounds step", () => {
       note: "needsPenguinAgent",
     });
     expect(w.started).toEqual(["spec"]);
+  });
+});
+
+/** A decodable book's plan with words: one ready to record, one recorded, one unsounded. */
+function wordWorld(
+  options: {
+    activityType?: "book" | "standard";
+    bookMode?: "decodable" | "readAlong" | null;
+    elevenlabs?: boolean;
+    words?: MediaAsset[];
+  } = {},
+) {
+  const word = (normalized: string, extra: Partial<MediaAsset> = {}): MediaAsset => ({
+    key: `book-word-${normalized}`,
+    type: "audio",
+    role: "bookWord",
+    description: normalized,
+    word: normalized,
+    normalizedWord: normalized,
+    usages: usage,
+    ...extra,
+  });
+  let revision = 1;
+  const activity = {
+    id: "act",
+    productCode: "words",
+    refNum: 1,
+    activityType: options.activityType ?? "book",
+    draft: {
+      contentRevision: "r1",
+      description: "A book",
+      status: "valid",
+      spec: {},
+      mediaPlan: {
+        specRevision: "s",
+        requirements: {},
+        manifest: {
+          productCode: "words",
+          refNum: 1,
+          assets: {
+            "en-US": options.words ?? [
+              word("cat", { phonemes: ["k", "æ", "t"] }),
+              word("sat", { phonemes: ["s", "æ", "t"], path: "media/sat.wav", script: "x" }),
+              word("ran"),
+              word("the", { phonemes: ["ð", "ə"], speechProvider: "gemini", voice: "Puck" }),
+            ],
+          },
+        } as AssetManifest,
+      },
+    },
+  };
+  const bump = () => (activity.draft.contentRevision = `r${++revision}`);
+  const group = () => activity.draft.mediaPlan.manifest.assets["en-US"]!;
+  const runs: ActivityRun[] = [];
+  const started: unknown[] = [];
+  const prepared: string[] = [];
+  const generation = {
+    async start(_p: string, _a: string, agentId: string, expected: string, module?: any) {
+      if (expected !== activity.draft.contentRevision) throw new Error("draft_conflict");
+      const asset = group().find((item) => item.key === module.audio.assetKey)!;
+      started.push({ ...module.audio, script: asset.script });
+      const run = {
+        kind: "audio",
+        runId: `run_${runs.length + 1}`,
+        sessionId: `session_${runs.length + 1}`,
+        status: "running",
+        error: null,
+        agentId,
+        audio: module.audio,
+      } as unknown as ActivityRun;
+      runs.push(run);
+      return run;
+    },
+    async list() {
+      for (const run of runs) if (run.status === "running") run.status = "succeeded";
+      return runs.map((run) => ({ ...run, hasCandidate: true }));
+    },
+    async speechSetup() {
+      return {
+        providers: [
+          { id: "gemini", available: true },
+          { id: "elevenlabs", available: options.elevenlabs ?? true },
+        ],
+      };
+    },
+    async acceptAudio(_p: string, _a: string, runId: string, expected: string) {
+      if (expected !== activity.draft.contentRevision) throw new Error("draft_conflict");
+      const run = runs.find((item) => item.runId === runId)!;
+      group().find((item) => item.key === run.audio!.assetKey)!.path = `media/${runId}.mp3`;
+      bump();
+    },
+  } as unknown as ActivityGeneration;
+  const activities = {
+    async getActivity() {
+      return structuredClone(activity);
+    },
+    async bookWordsState() {
+      return { bookMode: options.bookMode === undefined ? "decodable" : options.bookMode };
+    },
+    async prepareWordRecordings(
+      _p: string,
+      _a: string,
+      provider: SpeechProviderId,
+      expected: string,
+      language?: string,
+    ) {
+      if (expected !== activity.draft.contentRevision) throw new Error("draft_conflict");
+      prepared.push(`${provider}:${language ?? "all"}`);
+      const before = structuredClone(group());
+      for (const asset of group())
+        if (asset.phonemes?.length && !asset.path && !asset.speechProvider)
+          asset.speechProvider = provider;
+      syncWordScripts(group(), before);
+      bump();
+      return structuredClone(activity.draft);
+    },
+  } as unknown as ActivityAuthoring;
+  const runner = new PipelineRunner({
+    generation,
+    activities,
+    pause: () => new Promise((resolve) => setImmediate(resolve)),
+    now: () => "2026-09-25T12:00:00Z",
+    newId: () => "pipeline_words",
+  });
+  return { runner, activity, group, started, prepared, word };
+}
+
+describe("the words step", () => {
+  it("records each word with sounds and no recording, in its provider's script, and accepts it", async () => {
+    const w = wordWorld();
+    await w.runner.start("proj", "act", { selection: "words", agentId: "agent", voice: "Kore" })
+      .done;
+    const step = w.runner.status("act")!.steps[0]!;
+    expect(step).toMatchObject({ step: "words", status: "succeeded", done: 2, total: 2 });
+    // ElevenLabs can be used, so the word naming no provider takes it; "the" keeps Gemini.
+    expect(w.prepared).toEqual(["elevenlabs:all"]);
+    expect(w.started).toEqual([
+      {
+        language: "en-US",
+        assetKey: "book-word-cat",
+        provider: "elevenlabs",
+        voice: ELEVENLABS_DEFAULT_VOICE,
+        script: drawnOutScript("cat", ["k", "æ", "t"]),
+      },
+      {
+        language: "en-US",
+        assetKey: "book-word-the",
+        provider: "gemini",
+        voice: "Puck",
+        script: geminiScript("the", ["ð", "ə"]),
+      },
+    ]);
+    expect(w.group().find((item) => item.key === "book-word-cat")!.path).toBe("media/run_1.mp3");
+    // The word without sounds is left for later.
+    expect(w.group().find((item) => item.key === "book-word-ran")!.path).toBeUndefined();
+  });
+
+  it("speaks with Gemini when the agent cannot use ElevenLabs", async () => {
+    const w = wordWorld({ elevenlabs: false });
+    await w.runner.start("proj", "act", { selection: "words", agentId: "agent" }).done;
+    expect(w.prepared).toEqual(["gemini:all"]);
+    expect(w.started[0]).toMatchObject({
+      assetKey: "book-word-cat",
+      provider: "gemini",
+      script: geminiScript("cat", ["k", "æ", "t"]),
+    });
+  });
+
+  it("skips with a note for anything but a decodable book, a coding agent, or nothing to record", async () => {
+    const skipped = async (world: ReturnType<typeof wordWorld>, input = {}) => {
+      await world.runner.start("proj", "act", { selection: "words", agentId: "agent", ...input })
+        .done;
+      return world.runner.status("act")!.steps[0]!;
+    };
+    expect(await skipped(wordWorld({ activityType: "standard" }))).toMatchObject({
+      status: "skipped",
+      note: "notDecodable",
+    });
+    expect(await skipped(wordWorld({ bookMode: "readAlong" }))).toMatchObject({
+      note: "notDecodable",
+    });
+    // No mode recorded: the sequence's choice counts, and so do words already listed.
+    expect(
+      await skipped(wordWorld({ bookMode: null, words: [] }), { bookMode: "readAlong" }),
+    ).toMatchObject({ note: "notDecodable" });
+    expect(await skipped(wordWorld({ bookMode: null }))).toMatchObject({ status: "succeeded" });
+    expect(await skipped(wordWorld(), { agentId: "", codingAgentId: "codex" })).toMatchObject({
+      note: "needsPenguinAgent",
+    });
+    const unsounded = wordWorld();
+    unsounded.activity.draft.mediaPlan.manifest.assets["en-US"] = [unsounded.word("ran")];
+    expect(await skipped(unsounded)).toMatchObject({ note: "wordsMissingSounds" });
+    const recorded = wordWorld();
+    recorded.activity.draft.mediaPlan.manifest.assets["en-US"] = [];
+    expect(await skipped(recorded)).toMatchObject({ note: "noWords" });
+    expect(recorded.prepared).toEqual([]);
+  });
+
+  it("keeps to the scope's language", async () => {
+    const w = wordWorld();
+    await w.runner.start("proj", "act", {
+      selection: "words",
+      agentId: "agent",
+      scope: { language: "es-MX" },
+    }).done;
+    expect(w.runner.status("act")!.steps[0]).toMatchObject({ status: "skipped", note: "noWords" });
+    expect(w.started).toEqual([]);
   });
 });

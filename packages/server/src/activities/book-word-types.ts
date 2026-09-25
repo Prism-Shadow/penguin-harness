@@ -54,3 +54,16 @@ export interface PhonemesSettingsResponse {
   espeakPath: string | null;
   espeak: EspeakStatus;
 }
+
+/** When one sound of a word's recording is said, drawn out, in whole milliseconds. */
+export interface PhonemeTiming {
+  phoneme: string;
+  startMs: number;
+  endMs: number;
+}
+
+/** When a word's recording says the whole word at its normal pace, in whole milliseconds. */
+export interface WholeWordTiming {
+  startMs: number;
+  endMs: number;
+}

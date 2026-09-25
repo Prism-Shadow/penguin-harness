@@ -498,6 +498,12 @@ export type Strings = {
       media: (bound: number, total: number) => string;
       /** Media keys one scene describes differently from another. */
       mediaKeys: { ok: string; conflicting: (keys: string[]) => string };
+      /** A decodable book's word pronunciations in one language: recorded, and timed. */
+      words: {
+        ok: (language: string, total: number) => string;
+        none: (language: string) => string;
+        missing: (language: string, recorded: number, total: number, timed: number) => string;
+      };
       /** Only for an assessed activity. */
       assessment: {
         ok: string;
@@ -529,6 +535,7 @@ export type Strings = {
         | "media"
         | "translations"
         | "speech"
+        | "words"
         | "sounds"
         | "images"
         | "assessment"
@@ -553,6 +560,9 @@ export type Strings = {
         | "needsPenguinAgent"
         | "noNarration"
         | "noImages"
+        | "notDecodable"
+        | "noWords"
+        | "wordsMissingSounds"
         | "noSounds"
         | "soundProviderUnavailable"
         | "noAssessment"
@@ -940,6 +950,30 @@ export type Strings = {
       espeakMissing: string;
       notDecodable: string;
       run: string;
+      /** Record every word with sounds and no recording: the words stage for this language. */
+      record: (n: number) => string;
+      recordAbout: string;
+      recordBlocked: string;
+      recordTitle: string;
+      /** Asked before recording, because each word is a paid request to its provider. */
+      recordConfirm: (n: number, language: string) => string;
+      /** Words with sounds and no recording, and how many recorded words have no timings. */
+      toRecord: (n: number) => string;
+      untimed: (n: number) => string;
+      recording: string;
+      noRecording: string;
+      script: string;
+      scriptHint: string;
+      scriptYours: string;
+      writeScript: string;
+      useSoundsScript: string;
+      timeline: string;
+      timelineAbout: string;
+      timelineList: string;
+      noTimings: string;
+      /** A sound, or the whole word, and when it starts, for the timeline's accessible names. */
+      soundAt: (sound: string, start: string) => string;
+      wholeWordAt: (word: string, start: string) => string;
     };
     /** Who speaks a narration: Gemini or ElevenLabs, and the word timings ElevenLabs returns. */
     speechProvider: {

@@ -44,6 +44,7 @@ import { fileFactsFor } from "./media-details";
 import { SoundFields } from "./sound-fields";
 import { soundCandidateLabel, soundFailure } from "./sound-model";
 import { BookWordFields } from "./book-word-fields";
+import { PhonemeTimelineView } from "./phoneme-timeline-view";
 import { isBookWord } from "./book-words";
 
 export function AssetEditor({
@@ -207,6 +208,8 @@ export function AssetEditor({
       delete entry.generatedAudio;
       delete entry.wordTimings;
       delete entry.durationMs;
+      delete entry.phonemeTimings;
+      delete entry.wholeWordTiming;
     });
   }
   const uploadUrl = (path: string) => `${endpoint}/media-upload?path=${encodeURIComponent(path)}`;
@@ -217,6 +220,8 @@ export function AssetEditor({
       // Timings describe the recording that was bound, not this one.
       delete entry.wordTimings;
       delete entry.durationMs;
+      delete entry.phonemeTimings;
+      delete entry.wholeWordTiming;
     });
   }
   /** The media bound now, played or shown as the comparison's first half. */
@@ -529,6 +534,7 @@ export function AssetEditor({
                 label={asset.key}
                 onTrim={editable && !disabled ? trimTo : undefined}
                 onDecoded={(seconds) => setDecoded({ src: uploadSrc, seconds })}
+                onTime={isBookWord(asset) ? setPlayhead : undefined}
               />
             )}
             {asset.type === "audio" && !asset.generatedAudio && details}
@@ -544,13 +550,38 @@ export function AssetEditor({
               ))}
             {asset.type === "video" && details}
             {asset.type === "audio" && isBookWord(asset) && (
-              <BookWordFields
-                key={`${language}/${asset.key}/${(asset.phonemes ?? []).join(" ")}`}
-                asset={asset}
-                editable={editable && !!onSaveSounds}
-                canSave={canAccept && !disabled}
-                onSave={(phonemes) => onSaveSounds?.(language, asset.key, phonemes)}
-              />
+              <>
+                <BookWordFields
+                  key={`${language}/${asset.key}/${(asset.phonemes ?? []).join(" ")}`}
+                  asset={asset}
+                  editable={editable && !!onSaveSounds}
+                  canSave={canAccept && !disabled}
+                  onSave={(phonemes) => onSaveSounds?.(language, asset.key, phonemes)}
+                  onEdit={editable && !disabled ? edit : undefined}
+                />
+                <section className="space-y-1" aria-label={S.activities.bookWords.recording}>
+                  <p className="text-xs font-medium">{S.activities.bookWords.recording}</p>
+                  {asset.generatedAudio && (
+                    <WaveformPlayer
+                      key={asset.generatedAudio.runId}
+                      src={acceptedSrc}
+                      label={S.activities.bookWords.recording}
+                      autoLoad
+                      onDecoded={(seconds) => setDecoded({ src: acceptedSrc, seconds })}
+                      onTime={setPlayhead}
+                    />
+                  )}
+                  {!asset.path ? (
+                    <p className="text-xs text-gray-500">{S.activities.bookWords.noRecording}</p>
+                  ) : asset.generatedAudio || isUploadPath(asset.path) ? (
+                    // The recording's player (here, or the upload's above) moves the playhead.
+                    <PhonemeTimelineView asset={asset} seconds={playhead} />
+                  ) : (
+                    <p className="text-xs text-gray-500">{S.activities.noInAppPreview}</p>
+                  )}
+                  {asset.generatedAudio && details}
+                </section>
+              </>
             )}
             {asset.type === "audio" && !isBookWord(asset) && (
               <>

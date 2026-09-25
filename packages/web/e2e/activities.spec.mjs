@@ -6391,3 +6391,260 @@ test("refreshes a decodable book's words and corrects one word's sounds", async 
   await expect(editor).toContainText("Yours");
   expect(f.errors).toEqual([]);
 });
+
+test("records a decodable book's words and shows each word's sounds in time", async ({ page }) => {
+  const f = await fixture(page);
+  const clip = silentMp3(40);
+  const usage = (sceneId, sourceKey) => ({
+    sceneId,
+    sourceKey,
+    occurrence: 1,
+    sceneOccurrenceCount: 1,
+  });
+  const bookSpec = {
+    ...spec,
+    scenes: [
+      {
+        id: "page-1",
+        role: "story",
+        description: "Story page 1",
+        media: { images: [{ key: "page-1-art", description: "A cat" }] },
+        audio: { tracks: [{ key: "narration-1", description: "Narration", script: "The cat." }] },
+      },
+    ],
+  };
+  const drawnOut = '[very slowly] [drawn out] "/kæːːːt/" [short pause] cat.';
+  const word = (text, sounds, extra = {}) => ({
+    key: `book-word-${text}`,
+    type: "audio",
+    role: "bookWord",
+    description: `Pronunciation of “${text}”.`,
+    word: text,
+    normalizedWord: text,
+    phonemes: sounds,
+    phonemeSource: "espeak",
+    usages: [usage("page-1", "narration-1")],
+    ...extra,
+  });
+  await page.route(`**${base}/act_test/plan-media`, (route) =>
+    route.fallback({
+      postData: JSON.stringify({
+        ...route.request().postDataJSON(),
+        manifest: {
+          productCode: "words",
+          refNum: 12,
+          assets: {
+            "en-US": [
+              {
+                key: "narration-1",
+                type: "audio",
+                description: "Narration",
+                script: "The cat.",
+                usages: [usage("page-1", "narration-1")],
+              },
+              word("the", ["ð", "ə"], {
+                script:
+                  "Say the word 'the' very slowly, stretching each sound: ð ə, then say it normally.",
+              }),
+              word("cat", ["k", "æ", "t"], { script: drawnOut, speechProvider: "elevenlabs" }),
+            ],
+          },
+        },
+      }),
+    }),
+  );
+  let record = null;
+  let draft = null;
+  let recorded = false;
+  page.on("response", async (response) => {
+    const request = response.request();
+    const p = new URL(response.url()).pathname;
+    if (!response.ok()) return;
+    if (p === base && request.method() === "POST")
+      record = await response.json().catch(() => record);
+    if (
+      !recorded &&
+      [`${base}/act_test/apply-generated-spec`, `${base}/act_test/plan-media`].includes(p)
+    )
+      draft = await response.json().catch(() => draft);
+  });
+  // What the server holds once the words stage has recorded and accepted both words: "cat" by
+  // ElevenLabs, timed sound by sound, and "the" by Gemini, untimed.
+  const afterRecording = () => {
+    const manifest = structuredClone(draft.mediaPlan.manifest);
+    const group = manifest.assets["en-US"];
+    Object.assign(
+      group.find((asset) => asset.key === "book-word-cat"),
+      {
+        path: "media/generated/run_word_1.mp3",
+        generatedAudio: { runId: "run_word_1", sha256: "d".repeat(64), format: "mp3" },
+        wordTimings: [
+          { word: "kæːːːt", startMs: 0, endMs: 600 },
+          { word: "cat", startMs: 700, endMs: 1000 },
+        ],
+        durationMs: 1045,
+        phonemeTimings: [
+          { phoneme: "k", startMs: 0, endMs: 200 },
+          { phoneme: "æ", startMs: 200, endMs: 400 },
+          { phoneme: "t", startMs: 400, endMs: 600 },
+        ],
+        wholeWordTiming: { startMs: 700, endMs: 1000 },
+      },
+    );
+    Object.assign(
+      group.find((asset) => asset.key === "book-word-the"),
+      {
+        path: "media/generated/run_word_2.wav",
+        generatedAudio: { runId: "run_word_2", sha256: "e".repeat(64) },
+      },
+    );
+    return {
+      ...draft,
+      contentRevision: `${draft.contentRevision}-words`,
+      mediaPlan: { ...draft.mediaPlan, manifest },
+    };
+  };
+  const state = (status) => ({
+    pipelineId: "pipeline_words",
+    projectId,
+    activityId: "act_test",
+    selection: "words",
+    scope: { language: "en-US" },
+    status,
+    steps: [
+      {
+        step: "words",
+        status,
+        detail: status === "running" ? "book-word-cat" : null,
+        note: null,
+        done: status === "running" ? 0 : 2,
+        total: 2,
+        runIds: [],
+      },
+    ],
+    currentRunId: null,
+    currentSessionId: null,
+    error: null,
+    startedAt: "2026-09-25T12:00:00Z",
+    finishedAt: status === "running" ? null : "2026-09-25T12:01:00Z",
+  });
+  const stages = [];
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/act_test/book-words`)
+      return json({ bookMode: "decodable", espeak: { available: true, version: "1.51" } });
+    if (p === `${base}/act_test` && request.method() === "GET" && recorded)
+      return json({ ...record, draft: afterRecording() });
+    if (p === `${base}/act_test/pipeline` && request.method() === "POST") {
+      // One sequence at a time, as the server allows.
+      if (stages.length)
+        return json({ error: { code: "pipeline_running", message: "Running." } }, 409);
+      stages.push(request.postDataJSON());
+      return json(state("running"), 202);
+    }
+    if (p === `${base}/act_test/pipeline`)
+      return json({ pipeline: stages.length ? state(recorded ? "succeeded" : "running") : null });
+    if (/\/runs\/run_word_\d+\/audio$/.test(p)) {
+      const range = /bytes=(\d+)-(\d*)/.exec(request.headers()["range"] ?? "");
+      if (!range)
+        return route.fulfill({
+          contentType: "audio/mpeg",
+          headers: { "accept-ranges": "bytes" },
+          body: clip,
+        });
+      const start = Number(range[1]);
+      const end = range[2] ? Math.min(Number(range[2]), clip.length - 1) : clip.length - 1;
+      return route.fulfill({
+        status: 206,
+        contentType: "audio/mpeg",
+        headers: {
+          "accept-ranges": "bytes",
+          "content-range": `bytes ${start}-${end}/${clip.length}`,
+        },
+        body: clip.subarray(start, end + 1),
+      });
+    }
+    return route.fallback();
+  });
+
+  await create(page, { activityType: "book" });
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(bookSpec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  await openSection(page, "Speech coverage");
+
+  const panel = page.getByRole("region", { name: "Word pronunciations", exact: true });
+  await expect(panel).toContainText("2 words are ready to record.");
+  await panel.getByRole("button", { name: "Record words (2)", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  // Asked first, because every recording is a paid request.
+  await expect(dialog).toContainText("Record 2 words in en-US?");
+  await dialog.getByRole("button", { name: "Record words (2)", exact: true }).click();
+  await expect.poll(() => stages.length).toBe(1);
+  expect(stages[0]).toMatchObject({ stage: "words", language: "en-US", agentId: "default_agent" });
+  const stagesPanel = page.getByRole("complementary", { name: "Stages" });
+  await expect(stagesPanel.getByText("Record words", { exact: true })).toBeVisible();
+
+  // The stage records and accepts both words; the page shows the book as the server holds it.
+  recorded = true;
+  await page.reload();
+  await openSection(page, "Speech coverage");
+  await expect(panel).toContainText(
+    "1 recorded word has no sound timings, so it is not highlighted.",
+  );
+  await expect(panel.getByRole("button", { name: "Record words (0)", exact: true })).toBeDisabled();
+
+  const scene = page.getByRole("treeitem", { name: "page-1", exact: true });
+  if ((await scene.getAttribute("aria-expanded")) !== "true") await scene.click();
+  const group = page.getByRole("treeitem", { name: "Word pronunciations", exact: true }).first();
+  if ((await group.getAttribute("aria-expanded")) !== "true") await group.click();
+  await page.getByRole("treeitem", { name: "cat", exact: true }).first().click();
+
+  // The script is made from the sounds, and read-only until the author writes their own.
+  const script = page.getByRole("textbox", { name: /^Recording script/ });
+  await expect(script).toHaveValue(drawnOut);
+  await expect(script).toHaveAttribute("readonly", "");
+  const sounds = page.getByRole("list", {
+    name: "Sounds, highlighted as the recording plays",
+    exact: true,
+  });
+  await expect(sounds.getByRole("listitem")).toHaveText(["k", "æ", "t", "cat"]);
+  const player = page.locator('audio[aria-label="Recording"]');
+  await expect(player).toHaveAttribute("src", `${base}/act_test/runs/run_word_1/audio`);
+  const seekedTo = await player.evaluate(
+    (audio) =>
+      new Promise((resolve) => {
+        const seek = () => {
+          audio.addEventListener("seeked", () => resolve(audio.currentTime), { once: true });
+          audio.currentTime = 0.3;
+        };
+        if (audio.readyState >= 1) seek();
+        else {
+          audio.addEventListener("loadedmetadata", seek, { once: true });
+          audio.preload = "metadata";
+          audio.load();
+        }
+      }),
+  );
+  expect(seekedTo).toBeCloseTo(0.3, 1);
+  await expect(sounds.getByRole("listitem", { name: "Sound æ, at 0.20 s" })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+
+  // "the" was recorded by Gemini: it plays, and says it has no sound timings.
+  await page.getByRole("treeitem", { name: "the", exact: true }).first().click();
+  await expect(
+    page.getByText(
+      "This recording has no sound timings, so the book does not highlight its sounds.",
+    ),
+  ).toBeVisible();
+  expect(f.errors).toEqual([]);
+});

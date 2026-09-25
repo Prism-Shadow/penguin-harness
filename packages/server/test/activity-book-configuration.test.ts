@@ -246,4 +246,73 @@ describe("book configuration compiler", () => {
       },
     ]);
   });
+
+  it("gives a decodable book's story narration its words, sounds and timings in seconds", () => {
+    const activity = bookActivity();
+    const manifest = languageManifest(activity);
+    const word = (normalized: string, extra: Record<string, unknown> = {}) => ({
+      key: `book-word-${normalized}`,
+      type: "audio" as const,
+      role: "bookWord" as const,
+      description: `Pronunciation of “${normalized}”.`,
+      word: normalized,
+      normalizedWord: normalized,
+      usages: [],
+      ...extra,
+    });
+    manifest.assets["en-US"]!.push(
+      word("penguin", {
+        phonemes: ["p", "ɛ", "ŋ", "ɡ", "w", "ɪ", "n"],
+        path: "media/generated/penguin.mp3",
+        phonemeTimings: ["p", "ɛ", "ŋ", "ɡ", "w", "ɪ", "n"].map((phoneme, index) => ({
+          phoneme,
+          startMs: index * 100,
+          endMs: (index + 1) * 100,
+        })),
+        wholeWordTiming: { startMs: 900, endMs: 1400 },
+      }),
+      // Recorded by Gemini: it plays, but it is not timed.
+      word("walks", { phonemes: ["w", "ɔ", "k", "s"], path: "media/generated/walks.wav" }),
+    );
+    const product = compileBookConfiguration(activity, "decodable", manifest)[
+      activity.productCode
+    ] as Record<string, any>;
+    const words = product["en-US"].scenes[2].media.narration.words;
+    expect(words.map((entry: any) => entry.text)).toEqual([
+      "The",
+      "penguin",
+      "walks",
+      "home",
+      "It",
+      "waves",
+    ]);
+    expect(words[1]).toEqual({
+      text: "penguin",
+      normalizedWord: "penguin",
+      audioKey: "book-word-penguin",
+      phonemes: ["p", "ɛ", "ŋ", "ɡ", "w", "ɪ", "n"],
+      phonemeTimings: ["p", "ɛ", "ŋ", "ɡ", "w", "ɪ", "n"].map((phoneme, index) => ({
+        phoneme,
+        start: index / 10,
+        end: (index + 1) / 10,
+      })),
+      wholeWordTiming: { start: 0.9, end: 1.4 },
+    });
+    expect(words[2]).toMatchObject({
+      audioKey: "book-word-walks",
+      phonemes: ["w", "ɔ", "k", "s"],
+      phonemeTimings: [],
+      wholeWordTiming: null,
+    });
+    expect(words[0]).toMatchObject({ audioKey: null, phonemes: [], wholeWordTiming: null });
+    // The word's clip is bound in its language group, so the reader finds it by its key.
+    expect(product["en-US"]["book-word-penguin"]).toBe("{{MEDIA}}/generated/penguin.mp3");
+    // Cover and title pages have no narration to list words for.
+    expect(product["en-US"].scenes[0].media.narration).toBeNull();
+    // A read-along book is compiled as before: no words.
+    const readAlong = compileBookConfiguration(activity, "readAlong", manifest)[
+      activity.productCode
+    ] as Record<string, any>;
+    expect(readAlong["en-US"].scenes[2].media.narration.words).toEqual([]);
+  });
 });

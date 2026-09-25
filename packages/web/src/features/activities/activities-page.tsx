@@ -1659,6 +1659,15 @@ function ActivityEditor({
                     })
                   }
                   onAskModel={(words) => startRun("generate-phonemes", { language, words })}
+                  canRecord={
+                    editable &&
+                    available &&
+                    !busy &&
+                    pipelineBlocked === null &&
+                    !codingAgentId &&
+                    !!selectedAgent
+                  }
+                  onRecord={() => runStages("words", { language })}
                   onUseSounds={(runId) =>
                     void action(async () => {
                       const before = wordsWithoutSounds(

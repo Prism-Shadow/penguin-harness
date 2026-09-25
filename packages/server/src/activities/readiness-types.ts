@@ -20,5 +20,17 @@ export type ReadinessCheck =
       state: "missing" | "problems" | "valid";
       problems: number;
     }
+  /**
+   * Only for a decodable book, per language with word pronunciations: how many are recorded,
+   * and how many of those are timed sound by sound (a Gemini recording is not).
+   */
+  | {
+      id: "words";
+      level: ReadinessLevel;
+      language: string;
+      recorded: number;
+      total: number;
+      timed: number;
+    }
   /** Media keys the specification describes differently in different scenes, sorted. */
   | { id: "mediaKeys"; level: ReadinessLevel; keys: string[] };

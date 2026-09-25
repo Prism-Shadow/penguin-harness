@@ -14,6 +14,8 @@
  *   translations  translate and accept every narration another language lacks, or whose
  *           default-language line changed since it was translated
  *   speech  generate and accept every unbound narration with a usable script
+ *   words   a decodable book only: record and accept every word pronunciation with sounds
+ *           and no recording, said slowly sound by sound and then normally (pronunciation.ts)
  *   sounds  generate and accept every music and sound effect with a prompt and no file,
  *           with the chosen sound provider (ElevenLabs unless the sequence names another)
  *   images  generate and accept every unbound image with a description
@@ -47,6 +49,12 @@ import { soundPromptOf } from "./playback.js";
 import { SOUND_PROMPT_MAX } from "./sound.js";
 import type { SoundProviderId } from "./sound-types.js";
 import { servesSoundKind } from "./audio-providers.js";
+import {
+  unrecordedWithSounds,
+  unrecordedWithoutSounds,
+  wordRecordingTargets,
+} from "./pronunciation.js";
+import type { SpeechProviderId } from "./speech-types.js";
 import {
   PIPELINE_STEPS,
   type PipelineInput,
@@ -181,6 +189,26 @@ export function imageTargets(manifest: AssetManifest): { language: string; asset
       )
       .map((asset) => ({ language, assetKey: asset.key })),
   );
+}
+
+/**
+ * The voice a narration or word is spoken in: its own saved voice when its provider speaks with
+ * it, else the sequence's choice when that provider does, else the provider's default (the
+ * Vault's ElevenLabs voice, or Gemini's first).
+ */
+export function voiceFor(
+  provider: SpeechProviderId,
+  saved: string | undefined,
+  chosen: string | undefined,
+): string {
+  if (provider === "elevenlabs")
+    return isVoiceOf("elevenlabs", saved)
+      ? saved!
+      : isVoiceOf("elevenlabs", chosen)
+        ? chosen!
+        : ELEVENLABS_DEFAULT_VOICE;
+  if (isSpeechVoice(saved)) return saved;
+  return isSpeechVoice(chosen) ? chosen : SPEECH_VOICES[0];
 }
 
 const TERMINAL = new Set<ActivityRun["status"]>([
@@ -433,25 +461,15 @@ export class PipelineRunner {
         step.note = step.step === "speech" ? "noNarration" : "noImages";
         return;
       }
-      const fallbackVoice = isSpeechVoice(input.voice) ? input.voice : SPEECH_VOICES[0];
       for (const target of targets) {
-        // Each narration speaks with its own provider and saved voice; the run's choice fills
-        // the rest for Gemini, and the Vault's default voice for ElevenLabs.
         const narration = manifest.assets[target.language]?.find(
           (item) => item.key === target.assetKey,
         );
-        const provider = narration?.speechProvider ?? "gemini";
-        const saved = narration?.voice;
-        const voice =
-          provider === "elevenlabs"
-            ? isVoiceOf("elevenlabs", saved)
-              ? saved
-              : isVoiceOf("elevenlabs", input.voice)
-                ? input.voice
-                : ELEVENLABS_DEFAULT_VOICE
-            : isSpeechVoice(saved)
-              ? saved
-              : fallbackVoice;
+        const voice = voiceFor(
+          narration?.speechProvider ?? "gemini",
+          narration?.voice,
+          input.voice,
+        );
         step.detail = target.assetKey;
         const before = await current();
         const run = await generation.start(
@@ -480,6 +498,11 @@ export class PipelineRunner {
         step.done += 1;
       }
       step.detail = null;
+      return;
+    }
+
+    if (step.step === "words") {
+      await this.recordWords(state, step, input);
       return;
     }
 
@@ -620,6 +643,82 @@ export class PipelineRunner {
         runtime,
       ),
     );
+  }
+
+  /**
+   * The words step: a decodable book's word pronunciations with sounds and no recording, each
+   * recorded by the ordinary speech run with its own provider and voice and accepted. A word
+   * that names no provider is spoken by ElevenLabs when the agent can use it, else by Gemini,
+   * and keeps that choice; its script is made for the provider before anything is recorded.
+   */
+  private async recordWords(state: PipelineState, step: PipelineStepState, input: PipelineInput) {
+    const { projectId, activityId } = state;
+    const { activities, generation } = this.deps;
+    const current = () => activities.getActivity(projectId, activityId);
+    const activity = await current();
+    const manifest = activity.draft.mediaPlan?.manifest;
+    const hasWords =
+      !!manifest && Object.values(manifest.assets).some((group) => group.some(isBookWord));
+    const recorded =
+      activity.activityType === "book"
+        ? ((await activities.bookWordsState(projectId, activityId)).bookMode ?? null)
+        : null;
+    // The product's reading mode decides; where it records none, the sequence's choice, and a
+    // book that already has word pronunciations was refreshed as decodable.
+    const mode = recorded ?? input.bookMode ?? (hasWords ? "decodable" : null);
+    if (activity.activityType !== "book" || mode !== "decodable") {
+      step.status = "skipped";
+      step.note = "notDecodable";
+      return;
+    }
+    if (input.codingAgentId || !input.agentId) {
+      step.status = "skipped";
+      step.note = "needsPenguinAgent";
+      return;
+    }
+    if (!manifest) throw new Error("Plan media before recording the book's words.");
+    const waiting = inScope(unrecordedWithSounds(manifest), input.scope);
+    if (!waiting.length) {
+      step.status = "skipped";
+      step.note = inScope(unrecordedWithoutSounds(manifest), input.scope).length
+        ? "wordsMissingSounds"
+        : "noWords";
+      return;
+    }
+    const speech = await generation.speechSetup(projectId, input.agentId);
+    const fallback: SpeechProviderId = speech.providers?.some(
+      (entry) => entry.id === "elevenlabs" && entry.available,
+    )
+      ? "elevenlabs"
+      : "gemini";
+    const prepared = await activities.prepareWordRecordings(
+      projectId,
+      activityId,
+      fallback,
+      activity.draft.contentRevision,
+      input.scope?.language,
+    );
+    const ready = prepared.mediaPlan!.manifest;
+    const targets = inScope(wordRecordingTargets(ready), input.scope);
+    step.total = targets.length;
+    for (const target of targets) {
+      const word = ready.assets[target.language]?.find((item) => item.key === target.assetKey);
+      const provider = word?.speechProvider ?? "gemini";
+      step.detail = target.assetKey;
+      const before = await current();
+      const run = await generation.start(
+        projectId,
+        activityId,
+        input.agentId,
+        before.draft.contentRevision,
+        { audio: { ...target, voice: voiceFor(provider, word?.voice, input.voice), provider } },
+      );
+      await this.follow(state, step, run);
+      const after = await current();
+      await generation.acceptAudio(projectId, activityId, run.runId, after.draft.contentRevision);
+      step.done += 1;
+    }
+    step.detail = null;
   }
 
   /** Wait for one run to settle; anything but success ends the step with the run's own reason. */

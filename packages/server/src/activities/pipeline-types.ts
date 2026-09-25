@@ -9,6 +9,7 @@ export const PIPELINE_STEPS = [
   "media",
   "translations",
   "speech",
+  "words",
   "sounds",
   "images",
   "assessment",
@@ -32,6 +33,12 @@ export type PipelineNote =
   | "needsPenguinAgent"
   | "noNarration"
   | "noImages"
+  /** Word pronunciations are recorded for decodable books only. */
+  | "notDecodable"
+  /** No word pronunciation is waiting for a recording. */
+  | "noWords"
+  /** The words still without a recording have no sounds yet, so none can be recorded. */
+  | "wordsMissingSounds"
   /** No music or sound effect has a prompt and no file. */
   | "noSounds"
   /** The sound provider cannot be used by the chosen agent (no key, or no model). */

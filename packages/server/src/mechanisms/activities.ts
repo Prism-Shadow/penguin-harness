@@ -2,7 +2,7 @@ import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AudioTarget, AudioResult } from "../activities/audio.js";
 import type { GeneratedAudioFormat } from "../activities/media.js";
 import type { SoundSetup } from "../activities/sound-types.js";
-import type { SpeechSetup } from "../activities/speech-types.js";
+import type { SpeechProviderId, SpeechSetup } from "../activities/speech-types.js";
 import type { ImageRequest } from "../activities/image.js";
 import type { ImageTarget, ImageResult } from "../activities/generated-image.js";
 import type { MediaTextTarget } from "../activities/media-text.js";
@@ -315,6 +315,18 @@ export abstract class ActivityAuthoring extends Interface<{
     assetKey: string,
     phonemes: unknown,
     expectedRevision: string,
+  ): Promise<ActivityDraft>;
+  /**
+   * Ready a decodable book's words for recording: those with sounds and no recording that
+   * name no speech provider get `provider`, and every word's script follows its sounds and
+   * provider unless the author wrote it. Every language, or only `language`.
+   */
+  prepareWordRecordings(
+    projectId: string,
+    activityId: string,
+    provider: SpeechProviderId,
+    expectedRevision: string,
+    language?: string,
   ): Promise<ActivityDraft>;
   /** A model's proposed sounds, given only to words that still have none. */
   applyPhonemes(

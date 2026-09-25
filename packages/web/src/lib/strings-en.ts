@@ -563,6 +563,14 @@ export const en: Strings = {
         `${language} has ${covered} of ${total} narrations of the default language.`,
       media: (bound: number, total: number) =>
         `Images, video and animation: ${bound} of ${total} bound.`,
+      words: {
+        ok: (language: string, total: number) =>
+          `Word pronunciations in ${language}: all ${total} recorded and timed sound by sound.`,
+        none: (language: string) =>
+          `This decodable book lists no word pronunciations in ${language} yet. Refresh words in Audios.`,
+        missing: (language: string, recorded: number, total: number, timed: number) =>
+          `Word pronunciations in ${language}: ${recorded} of ${total} recorded, ${timed} timed sound by sound. The reader cannot sound out the others.`,
+      },
       mediaKeys: {
         ok: "Every media key means the same thing in every scene.",
         conflicting: (keys: string[]) =>
@@ -607,6 +615,7 @@ export const en: Strings = {
         media: "Plan media",
         translations: "Translate",
         speech: "Generate speech",
+        words: "Record words",
         sounds: "Generate sounds",
         images: "Generate images",
         assessment: "Generate assessment",
@@ -633,6 +642,10 @@ export const en: Strings = {
         needsPenguinAgent: "Media generation needs a Penguin agent, not a coding agent.",
         noNarration: "No narration is missing.",
         noImages: "No image is missing.",
+        notDecodable: "Word recordings are made for decodable books only.",
+        noWords: "No word is waiting for a recording.",
+        wordsMissingSounds:
+          "The words without a recording have no sounds yet. Give them sounds in Audios first.",
         noSounds: "No music or sound effect is missing.",
         soundProviderUnavailable:
           "The sound provider cannot be used by this agent. Add its key to the agent's Vault.",
@@ -1110,6 +1123,33 @@ export const en: Strings = {
       notDecodable:
         "Word pronunciations are for decodable books. Choose Decodable as the reading mode to list the story's words.",
       run: "Word sounds",
+      record: (n: number) => `Record words (${n})`,
+      recordAbout:
+        "Records each word that has sounds and no recording yet: said slowly, sound by sound, then normally. ElevenLabs is used when the agent's Vault has its key, and times each sound so the book can highlight it; Gemini records without timings. Each recording is a paid request made by the selected agent.",
+      recordBlocked: "Save your edits and choose a Penguin agent to record words.",
+      recordTitle: "Record words",
+      recordConfirm: (n: number, language: string) =>
+        `Record ${n} ${n === 1 ? "word" : "words"} in ${language}? Each recording is a paid request to ElevenLabs or Gemini, made by the selected agent, and each is kept on its word.`,
+      toRecord: (n: number) =>
+        n === 1 ? "1 word is ready to record." : `${n} words are ready to record.`,
+      untimed: (n: number) =>
+        n === 1
+          ? "1 recorded word has no sound timings, so it is not highlighted."
+          : `${n} recorded words have no sound timings, so they are not highlighted.`,
+      recording: "Recording",
+      noRecording: "Not recorded yet. Record words in Audios records it.",
+      script: "Recording script",
+      scriptHint: "Made from the word's sounds for its provider each time you save.",
+      scriptYours: "Your own script. It is kept as you wrote it.",
+      writeScript: "Write my own script",
+      useSoundsScript: "Use the script from its sounds",
+      timeline: "Sound timeline",
+      timelineAbout:
+        "When each sound of the recording is said, drawn out, and then when the whole word is said. The book highlights each sound in turn from these. Only an ElevenLabs recording has them.",
+      timelineList: "Sounds, highlighted as the recording plays",
+      noTimings: "This recording has no sound timings, so the book does not highlight its sounds.",
+      soundAt: (sound: string, start: string) => `Sound ${sound}, at ${start} s`,
+      wholeWordAt: (word: string, start: string) => `Whole word ${word}, at ${start} s`,
     },
     speechProvider: {
       label: "Provider",

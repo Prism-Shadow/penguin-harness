@@ -240,4 +240,60 @@ describe("build readiness", () => {
       ).toEqual({ id: "mediaKeys", level: "warn", keys: ["cat"] });
     });
   });
+
+  it("warns for a decodable book's words without a recording or without sound timings", () => {
+    const word = (key: string, extra: Record<string, unknown> = {}) => ({
+      key,
+      type: "audio",
+      role: "bookWord",
+      description: key,
+      word: key,
+      normalizedWord: key,
+      phonemes: ["k", "æ", "t"],
+      usages: usage,
+      ...extra,
+    });
+    const timings = {
+      phonemeTimings: [
+        { phoneme: "k", startMs: 0, endMs: 100 },
+        { phoneme: "æ", startMs: 100, endMs: 200 },
+        { phoneme: "t", startMs: 200, endMs: 300 },
+      ],
+      wholeWordTiming: { startMs: 400, endMs: 600 },
+    };
+    const book = (words: Record<string, unknown>[]) => {
+      const value = activity();
+      (value as { activityType: string }).activityType = "book";
+      value.draft.mediaPlan!.manifest.assets["en-US"]!.push(...(words as never[]));
+      return value;
+    };
+    const wordsCheck = (value: ActivityDetail, bookMode?: "decodable" | "readAlong" | null) =>
+      buildReadiness(value, { canonical: true, checkoutFound: true, bookMode }).filter(
+        (check) => check.id === "words",
+      );
+    // One recorded and timed, one recorded by Gemini (no timings), one not recorded.
+    const mixed = book([
+      word("cat", { path: "media/cat.mp3", ...timings }),
+      word("sat", { path: "media/sat.wav" }),
+      word("ran"),
+    ]);
+    expect(wordsCheck(mixed, "decodable")).toEqual([
+      { id: "words", level: "warn", language: "en-US", recorded: 2, total: 3, timed: 1 },
+    ]);
+    // Speech counts leave the words out.
+    expect(
+      buildReadiness(mixed, { canonical: true, checkoutFound: true }).find(
+        (check) => check.id === "speech" && check.language === "en-US",
+      ),
+    ).toMatchObject({ bound: 1, total: 2 });
+    expect(wordsCheck(book([word("cat", { path: "media/cat.mp3", ...timings })]), null)).toEqual([
+      { id: "words", level: "ok", language: "en-US", recorded: 1, total: 1, timed: 1 },
+    ]);
+    // A decodable book that has not listed its words; a read-along book is never asked.
+    expect(wordsCheck(book([]), "decodable")).toEqual([
+      { id: "words", level: "warn", language: "en-US", recorded: 0, total: 0, timed: 0 },
+    ]);
+    expect(wordsCheck(mixed, "readAlong")).toEqual([]);
+    expect(wordsCheck(activity(), "decodable")).toEqual([]);
+  });
 });

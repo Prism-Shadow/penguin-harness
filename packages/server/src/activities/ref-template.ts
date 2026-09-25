@@ -88,6 +88,8 @@ function unbind(asset: MediaAsset): void {
   delete asset.generatedImage;
   delete asset.wordTimings;
   delete asset.durationMs;
+  delete asset.phonemeTimings;
+  delete asset.wholeWordTiming;
 }
 
 /**

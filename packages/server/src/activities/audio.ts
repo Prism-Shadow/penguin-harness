@@ -12,6 +12,7 @@ import type { SoundRequest } from "./sound-types.js";
 import type { SpeechProviderId } from "./speech-types.js";
 import type { GeneratedAudioFormat } from "./media.js";
 import type { WordTiming } from "./word-timings.js";
+import { isBookWord } from "./book-words.js";
 
 export interface AudioTarget {
   language: string;
@@ -29,6 +30,12 @@ export interface AudioTarget {
   model: string;
   /** Present on a music or sound-effect run: what its provider is asked for. */
   sound?: SoundRequest;
+  /**
+   * `direction` when the script tells the voice how to say something rather than being the
+   * words to read: a word pronunciation spoken by Gemini, whose script asks for the word drawn
+   * out and then said normally. Absent means the script is read aloud as written.
+   */
+  delivery?: "direction";
 }
 export interface AudioResult {
   runId: string;
@@ -93,6 +100,7 @@ export function audioTarget(
       script: asset.script,
       voice: input.voice,
       model: SPEECH_MODEL,
+      ...(isBookWord(asset) && !asset.customScript ? { delivery: "direction" as const } : {}),
     };
   }
   const model = input.model ?? ELEVENLABS_DEFAULT_MODEL;

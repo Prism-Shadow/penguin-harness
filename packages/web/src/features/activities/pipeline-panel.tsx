@@ -35,6 +35,7 @@ export const PIPELINE_CHOICES: readonly PipelineSelection[] = [
   "media",
   "translations",
   "speech",
+  "words",
   "sounds",
   "images",
   "assessment",

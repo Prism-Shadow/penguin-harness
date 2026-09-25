@@ -36,3 +36,10 @@ the optional audio fields `role`, `word`, `normalizedWord`, `phonemes`, `phoneme
 media plan without them reads as before. An older build rejects a media plan that holds a
 word asset, so rolling back needs the word assets removed from the plans that have them. An
 older build lists a `phonemes` run by its kind alone.
+
+[Word recordings](2026-09-25-activity-word-recordings.md) added the optional word-asset fields
+`customScript`, `phonemeTimings` and `wholeWordTiming`, and the pipeline step `words`. They
+did not rewrite any existing record, and a media plan without them reads as before. An older
+build rejects a media plan that holds any of them, so rolling back needs them removed from
+the plans that have them. A word's `script` is now written from its sounds when the plan is
+saved; an older build keeps it as an ordinary script.

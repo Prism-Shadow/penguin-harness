@@ -2,7 +2,9 @@
  * A decodable book's word pronunciations, at the head of the Audios section: how many words
  * the story shows and how many still lack sounds, **Refresh words** to bring them in line
  * with the story (espeak-ng fills the sounds it can), and **Ask a model for the rest**, whose
- * proposal is listed here and accepted with **Use these sounds**.
+ * proposal is listed here and accepted with **Use these sounds**. **Record words (n)** runs the
+ * words stage for this language: each word with sounds and no recording is recorded, said
+ * slowly sound by sound and then normally.
  *
  * It reads the book's recorded reading mode and espeak-ng's status itself; everything it
  * changes goes through the page, which owns the draft.
@@ -15,9 +17,11 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
 import { Button } from "../../components/ui/button";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
+import { wordRecordingTally } from "./phoneme-timeline";
 import {
   PHONEMES_RUN_MAX_WORDS,
   bookWordAssets,
@@ -44,6 +48,8 @@ export function BookWordsPanel({
   onRefresh,
   onAskModel,
   onUseSounds,
+  canRecord,
+  onRecord,
 }: {
   endpoint: string;
   language: string;
@@ -60,8 +66,12 @@ export function BookWordsPanel({
   onRefresh: (bookMode: BookMode | undefined) => void;
   onAskModel: (words: string[]) => void;
   onUseSounds: (runId: string) => void;
+  /** Whether the words stage can start now: saved, nothing running, a Penguin agent chosen. */
+  canRecord: boolean;
+  onRecord: () => void;
 }) {
   const [state, setState] = useState<BookWordsState | null>(null);
+  const [confirming, setConfirming] = useState(false);
   useEffect(() => {
     let cancelled = false;
     apiFetch<BookWordsState>(`${endpoint}/book-words`)
@@ -100,6 +110,7 @@ export function BookWordsPanel({
   const all = bookWordAssets(group);
   const decodable = isDecodable(state, chosenMode, all.length > 0);
   const missing = wordsWithoutSounds(group);
+  const tally = wordRecordingTally(group);
   const proposal = candidate && candidate.runId === wanted ? parseProposal(candidate.text) : null;
   const proposed = proposal ? proposalRows(proposal, group) : [];
   // Only what accepting would change: a word that has sounds by now keeps them. A proposal
@@ -113,6 +124,7 @@ export function BookWordsPanel({
         {words.group}
         <InfoPopover label={words.group}>
           <p>{words.about}</p>
+          <p className="mt-2">{words.recordAbout}</p>
         </InfoPopover>
       </h3>
       {!decodable ? (
@@ -125,6 +137,16 @@ export function BookWordsPanel({
               <> · {missing.length ? words.missing(missing.length) : words.allSounded}</>
             )}
           </p>
+          {all.length > 0 && (tally.toRecord > 0 || tally.untimed > 0) && (
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              {[
+                tally.toRecord ? words.toRecord(tally.toRecord) : "",
+                tally.untimed ? words.untimed(tally.untimed) : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            </p>
+          )}
           {missing.length > 0 && !state.espeak.available && (
             <p className={`text-xs ${toneInk.attention}`}>{words.espeakMissing}</p>
           )}
@@ -146,7 +168,35 @@ export function BookWordsPanel({
                   {words.askModel}
                 </Button>
               )}
+              {all.length > 0 && (
+                <Button
+                  size="sm"
+                  disabled={!canRecord || tally.toRecord === 0}
+                  onClick={() => setConfirming(true)}
+                >
+                  {words.record(tally.toRecord)}
+                </Button>
+              )}
             </div>
+          )}
+          {editable && all.length > 0 && tally.toRecord > 0 && !canRecord && (
+            <p className="text-xs text-gray-500">{words.recordBlocked}</p>
+          )}
+          {confirming && (
+            <ConfirmModal
+              open
+              tone="primary"
+              title={words.recordTitle}
+              confirmLabel={words.record(tally.toRecord)}
+              confirmDisabled={!canRecord || tally.toRecord === 0}
+              onClose={() => setConfirming(false)}
+              onConfirm={() => {
+                setConfirming(false);
+                onRecord();
+              }}
+            >
+              <p>{words.recordConfirm(tally.toRecord, language)}</p>
+            </ConfirmModal>
           )}
           {missing.length > PHONEMES_RUN_MAX_WORDS && (
             <p className="text-xs text-gray-500">{words.askFirst(PHONEMES_RUN_MAX_WORDS)}</p>

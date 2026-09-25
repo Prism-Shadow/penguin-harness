@@ -41,6 +41,12 @@ function checkText(check: ReadinessCheck): string {
       return words.coverage(check.language, check.covered, check.total);
     case "media":
       return words.media(check.bound, check.total);
+    case "words":
+      return check.total === 0
+        ? words.words.none(check.language)
+        : check.level === "ok"
+          ? words.words.ok(check.language, check.total)
+          : words.words.missing(check.language, check.recorded, check.total, check.timed);
     case "mediaKeys":
       return check.keys.length ? words.mediaKeys.conflicting(check.keys) : words.mediaKeys.ok;
     case "assessment":

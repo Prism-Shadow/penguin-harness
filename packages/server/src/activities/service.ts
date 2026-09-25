@@ -97,6 +97,8 @@ import {
   wordsMissingPhonemes,
 } from "./book-words.js";
 import type { BookWordsRefresh, BookWordsState, PhonemesCandidate } from "./book-word-types.js";
+import { recordingTimingFields, syncWordScripts } from "./pronunciation.js";
+import type { SpeechProviderId } from "./speech-types.js";
 import {
   nextFreeRefNum,
   refDraftFromTemplate,
@@ -206,6 +208,8 @@ export class ActivityService implements ActivityAuthoring {
         : ((await this.effectiveModuleDocument(projectId, activity, "assessment"))?.value ?? null),
       ownAssessment: assessment?.own ?? null,
       canonicalRefNum: this.productOf(activity)?.canonicalRefNum ?? null,
+      bookMode:
+        activity.activityType === "book" ? (this.productOf(activity)?.bookMode ?? null) : null,
     });
   }
   async implementationFeatures(projectId: string, activityId: string) {
@@ -1101,6 +1105,7 @@ export class ActivityService implements ActivityAuthoring {
       const { plan, group, desired } = this.plannedWords({ ...record, draft: current }, language);
       const merged = mergeWordAssets(group, desired);
       fillPhonemes(merged, new Map(Object.entries(found)), "espeak");
+      syncWordScripts(merged, group);
       still = wordsMissingPhonemes(merged);
       const manifest = this.validWordManifest(
         { ...plan.manifest, assets: { ...plan.manifest.assets, [language]: merged } },
@@ -1172,6 +1177,7 @@ export class ActivityService implements ActivityAuthoring {
       asset.phonemes = sounds;
       asset.phonemeSource = "author";
       asset.customized = true;
+      syncWordScripts(manifest.assets[language]!, plan.manifest.assets[language]);
       return {
         ...draft,
         mediaPlan: { ...plan, manifest: this.validWordManifest(manifest, activity) },
@@ -1195,6 +1201,37 @@ export class ActivityService implements ActivityAuthoring {
         new Map(Object.entries(candidate.phonemes)),
         "model",
       );
+      syncWordScripts(manifest.assets[candidate.language]!, group);
+      return {
+        ...draft,
+        mediaPlan: { ...plan, manifest: this.validWordManifest(manifest, activity) },
+      };
+    });
+  }
+  /**
+   * Ready a language's words for recording (every language without `language`): a word with
+   * sounds and no recording that names no speech provider is given `provider`, and every
+   * word's script is brought in line with its sounds and provider, unless the author wrote it.
+   */
+  async prepareWordRecordings(
+    projectId: string,
+    activityId: string,
+    provider: SpeechProviderId,
+    expectedRevision: string,
+    language?: string,
+  ): Promise<ActivityDraft> {
+    return this.change(projectId, activityId, expectedRevision, (draft, activity) => {
+      const plan = draft.mediaPlan;
+      if (!plan || draft.status !== "valid" || plan.specRevision !== contentRevision(draft.spec))
+        throw new HttpError(409, "media_stale", "Plan media from the saved specification first.");
+      const manifest = structuredClone(plan.manifest);
+      for (const [code, group] of Object.entries(manifest.assets)) {
+        if (language !== undefined && code !== language) continue;
+        for (const asset of group)
+          if (isBookWord(asset) && asset.phonemes?.length && !asset.path && !asset.speechProvider)
+            asset.speechProvider = provider;
+        syncWordScripts(group, plan.manifest.assets[code]);
+      }
       return {
         ...draft,
         mediaPlan: { ...plan, manifest: this.validWordManifest(manifest, activity) },
@@ -1314,6 +1351,9 @@ export class ActivityService implements ActivityAuthoring {
         );
       try {
         const parsed = validateManifest(manifest, activity);
+        // A word's script follows its sounds and provider unless the author wrote it.
+        for (const [language, assets] of Object.entries(parsed.assets))
+          syncWordScripts(assets, draft.mediaPlan.manifest.assets[language]);
         validateMediaCoverage(parsed, { ...activity, draft });
         for (const [language, assets] of Object.entries(parsed.assets)) {
           for (const asset of assets) {
@@ -1444,6 +1484,10 @@ export class ActivityService implements ActivityAuthoring {
         ? normalizeAlignment(asset.script ?? "", result.wordTimings)
         : null;
       if (timings) Object.assign(asset, timingManifestFields(timings, result.durationMs));
+      // A word pronunciation's two timings are its drawn-out sounds and the word itself.
+      delete asset.phonemeTimings;
+      delete asset.wholeWordTiming;
+      if (isBookWord(asset)) Object.assign(asset, recordingTimingFields(asset));
       return { ...draft, mediaPlan: { ...plan, manifest } };
     });
   }

@@ -4913,9 +4913,11 @@ export type {
   BookWordsState,
   EspeakStatus,
   PhonemeSource,
+  PhonemeTiming,
   PhonemesCandidate,
   PhonemesSettingsResponse,
   PhonemesTarget,
+  WholeWordTiming,
 } from "../activities/book-word-types.js";
 
 // ---------------------------------------------------------------------------

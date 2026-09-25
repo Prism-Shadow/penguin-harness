@@ -27,6 +27,14 @@ function validScript(input) {
   );
 }
 
+// A script is read aloud as written, unless the run marks it as a direction to follow (a
+// word pronunciation: the word drawn out, then said normally), which is never read out.
+function geminiPrompt(input) {
+  return input.delivery === "direction"
+    ? `Speak in ${input.language}. Follow this direction, and say only the word it names, never the direction itself:\n${input.script}`
+    : `Read this script aloud in ${input.language}, without adding words:\n${input.script}`;
+}
+
 async function speakWithGemini(input) {
   if (
     input.model !== "gemini-3.1-flash-tts-preview" ||
@@ -47,7 +55,7 @@ async function speakWithGemini(input) {
         content_items: [
           {
             type: "text",
-            text: `Read this script aloud in ${input.language}, without adding words:\n${input.script}`,
+            text: geminiPrompt(input),
           },
         ],
       },

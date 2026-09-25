@@ -8,8 +8,14 @@ import {
   type AudioKind,
 } from "./playback.js";
 import type { SpeechProviderId } from "./speech-types.js";
-import type { PhonemeSource } from "./book-word-types.js";
-import { BOOK_WORD_MAX, BOOK_WORD_ROLE, cleanPhonemes, isBookWord } from "./book-words.js";
+import type { PhonemeSource, PhonemeTiming, WholeWordTiming } from "./book-word-types.js";
+import {
+  BOOK_WORD_MAX,
+  BOOK_WORD_ROLE,
+  PHONEMES_MAX,
+  cleanPhonemes,
+  isBookWord,
+} from "./book-words.js";
 
 export interface MediaAsset {
   key: string;
@@ -63,6 +69,17 @@ export interface MediaAsset {
   phonemes?: string[];
   phonemeSource?: PhonemeSource;
   customized?: boolean;
+  /**
+   * A word pronunciation whose script the author wrote: it is kept as written rather than
+   * made again from the word's sounds and provider (see pronunciation.ts).
+   */
+  customScript?: boolean;
+  /**
+   * A word pronunciation's recording, timed: when each sound is said, drawn out, and when the
+   * whole word is said at its normal pace. Only from a provider that timed the recording.
+   */
+  phonemeTimings?: PhonemeTiming[];
+  wholeWordTiming?: WholeWordTiming;
   /** A reference in the WAF media checkout, never a server filesystem path. */
   path?: string;
   /**
@@ -151,6 +168,9 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
               "phonemes",
               "phonemeSource",
               "customized",
+              "customScript",
+              "phonemeTimings",
+              "wholeWordTiming",
               "path",
               "usages",
               "generatedAudio",
@@ -273,6 +293,41 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         throw new Error("A word's sounds come from espeak, a model or the author.");
       if (asset.customized !== undefined && (!bookWord || typeof asset.customized !== "boolean"))
         throw new Error("Only a word pronunciation is marked as customized.");
+      if (
+        asset.customScript !== undefined &&
+        (!bookWord || typeof asset.customScript !== "boolean")
+      )
+        throw new Error("Only a word pronunciation's script is marked as the author's.");
+      const span = (value: unknown): value is { startMs: number; endMs: number } => {
+        const timing = value as Record<string, unknown> | null;
+        return (
+          !!timing &&
+          typeof timing === "object" &&
+          Number.isSafeInteger(timing.startMs) &&
+          Number.isSafeInteger(timing.endMs) &&
+          (timing.startMs as number) >= 0 &&
+          (timing.endMs as number) > (timing.startMs as number)
+        );
+      };
+      if (
+        asset.phonemeTimings !== undefined &&
+        (!bookWord ||
+          !Array.isArray(asset.phonemeTimings) ||
+          asset.phonemeTimings.length > PHONEMES_MAX ||
+          asset.phonemeTimings.some((timing: unknown) => {
+            const phoneme = (timing as { phoneme?: unknown } | null)?.phoneme;
+            return (
+              !span(timing) ||
+              typeof phoneme !== "string" ||
+              cleanPhonemes([phoneme])?.[0] !== phoneme
+            );
+          }))
+      )
+        throw new Error(
+          "A word's sound timings are its sounds, each with a start and a later end.",
+        );
+      if (asset.wholeWordTiming !== undefined && (!bookWord || !span(asset.wholeWordTiming)))
+        throw new Error("A word's whole-word timing has a start and a later end.");
       const playback = readPlayback(asset);
       if (playback === "invalid" || (playback && asset.type !== "audio"))
         throw new Error(
@@ -388,6 +443,24 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           ? { phonemeSource: asset.phonemeSource as PhonemeSource }
           : {}),
         ...(asset.customized !== undefined ? { customized: asset.customized === true } : {}),
+        ...(asset.customScript !== undefined ? { customScript: asset.customScript === true } : {}),
+        ...(asset.phonemeTimings !== undefined
+          ? {
+              phonemeTimings: (asset.phonemeTimings as Record<string, unknown>[]).map((timing) => ({
+                phoneme: String(timing.phoneme),
+                startMs: Number(timing.startMs),
+                endMs: Number(timing.endMs),
+              })),
+            }
+          : {}),
+        ...(asset.wholeWordTiming !== undefined
+          ? {
+              wholeWordTiming: {
+                startMs: Number((asset.wholeWordTiming as Record<string, unknown>).startMs),
+                endMs: Number((asset.wholeWordTiming as Record<string, unknown>).endMs),
+              },
+            }
+          : {}),
         ...(asset.path !== undefined ? { path: String(asset.path) } : {}),
         ...(asset.generatedAudio !== undefined
           ? { generatedAudio: asset.generatedAudio as MediaAsset["generatedAudio"] }
@@ -536,7 +609,11 @@ export function mediaConfiguration(manifest: AssetManifest): Record<string, unkn
   return { [manifest.productCode]: { telemetry: false, ...languages } };
 }
 
-/** Storage provenance belongs to Penguin, not Loom's runtime asset schema. */
+/**
+ * Storage provenance belongs to Penguin, not Loom's runtime asset schema; so do a word's
+ * authored-script mark and its sound timings, which reach the module through the book
+ * configuration instead.
+ */
 export function wafManifest(manifest: AssetManifest): AssetManifest {
   return {
     ...manifest,
@@ -544,8 +621,15 @@ export function wafManifest(manifest: AssetManifest): AssetManifest {
       Object.entries(manifest.assets).map(([language, assets]) => [
         language,
         assets.map(
-          ({ generatedAudio: _audio, generatedImage: _image, phonemeSource: _source, ...asset }) =>
-            asset,
+          ({
+            generatedAudio: _audio,
+            generatedImage: _image,
+            phonemeSource: _source,
+            customScript: _script,
+            phonemeTimings: _sounds,
+            wholeWordTiming: _word,
+            ...asset
+          }) => asset,
         ),
       ]),
     ),

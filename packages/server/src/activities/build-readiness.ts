@@ -15,6 +15,7 @@ import { conflictingMediaKeys } from "./media-markup.js";
 import { assessmentProblemCounts } from "./module-overrides.js";
 import type { ReadinessCheck } from "./readiness-types.js";
 import { isAssessmentData } from "./sandbox-assessment.js";
+import { wordRecordingCounts } from "./pronunciation.js";
 
 export type { ReadinessCheck, ReadinessLevel } from "./readiness-types.js";
 
@@ -27,6 +28,8 @@ export interface ReadinessContext {
   ownAssessment?: unknown;
   /** The product's canonical ref, whose number the shared assessment's title carries. */
   canonicalRefNum?: number | null;
+  /** A book's recorded reading mode, or null when its product records none. */
+  bookMode?: "decodable" | "readAlong" | null;
 }
 
 const DEFAULT_LANGUAGE = "en-US";
@@ -104,6 +107,25 @@ export function buildReadiness(
           language,
           bound,
           total: audio.length,
+        });
+      // A decodable book's words: each needs a recording, timed sound by sound, for the
+      // reader to sound it out. A book whose product records no mode but has word
+      // pronunciations was refreshed as decodable; a decodable book with none in its default
+      // language has not listed its words yet.
+      const words = wordRecordingCounts(plan.manifest.assets[language]!);
+      if (
+        activity.activityType === "book" &&
+        context.bookMode !== "readAlong" &&
+        (words.total > 0 || (context.bookMode === "decodable" && language === DEFAULT_LANGUAGE))
+      )
+        checks.push({
+          id: "words",
+          level:
+            words.total > 0 && words.recorded === words.total && words.timed === words.total
+              ? "ok"
+              : "warn",
+          language,
+          ...words,
         });
       if (language !== DEFAULT_LANGUAGE && defaultSpeech.size) {
         const keys = new Set(audio.map((asset) => asset.key));

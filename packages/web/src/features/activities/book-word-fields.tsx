@@ -1,13 +1,15 @@
 /**
  * One word pronunciation of a decodable book, in the asset editor: its word, and its sounds as
  * a row of small boxes the author can correct, add to and remove from. Saving makes the word
- * the author's, so refreshing the book's words never replaces it.
+ * the author's, so refreshing the book's words never replaces it. Below them, the script the
+ * word is recorded from: made from its sounds for its provider, read-only, unless the author
+ * chooses to write their own, which is then kept as written.
  */
 import { useState } from "react";
 import type { AssetManifest } from "@prismshadow/penguin-server/api";
 import { Button } from "../../components/ui/button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Input } from "../../components/ui/input";
+import { Input, Textarea } from "../../components/ui/input";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -22,9 +24,12 @@ export function BookWordFields({
   editable,
   canSave,
   onSave,
+  onEdit,
 }: {
   asset: MediaAsset;
   editable: boolean;
+  /** Change the word in the editor's unsaved manifest, as every other field does. */
+  onEdit?: (change: (entry: MediaAsset) => void) => void;
   /** Whether a save can go now: nothing else running and no unsaved edits it would drop. */
   canSave: boolean;
   onSave: (phonemes: string[]) => void;
@@ -98,6 +103,38 @@ export function BookWordFields({
           onClick={() => onSave(cleaned)}
         >
           {words.saveSounds}
+        </Button>
+      )}
+      <Textarea
+        size="sm"
+        label={words.script}
+        hint={asset.customScript ? words.scriptYours : words.scriptHint}
+        rows={2}
+        maxLength={5000}
+        value={asset.script ?? ""}
+        readOnly={!asset.customScript || !onEdit}
+        onChange={(event) =>
+          onEdit?.((entry) => {
+            entry.script = event.target.value;
+          })
+        }
+      />
+      {onEdit && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() =>
+            onEdit((entry) => {
+              if (entry.customScript) delete entry.customScript;
+              else {
+                // A word whose script the author writes is theirs, like one whose sounds they set.
+                entry.customScript = true;
+                entry.customized = true;
+              }
+            })
+          }
+        >
+          {asset.customScript ? words.useSoundsScript : words.writeScript}
         </Button>
       )}
     </section>
