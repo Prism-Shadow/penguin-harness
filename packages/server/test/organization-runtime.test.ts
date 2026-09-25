@@ -1251,6 +1251,47 @@ describe("organization runtime", () => {
       expect(started).toHaveLength(1);
     });
 
+    it("retries a one-shot event whose dispatch failed, so desk notices are not stranded", async () => {
+      await createOrg();
+      await hireHr();
+      started.length = 0;
+      // A ticket for HR queues a desk notice; the calendar dispatch is the only thing that
+      // drains the queue.
+      await service.createTicket(
+        P,
+        ORG,
+        { title: "For HR", owner: `agent:${HR}` },
+        { userId: "alice" },
+      );
+      await store.writeCalendarEvent(
+        orgDir(),
+        HR,
+        "sweep",
+        serializeCalendarEvent({
+          prompt: "Sweep the board",
+          enabled: true,
+          startAt: new Date(T0 + 1000).toISOString(),
+        }),
+      );
+      await scheduler.tickOnce(); // registration pass: the start time is still ahead
+      expect(started).toHaveLength(0);
+      nowMs = T0 + 2000;
+      startFails = true;
+      await scheduler.tickOnce(); // the one-shot fires into a failing runner
+      expect(started).toHaveLength(0);
+      expect((await service.calendar(P, ORG)).events[0]!.lastOutcome).toBe("error");
+      // The slot is unwound, so the next pass fires the event and drains the notices.
+      startFails = false;
+      await scheduler.tickOnce();
+      expect(started).toHaveLength(1);
+      const parsed = parseOrgTriggerMessage(started[0]!.text);
+      expect(parsed?.rest).toContain("Sweep the board");
+      expect(parsed?.rest).toContain("For HR");
+      // The one-shot is consumed by the pass that finally succeeded — never fired twice.
+      await scheduler.tickOnce();
+      expect(started).toHaveLength(1);
+    });
+
     it("queues behind a busy desk, holds while paused, and consumes silently with the switch off", async () => {
       await createOrg();
       await hireHr();
