@@ -4904,3 +4904,112 @@ test("saves a named version and lists it", async ({ page }) => {
   await expect(rows.first()).toContainText("Current");
   expect(f.errors).toEqual([]);
 });
+
+test("compares a version with the current script and restores it", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  const detail = await page.evaluate((url) => fetch(url).then((r) => r.json()), `${base}/act_test`);
+  // The version routes, with the server's rules: a restore names the draft's revision, keeps
+  // the draft as it was as an automatic version, then records a restore version.
+  const version = (seq, extra = {}) => ({
+    versionId: `ver_${seq}`,
+    seq,
+    label: null,
+    kind: "manual",
+    reason: null,
+    createdAt: "2026-09-25T10:00:00.000Z",
+    author: "author",
+    mediaBytes: 2048,
+    current: false,
+    deployed: { qa: null, prod: null },
+    ...extra,
+  });
+  const versions = [version(1, { label: "First take" })];
+  const restores = [];
+  let draft = detail.draft;
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (url.pathname === `${base}/act_test` && request.method() === "GET" && restores.length)
+      return json({ ...detail, draft });
+    if (url.pathname === `${base}/act_test/versions` && request.method() === "GET")
+      return json({ versions: [...versions].reverse() });
+    if (url.pathname === `${base}/act_test/versions/ver_1/diff`) {
+      expect(url.searchParams.get("against")).toBe("current");
+      return json({
+        files: [
+          {
+            name: "description",
+            before: "Practice sight words",
+            after: "Practice common sight words",
+          },
+        ],
+        media: [
+          {
+            path: "audio/run_hello.wav",
+            change: "changed",
+            beforeBytes: 2048,
+            afterBytes: 4096,
+          },
+        ],
+      });
+    }
+    if (url.pathname === `${base}/act_test/versions/ver_1/restore`) {
+      const body = request.postDataJSON();
+      restores.push(body);
+      if (body.expectedRevision !== draft.contentRevision)
+        return json({ error: { code: "draft_conflict", message: "Draft changed." } }, 409);
+      versions.push(version(2, { kind: "auto", reason: "before_restore" }));
+      versions.push(version(3, { kind: "restore", current: true }));
+      draft = { ...draft, description: "Practice sight words", contentRevision: "restored" };
+      return json(draft);
+    }
+    return route.fallback();
+  });
+  await openSection(page, "Generation history");
+  const first = page.getByRole("row", { name: /^v1\b/ });
+  await expect(first).toContainText("First take");
+
+  // Compare: the script's tab, its lines, and the narration file that changed.
+  await first
+    .getByRole("button", { name: "Compare v1 with the current draft", exact: true })
+    .click();
+  const panel = page.getByRole("region", { name: "v1 compared with the current draft" });
+  await expect(panel.getByRole("tab", { name: "Script", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  const lines = panel.getByLabel("Differences in Script", { exact: true });
+  await expect(lines).toContainText("Practice sight words");
+  await expect(lines).toContainText("Practice common sight words");
+  const media = panel.getByRole("row", { name: /audio\/run_hello\.wav/ });
+  await expect(media).toContainText("Changed");
+  await expect(media).toContainText("2.0 KB");
+  await expect(media).toContainText("4.0 KB");
+
+  // Restore, after confirming; the draft becomes v1's and a version of it is kept first.
+  await first.getByRole("button", { name: "Restore v1", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Restore v1", exact: true });
+  await expect(dialog).toContainText("kept first as a version");
+  await dialog.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(
+    page.getByText("Restored v1. The draft as it was is kept as a version.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  expect(restores).toEqual([{ expectedRevision: detail.draft.contentRevision }]);
+  await expect(page.getByRole("row", { name: /^v3\b/ })).toContainText("Current");
+  await expect(page.getByRole("row", { name: /^v2\b/ })).toContainText("Before a restore");
+  // The restore version is the draft now: nothing to restore on it.
+  await expect(
+    page.getByRole("row", { name: /^v3\b/ }).getByRole("button", { name: "Restore v3" }),
+  ).toHaveCount(0);
+  await openSection(page, "Description");
+  await expect(page.getByRole("textbox", { name: "Activity Script", exact: true })).toHaveText(
+    "Practice sight words",
+  );
+  expect(f.errors).toEqual([]);
+});

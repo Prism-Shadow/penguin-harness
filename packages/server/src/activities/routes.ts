@@ -53,6 +53,8 @@ function moduleDocumentKind(value: string | undefined): "configuration" | "asses
   throw badRequest("kind must be configuration or assessment.");
 }
 
+/** A version id as the version store makes them. */
+const VERSION_ID = /^ver_[a-f0-9]{32}$/;
 /** The one write-method path that only reads: a zip of files any member may already fetch. */
 const BUNDLE_PATH = /^\/api\/projects\/[^/]+\/activities\/media-library\/bundle$/;
 
@@ -747,6 +749,33 @@ export class ActivityRoutes {
       );
       // 201 when this save made a version; 200 when nothing changed and the latest is returned.
       return c.json(result, result.created ? 201 : 200);
+    });
+    // Compare a version with the draft as it is now, or with another version.
+    app.get("/:activityId/versions/:versionId/diff", async (c) => {
+      const against = c.req.query("against") ?? "current";
+      if (against !== "current" && !VERSION_ID.test(against))
+        throw badRequest('against must be "current" or a version id.');
+      return c.json(
+        await this.versions.diff(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          pathParam(c, "versionId"),
+          against,
+        ),
+      );
+    });
+    // Restore a version (owner, by the guard above): the draft as it was is kept first.
+    app.post("/:activityId/versions/:versionId/restore", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.versions.restore(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          pathParam(c, "versionId"),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+          c.var.user.userId,
+        ),
+      );
     });
     // The product's tags, reached through any of its refs; every ref lists the same ones.
     app.put("/:activityId/tags", async (c) => {

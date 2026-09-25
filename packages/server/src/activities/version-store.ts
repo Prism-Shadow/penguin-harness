@@ -11,7 +11,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Db } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
-import { newId } from "./domain.js";
+import { newId, type ActivityDraft } from "./domain.js";
 import { withinRoot } from "./sandbox-paths.js";
 import type { VersionKind, VersionReason, VersionSummary } from "./version-types.js";
 
@@ -33,6 +33,8 @@ export interface VersionRow {
   deployedQaAt: string | null;
   deployedProdAt: string | null;
   createdAt: string;
+  /** The draft's status when the version was kept; null on versions from before it was kept. */
+  draftStatus: ActivityDraft["status"] | null;
 }
 
 export function sha256(bytes: Uint8Array): string {
@@ -84,8 +86,8 @@ export function writeVersion(db: Db, row: VersionRow): void {
   db.prepare(
     `INSERT INTO activity_versions (version_id, activity_id, seq, label, kind, reason,
       content_hash, manifest_sha, media_bytes, module_run_id, source_version_id,
-      author_user_id, deployed_qa_at, deployed_prod_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      author_user_id, deployed_qa_at, deployed_prod_at, created_at, draft_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     row.versionId,
     row.activityId,
@@ -102,6 +104,7 @@ export function writeVersion(db: Db, row: VersionRow): void {
     row.deployedQaAt,
     row.deployedProdAt,
     row.createdAt,
+    row.draftStatus,
   );
 }
 
@@ -118,6 +121,14 @@ export function latestVersion(db: Db, activityId: string): VersionRow | null {
   const row = db
     .prepare("SELECT * FROM activity_versions WHERE activity_id = ? ORDER BY seq DESC LIMIT 1")
     .get(activityId) as Record<string, unknown> | undefined;
+  return row ? mapRow(row) : null;
+}
+
+/** One version of the activity, or null when the activity has none by that id. */
+export function getVersion(db: Db, activityId: string, versionId: string): VersionRow | null {
+  const row = db
+    .prepare("SELECT * FROM activity_versions WHERE activity_id = ? AND version_id = ?")
+    .get(activityId, versionId) as Record<string, unknown> | undefined;
   return row ? mapRow(row) : null;
 }
 
@@ -153,5 +164,10 @@ function mapRow(row: Record<string, unknown>): VersionRow {
     deployedQaAt: (row.deployed_qa_at as string | null) ?? null,
     deployedProdAt: (row.deployed_prod_at as string | null) ?? null,
     createdAt: row.created_at as string,
+    draftStatus: draftStatus(row.draft_status),
   };
+}
+
+function draftStatus(value: unknown): ActivityDraft["status"] | null {
+  return value === "draft" || value === "valid" || value === "invalid" ? value : null;
 }

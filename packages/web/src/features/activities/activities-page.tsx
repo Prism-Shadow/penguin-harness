@@ -1856,6 +1856,14 @@ function ActivityEditor({
                     })
                   }
                   onAnnounce={announce}
+                  unsaved={dirty}
+                  onRestored={(draft) =>
+                    accept({
+                      ...detail,
+                      title: draft.status === "valid" ? String(draft.spec?.title) : detail.title,
+                      draft,
+                    })
+                  }
                   onUseCandidate={(candidate) => {
                     if (!dirty || window.confirm(S.activities.discard)) {
                       setSpec(candidate);

@@ -1,10 +1,14 @@
 /**
- * Saved versions of an activity: save one, list them, and say which one the draft holds now.
+ * Saved versions of an activity: save one, list them, say which one the draft holds now,
+ * compare one with the draft or another version, and restore one.
  *
  * Storage is Penguin's own (version-store.ts): a row per version and content-addressed blobs
  * in the activity's directory, holding the version manifest and the bytes of every medium
  * Penguin owns. Checkout media is recorded by path only. A save whose content equals the
  * latest version's makes no new version and returns that one.
+ *
+ * A restore rolls forward: it keeps the draft as it was as an automatic version first, writes
+ * the version's files and content back, and records the result as a new `restore` version.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -12,12 +16,14 @@ import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
 import type { ActivityAuthoring } from "../mechanisms/activities.js";
-import { newId, type ActivityDetail } from "./domain.js";
+import { newId, type ActivityDetail, type ActivityDraft } from "./domain.js";
 import {
   IMPLEMENTATION_FEATURES_FILE,
   normalizeFeatureSelection,
 } from "./implementation-features.js";
+import { validateManifest } from "./media.js";
 import { withinRoot } from "./sandbox-paths.js";
+import { versionDiff } from "./version-diff.js";
 import {
   manifestBytes,
   manifestHash,
@@ -28,14 +34,18 @@ import {
   type VersionMedia,
 } from "./version-manifest.js";
 import {
+  getVersion,
   latestVersion,
   listVersions,
+  readBlob,
   sha256,
   summarizeVersion,
   writeBlob,
   writeVersion,
+  type VersionRow,
 } from "./version-store.js";
 import type {
+  VersionDiff,
   VersionKind,
   VersionReason,
   VersionSaveResult,
@@ -43,6 +53,7 @@ import type {
 } from "./version-types.js";
 
 export type {
+  VersionDiff,
   VersionKind,
   VersionReason,
   VersionSaveResult,
@@ -70,6 +81,28 @@ export abstract class ActivityVersions extends Interface<{
   save(projectId: string, activityId: string, input: VersionSaveInput): Promise<VersionSaveResult>;
   /** Every version of the activity, newest first, marking the one the draft holds now. */
   list(projectId: string, activityId: string): Promise<VersionSummary[]>;
+  /**
+   * What differs going from version `versionId` to `against`: the draft as it is now
+   * ("current") or another version of the activity.
+   */
+  diff(
+    projectId: string,
+    activityId: string,
+    versionId: string,
+    against: string,
+  ): Promise<VersionDiff>;
+  /**
+   * Make the draft equal version `versionId`, keeping the draft as it was as an automatic
+   * version first and recording the result as a `restore` version. Every file of the version
+   * is checked before anything changes. Returns the draft.
+   */
+  restore(
+    projectId: string,
+    activityId: string,
+    versionId: string,
+    expectedRevision: string,
+    author: string | null,
+  ): Promise<ActivityDraft>;
 }>() {}
 
 @Component()
@@ -91,49 +124,12 @@ export class ActivityVersionService implements ActivityVersions {
         "invalid_request",
         `label must be at most ${VERSION_LABEL_MAX} characters.`,
       );
-    return this.authoring.exclusive(projectId, activityId, async () => {
-      const activity = await this.authoring.getActivity(projectId, activityId);
-      const { workspace, activityDir } = this.dirs(projectId, activity);
-      const files: VersionMedia[] = [];
-      // One file at a time: each is read, checked, and stored before the next is opened.
-      for (const owned of ownedMediaPaths(activity.draft.mediaPlan?.manifest).owned) {
-        const bytes = await this.readOwned(workspace, owned.path);
-        const digest = sha256(bytes);
-        if (owned.expectedSha256 && owned.expectedSha256 !== digest)
-          throw new HttpError(
-            409,
-            "version_media_changed",
-            `The file ${owned.path} changed since it was generated.`,
-          );
-        await writeBlob(activityDir, bytes);
-        files.push({ path: owned.path, sha256: digest, bytes: bytes.length });
-      }
-      const manifest = versionManifest(activity.draft, await this.readFeatures(workspace), files);
-      const hash = manifestHash(manifest);
-      const latest = latestVersion(this.db, activityId);
-      if (latest && latest.contentHash === hash)
-        return { version: summarizeVersion(latest, hash), created: false };
-      const manifestSha = await writeBlob(activityDir, manifestBytes(manifest));
-      const row = {
-        versionId: newId("ver"),
-        activityId,
-        seq: (latest?.seq ?? 0) + 1,
+    return this.authoring.exclusive(projectId, activityId, async () =>
+      this.record(projectId, await this.authoring.getActivity(projectId, activityId), {
+        ...input,
         label,
-        kind: input.kind,
-        reason: input.kind === "auto" ? (input.reason ?? null) : null,
-        contentHash: hash,
-        manifestSha,
-        mediaBytes: mediaBytes(manifest),
-        moduleRunId: null,
-        sourceVersionId: input.sourceVersionId ?? null,
-        authorUserId: input.author,
-        deployedQaAt: null,
-        deployedProdAt: null,
-        createdAt: new Date().toISOString(),
-      };
-      writeVersion(this.db, row);
-      return { version: summarizeVersion(row, hash), created: true };
-    });
+      }),
+    );
   }
 
   async list(projectId: string, activityId: string): Promise<VersionSummary[]> {
@@ -147,15 +143,215 @@ export class ActivityVersionService implements ActivityVersions {
     return rows.map((row) => summarizeVersion(row, current));
   }
 
-  /** The draft as a version manifest, hashing the files without storing them. */
+  async diff(
+    projectId: string,
+    activityId: string,
+    versionId: string,
+    against: string,
+  ): Promise<VersionDiff> {
+    const activity = await this.authoring.getActivity(projectId, activityId);
+    const { activityDir } = this.dirs(projectId, activity);
+    const before = await this.readManifest(activityDir, this.requireVersion(activityId, versionId));
+    const after =
+      against === "current"
+        ? await this.currentManifest(projectId, activity)
+        : await this.readManifest(activityDir, this.requireVersion(activityId, against));
+    return versionDiff(before, after);
+  }
+
+  async restore(
+    projectId: string,
+    activityId: string,
+    versionId: string,
+    expectedRevision: string,
+    author: string | null,
+  ): Promise<ActivityDraft> {
+    return this.authoring.exclusive(projectId, activityId, async () => {
+      const activity = await this.authoring.getActivity(projectId, activityId);
+      if (activity.draft.contentRevision !== expectedRevision)
+        throw new HttpError(
+          409,
+          "draft_conflict",
+          "Draft changed. Reload it before restoring a version.",
+        );
+      const row = this.requireVersion(activityId, versionId);
+      const { workspace, activityDir } = this.dirs(projectId, activity);
+      // Every file and the media plan are checked before anything changes.
+      const target = await this.readManifest(activityDir, row).catch(() => {
+        throw incomplete(null);
+      });
+      for (const file of target.media) {
+        if (!withinRoot(workspace, file.path)) throw incomplete(file.path);
+        await readBlob(activityDir, file.sha256).catch(() => {
+          throw incomplete(file.path);
+        });
+      }
+      if (target.draft.mediaPlan) {
+        try {
+          validateManifest(
+            { ...target.draft.mediaPlan.manifest, refNum: activity.refNum },
+            activity,
+          );
+        } catch (error) {
+          throw new HttpError(422, "media_invalid", (error as Error).message);
+        }
+      }
+      const current = await this.currentManifest(projectId, activity).then(manifestHash);
+      // The draft already holds this version: there is nothing to restore or to keep.
+      if (current === row.contentHash) return activity.draft;
+      // Kept even when a file of the draft is missing or changed: that is when an author most
+      // needs to go back, and the version holds what was there.
+      await this.record(
+        projectId,
+        activity,
+        { kind: "auto", reason: "before_restore", author },
+        { lenient: true },
+      );
+      const featuresFile = path.join(workspace, IMPLEMENTATION_FEATURES_FILE);
+      const features = await fs.readFile(featuresFile).catch(() => null);
+      let draft: ActivityDraft;
+      try {
+        // Files the draft has and the version lacks stay: run history may name them.
+        for (const file of target.media)
+          await this.writeOwned(workspace, file.path, await readBlob(activityDir, file.sha256));
+        await writeAtomic(
+          featuresFile,
+          JSON.stringify({ selectedIds: target.implementationFeatures ?? [] }, null, 2) + "\n",
+        );
+        draft = await this.authoring.replaceDraft(
+          projectId,
+          activityId,
+          target.draft,
+          expectedRevision,
+          row.draftStatus === "draft" && target.draft.spec !== null,
+        );
+      } catch (error) {
+        // The draft is unchanged, so its features selection goes back to what it was. Media
+        // written so far stay; the version kept before the restore holds what they replaced.
+        if (features) await writeAtomic(featuresFile, features);
+        else await fs.rm(featuresFile, { force: true });
+        throw error;
+      }
+      // Lenient too: the version restored may itself have been kept without a missing file.
+      await this.record(
+        projectId,
+        await this.authoring.getActivity(projectId, activityId),
+        { kind: "restore", author, sourceVersionId: row.versionId },
+        { lenient: true },
+      );
+      return draft;
+    });
+  }
+
+  /**
+   * Keep the activity as it is now as a version; the caller holds the activity. `lenient`
+   * keeps it even when a file is missing (left out) or changed since it was generated (kept
+   * as it is now), for the version kept before a restore.
+   */
+  private async record(
+    projectId: string,
+    activity: ActivityDetail,
+    input: VersionSaveInput,
+    { lenient = false }: { lenient?: boolean } = {},
+  ): Promise<VersionSaveResult> {
+    const label = input.label ?? null;
+    const activityId = activity.id;
+    const { workspace, activityDir } = this.dirs(projectId, activity);
+    const files: VersionMedia[] = [];
+    // One file at a time: each is read, checked, and stored before the next is opened.
+    for (const owned of ownedMediaPaths(activity.draft.mediaPlan?.manifest).owned) {
+      const bytes = await this.readOwned(workspace, owned.path).catch((error: unknown) => {
+        if (lenient && isMissing(error)) return null;
+        throw error;
+      });
+      if (!bytes) continue;
+      const digest = sha256(bytes);
+      if (!lenient && owned.expectedSha256 && owned.expectedSha256 !== digest)
+        throw new HttpError(
+          409,
+          "version_media_changed",
+          `The file ${owned.path} changed since it was generated.`,
+        );
+      await writeBlob(activityDir, bytes);
+      files.push({ path: owned.path, sha256: digest, bytes: bytes.length });
+    }
+    const manifest = versionManifest(activity.draft, await this.readFeatures(workspace), files);
+    const hash = manifestHash(manifest);
+    const latest = latestVersion(this.db, activityId);
+    if (latest && latest.contentHash === hash)
+      return { version: summarizeVersion(latest, hash), created: false };
+    const manifestSha = await writeBlob(activityDir, manifestBytes(manifest));
+    const row = {
+      versionId: newId("ver"),
+      activityId,
+      seq: (latest?.seq ?? 0) + 1,
+      label,
+      kind: input.kind,
+      reason: input.kind === "auto" ? (input.reason ?? null) : null,
+      contentHash: hash,
+      manifestSha,
+      mediaBytes: mediaBytes(manifest),
+      moduleRunId: null,
+      sourceVersionId: input.sourceVersionId ?? null,
+      authorUserId: input.author,
+      deployedQaAt: null,
+      deployedProdAt: null,
+      createdAt: new Date().toISOString(),
+      draftStatus: activity.draft.status,
+    };
+    writeVersion(this.db, row);
+    return { version: summarizeVersion(row, hash), created: true };
+  }
+
+  private requireVersion(activityId: string, versionId: string): VersionRow {
+    const row = getVersion(this.db, activityId, versionId);
+    if (!row) throw new HttpError(404, "version_not_found", "Version not found.");
+    return row;
+  }
+
+  /** The manifest a version was stored as, read from its checked blob. */
+  private async readManifest(activityDir: string, row: VersionRow): Promise<VersionManifest> {
+    return JSON.parse(
+      (await readBlob(activityDir, row.manifestSha)).toString("utf8"),
+    ) as VersionManifest;
+  }
+
+  /**
+   * Put a version's file back at its place in the workspace: beside it first and then renamed
+   * over it, so the draft never holds half a file. A file already equal is left alone.
+   */
+  private async writeOwned(workspace: string, relative: string, bytes: Buffer): Promise<void> {
+    const file = withinRoot(workspace, relative);
+    if (!file) throw incomplete(relative);
+    const stat = await fs.lstat(file).catch(() => null);
+    if (stat?.isSymbolicLink()) throw incomplete(relative);
+    if (
+      stat?.isFile() &&
+      stat.size === bytes.length &&
+      sha256(await fs.readFile(file)) === sha256(bytes)
+    )
+      return;
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await writeAtomic(file, bytes);
+  }
+
+  /**
+   * The draft as a version manifest, hashing the files without storing them. A file the
+   * draft binds and the workspace lacks is left out, so a compare shows it as removed.
+   */
   private async currentManifest(
     projectId: string,
     activity: ActivityDetail,
   ): Promise<VersionManifest> {
     const { workspace } = this.dirs(projectId, activity);
     const files: VersionMedia[] = [];
-    for (const owned of ownedMediaPaths(activity.draft.mediaPlan?.manifest).owned)
-      files.push(await this.digestOwned(workspace, owned.path));
+    for (const owned of ownedMediaPaths(activity.draft.mediaPlan?.manifest).owned) {
+      const file = await this.digestOwned(workspace, owned.path).catch((error: unknown) => {
+        if (isMissing(error)) return null;
+        throw error;
+      });
+      if (file) files.push(file);
+    }
     return versionManifest(activity.draft, await this.readFeatures(workspace), files);
   }
 
@@ -212,5 +408,41 @@ export class ActivityVersionService implements ActivityVersions {
     } catch {
       return null;
     }
+  }
+}
+
+/**
+ * A restore refused because the version lacks a file; names the first one missing as
+ * `detail.path` for the App to word, or none when the version's record itself is missing.
+ */
+function incomplete(file: string | null): HttpError {
+  return file === null
+    ? new HttpError(
+        409,
+        "version_incomplete",
+        "This version cannot be restored: its record is missing or damaged.",
+      )
+    : new HttpError(
+        409,
+        "version_incomplete",
+        `This version cannot be restored: its file ${file} is missing or damaged.`,
+        undefined,
+        { path: file },
+      );
+}
+
+/** Whether `error` says a file the draft binds is missing from the workspace. */
+function isMissing(error: unknown): boolean {
+  return error instanceof HttpError && error.code === "version_media_missing";
+}
+
+/** Write beside the file and rename over it. */
+async function writeAtomic(file: string, data: string | Uint8Array): Promise<void> {
+  const temp = `${file}.${newId("tmp")}`;
+  try {
+    await fs.writeFile(temp, data, { flag: "wx" });
+    await fs.rename(temp, file);
+  } finally {
+    await fs.rm(temp, { force: true });
   }
 }

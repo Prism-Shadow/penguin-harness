@@ -32,7 +32,11 @@ import type { HarnessInfo, VersionReport } from "@prismshadow/penguin-core";
 
 /** Unified error response body; `code` is a machine-readable error code, `message` is a Chinese user-facing message. */
 export interface ErrorBody {
-  error: { code: string; message: string };
+  /**
+   * `detail` carries the facts a refusal names (a file path, say) as data, so the App words
+   * them itself instead of reading them out of the English `message`.
+   */
+  error: { code: string; message: string; detail?: Record<string, string> };
 }
 
 /** Session approval mode (reuses the CLI enum). */
@@ -4863,7 +4867,11 @@ export type {
 export type { ReadinessCheck, ReadinessLevel } from "../activities/readiness-types.js";
 export type { VoiceOption } from "../activities/voice-catalogue.js";
 export type {
+  VersionDiff,
+  VersionFileDiff,
+  VersionFileName,
   VersionKind,
+  VersionMediaDiff,
   VersionReason,
   VersionSaveResult,
   VersionSummary,

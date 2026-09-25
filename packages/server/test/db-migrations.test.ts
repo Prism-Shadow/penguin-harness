@@ -862,6 +862,7 @@ describe("migration 18 → current: usage-reported-cost", () => {
         "usage-reported-cost",
         "activity-product-tags",
         "activity-versions",
+        "activity-versions-draft-status",
       ]);
       expect(usageColumns(db)).toContain("reported_cost_usd");
       expect(db.prepare("SELECT total, reported_cost_usd FROM usage_records").all()).toEqual([
@@ -912,7 +913,11 @@ describe("migration 19 → current: activity-product-tags", () => {
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
       expect(tables(db)).not.toContain("activity_product_tags");
-      expect(migrate(db).applied).toEqual(["activity-product-tags", "activity-versions"]);
+      expect(migrate(db).applied).toEqual([
+        "activity-product-tags",
+        "activity-versions",
+        "activity-versions-draft-status",
+      ]);
       expect(tables(db)).toContain("activity_product_tags");
       fresh.exec(SCHEMA_SQL);
       expect(tables(fresh)).toContain("activity_product_tags");
@@ -929,6 +934,7 @@ describe("migration 19 → current: activity-product-tags", () => {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "activity-product-tags",
         "activity-versions",
+        "activity-versions-draft-status",
       ]);
     } finally {
       db.close();
@@ -975,7 +981,7 @@ describe("migration 20 → current: activity-versions", () => {
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
       expect(tables(db)).not.toContain("activity_versions");
-      expect(migrate(db).applied).toEqual(["activity-versions"]);
+      expect(migrate(db).applied).toEqual(["activity-versions", "activity-versions-draft-status"]);
       expect(tables(db)).toContain("activity_versions");
       fresh.exec(SCHEMA_SQL);
       expect(shape(db)).toBe(shape(fresh));
@@ -988,7 +994,10 @@ describe("migration 20 → current: activity-versions", () => {
   it("is swap-safe, so a pushed platform may apply it", () => {
     const db = open20();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["activity-versions"]);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "activity-versions",
+        "activity-versions-draft-status",
+      ]);
     } finally {
       db.close();
     }
@@ -1027,6 +1036,53 @@ describe("migration 20 → current: activity-versions", () => {
       rollbackTo(db, 20);
       expect(shape(db)).toBe(before);
       expect(db.prepare("SELECT id FROM activities").all()).toEqual([{ id: "a" }]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("migration 21 → current: activity-versions-draft-status", () => {
+  const versionColumns = (db: DatabaseSync) =>
+    (db.prepare("PRAGMA table_info(activity_versions)").all() as { name: string }[]).map(
+      (column) => column.name,
+    );
+  function open21(): DatabaseSync {
+    const db = new sqlite.DatabaseSync(":memory:");
+    db.exec(SCHEMA_SQL);
+    db.exec("ALTER TABLE activity_versions DROP COLUMN draft_status");
+    db.exec("PRAGMA user_version = 21");
+    return db;
+  }
+
+  it("adds the column, keeping the versions, and the result is a fresh database", () => {
+    const db = open21();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(
+        "INSERT INTO activities (id, collection_id, product_code, ref_num, title, activity_type, created_at, updated_at, archived) VALUES ('a', 'c', 'p', 0, 'Title', 'standard', 'now', 'now', 0);" +
+          "INSERT INTO activity_versions (version_id, activity_id, seq, kind, content_hash, manifest_sha, media_bytes, created_at) VALUES ('v', 'a', 1, 'manual', 'h', 'h', 0, 'now')",
+      );
+      expect(versionColumns(db)).not.toContain("draft_status");
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["activity-versions-draft-status"]);
+      expect(db.prepare("SELECT version_id, draft_status FROM activity_versions").all()).toEqual([
+        { version_id: "v", draft_status: null },
+      ]);
+      fresh.exec(SCHEMA_SQL);
+      expect(shape(db)).toBe(shape(fresh));
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("down drops only the column", () => {
+    const db = open21();
+    try {
+      const before = shape(db);
+      migrate(db);
+      rollbackTo(db, 21);
+      expect(shape(db)).toBe(before);
     } finally {
       db.close();
     }

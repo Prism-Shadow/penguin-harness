@@ -5,7 +5,11 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import type { ActivityRun, ActivityRunSummary } from "@prismshadow/penguin-server/api";
+import type {
+  ActivityDraft,
+  ActivityRun,
+  ActivityRunSummary,
+} from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
 import { Button } from "../../components/ui/button";
 import { apiErrorText } from "../../lib/api-error";
@@ -32,6 +36,8 @@ export function GenerationHistory({
   onCancel,
   onUseCandidate,
   onAnnounce,
+  unsaved = false,
+  onRestored,
 }: {
   runs: readonly ActivityRunSummary[];
   /** The draft's revision, which says when a module was built from an older one. */
@@ -43,8 +49,12 @@ export function GenerationHistory({
   onCancel: (runId: string) => void;
   /** Put a specification run's candidate in the editor. */
   onUseCandidate: (candidate: string) => void;
-  /** Say that a version was saved. */
+  /** Say that a version was saved or restored. */
   onAnnounce: (announcement: Announcement) => void;
+  /** Whether the editor holds edits not saved yet, which a restore replaces. */
+  unsaved?: boolean;
+  /** The draft a restored version made. */
+  onRestored?: (draft: ActivityDraft) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -52,7 +62,9 @@ export function GenerationHistory({
         endpoint={endpoint}
         editable={editable}
         draftRevision={draftRevision}
+        unsaved={unsaved}
         onAnnounce={onAnnounce}
+        onRestored={onRestored}
       />
       <section className="space-y-3">
         <h3 className="text-sm font-semibold">{S.activities.runs}</h3>

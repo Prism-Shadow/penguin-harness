@@ -203,9 +203,43 @@ export type Strings = {
         author: string;
         media: string;
         current: string;
+        actions: string;
       };
       kinds: { manual: string; auto: string; restore: string; deploy: string };
       reasons: { before_restore: string; before_proposal: string };
+      compare: string;
+      /** Accessible name of a row's Compare button. */
+      compareVersion: (seq: number) => string;
+      compareTitle: (seq: number) => string;
+      compareAbout: (seq: number) => string;
+      comparing: string;
+      compareFailed: string;
+      closeCompare: string;
+      /** Accessible name of one part's line diff. */
+      diffLabel: (part: string) => string;
+      files: {
+        description: string;
+        spec: string;
+        mediaPlan: string;
+        configuration: string;
+        assessment: string;
+        features: string;
+      };
+      mediaTitle: string;
+      mediaColumns: { file: string; change: string; before: string; after: string };
+      media: { added: string; removed: string; changed: string };
+      /** A side of the media table without the file. */
+      noFile: string;
+      noChanges: string;
+      restore: string;
+      /** Accessible name of a row's Restore button, and the confirmation's title. */
+      restoreVersion: (seq: number) => string;
+      restoreConfirm: (seq: number) => string;
+      restoreUnsaved: string;
+      restoring: string;
+      restored: (seq: number) => string;
+      incomplete: (path: string) => string;
+      incompleteRecord: string;
     };
     /** A new ref made from the product's template ref, deciding about each of its assets. */
     createRef: {

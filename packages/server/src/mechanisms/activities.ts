@@ -358,8 +358,22 @@ export abstract class ActivityAuthoring extends Interface<{
   ): string;
   /**
    * Run `operation` while no other change to this activity's draft or files can start, as the
-   * project's activity work. Not re-entrant: `operation` must not call a method that changes
-   * the same activity.
+   * project's activity work. A nested `exclusive` and a draft change that takes an expected
+   * revision (such as `replaceDraft` or `applySpec`) join the run instead of waiting; any
+   * other method that changes the same activity must not be called from `operation`.
    */
   exclusive<T>(projectId: string, activityId: string, operation: () => Promise<T>): Promise<T>;
+  /**
+   * Make the draft hold exactly `content`, as restoring a saved version does: the status is
+   * worked out as saving a specification works it out, unless `staleSpec` says the script
+   * was edited after the specification, which keeps the status "draft" as that edit did. A
+   * part `content` lacks is removed. Compare-and-set on `expectedRevision`.
+   */
+  replaceDraft(
+    projectId: string,
+    activityId: string,
+    content: Pick<ActivityDraft, "description" | "spec" | "mediaPlan" | "moduleDocuments">,
+    expectedRevision: string,
+    staleSpec?: boolean,
+  ): Promise<ActivityDraft>;
 }>() {}

@@ -359,6 +359,8 @@ author_user_id TEXT,
 deployed_qa_at TEXT,
 deployed_prod_at TEXT,
 created_at TEXT NOT NULL,
+-- The draft's status when the version was kept; NULL on rows from before it was recorded.
+draft_status TEXT,
 UNIQUE (activity_id, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_activity_versions_activity ON activity_versions(activity_id, seq);

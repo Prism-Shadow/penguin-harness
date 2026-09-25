@@ -104,6 +104,7 @@ describe("version rows", () => {
     deployedQaAt: null,
     deployedProdAt: null,
     createdAt: `2026-09-25T00:00:0${seq}.000Z`,
+    draftStatus: "valid",
   });
 
   it("lists newest first and marks the one matching the current content", () => {

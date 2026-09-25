@@ -33,6 +33,7 @@ describe("versionRows", () => {
     expect(rows.map((row) => row.number)).toEqual(["v3", "v2", "v1"]);
     expect(rows[0]).toEqual({
       versionId: "ver_3",
+      seq: 3,
       number: "v3",
       name: null,
       kind: "Automatic · Before an agent's proposal",

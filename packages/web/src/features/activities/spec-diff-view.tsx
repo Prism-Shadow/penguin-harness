@@ -50,9 +50,12 @@ export function SpecDiffView({
   edited,
   onRevert,
   compact = false,
+  label,
 }: {
   saved: string;
   edited: string;
+  /** Accessible name of the line list, when it reads something other than unsaved edits. */
+  label?: string;
   /**
    * Just the changed lines, inline, for a narrow panel: no heading, stepping or layout
    * switch, which a one-change review does not need.
@@ -100,7 +103,7 @@ export function SpecDiffView({
         </p>
         {truncated && <p className={`text-xs ${toneInk.attention}`}>{S.activities.diffTooLarge}</p>}
         <div
-          aria-label={S.activities.diffTitle}
+          aria-label={label ?? S.activities.diffTitle}
           className="max-h-72 overflow-auto rounded-lg border border-gray-200 font-mono text-xs dark:border-gray-800"
         >
           <InlineRows shown={shown} />

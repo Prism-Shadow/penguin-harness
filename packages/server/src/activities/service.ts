@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs/promises";
 import { buildReadiness } from "./build-readiness.js";
 import type { MediaAsset } from "./media.js";
@@ -123,6 +124,8 @@ export class ActivityService implements ActivityAuthoring {
   @Use() private readonly config!: Config;
   @Use() private readonly db!: Db;
   private readonly locks = new ActivityLocks();
+  /** The activities whose lock the running work already holds, through `exclusive`. */
+  private readonly held = new AsyncLocalStorage<ReadonlySet<string>>();
 
   async imageContent(projectId: string, activityId: string, input: ImageRequest) {
     const activity = await this.getActivity(projectId, activityId);
@@ -1255,7 +1258,58 @@ export class ActivityService implements ActivityAuthoring {
     activityId: string,
     operation: () => Promise<T>,
   ): Promise<T> {
-    return this.projectWork.run(projectId, () => this.locks.run(activityId, operation));
+    // Inside an exclusive run of this activity, a draft change joins it instead of waiting
+    // behind it for ever.
+    if (this.held.getStore()?.has(activityId)) return operation();
+    const held = new Set([...(this.held.getStore() ?? []), activityId]);
+    return this.projectWork.run(projectId, () =>
+      this.locks.run(activityId, () => this.held.run(held, operation)),
+    );
+  }
+  /**
+   * The draft made to hold `content`, as a restore of a saved version writes it: status and
+   * revision are worked out as a saved specification's are, except that a specification
+   * the script was edited after (`staleSpec`) stays "draft", and a part `content` lacks is
+   * removed from the draft.
+   */
+  async replaceDraft(
+    projectId: string,
+    activityId: string,
+    content: Pick<ActivityDraft, "description" | "spec" | "mediaPlan" | "moduleDocuments">,
+    expectedRevision: string,
+    staleSpec = false,
+  ): Promise<ActivityDraft> {
+    return this.change(projectId, activityId, expectedRevision, (draft, activity) => {
+      const { mediaPlan: _plan, moduleDocuments: _documents, ...rest } = draft;
+      const next: ActivityDraft = {
+        ...rest,
+        description: content.description,
+        spec: content.spec ? structuredClone(content.spec) : null,
+        status: "draft",
+      };
+      if (next.spec && !staleSpec) {
+        try {
+          validateActivitySpec(next.spec);
+          if (activity.activityType === "book") validateBookSpec(next.spec);
+          next.status = "valid";
+        } catch {
+          // Kept as it was saved, so the author can see and fix what no longer passes.
+          next.status = "invalid";
+        }
+      }
+      if (content.mediaPlan) {
+        const plan = structuredClone(content.mediaPlan);
+        plan.manifest.refNum = activity.refNum;
+        try {
+          validateManifest(plan.manifest, activity);
+        } catch (error) {
+          throw new HttpError(422, "media_invalid", (error as Error).message);
+        }
+        next.mediaPlan = plan;
+      }
+      if (content.moduleDocuments) next.moduleDocuments = structuredClone(content.moduleDocuments);
+      return next;
+    });
   }
   private async change(
     projectId: string,
@@ -1266,34 +1320,32 @@ export class ActivityService implements ActivityAuthoring {
       activity: ActivityRecord,
     ) => ActivityDraft | Promise<ActivityDraft>,
   ): Promise<ActivityDraft> {
-    return this.projectWork.run(projectId, () =>
-      this.locks.run(activityId, async () => {
-        const current = await this.getActivity(projectId, activityId);
-        if (!expectedRevision || expectedRevision !== current.draft.contentRevision)
-          throw new HttpError(
-            409,
-            "draft_conflict",
-            "Draft changed. Reload it before applying your edit.",
-          );
-        const draft = await edit(current.draft, current);
-        draft.contentRevision = draftRevision(draft);
-        draft.updatedAt = new Date().toISOString();
-        await this.writeDraft(projectId, draft, current.collectionId);
-        this.db
-          .prepare(
-            "UPDATE activity_drafts SET content_revision = ?, status = ?, updated_at = ? WHERE draft_id = ?",
-          )
-          .run(draft.contentRevision, draft.status, draft.updatedAt, draft.draftId);
-        this.db
-          .prepare("UPDATE activities SET title = ?, updated_at = ? WHERE id = ?")
-          .run(
-            draft.status === "valid" ? (draft.spec!.title as string) : current.title,
-            draft.updatedAt,
-            activityId,
-          );
-        return draft;
-      }),
-    );
+    return this.exclusive(projectId, activityId, async () => {
+      const current = await this.getActivity(projectId, activityId);
+      if (!expectedRevision || expectedRevision !== current.draft.contentRevision)
+        throw new HttpError(
+          409,
+          "draft_conflict",
+          "Draft changed. Reload it before applying your edit.",
+        );
+      const draft = await edit(current.draft, current);
+      draft.contentRevision = draftRevision(draft);
+      draft.updatedAt = new Date().toISOString();
+      await this.writeDraft(projectId, draft, current.collectionId);
+      this.db
+        .prepare(
+          "UPDATE activity_drafts SET content_revision = ?, status = ?, updated_at = ? WHERE draft_id = ?",
+        )
+        .run(draft.contentRevision, draft.status, draft.updatedAt, draft.draftId);
+      this.db
+        .prepare("UPDATE activities SET title = ?, updated_at = ? WHERE id = ?")
+        .run(
+          draft.status === "valid" ? (draft.spec!.title as string) : current.title,
+          draft.updatedAt,
+          activityId,
+        );
+      return draft;
+    });
   }
   private async writeDraft(
     projectId: string,

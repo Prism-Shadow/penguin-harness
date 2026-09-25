@@ -38,3 +38,34 @@ export interface VersionSaveResult {
   /** False when nothing changed since the latest version, which is returned instead. */
   created: boolean;
 }
+
+/** The parts of an activity a compare shows as text, in the order it shows them. */
+export type VersionFileName =
+  "description" | "spec" | "mediaPlan" | "configuration" | "assessment" | "features";
+
+/**
+ * One part that differs. `before` is the compared version's text and `after` the other
+ * side's; null means that side has none. JSON is pretty-printed with sorted keys.
+ */
+export interface VersionFileDiff {
+  name: VersionFileName;
+  before: string | null;
+  after: string | null;
+}
+
+/** A media file that differs; a side without the file has null bytes. */
+export interface VersionMediaDiff {
+  /** Relative to the draft workspace. */
+  path: string;
+  change: "added" | "removed" | "changed";
+  beforeBytes: number | null;
+  afterBytes: number | null;
+}
+
+/** What differs between a version and the current draft or another version. */
+export interface VersionDiff {
+  /** Only the parts that differ. */
+  files: VersionFileDiff[];
+  /** Only the media files that differ, by path. */
+  media: VersionMediaDiff[];
+}
