@@ -49,7 +49,8 @@ export type StudioLabel =
   | "unassigned"
   | "mediaLibrary"
   | "history"
-  | `group:${SceneAssetType}`;
+  | `group:${SceneAssetType}`
+  | "group:bookWord";
 
 /** Loom lists a scene's media as images, then videos, then audios, then animations. */
 const GROUP_ORDER: readonly SceneAssetType[] = ["image", "video", "audio", "animation"];
@@ -72,10 +73,13 @@ function sectionRow(
   };
 }
 
-function assetRow(sceneId: string, asset: { key: string; bound: boolean }): StudioNode {
+function assetRow(
+  sceneId: string,
+  asset: { key: string; bound: boolean; word?: string },
+): StudioNode {
   return {
     id: `asset:${sceneId}:${asset.key}`,
-    label: { text: asset.key },
+    label: { text: asset.word ?? asset.key },
     target: { kind: "asset", selection: { sceneId, key: asset.key } },
     disabled: false,
     mark: asset.bound ? null : "unbound",
@@ -91,15 +95,33 @@ export function buildStudioTree(
   const sceneRows: StudioNode[] = scenes.scenes.map((scene) => {
     const groups = GROUP_ORDER.flatMap((type) => {
       const category = scene.categories.find((entry) => entry.type === type);
-      if (!category?.assets.length) return [];
+      // A decodable book's words are audio, but they are the book's, not the scene's own
+      // sound, so they get a group of their own after it.
+      const own = category?.assets.filter((asset) => !asset.bookWord) ?? [];
+      const words = category?.assets.filter((asset) => asset.bookWord) ?? [];
       return [
-        {
-          id: `group:${scene.sceneId}:${type}`,
-          label: { key: `group:${type}` as const },
-          disabled: false,
-          mark: null,
-          children: category.assets.map((asset) => assetRow(scene.sceneId, asset)),
-        } satisfies StudioNode,
+        ...(own.length
+          ? [
+              {
+                id: `group:${scene.sceneId}:${type}`,
+                label: { key: `group:${type}` as const },
+                disabled: false,
+                mark: null,
+                children: own.map((asset) => assetRow(scene.sceneId, asset)),
+              } satisfies StudioNode,
+            ]
+          : []),
+        ...(words.length
+          ? [
+              {
+                id: `group:${scene.sceneId}:bookWord`,
+                label: { key: "group:bookWord" as const },
+                disabled: false,
+                mark: null,
+                children: words.map((asset) => assetRow(scene.sceneId, asset)),
+              } satisfies StudioNode,
+            ]
+          : []),
       ];
     });
     return {

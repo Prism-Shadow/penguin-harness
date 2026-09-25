@@ -85,6 +85,7 @@ import {
   type QualityCheckPorts,
 } from "../src/activities/quality-check.js";
 import { DefaultSoundModelPorts, type SoundModelPorts } from "../src/activities/sound-models.js";
+import { DefaultEspeakPorts, type EspeakPorts } from "../src/activities/phonemes.js";
 import {
   DefaultMediaLibraryPorts,
   type MediaLibraryPorts,
@@ -278,6 +279,8 @@ export interface TestAppOptions {
   testBrowserPorts?: TestBrowserPorts;
   /** Test double: the model hub's sound catalogue, which this build ships empty. */
   soundModelPorts?: SoundModelPorts;
+  /** Test double: espeak-ng, so a test never starts a program. */
+  espeakPorts?: EspeakPorts;
   /** Test double: the quality check's browser launcher and axe source, so no browser starts. */
   qualityCheckPorts?: QualityCheckPorts;
   /** Test double: the media library's bundle limit, small enough to cross with a few files. */
@@ -375,6 +378,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   if (o.qualityCheckPorts) out.push([DefaultQualityCheckPorts, o.qualityCheckPorts]);
   if (o.mediaLibraryPorts) out.push([DefaultMediaLibraryPorts, o.mediaLibraryPorts]);
   if (o.soundModelPorts) out.push([DefaultSoundModelPorts, o.soundModelPorts]);
+  if (o.espeakPorts) out.push([DefaultEspeakPorts, o.espeakPorts]);
   return out;
 }
 

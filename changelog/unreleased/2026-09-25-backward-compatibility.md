@@ -29,3 +29,10 @@ A narration's optional `speechProvider` arrived with [speech providers](2026-09-
 It did not rewrite any existing record. A narration or a run without a provider is read as
 Gemini's, as before. An older build rejects a media plan that names a speech provider, so
 rolling back needs the field removed from the plans that have it.
+
+A decodable book's word pronunciations arrived with [book words](2026-09-25-activity-book-words.md):
+the optional audio fields `role`, `word`, `normalizedWord`, `phonemes`, `phonemeSource` and
+`customized`, and the run kind `phonemes`. They did not rewrite any existing record, and a
+media plan without them reads as before. An older build rejects a media plan that holds a
+word asset, so rolling back needs the word assets removed from the plans that have them. An
+older build lists a `phonemes` run by its kind alone.

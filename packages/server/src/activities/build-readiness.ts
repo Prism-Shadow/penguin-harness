@@ -92,7 +92,10 @@ export function buildReadiness(
         .map((asset) => asset.key),
     );
     for (const language of languages) {
-      const audio = plan.manifest.assets[language]!.filter((asset) => asset.type === "audio");
+      // A book's word pronunciations are recorded with the words, not as narration.
+      const audio = plan.manifest.assets[language]!.filter(
+        (asset) => asset.type === "audio" && asset.role !== "bookWord",
+      );
       const bound = audio.filter((asset) => asset.path).length;
       if (audio.length)
         checks.push({

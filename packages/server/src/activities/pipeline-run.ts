@@ -27,6 +27,7 @@
  * outlive it in the history either way. A step that fails stops the sequence; nothing is
  * rolled back, and nothing after it runs.
  */
+import { isBookWord } from "./book-words.js";
 import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../http/errors.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
@@ -105,13 +106,20 @@ type MediaAsset = AssetManifest["assets"][string][number];
 const TEXT_MAX = 5000;
 const usable = (text: string | undefined) => !!text?.trim() && text.length <= TEXT_MAX;
 
-/** Unbound narration with a script the speech run accepts, in every language, in manifest order. */
+/**
+ * Unbound narration with a script the speech run accepts, in every language, in manifest order.
+ * A book's word pronunciations are recorded with the words, not as narration.
+ */
 export function speechTargets(manifest: AssetManifest): { language: string; assetKey: string }[] {
   return Object.entries(manifest.assets).flatMap(([language, assets]) =>
     assets
       .filter(
         (asset: MediaAsset) =>
-          asset.type === "audio" && !asset.kind && !asset.path && usable(asset.script),
+          asset.type === "audio" &&
+          !asset.kind &&
+          !isBookWord(asset) &&
+          !asset.path &&
+          usable(asset.script),
       )
       .map((asset) => ({ language, assetKey: asset.key })),
   );
@@ -153,7 +161,8 @@ export function translationTargets(
         .filter((asset: MediaAsset) => {
           const source = sources.get(asset.key);
           // Music and effects are not spoken, so there is nothing to translate.
-          if (asset.type !== "audio" || asset.kind || source === undefined) return false;
+          if (asset.type !== "audio" || asset.kind || isBookWord(asset) || source === undefined)
+            return false;
           return (
             !asset.script?.trim() ||
             (asset.translatedFrom !== undefined && asset.translatedFrom !== source)

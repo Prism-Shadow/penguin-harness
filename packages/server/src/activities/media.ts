@@ -8,6 +8,8 @@ import {
   type AudioKind,
 } from "./playback.js";
 import type { SpeechProviderId } from "./speech-types.js";
+import type { PhonemeSource } from "./book-word-types.js";
+import { BOOK_WORD_MAX, BOOK_WORD_ROLE, cleanPhonemes, isBookWord } from "./book-words.js";
 
 export interface MediaAsset {
   key: string;
@@ -50,6 +52,17 @@ export interface MediaAsset {
    * (1 000 to 60 000). Absent lets the provider choose.
    */
   targetDurationMs?: number;
+  /**
+   * A decodable book's word pronunciation (see book-words.ts): the word as the story shows
+   * it, its normalized form, its sounds and where they came from, and whether the author
+   * changed it, which keeps it on every later refresh. All only on audio with this role.
+   */
+  role?: typeof BOOK_WORD_ROLE;
+  word?: string;
+  normalizedWord?: string;
+  phonemes?: string[];
+  phonemeSource?: PhonemeSource;
+  customized?: boolean;
   /** A reference in the WAF media checkout, never a server filesystem path. */
   path?: string;
   /**
@@ -132,6 +145,12 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
               "loop",
               "volume",
               "targetDurationMs",
+              "role",
+              "word",
+              "normalizedWord",
+              "phonemes",
+              "phonemeSource",
+              "customized",
               "path",
               "usages",
               "generatedAudio",
@@ -221,6 +240,39 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         throw new Error(
           "A requested length belongs to music or a sound effect, from 1000 to 60000 milliseconds.",
         );
+      const bookWord = asset.role !== undefined;
+      if (
+        bookWord &&
+        (asset.role !== BOOK_WORD_ROLE ||
+          asset.type !== "audio" ||
+          asset.kind !== undefined ||
+          asset.word === undefined)
+      )
+        throw new Error('Only an audio word pronunciation has a role, "bookWord", with its word.');
+      const wordText = (value: unknown) =>
+        typeof value === "string" && value.length >= 1 && value.length <= BOOK_WORD_MAX;
+      if (
+        (asset.word !== undefined && (!bookWord || !wordText(asset.word))) ||
+        (asset.normalizedWord !== undefined && (!bookWord || !wordText(asset.normalizedWord)))
+      )
+        throw new Error("A word pronunciation's word is 1 to 64 characters.");
+      if (
+        asset.phonemes !== undefined &&
+        (!bookWord ||
+          !Array.isArray(asset.phonemes) ||
+          (asset.phonemes.length > 0 &&
+            JSON.stringify(cleanPhonemes(asset.phonemes)) !== JSON.stringify(asset.phonemes)))
+      )
+        throw new Error(
+          "A word pronunciation's sounds are at most 32, each 1 to 8 characters without stress marks.",
+        );
+      if (
+        asset.phonemeSource !== undefined &&
+        (!bookWord || !["espeak", "model", "author"].includes(String(asset.phonemeSource)))
+      )
+        throw new Error("A word's sounds come from espeak, a model or the author.");
+      if (asset.customized !== undefined && (!bookWord || typeof asset.customized !== "boolean"))
+        throw new Error("Only a word pronunciation is marked as customized.");
       const playback = readPlayback(asset);
       if (playback === "invalid" || (playback && asset.type !== "audio"))
         throw new Error(
@@ -324,6 +376,18 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         ...(asset.targetDurationMs !== undefined
           ? { targetDurationMs: Number(asset.targetDurationMs) }
           : {}),
+        ...(bookWord ? { role: BOOK_WORD_ROLE } : {}),
+        ...(asset.word !== undefined ? { word: String(asset.word) } : {}),
+        ...(asset.normalizedWord !== undefined
+          ? { normalizedWord: String(asset.normalizedWord) }
+          : {}),
+        ...(asset.phonemes !== undefined
+          ? { phonemes: (asset.phonemes as unknown[]).map(String) }
+          : {}),
+        ...(asset.phonemeSource !== undefined
+          ? { phonemeSource: asset.phonemeSource as PhonemeSource }
+          : {}),
+        ...(asset.customized !== undefined ? { customized: asset.customized === true } : {}),
         ...(asset.path !== undefined ? { path: String(asset.path) } : {}),
         ...(asset.generatedAudio !== undefined
           ? { generatedAudio: asset.generatedAudio as MediaAsset["generatedAudio"] }
@@ -407,6 +471,18 @@ export function planMedia(activity: ActivityDetail): MediaPlan {
       // label freshly copied English scripts as translated speech.
       return language === "en-US" ? [{ ...asset }] : [];
     });
+    // A book's word pronunciations are not in the specification; they are planned from its
+    // narration (book-words.ts) and survive a re-plan. Usages of scenes the specification no
+    // longer has go, and a word left in no scene goes too, unless the author customized it.
+    const sceneIds = new Set(
+      ((spec.scenes ?? spec.stages) as Record<string, unknown>[]).map((scene) => String(scene.id)),
+    );
+    const planned = new Set(assets[language]!.map((asset) => asset.key));
+    for (const old of previous[language] ?? []) {
+      if (!isBookWord(old) || planned.has(old.key)) continue;
+      const usages = old.usages.filter((usage) => sceneIds.has(usage.sceneId));
+      if (usages.length || old.customized) assets[language]!.push({ ...old, usages });
+    }
   }
   return {
     specRevision: contentRevision(spec),
@@ -467,7 +543,10 @@ export function wafManifest(manifest: AssetManifest): AssetManifest {
     assets: Object.fromEntries(
       Object.entries(manifest.assets).map(([language, assets]) => [
         language,
-        assets.map(({ generatedAudio: _audio, generatedImage: _image, ...asset }) => asset),
+        assets.map(
+          ({ generatedAudio: _audio, generatedImage: _image, phonemeSource: _source, ...asset }) =>
+            asset,
+        ),
       ]),
     ),
   };

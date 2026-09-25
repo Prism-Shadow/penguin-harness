@@ -33,7 +33,7 @@ export type Strings = {
         | "history",
         string
       >;
-      groups: Record<"image" | "video" | "audio" | "animation", string>;
+      groups: Record<"image" | "video" | "audio" | "animation" | "bookWord", string>;
       fold: (name: string) => string;
       unfold: (name: string) => string;
       needsMedia: string;
@@ -907,6 +907,39 @@ export type Strings = {
       applied: (n: number) => string;
       appliesNext: string;
       noMatches: string;
+    };
+    /** A decodable book's word pronunciations: the words, their sounds, and where those came from. */
+    bookWords: {
+      group: string;
+      about: string;
+      refresh: string;
+      refreshed: (n: number) => string;
+      count: (n: number) => string;
+      missing: (n: number) => string;
+      allSounded: string;
+      askModel: string;
+      /** More words are missing than one run takes, so it asks for the first of them. */
+      askFirst: (n: number) => string;
+      asking: string;
+      proposal: string;
+      proposalFailed: string;
+      proposalStale: string;
+      noneProposed: string;
+      useSounds: string;
+      accepted: (n: number) => string;
+      word: string;
+      sounds: string;
+      soundsHint: string;
+      sound: (n: number) => string;
+      addSound: string;
+      removeSound: (n: number) => string;
+      saveSounds: string;
+      saved: string;
+      noSounds: string;
+      source: Record<"espeak" | "model" | "author", string>;
+      espeakMissing: string;
+      notDecodable: string;
+      run: string;
     };
     /** Who speaks a narration: Gemini or ElevenLabs, and the word timings ElevenLabs returns. */
     speechProvider: {

@@ -28,6 +28,11 @@ import type {
   ModuleDocumentOverride,
 } from "../activities/domain.js";
 import type { AcceptanceStage } from "../activities/acceptance-types.js";
+import type {
+  BookWordsRefresh,
+  BookWordsState,
+  PhonemesCandidate,
+} from "../activities/book-word-types.js";
 
 export abstract class ActivityGeneration extends Interface<{
   shutdown(): Promise<void>;
@@ -66,6 +71,8 @@ export abstract class ActivityGeneration extends Interface<{
        * an earlier run's tests when they fit the same criteria.
        */
       test?: AcceptanceStage;
+      /** Sounds for a decodable book's words, proposed by a model for the author to accept. */
+      phonemes?: { language: string; words: unknown };
     },
     /** Run on an external coding agent instead of the Penguin agent `agentId` names. */
     runtime?: { codingAgentId?: string },
@@ -136,6 +143,13 @@ export abstract class ActivityGeneration extends Interface<{
     expectedRevision: string,
   ): Promise<ActivityDraft>;
   acceptMediaText(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
+  /** Fill the book words still without sounds from a successful phonemes run's candidate. */
+  acceptPhonemes(
     projectId: string,
     activityId: string,
     runId: string,
@@ -279,6 +293,36 @@ export abstract class ActivityAuthoring extends Interface<{
     activityId: string,
     selectedIds: string[],
   ): Promise<{ features: ImplementationFeature[]; selectedIds: string[] }>;
+  /** A book's recorded reading mode and whether espeak-ng can sound out its words. */
+  bookWordsState(projectId: string, activityId: string): Promise<BookWordsState>;
+  /**
+   * A decodable book's word pronunciations brought in line with its story in one language,
+   * with sounds from espeak-ng for the words that have none. `bookMode` is the author's
+   * choice, counted only when the product records no reading mode.
+   */
+  refreshBookWords(
+    projectId: string,
+    activityId: string,
+    language: string,
+    expectedRevision: string,
+    bookMode?: "decodable" | "readAlong",
+  ): Promise<BookWordsRefresh>;
+  /** The author's sounds for one word, which keeps the word on every later refresh. */
+  setWordPhonemes(
+    projectId: string,
+    activityId: string,
+    language: string,
+    assetKey: string,
+    phonemes: unknown,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
+  /** A model's proposed sounds, given only to words that still have none. */
+  applyPhonemes(
+    projectId: string,
+    activityId: string,
+    candidate: PhonemesCandidate,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
   /** Add a language the activity can be translated into, with its media plan to fill in. */
   addLanguage(
     projectId: string,

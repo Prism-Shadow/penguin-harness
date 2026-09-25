@@ -7,6 +7,7 @@ import type {
   ActivityRun,
   ActivityRunSummary,
   AssetManifest,
+  BookWordsRefresh,
   MediaStat,
   PipelineSelection,
   PipelineState,
@@ -39,6 +40,8 @@ import { ImportDialog } from "./import-dialog";
 import { ActivityWorkspace as WorkspaceShell, type StudioPanelEntry } from "./activity-workspace";
 import { AssetEditor } from "./asset-editor";
 import { SpeechCoverage } from "./speech-coverage";
+import { BookWordsPanel } from "./book-words-panel";
+import { withoutBookWords, wordsWithoutSounds } from "./book-words";
 import { speechTally } from "./bulk-speech";
 import { bulkSoundProvider, pendingSoundKinds } from "./bulk-sound";
 import { buildSceneTree, filterTree, treeSelections, type SceneAssetType } from "./scene-assets";
@@ -1414,6 +1417,24 @@ function ActivityEditor({
                   startRun("generate-media-text", { language: lang, assetKey, translate: true })
           }
           sceneNav={sceneNav}
+          onSaveSounds={(lang, assetKey, phonemes) =>
+            void action(async () => {
+              const draft = await apiFetch<ActivityDraft>(
+                `${endpoint}/book-words/${encodeURIComponent(assetKey)}/phonemes`,
+                {
+                  method: "PUT",
+                  body: {
+                    language: lang,
+                    phonemes,
+                    expectedRevision: detail.draft.contentRevision,
+                  },
+                },
+              );
+              if (!alive.current) return;
+              accept({ ...detail, draft });
+              toastSuccess(S.activities.bookWords.saved);
+            })
+          }
         />
       ) : section === "description" ? (
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1600,9 +1621,72 @@ function ActivityEditor({
                   </section>
                 </>
               )}
+              {section === "speech" && editedManifest && detail.activityType === "book" && (
+                <BookWordsPanel
+                  endpoint={endpoint}
+                  language={language}
+                  group={editedManifest.assets[language] ?? []}
+                  runs={runs}
+                  revision={detail.draft.contentRevision}
+                  chosenMode={bookMode}
+                  editable={editable}
+                  canChange={editable && available && !busy && !running && !dirty}
+                  canGenerate={
+                    editable && available && !busy && !running && !dirty && !!selectedAgent
+                  }
+                  onRefresh={(mode) =>
+                    void action(async () => {
+                      const result = await apiFetch<BookWordsRefresh>(
+                        `${endpoint}/book-words/refresh`,
+                        {
+                          method: "POST",
+                          body: {
+                            language,
+                            expectedRevision: detail.draft.contentRevision,
+                            ...(mode ? { bookMode: mode } : {}),
+                          },
+                        },
+                      );
+                      if (!alive.current) return;
+                      accept({ ...detail, draft: result.draft });
+                      const group = result.draft.mediaPlan?.manifest.assets[language] ?? [];
+                      announce({
+                        kind: "success",
+                        text: S.activities.bookWords.refreshed(
+                          group.length - withoutBookWords(group).length,
+                        ),
+                      });
+                    })
+                  }
+                  onAskModel={(words) => startRun("generate-phonemes", { language, words })}
+                  onUseSounds={(runId) =>
+                    void action(async () => {
+                      const before = wordsWithoutSounds(
+                        detail.draft.mediaPlan?.manifest.assets[language] ?? [],
+                      ).length;
+                      const draft = await apiFetch<ActivityDraft>(
+                        `${endpoint}/runs/${encodeURIComponent(runId)}/accept-phonemes`,
+                        {
+                          method: "POST",
+                          body: { expectedRevision: detail.draft.contentRevision },
+                        },
+                      );
+                      if (!alive.current) return;
+                      accept({ ...detail, draft });
+                      const after = wordsWithoutSounds(
+                        draft.mediaPlan?.manifest.assets[language] ?? [],
+                      ).length;
+                      announce({
+                        kind: "success",
+                        text: S.activities.bookWords.accepted(before - after),
+                      });
+                    })
+                  }
+                />
+              )}
               {section === "speech" && editedManifest && (
                 <SpeechCoverage
-                  assets={editedManifest.assets[language] ?? []}
+                  assets={withoutBookWords(editedManifest.assets[language] ?? [])}
                   language={language}
                   editable={editable}
                   canGenerate={
@@ -1631,7 +1715,7 @@ function ActivityEditor({
                   onCancelQueue={() => setSpeechQueue(null)}
                   runs={runs}
                   languages={Object.entries(editedManifest.assets).map(([code, group]) => {
-                    const tally = speechTally(group, runs, code);
+                    const tally = speechTally(withoutBookWords(group), runs, code);
                     return { language: code, ready: tally.ready, total: tally.total };
                   })}
                   onLanguage={setLanguage}

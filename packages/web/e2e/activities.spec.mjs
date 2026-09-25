@@ -6151,3 +6151,243 @@ test("speaks a narration with ElevenLabs and keeps its word timings", async ({ p
   );
   expect(f.errors).toEqual([]);
 });
+
+test("refreshes a decodable book's words and corrects one word's sounds", async ({ page }) => {
+  const f = await fixture(page);
+  const usage = (sceneId, sourceKey) => ({
+    sceneId,
+    sourceKey,
+    occurrence: 1,
+    sceneOccurrenceCount: 1,
+  });
+  const bookSpec = {
+    ...spec,
+    scenes: [
+      {
+        id: "page-1",
+        role: "story",
+        description: "Story page 1",
+        media: { images: [{ key: "page-1-art", description: "A cat" }] },
+        audio: {
+          tracks: [{ key: "narration-1", description: "Narration", script: "The cat sat." }],
+        },
+      },
+      {
+        id: "page-2",
+        role: "story",
+        description: "Story page 2",
+        media: { images: [{ key: "page-2-art", description: "A cat running" }] },
+        audio: {
+          tracks: [{ key: "narration-2", description: "Narration", script: "The cat ran." }],
+        },
+      },
+    ],
+  };
+  const narration = (key, sceneId, script) => ({
+    key,
+    type: "audio",
+    description: "Narration",
+    script,
+    usages: [usage(sceneId, key)],
+  });
+  const word = (text, keyHash, usages, sounds) => ({
+    key: `book-word-${text}-${keyHash}`,
+    type: "audio",
+    role: "bookWord",
+    description: `Pronunciation of “${text}”.`,
+    word: text,
+    normalizedWord: text,
+    ...(sounds ? { phonemes: sounds, phonemeSource: "espeak" } : {}),
+    usages,
+  });
+  const bothPages = [usage("page-1", "narration-1"), usage("page-2", "narration-2")];
+  await page.route(`**${base}/act_test/plan-media`, (route) =>
+    route.fallback({
+      postData: JSON.stringify({
+        ...route.request().postDataJSON(),
+        manifest: {
+          productCode: "words",
+          refNum: 12,
+          assets: {
+            "en-US": [
+              narration("narration-1", "page-1", "The cat sat."),
+              narration("narration-2", "page-2", "The cat ran."),
+            ],
+          },
+        },
+      }),
+    }),
+  );
+  // The draft as the server holds it, followed through the responses that change it.
+  let record = null;
+  let draft = null;
+  let mine = false;
+  page.on("response", async (response) => {
+    const request = response.request();
+    const p = new URL(response.url()).pathname;
+    if (!response.ok()) return;
+    if (p === base && request.method() === "POST")
+      record = await response.json().catch(() => record);
+    if (
+      !mine &&
+      [`${base}/act_test/apply-generated-spec`, `${base}/act_test/plan-media`].includes(p)
+    )
+      draft = await response.json().catch(() => draft);
+  });
+  const refreshes = [];
+  const soundSaves = [];
+  const asked = [];
+  const accepts = [];
+  const phonemeRuns = [];
+  let changes = 0;
+  const next = (change) => {
+    const manifest = structuredClone(draft.mediaPlan.manifest);
+    change(manifest.assets["en-US"]);
+    draft = {
+      ...draft,
+      contentRevision: `${draft.contentRevision}-w${++changes}`,
+      mediaPlan: { ...draft.mediaPlan, manifest },
+    };
+    mine = true;
+    return draft;
+  };
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/act_test/book-words`)
+      return json({ bookMode: "decodable", espeak: { available: true, version: "1.51" } });
+    if (p === `${base}/act_test` && request.method() === "GET" && mine)
+      return json({ ...record, draft });
+    if (p === `${base}/act_test/book-words/refresh`) {
+      const body = request.postDataJSON();
+      refreshes.push(body);
+      if (body.expectedRevision !== draft.contentRevision)
+        return json({ error: { code: "draft_conflict", message: "Draft changed." } }, 409);
+      // espeak-ng sounds out three of the four words; "ran" is left for a model.
+      const updated = next((group) =>
+        group.push(
+          word("the", "b9776d7ddf", bothPages, ["ð", "ə"]),
+          word("cat", "77af778b51", bothPages, ["k", "æ", "t"]),
+          word("sat", "339efeab70", [usage("page-1", "narration-1")], ["s", "æ", "t"]),
+          word("ran", "c8fc6bf296", [usage("page-2", "narration-2")]),
+        ),
+      );
+      return json({ draft: updated, missing: ["ran"] });
+    }
+    if (p === `${base}/act_test/generate-phonemes`) {
+      const body = request.postDataJSON();
+      // One generation at a time, as the server allows.
+      if (phonemeRuns.some((run) => run.status === "running"))
+        return json({ error: { code: "generation_running", message: "Running." } }, 409);
+      asked.push(body);
+      phonemeRuns.unshift({
+        kind: "phonemes",
+        phonemes: { language: body.language, words: body.words },
+        runId: "run_phonemes_1",
+        inputRevision: body.expectedRevision,
+        activityId: "act_test",
+        projectId,
+        sessionId: "session_phonemes",
+        status: "running",
+        createdAt: "2026-09-25T12:00:00Z",
+        finishedAt: null,
+        hasCandidate: false,
+        error: null,
+      });
+      return json(phonemeRuns[0], 202);
+    }
+    if (p === `${base}/act_test/runs` && request.method() === "GET")
+      return json({ runs: phonemeRuns });
+    if (p === `${base}/act_test/runs/run_phonemes_1/candidate`)
+      return json({
+        candidate: JSON.stringify({ language: "en-US", phonemes: { ran: ["r", "æ", "n"] } }),
+      });
+    if (p === `${base}/act_test/runs/run_phonemes_1/accept-phonemes`) {
+      const body = request.postDataJSON();
+      accepts.push(body);
+      if (body.expectedRevision !== draft.contentRevision)
+        return json({ error: { code: "draft_conflict", message: "Draft changed." } }, 409);
+      return json(
+        next((group) =>
+          Object.assign(
+            group.find((asset) => asset.normalizedWord === "ran"),
+            { phonemes: ["r", "æ", "n"], phonemeSource: "model" },
+          ),
+        ),
+      );
+    }
+    if (/\/book-words\/[^/]+\/phonemes$/.test(p) && request.method() === "PUT") {
+      const body = request.postDataJSON();
+      soundSaves.push({ key: decodeURIComponent(p.split("/").at(-2)), ...body });
+      if (body.expectedRevision !== draft.contentRevision)
+        return json({ error: { code: "draft_conflict", message: "Draft changed." } }, 409);
+      return json(
+        next((group) =>
+          Object.assign(
+            group.find((asset) => asset.key === "book-word-cat-77af778b51"),
+            { phonemes: body.phonemes, phonemeSource: "author", customized: true },
+          ),
+        ),
+      );
+    }
+    return route.fallback();
+  });
+
+  await create(page, { activityType: "book" });
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(bookSpec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  await openSection(page, "Speech coverage");
+
+  const panel = page.getByRole("region", { name: "Word pronunciations", exact: true });
+  await expect(panel).toContainText("0 words");
+  await panel.getByRole("button", { name: "Refresh words", exact: true }).click();
+  await expect(panel).toContainText("4 words · 1 word has no sounds yet.");
+  // The product records the reading mode, so the page sends none of its own.
+  expect(refreshes).toHaveLength(1);
+  expect(refreshes[0]).toMatchObject({ language: "en-US" });
+  expect(refreshes[0].bookMode).toBeUndefined();
+  // The words are the book's, not narration: the narration count is unchanged.
+  await expect(page.getByText("0 of 2 narrations bound")).toBeVisible();
+
+  await panel.getByRole("button", { name: "Ask a model for the rest", exact: true }).click();
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0]).toMatchObject({ agentId: "default_agent", language: "en-US", words: ["ran"] });
+  phonemeRuns[0] = { ...phonemeRuns[0], status: "succeeded", hasCandidate: true };
+  const proposal = panel.getByRole("region", { name: "Proposed sounds", exact: true });
+  await expect(proposal).toContainText("ran: r æ n", { timeout: 15_000 });
+  await proposal.getByRole("button", { name: "Use these sounds", exact: true }).click();
+  await expect(panel).toContainText("4 words · Every word has its sounds.");
+  expect(accepts).toHaveLength(1);
+
+  // The words are listed under each scene that shows them, in a group of their own.
+  const scene = page.getByRole("treeitem", { name: "page-1", exact: true });
+  if ((await scene.getAttribute("aria-expanded")) !== "true") await scene.click();
+  const group = page.getByRole("treeitem", { name: "Word pronunciations", exact: true }).first();
+  if ((await group.getAttribute("aria-expanded")) !== "true") await group.click();
+  await page.getByRole("treeitem", { name: "cat", exact: true }).first().click();
+
+  const editor = page.getByRole("region", { name: "Word pronunciations", exact: true });
+  await expect(editor.getByRole("textbox", { name: "Word", exact: true })).toHaveValue("cat");
+  await expect(editor).toContainText("From espeak-ng");
+  const second = editor.getByRole("textbox", { name: "Sound 2", exact: true });
+  await expect(second).toHaveValue("æ");
+  const save = editor.getByRole("button", { name: "Save sounds", exact: true });
+  await expect(save).toBeDisabled();
+  await second.fill("a");
+  await save.click();
+  await expect.poll(() => soundSaves.length).toBe(1);
+  expect(soundSaves[0]).toMatchObject({
+    key: "book-word-cat-77af778b51",
+    language: "en-US",
+    phonemes: ["k", "a", "t"],
+  });
+  await expect(editor).toContainText("Yours");
+  expect(f.errors).toEqual([]);
+});

@@ -92,6 +92,14 @@ import {
 } from "./acceptance-collect.js";
 import type { AcceptanceStage } from "./acceptance-types.js";
 import {
+  PHONEMES_FILE,
+  PHONEMES_INPUT_FILE,
+  parsePhonemesCandidate,
+  phonemesPrompt,
+  phonemesTarget,
+} from "./phonemes-run.js";
+import type { PhonemesCandidate } from "./book-word-types.js";
+import {
   newId,
   contentRevision,
   validateActivitySpec,
@@ -448,6 +456,8 @@ export class ActivityGenerationService implements ActivityGeneration {
       assessment?: { current: Record<string, unknown> | null };
       /** An acceptance test run, as the acceptance service prepared it. */
       test?: AcceptanceStage;
+      /** A phonemes run: sounds for a decodable book's words of one language. */
+      phonemes?: { language: string; words: unknown };
     },
     runtime?: { codingAgentId?: string },
   ): Promise<ActivityRun> {
@@ -466,10 +476,11 @@ export class ActivityGenerationService implements ActivityGeneration {
           const assist = module?.assist;
           const assessment = module?.assessment;
           const test = module?.test;
+          const phonemes = module?.phonemes ? phonemesTarget(activity, module.phonemes) : undefined;
           // An author may ask for help writing the script, so an empty one is no reason
           // to refuse a conversation; an assessment is written from the specification, and
           // tests from its acceptance criteria.
-          if (!assist && !assessment && !test && !activity.draft.description.trim())
+          if (!assist && !assessment && !test && !phonemes && !activity.draft.description.trim())
             throw new HttpError(
               400,
               "description_required",
@@ -487,6 +498,7 @@ export class ActivityGenerationService implements ActivityGeneration {
               module.assist,
               module.assessment,
               module.test,
+              module.phonemes,
             ].filter(Boolean).length > 1
           )
             throw new HttpError(400, "generation_invalid", "Choose one media generation type.");
@@ -534,7 +546,8 @@ export class ActivityGenerationService implements ActivityGeneration {
             !mediaText &&
             !assist &&
             !assessment &&
-            !test
+            !test &&
+            !phonemes
           ) {
             if (!activity.draft.spec || activity.draft.status !== "valid")
               throw new HttpError(
@@ -665,24 +678,27 @@ export class ActivityGenerationService implements ActivityGeneration {
               "This activity already has a running generation.",
             );
           const run: ActivityRun = {
-            kind: test
-              ? "test"
-              : assist
-                ? "assist"
-                : assessment
-                  ? "assessment"
-                  : mediaText
-                    ? "media-text"
-                    : image
-                      ? "image"
-                      : audio || sound
-                        ? "audio"
-                        : module
-                          ? "module"
-                          : "spec",
+            kind: phonemes
+              ? "phonemes"
+              : test
+                ? "test"
+                : assist
+                  ? "assist"
+                  : assessment
+                    ? "assessment"
+                    : mediaText
+                      ? "media-text"
+                      : image
+                        ? "image"
+                        : audio || sound
+                          ? "audio"
+                          : module
+                            ? "module"
+                            : "spec",
             ...(audio ? { audio } : sound ? { audio: sound } : {}),
             ...(image ? { image } : {}),
             ...(mediaText ? { mediaText } : {}),
+            ...(phonemes ? { phonemes } : {}),
             ...(assist ? { assist: { focus: assist.focus } } : {}),
             ...(test
               ? {
@@ -829,6 +845,7 @@ export class ActivityGenerationService implements ActivityGeneration {
             }
             if (mediaText)
               await atomicJson(path.join(workspace, "media-text-input.json"), mediaText);
+            if (phonemes) await atomicJson(path.join(workspace, PHONEMES_INPUT_FILE), phonemes);
             if (assessment) {
               const skill = libraryPlugin("waf-authoring")?.skills.find(
                 (entry) => entry.name === ASSESSMENT_SKILL,
@@ -887,7 +904,8 @@ export class ActivityGenerationService implements ActivityGeneration {
               !mediaText &&
               !assist &&
               !assessment &&
-              !test
+              !test &&
+              !phonemes
             ) {
               const chosen = await this.activities.implementationFeatures(projectId, activityId);
               features = chosen.features.filter((feature) =>
@@ -900,25 +918,27 @@ export class ActivityGenerationService implements ActivityGeneration {
               this.finish(run, "interrupted", "Server stopped before generation started.");
               return run;
             }
-            const prompt = test
-              ? test.cachedTest !== null
-                ? acceptanceReusePrompt
-                : acceptancePrompt
-              : assist
-                ? assistPrompt(assist.message, assist.focus)
-                : assessment
-                  ? assessmentPrompt
-                  : mediaText
-                    ? mediaTextPrompt(mediaText)
-                    : image
-                      ? imagePrompt
-                      : audio
-                        ? speechPrompt(audio)
-                        : sound
-                          ? soundPrompt
-                          : module
-                            ? modulePrompt + featureClause(features)
-                            : generationPrompt;
+            const prompt = phonemes
+              ? phonemesPrompt
+              : test
+                ? test.cachedTest !== null
+                  ? acceptanceReusePrompt
+                  : acceptancePrompt
+                : assist
+                  ? assistPrompt(assist.message, assist.focus)
+                  : assessment
+                    ? assessmentPrompt
+                    : mediaText
+                      ? mediaTextPrompt(mediaText)
+                      : image
+                        ? imagePrompt
+                        : audio
+                          ? speechPrompt(audio)
+                          : sound
+                            ? soundPrompt
+                            : module
+                              ? modulePrompt + featureClause(features)
+                              : generationPrompt;
             const session = await this.sessionService.createSession({
               projectId,
               agentId: owner,
@@ -1235,6 +1255,39 @@ export class ActivityGenerationService implements ActivityGeneration {
     );
   }
 
+  /**
+   * Give the book words still without sounds the sounds a phonemes run proposed: only a
+   * successful run, and only on the draft it was run against.
+   */
+  acceptPhonemes(projectId: string, activityId: string, runId: string, expectedRevision: string) {
+    return this.track(
+      this.projectWork.run(projectId, () =>
+        this.locks.run(activityId, async () => {
+          if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+          const run = await this.getRun(projectId, activityId, runId);
+          if (run.kind !== "phonemes" || run.status !== "succeeded" || !run.candidate)
+            throw new HttpError(
+              409,
+              "phonemes_changed",
+              "Only a successful phonemes candidate can be accepted.",
+            );
+          if (run.inputRevision !== expectedRevision)
+            throw new HttpError(
+              409,
+              "draft_conflict",
+              "The draft changed since the sounds were proposed. Ask again.",
+            );
+          return this.activities.applyPhonemes(
+            projectId,
+            activityId,
+            JSON.parse(run.candidate) as PhonemesCandidate,
+            expectedRevision,
+          );
+        }),
+      ),
+    );
+  }
+
   acceptAudio(projectId: string, activityId: string, runId: string, expectedRevision: string) {
     return this.track(
       this.projectWork.run(projectId, () =>
@@ -1449,6 +1502,30 @@ export class ActivityGenerationService implements ActivityGeneration {
                 });
                 return;
               }
+              if (run.kind === "phonemes") {
+                const observer = this.observers.get(run.runId);
+                if (!observer?.completed)
+                  throw new Error(observer?.error ?? "Phonemes Session did not complete.");
+                if (!run.phonemes) throw new Error("The phonemes run has no words recorded.");
+                const candidate = parsePhonemesCandidate(
+                  await readCandidate(path.join(this.workspace(run), PHONEMES_FILE), 256 * 1024),
+                  run.phonemes,
+                );
+                run.candidate = JSON.stringify(candidate);
+                this.save(run);
+                if (this.stopped) return;
+                await this.projectWork.run(run.projectId, async () => {
+                  const current = await this.activities.getActivity(run.projectId, run.activityId);
+                  if (current.draft.contentRevision !== run.inputRevision)
+                    throw new HttpError(
+                      409,
+                      "draft_conflict",
+                      "The draft changed while the sounds were being proposed.",
+                    );
+                  this.finish(run, "succeeded");
+                });
+                return;
+              }
               if (run.kind === "test") {
                 const observer = this.observers.get(run.runId);
                 if (!observer?.completed)
@@ -1598,7 +1675,9 @@ export class ActivityGenerationService implements ActivityGeneration {
                                 ? `${ASSESSMENT_FILE} or ${ASSESSMENT_HINTS_FILE}`
                                 : run.kind === "test"
                                   ? ACCEPTANCE_RESULTS_FILE
-                                  : "activity-spec.json"
+                                  : run.kind === "phonemes"
+                                    ? PHONEMES_FILE
+                                    : "activity-spec.json"
                     }.`
                   : error instanceof Error
                     ? error.message

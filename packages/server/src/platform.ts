@@ -120,6 +120,8 @@ import {
   DefaultQualityCheckPorts,
 } from "./activities/quality-check.js";
 import { QualityAdminRoutes } from "./activities/quality-routes.js";
+import { ActivityPhonemesService, DefaultEspeakPorts } from "./activities/phonemes.js";
+import { PhonemesAdminRoutes } from "./activities/phonemes-routes.js";
 import {
   ActivityAcceptanceService,
   DefaultAcceptancePorts,
@@ -396,6 +398,9 @@ export class CodingAgentsModule {}
     DefaultQualityCheckPorts,
     ActivityQualityService,
     QualityAdminRoutes,
+    DefaultEspeakPorts,
+    ActivityPhonemesService,
+    PhonemesAdminRoutes,
     DefaultAcceptancePorts,
     ActivityAcceptanceService,
   ],

@@ -27,6 +27,8 @@ import type { QualityStateResponse } from "./quality-types.js";
 import type { ActivityAcceptance } from "./acceptance-service.js";
 import type { AcceptanceStateResponse } from "./acceptance-types.js";
 import { parseRefDecisions } from "./ref-template.js";
+import type { ActivityPhonemes } from "./phonemes.js";
+import type { BookWordsRefresh, BookWordsSetup, BookWordsState } from "./book-word-types.js";
 import {
   badRequest,
   optionalString,
@@ -80,6 +82,7 @@ export class ActivityRoutes {
   @Use() private readonly versions!: ActivityVersions;
   @Use() private readonly quality!: ActivityQuality;
   @Use() private readonly acceptance!: ActivityAcceptance;
+  @Use() private readonly phonemes!: ActivityPhonemes;
   @Use() private readonly config!: Config;
   @Bind("activities") routes!: Hono<AppEnv>;
 
@@ -244,6 +247,80 @@ export class ActivityRoutes {
       if (!agentId || agentId.length > 128 || !isValidId(agentId))
         throw badRequest("agentId must be an id of 1-128 letters, digits, _ or -.");
       return c.json(await this.generation.soundSetup(requireValidId(c, "projectId"), agentId));
+    });
+    // Whether espeak-ng can sound out a decodable book's words on this server.
+    app.get("/book-words/setup", async (c) =>
+      c.json({ espeak: await this.phonemes.status() } satisfies BookWordsSetup),
+    );
+    app.get("/:activityId/book-words", async (c) =>
+      c.json(
+        (await this.activities.bookWordsState(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+        )) satisfies BookWordsState,
+      ),
+    );
+    // A decodable book's words brought in line with its story, with sounds from espeak-ng.
+    app.post("/:activityId/book-words/refresh", async (c) => {
+      const body = await readJson(c);
+      const bookMode = optionalString(body, "bookMode", { maxLen: 16 });
+      if (bookMode && bookMode !== "readAlong" && bookMode !== "decodable")
+        throw badRequest("bookMode must be readAlong or decodable.");
+      return c.json(
+        (await this.activities.refreshBookWords(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          requireString(body, "language", { minLen: 5, maxLen: 5 }),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+          bookMode ? (bookMode as "decodable" | "readAlong") : undefined,
+        )) satisfies BookWordsRefresh,
+      );
+    });
+    // The author's sounds for one word; the word is theirs from then on.
+    app.put("/:activityId/book-words/:assetKey/phonemes", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.activities.setWordPhonemes(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          optionalString(body, "language", { maxLen: 5 }) || DEFAULT_LANGUAGE_CODE,
+          pathParam(c, "assetKey"),
+          body.phonemes,
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        ),
+      );
+    });
+    // Sounds proposed by a model for the words espeak-ng could not sound out.
+    app.post("/:activityId/generate-phonemes", async (c) => {
+      const body = await readJson(c);
+      const runner = stageRunner(body);
+      return c.json(
+        await this.generation.start(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          runner.agentId,
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+          {
+            phonemes: {
+              language: requireString(body, "language", { minLen: 5, maxLen: 5 }),
+              words: body.words,
+            },
+          },
+          runner.runtime,
+        ),
+        202,
+      );
+    });
+    app.post("/:activityId/runs/:runId/accept-phonemes", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.generation.acceptPhonemes(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          pathParam(c, "runId"),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        ),
+      );
     });
     app.get("/image-setup", (c) =>
       c.json({ provider: "Gemini", model: IMAGE_MODEL, vaultKey: "GEMINI_API_KEY" }),

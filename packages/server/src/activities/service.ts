@@ -87,6 +87,16 @@ import {
   validateConfiguration,
 } from "./module-overrides.js";
 import { normalizeTags } from "./tags.js";
+import type { ActivityPhonemes } from "./phonemes.js";
+import {
+  cleanPhonemes,
+  desiredWords,
+  fillPhonemes,
+  isBookWord,
+  mergeWordAssets,
+  wordsMissingPhonemes,
+} from "./book-words.js";
+import type { BookWordsRefresh, BookWordsState, PhonemesCandidate } from "./book-word-types.js";
 import {
   nextFreeRefNum,
   refDraftFromTemplate,
@@ -128,6 +138,7 @@ export class ActivityService implements ActivityAuthoring {
   @Use() private readonly config!: Config;
   @Use() private readonly db!: Db;
   @Use() private readonly mediaLibrary!: MediaLibraryPorts;
+  @Use() private readonly phonemes!: ActivityPhonemes;
   private readonly locks = new ActivityLocks();
   /** The activities whose lock the running work already holds, through `exclusive`. */
   private readonly held = new AsyncLocalStorage<ReadonlySet<string>>();
@@ -1032,7 +1043,8 @@ export class ActivityService implements ActivityAuthoring {
       const refusal = canAddLanguage(Object.keys(plan.manifest.assets), language);
       if (refusal) throw new HttpError(422, "language_invalid", refusal.message);
       const group = plan.manifest.assets[DEFAULT_LANGUAGE_CODE]!.filter(
-        (asset) => asset.type === "audio" && !asset.kind && !!asset.script?.trim(),
+        (asset) =>
+          asset.type === "audio" && !asset.kind && !isBookWord(asset) && !!asset.script?.trim(),
       ).map((asset) => {
         const {
           script: _script,
@@ -1050,6 +1062,145 @@ export class ActivityService implements ActivityAuthoring {
       return { ...draft, mediaPlan: { ...plan, manifest } };
     });
   }
+  async bookWordsState(projectId: string, activityId: string): Promise<BookWordsState> {
+    const activity = await this.getActivity(projectId, activityId);
+    const product = activity.activityType === "book" ? this.productOf(activity) : null;
+    return { bookMode: product?.bookMode ?? null, espeak: await this.phonemes.status() };
+  }
+  /**
+   * A decodable book's words, brought in line with its story: Loom's book words, as assets of
+   * the language group (book-words.ts), with sounds from espeak-ng for each word that has
+   * none and that the author has not made their own. Refused for anything that is not a
+   * decodable book: the product's recorded reading mode decides, and only where it records
+   * none does the author's `bookMode` count. A choice the author makes that way is recorded
+   * on the product once the refresh succeeds, so it holds for every later refresh and reload.
+   */
+  async refreshBookWords(
+    projectId: string,
+    activityId: string,
+    language: string,
+    expectedRevision: string,
+    bookMode?: "decodable" | "readAlong",
+  ): Promise<BookWordsRefresh> {
+    const activity = await this.getActivity(projectId, activityId);
+    const product = activity.activityType === "book" ? this.productOf(activity) : null;
+    const recorded = product?.bookMode ?? null;
+    if (activity.activityType !== "book" || (recorded ?? bookMode) !== "decodable")
+      throw new HttpError(
+        409,
+        "not_decodable",
+        "Word pronunciations are planned for decodable books only.",
+      );
+    const planned = this.plannedWords(activity, language);
+    // espeak-ng runs outside the draft lock; its answer is used only if the words it was asked
+    // about are still the ones the draft holds when the change is made.
+    const missing = wordsMissingPhonemes(mergeWordAssets(planned.group, planned.desired));
+    const found = await this.phonemes.phonemesFor(missing, language);
+    let still: string[] = [];
+    const draft = await this.change(projectId, activityId, expectedRevision, (current, record) => {
+      const { plan, group, desired } = this.plannedWords({ ...record, draft: current }, language);
+      const merged = mergeWordAssets(group, desired);
+      fillPhonemes(merged, new Map(Object.entries(found)), "espeak");
+      still = wordsMissingPhonemes(merged);
+      const manifest = this.validWordManifest(
+        { ...plan.manifest, assets: { ...plan.manifest.assets, [language]: merged } },
+        record,
+      );
+      return { ...current, mediaPlan: { ...plan, manifest } };
+    });
+    if (product && !recorded)
+      await this.setProductBookMode(
+        projectId,
+        product.collectionId,
+        product.productCode,
+        "decodable",
+      );
+    return { draft, missing: still };
+  }
+  /** The media plan and a language group of a book, and the words its story shows. */
+  private plannedWords(activity: ActivityRecord & { draft: ActivityDraft }, language: string) {
+    const { draft } = activity;
+    const plan = draft.mediaPlan;
+    if (!plan || draft.status !== "valid" || plan.specRevision !== contentRevision(draft.spec))
+      throw new HttpError(409, "media_stale", "Plan media from the saved specification first.");
+    const group = plan.manifest.assets[language];
+    if (!group)
+      throw new HttpError(422, "language_invalid", "The media plan has no such language group.");
+    try {
+      return {
+        plan,
+        group,
+        desired: desiredWords(draft.spec!, group, language, DEFAULT_LANGUAGE_CODE),
+      };
+    } catch (error) {
+      throw new HttpError(422, "spec_invalid", (error as Error).message);
+    }
+  }
+  private validWordManifest(manifest: unknown, activity: ActivityRecord) {
+    try {
+      return validateManifest(manifest, activity);
+    } catch (error) {
+      throw new HttpError(422, "media_invalid", (error as Error).message);
+    }
+  }
+  /** One word asset of a language group, found for an edit, or a 404. */
+  private bookWord(draft: ActivityDraft, language: string, assetKey: string) {
+    const plan = draft.mediaPlan;
+    const manifest = plan ? structuredClone(plan.manifest) : null;
+    const asset = manifest?.assets[language]?.find((entry) => entry.key === assetKey);
+    if (!plan || !manifest || !asset || !isBookWord(asset))
+      throw new HttpError(404, "book_word_not_found", "No such word pronunciation.");
+    return { plan, manifest, asset };
+  }
+  async setWordPhonemes(
+    projectId: string,
+    activityId: string,
+    language: string,
+    assetKey: string,
+    phonemes: unknown,
+    expectedRevision: string,
+  ): Promise<ActivityDraft> {
+    const sounds = cleanPhonemes(phonemes);
+    if (!sounds)
+      throw new HttpError(
+        400,
+        "phonemes_invalid",
+        "Give between 1 and 32 sounds, each 1 to 8 characters.",
+      );
+    return this.change(projectId, activityId, expectedRevision, (draft, activity) => {
+      const { plan, manifest, asset } = this.bookWord(draft, language, assetKey);
+      asset.phonemes = sounds;
+      asset.phonemeSource = "author";
+      asset.customized = true;
+      return {
+        ...draft,
+        mediaPlan: { ...plan, manifest: this.validWordManifest(manifest, activity) },
+      };
+    });
+  }
+  async applyPhonemes(
+    projectId: string,
+    activityId: string,
+    candidate: PhonemesCandidate,
+    expectedRevision: string,
+  ): Promise<ActivityDraft> {
+    return this.change(projectId, activityId, expectedRevision, (draft, activity) => {
+      const plan = draft.mediaPlan;
+      const group = plan?.manifest.assets[candidate.language];
+      if (!plan || !group)
+        throw new HttpError(409, "media_stale", "Plan media from the saved specification first.");
+      const manifest = structuredClone(plan.manifest);
+      fillPhonemes(
+        manifest.assets[candidate.language]!,
+        new Map(Object.entries(candidate.phonemes)),
+        "model",
+      );
+      return {
+        ...draft,
+        mediaPlan: { ...plan, manifest: this.validWordManifest(manifest, activity) },
+      };
+    });
+  }
   /**
    * An imported ref's media: planned from its specification as any ref's is, then bound as
    * Loom had it. A language Loom held besides the default holds exactly what Loom listed
@@ -1064,6 +1215,11 @@ export class ActivityService implements ActivityAuthoring {
     const planned = await this.planMedia(projectId, activityId, expectedRevision);
     const manifest = structuredClone(planned.mediaPlan!.manifest);
     const defaults = manifest.assets[DEFAULT_LANGUAGE_CODE] ?? [];
+    const sceneIds = new Set(
+      ((planned.spec?.scenes ?? planned.spec?.stages ?? []) as { id?: unknown }[]).map((scene) =>
+        String(scene.id),
+      ),
+    );
     for (const [language, bindings] of Object.entries(media)) {
       const byKey = new Map(bindings.map((binding) => [binding.key, binding]));
       const listed = (asset: MediaAsset) =>
@@ -1105,6 +1261,37 @@ export class ActivityService implements ActivityAuthoring {
             : {}),
         };
       });
+      // A decodable book's word pronunciations are planned from its narration, not its
+      // specification, so they are carried as Loom had them, in the scenes that still exist.
+      const present = new Set(manifest.assets[language]!.map((asset) => asset.key));
+      for (const binding of bindings) {
+        const word = binding.bookWord;
+        if (!word || present.has(binding.key)) continue;
+        present.add(binding.key);
+        manifest.assets[language]!.push({
+          key: binding.key,
+          type: "audio",
+          role: "bookWord",
+          description: `Pronunciation of “${word.word}”.`,
+          word: word.word,
+          normalizedWord: word.normalizedWord,
+          ...(word.phonemes
+            ? { phonemes: word.phonemes, phonemeSource: word.customized ? "author" : "espeak" }
+            : {}),
+          ...(word.customized ? { customized: true } : {}),
+          ...(binding.path ? { path: binding.path } : {}),
+          ...(binding.script !== undefined ? { script: binding.script } : {}),
+          ...(binding.wordTimings ? { wordTimings: binding.wordTimings } : {}),
+          ...(binding.durationMs !== undefined ? { durationMs: binding.durationMs } : {}),
+          usages: word.usages.filter(
+            (usage) =>
+              sceneIds.has(usage.sceneId) &&
+              /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(usage.sourceKey) &&
+              usage.occurrence >= 1 &&
+              usage.sceneOccurrenceCount >= usage.occurrence,
+          ),
+        });
+      }
     }
     return this.applyMedia(projectId, activityId, manifest, planned.contentRevision);
   }

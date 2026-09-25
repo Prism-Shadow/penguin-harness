@@ -43,6 +43,8 @@ import { MediaDetailsView } from "./media-details-view";
 import { fileFactsFor } from "./media-details";
 import { SoundFields } from "./sound-fields";
 import { soundCandidateLabel, soundFailure } from "./sound-model";
+import { BookWordFields } from "./book-word-fields";
+import { isBookWord } from "./book-words";
 
 export function AssetEditor({
   manifest,
@@ -82,6 +84,7 @@ export function AssetEditor({
   onLanguage,
   mediaStats,
   savedManifest,
+  onSaveSounds,
 }: {
   manifest: AssetManifest;
   /** The language group the rail is showing. */
@@ -138,6 +141,8 @@ export function AssetEditor({
   mediaStats?: readonly MediaStat[] | null;
   /** The media plan as saved, which is what `mediaStats` describes. */
   savedManifest?: AssetManifest;
+  /** Save the author's sounds for a decodable book's word. */
+  onSaveSounds?: (language: string, assetKey: string, phonemes: string[]) => void;
   /**
    * Where this asset's scene sits on the storyboard: its name, the way back to the board,
    * and the scenes either side. Absent for media no scene uses.
@@ -538,7 +543,16 @@ export function AssetEditor({
                 <p className="text-xs text-gray-500">{S.activities.noInAppPreview}</p>
               ))}
             {asset.type === "video" && details}
-            {asset.type === "audio" && (
+            {asset.type === "audio" && isBookWord(asset) && (
+              <BookWordFields
+                key={`${language}/${asset.key}/${(asset.phonemes ?? []).join(" ")}`}
+                asset={asset}
+                editable={editable && !!onSaveSounds}
+                canSave={canAccept && !disabled}
+                onSave={(phonemes) => onSaveSounds?.(language, asset.key, phonemes)}
+              />
+            )}
+            {asset.type === "audio" && !isBookWord(asset) && (
               <>
                 <AudioPlaybackFields
                   asset={asset}

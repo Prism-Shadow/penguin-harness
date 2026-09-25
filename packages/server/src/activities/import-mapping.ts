@@ -19,6 +19,7 @@ import {
   importedPlayback,
   type AudioPlayback,
 } from "./playback.js";
+import { cleanPhonemes, normalizeWord, wordAssetKey, BOOK_WORD_MAX } from "./book-words.js";
 
 /** A Loom product, as the reader found it. */
 export interface SourceProduct {
@@ -78,6 +79,23 @@ export interface CarriedBinding {
   playback?: AudioPlayback;
   /** Music and sound effects: the length Loom's `duration` asked for, in milliseconds. */
   targetDurationMs?: number;
+  /**
+   * A decodable book's word pronunciation, which no specification plans: its word, sounds,
+   * whether the author made it their own, and the scenes that show it. Its key is re-derived
+   * from the word, so it matches the key a refresh would give it.
+   */
+  bookWord?: {
+    word: string;
+    normalizedWord: string;
+    phonemes?: string[];
+    customized: boolean;
+    usages: {
+      sceneId: string;
+      sourceKey: string;
+      occurrence: number;
+      sceneOccurrenceCount: number;
+    }[];
+  };
 }
 
 /** A path Penguin's manifest accepts: relative, under media/, no traversal. */
@@ -90,8 +108,43 @@ const MEDIA_PATH = /^media\/[A-Za-z0-9_./ -]+$/;
  */
 const UNCARRIED: Record<string, string> = {
   voice: "voices",
-  phonemes: "phonemes",
 };
+
+/** Loom's word pronunciation, as Penguin keeps it, or null for anything else. */
+function carriedWord(asset: Record<string, unknown>): CarriedBinding["bookWord"] | null {
+  if (asset.role !== "bookWord" || asset.type !== "audio" || typeof asset.word !== "string")
+    return null;
+  const normalizedWord = normalizeWord(
+    typeof asset.normalizedWord === "string" ? asset.normalizedWord : asset.word,
+  );
+  if (!normalizedWord || !asset.word || asset.word.length > BOOK_WORD_MAX) return null;
+  if (normalizedWord.length > BOOK_WORD_MAX) return null;
+  const usages = (Array.isArray(asset.usages) ? asset.usages : []).flatMap((raw: unknown) => {
+    const usage = (raw ?? {}) as Record<string, unknown>;
+    return typeof usage.sceneId === "string" &&
+      usage.sceneId &&
+      typeof usage.sourceKey === "string" &&
+      Number.isSafeInteger(usage.occurrence) &&
+      Number.isSafeInteger(usage.sceneOccurrenceCount)
+      ? [
+          {
+            sceneId: usage.sceneId,
+            sourceKey: usage.sourceKey,
+            occurrence: usage.occurrence as number,
+            sceneOccurrenceCount: usage.sceneOccurrenceCount as number,
+          },
+        ]
+      : [];
+  });
+  const phonemes = cleanPhonemes(asset.phonemes);
+  return {
+    word: asset.word,
+    normalizedWord,
+    ...(phonemes ? { phonemes } : {}),
+    customized: asset.customized === true,
+    usages,
+  };
+}
 
 /**
  * Loom's bindings for the languages being carried. Loom's older manifests are a flat list,
@@ -119,7 +172,14 @@ export function carriedBindings(
       if (typeof asset.key !== "string" || !asset.key) return [];
       for (const [field, name] of Object.entries(UNCARRIED))
         if (asset[field] !== undefined) lost[name] = (lost[name] ?? 0) + 1;
-      const binding: CarriedBinding = { key: asset.key };
+      // Sounds are IPA, and portable; they are kept on a word pronunciation, where they
+      // belong, and named as dropped anywhere else or when they are not sounds.
+      const word = carriedWord(asset);
+      if (asset.phonemes !== undefined && !word?.phonemes)
+        lost["phonemes"] = (lost["phonemes"] ?? 0) + 1;
+      const binding: CarriedBinding = word
+        ? { key: wordAssetKey(word.normalizedWord), bookWord: word }
+        : { key: asset.key };
       if (typeof asset.path === "string" && asset.path) {
         if (MEDIA_PATH.test(asset.path) && !asset.path.split("/").includes(".."))
           binding.path = asset.path;

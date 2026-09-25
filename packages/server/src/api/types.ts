@@ -4907,6 +4907,16 @@ export type {
   RefAssetDecision,
   RefNumberSuggestion,
 } from "../activities/ref-template-types.js";
+export type {
+  BookWordsRefresh,
+  BookWordsSetup,
+  BookWordsState,
+  EspeakStatus,
+  PhonemeSource,
+  PhonemesCandidate,
+  PhonemesSettingsResponse,
+  PhonemesTarget,
+} from "../activities/book-word-types.js";
 
 // ---------------------------------------------------------------------------
 // Coding agents (Agent Client Protocol)
