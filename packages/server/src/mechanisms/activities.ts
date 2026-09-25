@@ -40,7 +40,7 @@ export abstract class ActivityGeneration extends Interface<{
       bookMode?: string;
       audio?: { language: string; assetKey: string; voice: string };
       /** A music or sound-effect run for one asset, made by the named provider. */
-      sound?: { language: string; assetKey: string; provider: string };
+      sound?: { language: string; assetKey: string; provider: string; model?: string };
       image?: { language: string; assetKey: string };
       mediaText?: { language: string; assetKey: string; translate?: boolean };
       /** An assist run: the author's first message and what they had open. */

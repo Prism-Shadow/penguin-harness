@@ -1351,8 +1351,13 @@ function ActivityEditor({
             startRun("generate-audio", { language: lang, assetKey, voice })
           }
           soundProviders={soundProviders}
-          onGenerateSound={(lang, assetKey, provider) =>
-            startRun("generate-sound", { language: lang, assetKey, provider })
+          onGenerateSound={(lang, assetKey, provider, model) =>
+            startRun("generate-sound", {
+              language: lang,
+              assetKey,
+              provider,
+              ...(model !== undefined ? { model } : {}),
+            })
           }
           onGenerateImage={(lang, assetKey) =>
             startRun("generate-image", { language: lang, assetKey })

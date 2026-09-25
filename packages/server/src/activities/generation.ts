@@ -19,9 +19,10 @@ import type { Sessions, SessionServiceIface } from "../runtime/session-manager.j
 import { HttpError } from "../http/errors.js";
 import { ActivityLocks, atomicJson } from "./service.js";
 import { AUDIO_MAX_BYTES, audioTarget, audioPrompt, type AudioResult } from "./audio.js";
-import { SOUND_OUTPUT_FILE, soundPrompt, soundTarget } from "./sound.js";
+import { SOUND_OUTPUT_FILES, soundPrompt, soundTarget } from "./sound.js";
+import { AGENTHUB_VERSION, SoundModelPorts } from "./sound-models.js";
 import { soundProviderFor, soundSetup } from "./audio-providers.js";
-import type { SoundSetup } from "./sound-types.js";
+import type { SoundFormat, SoundSetup } from "./sound-types.js";
 import { readArtifactBytes } from "./artifact.js";
 import { soundPromptOf } from "./playback.js";
 import {
@@ -99,6 +100,28 @@ async function testFileUnchanged(workspace: string, hash: string | undefined): P
     return false;
   }
 }
+
+/**
+ * The file a sound run must collect: the format its request named (a hub model's catalogued
+ * format), else MP3, the only format ElevenLabs' helper writes. The other file being present
+ * fails the run, so audio the helper did not write is never bound as the provider's
+ * candidate. Its name only picks the check; the bytes must still pass it.
+ */
+async function soundOutputFormat(workspace: string, expected: SoundFormat): Promise<SoundFormat> {
+  const other: SoundFormat = expected === "mp3" ? "wav" : "mp3";
+  const stray = await fs
+    .lstat(path.join(workspace, SOUND_OUTPUT_FILES[other]))
+    .then(() => true)
+    .catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    });
+  if (stray)
+    throw new Error(
+      `The sound run wrote ${SOUND_OUTPUT_FILES[other]}, but its model returns ${SOUND_OUTPUT_FILES[expected]}.`,
+    );
+  return expected;
+}
 interface Observer {
   unsubscribe: () => void;
   completed: boolean;
@@ -121,6 +144,7 @@ export class ActivityGenerationService implements ActivityGeneration {
   @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly channels!: Channels;
   @Use() private readonly log!: Log;
+  @Use() private readonly soundModels!: SoundModelPorts;
   private readonly locks = new ActivityLocks();
   private readonly observers = new Map<string, Observer>();
   private readonly operations = new Set<Promise<unknown>>();
@@ -302,7 +326,7 @@ export class ActivityGenerationService implements ActivityGeneration {
   async soundSetup(projectId: string, agentId: string): Promise<SoundSetup> {
     await this.agents.requireExists(projectId, agentId);
     const keys = (await this.agents.getVault(projectId, agentId)).entries.map((entry) => entry.key);
-    return { providers: soundSetup(keys) };
+    return { providers: soundSetup(keys, this.soundModels.agenthubModels) };
   }
 
   async candidate(projectId: string, activityId: string, runId: string): Promise<string | null> {
@@ -318,7 +342,7 @@ export class ActivityGenerationService implements ActivityGeneration {
       wafRoot?: string;
       bookMode?: string;
       audio?: { language: string; assetKey: string; voice: string };
-      sound?: { language: string; assetKey: string; provider: string };
+      sound?: { language: string; assetKey: string; provider: string; model?: string };
       image?: { language: string; assetKey: string };
       mediaText?: { language: string; assetKey: string };
       assist?: { message: string; focus: AssistFocus | null };
@@ -369,7 +393,9 @@ export class ActivityGenerationService implements ActivityGeneration {
           )
             throw new HttpError(400, "generation_invalid", "Choose one media generation type.");
           const audio = module?.audio ? audioTarget(activity, module.audio) : undefined;
-          const sound = module?.sound ? soundTarget(activity, module.sound) : undefined;
+          const sound = module?.sound
+            ? soundTarget(activity, module.sound, this.soundModels.agenthubModels)
+            : undefined;
           const image = module?.image ? imageTarget(activity, module.image) : undefined;
           const mediaText = module?.mediaText
             ? mediaTextTarget(activity, module.mediaText)
@@ -483,13 +509,30 @@ export class ActivityGenerationService implements ActivityGeneration {
             const keys = (await this.agents.getVault(projectId, agentId)).entries.map(
               (entry) => entry.key,
             );
-            const choice = soundProviderFor(sound.sound.kind, sound.sound.provider, keys);
+            // The model the author named, or, with none named, the first the Vault has a key
+            // for, as setup reports it. The target's model was chosen before the keys were
+            // known, so the choice made here replaces it.
+            const choice = soundProviderFor(
+              sound.sound.kind,
+              sound.sound.provider,
+              keys,
+              module?.sound?.model,
+              this.soundModels.agenthubModels,
+            );
             if ("problem" in choice)
               throw new HttpError(
                 400,
                 "sound_credential_missing",
                 `Add ${choice.credential ?? "the provider's key"} to the selected Agent's Vault before generating a sound.`,
               );
+            sound.model = choice.model;
+            sound.sound.model = choice.model;
+            delete sound.sound.credential;
+            delete sound.sound.format;
+            if (choice.format) {
+              sound.sound.credential = choice.credential;
+              sound.sound.format = choice.format;
+            }
           }
           if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
           if (this.running().some((run) => run.activityId === activityId))
@@ -627,7 +670,7 @@ export class ActivityGenerationService implements ActivityGeneration {
               await atomicJson(path.join(workspace, "package.json"), {
                 private: true,
                 type: "module",
-                dependencies: { "@prismshadow/agenthub": "0.4.15" },
+                dependencies: { "@prismshadow/agenthub": AGENTHUB_VERSION },
               });
               await fs.writeFile(path.join(workspace, helperName), helper, {
                 flag: "wx",
@@ -644,10 +687,14 @@ export class ActivityGenerationService implements ActivityGeneration {
                   "The installed media helper is missing. Rebuild the bundled plugins.",
                 );
               await atomicJson(path.join(workspace, "sound-input.json"), sound.sound);
-              // The helper calls the provider with Node's own fetch; nothing to install.
+              // ElevenLabs is called with Node's own fetch, so nothing is installed for it; a
+              // hub model needs agenthub, and only that branch loads it.
               await atomicJson(path.join(workspace, "package.json"), {
                 private: true,
                 type: "module",
+                ...(sound.sound.provider === "agenthub"
+                  ? { dependencies: { "@prismshadow/agenthub": AGENTHUB_VERSION } }
+                  : {}),
               });
               await fs.writeFile(path.join(workspace, "generate-sound.mjs"), helper, {
                 flag: "wx",
@@ -1196,8 +1243,14 @@ export class ActivityGenerationService implements ActivityGeneration {
                   throw new Error(
                     observer?.error ?? `${sound ? "Sound" : "Speech"} Session did not complete.`,
                   );
+                const format = run.audio?.sound
+                  ? await soundOutputFormat(this.workspace(run), run.audio.sound.format ?? "mp3")
+                  : undefined;
                 const bytes = await readArtifactBytes(
-                  path.join(this.workspace(run), sound ? SOUND_OUTPUT_FILE : "speech.wav"),
+                  path.join(
+                    this.workspace(run),
+                    format ? SOUND_OUTPUT_FILES[format] : "speech.wav",
+                  ),
                   AUDIO_MAX_BYTES,
                 );
                 const result = await this.activities.storeAudio(
@@ -1205,7 +1258,7 @@ export class ActivityGenerationService implements ActivityGeneration {
                   run.activityId,
                   run.runId,
                   bytes,
-                  sound ? "mp3" : undefined,
+                  format,
                 );
                 run.candidate = JSON.stringify(result);
                 this.save(run);
@@ -1393,7 +1446,7 @@ export class ActivityGenerationService implements ActivityGeneration {
                         ? "image.png"
                         : run.kind === "audio"
                           ? run.audio?.sound
-                            ? SOUND_OUTPUT_FILE
+                            ? SOUND_OUTPUT_FILES[run.audio.sound.format ?? "mp3"]
                             : "speech.wav"
                           : run.kind === "module"
                             ? "module-result.json or a required artifact"

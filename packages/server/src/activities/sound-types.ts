@@ -9,8 +9,16 @@ export type SoundKind = "music" | "sfx";
 /** Where a sound is made: ElevenLabs directly, or a model reached through the model hub. */
 export type SoundProviderId = "elevenlabs" | "agenthub";
 
-/** Why a provider cannot make a sound right now. The App words each one. */
-export type SoundProblem = "provider_unknown" | "credential_missing" | "kind_unsupported";
+/**
+ * Why a provider cannot make a sound right now. The App words each one. `no_model`: the
+ * model hub offers no music or sound model in this version; `model_unknown`: the model asked
+ * for is not one the provider offers for that kind.
+ */
+export type SoundProblem =
+  "provider_unknown" | "credential_missing" | "kind_unsupported" | "no_model" | "model_unknown";
+
+/** The file format a sound model returns, and so the candidate the run keeps. */
+export type SoundFormat = "wav" | "mp3";
 
 /** What one sound run asks its provider for. */
 export interface SoundRequest {
@@ -19,6 +27,21 @@ export interface SoundRequest {
   kind: SoundKind;
   prompt: string;
   targetDurationMs?: number;
+  /**
+   * A model reached through the model hub: the Vault key its provider reads and the format
+   * it returns. Absent for ElevenLabs, whose helper branch names both itself.
+   */
+  credential?: string;
+  format?: SoundFormat;
+}
+
+/** One model the model hub offers for sound, as the editor's Model picker shows it. */
+export interface SoundModelChoice {
+  id: string;
+  kinds: SoundKind[];
+  /** The Vault key this model's provider needs. */
+  credential: string;
+  available: boolean;
 }
 
 /** One provider as the editor's picker shows it, for the chosen agent. */
@@ -31,6 +54,11 @@ export interface SoundProviderStatus {
   models: Partial<Record<SoundKind, string>>;
   available: boolean;
   problem?: SoundProblem;
+  /**
+   * Every model the provider offers, when it offers a choice (the model hub). Empty while the
+   * hub has no sound model; absent for a provider with one fixed model per kind.
+   */
+  modelChoices?: SoundModelChoice[];
 }
 
 /** `GET /sound-setup`. */

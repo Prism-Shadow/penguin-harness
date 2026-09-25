@@ -5591,3 +5591,159 @@ test("writes a prompt for a sound effect, generates it, and keeps the new clip",
   await expect(page.getByText("media/generated/run_sound_1.mp3", { exact: true })).toBeVisible();
   expect(f.errors).toEqual([]);
 });
+
+test("lists the model hub as a sound provider, disabled until it offers a model", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  // What the model hub offers: nothing in this version, then two music models.
+  let hubModels = [];
+  const generated = [];
+  const soundRuns = [];
+  await page.route(`**${base}/act_test/plan-media`, (route) =>
+    route.fallback({
+      postData: JSON.stringify({
+        ...route.request().postDataJSON(),
+        manifest: {
+          productCode: "words",
+          refNum: 12,
+          assets: {
+            "en-US": [
+              {
+                key: "tune",
+                type: "audio",
+                description: "A tune",
+                script: '<audio kind="music">a playful marimba loop</audio>',
+                kind: "music",
+                channel: "music",
+                loop: true,
+                volume: 1,
+                usages: [
+                  { sceneId: "intro", sourceKey: "tune", occurrence: 1, sceneOccurrenceCount: 1 },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    }),
+  );
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/sound-setup`)
+      return json({
+        providers: [
+          {
+            id: "elevenlabs",
+            kinds: ["music", "sfx"],
+            credential: "ELEVENLABS_API_KEY",
+            models: { music: "music_v1", sfx: "sound-generation" },
+            available: true,
+          },
+          {
+            id: "agenthub",
+            kinds: ["music", "sfx"],
+            credential: hubModels.length ? "GEMINI_API_KEY" : "",
+            models: hubModels.length ? { music: hubModels[0].id } : {},
+            available: hubModels.length > 0,
+            ...(hubModels.length ? {} : { problem: "no_model" }),
+            modelChoices: hubModels,
+          },
+        ],
+      });
+    if (p === `${base}/act_test/generate-sound`) {
+      const body = request.postDataJSON();
+      if (soundRuns.some((run) => run.status === "running"))
+        return json({ error: { code: "generation_running", message: "Running." } }, 409);
+      generated.push(body);
+      soundRuns.unshift({
+        kind: "audio",
+        audio: {
+          language: body.language,
+          assetKey: body.assetKey,
+          script: '<audio kind="music">a playful marimba loop</audio>',
+          model: body.model,
+          sound: {
+            provider: body.provider,
+            model: body.model,
+            kind: "music",
+            prompt: "a playful marimba loop",
+            credential: "GEMINI_API_KEY",
+            format: "wav",
+          },
+        },
+        runId: "run_hub_1",
+        inputRevision: body.expectedRevision,
+        activityId: "act_test",
+        projectId,
+        sessionId: "session_hub",
+        status: "running",
+        createdAt: "2026-09-25T10:00:00Z",
+        hasCandidate: false,
+        error: null,
+      });
+      return json(soundRuns[0], 202);
+    }
+    if (p === `${base}/act_test/runs` && request.method() === "GET")
+      return json({ runs: soundRuns });
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+
+  // Shown, never hidden: the option is there, disabled, with the reason in its name.
+  const provider = page.getByRole("button", { name: "Provider", exact: true });
+  await expect(provider).toHaveText("ElevenLabs");
+  await provider.click();
+  await expect(
+    page.getByRole("option", {
+      name: "Model: No music or sound model is available through the model hub in this version.",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
+  const model = page.getByRole("button", { name: "Model", exact: true });
+  await expect(model).toHaveCount(0);
+
+  // A release with sound models: choosing the hub offers its models.
+  hubModels = [
+    { id: "tune-lite", kinds: ["music"], credential: "GEMINI_API_KEY", available: true },
+    { id: "tune-pro", kinds: ["music", "sfx"], credential: "GEMINI_API_KEY", available: true },
+  ];
+  const setupLoaded = page.waitForResponse((response) =>
+    response.url().includes(`${base}/sound-setup`),
+  );
+  await page.reload();
+  await setupLoaded;
+  await openSection(page, "Scenes and media");
+  // Centred first: scrolling to reach a menu row would move the trigger and close the menu.
+  await provider.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await provider.click();
+  await page.getByRole("option", { name: "Model", exact: true }).click();
+  await expect(provider).toHaveText("Model");
+  await expect(model).toHaveText("tune-lite");
+  await model.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await model.click();
+  await page.getByRole("option", { name: "tune-pro", exact: true }).click();
+  await expect(model).toHaveText("tune-pro");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect.poll(() => generated.length).toBe(1);
+  expect(generated[0]).toMatchObject({
+    agentId: "default_agent",
+    language: "en-US",
+    assetKey: "tune",
+    provider: "agenthub",
+    model: "tune-pro",
+  });
+  await expect(page.getByRole("button", { name: "Generating…", exact: true })).toBeDisabled();
+  expect(f.errors).toEqual([]);
+});

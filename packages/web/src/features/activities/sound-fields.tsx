@@ -13,6 +13,7 @@ import { toneInk } from "../../lib/tone";
 import {
   SOUND_PROMPT_MAX,
   canGenerateSound,
+  chosenModel,
   chosenProvider,
   lengthText,
   parseLength,
@@ -41,10 +42,12 @@ export function SoundFields({
   /** The providers the chosen agent can use; null while unknown or without a Penguin agent. */
   providers: readonly SoundProviderStatus[] | null;
   onEdit: (change: (entry: MediaAsset) => void) => void;
-  onGenerate: (provider: string) => void;
+  /** `model` is set for a provider with a choice of models. */
+  onGenerate: (provider: string, model?: string) => void;
 }) {
   const words = S.activities.sound;
   const [choice, setChoice] = useState<string | null>(null);
+  const [modelChoice, setModelChoice] = useState<string | null>(null);
   // The Length field's text while it does not hold a length that can be saved.
   const [lengthDraft, setLengthDraft] = useState<{ key: string; text: string } | null>(null);
   const prompt = soundPromptOf(asset.script);
@@ -53,6 +56,7 @@ export function SoundFields({
   const length = parseLength(lengthValue);
   const options = providerOptions(providers ?? [], asset.kind);
   const provider = chosenProvider(options, choice);
+  const model = chosenModel(provider, modelChoice);
   const locked = !editable || disabled;
   return (
     <div className="space-y-3">
@@ -113,6 +117,23 @@ export function SoundFields({
             </Select>
           </div>
         )}
+        {provider && provider.models.length > 1 && (
+          <div className="min-w-48 flex-1">
+            <Select
+              size="sm"
+              label={words.model}
+              value={model?.id ?? ""}
+              disabled={locked}
+              onChange={(event) => setModelChoice(event.target.value)}
+            >
+              {provider.models.map((option) => (
+                <option key={option.id} value={option.id} disabled={option.problem !== null}>
+                  {option.problem ? words.unavailable(option.id, option.problem) : option.id}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
       </div>
       {!providers && editable && <p className="text-xs text-gray-500">{words.noProvider}</p>}
       {provider?.problem && <p className={`text-xs ${toneInk.attention}`}>{provider.problem}</p>}
@@ -120,7 +141,10 @@ export function SoundFields({
         <Button
           size="sm"
           disabled={!canGenerate || generating || !canGenerateSound(prompt, provider, length.ok)}
-          onClick={() => provider && onGenerate(provider.id)}
+          onClick={() =>
+            provider &&
+            onGenerate(provider.id, provider.models.length && model ? model.id : undefined)
+          }
         >
           {generating ? words.generating : asset.generatedAudio ? words.regenerate : words.generate}
         </Button>

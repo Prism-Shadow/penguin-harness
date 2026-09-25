@@ -4,18 +4,12 @@
  * another.
  */
 import { unzipSync } from "fflate";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { ActivityDetail } from "../src/activities/domain.js";
 import type { ProjectMediaListing } from "../src/activities/media-library-types.js";
 import type { UploadedMedia } from "../src/activities/upload.js";
 import { bundleEntryNames, copiedUploadName } from "../src/activities/media-bundle.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
-
-// A bundle limit small enough to cross with a few test files. Everything else is real.
-vi.mock("../src/activities/media-bundle.js", async (original) => ({
-  ...(await original<typeof import("../src/activities/media-bundle.js")>()),
-  BUNDLE_MAX_BYTES: 400,
-}));
 
 const png = (fill: number, padding = 0) =>
   Buffer.concat([
@@ -58,7 +52,8 @@ describe("project media library API", () => {
   });
 
   async function setup() {
-    const t = await createTestApp();
+    // A bundle limit small enough to cross with a few test files. Everything else is real.
+    const t = await createTestApp({ mediaLibraryPorts: { bundleMaxBytes: 400 } });
     cleanups.push(t.cleanup);
     const owner = await provisionUser(t.app, "librarian");
     const client = apiClient(t.app, owner.cookie);

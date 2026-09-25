@@ -2,6 +2,7 @@
  * Limits and naming for the project media library: how much one listing reports, how
  * much one downloaded bundle may hold, and what each file is called inside the zip.
  */
+import { Component, Interface } from "@prismshadow/penguin-core/kernel";
 import { UPLOAD_PREFIX } from "./upload.js";
 
 /** The most files one project listing reports, newest first. */
@@ -12,6 +13,17 @@ export const BUNDLE_MAX_ITEMS = 60;
 
 /** The most bytes one bundle may hold, before it is zipped. */
 export const BUNDLE_MAX_BYTES = 200 * 1024 * 1024;
+
+/**
+ * Where the media library reads its bundle limit. Absent, `BUNDLE_MAX_BYTES`; a test stands
+ * in a small limit so a few files can cross it.
+ */
+export abstract class MediaLibraryPorts extends Interface<{
+  bundleMaxBytes?: number;
+}>() {}
+
+@Component()
+export class DefaultMediaLibraryPorts implements MediaLibraryPorts {}
 
 /** The name a downloaded bundle is saved under. */
 export const BUNDLE_FILE_NAME = "media-library-selection.zip";

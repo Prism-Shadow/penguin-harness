@@ -55,15 +55,53 @@ export function parseLength(text: string): { ok: true; ms: number | undefined } 
   return { ok: true, ms: Math.round(seconds * 1000) };
 }
 
+export interface SoundModelOption {
+  id: string;
+  /** Why this model cannot make the sound now, worded; null when it can. */
+  problem: string | null;
+}
+
 export interface SoundProviderOption {
   id: SoundProviderId;
   label: string;
   /** Why this provider cannot make this asset now, worded; null when it can. */
   problem: string | null;
+  /**
+   * The models it offers for this kind when it offers a choice (the model hub); empty for a
+   * provider with one fixed model.
+   */
+  models: SoundModelOption[];
 }
 
 export function providerLabel(id: string): string {
   return id === "elevenlabs" || id === "agenthub" ? S.activities.sound.providers[id] : id;
+}
+
+function problemText(status: SoundProviderStatus, kind: SoundKind): string | null {
+  const problems = S.activities.sound.problems;
+  if (!status.kinds.includes(kind)) return problems.kind_unsupported;
+  if (status.modelChoices) {
+    // A provider with a choice of models: usable for this kind when one of its models makes
+    // the kind and the agent holds that model's key.
+    const choices = status.modelChoices.filter((choice) => choice.kinds.includes(kind));
+    if (!choices.length) return problems.no_model;
+    return choices.some((choice) => choice.available)
+      ? null
+      : problems.credential_missing(choices[0]!.credential);
+  }
+  if (status.available) return null;
+  switch (status.problem) {
+    case "credential_missing":
+      return problems.credential_missing(status.credential);
+    case "kind_unsupported":
+      return problems.kind_unsupported;
+    case "no_model":
+      return problems.no_model;
+    case "model_unknown":
+      return problems.model_unknown;
+    default:
+      return problems.provider_unknown;
+  }
 }
 
 /** The picker's options for one kind of sound, unavailable ones carrying their reason. */
@@ -71,19 +109,19 @@ export function providerOptions(
   providers: readonly SoundProviderStatus[],
   kind: SoundKind,
 ): SoundProviderOption[] {
-  return providers.map((provider) => {
-    const problems = S.activities.sound.problems;
-    const problem = !provider.kinds.includes(kind)
-      ? problems.kind_unsupported
-      : provider.available
-        ? null
-        : provider.problem === "credential_missing"
-          ? problems.credential_missing(provider.credential)
-          : provider.problem === "kind_unsupported"
-            ? problems.kind_unsupported
-            : problems.provider_unknown;
-    return { id: provider.id, label: providerLabel(provider.id), problem };
-  });
+  return providers.map((provider) => ({
+    id: provider.id,
+    label: providerLabel(provider.id),
+    problem: problemText(provider, kind),
+    models: (provider.modelChoices ?? [])
+      .filter((choice) => choice.kinds.includes(kind))
+      .map((choice) => ({
+        id: choice.id,
+        problem: choice.available
+          ? null
+          : S.activities.sound.problems.credential_missing(choice.credential),
+      })),
+  }));
 }
 
 /**
@@ -101,6 +139,18 @@ export function chosenProvider(
     options[0] ??
     null
   );
+}
+
+/**
+ * The model to ask a provider with a choice for: the author's choice while it can make the
+ * sound, else the first that can. Null for a provider with one fixed model, or when none can.
+ */
+export function chosenModel(
+  provider: SoundProviderOption | null,
+  choice: string | null,
+): SoundModelOption | null {
+  const usable = (provider?.models ?? []).filter((model) => model.problem === null);
+  return usable.find((model) => model.id === choice) ?? usable[0] ?? null;
 }
 
 /** Whether a sound can be asked for: a usable provider and a prompt of the right size. */

@@ -53,7 +53,7 @@ describe("the Length field", () => {
 describe("the Provider picker", () => {
   it("offers an available provider and names what an unavailable one needs", () => {
     expect(providerOptions([eleven()], "sfx")).toEqual([
-      { id: "elevenlabs", label: "ElevenLabs", problem: null },
+      { id: "elevenlabs", label: "ElevenLabs", problem: null, models: [] },
     ]);
     const missing = providerOptions(
       [eleven({ available: false, problem: "credential_missing" })],
@@ -70,8 +70,8 @@ describe("the Provider picker", () => {
   });
 
   it("keeps the author's choice, else the first usable provider, else shows the first", () => {
-    const usable = { id: "elevenlabs" as const, label: "ElevenLabs", problem: null };
-    const blocked = { id: "agenthub" as const, label: "Model", problem: "Not here." };
+    const usable = { id: "elevenlabs" as const, label: "ElevenLabs", problem: null, models: [] };
+    const blocked = { id: "agenthub" as const, label: "Model", problem: "Not here.", models: [] };
     expect(chosenProvider([blocked, usable], null)).toBe(usable);
     expect(chosenProvider([blocked, usable], "agenthub")).toBe(blocked);
     expect(chosenProvider([blocked], null)).toBe(blocked);
@@ -79,7 +79,7 @@ describe("the Provider picker", () => {
   });
 
   it("allows Generate only with a usable provider, a valid length and a 1-2000 character prompt", () => {
-    const usable = { id: "elevenlabs" as const, label: "ElevenLabs", problem: null };
+    const usable = { id: "elevenlabs" as const, label: "ElevenLabs", problem: null, models: [] };
     expect(canGenerateSound("rain", usable, true)).toBe(true);
     expect(canGenerateSound("  ", usable, true)).toBe(false);
     expect(canGenerateSound("x".repeat(2001), usable, true)).toBe(false);

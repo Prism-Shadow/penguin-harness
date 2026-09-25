@@ -15,6 +15,7 @@ import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { SoundSetup } from "../src/activities/sound-types.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import { activitySpec } from "./activity-fixtures.js";
+import { speechWave } from "./audio-fixtures.js";
 
 const PROJECT = "sounder-activities";
 const FIXTURE = new URL("./fixtures/sound-effect.mp3", import.meta.url);
@@ -28,7 +29,7 @@ describe("sound generation through Harness sessions", () => {
   async function fixture() {
     let complete: () => void = () => {};
     const waiting = new Set<string>();
-    let output: "mp3" | "invalid" = "mp3";
+    let output: "mp3" | "invalid" | "wav" = "mp3";
     const prompts: string[] = [];
     // Stands in for the Session that would run generate-sound.mjs: it writes what the helper
     // would have, and nothing reaches a provider.
@@ -50,10 +51,14 @@ describe("sound generation through Harness sessions", () => {
           if (options.signal.aborted) resolve();
           else options.signal.addEventListener("abort", () => resolve(), { once: true });
         });
-        await fs.writeFile(
-          path.join(row.workspace!, "sound.mp3"),
-          output === "invalid" ? Buffer.from("not audio") : await fs.readFile(FIXTURE),
-        );
+        // "wav" stands for audio the ElevenLabs helper never writes.
+        if (output === "wav")
+          await fs.writeFile(path.join(row.workspace!, "sound.wav"), speechWave(2400));
+        else
+          await fs.writeFile(
+            path.join(row.workspace!, "sound.mp3"),
+            output === "invalid" ? Buffer.from("not audio") : await fs.readFile(FIXTURE),
+          );
         yield requestEnd("completed");
       },
     });
@@ -143,7 +148,7 @@ describe("sound generation through Harness sessions", () => {
       await waitFor(() => waiting.has(run.sessionId!));
       return run;
     }
-    async function finish(run: ActivityRun, value: "mp3" | "invalid" = "mp3") {
+    async function finish(run: ActivityRun, value: "mp3" | "invalid" | "wav" = "mp3") {
       output = value;
       complete();
       await waitFor(() => t.deps.manager.statusOf(run.sessionId!) === "idle");
@@ -198,6 +203,7 @@ describe("sound generation through Harness sessions", () => {
         problem: "credential_missing",
         credential: "ELEVENLABS_API_KEY",
       }),
+      expect.objectContaining({ id: "agenthub", available: false, problem: "no_model" }),
     ]);
     await f.setVault(["ELEVENLABS_API_KEY"]);
     expect((await setup()).providers[0]).toMatchObject({ id: "elevenlabs", available: true });
@@ -313,5 +319,9 @@ describe("sound generation through Harness sessions", () => {
     const failed = await f.finish(bad, "invalid");
     expect(failed.status).toBe("failed");
     expect(failed.hasCandidate).toBe(false);
+    // An ElevenLabs run collects only sound.mp3; a WAV in its workspace is not its take.
+    const wave = await f.finish(await f.started(), "wav");
+    expect(wave.status).toBe("failed");
+    expect(wave.hasCandidate).toBe(false);
   });
 });

@@ -915,6 +915,8 @@ export type Strings = {
       lengthHint: string;
       lengthInvalid: string;
       provider: string;
+      /** The model picker shown when a provider offers several models for the kind. */
+      model: string;
       generate: string;
       regenerate: string;
       generating: string;
@@ -923,6 +925,8 @@ export type Strings = {
         credential_missing: (key: string) => string;
         kind_unsupported: string;
         provider_unknown: string;
+        no_model: string;
+        model_unknown: string;
       };
       unavailable: (provider: string, problem: string) => string;
       noProvider: string;

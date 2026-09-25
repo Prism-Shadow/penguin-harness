@@ -1,9 +1,15 @@
 import type {
+  SoundFormat,
   SoundKind,
   SoundProblem,
   SoundProviderId,
   SoundProviderStatus,
 } from "./sound-types.js";
+import {
+  AGENTHUB_SOUND_MODELS,
+  AGENTHUB_VERSION,
+  type AgenthubSoundModel,
+} from "./sound-models.js";
 
 /**
  * Which audio a run can actually produce, and what to say when it cannot.
@@ -189,9 +195,10 @@ export function describeAudioCapability(setup: AudioSetup): string {
  * model each uses per kind, and the Vault key it needs. An asset's `sfx` is this file's
  * `effect`.
  *
- * Only ElevenLabs is listed. A model reached through the model hub is a provider id the
- * seam knows, but this build has no such model, so asking for it is `provider_unknown`
- * rather than a quiet substitution.
+ * ElevenLabs has one fixed model per kind. The model hub ("agenthub") offers whatever
+ * `AGENTHUB_SOUND_MODELS` lists, each with its own provider's key and output format; that
+ * list is empty in this build, so the hub is reported as `no_model` rather than hidden or
+ * quietly replaced by another provider.
  */
 export interface SoundProvider {
   id: SoundProviderId;
@@ -209,10 +216,52 @@ export const SOUND_PROVIDERS: readonly SoundProvider[] = [
   },
 ];
 
+/** The kinds the model hub can be asked for; which models serve them is the catalogue's. */
+const AGENTHUB_KINDS: readonly SoundKind[] = ["music", "sfx"];
+
 const AUDIO_KIND_OF: Record<SoundKind, AudioKind> = { music: "music", sfx: "effect" };
 
+/** Whether release `have` is at least `need`, both plain `major.minor.patch`. */
+function atLeast(have: string, need: string): boolean {
+  const a = have.split(".").map(Number);
+  const b = need.split(".").map(Number);
+  for (let index = 0; index < 3; index += 1) {
+    const x = a[index] ?? 0;
+    const y = b[index] ?? 0;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    if (x !== y) return x > y;
+  }
+  return true;
+}
+
 /**
- * The provider and model that will make one sound, or why they cannot. `vaultKeys` are the
+ * The hub's models for one kind (or every kind) that the pinned agenthub release carries,
+ * from `catalogue` (this build's, unless a caller passes the one its ports hold).
+ */
+export function agenthubSoundModels(
+  kind?: SoundKind,
+  catalogue: readonly AgenthubSoundModel[] = AGENTHUB_SOUND_MODELS,
+): AgenthubSoundModel[] {
+  return catalogue.filter(
+    (model) =>
+      (!kind || model.kinds.includes(kind)) &&
+      AGENTHUB_KINDS.some((offered) => model.kinds.includes(offered)) &&
+      atLeast(AGENTHUB_VERSION, model.minAgenthub),
+  );
+}
+
+export type SoundChoice = {
+  provider: SoundProviderId;
+  model: string;
+  /** Set for a hub model: the Vault key it reads and what it returns. ElevenLabs needs its
+   * own key and always returns MP3. */
+  credential?: string;
+  format?: SoundFormat;
+};
+
+/**
+ * The provider and model that will make one sound, or why they cannot. `model` picks one of
+ * the provider's models (the first that makes the kind when absent). `vaultKeys` are the
  * keys the chosen agent's Vault holds; null skips the key check (an asset is being checked,
  * not a run started).
  */
@@ -220,11 +269,34 @@ export function soundProviderFor(
   kind: SoundKind,
   provider: string,
   vaultKeys: readonly string[] | null,
-): { provider: SoundProviderId; model: string } | { problem: SoundProblem; credential?: string } {
+  model?: string,
+  catalogue: readonly AgenthubSoundModel[] = AGENTHUB_SOUND_MODELS,
+): SoundChoice | { problem: SoundProblem; credential?: string } {
+  if (provider === "agenthub") {
+    const offered = agenthubSoundModels(kind, catalogue);
+    if (!offered.length) return { problem: "no_model" };
+    // With no model named, the first whose key the Vault holds, as setup reports it; the
+    // first offered only names the missing key.
+    const chosen =
+      model === undefined
+        ? (offered.find((entry) => !vaultKeys || vaultKeys.includes(entry.credential)) ??
+          offered[0]!)
+        : offered.find((entry) => entry.id === model);
+    if (!chosen) return { problem: "model_unknown" };
+    if (vaultKeys && !vaultKeys.includes(chosen.credential))
+      return { problem: "credential_missing", credential: chosen.credential };
+    return {
+      provider: "agenthub",
+      model: chosen.id,
+      credential: chosen.credential,
+      format: chosen.format,
+    };
+  }
   const sound = SOUND_PROVIDERS.find((entry) => entry.id === provider);
   if (!sound) return { problem: "provider_unknown" };
-  const model = sound.models[kind];
-  if (!sound.kinds.includes(kind) || !model) return { problem: "kind_unsupported" };
+  const fixed = sound.models[kind];
+  if (!sound.kinds.includes(kind) || !fixed) return { problem: "kind_unsupported" };
+  if (model !== undefined && model !== fixed) return { problem: "model_unknown" };
   const checked = checkProvider(
     AUDIO_KIND_OF[kind],
     sound.id,
@@ -234,12 +306,15 @@ export function soundProviderFor(
     return checked.problem === "credential_missing"
       ? { problem: "credential_missing", credential: checked.credential }
       : { problem: checked.problem };
-  return { provider: sound.id, model };
+  return { provider: sound.id, model: fixed };
 }
 
 /** Every sound provider as the picker shows it, for an agent holding `vaultKeys`. */
-export function soundSetup(vaultKeys: readonly string[]): SoundProviderStatus[] {
-  return SOUND_PROVIDERS.map((provider) => {
+export function soundSetup(
+  vaultKeys: readonly string[],
+  catalogue: readonly AgenthubSoundModel[] = AGENTHUB_SOUND_MODELS,
+): SoundProviderStatus[] {
+  const fixed = SOUND_PROVIDERS.map((provider): SoundProviderStatus => {
     // A provider is usable when it can make at least one kind; the kinds it cannot make
     // are simply absent from its list.
     const problems = provider.kinds.map((kind) => soundProviderFor(kind, provider.id, vaultKeys));
@@ -254,4 +329,35 @@ export function soundSetup(vaultKeys: readonly string[]): SoundProviderStatus[] 
       ...(!usable && problem && "problem" in problem ? { problem: problem.problem } : {}),
     };
   });
+  const offered = agenthubSoundModels(undefined, catalogue);
+  const choices = offered.map((model) => ({
+    id: model.id,
+    kinds: AGENTHUB_KINDS.filter((kind) => model.kinds.includes(kind)),
+    credential: model.credential,
+    available: vaultKeys.includes(model.credential),
+  }));
+  const usable = choices.find((choice) => choice.available);
+  const models: Partial<Record<SoundKind, string>> = {};
+  for (const kind of AGENTHUB_KINDS) {
+    // The model a run without a named model uses: the first usable one, else the first.
+    const serving = offered.filter((model) => model.kinds.includes(kind));
+    const first = serving.find((model) => vaultKeys.includes(model.credential)) ?? serving[0];
+    if (first) models[kind] = first.id;
+  }
+  const hub: SoundProviderStatus = {
+    id: "agenthub",
+    // What the hub can be asked for; which kinds a model serves is in `modelChoices`.
+    kinds: [...AGENTHUB_KINDS],
+    // The key the picker names: the first usable model's, else the first model's.
+    credential: (usable ?? choices[0])?.credential ?? "",
+    models,
+    available: !!usable,
+    ...(!choices.length
+      ? { problem: "no_model" as const }
+      : usable
+        ? {}
+        : { problem: "credential_missing" as const }),
+    modelChoices: choices,
+  };
+  return [...fixed, hub];
 }

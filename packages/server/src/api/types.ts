@@ -5071,7 +5071,9 @@ export type CodingAgentConfigOption =
   import("@prismshadow/penguin-coding-agents").AgentSessionConfigOption;
 export type { AudioTarget, AudioResult } from "../activities/audio.js";
 export type {
+  SoundFormat,
   SoundKind,
+  SoundModelChoice,
   SoundProblem,
   SoundProviderId,
   SoundProviderStatus,

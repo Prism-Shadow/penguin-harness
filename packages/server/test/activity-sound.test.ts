@@ -129,8 +129,11 @@ describe("the sound provider seam", () => {
       problem: "credential_missing",
       credential: "ELEVENLABS_API_KEY",
     });
-    // The model hub has no sound model in this build, so it is not a provider to use yet.
+    // The model hub has no sound model in this build: a known provider with nothing to offer.
     expect(soundProviderFor("music", "agenthub", ["GEMINI_API_KEY"])).toEqual({
+      problem: "no_model",
+    });
+    expect(soundProviderFor("sfx", "musicgen", ["GEMINI_API_KEY"])).toEqual({
       problem: "provider_unknown",
     });
   });
@@ -144,6 +147,15 @@ describe("the sound provider seam", () => {
         models: { music: "music_v1", sfx: "sound-generation" },
         available: false,
         problem: "credential_missing",
+      },
+      {
+        id: "agenthub",
+        kinds: ["music", "sfx"],
+        credential: "",
+        models: {},
+        available: false,
+        problem: "no_model",
+        modelChoices: [],
       },
     ]);
     expect(soundSetup(["ELEVENLABS_API_KEY"])[0]).toMatchObject({ available: true });

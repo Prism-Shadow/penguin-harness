@@ -99,7 +99,7 @@ export function AssetEditor({
   onSaveMedia: () => void;
   onGenerateAudio: (language: string, assetKey: string, voice: string) => void;
   /** Make a music or sound-effect candidate with the named provider. */
-  onGenerateSound?: (language: string, assetKey: string, provider: string) => void;
+  onGenerateSound?: (language: string, assetKey: string, provider: string, model?: string) => void;
   /** The sound providers the chosen agent can use; null while unknown or without one. */
   soundProviders?: readonly SoundProviderStatus[] | null;
   onGenerateImage: (language: string, assetKey: string) => void;
@@ -530,7 +530,9 @@ export function AssetEditor({
                     generating={audioCandidates.some((run) => run.status === "running")}
                     providers={soundProviders}
                     onEdit={edit}
-                    onGenerate={(provider) => onGenerateSound?.(language, asset.key, provider)}
+                    onGenerate={(provider, model) =>
+                      onGenerateSound?.(language, asset.key, provider, model)
+                    }
                   />
                 ) : (
                   <Textarea

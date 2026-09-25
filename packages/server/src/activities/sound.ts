@@ -13,12 +13,19 @@ import { AUDIO_MAX_BYTES, inspectWave, type AudioResult, type AudioTarget } from
 import { soundProviderFor } from "./audio-providers.js";
 import { soundPromptOf } from "./playback.js";
 import type { GeneratedAudioFormat } from "./media.js";
-import type { SoundProviderId } from "./sound-types.js";
+import type { SoundFormat, SoundProviderId } from "./sound-types.js";
+import type { AgenthubSoundModel } from "./sound-models.js";
 
 export const SOUND_PROMPT_MAX = 2000;
 
-/** The file the helper writes, which collection reads. */
-export const SOUND_OUTPUT_FILE = "sound.mp3";
+/**
+ * The file the helper writes, one per format, which collection reads. ElevenLabs always
+ * writes MP3; a hub model writes MP3 or WAV, whichever its audio was.
+ */
+export const SOUND_OUTPUT_FILES: Readonly<Record<SoundFormat, string>> = {
+  mp3: "sound.mp3",
+  wav: "sound.wav",
+};
 
 /** A sound run's target: an audio target whose `sound` says what to ask for. */
 export type SoundTarget = AudioTarget & { sound: NonNullable<AudioTarget["sound"]> };
@@ -30,7 +37,8 @@ export type SoundTarget = AudioTarget & { sound: NonNullable<AudioTarget["sound"
  */
 export function soundTarget(
   activity: ActivityDetail,
-  input: { language: string; assetKey: string; provider: string },
+  input: { language: string; assetKey: string; provider: string; model?: string },
+  catalogue?: readonly AgenthubSoundModel[],
 ): SoundTarget {
   const plan = activity.draft.mediaPlan;
   if (
@@ -53,15 +61,28 @@ export function soundTarget(
       "sound_invalid",
       `Select a music or sound effect asset with a prompt of 1–${SOUND_PROMPT_MAX} characters.`,
     );
-  const choice = soundProviderFor(asset.kind, input.provider, null);
-  if ("problem" in choice)
-    throw choice.problem === "provider_unknown"
-      ? new HttpError(400, "sound_provider_unknown", "Choose a sound provider this build carries.")
-      : new HttpError(
-          422,
-          "sound_kind_unsupported",
-          `That provider does not make ${asset.kind === "music" ? "music" : "sound effects"}.`,
-        );
+  const choice = soundProviderFor(asset.kind, input.provider, null, input.model, catalogue);
+  if ("problem" in choice) {
+    if (choice.problem === "provider_unknown")
+      throw new HttpError(
+        400,
+        "sound_provider_unknown",
+        "Choose a sound provider this build carries.",
+      );
+    if (choice.problem === "no_model")
+      throw new HttpError(
+        409,
+        "sound_no_model",
+        "No music or sound model is available through the model hub in this version.",
+      );
+    if (choice.problem === "model_unknown")
+      throw new HttpError(400, "sound_model_unknown", "Choose a model this provider offers.");
+    throw new HttpError(
+      422,
+      "sound_kind_unsupported",
+      `That provider does not make ${asset.kind === "music" ? "music" : "sound effects"}.`,
+    );
+  }
   return {
     language: input.language,
     assetKey: input.assetKey,
@@ -73,6 +94,8 @@ export function soundTarget(
       kind: asset.kind,
       prompt,
       ...(asset.targetDurationMs !== undefined ? { targetDurationMs: asset.targetDurationMs } : {}),
+      // A hub model names its key and format; ElevenLabs' helper branch knows its own.
+      ...(choice.format ? { credential: choice.credential, format: choice.format } : {}),
     },
   };
 }
@@ -197,7 +220,7 @@ export function audioMimeType(bytes: Uint8Array): "audio/wav" | "audio/mpeg" {
 }
 
 export const soundPrompt = `Generate the single sound candidate specified in sound-input.json.
-The supplied generate-sound.mjs helper calls the configured sound provider and reads its API key only from the Agent Vault-injected process environment.
-Use normal Harness exec_command approval for node generate-sound.mjs. Do not print credentials or read them into your context. Do not edit the supplied helper, package.json or input files. Do not delegate or write outside this workspace.
-Run the helper once. It writes sound.mp3. Do nothing else: never synthesize audio yourself or substitute another provider, model or prompt. If credentials or the provider fail, report the failure and stop; do not retry a billable provider request automatically.
+The supplied generate-sound.mjs helper calls the configured sound provider and reads its API key only from the Agent Vault-injected process environment. If package.json lists dependencies, install them first with npm install --ignore-scripts.
+Use normal Harness exec_command approval for that install and for node generate-sound.mjs. Do not print credentials or read them into your context. Do not edit the supplied helper, package.json or input files. Do not delegate or write outside this workspace.
+Run the helper once. It writes sound.mp3 or sound.wav. Do nothing else: never synthesize audio yourself or substitute another provider, model or prompt. If credentials or the provider fail, report the failure and stop; do not retry a billable provider request automatically.
 Finish only after the helper succeeds. The user will listen and explicitly accept the candidate; do not edit activity drafts or replace accepted media.`;

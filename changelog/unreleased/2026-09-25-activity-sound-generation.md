@@ -40,8 +40,8 @@ the Vault key to add. Uploading a file and choosing one from the library still w
   in that format.
 - `audio-providers.ts` gained the sound provider seam (`SOUND_PROVIDERS`,
   `soundProviderFor`, `soundSetup`). The existing worded capability report uses the same
-  provider check. The seam offers only ElevenLabs; a model reached through the model hub is a
-  provider id it knows but cannot use yet (`provider_unknown`).
+  provider check. The seam offers ElevenLabs here; a model reached through the model hub
+  arrived [separately](2026-09-25-activity-sound-agenthub.md).
 - The `agent-development` plugin version went to `2026.09.25.1`.
 
 ## Compatibility

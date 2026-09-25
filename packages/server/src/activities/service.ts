@@ -37,6 +37,7 @@ import { zipSync } from "fflate";
 import {
   BUNDLE_MAX_BYTES,
   BUNDLE_MAX_ITEMS,
+  MediaLibraryPorts,
   PROJECT_MEDIA_LIMIT,
   bundleEntryNames,
   copiedUploadName,
@@ -125,6 +126,7 @@ export class ActivityService implements ActivityAuthoring {
   @Use() private readonly projectWork!: ProjectActivityWork;
   @Use() private readonly config!: Config;
   @Use() private readonly db!: Db;
+  @Use() private readonly mediaLibrary!: MediaLibraryPorts;
   private readonly locks = new ActivityLocks();
   /** The activities whose lock the running work already holds, through `exclusive`. */
   private readonly held = new AsyncLocalStorage<ReadonlySet<string>>();
@@ -332,7 +334,7 @@ export class ActivityService implements ActivityAuthoring {
           "This uploaded file is no longer in the workspace.",
         );
       total += stat.size;
-      if (total > BUNDLE_MAX_BYTES)
+      if (total > (this.mediaLibrary.bundleMaxBytes ?? BUNDLE_MAX_BYTES))
         throw new HttpError(
           413,
           "bundle_too_large",

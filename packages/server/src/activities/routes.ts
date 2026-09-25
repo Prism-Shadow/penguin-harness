@@ -621,6 +621,8 @@ export class ActivityRoutes {
     app.post("/:activityId/generate-sound", async (c) => {
       const body = await readJson(c);
       const provider = requireString(body, "provider", { minLen: 1, maxLen: 64 });
+      // A provider with a choice of models (the model hub) may name one.
+      const model = optionalString(body, "model", { minLen: 1, maxLen: 128 });
       return c.json(
         await this.generation.start(
           requireValidId(c, "projectId"),
@@ -632,6 +634,7 @@ export class ActivityRoutes {
               language: requireString(body, "language", { minLen: 5, maxLen: 5 }),
               assetKey: requireString(body, "assetKey", { minLen: 1, maxLen: 128 }),
               provider,
+              ...(model !== undefined ? { model } : {}),
             },
           },
         ),

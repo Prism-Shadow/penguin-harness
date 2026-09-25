@@ -84,6 +84,11 @@ import {
   DefaultQualityCheckPorts,
   type QualityCheckPorts,
 } from "../src/activities/quality-check.js";
+import { DefaultSoundModelPorts, type SoundModelPorts } from "../src/activities/sound-models.js";
+import {
+  DefaultMediaLibraryPorts,
+  type MediaLibraryPorts,
+} from "../src/activities/media-bundle.js";
 
 export async function makeTempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
@@ -271,8 +276,12 @@ export interface TestAppOptions {
   machines?: MachinesService;
   /** Test double: the test browser's installer and lookup, so a test never downloads a browser. */
   testBrowserPorts?: TestBrowserPorts;
+  /** Test double: the model hub's sound catalogue, which this build ships empty. */
+  soundModelPorts?: SoundModelPorts;
   /** Test double: the quality check's browser launcher and axe source, so no browser starts. */
   qualityCheckPorts?: QualityCheckPorts;
+  /** Test double: the media library's bundle limit, small enough to cross with a few files. */
+  mediaLibraryPorts?: MediaLibraryPorts;
   /** Test double: company mode's organization service, for the route suite (its semantics have their own suites). */
   orgService?: OrganizationService;
   /** Test double: the desktop reveal, so a test never opens a file manager. */
@@ -364,6 +373,8 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   }
   if (o.testBrowserPorts) out.push([DefaultTestBrowserPorts, o.testBrowserPorts]);
   if (o.qualityCheckPorts) out.push([DefaultQualityCheckPorts, o.qualityCheckPorts]);
+  if (o.mediaLibraryPorts) out.push([DefaultMediaLibraryPorts, o.mediaLibraryPorts]);
+  if (o.soundModelPorts) out.push([DefaultSoundModelPorts, o.soundModelPorts]);
   return out;
 }
 
