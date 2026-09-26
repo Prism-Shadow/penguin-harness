@@ -101,6 +101,27 @@ interface StreamEntry {
   /** Set once the entry has been handed to EventSource; the socket never touches it again. */
   fallen: StreamConnection | null;
   closed: boolean;
+  /**
+   * The cadence this stream is expected to speak at, in ms (the caller's `heartbeatMs`), or
+   * null when the caller asked for no per-stream watchdog. The socket's own heartbeat says
+   * the SOCKET is alive; only the stream's own frames say the STREAM is, which is the fact a
+   * machine whose server stopped answering while its socket stayed healthy hides.
+   */
+  heartbeatMs: number | null;
+  /** Fires when no frame carrying this stream's id has arrived for two beats. */
+  streamDeadline: ReturnType<typeof setTimeout> | null;
+}
+
+/** What `stream` may be told beyond the handlers; see `heartbeatMs`. */
+export interface StreamOptions {
+  /**
+   * The cadence the stream is expected to speak at, in ms. When set, a stream silent for two
+   * beats is ended here and re-subscribed from its last event id — the same two-beats reading
+   * the socket's own watchdog makes of the socket (PRFC-0011). Only a stream that actually
+   * carries a beat should ask for it: on a stream that can legitimately go quiet, the watchdog
+   * would end a healthy subscription every two beats forever.
+   */
+  heartbeatMs?: number;
 }
 
 type State = "closed" | "connecting" | "open" | "unavailable";
@@ -327,6 +348,7 @@ export class ApiSocket {
     path: string,
     handlers: StreamHandlers,
     fallback: () => StreamConnection,
+    options: StreamOptions = {},
   ): StreamConnection {
     const entry: StreamEntry = {
       path,
@@ -339,6 +361,8 @@ export class ApiSocket {
       failures: 0,
       fallen: null,
       closed: false,
+      heartbeatMs: options.heartbeatMs ?? null,
+      streamDeadline: null,
     };
     if (this.isUnavailable()) {
       entry.fallen = fallback();
@@ -353,6 +377,7 @@ export class ApiSocket {
         entry.fallen?.close();
         if (entry.retry !== null) clearTimeout(entry.retry);
         this.#clearOpenDeadline(entry);
+        this.#clearStreamDeadline(entry);
         this.#waiting.delete(entry);
         if (entry.id !== null) {
           this.#streams.delete(entry.id);
@@ -505,6 +530,36 @@ export class ApiSocket {
     entry.openDeadline = null;
   }
 
+  /**
+   * The stream's own beat, armed afresh by every frame that carries its id. Silence for two
+   * beats ends the stream and re-subscribes it from its last event id: the socket's heartbeat
+   * keeps arriving all the while — it proves the socket is alive and nothing else — so a
+   * stream that stopped answering (a machine whose App was disposed by a hot push, its socket
+   * still healthy) would otherwise sit there looking connected for as long as the tab is open.
+   */
+  #armStreamDeadline(entry: StreamEntry): void {
+    if (entry.heartbeatMs === null) return;
+    const beatMs = entry.heartbeatMs;
+    if (entry.streamDeadline !== null) clearTimeout(entry.streamDeadline);
+    entry.streamDeadline = setTimeout(() => {
+      entry.streamDeadline = null;
+      if (entry.closed) return; // close() cleared this timer; an entry can outlive a frame, never a close
+      console.warn(
+        `[api-socket] stream ${entry.path}: no frame for ${2 * beatMs} ms (two beats at ${beatMs} ms) — ending it and re-subscribing from its last event id`,
+      );
+      if (entry.id !== null && this.#ws !== null && this.#state === "open") {
+        this.#ws.send(JSON.stringify({ id: entry.id, cancel: true }));
+      }
+      entry.handlers.onError?.(false);
+      this.#reissue(entry, REISSUE_MS);
+    }, 2 * beatMs);
+  }
+
+  #clearStreamDeadline(entry: StreamEntry): void {
+    if (entry.streamDeadline !== null) clearTimeout(entry.streamDeadline);
+    entry.streamDeadline = null;
+  }
+
   #clearHandshakeDeadline(): void {
     if (this.#handshakeDeadline !== null) clearTimeout(this.#handshakeDeadline);
     this.#handshakeDeadline = null;
@@ -513,6 +568,7 @@ export class ApiSocket {
   /** The stream is off the socket for now; issue it again after a pause (or at once on reconnect). */
   #reissue(entry: StreamEntry, delayMs: number): void {
     this.#clearOpenDeadline(entry);
+    this.#clearStreamDeadline(entry);
     if (entry.id !== null) {
       this.#streams.delete(entry.id);
       entry.id = null;
@@ -538,8 +594,11 @@ export class ApiSocket {
     const id = frame.id;
     const stream = this.#streams.get(id);
     if (stream !== undefined) {
-      // Any frame for the id is the server's answer to the issue, opened or not.
+      // Any frame for the id is the server's answer to the issue, opened or not — and it is
+      // this stream's own beat: the open `stream` frame, a machine_event, a server_event and a
+      // bare `heartbeat` all count.
       this.#clearOpenDeadline(stream);
+      this.#armStreamDeadline(stream);
       if ("event" in frame) {
         const eventId = (frame.eventId as string | null) ?? null;
         if (eventId !== null) stream.lastEventId = eventId;
@@ -549,9 +608,22 @@ export class ApiSocket {
         } catch {
           return; // single-line JSON by protocol; anything else is skipped as EventSource would
         }
-        if (frame.event === "server_event") {
+        // SSE names a frame by its `event:` line, and sse-text.ts defaults an absent one to
+        // `message` — the OmniMessage shape. Everything else is named dispatch, with the
+        // handlers this module knows by name first and `onEvent` for the rest.
+        const name = typeof frame.event === "string" ? frame.event : "message";
+        if (name === "server_event") {
           stream.handlers.onServerEvent(data as ServerEvent, eventId);
+        } else if (name === "message") {
+          stream.handlers.onOmniMessage(data as OmniMessage, eventId);
+        } else if (name === "heartbeat") {
+          // Liveness only, and it has already been banked above: the beat is never an
+          // application event, so it reaches no handler.
+        } else if (stream.handlers.onEvent !== undefined) {
+          stream.handlers.onEvent(name, data, eventId);
         } else {
+          // No named-event handler: an unlisted name is an OmniMessage, exactly as every name
+          // but `server_event` was treated before `onEvent` existed.
           stream.handlers.onOmniMessage(data as OmniMessage, eventId);
         }
       } else if ("stream" in frame) {
@@ -603,6 +675,10 @@ export class ApiSocket {
     this.#calls.clear();
     for (const entry of this.#streams.values()) {
       this.#clearOpenDeadline(entry);
+      // The stream is off the socket, so its silence is no longer a fact about it: the drop
+      // has already been reported, and the beat is measured again from the next issue's first
+      // frame. Left armed, it would warn about a stream that is not there.
+      this.#clearStreamDeadline(entry);
       entry.id = null;
       entry.handlers.onError?.(false);
       this.#waiting.add(entry);

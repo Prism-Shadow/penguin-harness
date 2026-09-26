@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiSocket, SocketTimeoutError } from "../src/api/socket";
-import type { StreamHandlers } from "../src/api/sse";
+import type { StreamConnection, StreamHandlers } from "../src/api/sse";
 
 /** A WebSocket the test drives by hand. */
 class FakeSocket {
@@ -190,6 +190,54 @@ describe("streams", () => {
     expect(h.omni).toEqual([{ kind: "m" }]);
     conn.close();
     expect(last().frames()[1]).toEqual({ id: 1, cancel: true });
+  });
+
+  it("dispatches by event name: heartbeat to nobody, server_event by name, every other name by name too", async () => {
+    const h = handlers();
+    const named: Array<[string, unknown, string | null]> = [];
+    socket.stream(
+      "/api/projects/p1/machines/events",
+      { ...h, onEvent: (name, data, eventId) => named.push([name, data, eventId]) },
+      () => ({ close: () => undefined }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    last().open();
+    last().receive({ id: 1, status: 200, stream: true, headers: {} });
+    // A stream's own beat reaches no handler: it is liveness, and the deadline was re-armed.
+    last().receive({ id: 1, event: "heartbeat", data: "{}" });
+    last().receive({ id: 1, event: "server_event", eventId: "h-1", data: '{"type":"hello"}' });
+    // An event with no `event:` line arrives named `message` (sse-text.ts), and stays an OmniMessage.
+    last().receive({ id: 1, event: "message", eventId: "1-2", data: '{"kind":"m"}' });
+    last().receive({
+      id: 1,
+      event: "machine_event",
+      eventId: "a1b2c3d4-7",
+      data: '{"machineId":"m1","event":{"type":"hello"}}',
+    });
+    expect(named).toEqual([
+      ["machine_event", { machineId: "m1", event: { type: "hello" } }, "a1b2c3d4-7"],
+    ]);
+    expect(h.server).toEqual([{ type: "hello" }]);
+    expect(h.omni).toEqual([{ kind: "m" }]);
+  });
+
+  it("treats an unlisted event name as an OmniMessage when the caller supplied no onEvent", async () => {
+    const h = handlers();
+    socket.stream("/api/events", h, () => ({ close: () => undefined }));
+    await Promise.resolve();
+    await Promise.resolve();
+    last().open();
+    last().receive({ id: 1, status: 200, stream: true, headers: {} });
+    last().receive({ id: 1, event: "heartbeat", data: "{}" });
+    last().receive({
+      id: 1,
+      event: "machine_event",
+      eventId: "a1b2c3d4-7",
+      data: '{"machineId":"m1"}',
+    });
+    expect(h.omni).toEqual([{ machineId: "m1" }]); // unchanged behaviour for every existing caller
+    expect(h.server).toEqual([]);
   });
 
   it("re-issues a stream after a drop with the last event id, on a fresh socket", async () => {
@@ -552,6 +600,119 @@ describe("deadlines", () => {
       .frames()
       .filter((f) => "call" in f);
     expect(calls).toHaveLength(1);
+    warn.mockRestore();
+  });
+});
+
+describe("per-stream heartbeat", () => {
+  /** A watched stream, opened and handed a frame so its own deadline is armed. */
+  async function watched(h: StreamHandlers): Promise<StreamConnection> {
+    const conn = socket.stream(
+      "/api/projects/p1/machines/events",
+      h,
+      () => ({ close: () => undefined }),
+      { heartbeatMs: 20_000 },
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    last().open();
+    last().receive({ id: 1, status: 200, stream: true, headers: {} });
+    last().receive({
+      id: 1,
+      event: "machine_event",
+      eventId: "a1b2c3d4-7",
+      data: '{"machineId":"m1","event":{"type":"hello"}}',
+    });
+    return conn;
+  }
+
+  it("ends a stream that misses two beats and re-subscribes it from its last event id", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const h = handlers();
+    await watched(h);
+    // The socket's own beat keeps the SOCKET alive; it says nothing about this stream.
+    vi.advanceTimersByTime(39_000);
+    last().receive({ heartbeat: true });
+    expect(socket.isOpen()).toBe(true);
+    expect(h.errors).toEqual([]);
+    vi.advanceTimersByTime(1_000); // two beats of stream silence since the machine_event
+    expect(h.errors).toEqual([false]); // ended, not closed: the caller's reconnect stands
+    expect(last().frames()[1]).toEqual({ id: 1, cancel: true });
+    expect(
+      warn.mock.calls.some(
+        ([m]) =>
+          String(m).includes("no frame for 40000 ms") &&
+          String(m).includes("re-subscribing from its last event id"),
+      ),
+    ).toBe(true);
+    vi.advanceTimersByTime(1_000); // the usual re-issue pause
+    expect(last().frames()[2]).toEqual({
+      id: 2,
+      call: {
+        method: "GET",
+        path: "/api/projects/p1/machines/events",
+        headers: { accept: "text/event-stream", "last-event-id": "a1b2c3d4-7" },
+      },
+    });
+    warn.mockRestore();
+  });
+
+  it("keeps a watched stream that speaks on every beat", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const h = handlers();
+    await watched(h);
+    for (let i = 0; i < 3; i++) {
+      vi.advanceTimersByTime(20_000);
+      last().receive({ id: 1, event: "heartbeat", data: "{}" });
+    }
+    expect(h.errors).toEqual([]);
+    expect(last().frames()).toHaveLength(1); // never re-issued
+    warn.mockRestore();
+  });
+
+  it("watches nothing on a stream whose caller asked for no heartbeat", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const quiet = handlers();
+    socket.stream("/api/sessions/s1/stream", quiet, () => ({ close: () => undefined }));
+    await Promise.resolve();
+    await Promise.resolve();
+    last().open();
+    last().receive({ id: 1, status: 200, stream: true, headers: {} });
+    // Two minutes of silence, with only the socket's own beat keeping the socket up.
+    for (let i = 0; i < 6; i++) {
+      vi.advanceTimersByTime(20_000);
+      last().receive({ heartbeat: true });
+    }
+    expect(quiet.errors).toEqual([]);
+    expect(last().frames()).toHaveLength(1);
+    warn.mockRestore();
+  });
+
+  it("never fires after close()", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const h = handlers();
+    const conn = await watched(h);
+    conn.close();
+    expect(last().frames()[1]).toEqual({ id: 1, cancel: true });
+    vi.advanceTimersByTime(120_000);
+    expect(h.errors).toEqual([]);
+    expect(
+      warn.mock.calls.some(([m]) => String(m).includes("re-subscribing from its last event id")),
+    ).toBe(false);
+    warn.mockRestore();
+  });
+
+  it("does not end a stream the socket dropped — the drop has already been reported", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const h = handlers();
+    await watched(h);
+    last().drop();
+    expect(h.errors).toEqual([false]); // the drop itself, once
+    vi.advanceTimersByTime(120_000);
+    expect(h.errors).toEqual([false]); // and nothing more from the stream's own deadline
+    expect(
+      warn.mock.calls.some(([m]) => String(m).includes("re-subscribing from its last event id")),
+    ).toBe(false);
     warn.mockRestore();
   });
 });
