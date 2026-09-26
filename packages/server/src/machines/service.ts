@@ -47,6 +47,7 @@ import type {
   MachinePhase,
   MachineReconnect,
   MachineServerStatus,
+  MachineSocketFact,
   MachineSshFailure,
   MachineUseRefusal,
   MachinesCheckoutImage,
@@ -126,6 +127,8 @@ import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
 import { MachineEventRelay } from "./event-relay.js";
 import type { EventRelay, EventRelayDeps, RelayDial } from "./event-relay.js";
+import { MachineEventHub } from "./event-hub.js";
+import { MachineSockets } from "./machine-sockets.js";
 import { HttpError } from "../http/errors.js";
 import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
@@ -320,6 +323,12 @@ export interface MachinesEffects {
   watchSessions: (listener: SessionListener) => () => void;
   /** Whether this computer's ssh can sign in with a stored password (transport/login.ts). */
   passwordSignIn: () => Promise<AskpassPlan>;
+  /**
+   * What the API socket to a machine is doing (machines/machine-sockets.ts), for `MachineInfo.socket`:
+   * connected, dialling, refused or failed, and since when. The sockets themselves are the
+   * proxy's, created beside it, so this is an injected reader rather than a field here.
+   */
+  socketFact: (machineId: string) => MachineSocketFact | null;
 }
 
 /** The id of the entry standing for the machine this server runs on. */
@@ -449,6 +458,7 @@ export class MachinesService {
       watchSessions: onSessionChange,
       passwordSignIn,
       lateSweepMs: 20_000,
+      socketFact: () => null,
       ...effects,
     };
     this.#passwords = new SshPasswords(path.join(dataRoot, "machines"));
@@ -597,6 +607,7 @@ export class MachinesService {
       },
       local: true,
       connection: null,
+      socket: null,
       api: null,
       root: this.dataRoot,
       status: {
@@ -627,6 +638,7 @@ export class MachinesService {
         ...(reconnect === undefined ? {} : { reconnect: this.#reconnectInfo(reconnect) }),
         ...(row?.sessionPid != null ? { keepConnected: true as const } : {}),
         ...(withPassword.has(alias) ? { passwordSaved: true as const } : {}),
+        socket: row?.machineId == null ? null : (this.#effects.socketFact(row.machineId) ?? null),
         api: this.#apiSeen.get(id) ?? null,
         ...(configSync === undefined ? {} : { configSync }),
         // The layout's own spelling, in the shell that machine speaks. Unknown platform
@@ -3007,6 +3019,11 @@ export class MachinesModule {
         // Best effort: a page reads the list again on its next change or visit.
       }
     };
+    // The generation's one socket cache and the event hub over it (PRFC-0011): the proxy's
+    // streams and the machines' aggregate event stream share both, so the hub holds ONE
+    // subscription per machine however many tabs read it.
+    const sockets = new MachineSockets((line) => console.log(line));
+    const events = new MachineEventHub(sockets, (line) => console.log(line));
     const machines = new MachinesService(
       this.paths.root,
       repo.ownId(),
@@ -3017,12 +3034,13 @@ export class MachinesModule {
         shippedImage: shippedImage(),
         announce: () => toAdmins({ type: "machines_changed" }),
         publishEvent: (machineId, event) => toAdmins({ type: "machine_event", machineId, event }),
+        socketFact: (machineId) => sockets.fact(machineId),
       },
       () => this.hmr.assetsDir(),
     );
     this.machines = machines;
-    this.routes = machinesRoutes({ machines, access: this.access });
-    this.serverProxyRoutes = machinesServerProxyRoutes(machines);
+    this.routes = machinesRoutes({ machines, access: this.access, events });
+    this.serverProxyRoutes = machinesServerProxyRoutes(machines, { sockets, events });
     // Every transient ssh session THIS generation opened closes with it, and every held one is
     // left for the successor, whose start() re-holds each one the record says was held.
     effect(() => machines.stop());
@@ -3035,12 +3053,16 @@ export class MachinesModule {
  * that machine's admin, with a session this server minted over the ssh access that installed
  * it, so this server's admin session is the one credential involved.
  */
-export function machinesServerProxyRoutes(machines: MachinesService): Hono<AppEnv> {
+export function machinesServerProxyRoutes(
+  machines: MachinesService,
+  shared: { sockets?: MachineSockets; events?: MachineEventHub } = {},
+): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const proxy = machinesProxy(
     (machineId) => machines.proxyTarget(machineId),
     (machineId, outcome) => machines.noteApiSeen(machineId, outcome),
     (line) => console.log(line),
+    shared,
   );
   app.all("*", async (c) => {
     if (!c.var.user.isAdmin) {

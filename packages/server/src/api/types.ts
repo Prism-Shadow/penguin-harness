@@ -3271,6 +3271,15 @@ export type ServerEvent =
   | { type: "credentials_updated" }
   /** Placeholder handshake on the user channel (reserved for automated task notifications). */
   | { type: "hello" }
+  /**
+   * The stream's own beat, written by the endpoint's SSE writer every 20 seconds (http/sse.ts)
+   * on `/api/events`, and by the hub on a machine's aggregate stream. The socket's ping and the
+   * `: ping` comment line are invisible to a stream's consumer, so without this a stream that
+   * stopped while its socket stayed healthy would look alive forever: the hub
+   * (machines/event-hub.ts) and the browser (web api/socket.ts) each end a stream that misses
+   * two beats and re-issue it with its last event id.
+   */
+  | { type: "heartbeat" }
   /** The served web assets were hot-swapped by a platform upgrade: clients reload to pick them up. */
   | { type: "web_updated"; rev: string }
   /**
@@ -5091,6 +5100,36 @@ export interface RestartResponse {
   reason?: "no_supervisor";
 }
 
+/**
+ * What the API socket this server holds to one machine is doing (machines/machine-sockets.ts) —
+ * the fact behind `MachineInfo.socket`. `since` is the instant the state was entered, so the
+ * Machines page can say how long a machine has been dialling, failing or connected instead of
+ * sending someone to the browser console for it.
+ */
+export interface MachineSocketFact {
+  /**
+   * `connected` once the handshake completed, `dialling` while a dial is outstanding, `refused`
+   * when the machine answered the handshake with a status (a program predating the socket), and
+   * `failed` when the dial did not complete or a socket that was up closed.
+   */
+  state: "connected" | "dialling" | "refused" | "failed";
+  /** When that state was entered (ISO). */
+  since: string;
+  /** The transport's own words where there are any: a refusal's status, a dial's error. */
+  detail?: string;
+}
+
+/**
+ * One machine's event, as the machines aggregate stream carries it
+ * (`GET /api/projects/:projectId/machines/events`): the machine's own `ServerEvent`, with the
+ * machine it came from — one stream carries many machines, and the tag is what keeps their
+ * events apart (docs: /docs/server-api § "One event stream per machine").
+ */
+export interface MachineEvent {
+  machineId: string;
+  event: ServerEvent;
+}
+
 /** One `Host` entry of the server's `~/.ssh/config`, as the Machines page lists it. */
 export interface MachineInfo {
   /** `ssh:<alias>` — the id the install route is asked for. */
@@ -5156,6 +5195,7 @@ export interface MachineInfo {
    */
   connection: { pid: number } | null;
   /**
+  /**
    * Present while this server is bringing a machine it keeps connected back — the connection
    * dropped, its server stopped or restarted, or this server itself just started — and absent
    * otherwise. A machine is kept connected from the moment it is enabled until it is stopped
@@ -5168,6 +5208,15 @@ export interface MachineInfo {
    * here, one that never got as far as a connection.
    */
   keepConnected?: true;
+  /**
+   * The API socket this server holds to that machine — connected, dialling, refused or failed,
+   * and since when (machines/machine-sockets.ts). Null for `local`, and until a stream has
+   * asked for a socket at all. A fact about one process on THIS side, like `connection` and
+   * for the same reason: it says the socket exists and what it is doing, never that the far
+   * side is answering. The Machines page reads it so a stuck stream does not have to be found
+   * in the browser console.
+   */
+  socket: MachineSocketFact | null;
   /**
    * The machine's API as last seen by this server's proxy — stamped by traffic passing
    * through, never by a probe of its own. `answeredAt` when the last forwarded request got
