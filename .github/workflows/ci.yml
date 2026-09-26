@@ -131,6 +131,7 @@ jobs:
   # `version`, or the hook package's `penguin.hooks.version` in package.json: installed copies
   # would never learn about the change (the update flag reads the version). Compared against the
   # pull request's base; a push has no base and the script passes on an empty one.
+  # The second step checks the SKILL.md content itself without a build or install.
   plugin-versions:
     needs: plan
     if: needs.plan.outputs.plugins == 'true'
@@ -143,6 +144,8 @@ jobs:
           fetch-depth: 0
       - name: Changed plugins carry a new version
         run: node scripts/check-plugin-versions.mjs '${{ github.event.pull_request.base.sha }}'
+      - name: Shipped skill content is well-formed
+        run: node scripts/check-plugin-skills.mjs
 
   # The npm publishing path, walked without publishing. CI used to prove only that the sources
   # typecheck and the tests pass, and the release workflow built a different, narrower set -- so a
