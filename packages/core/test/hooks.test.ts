@@ -9,6 +9,7 @@ import {
   isEventMessage,
   parsePreToolUseResult,
   parseStopHookResult,
+  parseUserPromptResult,
   runHookScript,
   runPreToolUseHooks,
   runStopHooks,
@@ -206,6 +207,22 @@ describe("script hooks", () => {
     );
     expect(parseStopHookResult("nope")).toBeUndefined();
     expect(parseStopHookResult(null)).toBeUndefined();
+  });
+
+  it("parseUserPromptResult reads only a string context as an answer, and the adapter carries it", async () => {
+    expect(parseUserPromptResult({ context: "add this" })).toEqual({ context: "add this" });
+    // An object answer with no string context is an *empty* answer, not "no answer": the point
+    // records that the hook answered and had nothing to add. Session.runUserPromptHook hands
+    // both on as {}, so this narrowing is where the distinction lives.
+    expect(parseUserPromptResult({ decision: "continue", context: 7 })).toEqual({});
+    // Anything that is not a JSON object is no opinion at all.
+    expect(parseUserPromptResult("nope")).toBeUndefined();
+    expect(parseUserPromptResult([])).toBeUndefined();
+    expect(parseUserPromptResult(null)).toBeUndefined();
+
+    await write("expand.mjs", answering("{ context: 7 }"));
+    const hook = scriptUserPromptHook("goal", dir, "expand.mjs", 5);
+    expect(await hook.run({ sessionId: "s1", scratchpadDir: dir, prompt: "go" })).toEqual({});
   });
 
   it("scriptStopHook adapts one installed command: the hook input on stdin, the answer parsed", async () => {
