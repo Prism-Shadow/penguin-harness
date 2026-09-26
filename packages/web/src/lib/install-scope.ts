@@ -219,6 +219,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.channelDraft.",
+    scope: "install",
+    why: "A channel composer's unsent text, keyed by user, Project, organization and channel — all four name things that live in one data root.",
+  },
+  {
+    kind: "family",
     key: "penguin.sidebarWorkspaces.",
     scope: "install",
     why: "Manually registered Workspace paths per Project; a new root has no such Project.",

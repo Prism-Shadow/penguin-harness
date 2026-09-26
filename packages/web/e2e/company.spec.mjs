@@ -239,6 +239,26 @@ test("company mode: create the organization, meet the CEO, see the board and the
   expect(siteDay.messages.some((m) => m.text.includes("站点频道成立"))).toBe(true);
   expect(siteDay.messages.some((m) => m.mentions.includes(`agent:${ORG}_ceo`))).toBe(true);
 
+  // An unsent draft stays with its channel: leaving does not lose it, another channel does not
+  // inherit it, a reload keeps it, and sending is what ends it.
+  await siteInput.fill("还没写完的一句");
+  await page
+    .getByRole("link", { name: /^全员频道/ })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/channels\/default_channel/);
+  await expect(page.getByRole("textbox", { name: /输入消息/ })).toHaveValue("");
+  await page.getByRole("link", { name: /^Site launch/ }).click();
+  await expect(page).toHaveURL(/channels\/site/);
+  await expect(page.getByRole("textbox", { name: /输入消息/ })).toHaveValue("还没写完的一句");
+  await page.reload();
+  await expect(page.getByRole("textbox", { name: /输入消息/ })).toHaveValue("还没写完的一句");
+  await page.getByRole("textbox", { name: /输入消息/ }).press("Enter");
+  await expect(page.getByText("还没写完的一句").first()).toBeVisible();
+  await expect(page.getByRole("textbox", { name: /输入消息/ })).toHaveValue("");
+  await page.reload();
+  await expect(page.getByRole("textbox", { name: /输入消息/ })).toHaveValue("");
+
   // The overview reflects it all: one employee, one proposed ticket, the mission on screen.
   await page.goto(`/org/${projectId}/${ORG}/overview`);
   await expect(page.getByText("Plugin Marketplace").first()).toBeVisible();
