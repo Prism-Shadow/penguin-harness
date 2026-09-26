@@ -83,6 +83,8 @@ interface StreamEntry {
   openDeadline: ReturnType<typeof setTimeout> | null;
   lastEventId: string | null;
   retry: ReturnType<typeof setTimeout> | null;
+  /** Issues in a row that did not open; the stream's own backoff, reset when it opens. */
+  failures: number;
   /** Set once the entry has been handed to EventSource; the socket never touches it again. */
   fallen: StreamConnection | null;
   closed: boolean;
@@ -301,6 +303,7 @@ export class ApiSocket {
       openDeadline: null,
       lastEventId: null,
       retry: null,
+      failures: 0,
       fallen: null,
       closed: false,
     };
@@ -435,13 +438,14 @@ export class ApiSocket {
     entry.openDeadline = setTimeout(() => {
       entry.openDeadline = null;
       if (entry.id !== id || this.#streams.get(id) !== entry) return;
+      const delay = this.#streamBackoff(entry);
       console.warn(
-        `[api-socket] stream ${entry.path}: not opened in ${STREAM_OPEN_TIMEOUT_MS} ms over a socket that is ${this.#describeLiveness()}; issuing it again`,
+        `[api-socket] stream ${entry.path}: not opened in ${STREAM_OPEN_TIMEOUT_MS} ms over a socket that is ${this.#describeLiveness()}; issuing it again in ${delay} ms`,
       );
       if (this.#ws !== null && this.#state === "open") {
         this.#ws.send(JSON.stringify({ id, cancel: true }));
       }
-      this.#reissue(entry, REISSUE_MS);
+      this.#reissue(entry, delay);
     }, STREAM_OPEN_TIMEOUT_MS);
     this.#ws.send(JSON.stringify({ id, call: { method: "GET", path: entry.path, headers } }));
   }
@@ -501,6 +505,7 @@ export class ApiSocket {
           stream.handlers.onOmniMessage(data as OmniMessage, eventId);
         }
       } else if ("stream" in frame) {
+        stream.failures = 0;
         stream.handlers.onOpen?.();
       } else if ("end" in frame) {
         stream.handlers.onError?.(false);
@@ -514,8 +519,16 @@ export class ApiSocket {
           stream.id = null;
           stream.handlers.onError?.(true);
         } else {
+          // Not ready — for a machine's stream, the hub saying why no socket carried it. Each
+          // stream backs off on its own: one unreachable machine must neither slow the others
+          // nor the page's reconnects, and none of them is ever moved onto HTTP.
+          const delay = this.#streamBackoff(stream);
+          const reason = (frame.body as { error?: { message?: string } } | null)?.error?.message;
+          console.warn(
+            `[api-socket] stream ${stream.path} answered ${status}${reason === undefined ? "" : ` (${reason})`}; issuing it again in ${delay} ms`,
+          );
           stream.handlers.onError?.(false);
-          this.#reissue(stream, this.#backoff());
+          this.#reissue(stream, delay);
         }
       }
       return;
@@ -580,6 +593,13 @@ export class ApiSocket {
         this.#scheduleReconnect(this.#backoff());
       });
     }, delayMs);
+  }
+
+  /** A stream's own re-issue delay: the reconnect's doubling shape, counted per stream. */
+  #streamBackoff(entry: StreamEntry): number {
+    const ms = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** entry.failures);
+    entry.failures += 1;
+    return ms;
   }
 
   #backoff(): number {

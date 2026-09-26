@@ -160,7 +160,7 @@ export type ProxyReport = (
 export function machinesProxy(
   resolve: (
     machineId: string,
-  ) => Promise<{ agent: http.Agent; port: number; cookie: string } | null>,
+  ) => Promise<{ agent: http.Agent; port: number; cookie: string; session: number } | null>,
   report?: ProxyReport,
   log: (line: string) => void = () => undefined,
 ): (request: Request) => Promise<Response | null> {
@@ -181,8 +181,10 @@ export function machinesProxy(
         { status: 503 },
       );
     }
-    // A stream rides the one socket held to the machine (PRFC-0011) rather than a channel of
-    // its own; a machine without a socket (an older build) still gets the HTTP forward.
+    // A stream rides the one socket held to the machine (PRFC-0011) and ONLY that: a stream
+    // forwarded over HTTP is a channel held open for good, and across many machines those
+    // pile up. Without a socket the stream is answered with the reason, and the browser
+    // re-issues it on its backoff (socket-relay.ts).
     const wantsStream =
       request.method === "GET" &&
       (request.headers.get("accept") ?? "").includes("text/event-stream");
@@ -191,10 +193,8 @@ export function machinesProxy(
         path: `${path.remotePath}${url.search}`,
         lastEventId: request.headers.get("last-event-id"),
       });
-      if (relayed !== null) {
-        report?.(path.machineId, { ok: true });
-        return relayed;
-      }
+      if (relayed.status < 500) report?.(path.machineId, { ok: true });
+      return relayed;
     }
     return proxyThroughSession(request, path, target.agent, target.port, target.cookie, report);
   };

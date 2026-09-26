@@ -422,4 +422,39 @@ describe("deadlines", () => {
     expect(last().frames()).toHaveLength(3);
     warn.mockRestore();
   });
+
+  it("backs a machine stream off on its own while the hub says no socket carries it, and resets once it opens", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const h = handlers();
+    socket.stream("/server/m1/api/events", h, () => ({ close: () => undefined }));
+    await Promise.resolve();
+    await Promise.resolve();
+    last().open();
+    const refuse = (id: number) =>
+      last().receive({
+        id,
+        status: 502,
+        headers: {},
+        body: { error: { code: "machine_socket_unavailable", message: "No API socket to m1" } },
+      });
+    refuse(1);
+    vi.advanceTimersByTime(999);
+    expect(last().frames()).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(last().frames()).toHaveLength(2); // 1 s
+    refuse(2);
+    vi.advanceTimersByTime(1_999);
+    expect(last().frames()).toHaveLength(2);
+    vi.advanceTimersByTime(1);
+    expect(last().frames()).toHaveLength(3); // 2 s
+    expect(warn.mock.calls.some(([m]) => String(m).includes("No API socket to m1"))).toBe(true);
+    last().receive({ id: 3, status: 200, stream: true, headers: {} });
+    last().receive({ id: 3, end: true, reason: "lagging" });
+    vi.advanceTimersByTime(1_000);
+    expect(last().frames()).toHaveLength(4);
+    refuse(4);
+    vi.advanceTimersByTime(1_000);
+    expect(last().frames()).toHaveLength(5); // back to 1 s after the open
+    warn.mockRestore();
+  });
 });
