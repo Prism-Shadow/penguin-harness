@@ -1136,6 +1136,30 @@ export type ServerEvent =
 4. 重放缓存的事件，去掉重叠部分。
 5. 之后继续处理实时流。
 
+## API 套接字（WebSocket）
+
+API 套接字是同一个 API 的第二种传输，供自带的 Web App 使用（PRFC-0011）：一个标签页一条套接字，每一帧是对既有端点的一次调用，每个长期的流是一次不结束的调用。上文没有任何东西是它特有的——HTTP 与套接字进入同一批路由，一次调用的授权、校验与应答与它的 HTTP 孪生完全一致。
+
+它在终端流的 upgrade 路径上打开，用一个以登录用户命名的保留 id：`GET /api/terminals/api-socket@<userId>/stream`（Upgrade；`@prismshadow/penguin-server/api` 的 `apiSocketPath(userId)` 负责拼写）。握手就是终端流的握手——会话 Cookie、同源的 `Origin`（或没有）、以及 id 的 owner 必须是登录用户本人，admin 的 Cookie 打不开 `api-socket@alice`——之后套接字以该用户的身份服务每次调用。运行时自有的前缀（`/api/auth`、`/api/hmr`、`/api/desktop`）回 `421 not_on_socket`，客户端改经 HTTP 发起。
+
+帧是 JSON 文本帧，id 由客户端分配、在套接字生命周期内唯一：
+
+```jsonc
+// 客户端 -> 服务端
+{ "id": 1, "call": { "method": "GET", "path": "/api/projects" } }
+{ "id": 2, "call": { "method": "GET", "path": "/api/sessions/session-…/stream", "headers": { "last-event-id": "3-41" } } }
+{ "id": 3, "call": { "method": "GET", "path": "/server/<machineId>/api/events" } }   // 机器的端点，路径与代理相同
+{ "id": 2, "cancel": true }                                                          // 结束一次流式调用
+
+// 服务端 -> 客户端
+{ "id": 1, "status": 200, "headers": { "date": "…" }, "body": { "projects": [] } }   // 一次性响应：一帧
+{ "id": 2, "status": 200, "stream": true, "headers": { "content-type": "text/event-stream" } }
+{ "id": 2, "event": "server_event", "eventId": "3-42", "data": "{\"type\":\"task_state\"}" }   // 即 SSE 的 event / id / data
+{ "id": 2, "end": true, "reason": "closed" }                                        // "lagging"：带 last-event-id 重新发起
+```
+
+`call.headers` 只接受 `last-event-id`、`accept` 与 `content-type`；凭据来自握手。JSON 正文以 `application/json` 发送；多部分正文与二进制响应（下载）不经套接字——后者回 `415 unsupported_transport`，客户端改用 fetch。服务端按 SSE 心跳的节奏 ping，两拍无应答即断开；发送积压超过水位的客户端，其流以 `reason: "lagging"` 结束——上文的投递保证对重新发起的调用与对一次重连完全相同。
+
 ## 类型导入
 
 所有 DTO 类型都能以仅类型导入的方式，从服务器包的 `@prismshadow/penguin-server/api` 子路径引入：

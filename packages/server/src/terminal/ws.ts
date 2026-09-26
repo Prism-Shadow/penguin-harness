@@ -85,10 +85,7 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
 /**
  * A WebSocket handshake bypasses CORS entirely, so any origin may attempt one and the cookie
  * still rides along. Only a genuinely same-origin page may connect: host AND port must match
- * the Host the browser targeted. Cookies are port-agnostic, so anything looser (hostname-only,
- * or a blanket loopback allowance) would let a page served by any other local server ride the
- * session cookie into a shell. The Vite dev server proxies with `changeOrigin: false`, so the
- * browser's own Host survives the proxy and this comparison holds in development too.
+ * the Host the browser targeted — the same rule every write is held to (auth/middleware.ts).
  */
 function isAllowedOrigin(req: IncomingMessage): boolean {
   return isOwnOrigin(req.headers.origin, req.headers.host);
