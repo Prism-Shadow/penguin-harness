@@ -20,16 +20,23 @@ if (base.trim() === "") {
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" });
 
 /**
- * What an installed copy actually holds: `installPlugin` writes the plugin's skills and its hook
- * package into the Agent's state directory, and nothing else. A plugin's npm `package.json` is
- * workspace and publishing metadata that never reaches an installed copy, so a change confined to
- * it cannot be invisible to a user — and demanding a `plugin.json` bump for it would advertise an
- * update whose content is identical. Release preparation bumps every plugin's `package.json` in
- * lockstep, so without this the first release after this guard landed failed on all thirteen.
+ * What an installed copy holds: `installSkill` writes `skills/<name>/SKILL.md` plus its auxiliary
+ * files and the plugin's `icon.svg` beside it; `installHook` writes the generated `hooks.json`, the
+ * `icon.svg` and the hook scripts; `plugin.json` is the source of the stamped version and of the
+ * hook manifest. The filter below counts everything under `plugins/<name>/` except `package.json`
+ * and `test/**`, deliberately wider than that set, so a path a plugin adds later over-asks for a
+ * bump rather than slipping through unbumped.
+ *
+ * The two exceptions are the files that never reach an installed copy: `package.json` is workspace
+ * and publishing metadata, and release preparation bumps every plugin's in lockstep, so counting it
+ * would have failed the first release after this guard landed on all thirteen; `test/` is a test
+ * run from the checkout rather than shipped content.
  */
 const isInstalledContent = (file) => {
   const parts = file.split("/");
-  return !(parts.length === 3 && parts[2] === "package.json");
+  const metadata = parts.length === 3 && parts[2] === "package.json";
+  const test = parts.length >= 3 && parts[2] === "test";
+  return !(metadata || test);
 };
 
 const changed = git("diff", "--name-only", `${base}...HEAD`, "--", "plugins/")

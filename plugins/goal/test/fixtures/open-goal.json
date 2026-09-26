@@ -1,0 +1,44 @@
+{
+  "start": { "objective": "make all tests pass", "budget": 1000 },
+  "steps": [
+    {
+      "records": [
+        {
+          "type": "session_meta",
+          "payload": { "session_id": "$SESSION", "agent_state": "$AGENT_STATE" }
+        },
+        {
+          "type": "event_msg",
+          "payload": { "type": "token_usage", "request": { "total": 999, "cache_read": 0 } }
+        },
+        {
+          "type": "model_msg",
+          "payload": { "type": "text", "role": "user", "text": "make all tests pass" }
+        },
+        {
+          "type": "model_msg",
+          "payload": {
+            "type": "text",
+            "role": "user",
+            "text": "$ROUND_INPUT",
+            "sender": "harness"
+          }
+        },
+        {
+          "type": "model_msg",
+          "payload": {
+            "type": "text",
+            "role": "assistant",
+            "text": "Two suites fail; looking into them.",
+            "stop_reason": "completed"
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": { "type": "token_usage", "request": { "total": 100, "cache_read": 40 } }
+        },
+        { "type": "event_msg", "payload": { "type": "request_end", "status": "completed" } }
+      ]
+    }
+  ]
+}

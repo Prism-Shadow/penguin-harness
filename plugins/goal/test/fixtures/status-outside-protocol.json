@@ -1,0 +1,32 @@
+{
+  "start": { "objective": "make all tests pass", "budget": -1 },
+  "goal": { "status": "paused" },
+  "steps": [
+    {
+      "records": [
+        {
+          "type": "session_meta",
+          "payload": { "session_id": "$SESSION", "agent_state": "$AGENT_STATE" }
+        },
+        {
+          "type": "model_msg",
+          "payload": { "type": "text", "role": "user", "text": "make all tests pass" }
+        },
+        {
+          "type": "model_msg",
+          "payload": {
+            "type": "text",
+            "role": "user",
+            "text": "$ROUND_INPUT",
+            "sender": "harness"
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": { "type": "token_usage", "request": { "total": 1, "cache_read": 0 } }
+        },
+        { "type": "event_msg", "payload": { "type": "request_end", "status": "completed" } }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "start": { "objective": "make all tests pass", "budget": 100 },
+  "steps": [
+    {
+      "records": [
+        {
+          "type": "session_meta",
+          "payload": { "session_id": "$SESSION", "agent_state": "$AGENT_STATE" }
+        },
+        {
+          "type": "model_msg",
+          "payload": { "type": "text", "role": "user", "text": "make all tests pass" }
+        },
+        {
+          "type": "model_msg",
+          "payload": {
+            "type": "text",
+            "role": "user",
+            "text": "$ROUND_INPUT",
+            "sender": "harness"
+          }
+        },
+        {
+          "type": "model_msg",
+          "payload": {
+            "type": "text",
+            "role": "assistant",
+            "text": "Read the failing suites; still three red.",
+            "stop_reason": "completed"
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": { "type": "token_usage", "request": { "total": 120, "cache_read": 0 } }
+        },
+        { "type": "event_msg", "payload": { "type": "request_end", "status": "completed" } }
+      ]
+    },
+    {
+      "records": [
+        {
+          "type": "session_meta",
+          "payload": { "session_id": "$SESSION", "agent_state": "$AGENT_STATE" }
+        },
+        {
+          "type": "model_msg",
+          "payload": {
+            "type": "text",
+            "role": "user",
+            "text": "$INJECTED",
+            "sender": "harness"
+          }
+        },
+        {
+          "type": "model_msg",
+          "payload": {
+            "type": "text",
+            "role": "assistant",
+            "text": "Wrapping up: one suite is still red, the fix is in the snapshot test.",
+            "stop_reason": "completed"
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": { "type": "token_usage", "request": { "total": 10, "cache_read": 0 } }
+        },
+        { "type": "event_msg", "payload": { "type": "request_end", "status": "completed" } }
+      ]
+    }
+  ]
+}
