@@ -10,11 +10,22 @@
  * Response for the proxy to return — so the hop is invisible to the socket serving the
  * browser, which re-frames that Response exactly as it would any endpoint's.
  *
- * A machine running a build without the API socket answers the handshake 404; that is
- * remembered briefly and the proxy falls back to forwarding the stream over HTTP, so a fleet
- * mid-upgrade keeps working. When the machine socket closes (the ssh session dropped, the
- * machine restarted), every stream on it ends; the browser re-issues each with its last
- * event id and the machine's own buffer fills the gap, or says resync.
+ * STREAMS NEVER FALL BACK TO HTTP. A forwarded stream is a never-ending response on a channel
+ * of its own, and with many machines those add up to exactly the pile of held connections the
+ * socket exists to avoid. When the socket cannot be had — the machine refuses the handshake
+ * (a build without it), the dial does not complete, or the socket stops serving — the stream is
+ * answered with an error at once and the browser re-issues it on its backoff; a machine that
+ * keeps refusing is one to update, and says so.
+ *
+ * The socket belongs to the ssh SESSION it was dialled through, not to the machine id: when the
+ * transport reopens the session (a drop, a reconnect), a socket or a dial made over the old one
+ * is let go and the next stream dials over the new one. Nothing waits without a deadline —
+ * a dial that neither opens nor fails in time is torn down, so one stuck handshake can never
+ * hold every later stream to that machine behind it.
+ *
+ * When the machine socket closes (the ssh session dropped, the machine restarted), every
+ * stream on it ends; the browser re-issues each with its last event id and the machine's own
+ * buffer fills the gap, or says resync.
  */
 import type http from "node:http";
 import { WebSocket } from "ws";
@@ -35,18 +46,33 @@ export interface MachineSocketTarget {
   agent: http.Agent;
   port: number;
   cookie: string;
+  /** The ssh session the agent dials through (its pid): a socket is only ever reused within one. */
+  session: number;
 }
 
-/** How long a refused handshake keeps the machine on the HTTP path before another try. */
+/** How long a refused handshake is remembered before the machine is asked again. */
 const REFUSED_FOR_MS = 60_000;
+/**
+ * A dial that has neither opened nor failed after this is torn down. It covers the SOCKS
+ * channel and the upgrade both: a machine that accepts the connection and never answers the
+ * upgrade would otherwise hold every later stream to it behind one promise.
+ */
+export const SOCKET_DIAL_TIMEOUT_MS = 10_000;
 /**
  * A stream the machine has not opened (or answered) after this rides a socket that is not
  * serving: one the machine's own hot push left bound to its disposed App, which keeps the
  * heartbeat going and answers nothing — the silence watchdog never fires. The socket is
  * terminated, which ends every stream on it so the browser re-issues each, this request is
- * forwarded over HTTP instead, and the next stream dials the machine's current App.
+ * answered with an error, and the next stream dials the machine's current App. Opening
+ * `/api/events` is immediate on a serving machine; the dial deadline plus this stays under the
+ * browser's own 20 s, so the browser hears the answer rather than giving up first.
  */
-export const STREAM_OPEN_TIMEOUT_MS = 20_000;
+export const STREAM_OPEN_TIMEOUT_MS = 8_000;
+
+/** Why no stream could be relayed, as the proxy answers it. */
+function unavailable(status: number, code: string, message: string): Response {
+  return Response.json({ error: { code, message } }, { status });
+}
 
 interface Sink {
   onStart(status: number): void;
@@ -104,8 +130,11 @@ class MachineSocket {
     ws.on("error", drop);
   }
 
-  /** Resolves on the open handshake; rejects when the machine refuses (no socket there) or cannot be reached. */
-  static open(target: MachineSocketTarget): Promise<MachineSocket> {
+  /**
+   * Resolves on the open handshake; rejects when the machine refuses (no socket there), cannot
+   * be reached, or has not answered within `timeoutMs`.
+   */
+  static open(target: MachineSocketTarget, timeoutMs: number): Promise<MachineSocket> {
     return new Promise((resolve, reject) => {
       // No Origin: the machine's guard reads its absence as a non-browser client, which this is.
       // The admin's reserved id: the session minted over there is the admin's, and the
@@ -115,12 +144,24 @@ class MachineSocket {
         headers: { host: `localhost:${target.port}`, cookie: target.cookie },
         perMessageDeflate: false,
       });
-      ws.once("open", () => resolve(new MachineSocket(ws)));
+      const deadline = setTimeout(() => {
+        reject(new Error(`no socket handshake in ${timeoutMs} ms`));
+        ws.terminate();
+      }, timeoutMs);
+      deadline.unref?.();
+      ws.once("open", () => {
+        clearTimeout(deadline);
+        resolve(new MachineSocket(ws));
+      });
       ws.once("unexpected-response", (_req, res) => {
+        clearTimeout(deadline);
         res.resume();
         reject(new HandshakeRefused(res.statusCode ?? 0));
       });
-      ws.once("error", (err) => reject(err));
+      ws.once("error", (err) => {
+        clearTimeout(deadline);
+        reject(err);
+      });
     });
   }
 
@@ -155,39 +196,49 @@ class MachineSocket {
   }
 }
 
+/** A socket to one machine, or the dial for it, and the ssh session it rides. */
+interface CachedSocket {
+  session: number;
+  pending: Promise<MachineSocket>;
+}
+
 /**
  * The per-machine socket cache and the stream relay over it. One instance per proxy; keyed
- * by machine id, dropped when the socket closes, and re-dialled on the next stream.
+ * by machine id and the ssh session under it, dropped when the socket closes or the session
+ * is replaced, and re-dialled on the next stream.
  */
 export class MachineSocketRelay {
-  readonly #sockets = new Map<string, Promise<MachineSocket>>();
-  readonly #refusedUntil = new Map<string, number>();
+  readonly #sockets = new Map<string, CachedSocket>();
+  readonly #refusedUntil = new Map<string, { until: number; status: number }>();
 
   readonly #openTimeoutMs: number;
+  readonly #dialTimeoutMs: number;
 
   constructor(
     private readonly log: (line: string) => void,
-    options: { openTimeoutMs?: number } = {},
+    options: { openTimeoutMs?: number; dialTimeoutMs?: number } = {},
   ) {
     this.#openTimeoutMs = options.openTimeoutMs ?? STREAM_OPEN_TIMEOUT_MS;
+    this.#dialTimeoutMs = options.dialTimeoutMs ?? SOCKET_DIAL_TIMEOUT_MS;
   }
 
   /**
-   * Relays one streaming request; null when this machine has no socket to relay over (the
-   * handshake was refused: an older build), in which case the caller forwards over HTTP.
+   * Relays one streaming request. Always answers: the stream, the machine's own non-streaming
+   * answer, or an error saying why no socket carried it — never a hand-back to an HTTP forward.
    */
   async stream(
     machineId: string,
     target: MachineSocketTarget,
     request: { path: string; lastEventId: string | null },
-  ): Promise<Response | null> {
-    const socket = await this.#socketFor(machineId, target);
-    if (socket === null) return null;
+  ): Promise<Response> {
+    const got = await this.#socketFor(machineId, target);
+    if (!("socket" in got)) return got.answer;
+    const socket = got.socket;
 
     const headers: Record<string, string> = { accept: "text/event-stream" };
     if (request.lastEventId !== null) headers["last-event-id"] = request.lastEventId;
 
-    return new Promise<Response | null>((resolve) => {
+    return new Promise<Response>((resolve) => {
       let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
       let ended = false;
       const encoder = new TextEncoder();
@@ -196,11 +247,17 @@ export class MachineSocketRelay {
         if (ended || controller !== null) return;
         ended = true;
         this.log(
-          `[machines] stream ${request.path} on ${machineId}: not opened in ${this.#openTimeoutMs} ms over a socket that is alive; terminating the socket, forwarding this stream over HTTP`,
+          `[machines] stream ${request.path} on ${machineId}: not opened in ${this.#openTimeoutMs} ms over a socket that is alive; terminating the socket, the next stream dials again`,
         );
         socket.cancel(id);
         socket.terminate();
-        resolve(null);
+        resolve(
+          unavailable(
+            504,
+            "machine_stream_not_opened",
+            `${machineId} did not open ${request.path} in ${this.#openTimeoutMs} ms; its socket was torn down and the next attempt dials again.`,
+          ),
+        );
       }, this.#openTimeoutMs);
       opening.unref?.();
       const finish = () => {
@@ -279,47 +336,88 @@ export class MachineSocketRelay {
     });
   }
 
-  async #socketFor(machineId: string, target: MachineSocketTarget): Promise<MachineSocket | null> {
-    const refusedUntil = this.#refusedUntil.get(machineId);
-    if (refusedUntil !== undefined && Date.now() < refusedUntil) return null;
-    let pending = this.#sockets.get(machineId);
-    if (pending === undefined) {
-      pending = MachineSocket.open(target).then(
+  async #socketFor(
+    machineId: string,
+    target: MachineSocketTarget,
+  ): Promise<{ socket: MachineSocket } | { answer: Response }> {
+    const refused = this.#refusedUntil.get(machineId);
+    if (refused !== undefined && Date.now() < refused.until) {
+      return { answer: refusedAnswer(machineId, refused.status) };
+    }
+    let cached = this.#sockets.get(machineId);
+    if (cached !== undefined && cached.session !== target.session) {
+      // The transport reopened the ssh session: whatever was dialled over the old one is
+      // let go (a settled socket is closed, a pending dial is closed when it settles).
+      this.log(
+        `[machines] ssh session to ${machineId} was replaced; dropping the socket dialled over the old one`,
+      );
+      this.#sockets.delete(machineId);
+      cached.pending.then(
+        (socket) => socket.terminate(),
+        () => undefined,
+      );
+      cached = undefined;
+    }
+    if (cached === undefined) {
+      const entry: CachedSocket = {
+        session: target.session,
+        pending: MachineSocket.open(target, this.#dialTimeoutMs),
+      };
+      entry.pending.then(
         (socket) => {
+          this.#refusedUntil.delete(machineId);
           socket.onClose(() => {
-            if (this.#sockets.get(machineId) === pending) this.#sockets.delete(machineId);
+            if (this.#sockets.get(machineId) === entry) this.#sockets.delete(machineId);
           });
-          return socket;
         },
         (err: unknown) => {
-          this.#sockets.delete(machineId);
-          // Only an ANSWERED refusal parks the machine on the HTTP path (its build has no
-          // socket); a dial that failed says nothing about the build, and the next stream
-          // tries the socket again — the ssh session may well be back by then.
+          if (this.#sockets.get(machineId) === entry) this.#sockets.delete(machineId);
+          // An ANSWERED refusal is remembered for a while (its build has no socket, or it
+          // turned this server away): asking again on every stream would only repeat it. A
+          // dial that failed says nothing about the build; the next stream tries again.
           if (err instanceof HandshakeRefused) {
-            this.#refusedUntil.set(machineId, Date.now() + REFUSED_FOR_MS);
+            this.#refusedUntil.set(machineId, {
+              until: Date.now() + REFUSED_FOR_MS,
+              status: err.status,
+            });
             this.log(
-              `[machines] no socket on ${machineId} (${err.message}); streams go over HTTP for a while`,
+              `[machines] no socket on ${machineId} (${err.message}); its streams are refused until it is updated`,
             );
           } else {
             this.log(
               `[machines] socket to ${machineId} failed: ${err instanceof Error ? err.message : err}`,
             );
           }
-          throw err;
         },
       );
-      this.#sockets.set(machineId, pending);
+      this.#sockets.set(machineId, entry);
+      cached = entry;
     }
     try {
-      const socket = await pending;
+      const socket = await cached.pending;
       if (socket.closed) {
-        this.#sockets.delete(machineId);
+        if (this.#sockets.get(machineId) === cached) this.#sockets.delete(machineId);
         return this.#socketFor(machineId, target);
       }
-      return socket;
-    } catch {
-      return null;
+      return { socket };
+    } catch (err) {
+      if (err instanceof HandshakeRefused) return { answer: refusedAnswer(machineId, err.status) };
+      return {
+        answer: unavailable(
+          502,
+          "machine_socket_unavailable",
+          `No API socket to ${machineId}: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      };
     }
   }
+}
+
+/** A machine that answered the socket handshake with a status: its build has no socket, or it refused this server. */
+function refusedAnswer(machineId: string, status: number): Response {
+  return unavailable(
+    502,
+    "machine_socket_refused",
+    `${machineId} answered the API socket handshake with ${status}; update the program on it — streams are not forwarded over HTTP.`,
+  );
 }
