@@ -326,6 +326,18 @@ export interface ContextEngineDeps {
 const isImageMessage = (m: OmniMessage): boolean =>
   (m.payload as { type?: string }).type === "image_url";
 
+/**
+ * Image input a flatten carry-over has to resend **as the message it came in as**: the transcript
+ * block is plain text, so a picture cannot be written into it — `image_url` (a web URL or a data
+ * URL) and `inline_data` (the same content carried as base64 bytes) are the two shapes user input
+ * arrives in. Only the input side is filtered here; an image the model **produced** rides the
+ * assistant side and is not input at all.
+ */
+const isImageInputMessage = (m: OmniMessage): boolean => {
+  const type = (m.payload as { type?: string }).type;
+  return type === "image_url" || type === "inline_data";
+};
+
 /** Whether a message carries steering of its own — an image, or text that isn't blank. */
 const carriesSteering = (m: OmniMessage): boolean => {
   const p = m.payload as { type?: string; text?: string };
@@ -2052,15 +2064,17 @@ export class ContextEngine {
   /**
    * Case B: flattens this attempt's input and its produced content into carry-over. Structured
    * `tool_call_output` in the input (paired with the previous completed turn) is kept as-is;
-   * everything else (text input, model thinking/text, this attempt's tool calls/results) is
-   * transcribed into a single `[turn_aborted]` plain-text user message (includes all
-   * completed and incomplete messages, including partial thinking/text). If the input text is
-   * itself already a `[turn_aborted]` block (from a previous attempt or a previous run's
-   * carry-over), its content is unwrapped and merged in, keeping a single-level structure.
+   * the input's image messages (`image_url` / `inline_data`) are kept as-is too, resent behind
+   * the block; everything else (text input, model thinking/text, this attempt's tool
+   * calls/results) is transcribed into a single `[turn_aborted]` plain-text user message
+   * (includes all completed and incomplete messages, including partial thinking/text). If the
+   * input text is itself already a `[turn_aborted]` block (from a previous attempt or a previous
+   * run's carry-over), its content is unwrapped and merged in, keeping a single-level structure.
    *
-   * TODO(multimodal): only text input is currently kept — `image_url` / `inline_data` input is
-   * lost during flatten (the `[turn_aborted]` structure has no corresponding transcription yet);
-   * multimodal carry-over support to be added later.
+   * A picture has no transcription, so an image the input carried is resent **as the message it
+   * came in as**, in the shape a Prompt uses (its text, then its images — see `steer`): the
+   * request that follows an interrupted turn must carry the same content the interrupted one did,
+   * not a transcript of a picture the model can no longer see.
    */
   private flattenCarryOver(
     attemptInput: OmniMessage[],
@@ -2072,13 +2086,14 @@ export class ContextEngine {
       (m) => (m.payload as { type?: string }).type === "tool_call_output",
     );
     const textInputs = attemptInput.filter((m) => (m.payload as { type?: string }).type === "text");
+    const images = attemptInput.filter(isImageInputMessage);
     const flattened = userText(
       this.buildTurnAbortedText(textInputs, assistantSegments, toolCalls, toolOutputs),
     );
     // flatten is sent to the model only and not written to Trace (synthetic carry-over isn't
     // persisted): resumption replay resends the discarded turn's **original input** as-is
     // (best-effort), with no dependency on this synthetic message.
-    return [...structured, flattened];
+    return [...structured, flattened, ...images];
   }
 
   /** Transcribes the interrupted turn's input, model thinking/text, and tool calls/results into a single `[turn_aborted]` plain-text block. */
