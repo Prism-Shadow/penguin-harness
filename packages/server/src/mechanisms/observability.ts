@@ -62,68 +62,77 @@ import type {
 } from "../services/usage-service.js";
 
 /** ErrorLog: the mechanism ErrorsRepo implements. */
-export abstract class ErrorLog extends Interface<{
-  insert(r: ErrorRecordInsert): void;
-  summary(projectId: string, f?: ErrorFilter): ErrorSummary;
-  topCode(projectId: string, f?: ErrorFilter): ErrorCodeCount | null;
-  recent(projectId: string, f?: ErrorFilter, limit?: number, offset?: number): ErrorItem[];
-  deleteFiltered(projectId: string, f?: Omit<ErrorFilter, "includeGlobal">): number;
-  deleteByAgent(projectId: string, agentId: string): void;
-  deleteByProject(projectId: string): void;
-}>() {}
+@Interface()
+export abstract class ErrorLog {
+  abstract insert(r: ErrorRecordInsert): void;
+  abstract summary(projectId: string, f?: ErrorFilter): ErrorSummary;
+  abstract topCode(projectId: string, f?: ErrorFilter): ErrorCodeCount | null;
+  abstract recent(projectId: string, f?: ErrorFilter, limit?: number, offset?: number): ErrorItem[];
+  abstract deleteFiltered(projectId: string, f?: Omit<ErrorFilter, "includeGlobal">): number;
+  abstract deleteByAgent(projectId: string, agentId: string): void;
+  abstract deleteByProject(projectId: string): void;
+}
 
 /** Errors: the mechanism ErrorRecorder implements. */
-export abstract class Errors extends Interface<{
-  record(args: ErrorRecordArgs): void;
-}>() {}
+@Interface()
+export abstract class Errors {
+  abstract record(args: ErrorRecordArgs): void;
+}
 
 /** UsageStore: the mechanism UsageRepo implements. */
-export abstract class UsageStore extends Interface<{
-  insert(r: UsageRecordInsert): void;
-  bucketByModel(projectId: string, f?: UsageFilter, tiers?: readonly PeakTier[]): UsageModelSums[];
-  groupsByModel(
+@Interface()
+export abstract class UsageStore {
+  abstract insert(r: UsageRecordInsert): void;
+  abstract bucketByModel(
+    projectId: string,
+    f?: UsageFilter,
+    tiers?: readonly PeakTier[],
+  ): UsageModelSums[];
+  abstract groupsByModel(
     projectId: string,
     groupBy: UsageGroupBy,
     f?: UsageFilter,
     tiers?: readonly PeakTier[],
   ): UsageGroupModelSums[];
-  seriesByModel(
+  abstract seriesByModel(
     projectId: string,
     granularity: UsageSeriesGranularity,
     f?: UsageFilter,
     tiers?: readonly PeakTier[],
   ): UsageSeriesModelSums[];
-  agentSeries(
+  abstract agentSeries(
     projectId: string,
     granularity: UsageSeriesGranularity,
     f?: UsageFilter,
   ): UsageAgentBucketCount[];
-  distinctAgentIds(projectId: string): string[];
-  distinctModels(projectId: string): { provider: string; modelId: string }[];
-  deleteByProject(projectId: string): void;
-}>() {}
+  abstract distinctAgentIds(projectId: string): string[];
+  abstract distinctModels(projectId: string): { provider: string; modelId: string }[];
+  abstract deleteByProject(projectId: string): void;
+}
 
 /** UsageRecording: the mechanism UsageRecorder implements. */
-export abstract class UsageRecording extends Interface<{
-  record(ctx: UsageContext, msg: OmniMessage<OmniPayload>): Promise<void>;
-}>() {}
+@Interface()
+export abstract class UsageRecording {
+  abstract record(ctx: UsageContext, msg: OmniMessage<OmniPayload>): Promise<void>;
+}
 
 /** UsageQueries: the mechanism UsageService implements. */
-export abstract class UsageQueries extends Interface<{
-  query(projectId: string, q: UsageQuery): Promise<UsageResponse>;
-  queryErrors(projectId: string, q: UsageErrorsQuery): UsageErrorsPage;
-  clearErrors(projectId: string, q: UsageErrorsClearQuery): number;
-  modelTotals(projectId: string): UsageModelTotals;
-  costBySession(
+@Interface()
+export abstract class UsageQueries {
+  abstract query(projectId: string, q: UsageQuery): Promise<UsageResponse>;
+  abstract queryErrors(projectId: string, q: UsageErrorsQuery): UsageErrorsPage;
+  abstract clearErrors(projectId: string, q: UsageErrorsClearQuery): number;
+  abstract modelTotals(projectId: string): UsageModelTotals;
+  abstract costBySession(
     projectId: string,
     sessionIds: readonly string[],
     fromTs: string,
     toTs: string,
   ): Promise<Opaque<"CostBySession", { bySession: Map<string, number>; unpriced: boolean }>>;
-  dailyCostForSessions(
+  abstract dailyCostForSessions(
     projectId: string,
     sessionIds: readonly string[],
     fromTs: string,
     toTs: string,
   ): Promise<Array<{ date: string; cost: number }>>;
-}>() {}
+}

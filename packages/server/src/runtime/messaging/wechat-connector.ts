@@ -439,9 +439,10 @@ export class WechatMessaging {
 }
 
 /** The long-poll + CDN transport as a node, so a test stands in a fake for the network. */
-export abstract class WeChatTransportHandle extends Interface<{
-  transport: Opaque<"WeChatTransport", WeChatTransport>;
-}>() {}
+@Interface()
+export abstract class WeChatTransportHandle {
+  abstract transport: Opaque<"WeChatTransport", WeChatTransport>;
+}
 @Module()
 export class WeChatTransportProvider {
   @Provide() wechatTransport!: WeChatTransportHandle;

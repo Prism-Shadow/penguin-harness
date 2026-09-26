@@ -2189,11 +2189,12 @@ export class MessagingModule {
  * The pacing and budgets the messaging bridge and its connectors run with. Every field is
  * optional: absent, a connector applies its own default; a test stands in zeros.
  */
-export abstract class MessagingTuning extends Interface<{
-  lineDelayMs?: number;
-  inboundImageBudgetBytes?: number;
-  qqTailFlushMs?: number;
-  retryDelayMs?: (failures: number) => number;
-}>() {}
+@Interface()
+export abstract class MessagingTuning {
+  abstract lineDelayMs?: number;
+  abstract inboundImageBudgetBytes?: number;
+  abstract qqTailFlushMs?: number;
+  abstract retryDelayMs?: (failures: number) => number;
+}
 @Component()
 export class DefaultMessagingTuning implements MessagingTuning {}

@@ -612,9 +612,10 @@ export class TelegramMessaging {
 }
 
 /** The Bot API transport as a node, so a test stands in a fake for the network. */
-export abstract class TelegramTransportHandle extends Interface<{
-  transport: Opaque<"TelegramTransport", TelegramTransport>;
-}>() {}
+@Interface()
+export abstract class TelegramTransportHandle {
+  abstract transport: Opaque<"TelegramTransport", TelegramTransport>;
+}
 @Module()
 export class TelegramTransportProvider {
   @Provide() telegramTransport!: TelegramTransportHandle;

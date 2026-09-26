@@ -334,9 +334,10 @@ export class FeishuMessaging {
 }
 
 /** The Lark SDK as a node, so a test stands in a fake for the network. */
-export abstract class FeishuSdkHandle extends Interface<{
-  sdk: Opaque<"FeishuSdk", FeishuSdk>;
-}>() {}
+@Interface()
+export abstract class FeishuSdkHandle {
+  abstract sdk: Opaque<"FeishuSdk", FeishuSdk>;
+}
 @Module()
 export class FeishuSdkProvider {
   @Provide() feishuSdk!: FeishuSdkHandle;

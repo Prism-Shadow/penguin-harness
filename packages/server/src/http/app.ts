@@ -16,9 +16,10 @@ import type { Errors } from "../mechanisms/observability.js";
 import type { Settings } from "../mechanisms/settings.js";
 
 /** The assembled business surface: one request in, one response (or a decline) out. */
-export abstract class Http extends Interface<{
-  fetch(request: Opaque<"Request", Request>): Promise<Opaque<"Response", Response>>;
-}>() {}
+@Interface()
+export abstract class Http {
+  abstract fetch(request: Opaque<"Request", Request>): Promise<Opaque<"Response", Response>>;
+}
 
 export interface HttpSlots {
   /**
