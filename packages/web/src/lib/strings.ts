@@ -205,6 +205,15 @@ export const zh = {
       signInRefused: "那台机器拒绝了本服务端的登录——请在「机器管理」页面修改它的 SSH 设置",
       failed: (message: string) => `那台机器没有答复：${message}`,
     },
+    /** The API socket this server holds to the machine (machines-view's socketReading). */
+    detailSocket: "API 套接字",
+    socket: {
+      connected: "已连接",
+      dialling: "拨号中",
+      refused: "被拒绝",
+      failed: "失败",
+    },
+    agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
     /** The notice under the title while machines carry another build; its action updates them all. */
     updateNotice: (count: number) => `${count} 台机器待更新`,

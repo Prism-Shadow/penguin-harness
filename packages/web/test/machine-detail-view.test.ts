@@ -505,6 +505,7 @@ describe("the facts", () => {
     machineId: "Ed5tN1qRz8Kc3VwY",
     local: false,
     connection: null,
+    socket: null,
     api: null,
     status: {
       state: "unreachable",

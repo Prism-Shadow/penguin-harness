@@ -10,6 +10,7 @@
  *   event lets it tell a quiet stream from a dead one (web api/sse.ts); without an id it
  *   moves neither Last-Event-ID nor the replay cursor. A peer that stops reading is cut off
  *   by the host's idle timeout ({@link STREAM_IDLE_MS}, app.ts);
+ *   User and machine-aggregate streams also send a `heartbeat` server event.
  * - Replay protocol: a fresh subscription without Last-Event-ID does not replay the buffer
  *   (history is served by the messages endpoint) — it only sends the initial events the
  *   caller supplied (pending approvals / hello). With a Last-Event-ID that hits the buffer,
@@ -30,7 +31,8 @@ import type { LiveStreams } from "../auth/live-streams.js";
 import type { Auth } from "../mechanisms/identity.js";
 import { SESSION_COOKIE, bearerToken } from "../auth/middleware.js";
 
-const HEARTBEAT_MS = 20_000;
+/** The beat both the named ping and the `heartbeat` server event are written on (machines/event-hub.ts times the hub's silence by it). */
+export const HEARTBEAT_MS = 20_000;
 
 /** An event stream's socket that sends nothing for this long is destroyed (app.ts): two missed beats. */
 export const STREAM_IDLE_MS = 2 * HEARTBEAT_MS;
@@ -53,6 +55,13 @@ export interface SseEndpointOptions {
   initialEvents?: ServerEvent[];
   /** Omitted only where there is no authenticated session to revoke. */
   revocation?: SseRevocation;
+  /**
+   * Also write a `heartbeat` server event every beat, not only the id-less `ping` event. Set on
+   * the user channel, whose readers (a browser tab, and the hub reading a machine's events)
+   * must be able to tell a live stream from a silent one — the socket's ping and the comment
+   * line both being invisible to a stream's consumer.
+   */
+  heartbeatEvent?: boolean;
 }
 
 /**
@@ -162,6 +171,12 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
           return;
         }
         enqueue(() => stream.writeSSE(PING));
+        if (opts.heartbeatEvent === true) {
+          // Unicast: the beat is this subscriber's own liveness, so it consumes a seq (as any
+          // event does) but is neither buffered nor broadcast to the channel's other readers.
+          const beat: ServerEvent = { type: "heartbeat" };
+          channel.sendTo(listener, beat, "server_event");
+        }
       }, HEARTBEAT_MS);
 
       stream.onAbort(() => finish());
