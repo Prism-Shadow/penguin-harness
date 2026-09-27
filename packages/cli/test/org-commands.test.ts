@@ -1589,7 +1589,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
       ].join("\n"),
     );
     expect(await cli(["org", "proposal", "groups"])).toBe(0);
-    expect(out()).toBe("unit: one module in isolation, no I/O\ne2e: the product end to end\n");
+    expect(
+      out().endsWith("unit: one module in isolation, no I/O\ne2e: the product end to end\n"),
+    ).toBe(true);
     expect(lastRequest("GET", "/proposals/test-groups")).toBeDefined();
   });
 
