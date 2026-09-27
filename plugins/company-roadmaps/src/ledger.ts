@@ -1,0 +1,397 @@
+/**
+ * The roadmap ledger: one append-only JSON-lines file per organization,
+ * `<root>/<project>/organizations/<org>/roadmaps.jsonl`, written only by this plugin and
+ * replayed on first use. Every write is one line; the state is the fold of the lines, so a
+ * roadmap's history is its lines and nothing is ever rewritten.
+ */
+import fs from "node:fs/promises";
+import path from "node:path";
+
+export const LEDGER_FILE = "roadmaps.jsonl";
+
+export function orgDirOf(root: string, projectId: string, orgId: string): string {
+  return path.join(root, projectId, "organizations", orgId);
+}
+
+export function ledgerPath(root: string, projectId: string, orgId: string): string {
+  return path.join(orgDirOf(root, projectId, orgId), LEDGER_FILE);
+}
+
+/**
+ * `awaiting_room`: derived at an establishment, no room bound yet; `discussing`: its room is
+ * relayed; `established`: the discussion is over and its items delegated. Archival is a flag
+ * beside the status — set by the establishment, or by hand to shelve a discussion.
+ */
+export type RoadmapStatus = "awaiting_room" | "discussing" | "established";
+
+/** A proposal the roadmap delegates: its brief and its owner, stacked on another proposal item (or on nothing). */
+export interface ProposalItem {
+  key: string;
+  kind: "proposal";
+  title: string;
+  brief: string;
+  owner: string;
+  /** The body sections it draws on, by heading. */
+  cites: string[];
+  /** The proposal item it is stacked on; absent = the previous proposal item, null = none. */
+  stackedOn?: string | null;
+}
+
+/** A roadmap the roadmap derives: its brief and the employees who discuss it (the first moderates). */
+export interface RoadmapItem {
+  key: string;
+  kind: "roadmap";
+  title: string;
+  brief: string;
+  employees: string[];
+  cites: string[];
+}
+
+export type DraftItem = ProposalItem | RoadmapItem;
+
+/** One employee's session cloned for the room. */
+export interface Clone {
+  agentId: string;
+  sessionId: string;
+  openedAt: string;
+  closedAt?: string;
+}
+
+/** What an establishment did with one item. */
+export interface Delegation {
+  key: string;
+  owner: string;
+  brief: string;
+  /** The item key its proposal is stacked on (proposal items). */
+  base: string | null;
+  /** The derived roadmap's number (roadmap items). */
+  child: number | null;
+  delivered: boolean;
+  error?: string;
+  /** The proposal number the owner linked back. */
+  proposal?: number;
+}
+
+export interface RoadmapEvent {
+  seq: number;
+  at: string;
+  by: string;
+  kind: LedgerEntry["kind"];
+  note?: string;
+}
+
+export interface Roadmap {
+  number: number;
+  name: string;
+  brief: string;
+  channelId: string | null;
+  /** The employees it was opened with, in order: the first moderates. */
+  employees: string[];
+  parent: number | null;
+  parentItem: string | null;
+  status: RoadmapStatus;
+  archived: boolean;
+  record: string;
+  body: string;
+  items: DraftItem[];
+  clones: Clone[];
+  delegations: Record<string, Delegation>;
+  createdBy: string;
+  createdAt: string;
+  events: RoadmapEvent[];
+}
+
+export type LedgerEntry =
+  | {
+      kind: "opened";
+      number: number;
+      name: string;
+      brief: string;
+      channelId: string | null;
+      employees: string[];
+      parent: number | null;
+      parentItem?: string;
+      by: string;
+    }
+  | { kind: "room"; number: number; channelId: string; by: string }
+  | { kind: "draft"; number: number; record?: string; body?: string; items?: DraftItem[]; by: string }
+  | { kind: "established"; number: number; by: string }
+  | {
+      kind: "delegated";
+      number: number;
+      key: string;
+      owner: string;
+      brief: string;
+      base: string | null;
+      child: number | null;
+      delivered: boolean;
+      error?: string;
+      by: string;
+    }
+  | { kind: "linked"; number: number; key: string; proposal: number; by: string }
+  | { kind: "reopened"; number: number; reason: string; by: string }
+  | { kind: "renamed"; number: number; name: string; by: string }
+  | { kind: "archived"; number: number; by: string }
+  | { kind: "unarchived"; number: number; by: string }
+  | { kind: "clone"; number: number; agentId: string; sessionId: string; by: string }
+  | {
+      kind: "clone_closed";
+      number: number;
+      agentId: string;
+      sessionId: string;
+      reason: string;
+      by: string;
+    }
+  | { kind: "notify_failed"; number: number; agentId: string; error: string; by: string };
+
+/** One line of the ledger; `seq` and `at` are the ledger's, everything else the write's. */
+export type LedgerLine = { seq: number; at: string } & LedgerEntry;
+
+export interface LedgerState {
+  roadmaps: Map<number, Roadmap>;
+  lastSeq: number;
+}
+
+const KINDS = new Set<LedgerEntry["kind"]>([
+  "opened",
+  "room",
+  "draft",
+  "established",
+  "delegated",
+  "linked",
+  "reopened",
+  "renamed",
+  "archived",
+  "unarchived",
+  "clone",
+  "clone_closed",
+  "notify_failed",
+]);
+
+export function emptyState(): LedgerState {
+  return { roadmaps: new Map(), lastSeq: 0 };
+}
+
+/** The lines of a ledger file; a line that is not one (bad JSON, unknown kind, no number) is skipped and counted. */
+export function parseLedger(text: string): { lines: LedgerLine[]; skipped: number } {
+  const lines: LedgerLine[] = [];
+  let skipped = 0;
+  for (const raw of text.split("\n")) {
+    if (raw.trim() === "") continue;
+    let v: unknown;
+    try {
+      v = JSON.parse(raw);
+    } catch {
+      skipped++;
+      continue;
+    }
+    const o = v as Record<string, unknown> | null;
+    if (
+      o === null ||
+      typeof o !== "object" ||
+      typeof o.seq !== "number" ||
+      typeof o.at !== "string" ||
+      typeof o.number !== "number" ||
+      typeof o.by !== "string" ||
+      !KINDS.has(o.kind as LedgerEntry["kind"])
+    ) {
+      skipped++;
+      continue;
+    }
+    lines.push(o as unknown as LedgerLine);
+  }
+  return { lines, skipped };
+}
+
+function noteOf(line: LedgerLine): string | undefined {
+  switch (line.kind) {
+    case "opened":
+      return line.channelId ?? undefined;
+    case "room":
+      return line.channelId;
+    case "delegated":
+      return line.child !== null ? `${line.key} → roadmap #${line.child}` : `${line.key} → ${line.owner}`;
+    case "linked":
+      return `${line.key} → proposal #${line.proposal}`;
+    case "reopened":
+      return line.reason;
+    case "renamed":
+      return line.name;
+    case "clone":
+    case "clone_closed":
+      return `${line.agentId} ${line.sessionId}`;
+    case "notify_failed":
+      return `${line.agentId}: ${line.error}`;
+    default:
+      return undefined;
+  }
+}
+
+/** Applies one line to the state. A line about a roadmap that was never opened is ignored. */
+export function applyLine(state: LedgerState, line: LedgerLine): void {
+  state.lastSeq = Math.max(state.lastSeq, line.seq);
+  if (line.kind === "opened") {
+    state.roadmaps.set(line.number, {
+      number: line.number,
+      name: line.name,
+      brief: line.brief,
+      channelId: line.channelId,
+      employees: [...line.employees],
+      parent: line.parent,
+      parentItem: line.parentItem ?? null,
+      status: line.channelId === null ? "awaiting_room" : "discussing",
+      archived: false,
+      record: "",
+      body: "",
+      items: [],
+      clones: [],
+      delegations: {},
+      createdBy: line.by,
+      createdAt: line.at,
+      events: [],
+    });
+  }
+  const r = state.roadmaps.get(line.number);
+  if (r === undefined) return;
+  const note = noteOf(line);
+  r.events.push({
+    seq: line.seq,
+    at: line.at,
+    by: line.by,
+    kind: line.kind,
+    ...(note !== undefined ? { note } : {}),
+  });
+  switch (line.kind) {
+    case "room":
+      r.channelId = line.channelId;
+      if (r.status === "awaiting_room") r.status = "discussing";
+      break;
+    case "draft":
+      if (line.record !== undefined) r.record = line.record;
+      if (line.body !== undefined) r.body = line.body;
+      if (line.items !== undefined) r.items = line.items;
+      break;
+    case "established":
+      r.status = "established";
+      r.archived = true;
+      break;
+    case "delegated": {
+      const prior = r.delegations[line.key];
+      r.delegations[line.key] = {
+        key: line.key,
+        owner: line.owner,
+        brief: line.brief,
+        base: line.base,
+        child: line.child,
+        delivered: line.delivered,
+        ...(line.error !== undefined ? { error: line.error } : {}),
+        // A re-delegation to the same owner keeps the proposal it already linked.
+        ...(prior?.proposal !== undefined && prior.owner === line.owner
+          ? { proposal: prior.proposal }
+          : {}),
+      };
+      break;
+    }
+    case "linked": {
+      const d = r.delegations[line.key];
+      if (d !== undefined) d.proposal = line.proposal;
+      break;
+    }
+    case "reopened":
+      r.status = "discussing";
+      r.archived = false;
+      break;
+    case "renamed":
+      r.name = line.name;
+      break;
+    case "archived":
+      r.archived = true;
+      break;
+    case "unarchived":
+      r.archived = false;
+      break;
+    case "clone":
+      r.clones.push({ agentId: line.agentId, sessionId: line.sessionId, openedAt: line.at });
+      break;
+    case "clone_closed": {
+      const c = r.clones.find((x) => x.sessionId === line.sessionId && x.closedAt === undefined);
+      if (c !== undefined) c.closedAt = line.at;
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+export function foldLedger(lines: readonly LedgerLine[]): LedgerState {
+  const state = emptyState();
+  for (const line of lines) applyLine(state, line);
+  return state;
+}
+
+/**
+ * One organization's ledger in memory, over its file: loaded once, appended under a promise
+ * chain so two writes never interleave, the state updated only once the line is on disk.
+ */
+export class Ledger {
+  private state: LedgerState = emptyState();
+  private loaded: Promise<void> | null = null;
+  private chain: Promise<void> = Promise.resolve();
+
+  constructor(
+    readonly file: string,
+    private readonly now: () => number = () => Date.now(),
+    private readonly log: (line: string) => void = () => {},
+  ) {}
+
+  load(): Promise<void> {
+    if (this.loaded === null) {
+      this.loaded = (async () => {
+        let text = "";
+        try {
+          text = await fs.readFile(this.file, "utf8");
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        }
+        const { lines, skipped } = parseLedger(text);
+        if (skipped > 0) this.log(`[company-roadmaps] ${this.file}: ${skipped} line(s) skipped`);
+        this.state = foldLedger(lines);
+      })();
+    }
+    return this.loaded;
+  }
+
+  roadmaps(): Roadmap[] {
+    return [...this.state.roadmaps.values()].sort((a, b) => a.number - b.number);
+  }
+
+  get(number: number): Roadmap | undefined {
+    return this.state.roadmaps.get(number);
+  }
+
+  nextNumber(): number {
+    let max = 0;
+    for (const n of this.state.roadmaps.keys()) max = Math.max(max, n);
+    return max + 1;
+  }
+
+  /** Appends one line — assigned the next `seq` and the current time — and applies it once written. */
+  append(entry: LedgerEntry): Promise<LedgerLine> {
+    const run = this.chain.then(async () => {
+      const line = {
+        seq: this.state.lastSeq + 1,
+        at: new Date(this.now()).toISOString(),
+        ...entry,
+      } as LedgerLine;
+      await fs.mkdir(path.dirname(this.file), { recursive: true });
+      await fs.appendFile(this.file, `${JSON.stringify(line)}\n`, "utf8");
+      applyLine(this.state, line);
+      return line;
+    });
+    this.chain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+}
