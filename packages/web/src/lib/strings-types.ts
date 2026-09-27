@@ -477,6 +477,79 @@ export type Strings = {
         layout_unsupported: (layout: string) => string;
         git_unavailable: string;
       };
+      /** The module release: its stages, their states and why one cannot run, the log. */
+      releaseTitle: string;
+      releaseAbout: string;
+      releaseModule: string;
+      releasing: string;
+      releaseStarted: string;
+      /** The confirm dialog's name and body: it pushes a branch and starts a Jenkins build. */
+      releaseConfirmTitle: string;
+      releaseConfirm: (branch: string) => string;
+      releaseConfirmLabel: string;
+      /** Running the push-and-build stage on its own asks the same. */
+      triggerConfirm: (branch: string) => string;
+      moduleVersion: string;
+      moduleVersionHint: string;
+      moduleVersionInvalid: string;
+      stop: string;
+      stopping: string;
+      log: string;
+      logEmpty: string;
+      /** The release tag the build made. */
+      resolvedVersion: (version: string) => string;
+      openBuild: string;
+      stagesLabel: string;
+      stageColumns: { stage: string; state: string };
+      advanced: string;
+      /** The per-stage Run button's accessible name. */
+      runStage: (stage: string) => string;
+      run: string;
+      stageStarted: (stage: string) => string;
+      stages: {
+        verify_module: string;
+        prepare_deploy: string;
+        trigger_module_build: string;
+        await_module_build: string;
+      };
+      statuses: {
+        pending: string;
+        running: string;
+        done: string;
+        failed: string;
+        cancelled: string;
+      };
+      /** The latest run's state, as the line above the stages says it. */
+      runStatuses: {
+        running: (stage: string) => string;
+        succeeded: string;
+        failed: string;
+        cancelled: string;
+        interrupted: string;
+      };
+      /** Why a stage cannot be run now. */
+      blockers: {
+        previous_stage: (stage: string) => string;
+        previous_rerun: (stage: string) => string;
+        run_active: string;
+        settings_missing: (field: string) => string;
+        clone_missing: (repo: string) => string;
+        clone_dirty: (repo: string) => string;
+        not_ready: (problem: string) => string;
+      };
+      /** Why a stage ended badly. */
+      errors: {
+        command_failed: (command: string, exitCode: number | null) => string;
+        command_timed_out: (command: string) => string;
+        command_missing: (command: string) => string;
+        jenkins_failed: (status: number) => string;
+        build_failed: (result: string) => string;
+        no_newer_tag: (before: string | null, after: string | null) => string;
+        build_timed_out: (minutes: number) => string;
+        missing_input: (stage: string) => string;
+        interrupted: string;
+        unexpected: string;
+      };
     };
     /** Check quality, in the Module section: accessibility and reading level of the played activity. */
     quality: {
@@ -3981,6 +4054,10 @@ export type Strings = {
     noDefaultModel: string;
     byCode: {
       deploy_clones_running: string;
+      deploy_running: string;
+      deploy_blocked: string;
+      deploy_run_not_found: string;
+      deploy_unavailable: string;
       deploy_no_module: string;
       deploy_not_canonical: string;
       deploy_settings_missing: string;

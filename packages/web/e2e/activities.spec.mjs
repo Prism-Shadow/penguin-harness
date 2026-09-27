@@ -6698,6 +6698,19 @@ test("shows what a deploy still needs", async ({ page }) => {
         message: "Ready.",
         buildLog: null,
       });
+    if (url.pathname === `${base}/act_test/deploy` && request.method() === "GET") {
+      const blocker = { code: "settings_missing", field: "qa.jenkinsUrl" };
+      return json({
+        context: context(false),
+        run: null,
+        stages: [
+          "verify_module",
+          "prepare_deploy",
+          "trigger_module_build",
+          "await_module_build",
+        ].map((stage) => ({ stage, status: "pending", finishedAt: null, metadata: {}, blocker })),
+      });
+    }
     if (url.pathname === `${base}/act_test/deploy/context` && request.method() === "GET") {
       const checkRemote = url.searchParams.get("checkRemote") === "1";
       if (checkRemote) remoteChecks++;
@@ -6863,5 +6876,188 @@ test("an admin fills in the deploy settings and tests the QA connection", async 
   await qa.getByRole("button", { name: "Test QA connection", exact: true }).click();
   await expect(dialog.getByTestId("deploy-test-qa")).toHaveText("Jenkins answered (200).");
   expect(tests).toHaveLength(1);
+  expect(f.errors).toEqual([]);
+});
+
+test("releases the module and follows the log", async ({ page }) => {
+  const f = await fixture(page);
+  const clean = { present: true, branch: "main", clean: true, ahead: 0, remoteUrlMatches: true };
+  const context = {
+    ready: true,
+    problems: [],
+    remoteChecked: false,
+    module: {
+      folder: "waf-module-words",
+      remote: "git@github.com:org/waf-module-words.git",
+      clone: clean,
+    },
+    activityData: { clone: clean },
+    media: { clone: clean },
+    branches: { deploy: "loom/words-deploy", activityData: "loom/words-activity-data" },
+    branchState: {
+      deploy: { local: true, remote: null },
+      activityData: { local: true, remote: null },
+    },
+  };
+  const order = ["verify_module", "prepare_deploy", "trigger_module_build", "await_module_build"];
+  // The server's rules: one run at a time, stages in order, the log numbered from 1 and handed
+  // out after a cursor, growing a few lines per poll while the run goes.
+  const script = [
+    ["verify_module", "== verify_module"],
+    ["verify_module", "$ npm ci"],
+    ["verify_module", "$ npm run lint"],
+    ["prepare_deploy", "== prepare_deploy"],
+    ["prepare_deploy", "$ git checkout -B loom/words-deploy main"],
+    ["trigger_module_build", "== trigger_module_build"],
+    ["trigger_module_build", 'Starting Jenkins job "Build WAF Modules".'],
+    ["await_module_build", "== await_module_build"],
+    ["await_module_build", "Jenkins: building (#12)."],
+    ["await_module_build", "Released as 1.5.0."],
+  ];
+  let run = null;
+  let starts = [];
+  let shown = 0;
+  let polls = 0;
+  const lines = () =>
+    script.slice(0, shown).map(([, text], index) => ({ seq: index + 1, at: "now", text }));
+  const advance = () => {
+    shown = Math.min(script.length, shown + 3);
+    const current = shown ? script[shown - 1][0] : order[0];
+    const finished = shown === script.length;
+    run = {
+      ...run,
+      status: finished ? "succeeded" : "running",
+      finishedAt: finished ? "2026-09-28T00:05:00.000Z" : null,
+      stages: order.map((stage) => ({
+        stage,
+        status:
+          finished || order.indexOf(stage) < order.indexOf(current)
+            ? "done"
+            : stage === current
+              ? "running"
+              : "pending",
+        error: null,
+      })),
+      metadata: finished
+        ? {
+            moduleVersion: "1.5.0",
+            preBuildTag: "1.4.0",
+            resolvedModuleVersion: "1.5.0",
+            moduleBuildUrl: "https://jenkins.example.org/job/Build%20WAF%20Modules/12/",
+          }
+        : { moduleVersion: "1.5.0" },
+    };
+  };
+  const stages = () =>
+    order.map((stage, index) => ({
+      stage,
+      status: run?.status === "succeeded" ? "done" : "pending",
+      finishedAt: null,
+      metadata: {},
+      blocker:
+        run?.status === "running"
+          ? { code: "run_active" }
+          : index > 0 && run?.status !== "succeeded"
+            ? { code: "previous_stage", stage: order[index - 1] }
+            : null,
+    }));
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (url.pathname === `${base}/act_test/sandbox/status`)
+      return json({
+        state: "ready",
+        playable: true,
+        buildable: true,
+        message: "Ready.",
+        buildLog: null,
+      });
+    if (url.pathname === `${base}/act_test/deploy` && request.method() === "GET")
+      return json({ context, run, stages: stages() });
+    if (url.pathname === `${base}/act_test/deploy` && request.method() === "POST") {
+      starts.push(request.postDataJSON());
+      if (run?.status === "running")
+        return json({ error: { code: "deploy_running", message: "A deploy is running." } }, 409);
+      run = {
+        runId: "dep_1",
+        activityId: "act_test",
+        target: "qa",
+        selection: "release",
+        status: "running",
+        stages: order.map((stage) => ({ stage, status: "pending", error: null })),
+        metadata: {},
+        startedAt: "2026-09-28T00:00:00.000Z",
+        finishedAt: null,
+      };
+      return json({ run }, 202);
+    }
+    if (url.pathname === `${base}/act_test/deploy/runs/dep_1/log`) {
+      polls++;
+      advance();
+      const after = Number(url.searchParams.get("after") ?? "0");
+      const all = lines();
+      const page = all.filter((line) => line.seq > after);
+      return json({
+        log: {
+          lines: page,
+          next: page.length ? page[page.length - 1].seq : after,
+          done: run.status !== "running",
+        },
+        run,
+      });
+    }
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Deploy");
+  const table = page.getByRole("table", { name: "Release stages" });
+  await expect(table.getByRole("row", { name: /^Verify the module/ })).toContainText("Not run");
+  await expect(table.getByRole("row", { name: /^Wait for the release tag/ })).toContainText(
+    "Waits for Push and start the build to finish.",
+  );
+
+  await page.getByRole("button", { name: "Release module", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Release the module" });
+  await expect(
+    dialog.getByText(
+      "This pushes the branch loom/words-deploy to the module's repository and starts a Jenkins build of it. The build makes a new release tag.",
+    ),
+  ).toBeVisible();
+  const version = dialog.getByLabel("Module version");
+  await version.fill("v1.5");
+  await expect(dialog.getByText("Write the version as three numbers, like 1.2.3.")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Release", exact: true })).toBeDisabled();
+  await version.fill("1.5.0");
+  await dialog.getByRole("button", { name: "Release", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(starts).toEqual([{ stage: "release", moduleVersion: "1.5.0" }]);
+
+  // While it runs: Stop is offered, and the log grows.
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  const log = page.getByTestId("deploy-log");
+  await expect(log).toContainText("$ git checkout -B loom/words-deploy main");
+
+  // It ends: every line once, in order, the version and the build link, every stage done.
+  await expect(page.getByTestId("deploy-run-status")).toHaveText("The last release finished.");
+  await expect(log).toHaveText(script.map(([, text]) => text).join("\n"));
+  await expect(page.getByText("Released as 1.5.0.", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open the Jenkins build" })).toHaveAttribute(
+    "href",
+    "https://jenkins.example.org/job/Build%20WAF%20Modules/12/",
+  );
+  for (const name of [
+    /^Verify the module/,
+    /^Prepare the deploy branch/,
+    /^Wait for the release tag/,
+  ])
+    await expect(table.getByRole("row", { name })).toContainText("Done");
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+  const settledPolls = polls;
+  await page.waitForTimeout(1500);
+  // Once the run has ended the log is no longer asked for.
+  expect(polls).toBe(settledPolls);
+  expect(starts).toHaveLength(1);
   expect(f.errors).toEqual([]);
 });

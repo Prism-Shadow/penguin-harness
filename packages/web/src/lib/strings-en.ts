@@ -279,7 +279,7 @@ export const en: Strings = {
       refNumHint:
         "A whole number no other ref of this product uses. The next free one is filled in.",
       name: "Name",
-      nameHint: "Optional",
+      nameHint: "Up to 64 characters.",
       language: "Language",
       voiceForAll: "Voice for all narration",
       voiceUnchanged: "Each narration's own voice",
@@ -559,6 +559,82 @@ export const en: Strings = {
             ? `The layout ${layout} cannot be deployed yet. Only mainOnly can.`
             : "The specification names no layout. Only mainOnly can be deployed.",
         git_unavailable: "git could not be run on this server.",
+      },
+      releaseTitle: "Module release",
+      releaseAbout:
+        "Release module builds and checks the module in its clone on this server, makes the deploy branch's commit, pushes that branch, asks Jenkins to build the module, and waits for the release tag the build makes. Each stage runs only after the one before it has finished since it was last run, and Prepare runs once per Verify. Verify first puts the module clone back to main as origin has it, so a release can always start again. Stop ends the release at once; what a stage already pushed stays pushed.",
+      releaseModule: "Release module",
+      releasing: "Releasing…",
+      releaseStarted: "The module release started.",
+      releaseConfirmTitle: "Release the module",
+      releaseConfirm: (branch) =>
+        `This pushes the branch ${branch} to the module's repository and starts a Jenkins build of it. The build makes a new release tag.`,
+      releaseConfirmLabel: "Release",
+      triggerConfirm: (branch) =>
+        `This pushes the branch ${branch} to the module's repository and starts a Jenkins build of it.`,
+      moduleVersion: "Module version",
+      moduleVersionHint: "Like 1.2.3. Left empty, the version in package.json stays.",
+      moduleVersionInvalid: "Write the version as three numbers, like 1.2.3.",
+      stop: "Stop",
+      stopping: "Stopping…",
+      log: "Log",
+      logEmpty: "Nothing logged yet.",
+      resolvedVersion: (version) => `Released as ${version}.`,
+      openBuild: "Open the Jenkins build",
+      stagesLabel: "Release stages",
+      stageColumns: { stage: "Stage", state: "State" },
+      advanced: "Run one stage",
+      runStage: (stage) => `Run ${stage}`,
+      run: "Run",
+      stageStarted: (stage) => `${stage} started.`,
+      stages: {
+        verify_module: "Verify the module",
+        prepare_deploy: "Prepare the deploy branch",
+        trigger_module_build: "Push and start the build",
+        await_module_build: "Wait for the release tag",
+      },
+      statuses: {
+        pending: "Not run",
+        running: "Running",
+        done: "Done",
+        failed: "Failed",
+        cancelled: "Stopped",
+      },
+      runStatuses: {
+        running: (stage) => `Releasing: ${stage}.`,
+        succeeded: "The last release finished.",
+        failed: "The last release failed.",
+        cancelled: "The last release was stopped.",
+        interrupted: "The last release was cut short when the server stopped.",
+      },
+      blockers: {
+        previous_stage: (stage) => `Waits for ${stage} to finish.`,
+        previous_rerun: (stage) =>
+          `Run ${stage} again first: this stage starts from what it leaves.`,
+        run_active: "A deploy is running on this server.",
+        settings_missing: (field) => `${field} is empty.`,
+        clone_missing: (repo) => `The ${repo} clone is not on this server yet.`,
+        clone_dirty: (repo) => `The ${repo} clone has uncommitted changes.`,
+        not_ready: (problem) => problem,
+      },
+      errors: {
+        command_failed: (command, exitCode) =>
+          exitCode === null
+            ? `${command} failed. The log shows its output.`
+            : `${command} failed with exit code ${exitCode}. The log shows its output.`,
+        command_timed_out: (command) =>
+          `${command} took longer than its time limit and was stopped.`,
+        command_missing: (command) => `${command} is not installed on this server.`,
+        jenkins_failed: (status) =>
+          status ? `Jenkins refused the request (HTTP ${status}).` : "Jenkins did not answer.",
+        build_failed: (result) => `The Jenkins build ended as ${result}.`,
+        no_newer_tag: (before, after) =>
+          `The build finished but made no newer release tag (before: ${before ?? "none"}, now: ${after ?? "none"}).`,
+        build_timed_out: (minutes) =>
+          `The build made no release tag within ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
+        missing_input: (stage) => `Run ${stage} first: this stage waits on the build it starts.`,
+        interrupted: "The server stopped while this stage ran.",
+        unexpected: "The stage stopped on an unexpected error. The log shows it.",
       },
     },
     quality: {
@@ -5951,6 +6027,10 @@ Scenarios:
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       deploy_clones_running: "The clones are already being prepared.",
+      deploy_running: "A deploy is already running on this server.",
+      deploy_blocked: "That stage cannot run now. The stages say why.",
+      deploy_run_not_found: "That deploy run is no longer here.",
+      deploy_unavailable: "Deploys are not ready yet. Try again in a moment.",
       deploy_no_module: "This activity belongs to no product, so there is no module to deploy.",
       deploy_not_canonical:
         "Only the canonical ref deploys: every ref of this product shares its module.",

@@ -25,12 +25,17 @@ export interface DeployGitResult {
   code: number | null;
   stdout: string;
   stderr: string;
-  /** Why there is no exit code: git is not installed, or it ran past its time limit. */
-  error?: "not_found" | "timed_out" | "not_started";
+  /**
+   * Why there is no exit code: git is not installed, it ran past its time limit, or the
+   * caller's signal stopped it.
+   */
+  error?: "not_found" | "timed_out" | "not_started" | "stopped";
 }
 
 export interface DeployGitOptions {
   timeoutMs?: number;
+  /** Stops git, and everything it started, as soon as it aborts. */
+  signal?: AbortSignal;
 }
 
 /** Every git call a deploy makes. */
@@ -55,6 +60,10 @@ function bounded(text: string): string {
 export const spawnGit: DeployGit = {
   run(args, cwd, opts = {}) {
     return new Promise((resolve) => {
+      if (opts.signal?.aborted) {
+        resolve({ code: null, stdout: "", stderr: "", error: "stopped" });
+        return;
+      }
       let stdout = "";
       let stderr = "";
       let child;
@@ -84,8 +93,18 @@ export const spawnGit: DeployGit = {
         stopTree(child);
       }, opts.timeoutMs ?? GIT_TIMEOUT_MS);
       timer.unref();
-      child.on("error", (error: NodeJS.ErrnoException) => {
+      let stopped = false;
+      const onAbort = () => {
+        stopped = true;
+        stopTree(child);
+      };
+      opts.signal?.addEventListener("abort", onAbort, { once: true });
+      const settle = () => {
         clearTimeout(timer);
+        opts.signal?.removeEventListener("abort", onAbort);
+      };
+      child.on("error", (error: NodeJS.ErrnoException) => {
+        settle();
         resolve({
           code: null,
           stdout,
@@ -94,8 +113,9 @@ export const spawnGit: DeployGit = {
         });
       });
       child.on("close", (code) => {
-        clearTimeout(timer);
-        if (timedOut) resolve({ code: null, stdout, stderr, error: "timed_out" });
+        settle();
+        if (stopped) resolve({ code: null, stdout, stderr, error: "stopped" });
+        else if (timedOut) resolve({ code: null, stdout, stderr, error: "timed_out" });
         else resolve({ code, stdout, stderr });
       });
     });

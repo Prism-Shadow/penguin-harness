@@ -1,10 +1,16 @@
 /**
  * Deploy: whether a deploy of this activity could start now, and what is still missing, each
- * in words. Nothing here deploys. The owner can make the missing clones (Prepare clones) and
- * ask the remote whether the branches are there (Check remote); both are explicit presses.
+ * in words, then the module release. The owner can make the missing clones (Prepare clones),
+ * ask the remote whether the branches are there (Check remote), and release the module; each
+ * is an explicit press, and the release asks before it pushes anything.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DeployContext, DeployContextResponse } from "@prismshadow/penguin-server/api";
+import type {
+  DeployContext,
+  DeployContextResponse,
+  DeployRun,
+  DeployStateResponse,
+} from "@prismshadow/penguin-server/api";
 import { ApiError, apiFetch } from "../../api/client";
 import { Button } from "../../components/ui/button";
 import { InfoPopover } from "../../components/ui/info-popover";
@@ -19,6 +25,7 @@ import {
   readinessRows,
   repoName,
 } from "./deploy-model";
+import { DeployRelease } from "./deploy-release";
 import type { Announcement } from "./run-toasts";
 
 const HEAD =
@@ -51,7 +58,17 @@ export function DeployPanel({
   onAnnounce: (announcement: Announcement) => void;
 }) {
   const words = S.activities.deploy;
-  const [context, setContext] = useState<DeployContext | null>(null);
+  const [state, setState] = useState<DeployStateResponse | null>(null);
+  const context = state?.context ?? null;
+  const setContext = useCallback(
+    (value: DeployContext) =>
+      setState((current) => (current ? { ...current, context: value } : current)),
+    [],
+  );
+  const setRun = useCallback(
+    (run: DeployRun) => setState((current) => (current ? { ...current, run } : current)),
+    [],
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"prepare" | "remote" | null>(null);
@@ -72,14 +89,27 @@ export function DeployPanel({
     },
     [endpoint],
   );
+  const loadState = useCallback(
+    () => apiFetch<DeployStateResponse>(`${endpoint}/deploy`),
+    [endpoint],
+  );
+  const reload = useCallback(() => {
+    loadState()
+      .then((value) => {
+        if (alive.current) setState(value);
+      })
+      .catch((cause) => {
+        if (alive.current) setActionError(apiErrorText(cause));
+      });
+  }, [loadState]);
 
   useEffect(() => {
     let cancelled = false;
-    setContext(null);
+    setState(null);
     setLoadError(null);
-    load()
+    loadState()
       .then((value) => {
-        if (!cancelled) setContext(value);
+        if (!cancelled) setState(value);
       })
       .catch((cause) => {
         if (!cancelled) setLoadError(apiErrorText(cause));
@@ -87,7 +117,7 @@ export function DeployPanel({
     return () => {
       cancelled = true;
     };
-  }, [load]);
+  }, [loadState]);
 
   async function prepare() {
     setBusy("prepare");
@@ -98,6 +128,8 @@ export function DeployPanel({
       });
       if (!alive.current) return;
       setContext(value.context);
+      // The stages' blockers follow the clones.
+      reload();
       onAnnounce({ kind: "success", text: words.prepared });
     } catch (cause) {
       if (alive.current) setActionError(prepareError(cause));
@@ -213,6 +245,18 @@ export function DeployPanel({
                 <p className="text-xs text-gray-500 dark:text-gray-400">{words.settingsHint}</p>
               )}
             </section>
+          )}
+          {state && context.branches.deploy && (
+            <DeployRelease
+              endpoint={endpoint}
+              editable={editable}
+              run={state.run}
+              stages={state.stages}
+              branch={context.branches.deploy}
+              onRun={setRun}
+              onSettled={reload}
+              onAnnounce={onAnnounce}
+            />
           )}
         </>
       )}

@@ -4936,6 +4936,22 @@ export type {
   DeploySettingsUpdate,
   DeploySettingsView,
   DeployTarget,
+  DeployBlocker,
+  DeployLogLine,
+  DeployLogPage,
+  DeployLogResponse,
+  DeployRun,
+  DeployRunMetadata,
+  DeployRunResponse,
+  DeployRunStage,
+  DeployRunStatus,
+  DeployStage,
+  DeployStageError,
+  DeployStageSelection,
+  DeployStageState,
+  DeployStageStatus,
+  DeployStartRequest,
+  DeployStateResponse,
 } from "../activities/deploy-types.js";
 
 // ---------------------------------------------------------------------------

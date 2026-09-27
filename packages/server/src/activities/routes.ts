@@ -30,7 +30,13 @@ import { parseRefDecisions } from "./ref-template.js";
 import type { ActivityPhonemes } from "./phonemes.js";
 import type { BookWordsRefresh, BookWordsSetup, BookWordsState } from "./book-word-types.js";
 import type { ActivityDeploys } from "./deploy-service.js";
-import type { DeployContextResponse } from "./deploy-types.js";
+import type {
+  DeployContextResponse,
+  DeployLogResponse,
+  DeployRunResponse,
+  DeployStateResponse,
+} from "./deploy-types.js";
+import { isModuleVersion, isStageSelection } from "./deploy-stages.js";
 import {
   badRequest,
   optionalString,
@@ -1116,6 +1122,61 @@ export class ActivityRoutes {
           checkRemote,
         }),
       } satisfies DeployContextResponse);
+    });
+    // The release: its state and each stage's (a member's to read), the log after a cursor,
+    // and starting or stopping it (the owner's: it pushes a branch and starts a Jenkins build).
+    app.get("/:activityId/deploy", async (c) =>
+      c.json(
+        (await this.deploys.state(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+        )) satisfies DeployStateResponse,
+      ),
+    );
+    app.post("/:activityId/deploy", async (c) => {
+      const body = await readJson(c);
+      const stage = body.stage;
+      if (!isStageSelection(stage))
+        throw badRequest("stage must be release or one of the release stages.");
+      const moduleVersion =
+        optionalString(body, "moduleVersion", { maxLen: 40 })?.trim() || undefined;
+      if (moduleVersion !== undefined && !isModuleVersion(moduleVersion))
+        throw badRequest("moduleVersion must be a version like 1.2.3.");
+      return c.json(
+        {
+          run: await this.deploys.start(
+            requireValidId(c, "projectId"),
+            pathParam(c, "activityId"),
+            {
+              target: "qa",
+              stage,
+              ...(moduleVersion ? { moduleVersion } : {}),
+            },
+          ),
+        } satisfies DeployRunResponse,
+        202,
+      );
+    });
+    app.get("/:activityId/deploy/runs/:runId/log", async (c) => {
+      const raw = c.req.query("after") ?? "0";
+      if (!/^\d{1,15}$/.test(raw)) throw badRequest("after must be a line number.");
+      return c.json(
+        (await this.deploys.log(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          requireValidId(c, "runId"),
+          Number(raw),
+        )) satisfies DeployLogResponse,
+      );
+    });
+    app.post("/:activityId/deploy/stop", async (c) => {
+      const run = await this.deploys.stop(
+        requireValidId(c, "projectId"),
+        pathParam(c, "activityId"),
+      );
+      if (!run)
+        throw new HttpError(404, "deploy_run_not_found", "This activity has no deploy run.");
+      return c.json({ run } satisfies DeployRunResponse);
     });
     app.post("/:activityId/deploy/clones", async (c) =>
       c.json({

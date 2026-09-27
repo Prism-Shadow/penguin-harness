@@ -6,9 +6,17 @@
 import type {
   BranchState,
   CloneState,
+  DeployBlocker,
   DeployContext,
+  DeployLogLine,
+  DeployLogPage,
   DeployProblem,
   DeployRepo,
+  DeployRun,
+  DeployStage,
+  DeployStageError,
+  DeployStageState,
+  DeployStageStatus,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import type { Tone } from "../../lib/tone";
@@ -213,4 +221,207 @@ export function clonesMissing(context: DeployContext): boolean {
   return context.problems.some(
     (problem) => problem.code === "clone_missing" || problem.code === "media_path_missing",
   );
+}
+
+// ---------------------------------------------------------------------------
+// The module release
+// ---------------------------------------------------------------------------
+
+/** The release stages in the order they run, as the server names them. */
+export const RELEASE_STAGES: readonly DeployStage[] = [
+  "verify_module",
+  "prepare_deploy",
+  "trigger_module_build",
+  "await_module_build",
+];
+
+/** The log lines the panel keeps: the server keeps no more in memory either. */
+export const LOG_KEEP = 2000;
+
+const STATUS_TONE: Record<DeployStageStatus, Tone> = {
+  pending: "muted",
+  running: "busy",
+  done: "success",
+  failed: "danger",
+  cancelled: "attention",
+};
+
+export function stageName(stage: DeployStage): string {
+  return S.activities.deploy.stages[stage];
+}
+
+/** Why a stage ended badly, as a sentence. */
+export function stageErrorText(error: DeployStageError): string {
+  const words = S.activities.deploy.errors;
+  switch (error.code) {
+    case "command_failed":
+      return words.command_failed(error.command, error.exitCode);
+    case "command_timed_out":
+      return words.command_timed_out(error.command);
+    case "command_missing":
+      return words.command_missing(error.command);
+    case "jenkins_failed":
+      return words.jenkins_failed(error.status);
+    case "build_failed":
+      return words.build_failed(error.result);
+    case "no_newer_tag":
+      return words.no_newer_tag(error.before, error.after);
+    case "build_timed_out":
+      return words.build_timed_out(error.minutes);
+    case "missing_input":
+      return words.missing_input(stageName(error.stage));
+    case "interrupted":
+      return words.interrupted;
+    case "unexpected":
+      return words.unexpected;
+  }
+}
+
+/** Why a stage cannot be run now, as a sentence. */
+export function blockerText(blocker: DeployBlocker): string {
+  const words = S.activities.deploy.blockers;
+  switch (blocker.code) {
+    case "previous_stage":
+      return words.previous_stage(stageName(blocker.stage));
+    case "previous_rerun":
+      return words.previous_rerun(stageName(blocker.stage));
+    case "run_active":
+      return words.run_active;
+    case "settings_missing":
+      return words.settings_missing(fieldName(blocker.field));
+    case "clone_missing":
+      return words.clone_missing(repoName(blocker.repo));
+    case "clone_dirty":
+      return words.clone_dirty(repoName(blocker.repo));
+    case "not_ready":
+      return words.not_ready(problemText(blocker.problem));
+  }
+}
+
+const STAGES: readonly DeployStage[] = [
+  "verify_module",
+  "prepare_deploy",
+  "trigger_module_build",
+  "await_module_build",
+];
+
+function asStage(value: string | undefined): DeployStage | null {
+  return STAGES.find((stage) => stage === value) ?? null;
+}
+
+function asRepo(value: string | undefined): DeployRepo | null {
+  return REPOS.find((repo) => repo === value) ?? null;
+}
+
+/**
+ * A `deploy_blocked` refusal's detail as a sentence: the blocker it names, worded as the stage
+ * list words it. Null when the detail names none this App knows, so the caller falls back to
+ * the code's own words.
+ */
+export function refusalText(detail: Readonly<Record<string, string>> | undefined): string | null {
+  if (!detail) return null;
+  const previous = asStage(detail.previous);
+  const repo = asRepo(detail.repo);
+  switch (detail.blocker) {
+    case "previous_stage":
+      return previous ? blockerText({ code: "previous_stage", stage: previous }) : null;
+    case "previous_rerun":
+      return previous ? blockerText({ code: "previous_rerun", stage: previous }) : null;
+    case "run_active":
+      return blockerText({ code: "run_active" });
+    case "settings_missing":
+      return detail.field ? blockerText({ code: "settings_missing", field: detail.field }) : null;
+    case "clone_missing":
+      return repo ? blockerText({ code: "clone_missing", repo }) : null;
+    case "clone_dirty":
+      return repo ? blockerText({ code: "clone_dirty", repo }) : null;
+    default:
+      return null;
+  }
+}
+
+export interface StageRow {
+  stage: DeployStage;
+  label: string;
+  status: DeployStageStatus;
+  tone: Tone;
+  /** The status in words: colour never carries it alone. */
+  statusText: string;
+  /** Why it ended badly, when the latest run says. */
+  error: string | null;
+  /** Why it cannot run now; null when it can. */
+  blocker: string | null;
+}
+
+/**
+ * One row per stage. While a run is going its stages' live states win over the stored ones
+ * (which the server set before it started), and nothing may be started; once it has ended the
+ * stored states are the truth, and a failed stage says why from the run that failed it.
+ */
+export function stageRows(run: DeployRun | null, stages: readonly DeployStageState[]): StageRow[] {
+  const running = run?.status === "running";
+  const words = S.activities.deploy;
+  return stages.map((state) => {
+    const live = run?.stages.find((entry) => entry.stage === state.stage);
+    const status: DeployStageStatus = running && live ? live.status : state.status;
+    const error =
+      live?.error && status === "failed" && live.status === "failed"
+        ? stageErrorText(live.error)
+        : null;
+    const blocker = running
+      ? words.blockers.run_active
+      : state.blocker
+        ? blockerText(state.blocker)
+        : null;
+    return {
+      stage: state.stage,
+      label: stageName(state.stage),
+      status,
+      tone: STATUS_TONE[status],
+      statusText: words.statuses[status],
+      error,
+      blocker,
+    };
+  });
+}
+
+/** The line above the stages: how the latest run stands. */
+export function runLine(run: DeployRun | null): { tone: Tone; text: string } | null {
+  if (!run) return null;
+  const words = S.activities.deploy.runStatuses;
+  switch (run.status) {
+    case "running": {
+      const current = run.stages.find((entry) => entry.status === "running") ?? run.stages[0];
+      return { tone: "busy", text: words.running(current ? stageName(current.stage) : "") };
+    }
+    case "succeeded":
+      return { tone: "success", text: words.succeeded };
+    case "failed":
+      return { tone: "danger", text: words.failed };
+    case "cancelled":
+      return { tone: "attention", text: words.cancelled };
+    case "interrupted":
+      return { tone: "attention", text: words.interrupted };
+  }
+}
+
+/**
+ * The lines kept after a page arrives: only lines newer than the newest kept, so a page asked
+ * twice (a slow poll overtaken by the next) never shows a line twice; at most LOG_KEEP.
+ */
+export function appendLog(lines: readonly DeployLogLine[], page: DeployLogPage): DeployLogLine[] {
+  const newest = lines.length ? lines[lines.length - 1]!.seq : 0;
+  const fresh = page.lines.filter((line) => line.seq > newest);
+  if (!fresh.length) return lines as DeployLogLine[];
+  const next = [...lines, ...fresh];
+  return next.length > LOG_KEEP ? next.slice(next.length - LOG_KEEP) : next;
+}
+
+/** A version an engineer typed: empty (keep the one in package.json) or plain semver. */
+export function versionProblem(value: string): string | null {
+  const text = value.trim();
+  if (!text) return null;
+  return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(text)
+    ? null
+    : S.activities.deploy.moduleVersionInvalid;
 }

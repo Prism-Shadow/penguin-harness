@@ -13,9 +13,9 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../http/errors.js";
-import type { Config } from "../hmr/capabilities.js";
+import type { Config, Db } from "../hmr/capabilities.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import { writeSecretFile } from "../secret-file.js";
@@ -47,13 +47,25 @@ import {
   type DeploySecrets,
   type DeploySettings,
 } from "./deploy-settings.js";
-import type {
-  DeployConnectionTest,
-  DeployContext,
-  DeployRepo,
-  DeploySettingsView,
-  DeployTarget,
+import {
+  DEPLOY_RELEASE_STAGES,
+  type DeployBlocker,
+  type DeployConnectionTest,
+  type DeployContext,
+  type DeployLogResponse,
+  type DeployRepo,
+  type DeployRun,
+  type DeploySettingsView,
+  type DeployStage,
+  type DeployStageSelection,
+  type DeployStageStatus,
+  type DeployStateResponse,
+  type DeployTarget,
 } from "./deploy-types.js";
+import { createDeployJenkins, type JenkinsFetch } from "./deploy-jenkins.js";
+import { spawnDeployProcess, type DeployProcess } from "./deploy-process.js";
+import { realClock, stageBlocker, stagesFor, type DeployClock } from "./deploy-stages.js";
+import { DeployRunner, dbDeployStore, type DeployRunStore } from "./deploy-run.js";
 
 /** How long a clone may take: a large module or activity-data history on a slow link. */
 export const CLONE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -77,6 +89,13 @@ export abstract class DeployPorts extends Interface<{
   runGit?: (args: string[], cwd: string, opts?: DeployGitOptions) => Promise<DeployGitResult>;
   /** Makes one GET to Jenkins and returns its HTTP status; throws when nothing answered. */
   getJenkins?: (request: JenkinsRequest) => Promise<{ status: number }>;
+  /** Every request a deploy makes to Jenkins (start a job, follow its build). */
+  jenkinsFetch?: JenkinsFetch;
+  /** Runs npm and npx in the module clone. Never throws. */
+  runProcess?: DeployProcess["run"];
+  /** The deploy's clock, so a test waits no real time. */
+  now?: DeployClock["now"];
+  sleep?: DeployClock["sleep"];
 }>() {}
 
 @Component()
@@ -109,6 +128,29 @@ export abstract class ActivityDeploys extends Interface<{
   ): Promise<DeployContext>;
   /** Makes whichever of the three clones are missing; a no-op for clones already right. */
   prepareClones(projectId: string, activityId: string): Promise<DeployContext>;
+  /** The readiness, the latest run, and each stage's state with why it cannot run now. */
+  state(projectId: string, activityId: string): Promise<DeployStateResponse>;
+  /**
+   * Starts the release or one stage. Only the canonical ref, only when the deploy is ready
+   * (409 `deploy_blocked` naming the blocker), one at a time on this server (409
+   * `deploy_running`).
+   */
+  start(
+    projectId: string,
+    activityId: string,
+    input: { target: DeployTarget; stage: DeployStageSelection; moduleVersion?: string },
+  ): Promise<DeployRun>;
+  /** The activity's latest run, or null when it has had none. */
+  latest(projectId: string, activityId: string): Promise<DeployRun | null>;
+  /** The run's log lines after the cursor, with the run as it stands. */
+  log(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    after: number,
+  ): Promise<DeployLogResponse>;
+  /** Stops the activity's running deploy; the latest run, or null when it has had none. */
+  stop(projectId: string, activityId: string): Promise<DeployRun | null>;
 }>() {}
 
 @Component()
@@ -118,9 +160,30 @@ export class ActivityDeployService implements ActivityDeploys {
   @Use() private readonly activities!: ActivityAuthoring;
   @Use() private readonly generation!: ActivityGeneration;
   @Use() private readonly ports!: DeployPorts;
+  @Use() private readonly db!: Db;
 
   /** One Prepare clones at a time: the activity-data and media clones are shared. */
   private preparing = false;
+  private store: DeployRunStore | null = null;
+  private runner: DeployRunner | null = null;
+
+  setup({ effect }: ClassCtx) {
+    const store = dbDeployStore(this.db);
+    // A run the last process left running is marked interrupted here.
+    const runner = new DeployRunner({
+      store,
+      logDir: path.join(this.config.root, "activity-deploy", "logs"),
+    });
+    this.store = store;
+    this.runner = runner;
+    effect(() => runner.dispose());
+  }
+
+  private active(): { store: DeployRunStore; runner: DeployRunner } {
+    if (!this.store || !this.runner)
+      throw new HttpError(503, "deploy_unavailable", "Deploys are not ready yet.");
+    return { store: this.store, runner: this.runner };
+  }
 
   private git(): DeployGit {
     const run = this.ports.runGit;
@@ -368,6 +431,137 @@ export class ActivityDeployService implements ActivityDeploys {
     }
   }
 
+  private statuses(activityId: string): Partial<Record<DeployStage, DeployStageStatus>> {
+    const stored = this.active().store.stages(activityId);
+    const out: Partial<Record<DeployStage, DeployStageStatus>> = {};
+    for (const stage of DEPLOY_RELEASE_STAGES)
+      if (stored[stage]) out[stage] = stored[stage]!.status;
+    return out;
+  }
+
+  async state(projectId: string, activityId: string): Promise<DeployStateResponse> {
+    const { store, runner } = this.active();
+    const context = await this.context(projectId, activityId);
+    const stored = store.stages(activityId);
+    const statuses = this.statuses(activityId);
+    const running = runner.current() !== null;
+    return {
+      context,
+      run: runner.latest(projectId, activityId),
+      stages: DEPLOY_RELEASE_STAGES.map((stage) => ({
+        stage,
+        status: stored[stage]?.status ?? "pending",
+        finishedAt: stored[stage]?.finishedAt ?? null,
+        metadata: stored[stage]?.metadata ?? {},
+        blocker: stageBlocker(stage, context, statuses, running),
+      })),
+    };
+  }
+
+  async start(
+    projectId: string,
+    activityId: string,
+    input: { target: DeployTarget; stage: DeployStageSelection; moduleVersion?: string },
+  ): Promise<DeployRun> {
+    const { runner } = this.active();
+    if (input.target !== "qa")
+      throw new HttpError(400, "invalid_request", "Only a QA release can be started.");
+    if (runner.current())
+      throw new HttpError(409, "deploy_running", "A deploy is already running on this server.");
+    const facts = await this.facts(projectId, activityId);
+    if (!facts.product)
+      throw new HttpError(409, "deploy_no_module", "This activity belongs to no product.");
+    if (!facts.canonical)
+      throw new HttpError(
+        409,
+        "deploy_not_canonical",
+        "Only the product's canonical ref deploys its module.",
+      );
+    const context = await this.context(projectId, activityId);
+    const first = stagesFor(input.stage)[0]!;
+    const blocker = stageBlocker(
+      first,
+      context,
+      this.statuses(activityId),
+      runner.current() !== null,
+    );
+    if (blocker?.code === "run_active")
+      throw new HttpError(409, "deploy_running", "A deploy is already running on this server.");
+    if (blocker)
+      throw new HttpError(
+        409,
+        "deploy_blocked",
+        `The ${first} stage cannot run now (${blocker.code}).`,
+        undefined,
+        blockerDetail(first, blocker),
+      );
+    const settings = this.stored();
+    const secrets = this.secrets();
+    const home = this.config.root;
+    const folder = facts.product.moduleFolder;
+    const moduleRun = await this.generation
+      .latestRun(projectId, activityId, "module", "succeeded")
+      .catch(() => null);
+    const source = moduleRun
+      ? sandboxModuleRoot(path.join(home, "activity-runs", moduleRun.runId))
+      : null;
+    const sourceReady = source !== null && (await exists(path.join(source, "package.json")));
+    const run = this.ports.runProcess;
+    // The runner checks again: another start may have begun while this one read the clones.
+    return runner.start({
+      projectId,
+      activityId,
+      target: input.target,
+      selection: input.stage,
+      base: {
+        git: this.git(),
+        jenkins: createDeployJenkins(
+          {
+            url: settings.qa.jenkinsUrl,
+            username: settings.qa.username,
+            token: secrets.qaToken ?? "",
+          },
+          this.ports.jenkinsFetch,
+        ),
+        process: run ? { run } : spawnDeployProcess,
+        clock: {
+          now: this.ports.now ?? realClock.now,
+          sleep: this.ports.sleep ?? realClock.sleep,
+        },
+        settings,
+        productCode: facts.activity.productCode,
+        module: {
+          folder,
+          dir: deployClonePaths(home, folder).module,
+          source: sourceReady ? source : null,
+        },
+        moduleVersion: input.moduleVersion ?? null,
+      },
+    });
+  }
+
+  async latest(projectId: string, activityId: string): Promise<DeployRun | null> {
+    await this.activities.getActivity(projectId, activityId);
+    return this.active().runner.latest(projectId, activityId);
+  }
+
+  async log(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    after: number,
+  ): Promise<DeployLogResponse> {
+    await this.activities.getActivity(projectId, activityId);
+    const page = this.active().runner.log(projectId, activityId, runId, after);
+    if (!page) throw new HttpError(404, "deploy_run_not_found", "No such deploy run.");
+    return page;
+  }
+
+  async stop(projectId: string, activityId: string): Promise<DeployRun | null> {
+    await this.activities.getActivity(projectId, activityId);
+    return this.active().runner.stop(projectId, activityId);
+  }
+
   /** A path that already exists must be the expected clone; anything else is left alone. */
   private async checkExisting(
     git: DeployGit,
@@ -410,6 +604,18 @@ function cloneFailed(repo: DeployRepo, result: DeployGitResult): HttpError {
     reason: timedOut ? "timed_out" : "git_failed",
     output,
   });
+}
+
+/** A blocker as the refusal's detail: its code and the facts it names. */
+function blockerDetail(stage: DeployStage, blocker: DeployBlocker): Record<string, string> {
+  const detail: Record<string, string> = { stage, blocker: blocker.code };
+  if (blocker.code === "previous_stage" || blocker.code === "previous_rerun")
+    detail.previous = blocker.stage;
+  if (blocker.code === "settings_missing") detail.field = blocker.field;
+  if (blocker.code === "clone_missing" || blocker.code === "clone_dirty")
+    detail.repo = blocker.repo;
+  if (blocker.code === "not_ready") detail.problem = blocker.problem.code;
+  return detail;
 }
 
 async function exists(file: string): Promise<boolean> {

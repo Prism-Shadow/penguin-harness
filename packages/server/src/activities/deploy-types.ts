@@ -187,3 +187,148 @@ export interface DeployContext {
 export interface DeployContextResponse {
   context: DeployContext;
 }
+
+/**
+ * The stages of a module release, in the order each needs the one before: build and check the
+ * module in its clone, make the deploy branch's commit, push it and ask Jenkins to build it,
+ * and wait for the release tag that build makes.
+ */
+export const DEPLOY_RELEASE_STAGES = [
+  "verify_module",
+  "prepare_deploy",
+  "trigger_module_build",
+  "await_module_build",
+] as const;
+
+export type DeployStage = (typeof DEPLOY_RELEASE_STAGES)[number];
+
+/** What a run was asked to do: the whole release, or one stage on its own. */
+export type DeployStageSelection = "release" | DeployStage;
+
+export type DeployStageStatus = "pending" | "running" | "done" | "failed" | "cancelled";
+
+export type DeployRunStatus = "running" | "succeeded" | "failed" | "cancelled" | "interrupted";
+
+/**
+ * Why a stage ended badly, as facts the App words. `output` is the end of the program's own
+ * output (npm's, git's), never the server's words.
+ */
+export type DeployStageError =
+  /** A program exited with a failure: its command line, its exit code (null when it did not exit). */
+  | { code: "command_failed"; command: string; exitCode: number | null; output: string }
+  /** A program ran past its time limit and was stopped. */
+  | { code: "command_timed_out"; command: string }
+  /** A program is not on this server. */
+  | { code: "command_missing"; command: string }
+  /** Jenkins refused or did not answer; `status` is its HTTP status, 0 when nothing answered. */
+  | { code: "jenkins_failed"; status: number }
+  /** The Jenkins build ended without success; `result` is Jenkins's word for it. */
+  | { code: "build_failed"; result: string; url: string | null }
+  /** The build finished and no newer release tag appeared. */
+  | { code: "no_newer_tag"; before: string | null; after: string | null }
+  /** Waited the configured minutes and the build had made no new tag. */
+  | { code: "build_timed_out"; minutes: number }
+  /** A stage run on its own needs what an earlier stage records, and it is not there. */
+  | { code: "missing_input"; stage: DeployStage }
+  /** The server stopped while the stage ran. */
+  | { code: "interrupted" }
+  /** Something the stage did not expect; the log says what. */
+  | { code: "unexpected" };
+
+/** What a run found out, gathered from its stages. */
+export interface DeployRunMetadata {
+  /** The version prepare_deploy wrote into package.json. */
+  moduleVersion?: string;
+  /** The commit prepare_deploy made on the deploy branch; absent when nothing had changed. */
+  commit?: string;
+  /** The newest plain semver tag before the build; null when the module had none. */
+  preBuildTag?: string | null;
+  /** The newest Jenkins build for this module before the trigger; null when there was none. */
+  preBuildNumber?: number | null;
+  /** The Jenkins build's page, once Jenkins has one. */
+  moduleBuildUrl?: string;
+  /** The release tag the build made. */
+  resolvedModuleVersion?: string;
+}
+
+export interface DeployRunStage {
+  stage: DeployStage;
+  status: DeployStageStatus;
+  error: DeployStageError | null;
+}
+
+export interface DeployRun {
+  runId: string;
+  activityId: string;
+  target: DeployTarget;
+  selection: DeployStageSelection;
+  status: DeployRunStatus;
+  stages: DeployRunStage[];
+  metadata: DeployRunMetadata;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+/** Why a stage cannot be run now. */
+export type DeployBlocker =
+  /** The stage before it has not finished since it was last run. */
+  | { code: "previous_stage"; stage: DeployStage }
+  /**
+   * The stage has run since the stage before it last did, and works on what that stage leaves
+   * behind: the stage before it has to run again first.
+   */
+  | { code: "previous_rerun"; stage: DeployStage }
+  /** A deploy is running on this server; one runs at a time. */
+  | { code: "run_active" }
+  | { code: "settings_missing"; field: string }
+  | { code: "clone_missing"; repo: DeployRepo }
+  | { code: "clone_dirty"; repo: DeployRepo }
+  /** Another readiness problem stands in the way. */
+  | { code: "not_ready"; problem: DeployProblem };
+
+/** A stage as it stands for an activity, across runs: survives a restart. */
+export interface DeployStageState {
+  stage: DeployStage;
+  status: DeployStageStatus;
+  finishedAt: string | null;
+  metadata: DeployRunMetadata;
+  /** Null when the stage may be run now. */
+  blocker: DeployBlocker | null;
+}
+
+export interface DeployStateResponse {
+  context: DeployContext;
+  /** The activity's latest run; null when it has had none. */
+  run: DeployRun | null;
+  stages: DeployStageState[];
+}
+
+/** A start: the whole release or one stage, and optionally the version to release as. */
+export interface DeployStartRequest {
+  stage: DeployStageSelection;
+  moduleVersion?: string;
+}
+
+export interface DeployRunResponse {
+  run: DeployRun;
+}
+
+export interface DeployLogLine {
+  /** Increases by one per line within a run, from 1. */
+  seq: number;
+  at: string;
+  text: string;
+}
+
+/** The log lines after a cursor; `done` once the run has ended and every line was sent. */
+export interface DeployLogPage {
+  lines: DeployLogLine[];
+  /** The cursor for the next page: the last line's seq, or the cursor asked with. */
+  next: number;
+  done: boolean;
+}
+
+export interface DeployLogResponse {
+  log: DeployLogPage;
+  run: DeployRun;
+}
