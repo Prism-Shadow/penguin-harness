@@ -638,6 +638,8 @@ export interface Messages {
     proposalShowDesc: string;
     proposalCreateDesc: string;
     proposalPublishDesc: string;
+    /** `proposal brief <n>`: rewrite the brief in place (the author or a person). */
+    proposalBriefDesc: string;
     proposalReadyDesc: string;
     proposalApproveDesc: string;
     proposalMergedDesc: string;
@@ -657,6 +659,10 @@ export interface Messages {
     proposalTitle: string;
     /** publish's --file: the whole proposal as one Markdown document. */
     proposalFile: string;
+    /** brief's -m / --file: the new brief, inline or from a file; exactly one of them. */
+    proposalBriefText: string;
+    proposalBriefFile: string;
+    proposalBriefOneSource: string;
     /** implement's --agent: the employee that builds it. */
     proposalImplementer: string;
     proposalMessage: string;
@@ -680,6 +686,7 @@ export interface Messages {
     /** Confirmations of the proposal writes. */
     proposalCreated(number: number, title: string): string;
     proposalPublished(number: number, revision: number): string;
+    proposalBriefRewritten(number: number): string;
     proposalStatusSet(number: number, status: string): string;
     proposalImplementing(number: number, implementer: string, sessionId: string): string;
     proposalMaterialAdded(number: number, kind: string): string;
@@ -1852,6 +1859,8 @@ const en: Messages = {
       "Start a proposal: an employee writes it (told on its desk), or write it yourself as an employee",
     proposalPublishDesc:
       "Publish a revision from a Markdown file (frontmatter title and scope, then the sections)",
+    proposalBriefDesc:
+      "Rewrite a proposal's brief (the author or a person); the revisions, comments and approval stay",
     proposalReadyDesc: "Mark a proposal ready for reading (the author or a person)",
     proposalApproveDesc: "Approve a proposal and request its merge (a person)",
     proposalMergedDesc: "Report the implementation merged (the implementer or a person)",
@@ -1873,6 +1882,9 @@ const en: Messages = {
     proposalBrief_: "The delegation, in one sentence",
     proposalTitle: "A working title (the published document's own title replaces it)",
     proposalFile: "The proposal as one Markdown document",
+    proposalBriefText: "The new brief",
+    proposalBriefFile: "Read the new brief from a local file",
+    proposalBriefOneSource: "Give exactly one of -m <text> or --file <file>.",
     proposalImplementer: "The employee that builds it (its Agent id); default: the author itself",
     proposalMessage: "A note appended to the proposal text the session opens with",
     proposalWorkspace:
@@ -1895,6 +1907,7 @@ const en: Messages = {
     proposalCommentsEmpty: (number) => `No comments on proposal #${number}.`,
     proposalCreated: (number, title) => `Created proposal #${number}: ${title}`,
     proposalPublished: (number, revision) => `Published proposal #${number}, revision ${revision}.`,
+    proposalBriefRewritten: (number) => `Rewrote the brief of proposal #${number}.`,
     proposalStatusSet: (number, status) => `Proposal #${number} is now ${status}.`,
     proposalImplementing: (number, implementer, sessionId) =>
       `Proposal #${number}: ${implementer} is implementing it in session ${sessionId}.`,
@@ -3040,6 +3053,7 @@ const zh: Messages = {
     proposalCreateDesc: "发起一份提案：交给某位员工写（直接送到它的工位），或作为员工自己写",
     proposalPublishDesc:
       "从 Markdown 文件发布一次修订（frontmatter 的 title 与 scope，然后是各节）",
+    proposalBriefDesc: "改写提案的简介（作者或人）；修订、评论与认可都不动",
     proposalReadyDesc: "标记提案可以读了（作者或人）",
     proposalApproveDesc: "认可提案并请求合并（人）",
     proposalMergedDesc: "报告实施已合并（实施者或人）",
@@ -3055,6 +3069,9 @@ const zh: Messages = {
     proposalBrief_: "一句话的委托",
     proposalTitle: "暂定标题（发布的文档自带的标题会替换它）",
     proposalFile: "整份提案，一个 Markdown 文件",
+    proposalBriefText: "新的简介",
+    proposalBriefFile: "从本地文件读取新的简介",
+    proposalBriefOneSource: "-m <text> 与 --file <file> 只能给一个。",
     proposalImplementer: "实施它的员工（其 Agent id）；缺省为作者自己",
     proposalMessage: "附在会话开头的提案文本之后的一句附言",
     proposalWorkspace: "共享工作区内的另一个目录（缺省：该员工工位的工作区）",
@@ -3074,6 +3091,7 @@ const zh: Messages = {
     proposalCommentsEmpty: (number) => `提案 #${number} 没有评论。`,
     proposalCreated: (number, title) => `已创建提案 #${number}：${title}`,
     proposalPublished: (number, revision) => `已发布提案 #${number} 的第 ${revision} 次修订。`,
+    proposalBriefRewritten: (number) => `已改写提案 #${number} 的简介。`,
     proposalStatusSet: (number, status) => `提案 #${number} 现在是 ${status}。`,
     proposalImplementing: (number, implementer, sessionId) =>
       `提案 #${number}：${implementer} 正在会话 ${sessionId} 中实施。`,

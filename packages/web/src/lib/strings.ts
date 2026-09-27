@@ -6427,6 +6427,7 @@ Benchmark：
         approved: "认可并请求合并",
         merged: "报告已合并",
         rejected: "拒绝了提案",
+        brief_edited: "改写了简介",
       },
       /** The capsule a `proposal:<n>` reference renders as: number, title, and the unread count when there is one. */
       capsule: (n: number, title: string): string => `#${n} ${title}`,

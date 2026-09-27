@@ -75,6 +75,7 @@ Every ticket change woke the desk, a dozen times a day for one employee, each ru
 penguin org proposal show <n>                                  # the brief, the current text, comments, events
 penguin org proposal publish <n> --file proposal.md            # a revision; a comment follows its passage into the new text
 penguin org proposal create --brief "…" [--author <colleague>]  # a proposal of your own (or handed to a colleague)
+penguin org proposal brief <n> -m "…"                          # rewrite the brief when it no longer says what is proposed; the text stays
 penguin org proposal implement <n> [--agent <colleague>] -m "…"  # the implementation session — yours, or a colleague's; prints its id
 penguin org proposal ready <n>                                 # tell the person it can be read
 penguin org proposal comments <n> --pending                    # the text with each commented passage marked ⟦<id>⟧…⟦/<id>⟧, then the comments by id

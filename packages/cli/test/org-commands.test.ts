@@ -1474,6 +1474,45 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(err()).toContain(t.org.proposalStatusInvalid("open"));
   });
 
+  it("brief rewrites the brief from -m or --file with the caller's identity; show prints the new one", async () => {
+    server.addProposal("acme", { number: 7, brief: "Write a proposal for the open PR #812" });
+    expect(await cli(["org", "proposal", "brief", "7", "-m", "Batch the ticket notices"])).toBe(0);
+    expect(lastRequest("PUT", "/proposals/7/brief")?.body).toEqual({
+      brief: "Batch the ticket notices",
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(out()).toBe(`${t.org.proposalBriefRewritten(7)}\n`);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-org-test-"));
+    const file = path.join(dir, "brief.md");
+    fs.writeFileSync(file, "Batch the notices,\nonce per sweep.\n");
+    try {
+      stdout.length = 0;
+      expect(await cli(["org", "proposal", "brief", "7", "--file", file])).toBe(0);
+      expect(lastRequest("PUT", "/proposals/7/brief")?.body).toMatchObject({
+        brief: "Batch the notices,\nonce per sweep.\n",
+      });
+      expect(await cli(["org", "proposal", "brief", "7", "--file", path.join(dir, "no.md")])).toBe(
+        1,
+      );
+      expect(err()).toContain(t.org.bodyFileUnreadable(path.join(dir, "no.md")));
+      // Exactly one source: neither, or both, is refused before any request.
+      const before = server.requests.length;
+      expect(await cli(["org", "proposal", "brief", "7"])).toBe(1);
+      expect(await cli(["org", "proposal", "brief", "7", "-m", "x", "--file", file])).toBe(1);
+      expect(err()).toContain(t.org.proposalBriefOneSource);
+      expect(server.requests.length).toBe(before);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "show", "7"])).toBe(0);
+    expect(out()).toContain(t.org.proposalBrief("Batch the notices,\nonce per sweep."));
+    expect(out()).toContain("brief_edited: Batch the notices,");
+  });
+
   it("publish sends the file as one Markdown document; show prints the sections back", async () => {
     server.addProposal("acme", { number: 3, title: "Old title" });
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-org-test-"));

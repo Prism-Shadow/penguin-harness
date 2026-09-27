@@ -6794,7 +6794,9 @@ export type ProposalEventKind =
   | "merged"
   | "rejected"
   /** A channel message the plugin had to send did not go out (the text says to whom, and why). */
-  | "notify_failed";
+  | "notify_failed"
+  /** The brief was rewritten (the text is the new brief); the revisions are untouched. */
+  | "brief_edited";
 
 /** One thing that happened to a proposal; `seq` orders the whole ledger and is what a read position points at. */
 export interface ProposalEvent {
@@ -6831,7 +6833,7 @@ export interface ProposalItem {
 }
 
 export interface ProposalDetail extends ProposalItem {
-  /** The delegation, as the person wrote it. */
+  /** The delegation, as the person wrote it — or as the author or a person last rewrote it (`penguin org proposal brief`). */
   brief: string;
   /** The repository's directory relative to the organization's shared workspace ("" = the workspace itself); scope paths are relative to it. */
   root: string;

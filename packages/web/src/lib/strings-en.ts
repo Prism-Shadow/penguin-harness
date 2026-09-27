@@ -6245,6 +6245,7 @@ Scenarios:
         approved: "approved it and requested the merge",
         merged: "reported it merged",
         rejected: "rejected the proposal",
+        brief_edited: "rewrote the brief",
       },
       /** The capsule a `proposal:<n>` reference renders as: number, title, and the unread count when there is one. */
       capsule: (n: number, title: string): string => `#${n} ${title}`,

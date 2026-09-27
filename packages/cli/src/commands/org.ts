@@ -28,7 +28,8 @@
  *   penguin org handbook list | show [path] | write <path> (-m <text> | --file <f>) | rm <path>
  *   penguin org finance [--period <yyyy-mm>]
  *   penguin org proposal ls [--status <s>] | show <n> | create [--author <agent_id>] --brief <s> [--title <s>]
- *                    | publish <n> --file <md> | ready <n> | implement <n> [--agent <agent_id>] [-m] [--workspace]
+ *                    | publish <n> --file <md> | brief <n> (-m <text> | --file <f>) | ready <n>
+ *                    | implement <n> [--agent <agent_id>] [-m] [--workspace]
  *                    | material <n> add <kind>=<url> [--label <s>] | feedback <n> -m <text> [--runtime]
  *                    | comments <n> [--pending] | resolve <n> <comment_id> [-m <text>] | merged <n>
  *                    | approve <n> | reject <n> --reason <s> | groups
@@ -2023,6 +2024,43 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (opts.json === true) printJson(detail);
     else {
       printLine(t.org.proposalPublished(detail.number, detail.revision));
+      for (const hint of detail.hints ?? []) printLine(t.org.proposalHint(hint));
+    }
+  });
+
+  scoped(
+    proposal
+      .command("brief <number>")
+      .description(t.org.proposalBriefDesc)
+      .option("-m, --message <text>", t.org.proposalBriefText)
+      .option("--file <file>", t.org.proposalBriefFile),
+    t,
+  ).action(async (raw: string, opts) => {
+    const number = parseProposalNumber(raw, t);
+    if (number === null) return;
+    if ((opts.message === undefined) === (opts.file === undefined)) {
+      fail(t, t.org.proposalBriefOneSource);
+      return;
+    }
+    let brief: string;
+    if (opts.file !== undefined) {
+      try {
+        brief = fs.readFileSync(String(opts.file), "utf8");
+      } catch {
+        fail(t, t.org.bodyFileUnreadable(String(opts.file)));
+        return;
+      }
+    } else brief = String(opts.message);
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const detail = await proposalRequest<ProposalDetail>(scope, t, "PUT", `/${number}/brief`, {
+      brief,
+      ...actorFields(),
+    });
+    if (detail === null) return;
+    if (opts.json === true) printJson(detail);
+    else {
+      printLine(t.org.proposalBriefRewritten(detail.number));
       for (const hint of detail.hints ?? []) printLine(t.org.proposalHint(hint));
     }
   });

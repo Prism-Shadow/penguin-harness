@@ -601,6 +601,51 @@ export class ProposalService {
     );
   }
 
+  /**
+   * The brief rewritten in place, by the author or a person: what the queue shows when the
+   * one it was started with no longer says what is proposed. Only the brief moves — the
+   * revisions, the comments, the events and any approval stand — so it is allowed in every
+   * status. The author's desk is told only while it is still writing (drafting), and never
+   * of its own rewrite.
+   */
+  async editBrief(
+    projectId: string,
+    orgId: string,
+    number: number,
+    text: string,
+    actor: OrgActor,
+  ): Promise<ProposalDetail> {
+    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(ledger);
+    const p = this.requireProposal(ledger, number);
+    this.requireAuthorOrPerson(p, caller, "rewrite the brief");
+    const brief = text.trim();
+    if (brief === "") throw badRequest("brief must not be empty.");
+    if (brief === p.brief) {
+      throw new ProposalError(
+        409,
+        "brief_unchanged",
+        `Proposal #${number} already has this brief.`,
+      );
+    }
+    const line = await ledger.append({ kind: "brief", number, brief, by: caller.principal });
+    this.notify(org, number, line.seq, "brief_edited");
+    if (p.status === "drafting") {
+      await this.tell(
+        delivery,
+        org,
+        p,
+        caller,
+        [p.author],
+        `${whoOf(caller)} rewrote the brief: ${brief}\n\nRead it with \`penguin org proposal show ${number}\` before the next revision.`,
+      );
+    }
+    return this.answer(
+      delivery,
+      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+    );
+  }
+
   async publish(
     projectId: string,
     orgId: string,

@@ -363,13 +363,20 @@ describe("eventLine", () => {
     expect(eventLine(ev({ kind: "changes_requested", text: "3" }), names)).toBe(
       "requested changes (3 comments)",
     );
+    expect(eventLine(ev({ kind: "brief_edited", text: "Batch the notices" }), names)).toBe(
+      "rewrote the brief",
+    );
     setActiveStrings(zh);
     expect(eventLine(ev({ kind: "approved" }), names)).toBe("认可并请求合并");
+    expect(eventLine(ev({ kind: "brief_edited" }), names)).toBe("改写了简介");
   });
 
-  it("keeps prose under the line only for feedback, resolutions and rejections", () => {
+  it("keeps prose under the line only for feedback, resolutions, rejections and a rewritten brief", () => {
     expect(eventDetail(ev({ kind: "feedback", text: "scope grew" }))).toBe("scope grew");
     expect(eventDetail(ev({ kind: "rejected", text: "not now" }))).toBe("not now");
+    expect(eventDetail(ev({ kind: "brief_edited", text: "Batch the notices" }))).toBe(
+      "Batch the notices",
+    );
     expect(eventDetail(ev({ kind: "material_added", text: "PR #5" }))).toBeNull();
     expect(eventDetail(ev({ kind: "feedback" }))).toBeNull();
   });

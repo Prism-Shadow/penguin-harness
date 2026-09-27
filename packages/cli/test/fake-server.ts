@@ -1380,6 +1380,11 @@ export class FakeServer {
         return this.json(bump("revised", { revision }));
       }
     }
+    if (method === "PUT" && c === "brief" && d === undefined) {
+      if (!isNonEmptyString(body?.brief)) return this.badRequest("brief is required.");
+      proposal.brief = body.brief.trim();
+      return this.json(bump("brief_edited", { text: proposal.brief }));
+    }
     if (method === "GET" && c === "comments" && d === undefined) {
       // The comments the caller may see, with the text marked the way the plugin marks it
       // for an agent: `⟦<id>⟧…⟦/<id>⟧` around each passage, then the comments by id.

@@ -11,6 +11,7 @@
  *   GET    /:number/revisions/:rev   one revision as published (title, scope, sections)
  *   GET    /:number/file?path=       one file under the proposal's base, read-only (the page's file panel)
  *   PUT    /:number                  publish a revision: { markdown }
+ *   PUT    /:number/brief            rewrite the brief: { brief } (the author or a person; the revisions stay)
  *   POST   /:number/ready | approve | reject { reason } | merged
  *   POST   /:number/implement        { agentId?, message?, workspace? } → an implementation session (default: the author's own)
  *   POST   /:number/materials        { kind, url, label? }
@@ -191,6 +192,19 @@ export function proposalRoutes(service: ProposalService): Hono {
         param(c, "orgId"),
         numberParam(c),
         requireString(body, "markdown", 200_000),
+        actorOf(c, body),
+      ),
+    );
+  });
+
+  app.put("/:number/brief", async (c) => {
+    const body = await jsonBody(c);
+    return c.json(
+      await service.editBrief(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        requireString(body, "brief"),
         actorOf(c, body),
       ),
     );

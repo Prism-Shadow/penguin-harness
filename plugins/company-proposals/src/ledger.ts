@@ -120,6 +120,12 @@ export type LedgerEntry =
       revision?: number;
     }
   | { kind: "resolved"; number: number; commentId: string; text: string; by: string }
+  /**
+   * The brief rewritten — by the author or a person — for a proposal whose brief no longer
+   * says what it proposes (a delegation's instructions, say). The revisions, the comments and
+   * the approval are untouched: the brief is what the queue shows, not the text approved.
+   */
+  | { kind: "brief"; number: number; brief: string; by: string }
   /** A desk delivery the plugin had to make did not go through: to whom, and why. */
   | { kind: "notify_failed"; number: number; reason: string; target: string[]; by: string };
 
@@ -303,6 +309,10 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       event("resolved", line.by, { text: line.text });
       return;
     }
+    case "brief":
+      p.brief = line.brief;
+      event("brief_edited", line.by, { text: line.brief });
+      return;
     case "notify_failed":
       event("notify_failed", line.by, { text: line.reason });
       return;

@@ -201,6 +201,8 @@ export function eventLine(ev: ProposalEvent, names: ReadonlyMap<string, string>)
       return t.rejected;
     case "notify_failed":
       return t.notify_failed;
+    case "brief_edited":
+      return t.brief_edited;
     default:
       return ev.kind;
   }
@@ -213,7 +215,8 @@ export function eventDetail(ev: ProposalEvent): string | null {
     ev.kind === "runtime_feedback" ||
     ev.kind === "rejected" ||
     ev.kind === "resolved" ||
-    ev.kind === "notify_failed"
+    ev.kind === "notify_failed" ||
+    ev.kind === "brief_edited"
     ? ev.text
     : null;
 }

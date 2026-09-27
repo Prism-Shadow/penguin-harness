@@ -117,6 +117,53 @@ describe("foldLedger", () => {
     expect(state.lastSeq).toBe(7);
   });
 
+  it("a brief line rewrites the brief and records an event with the new one; the revision, the title and the approval stand", () => {
+    const state = foldLedger(
+      lines(
+        {
+          kind: "created",
+          number: 1,
+          title: "T",
+          author: "dev",
+          delegatedBy: "user:boss",
+          brief: "Write a proposal for the open PR #812",
+        },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 1,
+          title: "Batch the notices",
+          scope: [{ kind: "edit", file: "a.ts" }],
+          sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: "x" }] }],
+          by: "agent:dev",
+        },
+        { kind: "status", number: 1, status: "approved", by: "user:boss", revision: 1 },
+        { kind: "brief", number: 1, brief: "Batch the ticket notices", by: "user:boss" },
+        // A brief line about a proposal never created is skipped like any other.
+        { kind: "brief", number: 9, brief: "nobody", by: "user:boss" },
+      ),
+    );
+    const p = state.proposals.get(1)!;
+    expect(p).toMatchObject({
+      brief: "Batch the ticket notices",
+      title: "Batch the notices",
+      revision: 1,
+      status: "approved",
+      approvedRevision: 1,
+      seq: 4,
+    });
+    expect(p.revisions.size).toBe(1);
+    expect(p.events.at(-1)).toEqual({
+      seq: 4,
+      at,
+      kind: "brief_edited",
+      by: "user:boss",
+      text: "Batch the ticket notices",
+    });
+    expect(state.proposals.has(9)).toBe(false);
+    expect(state.lastSeq).toBe(5);
+  });
+
   it("an approval covers one revision: it records the revision, a later revision puts the proposal back to ready, and a line written before the field reads as the revision current then", () => {
     const section = (text: string) => [
       { id: "s1", heading: "Change", paragraphs: [{ id: "p1", text }] },

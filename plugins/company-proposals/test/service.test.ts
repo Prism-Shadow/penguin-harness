@@ -13,6 +13,7 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Hono } from "hono";
 import type { OrgActor, OrgGateway, OrgView } from "@prismshadow/penguin-server/plugin";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import plugin, {
@@ -26,6 +27,7 @@ import plugin, {
   DEFAULT_TEST_GROUPS,
   TEST_GROUP_LINE,
   ledgerPath,
+  proposalRoutes,
   slugOf,
   testGroupsOf,
 } from "../src/index.js";
@@ -1261,6 +1263,104 @@ describe("ProposalService", () => {
     expect(replayed.comments.map((x) => [x.id, x.text, x.batchId !== null])).toEqual([
       [sent.id, "sent words", true],
     ]);
+  });
+
+  it("the brief is rewritten in place by the author or a person: revisions, comments and approval stand, the author is told only while drafting", async () => {
+    const n = await delegated();
+    gateway.desks.length = 0;
+    // A person rewrites a drafting proposal's brief: the author is told, the event carries the new brief.
+    let detail = await service.editBrief(PROJECT, ORG, n, "  Batch the ticket notices  ", BOSS);
+    expect(detail.brief).toBe("Batch the ticket notices");
+    expect(detail.events.at(-1)).toMatchObject({
+      kind: "brief_edited",
+      by: "user:boss",
+      text: "Batch the ticket notices",
+    });
+    expect(gateway.desks).toEqual([
+      {
+        agentId: "acme_dev",
+        text: `[proposal #${n}] boss rewrote the brief: Batch the ticket notices\n\nRead it with \`penguin org proposal show ${n}\` before the next revision.`,
+      },
+    ]);
+    expect(gateway.events.at(-1)).toMatchObject({
+      type: "plugin",
+      data: { number: n, kind: "brief_edited", seq: detail.seq },
+    });
+    // The author rewrites its own: not told of its own act.
+    detail = await service.editBrief(PROJECT, ORG, n, "Batch the notices, once per sweep", author);
+    expect(detail.events.at(-1)).toMatchObject({ kind: "brief_edited", by: "agent:acme_dev" });
+    expect(gateway.desks).toHaveLength(1);
+    // Nobody else, no empty brief, no rewrite to the same words, no proposal that is not there.
+    expect(await refused(() => service.editBrief(PROJECT, ORG, n, "Mine now", qa))).toEqual({
+      status: 403,
+      code: "not_author",
+    });
+    expect(await refused(() => service.editBrief(PROJECT, ORG, n, "  ", BOSS))).toEqual({
+      status: 400,
+      code: "bad_request",
+    });
+    expect(
+      await refused(() =>
+        service.editBrief(PROJECT, ORG, n, " Batch the notices, once per sweep ", BOSS),
+      ),
+    ).toEqual({ status: 409, code: "brief_unchanged" });
+    expect(await refused(() => service.editBrief(PROJECT, ORG, 99, "x", BOSS))).toEqual({
+      status: 404,
+      code: "proposal_not_found",
+    });
+    // Past drafting it is still allowed — the brief is what the queue shows, not what was
+    // approved — and the author's desk is left alone.
+    await service.publish(PROJECT, ORG, n, DOC, author);
+    await service.approve(PROJECT, ORG, n, BOSS);
+    const desks = gateway.desks.length;
+    detail = await service.editBrief(PROJECT, ORG, n, "Batched ticket notices", BOSS);
+    expect(detail).toMatchObject({
+      brief: "Batched ticket notices",
+      status: "approved",
+      revision: 1,
+      approvedRevision: 1,
+      title: "Batch the ticket notices",
+    });
+    expect(gateway.desks).toHaveLength(desks);
+    // The ledger replays to the same brief.
+    const again = new ProposalService({ gateway, agents, root, settings, log });
+    expect((await again.get(PROJECT, ORG, n, BOSS)).brief).toBe("Batched ticket notices");
+    expect((await again.list(PROJECT, ORG, BOSS)).proposals[0]?.title).toBe(
+      "Batch the ticket notices",
+    );
+  });
+
+  it("PUT /:number/brief rewrites the brief with the caller's identity; a missing brief is a 400", async () => {
+    const n = await delegated();
+    const app = new Hono();
+    app.use(async (c, next) => {
+      c.set("user" as never, { userId: "boss" } as never);
+      c.set("sessionVia" as never, "token" as never);
+      await next();
+    });
+    app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service));
+    const put = (body: unknown) =>
+      app.request(`/p/${PROJECT}/o/${ORG}/proposals/${n}/brief`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const ok = await put({ brief: "Batch the ticket notices", agentId: "acme_dev" });
+    expect(ok.status).toBe(200);
+    const detail = (await ok.json()) as {
+      brief: string;
+      events: Array<{ kind: string; by: string }>;
+    };
+    expect(detail.brief).toBe("Batch the ticket notices");
+    expect(detail.events.at(-1)).toMatchObject({ kind: "brief_edited", by: "agent:acme_dev" });
+    const missing = await put({});
+    expect(missing.status).toBe(400);
+    expect(await missing.json()).toEqual({
+      error: { code: "bad_request", message: "brief must be a non-empty string." },
+    });
+    const other = await put({ brief: "Not mine", agentId: "acme_qa" });
+    expect(other.status).toBe(403);
+    expect(((await other.json()) as { error: { code: string } }).error.code).toBe("not_author");
   });
 
   it("a desk that refuses never fails the write: the ledger has the line, the log has the reason", async () => {

@@ -33,6 +33,7 @@ For an employee, `penguin org proposal …` inside its session:
 ```text
 penguin org proposal ls | show <n>
 penguin org proposal publish <n> --file <markdown>     # a revision
+penguin org proposal brief <n> -m <text> | --file <f>  # rewrite the brief; the revisions stay
 penguin org proposal ready <n>
 penguin org proposal implement <n> --agent <id> [-m …]  # open the implementer's session
 penguin org proposal material <n> add pr=<url>
@@ -73,7 +74,7 @@ The ledger is one append-only file per organization, `<root>/<project>/organizat
 
 ## API
 
-`/api/projects/:projectId/organizations/:orgId/proposals` — `GET /`, `POST /` (`{ author, brief, title? }`), `GET|PUT /:number` (`{ markdown }`), `POST /:number/ready|approve|reject|merged|implement|materials|feedback|comments|comments/request|comments/:id/resolve|read`. Every route answers 404 while company mode is off.
+`/api/projects/:projectId/organizations/:orgId/proposals` — `GET /`, `POST /` (`{ author, brief, title? }`), `GET|PUT /:number` (`{ markdown }`), `PUT /:number/brief` (`{ brief }`, the author or a person), `POST /:number/ready|approve|reject|merged|implement|materials|feedback|comments|comments/request|comments/:id/resolve|read`. Every route answers 404 while company mode is off.
 
 ## Development
 
