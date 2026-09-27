@@ -93,6 +93,12 @@ export const DEPLOY_GROUPS: readonly DeployGroup[] = [
         kind: "text",
       },
       { path: "repos.mediaRemote", label: "mediaRemote", hint: "remoteHint", kind: "text" },
+      {
+        path: "repos.mediaPublicBase",
+        label: "mediaPublicBase",
+        hint: "mediaPublicBaseHint",
+        kind: "text",
+      },
     ],
   },
   {

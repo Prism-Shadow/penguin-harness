@@ -88,12 +88,39 @@ describe("deploy settings", () => {
     expect(settings.repos).toEqual({
       activityDataRemote: "ssh://git@github.com/org/data.git",
       mediaRemote: "git@github.com:org/media.git",
+      mediaPublicBase: "{{MEDIA}}/",
     });
     expect(
       rejectedField({ repos: { mediaRemote: "https://me:pw@github.com/org/media.git" } }),
     ).toBe("repos.mediaRemote");
     expect(rejectedField({ repos: { mediaRemote: "file:///tmp/media" } })).toBe(
       "repos.mediaRemote",
+    );
+  });
+
+  it("keeps where deployed media is found: a path, a web address or the framework's token", () => {
+    expect(defaultDeploySettings().repos.mediaPublicBase).toBe("{{MEDIA}}/");
+    const base = (value: string) =>
+      normalizeDeploySettings({ repos: { mediaPublicBase: value } }, defaultDeploySettings())
+        .settings.repos.mediaPublicBase;
+    expect(base("/assets/media")).toBe("/assets/media/");
+    expect(base("{{MEDIA}}")).toBe("{{MEDIA}}/");
+    expect(base("https://cdn.example.org/media/")).toBe("https://cdn.example.org/media/");
+    expect(base("")).toBe("{{MEDIA}}/");
+    for (const bad of [
+      "media",
+      "//cdn.example.org/m",
+      "/a/../b",
+      "/m?x=1",
+      "{{MEDIA}}/x",
+      "ftp://x/",
+    ])
+      expect(rejectedField({ repos: { mediaPublicBase: bad } })).toBe("repos.mediaPublicBase");
+    // A row saved before the field existed reads the default.
+    expect(readDeploySettings(JSON.stringify({ repos: { mediaRemote: "x" } })).repos).toMatchObject(
+      {
+        mediaPublicBase: "{{MEDIA}}/",
+      },
     );
   });
 

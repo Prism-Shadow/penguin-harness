@@ -1,6 +1,6 @@
 /**
  * Deploy: whether a deploy of this activity could start now, and what is still missing, each
- * in words, then the module release. The owner can make the missing clones (Prepare clones),
+ * in words, then the module release and the QA deploy. The owner can make the missing clones (Prepare clones),
  * ask the remote whether the branches are there (Check remote), and release the module; each
  * is an explicit press, and the release asks before it pushes anything.
  */
@@ -48,11 +48,14 @@ function prepareError(cause: unknown): string {
 
 export function DeployPanel({
   endpoint,
+  productCode,
   editable,
   onAnnounce,
 }: {
   /** The activity's API path. */
   endpoint: string;
+  /** The activity's product code, which the QA deploy's confirmation names. */
+  productCode: string;
   /** Whether the viewer owns the project: only the owner prepares clones or asks the remote. */
   editable: boolean;
   onAnnounce: (announcement: Announcement) => void;
@@ -253,6 +256,8 @@ export function DeployPanel({
               run={state.run}
               stages={state.stages}
               branch={context.branches.deploy}
+              activityDataBranch={context.branches.activityData}
+              productCode={productCode}
               onRun={setRun}
               onSettled={reload}
               onAnnounce={onAnnounce}

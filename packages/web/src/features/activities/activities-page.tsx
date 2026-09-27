@@ -2069,6 +2069,7 @@ function ActivityEditor({
                 <DeployPanel
                   key={detail.id}
                   endpoint={endpoint}
+                  productCode={detail.productCode}
                   editable={editable}
                   onAnnounce={announce}
                 />

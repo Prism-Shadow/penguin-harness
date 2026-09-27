@@ -10,6 +10,7 @@
  * Every git call and every Jenkins request goes through `DeployPorts`, which a test replaces,
  * so no test reaches a network or a real remote.
  */
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -19,7 +20,9 @@ import type { Config, Db } from "../hmr/capabilities.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import { writeSecretFile } from "../secret-file.js";
-import { sandboxModuleRoot, withinRoot } from "./sandbox-paths.js";
+import { sandboxMediaRoot, sandboxModuleRoot, withinRoot } from "./sandbox-paths.js";
+import { manifestAssetList, type ExportRef } from "./deploy-export.js";
+import type { ActivityDetail, ActivityProduct } from "./domain.js";
 import { findWafRoot } from "./waf-module.js";
 import { buildDeployContext } from "./deploy-context.js";
 import {
@@ -48,7 +51,7 @@ import {
   type DeploySettings,
 } from "./deploy-settings.js";
 import {
-  DEPLOY_RELEASE_STAGES,
+  DEPLOY_STAGES,
   type DeployBlocker,
   type DeployConnectionTest,
   type DeployContext,
@@ -64,7 +67,15 @@ import {
 } from "./deploy-types.js";
 import { createDeployJenkins, type JenkinsFetch } from "./deploy-jenkins.js";
 import { spawnDeployProcess, type DeployProcess } from "./deploy-process.js";
-import { realClock, stageBlocker, stagesFor, type DeployClock } from "./deploy-stages.js";
+import {
+  qaStages,
+  realClock,
+  releaseCurrent,
+  stageBlocker,
+  stagesFor,
+  type DeployActivitySnapshot,
+  type DeployClock,
+} from "./deploy-stages.js";
 import { DeployRunner, dbDeployStore, type DeployRunStore } from "./deploy-run.js";
 
 /** How long a clone may take: a large module or activity-data history on a slow link. */
@@ -434,8 +445,7 @@ export class ActivityDeployService implements ActivityDeploys {
   private statuses(activityId: string): Partial<Record<DeployStage, DeployStageStatus>> {
     const stored = this.active().store.stages(activityId);
     const out: Partial<Record<DeployStage, DeployStageStatus>> = {};
-    for (const stage of DEPLOY_RELEASE_STAGES)
-      if (stored[stage]) out[stage] = stored[stage]!.status;
+    for (const stage of DEPLOY_STAGES) if (stored[stage]) out[stage] = stored[stage]!.status;
     return out;
   }
 
@@ -448,7 +458,7 @@ export class ActivityDeployService implements ActivityDeploys {
     return {
       context,
       run: runner.latest(projectId, activityId),
-      stages: DEPLOY_RELEASE_STAGES.map((stage) => ({
+      stages: DEPLOY_STAGES.map((stage) => ({
         stage,
         status: stored[stage]?.status ?? "pending",
         finishedAt: stored[stage]?.finishedAt ?? null,
@@ -465,7 +475,7 @@ export class ActivityDeployService implements ActivityDeploys {
   ): Promise<DeployRun> {
     const { runner } = this.active();
     if (input.target !== "qa")
-      throw new HttpError(400, "invalid_request", "Only a QA release can be started.");
+      throw new HttpError(400, "invalid_request", "Only a QA deploy can be started.");
     if (runner.current())
       throw new HttpError(409, "deploy_running", "A deploy is already running on this server.");
     const facts = await this.facts(projectId, activityId);
@@ -477,8 +487,23 @@ export class ActivityDeployService implements ActivityDeploys {
         "deploy_not_canonical",
         "Only the product's canonical ref deploys its module.",
       );
+    const product = facts.product;
+    const home = this.config.root;
+    const folder = product.moduleFolder;
+    const moduleRun = await this.generation
+      .latestRun(projectId, activityId, "module", "succeeded")
+      .catch(() => null);
+    const source = moduleRun
+      ? sandboxModuleRoot(path.join(home, "activity-runs", moduleRun.runId))
+      : null;
+    const sourceReady = source !== null && (await exists(path.join(source, "package.json")));
+    const contentHash = sourceReady ? await moduleContentHash(source) : null;
+    const stages =
+      input.stage === "qa"
+        ? qaStages(releaseCurrent(this.active().store.stages(activityId), contentHash))
+        : stagesFor(input.stage);
     const context = await this.context(projectId, activityId);
-    const first = stagesFor(input.stage)[0]!;
+    const first = stages[0]!;
     const blocker = stageBlocker(
       first,
       context,
@@ -497,22 +522,16 @@ export class ActivityDeployService implements ActivityDeploys {
       );
     const settings = this.stored();
     const secrets = this.secrets();
-    const home = this.config.root;
-    const folder = facts.product.moduleFolder;
-    const moduleRun = await this.generation
-      .latestRun(projectId, activityId, "module", "succeeded")
-      .catch(() => null);
-    const source = moduleRun
-      ? sandboxModuleRoot(path.join(home, "activity-runs", moduleRun.runId))
-      : null;
-    const sourceReady = source !== null && (await exists(path.join(source, "package.json")));
     const run = this.ports.runProcess;
+    const paths = deployClonePaths(home, folder);
+    const activity = facts.activity;
     // The runner checks again: another start may have begun while this one read the clones.
     return runner.start({
       projectId,
       activityId,
       target: input.target,
       selection: input.stage,
+      stages,
       base: {
         git: this.git(),
         jenkins: createDeployJenkins(
@@ -529,15 +548,122 @@ export class ActivityDeployService implements ActivityDeploys {
           sleep: this.ports.sleep ?? realClock.sleep,
         },
         settings,
-        productCode: facts.activity.productCode,
+        productCode: activity.productCode,
         module: {
           folder,
-          dir: deployClonePaths(home, folder).module,
+          dir: paths.module,
           source: sourceReady ? source : null,
+          contentHash,
+        },
+        qa: {
+          activityData: { dir: paths.activityData },
+          media: { dir: paths.media },
+          refNum: activity.refNum,
+          target: {
+            tier: settings.qa.tier,
+            environment: settings.qa.environment,
+            frameworkVersion: settings.qa.frameworkVersion,
+            activityBaseUrl: settings.qa.activityBaseUrl,
+          },
+          snapshot: () =>
+            this.snapshot(projectId, activityId, product, sourceReady ? source : null),
         },
         moduleVersion: input.moduleVersion ?? null,
       },
     });
+  }
+
+  /**
+   * The product's refs as a QA deploy exports them, read when the export runs. Each ref's
+   * configuration is the author's edit, else the one the newest assembled module wrote for it,
+   * else the checkout module's; its assessment is the one in effect (the canonical ref's edit,
+   * else the module's own for the ref, else the canonical ref's). Archived refs are not listed.
+   */
+  private async snapshot(
+    projectId: string,
+    activityId: string,
+    product: ActivityProduct,
+    moduleRoot: string | null,
+  ): Promise<DeployActivitySnapshot> {
+    const deploying = await this.activities.getActivity(projectId, activityId);
+    const wafRoot = await findWafRoot();
+    const checkout = wafRoot
+      ? withinRoot(path.join(wafRoot, "modules"), product.moduleFolder)
+      : null;
+    const roots = [moduleRoot, checkout].filter((root): root is string => root !== null);
+    const readDocument = async (folder: string, names: string[]): Promise<unknown> => {
+      for (const root of roots)
+        for (const name of names) {
+          const file = withinRoot(path.join(root, folder), name);
+          if (!file) continue;
+          try {
+            return JSON.parse(await fsp.readFile(file, "utf8")) as unknown;
+          } catch {
+            /* Not there, or not JSON: try the next. */
+          }
+        }
+      return null;
+    };
+    const siblings = (
+      await this.activities.listActivities(projectId, deploying.collectionId)
+    ).filter(
+      (entry) =>
+        entry.productCode === deploying.productCode &&
+        (entry.productId === null || entry.productId === product.productId),
+    );
+    const refs: ExportRef[] = [];
+    const draftMediaRoots: string[] = [];
+    const code = deploying.productCode;
+    const canonical = product.canonicalRefNum;
+    for (const entry of siblings) {
+      const ref: ActivityDetail = await this.activities.getActivity(projectId, entry.id);
+      const own = `${code}-${ref.refNum}.json`;
+      const shared =
+        canonical != null && canonical !== ref.refNum ? [`${code}-${canonical}.json`] : [];
+      const configurationEdit = await this.activities.effectiveModuleDocument(
+        projectId,
+        ref,
+        "configuration",
+      );
+      const assessmentEdit = await this.activities.effectiveModuleDocument(
+        projectId,
+        ref,
+        "assessment",
+      );
+      const runtime = (ref.draft.spec as { runtime?: { usesAssessment?: unknown } } | null)
+        ?.runtime;
+      refs.push({
+        refNum: ref.refNum,
+        displayName: ref.displayName,
+        configuration: configurationEdit?.value ?? (await readDocument("configurations", [own])),
+        assessment: assessmentEdit?.value ?? (await readDocument("assessments", [own, ...shared])),
+        usesAssessment: runtime?.usesAssessment === true,
+        assets: manifestAssetList(ref.draft.mediaPlan?.manifest),
+        archived: ref.archived,
+      });
+      draftMediaRoots.push(
+        sandboxMediaRoot({
+          draftWorkspace: this.activities.draftWorkspace(
+            projectId,
+            ref.collectionId,
+            ref.id,
+            ref.draft.draftId,
+          ),
+        }),
+      );
+    }
+    const spec = (deploying.draft.spec ?? null) as {
+      title?: unknown;
+      runtime?: { layout?: unknown; theme?: unknown };
+    } | null;
+    return {
+      title: typeof spec?.title === "string" && spec.title.trim() ? spec.title : deploying.title,
+      layout: typeof spec?.runtime?.layout === "string" ? spec.runtime.layout : null,
+      theme: typeof spec?.runtime?.theme === "string" ? spec.runtime.theme : null,
+      contentRevision: deploying.draft.contentRevision,
+      refs,
+      draftMediaRoots,
+    };
   }
 
   async latest(projectId: string, activityId: string): Promise<DeployRun | null> {
@@ -616,6 +742,53 @@ function blockerDetail(stage: DeployStage, blocker: DeployBlocker): Record<strin
     detail.repo = blocker.repo;
   if (blocker.code === "not_ready") detail.problem = blocker.problem.code;
   return detail;
+}
+
+/**
+ * The folders and files of an assembled module a build reads and a release publishes: its
+ * content and the build configuration assembly writes beside it, not its build output.
+ */
+const MODULE_CONTENT = [
+  "src",
+  "res",
+  "generated",
+  "definition.json",
+  "package.json",
+  "tsconfig.json",
+  "tsconfig.build.json",
+  "webpack.config.cjs",
+  ".npmrc",
+  ".gitignore",
+];
+
+/**
+ * What an assembled module's content hashes to: every file its build reads, by path and bytes.
+ * A module built again in place hashes the same; one assembled again with changes does not.
+ */
+export async function moduleContentHash(root: string): Promise<string> {
+  const hash = createHash("sha256");
+  const files: string[] = [];
+  async function walk(relative: string) {
+    const full = path.join(root, relative);
+    const stat = await fsp.stat(full).catch(() => null);
+    if (!stat) return;
+    if (stat.isFile()) {
+      files.push(relative.split(path.sep).join("/"));
+      return;
+    }
+    if (!stat.isDirectory()) return;
+    for (const entry of await fsp.readdir(full)) {
+      if (entry === "node_modules" || entry === ".git") continue;
+      await walk(path.join(relative, entry));
+    }
+  }
+  for (const entry of MODULE_CONTENT) await walk(entry);
+  for (const file of files.sort()) {
+    hash.update(`${file}\n`);
+    hash.update(await fsp.readFile(path.join(root, file)));
+    hash.update("\n");
+  }
+  return hash.digest("hex");
 }
 
 async function exists(file: string): Promise<boolean> {

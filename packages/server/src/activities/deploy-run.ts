@@ -26,7 +26,7 @@ import {
   type DeployStageContext,
 } from "./deploy-stages.js";
 import {
-  DEPLOY_RELEASE_STAGES,
+  DEPLOY_STAGES,
   type DeployLogLine,
   type DeployLogPage,
   type DeployRun,
@@ -139,7 +139,7 @@ export function dbDeployStore(db: Db): DeployRunStore {
       }[];
       const out: Partial<Record<DeployStage, StoredStage>> = {};
       for (const row of rows) {
-        if (!(DEPLOY_RELEASE_STAGES as readonly string[]).includes(row.stage)) continue;
+        if (!(DEPLOY_STAGES as readonly string[]).includes(row.stage)) continue;
         let metadata: DeployRunMetadata = {};
         try {
           metadata = JSON.parse(row.metadata_json) as DeployRunMetadata;
@@ -244,6 +244,11 @@ export interface DeployStartSpec {
   target: DeployTarget;
   selection: DeployStageSelection;
   base: DeployStageBase;
+  /**
+   * The stages to run, when not all of the selection's: a QA deploy whose release is current
+   * leaves the release stages out, and they are recorded as skipped.
+   */
+  stages?: DeployStage[];
 }
 
 interface Active {
@@ -281,7 +286,9 @@ export class DeployRunner {
     if (this.disposed) throw new HttpError(503, "deploy_unavailable", "Deploys are not ready.");
     if (this.active)
       throw new HttpError(409, "deploy_running", "A deploy is already running on this server.");
-    const stages = stagesFor(spec.selection);
+    const all = stagesFor(spec.selection);
+    const stages = spec.stages ?? all;
+    const skipped = all.filter((stage) => !stages.includes(stage));
     const run: DeployRun = {
       runId: newId("dep"),
       activityId: spec.activityId,
@@ -289,6 +296,7 @@ export class DeployRunner {
       selection: spec.selection,
       status: "running",
       stages: stages.map((stage) => ({ stage, status: "pending", error: null })),
+      ...(skipped.length ? { skipped } : {}),
       metadata: {},
       startedAt: this.now().toISOString(),
       finishedAt: null,
@@ -324,11 +332,15 @@ export class DeployRunner {
     const { run, controller } = active;
     const stored = this.deps.store.stages(run.activityId);
     const earlier: DeployStageContext["earlier"] = {};
-    for (const stage of DEPLOY_RELEASE_STAGES) {
+    for (const stage of DEPLOY_STAGES) {
       const state = stored[stage];
       if (state?.status === "done") earlier[stage] = state.metadata;
     }
     let outcome: DeployRun["status"] = "succeeded";
+    if (run.skipped?.length)
+      log.append(
+        `The module's release is current (${earlier.await_module_build?.resolvedModuleVersion ?? "?"}): leaving out ${run.skipped.join(", ")}.`,
+      );
     for (const entry of run.stages) {
       if (controller.signal.aborted) {
         entry.status = "cancelled";
@@ -344,9 +356,7 @@ export class DeployRunner {
         metadata: {},
       });
       // What comes after this stage must be done again once it has run.
-      for (const later of DEPLOY_RELEASE_STAGES.slice(
-        DEPLOY_RELEASE_STAGES.indexOf(entry.stage) + 1,
-      ))
+      for (const later of DEPLOY_STAGES.slice(DEPLOY_STAGES.indexOf(entry.stage) + 1))
         this.saveStage(run.activityId, later, {
           status: "pending",
           finishedAt: null,

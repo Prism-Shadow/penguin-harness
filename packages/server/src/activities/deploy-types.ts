@@ -39,8 +39,13 @@ export interface DeploySettingsView {
   prod: DeployProdSettingsView;
   /** Jenkins job names; defaults "Build WAF Modules" and "WAF Activity Deploy". */
   jobs: { moduleBuild: string; activityDeploy: string };
-  /** The git remotes activity data and media are published to. */
-  repos: { activityDataRemote: string; mediaRemote: string };
+  /**
+   * The git remotes activity data and media are published to, and where the deployed
+   * activity finds its media: exported configurations point every media file at
+   * `mediaPublicBase` followed by its path under `media/` (default `/media/`; `{{MEDIA}}/`
+   * leaves the framework's token in place).
+   */
+  repos: { activityDataRemote: string; mediaRemote: string; mediaPublicBase: string };
   /** Who the deploy's commits are made as. */
   git: { userName: string; userEmail: string };
   /** How long a Jenkins build or deploy is waited for, in minutes; defaults 30 and 30. */
@@ -83,7 +88,8 @@ export type DeploySettingReason =
   | "not_version"
   | "not_email"
   | "minutes_range"
-  | "token_spaces";
+  | "token_spaces"
+  | "not_media_base";
 
 /** Which Jenkins a connection test reaches. */
 export type DeployTarget = "qa" | "prod";
@@ -200,10 +206,30 @@ export const DEPLOY_RELEASE_STAGES = [
   "await_module_build",
 ] as const;
 
-export type DeployStage = (typeof DEPLOY_RELEASE_STAGES)[number];
+/**
+ * The stages that put a released module's activity on QA, after the release: write the
+ * activity's data into the activity-data clone, check it, publish the media it names, publish
+ * the data, ask Jenkins to deploy it, and wait for that deploy.
+ */
+export const DEPLOY_QA_STAGES = [
+  "export_activity_data",
+  "verify_activity_data",
+  "verify_media_assets",
+  "publish_activity_data",
+  "trigger_activity_deploy",
+  "await_activity_deploy",
+] as const;
 
-/** What a run was asked to do: the whole release, or one stage on its own. */
-export type DeployStageSelection = "release" | DeployStage;
+/** Every stage, in the order each needs the one before. */
+export const DEPLOY_STAGES = [...DEPLOY_RELEASE_STAGES, ...DEPLOY_QA_STAGES] as const;
+
+export type DeployStage = (typeof DEPLOY_STAGES)[number];
+
+/**
+ * What a run was asked to do: the module release (stages 1 to 4), a QA deploy (stages 1 to
+ * 10, the release left out when it is current), or one stage on its own.
+ */
+export type DeployStageSelection = "release" | "qa" | DeployStage;
 
 export type DeployStageStatus = "pending" | "running" | "done" | "failed" | "cancelled";
 
@@ -230,6 +256,15 @@ export type DeployStageError =
   | { code: "build_timed_out"; minutes: number }
   /** A stage run on its own needs what an earlier stage records, and it is not there. */
   | { code: "missing_input"; stage: DeployStage }
+  /** The exported activity data failed its checks; `errors` is how many. */
+  | { code: "preflight_failed"; errors: number }
+  /**
+   * Media the exported data names are neither in the draft nor in the media repository:
+   * `paths` are the first of them (paths in the media repository), `count` all of them.
+   */
+  | { code: "media_missing"; paths: string[]; count: number }
+  /** The Jenkins activity deploy ran for the configured minutes and had not finished. */
+  | { code: "deploy_timed_out"; minutes: number }
   /** The server stopped while the stage ran. */
   | { code: "interrupted" }
   /** Something the stage did not expect; the log says what. */
@@ -249,6 +284,75 @@ export interface DeployRunMetadata {
   moduleBuildUrl?: string;
   /** The release tag the build made. */
   resolvedModuleVersion?: string;
+  /**
+   * What the assembled module verify_module checked hashed to; null when there was none and
+   * the module was verified as its repository held it. A QA deploy leaves out a release that
+   * is done for the same hash.
+   */
+  moduleContentHash?: string | null;
+  /** The ref numbers the exported data carries; archived refs are left out. */
+  deployedRefNums?: number[];
+  /** Every file export_activity_data wrote, relative to the activity-data clone. */
+  exportedFiles?: string[];
+  /** The draft revision of the deploying ref when its data was exported. */
+  exportedRevision?: string;
+  /** What verify_activity_data found. */
+  preflight?: DeployPreflightReport;
+  /** How many media files the exported data names. */
+  mediaChecked?: number;
+  /** The first media files copied into the media clone, and how many were copied. */
+  mediaCopied?: string[];
+  mediaCopiedCount?: number;
+  /** The media commit pushed to main; absent when the repository already had every file. */
+  mediaCommit?: string;
+  /** The activity-data commit pushed; absent when nothing had changed. */
+  activityDataCommit?: string;
+  /** The framework version the activity was deployed with. */
+  qaFrameworkVersion?: string;
+  /** The newest Jenkins activity deploy before the trigger; null when there was none. */
+  preDeployNumber?: number | null;
+  /** The Jenkins activity deploy's page, once Jenkins has one. */
+  activityDeployUrl?: string;
+  /** Where the deployed activity opens on QA. */
+  qaActivityUrl?: string;
+  /** When the QA deploy finished. */
+  qaDeployedAt?: string;
+  /** The draft revision of the deploying ref that is now on QA. */
+  contentRevision?: string;
+}
+
+/**
+ * One thing the check of the exported activity data found. Files are named relative to the
+ * activity-data clone; media by the reference as the file writes it.
+ */
+export type DeployPreflightIssue =
+  /** The deploy list is missing or does not name exactly this product's template. */
+  | { code: "deploy_list_mismatch"; file: string }
+  /** A file the template or deploy list names is not there. */
+  | { code: "file_missing"; file: string }
+  /** A file is not JSON, or not the object it must be. */
+  | { code: "file_invalid"; file: string }
+  /** The template's main module is not the released module. */
+  | { code: "layout_module_mismatch"; expected: string; found: string | null }
+  /** The template has no source, so the deploy would publish no ref. */
+  | { code: "no_sources" }
+  /** A ref uses the assessment and its assessment has no items. */
+  | { code: "assessment_empty"; file: string }
+  /** The assessment's item count is not its `configuration.maxItems`. */
+  | { code: "assessment_count_mismatch"; file: string; items: number; maxItems: number }
+  /** A media reference is not a plain relative path under the media folder. */
+  | { code: "media_path_unsafe"; file: string; reference: string }
+  /** A media reference still points at this server's preview. */
+  | { code: "media_preview_url"; file: string; reference: string }
+  /** A media reference still carries the framework's token, which the media address replaces. */
+  | { code: "media_token_left"; file: string; reference: string }
+  /** Warning: a configuration names no media at all. */
+  | { code: "configuration_without_media"; file: string };
+
+export interface DeployPreflightReport {
+  errors: DeployPreflightIssue[];
+  warnings: DeployPreflightIssue[];
+  counts: { templates: number; configurations: number; assessments: number; media: number };
 }
 
 export interface DeployRunStage {
@@ -264,6 +368,8 @@ export interface DeployRun {
   selection: DeployStageSelection;
   status: DeployRunStatus;
   stages: DeployRunStage[];
+  /** The release stages a QA deploy left out because the module's release was current. */
+  skipped?: DeployStage[];
   metadata: DeployRunMetadata;
   startedAt: string;
   finishedAt: string | null;
@@ -303,7 +409,10 @@ export interface DeployStateResponse {
   stages: DeployStageState[];
 }
 
-/** A start: the whole release or one stage, and optionally the version to release as. */
+/**
+ * A start: the release, the QA deploy or one stage, and optionally the version to release the
+ * module as.
+ */
 export interface DeployStartRequest {
   stage: DeployStageSelection;
   moduleVersion?: string;

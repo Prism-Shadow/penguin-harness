@@ -4940,6 +4940,8 @@ export type {
   DeployLogLine,
   DeployLogPage,
   DeployLogResponse,
+  DeployPreflightIssue,
+  DeployPreflightReport,
   DeployRun,
   DeployRunMetadata,
   DeployRunResponse,

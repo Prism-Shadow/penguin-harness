@@ -15,6 +15,7 @@ import type { DeployGitResult } from "../src/activities/deploy-git.js";
 import type { DeployJenkins } from "../src/activities/deploy-jenkins.js";
 import type { DeployProcess, DeployProcessResult } from "../src/activities/deploy-process.js";
 import { defaultDeploySettings } from "../src/activities/deploy-settings.js";
+import { qaStages, releaseCurrent } from "../src/activities/deploy-stages.js";
 import {
   DeployRunner,
   dbDeployStore,
@@ -157,14 +158,62 @@ describe("deploy runner", () => {
     const again = runnerOn(db, dir);
     expect(again.latest(PROJECT, ACTIVITY)).toEqual(run);
     const stored = dbDeployStore(db as unknown as Db).stages(ACTIVITY);
-    expect(Object.values(stored).map((state) => state!.status)).toEqual([
-      "done",
-      "done",
-      "done",
-      "done",
-    ]);
+    // The release's stages are done; the QA stages after them were set back to pending.
+    expect(
+      ["verify_module", "prepare_deploy", "trigger_module_build", "await_module_build"].map(
+        (stage) => stored[stage as keyof typeof stored]?.status,
+      ),
+    ).toEqual(["done", "done", "done", "done"]);
+    expect(stored.export_activity_data?.status).toBe("pending");
     expect(stored.await_module_build!.metadata.resolvedModuleVersion).toBe("1.1.0");
     expect(stored.await_module_build!.finishedAt).not.toBeNull();
+  });
+
+  it("leaves a current release out of a QA deploy and records the stages it left out", async () => {
+    const db = database();
+    const dir = await home();
+    const runner = runnerOn(db, dir);
+    const moduleBase = base(dir);
+    moduleBase.module = { ...moduleBase.module, contentHash: "h1" };
+    runner.start({
+      projectId: PROJECT,
+      activityId: ACTIVITY,
+      target: "qa",
+      selection: "release",
+      base: moduleBase,
+    });
+    expect((await settled(runner)).status).toBe("succeeded");
+    const stored = dbDeployStore(db as unknown as Db).stages(ACTIVITY);
+    expect(stored.verify_module?.metadata.moduleContentHash).toBe("h1");
+    expect(releaseCurrent(stored, "h1")).toBe(true);
+    expect(releaseCurrent(stored, "h2")).toBe(false);
+
+    const qa = runner.start({
+      projectId: PROJECT,
+      activityId: ACTIVITY,
+      target: "qa",
+      selection: "qa",
+      stages: qaStages(true),
+      // No activity-data or media side: the export cannot run, which is all this needs.
+      base: base(dir),
+    });
+    expect(qa.skipped).toEqual([
+      "verify_module",
+      "prepare_deploy",
+      "trigger_module_build",
+      "await_module_build",
+    ]);
+    expect(qa.stages.map((entry) => entry.stage)[0]).toBe("export_activity_data");
+    const run = await settled(runner);
+    expect(run.stages[0]).toMatchObject({ status: "failed", error: { code: "unexpected" } });
+    const log = runner.log(PROJECT, ACTIVITY, run.runId, 0)!.log.lines.map((line) => line.text);
+    expect(log[0]).toBe(
+      "The module's release is current (1.1.0): leaving out verify_module, prepare_deploy, trigger_module_build, await_module_build.",
+    );
+    // The release stays done: only the stages after the one that ran were set back.
+    expect(dbDeployStore(db as unknown as Db).stages(ACTIVITY).await_module_build?.status).toBe(
+      "done",
+    );
   });
 
   it("fails the first stage on a failing lint, keeps its log tail and runs nothing after", async () => {

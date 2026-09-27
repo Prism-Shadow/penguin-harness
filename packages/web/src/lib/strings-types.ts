@@ -511,6 +511,65 @@ export type Strings = {
         prepare_deploy: string;
         trigger_module_build: string;
         await_module_build: string;
+        export_activity_data: string;
+        verify_activity_data: string;
+        verify_media_assets: string;
+        publish_activity_data: string;
+        trigger_activity_deploy: string;
+        await_activity_deploy: string;
+      };
+      /** What Deploy to QA does, after the release, in the section's explanation. */
+      qaAbout: string;
+      deployQa: string;
+      deployingQa: string;
+      deployQaStarted: string;
+      /** The QA confirm dialog: what it pushes and starts, for this product code. */
+      deployQaConfirmTitle: string;
+      deployQaConfirm: (productCode: string) => string;
+      deployQaConfirmItems: {
+        release: (branch: string) => string;
+        media: string;
+        data: (branch: string) => string;
+        deploy: string;
+      };
+      deployQaConfirmLabel: string;
+      /** A stage run on its own that pushes or starts a Jenkins job asks first. */
+      stageConfirmTitle: (stage: string) => string;
+      stageConfirm: {
+        verify_media_assets: string;
+        publish_activity_data: (branch: string) => string;
+        trigger_activity_deploy: string;
+      };
+      /** The link to the activity on QA once a QA deploy finished. */
+      openQa: string;
+      /** The released module version the activity is on QA with. */
+      qaVersion: (version: string) => string;
+      /** A QA deploy left the release out because it was current. */
+      releaseSkipped: string;
+      /** The check of the exported data: its heading and each finding. */
+      preflightTitle: string;
+      preflightErrors: string;
+      preflightWarnings: string;
+      preflight: {
+        deploy_list_mismatch: (file: string) => string;
+        file_missing: (file: string) => string;
+        file_invalid: (file: string) => string;
+        layout_module_mismatch: (expected: string, found: string | null) => string;
+        no_sources: string;
+        assessment_empty: (file: string) => string;
+        assessment_count_mismatch: (file: string, items: number, maxItems: number) => string;
+        media_path_unsafe: (file: string, reference: string) => string;
+        media_preview_url: (file: string, reference: string) => string;
+        media_token_left: (file: string, reference: string) => string;
+        configuration_without_media: (file: string) => string;
+      };
+      /** The latest QA deploy's state, as the line above the stages says it. */
+      qaRunStatuses: {
+        running: (stage: string) => string;
+        succeeded: string;
+        failed: string;
+        cancelled: string;
+        interrupted: string;
       };
       statuses: {
         pending: string;
@@ -547,6 +606,10 @@ export type Strings = {
         no_newer_tag: (before: string | null, after: string | null) => string;
         build_timed_out: (minutes: number) => string;
         missing_input: (stage: string) => string;
+        preflight_failed: (errors: number) => string;
+        /** Media found nowhere: the first paths, and how many there are in all. */
+        media_missing: (paths: string[], count: number) => string;
+        deploy_timed_out: (minutes: number) => string;
         interrupted: string;
         unexpected: string;
       };
@@ -1608,6 +1671,8 @@ export type Strings = {
       activityDataRemote: string;
       mediaRemote: string;
       remoteHint: string;
+      mediaPublicBase: string;
+      mediaPublicBaseHint: string;
       gitUserName: string;
       gitUserEmail: string;
       buildMinutes: string;

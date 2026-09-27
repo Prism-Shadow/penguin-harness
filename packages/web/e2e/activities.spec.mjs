@@ -7061,3 +7061,166 @@ test("releases the module and follows the log", async ({ page }) => {
   expect(starts).toHaveLength(1);
   expect(f.errors).toEqual([]);
 });
+
+test("deploys to QA and links to the activity there", async ({ page }) => {
+  const f = await fixture(page);
+  const clean = { present: true, branch: "main", clean: true, ahead: 0, remoteUrlMatches: true };
+  const context = {
+    ready: true,
+    problems: [],
+    remoteChecked: false,
+    module: {
+      folder: "waf-module-words",
+      remote: "git@github.com:org/waf-module-words.git",
+      clone: clean,
+    },
+    activityData: { clone: clean },
+    media: { clone: clean },
+    branches: { deploy: "loom/words-deploy", activityData: "loom/words-activity-data" },
+    branchState: {
+      deploy: { local: true, remote: null },
+      activityData: { local: true, remote: null },
+    },
+  };
+  const order = [
+    "verify_module",
+    "prepare_deploy",
+    "trigger_module_build",
+    "await_module_build",
+    "export_activity_data",
+    "verify_activity_data",
+    "verify_media_assets",
+    "publish_activity_data",
+    "trigger_activity_deploy",
+    "await_activity_deploy",
+  ];
+  const qaUrl = "https://qa.example.org/play?productCode=words&refNum=1&frameworkVersion=4.2.1";
+  // The server's rules: one run at a time, the ten stages in order, each done before the next
+  // starts, and the log handed out after a cursor, two stages per poll.
+  let run = null;
+  const starts = [];
+  let reached = 0;
+  const log = () =>
+    order
+      .slice(0, reached)
+      .map((stage, index) => ({ seq: index + 1, at: "now", text: `== ${stage}` }));
+  const advance = () => {
+    reached = Math.min(order.length, reached + 2);
+    const finished = reached === order.length;
+    run = {
+      ...run,
+      status: finished ? "succeeded" : "running",
+      finishedAt: finished ? "2026-09-28T01:00:00.000Z" : null,
+      stages: order.map((stage, index) => ({
+        stage,
+        status:
+          finished || index < reached - 1 ? "done" : index === reached - 1 ? "running" : "pending",
+        error: null,
+      })),
+      metadata: finished
+        ? { resolvedModuleVersion: "1.5.0", qaActivityUrl: qaUrl, deployedRefNums: [1] }
+        : {},
+    };
+  };
+  const stages = () =>
+    order.map((stage, index) => {
+      const done = run?.status === "succeeded";
+      return {
+        stage,
+        status: done ? "done" : "pending",
+        finishedAt: null,
+        metadata: !done
+          ? {}
+          : stage === "export_activity_data"
+            ? { resolvedModuleVersion: "1.5.0" }
+            : stage === "await_activity_deploy"
+              ? { qaActivityUrl: qaUrl, qaDeployedAt: "2026-09-28T01:00:00.000Z" }
+              : {},
+        blocker:
+          run?.status === "running"
+            ? { code: "run_active" }
+            : index > 0 && !done
+              ? { code: "previous_stage", stage: order[index - 1] }
+              : null,
+      };
+    });
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (url.pathname === `${base}/act_test/sandbox/status`)
+      return json({
+        state: "ready",
+        playable: true,
+        buildable: true,
+        message: "Ready.",
+        buildLog: null,
+      });
+    if (url.pathname === `${base}/act_test/deploy` && request.method() === "GET")
+      return json({ context, run, stages: stages() });
+    if (url.pathname === `${base}/act_test/deploy` && request.method() === "POST") {
+      starts.push(request.postDataJSON());
+      if (run?.status === "running")
+        return json({ error: { code: "deploy_running", message: "A deploy is running." } }, 409);
+      run = {
+        runId: "dep_qa",
+        activityId: "act_test",
+        target: "qa",
+        selection: "qa",
+        status: "running",
+        stages: order.map((stage) => ({ stage, status: "pending", error: null })),
+        metadata: {},
+        startedAt: "2026-09-28T00:00:00.000Z",
+        finishedAt: null,
+      };
+      return json({ run }, 202);
+    }
+    if (url.pathname === `${base}/act_test/deploy/runs/dep_qa/log`) {
+      advance();
+      const after = Number(url.searchParams.get("after") ?? "0");
+      const lines = log().filter((line) => line.seq > after);
+      return json({
+        log: {
+          lines,
+          next: lines.length ? lines[lines.length - 1].seq : after,
+          done: run.status !== "running",
+        },
+        run,
+      });
+    }
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Deploy");
+  const table = page.getByRole("table", { name: "Release stages" });
+  await expect(table.getByRole("row", { name: /^Export the activity data/ })).toContainText(
+    "Waits for Wait for the release tag to finish.",
+  );
+  await expect(table.getByRole("row", { name: /^Wait for the QA deploy/ })).toContainText(
+    "Not run",
+  );
+  await expect(page.getByTestId("deploy-qa-result")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Deploy to QA", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Deploy to QA" });
+  await expect(dialog.getByText("This deploys words to QA. It:")).toBeVisible();
+  await expect(
+    dialog.getByText("pushes the activity data to the branch loom/words-activity-data"),
+  ).toBeVisible();
+  await expect(dialog.getByText("starts the Jenkins activity deploy to QA")).toBeVisible();
+  await dialog.getByRole("button", { name: "Deploy", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(starts).toEqual([{ stage: "qa" }]);
+
+  await expect(page.getByTestId("deploy-run-status")).toHaveText("The last QA deploy finished.");
+  await expect(page.getByTestId("deploy-log")).toHaveText(
+    order.map((stage) => `== ${stage}`).join("\n"),
+  );
+  await expect(page.getByRole("link", { name: "Open on QA" })).toHaveAttribute("href", qaUrl);
+  await expect(page.getByTestId("deploy-qa-result")).toContainText("On QA with module 1.5.0.");
+  for (const name of [/^Export the activity data/, /^Publish the media/, /^Wait for the QA deploy/])
+    await expect(table.getByRole("row", { name })).toContainText("Done");
+  expect(starts).toHaveLength(1);
+  expect(f.errors).toEqual([]);
+});

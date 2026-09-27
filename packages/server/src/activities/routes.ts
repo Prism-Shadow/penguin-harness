@@ -1137,7 +1137,7 @@ export class ActivityRoutes {
       const body = await readJson(c);
       const stage = body.stage;
       if (!isStageSelection(stage))
-        throw badRequest("stage must be release or one of the release stages.");
+        throw badRequest("stage must be release, qa or one of the deploy stages.");
       const moduleVersion =
         optionalString(body, "moduleVersion", { maxLen: 40 })?.trim() || undefined;
       if (moduleVersion !== undefined && !isModuleVersion(moduleVersion))

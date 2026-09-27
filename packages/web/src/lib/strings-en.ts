@@ -473,6 +473,7 @@ export const en: Strings = {
         "jobs.activityDeploy": "Activity deploy job",
         "repos.activityDataRemote": "Activity data repository",
         "repos.mediaRemote": "Media repository",
+        "repos.mediaPublicBase": "Media address",
         "git.userName": "Git user name",
         "git.userEmail": "Git email",
       },
@@ -592,6 +593,68 @@ export const en: Strings = {
         prepare_deploy: "Prepare the deploy branch",
         trigger_module_build: "Push and start the build",
         await_module_build: "Wait for the release tag",
+        export_activity_data: "Export the activity data",
+        verify_activity_data: "Check the activity data",
+        verify_media_assets: "Publish the media",
+        publish_activity_data: "Push the activity data",
+        trigger_activity_deploy: "Start the QA deploy",
+        await_activity_deploy: "Wait for the QA deploy",
+      },
+      qaAbout:
+        "Deploy to QA runs the release first, unless it is done for the module as it is now assembled, then writes every ref's configuration and assessment (archived refs left out), the template and the deploy list into the activity data clone, checks them, puts the media files only the draft holds into the media repository, pushes the activity data branch, asks Jenkins to deploy it to QA, and waits for that deploy. A media file found neither in the draft nor in the media repository stops it before anything is pushed.",
+      deployQa: "Deploy to QA",
+      deployingQa: "Deploying to QA…",
+      deployQaStarted: "The QA deploy started.",
+      deployQaConfirmTitle: "Deploy to QA",
+      deployQaConfirm: (productCode) => `This deploys ${productCode} to QA. It:`,
+      deployQaConfirmItems: {
+        release: (branch) =>
+          `releases the module first, pushing ${branch} and starting a Jenkins module build, unless its release is current`,
+        media: "pushes the media files only the draft holds to the media repository's main branch",
+        data: (branch) => `pushes the activity data to the branch ${branch}`,
+        deploy: "starts the Jenkins activity deploy to QA",
+      },
+      deployQaConfirmLabel: "Deploy",
+      stageConfirmTitle: (stage) => `Run ${stage}`,
+      stageConfirm: {
+        verify_media_assets:
+          "This pushes the media files only the draft holds to the media repository's main branch.",
+        publish_activity_data: (branch) =>
+          `This pushes the exported activity data to the branch ${branch}.`,
+        trigger_activity_deploy: "This starts the Jenkins activity deploy to QA.",
+      },
+      openQa: "Open on QA",
+      qaVersion: (version) => `On QA with module ${version}.`,
+      releaseSkipped: "The module's release was current, so it was not run again.",
+      preflightTitle: "What the check of the activity data found",
+      preflightErrors: "Errors: these stop the deploy",
+      preflightWarnings: "Warnings: these do not stop it",
+      preflight: {
+        deploy_list_mismatch: (file) => `${file} does not name exactly this product's template.`,
+        file_missing: (file) => `${file} is missing.`,
+        file_invalid: (file) => `${file} is not a JSON object the deploy can read.`,
+        layout_module_mismatch: (expected, found) =>
+          found
+            ? `The template names the module ${found}, not the released ${expected}.`
+            : `The template names no module; it should name ${expected}.`,
+        no_sources: "The template has no ref to deploy.",
+        assessment_empty: (file) => `${file} has no items, and a ref uses it.`,
+        assessment_count_mismatch: (file, items, maxItems) =>
+          `${file} has ${items} ${items === 1 ? "item" : "items"} but says it has ${maxItems}.`,
+        media_path_unsafe: (file, reference) =>
+          `${file} names media outside the media folder: ${reference}`,
+        media_preview_url: (file, reference) =>
+          `${file} still points at a preview on this server: ${reference}`,
+        media_token_left: (file, reference) =>
+          `${file} still carries the media token: ${reference}`,
+        configuration_without_media: (file) => `${file} names no media.`,
+      },
+      qaRunStatuses: {
+        running: (stage) => `Deploying to QA: ${stage}.`,
+        succeeded: "The last QA deploy finished.",
+        failed: "The last QA deploy failed.",
+        cancelled: "The last QA deploy was stopped.",
+        interrupted: "The last QA deploy was cut short when the server stopped.",
       },
       statuses: {
         pending: "Not run",
@@ -632,7 +695,13 @@ export const en: Strings = {
           `The build finished but made no newer release tag (before: ${before ?? "none"}, now: ${after ?? "none"}).`,
         build_timed_out: (minutes) =>
           `The build made no release tag within ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
-        missing_input: (stage) => `Run ${stage} first: this stage waits on the build it starts.`,
+        missing_input: (stage) => `Run ${stage} first: this stage works from what it records.`,
+        preflight_failed: (errors) =>
+          `The activity data failed its check: ${errors} ${errors === 1 ? "problem" : "problems"}. The activity data and media were not pushed.`,
+        media_missing: (paths, count) =>
+          `${count} media ${count === 1 ? "file is" : "files are"} neither in the draft nor in the media repository: ${paths.join(", ")}${count > paths.length ? ", …" : ""}. The activity data and media were not pushed.`,
+        deploy_timed_out: (minutes) =>
+          `The QA deploy had not finished within ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
         interrupted: "The server stopped while this stage ran.",
         unexpected: "The stage stopped on an unexpected error. The log shows it.",
       },
@@ -1965,6 +2034,9 @@ export const en: Strings = {
       activityDataRemote: "Activity data repository",
       mediaRemote: "Media repository",
       remoteHint: "git@github.com:owner/repo.git or https://…",
+      mediaPublicBase: "Media address",
+      mediaPublicBaseHint:
+        "Where a deployed activity finds its media. Keep {{MEDIA}}/ unless the activity data deploy changes: it fills that in. Otherwise /media/ or https://…",
       gitUserName: "Name",
       gitUserEmail: "Email",
       buildMinutes: "Module build, minutes",
@@ -1987,6 +2059,7 @@ export const en: Strings = {
         not_email: "Enter an email address.",
         minutes_range: "Enter a whole number of minutes from 1 to 240.",
         token_spaces: "A token has no spaces.",
+        not_media_base: "Use a path like /media/, an https:// address, or {{MEDIA}}/.",
       },
       testConnection: (target) => `Test ${target} connection`,
       testing: "Testing…",

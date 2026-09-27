@@ -242,7 +242,11 @@ const VIEW: DeploySettingsView = {
     frameworkVersion: "",
   },
   jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
-  repos: { activityDataRemote: "git@github.com:org/data.git", mediaRemote: "" },
+  repos: {
+    activityDataRemote: "git@github.com:org/data.git",
+    mediaRemote: "",
+    mediaPublicBase: "/media/",
+  },
   git: { userName: "", userEmail: "" },
   timeouts: { buildMinutes: 30, deployMinutes: 30 },
 };
@@ -341,7 +345,7 @@ describe("the module release", () => {
       "npm run lint failed with exit code 1. The log shows its output.",
     );
     expect(stageErrorText({ code: "missing_input", stage: "trigger_module_build" })).toBe(
-      "Run Push and start the build first: this stage waits on the build it starts.",
+      "Run Push and start the build first: this stage works from what it records.",
     );
     const blockers: DeployBlocker[] = [
       { code: "previous_stage", stage: "verify_module" },

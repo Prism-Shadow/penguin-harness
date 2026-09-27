@@ -10,6 +10,7 @@ import type {
   DeployContext,
   DeployLogLine,
   DeployLogPage,
+  DeployPreflightIssue,
   DeployProblem,
   DeployRepo,
   DeployRun,
@@ -235,6 +236,16 @@ export const RELEASE_STAGES: readonly DeployStage[] = [
   "await_module_build",
 ];
 
+/** The QA deploy's own stages, after the release, in the order they run. */
+export const QA_STAGES: readonly DeployStage[] = [
+  "export_activity_data",
+  "verify_activity_data",
+  "verify_media_assets",
+  "publish_activity_data",
+  "trigger_activity_deploy",
+  "await_activity_deploy",
+];
+
 /** The log lines the panel keeps: the server keeps no more in memory either. */
 export const LOG_KEEP = 2000;
 
@@ -270,6 +281,12 @@ export function stageErrorText(error: DeployStageError): string {
       return words.build_timed_out(error.minutes);
     case "missing_input":
       return words.missing_input(stageName(error.stage));
+    case "preflight_failed":
+      return words.preflight_failed(error.errors);
+    case "media_missing":
+      return words.media_missing(error.paths, error.count);
+    case "deploy_timed_out":
+      return words.deploy_timed_out(error.minutes);
     case "interrupted":
       return words.interrupted;
     case "unexpected":
@@ -298,12 +315,7 @@ export function blockerText(blocker: DeployBlocker): string {
   }
 }
 
-const STAGES: readonly DeployStage[] = [
-  "verify_module",
-  "prepare_deploy",
-  "trigger_module_build",
-  "await_module_build",
-];
+const STAGES: readonly DeployStage[] = [...RELEASE_STAGES, ...QA_STAGES];
 
 function asStage(value: string | undefined): DeployStage | null {
   return STAGES.find((stage) => stage === value) ?? null;
@@ -385,10 +397,15 @@ export function stageRows(run: DeployRun | null, stages: readonly DeployStageSta
   });
 }
 
+/** Whether a run went further than the module release: a QA deploy, or a QA stage on its own. */
+export function isQaRun(run: DeployRun): boolean {
+  return run.selection === "qa" || QA_STAGES.includes(run.selection as DeployStage);
+}
+
 /** The line above the stages: how the latest run stands. */
 export function runLine(run: DeployRun | null): { tone: Tone; text: string } | null {
   if (!run) return null;
-  const words = S.activities.deploy.runStatuses;
+  const words = isQaRun(run) ? S.activities.deploy.qaRunStatuses : S.activities.deploy.runStatuses;
   switch (run.status) {
     case "running": {
       const current = run.stages.find((entry) => entry.status === "running") ?? run.stages[0];
@@ -424,4 +441,88 @@ export function versionProblem(value: string): string | null {
   return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(text)
     ? null
     : S.activities.deploy.moduleVersionInvalid;
+}
+
+/** One finding of the check of the exported activity data, as a sentence. */
+export function preflightText(issue: DeployPreflightIssue): string {
+  const words = S.activities.deploy.preflight;
+  switch (issue.code) {
+    case "deploy_list_mismatch":
+      return words.deploy_list_mismatch(issue.file);
+    case "file_missing":
+      return words.file_missing(issue.file);
+    case "file_invalid":
+      return words.file_invalid(issue.file);
+    case "layout_module_mismatch":
+      return words.layout_module_mismatch(issue.expected, issue.found);
+    case "no_sources":
+      return words.no_sources;
+    case "assessment_empty":
+      return words.assessment_empty(issue.file);
+    case "assessment_count_mismatch":
+      return words.assessment_count_mismatch(issue.file, issue.items, issue.maxItems);
+    case "media_path_unsafe":
+      return words.media_path_unsafe(issue.file, issue.reference);
+    case "media_preview_url":
+      return words.media_preview_url(issue.file, issue.reference);
+    case "media_token_left":
+      return words.media_token_left(issue.file, issue.reference);
+    case "configuration_without_media":
+      return words.configuration_without_media(issue.file);
+  }
+}
+
+/** The check's findings to show: from the latest run while it has them, else the stored stage. */
+export function preflightFindings(
+  run: DeployRun | null,
+  stages: readonly DeployStageState[],
+): { errors: string[]; warnings: string[] } | null {
+  const report =
+    run?.metadata.preflight ??
+    stages.find((state) => state.stage === "verify_activity_data")?.metadata.preflight;
+  if (!report || (!report.errors.length && !report.warnings.length)) return null;
+  return {
+    errors: report.errors.map(preflightText),
+    warnings: report.warnings.map(preflightText),
+  };
+}
+
+/**
+ * Where the activity is on QA, once a QA deploy finished: the address and the module version it
+ * was deployed with, from the stored stages so it survives a reload. Null until one has.
+ */
+export function qaResult(
+  stages: readonly DeployStageState[],
+): { url: string; version: string | null } | null {
+  const done = stages.find((state) => state.stage === "await_activity_deploy");
+  if (done?.status !== "done" || !done.metadata.qaActivityUrl) return null;
+  const exported = stages.find((state) => state.stage === "export_activity_data");
+  return {
+    url: done.metadata.qaActivityUrl,
+    version:
+      done.metadata.resolvedModuleVersion ?? exported?.metadata.resolvedModuleVersion ?? null,
+  };
+}
+
+/**
+ * What a stage run on its own asks before it starts, when it pushes or starts a Jenkins job;
+ * null for a stage that only works on this server's clones or waits.
+ */
+export function stageConfirmText(
+  stage: DeployStage,
+  branches: { deploy: string; activityData: string },
+): string | null {
+  const words = S.activities.deploy;
+  switch (stage) {
+    case "trigger_module_build":
+      return words.triggerConfirm(branches.deploy);
+    case "verify_media_assets":
+      return words.stageConfirm.verify_media_assets;
+    case "publish_activity_data":
+      return words.stageConfirm.publish_activity_data(branches.activityData);
+    case "trigger_activity_deploy":
+      return words.stageConfirm.trigger_activity_deploy;
+    default:
+      return null;
+  }
 }

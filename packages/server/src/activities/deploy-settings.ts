@@ -22,6 +22,15 @@ export const DEPLOY_SECRETS_FILE = "secrets/activity-deploy.json";
 export const DEFAULT_ACTIVITY_DATA_REMOTE =
   "git@github.com:waterfordresearchinstitute/waf-activity-data.git";
 
+/**
+ * Where a deployed activity finds its media unless an admin says otherwise: the framework's
+ * token, which the activity-data deploy recognises, publishes and points at its media host.
+ */
+export const DEFAULT_MEDIA_PUBLIC_BASE = "{{MEDIA}}/";
+
+/** The framework's media token, which a media address may keep for the framework to replace. */
+export const MEDIA_TOKEN = "{{MEDIA}}";
+
 /** Longest a name (job, user, tier, environment) may be. */
 export const NAME_MAX = 200;
 /** Longest a URL or remote may be. */
@@ -72,7 +81,11 @@ export function defaultDeploySettings(): DeploySettings {
       frameworkVersion: "",
     },
     jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
-    repos: { activityDataRemote: DEFAULT_ACTIVITY_DATA_REMOTE, mediaRemote: "" },
+    repos: {
+      activityDataRemote: DEFAULT_ACTIVITY_DATA_REMOTE,
+      mediaRemote: "",
+      mediaPublicBase: DEFAULT_MEDIA_PUBLIC_BASE,
+    },
     git: { userName: "", userEmail: "" },
     timeouts: { buildMinutes: 30, deployMinutes: 30 },
   };
@@ -228,6 +241,40 @@ export function isAllowedRemote(remote: string): boolean {
   }
 }
 
+/**
+ * Where a deployed activity finds its media: a path on the activity's own host (`/media/`), a
+ * web address (https, or http on localhost), or the framework's token (`{{MEDIA}}/`), which
+ * the activity-data deploy recognises and replaces (the default). Always ends with one slash,
+ * so a media path follows it directly; empty takes the default.
+ */
+export function normalizeMediaBase(value: unknown, field: string): string {
+  const raw = text(value, field, URL_MAX);
+  if (raw === "") return DEFAULT_MEDIA_PUBLIC_BASE;
+  const refuse = () =>
+    invalid(
+      field,
+      "not_media_base",
+      "must be a path like /media/, an https:// address, or {{MEDIA}}/.",
+    );
+  if (/[\s"'<>`\\?#]/.test(raw)) throw refuse();
+  const slashed = `${raw.replace(/\/+$/, "")}/`;
+  if (raw.startsWith(MEDIA_TOKEN)) {
+    if (slashed !== `${MEDIA_TOKEN}/`) throw refuse();
+    return slashed;
+  }
+  if (raw.startsWith("/")) {
+    if (raw.startsWith("//") || raw.split("/").some((part) => part === "." || part === ".."))
+      throw refuse();
+    return slashed;
+  }
+  try {
+    new URL(raw);
+  } catch {
+    throw refuse();
+  }
+  return `${normalizeHttpUrl(raw, field)}/`;
+}
+
 /** "4.2", "4.2.1", "v4.2.1", "4.2.1-rc.1"; empty means not set. */
 const FRAMEWORK_VERSION = /^v?\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$/;
 
@@ -355,6 +402,9 @@ export function normalizeDeploySettings(
   next.repos.mediaRemote =
     set(repos, "mediaRemote", (v) => normalizeRemote(v, "repos.mediaRemote")) ??
     next.repos.mediaRemote;
+  next.repos.mediaPublicBase =
+    set(repos, "mediaPublicBase", (v) => normalizeMediaBase(v, "repos.mediaPublicBase")) ??
+    next.repos.mediaPublicBase;
 
   const git = groupOf(body, "git");
   next.git.userName = set(git, "userName", (v) => text(v, "git.userName")) ?? next.git.userName;

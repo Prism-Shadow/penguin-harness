@@ -570,14 +570,25 @@ describe("stage blockers", () => {
     // A failed or stopped verify leaves its copied files behind; verify itself clears them.
     expect(stageBlocker("verify_module", dirty, { verify_module: "failed" }, false)).toBeNull();
     expect(stageBlocker("prepare_deploy", dirty, { verify_module: "done" }, false)).toBeNull();
+    // The activity-data and media clones are put back as origin has them by the stages that
+    // work in them, so what a failed export or media copy left there does not block either.
     const otherDirty: DeployContext = {
       ...ready,
       ready: false,
-      problems: [{ code: "clone_dirty", repo: "activityData" }],
+      problems: [
+        { code: "clone_dirty", repo: "activityData" },
+        { code: "clone_ahead", repo: "media", count: 2 },
+      ],
     };
-    expect(stageBlocker("verify_module", otherDirty, {}, false)).toEqual({
-      code: "clone_dirty",
-      repo: "activityData",
+    expect(stageBlocker("verify_module", otherDirty, {}, false)).toBeNull();
+    const otherRemote: DeployContext = {
+      ...ready,
+      ready: false,
+      problems: [{ code: "clone_remote_mismatch", repo: "activityData" }],
+    };
+    expect(stageBlocker("verify_module", otherRemote, {}, false)).toEqual({
+      code: "not_ready",
+      problem: { code: "clone_remote_mismatch", repo: "activityData" },
     });
     const unset: DeployContext = {
       ...ready,

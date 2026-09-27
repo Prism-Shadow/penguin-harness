@@ -1,8 +1,8 @@
 /**
- * The module release, in the Deploy section: each stage with its state and why it cannot run
- * now, Release module (behind a confirmation, since it pushes a branch and starts a Jenkins
- * build), one stage at a time under "Run one stage", Stop, and the log, followed every second
- * while the release runs.
+ * The module release and the QA deploy, in the Deploy section: each stage with its state and
+ * why it cannot run now, Deploy to QA and Release module (each behind a confirmation, since
+ * they push branches and start Jenkins jobs), one stage at a time under "Run one stage", Stop,
+ * the log, followed every second while a run goes, and once QA has the activity, a link to it.
  */
 import { useEffect, useRef, useState } from "react";
 import type {
@@ -24,8 +24,11 @@ import { S } from "../../lib/strings";
 import { toneDot, toneInk } from "../../lib/tone";
 import {
   appendLog,
+  preflightFindings,
+  qaResult,
   refusalText,
   runLine,
+  stageConfirmText,
   stageName,
   stageRows,
   versionProblem,
@@ -46,6 +49,8 @@ export function DeployRelease({
   run,
   stages,
   branch,
+  activityDataBranch,
+  productCode,
   onRun,
   onSettled,
   onAnnounce,
@@ -56,6 +61,9 @@ export function DeployRelease({
   stages: readonly DeployStageState[];
   /** The module's deploy branch, which the confirmation names. */
   branch: string;
+  /** The activity-data branch a QA deploy pushes, which its confirmation names. */
+  activityDataBranch: string;
+  productCode: string;
   /** A run started, or the log poll brought a newer state of it. */
   onRun: (run: DeployRun) => void;
   /** A followed run ended: the stage states and readiness are read again. */
@@ -156,7 +164,11 @@ export function DeployRelease({
       onAnnounce({
         kind: "info",
         text:
-          selection === "release" ? words.releaseStarted : words.stageStarted(stageName(selection)),
+          selection === "release"
+            ? words.releaseStarted
+            : selection === "qa"
+              ? words.deployQaStarted
+              : words.stageStarted(stageName(selection)),
       });
     } catch (cause) {
       if (alive.current) {
@@ -189,9 +201,11 @@ export function DeployRelease({
     }
   }
 
-  /** A stage that pushes asks first; the others only work on this server's clone or wait. */
+  const branches = { deploy: branch, activityData: activityDataBranch };
+
+  /** A stage that pushes or starts a Jenkins job asks first; the others only work here or wait. */
   function runStage(stage: DeployStage) {
-    if (stage === "trigger_module_build") setConfirm(stage);
+    if (stageConfirmText(stage, branches) !== null) setConfirm(stage);
     else void start(stage);
   }
 
@@ -202,6 +216,12 @@ export function DeployRelease({
   const versionError = versionProblem(version);
   const buildUrl = run?.metadata.moduleBuildUrl;
   const resolved = run?.metadata.resolvedModuleVersion;
+  const onQa = qaResult(stages);
+  const findings = preflightFindings(run, stages);
+  const confirmText =
+    confirm === null || confirm === "release" || confirm === "qa"
+      ? null
+      : stageConfirmText(confirm, branches);
   return (
     <section className="space-y-3" aria-labelledby="activity-deploy-release-title">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -212,6 +232,7 @@ export function DeployRelease({
           {words.releaseTitle}
           <InfoPopover label={words.releaseTitle}>
             <p>{words.releaseAbout}</p>
+            <p className="mt-2">{words.qaAbout}</p>
           </InfoPopover>
         </h4>
         {editable && (
@@ -228,12 +249,20 @@ export function DeployRelease({
             )}
             <Button
               size="sm"
-              variant="primary"
               disabled={!canRelease}
-              aria-busy={busy === "start"}
+              aria-busy={busy === "start" && confirm === "release"}
               onClick={() => setConfirm("release")}
             >
-              {running ? words.releasing : words.releaseModule}
+              {running && run?.selection === "release" ? words.releasing : words.releaseModule}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!canRelease}
+              aria-busy={busy === "start" && confirm === "qa"}
+              onClick={() => setConfirm("qa")}
+            >
+              {running && run?.selection === "qa" ? words.deployingQa : words.deployQa}
             </Button>
           </div>
         )}
@@ -250,6 +279,22 @@ export function DeployRelease({
       {error && (
         <p role="alert" className={`text-xs ${toneInk.danger}`}>
           {error}
+        </p>
+      )}
+      {run?.skipped?.length ? (
+        <p className="text-xs text-gray-500 dark:text-gray-400">{words.releaseSkipped}</p>
+      ) : null}
+      {onQa && (
+        <p className="flex flex-wrap items-center gap-x-3 text-sm" data-testid="deploy-qa-result">
+          <a
+            href={onQa.url}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium underline underline-offset-2"
+          >
+            {words.openQa}
+          </a>
+          {onQa.version && <span>{words.qaVersion(onQa.version)}</span>}
         </p>
       )}
       {(resolved || buildUrl) && (
@@ -297,6 +342,50 @@ export function DeployRelease({
           </tbody>
         </table>
       </div>
+      {findings && (
+        <section aria-labelledby="activity-deploy-preflight-title" className="space-y-1">
+          <h5 id="activity-deploy-preflight-title" className="text-xs font-semibold">
+            {words.preflightTitle}
+          </h5>
+          {findings.errors.length > 0 && (
+            <>
+              <h6 id="activity-deploy-preflight-errors" className={`text-xs ${toneInk.danger}`}>
+                {words.preflightErrors}
+              </h6>
+              <ul
+                aria-labelledby="activity-deploy-preflight-errors"
+                className="list-disc space-y-1 pl-5 text-xs"
+              >
+                {findings.errors.map((text, index) => (
+                  <li key={index} className={toneInk.danger}>
+                    {text}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {findings.warnings.length > 0 && (
+            <>
+              <h6
+                id="activity-deploy-preflight-warnings"
+                className="text-xs text-gray-600 dark:text-gray-300"
+              >
+                {words.preflightWarnings}
+              </h6>
+              <ul
+                aria-labelledby="activity-deploy-preflight-warnings"
+                className="list-disc space-y-1 pl-5 text-xs"
+              >
+                {findings.warnings.map((text, index) => (
+                  <li key={index} className="text-gray-600 dark:text-gray-300">
+                    {text}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
       {editable && (
         <details className="space-y-2">
           <summary className="cursor-pointer text-xs font-medium">{words.advanced}</summary>
@@ -335,18 +424,42 @@ export function DeployRelease({
       </section>
       <ConfirmModal
         open={confirm !== null}
-        title={words.releaseConfirmTitle}
+        title={
+          confirm === "qa"
+            ? words.deployQaConfirmTitle
+            : confirm === "release" || confirm === null
+              ? words.releaseConfirmTitle
+              : words.stageConfirmTitle(stageName(confirm))
+        }
         tone="primary"
-        confirmLabel={confirm === "release" ? words.releaseConfirmLabel : words.run}
+        confirmLabel={
+          confirm === "release"
+            ? words.releaseConfirmLabel
+            : confirm === "qa"
+              ? words.deployQaConfirmLabel
+              : words.run
+        }
         confirmDisabled={confirm === "release" && versionError !== null}
         busy={busy === "start"}
         onClose={() => setConfirm(null)}
         onConfirm={() => confirm && void start(confirm)}
       >
         <div className="space-y-3">
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            {confirm === "release" ? words.releaseConfirm(branch) : words.triggerConfirm(branch)}
-          </p>
+          {confirm === "qa" ? (
+            <div className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
+              <p>{words.deployQaConfirm(productCode)}</p>
+              <ul className="list-disc space-y-1 pl-5">
+                <li>{words.deployQaConfirmItems.release(branch)}</li>
+                <li>{words.deployQaConfirmItems.media}</li>
+                <li>{words.deployQaConfirmItems.data(activityDataBranch)}</li>
+                <li>{words.deployQaConfirmItems.deploy}</li>
+              </ul>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              {confirm === "release" ? words.releaseConfirm(branch) : confirmText}
+            </p>
+          )}
           {confirm === "release" && (
             <Input
               size="sm"

@@ -14,19 +14,53 @@
  *   await_module_build    every 15 seconds, look for a newer release tag than the one noted,
  *                         until one appears, the build fails, or the configured minutes pass
  *
- * Everything runs in the module's deploy clone under PENGUIN_HOME; the WAF checkout is never
+ * and the QA deploy after it:
+ *
+ *   export_activity_data     put the activity-data clone on `loom/<pc>-activity-data` as origin
+ *                            has it (from main when origin has no such branch) and write every
+ *                            deployed ref's configuration and assessment, the template and the
+ *                            deploy list into it (`deploy-export.ts`)
+ *   verify_activity_data     check what was written (`deploy-preflight.ts`); errors fail it
+ *   verify_media_assets      put the media clone back to main as origin has it, copy each media
+ *                            file the data names that only the draft holds into it, fail naming
+ *                            any found nowhere, then commit and push main (`deploy-media.ts`)
+ *   publish_activity_data    commit what export wrote and push the branch
+ *   trigger_activity_deploy  note the newest activity deploy build, and start the activity
+ *                            deploy job for the branch and this product's template
+ *   await_activity_deploy    every 15 seconds, follow that build until it succeeds, fails, or
+ *                            the configured minutes pass; record where the activity opens on QA
+ *
+ * Everything runs in the deploy clones under PENGUIN_HOME; the WAF checkout is never
  * touched. git, Jenkins, the programs and the clock are ports, so a test runs every stage with
  * fakes and nothing reaches a remote.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { BASE_BRANCH, deployBranchName, moduleShortName, type DeployGit } from "./deploy-git.js";
+import {
+  BASE_BRANCH,
+  activityDataBranchName,
+  deployBranchName,
+  moduleShortName,
+  type DeployGit,
+} from "./deploy-git.js";
 import type { DeployJenkins, JenkinsBuildStatus } from "./deploy-jenkins.js";
 import { JenkinsError } from "./deploy-jenkins.js";
 import type { DeployProcess } from "./deploy-process.js";
 import type { DeploySettings } from "./deploy-settings.js";
 import {
+  ExportLayoutError,
+  exportFiles,
+  mainModule,
+  deployedRefs,
+  type ExportRef,
+} from "./deploy-export.js";
+import { runPreflight } from "./deploy-preflight.js";
+import { syncMedia } from "./deploy-media.js";
+import { withinRoot } from "./sandbox-paths.js";
+import {
+  DEPLOY_QA_STAGES,
   DEPLOY_RELEASE_STAGES,
+  DEPLOY_STAGES,
   type DeployBlocker,
   type DeployContext,
   type DeployProblem,
@@ -118,6 +152,33 @@ export const realClock: DeployClock = {
     }),
 };
 
+/** The activity as a QA deploy exports it, read when the export runs. */
+export interface DeployActivitySnapshot {
+  /** The deploying (canonical) ref's title, layout and theme, which the template carries. */
+  title: string;
+  layout: string | null;
+  theme: string | null;
+  /** The deploying ref's draft revision, recorded as what went to QA. */
+  contentRevision: string;
+  /** Every ref of the product; archived ones are left out of the export. */
+  refs: ExportRef[];
+  /** Each ref's draft media folder, where generated and uploaded media are found. */
+  draftMediaRoots: string[];
+}
+
+/** What the QA stages work on besides the module. */
+export interface DeployQaContext {
+  /** The activity-data clone. */
+  activityData: { dir: string };
+  /** The media clone. */
+  media: { dir: string };
+  /** The deploying ref's number, which the link to QA opens. */
+  refNum: number;
+  /** Where the deploy goes: the target's Jenkins job settings and the QA address. */
+  target: { tier: string; environment: string; frameworkVersion: string; activityBaseUrl: string };
+  snapshot(): Promise<DeployActivitySnapshot>;
+}
+
 export interface DeployStageContext {
   git: DeployGit;
   jenkins: DeployJenkins;
@@ -131,7 +192,11 @@ export interface DeployStageContext {
     dir: string;
     /** The newest assembled module to copy over the clone; null to deploy the clone as it is. */
     source: string | null;
+    /** What that module's content hashes to; null (or absent) when there is none. */
+    contentHash?: string | null;
   };
+  /** The activity-data and media side of a QA deploy; absent for a run that cannot reach it. */
+  qa?: DeployQaContext;
   /** The version to write into package.json; null keeps the one there. */
   moduleVersion: string | null;
   /** What this run found out so far; stages add to it. */
@@ -188,12 +253,12 @@ function lineWriter(log: (text: string) => void) {
 async function git(
   ctx: DeployStageContext,
   args: string[],
-  options: { timeoutMs?: number; allowFailure?: boolean; quiet?: boolean } = {},
+  options: { timeoutMs?: number; allowFailure?: boolean; quiet?: boolean; cwd?: string } = {},
 ) {
   checkStopped(ctx);
   const command = `git ${args.join(" ")}`;
   ctx.log(`$ ${command}`);
-  const result = await ctx.git.run(args, ctx.module.dir, {
+  const result = await ctx.git.run(args, options.cwd ?? ctx.module.dir, {
     ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
     signal: ctx.signal,
   });
@@ -217,6 +282,30 @@ async function git(
     });
   }
   return result;
+}
+
+/** Characters of paths one `git add` may name, well under Windows' 32,767-character command line. */
+const ADD_BATCH_CHARS = 8_000;
+
+/** Stages the paths in batches, so a product with hundreds of files never overflows the command line. */
+async function gitAdd(
+  ctx: DeployStageContext,
+  flags: readonly string[],
+  paths: readonly string[],
+  cwd: string,
+) {
+  let batch: string[] = [];
+  let size = 0;
+  for (const path of paths) {
+    if (batch.length && size + path.length + 1 > ADD_BATCH_CHARS) {
+      await git(ctx, ["add", ...flags, "--", ...batch], { cwd });
+      batch = [];
+      size = 0;
+    }
+    batch.push(path);
+    size += path.length + 1;
+  }
+  if (batch.length) await git(ctx, ["add", ...flags, "--", ...batch], { cwd });
 }
 
 function tailOf(text: string): string {
@@ -316,6 +405,7 @@ const verifyModule: DeployStageDefinition = {
       const copied = await syncModule(ctx.module.source, ctx.module.dir);
       ctx.log(`Copied ${copied} files from the newest assembled module.`);
     } else ctx.log("No assembled module: verifying the module as its repository holds it.");
+    ctx.metadata.moduleContentHash = ctx.module.contentHash ?? null;
     for (const args of MODULE_VERIFY_COMMANDS) await program(ctx, "npm", args);
   },
 };
@@ -467,43 +557,406 @@ const awaitModuleBuild: DeployStageDefinition = {
   },
 };
 
+/** How often the activity deploy is looked at while waiting for it. */
+export const DEPLOY_POLL_MS = 15_000;
+
+/** How many media paths a failure or the metadata names at most. */
+const PATHS_SHOWN = 20;
+
+function qaOf(ctx: DeployStageContext): DeployQaContext {
+  if (!ctx.qa) throw new Error("This run has no activity-data or media clone to work in.");
+  return ctx.qa;
+}
+
+/**
+ * The released module version the QA stages pin: this run's, else the one the last release (or
+ * the last export) recorded. A QA stage never guesses one.
+ */
+function releasedVersion(ctx: DeployStageContext): string {
+  const version =
+    ctx.metadata.resolvedModuleVersion ??
+    ctx.earlier.export_activity_data?.resolvedModuleVersion ??
+    ctx.earlier.await_module_build?.resolvedModuleVersion;
+  if (!version)
+    throw new DeployStageFailure({ code: "missing_input", stage: "await_module_build" });
+  ctx.metadata.resolvedModuleVersion = version;
+  return version;
+}
+
+/** Puts a clone on `branch` as origin has it (or on a new one from origin's main), clean. */
+async function resetClone(ctx: DeployStageContext, cwd: string, branch: string) {
+  await git(ctx, ["fetch", "origin"], { timeoutMs: PUSH_TIMEOUT_MS, cwd });
+  const has = async (ref: string) =>
+    (
+      await git(ctx, ["rev-parse", "--verify", "--quiet", ref], {
+        allowFailure: true,
+        quiet: true,
+        cwd,
+      })
+    ).code === 0;
+  const start = (await has(`refs/remotes/origin/${branch}`))
+    ? `origin/${branch}`
+    : (await has(`refs/remotes/origin/${BASE_BRANCH}`))
+      ? `origin/${BASE_BRANCH}`
+      : BASE_BRANCH;
+  await git(ctx, ["checkout", "-f", "-B", branch, start], { cwd });
+  await git(ctx, ["clean", "-fd"], { cwd });
+}
+
+/** The exported data's check, reading the activity-data clone. */
+async function preflightOf(ctx: DeployStageContext, version: string) {
+  const qa = qaOf(ctx);
+  return runPreflight({
+    productCode: ctx.productCode,
+    expectedModule: mainModule(ctx.module.folder, version),
+    mediaBase: ctx.settings.repos.mediaPublicBase,
+    read: async (relative) => {
+      const file = withinRoot(qa.activityData.dir, relative);
+      return file ? fs.readFile(file, "utf8").catch(() => null) : null;
+    },
+  });
+}
+
+/** Commits what is staged as the configured identity; the new commit, or null when nothing was. */
+async function commitStaged(
+  ctx: DeployStageContext,
+  cwd: string,
+  message: string,
+): Promise<string | null> {
+  const staged = await git(ctx, ["diff", "--cached", "--quiet"], {
+    allowFailure: true,
+    quiet: true,
+    cwd,
+  });
+  if (staged.code === 0) return null;
+  const { userName, userEmail } = ctx.settings.git;
+  await git(
+    ctx,
+    ["-c", `user.name=${userName}`, "-c", `user.email=${userEmail}`, "commit", "-m", message],
+    { cwd },
+  );
+  return (await git(ctx, ["rev-parse", "HEAD"], { quiet: true, cwd })).stdout.trim();
+}
+
+const exportActivityData: DeployStageDefinition = {
+  id: "export_activity_data",
+  async run(ctx) {
+    const qa = qaOf(ctx);
+    const version = releasedVersion(ctx);
+    const dir = qa.activityData.dir;
+    await resetClone(ctx, dir, activityDataBranchName(ctx.productCode));
+    const snapshot = await qa.snapshot();
+    checkStopped(ctx);
+    let files;
+    try {
+      files = exportFiles({
+        productCode: ctx.productCode,
+        title: snapshot.title,
+        layout: snapshot.layout,
+        theme: snapshot.theme,
+        moduleFolder: ctx.module.folder,
+        version,
+        mediaBase: ctx.settings.repos.mediaPublicBase,
+        refs: snapshot.refs,
+      });
+    } catch (error) {
+      if (error instanceof ExportLayoutError) ctx.log(error.message);
+      throw error;
+    }
+    for (const file of files) {
+      const target = withinRoot(dir, file.path);
+      if (!target) throw new Error(`An exported path left the clone: ${file.path}`);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, file.content);
+      ctx.log(`Wrote ${file.path}`);
+    }
+    const refs = deployedRefs(snapshot.refs);
+    ctx.metadata.deployedRefNums = refs.map((ref) => ref.refNum);
+    ctx.metadata.exportedFiles = files.map((file) => file.path);
+    ctx.metadata.exportedRevision = snapshot.contentRevision;
+    ctx.log(
+      `Exported ${refs.length} ref${refs.length === 1 ? "" : "s"} for ${mainModule(ctx.module.folder, version)}.`,
+    );
+  },
+};
+
+const verifyActivityData: DeployStageDefinition = {
+  id: "verify_activity_data",
+  async run(ctx) {
+    const version = releasedVersion(ctx);
+    const report = await preflightOf(ctx, version);
+    const { errors, warnings, counts } = report;
+    ctx.metadata.preflight = { errors, warnings, counts };
+    ctx.log(
+      `Checked ${report.counts.templates} template, ${report.counts.configurations} configurations, ${report.counts.assessments} assessments and ${report.counts.media} media files.`,
+    );
+    for (const warning of report.warnings) ctx.log(`Warning: ${JSON.stringify(warning)}`);
+    for (const error of report.errors) ctx.log(`Error: ${JSON.stringify(error)}`);
+    if (report.errors.length)
+      throw new DeployStageFailure({ code: "preflight_failed", errors: report.errors.length });
+  },
+};
+
+const verifyMediaAssets: DeployStageDefinition = {
+  id: "verify_media_assets",
+  async run(ctx) {
+    const qa = qaOf(ctx);
+    const version = releasedVersion(ctx);
+    const report = await preflightOf(ctx, version);
+    if (report.errors.length)
+      throw new DeployStageFailure({ code: "preflight_failed", errors: report.errors.length });
+    ctx.metadata.mediaChecked = report.media.length;
+    const cwd = qa.media.dir;
+    // The media clone is this server's own: what a failed publish left in it is dropped.
+    await git(ctx, ["fetch", "origin"], { timeoutMs: PUSH_TIMEOUT_MS, cwd });
+    await git(ctx, ["checkout", "-f", BASE_BRANCH], { cwd });
+    const tracked = await git(
+      ctx,
+      ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${BASE_BRANCH}`],
+      { allowFailure: true, quiet: true, cwd },
+    );
+    if (tracked.code === 0) await git(ctx, ["reset", "--hard", `origin/${BASE_BRANCH}`], { cwd });
+    await git(ctx, ["clean", "-fd"], { cwd });
+    const snapshot = await qa.snapshot();
+    const result = await syncMedia(
+      { dir: cwd, references: report.media, draftRoots: snapshot.draftMediaRoots },
+      {
+        git: (args, options = {}) => git(ctx, args, { ...options, cwd }),
+        log: ctx.log,
+      },
+    );
+    for (const missing of result.missing.slice(0, PATHS_SHOWN)) ctx.log(`Missing: ${missing}`);
+    if (result.missing.length)
+      throw new DeployStageFailure({
+        code: "media_missing",
+        paths: result.missing.slice(0, PATHS_SHOWN),
+        count: result.missing.length,
+      });
+    ctx.metadata.mediaCopied = result.copied.slice(0, PATHS_SHOWN);
+    ctx.metadata.mediaCopiedCount = result.copied.length;
+    if (!result.copied.length) {
+      ctx.log("The media repository already has every file: nothing to publish.");
+      return;
+    }
+    await gitAdd(ctx, [], result.copied, cwd);
+    const commit = await commitStaged(ctx, cwd, `Publish media for ${ctx.productCode}`);
+    if (!commit) return;
+    ctx.metadata.mediaCommit = commit;
+    await git(ctx, ["push", "origin", BASE_BRANCH], { timeoutMs: PUSH_TIMEOUT_MS, cwd });
+  },
+};
+
+const publishActivityData: DeployStageDefinition = {
+  id: "publish_activity_data",
+  async run(ctx) {
+    const qa = qaOf(ctx);
+    const version = releasedVersion(ctx);
+    const files =
+      ctx.metadata.exportedFiles ?? ctx.earlier.export_activity_data?.exportedFiles ?? null;
+    if (!files?.length)
+      throw new DeployStageFailure({ code: "missing_input", stage: "export_activity_data" });
+    const cwd = qa.activityData.dir;
+    const branch = activityDataBranchName(ctx.productCode);
+    await gitAdd(ctx, ["--all"], files, cwd);
+    const commit = await commitStaged(
+      ctx,
+      cwd,
+      `Deploy activity data for ${ctx.productCode} (${mainModule(ctx.module.folder, version)})`,
+    );
+    if (commit) ctx.metadata.activityDataCommit = commit;
+    else ctx.log("The activity data had not changed: nothing to commit.");
+    await git(ctx, ["push", "-u", "origin", branch], { timeoutMs: PUSH_TIMEOUT_MS, cwd });
+  },
+};
+
+/** The parameters the activity deploy job is started with, as the job takes them. */
+export function activityDeployParams(
+  productCode: string,
+  target: DeployQaContext["target"],
+): Record<string, string> {
+  return {
+    branch: activityDataBranchName(productCode),
+    framework_version: target.frameworkVersion,
+    tier: target.tier,
+    deploy_environment: target.environment,
+    add_activities_to_catalog: "false",
+    template_names: productCode,
+  };
+}
+
+/** The parameters a started activity deploy is recognised by. */
+function activityDeployMatch(params: Record<string, string>): Record<string, string> {
+  return {
+    branch: params.branch!,
+    tier: params.tier!,
+    deploy_environment: params.deploy_environment!,
+    template_names: params.template_names!,
+  };
+}
+
+/** Where the deployed activity opens on QA. */
+export function qaActivityUrl(
+  base: string,
+  productCode: string,
+  refNum: number,
+  frameworkVersion: string,
+): string {
+  const query = new URLSearchParams({
+    productCode,
+    refNum: String(refNum),
+    frameworkVersion,
+  });
+  return `${base}?${query.toString()}`;
+}
+
+const triggerActivityDeploy: DeployStageDefinition = {
+  id: "trigger_activity_deploy",
+  async run(ctx) {
+    const qa = qaOf(ctx);
+    const job = ctx.settings.jobs.activityDeploy;
+    const params = activityDeployParams(ctx.productCode, qa.target);
+    const before = await jenkinsCall(() => ctx.jenkins.status(job, activityDeployMatch(params)));
+    ctx.metadata.preDeployNumber = before.number ?? null;
+    ctx.metadata.qaFrameworkVersion = qa.target.frameworkVersion;
+    ctx.metadata.qaActivityUrl = qaActivityUrl(
+      qa.target.activityBaseUrl,
+      ctx.productCode,
+      qa.refNum,
+      qa.target.frameworkVersion,
+    );
+    checkStopped(ctx);
+    ctx.log(`Starting Jenkins job "${job}" with ${new URLSearchParams(params).toString()}.`);
+    const { queueUrl } = await jenkinsCall(() => ctx.jenkins.trigger(job, params));
+    if (queueUrl) ctx.log(`Queued: ${queueUrl}`);
+  },
+};
+
+const awaitActivityDeploy: DeployStageDefinition = {
+  id: "await_activity_deploy",
+  async run(ctx) {
+    const qa = qaOf(ctx);
+    // Run on its own, the stage waits on the deploy the trigger stage last started.
+    const triggered =
+      ctx.metadata.preDeployNumber !== undefined
+        ? ctx.metadata
+        : ctx.earlier.trigger_activity_deploy;
+    if (!triggered || triggered.preDeployNumber === undefined)
+      throw new DeployStageFailure({ code: "missing_input", stage: "trigger_activity_deploy" });
+    const after = triggered.preDeployNumber ?? null;
+    ctx.metadata.preDeployNumber = after;
+    ctx.metadata.qaFrameworkVersion = triggered.qaFrameworkVersion ?? qa.target.frameworkVersion;
+    ctx.metadata.qaActivityUrl =
+      triggered.qaActivityUrl ??
+      qaActivityUrl(
+        qa.target.activityBaseUrl,
+        ctx.productCode,
+        qa.refNum,
+        ctx.metadata.qaFrameworkVersion,
+      );
+    const job = ctx.settings.jobs.activityDeploy;
+    const match = activityDeployMatch(activityDeployParams(ctx.productCode, qa.target));
+    const minutes = ctx.settings.timeouts.deployMinutes;
+    const deadline = ctx.clock.now() + minutes * 60_000;
+    let last: JenkinsBuildStatus["state"] | null = null;
+    for (;;) {
+      checkStopped(ctx);
+      const status = await jenkinsCall(() => ctx.jenkins.status(job, match, { after }));
+      if (status.url && status.url !== ctx.metadata.activityDeployUrl) {
+        ctx.metadata.activityDeployUrl = status.url;
+        ctx.log(`Deploy: ${status.url}`);
+      }
+      if (status.state !== last) {
+        ctx.log(`Jenkins: ${status.state}${status.number ? ` (#${status.number})` : ""}.`);
+        last = status.state;
+      }
+      if (status.state === "failed")
+        throw new DeployStageFailure({
+          code: "build_failed",
+          result: status.result ?? "FAILURE",
+          url: status.url ?? null,
+        });
+      if (status.state === "succeeded") {
+        ctx.metadata.qaDeployedAt = new Date(ctx.clock.now()).toISOString();
+        const revision =
+          ctx.metadata.exportedRevision ?? ctx.earlier.export_activity_data?.exportedRevision;
+        if (revision) ctx.metadata.contentRevision = revision;
+        ctx.log(`On QA: ${ctx.metadata.qaActivityUrl}`);
+        return;
+      }
+      if (ctx.clock.now() >= deadline)
+        throw new DeployStageFailure({ code: "deploy_timed_out", minutes });
+      await ctx.clock.sleep(DEPLOY_POLL_MS, ctx.signal);
+    }
+  },
+};
+
 export const DEPLOY_STAGE_DEFINITIONS: Record<DeployStage, DeployStageDefinition> = {
   verify_module: verifyModule,
   prepare_deploy: prepareDeploy,
   trigger_module_build: triggerModuleBuild,
   await_module_build: awaitModuleBuild,
+  export_activity_data: exportActivityData,
+  verify_activity_data: verifyActivityData,
+  verify_media_assets: verifyMediaAssets,
+  publish_activity_data: publishActivityData,
+  trigger_activity_deploy: triggerActivityDeploy,
+  await_activity_deploy: awaitActivityDeploy,
 };
 
-/** The stages a selection runs, in order. */
+/** The stages a selection runs, in order (a QA deploy's before any release is left out). */
 export function stagesFor(selection: DeployStageSelection): DeployStage[] {
-  return selection === "release" ? [...DEPLOY_RELEASE_STAGES] : [selection];
+  if (selection === "release") return [...DEPLOY_RELEASE_STAGES];
+  if (selection === "qa") return [...DEPLOY_STAGES];
+  return [selection];
 }
 
 export function isStageSelection(value: unknown): value is DeployStageSelection {
   return (
     value === "release" ||
-    (typeof value === "string" && (DEPLOY_RELEASE_STAGES as readonly string[]).includes(value))
+    value === "qa" ||
+    (typeof value === "string" && (DEPLOY_STAGES as readonly string[]).includes(value))
   );
 }
 
 /**
- * Readiness problems every stage tolerates in the module clone: a release leaves it with
- * changes, and on a branch whose upstream is not there yet, and verify_module puts it back to
- * main as origin has it before anything else.
+ * Whether the module's release is current, so a QA deploy can leave it out: every release
+ * stage is done since the last verify, and verify checked the same assembled module (by its
+ * content hash). Without an assembled module there is nothing to compare, so the release runs.
  */
-function toleratedInModule(problem: DeployProblem): boolean {
+export function releaseCurrent(
+  stored: Partial<Record<DeployStage, { status: DeployStageStatus; metadata: DeployRunMetadata }>>,
+  contentHash: string | null,
+): boolean {
+  if (!contentHash) return false;
+  if (!DEPLOY_RELEASE_STAGES.every((stage) => stored[stage]?.status === "done")) return false;
   return (
-    "repo" in problem &&
-    problem.repo === "module" &&
-    (problem.code === "clone_dirty" ||
-      problem.code === "clone_ahead" ||
-      problem.code === "clone_unknown")
+    stored.verify_module?.metadata.moduleContentHash === contentHash &&
+    Boolean(stored.await_module_build?.metadata.resolvedModuleVersion)
   );
+}
+
+/** The stages a QA deploy runs: all ten, or the six after the release when it is current. */
+export function qaStages(releaseIsCurrent: boolean): DeployStage[] {
+  return releaseIsCurrent ? [...DEPLOY_QA_STAGES] : [...DEPLOY_STAGES];
+}
+
+/**
+ * Readiness problems every stage tolerates in the clones: they are this server's own, and each
+ * stage that works in one first puts it back as origin has it. A release leaves the module
+ * clone with changes and on a branch whose upstream is not there yet; an export or a media
+ * copy that failed half way leaves the activity-data or media clone with changes or commits
+ * not yet pushed.
+ */
+function tolerated(problem: DeployProblem): boolean {
+  if (!("repo" in problem)) return false;
+  if (problem.code === "clone_dirty" || problem.code === "clone_ahead") return true;
+  if (problem.code !== "clone_unknown") return false;
+  return problem.repo === "module" || problem.what === "status" || problem.what === "upstream";
 }
 
 /** The readiness problems that keep a stage from starting. */
 export function startProblems(context: DeployContext): DeployProblem[] {
-  return context.problems.filter((problem) => !toleratedInModule(problem));
+  return context.problems.filter((problem) => !tolerated(problem));
 }
 
 /**
@@ -535,9 +988,9 @@ export function stageBlocker(
   if (runActive) return { code: "run_active" };
   const problem = startProblems(context)[0];
   if (problem) return blockerOf(problem);
-  const index = DEPLOY_RELEASE_STAGES.indexOf(stage);
+  const index = DEPLOY_STAGES.indexOf(stage);
   if (index > 0) {
-    const previous = DEPLOY_RELEASE_STAGES[index - 1]!;
+    const previous = DEPLOY_STAGES[index - 1]!;
     if (statuses[previous] !== "done") return { code: "previous_stage", stage: previous };
     if (ONCE_PER_PREVIOUS.has(stage) && (statuses[stage] ?? "pending") !== "pending")
       return { code: "previous_rerun", stage: previous };

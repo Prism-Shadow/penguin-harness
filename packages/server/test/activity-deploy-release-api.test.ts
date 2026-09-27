@@ -218,7 +218,7 @@ describe("activity deploy release routes", () => {
     return { t, root, git, jenkins, npm, client, base, endpoint, state };
   }
 
-  it("lists the four stages, pending, with the later ones waiting on the one before", async () => {
+  it("lists the ten stages, pending, with the later ones waiting on the one before", async () => {
     const { state } = await setup();
     const found = await state();
     expect(found.context.ready).toBe(true);
@@ -228,6 +228,28 @@ describe("activity deploy release routes", () => {
       ["prepare_deploy", "pending", { code: "previous_stage", stage: "verify_module" }],
       ["trigger_module_build", "pending", { code: "previous_stage", stage: "prepare_deploy" }],
       ["await_module_build", "pending", { code: "previous_stage", stage: "trigger_module_build" }],
+      ["export_activity_data", "pending", { code: "previous_stage", stage: "await_module_build" }],
+      [
+        "verify_activity_data",
+        "pending",
+        { code: "previous_stage", stage: "export_activity_data" },
+      ],
+      ["verify_media_assets", "pending", { code: "previous_stage", stage: "verify_activity_data" }],
+      [
+        "publish_activity_data",
+        "pending",
+        { code: "previous_stage", stage: "verify_media_assets" },
+      ],
+      [
+        "trigger_activity_deploy",
+        "pending",
+        { code: "previous_stage", stage: "publish_activity_data" },
+      ],
+      [
+        "await_activity_deploy",
+        "pending",
+        { code: "previous_stage", stage: "trigger_activity_deploy" },
+      ],
     ]);
   });
 
@@ -277,7 +299,18 @@ describe("activity deploy release routes", () => {
       resolvedModuleVersion: "1.5.0",
       moduleBuildUrl: "https://jenkins.example.org/job/Build%20WAF%20Modules/3/",
     });
-    expect(found.stages.map((stage) => stage.status)).toEqual(["done", "done", "done", "done"]);
+    expect(found.stages.map((stage) => stage.status)).toEqual([
+      "done",
+      "done",
+      "done",
+      "done",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+    ]);
     expect(npm.state.lines).toEqual([
       "npm ci",
       "npm run buildDebug",
