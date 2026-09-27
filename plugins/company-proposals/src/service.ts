@@ -42,7 +42,7 @@ import type {
 import { CONFIG_GROUP, testGroupsOf, undeclaredGroupsMessage } from "./config.js";
 import { renderForAgent, sectionSource } from "./comments.js";
 import { readBaseFile } from "./files.js";
-import { PrStatusReader } from "./pr-status.js";
+import { PrStatusReader, type RunGh } from "./pr-status.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
 import {
   checkScope,
@@ -91,13 +91,13 @@ export interface ServiceDeps {
   agents: Pick<AgentLifecycle, "pluginVersion" | "updatePlugin">;
   /** The data root (Paths.root). */
   root: string;
-  settings: Pick<Settings, "get" | "set" | "getGithubToken">;
+  settings: Pick<Settings, "get" | "set">;
   log: Pick<Log, "line">;
   /** The plugin's settings group (config.ts); the declared defaults when absent (a test that does not care). */
   pluginConfig?: Pick<PluginConfig, "get">;
   now?: () => number;
-  /** The fetch the PR status lookup uses; the platform's by default (a test feeds answers). */
-  fetch?: typeof fetch;
+  /** How the PR status lookup runs `gh`; the machine's own by default (a test feeds answers). */
+  gh?: RunGh;
 }
 
 /** One write's desk deliveries: the ledger a failed delivery is recorded in, and the reasons collected for the answer. */
@@ -150,8 +150,7 @@ export class ProposalService {
 
   constructor(private readonly deps: ServiceDeps) {
     this.prStatus = new PrStatusReader({
-      ...(deps.fetch !== undefined ? { fetch: deps.fetch } : {}),
-      token: () => deps.settings.getGithubToken(),
+      ...(deps.gh !== undefined ? { gh: deps.gh } : {}),
       log: (line) => deps.log.line(line),
       ...(deps.now !== undefined ? { now: deps.now } : {}),
     });

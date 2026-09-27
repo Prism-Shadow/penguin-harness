@@ -1,17 +1,19 @@
 /**
  * The GitHub pull-request status a `pr` material carries: which URLs are looked up, how
- * GitHub's answer maps to the four states, and what the reader does with its cache, its
- * token and a failure.
+ * GitHub's answer maps to the four states, what the reader asks `gh` and does with its
+ * cache and a failure, and how the default runner starts a process. No test reaches
+ * GitHub or needs a logged-in `gh`: the reader gets a scripted runner, and the runner's
+ * own tests start node in place of `gh`.
  */
 import { describe, expect, it } from "vitest";
-import { PrStatusReader, STATUS_TTL_MS, parsePullUrl, statusOf } from "../src/pr-status.js";
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
+import {
+  PrStatusReader,
+  STATUS_TTL_MS,
+  ghRunner,
+  parsePullUrl,
+  statusOf,
+  type RunGh,
+} from "../src/pr-status.js";
 
 describe("parsePullUrl", () => {
   it("names the pull request of a GitHub URL, /pull or /pulls, with or without a tail", () => {
@@ -53,57 +55,38 @@ describe("statusOf", () => {
 describe("PrStatusReader", () => {
   const URL = "https://github.com/o/r/pull/7";
 
-  function reader(opts: {
-    answers: Array<() => Response | Promise<Response>>;
-    token?: string | null;
-    now?: () => number;
-  }) {
-    const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+  function reader(opts: { answers: Array<() => string | Promise<string>>; now?: () => number }) {
+    const calls: Array<{ args: string[]; limits: { timeoutMs: number; maxBytes: number } }> = [];
     const lines: string[] = [];
-    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
-      calls.push({
-        url: String(input),
-        headers: Object.fromEntries(Object.entries(init?.headers ?? {})),
-      });
+    const gh: RunGh = async (args, limits) => {
+      calls.push({ args: [...args], limits });
       const next = opts.answers.shift();
       if (next === undefined) throw new Error("no answer left");
       return next();
-    }) as unknown as typeof fetch;
+    };
     const r = new PrStatusReader({
-      fetch: fetchImpl,
-      token: () => opts.token ?? null,
+      gh,
       log: (l) => lines.push(l),
       ...(opts.now !== undefined ? { now: opts.now } : {}),
     });
     return { r, calls, lines };
   }
+  const json = (body: unknown) => () => JSON.stringify(body);
 
-  it("asks GitHub's API for the pull request, with the token when there is one", async () => {
-    const { r, calls } = reader({
-      answers: [() => jsonResponse({ state: "open", draft: true })],
-      token: "ghp_x",
-    });
-    const read = await r.read(URL);
+  it("asks gh for the pull request by its owner, repo and number, never the URL", async () => {
+    const { r, calls } = reader({ answers: [json({ state: "open", draft: true })] });
+    const read = await r.read("https://www.github.com/o/r.git/pull/7#discussion_r1");
     expect(read?.status).toBe("draft");
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe("https://api.github.com/repos/o/r/pulls/7");
-    expect(calls[0]!.headers.authorization).toBe("Bearer ghp_x");
-    expect(calls[0]!.headers.accept).toBe("application/vnd.github+json");
-  });
-
-  it("sends no authorization without a token", async () => {
-    const { r, calls } = reader({ answers: [() => jsonResponse({ state: "open" })] });
-    expect((await r.read(URL))?.status).toBe("open");
-    expect(calls[0]!.headers.authorization).toBeUndefined();
+    expect(calls[0]!.args).toEqual(["api", "repos/o/r/pulls/7"]);
+    expect(calls[0]!.limits.timeoutMs).toBeGreaterThan(0);
+    expect(calls[0]!.limits.maxBytes).toBeGreaterThan(0);
   });
 
   it("keeps an answer for a minute, then asks again", async () => {
     let t = 1_000_000;
     const { r, calls } = reader({
-      answers: [
-        () => jsonResponse({ state: "open" }),
-        () => jsonResponse({ merged: true, state: "closed" }),
-      ],
+      answers: [json({ state: "open" }), json({ merged: true, state: "closed" })],
       now: () => t,
     });
     expect((await r.read(URL))?.status).toBe("open");
@@ -116,7 +99,7 @@ describe("PrStatusReader", () => {
   });
 
   it("shares one request between concurrent reads", async () => {
-    const { r, calls } = reader({ answers: [() => jsonResponse({ state: "closed" })] });
+    const { r, calls } = reader({ answers: [json({ state: "closed" })] });
     const [a, b] = await Promise.all([r.read(URL), r.read(URL)]);
     expect(a?.status).toBe("closed");
     expect(b?.status).toBe("closed");
@@ -126,22 +109,75 @@ describe("PrStatusReader", () => {
   it("answers nothing on a failure, logs it once, and does not ask again within the minute", async () => {
     const { r, calls, lines } = reader({
       answers: [
-        () => jsonResponse({ message: "Not Found" }, 404),
-        () => jsonResponse({ state: "open" }),
+        () => Promise.reject(new Error("gh: API rate limit exceeded (HTTP 403)")),
+        json({ state: "open" }),
       ],
     });
     expect(await r.read(URL)).toBeNull();
     expect(await r.read(URL)).toBeNull();
     expect(calls).toHaveLength(1);
-    expect(lines.filter((l) => l.includes("PR status not read for o/r#7"))).toHaveLength(1);
-    const thrown = reader({ answers: [() => Promise.reject(new Error("ECONNRESET"))] });
-    expect(await thrown.r.read(URL)).toBeNull();
-    expect(thrown.lines[0]).toContain("ECONNRESET");
+    const logged = lines.filter((l) => l.includes("PR status not read for o/r#7"));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain("HTTP 403");
+    const garbled = reader({ answers: [() => "not json"] });
+    expect(await garbled.r.read(URL)).toBeNull();
+    expect(garbled.lines).toHaveLength(1);
+  });
+
+  it("does not hand gh a name GitHub would not accept", async () => {
+    const { r, calls, lines } = reader({ answers: [json({ state: "open" })] });
+    expect(await r.read("https://github.com/../r/pull/7")).toBeNull();
+    expect(calls).toHaveLength(0);
+    expect(lines[0]).toContain("not a GitHub repository name");
   });
 
   it("does not look up a URL that names no pull request", async () => {
     const { r, calls } = reader({ answers: [] });
     expect(await r.read("https://github.com/o/r/issues/7")).toBeNull();
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("ghRunner", () => {
+  // node stands in for gh: the runner starts whatever command it was made with.
+  const node = ghRunner(process.execPath);
+  const limits = { timeoutMs: 5_000, maxBytes: 1024 * 1024 };
+
+  it("answers the command's stdout", async () => {
+    const out = await node(
+      ["-e", "process.stdout.write(JSON.stringify({ state: 'open' }))"],
+      limits,
+    );
+    expect(JSON.parse(out)).toEqual({ state: "open" });
+  });
+
+  it("rejects with the reason when the command is missing, fails or runs too long", async () => {
+    await expect(ghRunner("penguin-no-such-gh")(["api", "x"], limits)).rejects.toThrow(
+      "penguin-no-such-gh not found",
+    );
+    await expect(
+      node(
+        [
+          "-e",
+          "process.stderr.write('warming up\\nHTTP 403: API rate limit exceeded\\n'); process.exit(1)",
+        ],
+        limits,
+      ),
+    ).rejects.toThrow(/^HTTP 403: API rate limit exceeded$/);
+    await expect(
+      node(["-e", "setTimeout(() => {}, 10_000)"], { ...limits, timeoutMs: 200 }),
+    ).rejects.toThrow("timed out after 200 ms");
+    await expect(
+      node(["-e", "process.stdout.write('x'.repeat(4096))"], { ...limits, maxBytes: 1024 }),
+    ).rejects.toThrow("wrote more than 1024 bytes");
+  });
+
+  it("leaves a reader without gh with no status and one log line", async () => {
+    const lines: string[] = [];
+    const r = new PrStatusReader({ gh: ghRunner("penguin-no-such-gh"), log: (l) => lines.push(l) });
+    expect(await r.read("https://github.com/o/r/pull/7")).toBeNull();
+    expect(lines).toEqual([
+      "[company-proposals] PR status not read for o/r#7: penguin-no-such-gh not found",
+    ]);
   });
 });
