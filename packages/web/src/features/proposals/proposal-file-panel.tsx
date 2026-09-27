@@ -175,7 +175,9 @@ export function ProposalFilePanel({
             <div className="mt-0.5 font-mono text-xs break-all text-gray-500 dark:text-gray-400">
               {target.name}
               {matches !== null && matches.length > 0 && (
-                <span className="ml-2 font-sans">{t.matches(matches.length)}</span>
+                <span className="ml-2 font-sans break-normal whitespace-nowrap">
+                  {t.matches(matches.length)}
+                </span>
               )}
             </div>
           )}
