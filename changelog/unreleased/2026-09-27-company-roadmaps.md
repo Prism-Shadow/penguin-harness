@@ -1,0 +1,19 @@
+# Company roadmaps: a discussion settles into a roadmap that delegates its proposals
+
+- **Date:** 2026-09-27
+- **Type:** feature
+- **Scope:** `plugins`
+
+[中文版](2026-09-27-company-roadmaps.zh.md)
+
+Company mode gained a **roadmap**: what a discussion among several employees settles into — a body written as a paper, and the proposals (each with a brief and an owner, stacked on one another) and roadmaps it leads to. It ships as a module plugin that is off by default, `@prismshadow/penguin-plugin-company-roadmaps` (`plugins/company-roadmaps`), and depends on company-proposals ([2026-09-21-company-proposals.md](2026-09-21-company-proposals.md)): a delegated proposal is created there by its owner.
+
+## Details
+
+- **The room is a channel.** A person opens a roadmap over an existing organization channel with one or more employees who are already its members; the first one moderates. Nothing of chat is new: members are invited and removed, and the room archived, with the channel's own commands and page. The plugin reads the channel's members and messages from disk and never writes to it.
+- **An employee's desk, cloned for the room.** For every employee in the room the plugin opens a session of that employee's Agent through the organization gateway, started on the room (who is in it, who moderates, the last 20 messages, how to speak there); every later room message is put into the other members' room sessions through the session runtime, queued behind a running Task, and never reaches a desk. An employee invited in gets a room session at the next pass (every `pollSeconds`, default 5); a removed one has its session closed; a deleted session is opened again. A room session's replies travel at the organization's hop 1, so the plugin keeps its own depth: a person's message is 0, a reply one more than what it answers, and a message at `relayDepth` (default 3) is relayed to no one. A paused organization is not relayed to.
+- **The draft.** The moderator or a person writes the record, the body and the items (`PUT …/roadmaps/:n/draft`); items are only briefs, and nothing is created while the room discusses. A person may open a roadmap derived from another (`parent`) to continue a discussion in another room; an employee cannot open one.
+- **Establishing** (`POST …/:n/establish`, the moderator or a person) needs a body, at least one item and every item's cites naming a heading of the body (400 `cite_unknown` otherwise). It archives the roadmap, stops the relay, and delegates every item at once: a proposal item is a line on its owner's desk with the brief, what it is stacked on (the previous proposal item unless `stackedOn` says otherwise) and the commands to create it with `penguin org proposal create` and link its number back (`POST …/:n/items/:key/link`), after which the owners stacked on it are told the number; a roadmap item becomes a derived roadmap waiting for its room, whose moderator is asked to open one and bind it (`POST …/:n/room`). A line that cannot be delivered is recorded as `notify_failed` and returned as a hint. Established again after a reopening, only the items whose owner or brief changed are delegated again.
+- **Reopening** (`POST …/:n/reopen { reason }`, an owner, an employee of the room or a person) puts the roadmap back to discussing and the reason into every room session. A roadmap can be renamed, and a discussion shelved and taken back (`archive` / `unarchive`).
+- **Boundaries.** A mention in a room still reaches that employee's own desk, so a room is used without mentions. A room session's cost is not counted in the organization's budget, as with any session opened through the gateway. The draft beside the room in the web app is not part of this change; the channel page can read `GET …/roadmaps?channel=<id>`.
+- The ledger is `<orgDir>/roadmaps.jsonl`, append-only and replayed on first use; `<orgDir>/roadmaps-relay.json` holds each room's cursor and the relay depths.
