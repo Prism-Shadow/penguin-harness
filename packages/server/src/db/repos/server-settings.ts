@@ -141,7 +141,6 @@ export class ServerSettingsRepo implements Settings {
     }
   }
 
-  /** Per-file composer attachment cap, in whole MB. */
   /** Whether a GitHub token is stored (the value itself is read by the package service). */
   hasGithubToken(): boolean {
     const raw = this.get(GITHUB_TOKEN_KEY);
@@ -159,6 +158,7 @@ export class ServerSettingsRepo implements Settings {
     this.set(GITHUB_TOKEN_KEY, JSON.stringify(value));
   }
 
+  /** Per-file composer attachment cap, in whole MB. */
   getAttachmentMaxMb(): number {
     return this.getAttachmentMb(ATTACHMENT_MAX_MB_KEY, DEFAULT_ATTACHMENT_MAX_MB);
   }
