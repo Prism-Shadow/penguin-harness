@@ -466,3 +466,21 @@ export function missingSettings(settings: DeploySettings, secrets: DeploySecrets
   ];
   return required.filter(([, value]) => value.trim() === "").map(([field]) => field);
 }
+
+/**
+ * The settings a deploy to PROD cannot start without, by dotted path, in the order the
+ * settings page lists them. The jobs, repositories and identity are QA's, checked by
+ * `missingSettings` before QA could have run.
+ */
+export function missingProdSettings(settings: DeploySettings, secrets: DeploySecrets): string[] {
+  const required: Array<[string, string]> = [
+    ["prod.jenkinsUrl", settings.prod.jenkinsUrl],
+    ["prod.username", settings.prod.username],
+    ["prod.token", secrets.prodToken ?? ""],
+    ["prod.tier", settings.prod.tier],
+    ["prod.environment", settings.prod.environment],
+    ["prod.frameworkVersion", settings.prod.frameworkVersion],
+    ["jobs.activityDeploy", settings.jobs.activityDeploy],
+  ];
+  return required.filter(([, value]) => value.trim() === "").map(([field]) => field);
+}

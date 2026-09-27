@@ -126,6 +126,7 @@ import {
   DefaultDeployPorts,
 } from "./activities/deploy-service.js";
 import { DeployAdminRoutes } from "./activities/deploy-routes.js";
+import { ActivityDeployEventHub, ActivityDeployEvents } from "./activities/deploy-events.js";
 import { ActivityPhonemesService, DefaultEspeakPorts } from "./activities/phonemes.js";
 import { PhonemesAdminRoutes } from "./activities/phonemes-routes.js";
 import {
@@ -410,6 +411,7 @@ export class CodingAgentsModule {}
     DefaultAcceptancePorts,
     ActivityAcceptanceService,
     DefaultDeployPorts,
+    ActivityDeployEventHub,
     ActivityDeployService,
     DeployAdminRoutes,
   ],
@@ -420,6 +422,7 @@ export class CodingAgentsModule {}
     TestBrowser,
     ActivityQuality,
     ActivityDeploys,
+    ActivityDeployEvents,
   ],
 })
 export class ActivitiesModule {}

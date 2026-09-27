@@ -24,6 +24,7 @@ import { S } from "../../lib/strings";
 import { toneDot, toneInk } from "../../lib/tone";
 import {
   appendLog,
+  isProdRun,
   preflightFindings,
   qaResult,
   refusalText,
@@ -34,6 +35,9 @@ import {
   versionProblem,
 } from "./deploy-model";
 import type { Announcement } from "./run-toasts";
+
+/** What this section starts: the release, the QA deploy or one of their stages. PROD is the PROD bar's. */
+type QaSelection = Exclude<DeployStageSelection, "prod">;
 
 const HEAD =
   "border-b border-gray-100 bg-gray-50 text-left text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400";
@@ -71,7 +75,7 @@ export function DeployRelease({
   onAnnounce: (announcement: Announcement) => void;
 }) {
   const words = S.activities.deploy;
-  const [confirm, setConfirm] = useState<DeployStageSelection | null>(null);
+  const [confirm, setConfirm] = useState<QaSelection | null>(null);
   const [version, setVersion] = useState("");
   const [busy, setBusy] = useState<"start" | "stop" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -145,7 +149,7 @@ export function DeployRelease({
     if (element && follow.current) element.scrollTop = element.scrollHeight;
   }, [lines]);
 
-  async function start(selection: DeployStageSelection) {
+  async function start(selection: QaSelection) {
     const problem = selection === "release" ? versionProblem(version) : null;
     if (problem) return;
     setBusy("start");
@@ -210,7 +214,8 @@ export function DeployRelease({
   }
 
   const rows = stageRows(run, stages);
-  const line = runLine(run);
+  // A PROD run's line is the PROD bar's.
+  const line = run && isProdRun(run) ? null : runLine(run);
   const first = rows[0];
   const canRelease = editable && !running && busy === null && first !== undefined && !first.blocker;
   const versionError = versionProblem(version);

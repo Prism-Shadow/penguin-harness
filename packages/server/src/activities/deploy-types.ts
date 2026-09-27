@@ -220,16 +220,28 @@ export const DEPLOY_QA_STAGES = [
   "await_activity_deploy",
 ] as const;
 
-/** Every stage, in the order each needs the one before. */
+/** The release and QA stages, in the order each needs the one before: the QA stage list. */
 export const DEPLOY_STAGES = [...DEPLOY_RELEASE_STAGES, ...DEPLOY_QA_STAGES] as const;
 
-export type DeployStage = (typeof DEPLOY_STAGES)[number];
+/**
+ * The stages of a PROD deploy, after a current QA deploy: ask the PROD Jenkins to deploy the
+ * activity data QA has, and wait for that deploy.
+ */
+export const DEPLOY_PROD_STAGES = ["trigger_production_deploy", "await_production_deploy"] as const;
+
+/** Every stage, QA's then PROD's, in the order each needs the one before. */
+export const DEPLOY_ALL_STAGES = [...DEPLOY_STAGES, ...DEPLOY_PROD_STAGES] as const;
+
+export type DeployStage = (typeof DEPLOY_ALL_STAGES)[number];
+
+export type DeployProdStage = (typeof DEPLOY_PROD_STAGES)[number];
 
 /**
  * What a run was asked to do: the module release (stages 1 to 4), a QA deploy (stages 1 to
- * 10, the release left out when it is current), or one stage on its own.
+ * 10, the release left out when it is current), a PROD deploy (its two stages), or one stage
+ * on its own.
  */
-export type DeployStageSelection = "release" | "qa" | DeployStage;
+export type DeployStageSelection = "release" | "qa" | "prod" | DeployStage;
 
 export type DeployStageStatus = "pending" | "running" | "done" | "failed" | "cancelled";
 
@@ -263,8 +275,11 @@ export type DeployStageError =
    * `paths` are the first of them (paths in the media repository), `count` all of them.
    */
   | { code: "media_missing"; paths: string[]; count: number }
-  /** The Jenkins activity deploy ran for the configured minutes and had not finished. */
-  | { code: "deploy_timed_out"; minutes: number }
+  /**
+   * The Jenkins activity deploy ran for the configured minutes and had not finished; `target`
+   * is absent for a QA deploy's (as runs before PROD deploys existed recorded it).
+   */
+  | { code: "deploy_timed_out"; minutes: number; target?: DeployTarget }
   /** The server stopped while the stage ran. */
   | { code: "interrupted" }
   /** Something the stage did not expect; the log says what. */
@@ -317,8 +332,28 @@ export interface DeployRunMetadata {
   qaActivityUrl?: string;
   /** When the QA deploy finished. */
   qaDeployedAt?: string;
-  /** The draft revision of the deploying ref that is now on QA. */
+  /** The number of the Jenkins QA activity deploy that succeeded; null when Jenkins gave none. */
+  activityDeployNumber?: number | null;
+  /**
+   * The draft revision of the deploying ref that is now on QA; on a PROD deploy, the one QA had
+   * and PROD now has.
+   */
   contentRevision?: string;
+  /** The framework version the activity was deployed to PROD with. */
+  prodFrameworkVersion?: string;
+  /** The newest Jenkins PROD activity deploy before the trigger; null when there was none. */
+  preProductionDeployNumber?: number | null;
+  /** The Jenkins PROD activity deploy's page, once Jenkins has one. */
+  productionDeployUrl?: string;
+  /** When the PROD deploy finished. */
+  prodDeployedAt?: string;
+  /** The number of the Jenkins PROD activity deploy that succeeded; null when Jenkins gave none. */
+  productionDeployNumber?: number | null;
+  /**
+   * Set when a wait stage, run again on its own, found the build it had already recorded: nothing
+   * new was deployed, and the deployed time is the one first recorded.
+   */
+  alreadyRecorded?: boolean;
 }
 
 /**
@@ -390,7 +425,13 @@ export type DeployBlocker =
   | { code: "clone_missing"; repo: DeployRepo }
   | { code: "clone_dirty"; repo: DeployRepo }
   /** Another readiness problem stands in the way. */
-  | { code: "not_ready"; problem: DeployProblem };
+  | { code: "not_ready"; problem: DeployProblem }
+  /**
+   * PROD only: QA's deploy is not of the activity as it is now. The activity data was published
+   * or its deploy started again after QA's deploy finished, or the draft changed since the
+   * revision QA has. Deploy to QA again first.
+   */
+  | { code: "qa_outdated" };
 
 /** A stage as it stands for an activity, across runs: survives a restart. */
 export interface DeployStageState {
@@ -402,20 +443,61 @@ export interface DeployStageState {
   blocker: DeployBlocker | null;
 }
 
+/** The last deploy that finished on PROD. */
+export interface DeployProductionRecord {
+  runId: string;
+  deployedAt: string;
+  /** The deploying ref's draft revision PROD has; null when QA did not record one. */
+  contentRevision: string | null;
+  frameworkVersion: string | null;
+  /** The Jenkins deploy's page; null when Jenkins gave none. */
+  url: string | null;
+}
+
+/** Where PROD stands for an activity. */
+export interface DeployProductionState {
+  /** The two PROD stages, as the QA stage list gives its own. */
+  stages: DeployStageState[];
+  /** Why Deploy to PROD cannot start now; null when it can. */
+  blocker: DeployBlocker | null;
+  /** The last deploy that finished on PROD; null when there has been none. */
+  last: DeployProductionRecord | null;
+}
+
 export interface DeployStateResponse {
   context: DeployContext;
-  /** The activity's latest run; null when it has had none. */
+  /** The activity's latest run, QA's or PROD's; null when it has had none. */
   run: DeployRun | null;
+  /** The release and QA stages. */
   stages: DeployStageState[];
+  production: DeployProductionState;
 }
 
 /**
- * A start: the release, the QA deploy or one stage, and optionally the version to release the
- * module as.
+ * A start: the release, the QA deploy, the PROD deploy or one stage, and optionally the
+ * version to release the module as. A PROD deploy (or one of its stages) needs `confirm`,
+ * which must be the activity's product code, and an admin who owns the project.
  */
 export interface DeployStartRequest {
   stage: DeployStageSelection;
   moduleVersion?: string;
+  /** Where the run deploys; absent, it follows from `stage`. */
+  target?: DeployTarget;
+  confirm?: string;
+}
+
+/**
+ * An activity went live on a target: fired once each time a QA or PROD deploy finishes with
+ * success, for whatever keeps track of deployed versions.
+ */
+export interface DeployedEvent {
+  projectId: string;
+  activityId: string;
+  runId: string;
+  target: DeployTarget;
+  /** The deploying ref's draft revision that went live; null when none was recorded. */
+  revision: string | null;
+  deployedAt: string;
 }
 
 export interface DeployRunResponse {

@@ -30,6 +30,14 @@
  *   await_activity_deploy    every 15 seconds, follow that build until it succeeds, fails, or
  *                            the configured minutes pass; record where the activity opens on QA
  *
+ * and, once QA has the activity as it is now, the PROD deploy:
+ *
+ *   trigger_production_deploy   start the same activity deploy job on the PROD Jenkins, for the
+ *                               branch QA deployed, with PROD's tier, environment and framework
+ *                               version
+ *   await_production_deploy     follow that deploy as await_activity_deploy follows QA's, and
+ *                               record when PROD got it
+ *
  * Everything runs in the deploy clones under PENGUIN_HOME; the WAF checkout is never
  * touched. git, Jenkins, the programs and the clock are ports, so a test runs every stage with
  * fakes and nothing reaches a remote.
@@ -58,6 +66,8 @@ import { runPreflight } from "./deploy-preflight.js";
 import { syncMedia } from "./deploy-media.js";
 import { withinRoot } from "./sandbox-paths.js";
 import {
+  DEPLOY_ALL_STAGES,
+  DEPLOY_PROD_STAGES,
   DEPLOY_QA_STAGES,
   DEPLOY_RELEASE_STAGES,
   DEPLOY_STAGES,
@@ -69,6 +79,7 @@ import {
   type DeployStageError,
   type DeployStageSelection,
   type DeployStageStatus,
+  type DeployTarget,
 } from "./deploy-types.js";
 
 /** The module checks a release runs, in order: install, both builds, and lint between them. */
@@ -179,6 +190,18 @@ export interface DeployQaContext {
   snapshot(): Promise<DeployActivitySnapshot>;
 }
 
+/** Where an activity deploy job runs: the target's tier, environment and framework version. */
+export interface DeployJobTarget {
+  tier: string;
+  environment: string;
+  frameworkVersion: string;
+}
+
+/** What the PROD stages work on: PROD's job settings. Jenkins is PROD's for such a run. */
+export interface DeployProdContext {
+  target: DeployJobTarget;
+}
+
 export interface DeployStageContext {
   git: DeployGit;
   jenkins: DeployJenkins;
@@ -197,6 +220,8 @@ export interface DeployStageContext {
   };
   /** The activity-data and media side of a QA deploy; absent for a run that cannot reach it. */
   qa?: DeployQaContext;
+  /** The PROD side of a PROD deploy; absent for every other run. */
+  prod?: DeployProdContext;
   /** The version to write into package.json; null keeps the one there. */
   moduleVersion: string | null;
   /** What this run found out so far; stages add to it. */
@@ -772,7 +797,7 @@ const publishActivityData: DeployStageDefinition = {
 /** The parameters the activity deploy job is started with, as the job takes them. */
 export function activityDeployParams(
   productCode: string,
-  target: DeployQaContext["target"],
+  target: DeployJobTarget,
 ): Record<string, string> {
   return {
     branch: activityDataBranchName(productCode),
@@ -831,6 +856,62 @@ const triggerActivityDeploy: DeployStageDefinition = {
   },
 };
 
+/**
+ * Follows a started activity deploy every 15 seconds until it succeeds, fails, or the
+ * configured minutes pass. `onUrl` gets the build's page once Jenkins has one. Returns the
+ * number of the build that succeeded, or null when Jenkins gave none.
+ */
+async function followActivityDeploy(
+  ctx: DeployStageContext,
+  options: {
+    match: Record<string, string>;
+    after: number | null;
+    onUrl(url: string): void;
+    /** Named in a timeout; QA's timeouts name none, as they always have. */
+    target?: DeployTarget;
+  },
+): Promise<number | null> {
+  const job = ctx.settings.jobs.activityDeploy;
+  const minutes = ctx.settings.timeouts.deployMinutes;
+  const deadline = ctx.clock.now() + minutes * 60_000;
+  let last: JenkinsBuildStatus["state"] | null = null;
+  let url: string | null = null;
+  for (;;) {
+    checkStopped(ctx);
+    const status = await jenkinsCall(() =>
+      ctx.jenkins.status(job, options.match, { after: options.after }),
+    );
+    if (status.url && status.url !== url) {
+      url = status.url;
+      options.onUrl(status.url);
+      ctx.log(`Deploy: ${status.url}`);
+    }
+    if (status.state !== last) {
+      ctx.log(`Jenkins: ${status.state}${status.number ? ` (#${status.number})` : ""}.`);
+      last = status.state;
+    }
+    if (status.state === "failed")
+      throw new DeployStageFailure({
+        code: "build_failed",
+        result: status.result ?? "FAILURE",
+        url: status.url ?? null,
+      });
+    if (status.state === "succeeded") return status.number ?? null;
+    if (ctx.clock.now() >= deadline)
+      throw new DeployStageFailure({
+        code: "deploy_timed_out",
+        minutes,
+        ...(options.target ? { target: options.target } : {}),
+      });
+    await ctx.clock.sleep(DEPLOY_POLL_MS, ctx.signal);
+  }
+}
+
+/** Whether a finished deploy stage followed the build an earlier run of it already recorded. */
+function sameBuild(recorded: number | null | undefined, found: number | null): boolean {
+  return typeof recorded === "number" && recorded === found;
+}
+
 const awaitActivityDeploy: DeployStageDefinition = {
   id: "await_activity_deploy",
   async run(ctx) {
@@ -853,40 +934,89 @@ const awaitActivityDeploy: DeployStageDefinition = {
         qa.refNum,
         ctx.metadata.qaFrameworkVersion,
       );
+    const number = await followActivityDeploy(ctx, {
+      match: activityDeployMatch(activityDeployParams(ctx.productCode, qa.target)),
+      after,
+      onUrl: (url) => {
+        ctx.metadata.activityDeployUrl = url;
+      },
+    });
+    const previous = ctx.earlier.await_activity_deploy;
+    ctx.metadata.activityDeployNumber = number;
+    if (sameBuild(previous?.activityDeployNumber, number) && previous?.qaDeployedAt) {
+      // Run again on its own, the stage found the build it had already seen finish.
+      ctx.metadata.qaDeployedAt = previous.qaDeployedAt;
+      ctx.metadata.alreadyRecorded = true;
+    } else ctx.metadata.qaDeployedAt = new Date(ctx.clock.now()).toISOString();
+    const revision =
+      ctx.metadata.exportedRevision ?? ctx.earlier.export_activity_data?.exportedRevision;
+    if (revision) ctx.metadata.contentRevision = revision;
+    ctx.log(`On QA: ${ctx.metadata.qaActivityUrl}`);
+  },
+};
+
+function prodOf(ctx: DeployStageContext): DeployProdContext {
+  if (!ctx.prod) throw new Error("This run has no PROD settings to deploy with.");
+  return ctx.prod;
+}
+
+const triggerProductionDeploy: DeployStageDefinition = {
+  id: "trigger_production_deploy",
+  async run(ctx) {
+    const prod = prodOf(ctx);
+    // PROD gets what QA has: the branch QA's deploy published, at the revision QA recorded.
+    const qa = ctx.earlier.await_activity_deploy;
+    if (!qa)
+      throw new DeployStageFailure({ code: "missing_input", stage: "await_activity_deploy" });
+    if (qa.contentRevision) ctx.metadata.contentRevision = qa.contentRevision;
+    if (qa.resolvedModuleVersion) ctx.metadata.resolvedModuleVersion = qa.resolvedModuleVersion;
     const job = ctx.settings.jobs.activityDeploy;
-    const match = activityDeployMatch(activityDeployParams(ctx.productCode, qa.target));
-    const minutes = ctx.settings.timeouts.deployMinutes;
-    const deadline = ctx.clock.now() + minutes * 60_000;
-    let last: JenkinsBuildStatus["state"] | null = null;
-    for (;;) {
-      checkStopped(ctx);
-      const status = await jenkinsCall(() => ctx.jenkins.status(job, match, { after }));
-      if (status.url && status.url !== ctx.metadata.activityDeployUrl) {
-        ctx.metadata.activityDeployUrl = status.url;
-        ctx.log(`Deploy: ${status.url}`);
-      }
-      if (status.state !== last) {
-        ctx.log(`Jenkins: ${status.state}${status.number ? ` (#${status.number})` : ""}.`);
-        last = status.state;
-      }
-      if (status.state === "failed")
-        throw new DeployStageFailure({
-          code: "build_failed",
-          result: status.result ?? "FAILURE",
-          url: status.url ?? null,
-        });
-      if (status.state === "succeeded") {
-        ctx.metadata.qaDeployedAt = new Date(ctx.clock.now()).toISOString();
-        const revision =
-          ctx.metadata.exportedRevision ?? ctx.earlier.export_activity_data?.exportedRevision;
-        if (revision) ctx.metadata.contentRevision = revision;
-        ctx.log(`On QA: ${ctx.metadata.qaActivityUrl}`);
-        return;
-      }
-      if (ctx.clock.now() >= deadline)
-        throw new DeployStageFailure({ code: "deploy_timed_out", minutes });
-      await ctx.clock.sleep(DEPLOY_POLL_MS, ctx.signal);
-    }
+    const params = activityDeployParams(ctx.productCode, prod.target);
+    const before = await jenkinsCall(() => ctx.jenkins.status(job, activityDeployMatch(params)));
+    ctx.metadata.preProductionDeployNumber = before.number ?? null;
+    ctx.metadata.prodFrameworkVersion = prod.target.frameworkVersion;
+    checkStopped(ctx);
+    ctx.log(
+      `Starting Jenkins job "${job}" on PROD with ${new URLSearchParams(params).toString()}.`,
+    );
+    const { queueUrl } = await jenkinsCall(() => ctx.jenkins.trigger(job, params));
+    if (queueUrl) ctx.log(`Queued: ${queueUrl}`);
+  },
+};
+
+const awaitProductionDeploy: DeployStageDefinition = {
+  id: "await_production_deploy",
+  async run(ctx) {
+    const prod = prodOf(ctx);
+    // Run on its own, the stage waits on the deploy the trigger stage last started.
+    const triggered =
+      ctx.metadata.preProductionDeployNumber !== undefined
+        ? ctx.metadata
+        : ctx.earlier.trigger_production_deploy;
+    if (!triggered || triggered.preProductionDeployNumber === undefined)
+      throw new DeployStageFailure({ code: "missing_input", stage: "trigger_production_deploy" });
+    ctx.metadata.preProductionDeployNumber = triggered.preProductionDeployNumber ?? null;
+    ctx.metadata.prodFrameworkVersion =
+      triggered.prodFrameworkVersion ?? prod.target.frameworkVersion;
+    if (triggered.contentRevision) ctx.metadata.contentRevision = triggered.contentRevision;
+    if (triggered.resolvedModuleVersion)
+      ctx.metadata.resolvedModuleVersion = triggered.resolvedModuleVersion;
+    const number = await followActivityDeploy(ctx, {
+      match: activityDeployMatch(activityDeployParams(ctx.productCode, prod.target)),
+      after: ctx.metadata.preProductionDeployNumber,
+      onUrl: (url) => {
+        ctx.metadata.productionDeployUrl = url;
+      },
+      target: "prod",
+    });
+    const previous = ctx.earlier.await_production_deploy;
+    ctx.metadata.productionDeployNumber = number;
+    if (sameBuild(previous?.productionDeployNumber, number) && previous?.prodDeployedAt) {
+      // Run again on its own, the stage found the build it had already seen finish.
+      ctx.metadata.prodDeployedAt = previous.prodDeployedAt;
+      ctx.metadata.alreadyRecorded = true;
+    } else ctx.metadata.prodDeployedAt = new Date(ctx.clock.now()).toISOString();
+    ctx.log("On PROD.");
   },
 };
 
@@ -901,12 +1031,15 @@ export const DEPLOY_STAGE_DEFINITIONS: Record<DeployStage, DeployStageDefinition
   publish_activity_data: publishActivityData,
   trigger_activity_deploy: triggerActivityDeploy,
   await_activity_deploy: awaitActivityDeploy,
+  trigger_production_deploy: triggerProductionDeploy,
+  await_production_deploy: awaitProductionDeploy,
 };
 
 /** The stages a selection runs, in order (a QA deploy's before any release is left out). */
 export function stagesFor(selection: DeployStageSelection): DeployStage[] {
   if (selection === "release") return [...DEPLOY_RELEASE_STAGES];
   if (selection === "qa") return [...DEPLOY_STAGES];
+  if (selection === "prod") return [...DEPLOY_PROD_STAGES];
   return [selection];
 }
 
@@ -914,8 +1047,14 @@ export function isStageSelection(value: unknown): value is DeployStageSelection 
   return (
     value === "release" ||
     value === "qa" ||
-    (typeof value === "string" && (DEPLOY_STAGES as readonly string[]).includes(value))
+    value === "prod" ||
+    (typeof value === "string" && (DEPLOY_ALL_STAGES as readonly string[]).includes(value))
   );
+}
+
+/** Whether a selection deploys to PROD: the PROD deploy, or one of its stages on its own. */
+export function isProdSelection(selection: DeployStageSelection): boolean {
+  return selection === "prod" || (DEPLOY_PROD_STAGES as readonly string[]).includes(selection);
 }
 
 /**
@@ -988,12 +1127,63 @@ export function stageBlocker(
   if (runActive) return { code: "run_active" };
   const problem = startProblems(context)[0];
   if (problem) return blockerOf(problem);
-  const index = DEPLOY_STAGES.indexOf(stage);
+  const index = DEPLOY_ALL_STAGES.indexOf(stage);
   if (index > 0) {
-    const previous = DEPLOY_STAGES[index - 1]!;
+    const previous = DEPLOY_ALL_STAGES[index - 1]!;
     if (statuses[previous] !== "done") return { code: "previous_stage", stage: previous };
     if (ONCE_PER_PREVIOUS.has(stage) && (statuses[stage] ?? "pending") !== "pending")
       return { code: "previous_rerun", stage: previous };
   }
+  return null;
+}
+
+/** A stage's stored state, as far as the PROD gate reads it. */
+export interface GateStage {
+  status: DeployStageStatus;
+  finishedAt: string | null;
+  metadata: DeployRunMetadata;
+}
+
+/**
+ * Whether QA has the activity as it is now, so PROD may get it: QA's deploy is done, finished
+ * after the activity data was last published and its deploy last started, and recorded the
+ * deploying ref's revision the draft still has.
+ */
+export function qaCurrent(
+  stored: Partial<Record<DeployStage, GateStage>>,
+  currentRevision: string,
+): boolean {
+  const qa = stored.await_activity_deploy;
+  if (qa?.status !== "done" || !qa.finishedAt) return false;
+  const finished = Date.parse(qa.finishedAt);
+  for (const stage of ["publish_activity_data", "trigger_activity_deploy"] as const) {
+    const earlier = stored[stage];
+    if (earlier?.status !== "done" || !earlier.finishedAt) return false;
+    if (Date.parse(earlier.finishedAt) > finished) return false;
+  }
+  return Boolean(qa.metadata.contentRevision) && qa.metadata.contentRevision === currentRevision;
+}
+
+/**
+ * Why a PROD stage cannot run now, or null when it can: what keeps any stage from starting
+ * (a run in progress, the readiness problems, the stage before it not done), then an empty
+ * PROD setting, then, for the trigger, a QA deploy that is not of the activity as it is now.
+ */
+export function prodStageBlocker(
+  stage: DeployStage,
+  context: DeployContext,
+  stored: Partial<Record<DeployStage, GateStage>>,
+  runActive: boolean,
+  facts: { currentRevision: string; missingSettings: readonly string[] },
+): DeployBlocker | null {
+  const statuses: Partial<Record<DeployStage, DeployStageStatus>> = {};
+  for (const [key, value] of Object.entries(stored))
+    if (value) statuses[key as DeployStage] = value.status;
+  const base = stageBlocker(stage, context, statuses, runActive);
+  if (base) return base;
+  const field = facts.missingSettings[0];
+  if (field) return { code: "settings_missing", field };
+  if (stage === "trigger_production_deploy" && !qaCurrent(stored, facts.currentRevision))
+    return { code: "qa_outdated" };
   return null;
 }

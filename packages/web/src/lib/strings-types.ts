@@ -517,6 +517,8 @@ export type Strings = {
         publish_activity_data: string;
         trigger_activity_deploy: string;
         await_activity_deploy: string;
+        trigger_production_deploy: string;
+        await_production_deploy: string;
       };
       /** What Deploy to QA does, after the release, in the section's explanation. */
       qaAbout: string;
@@ -595,6 +597,7 @@ export type Strings = {
         clone_missing: (repo: string) => string;
         clone_dirty: (repo: string) => string;
         not_ready: (problem: string) => string;
+        qa_outdated: string;
       };
       /** Why a stage ended badly. */
       errors: {
@@ -609,9 +612,48 @@ export type Strings = {
         preflight_failed: (errors: number) => string;
         /** Media found nowhere: the first paths, and how many there are in all. */
         media_missing: (paths: string[], count: number) => string;
-        deploy_timed_out: (minutes: number) => string;
+        /** The activity deploy had not finished in time; `target` is absent for QA's. */
+        deploy_timed_out: (minutes: number, target?: "qa" | "prod") => string;
         interrupted: string;
         unexpected: string;
+      };
+      /** The PROD bar under the QA deploy: an admin who owns the project deploys what QA has. */
+      prod: {
+        title: string;
+        about: string;
+        /** Accessible name of the PROD stages table. */
+        stagesLabel: string;
+        deploy: string;
+        deploying: string;
+        started: string;
+        /** Shown in place of Deploy to PROD to an owner who is not an admin. */
+        adminOnly: string;
+        /** Nothing stands in the way. */
+        ready: string;
+        never: string;
+        /** The last PROD deploy: when, and the framework version when known. */
+        last: (when: string, frameworkVersion: string | null) => string;
+        openDeploy: string;
+        /** The confirm dialog: what it does, and the field the product code is typed into. */
+        confirmTitle: string;
+        confirm: (productCode: string) => string;
+        confirmItems: { data: (branch: string) => string; jenkins: string };
+        confirmLabel: (productCode: string) => string;
+        confirmHint: string;
+        confirmButton: string;
+        /** The latest PROD deploy's state, as the bar says it. */
+        runStatuses: {
+          running: (stage: string) => string;
+          succeeded: string;
+          failed: string;
+          cancelled: string;
+          interrupted: string;
+        };
+        /** Why the server refused a start, by its error code. */
+        refused: {
+          confirmation_mismatch: string;
+          prod_requires_admin: string;
+        };
       };
     };
     /** Check quality, in the Module section: accessibility and reading level of the played activity. */

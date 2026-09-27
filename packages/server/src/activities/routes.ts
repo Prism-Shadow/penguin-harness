@@ -36,7 +36,7 @@ import type {
   DeployRunResponse,
   DeployStateResponse,
 } from "./deploy-types.js";
-import { isModuleVersion, isStageSelection } from "./deploy-stages.js";
+import { isModuleVersion, isProdSelection, isStageSelection } from "./deploy-stages.js";
 import {
   badRequest,
   optionalString,
@@ -1133,11 +1133,17 @@ export class ActivityRoutes {
         )) satisfies DeployStateResponse,
       ),
     );
+    // PROD is also an admin's, and needs the product code typed to confirm it: the service
+    // checks both, from the admin flag passed here.
     app.post("/:activityId/deploy", async (c) => {
       const body = await readJson(c);
       const stage = body.stage;
       if (!isStageSelection(stage))
-        throw badRequest("stage must be release, qa or one of the deploy stages.");
+        throw badRequest("stage must be release, qa, prod or one of the deploy stages.");
+      const target = isProdSelection(stage) ? "prod" : "qa";
+      if (body.target !== undefined && body.target !== target)
+        throw badRequest(`stage ${stage} deploys to ${target}; target must be ${target}.`);
+      const confirm = optionalString(body, "confirm", { maxLen: 200 });
       const moduleVersion =
         optionalString(body, "moduleVersion", { maxLen: 40 })?.trim() || undefined;
       if (moduleVersion !== undefined && !isModuleVersion(moduleVersion))
@@ -1148,9 +1154,11 @@ export class ActivityRoutes {
             requireValidId(c, "projectId"),
             pathParam(c, "activityId"),
             {
-              target: "qa",
+              target,
               stage,
               ...(moduleVersion ? { moduleVersion } : {}),
+              ...(confirm !== undefined ? { confirm } : {}),
+              isAdmin: c.var.user.isAdmin === true,
             },
           ),
         } satisfies DeployRunResponse,

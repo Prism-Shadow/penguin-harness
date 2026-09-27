@@ -23,3 +23,12 @@ The [QA deploy](2026-09-28-activity-deploy-qa.md) changed no schema:
   `activity_deploy_stages`, and a run with the selection `qa` is a new value in
   `activity_deploy_runs`. An older build skips stage rows it does not know, and returns a `qa`
   run's stored record as it is, new stage names included.
+
+The [PROD deploy](2026-09-28-activity-deploy-prod.md) changed no schema either:
+
+- The two PROD stages (`trigger_production_deploy`, `await_production_deploy`) are new rows in
+  `activity_deploy_stages`, and a PROD run is a row with `target = 'prod'`, which the table's
+  check already allowed, and the selection `prod`. An older build skips the stage rows, and
+  returns a PROD run's stored record as it is when it is the activity's latest run.
+- A QA run's `deploy_timed_out` error recorded no target and still reads as QA's; a PROD run's
+  names `target: "prod"`.

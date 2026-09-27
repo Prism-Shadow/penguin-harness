@@ -26,7 +26,7 @@ import {
   type DeployStageContext,
 } from "./deploy-stages.js";
 import {
-  DEPLOY_STAGES,
+  DEPLOY_ALL_STAGES,
   type DeployLogLine,
   type DeployLogPage,
   type DeployRun,
@@ -64,6 +64,8 @@ export interface DeployRunStore {
   saveStage(activityId: string, stage: DeployStage, state: StoredStage): void;
   /** Marks what a stopped process left running as interrupted. */
   interruptRunning(at: string): void;
+  /** The newest run that finished a deploy to PROD, or null when none has. */
+  lastProduction(projectId: string, activityId: string): DeployRun | null;
 }
 
 function parseRun(json: string): DeployRun | null {
@@ -139,7 +141,7 @@ export function dbDeployStore(db: Db): DeployRunStore {
       }[];
       const out: Partial<Record<DeployStage, StoredStage>> = {};
       for (const row of rows) {
-        if (!(DEPLOY_STAGES as readonly string[]).includes(row.stage)) continue;
+        if (!(DEPLOY_ALL_STAGES as readonly string[]).includes(row.stage)) continue;
         let metadata: DeployRunMetadata = {};
         try {
           metadata = JSON.parse(row.metadata_json) as DeployRunMetadata;
@@ -160,6 +162,18 @@ export function dbDeployStore(db: Db): DeployRunStore {
          VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(activity_id, stage) DO UPDATE SET status = excluded.status, finished_at = excluded.finished_at, metadata_json = excluded.metadata_json`,
       ).run(activityId, stage, state.status, state.finishedAt, JSON.stringify(state.metadata));
+    },
+    lastProduction(projectId, activityId) {
+      const rows = db
+        .prepare(
+          "SELECT record_json FROM activity_deploy_runs WHERE project_id = ? AND activity_id = ? AND target = 'prod' AND status = 'succeeded' ORDER BY started_at DESC, rowid DESC LIMIT 20",
+        )
+        .all(projectId, activityId) as { record_json: string }[];
+      for (const row of rows) {
+        const run = parseRun(row.record_json);
+        if (run?.metadata.prodDeployedAt) return run;
+      }
+      return null;
     },
     interruptRunning(at) {
       const rows = db
@@ -258,11 +272,21 @@ interface Active {
   done: Promise<void>;
 }
 
+/** A stage that finished with success, as the runner tells whoever listens. */
+export interface DeployStageDone {
+  projectId: string;
+  run: DeployRun;
+  stage: DeployStage;
+  metadata: DeployRunMetadata;
+}
+
 export interface DeployRunnerDeps {
   store: DeployRunStore;
   /** Where log files go: PENGUIN_HOME/activity-deploy/logs. */
   logDir: string;
   now?: () => Date;
+  /** Told of each stage that finishes with success; what it throws is ignored. */
+  onStageDone?: (done: DeployStageDone) => void;
 }
 
 export class DeployRunner {
@@ -332,7 +356,7 @@ export class DeployRunner {
     const { run, controller } = active;
     const stored = this.deps.store.stages(run.activityId);
     const earlier: DeployStageContext["earlier"] = {};
-    for (const stage of DEPLOY_STAGES) {
+    for (const stage of DEPLOY_ALL_STAGES) {
       const state = stored[stage];
       if (state?.status === "done") earlier[stage] = state.metadata;
     }
@@ -356,7 +380,7 @@ export class DeployRunner {
         metadata: {},
       });
       // What comes after this stage must be done again once it has run.
-      for (const later of DEPLOY_STAGES.slice(DEPLOY_STAGES.indexOf(entry.stage) + 1))
+      for (const later of DEPLOY_ALL_STAGES.slice(DEPLOY_ALL_STAGES.indexOf(entry.stage) + 1))
         this.saveStage(run.activityId, later, {
           status: "pending",
           finishedAt: null,
@@ -378,6 +402,17 @@ export class DeployRunner {
           finishedAt: this.now().toISOString(),
           metadata: { ...run.metadata },
         });
+        if (!this.disposed)
+          try {
+            this.deps.onStageDone?.({
+              projectId: active.projectId,
+              run: structuredClone(run),
+              stage: entry.stage,
+              metadata: { ...run.metadata },
+            });
+          } catch {
+            // A listener's failure is its own: the deploy goes on.
+          }
       } catch (error) {
         if (this.disposed) return;
         if (error instanceof DeployStopped || controller.signal.aborted) {

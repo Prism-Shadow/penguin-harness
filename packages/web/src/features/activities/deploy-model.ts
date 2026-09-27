@@ -12,6 +12,7 @@ import type {
   DeployLogPage,
   DeployPreflightIssue,
   DeployProblem,
+  DeployProductionState,
   DeployRepo,
   DeployRun,
   DeployStage,
@@ -246,6 +247,12 @@ export const QA_STAGES: readonly DeployStage[] = [
   "await_activity_deploy",
 ];
 
+/** The PROD deploy's stages, after a current QA deploy, in the order they run. */
+export const PROD_STAGES: readonly DeployStage[] = [
+  "trigger_production_deploy",
+  "await_production_deploy",
+];
+
 /** The log lines the panel keeps: the server keeps no more in memory either. */
 export const LOG_KEEP = 2000;
 
@@ -286,7 +293,7 @@ export function stageErrorText(error: DeployStageError): string {
     case "media_missing":
       return words.media_missing(error.paths, error.count);
     case "deploy_timed_out":
-      return words.deploy_timed_out(error.minutes);
+      return words.deploy_timed_out(error.minutes, error.target);
     case "interrupted":
       return words.interrupted;
     case "unexpected":
@@ -312,10 +319,12 @@ export function blockerText(blocker: DeployBlocker): string {
       return words.clone_dirty(repoName(blocker.repo));
     case "not_ready":
       return words.not_ready(problemText(blocker.problem));
+    case "qa_outdated":
+      return words.qa_outdated;
   }
 }
 
-const STAGES: readonly DeployStage[] = [...RELEASE_STAGES, ...QA_STAGES];
+const STAGES: readonly DeployStage[] = [...RELEASE_STAGES, ...QA_STAGES, ...PROD_STAGES];
 
 function asStage(value: string | undefined): DeployStage | null {
   return STAGES.find((stage) => stage === value) ?? null;
@@ -347,6 +356,8 @@ export function refusalText(detail: Readonly<Record<string, string>> | undefined
       return repo ? blockerText({ code: "clone_missing", repo }) : null;
     case "clone_dirty":
       return repo ? blockerText({ code: "clone_dirty", repo }) : null;
+    case "qa_outdated":
+      return blockerText({ code: "qa_outdated" });
     default:
       return null;
   }
@@ -402,10 +413,19 @@ export function isQaRun(run: DeployRun): boolean {
   return run.selection === "qa" || QA_STAGES.includes(run.selection as DeployStage);
 }
 
+/** Whether a run deployed to PROD: the PROD deploy, or one of its stages on its own. */
+export function isProdRun(run: DeployRun): boolean {
+  return run.target === "prod";
+}
+
 /** The line above the stages: how the latest run stands. */
 export function runLine(run: DeployRun | null): { tone: Tone; text: string } | null {
   if (!run) return null;
-  const words = isQaRun(run) ? S.activities.deploy.qaRunStatuses : S.activities.deploy.runStatuses;
+  const words = isProdRun(run)
+    ? S.activities.deploy.prod.runStatuses
+    : isQaRun(run)
+      ? S.activities.deploy.qaRunStatuses
+      : S.activities.deploy.runStatuses;
   switch (run.status) {
     case "running": {
       const current = run.stages.find((entry) => entry.status === "running") ?? run.stages[0];
@@ -525,4 +545,63 @@ export function stageConfirmText(
     default:
       return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// The PROD deploy
+// ---------------------------------------------------------------------------
+
+/** What the PROD bar shows: its stages, whether it may start and why not, and the last deploy. */
+export interface ProdBar {
+  rows: StageRow[];
+  /** The latest PROD run's line while it is the latest run; null otherwise. */
+  line: { tone: Tone; text: string } | null;
+  /** Why Deploy to PROD cannot start now; null when it can. */
+  blocker: string | null;
+  /** The last PROD deploy in words, or that there has been none. */
+  last: string;
+  /** The last PROD deploy's Jenkins page; null when there is none. */
+  lastUrl: string | null;
+}
+
+/**
+ * The PROD bar for the state the server sent. `run` is the activity's latest run, QA's or
+ * PROD's: its live stage states show only while it is a PROD run, and while any run goes
+ * nothing may start. `when` words a timestamp.
+ */
+export function prodBar(
+  production: DeployProductionState,
+  run: DeployRun | null,
+  when: (iso: string) => string,
+): ProdBar {
+  const words = S.activities.deploy;
+  const prodRun = run && isProdRun(run) ? run : null;
+  const running = run?.status === "running";
+  const rows = stageRows(prodRun ?? (running ? run : null), production.stages);
+  const blocker = running
+    ? words.blockers.run_active
+    : production.blocker
+      ? blockerText(production.blocker)
+      : null;
+  const last = production.last;
+  return {
+    rows,
+    line: prodRun ? runLine(prodRun) : null,
+    blocker,
+    last: last ? words.prod.last(when(last.deployedAt), last.frameworkVersion) : words.prod.never,
+    lastUrl: last?.url ?? null,
+  };
+}
+
+/** A typed confirmation matches the product code exactly. */
+export function prodConfirmed(typed: string, productCode: string): boolean {
+  return typed === productCode;
+}
+
+/** A refused PROD start in words, for the codes the PROD deploy adds; null for the others. */
+export function prodRefusalText(code: string | undefined): string | null {
+  const words = S.activities.deploy.prod.refused;
+  if (code === "confirmation_mismatch") return words.confirmation_mismatch;
+  if (code === "prod_requires_admin") return words.prod_requires_admin;
+  return null;
 }

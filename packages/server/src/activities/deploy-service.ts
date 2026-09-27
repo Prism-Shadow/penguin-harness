@@ -1,6 +1,9 @@
 /**
- * Deploying activities, first slice: the admin's deploy settings, the clones a deploy works
- * in, and whether a deploy of one activity could start.
+ * Deploying activities: the admin's deploy settings, the clones a deploy works in, whether a
+ * deploy of one activity could start, and the runs that release its module and deploy it to
+ * QA and then PROD. A PROD deploy needs an admin who owns the project, the product code typed
+ * to confirm, and a QA deploy of the activity as it is now; each QA or PROD deploy that
+ * finishes is told to `ActivityDeployEvents`.
  *
  * Nothing here changes anything outside PENGUIN_HOME. The one action that makes clones
  * (Prepare clones) clones into `PENGUIN_HOME/activity-deploy/repos/` and never into the WAF
@@ -43,6 +46,7 @@ import {
   DEPLOY_SETTINGS_KEY,
   isAllowedRemote,
   mergeSecrets,
+  missingProdSettings,
   normalizeDeploySettings,
   readDeploySecrets,
   readDeploySettings,
@@ -51,11 +55,15 @@ import {
   type DeploySettings,
 } from "./deploy-settings.js";
 import {
+  DEPLOY_ALL_STAGES,
+  DEPLOY_PROD_STAGES,
   DEPLOY_STAGES,
   type DeployBlocker,
   type DeployConnectionTest,
   type DeployContext,
   type DeployLogResponse,
+  type DeployProductionRecord,
+  type DeployProductionState,
   type DeployRepo,
   type DeployRun,
   type DeploySettingsView,
@@ -68,6 +76,8 @@ import {
 import { createDeployJenkins, type JenkinsFetch } from "./deploy-jenkins.js";
 import { spawnDeployProcess, type DeployProcess } from "./deploy-process.js";
 import {
+  isProdSelection,
+  prodStageBlocker,
   qaStages,
   realClock,
   releaseCurrent,
@@ -76,7 +86,13 @@ import {
   type DeployActivitySnapshot,
   type DeployClock,
 } from "./deploy-stages.js";
-import { DeployRunner, dbDeployStore, type DeployRunStore } from "./deploy-run.js";
+import {
+  DeployRunner,
+  dbDeployStore,
+  type DeployRunStore,
+  type DeployStageDone,
+} from "./deploy-run.js";
+import { ActivityDeployEvents } from "./deploy-events.js";
 
 /** How long a clone may take: a large module or activity-data history on a slow link. */
 export const CLONE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -142,14 +158,22 @@ export abstract class ActivityDeploys extends Interface<{
   /** The readiness, the latest run, and each stage's state with why it cannot run now. */
   state(projectId: string, activityId: string): Promise<DeployStateResponse>;
   /**
-   * Starts the release or one stage. Only the canonical ref, only when the deploy is ready
-   * (409 `deploy_blocked` naming the blocker), one at a time on this server (409
-   * `deploy_running`).
+   * Starts the release, a QA or PROD deploy, or one stage. Only the canonical ref, only when
+   * the deploy is ready (409 `deploy_blocked` naming the blocker), one at a time on this server
+   * (409 `deploy_running`). PROD also needs `isAdmin` (403 `prod_requires_admin`; the caller
+   * has checked the project owner) and `confirm` equal to the product code (400
+   * `confirmation_mismatch`).
    */
   start(
     projectId: string,
     activityId: string,
-    input: { target: DeployTarget; stage: DeployStageSelection; moduleVersion?: string },
+    input: {
+      target: DeployTarget;
+      stage: DeployStageSelection;
+      moduleVersion?: string;
+      confirm?: string;
+      isAdmin?: boolean;
+    },
   ): Promise<DeployRun>;
   /** The activity's latest run, or null when it has had none. */
   latest(projectId: string, activityId: string): Promise<DeployRun | null>;
@@ -172,6 +196,7 @@ export class ActivityDeployService implements ActivityDeploys {
   @Use() private readonly generation!: ActivityGeneration;
   @Use() private readonly ports!: DeployPorts;
   @Use() private readonly db!: Db;
+  @Use() private readonly events!: ActivityDeployEvents;
 
   /** One Prepare clones at a time: the activity-data and media clones are shared. */
   private preparing = false;
@@ -184,10 +209,31 @@ export class ActivityDeployService implements ActivityDeploys {
     const runner = new DeployRunner({
       store,
       logDir: path.join(this.config.root, "activity-deploy", "logs"),
+      onStageDone: (done) => this.deployed(done),
     });
     this.store = store;
     this.runner = runner;
     effect(() => runner.dispose());
+  }
+
+  /** A QA or PROD deploy finished: whoever keeps track of deployed versions is told. */
+  private deployed({ projectId, run, stage, metadata }: DeployStageDone) {
+    const at =
+      stage === "await_activity_deploy"
+        ? metadata.qaDeployedAt
+        : stage === "await_production_deploy"
+          ? metadata.prodDeployedAt
+          : undefined;
+    // A wait run again that found a build already recorded deployed nothing new.
+    if (!at || metadata.alreadyRecorded) return;
+    this.events.emit({
+      projectId,
+      activityId: run.activityId,
+      runId: run.runId,
+      target: stage === "await_production_deploy" ? "prod" : "qa",
+      revision: metadata.contentRevision ?? null,
+      deployedAt: at,
+    });
   }
 
   private active(): { store: DeployRunStore; runner: DeployRunner } {
@@ -445,13 +491,55 @@ export class ActivityDeployService implements ActivityDeploys {
   private statuses(activityId: string): Partial<Record<DeployStage, DeployStageStatus>> {
     const stored = this.active().store.stages(activityId);
     const out: Partial<Record<DeployStage, DeployStageStatus>> = {};
-    for (const stage of DEPLOY_STAGES) if (stored[stage]) out[stage] = stored[stage]!.status;
+    for (const stage of DEPLOY_ALL_STAGES) if (stored[stage]) out[stage] = stored[stage]!.status;
     return out;
+  }
+
+  /** Why a PROD stage cannot run now, from the stored stages and the activity as it is now. */
+  private prodBlocker(
+    stage: DeployStage,
+    activityId: string,
+    context: DeployContext,
+    currentRevision: string,
+  ): DeployBlocker | null {
+    const { store, runner } = this.active();
+    return prodStageBlocker(stage, context, store.stages(activityId), runner.current() !== null, {
+      currentRevision,
+      missingSettings: missingProdSettings(this.stored(), this.secrets()),
+    });
+  }
+
+  private production(
+    projectId: string,
+    activityId: string,
+    context: DeployContext,
+    currentRevision: string,
+  ): DeployProductionState {
+    const stored = this.active().store.stages(activityId);
+    const stages = DEPLOY_PROD_STAGES.map((stage) => ({
+      stage,
+      status: stored[stage]?.status ?? "pending",
+      finishedAt: stored[stage]?.finishedAt ?? null,
+      metadata: stored[stage]?.metadata ?? {},
+      blocker: this.prodBlocker(stage, activityId, context, currentRevision),
+    }));
+    const run = this.active().store.lastProduction(projectId, activityId);
+    const last: DeployProductionRecord | null = run?.metadata.prodDeployedAt
+      ? {
+          runId: run.runId,
+          deployedAt: run.metadata.prodDeployedAt,
+          contentRevision: run.metadata.contentRevision ?? null,
+          frameworkVersion: run.metadata.prodFrameworkVersion ?? null,
+          url: run.metadata.productionDeployUrl ?? null,
+        }
+      : null;
+    return { stages, blocker: stages[0]!.blocker, last };
   }
 
   async state(projectId: string, activityId: string): Promise<DeployStateResponse> {
     const { store, runner } = this.active();
     const context = await this.context(projectId, activityId);
+    const activity = await this.activities.getActivity(projectId, activityId);
     const stored = store.stages(activityId);
     const statuses = this.statuses(activityId);
     const running = runner.current() !== null;
@@ -465,20 +553,47 @@ export class ActivityDeployService implements ActivityDeploys {
         metadata: stored[stage]?.metadata ?? {},
         blocker: stageBlocker(stage, context, statuses, running),
       })),
+      production: this.production(projectId, activityId, context, activity.draft.contentRevision),
     };
   }
 
   async start(
     projectId: string,
     activityId: string,
-    input: { target: DeployTarget; stage: DeployStageSelection; moduleVersion?: string },
+    input: {
+      target: DeployTarget;
+      stage: DeployStageSelection;
+      moduleVersion?: string;
+      confirm?: string;
+      isAdmin?: boolean;
+    },
   ): Promise<DeployRun> {
     const { runner } = this.active();
-    if (input.target !== "qa")
-      throw new HttpError(400, "invalid_request", "Only a QA deploy can be started.");
+    const prod = isProdSelection(input.stage);
+    if (prod !== (input.target === "prod"))
+      throw new HttpError(
+        400,
+        "invalid_request",
+        prod
+          ? "A PROD stage deploys to PROD: the target must be prod."
+          : "A PROD deploy runs only the PROD stages.",
+      );
+    // PROD is an admin's who owns the project; the route has checked the owner.
+    if (prod && input.isAdmin !== true)
+      throw new HttpError(
+        403,
+        "prod_requires_admin",
+        "Only an admin who owns the project can deploy to PROD.",
+      );
     if (runner.current())
       throw new HttpError(409, "deploy_running", "A deploy is already running on this server.");
     const facts = await this.facts(projectId, activityId);
+    if (prod && input.confirm !== facts.activity.productCode)
+      throw new HttpError(
+        400,
+        "confirmation_mismatch",
+        "Type the product code to confirm the PROD deploy.",
+      );
     if (!facts.product)
       throw new HttpError(409, "deploy_no_module", "This activity belongs to no product.");
     if (!facts.canonical)
@@ -487,6 +602,7 @@ export class ActivityDeployService implements ActivityDeploys {
         "deploy_not_canonical",
         "Only the product's canonical ref deploys its module.",
       );
+    if (prod) return this.startProd(projectId, activityId, input.stage, facts);
     const product = facts.product;
     const home = this.config.root;
     const folder = product.moduleFolder;
@@ -569,6 +685,82 @@ export class ActivityDeployService implements ActivityDeploys {
             this.snapshot(projectId, activityId, product, sourceReady ? source : null),
         },
         moduleVersion: input.moduleVersion ?? null,
+      },
+    });
+  }
+
+  /**
+   * Starts the PROD deploy (or one of its stages) once the caller has checked who asks and the
+   * confirmation: the same job QA ran, on the PROD Jenkins with PROD's settings, for the
+   * activity data QA has.
+   */
+  private async startProd(
+    projectId: string,
+    activityId: string,
+    selection: DeployStageSelection,
+    facts: Awaited<ReturnType<ActivityDeployService["facts"]>>,
+  ): Promise<DeployRun> {
+    const { runner } = this.active();
+    const product = facts.product!;
+    const stages = stagesFor(selection);
+    const first = stages[0]!;
+    const context = await this.context(projectId, activityId);
+    const blocker = this.prodBlocker(
+      first,
+      activityId,
+      context,
+      facts.activity.draft.contentRevision,
+    );
+    if (blocker?.code === "run_active")
+      throw new HttpError(409, "deploy_running", "A deploy is already running on this server.");
+    if (blocker)
+      throw new HttpError(
+        409,
+        "deploy_blocked",
+        `The ${first} stage cannot run now (${blocker.code}).`,
+        undefined,
+        blockerDetail(first, blocker),
+      );
+    const settings = this.stored();
+    const secrets = this.secrets();
+    const run = this.ports.runProcess;
+    const home = this.config.root;
+    return runner.start({
+      projectId,
+      activityId,
+      target: "prod",
+      selection,
+      stages,
+      base: {
+        git: this.git(),
+        jenkins: createDeployJenkins(
+          {
+            url: settings.prod.jenkinsUrl,
+            username: settings.prod.username,
+            token: secrets.prodToken ?? "",
+          },
+          this.ports.jenkinsFetch,
+        ),
+        process: run ? { run } : spawnDeployProcess,
+        clock: {
+          now: this.ports.now ?? realClock.now,
+          sleep: this.ports.sleep ?? realClock.sleep,
+        },
+        settings,
+        productCode: facts.activity.productCode,
+        module: {
+          folder: product.moduleFolder,
+          dir: deployClonePaths(home, product.moduleFolder).module,
+          source: null,
+        },
+        prod: {
+          target: {
+            tier: settings.prod.tier,
+            environment: settings.prod.environment,
+            frameworkVersion: settings.prod.frameworkVersion,
+          },
+        },
+        moduleVersion: null,
       },
     });
   }

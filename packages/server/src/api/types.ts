@@ -4954,6 +4954,10 @@ export type {
   DeployStageStatus,
   DeployStartRequest,
   DeployStateResponse,
+  DeployProdStage,
+  DeployProductionRecord,
+  DeployProductionState,
+  DeployedEvent,
 } from "../activities/deploy-types.js";
 
 // ---------------------------------------------------------------------------

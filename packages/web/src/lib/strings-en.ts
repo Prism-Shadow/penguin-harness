@@ -599,6 +599,8 @@ export const en: Strings = {
         publish_activity_data: "Push the activity data",
         trigger_activity_deploy: "Start the QA deploy",
         await_activity_deploy: "Wait for the QA deploy",
+        trigger_production_deploy: "Start the PROD deploy",
+        await_production_deploy: "Wait for the PROD deploy",
       },
       qaAbout:
         "Deploy to QA runs the release first, unless it is done for the module as it is now assembled, then writes every ref's configuration and assessment (archived refs left out), the template and the deploy list into the activity data clone, checks them, puts the media files only the draft holds into the media repository, pushes the activity data branch, asks Jenkins to deploy it to QA, and waits for that deploy. A media file found neither in the draft nor in the media repository stops it before anything is pushed.",
@@ -679,6 +681,7 @@ export const en: Strings = {
         clone_missing: (repo) => `The ${repo} clone is not on this server yet.`,
         clone_dirty: (repo) => `The ${repo} clone has uncommitted changes.`,
         not_ready: (problem) => problem,
+        qa_outdated: "The activity changed after it went to QA. Deploy to QA again first.",
       },
       errors: {
         command_failed: (command, exitCode) =>
@@ -700,10 +703,47 @@ export const en: Strings = {
           `The activity data failed its check: ${errors} ${errors === 1 ? "problem" : "problems"}. The activity data and media were not pushed.`,
         media_missing: (paths, count) =>
           `${count} media ${count === 1 ? "file is" : "files are"} neither in the draft nor in the media repository: ${paths.join(", ")}${count > paths.length ? ", …" : ""}. The activity data and media were not pushed.`,
-        deploy_timed_out: (minutes) =>
-          `The QA deploy had not finished within ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
+        deploy_timed_out: (minutes, target) =>
+          `The ${target === "prod" ? "PROD" : "QA"} deploy had not finished within ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
         interrupted: "The server stopped while this stage ran.",
         unexpected: "The stage stopped on an unexpected error. The log shows it.",
+      },
+      prod: {
+        title: "PROD",
+        about:
+          "Deploy to PROD sends production the activity data QA has: it starts the same Jenkins activity deploy on the PROD Jenkins, with PROD's tier, environment and framework version, and waits for it. It is offered once the last QA deploy finished and the activity has not changed since. Only an admin who owns the project can start it, and only after typing the product code.",
+        stagesLabel: "PROD deploy stages",
+        deploy: "Deploy to PROD",
+        deploying: "Deploying to PROD…",
+        started: "The PROD deploy started.",
+        adminOnly: "Only an admin who owns the project can deploy to PROD.",
+        ready: "Ready to deploy what QA has to PROD.",
+        never: "Not deployed to PROD yet.",
+        last: (when, frameworkVersion) =>
+          frameworkVersion
+            ? `Last deployed to PROD on ${when}, with framework ${frameworkVersion}.`
+            : `Last deployed to PROD on ${when}.`,
+        openDeploy: "Open the PROD deploy",
+        confirmTitle: "Deploy to PROD",
+        confirm: (productCode) => `This deploys ${productCode} to production. It:`,
+        confirmItems: {
+          data: (branch) => `deploys the activity data QA has, from the branch ${branch}`,
+          jenkins: "starts the Jenkins activity deploy on the PROD Jenkins",
+        },
+        confirmLabel: (productCode) => `Type ${productCode} to confirm`,
+        confirmHint: "The product code, exactly as shown.",
+        confirmButton: "Deploy to PROD",
+        runStatuses: {
+          running: (stage) => `Deploying to PROD: ${stage}.`,
+          succeeded: "The last PROD deploy finished.",
+          failed: "The last PROD deploy failed.",
+          cancelled: "The last PROD deploy was stopped.",
+          interrupted: "The last PROD deploy was cut short when the server stopped.",
+        },
+        refused: {
+          confirmation_mismatch: "The product code typed did not match. Nothing was deployed.",
+          prod_requires_admin: "Only an admin who owns the project can deploy to PROD.",
+        },
       },
     },
     quality: {

@@ -1,6 +1,6 @@
 /**
  * Deploy: whether a deploy of this activity could start now, and what is still missing, each
- * in words, then the module release and the QA deploy. The owner can make the missing clones (Prepare clones),
+ * in words, then the module release, the QA deploy and the PROD deploy. The owner can make the missing clones (Prepare clones),
  * ask the remote whether the branches are there (Check remote), and release the module; each
  * is an explicit press, and the release asks before it pushes anything.
  */
@@ -17,6 +17,7 @@ import { InfoPopover } from "../../components/ui/info-popover";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneDot, toneInk } from "../../lib/tone";
+import { useAuth } from "../../state/auth";
 import {
   clonesMissing,
   needsSettings,
@@ -25,6 +26,7 @@ import {
   readinessRows,
   repoName,
 } from "./deploy-model";
+import { DeployProd } from "./deploy-prod";
 import { DeployRelease } from "./deploy-release";
 import type { Announcement } from "./run-toasts";
 
@@ -61,6 +63,7 @@ export function DeployPanel({
   onAnnounce: (announcement: Announcement) => void;
 }) {
   const words = S.activities.deploy;
+  const { user } = useAuth();
   const [state, setState] = useState<DeployStateResponse | null>(null);
   const context = state?.context ?? null;
   const setContext = useCallback(
@@ -258,6 +261,20 @@ export function DeployPanel({
               branch={context.branches.deploy}
               activityDataBranch={context.branches.activityData}
               productCode={productCode}
+              onRun={setRun}
+              onSettled={reload}
+              onAnnounce={onAnnounce}
+            />
+          )}
+          {state?.production && context.branches.deploy && (
+            <DeployProd
+              endpoint={endpoint}
+              editable={editable}
+              isAdmin={user?.isAdmin === true}
+              production={state.production}
+              run={state.run}
+              productCode={productCode}
+              activityDataBranch={context.branches.activityData}
               onRun={setRun}
               onSettled={reload}
               onAnnounce={onAnnounce}

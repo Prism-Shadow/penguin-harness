@@ -7224,3 +7224,223 @@ test("deploys to QA and links to the activity there", async ({ page }) => {
   expect(starts).toHaveLength(1);
   expect(f.errors).toEqual([]);
 });
+
+test("deploys to PROD only after typing the product code", async ({ page }) => {
+  const f = await fixture(page);
+  const clean = { present: true, branch: "main", clean: true, ahead: 0, remoteUrlMatches: true };
+  const context = {
+    ready: true,
+    problems: [],
+    remoteChecked: false,
+    module: {
+      folder: "waf-module-words",
+      remote: "git@github.com:org/waf-module-words.git",
+      clone: clean,
+    },
+    activityData: { clone: clean },
+    media: { clone: clean },
+    branches: { deploy: "loom/words-deploy", activityData: "loom/words-activity-data" },
+    branchState: {
+      deploy: { local: true, remote: null },
+      activityData: { local: true, remote: null },
+    },
+  };
+  const qaOrder = [
+    "verify_module",
+    "prepare_deploy",
+    "trigger_module_build",
+    "await_module_build",
+    "export_activity_data",
+    "verify_activity_data",
+    "verify_media_assets",
+    "publish_activity_data",
+    "trigger_activity_deploy",
+    "await_activity_deploy",
+  ];
+  const prodOrder = ["trigger_production_deploy", "await_production_deploy"];
+  const jenkinsUrl = "https://jenkins-prod.example.org/job/WAF%20Activity%20Deploy/9/";
+  // The server's rules: QA is current, so PROD may start; the product code must be typed; one
+  // run at a time; the log is handed out after a cursor, one stage per poll.
+  let run = null;
+  const starts = [];
+  let reached = 0;
+  const log = () =>
+    prodOrder
+      .slice(0, reached)
+      .map((stage, index) => ({ seq: index + 1, at: "now", text: `== ${stage}` }));
+  const advance = () => {
+    reached = Math.min(prodOrder.length, reached + 1);
+    const finished = reached === prodOrder.length;
+    run = {
+      ...run,
+      status: finished ? "succeeded" : "running",
+      finishedAt: finished ? "2026-09-28T02:00:00.000Z" : null,
+      stages: prodOrder.map((stage, index) => ({
+        stage,
+        status:
+          finished || index < reached - 1 ? "done" : index === reached - 1 ? "running" : "pending",
+        error: null,
+      })),
+      metadata: finished
+        ? {
+            prodDeployedAt: "2026-09-28T02:00:00.000Z",
+            prodFrameworkVersion: "4.1.0",
+            productionDeployUrl: jenkinsUrl,
+            contentRevision: "rev_1",
+          }
+        : {},
+    };
+  };
+  const state = () => {
+    const done = run?.status === "succeeded";
+    const running = run?.status === "running";
+    return {
+      context,
+      run,
+      stages: qaOrder.map((stage) => ({
+        stage,
+        status: "done",
+        finishedAt: "2026-09-28T01:00:00.000Z",
+        metadata: {},
+        blocker: running ? { code: "run_active" } : null,
+      })),
+      production: {
+        stages: prodOrder.map((stage) => ({
+          stage,
+          status: done ? "done" : "pending",
+          finishedAt: done ? "2026-09-28T02:00:00.000Z" : null,
+          metadata: {},
+          blocker: running ? { code: "run_active" } : null,
+        })),
+        blocker: running ? { code: "run_active" } : null,
+        last: done
+          ? {
+              runId: "dep_prod",
+              deployedAt: "2026-09-28T02:00:00.000Z",
+              contentRevision: "rev_1",
+              frameworkVersion: "4.1.0",
+              url: jenkinsUrl,
+            }
+          : null,
+      },
+    };
+  };
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    // PROD is an admin's who owns the project.
+    if (url.pathname === "/api/me")
+      return json({
+        user: { userId: "author", isAdmin: true, passwordIsInitial: false },
+        previewIsolated: true,
+        desktopMode: false,
+        companyMode: false,
+        sessionVia: "password",
+        uploadLimits: {
+          attachmentMaxMb: 100,
+          attachmentTotalMb: 120,
+          attachmentMaxCount: 20,
+          imageMaxMb: 20,
+          attachmentLimitMinMb: 1,
+          attachmentLimitMaxMb: 200,
+        },
+      });
+    if (url.pathname === `${base}/act_test/sandbox/status`)
+      return json({
+        state: "ready",
+        playable: true,
+        buildable: true,
+        message: "Ready.",
+        buildLog: null,
+      });
+    if (url.pathname === `${base}/act_test/deploy` && request.method() === "GET")
+      return json(state());
+    if (url.pathname === `${base}/act_test/deploy` && request.method() === "POST") {
+      const body = request.postDataJSON();
+      starts.push(body);
+      if (run?.status === "running")
+        return json({ error: { code: "deploy_running", message: "A deploy is running." } }, 409);
+      if (body.stage !== "prod" || body.confirm !== "words")
+        return json(
+          { error: { code: "confirmation_mismatch", message: "Type the product code." } },
+          400,
+        );
+      run = {
+        runId: "dep_prod",
+        activityId: "act_test",
+        target: "prod",
+        selection: "prod",
+        status: "running",
+        stages: prodOrder.map((stage) => ({ stage, status: "pending", error: null })),
+        metadata: {},
+        startedAt: "2026-09-28T01:30:00.000Z",
+        finishedAt: null,
+      };
+      return json({ run }, 202);
+    }
+    if (url.pathname === `${base}/act_test/deploy/runs/dep_prod/log`) {
+      advance();
+      const after = Number(url.searchParams.get("after") ?? "0");
+      const lines = log().filter((line) => line.seq > after);
+      return json({
+        log: {
+          lines,
+          next: lines.length ? lines[lines.length - 1].seq : after,
+          done: run.status !== "running",
+        },
+        run,
+      });
+    }
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Deploy");
+  await expect(page.getByRole("heading", { name: /^PROD More info/, level: 4 })).toBeVisible();
+  await expect(page.getByTestId("deploy-prod-last")).toHaveText("Not deployed to PROD yet.");
+  await expect(page.getByTestId("deploy-prod-blocker")).toHaveText(
+    "Ready to deploy what QA has to PROD.",
+  );
+  const table = page.getByRole("table", { name: "PROD deploy stages" });
+  await expect(table.getByRole("row", { name: /^Start the PROD deploy/ })).toContainText("Not run");
+
+  await page.getByRole("button", { name: "Deploy to PROD", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Deploy to PROD" });
+  await expect(dialog.getByText("This deploys words to production. It:")).toBeVisible();
+  await expect(
+    dialog.getByText("deploys the activity data QA has, from the branch loom/words-activity-data"),
+  ).toBeVisible();
+  const confirm = dialog.getByRole("button", { name: "Deploy to PROD", exact: true });
+  const typed = dialog.getByLabel("Type words to confirm");
+  await expect(confirm).toBeDisabled();
+  await typed.fill("Words");
+  await expect(confirm).toBeDisabled();
+  await typed.fill("word");
+  await expect(confirm).toBeDisabled();
+  await typed.fill(" words ");
+  await expect(confirm).toBeDisabled();
+  expect(starts).toEqual([]);
+  await typed.fill("words");
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(dialog).toBeHidden();
+  expect(starts).toEqual([{ stage: "prod", target: "prod", confirm: "words" }]);
+
+  await expect(page.getByTestId("deploy-prod-status")).toHaveText("The last PROD deploy finished.");
+  await expect(page.getByTestId("deploy-log")).toHaveText(
+    prodOrder.map((stage) => `== ${stage}`).join("\n"),
+  );
+  await expect(page.getByTestId("deploy-prod-last")).toContainText("Last deployed to PROD on");
+  await expect(page.getByTestId("deploy-prod-last")).toContainText("with framework 4.1.0.");
+  await expect(page.getByRole("link", { name: "Open the PROD deploy" })).toHaveAttribute(
+    "href",
+    jenkinsUrl,
+  );
+  for (const name of [/^Start the PROD deploy/, /^Wait for the PROD deploy/])
+    await expect(table.getByRole("row", { name })).toContainText("Done");
+  // The release section keeps its own line: a PROD run is not a release.
+  await expect(page.getByTestId("deploy-run-status")).toHaveCount(0);
+  expect(starts).toHaveLength(1);
+  expect(f.errors).toEqual([]);
+});
