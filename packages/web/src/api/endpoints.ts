@@ -146,6 +146,7 @@ import type {
   ProposalCreateRequest,
   ProposalDetail,
   ProposalRevision,
+  ProposalFileResponse,
   ProposalFeedbackRequest,
   ProposalImplementRequest,
   ProposalItem,
@@ -2949,6 +2950,17 @@ export const getOrgProposalRevision = (
   number: number,
   revision: number,
 ) => apiFetch<ProposalRevision>(`${proposalBase(projectId, orgId, number)}/revisions/${revision}`);
+
+/** One file under the proposal's base, read-only (`path` relative to it). */
+export const getOrgProposalFile = (
+  projectId: string,
+  orgId: string,
+  number: number,
+  path: string,
+) =>
+  apiFetch<ProposalFileResponse>(
+    `${proposalBase(projectId, orgId, number)}/file?path=${encodeURIComponent(path)}`,
+  );
 
 export const publishOrgProposal = (
   projectId: string,

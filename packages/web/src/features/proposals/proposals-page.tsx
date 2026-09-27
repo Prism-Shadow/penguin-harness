@@ -6,7 +6,8 @@
  * the materials (the implementer's PR among them), the scope list, the body, the tests list
  * (grouped unit, integration, e2e, bench, then the rest), the sessions opened for it, the event
  * timeline, and the action bar. No side column: the body is what a person reads, and it gets
- * the width.
+ * the width — until a scope or test file is opened, which takes the right of the row in a
+ * panel (proposal-file-panel.tsx) while the proposal stays where it was.
  *
  * While an approval stands for an older revision, one line under the header says so and offers
  * Changes | Latest. With Changes every change is marked where it is — the title's words, each
@@ -60,7 +61,6 @@ import { Segmented } from "../../components/ui/segmented";
 import { Chevron } from "../../components/ui/chevron";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useAuth } from "../../state/auth";
-import { rememberSessionMachine } from "../../lib/session-machines";
 import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
 import { Badge } from "../../components/ui/badge";
@@ -87,6 +87,7 @@ import {
   principalLabel,
 } from "../company/shared";
 import { PROPOSAL_COMPONENTS, PROPOSAL_REMARK_PLUGINS } from "./proposal-links";
+import { ProposalFilePanel, useFilePanelWidth } from "./proposal-file-panel";
 import {
   PROPOSAL_STATUS_TONE,
   commentsInSection,
@@ -114,7 +115,8 @@ import {
   diffWords,
   groupTests,
   unchangedEntries,
-  scopeFileTarget,
+  proposalFileParam,
+  withProposalFile,
   sectionSource,
   sortProposals,
 } from "./proposals-model";
@@ -703,45 +705,36 @@ function DetailPage({ number }: { number: number }) {
   };
 
   /**
-   * A scope file opens in the Files tab of a session whose Workspace holds it — the
-   * implementation sessions (newest first), then the author's desk — at the path the server
-   * resolved it under (`detail.base`). Those sessions live where the organization runs, so
-   * every call about them goes to that machine, and the chat page is told so too. None
-   * holds it: say so, and leave the path on the clipboard.
+   * A scope or test file opens in the panel beside the proposal; the page never navigates for
+   * it. The open file is in the query (`?file=`, with the row's `name=` pattern), so a reload
+   * keeps it; opening pushes a history entry, so Back closes the panel, and another file
+   * replaces the one on screen in place.
    */
-  const openScopeFile = async (file: string): Promise<void> => {
-    if (detail === null || detail.base === undefined) return;
-    const machine = org?.machineId ?? null;
-    const ids = [...detail.sessions].reverse();
-    try {
-      ids.push((await api.getOrgDesk(projectId, orgId, detail.author)).sessionId);
-    } catch {
-      // No desk to fall back to; the implementation sessions may still hold it.
-    }
-    const sessions: Array<{ sessionId: string; workspace: string }> = [];
-    for (const sessionId of ids) {
-      rememberSessionMachine(sessionId, machine);
-      try {
-        sessions.push({
-          sessionId,
-          workspace: (await api.getSession(sessionId)).session.workspace,
-        });
-      } catch {
-        // A session that cannot be read is skipped.
-      }
-    }
-    for (const session of sessions) {
-      const target = scopeFileTarget(detail.base, file, [session]);
-      if (target === null) continue;
-      const stat = await api.statSessionFiles(target.sessionId, [target.rel]).catch(() => null);
-      if (stat?.existing.includes(target.rel)) {
-        navigate(`/chat/${target.sessionId}?file=${encodeURIComponent(target.rel)}`);
-        return;
-      }
-    }
-    toastError(t.fileNotInWorkspace);
-    await navigator.clipboard?.writeText(file).catch(() => undefined);
+  const fileRef = proposalFileParam(location.search);
+  const openScopeFile = (file: string, name?: string): void => {
+    const opened = fileRef !== null;
+    navigate(
+      {
+        search: withProposalFile(location.search, name === undefined ? { file } : { file, name }),
+        hash: location.hash,
+      },
+      { replace: opened, state: { proposalFile: true } },
+    );
   };
+  const closeScopeFile = (): void => {
+    // The entry this page pushed goes back the way it came; a reloaded or pasted link has
+    // nothing of ours behind it, so the query is cleared in place.
+    if ((location.state as { proposalFile?: boolean } | null)?.proposalFile === true) {
+      navigate(-1);
+      return;
+    }
+    navigate(
+      { search: withProposalFile(location.search, null), hash: location.hash },
+      { replace: true },
+    );
+  };
+  const panelRowRef = useRef<HTMLDivElement | null>(null);
+  const panelWidth = useFilePanelWidth(panelRowRef);
 
   /** The person's own pending comments are theirs to reword or withdraw until sent. */
   const me = user == null ? null : `user:${user.userId}`;
@@ -777,127 +770,160 @@ function DetailPage({ number }: { number: number }) {
     </nav>
   );
 
+  // The proposal keeps its own scroll; an open file takes the right of the row (a sheet over
+  // the page below the desktop breakpoint), so reading a file never leaves the proposal.
   return (
-    <OrgPage
-      title={detail?.title ?? `#${number}`}
-      heading={
-        detail !== null && changes !== null && changes.title !== detail.title ? (
-          <InlineWords words={diffWords(changes.title, detail.title)} />
-        ) : undefined
-      }
-      info={t.info}
-    >
-      {crumb}
-      {detailError !== null ? (
-        <ErrorLine message={t.loadFailed} detail={detailError} onRetry={() => void loadDetail()} />
-      ) : detail === null ? (
-        <div className="space-y-4" aria-busy="true">
-          <Skeleton className="h-16" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-40" />
-        </div>
-      ) : (
-        <ProposalView
-          detail={detail}
-          names={names}
-          locale={locale}
-          highlightId={highlightId}
-          busy={busy}
-          onComment={addComment}
-          onOpenSession={(sessionId) => navigate(`/chat/${sessionId}`)}
-          onOpenTicket={(ticketId) => company.openTicket(projectId, orgId, ticketId)}
-          onOpenFile={openScopeFile}
-          me={me}
-          onEditComment={editComment}
-          onDeleteComment={deleteComment}
-          approved={approved}
-          view={view}
-          onView={setView}
-          changes={changes}
-          actions={
-            actions === null ? null : (
-              <>
-                <Button
-                  size="sm"
-                  disabled={busy || !actions.requestChanges}
-                  onClick={() => setConfirm("request")}
-                >
-                  {t.requestChanges(detail.pendingComments)}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={busy || !actions.approve}
-                  onClick={() => setConfirm("approve")}
-                >
-                  {t.approve}
-                </Button>
-                {actions.markMerged && (
-                  <Button size="sm" disabled={busy} onClick={() => setConfirm("merged")}>
-                    {t.markMerged}
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="danger"
-                  disabled={busy || !actions.reject}
-                  onClick={() => setConfirm("reject")}
-                >
-                  {t.reject}
-                </Button>
-              </>
-            )
+    <div ref={panelRowRef} style={panelWidth.style} className="flex h-full min-h-0">
+      <div className="h-full min-w-0 flex-1">
+        <OrgPage
+          title={detail?.title ?? `#${number}`}
+          heading={
+            detail !== null && changes !== null && changes.title !== detail.title ? (
+              <InlineWords words={diffWords(changes.title, detail.title)} />
+            ) : undefined
           }
-        />
-      )}
-
-      <ConfirmModal
-        open={confirm !== null}
-        title={
-          confirm === "request"
-            ? t.requestChangesTitle
-            : confirm === "approve"
-              ? t.approveTitle
-              : confirm === "merged"
-                ? t.markMergedTitle
-                : t.rejectTitle
-        }
-        tone={confirm === "reject" ? "danger" : "primary"}
-        confirmLabel={S.common.confirm}
-        confirmDisabled={confirm === "reject" && rejectReason.trim() === ""}
-        busy={busy}
-        onClose={() => {
-          setConfirm(null);
-          setRejectReason("");
-        }}
-        onConfirm={() => void onConfirm()}
-      >
-        <div className="space-y-2">
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            {detail === null || confirm === null
-              ? ""
-              : confirm === "request"
-                ? t.requestChangesConfirm(detail.pendingComments)
-                : confirm === "approve"
-                  ? t.approveConfirm(detail.title)
-                  : confirm === "merged"
-                    ? t.markMergedConfirm(detail.title)
-                    : t.rejectConfirm(detail.title)}
-          </p>
-          {confirm === "reject" && (
-            <Input
-              size="sm"
-              label={t.rejectReason}
-              required
-              value={rejectReason}
-              hint={t.rejectReasonHint}
-              autoFocus
-              onChange={(e) => setRejectReason(e.target.value)}
+          info={t.info}
+        >
+          {crumb}
+          {detailError !== null ? (
+            <ErrorLine
+              message={t.loadFailed}
+              detail={detailError}
+              onRetry={() => void loadDetail()}
+            />
+          ) : detail === null ? (
+            <div className="space-y-4" aria-busy="true">
+              <Skeleton className="h-16" />
+              <Skeleton className="h-24" />
+              <Skeleton className="h-40" />
+            </div>
+          ) : (
+            <ProposalView
+              detail={detail}
+              names={names}
+              locale={locale}
+              highlightId={highlightId}
+              busy={busy}
+              onComment={addComment}
+              onOpenSession={(sessionId) => navigate(`/chat/${sessionId}`)}
+              onOpenTicket={(ticketId) => company.openTicket(projectId, orgId, ticketId)}
+              onOpenFile={openScopeFile}
+              me={me}
+              onEditComment={editComment}
+              onDeleteComment={deleteComment}
+              approved={approved}
+              view={view}
+              onView={setView}
+              changes={changes}
+              actions={
+                actions === null ? null : (
+                  <>
+                    <Button
+                      size="sm"
+                      disabled={busy || !actions.requestChanges}
+                      onClick={() => setConfirm("request")}
+                    >
+                      {t.requestChanges(detail.pendingComments)}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={busy || !actions.approve}
+                      onClick={() => setConfirm("approve")}
+                    >
+                      {t.approve}
+                    </Button>
+                    {actions.markMerged && (
+                      <Button size="sm" disabled={busy} onClick={() => setConfirm("merged")}>
+                        {t.markMerged}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={busy || !actions.reject}
+                      onClick={() => setConfirm("reject")}
+                    >
+                      {t.reject}
+                    </Button>
+                  </>
+                )
+              }
             />
           )}
-        </div>
-      </ConfirmModal>
-    </OrgPage>
+
+          <ConfirmModal
+            open={confirm !== null}
+            title={
+              confirm === "request"
+                ? t.requestChangesTitle
+                : confirm === "approve"
+                  ? t.approveTitle
+                  : confirm === "merged"
+                    ? t.markMergedTitle
+                    : t.rejectTitle
+            }
+            tone={confirm === "reject" ? "danger" : "primary"}
+            confirmLabel={S.common.confirm}
+            confirmDisabled={confirm === "reject" && rejectReason.trim() === ""}
+            busy={busy}
+            onClose={() => {
+              setConfirm(null);
+              setRejectReason("");
+            }}
+            onConfirm={() => void onConfirm()}
+          >
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                {detail === null || confirm === null
+                  ? ""
+                  : confirm === "request"
+                    ? t.requestChangesConfirm(detail.pendingComments)
+                    : confirm === "approve"
+                      ? t.approveConfirm(detail.title)
+                      : confirm === "merged"
+                        ? t.markMergedConfirm(detail.title)
+                        : t.rejectConfirm(detail.title)}
+              </p>
+              {confirm === "reject" && (
+                <Input
+                  size="sm"
+                  label={t.rejectReason}
+                  required
+                  value={rejectReason}
+                  hint={t.rejectReasonHint}
+                  autoFocus
+                  onChange={(e) => setRejectReason(e.target.value)}
+                />
+              )}
+            </div>
+          </ConfirmModal>
+        </OrgPage>
+      </div>
+      {fileRef !== null && (
+        <>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t.filePanel.resize}
+            title={t.filePanel.resize}
+            {...panelWidth.dividerProps}
+            className={`hidden w-1.5 shrink-0 cursor-col-resize transition-colors duration-150 lg:block ${
+              panelWidth.resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
+            }`}
+          />
+          <div className="fixed inset-0 z-50 lg:static lg:z-auto lg:w-[var(--proposal-file-w)] lg:min-w-[360px] lg:shrink-0 lg:border-l lg:border-gray-200 lg:dark:border-gray-800">
+            <ProposalFilePanel
+              projectId={projectId}
+              orgId={orgId}
+              number={number}
+              target={fileRef}
+              onClose={closeScopeFile}
+            />
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -936,7 +962,7 @@ function ProposalView({
   onOpenSession: (sessionId: string) => void;
   onOpenTicket: (ticketId: string) => void;
   /** A scope file: opened in the Files tab of a session that has it (the implementation's, else the author's desk). */
-  onOpenFile: (file: string) => Promise<void>;
+  onOpenFile: (file: string, name?: string) => void;
   /** The signed-in person's principal: whose pending comments carry Edit / Delete. */
   me: string | null;
   onEditComment: (commentId: string, text: string) => Promise<boolean>;
@@ -1349,7 +1375,7 @@ function ScopeRow({
 }: {
   row: EntryChange<ProposalScopeEntry>;
   root: string;
-  onOpenFile: (file: string) => Promise<void>;
+  onOpenFile: (file: string, name?: string) => void;
 }) {
   const t = S.company.proposals;
   const entry = row.entry;
@@ -1386,7 +1412,7 @@ function ScopeRow({
         )}
         {!removed && entry.state === "exists" ? (
           <TitleButton
-            onClick={() => void onOpenFile(entry.file)}
+            onClick={() => onOpenFile(entry.file, entry.name)}
             hint={t.openFile}
             className="font-mono"
           >
@@ -1438,7 +1464,7 @@ function TestGroup({
   /** The group's tests in the head (a removed row is shown but not counted). */
   count: number;
   root: string;
-  onOpenFile: (file: string) => Promise<void>;
+  onOpenFile: (file: string, name?: string) => void;
 }) {
   const t = S.company.proposals;
   const [open, setOpen] = useState(true);
@@ -1497,7 +1523,7 @@ function TestRow({
 }: {
   row: EntryChange<ProposalTestEntry>;
   root: string;
-  onOpenFile: (file: string) => Promise<void>;
+  onOpenFile: (file: string, name?: string) => void;
 }) {
   const t = S.company.proposals;
   const entry = row.entry;
@@ -1528,7 +1554,7 @@ function TestRow({
         )}
         {!removed && entry.state === "exists" ? (
           <TitleButton
-            onClick={() => void onOpenFile(entry.file)}
+            onClick={() => onOpenFile(entry.file, entry.name)}
             hint={t.openFile}
             className="font-mono"
           >

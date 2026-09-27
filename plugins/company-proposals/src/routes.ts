@@ -8,6 +8,7 @@
  *   GET    /:number                  the proposal
  *   GET    /:number/revisions        every revision published: { revisions: [{ revision, by, at }] }
  *   GET    /:number/revisions/:rev   one revision as published (title, scope, sections)
+ *   GET    /:number/file?path=       one file under the proposal's base, read-only (the page's file panel)
  *   PUT    /:number                  publish a revision: { markdown }
  *   POST   /:number/ready | approve | reject { reason } | merged
  *   POST   /:number/implement        { agentId?, message?, workspace? } → an implementation session (default: the author's own)
@@ -328,6 +329,18 @@ export function proposalRoutes(service: ProposalService): Hono {
       ),
     );
   });
+
+  app.get("/:number/file", async (c) =>
+    c.json(
+      await service.file(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        c.req.query("path") ?? "",
+        actorOfQuery(c),
+      ),
+    ),
+  );
 
   app.get("/:number/comments", async (c) => {
     const pending = c.req.query("pending");

@@ -527,3 +527,19 @@
 /* The company channel's bubble (`.channel-bubble`: the deeper inline-code chip and table rules
    inside it) lives in the shared UI package too, beside its component:
    packages/ui/src/components/chat/channel-bubble/channel-bubble.css. */
+
+/* The proposal file panel's name-pattern matches: a wash over each matched line, and the
+   matched span painted through the Custom Highlight API (proposal-file-panel.tsx), which leaves
+   the highlighter's markup alone. A background wash, not a status tone. */
+.proposal-file .line[data-match] {
+  @apply bg-amber-50;
+}
+html.dark .proposal-file .line[data-match] {
+  @apply bg-amber-400/10;
+}
+::highlight(proposal-match) {
+  background-color: rgb(252 211 77 / 0.6);
+}
+html.dark ::highlight(proposal-match) {
+  background-color: rgb(245 158 11 / 0.35);
+}

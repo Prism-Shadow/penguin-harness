@@ -1,4 +1,3 @@
-import { toWorkspaceRelative } from "../../lib/file-path";
 /**
  * The proposals page's pure shaping (unit tested, no React): the queue's order, a status's
  * tone, the `proposal:<n>[#<pattern>]` reference grammar every Markdown surface recognizes,
@@ -561,25 +560,68 @@ export function withToken(
   return stripped === "" ? tokenText(key, value) : `${stripped} ${tokenText(key, value)}`;
 }
 
-/**
- * Where a scope file opens: the first session (in the order given — the implementation
- * sessions newest first, then the author's desk) whose Workspace holds the file's absolute
- * path, as `base` (the directory the scope resolves under, on the server that owns the
- * organization) joined with the file, and the path relative to that Workspace. Null when no
- * session's Workspace contains it.
- */
-export function scopeFileTarget(
-  base: string,
-  file: string,
-  sessions: ReadonlyArray<{ sessionId: string; workspace: string }>,
-): { sessionId: string; rel: string } | null {
-  const absolute = `${base.replace(/[\\/]+$/, "")}/${file}`;
-  for (const s of sessions) {
-    // A Workspace recorded with a trailing separator is the same directory.
-    const rel = toWorkspaceRelative(absolute, s.workspace.replace(/(.)[\\/]+$/, "$1"));
-    if (rel !== null && rel !== "") return { sessionId: s.sessionId, rel };
+// ---------------------------------------------------------------------------
+// The file panel beside the proposal
+// ---------------------------------------------------------------------------
+
+/** A file the panel shows: its path under the proposal's base, and the row's name pattern, if any. */
+export interface ProposalFileRef {
+  file: string;
+  name?: string;
+}
+
+/** The file the panel has open, from the page's query (`?file=<path>[&name=<pattern>]`); null when it is closed. */
+export function proposalFileParam(search: string): ProposalFileRef | null {
+  const query = new URLSearchParams(search);
+  const file = query.get("file");
+  if (file === null || file === "") return null;
+  const name = query.get("name");
+  return name === null || name === "" ? { file } : { file, name };
+}
+
+/** The query with the panel's file set (or, for null, removed); every other parameter stays. */
+export function withProposalFile(search: string, ref: ProposalFileRef | null): string {
+  const query = new URLSearchParams(search);
+  query.delete("file");
+  query.delete("name");
+  if (ref !== null) {
+    query.set("file", ref.file);
+    if (ref.name !== undefined && ref.name !== "") query.set("name", ref.name);
   }
-  return null;
+  const out = query.toString();
+  return out === "" ? "" : `?${out}`;
+}
+
+/** One line a name pattern matches: its index (0-based) and the span to mark in it. */
+export interface LineMatch {
+  line: number;
+  start: number;
+  end: number;
+}
+
+/**
+ * The lines of `content` a scope or test row's name pattern matches, each with the span to mark:
+ * the first capture group when the pattern has one and it took part, else the whole match. The
+ * pattern is a regular expression (the server compiles it at publish); one that does not compile
+ * here matches nothing, so null tells the caller to say so rather than show an empty result.
+ */
+export function matchingLines(content: string, pattern: string): LineMatch[] | null {
+  let re: RegExp;
+  try {
+    // `d` for the indices of the capture group; one match per line is enough to mark it.
+    re = new RegExp(pattern, "d");
+  } catch {
+    return null;
+  }
+  const out: LineMatch[] = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const m = re.exec(lines[i]!);
+    if (m === null) continue;
+    const span = m.indices?.[1] ?? m.indices?.[0];
+    out.push({ line: i, start: span?.[0] ?? m.index, end: span?.[1] ?? m.index + m[0].length });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

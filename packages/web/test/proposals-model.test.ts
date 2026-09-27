@@ -19,7 +19,9 @@ import {
   unchangedEntries,
   tokenizeWords,
   revisedAfterApproval,
-  scopeFileTarget,
+  matchingLines,
+  proposalFileParam,
+  withProposalFile,
   commentsInSection,
   eventDetail,
   eventLine,
@@ -373,31 +375,44 @@ describe("eventLine", () => {
   });
 });
 
-describe("scopeFileTarget", () => {
-  it("opens the file in the first session whose Workspace holds the scope's base", () => {
-    const sessions = [
-      { sessionId: "impl", workspace: "/w/shared/other" },
-      { sessionId: "desk", workspace: "/w/shared" },
-    ];
-    expect(scopeFileTarget("/w/shared/repo", "pkg/a.go", sessions)).toEqual({
-      sessionId: "desk",
-      rel: "repo/pkg/a.go",
-    });
-    expect(
-      scopeFileTarget("/w/shared/repo", "pkg/a.go", [
-        { sessionId: "s", workspace: "/w/shared/repo/" },
-      ]),
-    ).toEqual({ sessionId: "s", rel: "pkg/a.go" });
-    expect(scopeFileTarget("/w/shared/repo", "pkg/a.go", [sessions[0]!])).toBeNull();
+describe("the file panel's helpers", () => {
+  it("marks every line the pattern matches, on its first capture group when there is one", () => {
+    const content = [
+      "export function notifyTicket() {}",
+      "function helper() {}",
+      "export function reconcileCalendar() {}",
+    ].join("\n");
+    expect(matchingLines(content, "notifyTicket|reconcileCalendar")).toEqual([
+      { line: 0, start: 16, end: 28 },
+      { line: 2, start: 16, end: 33 },
+    ]);
+    // The capture group, not the whole match, is the span.
+    expect(matchingLines(content, "function (\\w+)\\(\\)")).toEqual([
+      { line: 0, start: 16, end: 28 },
+      { line: 1, start: 9, end: 15 },
+      { line: 2, start: 16, end: 33 },
+    ]);
+    // A group that did not take part falls back to the whole match.
+    expect(matchingLines("abc", "a(x)?b")).toEqual([{ line: 0, start: 0, end: 2 }]);
+    expect(matchingLines(content, "nothing here")).toEqual([]);
+    expect(matchingLines(content, "(unclosed")).toBeNull();
   });
 
-  it("reads a Windows base against a Windows Workspace", () => {
-    expect(
-      scopeFileTarget("C:\\Users\\k\\work\\general\\typst.ts", "packages/a/package.json", [
-        { sessionId: "desk", workspace: "C:\\Users\\k\\work\\general\\ceo" },
-        { sessionId: "root", workspace: "C:\\Users\\k\\work\\general" },
-      ]),
-    ).toEqual({ sessionId: "root", rel: "typst.ts/packages/a/package.json" });
+  it("keeps the open file in the query, beside the parameters already there", () => {
+    expect(proposalFileParam("")).toBeNull();
+    expect(proposalFileParam("?file=")).toBeNull();
+    expect(proposalFileParam("?file=pkg%2Fa.go")).toEqual({ file: "pkg/a.go" });
+    expect(proposalFileParam("?file=a.ts&name=%5Ereconcile+%28fires%29")).toEqual({
+      file: "a.ts",
+      name: "^reconcile (fires)",
+    });
+    const opened = withProposalFile("?q=x", { file: "pkg/a b.go", name: "^Test(\\w+)" });
+    expect(proposalFileParam(opened)).toEqual({ file: "pkg/a b.go", name: "^Test(\\w+)" });
+    expect(new URLSearchParams(opened).get("q")).toBe("x");
+    // Another file replaces the first, its pattern with it.
+    expect(proposalFileParam(withProposalFile(opened, { file: "b.ts" }))).toEqual({ file: "b.ts" });
+    expect(withProposalFile(opened, null)).toBe("?q=x");
+    expect(withProposalFile("?file=a.ts&name=x", null)).toBe("");
   });
 });
 

@@ -26,6 +26,7 @@ import type {
   ProposalComment,
   ProposalCommentsResponse,
   ProposalDetail,
+  ProposalFileResponse,
   ProposalItem,
   ProposalMaterial,
   ProposalRevision,
@@ -36,6 +37,7 @@ import type {
   ProposalsResponse,
 } from "@prismshadow/penguin-server/api";
 import { renderForAgent, sectionSource } from "./comments.js";
+import { readBaseFile } from "./files.js";
 import { PrStatusReader } from "./pr-status.js";
 import { Ledger, ledgerPath, type Proposal } from "./ledger.js";
 import {
@@ -347,6 +349,27 @@ export class ProposalService {
       this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
     );
     return { ...detail, materials: await this.withPrStatus(detail.materials) };
+  }
+
+  /**
+   * One file under the proposal's base (the shared workspace joined with the current
+   * revision's root), read-only: what the page's file panel shows beside the proposal.
+   */
+  async file(
+    projectId: string,
+    orgId: string,
+    number: number,
+    rel: string,
+    actor: OrgActor,
+  ): Promise<ProposalFileResponse> {
+    const { org, ledger } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(ledger, number);
+    const read = await readBaseFile(scopeBase(org.workspace, p.root), rel);
+    if ("code" in read) {
+      const status = read.code === "bad_path" ? 400 : read.code === "path_outside" ? 403 : 404;
+      throw new ProposalError(status, read.code, read.message);
+    }
+    return read;
   }
 
   /** The detail with where its scope resolves on this server, and each entry's state there. */

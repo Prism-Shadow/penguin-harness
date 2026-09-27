@@ -6877,6 +6877,22 @@ export interface ProposalRevisionsResponse {
   revisions: Array<{ revision: number; by: string; at: string }>;
 }
 
+/**
+ * `GET …/:number/file?path=`: one file under the proposal's `base`, read-only, for the page's
+ * file panel. `path` is relative to `base` (as the scope and tests write it).
+ */
+export interface ProposalFileResponse {
+  path: string;
+  size: number;
+  /** A NUL byte in the first 8 KB; `content` is then null. */
+  binary: boolean;
+  /** Only the first 512 KB is sent. */
+  truncated: boolean;
+  content: string | null;
+  /** The file's extension, lowercase and without the dot ("" when none); the page maps it to a grammar. */
+  extension: string;
+}
+
 export interface ProposalsResponse {
   proposals: ProposalItem[];
 }

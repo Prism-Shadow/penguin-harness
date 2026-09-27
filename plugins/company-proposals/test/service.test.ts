@@ -517,6 +517,35 @@ describe("ProposalService", () => {
     expect(late.revision).toBe(2);
   });
 
+  it("serves a file under the proposal's base for the page's file panel, and nothing outside it", async () => {
+    const n = await delegated();
+    await service.publish(PROJECT, ORG, n, DOC, author);
+    const file = "packages/server/src/runtime/organization/reconcile.ts";
+    expect(await service.file(PROJECT, ORG, n, file, BOSS)).toMatchObject({
+      path: file,
+      content: "export {};\n",
+      extension: "ts",
+    });
+    // An employee reads it too — the implementer's desk opens the same panel's data.
+    expect(await service.file(PROJECT, ORG, n, file, author)).toMatchObject({ path: file });
+    expect(await refused(() => service.file(PROJECT, ORG, n, "../secret", BOSS))).toEqual({
+      status: 400,
+      code: "bad_path",
+    });
+    expect(await refused(() => service.file(PROJECT, ORG, n, "nope.ts", BOSS))).toEqual({
+      status: 404,
+      code: "file_not_found",
+    });
+    expect(await refused(() => service.file(PROJECT, ORG, n, file, OUTSIDER))).toEqual({
+      status: 403,
+      code: "project_access",
+    });
+    expect(await refused(() => service.file(PROJECT, ORG, 99, file, BOSS))).toEqual({
+      status: 404,
+      code: "proposal_not_found",
+    });
+  });
+
   it("the tests are checked at publish like the scope: an existing test must be there, a new one in an existing file is a hint", async () => {
     const n = await delegated();
     const ws = gateway.org!.workspace;
