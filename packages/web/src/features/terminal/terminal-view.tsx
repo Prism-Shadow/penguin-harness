@@ -325,8 +325,9 @@ export function TerminalView({
       term.loadAddon(
         new ClipboardAddon({
           readText: () => Promise.resolve(""),
-          writeText: (_selection, text) =>
-            navigator.clipboard?.writeText(text).catch(() => {}) ?? Promise.resolve(),
+          writeText: async (_selection, text) => {
+            await writeClipboard(text);
+          },
         }),
       );
       termRef.current = term;

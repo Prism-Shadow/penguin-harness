@@ -26,6 +26,7 @@ import type {
 import type { DesktopPrivacyPane, DirListResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
+import { writeClipboard } from "../../lib/clipboard";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
@@ -40,7 +41,6 @@ import { useSessions } from "../../state/sessions";
 import { Modal } from "../../components/ui/modal";
 import { Button } from "../../components/ui/button";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import { writeClipboard } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CLOCK_ICON, FOLDER_ICON, FOLDER_OPEN_ICON } from "../../components/ui/group-list";
@@ -551,8 +551,7 @@ export function WorkspaceFinder({
       case "copyPath":
         // A menu row cannot show the copy button's own feedback — the panel closes out from
         // under it — so a toast confirms, as the Files panel's copy-path row does.
-        writeClipboard(target.path);
-        toastSuccess(S.common.copied);
+        void writeClipboard(target.path).then((ok) => ok && toastSuccess(S.common.copied));
         break;
       case "refresh":
         refresh();
