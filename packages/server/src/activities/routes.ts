@@ -29,6 +29,8 @@ import type { AcceptanceStateResponse } from "./acceptance-types.js";
 import { parseRefDecisions } from "./ref-template.js";
 import type { ActivityPhonemes } from "./phonemes.js";
 import type { BookWordsRefresh, BookWordsSetup, BookWordsState } from "./book-word-types.js";
+import type { ActivityDeploys } from "./deploy-service.js";
+import type { DeployContextResponse } from "./deploy-types.js";
 import {
   badRequest,
   optionalString,
@@ -83,6 +85,7 @@ export class ActivityRoutes {
   @Use() private readonly quality!: ActivityQuality;
   @Use() private readonly acceptance!: ActivityAcceptance;
   @Use() private readonly phonemes!: ActivityPhonemes;
+  @Use() private readonly deploys!: ActivityDeploys;
   @Use() private readonly config!: Config;
   @Bind("activities") routes!: Hono<AppEnv>;
 
@@ -1102,6 +1105,26 @@ export class ActivityRoutes {
         ),
       });
     });
+    // Whether a deploy could start. Reading it is a member's; asking the remote about the
+    // branches reaches the network with the server's SSH keys, so that is the owner's.
+    app.get("/:activityId/deploy/context", async (c) => {
+      const projectId = requireValidId(c, "projectId");
+      const checkRemote = c.req.query("checkRemote") === "1";
+      if (checkRemote) this.access.requireProjectOwner(c.var.user.userId, projectId);
+      return c.json({
+        context: await this.deploys.context(projectId, pathParam(c, "activityId"), {
+          checkRemote,
+        }),
+      } satisfies DeployContextResponse);
+    });
+    app.post("/:activityId/deploy/clones", async (c) =>
+      c.json({
+        context: await this.deploys.prepareClones(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+        ),
+      } satisfies DeployContextResponse),
+    );
     app.get("/:activityId/pipeline", async (c) =>
       c.json({
         pipeline: await this.pipelines.status(

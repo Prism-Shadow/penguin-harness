@@ -73,6 +73,7 @@ describe("studio tree", () => {
       "activityStats",
       "mediaLibrary",
       "history",
+      "deploy",
     ]);
   });
 

@@ -6648,3 +6648,220 @@ test("records a decodable book's words and shows each word's sounds in time", as
   ).toBeVisible();
   expect(f.errors).toEqual([]);
 });
+
+test("shows what a deploy still needs", async ({ page }) => {
+  const f = await fixture(page);
+  const absent = { present: false, branch: null, clean: null, ahead: null, remoteUrlMatches: null };
+  const clean = { present: true, branch: "main", clean: true, ahead: 0, remoteUrlMatches: true };
+  // The deploy routes, with the server's rules: the context is read-only, Prepare clones makes
+  // the missing clones and nothing else, and the remote is asked only on Check remote.
+  let cloned = false;
+  let prepares = 0;
+  let remoteChecks = 0;
+  const context = (remoteChecked) => {
+    const problems = [{ code: "settings_missing", field: "qa.jenkinsUrl" }];
+    if (!cloned)
+      for (const repo of ["module", "activityData", "media"])
+        problems.push({ code: "clone_missing", repo });
+    return {
+      ready: false,
+      problems,
+      remoteChecked,
+      module: {
+        folder: "waf-module-words",
+        remote: "git@github.com:org/waf-module-words.git",
+        clone: cloned ? clean : absent,
+      },
+      activityData: { clone: cloned ? clean : absent },
+      media: { clone: cloned ? clean : absent },
+      branches: { deploy: "loom/words-deploy", activityData: "loom/words-activity-data" },
+      branchState: {
+        deploy: cloned
+          ? { local: false, remote: remoteChecked ? true : null }
+          : { local: null, remote: null },
+        activityData: cloned
+          ? { local: true, remote: remoteChecked ? false : null }
+          : { local: null, remote: null },
+      },
+    };
+  };
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (url.pathname === `${base}/act_test/sandbox/status`)
+      return json({
+        state: "ready",
+        playable: true,
+        buildable: true,
+        message: "Ready.",
+        buildLog: null,
+      });
+    if (url.pathname === `${base}/act_test/deploy/context` && request.method() === "GET") {
+      const checkRemote = url.searchParams.get("checkRemote") === "1";
+      if (checkRemote) remoteChecks++;
+      return json({ context: context(checkRemote) });
+    }
+    if (url.pathname === `${base}/act_test/deploy/clones` && request.method() === "POST") {
+      prepares++;
+      cloned = true;
+      return json({ context: context(false) });
+    }
+    return route.fallback();
+  });
+  // Registered before the activity opens, so the studio reads the module as there from the start.
+  await create(page);
+  await openSection(page, "Deploy");
+  await expect(page.getByRole("heading", { name: /^Deploy More info/, level: 3 })).toBeVisible();
+  const status = page.getByTestId("deploy-readiness");
+  await expect(status).toHaveText("Not ready to deploy: 4 things are missing.");
+  const problems = page.getByRole("region", { name: "What is missing" });
+  await expect(problems.getByText("QA Jenkins address is empty.", { exact: true })).toBeVisible();
+  await expect(
+    problems.getByText("The Media clone is not on this server yet. Prepare clones makes it.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("An admin fills in the deploy settings under System settings, Deploy.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const checks = page.getByRole("table", { name: "Deploy checks" });
+  await expect(checks.getByRole("row", { name: /^Media clone/ })).toContainText("Not cloned yet");
+  await expect(checks.getByRole("row", { name: /^Ref/ })).toContainText("The canonical ref");
+
+  // Prepare clones makes the three clones; only the settings are left.
+  await page.getByRole("button", { name: "Prepare clones", exact: true }).click();
+  await expect(status).toHaveText("Not ready to deploy: 1 thing is missing.");
+  await expect(page.getByText("The clones are ready.", { exact: true })).toBeVisible();
+  await expect(checks.getByRole("row", { name: /^Media clone/ })).toContainText(
+    "Cloned, on main, clean",
+  );
+  await expect(page.getByRole("button", { name: "Prepare clones", exact: true })).toBeDisabled();
+  expect(prepares).toBe(1);
+  await expect(checks.getByRole("row", { name: /^Branch loom\/words-deploy/ })).toContainText(
+    "remote not checked",
+  );
+
+  // Check remote asks the remote once and says where each branch is.
+  expect(remoteChecks).toBe(0);
+  await page.getByRole("button", { name: "Check remote", exact: true }).click();
+  await expect(checks.getByRole("row", { name: /^Branch loom\/words-deploy/ })).toContainText(
+    "Not made yet; the deploy makes it · on the remote",
+  );
+  await expect(
+    checks.getByRole("row", { name: /^Branch loom\/words-activity-data/ }),
+  ).toContainText("Here · not on the remote yet");
+  expect(remoteChecks).toBe(1);
+  expect(f.errors).toEqual([]);
+});
+
+test("an admin fills in the deploy settings and tests the QA connection", async ({ page }) => {
+  const f = await fixture(page);
+  let settings = {
+    qa: {
+      jenkinsUrl: "",
+      username: "",
+      token: { set: false },
+      tier: "qa",
+      environment: "loom",
+      frameworkVersion: "",
+      activityBaseUrl: "",
+    },
+    prod: {
+      jenkinsUrl: "",
+      username: "",
+      token: { set: false },
+      tier: "prod",
+      environment: "DEFAULT",
+      frameworkVersion: "",
+    },
+    jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
+    repos: { activityDataRemote: "git@github.com:org/data.git", mediaRemote: "" },
+    git: { userName: "", userEmail: "" },
+    timeouts: { buildMinutes: 30, deployMinutes: 30 },
+  };
+  const puts = [];
+  const tests = [];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === "/api/me")
+      return json({
+        user: { userId: "author", isAdmin: true, passwordIsInitial: false },
+        previewIsolated: true,
+        desktopMode: false,
+        companyMode: false,
+        sessionVia: "password",
+        uploadLimits: {
+          attachmentMaxMb: 100,
+          attachmentTotalMb: 120,
+          attachmentMaxCount: 20,
+          imageMaxMb: 20,
+          attachmentLimitMinMb: 1,
+          attachmentLimitMaxMb: 200,
+        },
+      });
+    if (p === "/api/admin/activity-deploy/settings" && request.method() === "PUT") {
+      const body = request.postDataJSON();
+      puts.push(body);
+      // The server's rule: plain http only on this machine; a refused field writes nothing.
+      if (body.qa?.jenkinsUrl?.startsWith("http://"))
+        return json(
+          {
+            error: {
+              code: "invalid_deploy_setting",
+              message: "qa.jenkinsUrl: must start with https://",
+              detail: { field: "qa.jenkinsUrl", reason: "https_required" },
+            },
+          },
+          400,
+        );
+      const { token, ...qa } = body.qa ?? {};
+      settings = {
+        ...settings,
+        qa: { ...settings.qa, ...qa, token: { set: settings.qa.token.set || Boolean(token) } },
+      };
+      return json({ settings });
+    }
+    if (p === "/api/admin/activity-deploy/settings") return json({ settings });
+    if (p === "/api/admin/activity-deploy/settings/test/qa") {
+      tests.push(p);
+      return json({ test: { ok: true, status: 200 } });
+    }
+    return route.fallback();
+  });
+  await page.goto(`${origin}/activities`);
+  await page.locator('button[aria-haspopup="menu"]').filter({ hasText: "author" }).click();
+  await page.getByRole("button", { name: "System settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "System settings" });
+  await dialog.getByRole("button", { name: "Deploy" }).click();
+  const qa = dialog.getByRole("group", { name: "QA" });
+  await expect(qa.getByRole("textbox", { name: "Tier" })).toHaveValue("qa");
+  await expect(qa.getByRole("button", { name: "Test QA connection", exact: true })).toBeDisabled();
+
+  // A plain http address is refused and marked under its field.
+  await qa.getByRole("textbox", { name: "Jenkins address" }).fill("http://jenkins.example.org");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    qa.getByText("Use https:// (http:// only on localhost).", { exact: true }),
+  ).toBeVisible();
+
+  await qa.getByRole("textbox", { name: "Jenkins address" }).fill("https://jenkins.example.org");
+  await qa.getByLabel("Jenkins token").fill("secret-token");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(qa.getByText("Saved. Leave empty to keep the saved token.")).toBeVisible();
+  expect(puts.at(-1)).toEqual({
+    qa: { jenkinsUrl: "https://jenkins.example.org", token: "secret-token" },
+  });
+  await expect(qa.getByLabel("Jenkins token")).toHaveValue("");
+
+  await qa.getByRole("button", { name: "Test QA connection", exact: true }).click();
+  await expect(dialog.getByTestId("deploy-test-qa")).toHaveText("Jenkins answered (200).");
+  expect(tests).toHaveLength(1);
+  expect(f.errors).toEqual([]);
+});

@@ -71,6 +71,7 @@ import { CreateRefView } from "./create-ref-view";
 import { renumberManifestText } from "./ref-number";
 import { ImplementationFeaturesView } from "./implementation-features-view";
 import { GenerationHistory } from "./history-section";
+import { DeployPanel } from "./deploy-panel";
 import { useAssistProposal } from "./use-assist-proposal";
 import { StudioTreeView } from "./studio-tree-view";
 import { SessionsPanel } from "./sessions-panel";
@@ -2062,6 +2063,14 @@ function ActivityEditor({
                     void onSaved();
                     navigate(`/activities/${encodeURIComponent(made.id)}?section=scenes`);
                   }}
+                />
+              )}
+              {section === "deploy" && available && (
+                <DeployPanel
+                  key={detail.id}
+                  endpoint={endpoint}
+                  editable={editable}
+                  onAnnounce={announce}
                 />
               )}
               {section === "history" && available && (

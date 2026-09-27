@@ -49,6 +49,7 @@ export type StudioLabel =
   | "unassigned"
   | "mediaLibrary"
   | "history"
+  | "deploy"
   | `group:${SceneAssetType}`
   | "group:bookWord";
 
@@ -153,6 +154,7 @@ export function buildStudioTree(
     sectionRow("stats", "activityStats", "stats", sections),
     sectionRow("library", "mediaLibrary", "library", sections),
     sectionRow("history", "history", "history", sections),
+    sectionRow("deploy", "deploy", "deploy", sections),
   ];
 }
 

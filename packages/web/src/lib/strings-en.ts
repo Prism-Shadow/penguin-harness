@@ -31,6 +31,7 @@ export const en: Strings = {
         unassigned: "Not in any scene",
         mediaLibrary: "Media Library",
         history: "Generation History",
+        deploy: "Deploy",
       },
       groups: {
         image: "Images",
@@ -433,6 +434,133 @@ export const en: Strings = {
       noAssets: "This scene asks for no media.",
       empty: "The specification has no scenes yet.",
     },
+    deploy: {
+      title: "Deploy",
+      about:
+        "Whether this activity could be deployed now: the deploy settings are complete, the module's repository is known, and the three copies a deploy works in (the module, the activity data and the media) are on this server, clean and on the right remote. Nothing here deploys anything. Prepare clones makes the copies that are missing, and Check remote asks the remote whether the branches are there.",
+      loading: "Reading what a deploy needs…",
+      loadFailed: (reason) => `Could not read what a deploy needs: ${reason}`,
+      ready: "Ready to deploy.",
+      notReady: (n) => `Not ready to deploy: ${n} ${n === 1 ? "thing is" : "things are"} missing.`,
+      settingsHint: "An admin fills in the deploy settings under System settings, Deploy.",
+      checksLabel: "Deploy checks",
+      columns: { check: "Check", state: "State" },
+      problemsTitle: "What is missing",
+      prepareClones: "Prepare clones",
+      preparing: "Preparing the clones…",
+      prepared: "The clones are ready.",
+      checkRemote: "Check remote",
+      checkingRemote: "Asking the remote…",
+      remoteChecked: "Checked against the remote.",
+      cloneFailed: (repo, output) =>
+        output ? `The ${repo} clone failed. git said: ${output}` : `The ${repo} clone failed.`,
+      cloneTimedOut: (repo) => `The ${repo} clone took longer than its time limit and was stopped.`,
+      fields: {
+        "qa.jenkinsUrl": "QA Jenkins address",
+        "qa.username": "QA Jenkins user",
+        "qa.token": "QA Jenkins token",
+        "qa.tier": "QA tier",
+        "qa.environment": "QA environment",
+        "qa.frameworkVersion": "QA framework version",
+        "qa.activityBaseUrl": "QA activity address",
+        "prod.jenkinsUrl": "PROD Jenkins address",
+        "prod.username": "PROD Jenkins user",
+        "prod.token": "PROD Jenkins token",
+        "prod.tier": "PROD tier",
+        "prod.environment": "PROD environment",
+        "prod.frameworkVersion": "PROD framework version",
+        "jobs.moduleBuild": "Module build job",
+        "jobs.activityDeploy": "Activity deploy job",
+        "repos.activityDataRemote": "Activity data repository",
+        "repos.mediaRemote": "Media repository",
+        "git.userName": "Git user name",
+        "git.userEmail": "Git email",
+      },
+      repos: { module: "Module", activityData: "Activity data", media: "Media" },
+      rows: {
+        ref: "Ref",
+        layout: "Layout",
+        settings: "Deploy settings",
+        git: "git",
+        moduleRemote: "Module repository",
+        clone: (repo) => `${repo} clone`,
+        branch: (name) => `Branch ${name}`,
+      },
+      states: {
+        canonical: "The canonical ref, which owns the module",
+        notCanonical: "Not the canonical ref: deploy from the ref that owns the module",
+        noModule: "This activity belongs to no product, so it has no module",
+        layout: (layout) => `${layout} is not a layout a deploy supports`,
+        noLayout: "The specification names no layout",
+        settingsComplete: "Complete",
+        settingsMissing: (n) => `${n} ${n === 1 ? "setting is" : "settings are"} empty`,
+        gitAvailable: "Available",
+        gitUnavailable: "git could not be run on this server",
+        noRemote: "The module's package.json names no repository",
+        remoteInvalid: (remote) => `${remote} cannot be cloned from`,
+      },
+      clone: {
+        present: (branch) => (branch ? `Cloned, on ${branch}, clean` : "Cloned, clean"),
+        missing: "Not cloned yet",
+        dirty: "Has uncommitted changes",
+        ahead: (n) => `${n} ${n === 1 ? "commit is" : "commits are"} not pushed`,
+        remoteMismatch: "Points at a different remote",
+        unknown: "On disk; git could not read it",
+        notKnown: {
+          status: "git could not say whether it is clean",
+          upstream: "git could not count unpushed commits; the branch may have no upstream",
+          branch: "git could not say whether main is there",
+          sparse: "git could not list the folders it checks out",
+        },
+        remoteUnreachable: "The remote could not be reached",
+        mediaPathMissing: (path) => `${path} is not checked out`,
+      },
+      branch: {
+        local: "Here",
+        notYet: "Not made yet; the deploy makes it",
+        unknown: "Not known until the clone is there",
+        onRemote: "on the remote",
+        notOnRemote: "not on the remote yet",
+        remoteUnknown: "remote not checked",
+      },
+      problems: {
+        settings_missing: (field) => `${field} is empty.`,
+        module_remote_missing:
+          "The module's package.json names no repository, so there is nowhere to clone it from.",
+        module_remote_invalid:
+          "The module's package.json names a repository that cannot be cloned from. Only an ssh remote, git@host:owner/repo or an https address without a password can.",
+        clone_missing: (repo) =>
+          `The ${repo} clone is not on this server yet. Prepare clones makes it.`,
+        clone_unknown: (repo, what) =>
+          what === "status"
+            ? `git could not say whether the ${repo} clone is clean.`
+            : what === "upstream"
+              ? `git could not count the ${repo} clone's unpushed commits. Its branch may have no upstream.`
+              : what === "branch"
+                ? `git could not say whether the ${repo} clone has a main branch.`
+                : `git could not list the folders the ${repo} clone checks out.`,
+        remote_unreachable: (repo) => `The ${repo} remote could not be reached.`,
+        media_path_missing: (path) =>
+          `The Media clone does not check out ${path} yet. Prepare clones adds it.`,
+        clone_dirty: (repo) => `The ${repo} clone has uncommitted changes.`,
+        clone_ahead: (repo, n) =>
+          `The ${repo} clone has ${n} ${n === 1 ? "commit" : "commits"} its remote does not.`,
+        clone_remote_mismatch: (repo) =>
+          `The ${repo} clone points at a different remote than the settings name.`,
+        branch_missing: (repo, branch, where) =>
+          where === "local"
+            ? `The ${repo} clone has no ${branch} branch.`
+            : `The ${repo} remote has no ${branch} branch.`,
+        not_canonical:
+          "Only the canonical ref deploys: every ref of this product shares its module.",
+        no_module: "This activity belongs to no product, so there is no module to deploy.",
+        layout_unsupported: (layout) =>
+          layout
+            ? `The layout ${layout} cannot be deployed yet. Only mainOnly can.`
+            : "The specification names no layout. Only mainOnly can be deployed.",
+        git_unavailable: "git could not be run on this server.",
+      },
+    },
     quality: {
       title: "Quality",
       about:
@@ -775,6 +903,7 @@ export const en: Strings = {
       library: "Media library",
       module: "Module preview",
       history: "Generation history",
+      deploy: "Deploy",
       newRef: "New ref",
     },
     implementationFeatures: {
@@ -1729,6 +1858,68 @@ export const en: Strings = {
     companyModeServer: "Enable company mode",
     companyModeServerInfo:
       "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger. Beta: it may be unstable; please report what you hit.",
+    deploy: {
+      title: "Deploy",
+      about:
+        "Where activities are deployed to: the Jenkins that builds modules and deploys activities to QA and PROD, the repositories activity data and media are published to, and who the deploy's commits are made as. Tokens are kept in a file only this server can read and are never shown again. git uses this server's own SSH keys.",
+      groups: {
+        qa: "QA",
+        prod: "PROD",
+        jobs: "Jenkins jobs",
+        repos: "Repositories",
+        git: "Git identity",
+        timeouts: "Waiting",
+      },
+      jenkinsUrl: "Jenkins address",
+      jenkinsUrlHint: "https://… (http:// only for localhost)",
+      username: "Jenkins user",
+      token: "Jenkins token",
+      tokenSaved: "Saved. Leave empty to keep the saved token.",
+      tokenForget: "Forget token",
+      tokenWillClear: "The saved token is removed when you save.",
+      tier: "Tier",
+      environment: "Environment",
+      frameworkVersion: "Framework version",
+      frameworkVersionHint: "A version number, like 4.2.1",
+      activityBaseUrl: "Activity address",
+      activityBaseUrlHint: "https://… where a deployed activity opens on QA",
+      moduleBuildJob: "Module build job",
+      activityDeployJob: "Activity deploy job",
+      jobHint: "Leave empty for the default",
+      activityDataRemote: "Activity data repository",
+      mediaRemote: "Media repository",
+      remoteHint: "git@github.com:owner/repo.git or https://…",
+      gitUserName: "Name",
+      gitUserEmail: "Email",
+      buildMinutes: "Module build, minutes",
+      deployMinutes: "Activity deploy, minutes",
+      minutesHint: "1 to 240",
+      invalid: "This value is not accepted.",
+      reasons: {
+        not_text: "This value is not accepted.",
+        not_object: "This value is not accepted.",
+        control_characters: "Remove the control characters.",
+        too_long: "This is too long.",
+        not_address: "Enter a full address, like https://jenkins.example.org.",
+        https_required: "Use https:// (http:// only on localhost).",
+        credentials_in_address: "Leave the user and password out of the address.",
+        query_in_address: "Leave out everything after ? or #.",
+        not_remote: "Enter a git remote, like git@github.com:owner/repo.git.",
+        remote_scheme: "Use an ssh:// or https:// remote, or git@host:owner/repo.git.",
+        password_in_remote: "Leave the password out of the remote.",
+        not_version: "Enter a version number, like 4.2.1.",
+        not_email: "Enter an email address.",
+        minutes_range: "Enter a whole number of minutes from 1 to 240.",
+        token_spaces: "A token has no spaces.",
+      },
+      testConnection: (target) => `Test ${target} connection`,
+      testing: "Testing…",
+      testOk: (status) => `Jenkins answered (${status}).`,
+      testFailed: (status) => `Jenkins refused the request (${status}).`,
+      testNoAnswer: "Jenkins did not answer.",
+      testUsesSaved: "The test uses the saved settings. Save first.",
+      targets: { qa: "QA", prod: "PROD" },
+    },
     testBrowser: {
       title: "Test browser",
       about:
@@ -5759,6 +5950,20 @@ Scenarios:
     noDefaultModel: "This project has no default model yet — add one on the Models page first",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
+      deploy_clones_running: "The clones are already being prepared.",
+      deploy_no_module: "This activity belongs to no product, so there is no module to deploy.",
+      deploy_not_canonical:
+        "Only the canonical ref deploys: every ref of this product shares its module.",
+      deploy_settings_missing: "An admin has to fill in the deploy settings first.",
+      deploy_module_remote_missing: "The module's package.json names no repository.",
+      deploy_module_remote_invalid:
+        "The module's package.json names a repository that cannot be cloned from.",
+      deploy_clone_path:
+        "A clone would have been made outside the deploy directory or inside the WAF checkout, so nothing was cloned.",
+      deploy_clone_failed: "A clone failed.",
+      deploy_clone_path_taken:
+        "Something that is not the expected clone is already where the clone goes. It was left as it is.",
+      git_unavailable: "git could not be run on this server.",
       activity_invalid:
         "The activity details are invalid. Check the product code, reference number, and title.",
       activity_exists: "An activity already uses this product code and reference number.",

@@ -30,7 +30,8 @@ export type Strings = {
         | "activityStats"
         | "unassigned"
         | "mediaLibrary"
-        | "history",
+        | "history"
+        | "deploy",
         string
       >;
       groups: Record<"image" | "video" | "audio" | "animation" | "bookWord", string>;
@@ -391,6 +392,92 @@ export type Strings = {
       noAssets: string;
       empty: string;
     };
+    /** The Deploy section: whether a deploy of this activity could start, and what is missing. */
+    deploy: {
+      title: string;
+      about: string;
+      loading: string;
+      loadFailed: (reason: string) => string;
+      ready: string;
+      notReady: (n: number) => string;
+      /** Where an admin fills in the deploy settings. */
+      settingsHint: string;
+      checksLabel: string;
+      columns: { check: string; state: string };
+      problemsTitle: string;
+      prepareClones: string;
+      preparing: string;
+      prepared: string;
+      checkRemote: string;
+      checkingRemote: string;
+      remoteChecked: string;
+      /** A clone failed: the repository and the end of git's own output ("" when none). */
+      cloneFailed: (repo: string, output: string) => string;
+      /** A clone ran past its time limit. */
+      cloneTimedOut: (repo: string) => string;
+      /** The long name of each setting, by its dotted path. */
+      fields: Record<string, string>;
+      repos: { module: string; activityData: string; media: string };
+      rows: {
+        ref: string;
+        layout: string;
+        settings: string;
+        git: string;
+        moduleRemote: string;
+        clone: (repo: string) => string;
+        branch: (name: string) => string;
+      };
+      states: {
+        canonical: string;
+        notCanonical: string;
+        noModule: string;
+        layout: (layout: string) => string;
+        noLayout: string;
+        settingsComplete: string;
+        settingsMissing: (n: number) => string;
+        gitAvailable: string;
+        gitUnavailable: string;
+        noRemote: string;
+        remoteInvalid: (remote: string) => string;
+      };
+      clone: {
+        present: (branch: string | null) => string;
+        missing: string;
+        dirty: string;
+        ahead: (n: number) => string;
+        remoteMismatch: string;
+        unknown: string;
+        /** What git could not say about a present clone. */
+        notKnown: { status: string; upstream: string; branch: string; sparse: string };
+        remoteUnreachable: string;
+        mediaPathMissing: (path: string) => string;
+      };
+      branch: {
+        local: string;
+        notYet: string;
+        unknown: string;
+        onRemote: string;
+        notOnRemote: string;
+        remoteUnknown: string;
+      };
+      problems: {
+        settings_missing: (field: string) => string;
+        module_remote_missing: string;
+        module_remote_invalid: string;
+        clone_missing: (repo: string) => string;
+        clone_unknown: (repo: string, what: "status" | "upstream" | "branch" | "sparse") => string;
+        remote_unreachable: (repo: string) => string;
+        media_path_missing: (path: string) => string;
+        clone_dirty: (repo: string) => string;
+        clone_ahead: (repo: string, n: number) => string;
+        clone_remote_mismatch: (repo: string) => string;
+        branch_missing: (repo: string, branch: string, where: "local" | "remote") => string;
+        not_canonical: string;
+        no_module: string;
+        layout_unsupported: (layout: string) => string;
+        git_unavailable: string;
+      };
+    };
     /** Check quality, in the Module section: accessibility and reading level of the played activity. */
     quality: {
       title: string;
@@ -658,6 +745,7 @@ export type Strings = {
       | "library"
       | "module"
       | "history"
+      | "deploy"
       | "newRef",
       string
     >;
@@ -1416,6 +1504,53 @@ export type Strings = {
     companyModePersonalInfo: string;
     companyModeServer: string;
     companyModeServerInfo: string;
+    /** The deploy settings page (admin): where activities are deployed to. */
+    deploy: {
+      title: string;
+      about: string;
+      groups: {
+        qa: string;
+        prod: string;
+        jobs: string;
+        repos: string;
+        git: string;
+        timeouts: string;
+      };
+      jenkinsUrl: string;
+      jenkinsUrlHint: string;
+      username: string;
+      token: string;
+      tokenSaved: string;
+      tokenForget: string;
+      tokenWillClear: string;
+      tier: string;
+      environment: string;
+      frameworkVersion: string;
+      frameworkVersionHint: string;
+      activityBaseUrl: string;
+      activityBaseUrlHint: string;
+      moduleBuildJob: string;
+      activityDeployJob: string;
+      jobHint: string;
+      activityDataRemote: string;
+      mediaRemote: string;
+      remoteHint: string;
+      gitUserName: string;
+      gitUserEmail: string;
+      buildMinutes: string;
+      deployMinutes: string;
+      minutesHint: string;
+      invalid: string;
+      /** Why the server refused a field, by the reason code it sends; `invalid` for others. */
+      reasons: Record<string, string>;
+      testConnection: (target: string) => string;
+      testing: string;
+      testOk: (status: number) => string;
+      testFailed: (status: number) => string;
+      testNoAnswer: string;
+      testUsesSaved: string;
+      targets: { qa: string; prod: string };
+    };
     /** The test browser page (admin): the Chromium quality checks and tests open players in. */
     testBrowser: {
       title: string;
@@ -3845,6 +3980,16 @@ export type Strings = {
     speechCredentialMissing: (key: string) => string;
     noDefaultModel: string;
     byCode: {
+      deploy_clones_running: string;
+      deploy_no_module: string;
+      deploy_not_canonical: string;
+      deploy_settings_missing: string;
+      deploy_module_remote_missing: string;
+      deploy_module_remote_invalid: string;
+      deploy_clone_path_taken: string;
+      deploy_clone_path: string;
+      deploy_clone_failed: string;
+      git_unavailable: string;
       activity_invalid: string;
       activity_exists: string;
       activity_not_found: string;

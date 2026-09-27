@@ -60,6 +60,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "testBrowser",
+      "deploy",
       "users",
     ]);
   });
@@ -84,6 +85,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "testBrowser",
+      "deploy",
     ]);
   });
 
@@ -99,6 +101,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "testBrowser",
+      "deploy",
     ]);
   });
 });

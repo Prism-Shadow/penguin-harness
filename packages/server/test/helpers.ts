@@ -86,6 +86,7 @@ import {
 } from "../src/activities/quality-check.js";
 import { DefaultSoundModelPorts, type SoundModelPorts } from "../src/activities/sound-models.js";
 import { DefaultEspeakPorts, type EspeakPorts } from "../src/activities/phonemes.js";
+import { DefaultDeployPorts, type DeployPorts } from "../src/activities/deploy-service.js";
 import {
   DefaultMediaLibraryPorts,
   type MediaLibraryPorts,
@@ -281,6 +282,8 @@ export interface TestAppOptions {
   soundModelPorts?: SoundModelPorts;
   /** Test double: espeak-ng, so a test never starts a program. */
   espeakPorts?: EspeakPorts;
+  /** Test double: git and Jenkins for deploys, so a test never reaches a remote. */
+  deployPorts?: DeployPorts;
   /** Test double: the quality check's browser launcher and axe source, so no browser starts. */
   qualityCheckPorts?: QualityCheckPorts;
   /** Test double: the media library's bundle limit, small enough to cross with a few files. */
@@ -379,6 +382,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   if (o.mediaLibraryPorts) out.push([DefaultMediaLibraryPorts, o.mediaLibraryPorts]);
   if (o.soundModelPorts) out.push([DefaultSoundModelPorts, o.soundModelPorts]);
   if (o.espeakPorts) out.push([DefaultEspeakPorts, o.espeakPorts]);
+  if (o.deployPorts) out.push([DefaultDeployPorts, o.deployPorts]);
   return out;
 }
 

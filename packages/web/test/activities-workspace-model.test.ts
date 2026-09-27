@@ -45,6 +45,7 @@ describe("workspace sections", () => {
       "library",
       "module",
       "history",
+      "deploy",
       "newRef",
     ]);
   });
@@ -61,6 +62,8 @@ describe("workspace sections", () => {
       module: false,
       library: true,
       history: true,
+      // There is nothing to deploy until there is a module.
+      deploy: false,
       // Making a ref walks the media plan, so it waits for one.
       newRef: false,
     });

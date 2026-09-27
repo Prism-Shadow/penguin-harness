@@ -120,6 +120,12 @@ import {
   DefaultQualityCheckPorts,
 } from "./activities/quality-check.js";
 import { QualityAdminRoutes } from "./activities/quality-routes.js";
+import {
+  ActivityDeploys,
+  ActivityDeployService,
+  DefaultDeployPorts,
+} from "./activities/deploy-service.js";
+import { DeployAdminRoutes } from "./activities/deploy-routes.js";
 import { ActivityPhonemesService, DefaultEspeakPorts } from "./activities/phonemes.js";
 import { PhonemesAdminRoutes } from "./activities/phonemes-routes.js";
 import {
@@ -403,8 +409,18 @@ export class CodingAgentsModule {}
     PhonemesAdminRoutes,
     DefaultAcceptancePorts,
     ActivityAcceptanceService,
+    DefaultDeployPorts,
+    ActivityDeployService,
+    DeployAdminRoutes,
   ],
-  exports: [ActivityAuthoring, ActivityGeneration, ActivityVersions, TestBrowser, ActivityQuality],
+  exports: [
+    ActivityAuthoring,
+    ActivityGeneration,
+    ActivityVersions,
+    TestBrowser,
+    ActivityQuality,
+    ActivityDeploys,
+  ],
 })
 export class ActivitiesModule {}
 

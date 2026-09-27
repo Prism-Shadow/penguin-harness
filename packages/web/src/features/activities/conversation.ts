@@ -47,6 +47,8 @@ export function focusFor(
 ): AssistFocus {
   // Making a new ref reviews this ref's media; the agent knows that part as the scenes.
   if (section === "newRef") return { section: "scenes" };
+  // Deploying ships the module; the agent knows that part as the module.
+  if (section === "deploy") return { section: "module" };
   if (section === "scenes" && selection)
     return {
       section,

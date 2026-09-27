@@ -4919,6 +4919,24 @@ export type {
   PhonemesTarget,
   WholeWordTiming,
 } from "../activities/book-word-types.js";
+export type {
+  BranchState,
+  CloneState,
+  DeployConnectionTest,
+  DeployConnectionTestResponse,
+  DeployContext,
+  DeployContextResponse,
+  DeployProblem,
+  DeployProblemCode,
+  DeployProdSettingsView,
+  DeployQaSettingsView,
+  DeployRepo,
+  DeploySecretView,
+  DeploySettingsResponse,
+  DeploySettingsUpdate,
+  DeploySettingsView,
+  DeployTarget,
+} from "../activities/deploy-types.js";
 
 // ---------------------------------------------------------------------------
 // Coding agents (Agent Client Protocol)

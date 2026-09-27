@@ -136,6 +136,7 @@ const DIALOG_BODY_MODULES = new Set([
   "features/settings/account-section.tsx",
   "features/settings/profile-section.tsx",
   "features/settings/appearance-section.tsx",
+  "features/settings/deploy-section.tsx",
   "features/settings/general-section.tsx",
   "features/settings/proxy-section.tsx",
   "features/settings/section-shell.tsx",

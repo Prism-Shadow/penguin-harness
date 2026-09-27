@@ -156,6 +156,10 @@ import type {
   ProxyProbeTargetsResponse,
   ServerSettingsResponse,
   TestBrowserStatusResponse,
+  DeployConnectionTestResponse,
+  DeploySettingsResponse,
+  DeploySettingsUpdate,
+  DeployTarget,
   ServerSettingsUpdateRequest,
   SessionCategory,
   SessionContextResponse,
@@ -291,6 +295,20 @@ export const adminGetTestBrowser = () =>
 /** Starts installing the test browser (admin only); 409 while an install is already running. */
 export const adminInstallTestBrowser = () =>
   apiFetch<TestBrowserStatusResponse>("/api/admin/test-browser/install", { method: "POST" });
+
+/** The deploy settings (admin only); tokens come back only as whether one is set. */
+export const adminGetDeploySettings = () =>
+  apiFetch<DeploySettingsResponse>("/api/admin/activity-deploy/settings");
+
+/** Omitted fields keep their value; an empty token keeps the saved one, null clears it. */
+export const adminPutDeploySettings = (body: DeploySettingsUpdate) =>
+  apiFetch<DeploySettingsResponse>("/api/admin/activity-deploy/settings", { method: "PUT", body });
+
+/** One read-only GET to that Jenkins with the saved credentials. */
+export const adminTestDeployConnection = (target: DeployTarget) =>
+  apiFetch<DeployConnectionTestResponse>(`/api/admin/activity-deploy/settings/test/${target}`, {
+    method: "POST",
+  });
 
 // Project & members --------------------------------------------------------------
 
