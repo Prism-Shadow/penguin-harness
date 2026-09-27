@@ -18,7 +18,10 @@ export function routeOf(orgId: string, number: number | null, suffix = ""): stri
 
 /** A `curl` that sends `fields` (literal JSON members) with the session's identity claim. */
 export function curlOf(method: string, url: string, fields: string[] = []): string {
-  const claim = ['\\"sessionId\\":\\"$PENGUIN_SESSION_ID\\"', '\\"agentId\\":\\"$PENGUIN_AGENT_ID\\"'];
+  const claim = [
+    '\\"sessionId\\":\\"$PENGUIN_SESSION_ID\\"',
+    '\\"agentId\\":\\"$PENGUIN_AGENT_ID\\"',
+  ];
   const body = [...claim, ...fields].join(",");
   return `curl -sS -X ${method} "${url}" -H "authorization: Bearer $PENGUIN_API_TOKEN" -H "content-type: application/json" -d "{${body}}"`;
 }
@@ -115,16 +118,17 @@ export function delegationLine(args: {
 }
 
 /** The desk line telling a stacked proposal's owner the number of the one it is stacked on. */
-export function baseLinkedLine(r: Roadmap, item: DraftItem, base: DraftItem, proposal: number): string {
+export function baseLinkedLine(
+  r: Roadmap,
+  item: DraftItem,
+  base: DraftItem,
+  proposal: number,
+): string {
   return `${tag(r)} "${base.title}", which your item [${item.key}] "${item.title}" is stacked on, is proposal #${proposal} now: base your branch on that one's.`;
 }
 
 /** The desk line asking a derived roadmap's moderator to open its room. */
-export function roomRequestLine(args: {
-  orgId: string;
-  parent: Roadmap;
-  child: Roadmap;
-}): string {
+export function roomRequestLine(args: { orgId: string; parent: Roadmap; child: Roadmap }): string {
   const { orgId, parent, child } = args;
   const invite = child.employees.map((e) => `agent:${e}`).join(" ");
   return [

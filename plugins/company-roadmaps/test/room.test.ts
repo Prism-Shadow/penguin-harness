@@ -5,13 +5,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  agentMembers,
-  endCursor,
-  readRoom,
-  readSince,
-  recentMessages,
-} from "../src/index.js";
+import { agentMembers, endCursor, readRoom, readSince, recentMessages } from "../src/index.js";
 import { orgDir, post, tempRoot, writeChannel } from "./fakes.js";
 
 describe("the room's configuration", () => {
@@ -40,7 +34,9 @@ describe("the messages", () => {
     expect((await readSince(orgDir(root), "room_a", start)).messages).toEqual([]);
     await post(root, "room_a", "agent:acme_dev", "after");
     const { messages, cursor } = await readSince(orgDir(root), "room_a", start);
-    expect(messages.map((m) => [m.sender, m.text, m.hop])).toEqual([["agent:acme_dev", "after", 1]]);
+    expect(messages.map((m) => [m.sender, m.text, m.hop])).toEqual([
+      ["agent:acme_dev", "after", 1],
+    ]);
     expect((await readSince(orgDir(root), "room_a", cursor)).messages).toEqual([]);
   });
 

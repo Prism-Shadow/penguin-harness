@@ -10,7 +10,8 @@ import { tempRoot } from "./fakes.js";
 
 let seq = 0;
 const at = "2026-09-27T12:00:00.000Z";
-function line(entry: Omit<LedgerLine, "seq" | "at" | "by"> & { by?: string }): LedgerLine {
+type Entry<T> = T extends unknown ? Omit<T, "seq" | "at" | "by"> & { by?: string } : never;
+function line(entry: Entry<LedgerLine>): LedgerLine {
   seq++;
   return { seq, at, by: "user:boss", ...entry } as LedgerLine;
 }

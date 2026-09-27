@@ -85,7 +85,9 @@ describe("the routes", () => {
     expect((await call("GET", `${BASE}/x`)).status).toBe(404);
     await call("POST", BASE, open);
     const bad = await call("PUT", `${BASE}/1/draft`, {
-      items: [{ key: "a", kind: "proposal", title: "T", brief: "B", owner: "nobody", cites: ["Why"] }],
+      items: [
+        { key: "a", kind: "proposal", title: "T", brief: "B", owner: "nobody", cites: ["Why"] },
+      ],
     });
     expect([bad.status, code(bad)]).toEqual([400, "bad_request"]);
   });
@@ -94,7 +96,9 @@ describe("the routes", () => {
     await call("POST", BASE, open);
     await call("PUT", `${BASE}/1/draft`, {
       body: "## Why\n",
-      items: [{ key: "a", kind: "proposal", title: "T", brief: "B", owner: "acme_dev", cites: ["How"] }],
+      items: [
+        { key: "a", kind: "proposal", title: "T", brief: "B", owner: "acme_dev", cites: ["How"] },
+      ],
     });
     const refused = await call("POST", `${BASE}/1/establish`, {});
     expect([refused.status, code(refused)]).toEqual([400, "cite_unknown"]);
@@ -104,8 +108,12 @@ describe("the routes", () => {
     await call("POST", BASE, open);
     const listed = await call("GET", `${BASE}?channel=room_a&status=discussing`);
     expect((listed.json.roadmaps as unknown[]).length).toBe(1);
-    expect(((await call("GET", `${BASE}?channel=room_b`)).json.roadmaps as unknown[]).length).toBe(0);
-    expect(((await call("GET", `${BASE}?status=established`)).json.roadmaps as unknown[]).length).toBe(0);
+    expect(((await call("GET", `${BASE}?channel=room_b`)).json.roadmaps as unknown[]).length).toBe(
+      0,
+    );
+    expect(
+      ((await call("GET", `${BASE}?status=established`)).json.roadmaps as unknown[]).length,
+    ).toBe(0);
   });
 });
 
@@ -123,21 +131,36 @@ describe("the manifest", () => {
     const manifest = t.modules.CompanyRoadmapsPlugin;
     expect((manifest?.contributes["HttpModule.routes"]?.[0] as { id: string }).id).toBe(ROUTES_ID);
     const text = JSON.stringify(manifest);
-    for (const from of ["CompanyModule", "SessionRuntimeModule", "RuntimeModule", "PluginConfigModule"]) {
+    for (const from of [
+      "CompanyModule",
+      "SessionRuntimeModule",
+      "RuntimeModule",
+      "PluginConfigModule",
+    ]) {
       expect(text).toContain(from);
     }
   });
 
   it("declares the settings group config.ts reads: the same id and defaults", () => {
-    const [group] = (table().modules.CompanyRoadmapsPlugin?.contributes["PluginConfigProvider.groups"] ??
-      []) as Array<{
+    const [group] = (table().modules.CompanyRoadmapsPlugin?.contributes[
+      "PluginConfigProvider.groups"
+    ] ?? []) as Array<{
       id: string;
       properties: Record<string, { type: string; default: number }>;
     }>;
     expect(group?.id).toBe(CONFIG_GROUP);
-    expect(group?.properties.relayDepth).toMatchObject({ type: "number", default: DEFAULT_RELAY_DEPTH });
-    expect(group?.properties.pollSeconds).toMatchObject({ type: "number", default: DEFAULT_POLL_SECONDS });
-    expect(configOf({})).toEqual({ relayDepth: DEFAULT_RELAY_DEPTH, pollSeconds: DEFAULT_POLL_SECONDS });
+    expect(group?.properties.relayDepth).toMatchObject({
+      type: "number",
+      default: DEFAULT_RELAY_DEPTH,
+    });
+    expect(group?.properties.pollSeconds).toMatchObject({
+      type: "number",
+      default: DEFAULT_POLL_SECONDS,
+    });
+    expect(configOf({})).toEqual({
+      relayDepth: DEFAULT_RELAY_DEPTH,
+      pollSeconds: DEFAULT_POLL_SECONDS,
+    });
     expect(configOf({ relayDepth: 99, pollSeconds: 0 })).toEqual(configOf({}));
   });
 });

@@ -76,7 +76,12 @@ async function openA(): Promise<number> {
   const { roadmap } = await service.create(
     P,
     O,
-    { name: "Queue migration", channelId: "room_a", employees: ["acme_dev", "acme_web"], brief: "Move the queue" },
+    {
+      name: "Queue migration",
+      channelId: "room_a",
+      employees: ["acme_dev", "acme_web"],
+      brief: "Move the queue",
+    },
     BOSS,
   );
   return roadmap.number;
@@ -114,17 +119,28 @@ describe("opening a roadmap", () => {
   it("is a person's act: an employee is refused, as is a room without the employees, or no room", async () => {
     expect(
       await refusal(
-        service.create(P, O, { name: "x", channelId: "room_a", employees: ["acme_dev"] }, asAgent("acme_dev")),
+        service.create(
+          P,
+          O,
+          { name: "x", channelId: "room_a", employees: ["acme_dev"] },
+          asAgent("acme_dev"),
+        ),
       ),
     ).toEqual({ status: 403, code: "people_only" });
     expect(
-      await refusal(service.create(P, O, { name: "x", channelId: "room_a", employees: ["acme_qa"] }, BOSS)),
+      await refusal(
+        service.create(P, O, { name: "x", channelId: "room_a", employees: ["acme_qa"] }, BOSS),
+      ),
     ).toEqual({ status: 400, code: "not_in_room" });
     expect(
-      await refusal(service.create(P, O, { name: "x", channelId: "room_z", employees: ["acme_dev"] }, BOSS)),
+      await refusal(
+        service.create(P, O, { name: "x", channelId: "room_z", employees: ["acme_dev"] }, BOSS),
+      ),
     ).toEqual({ status: 400, code: "room_not_found" });
     expect(
-      await refusal(service.create(P, O, { name: "x", channelId: "room_a", employees: ["nobody"] }, BOSS)),
+      await refusal(
+        service.create(P, O, { name: "x", channelId: "room_a", employees: ["nobody"] }, BOSS),
+      ),
     ).toMatchObject({ status: 400 });
   });
 
@@ -219,15 +235,24 @@ describe("the draft", () => {
       status: 403,
       code: "not_moderator",
     });
-    const { roadmap } = await service.draft(P, O, n, { record: "We agree on a ledger.", body: BODY, items: ITEMS }, asAgent("acme_dev"));
+    const { roadmap } = await service.draft(
+      P,
+      O,
+      n,
+      { record: "We agree on a ledger.", body: BODY, items: ITEMS },
+      asAgent("acme_dev"),
+    );
     expect(roadmap.record).toBe("We agree on a ledger.");
     expect(roadmap.items.map((i) => i.key)).toEqual(["ledger", "page", "tests"]);
-    expect((await service.draft(P, O, n, { record: "Revised." }, BOSS)).roadmap.items).toHaveLength(3);
+    expect((await service.draft(P, O, n, { record: "Revised." }, BOSS)).roadmap.items).toHaveLength(
+      3,
+    );
   });
 
   it("refuses items that are not well formed", async () => {
     const n = await openA();
-    const bad = async (items: unknown) => (await refusal(service.draft(P, O, n, { items }, BOSS))).status;
+    const bad = async (items: unknown) =>
+      (await refusal(service.draft(P, O, n, { items }, BOSS))).status;
     expect(await bad([{ ...ITEMS[0], owner: "nobody" }])).toBe(400);
     expect(await bad([ITEMS[0], ITEMS[0]])).toBe(400);
     expect(await bad([{ ...ITEMS[0], cites: [] }])).toBe(400);
@@ -248,18 +273,35 @@ describe("the draft", () => {
 describe("establishing", () => {
   async function drafted(): Promise<number> {
     const n = await openA();
-    await service.draft(P, O, n, { record: "Agreed.", body: BODY, items: ITEMS }, asAgent("acme_dev"));
+    await service.draft(
+      P,
+      O,
+      n,
+      { record: "Agreed.", body: BODY, items: ITEMS },
+      asAgent("acme_dev"),
+    );
     return n;
   }
 
   it("needs a body, items, and every cite naming a section of the body", async () => {
     const n = await openA();
-    expect(await refusal(service.establish(P, O, n, BOSS))).toEqual({ status: 400, code: "body_empty" });
+    expect(await refusal(service.establish(P, O, n, BOSS))).toEqual({
+      status: 400,
+      code: "body_empty",
+    });
     await service.draft(P, O, n, { body: BODY }, BOSS);
-    expect(await refusal(service.establish(P, O, n, BOSS))).toEqual({ status: 400, code: "items_empty" });
+    expect(await refusal(service.establish(P, O, n, BOSS))).toEqual({
+      status: 400,
+      code: "items_empty",
+    });
     await service.draft(P, O, n, { items: [{ ...ITEMS[0], cites: ["Nowhere"] }] }, BOSS);
-    expect(await refusal(service.establish(P, O, n, BOSS))).toEqual({ status: 400, code: "cite_unknown" });
-    expect(await refusal(service.establish(P, O, n, asAgent("acme_web")))).toMatchObject({ status: 403 });
+    expect(await refusal(service.establish(P, O, n, BOSS))).toEqual({
+      status: 400,
+      code: "cite_unknown",
+    });
+    expect(await refusal(service.establish(P, O, n, asAgent("acme_web")))).toMatchObject({
+      status: 403,
+    });
   });
 
   it("archives the roadmap and delegates at once: each proposal to its owner's desk, stacked on the previous one", async () => {
@@ -275,7 +317,11 @@ describe("establishing", () => {
     expect(toDev).toContain("not stacked on another proposal");
     expect(toDev).toContain("penguin org proposal create --org-id acme --author acme_dev");
     expect(toWeb).toContain('stacked on "Roadmap ledger", which has no proposal number yet');
-    expect(roadmap.delegations.page).toMatchObject({ owner: "acme_web", base: "ledger", delivered: true });
+    expect(roadmap.delegations.page).toMatchObject({
+      owner: "acme_web",
+      base: "ledger",
+      delivered: true,
+    });
   });
 
   it("derives a roadmap item as a roadmap waiting for its room, and asks its moderator to open one", async () => {
@@ -293,11 +339,17 @@ describe("establishing", () => {
     });
     const ask = w.gateway.desks.find((d) => d.agentId === "acme_qa")!.text;
     expect(ask).toContain(`[roadmap #${child} «Test plan»], which you moderate`);
-    expect(ask).toContain("penguin org channel invite --org-id acme <channel_id> agent:acme_qa agent:acme_dev");
+    expect(ask).toContain(
+      "penguin org channel invite --org-id acme <channel_id> agent:acme_qa agent:acme_dev",
+    );
     // Its room bound, it discusses — and its employees' room sessions open.
     await writeChannel(w.root, "room_t", ["user:boss", "agent:acme_qa", "agent:acme_dev"]);
     const bound = await service.bindRoom(P, O, child!, "room_t", asAgent("acme_qa"));
-    expect(bound.roadmap).toMatchObject({ status: "discussing", channelId: "room_t", moderator: "acme_qa" });
+    expect(bound.roadmap).toMatchObject({
+      status: "discussing",
+      channelId: "room_t",
+      moderator: "acme_qa",
+    });
   });
 
   it("stops relaying the room once established", async () => {
@@ -348,12 +400,22 @@ describe("after the establishment", () => {
   it("is reopened by an owner who finds it lacking: the room discusses again and its sessions are told why", async () => {
     const n = await established();
     await post(w.root, "room_a", "user:boss", "said while established");
-    expect(await refusal(service.reopen(P, O, n, "x", asAgent("acme_ceo")))).toMatchObject({ status: 403 });
-    const { roadmap } = await service.reopen(P, O, n, "The ledger needs a migration first.", asAgent("acme_web"));
+    expect(await refusal(service.reopen(P, O, n, "x", asAgent("acme_ceo")))).toMatchObject({
+      status: 403,
+    });
+    const { roadmap } = await service.reopen(
+      P,
+      O,
+      n,
+      "The ledger needs a migration first.",
+      asAgent("acme_web"),
+    );
     expect(roadmap).toMatchObject({ status: "discussing", archived: false });
     for (const s of ["room-1", "room-2"]) {
       expect(w.runner.to(s)).toHaveLength(1);
-      expect(w.runner.to(s)[0]).toContain("reopened by agent:acme_web: The ledger needs a migration first.");
+      expect(w.runner.to(s)[0]).toContain(
+        "reopened by agent:acme_web: The ledger needs a migration first.",
+      );
     }
     await post(w.root, "room_a", "user:boss", "after the reopening");
     await service.relayOnce();
@@ -364,7 +426,11 @@ describe("after the establishment", () => {
   it("delegates again at the next establishment only what changed", async () => {
     const n = await established();
     await service.reopen(P, O, n, "Split the page.", BOSS);
-    const items = [ITEMS[0], { ...ITEMS[1], brief: "The draft beside the room, read-only." }, ITEMS[2]];
+    const items = [
+      ITEMS[0],
+      { ...ITEMS[1], brief: "The draft beside the room, read-only." },
+      ITEMS[2],
+    ];
     await service.draft(P, O, n, { items }, BOSS);
     await service.establish(P, O, n, BOSS);
     expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_web"]);
@@ -380,17 +446,27 @@ describe("names and the shelf", () => {
     await post(w.root, "room_a", "user:boss", "shelved");
     await service.relayOnce();
     expect(w.runner.inputs).toEqual([]);
-    expect(await refusal(service.draft(P, O, n, { record: "x" }, BOSS))).toMatchObject({ status: 409 });
+    expect(await refusal(service.draft(P, O, n, { record: "x" }, BOSS))).toMatchObject({
+      status: 409,
+    });
     await service.setArchived(P, O, n, false, BOSS);
     await service.draft(P, O, n, { body: BODY, items: [ITEMS[0]] }, BOSS);
     await service.establish(P, O, n, BOSS);
-    expect(await refusal(service.setArchived(P, O, n, false, BOSS))).toEqual({ status: 409, code: "established" });
+    expect(await refusal(service.setArchived(P, O, n, false, BOSS))).toEqual({
+      status: 409,
+      code: "established",
+    });
   });
 
   it("lists a room's roadmaps", async () => {
     const n = await openA();
     await writeChannel(w.root, "room_b", ["agent:acme_qa"]);
-    await service.create(P, O, { name: "Other", channelId: "room_b", employees: ["acme_qa"] }, BOSS);
+    await service.create(
+      P,
+      O,
+      { name: "Other", channelId: "room_b", employees: ["acme_qa"] },
+      BOSS,
+    );
     const { roadmaps } = await service.list(P, O, BOSS, { channel: "room_a" });
     expect(roadmaps.map((r) => r.number)).toEqual([n]);
   });

@@ -64,6 +64,8 @@ describe("the company-roadmaps plugin on a real server", () => {
     expect(await status(api.get(BASE))).toBe(404);
     await api.put("/api/admin/settings", { companyMode: true });
     expect(await status(api.get(BASE))).toBe(404);
-    expect(await status(api.post(BASE, { name: "x", channelId: "room_a", employees: ["a"] }))).toBe(404);
+    expect(await status(api.post(BASE, { name: "x", channelId: "room_a", employees: ["a"] }))).toBe(
+      404,
+    );
   });
 });

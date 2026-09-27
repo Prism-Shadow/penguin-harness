@@ -79,11 +79,7 @@ const badRequest = (message: string): RoadmapError => new RoadmapError(400, "bad
 export interface ServiceDeps {
   gateway: Pick<
     OrgGateway,
-    | "companyModeEnabled"
-    | "organization"
-    | "principalOf"
-    | "deliverToDesk"
-    | "openEmployeeSession"
+    "companyModeEnabled" | "organization" | "principalOf" | "deliverToDesk" | "openEmployeeSession"
   >;
   /** The session runtime's input: a later room message into an existing room session. */
   runner: Pick<MessagingTaskRunner, "startTask">;
@@ -159,7 +155,8 @@ function stringList(raw: unknown, what: string): string[] {
 }
 
 function text(raw: unknown, what: string, max: number): string {
-  if (typeof raw !== "string" || raw.trim() === "") throw badRequest(`${what} must be a non-empty string.`);
+  if (typeof raw !== "string" || raw.trim() === "")
+    throw badRequest(`${what} must be a non-empty string.`);
   if (raw.length > max) throw badRequest(`${what} is too long (max ${max} characters).`);
   return raw.trim();
 }
@@ -188,7 +185,8 @@ export function parseItems(raw: unknown, org: Pick<OrgView, "employees">): Draft
     const title = text(o.title, `items[${i}].title`, 200);
     const brief = text(o.brief, `items[${i}].brief`, 4000);
     const cites = stringList(o.cites, `items[${i}].cites`);
-    if (cites.length === 0) throw badRequest(`items[${i}].cites must name at least one body section.`);
+    if (cites.length === 0)
+      throw badRequest(`items[${i}].cites must name at least one body section.`);
     if (o.kind === "proposal") {
       const owner = typeof o.owner === "string" ? o.owner : "";
       if (!employees.has(owner)) throw badRequest(`items[${i}].owner is not an employee: ${owner}`);
@@ -205,8 +203,10 @@ export function parseItems(raw: unknown, org: Pick<OrgView, "employees">): Draft
       out.push(item);
     } else if (o.kind === "roadmap") {
       const list = stringList(o.employees, `items[${i}].employees`);
-      if (list.length === 0) throw badRequest(`items[${i}].employees must name at least one employee.`);
-      if (new Set(list).size !== list.length) throw badRequest(`items[${i}].employees repeats an employee.`);
+      if (list.length === 0)
+        throw badRequest(`items[${i}].employees must name at least one employee.`);
+      if (new Set(list).size !== list.length)
+        throw badRequest(`items[${i}].employees repeats an employee.`);
       for (const e of list) {
         if (!employees.has(e)) throw badRequest(`items[${i}].employees: not an employee: ${e}`);
       }
@@ -342,7 +342,11 @@ export class RoadmapService {
   /** People, or the moderator. */
   private requireModeratorOrPerson(r: Roadmap, caller: Caller): void {
     if (caller.agentId === null || caller.agentId === moderatorOf(r)) return;
-    throw new RoadmapError(403, "not_moderator", `Only a person or the moderator (${moderatorOf(r)}) may do this.`);
+    throw new RoadmapError(
+      403,
+      "not_moderator",
+      `Only a person or the moderator (${moderatorOf(r)}) may do this.`,
+    );
   }
 
   /** The room, checked: it exists, is not archived, and holds every one of `employees`. */
@@ -361,7 +365,8 @@ export class RoadmapService {
         `No channel ${channelId}: create it first (\`penguin org channel create ${channelId}\`).`,
       );
     }
-    if (room.archived) throw new RoadmapError(409, "room_archived", `Channel ${channelId} is archived.`);
+    if (room.archived)
+      throw new RoadmapError(409, "room_archived", `Channel ${channelId} is archived.`);
     const members = new Set(agentMembers(room));
     const missing = employees.filter((e) => !members.has(e));
     if (missing.length > 0) {
@@ -423,7 +428,12 @@ export class RoadmapService {
     return { roadmaps };
   }
 
-  async get(projectId: string, orgId: string, number: number, actor: OrgActor): Promise<RoadmapView> {
+  async get(
+    projectId: string,
+    orgId: string,
+    number: number,
+    actor: OrgActor,
+  ): Promise<RoadmapView> {
     const { ledger } = await this.open(projectId, orgId, actor);
     return this.view(this.require(ledger, number));
   }
@@ -433,7 +443,12 @@ export class RoadmapService {
   // -------------------------------------------------------------------------
 
   /** A person opens a roadmap over an existing room; a `parent` makes it a roadmap derived to continue a discussion elsewhere. */
-  async create(projectId: string, orgId: string, req: OpenRequest, actor: OrgActor): Promise<WriteResult> {
+  async create(
+    projectId: string,
+    orgId: string,
+    req: OpenRequest,
+    actor: OrgActor,
+  ): Promise<WriteResult> {
     const result = await this.withLock(projectId, orgId, async () => {
       const { org, caller, ledger } = await this.open(projectId, orgId, actor);
       if (caller.agentId !== null) {
@@ -478,7 +493,11 @@ export class RoadmapService {
       const r = this.require(ledger, number);
       this.requireStatus(r, "discussing", false);
       this.requireModeratorOrPerson(r, caller);
-      const entry: LedgerEntry & { kind: "draft" } = { kind: "draft", number, by: caller.principal };
+      const entry: LedgerEntry & { kind: "draft" } = {
+        kind: "draft",
+        number,
+        by: caller.principal,
+      };
       if (req.record !== undefined) {
         if (typeof req.record !== "string" || req.record.length > 50_000) {
           throw badRequest("record must be a string of at most 50000 characters.");
@@ -505,17 +524,32 @@ export class RoadmapService {
    * delegated (a reopened roadmap established again) is delegated again only when its owner or
    * its brief changed; a roadmap item that already derived its roadmap is left to it.
    */
-  async establish(projectId: string, orgId: string, number: number, actor: OrgActor): Promise<WriteResult> {
+  async establish(
+    projectId: string,
+    orgId: string,
+    number: number,
+    actor: OrgActor,
+  ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
       const { caller, ledger } = await this.open(projectId, orgId, actor);
       const r = this.require(ledger, number);
       this.requireStatus(r, "discussing", false);
       this.requireModeratorOrPerson(r, caller);
-      if (r.body.trim() === "") throw new RoadmapError(400, "body_empty", "The body is empty: write it before establishing.");
-      if (r.items.length === 0) throw new RoadmapError(400, "items_empty", "The roadmap has no items.");
+      if (r.body.trim() === "")
+        throw new RoadmapError(
+          400,
+          "body_empty",
+          "The body is empty: write it before establishing.",
+        );
+      if (r.items.length === 0)
+        throw new RoadmapError(400, "items_empty", "The roadmap has no items.");
       const unknown = unknownCites(r.body, r.items);
       if (unknown.length > 0) {
-        throw new RoadmapError(400, "cite_unknown", `Cites naming no section of the body: ${unknown.join("; ")}`);
+        throw new RoadmapError(
+          400,
+          "cite_unknown",
+          `Cites naming no section of the body: ${unknown.join("; ")}`,
+        );
       }
       await ledger.append({ kind: "established", number, by: caller.principal });
       const hints: string[] = [];
@@ -523,9 +557,11 @@ export class RoadmapService {
       for (const item of r.items) {
         const prior = r.delegations[item.key];
         if (item.kind === "proposal") {
-          if (prior !== undefined && prior.owner === item.owner && prior.brief === item.brief) continue;
+          if (prior !== undefined && prior.owner === item.owner && prior.brief === item.brief)
+            continue;
           const baseKey = bases.get(item.key) ?? null;
-          const baseItem = baseKey === null ? null : r.items.find((x) => x.key === baseKey) ?? null;
+          const baseItem =
+            baseKey === null ? null : (r.items.find((x) => x.key === baseKey) ?? null);
           const baseProposal = baseKey === null ? undefined : r.delegations[baseKey]?.proposal;
           const line = delegationLine({
             orgId,
@@ -534,10 +570,22 @@ export class RoadmapService {
             base:
               baseItem === null
                 ? null
-                : { title: baseItem.title, ...(baseProposal !== undefined ? { proposal: baseProposal } : {}) },
+                : {
+                    title: baseItem.title,
+                    ...(baseProposal !== undefined ? { proposal: baseProposal } : {}),
+                  },
             revised: prior !== undefined && prior.owner === item.owner,
           });
-          const res = await this.deliver(projectId, orgId, ledger, number, item.owner, line, caller.principal, hints);
+          const res = await this.deliver(
+            projectId,
+            orgId,
+            ledger,
+            number,
+            item.owner,
+            line,
+            caller.principal,
+            hints,
+          );
           await ledger.append({
             kind: "delegated",
             number,
@@ -608,7 +656,11 @@ export class RoadmapService {
       const d = r.delegations[key];
       const item = r.items.find((x) => x.key === key);
       if (d === undefined || item === undefined || item.kind !== "proposal") {
-        throw new RoadmapError(404, "item_not_delegated", `Roadmap #${number} has delegated no proposal item ${key}.`);
+        throw new RoadmapError(
+          404,
+          "item_not_delegated",
+          `Roadmap #${number} has delegated no proposal item ${key}.`,
+        );
       }
       if (caller.agentId !== null && caller.agentId !== d.owner) {
         throw new RoadmapError(403, "not_owner", `Only ${d.owner} (or a person) links ${key}.`);
@@ -655,7 +707,11 @@ export class RoadmapService {
         const owners = Object.values(r.delegations).map((d) => d.owner);
         const room = [...r.employees, ...r.clones.map((c) => c.agentId)];
         if (!owners.includes(caller.agentId) && !room.includes(caller.agentId)) {
-          throw new RoadmapError(403, "not_involved", `Only an owner, an employee of the room, or a person reopens roadmap #${number}.`);
+          throw new RoadmapError(
+            403,
+            "not_involved",
+            `Only an owner, an employee of the room, or a person reopens roadmap #${number}.`,
+          );
         }
       }
       await ledger.append({ kind: "reopened", number, reason: why, by: caller.principal });
@@ -666,15 +722,22 @@ export class RoadmapService {
       const room = relay[String(number)] ?? { cursor: null, depths: {} };
       for (const clone of reopened.clones.filter((c) => c.closedAt === undefined)) {
         try {
-          await this.deps.runner.startTask(clone.sessionId, [userText(line, "server")], { queueIfBusy: true });
+          await this.deps.runner.startTask(clone.sessionId, [userText(line, "server")], {
+            queueIfBusy: true,
+          });
           room.depths[clone.agentId] = 0;
         } catch (err) {
-          out.push(`${clone.agentId}'s room session was not told: ${err instanceof Error ? err.message : String(err)}`);
+          out.push(
+            `${clone.agentId}'s room session was not told: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
       // What the room said while the roadmap stood established was never relayed and is not now:
       // the reopening, not the backlog, is what the room sessions answer.
-      room.cursor = reopened.channelId === null ? null : await endCursor(orgDirOf(this.deps.root, projectId, orgId), reopened.channelId);
+      room.cursor =
+        reopened.channelId === null
+          ? null
+          : await endCursor(orgDirOf(this.deps.root, projectId, orgId), reopened.channelId);
       relay[String(number)] = room;
       await this.writeRelay(projectId, orgId, relay);
       return out;
@@ -704,12 +767,23 @@ export class RoadmapService {
     return { roadmap: await this.get(projectId, orgId, number, actor), hints };
   }
 
-  async rename(projectId: string, orgId: string, number: number, name: unknown, actor: OrgActor): Promise<WriteResult> {
+  async rename(
+    projectId: string,
+    orgId: string,
+    number: number,
+    name: unknown,
+    actor: OrgActor,
+  ): Promise<WriteResult> {
     return this.withLock(projectId, orgId, async () => {
       const { caller, ledger } = await this.open(projectId, orgId, actor);
       const r = this.require(ledger, number);
       this.requireModeratorOrPerson(r, caller);
-      await ledger.append({ kind: "renamed", number, name: text(name, "name", 120), by: caller.principal });
+      await ledger.append({
+        kind: "renamed",
+        number,
+        name: text(name, "name", 120),
+        by: caller.principal,
+      });
       return { roadmap: this.view(this.require(ledger, number)), hints: [] };
     });
   }
@@ -727,12 +801,24 @@ export class RoadmapService {
       const r = this.require(ledger, number);
       this.requireModeratorOrPerson(r, caller);
       if (r.archived === archived) {
-        throw new RoadmapError(409, archived ? "already_archived" : "not_archived", `Roadmap #${number} is ${archived ? "already" : "not"} archived.`);
+        throw new RoadmapError(
+          409,
+          archived ? "already_archived" : "not_archived",
+          `Roadmap #${number} is ${archived ? "already" : "not"} archived.`,
+        );
       }
       if (!archived && r.status === "established") {
-        throw new RoadmapError(409, "established", `Roadmap #${number} is established: reopen it instead.`);
+        throw new RoadmapError(
+          409,
+          "established",
+          `Roadmap #${number} is established: reopen it instead.`,
+        );
       }
-      await ledger.append({ kind: archived ? "archived" : "unarchived", number, by: caller.principal });
+      await ledger.append({
+        kind: archived ? "archived" : "unarchived",
+        number,
+        by: caller.principal,
+      });
       return { roadmap: this.view(this.require(ledger, number)), hints: [] };
     });
   }
@@ -779,7 +865,8 @@ export class RoadmapService {
     const ledger = this.ledger(projectId, orgId);
     await ledger.load();
     const r = ledger.get(number);
-    if (r === undefined || r.status !== "discussing" || r.archived || r.channelId === null) return hints;
+    if (r === undefined || r.status !== "discussing" || r.archived || r.channelId === null)
+      return hints;
     const org = await this.deps.gateway.organization(projectId, orgId);
     if (org === null) return hints;
     const orgDir = orgDirOf(this.deps.root, projectId, orgId);
@@ -798,7 +885,14 @@ export class RoadmapService {
           ? "session gone"
           : null;
       if (reason === null) continue;
-      await ledger.append({ kind: "clone_closed", number, agentId: c.agentId, sessionId: c.sessionId, reason, by });
+      await ledger.append({
+        kind: "clone_closed",
+        number,
+        agentId: c.agentId,
+        sessionId: c.sessionId,
+        reason,
+        by,
+      });
       delete state.depths[c.agentId];
     }
     // The room so far is the new sessions' context; the cursor starts after it.
@@ -807,7 +901,10 @@ export class RoadmapService {
       this.require(ledger, number)
         .clones.filter((c) => c.closedAt === undefined)
         .map((c) => c.agentId);
-    const order = [...r.employees.filter((e) => inRoom.includes(e)), ...inRoom.filter((e) => !r.employees.includes(e))];
+    const order = [
+      ...r.employees.filter((e) => inRoom.includes(e)),
+      ...inRoom.filter((e) => !r.employees.includes(e)),
+    ];
     const missing = order.filter((a) => !openNow().includes(a));
     if (missing.length > 0 && org.status !== "paused") {
       const recent = await recentMessages(orgDir, r.channelId, RECENT_CONTEXT);
@@ -820,36 +917,62 @@ export class RoadmapService {
             orgId,
             agentId,
             title: `${r.name} · roadmap #${number}`,
-            body: cloneBrief({ orgId, roadmap: current, agentId, moderator, members: order, recent }),
+            body: cloneBrief({
+              orgId,
+              roadmap: current,
+              agentId,
+              moderator,
+              members: order,
+              recent,
+            }),
           });
           await ledger.append({ kind: "clone", number, agentId, sessionId: opened.sessionId, by });
           state.depths[agentId] = 0;
         } catch (err) {
           const error = err instanceof Error ? err.message : String(err);
           hints.push(`No room session for ${agentId}: ${error}`);
-          this.deps.log.line(`[company-roadmaps] #${number}: no room session for ${agentId}: ${error}`);
+          this.deps.log.line(
+            `[company-roadmaps] #${number}: no room session for ${agentId}: ${error}`,
+          );
         }
       }
     }
     const { messages, cursor, skipped } = await readSince(orgDir, r.channelId, state.cursor);
-    if (skipped > 0) this.deps.log.line(`[company-roadmaps] #${number}: ${skipped} room line(s) skipped`);
+    if (skipped > 0)
+      this.deps.log.line(`[company-roadmaps] #${number}: ${skipped} room line(s) skipped`);
     // A paused organization is not relayed to; its messages are passed over, as its desks' are.
     if (org.status !== "paused") {
       const limit = this.config().relayDepth;
       const current = this.require(ledger, number);
       for (const msg of messages) {
         const open = current.clones.filter((c) => c.closedAt === undefined);
-        const plan = planRelay(msg, open.map((c) => c.agentId), state.depths, limit);
+        const plan = planRelay(
+          msg,
+          open.map((c) => c.agentId),
+          state.depths,
+          limit,
+        );
         for (const agentId of plan.to) {
           const clone = open.find((c) => c.agentId === agentId)!;
           try {
-            await this.deps.runner.startTask(clone.sessionId, [userText(relayLine(current, msg), "server")], {
-              queueIfBusy: true,
-            });
+            await this.deps.runner.startTask(
+              clone.sessionId,
+              [userText(relayLine(current, msg), "server")],
+              {
+                queueIfBusy: true,
+              },
+            );
           } catch (err) {
             // Closed now, reopened on the next pass (with the room so far as its context).
             const error = err instanceof Error ? err.message : String(err);
-            await ledger.append({ kind: "clone_closed", number, agentId, sessionId: clone.sessionId, reason: error, by });
+            await ledger.append({
+              kind: "clone_closed",
+              number,
+              agentId,
+              sessionId: clone.sessionId,
+              reason: error,
+              by,
+            });
             delete state.depths[agentId];
             hints.push(`${agentId}'s room session did not take ${msg.id}: ${error}`);
           }
@@ -913,7 +1036,9 @@ export class RoadmapService {
           }
         }
       } catch (err) {
-        this.deps.log.line(`[company-roadmaps] relay pass failed: ${err instanceof Error ? err.message : String(err)}`);
+        this.deps.log.line(
+          `[company-roadmaps] relay pass failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       } finally {
         this.relaying = null;
       }

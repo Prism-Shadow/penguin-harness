@@ -52,7 +52,10 @@ export class FakeGateway implements Pick<
     return this.org;
   }
   async principalOf(_p: string, _o: string, actor: OrgActor): Promise<string> {
-    if (actor.agentId !== undefined && this.org.employees.some((e) => e.agentId === actor.agentId)) {
+    if (
+      actor.agentId !== undefined &&
+      this.org.employees.some((e) => e.agentId === actor.agentId)
+    ) {
       return `agent:${actor.agentId}`;
     }
     return `user:${actor.userId}`;

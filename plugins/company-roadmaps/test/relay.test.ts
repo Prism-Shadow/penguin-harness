@@ -31,16 +31,16 @@ describe("planRelay", () => {
     const depths: Record<string, number> = {};
     const delivered: string[][] = [];
     delivered.push(planRelay(msg("user:boss"), open, depths, 3).to);
-    // Each answers the last thing relayed to it, back and forth.
-    const speakers = ["acme_dev", "acme_web", "acme_dev", "acme_web"];
+    // Each answers the one message relayed to it last, back and forth.
+    const speakers = ["acme_dev", "acme_web", "acme_dev"];
     for (const s of speakers) delivered.push(planRelay(msg(`agent:${s}`, 1), open, depths, 3).to);
     expect(delivered).toEqual([
-      ["acme_dev", "acme_web"], // depth 0
+      ["acme_dev", "acme_web"], // the person, at depth 0
       ["acme_web"], // dev answers at 1
       ["acme_dev"], // web answers at 2
-      [], // dev would answer at 3: the limit
-      [], // and so the exchange is over
+      [], // dev answers at 3, the limit: web receives nothing, so nothing more is answered
     ]);
+    expect(depths).toEqual({ acme_dev: 2, acme_web: 1 });
   });
 
   it("starts over at 0 when a person speaks again", () => {

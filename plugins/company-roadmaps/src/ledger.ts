@@ -114,7 +114,14 @@ export type LedgerEntry =
       by: string;
     }
   | { kind: "room"; number: number; channelId: string; by: string }
-  | { kind: "draft"; number: number; record?: string; body?: string; items?: DraftItem[]; by: string }
+  | {
+      kind: "draft";
+      number: number;
+      record?: string;
+      body?: string;
+      items?: DraftItem[];
+      by: string;
+    }
   | { kind: "established"; number: number; by: string }
   | {
       kind: "delegated";
@@ -210,7 +217,9 @@ function noteOf(line: LedgerLine): string | undefined {
     case "room":
       return line.channelId;
     case "delegated":
-      return line.child !== null ? `${line.key} → roadmap #${line.child}` : `${line.key} → ${line.owner}`;
+      return line.child !== null
+        ? `${line.key} → roadmap #${line.child}`
+        : `${line.key} → ${line.owner}`;
     case "linked":
       return `${line.key} → proposal #${line.proposal}`;
     case "reopened":
