@@ -3,7 +3,7 @@
 - **Date:** 2026-09-04
 - **Type:** feature
 - **Scope:** `web`
-- **PR:** [#613](https://github.com/Prism-Shadow/penguin-harness/pull/613)
+- **PR:** [#613](https://github.com/Prism-Shadow/penguin-harness/pull/613), [#645](https://github.com/Prism-Shadow/penguin-harness/pull/645)
 
 [English](2026-09-04-terminal-touch.md)
 
@@ -12,5 +12,9 @@
 软键盘也不再盖住页面底部：应用会请求 Chrome 在虚拟键盘弹出时收缩 layout viewport，`/terminal` 页则另按 visual viewport 自行定高，覆盖不实现该特性的浏览器。它的顶栏按手机宽度压缩——工作目录截断，状态收成一枚会自报其名的圆点。
 
 长按不再粘贴。它触发的事件与右键相同，但它不是右键；本想选中文字的一根手指，会把剪贴板推进一个正在运行的 shell。触摸设备改从快捷键条粘贴。
+
+单指拖动可以滚动终端，全屏程序接管了鼠标时也一样。xterm 恰恰对这类程序——Claude Code 与所有同类 TUI——关掉了自己的触摸滚动；而 Claude Code 画在备用屏（alternate screen）上，那里终端没有回滚缓冲，转录只在收到滚轮上报时才移动。手机没有滚轮，最新一行以上的内容因此全都够不着。现在拖动就是那个滚轮：拖动的位移在手指位置上变成 wheel 事件，经由 xterm 分发，因而按程序实际开启的鼠标协议编码；每移动一行的高度滚一行——转录跟着手指走，而不是被甩出去。点按仍然是点按：位移超过阈值之前什么都不滚，因此「点按即点击」照样能送达会响应点击的程序。鼠标没有被接管时，xterm 自己的触摸滚动原样保留，滚的仍是回滚缓冲。
+
+终端也不再把这个手势交给浏览器（触摸设备上给终端表面加 `touch-action: none`）：一旦浏览器认定这是页面滚动或下拉刷新，手势中途就不再可取消，终端也就把它丢了。
 
 Dock 自身的构件同步跟上：头部按钮与标签页的关闭按钮放大到手指尺寸，底部 Dock 增加高度切换——用于调整它的那条边界是 4px 的细线，鼠标够得着，手指够不着。

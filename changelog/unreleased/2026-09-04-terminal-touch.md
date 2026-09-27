@@ -3,7 +3,7 @@
 - **Date:** 2026-09-04
 - **Type:** feature
 - **Scope:** `web`
-- **PR:** [#613](https://github.com/Prism-Shadow/penguin-harness/pull/613)
+- **PR:** [#613](https://github.com/Prism-Shadow/penguin-harness/pull/613), [#645](https://github.com/Prism-Shadow/penguin-harness/pull/645)
 
 [中文版](2026-09-04-terminal-touch.zh.md)
 
@@ -12,5 +12,9 @@ A phone's soft keyboard has no Esc, no Tab, no arrows and no Ctrl, so a terminal
 The soft keyboard also stops covering the bottom of the page: the App asks Chrome to shrink the layout viewport when a virtual keyboard is up, and the `/terminal` page sizes itself to the visual viewport for the browsers that do not implement that. Its header compacts to a phone's width — the working directory truncates, and the status shows as its dot, which names itself.
 
 A long press no longer pastes. It raises the same event a right click does but it is not one, and a finger that meant to select text was pushing the clipboard into a live shell; touch pastes from the key bar instead.
+
+A one-finger drag scrolls the terminal, including while a full-screen program has taken the mouse. xterm turns its own touch scrolling off for exactly those programs — Claude Code and every TUI like it — and Claude Code draws on the alternate screen, where the terminal has no scrollback and the transcript moves only when a wheel reports; a phone has no wheel, so everything above the newest line was out of reach. The drag is now that wheel: its travel becomes wheel events at the finger's position, dispatched through xterm so they are encoded in whatever mouse protocol the program asked for, one line per line of travel — the transcript follows the finger instead of being flung by it. A tap is still a tap: nothing scrolls until the travel passes a slop threshold, so tap-to-click still reaches a program that answers clicks. Where the mouse is free, xterm's own touch scrolling is untouched and still scrolls the scrollback.
+
+The terminal also stops handing the gesture to the browser (`touch-action: none` on the surface, touch devices only): a drag the page decides is a page scroll or a pull-to-refresh stops being cancellable mid-gesture, and the terminal loses it.
 
 The dock's own chrome follows: its header buttons and tab closes grow to a finger's size, and the bottom dock gains a height toggle — the boundary you drag to resize it is a 4px line, which a mouse can hit and a finger cannot.
