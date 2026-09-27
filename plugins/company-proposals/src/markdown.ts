@@ -243,7 +243,7 @@ function validateScope(written: WrittenEntry[]): ProposalScopeEntry[] {
   });
 }
 
-const TEST_KINDS: readonly ProposalTestEntry["kind"][] = ["existing", "new"];
+const TEST_KINDS: readonly ProposalTestEntry["kind"][] = ["existing", "new", "delete"];
 /** A test group: any short lower-case word; unit, integration, e2e and bench are the usual ones. */
 const TEST_GROUP = /^[a-z0-9_-]{1,32}$/;
 
@@ -254,7 +254,7 @@ function validateTests(written: WrittenTest[]): ProposalTestEntry[] {
     if (!TEST_KINDS.includes(kind)) {
       throw new ProposalDocumentError(
         "tests_invalid",
-        `Test kind must be existing or new: ${entry.kind} (${label})`,
+        `Test kind must be existing, new or delete: ${entry.kind} (${label})`,
       );
     }
     const file = relativePath(entry.file);

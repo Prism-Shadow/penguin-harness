@@ -604,6 +604,18 @@ describe("ProposalService", () => {
       ["new", "integration", "packages/server/test/digest.test.ts", "new"],
       ["new", "unit", "packages/server/test/reconcile.test.ts", "exists"],
     ]);
+    // A deleted test must be there, like an existing one: a missing file is refused.
+    await expect(
+      service.publish(
+        PROJECT,
+        ORG,
+        n,
+        withTests(
+          '  - kind: delete\n    file: packages/server/test/gone.test.ts\n    description: "per-change notices go away"',
+        ),
+        author,
+      ),
+    ).rejects.toMatchObject({ status: 400, code: "tests_missing" });
     // States follow the tree on read; the revision keeps its tests.
     await fs.rm(path.join(ws, "packages/server/test/reconcile.test.ts"));
     const read = await service.get(PROJECT, ORG, n, BOSS);

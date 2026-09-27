@@ -534,6 +534,18 @@ describe("the diff since the approved revision", () => {
     ]);
   });
 
+  it("reads an existing test turned into a deleted one as a change of the same row", () => {
+    const t = (kind: "existing" | "new" | "delete") => ({
+      kind,
+      group: "unit",
+      file: "a.test.ts",
+      name: "one",
+      description: "first",
+    });
+    const rows = diffTests([t("existing")], [t("delete")]);
+    expect(rows.map((r) => [r.change, r.entry.kind])).toEqual([["changed", "delete"]]);
+  });
+
   it("reads every row as unchanged when nothing is compared", () => {
     expect(unchangedEntries([{ file: "a.ts" }])).toEqual([
       { change: "same", entry: { file: "a.ts" } },

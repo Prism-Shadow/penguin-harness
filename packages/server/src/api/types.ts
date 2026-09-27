@@ -6701,17 +6701,17 @@ export interface ProposalScopeEntry {
   state?: ProposalScopeState;
 }
 
-/** A listed test's state under the proposal's root, computed on read: an existing test is there or missing; a new one is there already (added to an existing file) or still to be written. */
+/** A listed test's state under the proposal's root, computed on read: an existing or deleted test is there or missing; a new one is there already (added to an existing file) or still to be written. */
 export type ProposalTestState = "exists" | "new" | "missing";
 
 /**
- * One test that bears on the change: an existing one or one the change adds (`kind`), in a
+ * One test that bears on the change: an existing one, one the change adds, or one it removes (`kind`), in a
  * group (`unit`, `integration`, `e2e`, `bench` by convention — any short word is accepted),
  * with a file (relative to `root`), optionally a pattern over the test names in it (a regular
  * expression, like a scope entry's `name`), and a description of what it checks.
  */
 export interface ProposalTestEntry {
-  kind: "existing" | "new";
+  kind: "existing" | "new" | "delete";
   file: string;
   name?: string;
   group: string;

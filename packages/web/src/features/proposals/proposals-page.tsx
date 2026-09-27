@@ -1509,10 +1509,11 @@ function TestGroup({
   );
 }
 
-/** A test's kind as a tag: an existing test recedes, a proposed one is an addition. */
-const TEST_KIND_TONE: Record<ProposalTestEntry["kind"], "muted" | "success"> = {
+/** A test's kind as a tag: an existing test recedes, a proposed one is an addition, a removed one is a deletion. */
+const TEST_KIND_TONE: Record<ProposalTestEntry["kind"], "muted" | "success" | "danger"> = {
   existing: "muted",
   new: "success",
+  delete: "danger",
 };
 
 /** One test: its kind, its file (a link while the file is there), its name pattern, and what it tests. */

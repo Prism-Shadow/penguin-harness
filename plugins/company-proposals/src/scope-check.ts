@@ -161,7 +161,7 @@ export function missingMessage(root: string, missing: ScopeCheck["missing"]): st
   return `These scope files do not exist under ${where}; fix the paths, or list a file the change creates as \`kind: new\`:\n${lines.join("\n")}`;
 }
 
-/** Each listed test's state under `base`: an existing test is there or missing; a new one is still to be written, or is going into a file that is there already. */
+/** Each listed test's state under `base`: an existing or deleted test is there or missing; a new one is still to be written, or is going into a file that is there already. */
 export async function testStates(
   base: string,
   tests: readonly ProposalTestEntry[],
@@ -169,14 +169,14 @@ export async function testStates(
   return Promise.all(
     tests.map(async (t): Promise<ProposalTestState> => {
       const here = await isFile(under(base, t.file));
-      if (t.kind === "existing") return here ? "exists" : "missing";
+      if (t.kind !== "new") return here ? "exists" : "missing";
       return here ? "exists" : "new";
     }),
   );
 }
 
 /**
- * What a publish checks of the tests: an `existing` test's file is there. A `new` test whose
+ * What a publish checks of the tests: an `existing` or `delete` test's file is there. A `new` test whose
  * file already exists is a hint only — a new test is often added to a file that has others.
  */
 export async function checkTests(
@@ -187,7 +187,7 @@ export async function checkTests(
   const hints: string[] = [];
   for (const t of tests) {
     const here = await isFile(under(base, t.file));
-    if (t.kind === "existing" && !here) {
+    if (t.kind !== "new" && !here) {
       missing.push({ path: t.file, suggestions: await suggestPaths(base, t.file) });
     }
     if (t.kind === "new" && here) {
@@ -199,12 +199,12 @@ export async function checkTests(
   return { missing, hints };
 }
 
-/** The refusal's text for tests listed as existing that are not there. */
+/** The refusal's text for tests listed as existing or deleted that are not there. */
 export function missingTestsMessage(root: string, missing: ScopeCheck["missing"]): string {
   const where = root === "" ? "the shared workspace" : `root \`${root}\``;
   const lines = missing.map(
     (m) =>
       `- ${m.path}${m.suggestions.length > 0 ? ` — did you mean ${m.suggestions.map((s) => `\`${s}\``).join(" or ")}?` : ""}`,
   );
-  return `These tests are listed as existing but their files are not under ${where}; fix the paths, or list a test the change adds as \`kind: new\`:\n${lines.join("\n")}`;
+  return `These tests are listed as existing or deleted but their files are not under ${where}; fix the paths, or list a test the change adds as \`kind: new\`:\n${lines.join("\n")}`;
 }

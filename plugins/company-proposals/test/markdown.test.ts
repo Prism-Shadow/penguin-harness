@@ -285,6 +285,30 @@ describe("the tests list", () => {
     expect(parseProposalDocument(DOC).tests).toEqual([]);
   });
 
+  it("reads a test the change removes as kind delete, and writes it back out", () => {
+    const doc = parseProposalDocument(
+      withTests(
+        [
+          "  - kind: delete",
+          "    file: packages/server/test/legacy-notice.test.ts",
+          '    name: "sends one notice per change"',
+          '    description: "per-change notices go away with the batch"',
+        ].join("\n"),
+      ),
+    );
+    expect(doc.tests).toEqual([
+      {
+        kind: "delete",
+        file: "packages/server/test/legacy-notice.test.ts",
+        group: "unit",
+        name: "sends one notice per change",
+        description: "per-change notices go away with the batch",
+      },
+    ]);
+    expect(renderProposalDocument(doc)).toContain("tests:\n  - kind: delete\n");
+    expect(parseProposalDocument(renderProposalDocument(doc))).toEqual(doc);
+  });
+
   it("round-trips the tests, writing each entry's kind and group out", () => {
     const doc = parseProposalDocument(
       withTests(

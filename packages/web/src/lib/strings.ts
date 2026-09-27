@@ -6358,7 +6358,7 @@ Benchmark：
       scopeMissingHint: (where: string): string => `在 ${where} 下找不到这个文件`,
       tests: "测试",
       testsEmpty: "作者尚未列出相关的测试。",
-      testKind: { existing: "已有", new: "拟增" },
+      testKind: { existing: "已有", new: "拟增", delete: "删除" },
       testMissing: "文件不存在",
       testMissingHint: (where: string): string => `标为已有，但在 ${where} 下找不到这个文件`,
       testsShowMore: (n: number): string => `再显示 ${n} 条`,

@@ -6175,7 +6175,7 @@ Scenarios:
       scopeMissingHint: (where: string): string => `Not found under ${where}`,
       tests: "Tests",
       testsEmpty: "The author has not listed the tests yet.",
-      testKind: { existing: "existing", new: "new" },
+      testKind: { existing: "existing", new: "new", delete: "delete" },
       testMissing: "file missing",
       testMissingHint: (where: string): string =>
         `Listed as existing, but the file is not under ${where}`,

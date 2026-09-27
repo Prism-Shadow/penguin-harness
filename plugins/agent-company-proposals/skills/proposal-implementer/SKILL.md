@@ -26,7 +26,7 @@ penguin org proposal material <n> add pr=<pr url> --label "PR <number>"
 ```
 
 - **Stay inside the scope.** The proposal's `scope` lists the files and names the change is meant to touch, each with its kind — `edit`, `new`, `delete`, or `rename` (from `from` to `file`) — and every path is relative to the proposal's `root`, the repository's directory in the shared workspace. Touching another file is a finding, not a decision: report it (`feedback`) and let the author widen the scope before you rely on it. A one-line edit the change cannot do without is fine to make and report in the same breath.
-- **Write the tests the proposal lists.** Its `tests` name each test's file (and name pattern) with what it tests: the `new` ones are yours to add, the `existing` ones must still pass. A listed test that cannot be written as described is a finding — report it and let the author replace it.
+- **Write the tests the proposal lists.** Its `tests` name each test's file (and name pattern) with what it tests: the `new` ones are yours to add, the `existing` ones must still pass, the `delete` ones you remove (only the cases the `name` matches, when it has one). A listed test that cannot be written as described is a finding — report it and let the author replace it.
 - **The PR body links the proposal by number** — `proposal:<n>` — and nothing else needs to be said twice; the proposal is the description.
 - **The test the proposal names is the test you write.** If it cannot be written as described, that is feedback.
 
