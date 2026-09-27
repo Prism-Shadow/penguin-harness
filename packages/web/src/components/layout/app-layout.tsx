@@ -40,7 +40,7 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
-import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { TerminalDockRuntime } from "../../features/terminal";
 import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
 import { toneStrip } from "../../lib/tone";

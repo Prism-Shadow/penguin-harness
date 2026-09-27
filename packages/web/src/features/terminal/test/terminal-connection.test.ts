@@ -13,8 +13,8 @@ import {
   type AttachedSocket,
   type SocketHandlers,
   type TerminalConnectionStatus,
-} from "../src/features/terminal/terminal-connection";
-import { TerminalOpcode, decodeFrame, encodeFrame } from "../src/features/terminal/terminal-frames";
+} from "../terminal-connection";
+import { TerminalOpcode, decodeFrame, encodeFrame } from "../terminal-frames";
 
 /** One fake socket: records what was sent, and lets a test play the link's part. */
 class FakeSocket implements AttachedSocket {

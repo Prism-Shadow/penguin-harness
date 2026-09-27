@@ -240,14 +240,14 @@ export function TerminalPage() {
       />
       <ConfirmModal
         open={confirmKill}
-        title={S.dock.killConfirmTitle}
+        title={S.terminal.killConfirmTitle}
         onClose={() => setConfirmKill(false)}
         onConfirm={() => void killConfirmed()}
         confirmLabel={S.terminal.killShell}
       >
         {info && (
           <p className="break-words text-sm text-gray-600 dark:text-gray-300">
-            {S.dock.killConfirmBody(info.name)}
+            {S.terminal.killConfirmBody(info.name)}
           </p>
         )}
       </ConfirmModal>

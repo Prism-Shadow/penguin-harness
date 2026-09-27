@@ -6,6 +6,7 @@
  * of a label/sentence or in a proper name (Agent State, AgentHub).
  */
 import type { PeakWindows } from "../features/models/model-grouping";
+import { terminalEn } from "../features/terminal/strings";
 import type { Strings } from "./strings";
 
 export const en: Strings = {
@@ -192,47 +193,8 @@ export const en: Strings = {
     verbTitle: "Every port forward of this machine",
   },
 
-  /** Server-side terminal (the in-app dock and the standalone /terminal page). */
-  terminal: {
-    title: "Terminal",
-    newShell: "New terminal",
-    /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
-    killShell: "Kill this terminal",
-    /** Boundary drag handle between the dock and the main content (double-click resets). */
-    /** Hover menu when the user has no live terminal yet. */
-    /** Pane body when creating/attaching a shell failed (the server message follows). */
-    createFailed: "Could not start a terminal",
-    /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
-    noTerminalApi:
-      "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
-    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
-    detach: "Open in new window",
-    status: {
-      connecting: "connecting",
-      ready: "ready",
-      /** The pty is fine; this page's socket dropped and is being reattached. */
-      reconnecting: "reconnecting",
-      exited: "exited",
-      error: "error",
-    },
-    /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
-    exitedWithCode: (code: string): string => `exit code ${code}`,
-    touchKeys: {
-      label: "Terminal keys",
-      esc: "Escape",
-      tab: "Tab",
-      ctrl: "Ctrl (tap, then the next character)",
-      alt: "Alt (tap, then the next character)",
-      up: "Arrow up",
-      down: "Arrow down",
-      left: "Arrow left",
-      right: "Arrow right",
-      interrupt: "Interrupt (Ctrl+C)",
-      paste: "Paste",
-      hideKeyboard: "Dismiss the keyboard",
-      showKeyboard: "Show the keyboard",
-    },
-  },
+  /** Server-side terminal (the in-app dock and the standalone /terminal page): the terminal module owns this copy. */
+  terminal: terminalEn,
 
   dock: {
     addTab: "Add panel",
@@ -244,9 +206,6 @@ export const en: Strings = {
     rightDock: "Right sidebar",
     bottomDock: "Bottom panel",
     draftEmpty: "Available once the conversation starts",
-    killConfirmTitle: "Close this terminal?",
-    killConfirmBody: (name: string): string =>
-      `This ends the shell "${name}" — it cannot be restored.`,
     launcher: "Shortcuts",
     launcherCaption: "Shortcuts",
     launcherOpen: "Open",

@@ -28,7 +28,7 @@ import {
   probeJson,
   type TerminalInfo,
   type TerminalStatus,
-} from "../terminal/terminal-view";
+} from "../terminal";
 
 interface SurfaceRendererProps {
   session: SessionInfo;

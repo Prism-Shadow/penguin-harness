@@ -18,6 +18,16 @@ src/
 
 DTO types are imported type-only from `@prismshadow/penguin-server/api`; no server code enters the bundle. Rendering rules for streaming partials (start/delta/stop aggregation, complete-message replacement, origin-chain nesting into subagent cards) live in `lib/omni/stream-model.ts`, which is fully unit-tested.
 
+## Modules
+
+A feature directory can be a **module**: `src/features/<name>/` with a public entry (`index.ts`), its own zh/en dictionary fragments (`strings.ts`, mounted by reference as a section of the app dictionaries, so components still read `S.<name>.*`), and its unit tests under `test/`. `test/web-modules.ts` lists the modules and what each may import from the rest of the app; `vitest.config.ts` turns every entry into a test project, and `test/module-boundaries.test.ts` fails on an import that goes around a module's entry or outside its declared dependencies.
+
+```bash
+pnpm --filter @prismshadow/penguin-web exec vitest run --project terminal   # one module's tests alone
+```
+
+The terminal is the first module. To add one: create the entry and the fragments, move the section out of both app dictionaries (leave `<name>: <name>Zh` / `<name>: <name>En`), route outside imports through the entry, move its tests, and add the manifest entry.
+
 ## Development
 
 Prereqs: Node >= 24, pnpm; run `pnpm install` at the repo root first (core must be built — the root `dev:*` scripts handle that).

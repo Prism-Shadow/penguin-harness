@@ -12,6 +12,7 @@
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
 import type { PeakWindows } from "../features/models/model-grouping";
+import { terminalZh } from "../features/terminal/strings";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -223,52 +224,8 @@ export const zh = {
     verbTitle: "查看这台机器的全部端口转发",
   },
 
-  /** Server-side terminal (the in-app dock and the standalone /terminal page). */
-  terminal: {
-    title: "终端",
-    newShell: "新建终端",
-    /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
-    killShell: "关闭此终端",
-    /** Pane body when creating/attaching a shell failed (the server message follows). */
-    createFailed: "终端创建失败",
-    /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
-    noTerminalApi:
-      "该服务端没有终端接口：运行中的 runtime 早于该功能。热更新只替换平台与前端，终端接口属于 runtime，需更新 runtime 本身（重启无效）",
-    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
-    detach: "在新窗口打开",
-    status: {
-      connecting: "连接中",
-      ready: "已连接",
-      /** The pty is fine; this page's socket dropped and is being reattached. */
-      reconnecting: "重连中",
-      exited: "已退出",
-      error: "连接错误",
-    },
-    /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
-    exitedWithCode: (code: string): string => `退出码 ${code}`,
-    /**
-     * The touch key bar (terminal-keybar.tsx), shown only under `(pointer: coarse)`: the
-     * keys a phone's soft keyboard has none of. Cap faces are the key names themselves
-     * (Esc / Tab / Ctrl / Alt / ^C) and stay untranslated, as on a physical keyboard; these
-     * are their accessible names.
-     */
-    touchKeys: {
-      label: "终端快捷键",
-      esc: "Esc 键",
-      tab: "Tab 键",
-      /** Sticky: tap to arm, the next character composes with it. */
-      ctrl: "Ctrl 键（点一下，下一个字符生效）",
-      alt: "Alt 键（点一下，下一个字符生效）",
-      up: "上方向键",
-      down: "下方向键",
-      left: "左方向键",
-      right: "右方向键",
-      interrupt: "中断（Ctrl+C）",
-      paste: "粘贴",
-      hideKeyboard: "收起键盘",
-      showKeyboard: "调出键盘",
-    },
-  },
+  /** Server-side terminal (the in-app dock and the standalone /terminal page): the terminal module owns this copy. */
+  terminal: terminalZh,
 
   /** The dock surfaces (right / bottom) every side element renders in as a tab. */
   dock: {
@@ -287,9 +244,6 @@ export const zh = {
     bottomDock: "下侧栏",
     /** A session-bound panel's body on the draft page, where no Session exists yet. */
     draftEmpty: "发送第一条消息后可用",
-    /** Terminal tab ×: ends the shell for real, so it asks first. `name` is the tab label. */
-    killConfirmTitle: "关闭此终端？",
-    killConfirmBody: (name: string): string => `将结束 Shell「${name}」的进程，无法恢复。`,
     /**
      * The floating launcher on the chat body's right edge while the right dock is hidden.
      * `launcherCaption` is printed under the ball at rest — the same words as the ball's

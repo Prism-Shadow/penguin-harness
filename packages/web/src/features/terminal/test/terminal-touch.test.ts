@@ -3,7 +3,7 @@
  * from a scroll, the direction, and the remainder carried between moves.
  */
 import { describe, expect, it } from "vitest";
-import { TOUCH_SLOP_PX, TouchScroll } from "../src/features/terminal/terminal-touch";
+import { TOUCH_SLOP_PX, TouchScroll } from "../terminal-touch";
 
 const CELL = 20;
 

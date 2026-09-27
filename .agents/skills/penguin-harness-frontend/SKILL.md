@@ -194,6 +194,12 @@ surprise. What it cannot see is whether a function-valued string uses the parame
 `(n: number) => "items"` typechecks while the other side interpolates `n`. Add both, in the same
 shape, in the same PR.
 
+A **module** (a feature directory listed in `test/web-modules.ts` — the terminal so far) owns its
+copy instead: its `strings.ts` exports a zh fragment and an en fragment typed against it, and the
+app dictionaries mount them by reference (`terminal: terminalZh`). Add that module's keys there,
+not in the app dictionaries; reads stay `S.terminal.*`. `packages/web/README.md` ("Modules") has
+the rest of the module contract.
+
 `S` is a live binding swapped on locale change, so read it at render time; never hoist `S.x.y` into
 a module-level constant.
 
