@@ -18,5 +18,3 @@ Three numbers stopped being constants tuned on a LAN:
 - **Container resizes** reached the pty one per pixel change. On a phone the address bar collapses and the soft keyboard opens constantly, and every size that lands costs a SIGWINCH and a full repaint from whatever is running. They settle for 120ms now, and only a change that moves the grid is sent at all.
 
 The stream is also compressed on the wire (permessage-deflate, bounded window, small frames left alone), which is worth a little CPU on the most compressible traffic this server has.
-
-Both ends of the stream can be older than this release; what that costs, and the one rule that pays for it, is in [Backward compatibility](2026-09-07-backward-compatibility.md).
