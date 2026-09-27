@@ -9,7 +9,8 @@
  * in it, which is what makes one shareable.
  *
  * A gist is a flat set of text files, so paths are flattened into file names (`a/b.md` →
- * `a--b.md`) and `penguin-agent.json` carries the manifest that maps them back. That keeps
+ * `a\b.md`; the older `a--b.md` form is still read from packages published before, never
+ * written) and `penguin-agent.json` carries the manifest that maps them back. That keeps
  * a published Agent readable and diffable on the gist page — the reason to choose a gist
  * over an opaque archive at all.
  */
