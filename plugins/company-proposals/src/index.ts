@@ -27,6 +27,7 @@ import type {
   Log,
   OrgGateway,
   Paths,
+  PluginConfig,
   Settings,
 } from "@prismshadow/penguin-server/plugin";
 import { ProposalService } from "./service.js";
@@ -60,6 +61,13 @@ export {
 } from "./service.js";
 export type { ServiceDeps } from "./service.js";
 export { ROUTES_ID, proposalRoutes } from "./routes.js";
+export {
+  CONFIG_GROUP,
+  DEFAULT_TEST_GROUPS,
+  TEST_GROUP_LINE,
+  testGroupsOf,
+  undeclaredGroupsMessage,
+} from "./config.js";
 export { checkScope, scopeBase, scopeStates, suggestPaths } from "./scope-check.js";
 export {
   PARAGRAPH_GAP,
@@ -99,6 +107,38 @@ export const PAGE_ID = "company-proposals.page";
         renderer: { builtin: "OrgProposalsPage" },
       },
     ],
+    "PluginConfigProvider.groups": [
+      {
+        // A manifest is data: these literals repeat config.ts's CONFIG_GROUP, TEST_GROUP_LINE
+        // and DEFAULT_TEST_GROUPS, and a test holds the two copies together.
+        id: "company-proposals",
+        title: "Company proposals",
+        titleZh: "公司提案",
+        description:
+          "Proposals in company mode. The settings apply to every organization on this server.",
+        descriptionZh: "公司模式下的提案。设置对本服务器上的所有组织生效。",
+        properties: {
+          testGroups: {
+            type: "list",
+            title: "Test groups",
+            titleZh: "测试分组",
+            description:
+              "One group per line, as `id: what it covers`. A proposal's tests may only use these groups, and the proposal page shows them in this order.",
+            descriptionZh:
+              "每行一个分组，写作 `id: 覆盖范围`。提案的测试只能使用这些分组，提案页按此顺序展示。",
+            pattern: "^[a-z0-9_-]{1,32}: \\S.*$",
+            patternErrorMessage:
+              "lines must read `id: description` (id: lower-case letters, digits, - or _)",
+            default: [
+              "unit: one module in isolation, no I/O",
+              "integration: several modules together, real storage or network",
+              "e2e: the product end to end, through its UI or CLI",
+              "bench: performance measurements",
+            ],
+          },
+        },
+      },
+    ],
     "WebModule.quickStarts": [
       {
         id: "company-proposals.quick-start",
@@ -117,6 +157,7 @@ export class CompanyProposalsPlugin {
   @Use("RuntimeModule") private readonly paths!: Paths;
   @Use("SettingsModule") private readonly settings!: Settings;
   @Use("RuntimeModule") private readonly log!: Log;
+  @Use("PluginConfigModule") private readonly pluginConfig!: PluginConfig;
   @Bind(ROUTES_ID) routes!: Hono;
 
   setup(_ctx: ClassCtx) {
@@ -126,6 +167,7 @@ export class CompanyProposalsPlugin {
       root: this.paths.root,
       settings: this.settings,
       log: this.log,
+      pluginConfig: this.pluginConfig,
     });
     this.routes = proposalRoutes(service);
   }

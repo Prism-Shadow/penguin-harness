@@ -570,6 +570,35 @@ describe("the diff since the approved revision", () => {
     expect(TEST_GROUP_FOLD).toBe(12);
   });
 
+  it("orders the tests by the declared groups with their descriptions, an undeclared group last and flagged", () => {
+    const tests = [
+      { group: "perf", n: 1 },
+      { group: "unit", n: 2 },
+      { group: "a11y", n: 3 },
+      { group: "e2e", n: 4 },
+    ];
+    const declared = [
+      { id: "e2e", description: "the product end to end" },
+      { id: "unit", description: "one module" },
+    ];
+    expect(
+      groupTests(tests, (t) => t.group, declared).map((g) => [
+        g.group,
+        g.tests.map((t) => t.n).join(","),
+        g.description ?? null,
+        g.undeclared,
+      ]),
+    ).toEqual([
+      ["e2e", "4", "the product end to end", false],
+      ["unit", "2", "one module", false],
+      ["a11y", "3", null, true],
+      ["perf", "1", null, true],
+    ]);
+    // An empty declaration flags everything; no declaration at all (an older server) flags nothing.
+    expect(groupTests(tests, (t) => t.group, []).every((g) => g.undeclared)).toBe(true);
+    expect(groupTests(tests, (t) => t.group).some((g) => g.undeclared)).toBe(false);
+  });
+
   it("has a diff to show only while an older approval stands and the proposal is open again", () => {
     expect(revisedAfterApproval({ status: "ready", revision: 3, approvedRevision: 1 })).toBe(true);
     expect(revisedAfterApproval({ status: "drafting", revision: 2, approvedRevision: 1 })).toBe(

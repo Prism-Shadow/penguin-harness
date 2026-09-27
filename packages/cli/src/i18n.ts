@@ -695,6 +695,9 @@ export interface Messages {
     proposalScope(root: string): string;
     proposalHint(hint: string): string;
     proposalTests(): string;
+    proposalGroupUndeclared(): string;
+    proposalGroupsDesc: string;
+    proposalGroupsEmpty(): string;
     proposalMaterials(): string;
     proposalComments(): string;
     proposalEvents(): string;
@@ -1912,6 +1915,11 @@ const en: Messages = {
       `Scope under ${root === "" ? "the shared workspace" : `root ${root}`} (kind, file, state, name pattern):`,
     proposalHint: (hint) => `Hint: ${hint}`,
     proposalTests: () => "Tests (kind, file, [name pattern], what it tests, state):",
+    proposalGroupUndeclared: () => "(undeclared — the next publish must move these)",
+    proposalGroupsDesc:
+      "List the test groups a proposal may use, in order (declared under Settings → Plugins → Company proposals)",
+    proposalGroupsEmpty: () =>
+      "No test groups are declared. An admin declares them under Settings → Plugins → Company proposals.",
     proposalMaterials: () => "Materials:",
     proposalComments: () => "Comments:",
     proposalEvents: () => "Events:",
@@ -3085,6 +3093,9 @@ const zh: Messages = {
       `范围（${root === "" ? "共享工作区" : `根目录 ${root}`}；类型、文件、状态、名称模式）：`,
     proposalHint: (hint) => `提示：${hint}`,
     proposalTests: () => "测试（类型、文件、[名称模式]、测试什么、状态）：",
+    proposalGroupUndeclared: () => "（未声明——下次发布须移到已声明的分组）",
+    proposalGroupsDesc: "列出提案可用的测试分组及其顺序（在「设置 → 插件 → 公司提案」中声明）",
+    proposalGroupsEmpty: () => "尚未声明任何测试分组。请管理员在「设置 → 插件 → 公司提案」中声明。",
     proposalMaterials: () => "材料：",
     proposalComments: () => "评论：",
     proposalEvents: () => "事件：",

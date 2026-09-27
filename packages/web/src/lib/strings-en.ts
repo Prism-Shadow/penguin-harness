@@ -6182,6 +6182,9 @@ Scenarios:
       testsShowMore: (n: number): string => `Show ${n} more`,
       testsShowLess: "Show less",
       testGroupToggle: (group: string): string => `Collapse or expand the ${group} group`,
+      testGroupsUndeclared: "Undeclared groups",
+      testGroupsUndeclaredNote:
+        "These groups are no longer declared under Settings → Plugins → Company proposals; the next publish must move their tests into a declared group.",
       sections: "Body",
       sectionsEmpty: "The author has not published a body yet.",
       events: "Events",

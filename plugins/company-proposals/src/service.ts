@@ -20,6 +20,7 @@ import type {
   OrgActor,
   OrgGateway,
   OrgView,
+  PluginConfig,
   Settings,
 } from "@prismshadow/penguin-server/plugin";
 import type {
@@ -34,8 +35,11 @@ import type {
   ProposalMaterialKind,
   ProposalPluginEvent,
   ProposalStatus,
+  ProposalTestGroup,
+  ProposalTestGroupsResponse,
   ProposalsResponse,
 } from "@prismshadow/penguin-server/api";
+import { CONFIG_GROUP, testGroupsOf, undeclaredGroupsMessage } from "./config.js";
 import { renderForAgent, sectionSource } from "./comments.js";
 import { readBaseFile } from "./files.js";
 import { PrStatusReader } from "./pr-status.js";
@@ -89,6 +93,8 @@ export interface ServiceDeps {
   root: string;
   settings: Pick<Settings, "get" | "set" | "getGithubToken">;
   log: Pick<Log, "line">;
+  /** The plugin's settings group (config.ts); the declared defaults when absent (a test that does not care). */
+  pluginConfig?: Pick<PluginConfig, "get">;
   now?: () => number;
   /** The fetch the PR status lookup uses; the platform's by default (a test feeds answers). */
   fetch?: typeof fetch;
@@ -149,6 +155,34 @@ export class ProposalService {
       log: (line) => deps.log.line(line),
       ...(deps.now !== undefined ? { now: deps.now } : {}),
     });
+  }
+
+  /** The skipped lines last reported, so a bad line is logged once per change, not on every read. */
+  private reportedSkips = "";
+
+  /** The declared test groups, in order — read from the settings group on every use, so a save applies at once. */
+  testGroups(): ProposalTestGroup[] {
+    const { groups, skipped } = testGroupsOf(this.deps.pluginConfig?.get(CONFIG_GROUP) ?? {});
+    const key = skipped.join("\n");
+    if (key !== this.reportedSkips) {
+      this.reportedSkips = key;
+      if (skipped.length > 0) {
+        this.deps.log.line(
+          `[company-proposals] test group lines skipped (want \`id: description\`, ids unique): ${skipped.join(" | ")}`,
+        );
+      }
+    }
+    return groups;
+  }
+
+  /** The declared test groups for a caller of the organization: what an author must pick from. */
+  async listTestGroups(
+    projectId: string,
+    orgId: string,
+    actor: OrgActor,
+  ): Promise<ProposalTestGroupsResponse> {
+    await this.open(projectId, orgId, actor);
+    return { groups: this.testGroups() };
   }
 
   private now(): number {
@@ -348,7 +382,11 @@ export class ProposalService {
       org,
       this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
     );
-    return { ...detail, materials: await this.withPrStatus(detail.materials) };
+    return {
+      ...detail,
+      materials: await this.withPrStatus(detail.materials),
+      testGroups: this.testGroups(),
+    };
   }
 
   /**
@@ -584,6 +622,19 @@ export class ProposalService {
     } catch (err) {
       if (err instanceof ProposalDocumentError) throw new ProposalError(400, err.code, err.message);
       throw err;
+    }
+    // Only declared test groups. A revision already in the ledger keeps whatever group it was
+    // published with (the page shows it under Undeclared); it is this publish that must move it.
+    const declared = this.testGroups();
+    const undeclared = [...new Set(doc.tests.map((t) => t.group))].filter(
+      (g) => !declared.some((d) => d.id === g),
+    );
+    if (undeclared.length > 0) {
+      throw new ProposalError(
+        400,
+        "tests_group_undeclared",
+        undeclaredGroupsMessage(undeclared, declared),
+      );
     }
     // An approval covers ONE revision. Read before the append: the fold puts an approved
     // proposal back to ready as the line lands, and the record of which revision was

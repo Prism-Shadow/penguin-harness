@@ -5,6 +5,7 @@
  *
  *   GET    /                         the queue (each with the caller's unread count)
  *   POST   /                         start one: { author?, brief, title? } (author defaults to the calling employee)
+ *   GET    /test-groups              the test groups a proposal may use, in order: { groups: [{ id, description }] }
  *   GET    /:number                  the proposal
  *   GET    /:number/revisions        every revision published: { revisions: [{ revision, by, at }] }
  *   GET    /:number/revisions/:rev   one revision as published (title, scope, sections)
@@ -171,6 +172,10 @@ export function proposalRoutes(service: ProposalService): Hono {
     );
     return c.json(created, 201);
   });
+
+  app.get("/test-groups", async (c) =>
+    c.json(await service.listTestGroups(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
+  );
 
   app.get("/:number", async (c) =>
     c.json(

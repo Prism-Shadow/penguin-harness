@@ -1133,18 +1133,11 @@ function ProposalView({
         {testRows.length === 0 ? (
           <OrgEmptyLine>{t.testsEmpty}</OrgEmptyLine>
         ) : (
-          <div className="space-y-3">
-            {groupTests(testRows, (row) => row.entry.group).map(({ group, tests }) => (
-              <TestGroup
-                key={group}
-                group={group}
-                rows={tests}
-                count={tests.filter((r) => r.change !== "removed").length}
-                root={detail.root}
-                onOpenFile={onOpenFile}
-              />
-            ))}
-          </div>
+          <TestGroups
+            groups={groupTests(testRows, (row) => row.entry.group, detail.testGroups)}
+            root={detail.root}
+            onOpenFile={onOpenFile}
+          />
         )}
       </OrgSection>
 
@@ -1452,14 +1445,65 @@ function ScopeRow({
  * One group of the tests list: a small heading with its count that folds the group, then its
  * rows. A long group shows its first TEST_GROUP_FOLD rows and folds the rest behind "Show N more".
  */
+/** The declared groups in order, then — under their own label — the groups the revision uses that are no longer declared. */
+function TestGroups({
+  groups,
+  root,
+  onOpenFile,
+}: {
+  groups: {
+    group: string;
+    tests: EntryChange<ProposalTestEntry>[];
+    description?: string;
+    undeclared: boolean;
+  }[];
+  root: string;
+  onOpenFile: (file: string, name?: string) => void;
+}) {
+  const t = S.company.proposals;
+  const render = (g: (typeof groups)[number]) => (
+    <TestGroup
+      key={g.group}
+      group={g.group}
+      {...(g.description !== undefined ? { description: g.description } : {})}
+      rows={g.tests}
+      count={g.tests.filter((r) => r.change !== "removed").length}
+      root={root}
+      onOpenFile={onOpenFile}
+    />
+  );
+  const undeclared = groups.filter((g) => g.undeclared);
+  return (
+    <div className="space-y-3">
+      {groups.filter((g) => !g.undeclared).map(render)}
+      {undeclared.length > 0 && (
+        <div className="space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800">
+          <div>
+            <h4 className="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {t.testGroupsUndeclared}
+            </h4>
+            <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+              {t.testGroupsUndeclaredNote}
+            </p>
+          </div>
+          {undeclared.map(render)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TestGroup({
   group,
+  description,
   rows,
   count,
   root,
   onOpenFile,
 }: {
   group: string;
+  /** What the declaration says the group covers. */
+  description?: string;
   rows: EntryChange<ProposalTestEntry>[];
   /** The group's tests in the head (a removed row is shown but not counted). */
   count: number;
@@ -1487,6 +1531,11 @@ function TestGroup({
           <span>{group}</span>
           <span className="font-normal tabular-nums text-gray-400 dark:text-gray-500">{count}</span>
         </button>
+        {description !== undefined && (
+          <span className="mt-0.5 block pl-[18px] text-xs font-normal text-gray-400 dark:text-gray-500">
+            {description}
+          </span>
+        )}
       </h4>
       <div id={listId} hidden={!open}>
         <ul className="mt-1 divide-y divide-gray-100 text-xs dark:divide-gray-800">

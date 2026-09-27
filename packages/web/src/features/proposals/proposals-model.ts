@@ -915,21 +915,24 @@ export function revisedAfterApproval(detail: {
   );
 }
 
-/** The groups every proposal is expected to use, in reading order; any other group follows them alphabetically. */
-export const TEST_GROUP_ORDER: readonly string[] = ["unit", "integration", "e2e", "bench"];
+/** The order when the server sends no declared groups (one older than the declaration). */
+export const DEFAULT_TEST_GROUP_ORDER: readonly string[] = ["unit", "integration", "e2e", "bench"];
 
 /** How many rows a test group shows before the rest fold behind "Show N more". */
 export const TEST_GROUP_FOLD = 12;
 
 /**
- * The tests list as the page shows it: one bucket per group, the four usual groups first in
- * their fixed order, then the rest alphabetically; rows keep their order inside a group (a
- * removed test goes to the group it had).
+ * The tests list as the page shows it: one bucket per group, in the declared order with each
+ * declared group's description; a group used by the revision but no longer declared follows,
+ * alphabetically, flagged `undeclared` (the next publish must move it). Without a declaration
+ * (an older server) the four usual groups lead and nothing is flagged. Rows keep their order
+ * inside a group (a removed test goes to the group it had).
  */
 export function groupTests<T>(
   tests: readonly T[],
   groupOf: (test: T) => string,
-): { group: string; tests: T[] }[] {
+  declared?: readonly { id: string; description: string }[],
+): { group: string; tests: T[]; description?: string; undeclared: boolean }[] {
   const byGroup = new Map<string, T[]>();
   for (const t of tests) {
     const group = groupOf(t);
@@ -937,11 +940,20 @@ export function groupTests<T>(
     if (bucket === undefined) byGroup.set(group, [t]);
     else bucket.push(t);
   }
+  const order = declared?.map((d) => d.id) ?? DEFAULT_TEST_GROUP_ORDER;
   const rank = (g: string): number => {
-    const i = TEST_GROUP_ORDER.indexOf(g);
-    return i === -1 ? TEST_GROUP_ORDER.length : i;
+    const i = order.indexOf(g);
+    return i === -1 ? order.length : i;
   };
   return [...byGroup.keys()]
     .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
-    .map((group) => ({ group, tests: byGroup.get(group) ?? [] }));
+    .map((group) => {
+      const description = declared?.find((d) => d.id === group)?.description;
+      return {
+        group,
+        tests: byGroup.get(group) ?? [],
+        ...(description !== undefined ? { description } : {}),
+        undeclared: declared !== undefined && description === undefined,
+      };
+    });
 }

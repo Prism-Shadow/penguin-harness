@@ -31,7 +31,7 @@
  *                    | publish <n> --file <md> | ready <n> | implement <n> [--agent <agent_id>] [-m] [--workspace]
  *                    | material <n> add <kind>=<url> [--label <s>] | feedback <n> -m <text> [--runtime]
  *                    | comments <n> [--pending] | resolve <n> <comment_id> [-m <text>] | merged <n>
- *                    | approve <n> | reject <n> --reason <s>
+ *                    | approve <n> | reject <n> --reason <s> | groups
  *                    (the company-proposals plugin's routes: without the plugin, every one is a 404)
  *
  * Every subcommand takes `--org-id` (default: PENGUIN_ORG_ID, the variable company mode
@@ -80,6 +80,7 @@ import type {
   OrganizationsResponse,
   ProposalCommentsResponse,
   ProposalDetail,
+  ProposalTestGroupsResponse,
   ProposalTestEntry,
   ProposalItem,
   ProposalMaterialKind,
@@ -582,17 +583,27 @@ function renderProposals(items: readonly ProposalItem[], t: Messages): string {
   );
 }
 
-/** The groups a proposal's tests are read in: unit, integration, e2e, bench, then any other alphabetically. */
-const TEST_GROUP_ORDER = ["unit", "integration", "e2e", "bench"];
+/** The order when the server sends no declared groups (one older than the declaration). */
+const DEFAULT_TEST_GROUP_ORDER = ["unit", "integration", "e2e", "bench"];
 
-function testGroups(tests: readonly ProposalTestEntry[]): [string, ProposalTestEntry[]][] {
+/**
+ * A proposal's tests by group, in the declared order; a group no longer declared follows,
+ * alphabetically, marked. Without a declaration (a server older than it) nothing is marked.
+ */
+function testGroups(
+  tests: readonly ProposalTestEntry[],
+  declaredGroups: readonly string[] | undefined,
+): [string, ProposalTestEntry[], boolean][] {
+  const declared = declaredGroups ?? DEFAULT_TEST_GROUP_ORDER;
   const byGroup = new Map<string, ProposalTestEntry[]>();
   for (const test of tests) byGroup.set(test.group, [...(byGroup.get(test.group) ?? []), test]);
   const rank = (g: string): number => {
-    const i = TEST_GROUP_ORDER.indexOf(g);
-    return i === -1 ? TEST_GROUP_ORDER.length : i;
+    const i = declared.indexOf(g);
+    return i === -1 ? declared.length : i;
   };
-  return [...byGroup].sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
+  return [...byGroup]
+    .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+    .map(([g, entries]) => [g, entries, declaredGroups === undefined || declared.includes(g)]);
 }
 
 /**
@@ -652,8 +663,11 @@ function renderProposal(d: ProposalDetail, t: Messages, marked: string | null): 
           [
             t.org.proposalTests(),
             // Kinds, groups and states stay in English: they are field values.
-            ...testGroups(d.tests).flatMap(([group, entries]) => [
-              `  ${group} (${entries.length}):`,
+            ...testGroups(
+              d.tests,
+              d.testGroups?.map((g) => g.id),
+            ).flatMap(([group, entries, declared]) => [
+              `  ${group} (${entries.length})${declared ? "" : ` ${t.org.proposalGroupUndeclared()}`}:`,
               ...entries.map(
                 (e) =>
                   `    ${e.kind} ${e.file}${e.name !== undefined ? ` [${e.name}]` : ""} — ${e.description}${e.state !== undefined ? ` (${e.state})` : ""}`,
@@ -1906,6 +1920,29 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     }
     process.stdout.write(renderProposals(proposals, t));
   });
+
+  scoped(proposal.command("groups").description(t.org.proposalGroupsDesc), t).action(
+    async (opts) => {
+      const scope = await orgScope(opts, t);
+      if (scope === null) return;
+      const res = await proposalRequest<ProposalTestGroupsResponse>(
+        scope,
+        t,
+        "GET",
+        "/test-groups",
+      );
+      if (res === null) return;
+      if (opts.json === true) {
+        printJson(res);
+        return;
+      }
+      if (res.groups.length === 0) {
+        printLine(t.org.proposalGroupsEmpty());
+        return;
+      }
+      for (const g of res.groups) printLine(`${g.id}: ${g.description}`);
+    },
+  );
 
   scoped(proposal.command("show <number>").description(t.org.proposalShowDesc), t).action(
     async (raw: string, opts) => {

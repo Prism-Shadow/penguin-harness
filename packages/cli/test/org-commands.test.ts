@@ -1552,6 +1552,47 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(text.indexOf("## Change")).toBeLessThan(text.indexOf(block));
   });
 
+  it("show orders the test groups as declared and marks one no longer declared; groups lists the declaration", async () => {
+    server.addProposal("acme", {
+      number: 6,
+      tests: [
+        {
+          kind: "existing",
+          group: "unit",
+          file: "test/a.test.ts",
+          description: "a",
+          state: "exists",
+        },
+        {
+          kind: "existing",
+          group: "perf",
+          file: "test/p.bench.ts",
+          description: "p",
+          state: "exists",
+        },
+        { kind: "new", group: "e2e", file: "e2e/f.spec.ts", description: "f", state: "new" },
+      ],
+      testGroups: [
+        { id: "e2e", description: "the product end to end" },
+        { id: "unit", description: "one module" },
+      ],
+    });
+    expect(await cli(["org", "proposal", "show", "6"])).toBe(0);
+    const text = out();
+    expect(text).toContain(
+      [
+        "  e2e (1):",
+        "    new e2e/f.spec.ts — f (new)",
+        "  unit (1):",
+        "    existing test/a.test.ts — a (exists)",
+        `  perf (1) ${t.org.proposalGroupUndeclared()}:`,
+      ].join("\n"),
+    );
+    expect(await cli(["org", "proposal", "groups"])).toBe(0);
+    expect(out()).toBe("unit: one module in isolation, no I/O\ne2e: the product end to end\n");
+    expect(lastRequest("GET", "/proposals/test-groups")).toBeDefined();
+  });
+
   it("show prints the root and each scope entry as its kind, file and state; publish prints the server's hints", async () => {
     server.addProposal("acme", {
       number: 4,

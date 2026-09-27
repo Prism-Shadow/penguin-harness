@@ -1331,6 +1331,14 @@ export class FakeServer {
       }
       return this.json({ proposals: list() });
     }
+    if (b === "test-groups" && method === "GET") {
+      return this.json({
+        groups: [
+          { id: "unit", description: "one module in isolation, no I/O" },
+          { id: "e2e", description: "the product end to end" },
+        ],
+      });
+    }
     const number = Number(b);
     const proposal = proposals.get(number);
     if (!proposal) {

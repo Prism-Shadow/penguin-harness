@@ -6364,6 +6364,9 @@ Benchmark：
       testsShowMore: (n: number): string => `再显示 ${n} 条`,
       testsShowLess: "收起",
       testGroupToggle: (group: string): string => `折叠或展开 ${group} 组`,
+      testGroupsUndeclared: "未声明的分组",
+      testGroupsUndeclaredNote:
+        "这些分组已不在「设置 → 插件 → 公司提案」的声明中，下次发布须把其中的测试移到已声明的分组。",
       sections: "正文",
       sectionsEmpty: "作者还没有发布正文。",
       events: "事件",

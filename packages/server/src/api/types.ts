@@ -6856,6 +6856,23 @@ export interface ProposalDetail extends ProposalItem {
   approvedRevision: number | null;
   /** The ledger's latest `seq`: what `POST …/read` should carry to mark everything read. */
   seq: number;
+  /** The test groups the proposals plugin's configuration declares, in display order — on a read. */
+  testGroups?: ProposalTestGroup[];
+}
+
+/**
+ * A test group the proposals plugin's configuration declares (Settings → Plugins, one line
+ * `id: description` each; server-wide). A proposal's tests may only use declared groups, and
+ * the page shows them in the declared order.
+ */
+export interface ProposalTestGroup {
+  id: string;
+  description: string;
+}
+
+/** `GET …/organizations/:orgId/proposals/test-groups`. */
+export interface ProposalTestGroupsResponse {
+  groups: ProposalTestGroup[];
 }
 
 /** One revision as it was published: `GET …/:number/revisions/:rev`. */

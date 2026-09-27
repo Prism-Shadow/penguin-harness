@@ -22,8 +22,12 @@ import plugin, {
   ProposalError,
   ProposalService,
   ROUTES_ID,
+  CONFIG_GROUP,
+  DEFAULT_TEST_GROUPS,
+  TEST_GROUP_LINE,
   ledgerPath,
   slugOf,
+  testGroupsOf,
 } from "../src/index.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -623,6 +627,63 @@ describe("ProposalService", () => {
     expect(
       (await service.revision(PROJECT, ORG, n, published.revision, BOSS)).tests.map((t) => t.file),
     ).toHaveLength(3);
+  });
+
+  it("tests use only the declared groups, in the declared order, and a save applies to the next publish", async () => {
+    const n = await delegated();
+    const stored: Record<string, unknown> = {};
+    const configured = new ProposalService({
+      gateway,
+      agents,
+      root,
+      settings,
+      log,
+      pluginConfig: { get: (name) => (name === CONFIG_GROUP ? stored : {}) },
+    });
+    const ws = gateway.org!.workspace;
+    await fs.mkdir(path.join(ws, "packages/server/test"), { recursive: true });
+    await fs.writeFile(path.join(ws, "packages/server/test/reconcile.test.ts"), "// t\n");
+    const withGroup = (group: string): string =>
+      DOC.replace(
+        "---\n\n## Change",
+        `tests:\n  - group: ${group}\n    file: packages/server/test/reconcile.test.ts\n    description: "a blocked ticket reaches its owner once"\n---\n\n## Change`,
+      );
+    // The defaults: `perf` is not one of them — refused, with the declared list.
+    let message = "";
+    try {
+      await configured.publish(PROJECT, ORG, n, withGroup("perf"), author);
+    } catch (err) {
+      expect(err).toMatchObject({ status: 400, code: "tests_group_undeclared" });
+      message = (err as Error).message;
+    }
+    expect(message).toContain("not declared: perf");
+    expect(message).toContain("- e2e: the product end to end, through its UI or CLI");
+    // An admin declares it (Settings → Plugins): the next publish takes it, no restart.
+    stored.testGroups = ["perf: timings under load", "unit: one module in isolation, no I/O"];
+    const published = await configured.publish(PROJECT, ORG, n, withGroup("perf"), author);
+    expect(published.tests.map((t) => t.group)).toEqual(["perf"]);
+    const read = await configured.get(PROJECT, ORG, n, BOSS);
+    expect(read.testGroups).toEqual([
+      { id: "perf", description: "timings under load" },
+      { id: "unit", description: "one module in isolation, no I/O" },
+    ]);
+    expect((await configured.listTestGroups(PROJECT, ORG, author)).groups.map((g) => g.id)).toEqual(
+      ["perf", "unit"],
+    );
+    await expect(configured.listTestGroups(PROJECT, ORG, OUTSIDER)).rejects.toMatchObject({
+      status: 403,
+    });
+    // Taken back out: the published revision keeps its group (nothing is rewritten); the next publish must move it.
+    stored.testGroups = ["unit: one module in isolation, no I/O"];
+    const after = await configured.get(PROJECT, ORG, n, BOSS);
+    expect(after.tests.map((t) => t.group)).toEqual(["perf"]);
+    expect(after.testGroups?.map((g) => g.id)).toEqual(["unit"]);
+    await expect(
+      configured.publish(PROJECT, ORG, n, withGroup("perf"), author),
+    ).rejects.toMatchObject({ status: 400, code: "tests_group_undeclared" });
+    expect((await configured.publish(PROJECT, ORG, n, withGroup("unit"), author)).revision).toBe(
+      published.revision + 1,
+    );
   });
 
   it("a revision written before tests existed reads with no tests", async () => {
@@ -1277,6 +1338,29 @@ describe("ProposalService", () => {
   });
 });
 
+describe("the declared test groups", () => {
+  it("reads `id: description` lines in order, skipping a malformed or repeated one", () => {
+    expect(testGroupsOf({}).groups.map((g) => g.id)).toEqual([
+      "unit",
+      "integration",
+      "e2e",
+      "bench",
+    ]);
+    expect(
+      testGroupsOf({
+        testGroups: ["e2e: whole product", "Perf timings", "e2e: again", "unit: one module"],
+      }),
+    ).toEqual({
+      groups: [
+        { id: "e2e", description: "whole product" },
+        { id: "unit", description: "one module" },
+      ],
+      skipped: ["Perf timings", "e2e: again"],
+    });
+    expect(testGroupsOf({ testGroups: [] }).groups).toEqual([]);
+  });
+});
+
 describe("the manifest", () => {
   it("agrees with the code half: the generated table names the routes, the page and the module", () => {
     const table = JSON.parse(readFileSync(path.join(PLUGIN_DIR, "ifaces.json"), "utf8")) as {
@@ -1290,6 +1374,24 @@ describe("the manifest", () => {
     expect(manifest?.contributes["WebModule.pages"]?.[0]).toMatchObject({
       id: PAGE_ID,
       nav: "org",
+    });
+  });
+
+  it("declares the settings group config.ts reads: the same id, line pattern and defaults", () => {
+    const table = JSON.parse(readFileSync(path.join(PLUGIN_DIR, "ifaces.json"), "utf8")) as {
+      modules: Record<string, { contributes: Record<string, unknown[]> }>;
+    };
+    const [group] = (table.modules.CompanyProposalsPlugin?.contributes[
+      "PluginConfigProvider.groups"
+    ] ?? []) as Array<{
+      id: string;
+      properties: { testGroups: { type: string; pattern: string; default: string[] } };
+    }>;
+    expect(group?.id).toBe(CONFIG_GROUP);
+    expect(group?.properties.testGroups).toMatchObject({
+      type: "list",
+      pattern: TEST_GROUP_LINE,
+      default: [...DEFAULT_TEST_GROUPS],
     });
   });
 });

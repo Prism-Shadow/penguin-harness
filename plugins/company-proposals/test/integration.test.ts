@@ -3,7 +3,7 @@
  * loader, its requirements resolved from the tree (the organization gateway included), its
  * page contributed to the web slots, and its routes mounted behind the cookie gate —
  * answering 404 while company mode is off, and 404 for an organization that does not exist
- * once it is on. Creating an organization needs a model to run its CEO, so the lifecycle
+ * once it is on — and its settings group, declared on the Plugins page. Creating an organization needs a model to run its CEO, so the lifecycle
  * itself is exercised in service.test.ts over the gateway fake.
  *
  * Needs the server and this package built (see README).
@@ -19,6 +19,7 @@ import {
   type HarnessApi,
   type HarnessApiError,
 } from "@prismshadow/penguin-plugin-test";
+import { DEFAULT_TEST_GROUPS } from "../src/config.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = "/api/projects/default_project/organizations/acme/proposals";
@@ -63,6 +64,32 @@ describe("the company-proposals plugin on a real server", () => {
       nav: "org",
       renderer: { builtin: "OrgProposalsPage" },
     });
+  });
+
+  it("declares its settings group on the Plugins page: the default test groups, and a line that is not `id: description` refused", async () => {
+    const read = await api.get<{
+      plugins: Array<{ name: string; values: Record<string, unknown> }>;
+    }>("/api/admin/plugin-config");
+    const entry = read.plugins.find((p) => p.name === "company-proposals");
+    expect(entry?.values.testGroups).toEqual([...DEFAULT_TEST_GROUPS]);
+    const bad = await status(
+      api.put("/api/admin/plugin-config", {
+        name: "company-proposals",
+        values: { testGroups: ["unit: one module", "Perf"] },
+      }),
+    );
+    expect(bad.status).toBe(400);
+    await api.put("/api/admin/plugin-config", {
+      name: "company-proposals",
+      values: { testGroups: ["e2e: the product end to end", "unit: one module"] },
+    });
+    const saved = await api.get<{
+      plugins: Array<{ name: string; values: Record<string, unknown> }>;
+    }>("/api/admin/plugin-config");
+    expect(saved.plugins.find((p) => p.name === "company-proposals")?.values.testGroups).toEqual([
+      "e2e: the product end to end",
+      "unit: one module",
+    ]);
   });
 
   it("answers 404 while company mode is off, and 404 for a missing organization once it is on", async () => {
