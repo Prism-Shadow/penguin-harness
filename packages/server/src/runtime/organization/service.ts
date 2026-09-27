@@ -2718,62 +2718,43 @@ export class OrganizationService {
     return this.actorPrincipal(org, actor);
   }
 
-  async gatewayEnsureChannel(
+  /**
+   * One plain line of work on the employee's desk, in nobody's name: the text is the user
+   * input as given (sender `server`, like a trigger), queued behind a running Task. An
+   * organization that is paused, or an employee whose budget (or an ancestor's) is paused,
+   * receives nothing — the call fails with the reason instead, so the caller can record it.
+   */
+  async gatewayDeliverToDesk(
     projectId: string,
     orgId: string,
-    channelId: string,
-    opts: { name: string; purpose: string; unarchive?: boolean },
-    by: Actor,
-    principals: readonly string[],
-  ): Promise<void> {
-    const org = await this.requireOrg(projectId, orgId);
-    const existing = await this.deps.store.readChannel(org.dir, channelId);
-    if (existing === null) {
-      // The creator is a member from the start, employee or person.
-      await this.createChannel(
-        projectId,
-        orgId,
-        { channelId, name: opts.name, purpose: opts.purpose },
-        by,
-      );
-    } else if (existing.parsed.ok && existing.parsed.value.archived && opts.unarchive === true) {
-      // A channel a plugin drives through must be open. A person may lift the archive (the
-      // channel patch path writes the system line); an employee may not, and says so.
-      if (this.actorPrincipal(org, by).startsWith("agent:")) {
-        throw channelArchived(channelId);
-      }
-      await this.patchChannel(projectId, orgId, channelId, { archived: false }, by);
-    } else if (existing.parsed.ok && existing.parsed.value.archived) {
-      // Not asked to reopen it: an archived channel is left exactly as it is.
-      return;
-    }
-    // Memberships are the person's to arrange: joining is theirs by right, an employee may not
-    // invite itself, and only a member may invite the rest — so the person behind the actor
-    // joins first, then invites the actor's own employee (when it is one) and the others.
-    const person: Actor = { userId: by.userId };
-    await this.addChannelMember(projectId, orgId, channelId, userPrincipal(by.userId), person);
-    const self = this.actorPrincipal(org, by);
-    const wanted = self.startsWith("agent:") ? [self, ...principals] : principals;
-    for (const principal of wanted) {
-      if (principal === userPrincipal(by.userId)) continue;
-      await this.addChannelMember(projectId, orgId, channelId, principal, person);
-    }
-  }
-
-  async gatewaySend(
-    projectId: string,
-    orgId: string,
-    by: Actor,
-    channelId: string,
+    agentId: string,
     text: string,
-  ): Promise<{ id: string }> {
-    // An employee speaks through its session (the message inherits the session's hop); an
-    // Agent id alone names nobody's session, so the message is then the person's.
-    const msg = await this.sendChannelMessage(projectId, orgId, by.userId, channelId, {
-      text,
-      ...(by.sessionId !== undefined ? { sessionId: by.sessionId } : {}),
+  ): Promise<{ sessionId: string; queued: boolean }> {
+    return this.scheduler.withLock(projectId, orgId, async () => {
+      const org = await this.requireValidOrg(projectId, orgId);
+      if (!org.byId.has(agentId)) {
+        throw new HttpError(400, "not_an_employee", `${agentId} is not an employee of ${orgId}`);
+      }
+      if (org.config.status === "paused") {
+        throw new HttpError(409, "org_paused", `${orgId} is paused; ${agentId} was not told.`);
+      }
+      const spend = await computeSpend(this.deps, org, []);
+      if (pausedEmployees(this.deps, org, spend.period).has(agentId)) {
+        throw new HttpError(
+          409,
+          "employee_paused",
+          `${agentId} is paused by its budget for ${spend.period}; it was not told.`,
+        );
+      }
+      const desk = await ensureDesk(this.deps, org, agentId);
+      if (!desk.ok) throw new HttpError(409, "desk_unavailable", desk.error);
+      const res = await this.deps.runner.startTask(
+        desk.desk.sessionId,
+        [userText(text, "server")],
+        { queueIfBusy: true },
+      );
+      return { sessionId: desk.desk.sessionId, queued: res.queued === true };
     });
-    return { id: msg.id };
   }
 
   /** {@link openTicketSession} without the ticket: the session is the employee's, marked as the organization's, and started on `body`. */
@@ -3276,10 +3257,8 @@ export class OrganizationModule {
       organization: (projectId, orgId) => orgService.gatewayView(projectId, orgId),
       principalOf: (projectId, orgId, actor) =>
         orgService.gatewayPrincipal(projectId, orgId, actor),
-      ensureChannel: (projectId, orgId, channelId, opts, by, principals) =>
-        orgService.gatewayEnsureChannel(projectId, orgId, channelId, opts, by, principals),
-      sendChannelMessage: (projectId, orgId, by, channelId, text) =>
-        orgService.gatewaySend(projectId, orgId, by, channelId, text),
+      deliverToDesk: (projectId, orgId, agentId, text) =>
+        orgService.gatewayDeliverToDesk(projectId, orgId, agentId, text),
       openEmployeeSession: (args) => orgService.gatewayOpenSession(args),
       notifyProject: deps.notifyProject,
     };

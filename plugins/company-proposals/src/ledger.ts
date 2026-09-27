@@ -23,6 +23,7 @@ import type {
   ProposalRevision,
   ProposalScopeEntry,
   ProposalSection,
+  ProposalTestEntry,
   ProposalStatus,
 } from "@prismshadow/penguin-server/api";
 
@@ -56,6 +57,8 @@ export type LedgerEntry =
       root?: string;
       /** Every entry carries its `kind` (a ledger written before kinds is read as "edit" on load — see migrateScopeKinds). */
       scope: ProposalScopeEntry[];
+      /** Absent on a line written before tests existed: read as []. */
+      tests?: ProposalTestEntry[];
       sections: ProposalSection[];
       by: string;
     }
@@ -117,7 +120,7 @@ export type LedgerEntry =
       revision?: number;
     }
   | { kind: "resolved"; number: number; commentId: string; text: string; by: string }
-  /** A channel message the plugin had to send did not go out: to whom, and why. */
+  /** A desk delivery the plugin had to make did not go through: to whom, and why. */
   | { kind: "notify_failed"; number: number; reason: string; target: string[]; by: string };
 
 /** A proposal as the fold produces it: every fact the ledger holds about it, before any caller-specific view. */
@@ -135,6 +138,7 @@ export interface Proposal {
   /** The scope's root at the head revision ("" = the shared workspace). */
   root: string;
   scope: ProposalScopeEntry[];
+  tests: ProposalTestEntry[];
   sections: ProposalSection[];
   materials: ProposalMaterial[];
   sessions: string[];
@@ -181,6 +185,7 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       updatedAt: line.at,
       root: "",
       scope: [],
+      tests: [],
       sections: [],
       materials: [],
       sessions: [],
@@ -210,12 +215,14 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       p.title = line.title;
       p.root = line.root ?? "";
       p.scope = line.scope;
+      p.tests = line.tests ?? [];
       p.sections = line.sections;
       p.revisions.set(line.revision, {
         revision: line.revision,
         title: line.title,
         root: line.root ?? "",
         scope: line.scope,
+        tests: line.tests ?? [],
         sections: line.sections,
         by: line.by,
         at: line.at,

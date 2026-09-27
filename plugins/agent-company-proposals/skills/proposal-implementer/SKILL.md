@@ -6,7 +6,7 @@ version: 2026.10.11.1
 
 # Proposal Implementer
 
-A **proposal** is written for a person to read; this session builds it — at the same time, not afterwards. It is not a job of its own: the author usually builds its own proposal, and a colleague is asked only when better placed. The session opens with the proposal's text and a note; you work on a branch, open a PR against the organization's `dev` branch, attach it to the proposal as material, and tell the author (in the channel — even when the author is your own desk, the text is revised from there) every place where what you built is not what the text says. The person reads the proposal and the PR side by side; when they approve, you merge and report.
+A **proposal** is written for a person to read; this session builds it — at the same time, not afterwards. It is not a job of its own: the author usually builds its own proposal, and a colleague is asked only when better placed. The session opens with the proposal's text and a note; you work on a branch, open a PR against the organization's `dev` branch, attach it to the proposal as material, and tell the author (with `feedback` — even when the author is your own desk, the text is revised from there) every place where what you built is not what the text says. The plugin speaks to you the same way: a line on your desk that starts with `[proposal #<n>]`, says what happened and names the command to run next. There is no proposals channel. The person reads the proposal and the PR side by side; when they approve, you merge and report.
 
 Everything in `company-employee` applies to you too. This skill is what building a proposal adds; it arrives on the Agent by itself when a build is opened for it. The organization must have the `company-proposals` plugin installed.
 
@@ -26,6 +26,7 @@ penguin org proposal material <n> add pr=<pr url> --label "PR <number>"
 ```
 
 - **Stay inside the scope.** The proposal's `scope` lists the files and names the change is meant to touch, each with its kind — `edit`, `new`, `delete`, or `rename` (from `from` to `file`) — and every path is relative to the proposal's `root`, the repository's directory in the shared workspace. Touching another file is a finding, not a decision: report it (`feedback`) and let the author widen the scope before you rely on it. A one-line edit the change cannot do without is fine to make and report in the same breath.
+- **Write the tests the proposal lists.** Its `tests` name each test's file (and name pattern) with what it tests: the `new` ones are yours to add, the `existing` ones must still pass. A listed test that cannot be written as described is a finding — report it and let the author replace it.
 - **The PR body links the proposal by number** — `proposal:<n>` — and nothing else needs to be said twice; the proposal is the description.
 - **The test the proposal names is the test you write.** If it cannot be written as described, that is feedback.
 
@@ -38,12 +39,12 @@ Every place where the code disagrees with the text goes to the author, with `pen
 - the test as described cannot show the change, and what would;
 - a simpler change that does the same thing.
 
-The author reads it as a mention in the `proposals` channel and revises; you do not wait for the revision to keep building unless the finding blocks you — say so in the message when it does.
+The plugin puts it on the author's desk as a `[proposal #<n>] feedback from …` line and the author revises; you do not wait for the revision to keep building unless the finding blocks you — say so in the message when it does.
 
 ## Into dev early, into main on approval
 
 - **Merge into `dev` when the branch works** — tests pass, the PR is reviewable — without waiting for the person. The test team checks `dev` in batches; a branch that sits unmerged until someone reads it is a branch nobody tests. Keep the PR open against `dev` until then; merging it is the integration.
-- **`approved`** (`@you proposal:<n> is approved, merge it`) means the person accepted the proposal together with the implementation: merge the change into `main` (or as the handbook says), then `penguin org proposal merged <n>`. Nothing lands on `main` before that message.
+- **`approved`** (`[proposal #<n>] approved by … — merge the PR and run …` on your desk) means the person accepted the proposal together with the implementation: merge the change into `main` (or as the handbook says), then `penguin org proposal merged <n>`. Nothing lands on `main` before that message.
 - **A runtime feedback** on your proposal before approval is yours and the author's together: fix the branch, re-merge into `dev`, tell the author what changed so the text follows.
 - **A fix ticket** after the merge is an ordinary ticket: it names your proposal in its goal, and the tester attaches it as material; you work it like any ticket.
 
@@ -55,7 +56,6 @@ penguin org proposal material <n> add pr=<url> [--label <s>]
 penguin org proposal material <n> add branch=<url>
 penguin org proposal feedback <n> -m "<finding>"
 penguin org proposal merged <n>
-penguin org channel send --channel proposals -m "@<author> proposal:<n> …"   # a question, not a finding
 ```
 
 ## Cautions

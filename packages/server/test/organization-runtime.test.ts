@@ -3325,78 +3325,48 @@ describe("organization runtime", () => {
       );
     });
 
-    it("ensures a channel with the person and the employees in it, idempotently, and speaks in the actor's name", async () => {
+    it("delivers a plain line to an employee's desk in nobody's name, queued when busy, and refuses a paused one", async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
-      const opts = { name: "Proposals", purpose: "Where proposals are discussed" };
-      const alice = { userId: "alice" };
-      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, alice, [`agent:${HR}`]);
-      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, alice, [`agent:${HR}`]);
-      const detail = await service.channel(P, ORG, "proposals", alice);
-      expect(detail.name).toBe("Proposals");
-      expect(detail.members.map((m) => m.principal).sort()).toEqual(
-        [`agent:${HR}`, "user:alice"].sort(),
-      );
-      const sent = await service.gatewaySend(
-        P,
-        ORG,
-        alice,
-        "proposals",
-        `@agent:${HR} proposal:1 — please write it`,
-      );
-      const messages = await service.channelMessages(P, ORG, alice, "proposals", {});
-      const msg = messages.messages.find((m) => m.id === sent.id);
-      expect(msg).toMatchObject({ sender: "user:alice", hop: 0, mentions: [`agent:${HR}`] });
-      // An employee acting from its desk speaks as itself: the message is the employee's,
-      // at the hop its session carries, and the employee was invited by the person first.
-      const desk = await service.desk(P, ORG, CEO, {});
-      const ceo = { userId: "alice", agentId: CEO, sessionId: desk.sessionId };
-      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, ceo, []);
-      const after = await service.channel(P, ORG, "proposals", alice);
-      expect(after.members.map((m) => m.principal)).toContain(`agent:${CEO}`);
-      const own = await service.gatewaySend(
-        P,
-        ORG,
-        ceo,
-        "proposals",
-        "proposal:2 is mine to write",
-      );
-      const again = await service.channelMessages(P, ORG, alice, "proposals", {});
-      expect(again.messages.find((m) => m.id === own.id)).toMatchObject({
-        sender: `agent:${CEO}`,
-        hop: 1,
+      const desk = await service.desk(P, ORG, HR, {});
+      const text =
+        "[proposal #3] approved by alice — merge the PR and run `penguin org proposal merged 3`";
+      const before = started.length;
+      expect(await service.gatewayDeliverToDesk(P, ORG, HR, text)).toEqual({
+        sessionId: desk.sessionId,
+        queued: false,
       });
-      // A channel an employee opens has the employee in it from the start.
-      await service.gatewayEnsureChannel(P, ORG, "reviews", opts, ceo, [`agent:${HR}`]);
-      const reviews = await service.channel(P, ORG, "reviews", alice);
-      expect(reviews.members.map((m) => m.principal).sort()).toEqual(
-        [`agent:${CEO}`, `agent:${HR}`, "user:alice"].sort(),
-      );
-    });
-
-    it("opens an archived channel again for a person when asked to, and refuses an employee", async () => {
-      await createOrg();
-      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
-      const opts = { name: "Proposals", purpose: "Where proposals are discussed" };
-      const alice = { userId: "alice" };
-      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, alice, [`agent:${HR}`]);
-      await service.patchChannel(P, ORG, "proposals", { archived: true }, alice);
-      // Without the option an archived channel stays as it is.
-      await service.gatewayEnsureChannel(P, ORG, "proposals", opts, alice, []);
-      expect((await service.channel(P, ORG, "proposals", alice)).archived).toBe(true);
-      const desk = await service.desk(P, ORG, CEO, {});
-      const ceo = { userId: "alice", agentId: CEO, sessionId: desk.sessionId };
-      await expect(
-        service.gatewayEnsureChannel(P, ORG, "proposals", { ...opts, unarchive: true }, ceo, []),
-      ).rejects.toMatchObject({ status: 409, code: "channel_archived" });
-      await service.gatewayEnsureChannel(P, ORG, "proposals", { ...opts, unarchive: true }, alice, [
-        `agent:${HR}`,
+      // The line is the input as given: no trigger block, no channel, no person's name.
+      expect(started.slice(before)).toEqual([
+        { sessionId: desk.sessionId, text, queueIfBusy: true },
       ]);
-      expect((await service.channel(P, ORG, "proposals", alice)).archived).toBe(false);
-      const sent = await service.gatewaySend(P, ORG, alice, "proposals", `@agent:${HR} again`);
-      const messages = await service.channelMessages(P, ORG, alice, "proposals", {});
-      expect(messages.messages.some((m) => m.id === sent.id)).toBe(true);
-      expect(messages.messages.some((m) => m.notice?.kind === "channel_unarchived")).toBe(true);
+      expect(parseOrgTriggerMessage(started.at(-1)!.text)).toBeNull();
+      expect(
+        (await service.channels(P, ORG, { userId: "alice" })).channels.map((c) => c.channelId),
+      ).not.toContain("proposals");
+
+      busy.add(desk.sessionId);
+      expect(await service.gatewayDeliverToDesk(P, ORG, HR, text)).toMatchObject({ queued: true });
+      busy.delete(desk.sessionId);
+
+      await expect(service.gatewayDeliverToDesk(P, ORG, "stranger", text)).rejects.toMatchObject({
+        status: 400,
+        code: "not_an_employee",
+      });
+      const at = new Date(nowMs).toISOString();
+      cache.markBudget(P, ORG, HR, "2026-09", { pausedAt: at });
+      const held = started.length;
+      await expect(service.gatewayDeliverToDesk(P, ORG, HR, text)).rejects.toMatchObject({
+        status: 409,
+        code: "employee_paused",
+      });
+      cache.markBudget(P, ORG, HR, "2026-09", { pausedAt: null });
+      await service.patch(P, ORG, { status: "paused" }, "alice");
+      await expect(service.gatewayDeliverToDesk(P, ORG, HR, text)).rejects.toMatchObject({
+        status: 409,
+        code: "org_paused",
+      });
+      expect(started.length).toBe(held);
     });
 
     it("opens an employee's session as the organization's, titled and started on the body", async () => {

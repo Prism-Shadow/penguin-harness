@@ -6701,6 +6701,25 @@ export interface ProposalScopeEntry {
   state?: ProposalScopeState;
 }
 
+/** A listed test's state under the proposal's root, computed on read: an existing test is there or missing; a new one is there already (added to an existing file) or still to be written. */
+export type ProposalTestState = "exists" | "new" | "missing";
+
+/**
+ * One test that bears on the change: an existing one or one the change adds (`kind`), in a
+ * group (`unit`, `integration`, `e2e`, `bench` by convention — any short word is accepted),
+ * with a file (relative to `root`), optionally a pattern over the test names in it (a regular
+ * expression, like a scope entry's `name`), and a description of what it checks.
+ */
+export interface ProposalTestEntry {
+  kind: "existing" | "new";
+  file: string;
+  name?: string;
+  group: string;
+  description: string;
+  /** Computed on read (`GET …/:number`), never stored. */
+  state?: ProposalTestState;
+}
+
 /** One paragraph of a section: the unit a comment anchors to. `id` is stable across revisions for unchanged text. */
 export interface ProposalParagraph {
   id: string;
@@ -6821,6 +6840,8 @@ export interface ProposalDetail extends ProposalItem {
   /** Notes on the scope a publish accepted but that deserve a look (a `new` file that already exists, a rename target already there) — on the publish answer only. */
   hints?: string[];
   scope: ProposalScopeEntry[];
+  /** The tests that bear on the change, existing and new; `[]` on a revision written before tests existed. */
+  tests: ProposalTestEntry[];
   sections: ProposalSection[];
   /** Pending comments are the commenter's own until requested: an employee sees only batched ones. */
   comments: ProposalComment[];
@@ -6844,6 +6865,7 @@ export interface ProposalRevision {
   /** The scope's root at this revision ("" = the shared workspace). */
   root: string;
   scope: ProposalScopeEntry[];
+  tests: ProposalTestEntry[];
   sections: ProposalSection[];
   /** `agent:<id>` or `user:<id>`. */
   by: string;
@@ -6857,8 +6879,6 @@ export interface ProposalRevisionsResponse {
 
 export interface ProposalsResponse {
   proposals: ProposalItem[];
-  /** The id of the organization's proposals channel, once one exists. */
-  channelId: string | null;
 }
 
 export interface ProposalCreateRequest {

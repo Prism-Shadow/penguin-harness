@@ -11,10 +11,10 @@
  * delegates it to an employee, that employee writes it while another builds it, the person
  * reads, comments in batches and approves, and the build lands as a pull request the
  * proposal links as material. The harness lends this package what it already has — the
- * organization (its people, its channels, an employee's session, the Project's event
+ * organization (its people, an employee's desk and sessions, the Project's event
  * stream), the settings store, the data root — through the organization gateway; what
  * makes those a proposal lives here: ledger.ts is the append-only record, markdown.ts the
- * document form, service.ts the state machine and the channel messages that drive the
+ * document form, service.ts the state machine and the desk deliveries that drive the
  * employees, routes.ts the API. The page is the web app's own `OrgProposalsPage` renderer,
  * declared here as a company-mode page so it appears — with its nav row — only while the
  * plugin is installed.
@@ -52,9 +52,6 @@ export type { ProposalDocument } from "./markdown.js";
 export {
   MATERIAL_KINDS,
   PLUGIN_NAME,
-  PROPOSALS_CHANNEL,
-  PROPOSALS_CHANNEL_NAME,
-  PROPOSALS_CHANNEL_PURPOSE,
   SKILLS_PLUGIN,
   ProposalError,
   compareDatedVersions,

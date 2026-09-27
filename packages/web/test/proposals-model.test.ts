@@ -12,7 +12,11 @@ import {
   diffParagraphs,
   diffWords,
   inlineSections,
-  scopeChanges,
+  diffScope,
+  diffTests,
+  groupTests,
+  TEST_GROUP_FOLD,
+  unchangedEntries,
   tokenizeWords,
   revisedAfterApproval,
   scopeFileTarget,
@@ -460,13 +464,83 @@ describe("the diff since the approved revision", () => {
     ).toEqual(["removed", "current"]);
   });
 
-  it("names the scope's added, removed and re-patterned files", () => {
+  it("marks the scope in place: added, removed after its surviving predecessor, changed with the old entry", () => {
+    const before = [
+      { file: "a.ts", kind: "edit" },
+      { file: "b.ts", kind: "edit" },
+      { file: "c.ts", kind: "edit", name: "f" },
+      { file: "d.ts", kind: "rename", from: "old.ts" },
+    ];
+    const after = [
+      { file: "a.ts", kind: "edit" },
+      { file: "c.ts", kind: "edit", name: "g" },
+      { file: "e.ts", kind: "new" },
+      { file: "d.ts", kind: "rename", from: "older.ts" },
+    ];
+    expect(diffScope(before, after).map((r) => `${r.change}:${r.entry.file}`)).toEqual([
+      "same:a.ts",
+      "removed:b.ts",
+      "changed:c.ts",
+      "added:e.ts",
+      "changed:d.ts",
+    ]);
+    const changed = diffScope(before, after).find((r) => r.entry.file === "c.ts");
+    expect(changed).toEqual({ change: "changed", entry: after[1], before: before[2] });
+  });
+
+  it("puts an entry removed before every survivor first", () => {
     expect(
-      scopeChanges(
-        [{ file: "a.ts", name: "f" }, { file: "b.ts" }],
-        [{ file: "a.ts", name: "g" }, { file: "c.ts" }],
+      diffScope(
+        [
+          { file: "x.ts", kind: "edit" },
+          { file: "a.ts", kind: "edit" },
+        ],
+        [{ file: "a.ts", kind: "delete" }],
+      ).map((r) => `${r.change}:${r.entry.file}`),
+    ).toEqual(["removed:x.ts", "changed:a.ts"]);
+  });
+
+  it("pairs tests by file and name pattern: another pattern is another test, another description a change", () => {
+    const t = (file: string, name: string | undefined, description: string) => ({
+      kind: "existing" as const,
+      group: "unit",
+      file,
+      ...(name === undefined ? {} : { name }),
+      description,
+    });
+    const rows = diffTests(
+      [t("a.test.ts", "one", "first"), t("a.test.ts", "two", "second")],
+      [t("a.test.ts", "one", "first, reworded"), t("a.test.ts", "three", "third")],
+    );
+    expect(rows.map((r) => `${r.change}:${r.entry.name}`)).toEqual([
+      "changed:one",
+      "removed:two",
+      "added:three",
+    ]);
+  });
+
+  it("reads every row as unchanged when nothing is compared", () => {
+    expect(unchangedEntries([{ file: "a.ts" }])).toEqual([
+      { change: "same", entry: { file: "a.ts" } },
+    ]);
+  });
+
+  it("groups the tests unit, integration, e2e, bench first, then the rest alphabetically, keeping row order", () => {
+    const tests = [
+      { group: "perf", n: 1 },
+      { group: "e2e", n: 2 },
+      { group: "unit", n: 3 },
+      { group: "a11y", n: 4 },
+      { group: "unit", n: 5 },
+      { group: "bench", n: 6 },
+      { group: "integration", n: 7 },
+    ];
+    expect(
+      groupTests(tests, (t) => t.group).map(
+        (g) => `${g.group}:${g.tests.map((t) => t.n).join(",")}`,
       ),
-    ).toEqual({ added: ["c.ts"], removed: ["b.ts"], changed: ["a.ts"] });
+    ).toEqual(["unit:3,5", "integration:7", "e2e:2", "bench:6", "a11y:4", "perf:1"]);
+    expect(TEST_GROUP_FOLD).toBe(12);
   });
 
   it("has a diff to show only while an older approval stands and the proposal is open again", () => {

@@ -54,9 +54,9 @@ export interface OrgView {
 
 /**
  * OrgGateway: what a plugin may do with an organization without holding the organization
- * service — read it, attribute a write, speak to its employees the one way company mode
- * allows (a channel message, which reaches them as a `mention` run), open a session for an
- * employee the way a ticket session is opened, and notify the Project's people. Every
+ * service — read it, attribute a write, put a line of work on an employee's desk (in nobody's
+ * name), open a session for an employee the way a ticket session is opened, and notify the
+ * Project's people. Every
  * method is a narrowing of OrganizationService; none adds behaviour the routes do not have.
  */
 export abstract class OrgGateway extends Interface<{
@@ -67,34 +67,17 @@ export abstract class OrgGateway extends Interface<{
   /** `agent:<id>` when the actor is (or speaks from a session of) an employee, else `user:<id>`. */
   principalOf(projectId: string, orgId: string, actor: OrgActor): Promise<string>;
   /**
-   * The channel exists with these members afterwards: created by `by` when missing (a person
-   * or an employee may create a channel), the person behind `by` joined when they are not in
-   * it (a person may join any channel; an employee is in what it created or was invited to),
-   * then `by`'s own employee (when it is one) and the other principals invited by that
-   * person. Idempotent. With `unarchive`, an archived channel is opened again when `by` is a
-   * person (the channel's own patch path, so the system line is written); an employee cannot
-   * lift an archive, and the call fails with `channel_archived`.
+   * One line of work on the employee's desk, attributed to no one: `text` is the desk's next
+   * user input as given (sender `server`), queued behind a running Task. Fails with
+   * `org_paused` / `employee_paused` (budget, its own or an ancestor's) instead of delivering,
+   * and with `desk_unavailable` when no desk can be opened.
    */
-  ensureChannel(
+  deliverToDesk(
     projectId: string,
     orgId: string,
-    channelId: string,
-    opts: { name: string; purpose: string; unarchive?: boolean },
-    by: OrgActor,
-    principals: readonly string[],
-  ): Promise<void>;
-  /**
-   * A message in the actor's name: an employee's when `by` speaks from one of its sessions
-   * (the hop the session carries), else the person's (hop 0). `@mentions` in it trigger the
-   * employees named, within the channel's membership.
-   */
-  sendChannelMessage(
-    projectId: string,
-    orgId: string,
-    by: OrgActor,
-    channelId: string,
+    agentId: string,
     text: string,
-  ): Promise<{ id: string }>;
+  ): Promise<{ sessionId: string; queued: boolean }>;
   /**
    * A session of the employee's Agent, marked as the organization's, started on `body` as
    * its first user input — what a ticket session is, minus the ticket. The workspace defaults

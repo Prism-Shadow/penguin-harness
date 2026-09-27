@@ -2,8 +2,8 @@
  * The service over a fake organization gateway: the whole lifecycle of a proposal — a
  * person delegates, the author publishes and marks ready, comments gather and go out as
  * one batch, the author resolves, an implementer's session opens, feedback, approval,
- * merge — every drive of an employee being one channel message in the delegating
- * person's name, every refusal the right one, pending comments invisible to employees,
+ * merge — every drive of an employee being one `[proposal #<n>]` line on its desk, in
+ * nobody's name and never to the employee that acted, every refusal the right one, pending comments invisible to employees,
  * unread counts moving with a person's read position, and the whole thing standing again
  * after the ledger is replayed. Nothing here starts a server or a Session.
  */
@@ -19,10 +19,10 @@ import plugin, {
   sectionSource,
   CompanyProposalsPlugin,
   PAGE_ID,
-  PROPOSALS_CHANNEL,
   ProposalError,
   ProposalService,
   ROUTES_ID,
+  ledgerPath,
   slugOf,
 } from "../src/index.js";
 
@@ -74,15 +74,12 @@ class FakeGateway implements OrgGateway {
     ],
     userIds: ["boss"],
   };
-  channels: Array<{ channelId: string; by: OrgActor; principals: string[] }> = [];
-  messages: Array<{ by: OrgActor; channelId: string; text: string }> = [];
+  /** Every line put on a desk, in order. */
+  desks: Array<{ agentId: string; text: string }> = [];
   sessions: Array<{ agentId: string; title: string; body: string; workspace?: string }> = [];
   events: ServerEvent[] = [];
-  failChannel = false;
-  /** The proposals channel is archived (a person archived it by hand). */
-  archived = false;
-  unarchivedBy: OrgActor[] = [];
-  failSend = false;
+  /** Desks that refuse a line, with the reason (a paused employee, say). */
+  refuse = new Map<string, string>();
 
   companyModeEnabled(): boolean {
     return this.enabled;
@@ -99,27 +96,11 @@ class FakeGateway implements OrgGateway {
     }
     return `user:${actor.userId}`;
   }
-  async ensureChannel(
-    _p: string,
-    _o: string,
-    channelId: string,
-    _opts: { name: string; purpose: string; unarchive?: boolean },
-    by: OrgActor,
-    principals: readonly string[],
-  ): Promise<void> {
-    if (this.failChannel) throw new Error("channel unavailable");
-    if (this.archived) {
-      if (_opts.unarchive !== true || by.agentId !== undefined)
-        throw new Error(`Channel ${channelId} is archived: unarchive it before writing to it.`);
-      this.archived = false;
-      this.unarchivedBy.push(by);
-    }
-    this.channels.push({ channelId, by, principals: [...principals] });
-  }
-  async sendChannelMessage(_p: string, _o: string, by: OrgActor, channelId: string, text: string) {
-    if (this.failChannel || this.failSend) throw new Error("channel unavailable");
-    this.messages.push({ by, channelId, text });
-    return { id: `msg-${this.messages.length}` };
+  async deliverToDesk(_p: string, _o: string, agentId: string, text: string) {
+    const refused = this.refuse.get(agentId);
+    if (refused !== undefined) throw new Error(refused);
+    this.desks.push({ agentId, text });
+    return { sessionId: `desk-${agentId}`, queued: false };
   }
   async openEmployeeSession(args: {
     agentId: string;
@@ -263,7 +244,7 @@ describe("ProposalService", () => {
     });
   });
 
-  it("a person delegates: the proposal is numbered, the channel is prepared and the author is @-mentioned in the person's name", async () => {
+  it("a person delegates: the proposal is numbered and the author's desk gets one line, in nobody's name", async () => {
     const created = await service.create(
       PROJECT,
       ORG,
@@ -281,13 +262,12 @@ describe("ProposalService", () => {
       brief: "Batch the notices\nsecond line",
       unread: 0,
     });
-    expect(gateway.channels).toEqual([
-      { channelId: PROPOSALS_CHANNEL, by: BOSS, principals: ["agent:acme_dev"] },
-    ]);
-    expect(gateway.messages).toHaveLength(1);
-    expect(gateway.messages[0]).toMatchObject({ by: BOSS, channelId: PROPOSALS_CHANNEL });
-    expect(gateway.messages[0]!.text).toContain("@agent:acme_dev proposal:1");
-    expect(gateway.messages[0]!.text).toContain("penguin org proposal publish 1");
+    expect(gateway.desks).toHaveLength(1);
+    expect(gateway.desks[0]!.agentId).toBe("acme_dev");
+    expect(gateway.desks[0]!.text).toMatch(
+      /^\[proposal #1\] boss asks you to write it: Batch the notices/,
+    );
+    expect(gateway.desks[0]!.text).toContain("penguin org proposal publish 1");
     // The author is given the skills plugin, once.
     expect(agents.updates).toEqual(["acme_dev"]);
     expect(gateway.events).toEqual([
@@ -314,7 +294,7 @@ describe("ProposalService", () => {
     expect(agents.updates).toEqual(["acme_dev"]);
   });
 
-  it("an employee proposes on its own: it is the author and the delegator, nobody is @-mentioned, the channel is prepared", async () => {
+  it("an employee proposes on its own: it is the author and the delegator, and its own desk is not told", async () => {
     const created = await service.create(PROJECT, ORG, { brief: "Rotate the API token" }, author);
     expect(created).toMatchObject({
       number: 1,
@@ -323,14 +303,10 @@ describe("ProposalService", () => {
       status: "drafting",
     });
     expect(created.events[0]).toMatchObject({ kind: "created", by: "agent:acme_dev" });
-    // Its own desk would only be woken by an @ of itself; the channel still gets it as a
-    // member so a batch or an approval can reach it later.
-    expect(gateway.messages).toEqual([]);
-    expect(gateway.channels).toEqual([
-      { channelId: PROPOSALS_CHANNEL, by: author, principals: ["agent:acme_dev"] },
-    ]);
+    // Telling it of its own act would only start a run on its own desk.
+    expect(gateway.desks).toEqual([]);
     expect(agents.updates).toEqual(["acme_dev"]);
-    // Delegating to a colleague: the colleague is the author and is told, in the employee's name.
+    // Delegating to a colleague: the colleague is the author and its desk is told.
     const handed = await service.create(
       PROJECT,
       ORG,
@@ -338,9 +314,9 @@ describe("ProposalService", () => {
       author,
     );
     expect(handed).toMatchObject({ number: 2, author: "acme_impl", delegatedBy: "agent:acme_dev" });
-    expect(gateway.messages).toHaveLength(1);
-    expect(gateway.messages[0]).toMatchObject({ by: author, channelId: PROPOSALS_CHANNEL });
-    expect(gateway.messages[0]!.text).toContain("@agent:acme_impl proposal:2");
+    expect(gateway.desks).toEqual([
+      { agentId: "acme_impl", text: expect.stringMatching(/^\[proposal #2\] acme_dev asks you/) },
+    ]);
     expect(agents.updates).toEqual(["acme_dev", "acme_impl"]);
     // A person sees the employee's proposal as unread; the employee counts nothing.
     const seen = await service.get(PROJECT, ORG, 1, BOSS);
@@ -541,6 +517,83 @@ describe("ProposalService", () => {
     expect(late.revision).toBe(2);
   });
 
+  it("the tests are checked at publish like the scope: an existing test must be there, a new one in an existing file is a hint", async () => {
+    const n = await delegated();
+    const ws = gateway.org!.workspace;
+    await fs.mkdir(path.join(ws, "packages/server/test"), { recursive: true });
+    await fs.writeFile(path.join(ws, "packages/server/test/reconcile.test.ts"), "// tests\n");
+    await fs.mkdir(path.join(ws, "packages/legacy/web/e2e"), { recursive: true });
+    const withTests = (tests: string): string =>
+      DOC.replace("---\n\n## Change", `tests:\n${tests}\n---\n\n## Change`);
+    // An existing test whose file moved out of `legacy/`: refused, with the likely path.
+    await fs.mkdir(path.join(ws, "packages/web/e2e"), { recursive: true });
+    await fs.writeFile(path.join(ws, "packages/web/e2e/desk.spec.ts"), "// e2e\n");
+    let message = "";
+    try {
+      await service.publish(
+        PROJECT,
+        ORG,
+        n,
+        withTests(
+          '  - group: e2e\n    file: packages/legacy/web/e2e/desk.spec.ts\n    description: "a desk run shows the digest"',
+        ),
+        author,
+      );
+    } catch (err) {
+      expect(err).toMatchObject({ status: 400, code: "tests_missing" });
+      message = (err as Error).message;
+    }
+    expect(message).toContain(
+      "packages/legacy/web/e2e/desk.spec.ts — did you mean `packages/web/e2e/desk.spec.ts`?",
+    );
+    // Existing and new tests: a new test going into a file that is there is a hint, not a refusal.
+    const published = await service.publish(
+      PROJECT,
+      ORG,
+      n,
+      withTests(
+        [
+          "  - file: packages/server/test/reconcile.test.ts",
+          '    name: "blocked ticket"',
+          '    description: "a blocked ticket reaches its owner once"',
+          "  - kind: new",
+          "    group: integration",
+          "    file: packages/server/test/digest.test.ts",
+          '    description: "the digest lists every change"',
+          "  - kind: new",
+          "    file: packages/server/test/reconcile.test.ts",
+          '    description: "a restart does not repeat a notice"',
+        ].join("\n"),
+      ),
+      author,
+    );
+    expect(published.hints).toEqual([
+      "test packages/server/test/reconcile.test.ts is listed as new and the file already exists — the new test goes into it.",
+    ]);
+    expect(published.tests.map((t) => [t.kind, t.group, t.file, t.state])).toEqual([
+      ["existing", "unit", "packages/server/test/reconcile.test.ts", "exists"],
+      ["new", "integration", "packages/server/test/digest.test.ts", "new"],
+      ["new", "unit", "packages/server/test/reconcile.test.ts", "exists"],
+    ]);
+    // States follow the tree on read; the revision keeps its tests.
+    await fs.rm(path.join(ws, "packages/server/test/reconcile.test.ts"));
+    const read = await service.get(PROJECT, ORG, n, BOSS);
+    expect(read.tests.map((t) => t.state)).toEqual(["missing", "new", "new"]);
+    expect(
+      (await service.revision(PROJECT, ORG, n, published.revision, BOSS)).tests.map((t) => t.file),
+    ).toHaveLength(3);
+  });
+
+  it("a revision written before tests existed reads with no tests", async () => {
+    const n = await delegated();
+    await service.publish(PROJECT, ORG, n, DOC, author);
+    const again = new ProposalService({ gateway, root, settings, agents, log: { line: () => {} } });
+    const read = await again.get(PROJECT, ORG, n, BOSS);
+    expect(read.tests).toEqual([]);
+    const text = await fs.readFile(ledgerPath(root, PROJECT, ORG), "utf8");
+    expect(text).not.toContain('"tests"');
+  });
+
   it("the author's ready answers a request for changes: a revision after it, and every comment resolved", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
@@ -595,7 +648,7 @@ describe("ProposalService", () => {
     expect((await service.ready(PROJECT, ORG, n, BOSS)).status).toBe("ready");
   });
 
-  it("comments are the person's own until requested; one request is one batch and one channel message", async () => {
+  it("comments are the person's own until requested; one request is one batch and one line on the author's desk", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
@@ -691,7 +744,7 @@ describe("ProposalService", () => {
     expect((await service.comments(PROJECT, ORG, n, { pending: true }, author)).comments).toEqual(
       [],
     );
-    expect(gateway.messages).toHaveLength(1);
+    expect(gateway.desks).toHaveLength(1);
 
     const requested = await service.requestChanges(PROJECT, ORG, n, BOSS);
     expect(requested.status).toBe("drafting");
@@ -702,11 +755,12 @@ describe("ProposalService", () => {
       by: "user:boss",
       text: "2",
     });
-    expect(gateway.messages).toHaveLength(2);
-    expect(gateway.messages[1]!.text).toContain(
-      "@agent:acme_dev proposal:1 has a batch of 2 comments",
+    expect(gateway.desks).toHaveLength(2);
+    expect(gateway.desks[1]!.agentId).toBe("acme_dev");
+    expect(gateway.desks[1]!.text).toContain(
+      "[proposal #1] boss requested changes: a batch of 2 comments",
     );
-    expect(gateway.messages[1]!.text).toContain(`penguin org proposal comments ${n} --pending`);
+    expect(gateway.desks[1]!.text).toContain(`penguin org proposal comments ${n} --pending`);
 
     // What the author reads: the passages marked in the text, the comments by id, no offsets.
     const forAuthor = await service.comments(PROJECT, ORG, n, { pending: true }, author);
@@ -771,7 +825,7 @@ describe("ProposalService", () => {
     );
   });
 
-  it("implement opens the implementer's session on the proposal's text and invites it to the channel", async () => {
+  it("implement opens the implementer's session on the proposal's text", async () => {
     const n = await delegated();
     expect(
       await refused(() => service.implement(PROJECT, ORG, n, { agentId: "acme_impl" }, author)),
@@ -814,11 +868,8 @@ describe("ProposalService", () => {
     expect(session.body).toContain("Note from the author: Mind the tests.");
     expect(session.body).toContain("## Change");
     expect(session.body).toContain('title: "Batch the ticket notices"');
-    expect(gateway.channels.at(-1)).toEqual({
-      channelId: PROPOSALS_CHANNEL,
-      by: author,
-      principals: ["agent:acme_dev", "agent:acme_impl"],
-    });
+    // The session's first input is the notice; no desk line besides the delegation's.
+    expect(gateway.desks.map((d) => d.agentId)).toEqual(["acme_dev"]);
     expect(started.events.at(-1)).toMatchObject({
       kind: "implementation_started",
       text: "acme_impl",
@@ -833,11 +884,6 @@ describe("ProposalService", () => {
     const started = await service.implement(PROJECT, ORG, n, {}, author);
     expect(started).toMatchObject({ implementer: "acme_dev", sessions: ["impl-1"] });
     expect(gateway.sessions[0]).toMatchObject({ agentId: "acme_dev" });
-    expect(gateway.channels.at(-1)).toEqual({
-      channelId: PROPOSALS_CHANNEL,
-      by: author,
-      principals: ["agent:acme_dev", "agent:acme_dev"],
-    });
     expect(agents.updates).toEqual(["acme_dev"]);
   });
 
@@ -872,7 +918,7 @@ describe("ProposalService", () => {
       status: 400,
       code: "bad_request",
     });
-    const before = gateway.messages.length;
+    const before = gateway.desks.length;
     const fed = await service.feedback(
       PROJECT,
       ORG,
@@ -885,10 +931,12 @@ describe("ProposalService", () => {
       by: "agent:acme_impl",
       text: "digest.ts needs a change too",
     });
-    expect(gateway.messages[before]!.text).toMatch(
-      /^@agent:acme_dev proposal:1 feedback from agent:acme_impl:/,
-    );
-    expect(gateway.messages[before]!.text).not.toContain("@agent:acme_impl");
+    expect(gateway.desks.slice(before)).toEqual([
+      {
+        agentId: "acme_dev",
+        text: expect.stringMatching(/^\[proposal #1\] feedback from acme_impl: digest\.ts needs/),
+      },
+    ]);
     const runtime = await service.feedback(
       PROJECT,
       ORG,
@@ -897,9 +945,17 @@ describe("ProposalService", () => {
       qa,
     );
     expect(runtime.events.at(-1)).toMatchObject({ kind: "runtime_feedback", by: "agent:acme_qa" });
-    expect(gateway.messages.at(-1)!.text).toMatch(
-      /^@agent:acme_dev @agent:acme_impl proposal:1 runtime feedback from agent:acme_qa:/,
+    expect(gateway.desks.slice(before + 1).map((d) => d.agentId)).toEqual([
+      "acme_dev",
+      "acme_impl",
+    ]);
+    expect(gateway.desks.at(-1)!.text).toMatch(
+      /^\[proposal #1\] runtime feedback from acme_qa: crashes on an empty board/,
     );
+    // The implementer's own runtime finding goes to the author alone: nobody is told of their own act.
+    const mark = gateway.desks.length;
+    await service.feedback(PROJECT, ORG, n, { text: "slow start", runtime: true }, impl);
+    expect(gateway.desks.slice(mark).map((d) => d.agentId)).toEqual(["acme_dev"]);
   });
 
   it("approve, merge and reject: who may, from which status, and who is told", async () => {
@@ -921,9 +977,10 @@ describe("ProposalService", () => {
 
     const approvedNoImpl = await service.approve(PROJECT, ORG, n, BOSS);
     expect(approvedNoImpl.status).toBe("approved");
-    expect(gateway.messages.at(-1)!.text).toContain(
-      "@agent:acme_dev proposal:1 is approved with nobody building it yet",
-    );
+    expect(gateway.desks.at(-1)).toEqual({
+      agentId: "acme_dev",
+      text: expect.stringContaining("[proposal #1] approved by boss with nobody building it yet"),
+    });
 
     // A second proposal, with an implementer: approval goes to the implementer, who reports the merge.
     const m = (await service.create(PROJECT, ORG, { author: "acme_dev", brief: "Second" }, BOSS))
@@ -931,9 +988,10 @@ describe("ProposalService", () => {
     await service.publish(PROJECT, ORG, m, DOC, author);
     await service.implement(PROJECT, ORG, m, { agentId: "acme_impl" }, author);
     await service.approve(PROJECT, ORG, m, BOSS);
-    expect(gateway.messages.at(-1)!.text).toContain(
-      `@agent:acme_impl proposal:${m} is approved — merge it`,
-    );
+    expect(gateway.desks.at(-1)).toEqual({
+      agentId: "acme_impl",
+      text: `[proposal #${m}] approved by boss — merge the PR and run \`penguin org proposal merged ${m}\`.`,
+    });
     expect(await refused(() => service.merged(PROJECT, ORG, m, author))).toEqual({
       status: 403,
       code: "not_implementer",
@@ -955,9 +1013,10 @@ describe("ProposalService", () => {
     const rejected = await service.reject(PROJECT, ORG, n, "Not this quarter.", BOSS);
     expect(rejected.status).toBe("rejected");
     expect(rejected.events.at(-1)).toMatchObject({ kind: "rejected", text: "Not this quarter." });
-    expect(gateway.messages.at(-1)!.text).toContain(
-      "@agent:acme_dev proposal:1 is rejected: Not this quarter.",
-    );
+    expect(gateway.desks.at(-1)).toEqual({
+      agentId: "acme_dev",
+      text: expect.stringContaining("[proposal #1] rejected by boss: Not this quarter."),
+    });
     expect(await refused(() => service.publish(PROJECT, ORG, n, DOC, author))).toEqual({
       status: 409,
       code: "proposal_closed",
@@ -984,9 +1043,10 @@ describe("ProposalService", () => {
       kind: "ready",
       text: "revision 2 — approval of revision 1 no longer covers it",
     });
-    expect(gateway.messages.at(-1)!.text).toBe(
-      `@agent:acme_impl proposal:${n} was revised after approval (revision 1 → 2); wait for a new approval before merging.`,
-    );
+    expect(gateway.desks.at(-1)).toEqual({
+      agentId: "acme_impl",
+      text: `[proposal #${n}] revised after approval (revision 1 → 2) — wait for a new approval before merging.`,
+    });
     // The implementer may not merge on the old approval.
     expect(await refused(() => service.merged(PROJECT, ORG, n, impl))).toEqual({
       status: 409,
@@ -1029,7 +1089,6 @@ describe("ProposalService", () => {
     await service.ready(PROJECT, ORG, n, author);
     let list = await service.list(PROJECT, ORG, BOSS);
     expect(list.proposals[0]).toMatchObject({ number: n, unread: 2 });
-    expect(list.channelId).toBe(PROPOSALS_CHANNEL);
     expect((await service.list(PROJECT, ORG, author)).proposals[0]!.unread).toBe(0);
 
     const detail = await service.get(PROJECT, ORG, n, BOSS);
@@ -1111,8 +1170,11 @@ describe("ProposalService", () => {
     ]);
   });
 
-  it("a channel that fails never fails the write: the ledger has the line, the log has the reason", async () => {
-    gateway.failChannel = true;
+  it("a desk that refuses never fails the write: the ledger has the line, the log has the reason", async () => {
+    gateway.refuse.set(
+      "acme_dev",
+      "acme_dev is paused by its budget for 2026-09; it was not told.",
+    );
     const created = await service.create(
       PROJECT,
       ORG,
@@ -1120,35 +1182,20 @@ describe("ProposalService", () => {
       BOSS,
     );
     expect(created.number).toBe(1);
-    expect(gateway.messages).toEqual([]);
-    expect(lines.some((l) => l.includes("not notified") && l.includes("channel unavailable"))).toBe(
-      true,
-    );
+    expect(gateway.desks).toEqual([]);
+    expect(
+      lines.some((l) => l.includes("not notified") && l.includes("paused by its budget")),
+    ).toBe(true);
     // Not silent: the answer carries it, and the timeline records it.
-    expect(created.hints).toEqual(["agent:acme_dev not notified: channel unavailable"]);
+    const reason =
+      "agent:acme_dev not notified: acme_dev is paused by its budget for 2026-09; it was not told.";
+    expect(created.hints).toEqual([reason]);
     const read = await service.get(PROJECT, ORG, created.number, BOSS);
     expect(read.events.map((e) => e.kind)).toEqual(["created", "notify_failed"]);
-    expect(read.events[1]!.text).toBe("agent:acme_dev not notified: channel unavailable");
+    expect(read.events[1]).toMatchObject({ text: reason, by: "user:boss" });
   });
 
-  it("an archived channel is opened again when a person acts, and an employee's step records the failure", async () => {
-    gateway.archived = true;
-    const n = await delegated();
-    // The person's delegation lifted the archive and delivered.
-    expect(gateway.unarchivedBy).toEqual([BOSS]);
-    expect(gateway.messages).toHaveLength(1);
-    // Archived again; the author's own action cannot lift it.
-    gateway.archived = true;
-    const own = await service.create(PROJECT, ORG, { brief: "My own idea" }, author);
-    expect(own.hints?.[0]).toMatch(/not notified: Channel proposals is archived/);
-    expect((await service.get(PROJECT, ORG, own.number, BOSS)).events.at(-1)).toMatchObject({
-      kind: "notify_failed",
-      by: "agent:acme_dev",
-    });
-    expect(n).toBe(1);
-  });
-
-  it("a message that cannot be sent is recorded as a failed delivery", async () => {
+  it("a request for changes that cannot reach the author is recorded as a failed delivery", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);
     await service.ready(PROJECT, ORG, n, author);
@@ -1163,9 +1210,11 @@ describe("ProposalService", () => {
       { sectionId: change.id, start, end: start + 12, quote: "notifyTicket", text: "why?" },
       BOSS,
     );
-    gateway.failSend = true;
+    gateway.refuse.set("acme_dev", "Acme is paused; acme_dev was not told.");
     const requested = await service.requestChanges(PROJECT, ORG, n, BOSS);
-    expect(requested.hints).toEqual(["agent:acme_dev not notified: channel unavailable"]);
+    expect(requested.hints).toEqual([
+      "agent:acme_dev not notified: Acme is paused; acme_dev was not told.",
+    ]);
     expect(requested.events.at(-1)?.kind).toBe("notify_failed");
   });
 

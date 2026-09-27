@@ -3,7 +3,8 @@
  * way back. One Markdown file: a frontmatter block with `title`, an optional `root` (the
  * repository's directory in the shared workspace) and `scope` (the files the change touches:
  * each with its kind — edit, new, delete, or rename `from` an old path — and an optional name
- * pattern; an entry written without a kind is an edit), then the sections, `## ` headings
+ * pattern; an entry written without a kind is an edit) and `tests` (the tests that bear on the
+ * change — existing ones and the ones it adds, each in a group with what it checks), then the sections, `## ` headings
  * over paragraphs. Three sections are required — 改动 / 目的 / 测试, or Change / Purpose /
  * Test — and the body may not link to files: a proposal is read as "what changes and why",
  * in terms of interfaces; the paths live in the scope, the diff in the PR it links as material.
@@ -18,6 +19,7 @@ import type {
   ProposalScopeEntry,
   ProposalScopeKind,
   ProposalSection,
+  ProposalTestEntry,
 } from "@prismshadow/penguin-server/api";
 
 /** What a rejected document answers: the status and code the route sends, the message the author reads. */
@@ -36,6 +38,8 @@ export interface ProposalDocument {
   /** The repository's directory relative to the shared workspace ("" = the workspace itself). */
   root: string;
   scope: ProposalScopeEntry[];
+  /** The tests that bear on the change: existing ones and the ones it adds, each with what it checks. */
+  tests: ProposalTestEntry[];
   sections: ProposalSection[];
 }
 
@@ -79,6 +83,14 @@ function splitFrontmatter(text: string): { head: string[]; body: string } {
 
 /** A scope entry as written: `kind` may be left out (read as `edit`, so older skill copies keep working). */
 type WrittenEntry = { kind?: string; file: string; from?: string; name?: string };
+/** A test entry as written: `kind` defaults to existing, `group` to unit; `description` is required. */
+type WrittenTest = {
+  kind?: string;
+  file: string;
+  name?: string;
+  group?: string;
+  description?: string;
+};
 
 const SCOPE_KINDS: readonly ProposalScopeKind[] = ["edit", "new", "delete", "rename"];
 
@@ -86,37 +98,62 @@ function parseFrontmatter(head: string[]): {
   title: string;
   root: string;
   scope: WrittenEntry[];
+  tests: WrittenTest[];
 } {
   let title = "";
   let root = "";
   const scope: WrittenEntry[] = [];
-  let inScope = false;
+  const tests: WrittenTest[] = [];
+  let list: "scope" | "tests" | null = null;
   for (const raw of head) {
     if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
     const top = /^([A-Za-z_]+):\s*(.*)$/.exec(raw);
     if (top !== null && !raw.startsWith(" ")) {
-      inScope = false;
+      list = null;
       if (top[1] === "title") title = unquote(top[2] ?? "");
       else if (top[1] === "root") root = unquote(top[2] ?? "");
-      else if (top[1] === "scope") inScope = true;
+      else if (top[1] === "scope") list = "scope";
+      else if (top[1] === "tests") list = "tests";
       continue;
     }
-    if (!inScope) continue;
+    if (list === null) continue;
+    const set = (key: string, value: string): void => {
+      if (list === "scope") setField(scope[scope.length - 1]!, key, value, raw);
+      else setTestField(tests[tests.length - 1]!, key, value, raw);
+    };
     // An item opens with `- <field>: <value>` (any of the entry's fields) or a bare `-`.
     const item = /^\s*-\s*(?:([a-z]+):\s*(.*))?$/.exec(raw);
     if (item !== null) {
-      scope.push({ file: "" });
-      if (item[1] !== undefined) setField(scope[scope.length - 1]!, item[1], item[2] ?? "", raw);
+      if (list === "scope") scope.push({ file: "" });
+      else tests.push({ file: "" });
+      if (item[1] !== undefined) set(item[1], item[2] ?? "");
       continue;
     }
     const field = /^\s+([a-z]+):\s*(.*)$/.exec(raw);
-    if (field !== null && scope.length > 0) {
-      setField(scope[scope.length - 1]!, field[1]!, field[2] ?? "", raw);
+    if (field !== null && (list === "scope" ? scope.length : tests.length) > 0) {
+      set(field[1]!, field[2] ?? "");
       continue;
     }
-    throw new ProposalDocumentError("proposal_frontmatter", `Unreadable scope line: ${raw.trim()}`);
+    throw new ProposalDocumentError(
+      "proposal_frontmatter",
+      `Unreadable ${list} line: ${raw.trim()}`,
+    );
   }
-  return { title, root, scope };
+  return { title, root, scope, tests };
+}
+
+function setTestField(entry: WrittenTest, key: string, raw: string, line: string): void {
+  const value = unquote(raw);
+  if (key === "file") entry.file = value;
+  else if (key === "kind") entry.kind = value;
+  else if (key === "name") entry.name = value;
+  else if (key === "group") entry.group = value;
+  else if (key === "description") entry.description = value;
+  else
+    throw new ProposalDocumentError(
+      "proposal_frontmatter",
+      `Unknown tests field \`${key}\` (file, kind, name, group, description): ${line.trim()}`,
+    );
 }
 
 function setField(entry: WrittenEntry, key: string, raw: string, line: string): void {
@@ -201,6 +238,57 @@ function validateScope(written: WrittenEntry[]): ProposalScopeEntry[] {
           `Scope name pattern is not a regular expression: ${out.name}`,
         );
       }
+    }
+    return out;
+  });
+}
+
+const TEST_KINDS: readonly ProposalTestEntry["kind"][] = ["existing", "new"];
+/** A test group: any short lower-case word; unit, integration, e2e and bench are the usual ones. */
+const TEST_GROUP = /^[a-z0-9_-]{1,32}$/;
+
+function validateTests(written: WrittenTest[]): ProposalTestEntry[] {
+  return written.map((entry, i) => {
+    const label = entry.file || `entry ${i + 1}`;
+    const kind = (entry.kind ?? "existing").trim().toLowerCase() as ProposalTestEntry["kind"];
+    if (!TEST_KINDS.includes(kind)) {
+      throw new ProposalDocumentError(
+        "tests_invalid",
+        `Test kind must be existing or new: ${entry.kind} (${label})`,
+      );
+    }
+    const file = relativePath(entry.file);
+    if (file === null) {
+      throw new ProposalDocumentError(
+        "tests_invalid",
+        `Test file must be a relative path inside the repository: ${entry.file || "(empty)"}`,
+      );
+    }
+    const group = (entry.group ?? "unit").trim().toLowerCase();
+    if (!TEST_GROUP.test(group)) {
+      throw new ProposalDocumentError(
+        "tests_invalid",
+        `Test group must be a short lower-case word (letters, digits, - or _): ${entry.group} (${file})`,
+      );
+    }
+    const description = (entry.description ?? "").trim();
+    if (description === "") {
+      throw new ProposalDocumentError(
+        "tests_invalid",
+        `Every test needs a \`description\` of what it checks: ${file}`,
+      );
+    }
+    const out: ProposalTestEntry = { kind, file, group, description };
+    if (entry.name !== undefined) {
+      try {
+        new RegExp(entry.name);
+      } catch {
+        throw new ProposalDocumentError(
+          "tests_invalid",
+          `Test name pattern is not a regular expression: ${entry.name} (${file})`,
+        );
+      }
+      out.name = entry.name;
     }
     return out;
   });
@@ -340,6 +428,7 @@ export function parseProposalDocument(
   }
   const root = validateRoot(written.root);
   const scope = validateScope(written.scope);
+  const tests = validateTests(written.tests);
   const fileLink = linksToFile(body);
   if (fileLink !== null) {
     throw new ProposalDocumentError(
@@ -384,7 +473,7 @@ export function parseProposalDocument(
     }));
     return { id, heading: s.heading, paragraphs };
   });
-  return { title: title.trim(), root, scope, sections };
+  return { title: title.trim(), root, scope, tests, sections };
 }
 
 function idNumber(id: string, prefix: string): number {
@@ -407,6 +496,16 @@ export function renderProposalDocument(doc: ProposalDocument): string {
       if (entry.from !== undefined) head.push(`    from: ${entry.from}`);
       head.push(`    file: ${entry.file}`);
       if (entry.name !== undefined) head.push(`    name: ${quote(entry.name)}`);
+    }
+  }
+  if (doc.tests.length > 0) {
+    head.push("tests:");
+    for (const t of doc.tests) {
+      head.push(`  - kind: ${t.kind}`);
+      head.push(`    group: ${t.group}`);
+      head.push(`    file: ${t.file}`);
+      if (t.name !== undefined) head.push(`    name: ${quote(t.name)}`);
+      head.push(`    description: ${quote(t.description)}`);
     }
   }
   head.push("---");

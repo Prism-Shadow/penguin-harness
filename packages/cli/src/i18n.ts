@@ -694,6 +694,7 @@ export interface Messages {
     proposalSessions(sessions: string): string;
     proposalScope(root: string): string;
     proposalHint(hint: string): string;
+    proposalTests(): string;
     proposalMaterials(): string;
     proposalComments(): string;
     proposalEvents(): string;
@@ -1845,7 +1846,7 @@ const en: Messages = {
     proposalShowDesc:
       "Show a proposal: its head, scope, materials, the sections, the comments and the events",
     proposalCreateDesc:
-      "Delegate a proposal to an employee: it is told in the proposals channel and writes it",
+      "Start a proposal: an employee writes it (told on its desk), or write it yourself as an employee",
     proposalPublishDesc:
       "Publish a revision from a Markdown file (frontmatter title and scope, then the sections)",
     proposalReadyDesc: "Mark a proposal ready for reading (the author or a person)",
@@ -1910,6 +1911,7 @@ const en: Messages = {
     proposalScope: (root) =>
       `Scope under ${root === "" ? "the shared workspace" : `root ${root}`} (kind, file, state, name pattern):`,
     proposalHint: (hint) => `Hint: ${hint}`,
+    proposalTests: () => "Tests (kind, file, [name pattern], what it tests, state):",
     proposalMaterials: () => "Materials:",
     proposalComments: () => "Comments:",
     proposalEvents: () => "Events:",
@@ -3027,7 +3029,7 @@ const zh: Messages = {
     proposalDesc: "提案（company-proposals 插件）：写给人读的一份改动，员工同时实施它",
     proposalLsDesc: "列出组织的提案（按 --status 本地过滤）",
     proposalShowDesc: "显示一份提案：头部、范围、材料、各节、评论与事件",
-    proposalCreateDesc: "发起一份提案：交给某位员工写（在提案频道里告知它），或作为员工自己写",
+    proposalCreateDesc: "发起一份提案：交给某位员工写（直接送到它的工位），或作为员工自己写",
     proposalPublishDesc:
       "从 Markdown 文件发布一次修订（frontmatter 的 title 与 scope，然后是各节）",
     proposalReadyDesc: "标记提案可以读了（作者或人）",
@@ -3082,6 +3084,7 @@ const zh: Messages = {
     proposalScope: (root) =>
       `范围（${root === "" ? "共享工作区" : `根目录 ${root}`}；类型、文件、状态、名称模式）：`,
     proposalHint: (hint) => `提示：${hint}`,
+    proposalTests: () => "测试（类型、文件、[名称模式]、测试什么、状态）：",
     proposalMaterials: () => "材料：",
     proposalComments: () => "评论：",
     proposalEvents: () => "事件：",

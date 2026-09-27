@@ -1508,6 +1508,50 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(text).toContain("revised r1");
   });
 
+  it("show prints the tests after the sections, grouped unit, integration, e2e, bench, then the rest", async () => {
+    server.addProposal("acme", {
+      number: 5,
+      sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: "One." }] }],
+      tests: [
+        {
+          kind: "new",
+          group: "e2e",
+          file: "e2e/flow.spec.ts",
+          description: "the whole flow",
+          state: "new",
+        },
+        {
+          kind: "existing",
+          group: "a11y",
+          file: "test/axe.test.ts",
+          description: "no violations",
+          state: "exists",
+        },
+        {
+          kind: "existing",
+          group: "unit",
+          file: "test/a.test.ts",
+          name: "^batches",
+          description: "batches the notices",
+          state: "exists",
+        },
+      ],
+    });
+    expect(await cli(["org", "proposal", "show", "5"])).toBe(0);
+    const text = out();
+    const block = [
+      t.org.proposalTests(),
+      "  unit (1):",
+      "    existing test/a.test.ts [^batches] — batches the notices (exists)",
+      "  e2e (1):",
+      "    new e2e/flow.spec.ts — the whole flow (new)",
+      "  a11y (1):",
+      "    existing test/axe.test.ts — no violations (exists)",
+    ].join("\n");
+    expect(text).toContain(block);
+    expect(text.indexOf("## Change")).toBeLessThan(text.indexOf(block));
+  });
+
   it("show prints the root and each scope entry as its kind, file and state; publish prints the server's hints", async () => {
     server.addProposal("acme", {
       number: 4,

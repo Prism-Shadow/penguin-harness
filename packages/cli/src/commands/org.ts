@@ -80,6 +80,7 @@ import type {
   OrganizationsResponse,
   ProposalCommentsResponse,
   ProposalDetail,
+  ProposalTestEntry,
   ProposalItem,
   ProposalMaterialKind,
   ProposalStatus,
@@ -581,10 +582,23 @@ function renderProposals(items: readonly ProposalItem[], t: Messages): string {
   );
 }
 
+/** The groups a proposal's tests are read in: unit, integration, e2e, bench, then any other alphabetically. */
+const TEST_GROUP_ORDER = ["unit", "integration", "e2e", "bench"];
+
+function testGroups(tests: readonly ProposalTestEntry[]): [string, ProposalTestEntry[]][] {
+  const byGroup = new Map<string, ProposalTestEntry[]>();
+  for (const test of tests) byGroup.set(test.group, [...(byGroup.get(test.group) ?? []), test]);
+  const rank = (g: string): number => {
+    const i = TEST_GROUP_ORDER.indexOf(g);
+    return i === -1 ? TEST_GROUP_ORDER.length : i;
+  };
+  return [...byGroup].sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
+}
+
 /**
  * `proposal show`: the head, the brief, the scope, the materials, the sections as Markdown —
  * with the comments' passages marked and the comments by id when the server sent that text —
- * and the events.
+ * the tests by group, and the events.
  */
 function renderProposal(d: ProposalDetail, t: Messages, marked: string | null): string {
   const head = [
@@ -631,6 +645,22 @@ function renderProposal(d: ProposalDetail, t: Messages, marked: string | null): 
       : d.sections.map((section) =>
           [`## ${section.heading}`, ...section.paragraphs.map((p) => p.text)].join("\n\n"),
         );
+  const tests =
+    d.tests.length === 0
+      ? []
+      : [
+          [
+            t.org.proposalTests(),
+            // Kinds, groups and states stay in English: they are field values.
+            ...testGroups(d.tests).flatMap(([group, entries]) => [
+              `  ${group} (${entries.length}):`,
+              ...entries.map(
+                (e) =>
+                  `    ${e.kind} ${e.file}${e.name !== undefined ? ` [${e.name}]` : ""} — ${e.description}${e.state !== undefined ? ` (${e.state})` : ""}`,
+              ),
+            ]),
+          ].join("\n"),
+        ];
   const comments: string[] = [];
   // The kinds stay in English: they are field values, like a ticket history's actions.
   const events = d.events.map(
@@ -642,6 +672,7 @@ function renderProposal(d: ProposalDetail, t: Messages, marked: string | null): 
     ...scope,
     ...materials,
     ...sections,
+    ...tests,
     ...comments,
     ...(events.length > 0 ? [`${t.org.proposalEvents()}\n${events.join("\n")}`] : []),
   ];
@@ -1866,7 +1897,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     const proposals =
       status === null ? res.proposals : res.proposals.filter((p) => p.status === status);
     if (opts.json === true) {
-      printJson({ proposals, channelId: res.channelId });
+      printJson({ proposals });
       return;
     }
     if (proposals.length === 0) {

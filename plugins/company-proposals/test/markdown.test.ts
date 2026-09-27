@@ -237,3 +237,100 @@ describe("renderProposalDocument", () => {
     expect(parseProposalDocument(text)).toEqual(doc);
   });
 });
+
+describe("the tests list", () => {
+  const withTests = (tests: string): string =>
+    DOC.replace("---\n\n## Change", `tests:\n${tests}\n---\n\n## Change`);
+
+  it("reads each test with its kind, group, pattern and description, defaulting to an existing unit test", () => {
+    const doc = parseProposalDocument(
+      withTests(
+        [
+          "  - file: packages/server/test/reconcile.test.ts",
+          '    name: "blocked ticket (\\\\w+)"',
+          '    description: "a blocked ticket reaches its owner at the next sweep, once"',
+          "  - kind: new",
+          "    group: integration",
+          "    file: packages/server/test/digest.test.ts",
+          '    description: "the digest lists every change since the last sweep"',
+          "  - kind: new",
+          "    group: e2e",
+          "    file: packages/web/e2e/desk.spec.ts",
+          "    description: a desk run shows the digest section",
+        ].join("\n"),
+      ),
+    );
+    expect(doc.tests).toEqual([
+      {
+        kind: "existing",
+        file: "packages/server/test/reconcile.test.ts",
+        group: "unit",
+        name: "blocked ticket (\\w+)",
+        description: "a blocked ticket reaches its owner at the next sweep, once",
+      },
+      {
+        kind: "new",
+        file: "packages/server/test/digest.test.ts",
+        group: "integration",
+        description: "the digest lists every change since the last sweep",
+      },
+      {
+        kind: "new",
+        file: "packages/web/e2e/desk.spec.ts",
+        group: "e2e",
+        description: "a desk run shows the digest section",
+      },
+    ]);
+    // No tests: an empty list.
+    expect(parseProposalDocument(DOC).tests).toEqual([]);
+  });
+
+  it("round-trips the tests, writing each entry's kind and group out", () => {
+    const doc = parseProposalDocument(
+      withTests(
+        [
+          "  - group: bench",
+          "    file: bench/sweep.bench.ts",
+          '    name: "sweep of (\\\\d+) tickets"',
+          '    description: "a sweep over 1000 tickets stays under 50 ms"',
+          "  - file: test/a.test.ts",
+          '    description: "says \\"quoted\\" things"',
+        ].join("\n"),
+      ),
+    );
+    const text = renderProposalDocument(doc);
+    expect(text).toContain(
+      "tests:\n  - kind: existing\n    group: bench\n    file: bench/sweep.bench.ts\n",
+    );
+    expect(parseProposalDocument(text)).toEqual(doc);
+  });
+
+  it("refuses a test without a description, a bad group, an unknown kind and a pattern that is not a regular expression", () => {
+    const code = (tests: string): string => {
+      try {
+        parseProposalDocument(withTests(tests));
+        return "accepted";
+      } catch (err) {
+        expect(err).toBeInstanceOf(ProposalDocumentError);
+        return (err as ProposalDocumentError).code;
+      }
+    };
+    expect(code("  - file: a.test.ts")).toBe("tests_invalid");
+    expect(code('  - file: a.test.ts\n    description: "  "')).toBe("tests_invalid");
+    expect(code('  - file: a.test.ts\n    group: "Not A Group"\n    description: x')).toBe(
+      "tests_invalid",
+    );
+    expect(code("  - file: a.test.ts\n    kind: planned\n    description: x")).toBe(
+      "tests_invalid",
+    );
+    expect(code('  - file: a.test.ts\n    name: "(unclosed"\n    description: x')).toBe(
+      "tests_invalid",
+    );
+    expect(code("  - file: ../outside.test.ts\n    description: x")).toBe("tests_invalid");
+    expect(code("  - file: a.test.ts\n    owner: me\n    description: x")).toBe(
+      "proposal_frontmatter",
+    );
+    // Any short lower-case group is accepted.
+    expect(code("  - file: a.test.ts\n    group: fuzz\n    description: x")).toBe("accepted");
+  });
+});

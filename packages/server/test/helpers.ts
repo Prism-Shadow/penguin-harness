@@ -425,8 +425,9 @@ export function replacementsFor(o: TestAppOptions): Replacements {
           organization: async () => null,
           principalOf: async (_p: string, _o: string, actor: { userId: string }) =>
             `user:${actor.userId}`,
-          ensureChannel: async () => {},
-          sendChannelMessage: async () => ({ id: "msg-fake" }),
+          deliverToDesk: async () => {
+            throw new Error("no organization in this suite");
+          },
           openEmployeeSession: async () => {
             throw new Error("no organization in this suite");
           },

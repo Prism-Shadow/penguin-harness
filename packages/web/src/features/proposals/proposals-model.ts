@@ -771,18 +771,93 @@ export function inlineSections(
   return out;
 }
 
-/** The scope's files the head added, removed, or kept with another name pattern. */
-export function scopeChanges(
-  before: readonly { file: string; name?: string }[],
-  after: readonly { file: string; name?: string }[],
-): { added: string[]; removed: string[]; changed: string[] } {
-  const was = new Map(before.map((e) => [e.file, e.name ?? ""]));
-  const now = new Map(after.map((e) => [e.file, e.name ?? ""]));
-  return {
-    added: [...now.keys()].filter((f) => !was.has(f)),
-    removed: [...was.keys()].filter((f) => !now.has(f)),
-    changed: [...now.keys()].filter((f) => was.has(f) && was.get(f) !== now.get(f)),
+/**
+ * One row of a list (the scope, the tests) as it reads with the changes since the approved
+ * revision marked in place: kept as it was, added, removed (the approved revision's entry), or
+ * the same entry with another value (`before` is what it was).
+ */
+export type EntryChange<T> =
+  | { change: "same"; entry: T }
+  | { change: "added"; entry: T }
+  | { change: "removed"; entry: T }
+  | { change: "changed"; entry: T; before: T };
+
+/**
+ * The head's entries against the approved revision's, in the head's order. Entries are paired
+ * by `key` (first unpaired match, so a repeated key pairs in order); a pair `equal` says differ
+ * is `changed`. An entry the head no longer has stays where it stood: after the head entry its
+ * nearest surviving predecessor became, or first when nothing before it survived.
+ */
+export function diffEntries<T>(
+  before: readonly T[],
+  after: readonly T[],
+  key: (entry: T) => string,
+  equal: (a: T, b: T) => boolean,
+): EntryChange<T>[] {
+  const taken = new Map<number, number>(); // index in before → index in after
+  const oldOf = new Map<number, T>(); // index in after → its approved entry
+  after.forEach((entry, j) => {
+    const k = key(entry);
+    const i = before.findIndex((b, n) => !taken.has(n) && key(b) === k);
+    if (i < 0) return;
+    taken.set(i, j);
+    oldOf.set(j, before[i]!);
+  });
+  const removedAfter = new Map<number, T[]>(); // -1 = before everything
+  let anchor = -1;
+  before.forEach((entry, i) => {
+    const j = taken.get(i);
+    if (j !== undefined) {
+      anchor = j;
+      return;
+    }
+    const list = removedAfter.get(anchor) ?? [];
+    list.push(entry);
+    removedAfter.set(anchor, list);
+  });
+  const out: EntryChange<T>[] = [];
+  const pushRemoved = (at: number) => {
+    for (const entry of removedAfter.get(at) ?? []) out.push({ change: "removed", entry });
   };
+  pushRemoved(-1);
+  after.forEach((entry, j) => {
+    const old = oldOf.get(j);
+    if (old === undefined) out.push({ change: "added", entry });
+    else if (equal(old, entry)) out.push({ change: "same", entry });
+    else out.push({ change: "changed", entry, before: old });
+    pushRemoved(j);
+  });
+  return out;
+}
+
+/** The scope against the approved revision's: an entry is its file; its kind, rename source and name pattern are its value. */
+export function diffScope<T extends { file: string; kind: string; from?: string; name?: string }>(
+  before: readonly T[],
+  after: readonly T[],
+): EntryChange<T>[] {
+  return diffEntries(
+    before,
+    after,
+    (e) => e.file,
+    (a, b) => a.kind === b.kind && a.from === b.from && a.name === b.name,
+  );
+}
+
+/** The tests against the approved revision's: a test is its file and name pattern (one file may carry several); kind, group and description are its value. */
+export function diffTests<
+  T extends { file: string; name?: string; kind: string; group: string; description: string },
+>(before: readonly T[], after: readonly T[]): EntryChange<T>[] {
+  return diffEntries(
+    before,
+    after,
+    (t) => `${t.file}\u0000${t.name ?? ""}`,
+    (a, b) => a.kind === b.kind && a.group === b.group && a.description === b.description,
+  );
+}
+
+/** Every row unchanged: what the lists render when no approved revision is being compared. */
+export function unchangedEntries<T>(entries: readonly T[]): EntryChange<T>[] {
+  return entries.map((entry) => ({ change: "same", entry }));
 }
 
 /** Whether the page has a diff to show: an approval stands for an older revision than the head, and the proposal is open again. */
@@ -796,4 +871,35 @@ export function revisedAfterApproval(detail: {
     detail.approvedRevision < detail.revision &&
     (detail.status === "ready" || detail.status === "drafting")
   );
+}
+
+/** The groups every proposal is expected to use, in reading order; any other group follows them alphabetically. */
+export const TEST_GROUP_ORDER: readonly string[] = ["unit", "integration", "e2e", "bench"];
+
+/** How many rows a test group shows before the rest fold behind "Show N more". */
+export const TEST_GROUP_FOLD = 12;
+
+/**
+ * The tests list as the page shows it: one bucket per group, the four usual groups first in
+ * their fixed order, then the rest alphabetically; rows keep their order inside a group (a
+ * removed test goes to the group it had).
+ */
+export function groupTests<T>(
+  tests: readonly T[],
+  groupOf: (test: T) => string,
+): { group: string; tests: T[] }[] {
+  const byGroup = new Map<string, T[]>();
+  for (const t of tests) {
+    const group = groupOf(t);
+    const bucket = byGroup.get(group);
+    if (bucket === undefined) byGroup.set(group, [t]);
+    else bucket.push(t);
+  }
+  const rank = (g: string): number => {
+    const i = TEST_GROUP_ORDER.indexOf(g);
+    return i === -1 ? TEST_GROUP_ORDER.length : i;
+  };
+  return [...byGroup.keys()]
+    .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+    .map((group) => ({ group, tests: byGroup.get(group) ?? [] }));
 }

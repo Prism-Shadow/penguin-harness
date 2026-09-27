@@ -8,7 +8,12 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ProposalScopeEntry, ProposalScopeState } from "@prismshadow/penguin-server/api";
+import type {
+  ProposalScopeEntry,
+  ProposalScopeState,
+  ProposalTestEntry,
+  ProposalTestState,
+} from "@prismshadow/penguin-server/api";
 
 /** Directories the basename walk never enters: tool state, dependencies and build output. */
 const SKIPPED_DIRS = new Set([
@@ -154,4 +159,52 @@ export function missingMessage(root: string, missing: ScopeCheck["missing"]): st
       `- ${m.path}${m.suggestions.length > 0 ? ` — did you mean ${m.suggestions.map((s) => `\`${s}\``).join(" or ")}?` : ""}`,
   );
   return `These scope files do not exist under ${where}; fix the paths, or list a file the change creates as \`kind: new\`:\n${lines.join("\n")}`;
+}
+
+/** Each listed test's state under `base`: an existing test is there or missing; a new one is still to be written, or is going into a file that is there already. */
+export async function testStates(
+  base: string,
+  tests: readonly ProposalTestEntry[],
+): Promise<ProposalTestState[]> {
+  return Promise.all(
+    tests.map(async (t): Promise<ProposalTestState> => {
+      const here = await isFile(under(base, t.file));
+      if (t.kind === "existing") return here ? "exists" : "missing";
+      return here ? "exists" : "new";
+    }),
+  );
+}
+
+/**
+ * What a publish checks of the tests: an `existing` test's file is there. A `new` test whose
+ * file already exists is a hint only — a new test is often added to a file that has others.
+ */
+export async function checkTests(
+  base: string,
+  tests: readonly ProposalTestEntry[],
+): Promise<Pick<ScopeCheck, "missing" | "hints">> {
+  const missing: ScopeCheck["missing"] = [];
+  const hints: string[] = [];
+  for (const t of tests) {
+    const here = await isFile(under(base, t.file));
+    if (t.kind === "existing" && !here) {
+      missing.push({ path: t.file, suggestions: await suggestPaths(base, t.file) });
+    }
+    if (t.kind === "new" && here) {
+      hints.push(
+        `test ${t.file} is listed as new and the file already exists — the new test goes into it.`,
+      );
+    }
+  }
+  return { missing, hints };
+}
+
+/** The refusal's text for tests listed as existing that are not there. */
+export function missingTestsMessage(root: string, missing: ScopeCheck["missing"]): string {
+  const where = root === "" ? "the shared workspace" : `root \`${root}\``;
+  const lines = missing.map(
+    (m) =>
+      `- ${m.path}${m.suggestions.length > 0 ? ` — did you mean ${m.suggestions.map((s) => `\`${s}\``).join(" or ")}?` : ""}`,
+  );
+  return `These tests are listed as existing but their files are not under ${where}; fix the paths, or list a test the change adds as \`kind: new\`:\n${lines.join("\n")}`;
 }

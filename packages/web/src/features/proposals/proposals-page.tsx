@@ -3,9 +3,15 @@
  * full-width list (one row per proposal: its number, its title as the link, its status as a
  * text pill, its author, its unread count and when it last moved; unread first, then newest),
  * and one PROPOSAL as its own page — a breadcrumb back to the queue, the header, the brief,
- * the materials (the implementer's PR among them), the scope table (the one place a file path
- * appears), the body, the sessions opened for it, the event timeline, and the action bar. No
- * side column: the body is what a person reads, and it gets the width.
+ * the materials (the implementer's PR among them), the scope list, the body, the tests list
+ * (grouped unit, integration, e2e, bench, then the rest), the sessions opened for it, the event
+ * timeline, and the action bar. No side column: the body is what a person reads, and it gets
+ * the width.
+ *
+ * While an approval stands for an older revision, one line under the header says so and offers
+ * Changes | Latest. With Changes every change is marked where it is — the title's words, each
+ * scope and test row (added, removed in its old place, changed with the old value struck), the
+ * body's paragraphs and words; Latest shows the head plain. Nothing is listed above the body.
  *
  * Both are the builtin renderer the company-proposals plugin's page contribution names
  * (`OrgProposalsPage`); it mounts under the organization layout only while the contributions
@@ -40,7 +46,9 @@ import type {
   ProposalRevision,
   ProposalSection,
   ProposalStatus,
+  ProposalScopeEntry,
   ProposalScopeKind,
+  ProposalTestEntry,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -48,7 +56,8 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk, toneStrip, toneSurface } from "../../lib/tone";
-import { Switch } from "../../components/ui/switch";
+import { Segmented } from "../../components/ui/segmented";
+import { Chevron } from "../../components/ui/chevron";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useAuth } from "../../state/auth";
 import { rememberSessionMachine } from "../../lib/session-machines";
@@ -99,12 +108,17 @@ import {
   diffParagraphs,
   inlineSections,
   revisedAfterApproval,
-  scopeChanges,
+  TEST_GROUP_FOLD,
+  diffScope,
+  diffTests,
+  diffWords,
+  groupTests,
+  unchangedEntries,
   scopeFileTarget,
   sectionSource,
   sortProposals,
 } from "./proposals-model";
-import type { ParagraphChange, WordChange } from "./proposals-model";
+import type { EntryChange, ParagraphChange, WordChange } from "./proposals-model";
 
 /** A scope entry's kind as a tag: an edit recedes, a new file is an addition, a delete a removal, a rename a move. */
 const SCOPE_KIND_TONE: Record<ProposalScopeKind, "muted" | "success" | "danger" | "link"> = {
@@ -543,6 +557,10 @@ function DetailPage({ number }: { number: number }) {
   const [confirm, setConfirm] = useState<"request" | "approve" | "reject" | "merged" | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  const approved = useApprovedRevision(detail);
+  // Changes show by default while an older approval stands; the choice is this view's only.
+  const [view, setView] = useState<DiffView>("changes");
+  const changes = view === "changes" ? approved.revision : null;
 
   useDocumentTitle(
     detail === null
@@ -613,7 +631,7 @@ function DetailPage({ number }: { number: number }) {
       setDetail(next);
       company.proposalsChanged();
       toastSuccess(done);
-      // A write that could not reach an employee says so: the channel is the only way there.
+      // A write that could not reach an employee says so: its desk is the only way there.
       for (const hint of next.hints ?? []) toastError(hint);
       return true;
     } catch (e) {
@@ -760,7 +778,15 @@ function DetailPage({ number }: { number: number }) {
   );
 
   return (
-    <OrgPage title={detail?.title ?? `#${number}`} info={t.info}>
+    <OrgPage
+      title={detail?.title ?? `#${number}`}
+      heading={
+        detail !== null && changes !== null && changes.title !== detail.title ? (
+          <InlineWords words={diffWords(changes.title, detail.title)} />
+        ) : undefined
+      }
+      info={t.info}
+    >
       {crumb}
       {detailError !== null ? (
         <ErrorLine message={t.loadFailed} detail={detailError} onRetry={() => void loadDetail()} />
@@ -784,6 +810,10 @@ function DetailPage({ number }: { number: number }) {
           me={me}
           onEditComment={editComment}
           onDeleteComment={deleteComment}
+          approved={approved}
+          view={view}
+          onView={setView}
+          changes={changes}
           actions={
             actions === null ? null : (
               <>
@@ -871,7 +901,7 @@ function DetailPage({ number }: { number: number }) {
   );
 }
 
-/** The proposal: header, brief, materials, scope, body with its comments, sessions, events, and the action bar at the foot. */
+/** The proposal: header, brief, materials, scope, body with its comments, tests, sessions, events, and the action bar at the foot. */
 function ProposalView({
   detail,
   names,
@@ -885,6 +915,10 @@ function ProposalView({
   me,
   onEditComment,
   onDeleteComment,
+  approved,
+  view,
+  onView,
+  changes,
   actions,
 }: {
   detail: ProposalDetail;
@@ -907,6 +941,12 @@ function ProposalView({
   me: string | null;
   onEditComment: (commentId: string, text: string) => Promise<boolean>;
   onDeleteComment: (commentId: string) => Promise<boolean>;
+  /** The approved revision while the head has moved past it (null revision otherwise). */
+  approved: { revision: ProposalRevision | null; error: string | null };
+  view: DiffView;
+  onView: (view: DiffView) => void;
+  /** The approved revision the page marks its changes against, or null to show the head plain. */
+  changes: ProposalRevision | null;
   actions: ReactNode;
 }) {
   const t = S.company.proposals;
@@ -916,10 +956,16 @@ function ProposalView({
   );
   const events = useMemo(() => [...detail.events].reverse(), [detail.events]);
   const closed = detail.status === "merged" || detail.status === "rejected";
-  const approved = useApprovedRevision(detail);
-  // Changes show by default while an older approval stands; the toggle is this view's only.
-  const [showChanges, setShowChanges] = useState(true);
-  const changes = showChanges && approved.revision !== null ? approved.revision : null;
+  const scopeRows = useMemo(
+    () =>
+      changes === null ? unchangedEntries(detail.scope) : diffScope(changes.scope, detail.scope),
+    [changes, detail.scope],
+  );
+  const testRows = useMemo(
+    () =>
+      changes === null ? unchangedEntries(detail.tests) : diffTests(changes.tests, detail.tests),
+    [changes, detail.tests],
+  );
   return (
     <div className="space-y-6">
       <header>
@@ -954,6 +1000,17 @@ function ProposalView({
         </dl>
       </header>
 
+      {revisedAfterApproval(detail) && detail.approvedRevision !== null && (
+        <ChangesBar
+          detail={detail}
+          approvedRevision={detail.approvedRevision}
+          error={approved.error}
+          names={names}
+          view={view}
+          onView={onView}
+        />
+      )}
+
       <OrgSection title={t.briefSection}>
         <div className="md-body md-compact text-sm text-gray-800 dark:text-gray-100">
           <Md
@@ -983,72 +1040,21 @@ function ProposalView({
             {detail.root}
           </p>
         )}
-        {detail.scope.length === 0 ? (
+        {scopeRows.length === 0 ? (
           <OrgEmptyLine>{t.scopeEmpty}</OrgEmptyLine>
         ) : (
           <ul className="divide-y divide-gray-100 text-xs dark:divide-gray-800">
-            {detail.scope.map((entry, i) => (
-              // A list, not a table: a long name pattern wraps under its file instead of
-              // squeezing the file column to a character a line.
-              <li key={`${entry.file}-${i}`} className="py-1.5">
-                <div className="flex flex-wrap items-baseline gap-1.5 font-mono break-all">
-                  <span
-                    className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface[SCOPE_KIND_TONE[entry.kind]]}`}
-                  >
-                    {t.scopeKind[entry.kind]}
-                  </span>
-                  {entry.kind === "rename" && entry.from !== undefined && (
-                    <span className="text-gray-500 dark:text-gray-400">{entry.from} →</span>
-                  )}
-                  {entry.state === "exists" ? (
-                    <TitleButton
-                      onClick={() => void onOpenFile(entry.file)}
-                      hint={t.openFile}
-                      className="font-mono"
-                    >
-                      {entry.file}
-                    </TitleButton>
-                  ) : (
-                    <span>{entry.file}</span>
-                  )}
-                  {entry.state !== undefined && entry.state !== "exists" && (
-                    <span
-                      className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface[entry.state === "missing" ? "danger" : "muted"]}`}
-                      title={
-                        entry.state === "missing"
-                          ? t.scopeMissingHint(detail.root === "" ? t.scopeWorkspace : detail.root)
-                          : undefined
-                      }
-                    >
-                      {t.scopeState[entry.state]}
-                    </span>
-                  )}
-                </div>
-                {entry.name !== undefined && (
-                  <div className="mt-0.5 font-mono whitespace-pre-wrap break-all text-gray-500 dark:text-gray-400">
-                    <span className="mr-1 text-[11px] uppercase tracking-wide">
-                      {t.scopePattern}
-                    </span>
-                    {entry.name}
-                  </div>
-                )}
-              </li>
+            {scopeRows.map((row, i) => (
+              <ScopeRow
+                key={`${row.change}-${row.entry.file}-${i}`}
+                row={row}
+                root={detail.root}
+                onOpenFile={onOpenFile}
+              />
             ))}
           </ul>
         )}
       </OrgSection>
-
-      {revisedAfterApproval(detail) && detail.approvedRevision !== null && (
-        <ChangesBar
-          detail={detail}
-          approvedRevision={detail.approvedRevision}
-          approved={approved.revision}
-          error={approved.error}
-          names={names}
-          shown={showChanges}
-          onToggle={() => setShowChanges((v) => !v)}
-        />
-      )}
 
       <OrgSection title={t.sections}>
         {detail.sections.length === 0 ? (
@@ -1093,6 +1099,25 @@ function ProposalView({
                 />
               ))}
             </div>
+          </div>
+        )}
+      </OrgSection>
+
+      <OrgSection title={t.tests} count={detail.tests.length}>
+        {testRows.length === 0 ? (
+          <OrgEmptyLine>{t.testsEmpty}</OrgEmptyLine>
+        ) : (
+          <div className="space-y-3">
+            {groupTests(testRows, (row) => row.entry.group).map(({ group, tests }) => (
+              <TestGroup
+                key={group}
+                group={group}
+                rows={tests}
+                count={tests.filter((r) => r.change !== "removed").length}
+                root={detail.root}
+                onOpenFile={onOpenFile}
+              />
+            ))}
           </div>
         )}
       </OrgSection>
@@ -1159,25 +1184,29 @@ function ProposalView({
   );
 }
 
+/** How the page reads while an older approval stands: its changes marked in place, or the head plain. */
+type DiffView = "changes" | "latest";
+
 /**
  * The approved revision, read while the page has something to compare it with: an approval
  * covers ONE revision, so once the author publishes again the approver reads what changed.
  */
-function useApprovedRevision(detail: ProposalDetail): {
+function useApprovedRevision(detail: ProposalDetail | null): {
   revision: ProposalRevision | null;
   error: string | null;
 } {
   const { projectId, orgId } = useOrg();
-  const wanted = revisedAfterApproval(detail) ? detail.approvedRevision : null;
+  const wanted = detail !== null && revisedAfterApproval(detail) ? detail.approvedRevision : null;
+  const number = detail?.number ?? null;
   const [revision, setRevision] = useState<ProposalRevision | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setRevision(null);
     setError(null);
-    if (wanted === null) return;
+    if (wanted === null || number === null) return;
     let alive = true;
     api
-      .getOrgProposalRevision(projectId, orgId, detail.number, wanted)
+      .getOrgProposalRevision(projectId, orgId, number, wanted)
       .then((r) => {
         if (alive) setRevision(r);
       })
@@ -1187,46 +1216,35 @@ function useApprovedRevision(detail: ProposalDetail): {
     return () => {
       alive = false;
     };
-  }, [projectId, orgId, detail.number, wanted]);
+  }, [projectId, orgId, number, wanted]);
   return { revision, error };
 }
 
 /**
- * The one line above the body while an older approval stands: since which revision, who
- * approved it, the title and scope changes (the body shows the rest inline), and the toggle
- * between the tracked-changes body and the plain one.
+ * The one line under the header while an older approval stands: since which revision, who
+ * approved it, and the Changes | Latest switch. It never lists changes — every change is
+ * marked where it is (title, scope, body, tests).
  */
 function ChangesBar({
   detail,
   approvedRevision,
-  approved,
   error,
   names,
-  shown,
-  onToggle,
+  view,
+  onView,
 }: {
   detail: ProposalDetail;
   approvedRevision: number;
-  approved: ProposalRevision | null;
   error: string | null;
   names: ReadonlyMap<string, string>;
-  shown: boolean;
-  onToggle: () => void;
+  view: DiffView;
+  onView: (view: DiffView) => void;
 }) {
   const t = S.company.proposals.diff;
   const approval = useMemo(
     () => [...detail.events].reverse().find((e) => e.kind === "approved") ?? null,
     [detail.events],
   );
-  const scope = approved === null ? null : scopeChanges(approved.scope, detail.scope);
-  const scopeParts =
-    scope === null
-      ? []
-      : [
-          ...scope.added.map((f) => `+${f}`),
-          ...scope.removed.map((f) => `−${f}`),
-          ...scope.changed.map((f) => `~${f}`),
-        ];
   return (
     <div className={`rounded-md border px-3 py-1.5 text-xs ${toneStrip.attention}`}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -1238,19 +1256,309 @@ function ChangesBar({
             · {t.approvedBy(principalLabel(approval.by, names), formatDateTime(approval.at))}
           </span>
         )}
-        <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5">
-          <Switch checked={shown} onChange={onToggle} aria-label={t.showChanges} />
-          <span>{t.showChanges}</span>
-        </label>
+        <div role="group" aria-label={t.view.label} className="ml-auto w-36">
+          <Segmented
+            cols={2}
+            value={view}
+            onChange={onView}
+            options={[
+              { value: "changes", label: t.view.changes },
+              { value: "latest", label: t.view.latest },
+            ]}
+          />
+        </div>
       </div>
       {error !== null && <p className={`mt-1 ${toneInk.danger}`}>{`${t.loadFailed}: ${error}`}</p>}
-      {shown && approved !== null && approved.title !== detail.title && (
-        <p className="mt-1 break-words">{t.titleChanged(approved.title, detail.title)}</p>
-      )}
-      {shown && scopeParts.length > 0 && (
-        <p className="mt-1 font-mono break-all">{t.scopeChanged(scopeParts.join("  "))}</p>
-      )}
     </div>
+  );
+}
+
+/** Words changed inline: gone words struck in danger, new ones tinted success — a title, a pattern, a description. */
+function InlineWords({ words }: { words: WordChange[] }) {
+  return (
+    <span className="min-w-0 break-words">
+      {words.map((w, i) =>
+        w.kind === "same" ? (
+          <span key={i}>{w.text}</span>
+        ) : w.kind === "del" ? (
+          <del key={i} className={`decoration-1 ${toneSurface.danger}`}>
+            {w.text}
+          </del>
+        ) : (
+          <ins key={i} className={`no-underline ${toneSurface.success}`}>
+            {w.text}
+          </ins>
+        ),
+      )}
+    </span>
+  );
+}
+
+/** An old value struck and the new one tinted, side by side: a scope entry's kind or rename source, a test's group. */
+function Replaced({ before, after }: { before: ReactNode; after: ReactNode }) {
+  return (
+    <>
+      <del className={`decoration-1 ${toneSurface.danger}`}>{before}</del>
+      <ins className={`no-underline ${toneSurface.success}`}>{after}</ins>
+    </>
+  );
+}
+
+/** A list row's frame for its change: an added row tinted with a success edge, a removed one struck in danger, a changed one with an attention edge. */
+function changeRowClass(change: EntryChange<unknown>["change"]): string {
+  switch (change) {
+    case "added":
+      return `relative rounded-sm px-1 ${toneSurface.success}`;
+    case "removed":
+      return `relative rounded-sm px-1 line-through decoration-1 opacity-80 ${toneSurface.danger}`;
+    case "changed":
+      return "relative px-1";
+    case "same":
+      return "px-1";
+  }
+}
+
+const CHANGE_EDGE: Record<
+  EntryChange<unknown>["change"],
+  "success" | "danger" | "attention" | null
+> = {
+  added: "success",
+  removed: "danger",
+  changed: "attention",
+  same: null,
+};
+
+/** The screen-reader word that says what a marked row is, since the tint alone does not. */
+function ChangeLabel({ change }: { change: EntryChange<unknown>["change"] }) {
+  const t = S.company.proposals.diff;
+  if (change === "same") return null;
+  const label =
+    change === "added" ? t.addedLabel : change === "removed" ? t.removedLabel : t.changedLabel;
+  return <span className="sr-only">{label}: </span>;
+}
+
+/**
+ * One scope entry. A list, not a table: a long name pattern wraps under its file instead of
+ * squeezing the file column to a character a line. While changes show, the row carries its
+ * mark in place; a removed entry is text, never a link.
+ */
+function ScopeRow({
+  row,
+  root,
+  onOpenFile,
+}: {
+  row: EntryChange<ProposalScopeEntry>;
+  root: string;
+  onOpenFile: (file: string) => Promise<void>;
+}) {
+  const t = S.company.proposals;
+  const entry = row.entry;
+  const before = row.change === "changed" ? row.before : null;
+  const removed = row.change === "removed";
+  const edge = CHANGE_EDGE[row.change];
+  const kindTag = (kind: ProposalScopeKind) => (
+    <span
+      className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface[SCOPE_KIND_TONE[kind]]}`}
+    >
+      {t.scopeKind[kind]}
+    </span>
+  );
+  return (
+    <li className={`py-1.5 ${changeRowClass(row.change)}`}>
+      {edge !== null && <ChangeEdge tone={edge} />}
+      <ChangeLabel change={row.change} />
+      <div className="flex flex-wrap items-baseline gap-1.5 font-mono break-all">
+        {before !== null && before.kind !== entry.kind ? (
+          <Replaced before={kindTag(before.kind)} after={kindTag(entry.kind)} />
+        ) : (
+          kindTag(entry.kind)
+        )}
+        {before !== null && before.from !== entry.from ? (
+          <span className="text-gray-500 dark:text-gray-400">
+            <Replaced before={before.from ?? ""} after={entry.from ?? ""} />
+            {entry.from !== undefined && " →"}
+          </span>
+        ) : (
+          entry.kind === "rename" &&
+          entry.from !== undefined && (
+            <span className="text-gray-500 dark:text-gray-400">{entry.from} →</span>
+          )
+        )}
+        {!removed && entry.state === "exists" ? (
+          <TitleButton
+            onClick={() => void onOpenFile(entry.file)}
+            hint={t.openFile}
+            className="font-mono"
+          >
+            {entry.file}
+          </TitleButton>
+        ) : (
+          <span>{entry.file}</span>
+        )}
+        {!removed && entry.state !== undefined && entry.state !== "exists" && (
+          <span
+            className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface[entry.state === "missing" ? "danger" : "muted"]}`}
+            title={
+              entry.state === "missing"
+                ? t.scopeMissingHint(root === "" ? t.scopeWorkspace : root)
+                : undefined
+            }
+          >
+            {t.scopeState[entry.state]}
+          </span>
+        )}
+      </div>
+      {(entry.name !== undefined || before?.name !== undefined) && (
+        <div className="mt-0.5 font-mono whitespace-pre-wrap break-all text-gray-500 dark:text-gray-400">
+          <span className="mr-1 text-[11px] uppercase tracking-wide">{t.scopePattern}</span>
+          {before !== null && before.name !== entry.name ? (
+            <InlineWords words={diffWords(before.name ?? "", entry.name ?? "")} />
+          ) : (
+            entry.name
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/**
+ * One group of the tests list: a small heading with its count that folds the group, then its
+ * rows. A long group shows its first TEST_GROUP_FOLD rows and folds the rest behind "Show N more".
+ */
+function TestGroup({
+  group,
+  rows,
+  count,
+  root,
+  onOpenFile,
+}: {
+  group: string;
+  rows: EntryChange<ProposalTestEntry>[];
+  /** The group's tests in the head (a removed row is shown but not counted). */
+  count: number;
+  root: string;
+  onOpenFile: (file: string) => Promise<void>;
+}) {
+  const t = S.company.proposals;
+  const [open, setOpen] = useState(true);
+  const [all, setAll] = useState(false);
+  const listId = `proposal-tests-${group}`;
+  const folded = !all && rows.length > TEST_GROUP_FOLD;
+  const shown = folded ? rows.slice(0, TEST_GROUP_FOLD) : rows;
+  return (
+    <div>
+      <h4>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={listId}
+          title={t.testGroupToggle(group)}
+          className={`flex items-center ${ICON_GAP.row} text-[11px] font-medium uppercase tracking-wide text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200`}
+        >
+          <Chevron open={open} size={ICON_SIZE.chevronDense} />
+          <span>{group}</span>
+          <span className="font-normal tabular-nums text-gray-400 dark:text-gray-500">{count}</span>
+        </button>
+      </h4>
+      <div id={listId} hidden={!open}>
+        <ul className="mt-1 divide-y divide-gray-100 text-xs dark:divide-gray-800">
+          {shown.map((row, i) => (
+            <TestRow
+              key={`${row.change}-${row.entry.file}-${row.entry.name ?? ""}-${i}`}
+              row={row}
+              root={root}
+              onOpenFile={onOpenFile}
+            />
+          ))}
+        </ul>
+        {rows.length > TEST_GROUP_FOLD && (
+          <TitleButton onClick={() => setAll((v) => !v)} className="mt-1 text-xs">
+            {folded ? t.testsShowMore(rows.length - TEST_GROUP_FOLD) : t.testsShowLess}
+          </TitleButton>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A test's kind as a tag: an existing test recedes, a proposed one is an addition. */
+const TEST_KIND_TONE: Record<ProposalTestEntry["kind"], "muted" | "success"> = {
+  existing: "muted",
+  new: "success",
+};
+
+/** One test: its kind, its file (a link while the file is there), its name pattern, and what it tests. */
+function TestRow({
+  row,
+  root,
+  onOpenFile,
+}: {
+  row: EntryChange<ProposalTestEntry>;
+  root: string;
+  onOpenFile: (file: string) => Promise<void>;
+}) {
+  const t = S.company.proposals;
+  const entry = row.entry;
+  const before = row.change === "changed" ? row.before : null;
+  const removed = row.change === "removed";
+  const edge = CHANGE_EDGE[row.change];
+  const kindTag = (kind: ProposalTestEntry["kind"]) => (
+    <span
+      className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface[TEST_KIND_TONE[kind]]}`}
+    >
+      {t.testKind[kind]}
+    </span>
+  );
+  return (
+    <li className={`py-1.5 ${changeRowClass(row.change)}`}>
+      {edge !== null && <ChangeEdge tone={edge} />}
+      <ChangeLabel change={row.change} />
+      <div className="flex flex-wrap items-baseline gap-1.5 font-mono break-all">
+        {before !== null && before.kind !== entry.kind ? (
+          <Replaced before={kindTag(before.kind)} after={kindTag(entry.kind)} />
+        ) : (
+          kindTag(entry.kind)
+        )}
+        {before !== null && before.group !== entry.group && (
+          <span className="font-sans text-[11px] text-gray-500 dark:text-gray-400">
+            <Replaced before={before.group} after={entry.group} />
+          </span>
+        )}
+        {!removed && entry.state === "exists" ? (
+          <TitleButton
+            onClick={() => void onOpenFile(entry.file)}
+            hint={t.openFile}
+            className="font-mono"
+          >
+            {entry.file}
+          </TitleButton>
+        ) : (
+          <span>{entry.file}</span>
+        )}
+        {!removed && entry.state === "missing" && (
+          <span
+            className={`shrink-0 rounded-sm px-1 font-sans text-[11px] ${toneSurface.danger}`}
+            title={t.testMissingHint(root === "" ? t.scopeWorkspace : root)}
+          >
+            {t.testMissing}
+          </span>
+        )}
+      </div>
+      {entry.name !== undefined && (
+        <div className="mt-0.5 font-mono whitespace-pre-wrap break-all text-gray-500 dark:text-gray-400">
+          {entry.name}
+        </div>
+      )}
+      <p className="mt-0.5 text-sm whitespace-pre-wrap break-words text-gray-800 dark:text-gray-100">
+        {before !== null && before.description !== entry.description ? (
+          <InlineWords words={diffWords(before.description, entry.description)} />
+        ) : (
+          entry.description
+        )}
+      </p>
+    </li>
   );
 }
 
@@ -1301,19 +1609,7 @@ function ReplacedParagraph({ words }: { words: WordChange[] }) {
       <ChangeEdge tone="attention" />
       <span className="sr-only">{t.changedLabel}: </span>
       <p className="px-1 text-sm whitespace-pre-wrap text-gray-800 dark:text-gray-100">
-        {words.map((w, i) =>
-          w.kind === "same" ? (
-            <span key={i}>{w.text}</span>
-          ) : w.kind === "del" ? (
-            <del key={i} className={`decoration-1 ${toneSurface.danger}`}>
-              {w.text}
-            </del>
-          ) : (
-            <ins key={i} className={`no-underline ${toneSurface.success}`}>
-              {w.text}
-            </ins>
-          ),
-        )}
+        <InlineWords words={words} />
       </p>
     </div>
   );
@@ -2018,7 +2314,7 @@ function markPassage(block: HTMLElement, comment: ProposalComment, by: string): 
 
 /**
  * Delegating a change: the author employee, the brief, an optional title. Creating it opens
- * the new proposal and tells the author in the proposals channel — the server does that.
+ * the new proposal and tells the author on its desk — the server does that.
  */
 function NewProposalDialog({
   open,
