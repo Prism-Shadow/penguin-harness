@@ -850,7 +850,15 @@ export class RoadmapService {
 
   /** One pass over one roadmap's room, under the organization's lock; what went wrong comes back as hints. */
   relayRoadmap(projectId: string, orgId: string, number: number): Promise<string[]> {
-    return this.withLock(projectId, orgId, () => this.relayUnlocked(projectId, orgId, number));
+    // A write that already landed (an opening, a reopening, a bound room) must not answer 500
+    // because the pass after it failed: the failure is said, and the next pass tries again.
+    return this.withLock(projectId, orgId, () =>
+      this.relayUnlocked(projectId, orgId, number).catch((err: unknown) => {
+        const error = err instanceof Error ? err.message : String(err);
+        this.deps.log.line(`[company-roadmaps] #${number}: relay pass failed: ${error}`);
+        return [`The room was not relayed this time: ${error}`];
+      }),
+    );
   }
 
   /**

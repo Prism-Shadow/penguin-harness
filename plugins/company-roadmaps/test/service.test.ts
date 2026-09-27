@@ -116,6 +116,27 @@ describe("opening a roadmap", () => {
     expect(w.runner.inputs).toEqual([]);
   });
 
+  it("answers the opening even when the pass after it fails, says so, and the next pass catches up", async () => {
+    let calls = 0;
+    const real = w.gateway.organization.bind(w.gateway);
+    w.gateway.organization = async () => {
+      calls++;
+      if (calls === 2) throw new Error("disk hiccup");
+      return real();
+    };
+    const { roadmap, hints } = await service.create(
+      P,
+      O,
+      { name: "Queue migration", channelId: "room_a", employees: ["acme_dev"] },
+      BOSS,
+    );
+    expect(roadmap.status).toBe("discussing");
+    expect(hints).toEqual(["The room was not relayed this time: disk hiccup"]);
+    expect(w.gateway.opened).toEqual([]);
+    await service.relayOnce();
+    expect(w.gateway.opened.map((s) => s.agentId)).toEqual(["acme_dev", "acme_web"]);
+  });
+
   it("is a person's act: an employee is refused, as is a room without the employees, or no room", async () => {
     expect(
       await refusal(
