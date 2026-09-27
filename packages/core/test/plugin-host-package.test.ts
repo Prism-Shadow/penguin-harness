@@ -1,11 +1,13 @@
 /**
  * The plugin library's host package, where a pushed platform lives (plugins/index.ts).
  *
- * A hot-pushed platform bundle sits in a data root's store, where nothing above it is a
- * package — so the loader must not look for one at import, and when it looks it must also
- * look above the program that booted it (`process.argv[1]`), which is where a pushed
- * platform's plugins are installed. Pinned by bundling the loader into a package-less scratch
- * directory and running node against it, the way the far side of a push does.
+ * Two fixed starting points, each walked upward to the first package.json naming a plugin
+ * package: the installation the loader sits in, then the installation of the running program
+ * (`process.argv[1]`). A hot-pushed platform bundle sits in a data root's store, where nothing
+ * above it is a package, so the loader must not look at import, and its plugins are the ones
+ * installed with the program that booted it. Pinned by bundling the loader into a
+ * package-less scratch directory and running node against it, the way the far side of a push
+ * does.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -17,6 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const LOADER = path.resolve(import.meta.dirname, "../src/plugins/index.ts");
 const GOAL_PLUGIN = path.resolve(import.meta.dirname, "../../../plugins/goal");
+const HUMANIZER_PLUGIN = path.resolve(import.meta.dirname, "../../../plugins/humanizer");
 
 /** A package.json anywhere above `dir` would make the scratch directory a host package. */
 function packageJsonAbove(dir: string): string | null {
@@ -76,8 +79,10 @@ describe("the plugin library's host package", () => {
     fs.writeFileSync(program, script(bundle));
     const outcome = run(program);
     expect(outcome.loaded).toBe(true);
-    expect(outcome.error).toContain("No package.json above the plugin loader at ");
-    expect(outcome.error).toContain(`or above the program at ${scratch}`);
+    expect(outcome.error).toContain(
+      `above the plugin loader at ${fs.realpathSync(path.dirname(bundle))} `,
+    );
+    expect(outcome.error).toContain(`or above the program at ${fs.realpathSync(scratch)}`);
   });
 
   it("reads the plugins installed beside the program that booted the bundle", () => {
@@ -98,10 +103,40 @@ describe("the plugin library's host package", () => {
   });
 
   it("walks past a package.json it cannot read on the way up", () => {
-    // Somebody else's file in the data root's ancestry: it answers nothing, and it must not
-    // keep the walk from reaching the host package above the program (the test above).
-    fs.writeFileSync(path.join(scratch, "root", "package.json"), "{ not json");
+    // Somebody else's file between the program and its host package: it answers nothing, and
+    // it must not keep the walk from reaching the host package above it (the test above).
+    fs.writeFileSync(path.join(scratch, "install", "lib", "dist", "package.json"), "{ not json");
     const program = path.join(scratch, "install", "lib", "dist", "serve.mjs");
+    expect(run(program)).toEqual({ loaded: true, names: ["goal"] });
+  });
+
+  it("prefers the installation the loader sits in, past a package.json that names no plugin", () => {
+    // The loader bundled into an installation (the CLI or desktop bundle): `app/package.json`
+    // names the plugin and carries it; `app/dist/package.json` names none and is walked past.
+    const app = path.join(scratch, "app");
+    const inlined = path.join(app, "dist", "loader.mjs");
+    fs.mkdirSync(path.dirname(inlined), { recursive: true });
+    fs.copyFileSync(bundle, inlined);
+    fs.writeFileSync(path.join(app, "dist", "package.json"), JSON.stringify({ type: "module" }));
+    fs.writeFileSync(
+      path.join(app, "package.json"),
+      JSON.stringify({ name: "app", dependencies: { "@penguinharness/goal": "*" } }),
+    );
+    fs.cpSync(GOAL_PLUGIN, path.join(app, "node_modules", "@penguinharness", "goal"), {
+      recursive: true,
+    });
+    // The program's installation is a host too, of a different plugin: were it chosen, the
+    // library would read that one instead.
+    const other = path.join(scratch, "other");
+    fs.cpSync(HUMANIZER_PLUGIN, path.join(other, "node_modules", "@penguinharness", "humanizer"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(other, "package.json"),
+      JSON.stringify({ name: "other", dependencies: { "@penguinharness/humanizer": "*" } }),
+    );
+    const program = path.join(other, "serve.mjs");
+    fs.writeFileSync(program, script(inlined));
     expect(run(program)).toEqual({ loaded: true, names: ["goal"] });
   });
 });

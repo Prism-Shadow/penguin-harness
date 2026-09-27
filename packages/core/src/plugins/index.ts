@@ -251,17 +251,26 @@ export function workspacePluginRoot(
 }
 
 /**
- * The host package: the package whose `dependencies` name the plugin packages — `packages/core`
- * from source or dist, and the bundling package's own root wherever core is inlined (the CLI
- * bundle, the desktop server bundle). Looked for above this module first, then above the
- * running program (`process.argv[1]`): a hot-pushed platform bundle sits in the data root's
- * store, where nothing above it is a package, and the plugins it can offer are the ones
- * installed beside the program that booted it. The first package.json naming a plugin
- * package wins; failing that, the first package.json that could be read at all (an empty
- * library, with a root to name in errors); failing that, null.
+ * The host package: the package whose `dependencies` name the plugin packages. Two fixed
+ * starting points, tried in this order, each walked upward to the first package.json that
+ * names a plugin package:
  *
- * Found on first use and never at import: the bundle has to LOAD on a machine that has no
- * host package, and the library call is then what fails, naming both places it looked.
+ * 1. the installation this module sits in — `packages/core` from source or dist, the
+ *    bundling package's own root wherever core is inlined (the CLI bundle, the desktop
+ *    server bundle);
+ * 2. the installation of the running program (`process.argv[1]`, symlinks resolved) — the
+ *    one that matters for a hot-pushed platform bundle, which sits in the data root's store
+ *    where nothing above it is a package, and whose plugins are the ones installed with the
+ *    program that booted it.
+ *
+ * A package.json on the way up that does not name a plugin package is skipped, and so is
+ * one that cannot be read or parsed (somebody else's file, not this one's answer); neither
+ * stops the walk from reaching the host above it. There is no fallback to whichever
+ * package.json was read first: when neither starting point leads to a host, the library
+ * call fails naming both.
+ *
+ * Determined on first use and never at import: the bundle has to LOAD on a machine that has
+ * no host package, and the library call is then what fails.
  */
 interface HostPackage {
   root: string;
@@ -273,47 +282,46 @@ const LOADER_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 function programDir(): string | null {
   const entry = process.argv[1];
-  return typeof entry === "string" && entry !== "" ? path.dirname(path.resolve(entry)) : null;
+  if (typeof entry !== "string" || entry === "") return null;
+  const resolved = path.resolve(entry);
+  // A package manager's bin is a symlink into the installation it belongs to.
+  try {
+    return path.dirname(fs.realpathSync(resolved));
+  } catch {
+    return path.dirname(resolved);
+  }
 }
 
-function findHostPackage(): HostPackage | null {
-  let first: HostPackage | null = null;
-  for (const start of [LOADER_DIR, programDir()]) {
-    if (start === null) continue;
-    for (let dir = start; ;) {
-      const file = path.join(dir, "package.json");
-      if (fs.existsSync(file)) {
-        const candidate: HostPackage = { root: dir, require: createRequire(file) };
-        // An unreadable or malformed package.json on the way up is somebody else's file,
-        // not this one's answer: it must not keep the walk from reaching the host package
-        // above the program.
-        let dependencies: Record<string, string> | null = null;
-        try {
-          dependencies = readDependencies(candidate);
-        } catch {
-          break;
-        }
-        if (Object.keys(dependencies).some((d) => d.startsWith(PLUGIN_PKG_PREFIX)))
+/** From `start` upward, the first package.json whose `dependencies` name a plugin package. */
+function hostPackageAbove(start: string): HostPackage | null {
+  for (let dir = start; ;) {
+    const file = path.join(dir, "package.json");
+    if (fs.existsSync(file)) {
+      const candidate: HostPackage = { root: dir, require: createRequire(file) };
+      try {
+        if (Object.keys(readDependencies(candidate)).some((d) => d.startsWith(PLUGIN_PKG_PREFIX)))
           return candidate;
-        first ??= candidate;
-        break;
+      } catch {
+        // Unreadable or malformed: walk on.
       }
-      const parent = path.dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
     }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
   }
-  return first;
 }
 
 let host: HostPackage | null | undefined;
 function hostPackage(): HostPackage {
-  if (host === undefined) host = findHostPackage();
+  const program = programDir();
+  if (host === undefined)
+    host = hostPackageAbove(LOADER_DIR) ?? (program === null ? null : hostPackageAbove(program));
   if (host === null) {
-    const program = programDir();
     throw new Error(
-      `No package.json above the plugin loader at ${LOADER_DIR}` +
-        (program === null ? "" : ` or above the program at ${program}`),
+      `No package.json naming a ${PLUGIN_PKG_PREFIX} plugin package above the plugin loader at ${LOADER_DIR}` +
+        (program === null
+          ? " (no running program to look above: process.argv[1] is empty)"
+          : ` or above the program at ${program}`),
     );
   }
   return host;
