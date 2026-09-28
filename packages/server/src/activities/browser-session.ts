@@ -26,6 +26,11 @@ export interface OpenPageOptions {
   /** How long the browser may take to start and the page to load, and each page action. */
   timeoutMs: number;
   launcher?: BrowserLauncher;
+  /**
+   * Record the page to a WebM in this directory, at the viewport's size. The file is written
+   * when the page's context closes (see video-render.ts).
+   */
+  recordVideoDir?: string;
 }
 
 export interface BrowserSession {
@@ -56,7 +61,12 @@ export async function openPage(
   let closed: Promise<void> | null = null;
   const close = () => (closed ??= browser.close().catch(() => {}));
   try {
-    const context = await browser.newContext({ viewport });
+    const context = await browser.newContext({
+      viewport,
+      ...(options.recordVideoDir
+        ? { recordVideo: { dir: options.recordVideoDir, size: viewport } }
+        : {}),
+    });
     const page = await context.newPage();
     page.setDefaultTimeout(options.timeoutMs);
     await page.goto(url, { timeout: options.timeoutMs, waitUntil: "load" });

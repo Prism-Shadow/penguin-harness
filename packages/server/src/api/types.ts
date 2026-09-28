@@ -5159,6 +5159,7 @@ export type {
   CompositionTarget,
   VideoSetup,
 } from "../activities/composition-types.js";
+export type { VideoProblemCode, VideoResult, VideoTarget } from "../activities/video-types.js";
 export type {
   SpeechProblem,
   SpeechProviderId,

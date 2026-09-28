@@ -242,6 +242,9 @@ export abstract class ActivitySandbox extends Interface<{
   ): Promise<Record<string, unknown>>;
 }>() {}
 
+/** The media path a recorded scene video is bound to, below `media/`. */
+const RECORDING_PATH = /^generated\/run_[a-f0-9]{32}\.webm$/;
+
 @Component({})
 export class ActivitySandboxService implements ActivitySandbox {
   @Use() private readonly activities!: ActivityAuthoring;
@@ -348,11 +351,23 @@ export class ActivitySandboxService implements ActivitySandbox {
     ];
     const wafRoot = await this.locateWafRoot();
     if (wafRoot) roots.push(path.join(wafRoot, "media"));
+    const recorded = new Set(
+      Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
+        .flat()
+        .flatMap((asset) => (asset.generatedVideo && asset.path ? [asset.path] : [])),
+    );
     const sizeOf = async (bound: string | undefined): Promise<number | null> => {
       const normal = (bound ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
       if (!normal.startsWith("media/")) return null;
       const relative = previewMediaPath(normal.slice("media/".length));
       if (!relative) return null;
+      const recording = recorded.has(normal)
+        ? await this.activities.boundVideoFile(projectId, activityId, normal)
+        : null;
+      if (recording) {
+        const stat = await fs.stat(recording).catch(() => null);
+        if (stat?.isFile()) return stat.size;
+      }
       for (const root of roots) {
         const file = withinRoot(root, relative);
         const stat = file ? await fs.stat(file).catch(() => null) : null;
@@ -768,6 +783,16 @@ export class ActivitySandboxService implements ActivitySandbox {
     // draft does not hold is the checkout's -- which is where every Loom asset lives.
     const wafRoot = await this.locateWafRoot();
     if (wafRoot) roots.push(path.join(wafRoot, "media"));
+
+    // A recorded scene video is kept beside the draft's media, not in it (see video-render.ts);
+    // its bound path names where the player asks for it.
+    const recording = RECORDING_PATH.test(relative)
+      ? await this.activities.boundVideoFile(projectId, activityId, `media/${relative}`)
+      : null;
+    if (recording) {
+      const served = await this.serveFile(recording, relative, request);
+      if (served) return served;
+    }
 
     for (const root of roots) {
       const file = withinRoot(root, relative);

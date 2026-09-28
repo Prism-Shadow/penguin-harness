@@ -115,6 +115,10 @@ import {
   ActivityCompositionService,
 } from "./activities/composition-service.js";
 import {
+  ActivityVideoRenderService,
+  DefaultVideoRenderPorts,
+} from "./activities/video-render-service.js";
+import {
   DefaultTestBrowserPorts,
   TestBrowser,
   TestBrowserService,
@@ -408,6 +412,8 @@ export class CodingAgentsModule {}
     ActivityPlayRoutes,
     ActivityCompositionService,
     ActivityCompositionRoutes,
+    DefaultVideoRenderPorts,
+    ActivityVideoRenderService,
     DefaultTestBrowserPorts,
     DefaultSoundModelPorts,
     DefaultMediaLibraryPorts,

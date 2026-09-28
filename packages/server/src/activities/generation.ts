@@ -128,6 +128,7 @@ import {
 } from "./composition.js";
 import { IMAGE_MAX_BYTES as COMPOSITION_IMAGE_MAX_BYTES } from "./image.js";
 import type { CompositionCandidate, CompositionTarget } from "./composition-types.js";
+import type { VideoProblemCode, VideoResult, VideoTarget } from "./video-types.js";
 import { mediaContentType } from "./media-origin.js";
 import {
   newId,
@@ -459,6 +460,10 @@ export class ActivityGenerationService implements ActivityGeneration {
     await this.agents.requireExists(projectId, agentId);
     const keys = (await this.agents.getVault(projectId, agentId)).entries.map((entry) => entry.key);
     return { ...base, catalogue: speechCatalogue(keys), providers: speechSetup(keys) };
+  }
+
+  run(projectId: string, activityId: string, runId: string): Promise<ActivityRun> {
+    return this.getRun(projectId, activityId, runId);
   }
 
   async candidate(projectId: string, activityId: string, runId: string): Promise<string | null> {
@@ -828,6 +833,12 @@ export class ActivityGenerationService implements ActivityGeneration {
                 workspace,
                 expectedRevision,
               );
+              await this.activities.prepareVideoMedia(
+                projectId,
+                activityId,
+                workspace,
+                expectedRevision,
+              );
               await this.activities.prepareUploadedMedia(
                 projectId,
                 activityId,
@@ -1068,6 +1079,7 @@ export class ActivityGenerationService implements ActivityGeneration {
     projectId: string,
     activityId: string,
     kind: DeterministicRunKind,
+    target?: { video?: VideoTarget },
   ): Promise<ActivityRun> {
     return this.track(
       this.locks.run(activityId, async () => {
@@ -1086,6 +1098,7 @@ export class ActivityGenerationService implements ActivityGeneration {
           projectId,
           draftId: activity.draft.draftId,
           inputRevision: activity.draft.contentRevision,
+          ...(kind === "video" && target?.video ? { video: target.video } : {}),
           // Nobody's agent does this work; the server does.
           agentId: "",
           sessionId: null,
@@ -1121,12 +1134,17 @@ export class ActivityGenerationService implements ActivityGeneration {
     runId: string,
     status: "succeeded" | "failed",
     error: string | null,
+    candidate?: string,
+    videoProblem?: VideoProblemCode,
   ): Promise<boolean> {
     return this.track(
       this.locks.run(activityId, async () => {
         if (this.stopped) return false;
         const run = await this.getRun(projectId, activityId, runId);
         if (run.status !== "running" || run.sessionId) return false;
+        if (status === "succeeded" && candidate !== undefined) run.candidate = candidate;
+        if (status === "failed" && videoProblem && run.video)
+          run.video = { ...run.video, problem: videoProblem };
         this.finish(run, status, error);
         return true;
       }),
@@ -1232,6 +1250,61 @@ export class ActivityGenerationService implements ActivityGeneration {
             projectId,
             activityId,
             run.image,
+            result,
+            expectedRevision,
+          );
+        }),
+      ),
+    );
+  }
+  async videoContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array> {
+    const run = await this.getRun(projectId, activityId, runId).catch((error: unknown) => {
+      if (error instanceof HttpError && error.code === "run_not_found") return null;
+      throw error;
+    });
+    if (!run) {
+      // A ref made from its template keeps the template's accepted recordings, but not the
+      // runs that made them; a recording this draft binds is still this ref's to play.
+      const activity = await this.activities.getActivity(projectId, activityId);
+      const bound = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
+        .flat()
+        .find((asset) => asset.generatedVideo?.runId === runId)?.generatedVideo;
+      if (!bound) throw new HttpError(404, "run_not_found", "Video candidate not available.");
+      return this.activities.readVideo(projectId, activityId, runId, bound.sha256);
+    }
+    if (run.kind !== "video" || !run.candidate || !["succeeded", "conflict"].includes(run.status))
+      throw new HttpError(404, "run_not_found", "Video candidate not available.");
+    const result = JSON.parse(run.candidate) as VideoResult;
+    if (result.runId !== runId)
+      throw new HttpError(409, "video_changed", "Video candidate metadata changed.");
+    return this.activities.readVideo(projectId, activityId, runId, result.sha256);
+  }
+  acceptVideo(projectId: string, activityId: string, runId: string, expectedRevision: string) {
+    return this.track(
+      this.projectWork.run(projectId, () =>
+        this.locks.run(activityId, async () => {
+          if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+          if (!this.videoExperiment()) throw experimentOff();
+          const run = await this.getRun(projectId, activityId, runId);
+          if (run.kind !== "video" || run.status !== "succeeded" || !run.video || !run.candidate)
+            throw new HttpError(
+              409,
+              "video_changed",
+              "Only a successful video recording can be kept.",
+            );
+          if (run.inputRevision !== expectedRevision)
+            throw new HttpError(
+              409,
+              "draft_conflict",
+              "The draft changed since the video was recorded. Record it again.",
+            );
+          const result = JSON.parse(run.candidate) as VideoResult;
+          if (result.runId !== runId)
+            throw new HttpError(409, "video_changed", "Video candidate metadata changed.");
+          return this.activities.applyVideo(
+            projectId,
+            activityId,
+            run.video,
             result,
             expectedRevision,
           );

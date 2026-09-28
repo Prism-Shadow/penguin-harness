@@ -51,3 +51,13 @@ either:
   `composition` field in its record. An older build lists it as it is stored and names it as a
   specification run, and serves no composition. A composition run still going when an older
   build takes over fails there, since that build looks for a specification to collect.
+
+The [scene video recording](2026-09-28-activity-scene-video.md) changed no schema either:
+
+- A recording run is a row of `activity_runs` with the new kind `video` and an optional `video`
+  field in its record. An older build lists it as it is stored and names it as a specification
+  run. A recording still going when an older build takes over is marked interrupted there.
+- A media asset gained an optional `generatedVideo` field, and its recording lives in the draft
+  workspace under `videos/`. An older build refuses to save or re-plan a media plan holding the
+  field, since its validator allows no unknown field; unbinding the recording in the newer build
+  first, or keeping the newer build, avoids it. Nothing stored is rewritten.

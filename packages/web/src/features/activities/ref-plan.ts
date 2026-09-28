@@ -253,6 +253,8 @@ export function boundSource(asset: MediaAsset, endpoint: string): string | null 
   if (!asset.path) return null;
   if (asset.generatedAudio)
     return `${endpoint}/runs/${encodeURIComponent(asset.generatedAudio.runId)}/audio`;
+  if (asset.generatedVideo)
+    return `${endpoint}/runs/${encodeURIComponent(asset.generatedVideo.runId)}/video`;
   if (asset.path.startsWith("media/uploads/"))
     return `${endpoint}/media-upload?${new URLSearchParams({ path: asset.path })}`;
   return `${endpoint}/sandbox/media/${asset.path

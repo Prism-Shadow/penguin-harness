@@ -1615,7 +1615,7 @@ export const en: Strings = {
     },
     video: {
       title: "Scene video",
-      info: "An agent composes a short animation for this scene from its description and the images bound to it. Watch it here and ask again until it fits; nothing is recorded or bound to the asset yet. The composition runs on the preview origin and may use only the scene's images.",
+      info: "An agent composes a short animation for this scene from its description and the images bound to it. Watch it here and ask again until it fits. Record video then plays it once in the test browser and records it as a WebM video; nothing is bound to the asset until you choose Use new. The composition runs on the preview origin and may use only the scene's images.",
       experimental: "Experimental",
       compose: "Compose from storyboard",
       recompose: "Compose again",
@@ -1644,6 +1644,30 @@ export const en: Strings = {
       },
       choiceWarning:
         "This scene asks the learner to choose something, and a video only plays. You can still compose it.",
+      record: "Record video",
+      rerecord: "Record again",
+      recording: "Recording…",
+      recordRun: "Scene video recording",
+      recordings: "Recordings",
+      recorded: "Recorded video",
+      useNew: "Use new",
+      keepCurrent: "Keep current",
+      leadIn:
+        "A recording opens with a short blank moment while the page loads, before the animation starts. It is not trimmed.",
+      olderRecording: "Recorded from an earlier draft. Record again to keep it.",
+      noCurrent: "No video is bound yet.",
+      recordFailed: (cause: string) => `The recording failed: ${cause}`,
+      noCause: "no reason was given.",
+      recordProblems: {
+        video_not_ready:
+          "The composition did not get ready to play within 30 seconds. Compose again, then record.",
+        video_no_timeline: "The composition has no animation timeline to play. Compose again.",
+        video_timeout:
+          "The recording took longer than it may and was stopped. Compose again, then record.",
+        video_invalid: "The browser did not write a WebM video, so nothing was kept. Record again.",
+        video_too_large: "The recording is larger than 100 MB, so it was not kept.",
+        video_stopped: "The server stopped before the recording finished. Record again.",
+      },
       problems: {
         composition_network:
           "The composition tried to load something from the network. Compose again; it may use only the scene's images.",
@@ -6261,6 +6285,14 @@ Scenarios:
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       experiment_off: "Scene videos are an experiment an admin has not turned on.",
+      video_composition_missing:
+        "There is no composed scene to record. Compose the scene first, then record it.",
+      video_asset_changed:
+        "The video or animation this scene was composed for is no longer in the media plan.",
+      video_invalid: "The recording is not a WebM video, so it was not kept.",
+      video_changed: "The recorded video changed or is gone. Record it again.",
+      test_browser_missing:
+        "The test browser is not installed. An admin installs it in System settings.",
       composition_no_images:
         "Bind an image to this scene first: the composition is made from the scene's images.",
       composition_asset_invalid:

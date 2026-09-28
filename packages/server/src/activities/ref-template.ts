@@ -86,6 +86,7 @@ function unbind(asset: MediaAsset): void {
   delete asset.path;
   delete asset.generatedAudio;
   delete asset.generatedImage;
+  delete asset.generatedVideo;
   delete asset.wordTimings;
   delete asset.durationMs;
   delete asset.phonemeTimings;

@@ -35,7 +35,7 @@ export function plannedEntries(assets: readonly MediaAsset[]): PlannedEntry[] {
     path: asset.path ?? null,
     source: !asset.path
       ? null
-      : asset.generatedAudio || asset.generatedImage
+      : asset.generatedAudio || asset.generatedImage || asset.generatedVideo
         ? "generated"
         : isUploadPath(asset.path)
           ? "upload"

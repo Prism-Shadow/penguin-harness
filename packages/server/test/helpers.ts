@@ -81,6 +81,10 @@ import { machinesRoutes } from "../src/http/routes/machines.js";
 import type { Access } from "../src/mechanisms/projects.js";
 import { DefaultTestBrowserPorts, type TestBrowserPorts } from "../src/activities/test-browser.js";
 import {
+  DefaultVideoRenderPorts,
+  type VideoRenderPorts,
+} from "../src/activities/video-render-service.js";
+import {
   DefaultQualityCheckPorts,
   type QualityCheckPorts,
 } from "../src/activities/quality-check.js";
@@ -286,6 +290,8 @@ export interface TestAppOptions {
   deployPorts?: DeployPorts;
   /** Test double: the quality check's browser launcher and axe source, so no browser starts. */
   qualityCheckPorts?: QualityCheckPorts;
+  /** Test double: the scene-video recorder's browser launcher, so no browser starts. */
+  videoRenderPorts?: VideoRenderPorts;
   /** Test double: the media library's bundle limit, small enough to cross with a few files. */
   mediaLibraryPorts?: MediaLibraryPorts;
   /** Test double: company mode's organization service, for the route suite (its semantics have their own suites). */
@@ -379,6 +385,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   }
   if (o.testBrowserPorts) out.push([DefaultTestBrowserPorts, o.testBrowserPorts]);
   if (o.qualityCheckPorts) out.push([DefaultQualityCheckPorts, o.qualityCheckPorts]);
+  if (o.videoRenderPorts) out.push([DefaultVideoRenderPorts, o.videoRenderPorts]);
   if (o.mediaLibraryPorts) out.push([DefaultMediaLibraryPorts, o.mediaLibraryPorts]);
   if (o.soundModelPorts) out.push([DefaultSoundModelPorts, o.soundModelPorts]);
   if (o.espeakPorts) out.push([DefaultEspeakPorts, o.espeakPorts]);

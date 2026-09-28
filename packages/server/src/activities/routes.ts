@@ -40,6 +40,7 @@ import type {
 import { isModuleVersion, isProdSelection, isStageSelection } from "./deploy-stages.js";
 import { compositionBase, type ActivityCompositions } from "./composition-service.js";
 import type { VideoSetup } from "./composition-types.js";
+import type { ActivityVideoRenders } from "./video-render-service.js";
 import {
   badRequest,
   optionalString,
@@ -98,6 +99,7 @@ export class ActivityRoutes {
   @Use() private readonly deploys!: ActivityDeploys;
   @Use() private readonly moduleBuilds!: ActivityModuleBuilds;
   @Use() private readonly compositions!: ActivityCompositions;
+  @Use() private readonly videoRenders!: ActivityVideoRenders;
   @Use() private readonly config!: Config;
   @Bind("activities") routes!: Hono<AppEnv>;
 
@@ -309,6 +311,47 @@ export class ActivityRoutes {
         target === null,
       );
       return c.redirect(`${target?.origin ?? ""}${compositionBase(token)}composition.html`, 302);
+    });
+    // Records a kept composition to a WebM in the test browser (experimental): no agent, so
+    // no runner, and the run answers at once while the browser plays.
+    app.post("/:activityId/render-video", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.videoRenders.start(requireValidId(c, "projectId"), pathParam(c, "activityId"), {
+          compositionRunId: requireString(body, "compositionRunId", { minLen: 1, maxLen: 128 }),
+          expectedRevision: requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        }),
+        202,
+      );
+    });
+    // A video run's recording, or one the draft binds, to play in the studio.
+    app.get("/:activityId/runs/:runId/video", async (c) => {
+      const bytes = await this.generation.videoContent(
+        requireValidId(c, "projectId"),
+        pathParam(c, "activityId"),
+        pathParam(c, "runId"),
+      );
+      return new Response(new Uint8Array(bytes), {
+        headers: {
+          "Content-Type": "video/webm",
+          "Content-Length": String(bytes.byteLength),
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy": "default-src 'none'; sandbox",
+          "Cross-Origin-Resource-Policy": "same-origin",
+        },
+      });
+    });
+    app.post("/:activityId/runs/:runId/accept-video", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.generation.acceptVideo(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          pathParam(c, "runId"),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        ),
+      );
     });
     // Whether espeak-ng can sound out a decodable book's words on this server.
     app.get("/book-words/setup", async (c) =>

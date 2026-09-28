@@ -866,7 +866,11 @@ function ActivityEditor({
               (item.generatedImage === undefined ||
                 (item.generatedImage &&
                   typeof item.generatedImage.runId === "string" &&
-                  typeof item.generatedImage.sha256 === "string")),
+                  typeof item.generatedImage.sha256 === "string")) &&
+              (item.generatedVideo === undefined ||
+                (item.generatedVideo &&
+                  typeof item.generatedVideo.runId === "string" &&
+                  typeof item.generatedVideo.sha256 === "string")),
           ),
       )
     )
@@ -1444,6 +1448,14 @@ function ActivityEditor({
                     ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
                   })
               : undefined
+          }
+          onRecordVideo={
+            videoSetup?.enabled
+              ? (compositionRunId) => startRun("render-video", { compositionRunId })
+              : undefined
+          }
+          onAcceptVideo={
+            videoSetup?.enabled ? (runId) => acceptRun(runId, "accept-video") : undefined
           }
           onSaveSounds={(lang, assetKey, phonemes) =>
             void action(async () => {

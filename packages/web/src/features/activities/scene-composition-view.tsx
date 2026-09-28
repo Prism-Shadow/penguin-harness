@@ -7,7 +7,7 @@
  * origin (the link route redirects there) and is driven only by messages: Play, Pause and
  * Restart are posted to it, and what it reports back is read as one of a few known states.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type {
   ActivityRunSummary,
   AssetManifest,
@@ -33,6 +33,15 @@ import {
   sceneHasLearnerChoice,
   type PreviewState,
 } from "./scene-composition";
+import { MediaComparison } from "./media-comparison";
+import { MediaPlayer } from "./media-player";
+import {
+  comparedRecording,
+  isRecordable,
+  recordingFailure,
+  recordingUrl,
+  videoRuns,
+} from "./scene-video";
 
 type Asset = AssetManifest["assets"][string][number];
 
@@ -47,6 +56,10 @@ export function SceneCompositionView({
   canGenerate,
   spec,
   onCompose,
+  canRecord = false,
+  onRecord,
+  onAcceptVideo,
+  current,
 }: {
   asset: Asset;
   /** The assets of the language shown, which the scene's images are among. */
@@ -60,10 +73,23 @@ export function SceneCompositionView({
   /** The saved specification, which says whether the scene asks the learner to choose. */
   spec: unknown;
   onCompose: (language: string, assetKey: string) => void;
+  /** Whether a composition may be recorded or a recording kept now (no unsaved edits, no run). */
+  canRecord?: boolean;
+  /** Record a kept composition to a video. */
+  onRecord?: (compositionRunId: string) => void;
+  /** Bind a recording to this asset. */
+  onAcceptVideo?: (runId: string) => void;
+  /** The asset's video now, shown beside a new recording. */
+  current?: ReactNode;
 }) {
   const compositions = compositionRuns(runs, language, asset.key);
   const composing = compositions.some((run) => run.status === "running");
   const shown = compositions.find(isShowable) ?? null;
+  const recordings = videoRuns(runs, language, asset.key);
+  const recording = recordings.some((run) => run.status === "running");
+  // New recordings the author chose to keep the current video over; they stay in the list.
+  const [kept, setKept] = useState<ReadonlySet<string>>(new Set());
+  const compared = comparedRecording(recordings, asset, revision, kept);
   const hasImage = sceneHasImage(group, asset);
   const choice = sceneHasLearnerChoice(spec, compositionScene(asset));
   return (
@@ -97,6 +123,76 @@ export function SceneCompositionView({
           endpoint={endpoint}
           stale={shown.inputRevision !== revision}
         />
+      )}
+      {editable && onRecord && isRecordable(shown) && (
+        <div className="space-y-1">
+          <Button
+            size="sm"
+            disabled={!canRecord || recording}
+            onClick={() => onRecord(shown.runId)}
+          >
+            {recording
+              ? S.activities.video.recording
+              : recordings.some((run) => run.status === "succeeded")
+                ? S.activities.video.rerecord
+                : S.activities.video.record}
+          </Button>
+          <p className="text-xs text-gray-500">{S.activities.video.leadIn}</p>
+        </div>
+      )}
+      {compared && editable && onAcceptVideo && (
+        <MediaComparison
+          current={
+            current ?? <p className="text-xs text-gray-500">{S.activities.video.noCurrent}</p>
+          }
+          next={
+            <MediaPlayer
+              key={compared.runId}
+              kind="video"
+              src={recordingUrl(endpoint, compared.runId)}
+              label={S.activities.mediaComparison.next}
+            />
+          }
+          disabled={!canRecord}
+          useLabel={S.activities.video.useNew}
+          keepLabel={S.activities.video.keepCurrent}
+          onUse={() => onAcceptVideo(compared.runId)}
+          onKeep={() => setKept((previous) => new Set(previous).add(compared.runId))}
+        />
+      )}
+      {recordings.length > 0 && (
+        <section className="space-y-2" aria-label={S.activities.video.recordings}>
+          <h5 className="text-xs font-semibold">{S.activities.video.recordings}</h5>
+          <ul className="space-y-2">
+            {recordings.map((run) => {
+              const failure = run.status === "succeeded" ? null : recordingFailure(run);
+              return (
+                <li
+                  key={run.runId}
+                  className="space-y-1 border-t border-gray-200 pt-2 text-xs dark:border-gray-800"
+                >
+                  <p>
+                    {new Date(run.createdAt).toLocaleString()} ·{" "}
+                    {S.activities.speechStatus[run.status]}
+                    {run.runId === asset.generatedVideo?.runId
+                      ? ` · ${S.activities.video.recorded}`
+                      : ""}
+                  </p>
+                  {run.status === "succeeded" && run.inputRevision !== revision && (
+                    <p className="text-gray-500">{S.activities.video.olderRecording}</p>
+                  )}
+                  {failure && (
+                    <p
+                      className={`break-words ${run.status === "failed" ? toneInk.danger : "text-gray-500"}`}
+                    >
+                      {failure}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
       {compositions.length > 0 && (
         <section className="space-y-2" aria-label={S.activities.video.candidates}>

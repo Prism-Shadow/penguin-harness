@@ -20,6 +20,8 @@ import type { ActivityAuthoring } from "../mechanisms/activities.js";
 import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import { HttpError } from "../http/errors.js";
 import { generatedAudioPath, planMedia, validateManifest, validateMediaCoverage } from "./media.js";
+import { VIDEO_DIR, generatedVideoPath, inspectWebm, readVideoFile } from "./video-render.js";
+import type { VideoResult, VideoTarget } from "./video-types.js";
 import { mediaTextField, type MediaTextTarget } from "./media-text.js";
 import { AUDIO_MAX_BYTES, type AudioResult, type AudioTarget } from "./audio.js";
 import { inspectGeneratedAudio } from "./sound.js";
@@ -546,6 +548,137 @@ export class ActivityService implements ActivityAuthoring {
       await fs.writeFile(file, bytes, { flag: "wx" });
       copied.add(asset.path!);
     }
+  }
+
+  /** Where a run's recording is kept in the draft workspace: `videos/<runId>.webm`. */
+  private videoPath(
+    projectId: string,
+    activity: ActivityRecord & { draft: ActivityDraft },
+    runId: string,
+  ) {
+    if (!/^run_[a-f0-9]{32}$/.test(runId))
+      throw new HttpError(404, "run_not_found", "Video candidate not found.");
+    return path.join(this.activityWorkspace(projectId, activity), VIDEO_DIR, `${runId}.webm`);
+  }
+  async storeVideo(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    bytes: Uint8Array,
+  ): Promise<VideoResult> {
+    return this.projectWork.run(projectId, async () => {
+      const activity = await this.getActivity(projectId, activityId);
+      let inspected: { sha256: string; bytes: number };
+      try {
+        inspected = inspectWebm(bytes);
+      } catch (error) {
+        throw new HttpError(422, "video_invalid", (error as Error).message);
+      }
+      const file = this.videoPath(projectId, activity, runId);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, bytes, { flag: "wx" });
+      return { runId, ...inspected };
+    });
+  }
+  async discardVideo(projectId: string, activityId: string, runId: string): Promise<void> {
+    await this.projectWork.run(projectId, async () => {
+      const activity = await this.getActivity(projectId, activityId);
+      await fs.rm(this.videoPath(projectId, activity, runId), { force: true });
+    });
+  }
+  async readVideo(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    sha256: string,
+  ): Promise<Uint8Array> {
+    const activity = await this.getActivity(projectId, activityId);
+    const changed = () =>
+      new HttpError(409, "video_changed", "The stored video changed. Record it again.");
+    let bytes: Buffer;
+    try {
+      bytes = await readVideoFile(this.videoPath(projectId, activity, runId));
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        throw new HttpError(404, "run_not_found", "Video candidate not available.");
+      throw changed();
+    }
+    try {
+      if (inspectWebm(bytes).sha256 !== sha256) throw changed();
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw changed();
+    }
+    return bytes;
+  }
+  async applyVideo(
+    projectId: string,
+    activityId: string,
+    target: VideoTarget,
+    result: VideoResult,
+    expectedRevision: string,
+  ): Promise<ActivityDraft> {
+    await this.readVideo(projectId, activityId, result.runId, result.sha256);
+    return this.change(projectId, activityId, expectedRevision, (draft) => {
+      const plan = draft.mediaPlan;
+      if (!plan || plan.specRevision !== contentRevision(draft.spec) || draft.status !== "valid")
+        throw new HttpError(
+          409,
+          "media_stale",
+          "Rebuild the media plan before keeping a recorded video.",
+        );
+      const manifest = structuredClone(plan.manifest);
+      const asset = manifest.assets[target.language]?.find(
+        (entry) => entry.key === target.assetKey,
+      );
+      if (!asset || (asset.type !== "video" && asset.type !== "animation"))
+        throw new HttpError(
+          409,
+          "video_asset_changed",
+          "The video or animation this was recorded for is no longer in the media plan.",
+        );
+      asset.path = generatedVideoPath(result.runId);
+      asset.generatedVideo = { runId: result.runId, sha256: result.sha256 };
+      // Measured from the file this replaces.
+      delete asset.durationMs;
+      return { ...draft, mediaPlan: { ...plan, manifest } };
+    });
+  }
+  async prepareVideoMedia(
+    projectId: string,
+    activityId: string,
+    workspace: string,
+    expectedRevision: string,
+  ): Promise<void> {
+    const activity = await this.getActivity(projectId, activityId);
+    if (activity.draft.contentRevision !== expectedRevision)
+      throw new HttpError(409, "draft_conflict", "Media changed before assembly.");
+    const copied = new Set<string>();
+    for (const asset of Object.values(activity.draft.mediaPlan?.manifest.assets ?? {}).flat()) {
+      if (!asset.generatedVideo || copied.has(asset.path!)) continue;
+      const bytes = await this.readVideo(
+        projectId,
+        activityId,
+        asset.generatedVideo.runId,
+        asset.generatedVideo.sha256,
+      );
+      const file = path.join(workspace, asset.path!);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, bytes, { flag: "wx" });
+      copied.add(asset.path!);
+    }
+  }
+  /**
+   * The draft file behind a bound recording's media path (`media/generated/<runId>.webm`), for
+   * the player to serve, or null when the path is not a recording this draft binds.
+   */
+  async boundVideoFile(projectId: string, activityId: string, mediaPath: string) {
+    const activity = await this.getActivity(projectId, activityId);
+    const bound = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
+      .flat()
+      .find((asset) => asset.generatedVideo && asset.path === mediaPath)?.generatedVideo;
+    return bound ? this.videoPath(projectId, activity, bound.runId) : null;
   }
 
   private collectionDir(projectId: string, collectionId: string): string {
@@ -1278,6 +1411,7 @@ export class ActivityService implements ActivityAuthoring {
                 path: _path,
                 generatedAudio: _audio,
                 generatedImage: _image,
+                generatedVideo: _video,
                 translatedFrom: _from,
                 wordTimings: _timings,
                 durationMs: _duration,
@@ -1375,6 +1509,18 @@ export class ActivityService implements ActivityAuthoring {
               accepted.sha256 !== asset.generatedImage.sha256
             )
               throw new Error("Use Accept this image to bind a generated candidate.");
+          }
+          for (const asset of assets) {
+            if (!asset.generatedVideo) continue;
+            const accepted = draft.mediaPlan.manifest.assets[language]?.find(
+              (previous) => previous.key === asset.key,
+            )?.generatedVideo;
+            if (
+              !accepted ||
+              accepted.runId !== asset.generatedVideo.runId ||
+              accepted.sha256 !== asset.generatedVideo.sha256
+            )
+              throw new Error("Keep a recorded video from its comparison to bind it.");
           }
         }
         // An upload is bytes this server holds, so what it actually is can be checked
@@ -2073,7 +2219,7 @@ export class ActivityService implements ActivityAuthoring {
   /** Copy a template's own files into a new ref's workspace, never following a link. */
   private async copyTemplateFiles(source: string, target: string): Promise<void> {
     await fs.mkdir(target, { recursive: true });
-    for (const name of ["audio", "images", "media", IMPLEMENTATION_FEATURES_FILE]) {
+    for (const name of ["audio", "images", VIDEO_DIR, "media", IMPLEMENTATION_FEATURES_FILE]) {
       const from = path.join(source, name);
       const stat = await fs.lstat(from).catch(() => null);
       if (!stat || stat.isSymbolicLink()) continue;

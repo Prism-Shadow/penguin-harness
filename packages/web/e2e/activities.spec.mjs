@@ -7895,3 +7895,239 @@ test("shows nothing of scene videos while the experiment is off", async ({ page 
   await expect(page.getByRole("button", { name: "Compose from storyboard" })).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });
+
+test("records a composed scene and keeps it as the scene's video", async ({ page }) => {
+  const f = await fixture(page);
+  const renderRequests = [];
+  const recordings = [];
+  let refuseRender = true;
+  // The draft as the fixture last served it; keeping the recording binds it on top of it.
+  let draft = null;
+  let accepted = null;
+  page.on("response", async (response) => {
+    const p = new URL(response.url()).pathname;
+    if ([`${base}/act_test/plan-media`, `${base}/act_test/media`].includes(p) && response.ok())
+      draft = await response.json().catch(() => draft);
+  });
+  const usage = (key) => ({
+    sceneId: "intro",
+    sourceKey: key,
+    occurrence: 1,
+    sceneOccurrenceCount: 1,
+  });
+  await page.route(`**${base}/act_test/plan-media`, (route) =>
+    route.fallback({
+      postData: JSON.stringify({
+        ...route.request().postDataJSON(),
+        manifest: {
+          productCode: "words",
+          refNum: 12,
+          assets: {
+            "en-US": [
+              {
+                key: "intro-video",
+                type: "video",
+                description: "The sky slowly brightens",
+                path: "media/uploads/intro-00000000.webm",
+                usages: [usage("intro-video")],
+              },
+              {
+                key: "sky",
+                type: "image",
+                description: "A blue sky",
+                path: "media/uploads/sky-00000000.png",
+                usages: [usage("sky")],
+              },
+            ],
+          },
+        },
+      }),
+    }),
+  );
+  const composition = {
+    kind: "composition",
+    composition: {
+      language: "en-US",
+      assetKey: "intro-video",
+      sceneId: "intro",
+      width: 640,
+      height: 480,
+      images: [{ key: "sky", file: "images/sky.png", sha256: "a".repeat(64) }],
+    },
+    runId: "run_comp_1",
+    inputRevision: "an-earlier-revision",
+    activityId: "act_test",
+    projectId,
+    agentId: "default_agent",
+    sessionId: "session_comp",
+    status: "succeeded",
+    createdAt: "2026-09-28T10:00:00Z",
+    finishedAt: "2026-09-28T10:01:00Z",
+    hasCandidate: true,
+    error: null,
+  };
+  // A WebM header is all the studio needs: the players fetch nothing until asked.
+  const webm = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x84, 0x42, 0x82, 0x81, 0x77]);
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const p = url.pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/video-setup`) return json({ enabled: true });
+    if (p === `${base}/act_test/media-upload` && url.searchParams.get("path")?.endsWith(".webm"))
+      return route.fulfill({ contentType: "video/webm", body: webm });
+    if (p === `${base}/act_test/media-upload` || p === `${base}/act_test/media-image`)
+      return route.fulfill({ contentType: "image/png", body: PIXEL });
+    if (p === `${base}/act_test/runs` && request.method() === "GET")
+      return json({ runs: [...recordings, composition] });
+    if (p === `${base}/act_test/runs/run_comp_1/candidate`)
+      return json({
+        candidate: JSON.stringify({
+          frames: [
+            { id: "frame-1", description: "The sky fades in", seconds: 3 },
+            { id: "frame-2", description: "The sun rises", seconds: 3 },
+          ],
+          seconds: 6,
+          sha256: "b".repeat(64),
+          bytes: 900,
+        }),
+      });
+    if (p === `${base}/act_test/runs/run_comp_1/composition-link`)
+      return route.fulfill({ contentType: "text/html", body: "<!doctype html><p>Dawn</p>" });
+    if (p === `${base}/act_test/render-video`) {
+      const body = request.postDataJSON();
+      if (refuseRender) {
+        refuseRender = false;
+        return json(
+          { error: { code: "test_browser_missing", message: "Server sentence, not shown." } },
+          409,
+        );
+      }
+      // One run at a time, as the server allows.
+      if (recordings.some((run) => run.status === "running"))
+        return json({ error: { code: "generation_running", message: "Running." } }, 409);
+      renderRequests.push(body);
+      recordings.unshift({
+        kind: "video",
+        video: {
+          language: "en-US",
+          assetKey: "intro-video",
+          compositionRunId: body.compositionRunId,
+          width: 640,
+          height: 480,
+          seconds: 6,
+        },
+        runId: `run_video_${recordings.length + 1}`,
+        inputRevision: body.expectedRevision,
+        activityId: "act_test",
+        projectId,
+        agentId: "",
+        sessionId: null,
+        status: "running",
+        createdAt: `2026-09-28T11:0${recordings.length}:00Z`,
+        finishedAt: null,
+        hasCandidate: false,
+        error: null,
+      });
+      return json(recordings[0], 202);
+    }
+    if (/\/runs\/run_video_\d+\/video$/.test(p))
+      return route.fulfill({ contentType: "video/webm", body: webm });
+    if (/\/runs\/run_video_\d+\/accept-video$/.test(p)) {
+      const run = recordings.find((entry) => p.includes(`/${entry.runId}/`));
+      if (!run || run.status !== "succeeded")
+        return json({ error: { code: "video_changed", message: "Not kept." } }, 409);
+      const manifest = structuredClone(draft.mediaPlan.manifest);
+      const asset = manifest.assets["en-US"].find((entry) => entry.key === "intro-video");
+      asset.path = `media/generated/${run.runId}.webm`;
+      asset.generatedVideo = { runId: run.runId, sha256: "c".repeat(64) };
+      accepted = {
+        ...draft,
+        contentRevision: `${draft.contentRevision}-video`,
+        mediaPlan: { ...draft.mediaPlan, manifest },
+      };
+      return json(accepted);
+    }
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  await page.getByRole("treeitem", { name: "Videos", exact: true, level: 3 }).click();
+  await page
+    .getByRole("treeitem", { name: /intro-video/ })
+    .first()
+    .click();
+  await expect(page.getByRole("heading", { name: "intro-video", exact: true })).toBeVisible();
+
+  const section = page.getByRole("region", { name: "Scene video", exact: true });
+  const record = section.getByRole("button", { name: "Record video", exact: true });
+  await expect(record).toBeEnabled();
+  await expect(
+    section.getByText(
+      "A recording opens with a short blank moment while the page loads, before the animation starts. It is not trimmed.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  // A refusal the server reports by code is worded by the App.
+  await record.click();
+  await expect(
+    page.getByText("The test browser is not installed. An admin installs it in System settings.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("Server sentence, not shown.")).toHaveCount(0);
+  expect(renderRequests).toEqual([]);
+
+  await record.click();
+  await expect.poll(() => renderRequests.length).toBe(1);
+  expect(renderRequests[0]).toMatchObject({ compositionRunId: "run_comp_1" });
+  expect(renderRequests[0].expectedRevision).toBe(draft.contentRevision);
+  await expect(section.getByRole("button", { name: "Recording…", exact: true })).toBeDisabled();
+
+  // The recording plays beside the current video, and replaces it only on request.
+  recordings[0] = {
+    ...recordings[0],
+    status: "succeeded",
+    hasCandidate: true,
+    finishedAt: "2026-09-28T11:00:09Z",
+  };
+  const comparison = section.getByRole("region", { name: "Current and new", exact: true });
+  await expect(comparison).toBeVisible({ timeout: 15_000 });
+  await expect(
+    comparison.getByRole("figure", { name: "Current", exact: true }).locator("video"),
+  ).toHaveAttribute(
+    "src",
+    `${base}/act_test/media-upload?path=media%2Fuploads%2Fintro-00000000.webm`,
+  );
+  await expect(
+    comparison.getByRole("figure", { name: "New", exact: true }).locator("video"),
+  ).toHaveAttribute("src", `${base}/act_test/runs/run_video_1/video`);
+  await comparison.getByRole("button", { name: "Use new", exact: true }).click();
+  await expect
+    .poll(() => accepted?.mediaPlan.manifest.assets["en-US"][0].path)
+    .toBe("media/generated/run_video_1.webm");
+  // Kept: the scene's video is the recording, and the comparison is gone.
+  await expect(
+    page.locator('video[aria-label="Play bound media: Recorded video"]'),
+  ).toHaveAttribute("src", `${base}/act_test/runs/run_video_1/video`);
+  await expect(comparison).toHaveCount(0);
+  await expect(section.getByRole("button", { name: "Record again", exact: true })).toBeVisible();
+  // The fixture's init script runs in every frame, the sandboxed preview too, where reading
+  // localStorage is refused by design; only that exact refusal is the sandbox working.
+  expect(
+    f.errors.filter(
+      (error) =>
+        !error.includes(
+          "Failed to read the 'localStorage' property from 'Window': The document is sandboxed and lacks the 'allow-same-origin' flag.",
+        ),
+    ),
+  ).toEqual([]);
+});

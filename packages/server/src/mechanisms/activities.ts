@@ -5,6 +5,7 @@ import type { SoundSetup } from "../activities/sound-types.js";
 import type { SpeechProviderId, SpeechSetup } from "../activities/speech-types.js";
 import type { ImageRequest } from "../activities/image.js";
 import type { CompositionFileContent } from "../activities/composition.js";
+import type { VideoProblemCode, VideoResult, VideoTarget } from "../activities/video-types.js";
 import type { ImageTarget, ImageResult } from "../activities/generated-image.js";
 import type { MediaTextTarget } from "../activities/media-text.js";
 import type { AssistFocus, AssistProposal, ProposalChange } from "../activities/assist.js";
@@ -84,6 +85,8 @@ export abstract class ActivityGeneration extends Interface<{
     runtime?: { codingAgentId?: string },
   ): Promise<ActivityRun>;
   list(projectId: string, activityId: string): Promise<ActivityRunSummary[]>;
+  /** One run of the activity, with its candidate; 404 `run_not_found` when there is none. */
+  run(projectId: string, activityId: string, runId: string): Promise<ActivityRun>;
   candidate(projectId: string, activityId: string, runId: string): Promise<string | null>;
   /** An assist run's current proposal, read from its workspace. */
   proposal(
@@ -106,6 +109,8 @@ export abstract class ActivityGeneration extends Interface<{
     projectId: string,
     activityId: string,
     kind: DeterministicRunKind,
+    /** A video run's target, recorded with the run. */
+    target?: { video?: VideoTarget },
   ): Promise<ActivityRun>;
   /**
    * Settles a run `openDeterministic` opened. False, and nothing changed, when it had already
@@ -117,6 +122,10 @@ export abstract class ActivityGeneration extends Interface<{
     runId: string,
     status: "succeeded" | "failed",
     error: string | null,
+    /** What a succeeded run kept (a video run's recording), stored as its candidate. */
+    candidate?: string,
+    /** Why a failed video run failed, when Penguin knows the cause; kept on its target. */
+    videoProblem?: VideoProblemCode,
   ): Promise<boolean>;
   /** Whether a run is still going: false once it has settled, been cancelled or interrupted. */
   isRunning(projectId: string, activityId: string, runId: string): Promise<boolean>;
@@ -148,6 +157,15 @@ export abstract class ActivityGeneration extends Interface<{
   speechSetup(projectId: string, agentId?: string): Promise<SpeechSetup>;
   imageCandidateContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array>;
   acceptImage(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
+  /** A video run's recording, or a recording the draft binds; 404 when there is none. */
+  videoContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array>;
+  /** Bind a successful video run's recording to its asset (experimental). */
+  acceptVideo(
     projectId: string,
     activityId: string,
     runId: string,
@@ -227,6 +245,39 @@ export abstract class ActivityAuthoring extends Interface<{
     workspace: string,
     expectedRevision: string,
   ): Promise<void>;
+  /** Keep a video run's recording in the draft workspace; 422 `video_invalid` if not a WebM. */
+  storeVideo(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    bytes: Uint8Array,
+  ): Promise<VideoResult>;
+  /** Remove a recording kept for a run that was not settled with it (cancelled or stopped). */
+  discardVideo(projectId: string, activityId: string, runId: string): Promise<void>;
+  /** A kept recording, while its bytes are the ones kept; 409 `video_changed` otherwise. */
+  readVideo(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    sha256: string,
+  ): Promise<Uint8Array>;
+  /** Bind a kept recording to its video or animation asset. */
+  applyVideo(
+    projectId: string,
+    activityId: string,
+    target: VideoTarget,
+    result: VideoResult,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
+  /** Copy the accepted recordings into an assembly workspace at their bound paths. */
+  prepareVideoMedia(
+    projectId: string,
+    activityId: string,
+    workspace: string,
+    expectedRevision: string,
+  ): Promise<void>;
+  /** The draft file behind a bound recording's media path, or null when none is bound there. */
+  boundVideoFile(projectId: string, activityId: string, mediaPath: string): Promise<string | null>;
   imageContent(
     projectId: string,
     activityId: string,

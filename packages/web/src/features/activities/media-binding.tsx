@@ -55,7 +55,7 @@ export function MediaBinding({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const kind = uploadKindFor(asset.type);
-  const generated = !!asset.generatedAudio || !!asset.generatedImage;
+  const generated = !!asset.generatedAudio || !!asset.generatedImage || !!asset.generatedVideo;
   const locked = !editable || disabled || generated;
   const problem = asset.path ? mediaPathProblem(asset.path) : null;
   const scenes = sharedScenes(asset);

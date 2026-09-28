@@ -54,7 +54,9 @@ function mediaSlots(manifest: VersionManifest): Map<string, VersionMedia> {
         ? byPath.get(`audio/${asset.generatedAudio.runId}.${asset.generatedAudio.format ?? "wav"}`)
         : asset.generatedImage
           ? byPath.get(`images/${asset.generatedImage.runId}.png`)
-          : undefined;
+          : asset.generatedVideo
+            ? byPath.get(`videos/${asset.generatedVideo.runId}.webm`)
+            : undefined;
       if (!file || claimed.has(file.path)) continue;
       slots.set(`asset:${language}:${asset.key}`, file);
       claimed.add(file.path);

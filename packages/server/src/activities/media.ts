@@ -88,6 +88,11 @@ export interface MediaAsset {
    */
   generatedAudio?: { runId: string; sha256: string; format?: GeneratedAudioFormat };
   generatedImage?: { runId: string; sha256: string };
+  /**
+   * A scene video a run recorded from a composition and the author accepted (experimental),
+   * on a video or animation asset, bound to `media/generated/<runId>.webm`.
+   */
+  generatedVideo?: { runId: string; sha256: string };
   usages: {
     sceneId: string;
     sourceKey: string;
@@ -175,6 +180,7 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
               "usages",
               "generatedAudio",
               "generatedImage",
+              "generatedVideo",
             ].includes(key),
         )
       )
@@ -384,6 +390,19 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         )
           throw new Error("Invalid generated image binding.");
       }
+      if (asset.generatedVideo !== undefined) {
+        const generated = object(asset.generatedVideo);
+        if (
+          (asset.type !== "video" && asset.type !== "animation") ||
+          Object.keys(generated).some((key) => !["runId", "sha256"].includes(key)) ||
+          typeof generated.runId !== "string" ||
+          !/^run_[a-f0-9]{32}$/.test(generated.runId) ||
+          typeof generated.sha256 !== "string" ||
+          !/^[a-f0-9]{64}$/.test(generated.sha256) ||
+          asset.path !== `media/generated/${generated.runId}.webm`
+        )
+          throw new Error("Invalid generated video binding.");
+      }
       const usages = asset.usages.map((value) => {
         const usage = object(value);
         if (
@@ -467,6 +486,14 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           : {}),
         ...(asset.generatedImage !== undefined
           ? { generatedImage: asset.generatedImage as MediaAsset["generatedImage"] }
+          : {}),
+        ...(asset.generatedVideo !== undefined
+          ? {
+              generatedVideo: {
+                runId: String((asset.generatedVideo as Record<string, unknown>).runId),
+                sha256: String((asset.generatedVideo as Record<string, unknown>).sha256),
+              },
+            }
           : {}),
         usages,
       };
@@ -624,6 +651,7 @@ export function wafManifest(manifest: AssetManifest): AssetManifest {
           ({
             generatedAudio: _audio,
             generatedImage: _image,
+            generatedVideo: _video,
             phonemeSource: _source,
             customScript: _script,
             phonemeTimings: _sounds,

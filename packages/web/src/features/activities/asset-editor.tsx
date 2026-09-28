@@ -47,6 +47,7 @@ import { BookWordFields } from "./book-word-fields";
 import { PhonemeTimelineView } from "./phoneme-timeline-view";
 import { isBookWord } from "./book-words";
 import { SceneCompositionView } from "./scene-composition-view";
+import { recordingUrl } from "./scene-video";
 
 export function AssetEditor({
   manifest,
@@ -88,6 +89,8 @@ export function AssetEditor({
   savedManifest,
   onSaveSounds,
   onCompose,
+  onRecordVideo,
+  onAcceptVideo,
   spec,
 }: {
   manifest: AssetManifest;
@@ -152,6 +155,10 @@ export function AssetEditor({
    * scene-video experiment is on; absent, the editor shows nothing of it.
    */
   onCompose?: (language: string, assetKey: string) => void;
+  /** Record a kept composition to a video (experimental, like `onCompose`). */
+  onRecordVideo?: (compositionRunId: string) => void;
+  /** Bind a recorded video to its asset. */
+  onAcceptVideo?: (runId: string) => void;
   /** The saved specification, for the scene-video advisory about learner choices. */
   spec?: unknown;
   /**
@@ -204,6 +211,7 @@ export function AssetEditor({
   const audioUrl = (runId: string) => `${endpoint}/runs/${encodeURIComponent(runId)}/audio`;
   const generatedImageUrl = (runId: string) =>
     `${endpoint}/runs/${encodeURIComponent(runId)}/image`;
+  const videoUrl = (runId: string) => recordingUrl(endpoint, runId);
   /**
    * Store a trimmed clip as an upload and bind the asset to it. The file is no longer the
    * one a speech run produced, so the asset stops claiming that run's output.
@@ -225,6 +233,8 @@ export function AssetEditor({
   const uploadUrl = (path: string) => `${endpoint}/media-upload?path=${encodeURIComponent(path)}`;
   function bindPath(path: string | undefined) {
     edit((entry) => {
+      // A recording is bound only at its own path; another file is no longer it.
+      if (entry.generatedVideo && entry.path !== path) delete entry.generatedVideo;
       if (path) entry.path = path;
       else delete entry.path;
       // Timings describe the recording that was bound, not this one.
@@ -247,6 +257,8 @@ export function AssetEditor({
           description={asset.description}
         />
       );
+    if (asset.generatedVideo)
+      return <MediaPlayer kind="video" src={videoUrl(asset.generatedVideo.runId)} label={label} />;
     if (isUploadPath(asset.path)) return uploadedMedia(asset.path, label);
     if (asset.type === "image" && canPreview)
       return <ImagePreview src={imageUrl} description={asset.description} />;
@@ -317,15 +329,17 @@ export function AssetEditor({
     ? null
     : asset.type === "audio" && asset.generatedAudio
       ? acceptedSrc
-      : isUploadPath(asset.path)
-        ? uploadSrc
-        : asset.path.startsWith("media/")
-          ? `${endpoint}/sandbox/media/${asset.path
-              .slice("media/".length)
-              .split("/")
-              .map(encodeURIComponent)
-              .join("/")}`
-          : null;
+      : asset.generatedVideo
+        ? videoUrl(asset.generatedVideo.runId)
+        : isUploadPath(asset.path)
+          ? uploadSrc
+          : asset.path.startsWith("media/")
+            ? `${endpoint}/sandbox/media/${asset.path
+                .slice("media/".length)
+                .split("/")
+                .map(encodeURIComponent)
+                .join("/")}`
+            : null;
   const details =
     asset?.path && detailsSrc && (asset.type === "audio" || asset.type === "video") ? (
       <MediaDetailsView
@@ -549,7 +563,14 @@ export function AssetEditor({
             )}
             {asset.type === "audio" && !asset.generatedAudio && details}
             {(asset.type === "video" || asset.type === "animation") &&
-              (isUploadPath(asset.path) ? (
+              (asset.generatedVideo ? (
+                <MediaPlayer
+                  key={asset.generatedVideo.runId}
+                  kind="video"
+                  src={videoUrl(asset.generatedVideo.runId)}
+                  label={S.activities.video.recorded}
+                />
+              ) : isUploadPath(asset.path) ? (
                 <MediaPlayer
                   kind="video"
                   src={`${endpoint}/media-upload?path=${encodeURIComponent(asset.path!)}`}
@@ -571,6 +592,10 @@ export function AssetEditor({
                 canGenerate={canGenerate}
                 spec={spec}
                 onCompose={onCompose}
+                canRecord={canAccept}
+                onRecord={onRecordVideo}
+                onAcceptVideo={onAcceptVideo}
+                current={currentMedia() ?? undefined}
               />
             )}
             {asset.type === "audio" && isBookWord(asset) && (

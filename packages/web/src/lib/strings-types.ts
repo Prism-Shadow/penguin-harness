@@ -1395,6 +1395,33 @@ export type Strings = {
         string
       >;
       choiceWarning: string;
+      /** Recording a composition to a video: the action, its run, and the comparison. */
+      record: string;
+      rerecord: string;
+      recording: string;
+      /** The recording run's name in the history and the sessions panel. */
+      recordRun: string;
+      recordings: string;
+      /** The label of the bound recording's player. */
+      recorded: string;
+      useNew: string;
+      keepCurrent: string;
+      /** The recording's known limit: a blank moment before the animation starts. */
+      leadIn: string;
+      olderRecording: string;
+      noCurrent: string;
+      recordFailed: (cause: string) => string;
+      noCause: string;
+      /** A failed recording, by the code the server reports for the causes it knows. */
+      recordProblems: Record<
+        | "video_not_ready"
+        | "video_no_timeline"
+        | "video_timeout"
+        | "video_invalid"
+        | "video_too_large"
+        | "video_stopped",
+        string
+      >;
       /** A failed check of what the agent wrote, by the code the server reports. */
       problems: Record<
         | "composition_network"
@@ -4264,6 +4291,11 @@ export type Strings = {
     noDefaultModel: string;
     byCode: {
       experiment_off: string;
+      video_composition_missing: string;
+      video_asset_changed: string;
+      video_invalid: string;
+      video_changed: string;
+      test_browser_missing: string;
       composition_no_images: string;
       composition_asset_invalid: string;
       composition_image_too_large: string;

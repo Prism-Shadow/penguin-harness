@@ -44,7 +44,8 @@ const RUN_ID = /^run_[a-f0-9]{32}$/;
 /**
  * Which bound files belong to Penguin (and where they sit in the draft workspace) and which
  * are checkout references. A generated clip or image lives at `audio/<runId>.wav` (`.mp3` for a sound) or
- * `images/<runId>.png`; an upload lives at its own reference.
+ * `images/<runId>.png`, a recorded scene video at `videos/<runId>.webm`; an upload lives at its
+ * own reference.
  */
 export function ownedMediaPaths(manifest: AssetManifest | undefined): {
   owned: OwnedMedia[];
@@ -59,6 +60,9 @@ export function ownedMediaPaths(manifest: AssetManifest | undefined): {
     } else if (asset.generatedImage && RUN_ID.test(asset.generatedImage.runId)) {
       const file = `images/${asset.generatedImage.runId}.png`;
       owned.set(file, { path: file, expectedSha256: asset.generatedImage.sha256 });
+    } else if (asset.generatedVideo && RUN_ID.test(asset.generatedVideo.runId)) {
+      const file = `videos/${asset.generatedVideo.runId}.webm`;
+      owned.set(file, { path: file, expectedSha256: asset.generatedVideo.sha256 });
     } else if (isUploadReference(asset.path)) {
       if (!owned.has(asset.path!))
         owned.set(asset.path!, { path: asset.path!, expectedSha256: null });
