@@ -4,6 +4,12 @@
  * draws the row for), and its script, run against a stand-in parent window, finds the
  * organization in the parent's URL, asks the plugin's own routes, follows the app's language
  * and escapes what it shows.
+ *
+ * And it is never blank. In the dark theme an empty `<main>` is a solid near-black pane — what a
+ * person saw in a real browser while the list was on its way, and for good when the answer never
+ * came — so every write the script makes is read back as text, and the document without its
+ * script, the moment before the answer, every refusal, a hung answer and a script that throws
+ * must each leave words (the HTTP status among them, when there is one).
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -15,8 +21,10 @@ import {
   PAGE_ROUTES_ID,
   PAGE_SRC,
   PAGE_STRINGS,
+  PAGE_TIMEOUT_MS,
   pageHtml,
   pageRoutes,
+  roadmapRecipe,
 } from "../src/index.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -27,20 +35,73 @@ function scriptOf(html: string): string {
   return m[1]!;
 }
 
-/** Runs the page's script against a parent at `parentPath`; returns what it rendered and what it asked. */
+/** What a person reads in some HTML: its text, tags dropped, the five escapes undone, spaces folded. */
+function readable(html: string): string {
+  return html
+    .replace(/<(script|style)[\s\S]*?<\/\1>/g, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(
+      /&(lt|gt|quot|#39|amp);/g,
+      (_, e: string) => ({ lt: "<", gt: ">", quot: '"', "#39": "'", amp: "&" })[e]!,
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+interface Answer {
+  ok: boolean;
+  status?: number;
+  body: unknown;
+}
+
+interface Rendered {
+  /** The last HTML the script wrote into `#main`. */
+  html: string;
+  /** Every HTML the script wrote into `#main`, in order. */
+  writes: string[];
+  fetched: string[];
+  lang: string;
+  dark: boolean;
+  title: string;
+  /** Fires the timers the script set (its deadline), then lets the promises settle. */
+  expire: () => Promise<string>;
+}
+
+const settle = async () => {
+  for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+};
+
+/**
+ * Runs the page's script against a parent at `parentPath`; returns what it rendered and what it
+ * asked. `answer` may return a promise that never settles (a hung server) or throw (no network).
+ */
 async function render(
   parentPath: string,
-  answer: (url: string) => { ok: boolean; body: unknown },
-  opts: { lang?: string; dark?: boolean; hash?: string } = {},
-): Promise<{ html: string; fetched: string[]; lang: string; dark: boolean; title: string }> {
+  answer: (url: string) => Answer | Promise<Answer>,
+  opts: { lang?: string; dark?: boolean; hash?: string; brokenRoot?: boolean } = {},
+): Promise<Rendered> {
   const fetched: string[] = [];
-  const main = { innerHTML: "", addEventListener: () => {} };
+  const writes: string[] = [];
+  const main = {
+    get innerHTML() {
+      return writes.at(-1) ?? "";
+    },
+    set innerHTML(html: string) {
+      writes.push(html);
+    },
+    addEventListener: () => {},
+  };
   const classes = new Set<string>();
+  const root = { lang: "", classList: { add: (c: string) => classes.add(c) } };
   const doc = {
     title: "",
     getElementById: () => main,
-    documentElement: { lang: "", classList: { add: (c: string) => classes.add(c) } },
+    get documentElement() {
+      if (opts.brokenRoot === true) throw new Error("no root element");
+      return root;
+    },
   };
+  const timers: Array<() => void> = [];
   const sandbox = {
     document: doc,
     window: {
@@ -50,24 +111,47 @@ async function render(
       },
       addEventListener: () => {},
     },
-    location: { hash: opts.hash ?? "", pathname: PAGE_SRC },
+    location: { hash: opts.hash ?? "", pathname: PAGE_SRC, origin: "http://localhost:7364" },
     localStorage: { getItem: () => opts.lang ?? null },
     navigator: { language: "en-US" },
+    setTimeout: (f: () => void) => timers.push(f),
+    clearTimeout: () => {},
     fetch: async (url: string) => {
       fetched.push(url);
-      const a = answer(url);
-      return { ok: a.ok, status: a.ok ? 200 : 404, json: async () => a.body };
+      const a = await answer(url);
+      return {
+        ok: a.ok,
+        status: a.status ?? (a.ok ? 200 : 404),
+        json: async () => {
+          if (typeof a.body === "string") throw new SyntaxError("Unexpected token");
+          return a.body;
+        },
+      };
     },
   };
   vm.runInNewContext(scriptOf(pageHtml()), sandbox);
-  for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+  await settle();
   return {
-    html: main.innerHTML,
+    get html() {
+      return main.innerHTML;
+    },
+    writes,
     fetched,
-    lang: doc.documentElement.lang,
+    lang: root.lang,
     dark: classes.has("dark"),
     title: doc.title,
+    expire: async () => {
+      for (const f of timers.splice(0)) f();
+      await settle();
+      return main.innerHTML;
+    },
   };
+}
+
+/** No write the script made reads as nothing. */
+function neverBlank(out: Rendered): void {
+  expect(out.writes.length).toBeGreaterThan(0);
+  for (const html of out.writes) expect(readable(html)).not.toBe("");
 }
 
 const ROADMAP = {
@@ -97,7 +181,7 @@ describe("the page route", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^text\/html/);
     const html = await res.text();
-    expect(html).toContain('<main id="main"></main>');
+    expect(html).toContain('<main id="main"><h1>Roadmaps</h1>');
     expect(`${PAGE_PREFIX}/page`).toBe(PAGE_SRC);
   });
 
@@ -151,11 +235,126 @@ describe("the page's script", () => {
     expect(out.html).toContain("## Why");
   });
 
-  it("says roadmaps are unavailable when the routes answer 404, and outside an organization asks nothing", async () => {
+  it("says roadmaps are unavailable when the routes answer a bare 404, and outside an organization asks nothing", async () => {
     const off = await render("/org/proj/acme/roadmaps", () => ({ ok: false, body: {} }));
-    expect(off.html).toContain(PAGE_STRINGS.en.unavailable);
+    expect(readable(off.html)).toContain(`HTTP 404 — ${PAGE_STRINGS.en.unavailable}`);
     const nowhere = await render("/chat", () => ({ ok: true, body: {} }));
     expect(nowhere.fetched).toEqual([]);
-    expect(nowhere.html).toContain(PAGE_STRINGS.en.unavailable);
+    expect(readable(nowhere.html)).toContain(PAGE_STRINGS.en.elsewhere);
+    expect(readable(nowhere.html)).toContain("/chat");
+  });
+});
+
+describe("the page is never blank", () => {
+  it("the document says what it is before any script runs", () => {
+    const body = /<body>([\s\S]*)<\/body>/.exec(pageHtml())![1]!;
+    const text = readable(body);
+    expect(text).toContain(PAGE_STRINGS.en.title);
+    expect(text).toContain(PAGE_STRINGS.en.loading);
+  });
+
+  it("says what it is asking before the answer arrives", async () => {
+    const out = await render("/org/proj/acme/roadmaps", () => new Promise<Answer>(() => {}), {
+      dark: true,
+    });
+    expect(out.fetched).toEqual(["/api/projects/proj/organizations/acme/roadmaps"]);
+    const text = readable(out.html);
+    expect(text).toContain(PAGE_STRINGS.en.title);
+    expect(text).toContain(PAGE_STRINGS.en.loading);
+    expect(text).toContain("GET /api/projects/proj/organizations/acme/roadmaps");
+    neverBlank(out);
+  });
+
+  it(`says the server did not answer when no answer has come after ${PAGE_TIMEOUT_MS / 1000} s`, async () => {
+    const out = await render("/org/proj/acme/roadmaps", () => new Promise<Answer>(() => {}));
+    const text = readable(await out.expire());
+    expect(text).toContain(PAGE_STRINGS.en.failed);
+    expect(text).toContain(PAGE_STRINGS.en.timeout.replace("{s}", String(PAGE_TIMEOUT_MS / 1000)));
+    neverBlank(out);
+  });
+
+  it.each([
+    [
+      404,
+      { error: { code: "not_found", message: "Company mode is off." } },
+      "Company mode is off.",
+    ],
+    [404, {}, PAGE_STRINGS.en.unavailable],
+    [401, {}, PAGE_STRINGS.en.signedOut],
+    [403, { error: { code: "forbidden", message: "Not a member." } }, "Not a member."],
+    [500, "<html>oops</html>", ""],
+  ])("a %i answer leaves its status and what it means", async (status, body, said) => {
+    const out = await render("/org/proj/acme/roadmaps", () => ({ ok: false, status, body }));
+    const text = readable(out.html);
+    expect(text).toContain(PAGE_STRINGS.en.failed);
+    expect(text).toContain(`HTTP ${status}`);
+    expect(text).toContain(said);
+    neverBlank(out);
+  });
+
+  it("a request that fails before any answer says so", async () => {
+    const out = await render("/org/proj/acme/roadmaps/3", () => {
+      throw new TypeError("Failed to fetch");
+    });
+    const text = readable(out.html);
+    expect(text).toContain(PAGE_STRINGS.en.network);
+    expect(text).toContain("Failed to fetch");
+    neverBlank(out);
+  });
+
+  it("a script that cannot start says so", async () => {
+    const out = await render(
+      "/org/proj/acme/roadmaps",
+      () => ({ ok: true, body: { roadmaps: [] } }),
+      {
+        brokenRoot: true,
+      },
+    );
+    expect(readable(out.html)).toContain(PAGE_STRINGS.en.broken);
+    expect(readable(out.html)).toContain("no root element");
+    neverBlank(out);
+  });
+
+  it("every state that answers is words, in either language", async () => {
+    for (const lang of ["en", "zh"] as const) {
+      for (const answer of [
+        () => ({ ok: true, body: { roadmaps: [] } }),
+        () => ({ ok: true, body: { roadmaps: [ROADMAP] } }),
+        () => ({ ok: false, status: 404, body: {} }),
+      ]) {
+        const out = await render("/org/proj/acme/roadmaps", answer, { lang, dark: true });
+        neverBlank(out);
+        expect(readable(out.html)).toContain(PAGE_STRINGS[lang].title);
+      }
+    }
+  });
+});
+
+describe("the page says how a roadmap is opened", () => {
+  const RECIPE = [
+    "penguin org channel create room_queue",
+    "penguin org channel invite room_queue agent:<employee>",
+    'curl -X POST "http://localhost:7364/api/projects/proj/organizations/acme/roadmaps"',
+  ];
+
+  it("fills the README's three commands with the organization at hand", () => {
+    const recipe = roadmapRecipe("proj", "acme", "http://localhost:7364");
+    for (const line of RECIPE) expect(recipe).toContain(line);
+    expect(recipe).toContain("--org-id acme --project-id proj");
+    expect(recipe).toContain('"channelId": "room_queue"');
+  });
+
+  it("on the empty list and on a list, as text a person can copy", async () => {
+    for (const body of [{ roadmaps: [] }, { roadmaps: [ROADMAP] }]) {
+      const out = await render("/org/proj/acme/roadmaps", () => ({ ok: true, body }));
+      const text = readable(out.html);
+      expect(text).toContain(PAGE_STRINGS.en.howTitle);
+      for (const line of RECIPE) expect(text).toContain(line);
+    }
+    const empty = await render("/org/proj/acme/roadmaps", () => ({
+      ok: true,
+      body: { roadmaps: [] },
+    }));
+    expect(readable(empty.html)).toContain(PAGE_STRINGS.en.empty);
   });
 });
