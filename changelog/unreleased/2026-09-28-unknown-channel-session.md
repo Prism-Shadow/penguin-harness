@@ -3,7 +3,7 @@
 - **Date:** 2026-09-28
 - **Type:** fix
 - **Scope:** `server`
-- **PR:** pending
+- **PR:** [#865](https://github.com/Prism-Shadow/penguin-harness/pull/865)
 
 [中文版](2026-09-28-unknown-channel-session.zh.md)
 
