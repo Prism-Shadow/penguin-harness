@@ -46,6 +46,7 @@ import { soundCandidateLabel, soundFailure } from "./sound-model";
 import { BookWordFields } from "./book-word-fields";
 import { PhonemeTimelineView } from "./phoneme-timeline-view";
 import { isBookWord } from "./book-words";
+import { SceneCompositionView } from "./scene-composition-view";
 
 export function AssetEditor({
   manifest,
@@ -86,6 +87,8 @@ export function AssetEditor({
   mediaStats,
   savedManifest,
   onSaveSounds,
+  onCompose,
+  spec,
 }: {
   manifest: AssetManifest;
   /** The language group the rail is showing. */
@@ -144,6 +147,13 @@ export function AssetEditor({
   savedManifest?: AssetManifest;
   /** Save the author's sounds for a decodable book's word. */
   onSaveSounds?: (language: string, assetKey: string, phonemes: string[]) => void;
+  /**
+   * Ask an agent to compose the scene of a video or animation asset. Given only while the
+   * scene-video experiment is on; absent, the editor shows nothing of it.
+   */
+  onCompose?: (language: string, assetKey: string) => void;
+  /** The saved specification, for the scene-video advisory about learner choices. */
+  spec?: unknown;
   /**
    * Where this asset's scene sits on the storyboard: its name, the way back to the board,
    * and the scenes either side. Absent for media no scene uses.
@@ -549,6 +559,20 @@ export function AssetEditor({
                 <p className="text-xs text-gray-500">{S.activities.noInAppPreview}</p>
               ))}
             {asset.type === "video" && details}
+            {(asset.type === "video" || asset.type === "animation") && onCompose && (
+              <SceneCompositionView
+                asset={asset}
+                group={group}
+                language={language}
+                runs={runs}
+                endpoint={endpoint}
+                revision={revision}
+                editable={editable}
+                canGenerate={canGenerate}
+                spec={spec}
+                onCompose={onCompose}
+              />
+            )}
             {asset.type === "audio" && isBookWord(asset) && (
               <>
                 <BookWordFields

@@ -39,6 +39,10 @@ import {
   proxyProbeTarget,
 } from "../../services/proxy-probe.js";
 import type { Settings } from "../../mechanisms/settings.js";
+import {
+  VIDEO_EXPERIMENT_SETTING,
+  readVideoExperiment,
+} from "../../activities/video-experiment.js";
 
 /**
  * proxyUrl update value -> stored value: null and empty/whitespace-only clear the
@@ -93,6 +97,9 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
       proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
       ...deps.serverSettingsRepo.getAttachmentLimitsMb(),
       companyMode: deps.serverSettingsRepo.getCompanyMode(),
+      activityVideoExperiment: readVideoExperiment(
+        deps.serverSettingsRepo.get(VIDEO_EXPERIMENT_SETTING),
+      ),
     },
   });
 
@@ -105,6 +112,7 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     const proxyForApp = optionalBoolean(body, "proxyForApp");
     const proxyForAgent = optionalBoolean(body, "proxyForAgent");
     const companyMode = optionalBoolean(body, "companyMode");
+    const videoExperiment = optionalBoolean(body, "activityVideoExperiment");
     const proxyUrlProvided = body.proxyUrl !== undefined;
     const proxyUrl = proxyUrlProvided ? parseProxyUrl(body.proxyUrl) : null;
     const attachmentMaxMb =
@@ -132,6 +140,9 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     // Read per tick by the organization scheduler and per request by the organization routes, so
     // flipping it needs no restart: off holds every automatic trigger and 404s the routes.
     if (companyMode !== undefined) deps.serverSettingsRepo.setCompanyMode(companyMode);
+    // Read per request by the activity routes, like company mode: no restart.
+    if (videoExperiment !== undefined)
+      deps.serverSettingsRepo.set(VIDEO_EXPERIMENT_SETTING, JSON.stringify(videoExperiment));
     if (proxyForApp !== undefined) deps.serverSettingsRepo.setProxyForApp(proxyForApp);
     if (proxyForAgent !== undefined) deps.serverSettingsRepo.setProxyForAgent(proxyForAgent);
     if (proxyUrlProvided) deps.serverSettingsRepo.setProxyUrl(proxyUrl);

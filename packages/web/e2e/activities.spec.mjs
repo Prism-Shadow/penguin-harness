@@ -7651,3 +7651,247 @@ test("plays an older module build", async ({ page }) => {
   ]);
   expect(f.errors).toEqual([]);
 });
+
+test("composes a scene from its storyboard when the experiment is on", async ({ page }) => {
+  const f = await fixture(page);
+  const composeRequests = [];
+  const compositionRuns = [];
+  let refuseCompose = false;
+  const usage = (key) => ({
+    sceneId: "intro",
+    sourceKey: key,
+    occurrence: 1,
+    sceneOccurrenceCount: 1,
+  });
+  await page.route(`**${base}/act_test/plan-media`, (route) =>
+    route.fallback({
+      postData: JSON.stringify({
+        ...route.request().postDataJSON(),
+        manifest: {
+          productCode: "words",
+          refNum: 12,
+          assets: {
+            "en-US": [
+              {
+                key: "intro-video",
+                type: "video",
+                description: "The sky slowly brightens",
+                usages: [usage("intro-video")],
+              },
+              {
+                key: "sky",
+                type: "image",
+                description: "A blue sky",
+                path: "media/uploads/sky-00000000.png",
+                usages: [usage("sky")],
+              },
+            ],
+          },
+        },
+      }),
+    }),
+  );
+  // Stands in for the page the preview origin would serve: it reports its state the way
+  // Penguin's bridge script does and answers the studio's play and pause messages.
+  const composition = `<!doctype html><html><body style="margin:0;background:#fff"><div id="stage">Dawn</div><script>
+    const tell = (state) => parent.postMessage({ source: "penguin-composition", state, duration: 6 }, "*");
+    addEventListener("message", (event) => {
+      if (event.data && event.data.source === "penguin-studio")
+        tell(event.data.action === "pause" ? "paused" : "playing");
+    });
+    addEventListener("load", () => tell("ready"));
+  </script></body></html>`;
+  await page.route("**/*", (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/video-setup`) return json({ enabled: true });
+    if (p === `${base}/act_test/media-upload` || p === `${base}/act_test/media-image`)
+      return route.fulfill({ contentType: "image/png", body: PIXEL });
+    if (p === `${base}/act_test/compose-video`) {
+      const body = request.postDataJSON();
+      if (refuseCompose)
+        return json(
+          { error: { code: "composition_no_images", message: "Server sentence, not shown." } },
+          409,
+        );
+      // One run at a time, as the server allows.
+      if (compositionRuns.some((run) => run.status === "running"))
+        return json({ error: { code: "generation_running", message: "Running." } }, 409);
+      composeRequests.push(body);
+      compositionRuns.unshift({
+        kind: "composition",
+        composition: {
+          language: body.language,
+          assetKey: body.assetKey,
+          sceneId: "intro",
+          width: 640,
+          height: 480,
+          images: [{ key: "sky", file: "images/sky.png", sha256: "a".repeat(64) }],
+        },
+        runId: `run_comp_${compositionRuns.length + 1}`,
+        inputRevision: body.expectedRevision,
+        activityId: "act_test",
+        projectId,
+        agentId: "default_agent",
+        sessionId: "session_comp",
+        status: "running",
+        createdAt: `2026-09-28T10:0${compositionRuns.length}:00Z`,
+        finishedAt: null,
+        hasCandidate: false,
+        error: null,
+      });
+      return json(compositionRuns[0], 202);
+    }
+    if (p === `${base}/act_test/runs` && request.method() === "GET")
+      return json({ runs: compositionRuns });
+    if (/\/runs\/run_comp_\d+\/candidate$/.test(p))
+      return json({
+        candidate: JSON.stringify({
+          frames: [
+            { id: "frame-1", description: "The sky fades in", seconds: 3 },
+            { id: "frame-2", description: "The sun rises", seconds: 3 },
+          ],
+          seconds: 6,
+          sha256: "b".repeat(64),
+          bytes: 900,
+        }),
+      });
+    if (/\/runs\/run_comp_\d+\/composition-link$/.test(p))
+      return route.fulfill({ contentType: "text/html", body: composition });
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  // Videos is a closed group of the scene until it is opened.
+  await page.getByRole("treeitem", { name: "Videos", exact: true, level: 3 }).click();
+  await page
+    .getByRole("treeitem", { name: /intro-video/ })
+    .first()
+    .click();
+  await expect(page.getByRole("heading", { name: "intro-video", exact: true })).toBeVisible();
+
+  const section = page.getByRole("region", { name: "Scene video", exact: true });
+  await expect(section.getByText("Experimental", { exact: true })).toBeVisible();
+  await section.getByRole("button", { name: "Compose from storyboard", exact: true }).click();
+  await expect.poll(() => composeRequests.length).toBe(1);
+  expect(composeRequests[0]).toMatchObject({
+    agentId: "default_agent",
+    language: "en-US",
+    assetKey: "intro-video",
+  });
+  await expect(section.getByRole("button", { name: "Composing…", exact: true })).toBeDisabled();
+
+  compositionRuns[0] = { ...compositionRuns[0], status: "succeeded", hasCandidate: true };
+  const preview = section.getByTitle("Scene composition preview", { exact: true });
+  await expect(preview).toBeVisible({ timeout: 15_000 });
+  await expect(preview).toHaveAttribute("sandbox", "allow-scripts");
+  await expect(preview).toHaveAttribute("src", `${base}/act_test/runs/run_comp_1/composition-link`);
+  await expect(section.getByText("Ready to play · 6 s", { exact: true })).toBeVisible();
+  await section.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(section.getByText("Playing · 6 s", { exact: true })).toBeVisible();
+  await section.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(section.getByText("Paused · 6 s", { exact: true })).toBeVisible();
+  const frames = section.getByRole("region", { name: "Frames", exact: true });
+  await expect(frames.getByRole("listitem")).toHaveText([
+    "Frame 1 · 3 s The sky fades in",
+    "Frame 2 · 3 s The sun rises",
+  ]);
+
+  // Ask again: a check that failed is worded, and the kept composition stays on screen.
+  await section.getByRole("button", { name: "Compose again", exact: true }).click();
+  await expect.poll(() => composeRequests.length).toBe(2);
+  compositionRuns[0] = {
+    ...compositionRuns[0],
+    status: "failed",
+    error: "composition.html reaches the network (https://cdn.example.com/gsap.js)",
+    composition: { ...compositionRuns[0].composition, problem: "composition_network" },
+  };
+  await expect(
+    section.getByText(
+      "The composition tried to load something from the network. Compose again; it may use only the scene's images.",
+      { exact: true },
+    ),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(preview).toHaveAttribute("src", `${base}/act_test/runs/run_comp_1/composition-link`);
+
+  // A refusal the server reports by code is worded by the App, not by the server.
+  refuseCompose = true;
+  await section.getByRole("button", { name: "Compose again", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Bind an image to this scene first: the composition is made from the scene's images.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("Server sentence, not shown.")).toHaveCount(0);
+  // The fixture's init script runs in every frame, the sandboxed preview too, where reading
+  // localStorage is refused by design; only that exact refusal is the sandbox working.
+  expect(
+    f.errors.filter(
+      (error) =>
+        !error.includes(
+          "Failed to read the 'localStorage' property from 'Window': The document is sandboxed and lacks the 'allow-same-origin' flag.",
+        ),
+    ),
+  ).toEqual([]);
+});
+
+test("shows nothing of scene videos while the experiment is off", async ({ page }) => {
+  const f = await fixture(page);
+  await page.route(`**${base}/act_test/plan-media`, (route) =>
+    route.fallback({
+      postData: JSON.stringify({
+        ...route.request().postDataJSON(),
+        manifest: {
+          productCode: "words",
+          refNum: 12,
+          assets: {
+            "en-US": [
+              {
+                key: "intro-video",
+                type: "video",
+                description: "The sky slowly brightens",
+                usages: [
+                  {
+                    sceneId: "intro",
+                    sourceKey: "intro-video",
+                    occurrence: 1,
+                    sceneOccurrenceCount: 1,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    }),
+  );
+  await page.route("**/*", (route) => {
+    if (new URL(route.request().url()).pathname === `${base}/video-setup`)
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ enabled: false }),
+      });
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Specification");
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await openSection(page, "Scenes and media");
+  await planMedia(page);
+  await expect(page.getByRole("heading", { name: "intro-video", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Scene video", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Compose from storyboard" })).toHaveCount(0);
+  expect(f.errors).toEqual([]);
+});

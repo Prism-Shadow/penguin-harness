@@ -1370,6 +1370,43 @@ export type Strings = {
       bulkUnavailable: (provider: string) => string;
       statuses: Record<"ready" | "missing" | "failed" | "generating" | "noPrompt", string>;
     };
+    /** Scene videos (experimental): an agent composes an animated scene from its storyboard. */
+    video: {
+      title: string;
+      info: string;
+      experimental: string;
+      compose: string;
+      recompose: string;
+      composing: string;
+      /** The run's name in the history and the sessions panel. */
+      run: string;
+      noImages: string;
+      candidates: string;
+      frames: string;
+      frame: (index: number, seconds: string) => string;
+      seconds: (seconds: string) => string;
+      preview: string;
+      play: string;
+      pause: string;
+      restart: string;
+      older: string;
+      states: Record<
+        "loading" | "ready" | "playing" | "paused" | "ended" | "broken" | "unavailable",
+        string
+      >;
+      choiceWarning: string;
+      /** A failed check of what the agent wrote, by the code the server reports. */
+      problems: Record<
+        | "composition_network"
+        | "composition_reference"
+        | "composition_timeline"
+        | "composition_template"
+        | "composition_random"
+        | "composition_size"
+        | "composition_frames",
+        string
+      >;
+    };
     assetLibrary: {
       kind: string;
       binding: string;
@@ -1745,6 +1782,9 @@ export type Strings = {
     companyModePersonalInfo: string;
     companyModeServer: string;
     companyModeServerInfo: string;
+    /** The scene-videos experiment switch (admin), on the general page. */
+    videoExperiment: string;
+    videoExperimentInfo: string;
     /** The deploy settings page (admin): where activities are deployed to. */
     deploy: {
       title: string;
@@ -4223,6 +4263,11 @@ export type Strings = {
     speechCredentialMissing: (key: string) => string;
     noDefaultModel: string;
     byCode: {
+      experiment_off: string;
+      composition_no_images: string;
+      composition_asset_invalid: string;
+      composition_image_too_large: string;
+      composition_not_found: string;
       deploy_clones_running: string;
       deploy_running: string;
       deploy_blocked: string;

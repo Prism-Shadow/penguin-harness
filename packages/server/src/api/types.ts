@@ -258,6 +258,12 @@ export interface ServerSettings {
    * reports it so clients hide the mode switch. Organizations on disk are untouched.
    */
   companyMode: boolean;
+  /**
+   * Scene videos experiment switch (default off). On, a video or animation asset in the
+   * activity studio offers Compose from storyboard; off, the studio shows nothing of it and
+   * the composition routes answer 403. Read per request, so it needs no restart.
+   */
+  activityVideoExperiment: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -270,6 +276,8 @@ export interface ServerSettingsUpdateRequest {
   proxyForAgent?: boolean;
   /** Company mode master switch; see `ServerSettings.companyMode`. */
   companyMode?: boolean;
+  /** Scene videos experiment switch; see `ServerSettings.activityVideoExperiment`. */
+  activityVideoExperiment?: boolean;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -5143,6 +5151,14 @@ export type {
   SoundRequest,
   SoundSetup,
 } from "../activities/sound-types.js";
+export type {
+  CompositionCandidate,
+  CompositionFrame,
+  CompositionImage,
+  CompositionProblemCode,
+  CompositionTarget,
+  VideoSetup,
+} from "../activities/composition-types.js";
 export type {
   SpeechProblem,
   SpeechProviderId,

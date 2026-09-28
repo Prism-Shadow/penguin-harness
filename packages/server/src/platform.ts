@@ -111,6 +111,10 @@ import {
 } from "./activities/module-build-service.js";
 import { ActivityPlayRoutes } from "./activities/play-routes.js";
 import {
+  ActivityCompositionRoutes,
+  ActivityCompositionService,
+} from "./activities/composition-service.js";
+import {
   DefaultTestBrowserPorts,
   TestBrowser,
   TestBrowserService,
@@ -402,6 +406,8 @@ export class CodingAgentsModule {}
     ActivityModuleBuildService,
     ActivityRoutes,
     ActivityPlayRoutes,
+    ActivityCompositionService,
+    ActivityCompositionRoutes,
     DefaultTestBrowserPorts,
     DefaultSoundModelPorts,
     DefaultMediaLibraryPorts,

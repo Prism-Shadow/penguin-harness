@@ -41,3 +41,13 @@ changed no schema either:
   and plays the newest build.
 - The deployed markers and `module_run_id` fill columns migration 21 created and older builds
   left empty.
+
+The [scene composition](2026-09-28-activity-scene-composition.md) experiment changed no schema
+either:
+
+- Its switch is a new `server_settings` key, `activityVideoExperiment`; a server without the
+  row reads it as off. An older build ignores the key.
+- A composition run is a row of `activity_runs` with the new kind `composition` and an optional
+  `composition` field in its record. An older build lists it as it is stored and names it as a
+  specification run, and serves no composition. A composition run still going when an older
+  build takes over fails there, since that build looks for a specification to collect.

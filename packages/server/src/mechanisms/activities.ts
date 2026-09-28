@@ -4,6 +4,7 @@ import type { GeneratedAudioFormat } from "../activities/media.js";
 import type { SoundSetup } from "../activities/sound-types.js";
 import type { SpeechProviderId, SpeechSetup } from "../activities/speech-types.js";
 import type { ImageRequest } from "../activities/image.js";
+import type { CompositionFileContent } from "../activities/composition.js";
 import type { ImageTarget, ImageResult } from "../activities/generated-image.js";
 import type { MediaTextTarget } from "../activities/media-text.js";
 import type { AssistFocus, AssistProposal, ProposalChange } from "../activities/assist.js";
@@ -73,6 +74,11 @@ export abstract class ActivityGeneration extends Interface<{
       test?: AcceptanceStage;
       /** Sounds for a decodable book's words, proposed by a model for the author to accept. */
       phonemes?: { language: string; words: unknown };
+      /**
+       * An animated composition of a video or animation asset's scene, from its description
+       * and bound images (experimental: refused while `activityVideoExperiment` is off).
+       */
+      composition?: { language: string; assetKey: string; wafRoot?: string };
     },
     /** Run on an external coding agent instead of the Penguin agent `agentId` names. */
     runtime?: { codingAgentId?: string },
@@ -160,6 +166,18 @@ export abstract class ActivityGeneration extends Interface<{
     runId: string,
     expectedRevision: string,
   ): Promise<ActivityDraft>;
+  /** Whether an admin turned the scene-video experiment on. */
+  videoExperiment(): boolean;
+  /**
+   * One file of a kept composition (the page, a staged image or a vendored script), for the
+   * preview origin only; 404 `composition_not_found` for anything else.
+   */
+  compositionFile(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    rawPath: string,
+  ): Promise<CompositionFileContent>;
   /** Keep a successful assessment run's candidate as the product's assessment edit. */
   acceptAssessment(
     projectId: string,

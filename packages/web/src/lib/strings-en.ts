@@ -1613,6 +1613,53 @@ export const en: Strings = {
         noPrompt: "No prompt",
       },
     },
+    video: {
+      title: "Scene video",
+      info: "An agent composes a short animation for this scene from its description and the images bound to it. Watch it here and ask again until it fits; nothing is recorded or bound to the asset yet. The composition runs on the preview origin and may use only the scene's images.",
+      experimental: "Experimental",
+      compose: "Compose from storyboard",
+      recompose: "Compose again",
+      composing: "Composing…",
+      run: "Scene composition",
+      noImages:
+        "Bind an image to this scene first: the composition is made from the scene's images.",
+      candidates: "Compositions",
+      frames: "Frames",
+      frame: (index: number, seconds: string) => `Frame ${index} · ${seconds} s`,
+      seconds: (seconds: string) => `${seconds} s`,
+      preview: "Scene composition preview",
+      play: "Play",
+      pause: "Pause",
+      restart: "Restart",
+      older: "Composed from an earlier draft.",
+      states: {
+        loading: "Loading the composition…",
+        ready: "Ready to play",
+        playing: "Playing",
+        paused: "Paused",
+        ended: "Finished",
+        broken: "The composition has no timeline to play.",
+        unavailable:
+          "The composition could not be shown. It may have changed, or scene videos may have been turned off. Compose again or reload the page.",
+      },
+      choiceWarning:
+        "This scene asks the learner to choose something, and a video only plays. You can still compose it.",
+      problems: {
+        composition_network:
+          "The composition tried to load something from the network. Compose again; it may use only the scene's images.",
+        composition_reference:
+          "The composition refers to a file that is not one of the scene's images. Compose again.",
+        composition_timeline:
+          "The composition has no paused animation timeline to play. Compose again.",
+        composition_template:
+          "The composition dropped part of the template it must keep. Compose again.",
+        composition_random:
+          "The composition uses randomness, so it would not play the same way twice. Compose again.",
+        composition_size: "The composition is larger than 512 KB. Compose again.",
+        composition_frames:
+          "The frame list is missing, unreadable, or not 6 to 60 seconds long. Compose again.",
+      },
+    },
     assetLibrary: {
       kind: "Media type",
       binding: "Binding",
@@ -2114,6 +2161,9 @@ export const en: Strings = {
     companyModeServer: "Enable company mode",
     companyModeServerInfo:
       "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger. Beta: it may be unstable; please report what you hit.",
+    videoExperiment: "Scene videos",
+    videoExperimentInfo:
+      "For every author on this server: a video or animation asset in the activity studio offers Compose from storyboard, where an agent writes a short animated scene from the scene's images. Off by default; turning it off hides it again and stops serving compositions.",
     deploy: {
       title: "Deploy",
       about:
@@ -6210,6 +6260,14 @@ Scenarios:
     noDefaultModel: "This project has no default model yet — add one on the Models page first",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
+      experiment_off: "Scene videos are an experiment an admin has not turned on.",
+      composition_no_images:
+        "Bind an image to this scene first: the composition is made from the scene's images.",
+      composition_asset_invalid:
+        "Only a video or animation asset that a scene uses can be composed.",
+      composition_image_too_large:
+        "One of the scene's images is larger than 8 MB. Bind a smaller image before composing.",
+      composition_not_found: "That composition is no longer available. Compose again.",
       deploy_clones_running: "The clones are already being prepared.",
       deploy_running: "A deploy is already running on this server.",
       deploy_blocked: "That stage cannot run now. The stages say why.",

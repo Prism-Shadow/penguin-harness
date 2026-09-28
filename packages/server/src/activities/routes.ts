@@ -38,6 +38,8 @@ import type {
   DeployStateResponse,
 } from "./deploy-types.js";
 import { isModuleVersion, isProdSelection, isStageSelection } from "./deploy-stages.js";
+import { compositionBase, type ActivityCompositions } from "./composition-service.js";
+import type { VideoSetup } from "./composition-types.js";
 import {
   badRequest,
   optionalString,
@@ -95,6 +97,7 @@ export class ActivityRoutes {
   @Use() private readonly phonemes!: ActivityPhonemes;
   @Use() private readonly deploys!: ActivityDeploys;
   @Use() private readonly moduleBuilds!: ActivityModuleBuilds;
+  @Use() private readonly compositions!: ActivityCompositions;
   @Use() private readonly config!: Config;
   @Bind("activities") routes!: Hono<AppEnv>;
 
@@ -259,6 +262,53 @@ export class ActivityRoutes {
       if (!agentId || agentId.length > 128 || !isValidId(agentId))
         throw badRequest("agentId must be an id of 1-128 letters, digits, _ or -.");
       return c.json(await this.generation.soundSetup(requireValidId(c, "projectId"), agentId));
+    });
+    // Whether the scene-video experiment is on: the studio shows nothing of it when it is not.
+    app.get("/video-setup", (c) =>
+      c.json({ enabled: this.generation.videoExperiment() } satisfies VideoSetup),
+    );
+    // An agent composes an animated scene for a video or animation asset (experimental).
+    app.post("/:activityId/compose-video", async (c) => {
+      const body = await readJson(c);
+      const runner = stageRunner(body);
+      return c.json(
+        await this.generation.start(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          runner.agentId,
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+          {
+            composition: {
+              language: requireString(body, "language", { minLen: 5, maxLen: 5 }),
+              assetKey: requireString(body, "assetKey", { minLen: 1, maxLen: 128 }),
+              // The checkout the author chose, for scene images bound to checkout media.
+              wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) || undefined,
+            },
+          },
+          runner.runtime,
+        ),
+        202,
+      );
+    });
+    // Where a kept composition is shown. The page is agent-written HTML, so it is served only
+    // on the preview origin behind a signed link (see composition-service.ts); this route
+    // hands an authorised author that link and serves nothing itself.
+    app.get("/:activityId/runs/:runId/composition-link", async (c) => {
+      const target = resolvePreviewTarget(
+        c.req.url,
+        c.req.header("host"),
+        this.config.previewOrigin,
+        this.config,
+      );
+      const host = target?.host ?? hostOnly(requestAuthority(c.req.url, c.req.header("host")));
+      const { token } = await this.compositions.link(
+        requireValidId(c, "projectId"),
+        pathParam(c, "activityId"),
+        pathParam(c, "runId"),
+        host,
+        target === null,
+      );
+      return c.redirect(`${target?.origin ?? ""}${compositionBase(token)}composition.html`, 302);
     });
     // Whether espeak-ng can sound out a decodable book's words on this server.
     app.get("/book-words/setup", async (c) =>

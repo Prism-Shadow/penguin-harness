@@ -39,6 +39,8 @@ export function runTitle(kind: ActivityRunSummary["kind"]): string {
       return S.activities.testRun;
     case "phonemes":
       return S.activities.bookWords.run;
+    case "composition":
+      return S.activities.video.run;
     default:
       return S.activities.specRun;
   }

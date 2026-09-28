@@ -99,10 +99,41 @@ import {
   phonemesTarget,
 } from "./phonemes-run.js";
 import type { PhonemesCandidate } from "./book-word-types.js";
+import type { Settings } from "../mechanisms/settings.js";
+import { VIDEO_EXPERIMENT_SETTING, readVideoExperiment } from "./video-experiment.js";
+import {
+  COMPOSITION_BRIDGE,
+  COMPOSITION_BRIDGE_FILE,
+  COMPOSITION_FILE,
+  COMPOSITION_FRAMES_FILE,
+  COMPOSITION_FRAMES_MAX_BYTES,
+  COMPOSITION_GSAP_FILE,
+  COMPOSITION_IMAGE_DIR,
+  COMPOSITION_INPUT_FILE,
+  COMPOSITION_MAX_BYTES,
+  COMPOSITION_TEMPLATE_FILE,
+  CompositionProblem,
+  compositionInput,
+  compositionProblem,
+  compositionPrompt,
+  compositionScene,
+  compositionTemplate,
+  gsapSource,
+  imageExtension,
+  parseFrames,
+  sha256,
+  stagedFiles,
+  type CompositionFileContent,
+  type CompositionScene,
+} from "./composition.js";
+import { IMAGE_MAX_BYTES as COMPOSITION_IMAGE_MAX_BYTES } from "./image.js";
+import type { CompositionCandidate, CompositionTarget } from "./composition-types.js";
+import { mediaContentType } from "./media-origin.js";
 import {
   newId,
   contentRevision,
   validateActivitySpec,
+  type ActivityDetail,
   type ActivityRun,
   type ActivityRunSummary,
   type DeterministicRunKind,
@@ -227,6 +258,7 @@ export class ActivityGenerationService implements ActivityGeneration {
   @Use() private readonly channels!: Channels;
   @Use() private readonly log!: Log;
   @Use() private readonly soundModels!: SoundModelPorts;
+  @Use() private readonly settings!: Settings;
   private readonly locks = new ActivityLocks();
   private readonly observers = new Map<string, Observer>();
   private readonly operations = new Set<Promise<unknown>>();
@@ -458,6 +490,8 @@ export class ActivityGenerationService implements ActivityGeneration {
       test?: AcceptanceStage;
       /** A phonemes run: sounds for a decodable book's words of one language. */
       phonemes?: { language: string; words: unknown };
+      /** A scene composition for a video or animation asset (experimental). */
+      composition?: { language: string; assetKey: string; wafRoot?: string };
     },
     runtime?: { codingAgentId?: string },
   ): Promise<ActivityRun> {
@@ -466,6 +500,9 @@ export class ActivityGenerationService implements ActivityGeneration {
       this.projectWork.run(projectId, () =>
         this.locks.run(activityId, async () => {
           if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+          // Scene videos are refused while the experiment is off, before anything about the
+          // draft is checked, so an author always learns first that the experiment is off.
+          if (module?.composition && !this.videoExperiment()) throw experimentOff();
           const activity = await this.activities.getActivity(projectId, activityId);
           if (activity.draft.contentRevision !== expectedRevision)
             throw new HttpError(
@@ -499,6 +536,7 @@ export class ActivityGenerationService implements ActivityGeneration {
               module.assessment,
               module.test,
               module.phonemes,
+              module.composition,
             ].filter(Boolean).length > 1
           )
             throw new HttpError(400, "generation_invalid", "Choose one media generation type.");
@@ -509,6 +547,9 @@ export class ActivityGenerationService implements ActivityGeneration {
           const image = module?.image ? imageTarget(activity, module.image) : undefined;
           const mediaText = module?.mediaText
             ? mediaTextTarget(activity, module.mediaText)
+            : undefined;
+          const composition = module?.composition
+            ? await this.compositionStage(projectId, activityId, activity, module.composition)
             : undefined;
           if (assessment) {
             if (!activity.draft.spec || activity.draft.status !== "valid")
@@ -547,7 +588,8 @@ export class ActivityGenerationService implements ActivityGeneration {
             !assist &&
             !assessment &&
             !test &&
-            !phonemes
+            !phonemes &&
+            !composition
           ) {
             if (!activity.draft.spec || activity.draft.status !== "valid")
               throw new HttpError(
@@ -678,27 +720,30 @@ export class ActivityGenerationService implements ActivityGeneration {
               "This activity already has a running generation.",
             );
           const run: ActivityRun = {
-            kind: phonemes
-              ? "phonemes"
-              : test
-                ? "test"
-                : assist
-                  ? "assist"
-                  : assessment
-                    ? "assessment"
-                    : mediaText
-                      ? "media-text"
-                      : image
-                        ? "image"
-                        : audio || sound
-                          ? "audio"
-                          : module
-                            ? "module"
-                            : "spec",
+            kind: composition
+              ? "composition"
+              : phonemes
+                ? "phonemes"
+                : test
+                  ? "test"
+                  : assist
+                    ? "assist"
+                    : assessment
+                      ? "assessment"
+                      : mediaText
+                        ? "media-text"
+                        : image
+                          ? "image"
+                          : audio || sound
+                            ? "audio"
+                            : module
+                              ? "module"
+                              : "spec",
             ...(audio ? { audio } : sound ? { audio: sound } : {}),
             ...(image ? { image } : {}),
             ...(mediaText ? { mediaText } : {}),
             ...(phonemes ? { phonemes } : {}),
+            ...(composition ? { composition: composition.target } : {}),
             ...(assist ? { assist: { focus: assist.focus } } : {}),
             ...(test
               ? {
@@ -846,6 +891,7 @@ export class ActivityGenerationService implements ActivityGeneration {
             if (mediaText)
               await atomicJson(path.join(workspace, "media-text-input.json"), mediaText);
             if (phonemes) await atomicJson(path.join(workspace, PHONEMES_INPUT_FILE), phonemes);
+            if (composition) await stageComposition(workspace, composition);
             if (assessment) {
               const skill = libraryPlugin("waf-authoring")?.skills.find(
                 (entry) => entry.name === ASSESSMENT_SKILL,
@@ -905,7 +951,8 @@ export class ActivityGenerationService implements ActivityGeneration {
               !assist &&
               !assessment &&
               !test &&
-              !phonemes
+              !phonemes &&
+              !composition
             ) {
               const chosen = await this.activities.implementationFeatures(projectId, activityId);
               features = chosen.features.filter((feature) =>
@@ -918,27 +965,29 @@ export class ActivityGenerationService implements ActivityGeneration {
               this.finish(run, "interrupted", "Server stopped before generation started.");
               return run;
             }
-            const prompt = phonemes
-              ? phonemesPrompt
-              : test
-                ? test.cachedTest !== null
-                  ? acceptanceReusePrompt
-                  : acceptancePrompt
-                : assist
-                  ? assistPrompt(assist.message, assist.focus)
-                  : assessment
-                    ? assessmentPrompt
-                    : mediaText
-                      ? mediaTextPrompt(mediaText)
-                      : image
-                        ? imagePrompt
-                        : audio
-                          ? speechPrompt(audio)
-                          : sound
-                            ? soundPrompt
-                            : module
-                              ? modulePrompt + featureClause(features)
-                              : generationPrompt;
+            const prompt = composition
+              ? compositionPrompt
+              : phonemes
+                ? phonemesPrompt
+                : test
+                  ? test.cachedTest !== null
+                    ? acceptanceReusePrompt
+                    : acceptancePrompt
+                  : assist
+                    ? assistPrompt(assist.message, assist.focus)
+                    : assessment
+                      ? assessmentPrompt
+                      : mediaText
+                        ? mediaTextPrompt(mediaText)
+                        : image
+                          ? imagePrompt
+                          : audio
+                            ? speechPrompt(audio)
+                            : sound
+                              ? soundPrompt
+                              : module
+                                ? modulePrompt + featureClause(features)
+                                : generationPrompt;
             const session = await this.sessionService.createSession({
               projectId,
               agentId: owner,
@@ -1348,6 +1397,125 @@ export class ActivityGenerationService implements ActivityGeneration {
     );
   }
 
+  /** Whether an admin turned the scene-video experiment on. */
+  videoExperiment(): boolean {
+    return readVideoExperiment(this.settings.get(VIDEO_EXPERIMENT_SETTING));
+  }
+
+  /**
+   * Everything a composition run stages, read before the run is recorded so a refusal leaves
+   * no run behind: the scene, and the bytes of each of its bound images. 403 while the
+   * experiment is off; 409 `composition_no_images` for a scene with no image to compose from.
+   */
+  private async compositionStage(
+    projectId: string,
+    activityId: string,
+    activity: ActivityDetail,
+    input: { language: string; assetKey: string; wafRoot?: string },
+  ): Promise<CompositionStage> {
+    if (!this.videoExperiment()) throw experimentOff();
+    const scene = compositionScene(activity, input);
+    if (!scene.images.length)
+      throw new HttpError(
+        409,
+        "composition_no_images",
+        "Bind an image to this scene before composing its video.",
+      );
+    const images: CompositionTarget["images"] = [];
+    const bytes: Uint8Array[] = [];
+    for (const image of scene.images) {
+      // An image that cannot be read now is refused, never left out of the scene quietly.
+      const content = await this.activities.imageContent(projectId, activityId, {
+        language: input.language,
+        assetKey: image.key,
+        expectedRevision: activity.draft.contentRevision,
+        ...(input.wafRoot ? { wafRoot: input.wafRoot } : {}),
+      });
+      // Staged images are served back only up to this size, so a larger one is refused now
+      // rather than missing from the composition later.
+      if (content.bytes.byteLength > COMPOSITION_IMAGE_MAX_BYTES)
+        throw new HttpError(
+          409,
+          "composition_image_too_large",
+          "A scene image is larger than 8 MB. Bind a smaller image before composing.",
+        );
+      images.push({
+        key: image.key,
+        file: `${COMPOSITION_IMAGE_DIR}/${image.key}.${imageExtension(content.mimeType)}`,
+        sha256: sha256(content.bytes),
+      });
+      bytes.push(content.bytes);
+    }
+    return {
+      scene,
+      target: {
+        language: input.language,
+        assetKey: input.assetKey,
+        sceneId: scene.sceneId,
+        width: scene.width,
+        height: scene.height,
+        images,
+      },
+      bytes,
+    };
+  }
+
+  /**
+   * One file of a kept composition, for the preview origin to serve: the page, one of its
+   * staged images, or the vendored scripts. The page and images are served only while their
+   * bytes are the ones checked and staged; anything else is 404.
+   */
+  async compositionFile(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    rawPath: string,
+  ): Promise<CompositionFileContent> {
+    const missing = () =>
+      new HttpError(404, "composition_not_found", "Composition file not found.");
+    const run = await this.getRun(projectId, activityId, runId);
+    if (
+      run.kind !== "composition" ||
+      !run.composition ||
+      !run.candidate ||
+      !["succeeded", "conflict"].includes(run.status)
+    )
+      throw missing();
+    let file: string;
+    try {
+      file = decodeURIComponent(rawPath);
+    } catch {
+      throw missing();
+    }
+    if (file === COMPOSITION_GSAP_FILE)
+      return { contentType: "text/javascript; charset=utf-8", body: await gsapSource() };
+    if (file === COMPOSITION_BRIDGE_FILE)
+      return {
+        contentType: "text/javascript; charset=utf-8",
+        body: Buffer.from(COMPOSITION_BRIDGE, "utf8"),
+      };
+    const expected =
+      file === COMPOSITION_FILE
+        ? (JSON.parse(run.candidate) as CompositionCandidate).sha256
+        : run.composition.images.find((image) => image.file === file)?.sha256;
+    if (!expected) throw missing();
+    let bytes: Buffer;
+    try {
+      bytes = await readArtifactBytes(
+        path.join(this.workspace(run), ...file.split("/")),
+        file === COMPOSITION_FILE ? COMPOSITION_MAX_BYTES : COMPOSITION_IMAGE_MAX_BYTES,
+      );
+    } catch {
+      throw missing();
+    }
+    // Changed since it was checked or staged: the Session may still be writing here.
+    if (sha256(bytes) !== expected) throw missing();
+    return {
+      contentType: file === COMPOSITION_FILE ? "text/html; charset=utf-8" : mediaContentType(file),
+      body: bytes,
+    };
+  }
+
   /** Deterministic reconciliation entry used by the timer and lifecycle tests. */
   reconcile(): Promise<void> {
     if (this.stopped) return Promise.resolve();
@@ -1540,6 +1708,27 @@ export class ActivityGenerationService implements ActivityGeneration {
                 });
                 return;
               }
+              if (run.kind === "composition") {
+                const observer = this.observers.get(run.runId);
+                if (!observer?.completed)
+                  throw new Error(observer?.error ?? "Composition Session did not complete.");
+                if (!run.composition) throw new Error("The composition run has no scene recorded.");
+                const candidate = await collectComposition(this.workspace(run), run.composition);
+                run.candidate = JSON.stringify(candidate);
+                this.save(run);
+                if (this.stopped) return;
+                await this.projectWork.run(run.projectId, async () => {
+                  const current = await this.activities.getActivity(run.projectId, run.activityId);
+                  if (current.draft.contentRevision !== run.inputRevision)
+                    throw new HttpError(
+                      409,
+                      "draft_conflict",
+                      "The draft changed while the scene was being composed.",
+                    );
+                  this.finish(run, "succeeded");
+                });
+                return;
+              }
               if (run.kind === "test") {
                 const observer = this.observers.get(run.runId);
                 if (!observer?.completed)
@@ -1672,6 +1861,9 @@ export class ActivityGenerationService implements ActivityGeneration {
             } catch (error) {
               if (this.stopped && run.candidate === null) return;
               const conflict = error instanceof HttpError && error.code === "draft_conflict";
+              // The App words a failed check by its code; the message stays for the trace.
+              if (error instanceof CompositionProblem && run.composition)
+                run.composition = { ...run.composition, problem: error.code };
               const message =
                 (error as NodeJS.ErrnoException).code === "ENOENT"
                   ? `The session ended without ${
@@ -1691,7 +1883,9 @@ export class ActivityGenerationService implements ActivityGeneration {
                                   ? ACCEPTANCE_RESULTS_FILE
                                   : run.kind === "phonemes"
                                     ? PHONEMES_FILE
-                                    : "activity-spec.json"
+                                    : run.kind === "composition"
+                                      ? `${COMPOSITION_FILE} or ${COMPOSITION_FRAMES_FILE}`
+                                      : "activity-spec.json"
                     }.`
                   : error instanceof Error
                     ? error.message
@@ -1746,3 +1940,78 @@ The specification contract:
 If input.json declares activityType book, scene order is page order. Give every page an explicit role: cover, title, or story. Cover is optional and first; title is optional and follows cover or is first; all remaining pages are story pages. Use unique scene IDs, exactly one image per page with a meaningful description, and no scene videos or animations. Each audio track must have a globally unique non-empty key. The first audio cue on a story page is its visible narration text and must contain words; later cues are hidden follow-up prompts. Cover/title lettering is baked into the image; story images contain no story text. Preserve authored narration order and wording.
 Describe the actual learning flow, interactions, feedback and media needs. Preserve useful existing draft details in input.json.
 Use Harness's normal approval flow for tool actions. Finish only after writing valid JSON.`;
+
+/** 403 while an admin has not turned the scene-video experiment on. */
+function experimentOff(): HttpError {
+  return new HttpError(
+    403,
+    "experiment_off",
+    "Scene videos are an experiment an admin has not turned on.",
+  );
+}
+
+/** What a composition run stages, read and checked before the run is recorded. */
+interface CompositionStage {
+  scene: CompositionScene;
+  target: CompositionTarget;
+  bytes: Uint8Array[];
+}
+
+/** Stages a composition run's input, template, scripts and images into its workspace. */
+async function stageComposition(workspace: string, stage: CompositionStage): Promise<void> {
+  const { scene, target } = stage;
+  await atomicJson(path.join(workspace, COMPOSITION_INPUT_FILE), compositionInput(scene, target));
+  await fs.writeFile(
+    path.join(workspace, COMPOSITION_TEMPLATE_FILE),
+    compositionTemplate(target.width, target.height),
+    { flag: "wx" },
+  );
+  // Copies for the agent to read; the preview serves the scripts from Penguin, not these.
+  await fs.writeFile(path.join(workspace, COMPOSITION_GSAP_FILE), await gsapSource(), {
+    flag: "wx",
+  });
+  await fs.writeFile(path.join(workspace, COMPOSITION_BRIDGE_FILE), COMPOSITION_BRIDGE, {
+    flag: "wx",
+  });
+  await fs.mkdir(path.join(workspace, COMPOSITION_IMAGE_DIR), { recursive: true });
+  for (const [index, image] of target.images.entries())
+    await fs.writeFile(path.join(workspace, ...image.file.split("/")), stage.bytes[index]!, {
+      flag: "wx",
+    });
+}
+
+/**
+ * What a composition run wrote, checked: the page (512 KB at most, only staged files, no
+ * network, no randomness, one timeline) and its frames. Throws a `CompositionProblem` naming
+ * the first thing wrong; a missing page stays ENOENT, which names both files.
+ */
+async function collectComposition(
+  workspace: string,
+  target: CompositionTarget,
+): Promise<CompositionCandidate> {
+  let html: Buffer;
+  try {
+    html = await readArtifactBytes(path.join(workspace, COMPOSITION_FILE), COMPOSITION_MAX_BYTES);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw error;
+    throw new CompositionProblem("composition_size", `${COMPOSITION_FILE} is larger than 512 KB.`);
+  }
+  let frames: string;
+  try {
+    frames = await readCandidate(
+      path.join(workspace, COMPOSITION_FRAMES_FILE),
+      COMPOSITION_FRAMES_MAX_BYTES,
+    );
+  } catch (error) {
+    throw new CompositionProblem(
+      "composition_frames",
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+        ? `The session ended without ${COMPOSITION_FRAMES_FILE}.`
+        : `${COMPOSITION_FRAMES_FILE} is larger than 64 KB.`,
+    );
+  }
+  const problem = compositionProblem(html.toString("utf8"), stagedFiles(target));
+  if (problem) throw problem;
+  const parsed = parseFrames(frames);
+  return { ...parsed, sha256: sha256(html), bytes: html.length };
+}

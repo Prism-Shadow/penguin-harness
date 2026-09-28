@@ -18,6 +18,7 @@ import type {
   SpeechProviderStatus,
   SpeechSetup,
   UploadedMedia,
+  VideoSetup,
   VoiceOption,
 } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
@@ -640,6 +641,20 @@ function ActivityEditor({
       cancelled = true;
     };
   }, [available, editable, selectedAgent, codingAgentId, projectId]);
+  // Whether the scene-video experiment is on; the studio shows nothing of it until it is.
+  const [videoSetup, setVideoSetup] = useState<VideoSetup | null>(null);
+  useEffect(() => {
+    if (!available || !editable) return;
+    let cancelled = false;
+    void apiFetch<VideoSetup>(`${basePath(projectId)}/video-setup`)
+      .then((value) => {
+        if (!cancelled) setVideoSetup(value);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [available, editable, projectId]);
   const soundProviders =
     soundSetup && !codingAgentId && soundSetup.agentId === selectedAgent
       ? soundSetup.providers
@@ -1418,6 +1433,18 @@ function ActivityEditor({
                   startRun("generate-media-text", { language: lang, assetKey, translate: true })
           }
           sceneNav={sceneNav}
+          spec={detail?.draft.spec}
+          onCompose={
+            videoSetup?.enabled
+              ? (lang, assetKey) =>
+                  startRun("compose-video", {
+                    language: lang,
+                    assetKey,
+                    // Scene images bound to checkout media are read from the chosen checkout.
+                    ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
+                  })
+              : undefined
+          }
           onSaveSounds={(lang, assetKey, phonemes) =>
             void action(async () => {
               const draft = await apiFetch<ActivityDraft>(

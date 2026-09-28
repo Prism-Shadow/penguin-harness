@@ -457,6 +457,9 @@ importers:
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
+      gsap:
+        specifier: ^3.15.0
+        version: 3.15.0
       hono:
         specifier: ^4.12.34
         version: 4.12.34
@@ -3191,6 +3194,9 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  gsap@3.15.0:
+    resolution: {integrity: sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A==}
 
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
@@ -6105,6 +6111,7 @@ snapshots:
       '@prismshadow/penguin-coding-agents': file:packages/coding-agents(zod@4.4.3)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
+      axe-core: 4.13.0
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.12.34
@@ -6134,6 +6141,7 @@ snapshots:
       '@prismshadow/penguin-coding-agents': file:packages/coding-agents(zod@4.4.3)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@xterm/headless': 5.5.0
+      axe-core: 4.13.0
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.12.34
@@ -7689,6 +7697,8 @@ snapshots:
       responselike: 2.0.1
 
   graceful-fs@4.2.11: {}
+
+  gsap@3.15.0: {}
 
   has-flag@4.0.0: {}
 
