@@ -29,6 +29,7 @@ import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { machineLabel, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
+import { dirToCommit } from "./workspace-pick";
 
 /** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
 export const pillClass =
@@ -136,18 +137,21 @@ export function WorkspaceSelect({
   /**
    * Browses level by level (clicking a directory/parent); an empty string means the server's
    * home directory (the default starting point). `onError` overrides the default error-row
-   * handling (the path-edit commit toasts and reverts instead); it only ever fires for the
-   * newest request, like every other outcome.
+   * handling (the path-edit commit toasts and reverts instead); `onLoaded` runs after a
+   * successful listing (the "Use this dir" button commits what it resolved to). Both only ever
+   * fire for the newest request, like every other outcome.
    */
   const loadDir = useCallback(
-    (abs: string, opts?: { onError?: () => void }) => {
+    (abs: string, opts?: { onError?: () => void; onLoaded?: (res: DirListResponse) => void }) => {
       const seq = ++loadSeq.current;
       setLoading(true);
       setError(null);
       api
         .listDirs(projectId, abs, machine)
         .then((res) => {
-          if (seq === loadSeq.current) setDir(res);
+          if (seq !== loadSeq.current) return;
+          setDir(res);
+          opts?.onLoaded?.(res);
         })
         .catch((e: unknown) => {
           if (seq !== loadSeq.current) return;
@@ -236,6 +240,32 @@ export function WorkspaceSelect({
       onError: () => {
         toastError(S.chat.workspaceDirInvalid);
         setPathDraft(dir?.path ?? "");
+      },
+    });
+  };
+
+  /**
+   * "Use this dir": commits what the path box says (see dirToCommit). A typed path goes through
+   * loadDir like any commit — superseding the blur commit the click itself set off — and the
+   * picker only closes once the server has confirmed it; an invalid one toasts and reverts, and
+   * nothing is committed.
+   */
+  const target = dirToCommit(pathDraft, dir?.path);
+  const pickThisDir = () => {
+    if (!target) return;
+    if (target.kind === "listed") {
+      onChange(target.path, machine);
+      setOpen(false);
+      return;
+    }
+    loadDir(target.path, {
+      onError: () => {
+        toastError(S.chat.workspaceDirInvalid);
+        setPathDraft(dir?.path ?? "");
+      },
+      onLoaded: (res) => {
+        onChange(res.path, machine);
+        setOpen(false);
       },
     });
   };
@@ -357,14 +387,12 @@ export function WorkspaceSelect({
             }}
             className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-xs text-gray-600 focus:border-gray-300 focus:outline-none dark:text-gray-300 dark:focus:border-gray-600"
           />
+          {/* Not disabled while loading: the click's own mousedown blurs the path box, whose
+              commit starts a load, and a button disabled by it would swallow that click. */}
           <button
             type="button"
-            disabled={!dir}
-            onClick={() => {
-              if (!dir) return;
-              onChange(dir.path, machine);
-              setOpen(false);
-            }}
+            disabled={!target}
+            onClick={pickThisDir}
             className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             {S.chat.workspaceUseThis}
