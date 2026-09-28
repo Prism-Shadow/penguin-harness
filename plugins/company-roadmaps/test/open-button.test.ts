@@ -8,6 +8,7 @@
  */
 import vm from "node:vm";
 import { Window } from "happy-dom";
+import type { Element, HTMLElement, HTMLInputElement, HTMLSelectElement } from "happy-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { PAGE_STRINGS, pageHtml } from "../src/index.js";
 
@@ -85,7 +86,7 @@ async function page(
   vm.runInNewContext(/<script>([\s\S]*)<\/script>/.exec(html)![1]!, sandbox);
   await settle();
   const main = document.getElementById("main")!;
-  const $ = <E extends Element>(selector: string) => main.querySelector(selector) as unknown as E;
+  const $ = <E extends Element>(selector: string) => main.querySelector(selector) as E;
   const fire = async (el: Element, type: string) => {
     el.dispatchEvent(new window.Event(type, { bubbles: true, cancelable: true }));
     await settle();
@@ -102,17 +103,17 @@ async function page(
     choose: async (value: string) => {
       const select = $<HTMLSelectElement>('select[name="room"]');
       select.value = value;
-      await fire(select as unknown as Element, "change");
+      await fire(select, "change");
     },
     pick: async (id: string) => {
       const box = $<HTMLInputElement>(`input[name="employee"][value="${id}"]`);
       box.checked = true;
-      await fire(box as unknown as Element, "change");
+      await fire(box, "change");
     },
     name: async (value: string) => {
       const input = $<HTMLInputElement>('input[name="name"]');
       input.value = value;
-      await fire(input as unknown as Element, "input");
+      await fire(input, "input");
     },
     submit: async () => fire($("form[data-form]"), "submit"),
   };
