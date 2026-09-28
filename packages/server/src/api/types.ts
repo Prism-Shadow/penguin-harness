@@ -5247,6 +5247,19 @@ export interface BuiltinBrowserHistoryResponse {
   entries: BuiltinBrowserHistoryEntry[];
 }
 
+/**
+ * GET / PUT /api/builtin-browser/settings: the browser's own settings, a file of the server's
+ * that is read and written without the desktop shell. PUT takes the whole object.
+ */
+export interface BuiltinBrowserSettings {
+  /**
+   * The page a new tab opens when it is given no address — the panel's "+", an agent's new tab
+   * — and the toolbar's Home button goes to: an http(s) address, or null for none (a new tab is
+   * then blank). PUT takes a bare host too and answers the address as stored.
+   */
+  homepage: string | null;
+}
+
 export type BuiltinBrowserAction =
   "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
 

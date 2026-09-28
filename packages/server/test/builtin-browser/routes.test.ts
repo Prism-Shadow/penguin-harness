@@ -1,7 +1,7 @@
 /**
  * /api/builtin-browser over a fake shell, with the browser mounted directly (short timings,
  * an injected importer): availability and its 503 reasons, the admin gate, opening a tab
- * through a window's claim, and the shape of what each agent action answers.
+ * through a window's claim, the shape of what each agent action answers, and the homepage.
  *
  * module.test.ts covers the same routes assembled in the real platform tree.
  */
@@ -16,6 +16,7 @@ import type {
   BuiltinBrowserImportSource,
   BuiltinBrowserScanResult,
   BuiltinBrowserServerEvent,
+  BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
 } from "../../src/api/types.js";
@@ -24,7 +25,7 @@ import type { UserRow } from "../../src/db/repos/users.js";
 import { handleError } from "../../src/http/errors.js";
 import { ImportSourceNotFoundError } from "../../src/builtin-browser/import/index.js";
 import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";
-import { BuiltinBrowser, browserUrl } from "../../src/builtin-browser/service.js";
+import { BuiltinBrowser, browserUrl, homepageUrl } from "../../src/builtin-browser/service.js";
 import type { Importer } from "../../src/builtin-browser/service.js";
 import { FakeShell, evaluated, expressionOf, tab } from "./fake-shell.js";
 import type { CdpHandler } from "./fake-shell.js";
@@ -966,6 +967,95 @@ describe("import, history and data", () => {
   });
 });
 
+describe("settings", () => {
+  it("has no homepage until one is set, and keeps it in the data root without the shell", async () => {
+    const h = mount({ shell: null });
+    expect(await json<BuiltinBrowserSettings>(await h.call("GET", "/settings"))).toEqual({
+      homepage: null,
+    });
+    const put = await h.call("PUT", "/settings", { homepage: "home.test/start" });
+    expect(put.status).toBe(200);
+    // A bare host is read as the address bar reads it.
+    expect(await json<BuiltinBrowserSettings>(put)).toEqual({
+      homepage: "https://home.test/start",
+    });
+    expect(await json<BuiltinBrowserSettings>(await h.call("GET", "/settings"))).toEqual({
+      homepage: "https://home.test/start",
+    });
+    const file = path.join(root, "builtin-browser", "settings.json");
+    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({
+      homepage: "https://home.test/start",
+    });
+    const cleared = await h.call("PUT", "/settings", { homepage: null });
+    expect(await json<BuiltinBrowserSettings>(cleared)).toEqual({ homepage: null });
+  });
+
+  it("takes a web address or null, and nothing else", async () => {
+    const h = mount({ shell: null });
+    for (const homepage of [
+      "about:blank",
+      "file:///etc/passwd",
+      "javascript:alert(1)",
+      "mailto:a@b.test",
+      "",
+      "   ",
+      42,
+      {},
+    ]) {
+      const res = await h.call("PUT", "/settings", { homepage });
+      expect(res.status).toBe(400);
+      expect((await errorOf(res)).error.code).toBe("invalid_url");
+    }
+    const missing = await h.call("PUT", "/settings", {});
+    expect(missing.status).toBe(400);
+    expect((await errorOf(missing)).error.message).toMatch(/homepage is required/);
+    expect(await json<BuiltinBrowserSettings>(await h.call("GET", "/settings"))).toEqual({
+      homepage: null,
+    });
+  });
+
+  it("is for admins only", async () => {
+    const h = mount({ admin: false });
+    for (const [method, body] of [
+      ["GET", undefined],
+      ["PUT", { homepage: "https://home.test/" }],
+    ] as const) {
+      const res = await h.call(method, "/settings", body);
+      expect(res.status).toBe(403);
+      expect((await errorOf(res)).error.code).toBe("admin_required");
+    }
+  });
+
+  it("opens the homepage in a new tab given no address, and an address given as given", async () => {
+    const h = mount();
+    h.shell.cdp = page(() => ({}));
+    await h.call("PUT", "/settings", { homepage: "https://home.test/" });
+    const opening = h.call("POST", "/tabs", {});
+    await until(() => h.events.some((e) => e.type === "builtin_browser_open"), "the open event");
+    const open = openEvent(h.events);
+    expect(open.url).toBe("https://home.test/");
+    h.shell.show(tab(5, { url: "https://home.test/", title: "Home" }));
+    await h.call("POST", "/tabs/claim", { requestId: open.requestId, tabId: 5 });
+    const res = await opening;
+    expect(res.status).toBe(200);
+    expect((await json<{ tab: BuiltinBrowserTab }>(res)).tab).toMatchObject({
+      id: 5,
+      url: "https://home.test/",
+    });
+
+    // Nobody claims these two; only the address each asked the windows for matters here.
+    const opens = () => h.events.flatMap((e) => (e.type === "builtin_browser_open" ? [e.url] : []));
+    await h.call("POST", "/tabs", { url: "https://other.test/" });
+    await h.call("POST", "/tabs", { url: "about:blank" });
+    expect(opens()).toEqual(["https://home.test/", "https://other.test/", "about:blank"]);
+
+    // Without a homepage a new tab is blank again.
+    await h.call("PUT", "/settings", { homepage: null });
+    await h.call("POST", "/tabs", {});
+    expect(opens().at(-1)).toBe("about:blank");
+  });
+});
+
 describe("browserUrl", () => {
   it("gives a bare host a scheme and refuses anything that is not a web page", () => {
     expect(browserUrl("amazon.com/orders", false)).toBe("https://amazon.com/orders");
@@ -986,6 +1076,15 @@ describe("browserUrl", () => {
       42,
     ]) {
       expect(() => browserUrl(bad, false)).toThrow(/not a web address/);
+    }
+  });
+
+  it("reads a homepage the same way, with null for none and never the blank page", () => {
+    expect(homepageUrl("home.test")).toBe("https://home.test/");
+    expect(homepageUrl("localhost:5173/app")).toBe("http://localhost:5173/app");
+    expect(homepageUrl(null)).toBeNull();
+    for (const bad of [undefined, "", "about:blank", "chrome://gpu", 7]) {
+      expect(() => homepageUrl(bad)).toThrow(/not a web address a homepage can be/);
     }
   });
 });

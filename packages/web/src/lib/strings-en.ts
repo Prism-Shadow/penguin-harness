@@ -202,8 +202,10 @@ export const en: Strings = {
     more: "More",
     importAction: "Import from browser…",
     clearDataAction: "Clear browsing data…",
+    setHomepageAction: "Set homepage…",
     openExternal: "Open in system browser",
     devTools: "Developer tools",
+    home: "Home",
     agentBusy: (action: string): string => `An agent is using the browser: ${action}`,
     agentBusyTab: "An agent is using this tab",
     actions: {
@@ -262,6 +264,15 @@ export const en: Strings = {
     clearConfirm: "Clear",
     clearDone: "Browsing data cleared",
     clearFailed: (reason: string): string => `Could not clear the data: ${reason}`,
+    homepageTitle: "Set homepage",
+    homepageIntro: "New tabs and the Home button open this page.",
+    homepageAddress: "Address",
+    homepagePlaceholder: "example.com",
+    homepageHintEmpty: "Leave empty for none; new tabs then open blank.",
+    homepageHintOpens: (url: string): string => `Opens ${url}`,
+    homepageUseCurrent: "Use current page",
+    homepageClear: "Clear",
+    homepageFailed: (reason: string): string => `Could not save the homepage: ${reason}`,
   },
 
   tracePanel: {
@@ -2842,6 +2853,12 @@ Scenarios:
       budget_limited: "budget exhausted",
       aborted: "interrupted",
     } as Record<string, string>,
+    linkMenu: {
+      openInBuiltinBrowser: "Open in built-in browser",
+      openExternal: "Open in system browser",
+      openInNewTab: "Open in new tab",
+      copyLink: "Copy link address",
+    },
   },
 
   /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */

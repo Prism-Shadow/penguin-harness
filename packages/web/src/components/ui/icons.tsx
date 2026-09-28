@@ -190,6 +190,14 @@ export const ARROW_FORWARD_ICON = "M5 12h14m-6-6 6 6-6 6";
 /** Angle brackets: developer tools. */
 export const CODE_ICON = "M16 18l6-6-6-6M8 6l-6 6 6 6";
 
+/** A house with its door: the built-in browser's homepage, on the Home button and the menu row that sets it. */
+export const HOME_ICON =
+  "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
+
+/** Two links of a chain: a link's address, as the conversation's link menu copies it. */
+export const LINK_ICON =
+  "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71";
+
 /**
  * Window with a bottom pane / a right pane: the two dock edges. Drawn by the chat toolbar's
  * pull-open buttons and the dock header's move-dock buttons, so one mark stands for one edge

@@ -10,11 +10,13 @@
  *   by a close. The order is the DOM order of the elements and must never change: moving a
  *   webview in the DOM reloads its page, so guests are only ever appended or removed.
  *
- * Activity (`builtin_browser_activity`) marks the tabs an agent is working in right now.
+ * Activity (`builtin_browser_activity`) marks the tabs an agent is working in right now, and
+ * the homepage is the server's setting as this window last read or saved it.
  */
 import type {
   BuiltinBrowserAction,
   BuiltinBrowserServerEvent,
+  BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
 } from "@prismshadow/penguin-server/api";
@@ -56,6 +58,8 @@ export interface BrowserState {
    * before the close would otherwise put a closed tab back in the strip for a moment.
    */
   closing: readonly number[];
+  /** The page a new tab and the Home button open; null for none (new tabs are blank). */
+  homepage: string | null;
 }
 
 export type BrowserAction =
@@ -73,7 +77,9 @@ export type BrowserAction =
   /** The user brought a tab to the front here; the server confirms with a tabs event. */
   | { type: "activated"; tabId: number }
   /** Events may have been lost: activity marks can no longer be trusted. */
-  | { type: "resync" };
+  | { type: "resync" }
+  /** The browser's settings as the server holds them (read, or answered to a save). */
+  | { type: "settings"; settings: BuiltinBrowserSettings };
 
 export const INITIAL_BROWSER_STATE: BrowserState = {
   supported: false,
@@ -84,6 +90,7 @@ export const INITIAL_BROWSER_STATE: BrowserState = {
   guests: [],
   activity: {},
   closing: [],
+  homepage: null,
 };
 
 /** The key a guest is known by, from the request that created it. */
@@ -202,6 +209,10 @@ export function reduceBrowser(state: BrowserState, action: BrowserAction): Brows
       return state.activeTabId === action.tabId ? state : { ...state, activeTabId: action.tabId };
     case "resync":
       return { ...state, activity: {} };
+    case "settings":
+      return state.homepage === action.settings.homepage
+        ? state
+        : { ...state, homepage: action.settings.homepage };
   }
 }
 

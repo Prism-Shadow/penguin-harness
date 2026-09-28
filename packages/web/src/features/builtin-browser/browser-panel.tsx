@@ -5,15 +5,15 @@
  * tabs — the panel holds no page itself, it only registers where the page should appear.
  *
  * No tab open: the slot shows how to start — a new tab, or importing sign-ins from a system
- * browser. A blank new tab shows the slot's own empty surface, themed, with the address bar
- * waiting, rather than a white page. Where the browser cannot run (outside the desktop app,
- * an older shell) the panel says so instead.
+ * browser. A new tab opens the homepage when one is set; a blank one shows the slot's own
+ * empty surface, themed, with the address bar waiting, rather than a white page. Where the
+ * browser cannot run (outside the desktop app, an older shell) the panel says so instead.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { isWebUrl } from "./address";
+import { isBlankUrl, isWebUrl } from "./address";
 import { activateBrowserTab, closeBrowserTab, openBrowserTab } from "./browser-actions";
 import {
   activeTab,
@@ -27,6 +27,7 @@ import { browserState, subscribeBrowser } from "./browser-store";
 import { BrowserTabStrip } from "./browser-tab-strip";
 import { BrowserToolbar } from "./browser-toolbar";
 import { ClearDataDialog } from "./clear-data-dialog";
+import { HomepageDialog } from "./homepage-dialog";
 import { ImportDialog } from "./import-dialog";
 import { registerSlot, setSlotVisible } from "./slot-registry";
 import { webviewForTab, type WebviewElement } from "./webview-registry";
@@ -82,6 +83,7 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
   const tabId = tab?.id ?? null;
   const [importOpen, setImportOpen] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
+  const [homepageOpen, setHomepageOpen] = useState(false);
   const addressRef = useRef<HTMLInputElement | null>(null);
 
   // The slot is where the layer puts the page on screen; it says so only while this panel is
@@ -94,8 +96,9 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
   }, [slotId]);
   useLayoutEffect(() => setSlotVisible(slotId, active), [slotId, active]);
 
-  // A new tab from "+" waits for an address. The field is keyed by tab, so it is focused once
-  // the new tab is the one on screen — the request can come back before that happens.
+  // A new tab from "+" opens the homepage, or waits blank for an address. The field is keyed
+  // by tab, so it is focused once the blank tab is the one on screen — the request can come
+  // back before that happens.
   const [focusFor, setFocusFor] = useState<number | null>(null);
   useEffect(() => {
     if (focusFor === null || focusFor !== tabId) return;
@@ -103,7 +106,9 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
     setFocusFor(null);
   }, [focusFor, tabId]);
   const newTab = () => {
-    void openBrowserTab().then(setFocusFor);
+    void openBrowserTab().then((opened) => {
+      if (opened !== null && isBlankUrl(opened.url)) setFocusFor(opened.id);
+    });
   };
 
   const navigate = (url: string) => {
@@ -122,6 +127,8 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
     tab !== null && isWebUrl(tab.url)
       ? () => window.open(tab.url, "_blank", "noopener,noreferrer")
       : null;
+  const { homepage } = state;
+  const goHome = homepage !== null ? () => navigate(homepage) : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -144,9 +151,11 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
         onForward={() => drive(tabId, (view) => view.goForward())}
         onReload={() => drive(tabId, (view) => view.reload())}
         onStop={() => drive(tabId, (view) => view.stop())}
+        onHome={goHome}
         onNavigate={navigate}
         onImport={() => setImportOpen(true)}
         onClearData={() => setClearOpen(true)}
+        onSetHomepage={() => setHomepageOpen(true)}
         onOpenExternal={openExternal}
         onDevTools={() => drive(tabId, (view) => view.openDevTools())}
       />
@@ -174,6 +183,13 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
       </div>
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <ClearDataDialog open={clearOpen} onClose={() => setClearOpen(false)} />
+      {homepageOpen && (
+        <HomepageDialog
+          homepage={homepage}
+          currentPage={tab !== null && isWebUrl(tab.url) ? tab.url : null}
+          onClose={() => setHomepageOpen(false)}
+        />
+      )}
     </div>
   );
 }

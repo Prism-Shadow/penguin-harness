@@ -32,7 +32,12 @@ import type { CSSProperties } from "react";
 import { toneInk } from "../../lib/tone";
 import { currentDockScope, isTabShown, openPanel } from "../dock/dock-state";
 import { isBlankUrl } from "./address";
-import { claimGuest, closeBrowserTab, refreshBrowserStatus } from "./browser-actions";
+import {
+  claimGuest,
+  closeBrowserTab,
+  refreshBrowserSettings,
+  refreshBrowserStatus,
+} from "./browser-actions";
 import { subscribeBuiltinBrowserEvents, subscribeBuiltinBrowserResync } from "./browser-events";
 import { activeTab, guestByKey, shouldReveal, type BrowserGuest } from "./browser-state";
 import { browserState, dispatchBrowser, subscribeBrowser } from "./browser-store";
@@ -246,12 +251,14 @@ function LayerHost() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const ringRef = useRef<HTMLDivElement | null>(null);
 
-  // This window hosts the pages from here on: read the registry, follow its events, and
-  // re-read it whenever events may have been lost. Unmounting (signing out) drops the pages,
-  // and the store forgets them with it.
+  // This window hosts the pages from here on: read the registry and the settings, follow the
+  // events, and re-read both when the channel comes back past its replay buffer (events were
+  // lost, or the server restarted). Unmounting (signing out) drops the pages, and the store
+  // forgets them with it.
   useEffect(() => {
     dispatchBrowser({ type: "supported", supported: true });
     void refreshBrowserStatus();
+    void refreshBrowserSettings();
     const revealed = new Set<string>();
     const offEvents = subscribeBuiltinBrowserEvents((event) => {
       dispatchBrowser({ type: "event", event });
@@ -265,6 +272,7 @@ function LayerHost() {
     const offResync = subscribeBuiltinBrowserResync(() => {
       dispatchBrowser({ type: "resync" });
       void refreshBrowserStatus();
+      void refreshBrowserSettings();
     });
     return () => {
       offEvents();

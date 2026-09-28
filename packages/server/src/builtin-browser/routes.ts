@@ -3,13 +3,16 @@
  *
  *   GET    /status                     availability, tabs, active tab (never 503)
  *   GET    /tabs                       tabs and the active one
- *   POST   /tabs                       open a tab (a window creates it and claims it)
+ *   POST   /tabs                       open a tab (a window creates it and claims it); with
+ *                                      no address it opens the homepage, or a blank page
  *   POST   /tabs/claim                 a window names the tab it created for a request
  *   POST   /tabs/:tab/activate         focus a tab (the user) or switch to it (the agent)
  *   DELETE /tabs/:tab                  close a tab
  *   POST   /tabs/:tab/navigate|scan|exec|click|type|screenshot|cdp   the agent's actions
  *   GET    /import/sources             system browser profiles that can be imported
  *   POST   /import                     import cookies and / or history from one
+ *   GET    /settings                   the browser's settings (its homepage); no shell needed
+ *   PUT    /settings                   replace them: {homepage: address | null}
  *   GET    /history?q=&limit=          search the history
  *   DELETE /history                    forget it
  *   POST   /clear-data                 clear the browser's cookies, cache or site storage
@@ -25,6 +28,7 @@ import type {
   BuiltinBrowserImportResult,
   BuiltinBrowserImportSourcesResponse,
   BuiltinBrowserScreenshot,
+  BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
 } from "../api/types.js";
@@ -300,6 +304,19 @@ export function builtinBrowserRoutes(browser: BuiltinBrowser): Hono<AppEnv> {
         : {}),
     });
     return c.json(result satisfies BuiltinBrowserImportResult);
+  });
+
+  app.get("/settings", async (c) =>
+    c.json((await browser.getSettings()) satisfies BuiltinBrowserSettings),
+  );
+
+  app.put("/settings", async (c) => {
+    const body = await jsonBody(c);
+    if (!("homepage" in body)) {
+      throw badRequest("homepage is required: a web address, or null for none.");
+    }
+    const saved = await browser.updateSettings({ homepage: body.homepage });
+    return c.json(saved satisfies BuiltinBrowserSettings);
   });
 
   app.get("/history", (c) => {

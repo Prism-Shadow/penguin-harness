@@ -2,11 +2,13 @@
  * The built-in browser's round trips to the server, each paired with the local change that
  * makes it feel immediate. Components call these; none of them throws.
  */
+import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toastError } from "../../components/ui/toast";
+import { openPanel } from "../dock/dock-state";
 import { dispatchBrowser } from "./browser-store";
 import type { BrowserGuest } from "./browser-state";
 
@@ -23,17 +25,42 @@ export async function refreshBrowserStatus(): Promise<void> {
   }
 }
 
-/** Opens a tab (at `url`, or blank) and brings it to the front; its id once it exists, else null. */
-export async function openBrowserTab(url?: string): Promise<number | null> {
+/**
+ * Reads the browser's settings (its homepage). A refusal or a network failure keeps what is
+ * known: an older server without the route simply has no homepage to offer.
+ */
+export async function refreshBrowserSettings(): Promise<void> {
+  try {
+    dispatchBrowser({ type: "settings", settings: await api.getBuiltinBrowserSettings() });
+  } catch {
+    // Nothing to do: the toolbar goes on without a Home button.
+  }
+}
+
+/**
+ * Opens a tab and brings it to the front: at `url`, or else where the server opens a new tab
+ * — the homepage, or a blank page without one. The tab once it exists, else null.
+ */
+export async function openBrowserTab(url?: string): Promise<BuiltinBrowserTab | null> {
   try {
     const { tab } = await api.openBuiltinBrowserTab(
       url === undefined ? { activate: true } : { url, activate: true },
     );
-    return tab.id;
+    return tab;
   } catch (err) {
     toastError(S.builtinBrowser.openFailed(apiErrorText(err)));
     return null;
   }
+}
+
+/**
+ * A link from the conversation, opened in the built-in browser: the Browser panel comes up in
+ * the dock of the conversation on screen, and the link opens in a new tab there — the same
+ * request as the panel's own new tab, so the page joins the one set of tabs.
+ */
+export function openLinkInBrowser(url: string): void {
+  openPanel("builtin-browser");
+  void openBrowserTab(url);
 }
 
 /** Brings a tab to the front here at once; the server's next registry snapshot confirms it. */

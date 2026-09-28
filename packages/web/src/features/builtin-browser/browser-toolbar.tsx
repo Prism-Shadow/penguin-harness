@@ -1,8 +1,8 @@
 /**
- * The built-in browser's toolbar: back, forward, reload (stop while the page loads), the
- * address bar, the mark of an agent at work while one drives the browser, and the overflow
- * menu — import from a system browser, clear browsing data, open the page in the system
- * browser, developer tools.
+ * The built-in browser's toolbar: back, forward, reload (stop while the page loads), Home
+ * while a homepage is set, the address bar, the mark of an agent at work while one drives the
+ * browser, and the overflow menu — import from a system browser, clear browsing data, set the
+ * homepage, open the page in the system browser, developer tools.
  *
  * Icon buttons are flat: no fill at rest or on hover, the glyph darkens instead, and each is
  * named by a tooltip below it. The agent mark is an icon with its tooltip, never a text badge.
@@ -23,6 +23,7 @@ import {
   CloseIcon,
   DOWNLOAD_ICON,
   EXTERNAL_LINK_ICON,
+  HOME_ICON,
   REFRESH_ICON,
 } from "../../components/ui/icons";
 import {
@@ -79,9 +80,12 @@ export interface BrowserToolbarProps {
   onForward: () => void;
   onReload: () => void;
   onStop: () => void;
+  /** Goes to the homepage; null while none is set, which leaves the button out. */
+  onHome: (() => void) | null;
   onNavigate: (url: string) => void;
   onImport: () => void;
   onClearData: () => void;
+  onSetHomepage: () => void;
   /** Null when the page is not a web page the system browser could open. */
   onOpenExternal: (() => void) | null;
   onDevTools: () => void;
@@ -131,6 +135,11 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
           <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.rowLead} />
         </ToolButton>
       )}
+      {props.onHome !== null && (
+        <ToolButton label={S.builtinBrowser.home} onClick={props.onHome}>
+          <GlyphIcon d={HOME_ICON} size={ICON_SIZE.rowLead} />
+        </ToolButton>
+      )}
       {/* Keyed by tab: switching tabs drops a half-typed address instead of carrying it over. */}
       <AddressBar
         key={tab?.id ?? "none"}
@@ -174,6 +183,10 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
         <button type="button" className={overflowMenuRowClass} onClick={item(props.onClearData)}>
           {overflowMenuGlyph(TRASH_ICON)}
           {S.builtinBrowser.clearDataAction}
+        </button>
+        <button type="button" className={overflowMenuRowClass} onClick={item(props.onSetHomepage)}>
+          {overflowMenuGlyph(HOME_ICON)}
+          {S.builtinBrowser.setHomepageAction}
         </button>
         {(props.onOpenExternal !== null || props.hostsPage) && (
           <div className="mx-2 my-1 border-t border-gray-100 dark:border-gray-800" />

@@ -89,6 +89,15 @@ export function normalizeAddress(input: string): string | null {
   return `${SEARCH_URL}${encodeURIComponent(text)}`;
 }
 
+/**
+ * The homepage an entry in the homepage dialog stands for: the address bar's reading of it, or
+ * none for an empty entry and for the blank page, which is what a new tab opens without one.
+ */
+export function homepageFromInput(input: string): string | null {
+  const url = normalizeAddress(input);
+  return url === null || url === BLANK_URL ? null : url;
+}
+
 /** Whether a URL is a web page (the only kind that may be handed to the system browser). */
 export function isWebUrl(url: string): boolean {
   const parsed = parseUrl(url);

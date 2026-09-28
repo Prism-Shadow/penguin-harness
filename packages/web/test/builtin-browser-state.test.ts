@@ -1,7 +1,8 @@
 /**
  * The built-in browser's state in a window (features/builtin-browser/browser-state.ts): the
- * server's tab registry, the pages this window hosts, and the agent's activity — driven by the
- * user channel's four events and the window's own actions (claim, close, activate).
+ * server's tab registry, the pages this window hosts, the agent's activity and the homepage —
+ * driven by the user channel's four events and the window's own actions (claim, close,
+ * activate, settings read or saved).
  */
 import { describe, expect, it } from "vitest";
 import type { BuiltinBrowserServerEvent, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
@@ -281,5 +282,31 @@ describe("shouldReveal", () => {
 
   it("brings it up once per conversation, so hiding it again is respected", () => {
     expect(shouldReveal(acting(true), onScreen, new Set(["s1"]))).toBe(false);
+  });
+});
+
+describe("settings", () => {
+  it("has no homepage until the server names one, and follows it being cleared", () => {
+    expect(READY.homepage).toBeNull();
+    const set = reduceBrowser(READY, {
+      type: "settings",
+      settings: { homepage: "https://example.com/start" },
+    });
+    expect(set.homepage).toBe("https://example.com/start");
+    const cleared = reduceBrowser(set, { type: "settings", settings: { homepage: null } });
+    expect(cleared.homepage).toBeNull();
+  });
+
+  it("keeps the same state object when nothing changed, so nothing re-renders", () => {
+    expect(reduceBrowser(READY, { type: "settings", settings: { homepage: null } })).toBe(READY);
+  });
+
+  it("keeps the homepage across the window's other changes", () => {
+    const set = reduceBrowser(READY, {
+      type: "settings",
+      settings: { homepage: "https://example.com/start" },
+    });
+    const after = run(set, open("r1"), { type: "resync" }, { type: "supported", supported: false });
+    expect(after.homepage).toBe("https://example.com/start");
   });
 });

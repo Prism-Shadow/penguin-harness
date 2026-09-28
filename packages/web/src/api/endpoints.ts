@@ -218,6 +218,7 @@ import type {
   BuiltinBrowserImportRequest,
   BuiltinBrowserImportResult,
   BuiltinBrowserImportSourcesResponse,
+  BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
   DesktopBrowserCommand,
@@ -2134,8 +2135,9 @@ export type BuiltinBrowserStorage = Extract<
 export const getBuiltinBrowserStatus = () =>
   apiFetch<BuiltinBrowserStatus>(builtinBrowserPath("/status"), { server: null });
 /**
- * A new tab. The server asks this window (over the user channel) to create the page, and
- * answers once the page is claimed — so this resolves after the tab exists.
+ * A new tab, at `url` or else at the homepage (blank without one). The server asks this window
+ * (over the user channel) to create the page, and answers once the page is claimed — so this
+ * resolves after the tab exists.
  */
 export const openBuiltinBrowserTab = (body: { url?: string; activate?: boolean }) =>
   apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath("/tabs"), {
@@ -2167,6 +2169,16 @@ export const importIntoBuiltinBrowser = (body: BuiltinBrowserImportRequest) =>
   apiFetch<BuiltinBrowserImportResult>(builtinBrowserPath("/import"), {
     method: "POST",
     body,
+    server: null,
+  });
+/** The browser's settings — its homepage. The server's own file: no desktop shell needed. */
+export const getBuiltinBrowserSettings = () =>
+  apiFetch<BuiltinBrowserSettings>(builtinBrowserPath("/settings"), { server: null });
+/** Replaces them; answers them as stored (a bare host given its scheme). */
+export const putBuiltinBrowserSettings = (settings: BuiltinBrowserSettings) =>
+  apiFetch<BuiltinBrowserSettings>(builtinBrowserPath("/settings"), {
+    method: "PUT",
+    body: settings,
     server: null,
   });
 /** History matching `q` (address and title), most visited first. */

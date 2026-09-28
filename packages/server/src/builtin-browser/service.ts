@@ -1,7 +1,7 @@
 /**
  * The built-in browser as the routes drive it: one object per platform generation that owns
- * the shell link, the tab registry, the driver and actions over them, the history, and the
- * events the admins' windows hear.
+ * the shell link, the tab registry, the driver and actions over them, the history, the
+ * settings, and the events the admins' windows hear.
  *
  * Availability comes first on every call that needs the shell: no port means this server is
  * not the desktop shell's child (`not_desktop`), an unanswered hello a shell too old to host
@@ -22,6 +22,7 @@ import type {
   BuiltinBrowserScanResult,
   BuiltinBrowserScreenshot,
   BuiltinBrowserServerEvent,
+  BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
@@ -34,6 +35,7 @@ import type { ActionTiming } from "./actions.js";
 import { BrowserDriver, mapLinkError } from "./driver.js";
 import { HistoryStore, historyFile, isWebUrl } from "./history.js";
 import { listImportSources, readCookies, readHistory } from "./import/index.js";
+import { SettingsStore, settingsFile } from "./settings.js";
 import { ShellLink, parseTab } from "./shell-link.js";
 import type { BrowserShellPort, ShellLinkTiming } from "./shell-link.js";
 import { TabRegistry } from "./tabs.js";
@@ -150,6 +152,28 @@ export function browserUrl(raw: unknown, blankWhenEmpty: boolean): string {
 }
 
 /**
+ * A homepage as PUT /settings takes it: null for none, else a web page read by the rule above,
+ * a bare host given its scheme. Never the blank page: that is what no homepage already opens.
+ */
+export function homepageUrl(raw: unknown): string | null {
+  if (raw === null) return null;
+  let url: string | null;
+  try {
+    url = browserUrl(raw, false);
+  } catch {
+    url = null;
+  }
+  if (url === null || !isWebUrl(url)) {
+    throw new HttpError(
+      400,
+      "invalid_url",
+      `${JSON.stringify(raw)} is not a web address a homepage can be (http or https).`,
+    );
+  }
+  return url;
+}
+
+/**
  * What raw CDP may not do: reach other targets (`Target.*`: open, attach to or close pages the
  * browser does not know), or navigate the tab where the browser would not go. The shell guards
  * the page's own navigations only; one that CDP makes passes it, so `Page.navigate` gets the
@@ -169,7 +193,7 @@ function checkRawCdp(method: string, params: Record<string, unknown> | undefined
 export interface BuiltinBrowserDeps {
   /** The shell's message port; null when this server is not the desktop shell's child. */
   port: BrowserShellPort | null;
-  /** The data root; the history lives under it. */
+  /** The data root; the history and the settings live under it. */
   root: string;
   /** Sends one event to every admin's user channel. */
   publish(event: BuiltinBrowserServerEvent): void;
@@ -189,6 +213,7 @@ interface Connected {
 export class BuiltinBrowser {
   readonly tabs: TabRegistry;
   readonly history: HistoryStore;
+  readonly settings: SettingsStore;
   private readonly connected: Connected | null;
   private readonly timing: typeof DEFAULT_TIMING;
   /** How long an opened web page gets to load before POST /tabs answers. */
@@ -210,6 +235,7 @@ export class BuiltinBrowser {
     this.importer = deps.importer ?? { listImportSources, readCookies, readHistory };
     this.tabs = new TabRegistry(now);
     this.history = new HistoryStore(historyFile(deps.root), { now, log: deps.log });
+    this.settings = new SettingsStore(settingsFile(deps.root), deps.log);
     if (deps.port === null) {
       this.connected = null;
       return;
@@ -248,8 +274,8 @@ export class BuiltinBrowser {
   }
 
   /**
-   * POST /tabs: asks the admins' windows for a tab, waits for one to claim it, and — for a web
-   * page — for the page to load.
+   * POST /tabs: asks the admins' windows for a tab — at the address given, else at the
+   * homepage, else blank — waits for one to claim it, and, for a web page, for the page to load.
    */
   async openTab(opts: {
     url?: unknown;
@@ -257,7 +283,7 @@ export class BuiltinBrowser {
     activate?: boolean;
   }): Promise<BuiltinBrowserTab> {
     const { driver } = await this.ready();
-    const url = browserUrl(opts.url, true);
+    const url = await this.newTabUrl(opts.url);
     if (this.tabsHeld() >= MAX_TABS) {
       throw new HttpError(
         409,
@@ -402,6 +428,18 @@ export class BuiltinBrowser {
     return this.act(tab, "cdp", sessionId, (tabId, actions) => actions.cdp(tabId, method, params));
   }
 
+  // --- settings ----------------------------------------------------------------
+
+  /** GET /settings: the server's own file, so it needs no shell. */
+  getSettings(): Promise<BuiltinBrowserSettings> {
+    return this.settings.read();
+  }
+
+  /** PUT /settings: the homepage as a web address (a bare host gets a scheme), or null for none. */
+  async updateSettings(update: { homepage: unknown }): Promise<BuiltinBrowserSettings> {
+    return this.settings.write({ homepage: homepageUrl(update.homepage) });
+  }
+
   // --- import, history, data --------------------------------------------------
 
   listImportSources(): BuiltinBrowserImportSource[] {
@@ -530,6 +568,12 @@ export class BuiltinBrowser {
       throw new HttpError(404, "no_such_tab", `Tab ${tabId} is not open in the built-in browser.`);
     }
     return tab;
+  }
+
+  /** The page a new tab opens: the address it was given, else the homepage, else the blank page. */
+  private async newTabUrl(raw: unknown): Promise<string> {
+    if (raw !== undefined && raw !== null && raw !== "") return browserUrl(raw, false);
+    return (await this.settings.read()).homepage ?? "about:blank";
   }
 
   /** One agent action on one tab: made active, announced busy while it runs. */

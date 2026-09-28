@@ -1,7 +1,7 @@
 /**
  * The built-in browser's address bar rules (features/builtin-browser/address.ts): what a typed
- * line loads — the address as typed, a bare host with a scheme, or a Bing search — and how a
- * page's address, title and favicon are shown back.
+ * line loads — the address as typed, a bare host with a scheme, or a Bing search — what an
+ * entry in the homepage dialog saves, and how a page's address, title and favicon are shown back.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -9,6 +9,7 @@ import {
   SEARCH_URL,
   displayAddress,
   faviconSrc,
+  homepageFromInput,
   isBlankUrl,
   isWebUrl,
   normalizeAddress,
@@ -82,6 +83,21 @@ describe("normalizeAddress", () => {
 
   it("does not take an out-of-range IPv4 address for a host", () => {
     expect(normalizeAddress("999.1.1.1")).toBe(search("999.1.1.1"));
+  });
+});
+
+describe("homepageFromInput", () => {
+  it("reads an entry as the address bar does", () => {
+    expect(homepageFromInput("example.com")).toBe("https://example.com/");
+    expect(homepageFromInput(" https://example.com/start ")).toBe("https://example.com/start");
+    expect(homepageFromInput("localhost:3000")).toBe("http://localhost:3000/");
+    expect(homepageFromInput("penguin news")).toBe(search("penguin news"));
+  });
+
+  it("saves no homepage for an empty entry or the blank page", () => {
+    expect(homepageFromInput("")).toBeNull();
+    expect(homepageFromInput("   ")).toBeNull();
+    expect(homepageFromInput("about:blank")).toBeNull();
   });
 });
 
