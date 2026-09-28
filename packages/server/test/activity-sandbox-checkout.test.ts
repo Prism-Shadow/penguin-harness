@@ -88,7 +88,7 @@ async function setup(options: { runs?: boolean; canonical?: boolean } = {}) {
       draftWorkspace: () => path.join(penguin, "drafts"),
     },
     generation: {
-      list: async () =>
+      moduleBuilds: async () =>
         options.runs
           ? [{ runId: "run_1", kind: "module", status: "succeeded", createdAt: "2026-09-01" }]
           : [],

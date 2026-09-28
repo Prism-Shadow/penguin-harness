@@ -7444,3 +7444,210 @@ test("deploys to PROD only after typing the product code", async ({ page }) => {
   expect(starts).toHaveLength(1);
   expect(f.errors).toEqual([]);
 });
+
+test("marks the deployed version and says the activity changed since", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  // The version routes, with the server's rules: v1 went to QA, and the status compares the
+  // QA version with the draft, which a script edit changes.
+  let changed = false;
+  const v1 = {
+    versionId: "ver_1",
+    seq: 1,
+    label: "Release",
+    kind: "deploy",
+    reason: null,
+    createdAt: "2026-09-28T10:00:00.000Z",
+    author: null,
+    mediaBytes: 0,
+    current: true,
+    deployed: { qa: "2026-09-28T10:05:00.000Z", prod: null },
+  };
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (url.pathname === `${base}/act_test/description` && request.method() === "PATCH") {
+      changed = true;
+      return route.fallback();
+    }
+    if (url.pathname === `${base}/act_test/versions` && request.method() === "GET")
+      return json({ versions: [{ ...v1, current: !changed }] });
+    if (url.pathname === `${base}/act_test/versions/status`)
+      return json({
+        qa: changed ? "changed" : "in_sync",
+        prod: "never",
+        qaVersion: { versionId: "ver_1", seq: 1, deployedAt: "2026-09-28T10:05:00.000Z" },
+        prodVersion: null,
+      });
+    return route.fallback();
+  });
+  await openSection(page, "Generation history");
+  const status = page.getByRole("list", { name: "Deploys", exact: true });
+  await expect(status).toContainText("In sync with QA");
+  await expect(status).toContainText("v1, ");
+  await expect(status).toContainText("Never deployed to PROD");
+  const row = page.getByRole("row", { name: /^v1\b/ });
+  await expect(row.getByRole("img", { name: /^Went to QA on / })).toHaveText("QA");
+  await expect(row.getByRole("img", { name: /^Went to PROD on / })).toHaveCount(0);
+
+  // Editing the script leaves QA behind.
+  await openSection(page, "Description");
+  await page
+    .getByRole("textbox", { name: "Activity Script", exact: true })
+    .fill("A script QA has not seen");
+  await page.getByRole("button", { name: "Save script", exact: true }).click();
+  await openSection(page, "Generation history");
+  await expect(status).toContainText("Changed since the QA deploy");
+  await expect(row).not.toContainText("Current");
+  await expect(row.getByRole("img", { name: /^Went to QA on / })).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
+test("plays an older module build", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  const detail = await page.evaluate((url) => fetch(url).then((r) => r.json()), `${base}/act_test`);
+  const older = `run_${"a".repeat(32)}`;
+  const newer = `run_${"b".repeat(32)}`;
+  const moduleRun = (runId, createdAt) => ({
+    kind: "module",
+    runId,
+    activityId: "act_test",
+    projectId,
+    sessionId: null,
+    status: "succeeded",
+    createdAt,
+    finishedAt: createdAt,
+    inputRevision: detail.draft.contentRevision,
+    hasCandidate: false,
+    error: null,
+  });
+  // The module-build routes, with the server's rules: a pin names the draft's revision and
+  // leaves it as it was, and the pinned build plays until it is unpinned.
+  let draft = detail.draft;
+  const pins = [];
+  const diffs = [];
+  const builds = () => ({
+    builds: [
+      {
+        runId: newer,
+        createdAt: "2026-09-27T10:00:00.000Z",
+        finishedAt: null,
+        files: 7,
+        newest: true,
+      },
+      {
+        runId: older,
+        createdAt: "2026-09-26T10:00:00.000Z",
+        finishedAt: null,
+        files: 6,
+        newest: false,
+      },
+    ],
+    pinnedRunId: draft.pinnedModuleRunId ?? null,
+    playingRunId: draft.pinnedModuleRunId ?? newer,
+  });
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const p = url.pathname;
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/act_test` && request.method() === "GET") return json({ ...detail, draft });
+    if (p === `${base}/act_test/runs` && request.method() === "GET")
+      return json({
+        runs: [
+          moduleRun(newer, "2026-09-27T10:00:00.000Z"),
+          moduleRun(older, "2026-09-26T10:00:00.000Z"),
+        ],
+      });
+    if (p === `${base}/act_test/module-builds`) return json(builds());
+    if (p === `${base}/act_test/module-builds/diff`) {
+      diffs.push([url.searchParams.get("from"), url.searchParams.get("to")]);
+      return json({
+        from: older,
+        to: newer,
+        unchanged: 4,
+        files: [
+          {
+            path: "src/index.ts",
+            change: "changed",
+            beforeBytes: 20,
+            afterBytes: 21,
+            text: "shown",
+            before: "export const n = 1;\n",
+            after: "export const n = 22;\n",
+          },
+          {
+            path: "res/logo.png",
+            change: "added",
+            beforeBytes: null,
+            afterBytes: 2048,
+            text: "binary",
+            before: null,
+            after: null,
+          },
+        ],
+      });
+    }
+    const pin = p.match(/\/act_test\/module-builds\/(run_[a-f0-9]{32})\/pin$/);
+    if (pin || p === `${base}/act_test/module-builds/unpin`) {
+      const body = request.postDataJSON();
+      pins.push(pin ? { pin: pin[1], ...body } : { unpin: true, ...body });
+      if (body.expectedRevision !== draft.contentRevision)
+        return json({ error: { code: "draft_conflict", message: "Draft changed." } }, 409);
+      const { pinnedModuleRunId: _pinned, ...rest } = draft;
+      draft = pin ? { ...rest, pinnedModuleRunId: pin[1] } : rest;
+      return json(draft);
+    }
+    return route.fallback();
+  });
+  // The runs were read when the activity opened; read them again with the builds in them.
+  await page.reload();
+  await openSection(page, "Generation history");
+  const section = page.getByRole("region", { name: /^Module builds/ });
+  const newest = section.getByRole("row").filter({ hasText: "Build bbbbbb" });
+  const old = section.getByRole("row").filter({ hasText: "Build aaaaaa" });
+  await expect(newest).toContainText("Newest");
+  await expect(newest).toContainText("Playing");
+  await expect(old).toContainText("6 files");
+
+  // Compare the two: the older one reads first, whichever was ticked first.
+  const compare = section.getByRole("button", { name: "Compare", exact: true });
+  await expect(compare).toBeDisabled();
+  await newest.getByRole("checkbox", { name: "Select Build bbbbbb to compare" }).check();
+  await old.getByRole("checkbox", { name: "Select Build aaaaaa to compare" }).check();
+  await compare.click();
+  const panel = page.getByRole("region", { name: /^Build aaaaaa compared with Build bbbbbb/ });
+  await expect(panel.getByRole("row", { name: /res\/logo\.png/ })).toContainText(
+    "Not shown: not a text file.",
+  );
+  expect(diffs).toEqual([[older, newer]]);
+  const lines = panel.getByLabel("Differences in src/index.ts", { exact: true });
+  await expect(lines).toContainText("export const n = 1;");
+  await expect(lines).toContainText("export const n = 22;");
+  await expect(panel).toContainText("4 other files are the same.");
+
+  // Play the older build: the preview stays on it, with a notice, until it is unpinned.
+  await old.getByRole("button", { name: "Play Build aaaaaa in the preview", exact: true }).click();
+  await expect(page.getByText("The preview plays Build aaaaaa.", { exact: true })).toBeVisible();
+  const notice = section
+    .getByRole("status")
+    .filter({ hasText: "The preview plays an older build." });
+  await expect(notice).toBeVisible();
+  await expect(old).toContainText("Playing");
+  await expect(newest).not.toContainText("Playing");
+  await notice.getByRole("button", { name: "Unpin", exact: true }).click();
+  await expect(
+    page.getByText("The preview plays the newest build again.", { exact: true }),
+  ).toBeVisible();
+  await expect(notice).toHaveCount(0);
+  await expect(newest).toContainText("Playing");
+  expect(pins).toEqual([
+    { pin: older, expectedRevision: detail.draft.contentRevision },
+    { unpin: true, expectedRevision: detail.draft.contentRevision },
+  ]);
+  expect(f.errors).toEqual([]);
+});

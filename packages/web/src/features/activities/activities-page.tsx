@@ -2071,6 +2071,7 @@ function ActivityEditor({
                   endpoint={endpoint}
                   productCode={detail.productCode}
                   editable={editable}
+                  pinnedBuild={Boolean(detail.draft.pinnedModuleRunId)}
                   onAnnounce={announce}
                 />
               )}
@@ -2103,6 +2104,11 @@ function ActivityEditor({
                       title: draft.status === "valid" ? String(draft.spec?.title) : detail.title,
                       draft,
                     })
+                  }
+                  pinnedModuleRunId={detail.draft.pinnedModuleRunId}
+                  onDraft={(draft) =>
+                    // A pin changes only which build the preview plays; unsaved text stays.
+                    setDetail((current) => (current ? { ...current, draft } : current))
                   }
                   onUseCandidate={(candidate) => {
                     if (!dirty || window.confirm(S.activities.discard)) {

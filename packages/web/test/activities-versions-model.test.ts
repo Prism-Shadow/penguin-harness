@@ -41,6 +41,7 @@ describe("versionRows", () => {
       author: "Penguin",
       size: "None",
       current: true,
+      deployed: [],
     });
     expect(rows[2]).toMatchObject({ name: "First", kind: "Saved", size: "2.0 KB", current: false });
   });

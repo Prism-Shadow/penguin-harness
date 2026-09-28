@@ -106,6 +106,9 @@ import {
   type RefNumberSuggestion,
 } from "./ref-template.js";
 
+/** A run's id, as a pinned module build names one. */
+const RUN_ID = /^run_[a-f0-9]{32}$/;
+
 /** Serializes compare-and-publish operations within the server's single-writer lifetime. */
 export class ActivityLocks {
   private readonly pending = new Map<string, Promise<unknown>>();
@@ -794,6 +797,11 @@ export class ActivityService implements ActivityAuthoring {
     )
       throw new Error("Activity draft is corrupt.");
     if (file.moduleDocuments !== undefined && !validModuleDocuments(file.moduleDocuments))
+      throw new Error("Activity draft is corrupt.");
+    if (
+      file.pinnedModuleRunId !== undefined &&
+      (typeof file.pinnedModuleRunId !== "string" || !RUN_ID.test(file.pinnedModuleRunId))
+    )
       throw new Error("Activity draft is corrupt.");
     if (file.mediaPlan) {
       if (!/^[a-f0-9]{64}$/.test(file.mediaPlan.specRevision))
@@ -1572,6 +1580,25 @@ export class ActivityService implements ActivityAuthoring {
       }
       if (content.moduleDocuments) next.moduleDocuments = structuredClone(content.moduleDocuments);
       return next;
+    });
+  }
+  /**
+   * Pin the module build the preview plays (`runId`), or unpin it (null) so the newest plays
+   * again. The caller checks the run is a succeeded module run of this activity. The pin is
+   * not part of the draft's revision, so `expectedRevision` only checks the author saw the
+   * current draft, and the revision stays what it was.
+   */
+  async pinModuleRun(
+    projectId: string,
+    activityId: string,
+    runId: string | null,
+    expectedRevision: string,
+  ): Promise<ActivityDraft> {
+    if (runId !== null && !RUN_ID.test(runId))
+      throw new HttpError(400, "invalid_request", "runId is not a run id.");
+    return this.change(projectId, activityId, expectedRevision, (draft) => {
+      const { pinnedModuleRunId: _pinned, ...rest } = draft;
+      return runId === null ? rest : { ...rest, pinnedModuleRunId: runId };
     });
   }
   private async change(

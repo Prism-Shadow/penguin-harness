@@ -1,5 +1,5 @@
 /**
- * The activity's Generation History: its saved versions, then every run, newest first, with
+ * The activity's Generation History: its saved versions, its module builds, then every run, newest first, with
  * how it went, its Session, a way to cancel one still running, and the candidate a
  * specification run left.
  */
@@ -16,6 +16,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneInk, toneSurface, type Tone } from "../../lib/tone";
 import { runKindLabel, type Announcement } from "./run-toasts";
+import { ModuleBuildsView } from "./module-builds-view";
 import { VersionsView } from "./versions-view";
 
 const runTone: Record<ActivityRun["status"], Tone> = {
@@ -38,6 +39,8 @@ export function GenerationHistory({
   onAnnounce,
   unsaved = false,
   onRestored,
+  onDraft,
+  pinnedModuleRunId,
 }: {
   runs: readonly ActivityRunSummary[];
   /** The draft's revision, which says when a module was built from an older one. */
@@ -55,7 +58,15 @@ export function GenerationHistory({
   unsaved?: boolean;
   /** The draft a restored version made. */
   onRestored?: (draft: ActivityDraft) => void;
+  /** The draft pinning or unpinning a module build made; only the draft changed. */
+  onDraft?: (draft: ActivityDraft) => void;
+  /** The build the draft pins, which keeps Module builds shown so it can be unpinned. */
+  pinnedModuleRunId?: string;
 }) {
+  const builds = runs
+    .filter((run) => run.kind === "module" && run.status === "succeeded")
+    .map((run) => run.runId)
+    .join(",");
   return (
     <div className="space-y-6">
       <VersionsView
@@ -66,6 +77,16 @@ export function GenerationHistory({
         onAnnounce={onAnnounce}
         onRestored={onRestored}
       />
+      {(builds || pinnedModuleRunId) && (
+        <ModuleBuildsView
+          endpoint={endpoint}
+          editable={editable}
+          draftRevision={draftRevision}
+          buildsKey={builds}
+          onAnnounce={onAnnounce}
+          onDraft={(draft) => onDraft?.(draft)}
+        />
+      )}
       <section className="space-y-3">
         <h3 className="text-sm font-semibold">{S.activities.runs}</h3>
         {runs.length === 0 && <p className="text-xs text-gray-500">{S.activities.noRuns}</p>}

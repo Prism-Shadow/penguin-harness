@@ -542,6 +542,42 @@ describe("activity generation through Harness sessions", () => {
     expect((await current()).draft.mediaPlan).toEqual(saved.mediaPlan);
   });
 
+  it("accepts a speech candidate that finished before a module build was pinned", async () => {
+    const f = await fixture("audio");
+    const run = (await (await f.startAudio()).json()) as ActivityRun;
+    expect((await f.finish(run)).status).toBe("succeeded");
+    const build = `run_${"b".repeat(32)}`;
+    const createdAt = "2026-09-27T10:00:00.000Z";
+    f.t.deps.db
+      .prepare(
+        "INSERT INTO activity_runs (run_id, project_id, activity_id, status, created_at, kind, record_json) VALUES (?, ?, ?, 'succeeded', ?, 'module', ?)",
+      )
+      .run(
+        build,
+        "generator-activities",
+        f.activity.id,
+        createdAt,
+        JSON.stringify({ runId: build, status: "succeeded", kind: "module", createdAt }),
+      );
+    // Play this build: only the preview changes, so the candidate is still for this draft.
+    const pinned = await f.client.post(`${f.endpoint}/module-builds/${build}/pin`, {
+      expectedRevision: run.inputRevision,
+    });
+    expect(pinned.status, await pinned.clone().text()).toBe(200);
+    const draft = (await pinned.json()) as ActivityDraft;
+    expect(draft.pinnedModuleRunId).toBe(build);
+    expect(draft.contentRevision).toBe(run.inputRevision);
+    const accepted = await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-audio`, {
+      expectedRevision: draft.contentRevision,
+    });
+    expect(accepted.status, await accepted.clone().text()).toBe(200);
+    const saved = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    expect(saved.draft.mediaPlan!.manifest.assets["en-US"]![0]!.generatedAudio?.runId).toBe(
+      run.runId,
+    );
+    expect(saved.draft.pinnedModuleRunId).toBe(build);
+  });
+
   it("retains a playable conflict candidate without applying it when a draft changes during speech", async () => {
     const f = await fixture("audio");
     const run = (await (await f.startAudio()).json()) as ActivityRun;
@@ -1709,6 +1745,14 @@ describe("activity generation through Harness sessions", () => {
     });
     // Against the revision it was applied to, a second apply is a conflict, not a repeat.
     expect((await apply(before.draft.contentRevision)).status).toBe(409);
+    // The draft as it was is kept first, once: the refused apply kept it, and the second
+    // apply found the draft still equal to that version.
+    const { versions } = (await (await client.get(`${endpoint}/versions`)).json()) as {
+      versions: { kind: string; reason: string | null }[];
+    };
+    expect(versions).toEqual([
+      expect.objectContaining({ kind: "auto", reason: "before_proposal" }),
+    ]);
 
     // Discarding keeps the file with the run, and the studio stops offering it.
     const discarded = await client.post(`${endpoint}/runs/${run.runId}/proposal/discard`, {});

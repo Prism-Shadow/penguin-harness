@@ -132,6 +132,33 @@ export function getVersion(db: Db, activityId: string, versionId: string): Versi
   return row ? mapRow(row) : null;
 }
 
+/** Remove version rows (their blobs are the caller's to collect). */
+export function deleteVersions(db: Db, activityId: string, versionIds: readonly string[]): void {
+  const remove = db.prepare(
+    "DELETE FROM activity_versions WHERE activity_id = ? AND version_id = ?",
+  );
+  for (const versionId of versionIds) remove.run(activityId, versionId);
+}
+
+/** Record when a version went to QA or PROD. */
+export function markVersionDeployed(
+  db: Db,
+  activityId: string,
+  versionId: string,
+  target: "qa" | "prod",
+  at: string,
+): void {
+  db.prepare(
+    `UPDATE activity_versions SET ${target === "qa" ? "deployed_qa_at" : "deployed_prod_at"} = ?
+     WHERE activity_id = ? AND version_id = ?`,
+  ).run(at, activityId, versionId);
+}
+
+/** Whether a blob directory entry is a blob's name (and not a file being written). */
+export function isBlobName(name: string): boolean {
+  return SHA256.test(name);
+}
+
 export function summarizeVersion(row: VersionRow, currentHash: string | null): VersionSummary {
   return {
     versionId: row.versionId,

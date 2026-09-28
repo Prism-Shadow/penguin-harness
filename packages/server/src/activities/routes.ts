@@ -30,6 +30,7 @@ import { parseRefDecisions } from "./ref-template.js";
 import type { ActivityPhonemes } from "./phonemes.js";
 import type { BookWordsRefresh, BookWordsSetup, BookWordsState } from "./book-word-types.js";
 import type { ActivityDeploys } from "./deploy-service.js";
+import type { ActivityModuleBuilds } from "./module-build-service.js";
 import type {
   DeployContextResponse,
   DeployLogResponse,
@@ -71,6 +72,7 @@ function moduleDocumentKind(value: string | undefined): "configuration" | "asses
 
 /** A version id as the version store makes them. */
 const VERSION_ID = /^ver_[a-f0-9]{32}$/;
+const RUN_ID = /^run_[a-f0-9]{32}$/;
 /** The one write-method path that only reads: a zip of files any member may already fetch. */
 const BUNDLE_PATH = /^\/api\/projects\/[^/]+\/activities\/media-library\/bundle$/;
 
@@ -92,6 +94,7 @@ export class ActivityRoutes {
   @Use() private readonly acceptance!: ActivityAcceptance;
   @Use() private readonly phonemes!: ActivityPhonemes;
   @Use() private readonly deploys!: ActivityDeploys;
+  @Use() private readonly moduleBuilds!: ActivityModuleBuilds;
   @Use() private readonly config!: Config;
   @Bind("activities") routes!: Hono<AppEnv>;
 
@@ -877,6 +880,54 @@ export class ActivityRoutes {
       // 201 when this save made a version; 200 when nothing changed and the latest is returned.
       return c.json(result, result.created ? 201 : 200);
     });
+    // Whether QA and PROD hold what the draft holds now.
+    app.get("/:activityId/versions/status", async (c) =>
+      c.json(
+        await this.versions.status(requireValidId(c, "projectId"), pathParam(c, "activityId")),
+      ),
+    );
+    // Module builds: any member may list and compare them; pinning needs the owner.
+    app.get("/:activityId/module-builds", async (c) =>
+      c.json(
+        await this.moduleBuilds.list(requireValidId(c, "projectId"), pathParam(c, "activityId")),
+      ),
+    );
+    app.get("/:activityId/module-builds/diff", async (c) => {
+      const from = c.req.query("from") ?? "";
+      const to = c.req.query("to") ?? "";
+      if (!RUN_ID.test(from) || !RUN_ID.test(to)) throw badRequest("from and to must be run ids.");
+      return c.json(
+        await this.moduleBuilds.diff(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          from,
+          to,
+        ),
+      );
+    });
+    app.post("/:activityId/module-builds/unpin", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.moduleBuilds.unpin(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        ),
+      );
+    });
+    app.post("/:activityId/module-builds/:runId/pin", async (c) => {
+      const runId = pathParam(c, "runId");
+      if (!RUN_ID.test(runId)) throw badRequest("runId must be a run id.");
+      const body = await readJson(c);
+      return c.json(
+        await this.moduleBuilds.pin(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          runId,
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        ),
+      );
+    });
     // Compare a version with the draft as it is now, or with another version.
     app.get("/:activityId/versions/:versionId/diff", async (c) => {
       const against = c.req.query("against") ?? "current";
@@ -1245,12 +1296,19 @@ export class ActivityRoutes {
           "proposal_missing",
           error ?? "The conversation has no proposal to apply.",
         );
+      // The draft as it was is kept as an automatic version first, so the proposal can be undone.
       return c.json(
-        await this.activities.applyProposal(
+        await this.versions.keepBefore(
           projectId,
           activityId,
-          proposal.changes,
-          expectedRevision,
+          { reason: "before_proposal", author: c.var.user.userId, expectedRevision },
+          () =>
+            this.activities.applyProposal(
+              projectId,
+              activityId,
+              proposal.changes,
+              expectedRevision,
+            ),
         ),
       );
     });

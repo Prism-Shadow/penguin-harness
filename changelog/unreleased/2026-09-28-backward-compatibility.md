@@ -32,3 +32,12 @@ The [PROD deploy](2026-09-28-activity-deploy-prod.md) changed no schema either:
   returns a PROD run's stored record as it is when it is the activity's latest run.
 - A QA run's `deploy_timed_out` error recorded no target and still reads as QA's; a PROD run's
   names `target: "prod"`.
+
+The [automatic versions, deployed markers and module builds](2026-09-28-activity-versions-deployed-builds.md)
+changed no schema either:
+
+- `draft.json` gained an optional `pinnedModuleRunId`, which is not part of the draft's
+  revision, so every draft keeps its revision, pinned or not. An older build ignores the field
+  and plays the newest build.
+- The deployed markers and `module_run_id` fill columns migration 21 created and older builds
+  left empty.

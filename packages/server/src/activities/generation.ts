@@ -1111,6 +1111,20 @@ export class ActivityGenerationService implements ActivityGeneration {
     return { ...metadata, kind: row.kind };
   }
 
+  async moduleBuilds(projectId: string, activityId: string): Promise<ActivityRunSummary[]> {
+    await this.activities.getActivity(projectId, activityId);
+    return (
+      this.db
+        .prepare(
+          "SELECT kind, record_json FROM activity_runs WHERE project_id = ? AND activity_id = ? AND kind = 'module' AND status = 'succeeded' ORDER BY created_at DESC, run_id DESC",
+        )
+        .all(projectId, activityId) as { kind: ActivityRun["kind"]; record_json: string }[]
+    ).map((row) => {
+      const metadata = JSON.parse(row.record_json) as ActivityRunSummary;
+      return { ...metadata, kind: row.kind };
+    });
+  }
+
   async audioContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array> {
     const run = await this.getRun(projectId, activityId, runId).catch((error: unknown) => {
       if (error instanceof HttpError && error.code === "run_not_found") return null;

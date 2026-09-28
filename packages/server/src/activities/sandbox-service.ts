@@ -21,7 +21,8 @@ import { Component, Interface, Use, type Opaque } from "@prismshadow/penguin-cor
 import { HttpError } from "../http/errors.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import type { Config } from "../hmr/capabilities.js";
-import type { ActivityRecord } from "./domain.js";
+import type { ActivityDraft, ActivityRecord } from "./domain.js";
+import { playingBuild } from "./module-builds.js";
 import {
   activityPayload,
   scopeConfigurationToLanguage,
@@ -283,16 +284,21 @@ export class ActivitySandboxService implements ActivitySandbox {
   >();
 
   /**
-   * The workspace of the most recent module build, or null when nothing has been built.
+   * The workspace of the module build the preview plays: the one an author pinned while it
+   * is still a succeeded build, else the most recent; null when nothing has been built.
    *
    * Only a succeeded run counts. A failed build leaves a half-written workspace behind, and
    * serving from it would give an author a preview of code that did not compile.
    */
-  private async builtModule(projectId: string, activityId: string): Promise<string | null> {
-    const runs = await this.generation.list(projectId, activityId);
-    const built = runs
-      .filter((run) => run.kind === "module" && run.status === "succeeded")
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+  private async builtModule(
+    projectId: string,
+    activityId: string,
+    pinnedRunId?: string,
+  ): Promise<string | null> {
+    const built = playingBuild(
+      await this.generation.moduleBuilds(projectId, activityId),
+      pinnedRunId,
+    );
     return built
       ? sandboxModuleRoot(path.join(this.config.root, "activity-runs", built.runId))
       : null;
@@ -304,9 +310,10 @@ export class ActivitySandboxService implements ActivitySandbox {
    */
   private async moduleSource(
     projectId: string,
-    activity: ActivityRecord,
+    // The draft, when the caller has it, names a pinned build.
+    activity: ActivityRecord & { draft?: Pick<ActivityDraft, "pinnedModuleRunId"> },
   ): Promise<ModuleSource | null> {
-    const run = await this.builtModule(projectId, activity.id);
+    const run = await this.builtModule(projectId, activity.id, activity.draft?.pinnedModuleRunId);
     if (run) return { kind: "run", root: run };
     const product = this.activities.productOf(activity);
     if (!product) return null;

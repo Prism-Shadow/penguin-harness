@@ -16,7 +16,7 @@ import { Button } from "../../components/ui/button";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { toneDot, toneInk } from "../../lib/tone";
+import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import {
   clonesMissing,
@@ -52,6 +52,7 @@ export function DeployPanel({
   endpoint,
   productCode,
   editable,
+  pinnedBuild = false,
   onAnnounce,
 }: {
   /** The activity's API path. */
@@ -60,6 +61,8 @@ export function DeployPanel({
   productCode: string;
   /** Whether the viewer owns the project: only the owner prepares clones or asks the remote. */
   editable: boolean;
+  /** Whether the preview plays a pinned module build, which a release does not ship. */
+  pinnedBuild?: boolean;
   onAnnounce: (announcement: Announcement) => void;
 }) {
   const words = S.activities.deploy;
@@ -211,6 +214,15 @@ export function DeployPanel({
           >
             {line.text}
           </p>
+          {pinnedBuild && (
+            <p
+              role="status"
+              className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}
+              data-testid="deploy-pinned-build"
+            >
+              {words.pinnedBuild}
+            </p>
+          )}
           <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
             <table className="w-full text-sm" aria-label={words.checksLabel}>
               <thead>

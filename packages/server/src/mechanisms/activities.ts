@@ -124,6 +124,11 @@ export abstract class ActivityGeneration extends Interface<{
     kind: ActivityRun["kind"],
     status: ActivityRun["status"],
   ): Promise<ActivityRunSummary | null>;
+  /**
+   * Every succeeded module run of the activity (its module builds), newest first, however
+   * many runs of other kinds came after them.
+   */
+  moduleBuilds(projectId: string, activityId: string): Promise<ActivityRunSummary[]>;
   acceptAudio(
     projectId: string,
     activityId: string,
@@ -493,5 +498,18 @@ export abstract class ActivityAuthoring extends Interface<{
     content: Pick<ActivityDraft, "description" | "spec" | "mediaPlan" | "moduleDocuments">,
     expectedRevision: string,
     staleSpec?: boolean,
+  ): Promise<ActivityDraft>;
+  /**
+   * Pin the module build the preview plays to run `runId`, or unpin it with null so the
+   * newest build plays again. The caller checks the run is a succeeded module run of this
+   * activity. Refused (409 `draft_conflict`) unless `expectedRevision` is the draft's
+   * revision. The pin is not part of that revision, so it never makes a candidate, a stage
+   * or a deploy out of date.
+   */
+  pinModuleRun(
+    projectId: string,
+    activityId: string,
+    runId: string | null,
+    expectedRevision: string,
   ): Promise<ActivityDraft>;
 }>() {}

@@ -9,14 +9,23 @@
  *
  * A restore rolls forward: it keeps the draft as it was as an automatic version first, writes
  * the version's files and content back, and records the result as a new `restore` version.
+ * An agent's proposal is applied the same way: the draft as it was is kept first.
+ *
+ * A finished QA or PROD deploy (the deploy events hook) keeps the draft as a `deploy` version,
+ * or marks the latest one when nothing changed, and `status` says whether the draft has
+ * changed since. After each new version, automatic versions beyond the newest 20 are removed
+ * (version-retention.ts), with every blob no remaining version references.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
-import type { ActivityAuthoring } from "../mechanisms/activities.js";
-import { newId, type ActivityDetail, type ActivityDraft } from "./domain.js";
+import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
+import { ActivityDeployEvents } from "./deploy-events.js";
+import type { DeployedEvent } from "./deploy-types.js";
+import { draftRevision, newId, type ActivityDetail, type ActivityDraft } from "./domain.js";
+import { playingBuild } from "./module-builds.js";
 import {
   IMPLEMENTATION_FEATURES_FILE,
   normalizeFeatureSelection,
@@ -33,10 +42,16 @@ import {
   type VersionManifest,
   type VersionMedia,
 } from "./version-manifest.js";
+import { prunableVersions } from "./version-retention.js";
 import {
+  blobFile,
+  blobsDir,
+  deleteVersions,
   getVersion,
+  isBlobName,
   latestVersion,
   listVersions,
+  markVersionDeployed,
   readBlob,
   sha256,
   summarizeVersion,
@@ -45,10 +60,13 @@ import {
   type VersionRow,
 } from "./version-store.js";
 import type {
+  DeployDrift,
+  DeployedVersion,
   VersionDiff,
   VersionKind,
   VersionReason,
   VersionSaveResult,
+  VersionStatus,
   VersionSummary,
 } from "./version-types.js";
 
@@ -57,6 +75,7 @@ export type {
   VersionKind,
   VersionReason,
   VersionSaveResult,
+  VersionStatus,
   VersionSummary,
 } from "./version-types.js";
 
@@ -103,14 +122,129 @@ export abstract class ActivityVersions extends Interface<{
     expectedRevision: string,
     author: string | null,
   ): Promise<ActivityDraft>;
+  /**
+   * Run `change`, a change that replaces a lot of the draft at once (an agent's whole
+   * proposal), keeping the draft as it was first as an automatic version. Both happen while
+   * nothing else changes the activity; `change` may change the draft through
+   * `ActivityAuthoring` with an expected revision. A draft whose revision is not
+   * `expectedRevision` is refused (409) before anything is kept. When `change` fails the
+   * version stays; it holds the draft as it still is.
+   */
+  keepBefore<T>(
+    projectId: string,
+    activityId: string,
+    input: { reason: VersionReason; author: string | null; expectedRevision: string },
+    change: () => Promise<T>,
+  ): Promise<T>;
+  /**
+   * Record a finished deploy: the draft is kept as a `deploy` version (or the latest version,
+   * when it holds the same) and marked as the one on the target. When the draft changed after
+   * the deploy took it, the newest version that holds what went is marked instead; null when
+   * none does.
+   */
+  markDeployed(event: DeployedEvent): Promise<VersionSummary | null>;
+  /** Whether QA and PROD hold what the draft holds now. */
+  status(projectId: string, activityId: string): Promise<VersionStatus>;
 }>() {}
 
 @Component()
 export class ActivityVersionService implements ActivityVersions {
   @Use() private readonly authoring!: ActivityAuthoring;
+  @Use() private readonly generation!: ActivityGeneration;
+  @Use() private readonly deployEvents!: ActivityDeployEvents;
   @Use() private readonly db!: Db;
   /** Digests of files already read, by path, size and modification time. */
   private readonly digests = new Map<string, string>();
+
+  setup({ effect }: ClassCtx) {
+    const listener = (event: DeployedEvent) => {
+      this.markDeployed(event).catch((error: unknown) => {
+        // The deploy stands either way; only its marker is missing.
+        console.warn(
+          `[activity-versions] could not mark the ${event.target} deploy of ${event.activityId}:`,
+          error instanceof Error ? error.message : error,
+        );
+      });
+    };
+    this.deployEvents.subscribe(listener);
+    effect(() => this.deployEvents.unsubscribe(listener));
+  }
+
+  async keepBefore<T>(
+    projectId: string,
+    activityId: string,
+    input: { reason: VersionReason; author: string | null; expectedRevision: string },
+    change: () => Promise<T>,
+  ): Promise<T> {
+    return this.authoring.exclusive(projectId, activityId, async () => {
+      const activity = await this.authoring.getActivity(projectId, activityId);
+      if (activity.draft.contentRevision !== input.expectedRevision)
+        throw new HttpError(
+          409,
+          "draft_conflict",
+          "Draft changed. Reload it before applying your edit.",
+        );
+      // Kept even when a file of the draft is missing or changed, as before a restore. When
+      // the change then fails, the version stays: it holds the draft as it still is, so a
+      // second try keeps nothing new.
+      await this.record(
+        projectId,
+        activity,
+        { kind: "auto", reason: input.reason, author: input.author },
+        { lenient: true },
+      );
+      return change();
+    });
+  }
+
+  async markDeployed(event: DeployedEvent): Promise<VersionSummary | null> {
+    const { projectId, activityId, target } = event;
+    if (target !== "qa" && target !== "prod") return null;
+    return this.authoring.exclusive(projectId, activityId, async () => {
+      const activity = await this.authoring.getActivity(projectId, activityId);
+      let row: VersionRow | null;
+      if (!event.revision || event.revision === activity.draft.contentRevision) {
+        const { version } = await this.record(
+          projectId,
+          activity,
+          { kind: "deploy", author: null },
+          { lenient: true },
+        );
+        row = getVersion(this.db, activityId, version.versionId);
+      } else {
+        // The draft changed after the deploy took it: mark the newest version holding what went.
+        row = await this.versionAtRevision(projectId, activity, event.revision);
+      }
+      if (!row) return null;
+      markVersionDeployed(this.db, activityId, row.versionId, target, event.deployedAt);
+      const marked = getVersion(this.db, activityId, row.versionId)!;
+      const current = await this.currentManifest(projectId, activity)
+        .then(manifestHash)
+        .catch(() => null);
+      return summarizeVersion(marked, current);
+    });
+  }
+
+  async status(projectId: string, activityId: string): Promise<VersionStatus> {
+    const activity = await this.authoring.getActivity(projectId, activityId);
+    const rows = listVersions(this.db, activityId);
+    const qa = lastDeployed(rows, "qa");
+    const prod = lastDeployed(rows, "prod");
+    const current =
+      qa || prod
+        ? await this.currentManifest(projectId, activity)
+            .then(manifestHash)
+            .catch(() => null)
+        : null;
+    const drift = (row: VersionRow | null): DeployDrift =>
+      !row ? "never" : current !== null && row.contentHash === current ? "in_sync" : "changed";
+    return {
+      qa: drift(qa),
+      prod: drift(prod),
+      qaVersion: qa ? deployedVersion(qa, qa.deployedQaAt!) : null,
+      prodVersion: prod ? deployedVersion(prod, prod.deployedProdAt!) : null,
+    };
+  }
 
   async save(
     projectId: string,
@@ -205,7 +339,8 @@ export class ActivityVersionService implements ActivityVersions {
         projectId,
         activity,
         { kind: "auto", reason: "before_restore", author },
-        { lenient: true },
+        // The version being restored stays, however old: it is read from next.
+        { lenient: true, protect: row.versionId },
       );
       const featuresFile = path.join(workspace, IMPLEMENTATION_FEATURES_FILE);
       const features = await fs.readFile(featuresFile).catch(() => null);
@@ -246,13 +381,14 @@ export class ActivityVersionService implements ActivityVersions {
   /**
    * Keep the activity as it is now as a version; the caller holds the activity. `lenient`
    * keeps it even when a file is missing (left out) or changed since it was generated (kept
-   * as it is now), for the version kept before a restore.
+   * as it is now), for the version kept before a restore. Retention then runs, sparing
+   * `protect`.
    */
   private async record(
     projectId: string,
     activity: ActivityDetail,
     input: VersionSaveInput,
-    { lenient = false }: { lenient?: boolean } = {},
+    { lenient = false, protect }: { lenient?: boolean; protect?: string } = {},
   ): Promise<VersionSaveResult> {
     const label = input.label ?? null;
     const activityId = activity.id;
@@ -291,7 +427,7 @@ export class ActivityVersionService implements ActivityVersions {
       contentHash: hash,
       manifestSha,
       mediaBytes: mediaBytes(manifest),
-      moduleRunId: null,
+      moduleRunId: await this.moduleRunId(projectId, activity, input.kind),
       sourceVersionId: input.sourceVersionId ?? null,
       authorUserId: input.author,
       deployedQaAt: null,
@@ -300,7 +436,73 @@ export class ActivityVersionService implements ActivityVersions {
       draftStatus: activity.draft.status,
     };
     writeVersion(this.db, row);
+    await this.prune(activityId, activityDir, protect);
     return { version: summarizeVersion(row, hash), created: true };
+  }
+
+  /**
+   * The module build recorded with a version; null with none. A deploy version records the
+   * newest build, which is what a release ships whatever the preview plays; any other version
+   * records the build the preview plays now.
+   */
+  private async moduleRunId(
+    projectId: string,
+    activity: ActivityDetail,
+    kind: VersionKind,
+  ): Promise<string | null> {
+    const builds = await this.generation.moduleBuilds(projectId, activity.id).catch(() => []);
+    return (
+      playingBuild(builds, kind === "deploy" ? null : activity.draft.pinnedModuleRunId)?.runId ??
+      null
+    );
+  }
+
+  /**
+   * Remove the automatic versions retention lets go, then every blob no remaining version
+   * references. The caller holds the activity. A version whose manifest cannot be read
+   * stops the blob sweep, since what it references is then unknown.
+   */
+  private async prune(activityId: string, activityDir: string, protect?: string): Promise<void> {
+    const rows = listVersions(this.db, activityId);
+    const doomed = new Set(
+      prunableVersions(rows)
+        .map((row) => row.versionId)
+        .filter((versionId) => versionId !== protect),
+    );
+    if (doomed.size) deleteVersions(this.db, activityId, [...doomed]);
+    const live = new Set<string>();
+    for (const row of rows) {
+      if (doomed.has(row.versionId)) continue;
+      live.add(row.manifestSha);
+      let manifest: VersionManifest;
+      try {
+        manifest = await this.readManifest(activityDir, row);
+      } catch {
+        return;
+      }
+      for (const file of manifest.media) live.add(file.sha256);
+    }
+    const names = await fs.readdir(blobsDir(activityDir)).catch(() => [] as string[]);
+    for (const name of names)
+      if (isBlobName(name) && !live.has(name))
+        await fs.rm(blobFile(activityDir, name), { force: true });
+  }
+
+  /**
+   * The newest version whose draft content had revision `revision`, read from the versions'
+   * manifests; null when none did.
+   */
+  private async versionAtRevision(
+    projectId: string,
+    activity: ActivityDetail,
+    revision: string,
+  ): Promise<VersionRow | null> {
+    const { activityDir } = this.dirs(projectId, activity);
+    for (const row of listVersions(this.db, activity.id)) {
+      const manifest = await this.readManifest(activityDir, row).catch(() => null);
+      if (manifest && draftRevision(manifest.draft) === revision) return row;
+    }
+    return null;
   }
 
   private requireVersion(activityId: string, versionId: string): VersionRow {
@@ -429,6 +631,23 @@ function incomplete(file: string | null): HttpError {
         undefined,
         { path: file },
       );
+}
+
+/** The version that went to `target` last, or null when none went. */
+function lastDeployed(rows: readonly VersionRow[], target: "qa" | "prod"): VersionRow | null {
+  const at = (row: VersionRow) => (target === "qa" ? row.deployedQaAt : row.deployedProdAt);
+  let last: VersionRow | null = null;
+  for (const row of rows) {
+    const when = at(row);
+    if (!when) continue;
+    const lastAt = last ? at(last) : null;
+    if (!last || !lastAt || when > lastAt || (when === lastAt && row.seq > last.seq)) last = row;
+  }
+  return last;
+}
+
+function deployedVersion(row: VersionRow, deployedAt: string): DeployedVersion {
+  return { versionId: row.versionId, seq: row.seq, deployedAt };
 }
 
 /** Whether `error` says a file the draft binds is missing from the workspace. */

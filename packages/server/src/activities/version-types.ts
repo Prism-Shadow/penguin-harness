@@ -69,3 +69,26 @@ export interface VersionDiff {
   /** Only the media files that differ, by path. */
   media: VersionMediaDiff[];
 }
+
+/**
+ * Where a deploy target stands against the draft: never deployed, holding exactly what the
+ * draft holds now, or holding something the draft has changed since.
+ */
+export type DeployDrift = "never" | "in_sync" | "changed";
+
+/** The version that last went to a target, and when. */
+export interface DeployedVersion {
+  versionId: string;
+  seq: number;
+  deployedAt: string;
+}
+
+/** How QA and PROD compare with the draft as it is now. */
+export interface VersionStatus {
+  qa: DeployDrift;
+  prod: DeployDrift;
+  /** The version QA last got; null when it never got one. */
+  qaVersion: DeployedVersion | null;
+  /** Likewise for PROD. */
+  prodVersion: DeployedVersion | null;
+}

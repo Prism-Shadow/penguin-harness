@@ -7,6 +7,7 @@ import type {
   VersionDiff,
   VersionFileName,
   VersionSaveResult,
+  VersionStatus,
   VersionSummary,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
@@ -25,6 +26,73 @@ export interface VersionRow {
   author: string;
   size: string;
   current: boolean;
+  /** Where the version went, QA first; empty for one never deployed. */
+  deployed: DeployedBadge[];
+}
+
+export interface DeployedBadge {
+  target: "qa" | "prod";
+  /** What the badge shows. */
+  label: string;
+  /** Its accessible name: where the version went, and when. */
+  name: string;
+}
+
+/** How a time reads in the table: the viewer's own date and time. */
+export const localTime = (iso: string) => new Date(iso).toLocaleString();
+
+/** The QA and PROD badges of a version that went there. */
+export function deployedBadges(
+  version: Pick<VersionSummary, "deployed">,
+  when: (iso: string) => string = localTime,
+): DeployedBadge[] {
+  const words = S.activities.versions;
+  return (["qa", "prod"] as const).flatMap((target) => {
+    const at = version.deployed?.[target];
+    if (!at) return [];
+    const label = words.deployedBadge[target];
+    return [{ target, label, name: words.deployedOn(label, when(at)) }];
+  });
+}
+
+/** One line of the deploy status: the words, the tone they read in, and which version went. */
+export interface StatusLine {
+  target: "qa" | "prod";
+  text: string;
+  tone: "success" | "attention" | "muted";
+  /** The version that went and when; null when none went. */
+  detail: string | null;
+}
+
+const DRIFTS = new Set(["never", "in_sync", "changed"]);
+
+/** Whether an answer is a deploy status the App can word. */
+export function isVersionStatus(value: unknown): value is VersionStatus {
+  const status = value as Partial<VersionStatus> | null;
+  return (
+    !!status &&
+    typeof status === "object" &&
+    DRIFTS.has(status.qa as string) &&
+    DRIFTS.has(status.prod as string)
+  );
+}
+
+/** QA's and PROD's status against the draft, QA first. */
+export function statusLines(
+  status: VersionStatus,
+  when: (iso: string) => string = localTime,
+): StatusLine[] {
+  const words = S.activities.versions.status;
+  return (["qa", "prod"] as const).map((target) => {
+    const drift = status[target];
+    const version = target === "qa" ? status.qaVersion : status.prodVersion;
+    return {
+      target,
+      text: words[target][drift] ?? drift,
+      tone: drift === "in_sync" ? "success" : drift === "changed" ? "attention" : "muted",
+      detail: version ? words.deployed(version.seq, when(version.deployedAt)) : null,
+    };
+  });
 }
 
 /** What made a version, with the reason an automatic one was kept. */
@@ -53,6 +121,7 @@ export function versionRows(list: readonly VersionSummary[]): VersionRow[] {
       author: version.author ?? S.activities.versions.noAuthor,
       size: sizeText(version.mediaBytes),
       current: version.current,
+      deployed: deployedBadges(version),
     }));
 }
 

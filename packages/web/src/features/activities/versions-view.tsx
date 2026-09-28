@@ -1,7 +1,8 @@
 /**
  * The activity's saved versions: Save version (with an optional name), the table of every
- * version, newest first, naming the one the draft holds now, Compare (a version against the
- * current draft, part by part and media file by media file) and Restore.
+ * version, newest first, naming the one the draft holds now and the ones that went to QA or
+ * PROD, Compare (a version against the current draft, part by part and media file by media
+ * file) and Restore. Under the heading, whether QA and PROD hold what the draft holds now.
  */
 import { useEffect, useRef, useState } from "react";
 import type {
@@ -9,6 +10,7 @@ import type {
   VersionDiff,
   VersionFileName,
   VersionSaveResult,
+  VersionStatus,
   VersionSummary,
 } from "@prismshadow/penguin-server/api";
 import { ApiError, apiFetch } from "../../api/client";
@@ -31,6 +33,8 @@ import {
   mediaChangeRows,
   restoreProblem,
   saveAnnouncement,
+  isVersionStatus,
+  statusLines,
   versionName,
   versionRows,
 } from "./versions-model";
@@ -71,6 +75,7 @@ export function VersionsView({
 }) {
   const words = S.activities.versions;
   const [versions, setVersions] = useState<VersionSummary[] | null>(null);
+  const [status, setStatus] = useState<VersionStatus | null>(null);
   const [loadError, setLoadError] = useState("");
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -93,6 +98,15 @@ export function VersionsView({
   async function load() {
     const read = ++reads.current;
     setLoadError("");
+    // The deploy status is a line beside the list: when it cannot be read it is left out.
+    void apiFetch<unknown>(`${endpoint}/versions/status`)
+      .then((result) => {
+        if (alive.current && read === reads.current)
+          setStatus(isVersionStatus(result) ? result : null);
+      })
+      .catch(() => {
+        if (alive.current && read === reads.current) setStatus(null);
+      });
     try {
       const result = await apiFetch<{ versions?: VersionSummary[] }>(`${endpoint}/versions`);
       if (alive.current && read === reads.current)
@@ -204,6 +218,20 @@ export function VersionsView({
           </Button>
         )}
       </div>
+      {status && (
+        <ul aria-label={words.status.label} className="space-y-0.5 text-xs">
+          {statusLines(status).map((line) => (
+            <li key={line.target}>
+              <span
+                className={`font-medium ${line.tone === "muted" ? "text-gray-500" : toneInk[line.tone]}`}
+              >
+                {line.text}
+              </span>
+              {line.detail && <span className="text-gray-500"> · {line.detail}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
       {loadError ? (
         <div className="space-y-2">
           <p role="alert" className={`text-xs ${toneInk.danger}`}>
@@ -239,7 +267,21 @@ export function VersionsView({
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
               {rows.map((row) => (
                 <tr key={row.versionId}>
-                  <td className={`${TD} whitespace-nowrap font-medium`}>{row.number}</td>
+                  <td className={`${TD} whitespace-nowrap font-medium`}>
+                    <span className="flex items-center gap-1">
+                      {row.number}
+                      {row.deployed.map((badge) => (
+                        <span
+                          key={badge.target}
+                          role="img"
+                          aria-label={badge.name}
+                          title={badge.name}
+                        >
+                          <Badge tone="brand">{badge.label}</Badge>
+                        </span>
+                      ))}
+                    </span>
+                  </td>
                   <td className={`${TD} break-words`}>
                     {row.name ?? <span className="text-gray-500">{words.unnamed}</span>}
                   </td>

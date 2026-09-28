@@ -114,7 +114,8 @@ async function sandbox(options: {
         options.moduleFolder ? { moduleFolder: options.moduleFolder, canonicalRefNum: 1 } : null,
       draftWorkspace: () => path.join(root, "draft"),
     },
-    generation: { list: async () => runs },
+    // The real query returns only succeeded module runs; the service filters them again.
+    generation: { list: async () => runs, moduleBuilds: async () => runs },
     config: { root },
     locateWafRoot: async () => options.wafRoot ?? null,
   });

@@ -241,6 +241,67 @@ export type Strings = {
       restored: (seq: number) => string;
       incomplete: (path: string) => string;
       incompleteRecord: string;
+      /** Whether QA and PROD hold what the draft holds now, under the Versions heading. */
+      status: {
+        label: string;
+        qa: Record<"never" | "in_sync" | "changed", string>;
+        prod: Record<"never" | "in_sync" | "changed", string>;
+        /** The deployed version and when it went, after the status. */
+        deployed: (seq: number, when: string) => string;
+      };
+      /** Badges on the rows of the versions that went to QA or PROD. */
+      deployedBadge: Record<"qa" | "prod", string>;
+      /** The badge's accessible name: where the version went, and when. */
+      deployedOn: (target: string, when: string) => string;
+    };
+    /** Module builds: every succeeded assembly, compared two at a time, one played in the preview. */
+    moduleBuilds: {
+      title: string;
+      about: string;
+      aboutPin: string;
+      loading: string;
+      loadFailed: string;
+      empty: string;
+      /** A build's short name, from its run. */
+      label: (id: string) => string;
+      columns: {
+        select: string;
+        build: string;
+        built: string;
+        files: string;
+        preview: string;
+        actions: string;
+      };
+      files: (count: number) => string;
+      noFolder: string;
+      newest: string;
+      playing: string;
+      select: (label: string) => string;
+      selectHint: string;
+      compare: string;
+      compareTitle: (from: string, to: string) => string;
+      compareAbout: (from: string, to: string) => string;
+      comparing: string;
+      compareFailed: string;
+      closeCompare: string;
+      noChanges: string;
+      unchanged: (count: number) => string;
+      fileColumns: { file: string; change: string; before: string; after: string };
+      changes: Record<"added" | "removed" | "changed", string>;
+      noFile: string;
+      textFile: string;
+      text: Record<"binary" | "too_large", string>;
+      diffLabel: (file: string) => string;
+      play: string;
+      playBuild: (label: string) => string;
+      unpin: string;
+      pinnedNotice: string;
+      pinnedDetail: (label: string) => string;
+      pinned: (label: string) => string;
+      unpinned: string;
+      /** The pinned build no longer exists, so the newest plays. */
+      pinGone: string;
+      /** Why Play this build and Unpin wait: a run is in progress. */
     };
     /** A new ref made from the product's template ref, deciding about each of its assets. */
     createRef: {
@@ -402,6 +463,8 @@ export type Strings = {
       notReady: (n: number) => string;
       /** Where an admin fills in the deploy settings. */
       settingsHint: string;
+      /** The preview plays a pinned build, which a release does not ship. */
+      pinnedBuild: string;
       checksLabel: string;
       columns: { check: string; state: string };
       problemsTitle: string;

@@ -4900,8 +4900,19 @@ export type {
   VersionMediaDiff,
   VersionReason,
   VersionSaveResult,
+  VersionStatus,
   VersionSummary,
+  DeployDrift,
+  DeployedVersion,
 } from "../activities/version-types.js";
+export type {
+  ModuleBuild,
+  ModuleBuildChange,
+  ModuleBuildDiff,
+  ModuleBuildFileDiff,
+  ModuleBuildList,
+  ModuleBuildText,
+} from "../activities/module-build-types.js";
 export type {
   RefAssetAction,
   RefAssetDecision,
