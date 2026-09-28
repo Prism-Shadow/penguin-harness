@@ -34,6 +34,7 @@ export type Strings = {
         | "deploy",
         string
       >;
+      phases: { write: string; media: string; build: string; more: string };
       groups: Record<"image" | "video" | "audio" | "animation" | "bookWord", string>;
       fold: (name: string) => string;
       unfold: (name: string) => string;

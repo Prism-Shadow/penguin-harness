@@ -13,7 +13,7 @@
  */
 import type { SceneAssetSelection } from "./scene-asset-tree";
 import type { SceneAssetTree, SceneAssetType } from "./scene-assets";
-import type { WorkspaceSection, WorkspaceSectionEntry } from "./workspace-model";
+import { phaseOf, type StudioPhase, type WorkspaceSection, type WorkspaceSectionEntry } from "./workspace-model";
 
 /** What choosing a row does. */
 export type StudioTarget =
@@ -146,16 +146,23 @@ export function buildStudioTree(
     sectionRow("script", "activityScript", "description", sections),
     sectionRow("spec", "activitySpec", "specification", sections),
     sectionRow("features", "implementationFeatures", "features", sections),
+    sectionRow("scenes", "scenes", "scenes", sections, sceneRows),
+    sectionRow("audios", "audios", "speech", sections),
+    sectionRow("library", "mediaLibrary", "library", sections),
+    sectionRow("module", "moduleDefinition", "module", sections),
     sectionRow("configuration", "configurationData", "configuration", sections),
     sectionRow("assessment", "assessmentData", "assessment", sections),
-    sectionRow("module", "moduleDefinition", "module", sections),
-    sectionRow("audios", "audios", "speech", sections),
-    sectionRow("scenes", "scenes", "scenes", sections, sceneRows),
-    sectionRow("stats", "activityStats", "stats", sections),
-    sectionRow("library", "mediaLibrary", "library", sections),
-    sectionRow("history", "history", "history", sections),
     sectionRow("deploy", "deploy", "deploy", sections),
+    sectionRow("stats", "activityStats", "stats", sections),
+    sectionRow("history", "history", "history", sections),
   ];
+}
+
+/** The phase a top-level row sits under; null for rows that are not sections. */
+export function phaseOfNode(node: StudioNode): StudioPhase | null {
+  const target = node.target;
+  if (!target || target.kind !== "section" || target.section === "newRef") return null;
+  return phaseOf(target.section);
 }
 
 /** Whether a row is the one the main panel is showing. */

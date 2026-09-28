@@ -33,6 +33,7 @@ export const en: Strings = {
         history: "Generation History",
         deploy: "Deploy",
       },
+      phases: { write: "Write", media: "Media", build: "Build & ship", more: "More" },
       groups: {
         image: "Images",
         video: "Videos",

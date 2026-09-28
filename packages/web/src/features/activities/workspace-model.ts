@@ -52,26 +52,49 @@ export function workspaceSections(state: WorkspaceState): WorkspaceSectionEntry[
     { key: "specification", enabled: true },
     // A checklist for the module assembly; choosing features needs no module yet.
     { key: "features", enabled: true },
-    // The module's own documents, read from whichever module the player would play.
-    { key: "configuration", enabled: state.hasModule },
-    { key: "assessment", enabled: state.hasModule || !!state.usesAssessment },
     // Always reachable: the action that builds the media plan lives inside this
     // section, so gating the section would hide its own entry point. The pane says
     // what is missing instead.
     { key: "scenes", enabled: true },
     { key: "speech", enabled: state.hasSpec && state.hasPlan },
-    { key: "stats", enabled: state.hasPlan },
     { key: "library", enabled: true },
     // Reachable once there is a specification to assemble from: the Build stage that
     // assembles the first module lives in this section, as planning media lives in Scenes.
     { key: "module", enabled: state.hasModule || state.hasSpec },
-    { key: "history", enabled: true },
+    // The module's own documents, read from whichever module the player would play.
+    { key: "configuration", enabled: state.hasModule },
+    { key: "assessment", enabled: state.hasModule || !!state.usesAssessment },
     // Whether a deploy could start: there is nothing to deploy until there is a module.
     { key: "deploy", enabled: state.hasModule },
+    { key: "stats", enabled: state.hasPlan },
+    { key: "history", enabled: true },
     // Making a ref from this one, reached from the ref header rather than the tree: its
     // table walks the media plan, so it waits for one.
     { key: "newRef", enabled: state.hasPlan },
   ];
+}
+
+/** The rail's phases, top to bottom: what an author does first sits first. */
+export type StudioPhase = "write" | "media" | "build" | "more";
+export const STUDIO_PHASES: readonly StudioPhase[] = ["write", "media", "build", "more"];
+
+const PHASE_OF: Record<Exclude<WorkspaceSection, "newRef">, StudioPhase> = {
+  description: "write",
+  specification: "write",
+  features: "write",
+  scenes: "media",
+  speech: "media",
+  library: "media",
+  module: "build",
+  configuration: "build",
+  assessment: "build",
+  deploy: "build",
+  stats: "more",
+  history: "more",
+};
+
+export function phaseOf(section: Exclude<WorkspaceSection, "newRef">): StudioPhase {
+  return PHASE_OF[section];
 }
 
 const SECTION_KEYS: readonly WorkspaceSection[] = workspaceSections({

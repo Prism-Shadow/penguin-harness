@@ -8,13 +8,13 @@
  * branch with a target does both: its name opens it, its chevron folds it, so reaching
  * the Scenes section never collapses the scenes under it.
  */
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Chevron } from "../../components/ui/chevron";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { toneDot } from "../../lib/tone";
 import type { SceneAssetSelection } from "./scene-asset-tree";
-import { isCurrent, pathTo, type StudioNode, type StudioTarget } from "./studio-tree";
+import { isCurrent, pathTo, phaseOfNode, type StudioNode, type StudioTarget } from "./studio-tree";
 import type { WorkspaceSection } from "./workspace-model";
 
 function labelOf(node: StudioNode): string {
@@ -135,7 +135,24 @@ export function StudioTreeView({
       className="min-h-0 flex-1 overflow-y-auto px-2 py-2"
     >
       <ul role="tree" aria-label={S.activities.studioTree.label}>
-        {nodes.map((node) => row(node, 0))}
+        {nodes.map((node, index) => {
+          const phase = phaseOfNode(node);
+          const starts = phase !== null && (index === 0 || phase !== phaseOfNode(nodes[index - 1]!));
+          return (
+            <Fragment key={node.id}>
+              {starts && (
+                <li
+                  role="none"
+                  aria-hidden
+                  className="px-2 pb-1 pt-3 text-[10.5px] font-semibold uppercase tracking-wider text-gray-400 first:pt-1 dark:text-gray-500"
+                >
+                  {S.activities.studioTree.phases[phase!]}
+                </li>
+              )}
+              {row(node, 0)}
+            </Fragment>
+          );
+        })}
       </ul>
     </nav>
   );

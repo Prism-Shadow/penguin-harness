@@ -7,6 +7,7 @@ import {
   buildStudioTree,
   isCurrent,
   pathTo,
+  phaseOfNode,
   pickCandidates,
   type StudioNode,
 } from "../src/features/activities/studio-tree";
@@ -65,15 +66,24 @@ describe("studio tree", () => {
       "activityScript",
       "activitySpec",
       "implementationFeatures",
+      "scenes",
+      "audios",
+      "mediaLibrary",
+      "moduleDefinition",
       "configurationData",
       "assessmentData",
-      "moduleDefinition",
-      "audios",
-      "scenes",
-      "activityStats",
-      "mediaLibrary",
-      "history",
       "deploy",
+      "activityStats",
+      "history",
+    ]);
+  });
+
+  it("orders top-level rows by phase and names each row's phase", () => {
+    expect(tree.map((node) => phaseOfNode(node))).toEqual([
+      "write", "write", "write",
+      "media", "media", "media",
+      "build", "build", "build", "build",
+      "more", "more",
     ]);
   });
 
