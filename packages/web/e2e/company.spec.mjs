@@ -9,6 +9,11 @@
  * own sessions. The desk row's run mark is checked on both sides of the initialization run:
  * it turns itself off when the run ends, which no server event announces.
  *
+ * A second, shorter flow pins that the mode switch, the sidebar and the page always stand in
+ * one mode: `/` lands on the current mode's home (the desktop shell starts there, a sign-in
+ * lands there), and a typed `/chat/new` is development mode's page, so the switch and the
+ * sidebar follow it instead of staying on company mode around it.
+ *
  * Company mode is off on a fresh server, so the spec turns the admin master switch on through
  * /api/admin/settings before it signs in as the board member — without it there is no mode
  * switch to click and every organization route answers 404.
@@ -280,4 +285,46 @@ test("company mode: create the organization, meet the CEO, see the board and the
   const overview = await (await page.request.get(api(`/organizations/${ORG}`))).json();
   expect(overview.board.proposed).toBe(1);
   expect(overview.openTickets).toBe(1);
+});
+
+test("company mode: the switch, the sidebar and the page stand in one mode", async ({ page }) => {
+  await enableCompanyMode();
+  // A user of its own: the work mode is a per-user preference, and the flow above leaves it
+  // in development mode for U.
+  await provisionAndLogin(page.request, `${U}_mode`, P);
+  // No model is configured for this user, so the first chat page would raise the credential
+  // guide over the sidebar; it is marked seen up front.
+  const seen = await page.request.put(`${BASE}/api/me/prefs`, {
+    data: { credentialGuideSeen: true },
+  });
+  expect(seen.ok(), "put prefs").toBeTruthy();
+  const sidebar = page.getByRole("complementary");
+  // Each mode's sidebar by a row only it has: development's new-chat entry, and the company
+  // organization switcher's empty state (this user has no organization).
+  const devSidebar = sidebar.getByRole("button", { name: "新建对话" }).first();
+  const companySidebar = sidebar.getByText("还没有组织").first();
+  const modeSwitch = page.getByRole("group", { name: "工作模式" });
+
+  await page.goto("/");
+  await expect(devSidebar).toBeVisible();
+  await modeSwitch.getByRole("button", { name: /^公司/ }).click();
+  await expect(page).toHaveURL(/\/org$/);
+  await expect(companySidebar).toBeVisible();
+
+  // `/` is where the desktop shell starts and a sign-in lands: in company mode it is the
+  // organizations, not the new-chat page inside the company sidebar.
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/org$/);
+  await expect(companySidebar).toBeVisible();
+
+  // A typed /chat/new is development mode's page: the sidebar follows it.
+  await page.goto("/chat/new");
+  await expect(devSidebar).toBeVisible();
+  await expect(companySidebar).toHaveCount(0);
+
+  // …and the move is a choice of mode like the switch's: `/` now lands in development mode.
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/chat/);
+  await expect(devSidebar).toBeVisible();
+  await expect(companySidebar).toHaveCount(0);
 });
