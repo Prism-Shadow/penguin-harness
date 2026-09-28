@@ -1693,6 +1693,7 @@ export type Strings = {
     placeholder: string;
     recentsSection: string;
     pagesSection: string;
+    activitiesSection: string;
     loading: string;
     noMatches: string;
     navigateHint: string;

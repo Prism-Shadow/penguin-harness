@@ -1996,6 +1996,7 @@ export const en: Strings = {
     placeholder: "Search pages, agents, and sessions…",
     recentsSection: "Recent",
     pagesSection: "Pages",
+    activitiesSection: "Activities",
     loading: "Loading agents and sessions…",
     noMatches: "No matches.",
     // Footer key hints: the word follows its key.

@@ -11,13 +11,14 @@
  * (Array#sort is stable), so each section keeps its manifest/list order.
  */
 
-export type SwitcherEntrySection = "pages" | "agents";
+export type SwitcherEntrySection = "pages" | "agents" | "activities";
 
 /** One palette row as data. Rendering (labels, glyphs, status marks) lives in the component. */
 export interface SwitcherEntry {
   /**
    * Stable identity, persisted in the recents list (`page:<key>`, `agent:<id>`,
-   * `session:<id>`); ids of vanished pages/agents/sessions simply stop matching.
+   * `activity:<id>`, `session:<id>`); ids of vanished pages/agents/activities/sessions
+   * simply stop matching.
    */
   id: string;
   /** The section the entry groups under — fixed order in the palette. */
@@ -44,7 +45,7 @@ export interface SwitcherSectionMatches {
 }
 
 /** Fixed section order of the palette; `recents` is prepended only by the empty-query path. */
-export const SWITCHER_SECTIONS: readonly SwitcherEntrySection[] = ["pages", "agents"];
+export const SWITCHER_SECTIONS: readonly SwitcherEntrySection[] = ["pages", "agents", "activities"];
 
 /** Main-nav pages, in nav order (lib/nav-group-collapse.ts already applies released + admin visibility). */
 export function buildPageEntries(
@@ -71,6 +72,21 @@ export function buildAgentEntries(
     title: agent.title,
     detail: agent.command,
     to: "/models?view=local",
+    routeState: null,
+    busy: null,
+  }));
+}
+
+/** This project's activities, detail is the ref address (product code / ref number). */
+export function buildActivityEntries(
+  items: ReadonlyArray<{ id: string; title: string; productCode: string; refNum: number }>,
+): SwitcherEntry[] {
+  return items.map((item) => ({
+    id: `activity:${item.id}`,
+    section: "activities",
+    title: item.title,
+    detail: `${item.productCode} / ${item.refNum}`,
+    to: `/activities/${encodeURIComponent(item.id)}`,
     routeState: null,
     busy: null,
   }));
