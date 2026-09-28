@@ -7,13 +7,13 @@ import {
   buildStudioTree,
   isCurrent,
   pathTo,
+  phaseOfNode,
   pickCandidates,
   type StudioNode,
 } from "../src/features/activities/studio-tree";
 import {
   SIDE_PANEL_KEY,
   SIDE_PANEL_WIDTH,
-  STUDIO_RAIL_WIDTH,
   WORKSPACE_TWO_PANE_WIDTH,
   readSidePanel,
   sidePanelFitsBeside,
@@ -65,15 +65,24 @@ describe("studio tree", () => {
       "activityScript",
       "activitySpec",
       "implementationFeatures",
+      "scenes",
+      "audios",
+      "mediaLibrary",
+      "moduleDefinition",
       "configurationData",
       "assessmentData",
-      "moduleDefinition",
-      "audios",
-      "scenes",
-      "activityStats",
-      "mediaLibrary",
-      "history",
       "deploy",
+      "activityStats",
+      "history",
+    ]);
+  });
+
+  it("orders top-level rows by phase and names each row's phase", () => {
+    expect(tree.map((node) => phaseOfNode(node))).toEqual([
+      "write", "write", "write",
+      "media", "media", "media",
+      "build", "build", "build", "build",
+      "more", "more",
     ]);
   });
 
@@ -207,7 +216,7 @@ describe("picking in the player", () => {
 
 describe("side panel", () => {
   it("sits beside the work only when the tree and the editor still fit", () => {
-    const needed = WORKSPACE_TWO_PANE_WIDTH + STUDIO_RAIL_WIDTH + SIDE_PANEL_WIDTH;
+    const needed = WORKSPACE_TWO_PANE_WIDTH + SIDE_PANEL_WIDTH;
     expect(sidePanelFitsBeside(needed)).toBe(true);
     expect(sidePanelFitsBeside(needed - 1)).toBe(false);
     // Unmeasured counts as wide, so the first paint is not the covering layout.

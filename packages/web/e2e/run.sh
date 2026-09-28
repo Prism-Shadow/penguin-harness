@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end verification (Playwright + mock LLM): build plugins/core/server/web -> start mock Anthropic SSE ->
-# start server (temp data root) -> run chat.spec.mjs. SKIP_BUILD=1 skips the build.
+# start server (temp data root) -> run the specs. SKIP_BUILD=1 skips the build; arguments go to
+# playwright, so `run.sh activities.spec.mjs -g "home"` runs just those tests.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
@@ -48,4 +49,6 @@ done
 
 echo "== run playwright =="
 cd "$ROOT/packages/web"
-npx playwright test -c "$HERE/playwright.config.mjs"
+# pnpm passes the `--` of `test:e2e -- <spec>` through; playwright would then ignore the spec.
+[ "${1:-}" = "--" ] && shift
+npx playwright test -c "$HERE/playwright.config.mjs" "$@"

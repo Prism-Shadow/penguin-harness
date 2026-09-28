@@ -196,6 +196,8 @@ export abstract class ActivitySandbox extends Interface<{
   /** One file of the checkout's navigation bar module, which every played layout carries. */
   navbarFile(rawPath: string): Promise<SandboxMediaResponse>;
   build(projectId: string, activityId: string, force?: boolean): Promise<SandboxBuildReport>;
+  /** Whether a module exists to play: a built run, or the product's checkout folder. */
+  hasModule(projectId: string, activity: ActivityRecord): Promise<boolean>;
   media(
     projectId: string,
     activityId: string,
@@ -579,6 +581,13 @@ export class ActivitySandboxService implements ActivitySandbox {
     // The last build's output, so a failed build is visible rather than showing as a
     // preview that simply never appears.
     return sandboxStatus(state, source ? this.builderFor(source).lastLog(source.root) : null);
+  }
+
+  async hasModule(projectId: string, activity: ActivityRecord): Promise<boolean> {
+    const source = await this.moduleSource(projectId, activity);
+    if (!source) return false;
+    const definition = await fs.stat(path.join(source.root, "definition.json")).catch(() => null);
+    return Boolean(definition?.isFile());
   }
 
   /**

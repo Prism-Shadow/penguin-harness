@@ -43,6 +43,9 @@ const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2
 /** Stands in for the organization map when company mode is not wired in (tests, older assemblies). */
 const EMPTY_ORG_IDS: ReadonlyMap<string, string> = new Map();
 
+/** Stands in for the activity map when no Project's runs are wired in (tests, older assemblies). */
+const EMPTY_ACTIVITY_IDS: ReadonlyMap<string, string> = new Map();
+
 /** Derives creation time from the local timestamp embedded in session_id; returns null if it doesn't match. */
 export function sessionIdCreatedAt(sessionId: string): string | null {
   const m = SESSION_ID_TS_RE.exec(sessionId);
@@ -105,6 +108,9 @@ export interface SessionServiceDeps {
    */
   orgIdOfSession?: (sessionId: string) => string | undefined;
   orgIdsOfProject?: (projectId: string) => ReadonlyMap<string, string>;
+  /** The activity whose run a Session is, for `SessionInfo.activityId` (see orgIdOfSession). */
+  activityIdOfSession?: (sessionId: string) => string | undefined;
+  activityIdsOfProject?: (projectId: string) => ReadonlyMap<string, string>;
   /** Spawn-confinement getter (the sandbox module's), forwarded into core beside proxyEnv. */
   confineSpawn?: () => SpawnConfiner | null;
 }
@@ -125,10 +131,14 @@ export class SessionService {
     row: SessionRow,
     hasTrace: boolean,
     orgIds?: ReadonlyMap<string, string>,
+    activityIds?: ReadonlyMap<string, string>,
   ): Promise<SessionInfo> {
     const source = await this.sourceOf(row, hasTrace);
     const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
     const orgId = orgIds ? orgIds.get(row.sessionId) : this.deps.orgIdOfSession?.(row.sessionId);
+    const activityId = activityIds
+      ? activityIds.get(row.sessionId)
+      : this.deps.activityIdOfSession?.(row.sessionId);
     const backgroundTasks = this.deps.manager.backgroundTasksOf(row.sessionId);
     return {
       sessionId: row.sessionId,
@@ -150,6 +160,7 @@ export class SessionService {
       archived: (row.archivedAt ?? null) !== null,
       ...(messagingChannel !== null ? { messagingChannel } : {}),
       ...(orgId !== undefined ? { orgId } : {}),
+      ...(activityId !== undefined ? { activityId } : {}),
       ...(row.client !== null && row.client !== undefined ? { client: row.client } : {}),
       ...(backgroundTasks !== undefined ? { backgroundTasks } : {}),
     };
@@ -253,6 +264,7 @@ export class SessionService {
     // below: the company caches are small, and a lookup per row would put a statement
     // behind every entry of a long sidebar list.
     const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
+    const activityIds = this.deps.activityIdsOfProject?.(projectId) ?? EMPTY_ACTIVITY_IDS;
     if (excludeOrg) {
       // The durable `client` stamp answers first: it survives the organization and is
       // inherited by sub-sessions, which no cache names. The caches catch a row the
@@ -281,7 +293,7 @@ export class SessionService {
     const rowHasTrace = (row: SessionRow): boolean =>
       traces ? traces.has(row.sessionId) : row.hasTrace === true;
     const toPage = (page: SessionRow[]) =>
-      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row), orgIds)));
+      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row), orgIds, activityIds)));
 
     // No classification asked for: slice straight away (the pre-category behavior).
     if (category === undefined && workspaceGroup === undefined && !withCounts) {

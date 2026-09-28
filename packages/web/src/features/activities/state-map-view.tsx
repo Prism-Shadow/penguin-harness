@@ -10,7 +10,9 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { apiFetch } from "../../api/client";
 import { Button } from "../../components/ui/button";
+import { EmptyState } from "../../components/ui/empty-state";
 import { Select } from "../../components/ui/select";
+import { SkeletonList } from "../../components/ui/skeleton";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -557,11 +559,13 @@ export function StateMapView({
         )}
       </div>
       {!open ? null : read.state === "loading" ? (
-        <p className="text-xs text-gray-500">{words.loading}</p>
+        <div role="status" aria-label={words.loading}>
+          <SkeletonList rows={3} />
+        </div>
       ) : read.state === "error" ? (
         <p className={`text-xs ${toneInk.attention}`}>{words.unreadable(read.message)}</p>
       ) : !machine || !scenes.length ? (
-        <p className="text-xs text-gray-500">{words.none}</p>
+        <EmptyState title={words.none} />
       ) : (
         <SceneGraph
           machine={machine}

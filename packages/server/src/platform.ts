@@ -103,6 +103,7 @@ import { BenchmarkService } from "./services/benchmark-service.js";
 import { ActivityService } from "./activities/service.js";
 import { ActivityRoutes } from "./activities/routes.js";
 import { ActivitySandboxService } from "./activities/sandbox-service.js";
+import { ActivitySummaryService } from "./activities/summary-service.js";
 import { ActivityPipelineService } from "./activities/pipeline-run.js";
 import { ActivityVersionService, ActivityVersions } from "./activities/version-service.js";
 import {
@@ -407,6 +408,7 @@ export class CodingAgentsModule {}
     ActivityService,
     ActivityGenerationService,
     ActivitySandboxService,
+    ActivitySummaryService,
     ActivityPipelineService,
     ActivityVersionService,
     ActivityModuleBuildService,

@@ -255,9 +255,9 @@ export const KEY_RULES: readonly KeyRule[] = [
   // --------------------------------------------------------------- install-scoped state
   {
     kind: "exact",
-    key: "penguin.activities.recent",
+    key: "penguin.activities.collapsedGroups",
     scope: "install",
-    why: "Activities each Project opened most recently, keyed by Project id and naming Activity ids; a new root has neither.",
+    why: "Product groups each Project folded on the Activities home, keyed by Project id; a new root has none.",
   },
   {
     kind: "family",

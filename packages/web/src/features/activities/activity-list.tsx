@@ -1,19 +1,29 @@
 /**
- * The Activities list: every activity of the project as a card, narrowed by a search and by
- * one product tag at a time.
+ * The Activities home: every activity of the project grouped by product code, narrowed by a
+ * search and by one product tag at a time, sorted by recency or by code.
  */
-import { useId, useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import { Link } from "react-router";
-import type { ActivityRecord } from "@prismshadow/penguin-server/api";
-import { Badge } from "../../components/ui/badge";
+import type { ActivityRecord, ActivitySummary } from "@prismshadow/penguin-server/api";
 import { Button } from "../../components/ui/button";
+import { Chevron } from "../../components/ui/chevron";
+import { ChipGroup } from "../../components/ui/chip-group";
+import { EmptyState } from "../../components/ui/empty-state";
 import { Input } from "../../components/ui/input";
+import { SkeletonList } from "../../components/ui/skeleton";
 import { S } from "../../lib/strings";
-import { toneInk, toneStrip } from "../../lib/tone";
-import { filterByTag, tagCounts } from "./activity-tags";
-import { activityInitials, filterActivities } from "./preview";
-import { recentActivities, type RecentActivity } from "./recent-activities";
-import { SEGMENT, SEGMENTS, SEGMENT_OFF, SEGMENT_ON } from "./segment-styles";
+import { toneDot, toneInk, toneStrip } from "../../lib/tone";
+import { useLocale } from "../../state/locale";
+import { formatRelativeShort } from "../../lib/format";
+import { tagCounts } from "./activity-tags";
+import {
+  groupByProduct,
+  readCollapsed,
+  writeCollapsed,
+  type ActivityGroup,
+  type GroupSort,
+} from "./activity-groups";
+import { runTitle } from "./sessions-panel";
 
 export function ActivityList({
   items,
@@ -22,7 +32,10 @@ export function ActivityList({
   editable,
   available,
   createDisabled = false,
-  recent = [],
+  projectId,
+  summaries,
+  sort,
+  onSort,
   search,
   onSearch,
   tag: chosenTag,
@@ -39,8 +52,10 @@ export function ActivityList({
   available: boolean;
   /** Creating is held back while something unsaved would be lost by leaving. */
   createDisabled?: boolean;
-  /** This project's openings in this browser, most recent first. */
-  recent?: readonly RecentActivity[];
+  projectId: string;
+  summaries: Readonly<Record<string, ActivitySummary>>;
+  sort: GroupSort;
+  onSort: (sort: GroupSort) => void;
   search: string;
   onSearch: (search: string) => void;
   /** The one tag the list is narrowed to, or null for all of them. */
@@ -58,21 +73,28 @@ export function ActivityList({
     chosenTag && counts.some((entry) => entry.tag.toLowerCase() === chosenTag.toLowerCase())
       ? chosenTag
       : null;
-  const visible = useMemo(
-    () => filterActivities(filterByTag(items, tag), search),
-    [items, tag, search],
-  );
-  const recentItems = useMemo(() => recentActivities(items, recent), [items, recent]);
-  // Searching is looking for something else, so the row steps aside for the matches.
-  const showRecent = !loading && search.trim() === "" && recentItems.length > 0;
-  const recentId = useId();
-  const allId = useId();
   const words = S.activities.tags;
+  const home = S.activities.home;
+  const groups = useMemo(
+    () => groupByProduct(items, summaries, { sort, search, tag }),
+    [items, summaries, sort, search, tag],
+  );
+  const [collapsed, setCollapsed] = useState(() => readCollapsed(projectId));
+  function toggle(key: string) {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      writeCollapsed(projectId, next);
+      return next;
+    });
+  }
+  const tagValue = counts.find((c) => c.tag.toLowerCase() === tag?.toLowerCase())?.tag ?? "";
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
+      <div className="mx-auto max-w-5xl space-y-5 p-4 md:p-6">
         <header className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-lg font-semibold">{S.activities.title}</h1>
+          <h1 className="text-xl font-semibold">{S.activities.title}</h1>
           <div className="flex items-center gap-2">
             <Button size="sm" disabled={!available} onClick={onRefresh}>
               {S.activities.refresh}
@@ -123,108 +145,187 @@ export function ActivityList({
               className="max-w-sm"
             />
             {counts.length > 0 && (
-              <div role="group" aria-label={words.filter} className={SEGMENTS}>
-                {[null, ...counts].map((entry) => {
-                  const value = entry?.tag ?? null;
-                  const on =
-                    value === null ? tag === null : tag?.toLowerCase() === value.toLowerCase();
-                  return (
-                    <button
-                      key={value ?? ""}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => onTag(value)}
-                      className={`${SEGMENT} ${on ? SEGMENT_ON : SEGMENT_OFF}`}
-                    >
-                      {entry ? `${entry.tag} · ${entry.count}` : `${words.all} · ${items.length}`}
-                    </button>
-                  );
-                })}
-              </div>
+              <ChipGroup
+                label={words.filter}
+                value={tagValue}
+                onChange={(v) => onTag(v === "" ? null : v)}
+                options={[
+                  { value: "", label: `${words.all} · ${items.length}` },
+                  ...counts.map((c) => ({ value: c.tag, label: `${c.tag} · ${c.count}` })),
+                ]}
+              />
             )}
+            <span className="flex-1" />
+            <ChipGroup
+              label={home.sortLabel}
+              value={sort}
+              onChange={onSort}
+              options={[
+                { value: "recent", label: home.sort.recent },
+                { value: "code", label: home.sort.code },
+              ]}
+            />
           </div>
         )}
-        {showRecent && (
-          <section aria-labelledby={recentId} className="space-y-3">
-            <h2 id={recentId} className="text-sm font-semibold">
-              {S.activities.recent.title}
-            </h2>
-            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {recentItems.map((item) => (
-                <li key={item.id}>
-                  <ActivityCard item={item} compact />
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
         {loading ? (
-          <p role="status" className="text-xs text-gray-500">
-            {S.activities.loading}
-          </p>
-        ) : visible.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            {items.length === 0 ? S.activities.empty : S.activities.noMatches}
-          </p>
+          <div role="status" aria-label={S.activities.loading}>
+            <SkeletonList rows={4} />
+          </div>
+        ) : groups.length === 0 ? (
+          <EmptyState title={items.length === 0 ? S.activities.empty : S.activities.noMatches} />
         ) : (
-          <section
-            // Named even without its heading, so the full list is one region to look in.
-            aria-labelledby={showRecent ? allId : undefined}
-            aria-label={showRecent ? undefined : S.activities.recent.all}
-            className="space-y-3"
-          >
-            {showRecent && (
-              <h2 id={allId} className="text-sm font-semibold">
-                {S.activities.recent.all}
-              </h2>
-            )}
-            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {visible.map((item) => (
-                <li key={item.id}>
-                  <ActivityCard item={item} />
-                </li>
-              ))}
-            </ul>
-          </section>
+          groups.map((group) => (
+            <ProductGroup
+              key={group.key}
+              group={group}
+              summaries={summaries}
+              collapsed={collapsed.has(group.key)}
+              onToggle={() => toggle(group.key)}
+              editable={editable && available}
+            />
+          ))
         )}
       </div>
     </div>
   );
 }
 
-/** One activity as a card linking to it; compact leaves out its type and tags. */
-function ActivityCard({ item, compact = false }: { item: ActivityRecord; compact?: boolean }) {
+function ProductGroup({
+  group,
+  summaries,
+  collapsed,
+  onToggle,
+  editable,
+}: {
+  group: ActivityGroup;
+  summaries: Readonly<Record<string, ActivitySummary>>;
+  collapsed: boolean;
+  onToggle: () => void;
+  editable: boolean;
+}) {
+  const home = S.activities.home;
+  const canonical = group.canonicalId ? summaries[group.canonicalId] : undefined;
+  // A new ref copies the canonical ref's media plan, so it waits for one — the same gate as
+  // the studio's New ref section (`hasPlan`). A legacy canonical ref with no product row is
+  // refused as a template by the server, so it offers no New ref either.
+  const canAddRef =
+    editable && !!canonical?.hasPlan && group.canonicalId !== null && group.canonicalHasProduct;
+  const newRefHref =
+    group.canonicalId !== null
+      ? `/activities/${encodeURIComponent(group.canonicalId)}?section=newRef`
+      : "";
+  const headingId = useId();
+  return (
+    <section aria-labelledby={headingId} className="space-y-3">
+      <h2 id={headingId} className="border-b border-gray-200 pb-2 dark:border-gray-800">
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          onClick={onToggle}
+          className="flex w-full items-center gap-2 text-left"
+        >
+          <Chevron open={!collapsed} />
+          <span className="font-mono text-sm font-semibold">{group.productCode}</span>
+          <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-normal dark:bg-gray-800">
+            {group.activityType === "book" ? S.activities.book : S.activities.standard}
+          </span>
+          <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+            {home.refs(group.items.length)}
+            {group.attention > 0 && ` · ${home.attention(group.attention)}`}
+          </span>
+        </button>
+      </h2>
+      {!collapsed && (
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {group.items.map((item) => (
+            <li key={item.id}>
+              <ActivityCard item={item} summary={summaries[item.id]} />
+            </li>
+          ))}
+          {editable && (
+            <li>
+              {canAddRef ? (
+                <Link
+                  to={newRefHref}
+                  className="flex h-full min-h-24 items-center justify-center rounded-lg border border-dashed border-gray-300 text-sm text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900"
+                >
+                  + {home.newRef}
+                </Link>
+              ) : (
+                <span className="flex h-full min-h-24 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-200 p-3 text-center text-sm text-gray-400 dark:border-gray-800">
+                  <span>+ {home.newRef}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-500">
+                    {home.newRefUnavailable}
+                  </span>
+                </span>
+              )}
+            </li>
+          )}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** One activity ref as a card linking to it: its title, ref line and milestone progress. */
+function ActivityCard({ item, summary }: { item: ActivityRecord; summary?: ActivitySummary }) {
+  const home = S.activities.home;
+  const { locale } = useLocale();
   return (
     <Link
-      to={`/activities/${item.id}`}
-      className="flex h-full flex-col gap-2 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
+      to={`/activities/${encodeURIComponent(item.id)}`}
+      className="flex h-full min-h-24 flex-col gap-1.5 rounded-lg border border-gray-200 p-3 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
     >
-      <span className="flex items-center gap-3">
-        <span
-          aria-hidden
-          className="flex h-9 w-9 flex-none items-center justify-center rounded-md bg-gray-100 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-        >
-          {activityInitials(item.title, item.productCode)}
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-medium">{item.title}</span>
-          <span className="block truncate text-xs text-gray-500">
-            {item.productCode} / {item.refNum}
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span className="truncate text-sm font-medium">{item.displayName ?? item.title}</span>
+        {summary?.canonical && (
+          <span className="text-gray-400" aria-label={home.canonical} title={home.canonical}>
+            ★
           </span>
-        </span>
+        )}
       </span>
-      {!compact && (
-        <span className="mt-auto flex flex-wrap items-center gap-1.5">
-          <span className="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-800">
-            {item.activityType === "book" ? S.activities.book : S.activities.standard}
+      <span className="text-xs text-gray-500 dark:text-gray-400">
+        {home.refLine(item.refNum, formatRelativeShort(item.updatedAt, locale))}
+      </span>
+      {summary && (
+        <span className="mt-auto flex items-center justify-between gap-2">
+          <span
+            className="flex max-w-24 flex-1 gap-0.5"
+            role="img"
+            aria-label={home.progress(summary.done, summary.total)}
+          >
+            {Array.from({ length: summary.total }, (_, index) => (
+              <i
+                key={index}
+                className={`h-1 flex-1 rounded-full ${
+                  index < summary.done
+                    ? "bg-gray-400 dark:bg-gray-500"
+                    : "bg-gray-200 dark:bg-gray-800"
+                }`}
+              />
+            ))}
           </span>
-          {(item.tags ?? []).map((entry) => (
-            <Badge key={entry} tone="gray">
-              {entry}
-            </Badge>
-          ))}
+          <SummaryStatus status={summary.status} />
         </span>
       )}
     </Link>
+  );
+}
+
+function SummaryStatus({ status }: { status: ActivitySummary["status"] }) {
+  const words = S.activities.home.status;
+  const [tone, text] =
+    status.kind === "running"
+      ? (["busy", words.running(runTitle(status.runKind))] as const)
+      : status.kind === "stale"
+        ? (["attention", words.stale] as const)
+        : status.kind === "built"
+          ? (["success", words.built] as const)
+          : (["muted", words.next[status.milestone]] as const);
+  return (
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap text-xs ${toneInk[tone]}`}>
+      {tone !== "muted" && <span aria-hidden className={`size-1.5 rounded-full ${toneDot[tone]}`} />}
+      {text}
+    </span>
   );
 }

@@ -135,8 +135,19 @@ async function fixture(page) {
           },
         ],
       });
-    if (p === base && request.method() === "GET")
-      return json({ activities: activity ? [activity] : [] });
+    if (p === base && request.method() === "GET") {
+      const activities = activity ? [activity] : [];
+      if (url.searchParams.get("summary") !== "1") return json({ activities });
+      // A fixed "next spec" summary per activity: nothing here computes the real facts, and
+      // no test in this file reads the home page's status text off the default fixture.
+      const summaries = Object.fromEntries(
+        activities.map((entry) => [
+          entry.id,
+          { canonical: true, hasPlan: false, done: 0, total: 3, status: { kind: "next", milestone: "spec" } },
+        ]),
+      );
+      return json({ activities, summaries });
+    }
     if (p === `${base}/module-setup`) return json({ wafRoot: "C:/WAF checkout" });
     if (p === `${base}/speech-setup`) return json({ voices: ["Kore", "Puck"] });
     if (p === `${base}/act_test/media-uploads`) {
@@ -719,8 +730,11 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   await expect(
     page.getByRole("button", { name: "Assemble WAF module", exact: true }),
   ).toBeDisabled();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Cancel" })
+    .click();
   await openSection(page, "Specification");
   await expect(editor).toHaveValue(JSON.stringify(manifest));
   const request = page.waitForRequest(
@@ -1264,8 +1278,11 @@ test("edits scripts and explicitly accepts speech while regeneration keeps the a
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
   await page.getByRole("textbox", { name: /^Speech script/ }).fill("Hello there");
   await expect(page.getByRole("button", { name: "Generate speech", exact: true })).toBeDisabled();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Cancel" })
+    .click();
   await expect(page.getByRole("textbox", { name: /^Speech script/ })).toHaveValue("Hello there");
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
   await page.getByRole("button", { name: "Generate speech", exact: true }).click();
@@ -1334,8 +1351,11 @@ test("edits image descriptions and explicitly accepts images while failed regene
   await description.fill("A friendly orange cat wearing a blue scarf");
   await openSection(page, "Scenes and media");
   await expect(page.getByRole("button", { name: "Generate image", exact: true })).toBeDisabled();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Cancel" })
+    .click();
   await openSection(page, "Scenes and media");
   await expect(description).toHaveValue("A friendly orange cat wearing a blue scarf");
   await openSection(page, "Scenes and media");
@@ -1422,8 +1442,11 @@ test("reviews and accepts an improved image prompt without changing its saved me
   await description.fill("Unsaved prompt");
   await openSection(page, "Scenes and media");
   await expect(improve).toBeDisabled();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Cancel" })
+    .click();
   await openSection(page, "Scenes and media");
   await expect(description).toHaveValue("Unsaved prompt");
   await openSection(page, "Scenes and media");
@@ -1659,8 +1682,11 @@ test("polling preserves unsaved edits and exposes conflicting output for review"
   await expect(page.getByRole("textbox", { name: "Activity Script", exact: true })).toHaveText(
     "My unsaved edit",
   );
-  page.on("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Discard" })
+    .click();
   await expect(page.getByRole("textbox", { name: "Activity Script", exact: true })).toHaveText(
     "Changed in another tab",
   );
@@ -1696,6 +1722,14 @@ test("member view is read-only and mobile layout does not overflow", async ({ pa
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+  // The breadcrumb's title truncates rather than pushing the row wider than the viewport:
+  // either it is long enough to be visibly clipped, or it simply fits at this width.
+  const crumbTitle = page.locator('nav[aria-label="Breadcrumb"] h2');
+  expect(
+    await crumbTitle.evaluate(
+      (el) => el.scrollWidth > el.clientWidth || el.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
   // Opening the rail here is a temporary answer to having no room for both, so a wider
   // window and back must not leave it covering the editor again. The emulated viewport
   // change does not notify the page the way a real window resize does, so the
@@ -1714,6 +1748,44 @@ test("member view is read-only and mobile layout does not overflow", async ({ pa
   expect(f.errors).toEqual([]);
 });
 
+test("the studio header wraps its controls instead of overlapping them", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+
+  // Two of a set of locators overlap when their boxes intersect on both axes.
+  const intersects = (a, b) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  const assertNoOverlap = async (locators) => {
+    const boxes = [];
+    for (const locator of locators) {
+      const box = await locator.boundingBox();
+      expect(box, `expected a visible bounding box for ${await locator.evaluate((el) => el.outerHTML.slice(0, 80))}`).not.toBeNull();
+      boxes.push(box);
+    }
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++)
+        expect(intersects(boxes[i], boxes[j]), `boxes ${i} and ${j} overlap`).toBe(false);
+  };
+  const headerControls = () => [
+    page.locator('nav[aria-label="Breadcrumb"] h2'),
+    page.getByRole("button", { name: "Ref settings", exact: true }),
+    page.getByRole("button", { name: "Change number", exact: true }),
+    // The draft/unsaved status text: the aria-live paragraph right after the breadcrumb.
+    page.locator('nav[aria-label="Breadcrumb"] + p[aria-live]'),
+    page.getByRole("button", { name: "Reload draft", exact: true }),
+    page.getByRole("button", { name: "Layout", exact: true }),
+  ];
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.reload();
+  await assertNoOverlap(headerControls());
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+  await assertNoOverlap(headerControls());
+  expect(f.errors).toEqual([]);
+});
+
 test("dirty drafts block sidebar, Session, browser back, and project switches", async ({
   page,
 }) => {
@@ -1725,43 +1797,58 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   await openSection(page, "Scenes and media");
   await openSection(page, "Description");
   await description.fill("Keep this edit");
-  let prompts = 0;
-  const decline = (dialog) => {
-    prompts++;
-    return dialog.dismiss();
-  };
-  page.on("dialog", decline);
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
   await openSection(page, "Generation history");
   await page.getByRole("link", { name: "Open Session" }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/activities\/act_test(\?section=\w+)?$/);
   await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/activities\/act_test(\?section=\w+)?$/);
   await page.goBack();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/activities\/act_test(\?section=\w+)?$/);
   await openSection(page, "Description");
   await expect(description).toHaveText("Keep this edit");
+  // Switching Projects while dirty asks too; canceling leaves the switch and edit in place.
+  // The activity workspace auto-collapses the sidebar to its rail: expand it to reach the
+  // project switcher, which the rail does not carry.
+  await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
   await page.getByRole("button", { name: "Activities test", exact: true }).click();
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(page.getByRole("button", { name: "Activities test", exact: true })).toBeVisible();
   await expect(description).toHaveText("Keep this edit");
   expect(await page.evaluate(() => localStorage.getItem("penguin.lastProjectId"))).not.toBe(
     "second-project",
   );
   expect(f.prefsWrites.some((prefs) => prefs.lastProjectId === "second-project")).toBe(false);
-  expect(prompts).toBe(4);
-  page.off("dialog", decline);
-  page.on("dialog", (dialog) => dialog.accept());
   await page.goBack();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Discard" }).click();
   await expect(page).toHaveURL(/\/activities$/);
   await page
-    .getByRole("region", { name: "All activities" })
+    .getByRole("region", { name: /words/ })
     .getByRole("link", { name: /Sight words/ })
     .click();
   await openSection(page, "Scenes and media");
   await openSection(page, "Description");
   await description.fill("Another edit");
+  // Re-entering the workspace collapsed the sidebar again; expand it for the switcher.
+  await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
   await page.getByRole("button", { name: "Activities test", exact: true }).click();
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
+  // Discarding this time clears `dirty` and replays the switch, which now goes through.
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Discard" }).click();
   await expect(page.getByRole("button", { name: "Second project", exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem("penguin.lastProjectId"))).toBe(
     "second-project",
@@ -1843,10 +1930,26 @@ test("polling errors recover without clearing a save conflict or unsaved edits",
   expect(f.errors).toEqual([]);
 });
 
+test("an activity collapses the sidebar without changing the stored choice", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  // On the activity workspace the sidebar steps back to its rail — the full sidebar's
+  // "Collapse sidebar" button (only the pinned Sidebar carries it) is not there to find.
+  await expect(page.getByRole("button", { name: "Collapse sidebar", exact: true })).toBeHidden();
+  await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await expect(page).toHaveURL(/\/agents$/);
+  await expect(page.getByRole("button", { name: "Collapse sidebar", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("penguin.sidebarCollapsed"))).not.toBe(
+    "1",
+  );
+  expect(f.errors).toEqual([]);
+});
+
 test("collapsed rail keeps Activities reachable through the page manifest", async ({ page }) => {
   const f = await fixture(page);
   await create(page);
-  await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();
+  // The activity workspace already auto-collapses the sidebar to its rail.
+  await expect(page.getByRole("button", { name: "Collapse sidebar", exact: true })).toBeHidden();
   const activities = page.getByRole("link", { name: "Activities", exact: true });
   await expect(activities).toBeVisible();
   await activities.click();
@@ -1855,6 +1958,9 @@ test("collapsed rail keeps Activities reachable through the page manifest", asyn
 });
 
 async function projectSettings(page) {
+  // The activity workspace auto-collapses the sidebar to its rail, which carries no project
+  // switcher; expand it first.
+  await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
   await page.getByRole("button", { name: "Activities test", exact: true }).click();
   await page.getByRole("button", { name: "Project settings", exact: true }).click();
   return page.getByRole("dialog", { name: "Project settings", exact: true });
@@ -1868,18 +1974,29 @@ test("canceling the dirty-editor guard prevents Project deletion and remount", a
   await openSection(page, "Description");
   await description.fill("Keep before deletion");
   const original = await description.elementHandle();
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
+  const deleteDialog = page.getByRole("dialog", { name: "Delete Project", exact: true });
   const settings = await projectSettings(page);
   await settings.getByRole("button", { name: "Delete", exact: true }).click();
-  page.once("dialog", (dialog) => dialog.dismiss());
-  await page
-    .getByRole("dialog", { name: "Delete Project", exact: true })
-    .getByRole("button", { name: "Confirm", exact: true })
-    .click();
-  await expect(page.getByRole("dialog", { name: "Delete Project", exact: true })).toHaveCount(0);
+  await deleteDialog.getByRole("button", { name: "Confirm", exact: true }).click();
+  // deleteProject awaits the guard's dialog before settling, so the Delete Project dialog
+  // stays open (stacked behind the discard one) until that answer comes back.
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(deleteDialog).toHaveCount(0);
   expect(f.deletedProjects).toBe(0);
-  await settings.getByRole("button", { name: "Close", exact: true }).click();
   await expect(description).toHaveText("Keep before deletion");
   expect(await description.evaluate((element, before) => element === before, original)).toBe(true);
+  // Discarding this time lets the same deleteProject call finish, and the delete goes through.
+  await settings.getByRole("button", { name: "Delete", exact: true }).click();
+  await deleteDialog.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Discard" }).click();
+  await expect.poll(() => f.deletedProjects).toBe(1);
+  // The replayed delete is the same call doDelete is still awaiting, so its own success
+  // handling (onClose) runs and closes the whole settings dialog — not just the sub-dialog.
+  await expect(settings).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });
 
@@ -1894,11 +2011,14 @@ test("declining a refresh fallback preserves detached text without retaining Pro
   await openSection(page, "Description");
   await description.fill("Copy this before leaving");
   const original = await description.elementHandle();
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
   const settings = await projectSettings(page);
   await settings.getByRole("textbox").fill("Refresh the project list");
   f.removeProject();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(
     page.getByText("This Project is no longer available.", { exact: false }),
   ).toBeVisible();
@@ -1918,14 +2038,40 @@ test("declining a refresh fallback preserves detached text without retaining Pro
   await expect(
     page.getByRole("button", { name: "Activities test owner", exact: true }),
   ).toHaveCount(0);
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(description).toHaveText("Copy this before leaving");
   expect(await description.evaluate((element, before) => element === before, original)).toBe(true);
+  // Discarding this time clears `dirty` and replays the switch, which now goes through.
   await page.getByRole("button", { name: "Select a Project", exact: true }).click();
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Discard" }).click();
   await expect(page.getByRole("button", { name: "Second project", exact: true })).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
+test("leaving with unsaved edits asks through the app's dialog", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  const description = page.getByRole("textbox", { name: "Activity Script", exact: true });
+  await openSection(page, "Scenes and media");
+  await openSection(page, "Description");
+  await description.fill("Keep this edit");
+  await page.getByRole("link", { name: "All activities" }).click();
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/\/activities\/[^/?]+/);
+  await page.getByRole("link", { name: "All activities" }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Discard" })
+    .click();
+  await expect(page).toHaveURL(/\/activities$/);
   expect(f.errors).toEqual([]);
 });
 
@@ -3184,8 +3330,8 @@ test("applies a whole proposal at once, and discards one after asking", async ({
     return route.fallback();
   });
   await page.reload();
-  await page.getByRole("button", { name: "Conversation", exact: true }).click();
-  const panel = page.getByRole("complementary", { name: "Conversation", exact: true });
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Chat", exact: true });
   await panel.getByRole("button", { name: "Apply 2 changes", exact: true }).click();
   await expect.poll(() => applied.length).toBe(1);
   expect(applied[0]).toHaveProperty("expectedRevision");
@@ -3248,14 +3394,42 @@ test("the conversation panel lists its threads and shows the open one's proposal
     return route.fallback();
   });
   await page.reload();
-  await page.getByRole("button", { name: "Conversation", exact: true }).click();
-  const panel = page.getByRole("complementary", { name: "Conversation", exact: true });
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Chat", exact: true });
   await expect(panel.getByText("Newest idea.", { exact: true })).toBeVisible();
   const threads = panel.getByRole("button", { name: "Conversation", exact: true });
   await expect(threads).toContainText("About the whole activity");
   await threads.click();
   await page.getByRole("option", { name: /^About scene intro/ }).click();
   await expect(panel.getByText("An older idea.", { exact: true })).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
+test("a run's session transcript opens in place in the Sessions panel", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  await openSection(page, "Description");
+  await page.getByRole("button", { name: "Generate specification", exact: true }).click();
+  await page.route("**/*", (route) => {
+    const p = new URL(route.request().url()).pathname;
+    if (p === "/api/sessions/session_test/messages")
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ messages: [] }),
+      });
+    return route.fallback();
+  });
+  await page.getByRole("button", { name: "Sessions", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Sessions", exact: true });
+  // The accessible name carries which run this toggle is for, so two same-kind runs are
+  // distinguishable to assistive tech even though the visible label is always "Show"/"Hide".
+  const toggle = panel.getByRole("button", { name: /^Show: Specification,/ });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await expect(panel.getByRole("link", { name: /Open full page/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/activities\//);
+  await panel.getByRole("button", { name: /^Hide: Specification,/ }).click();
+  await expect(panel.getByRole("link", { name: /Open full page/ })).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });
 
@@ -4152,12 +4326,17 @@ test("tags a product, filters the list by tag, and deletes an activity after con
     "math · 1",
     "Phonics · 1",
   ]);
-  // The activity just opened also sits under Recently opened; the full list is its own region.
-  const all = page.getByRole("region", { name: "All activities" });
-  const cards = all.getByRole("listitem").filter({ has: page.getByRole("link") });
-  const sight = all.getByRole("link", { name: /Sight words/ });
-  await expect(sight).toContainText("Phonics");
-  await expect(sight).toContainText("grade 1");
+  // Each product is its own group now, so cards and the ref link are found across the page.
+  // The card itself no longer prints tags (the home page's ActivityCard is status-focused);
+  // the tag filter above is what proves they saved. Excluded by text rather than by "has a
+  // link" alone: a fixture with `hasPlan: true` would turn the group's own "+ New ref" item
+  // into a link too, and it must never count as an activity card.
+  const cards = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("link") })
+    .filter({ hasNotText: "New ref" });
+  const sight = page.getByRole("link", { name: /Sight words/ });
+  await expect(sight).toBeVisible();
   await filter.getByRole("button", { name: "math · 1", exact: true }).click();
   await expect(filter.getByRole("button", { name: "math · 1", exact: true })).toHaveAttribute(
     "aria-pressed",
@@ -4195,13 +4374,13 @@ test("tags a product, filters the list by tag, and deletes an activity after con
   expect(f.errors).toEqual([]);
 });
 
-test("shows the activity just opened under Recently opened", async ({ page }) => {
+test("the home page groups refs under their product code", async ({ page }) => {
   const f = await fixture(page);
-  const record = (id, productCode, refNum, title) => ({
+  const record = (id, refNum, title) => ({
     id,
     collectionId: "col_test",
-    productId: `prd_${productCode}`,
-    productCode,
+    productId: "prd_ants",
+    productCode: "ants",
     refNum,
     title,
     displayName: null,
@@ -4212,71 +4391,42 @@ test("shows the activity just opened under Recently opened", async ({ page }) =>
     archived: false,
     tags: [],
   });
-  const list = () => [
-    record("act_test", "words", 12, "Sight words"),
-    record("act_letters", "letters", 1, "Letter hunt"),
-    record("act_count", "count", 3, "Counting"),
-  ];
+  const activities = [record("act_ants1", 1, "ants 1"), record("act_ants2", 2, "ants 2")];
+  const summaries = Object.fromEntries(
+    activities.map((entry, index) => [
+      entry.id,
+      {
+        canonical: index === 0,
+        hasPlan: false,
+        done: 0,
+        total: 3,
+        status: { kind: "next", milestone: "spec" },
+      },
+    ]),
+  );
   await page.route("**/*", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === base && request.method() === "GET")
       return route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify({ activities: list() }),
+        body: JSON.stringify(
+          url.searchParams.get("summary") === "1" ? { activities, summaries } : { activities },
+        ),
       });
     return route.fallback();
   });
-  // Opened earlier in this browser: Letter hunt, then one since deleted, and one in another
-  // project.
   await page.goto(`${origin}/activities`);
-  await page.evaluate(
-    ([key, projectId]) =>
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          [projectId]: [
-            { id: "act_gone", at: "2026-09-25T09:00:00.000Z" },
-            { id: "act_letters", at: "2026-09-25T08:00:00.000Z" },
-          ],
-          other: [{ id: "act_count", at: "2026-09-25T09:30:00.000Z" }],
-        }),
-      ),
-    ["penguin.activities.recent", projectId],
-  );
-  await create(page);
-  await page.getByRole("link", { name: "All activities", exact: true }).click();
-  await expect(page).toHaveURL(/\/activities$/);
-  const recent = page.getByRole("region", { name: "Recently opened" });
-  await expect(recent.getByRole("link")).toHaveCount(2);
-  await expect(recent.getByRole("link").nth(0)).toContainText("Sight words");
-  await expect(recent.getByRole("link").nth(1)).toContainText("Letter hunt");
-  await expect(page.getByRole("region", { name: "All activities" }).getByRole("link")).toHaveCount(
-    3,
-  );
-
-  // Searching is looking for something else, so the row steps aside.
-  const search = page.getByRole("textbox", { name: "Search activities", exact: true });
-  await search.fill("count");
-  await expect(recent).toHaveCount(0);
-  await search.fill("");
-  await expect(recent.getByRole("link")).toHaveCount(2);
-
-  // Opening it again from the row keeps it once, first.
-  await recent.getByRole("link", { name: /Sight words/ }).click();
-  await expect(page).toHaveURL(/activities\/act_test$/);
-  await page.getByRole("link", { name: "All activities", exact: true }).click();
-  await expect(recent.getByRole("link")).toHaveCount(2);
-  await expect(recent.getByRole("link").nth(0)).toContainText("Sight words");
-
-  // What this browser stored is unreadable: no row, no error.
-  await page.evaluate((key) => localStorage.setItem(key, "{not json"), "penguin.activities.recent");
+  const group = page.getByRole("region", { name: /ants/ });
+  const toggle = group.getByRole("button", { name: /ants/ });
+  await expect(group.getByRole("link", { name: /ants 1/ })).toBeVisible();
+  await expect(group.getByText("Specification next").first()).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await toggle.click();
+  await expect(group.getByRole("link", { name: /ants 1/ })).toBeHidden();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await page.reload();
-  await expect(page.getByRole("region", { name: "All activities" }).getByRole("link")).toHaveCount(
-    3,
-  );
-  await expect(recent).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "All activities" })).toHaveCount(0);
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
   expect(f.errors).toEqual([]);
 });
 
@@ -4338,8 +4488,12 @@ test("browses the project's media, switches to the table, and downloads two file
   });
   await page.goto(`${origin}/activities`);
   await page.getByRole("button", { name: "Media library", exact: true }).click();
-  await expect(page).toHaveURL(/\/activities\?view=media$/);
+  await expect(page).toHaveURL(/\/activities\/media$/);
   await expect(page.getByRole("heading", { name: /^Project media library/ })).toBeVisible();
+
+  // The old ?view=media URL still lands on the media library, redirected to its own route.
+  await page.goto(`${origin}/activities?view=media`);
+  await expect(page).toHaveURL(/\/activities\/media$/);
 
   // The grid shows every file; the type chips and the search narrow it.
   const list = page.getByRole("region", { name: "Files", exact: true });
@@ -4752,7 +4906,7 @@ test("switches the studio to the Reviewing layout and saves a layout of its own"
     page.getByRole("separator", { name: "Activity rail width", exact: true }),
   ).toHaveAttribute("aria-valuenow", "300");
   await expect(
-    page.getByRole("complementary", { name: "Conversation", exact: true }),
+    page.getByRole("complementary", { name: "Chat", exact: true }),
   ).toBeVisible();
 
   // Save the arrangement under a name of the author's own; the same name twice is refused.
@@ -6768,6 +6922,128 @@ test("shows what a deploy still needs", async ({ page }) => {
     checks.getByRole("row", { name: /^Branch loom\/words-activity-data/ }),
   ).toContainText("Here · not on the remote yet");
   expect(remoteChecks).toBe(1);
+  expect(f.errors).toEqual([]);
+});
+
+test("an admin opens the deploy settings from what a deploy still needs", async ({ page }) => {
+  const f = await fixture(page);
+  const absent = { present: false, branch: null, clean: null, ahead: null, remoteUrlMatches: null };
+  const context = {
+    ready: false,
+    problems: [{ code: "settings_missing", field: "qa.jenkinsUrl" }],
+    remoteChecked: false,
+    module: {
+      folder: "waf-module-words",
+      remote: "git@github.com:org/waf-module-words.git",
+      clone: absent,
+    },
+    activityData: { clone: absent },
+    media: { clone: absent },
+    branches: { deploy: "loom/words-deploy", activityData: "loom/words-activity-data" },
+    branchState: {
+      deploy: { local: null, remote: null },
+      activityData: { local: null, remote: null },
+    },
+  };
+  const settings = {
+    qa: {
+      jenkinsUrl: "",
+      username: "",
+      token: { set: false },
+      tier: "qa",
+      environment: "loom",
+      frameworkVersion: "",
+      activityBaseUrl: "",
+    },
+    prod: {
+      jenkinsUrl: "",
+      username: "",
+      token: { set: false },
+      tier: "prod",
+      environment: "DEFAULT",
+      frameworkVersion: "",
+    },
+    jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
+    repos: { activityDataRemote: "", mediaRemote: "" },
+    git: { userName: "", userEmail: "" },
+    timeouts: { buildMinutes: 30, deployMinutes: 30 },
+  };
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (url.pathname === "/api/me")
+      return json({
+        user: { userId: "author", isAdmin: true, passwordIsInitial: false },
+        previewIsolated: true,
+        desktopMode: false,
+        companyMode: false,
+        sessionVia: "password",
+        uploadLimits: {
+          attachmentMaxMb: 100,
+          attachmentTotalMb: 120,
+          attachmentMaxCount: 20,
+          imageMaxMb: 20,
+          attachmentLimitMinMb: 1,
+          attachmentLimitMaxMb: 200,
+        },
+      });
+    if (url.pathname === "/api/admin/activity-deploy/settings") return json({ settings });
+    if (url.pathname === `${base}/act_test/sandbox/status`)
+      return json({
+        state: "ready",
+        playable: true,
+        buildable: true,
+        message: "Ready.",
+        buildLog: null,
+      });
+    if (url.pathname === `${base}/act_test/deploy` && request.method() === "GET") {
+      const blocker = { code: "settings_missing", field: "qa.jenkinsUrl" };
+      return json({
+        context,
+        run: null,
+        stages: [
+          "verify_module",
+          "prepare_deploy",
+          "trigger_module_build",
+          "await_module_build",
+        ].map((stage) => ({ stage, status: "pending", finishedAt: null, metadata: {}, blocker })),
+      });
+    }
+    if (url.pathname === `${base}/act_test/deploy/context` && request.method() === "GET")
+      return json({ context });
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Deploy");
+  const problems = page.getByRole("region", { name: "What is missing" });
+  await expect(problems.getByText("QA Jenkins address is empty.", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Open deploy settings", exact: true }).click();
+  // Exactly one settings dialog, and it opens on the Deploy page.
+  const dialogs = page.getByRole("dialog", { name: "System settings" });
+  await expect(dialogs).toHaveCount(1);
+  const qa = dialogs.getByRole("group", { name: "QA" });
+  await expect(qa.getByRole("textbox", { name: "Tier" })).toHaveValue("qa");
+  await expect(qa.getByRole("textbox", { name: "Jenkins address" })).toBeVisible();
+  await expect(dialogs).toHaveCount(1);
+  expect(f.errors).toEqual([]);
+});
+
+test("on a phone, System settings from the drawer's account menu opens one dialog", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(`${origin}/activities`);
+  // The drawer's sidebar and the hidden desktop pane are both mounted now, each with an
+  // account menu; the dialog they open is the layout's one.
+  await page.getByRole("button", { name: /^Sessions/ }).first().click();
+  // Only the drawer's user row is on screen; the desktop pane's is hidden at this width.
+  await page.getByRole("button", { name: "author", exact: true }).click();
+  await page.getByRole("button", { name: "System settings", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "System settings" })).toHaveCount(1);
   expect(f.errors).toEqual([]);
 });
 

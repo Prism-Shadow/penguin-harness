@@ -80,6 +80,7 @@ import {
   workspaceLabel,
 } from "../../lib/session-grouping";
 import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
+import { withoutActivityRuns } from "../../lib/activity-sessions";
 import {
   initialNavGroupCollapsed,
   navKeysFor,
@@ -433,10 +434,13 @@ export function Sidebar({
    * withoutOrgSessions): this list is the user's conversations, and a switch about the shell
    * does not turn a scheduler's Session into one.
    */
-  const sessions = useMemo(() => withoutOrgSessions(allSessions), [allSessions]);
+  const sessions = useMemo(
+    () => withoutActivityRuns(withoutOrgSessions(allSessions)),
+    [allSessions],
+  );
   const byAgent = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
-    for (const [agentId, rows] of allByAgent) map.set(agentId, withoutOrgSessions(rows));
+    for (const [agentId, rows] of allByAgent) map.set(agentId, withoutActivityRuns(withoutOrgSessions(rows)));
     return map;
   }, [allByAgent]);
 

@@ -4,9 +4,11 @@ import {
   RAIL_DEFAULT_WIDTH,
   RAIL_MAX_WIDTH,
   RAIL_MIN_WIDTH,
+  STUDIO_PHASES,
   clampRailWidth,
   fitsComparison,
   WORKSPACE_TWO_PANE_WIDTH,
+  phaseOf,
   railFitsBeside,
   railWidthAfterKey,
   railWidthFor,
@@ -17,6 +19,7 @@ import {
   workspaceSections,
   writeRailCollapsed,
   writeRailWidth,
+  type WorkspaceSection,
 } from "../src/features/activities/workspace-model";
 
 const full = { hasSpec: true, hasPlan: true, hasModule: true };
@@ -32,22 +35,26 @@ function memory(seed: Record<string, string> = {}) {
 }
 
 describe("workspace sections", () => {
-  it("offers every part of an activity, in one order", () => {
-    expect(workspaceSections(full).map((section) => section.key)).toEqual([
-      "description",
-      "specification",
-      "features",
-      "configuration",
-      "assessment",
-      "scenes",
-      "speech",
-      "stats",
-      "library",
-      "module",
-      "history",
-      "deploy",
+  it("lists sections in phase order", () => {
+    expect(workspaceSections(full).map((entry) => entry.key)).toEqual([
+      "description", "specification", "features",
+      "scenes", "speech", "library",
+      "module", "configuration", "assessment", "deploy",
+      "stats", "history",
       "newRef",
     ]);
+  });
+
+  it("puts every rail section in exactly one phase, in phase order", () => {
+    const rail = workspaceSections(full).filter((entry) => entry.key !== "newRef");
+    const phases = rail.map((entry) => phaseOf(entry.key as Exclude<WorkspaceSection, "newRef">));
+    expect(phases).toEqual([
+      "write", "write", "write",
+      "media", "media", "media",
+      "build", "build", "build", "build",
+      "more", "more",
+    ]);
+    expect(STUDIO_PHASES).toEqual(["write", "media", "build", "more"]);
   });
 
   it("keeps a section visible but disabled until its subject exists", () => {

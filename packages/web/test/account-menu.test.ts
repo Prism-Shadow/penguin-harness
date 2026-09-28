@@ -135,7 +135,7 @@ describe("the account menu", () => {
     // dialog, whose own section registry decides which pages this viewer sees — so the row
     // itself carries no isAdmin test, or a non-admin would lose the personal pages along
     // with the admin ones.
-    expect(source).toContain("setSettingsOpen(true)");
+    expect(source).toContain("settingsDialog.getState().open()");
     expect(source).not.toContain("offersChangePassword");
     expect(source).not.toContain("S.settings.language");
     expect(source).not.toContain("S.settings.theme");
@@ -149,6 +149,17 @@ describe("the account menu", () => {
     expect(source).not.toContain("ProxySettingsDialog");
     expect(source).not.toContain("UploadLimitsDialog");
     expect(source).not.toContain("ChangePasswordDialog");
+  });
+
+  it("opens the settings dialog the app layout mounts once, never one of its own", () => {
+    // Phones mount two sidebars, so two of these menus: a dialog per menu opened twice.
+    expect(source).not.toContain("<SettingsDialog");
+    const layout = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../src/components/layout/app-layout.tsx"),
+      "utf8",
+    );
+    expect(layout.split("<SettingsDialog").length - 1).toBe(1);
+    expect(layout).toContain("useSettingsDialog((s) => s.isOpen)");
   });
 
   it("keeps the one update row outside the settings dialog, opening the modal the layout mounts", () => {

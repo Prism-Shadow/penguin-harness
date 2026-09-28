@@ -1440,6 +1440,8 @@ export interface SessionInfo {
    * tickets are where these Sessions are reached instead.
    */
   orgId?: string;
+  /** The activity whose generation run this Session is; absent for every other Session. */
+  activityId?: string;
   /**
    * Which client opened the Session, as stored on the index row: "cli" from the CLI (a
    * Session adopted from a legacy CLI-direct Trace included), "org" from the organization
@@ -4860,6 +4862,11 @@ export type {
   ModuleDocumentOverride,
 } from "../activities/domain.js";
 export type { SandboxStatus, SandboxBuildReport } from "../activities/sandbox-paths.js";
+export type {
+  ActivitySummary,
+  ActivitySummaryStatus,
+  SummaryMilestone,
+} from "../activities/activity-summary.js";
 export type { ModuleDocument, ModuleDocuments } from "../activities/module-documents.js";
 export type { MediaStat } from "../activities/media-stats.js";
 export type { ImplementationFeature } from "../activities/implementation-features.js";

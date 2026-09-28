@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SWITCHER_SECTIONS,
+  buildActivityEntries,
   buildAgentEntries,
   buildPageEntries,
   filterSwitcherEntries,
@@ -88,6 +89,22 @@ describe("entry builders", () => {
         busy: null,
       },
     ]);
+  });
+
+  it("builds one entry per activity, detail is product and ref", () => {
+    expect(buildActivityEntries([{ id: "a1", title: "Counting ants", productCode: "ants", refNum: 3 }])).toEqual([
+      { id: "activity:a1", section: "activities", title: "Counting ants", detail: "ants / 3", to: "/activities/a1", routeState: null, busy: null },
+    ]);
+  });
+
+  it("titles an activity entry with the display name its card shows", () => {
+    const [named, plain] = buildActivityEntries([
+      { id: "a1", title: "Counting ants", displayName: "Ant parade", productCode: "ants", refNum: 3 },
+      { id: "a 2", title: "Counting bees", displayName: null, productCode: "bees", refNum: 1 },
+    ]);
+    expect(named!.title).toBe("Ant parade");
+    expect(plain!.title).toBe("Counting bees");
+    expect(plain!.to).toBe("/activities/a%202");
   });
 });
 
@@ -192,7 +209,7 @@ describe("filterSwitcherEntries", () => {
   });
 
   it("never reorders the fixed section sequence", () => {
-    expect(SWITCHER_SECTIONS).toEqual(["pages", "agents"]);
+    expect(SWITCHER_SECTIONS).toEqual(["pages", "agents", "activities"]);
   });
 });
 

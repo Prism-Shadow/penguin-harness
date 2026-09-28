@@ -33,6 +33,7 @@ export const en: Strings = {
         history: "Generation History",
         deploy: "Deploy",
       },
+      phases: { write: "Write", media: "Media", build: "Build & ship", more: "More" },
       groups: {
         image: "Images",
         video: "Videos",
@@ -143,11 +144,15 @@ export const en: Strings = {
       names: {
         run: "Stages",
         player: "Player",
-        conversation: "Conversation",
-        sessions: "Agent sessions",
+        conversation: "Chat",
+        sessions: "Sessions",
       },
       sessionsEmpty: "No agent has worked on this activity yet.",
-      openSession: "Open",
+      showTranscript: "Show",
+      hideTranscript: "Hide",
+      transcriptToggle: (action: string, run: string, time: string) =>
+        `${action}: ${run}, ${time}`,
+      openFullPage: "Open full page",
     },
     studioRefs: {
       ref: "Ref",
@@ -416,9 +421,23 @@ export const en: Strings = {
         activity_archived: "A deleted ref of this product keeps that number.",
       },
     },
-    recent: {
-      title: "Recently opened",
-      all: "All activities",
+    home: {
+      sortLabel: "Sort",
+      sort: { recent: "Recent", code: "A–Z" },
+      refs: (count: number) => (count === 1 ? "1 ref" : `${count} refs`),
+      attention: (count: number) => (count === 1 ? "1 needs attention" : `${count} need attention`),
+      refLine: (refNum: number, when: string) => `ref ${refNum} · ${when}`,
+      canonical: "Canonical ref",
+      progress: (done: number, total: number) => `${done} of ${total} milestones`,
+      newRef: "New ref",
+      newRefUnavailable:
+        "Plan the canonical ref's media first; a new ref copies its media plan.",
+      status: {
+        running: (what: string) => `${what} running`,
+        stale: "Media plan out of date",
+        built: "Built",
+        next: { spec: "Specification next", mediaPlan: "Media plan next", module: "Module next" },
+      },
     },
     projectMedia: {
       title: "Project media library",
@@ -512,6 +531,7 @@ export const en: Strings = {
       ready: "Ready to deploy.",
       notReady: (n) => `Not ready to deploy: ${n} ${n === 1 ? "thing is" : "things are"} missing.`,
       settingsHint: "An admin fills in the deploy settings under System settings, Deploy.",
+      openSettings: "Open deploy settings",
       pinnedBuild:
         "The preview plays a pinned module build. A release ships the newest build, not the pinned one. Unpin it under History, Module builds, to preview what ships.",
       checksLabel: "Deploy checks",
@@ -1892,12 +1912,16 @@ export const en: Strings = {
     saved: "Saved",
     unsaved: "Unsaved changes",
     discard: "Discard your unsaved edits and load another draft?",
+    discardTitle: "Discard unsaved changes?",
+    discardConfirm: "Discard",
     remoteChanged:
       "The saved draft changed. Your edits are still here; reload before applying them.",
     saveFirst: "Save your description before generating. Review or save specification edits first.",
     readOnly: "Only the Project owner can edit activities.",
     runningHelp: "Generation continues when you leave this page. Open its Session to follow along.",
     collection: "Collection",
+    breadcrumb: "Breadcrumb",
+    runningChip: (what: string) => `${what} running`,
     refresh: "Refresh list",
     status: {
       running: "Running",
@@ -1967,12 +1991,13 @@ export const en: Strings = {
     },
   },
 
-  /** Quick Switcher (Ctrl/Cmd+K): the keyboard palette for jumping to pages, coding agents and their sessions. */
+  /** Quick Switcher (Ctrl/Cmd+K): the keyboard palette for jumping to pages, activities, coding agents and their sessions. */
   quickSwitcher: {
     title: "Quick switcher",
-    placeholder: "Search pages, agents, and sessions…",
+    placeholder: "Search pages, activities, agents, and sessions…",
     recentsSection: "Recent",
     pagesSection: "Pages",
+    activitiesSection: "Activities",
     loading: "Loading agents and sessions…",
     noMatches: "No matches.",
     // Footer key hints: the word follows its key.
@@ -4240,6 +4265,9 @@ Scenarios:
     },
     sessionList: "Sessions",
     defaultSessionTitle: "New chat",
+    /** Banner shown when the open conversation is an activity's generation run, not an ordinary chat. */
+    partOfActivity: "This session is an activity's generation run.",
+    backToActivity: "Back to the activity",
     agent: "Agent",
     model: "Model",
     workspace: "Workspace",

@@ -14,6 +14,7 @@ import type { ActivityRun, ActivityRunSummary } from "@prismshadow/penguin-serve
 import { apiFetch } from "../../api/client";
 import * as api from "../../api/endpoints";
 import { Button } from "../../components/ui/button";
+import { EmptyState } from "../../components/ui/empty-state";
 import { Textarea } from "../../components/ui/input";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
@@ -283,7 +284,7 @@ function Conversation({
             }
           />
         ) : (
-          <p className="p-4 text-sm text-gray-500">{editable ? words.empty : words.readOnly}</p>
+          <EmptyState title={editable ? words.empty : words.readOnly} />
         )}
       </div>
       {(proposal || proposalError) && (

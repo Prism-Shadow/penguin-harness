@@ -110,6 +110,20 @@ describe("previewing a module from the WAF checkout", () => {
     return result;
   }
 
+  it("reports a module for an imported ref whose module exists only in the checkout", async () => {
+    const { service, moduleRoot } = await made();
+    const record = {
+      id: ACTIVITY,
+      collectionId: "col",
+      productCode: "sight-words",
+      refNum: 1,
+    } as unknown as Parameters<typeof service.hasModule>[1];
+    expect(await service.hasModule(PROJECT, record)).toBe(true);
+    // Without the module's definition there is nothing to show as built.
+    await fs.rm(path.join(moduleRoot, "definition.json"));
+    expect(await service.hasModule(PROJECT, record)).toBe(false);
+  });
+
   it("composes the payload from the checkout when Penguin has built nothing", async () => {
     const { service } = await made();
     const payload = await service.payload(PROJECT, ACTIVITY, {});

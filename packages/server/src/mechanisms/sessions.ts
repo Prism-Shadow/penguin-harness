@@ -31,6 +31,9 @@ export abstract class SessionIndex extends Interface<{
   deleteByAgent(projectId: string, agentId: string): void;
   deleteByProject(projectId: string): void;
   deleteById(sessionId: string): void;
+  /** A Map has no wire form, so this is carried as an opaque host object, like OrgCache.orgIdsOfProject. */
+  activityIdsOfProject(projectId: string): Opaque<"ActivityIdsBySession", Map<string, string>>;
+  activityIdOfSession(sessionId: string): string | undefined;
 }>() {}
 
 /** SessionOrigins: the mechanism SessionSources implements. */

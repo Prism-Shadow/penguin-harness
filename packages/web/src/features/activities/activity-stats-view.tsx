@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import type { MediaStat } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
 import { Button } from "../../components/ui/button";
+import { EmptyState } from "../../components/ui/empty-state";
+import { SkeletonList } from "../../components/ui/skeleton";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -88,9 +90,11 @@ export function ActivityStatsView({ endpoint, revision }: { endpoint: string; re
           {words.unreadable(error)}
         </p>
       ) : !tables ? (
-        <p className="text-sm text-gray-500">{S.common.loading}</p>
+        <div role="status" aria-label={S.common.loading}>
+          <SkeletonList rows={3} />
+        </div>
       ) : tables.total.count === 0 ? (
-        <p className="text-sm text-gray-500">{words.empty}</p>
+        <EmptyState title={words.empty} />
       ) : (
         <>
           <StatsTable

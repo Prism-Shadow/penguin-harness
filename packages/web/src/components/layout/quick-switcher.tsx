@@ -22,10 +22,13 @@ import { createPortal } from "react-dom";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../../state/auth";
-import type { CodingAgentServerInfo } from "@prismshadow/penguin-server/api";
+import { useProject } from "../../state/project";
+import type { ActivityRecord, CodingAgentServerInfo } from "@prismshadow/penguin-server/api";
+import { apiFetch } from "../../api/client";
 import { listCodingAgents } from "../../api/endpoints";
 import { navKeysFor } from "../../lib/nav-group-collapse";
 import {
+  buildActivityEntries,
   buildAgentEntries,
   buildPageEntries,
   filterSwitcherEntries,
@@ -62,10 +65,11 @@ const kbdClass =
 function sectionTitle(section: SwitcherEntry["section"] | "recents"): string {
   if (section === "recents") return S.quickSwitcher.recentsSection;
   if (section === "pages") return S.quickSwitcher.pagesSection;
+  if (section === "activities") return S.quickSwitcher.activitiesSection;
   return S.codingAgents.agentsTitle;
 }
 
-/** Row glyph: pages wear their nav icon; agents share the coding-agents mark. */
+/** Row glyph: pages wear their nav icon; agents and activities share the coding-agents/activities marks. */
 function rowGlyph(entry: SwitcherEntry): string | null {
   if (entry.section === "pages") {
     // The id was built from a nav key (lib/nav-group-collapse.ts), whose set NAV_ICONS covers.
@@ -73,11 +77,13 @@ function rowGlyph(entry: SwitcherEntry): string | null {
     return NAV_ICONS[key] ?? null;
   }
   if (entry.section === "agents") return NAV_ICONS["coding-agents"];
+  if (entry.section === "activities") return NAV_ICONS["activities"] ?? null;
   return null;
 }
 
 export function QuickSwitcherPalette({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
+  const { currentProject } = useProject();
   const navigate = useNavigate();
   // Fetches on mount — and this component mounts only while the palette is open.
   const [agents, setAgents] = useState<CodingAgentServerInfo[]>([]);
@@ -99,6 +105,29 @@ export function QuickSwitcherPalette({ onClose }: { onClose: () => void }) {
       cancelled = true;
     };
   }, []);
+
+  // This project's activities, one entry each; a project without activities access (or no
+  // current project, or a failed fetch) simply shows none — the error is swallowed, not surfaced.
+  const [activities, setActivities] = useState<ActivityRecord[]>([]);
+  const projectId = currentProject?.projectId;
+  useEffect(() => {
+    // The previous project's entries would navigate outside this one; drop them first.
+    setActivities([]);
+    if (!projectId) return;
+    let cancelled = false;
+    apiFetch<{ activities: ActivityRecord[] }>(
+      `/api/projects/${encodeURIComponent(projectId)}/activities`,
+    )
+      .then((res) => {
+        if (!cancelled) setActivities(res.activities);
+      })
+      .catch(() => {
+        /* No activities access on this project; the section stays empty. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -136,8 +165,9 @@ export function QuickSwitcherPalette({ onClose }: { onClose: () => void }) {
           command: [agent.command, ...agent.args].join(" "),
         })),
       ),
+      ...buildActivityEntries(activities),
     ],
-    [user?.isAdmin, agents],
+    [user?.isAdmin, agents, activities],
   );
 
   // Recents are read once per open; a selection made this session is pushed straight through.

@@ -1,11 +1,20 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  Link,
+  Navigate,
+  useBlocker,
+  useMatch,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router";
 import type {
   ActivityDetail,
   ActivityDraft,
   ActivityRecord,
   ActivityRun,
   ActivityRunSummary,
+  ActivitySummary,
   AssetManifest,
   BookWordsRefresh,
   MediaStat,
@@ -26,14 +35,23 @@ import { toastAttention, toastError, toastInfo, toastSuccess } from "../../compo
 import { discoverCodingAgents, listCodingAgents } from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
+import { useSessions } from "../../state/sessions";
+import {
+  RUNNING_POLL_MS,
+  settledActivityRuns,
+  shouldPollSummaries,
+  startedUnlistedRuns,
+  shouldReloadList,
+} from "../../lib/activity-sessions";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { InfoPopover } from "../../components/ui/info-popover";
+import { EmptyState } from "../../components/ui/empty-state";
 import { AssetLibraryView } from "./asset-library-view";
 import { settledPipeline, settledRuns, type Announcement } from "./run-toasts";
 import { CreateActivityDialog } from "./create-activity-dialog";
@@ -75,7 +93,7 @@ import { GenerationHistory } from "./history-section";
 import { DeployPanel } from "./deploy-panel";
 import { useAssistProposal } from "./use-assist-proposal";
 import { StudioTreeView } from "./studio-tree-view";
-import { SessionsPanel } from "./sessions-panel";
+import { runTitle, SessionsPanel } from "./sessions-panel";
 import { ModulePreview } from "./module-preview";
 import { SandboxPanel } from "./sandbox-panel";
 import { sandboxHasModule, type SandboxStatusLike } from "./sandbox";
@@ -84,7 +102,8 @@ import { SpecDiffView } from "./spec-diff-view";
 import { latestModuleRun } from "./preview";
 import { ActivityList } from "./activity-list";
 import { ProjectMediaView } from "./project-media-view";
-import { pushRecent, readRecent } from "./recent-activities";
+import type { GroupSort } from "./activity-groups";
+import { useDiscardConfirm } from "./use-discard-confirm";
 import { applyVoice, optionsFromVoices } from "./voice-catalogue";
 import {
   applyProvider,
@@ -121,7 +140,7 @@ export function ActivitiesPage() {
   const project =
     currentProject ??
     (previousProject.current?.projectId === unavailableProjectId ? previousProject.current : null);
-  if (!project) return <p className="p-6 text-sm text-gray-500">{S.activities.noProject}</p>;
+  if (!project) return <EmptyState title={S.activities.noProject} />;
   return (
     <ActivityWorkspace
       key={project.projectId}
@@ -145,12 +164,15 @@ function ActivityWorkspace({
   const { activityId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const media = useMatch("/activities/media") !== null;
   const [items, setItems] = useState<ActivityRecord[]>([]);
+  const [summaries, setSummaries] = useState<Record<string, ActivitySummary>>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   // Kept here rather than in the list, so opening an activity and coming back keeps them.
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState<string | null>(null);
+  const [sort, setSort] = useState<GroupSort>("recent");
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const dirty = useRef(false);
@@ -163,23 +185,82 @@ function ActivityWorkspace({
       mounted.current = false;
     };
   }, []);
+  // Read through a ref so `reload` keeps one identity across opening and leaving an activity.
+  const openActivityId = useRef(activityId);
+  openActivityId.current = activityId;
+  // Reloads can overlap (a live-status reload while the first load is in flight) and finish
+  // out of order. Each request takes a number, and a response applies only when it is newer
+  // than the last one applied, so an older response never overwrites fresher records or status.
+  const requested = useRef(0);
+  const appliedItems = useRef(0);
+  const appliedSummaries = useRef(0);
   const reload = useCallback(async () => {
     if (!accessible.current) return;
+    // Inside an activity (a studio save, say) only the records are needed: the summaries
+    // fan out over every activity, and the return-to-list reload fetches them fresh.
+    const withSummaries = openActivityId.current === undefined;
+    const request = ++requested.current;
     try {
-      const result = await apiFetch<{ activities: ActivityRecord[] }>(basePath(projectId));
+      const result = await apiFetch<{
+        activities: ActivityRecord[];
+        summaries?: Record<string, ActivitySummary>;
+      }>(withSummaries ? `${basePath(projectId)}?summary=1` : basePath(projectId));
       if (mounted.current) {
-        setItems(result.activities);
-        setError("");
+        if (request > appliedItems.current) {
+          appliedItems.current = request;
+          setItems(result.activities);
+          setError("");
+        }
+        if (withSummaries && request > appliedSummaries.current) {
+          appliedSummaries.current = request;
+          setSummaries(result.summaries ?? {});
+        }
       }
     } catch (e) {
-      if (mounted.current) setError(apiErrorText(e));
+      if (mounted.current && request === requested.current) setError(apiErrorText(e));
     } finally {
-      if (mounted.current) setLoading(false);
+      if (mounted.current && request === requested.current) setLoading(false);
     }
   }, [projectId]);
   useEffect(() => {
     void reload();
   }, [reload]);
+  // Live refresh: no server event exists for activity runs, so the home list rides the
+  // sessions store instead — an activity-run session going idle (or otherwise settling)
+  // is the signal that this list may be stale. Only while looking at the list itself
+  // (not a single activity's own workspace), and only on the running -> settled edge, so a
+  // page that never had a run in flight does not reload on every unrelated session tick.
+  const { sessions, liveStatuses } = useSessions();
+  const seenRunStatus = useRef(new Map<string, string>());
+  useEffect(() => {
+    if (!activityId && settledActivityRuns(seenRunStatus.current, sessions)) void reload();
+    seenRunStatus.current = new Map(sessions.map((session) => [session.sessionId, session.status]));
+  }, [sessions, activityId, reload]);
+  // A run started elsewhere after the store loaded has no row, only a live status: reload on
+  // its start, so its summary says "running" and the poll below takes it to its end.
+  const seenLive = useRef<ReadonlyMap<string, string>>(liveStatuses);
+  useEffect(() => {
+    if (!activityId && startedUnlistedRuns(seenLive.current, liveStatuses, sessions)) void reload();
+    seenLive.current = liveStatuses;
+  }, [liveStatuses, sessions, activityId, reload]);
+  // A run can settle while the user is still inside that activity's own workspace — the
+  // effect above never fires then, since it only watches while `!activityId`, so the run
+  // "settling" is missed there. Coming back to the list is itself a reason to check again:
+  // `prevActivityId` starts undefined, so the list's own first mount does not double-reload.
+  const prevActivityId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (shouldReloadList(prevActivityId.current, activityId)) void reload();
+    prevActivityId.current = activityId;
+  }, [activityId, reload]);
+  // A run started after the sessions store loaded never reaches the settle signal above, so
+  // while the list is shown and some summary says a run is in flight, re-read it every few
+  // seconds; the poll stops once nothing is running or an activity is opened.
+  const polling = shouldPollSummaries(activityId, summaries);
+  useEffect(() => {
+    if (!polling) return;
+    const timer = window.setInterval(() => void reload(), RUNNING_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [polling, reload]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (dirty.current) event.preventDefault();
@@ -187,22 +268,55 @@ function ActivityWorkspace({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, []);
-  const canLeave = useCallback(() => !dirty.current || window.confirm(S.activities.discard), []);
+  const canLeave = useCallback(() => !dirty.current, []);
+  const isDirty = useCallback(() => dirty.current, []);
+  const discard = useDiscardConfirm(isDirty);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      currentLocation.pathname !== nextLocation.pathname && !canLeave(),
+      currentLocation.pathname !== nextLocation.pathname && dirty.current,
   );
+  // Ask once per blocked *attempt*, not merely once per "unblocked -> blocked" edge: a
+  // Cancel's `blocker.reset()` and the very next navigation's own block can land in the same
+  // React batch (e.g. a browser-back thrown right after dismissing the previous dialog), and
+  // React is then free to skip rendering the intermediate "unblocked" state entirely — this
+  // effect would never see it and would wrongly treat the new attempt as already answered.
+  // Each blocked attempt is a new blocker object, so its identity survives that skip.
+  const askedFor = useRef<typeof blocker | null>(null);
   useEffect(() => {
-    if (blocker.state === "blocked") blocker.reset();
-  }, [blocker]);
+    if (blocker.state !== "blocked") {
+      askedFor.current = null;
+      return;
+    }
+    if (askedFor.current === blocker) return;
+    askedFor.current = blocker;
+    discard.ask(
+      () => blocker.proceed(),
+      () => blocker.reset(),
+    );
+  }, [blocker, discard.ask]);
+  // Switching or deleting a Project while dirty asks through the same dialog. The caller
+  // (setCurrentProjectId / deleteProject / the removed-selection reload) awaits this, so its
+  // own success/error handling runs on whichever answer actually happened — declining
+  // resolves false right away, discarding clears `dirty` and resolves true.
+  const projectChangeGuard = useCallback(() => {
+    if (!dirty.current) return true;
+    return new Promise<boolean>((resolve) => {
+      discard.ask(
+        () => {
+          dirty.current = false;
+          resolve(true);
+        },
+        () => resolve(false),
+      );
+    });
+  }, [discard.ask]);
   useLayoutEffect(
-    () => registerProjectChangeGuard(canLeave),
-    [registerProjectChangeGuard, canLeave],
+    () => registerProjectChangeGuard(projectChangeGuard),
+    [registerProjectChangeGuard, projectChangeGuard],
   );
-  // Read again whenever the author comes back from an activity, which recorded itself.
-  const recent = useMemo(() => (activityId ? [] : readRecent(projectId)), [projectId, activityId]);
   if (!activityId && searchParams.get("view") === "media")
-    return <ProjectMediaView projectId={projectId} available={available} />;
+    return <Navigate to="/activities/media" replace />;
+  if (media) return <ProjectMediaView projectId={projectId} available={available} />;
   if (activityId) {
     // The workspace fills this pane and scrolls inside itself, so nothing may wrap it
     // in a scroller or a max-width column.
@@ -226,6 +340,7 @@ function ActivityWorkspace({
             navigate("/activities");
           }}
         />
+        {discard.modal}
       </div>
     );
   }
@@ -238,7 +353,10 @@ function ActivityWorkspace({
         editable={editable}
         available={available}
         createDisabled={!canLeave()}
-        recent={recent}
+        projectId={projectId}
+        summaries={summaries}
+        sort={sort}
+        onSort={setSort}
         search={search}
         onSearch={setSearch}
         tag={tag}
@@ -246,7 +364,7 @@ function ActivityWorkspace({
         onRefresh={() => void reload()}
         onImport={() => setImportOpen(true)}
         onCreate={() => setCreateOpen(true)}
-        onMedia={() => navigate("/activities?view=media")}
+        onMedia={() => navigate("/activities/media")}
       />
       {importOpen && (
         <ImportDialog
@@ -266,6 +384,7 @@ function ActivityWorkspace({
           }}
         />
       )}
+      {discard.modal}
     </>
   );
 }
@@ -290,14 +409,6 @@ function ActivityEditor({
   const { agents, currentAgent } = useProject();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
-  // Opening counts once the activity has loaded (a missing one never does), once per
-  // activity: the editor is keyed by it, and polling reloads it.
-  const recorded = useRef(false);
-  useEffect(() => {
-    if (!detail || detail.id !== activityId || recorded.current) return;
-    recorded.current = true;
-    pushRecent(projectId, activityId, new Date().toISOString());
-  }, [detail, activityId, projectId]);
   const [description, setDescription] = useState("");
   const [spec, setSpec] = useState("");
   const [specOpen, setSpecOpen] = useState(false);
@@ -463,6 +574,7 @@ function ActivityEditor({
     (description !== detail.draft.description ||
       spec !== pretty(detail.draft.spec) ||
       media !== pretty(detail.draft.mediaPlan?.manifest));
+  const discard = useDiscardConfirm(() => dirty);
   state.current = { dirty, busy, revision: detail?.draft.contentRevision ?? "", available };
   // The conversation the panel has open, whose proposal the studio shows; until the panel
   // says otherwise, the newest.
@@ -1178,25 +1290,40 @@ function ActivityEditor({
         {error || loadError || S.activities.loading}
       </p>
     );
+  const runningRun = runs.find((run) => run.status === "running");
   return (
-    <WorkspaceShell
-      panels={panels}
-      showPanel={showPanel}
-      layout={{ section, onSection: setSection }}
-      header={
-        <>
-          <Link
-            to="/activities"
-            className="shrink-0 text-xs text-gray-500 underline hover:text-gray-700 dark:hover:text-gray-300"
-          >
-            {S.activities.backToActivities}
-          </Link>
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-semibold" title={detail.title}>
-              {detail.title}
-            </h2>
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-              <span>{detail.productCode}</span>
+    <>
+      <WorkspaceShell
+        panels={panels}
+        showPanel={showPanel}
+        layout={{ section, onSection: setSection }}
+        header={
+          <>
+            <nav
+              aria-label={S.activities.breadcrumb}
+              className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm"
+            >
+              <Link
+                to="/activities"
+                className="shrink-0 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                {S.activities.backToActivities}
+              </Link>
+              <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">
+                /
+              </span>
+              <span
+                className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400"
+                title={`${S.activities.collection}: ${detail.collectionId}`}
+              >
+                {detail.productCode}
+              </span>
+              <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">
+                /
+              </span>
+              <h2 className="min-w-0 truncate font-semibold" title={detail.title}>
+                {detail.title}
+              </h2>
               <RefSwitcher
                 base={basePath(projectId)}
                 activity={detail}
@@ -1232,985 +1359,1012 @@ function ActivityEditor({
                 // The new-ref table walks the media plan, so the way in waits for one.
                 onNewRef={detail.draft.mediaPlan ? () => setSection("newRef") : undefined}
               />
-              <span className="truncate">
-                {S.activities.collection}: {detail.collectionId}
-              </span>
-            </div>
-          </div>
-          <p aria-live="polite" className={`text-xs ${dirty ? toneInk.attention : toneInk.muted}`}>
-            {dirty ? S.activities.unsaved : S.activities.draftStatus[detail.draft.status]}
-          </p>
-          <Button
-            size="sm"
-            disabled={busy || !available}
-            onClick={() => {
-              if (!dirty || window.confirm(S.activities.discard))
-                void action(async () => {
-                  const value = await apiFetch<ActivityDetail>(endpoint);
-                  if (alive.current) accept(value);
-                });
-            }}
-          >
-            {S.activities.reload}
-          </Button>
-        </>
-      }
-      notices={
-        <>
-          {!available && (
-            <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
-              {S.activities.unavailable}
+              {runningRun && (
+                <span
+                  className={`ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-current/20 px-2 py-0.5 text-xs ${toneInk.busy}`}
+                >
+                  <span aria-hidden className={`size-1.5 rounded-full ${toneDot.busy}`} />
+                  {S.activities.runningChip(runTitle(runningRun.kind))}
+                </span>
+              )}
+            </nav>
+            <p
+              aria-live="polite"
+              className={`whitespace-nowrap text-xs ${dirty ? toneInk.attention : toneInk.muted}`}
+            >
+              {dirty ? S.activities.unsaved : S.activities.draftStatus[detail.draft.status]}
             </p>
-          )}
-          {available && !editable && (
-            <p className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
-              {S.activities.readOnly}
-            </p>
-          )}
-          {error && (
-            <p role="alert" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
-              {error}
-            </p>
-          )}
-          {loadError && available && (
-            <p role="alert" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
-              {loadError}
-            </p>
-          )}
-          {changed && (
-            <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
-              {S.activities.remoteChanged}
-            </p>
-          )}
-        </>
-      }
-      rail={(dismiss) => (
-        <div className="flex min-h-0 flex-1 flex-col">
-          {Object.keys(editedManifest?.assets ?? {}).length > 1 && (
-            <div className="shrink-0 px-3 pt-2">
-              <Select
-                size="sm"
-                label={S.activities.mediaLanguage}
-                value={language}
-                onChange={(event) => setLanguage(event.target.value)}
-              >
-                {Object.keys(editedManifest?.assets ?? {}).map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-          <StudioTreeView
-            nodes={buildStudioTree(sections, tree)}
-            section={section}
-            selection={section === "scenes" && !board ? selection : null}
-            onChoose={(target) => {
-              if (target.kind === "section") {
-                setSection(target.section);
-                if (target.section === "scenes") setBoard(true);
-              } else if (target.kind === "asset") {
-                setSelected(target.selection);
-                setBoard(false);
-                setSection("scenes");
+            <Button
+              size="sm"
+              disabled={busy || !available}
+              onClick={() =>
+                discard.ask(
+                  () =>
+                    void action(async () => {
+                      const value = await apiFetch<ActivityDetail>(endpoint);
+                      if (alive.current) accept(value);
+                    }),
+                )
               }
-              dismiss();
-            }}
-          />
-          {editable && available && (
-            <PipelineControls
-              choice={pipelineChoice}
-              pipeline={pipeline}
-              blocked={pipelineBlocked}
-              onChoose={setPipelineChoice}
-              onRun={() => runStages()}
-              onStop={stopStages}
+            >
+              {S.activities.reload}
+            </Button>
+          </>
+        }
+        notices={
+          <>
+            {!available && (
+              <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
+                {S.activities.unavailable}
+              </p>
+            )}
+            {available && !editable && (
+              <p className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
+                {S.activities.readOnly}
+              </p>
+            )}
+            {error && (
+              <p role="alert" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
+                {error}
+              </p>
+            )}
+            {loadError && available && (
+              <p role="alert" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
+                {loadError}
+              </p>
+            )}
+            {changed && (
+              <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
+                {S.activities.remoteChanged}
+              </p>
+            )}
+          </>
+        }
+        rail={(dismiss) => (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {Object.keys(editedManifest?.assets ?? {}).length > 1 && (
+              <div className="shrink-0 px-3 pt-2">
+                <Select
+                  size="sm"
+                  label={S.activities.mediaLanguage}
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value)}
+                >
+                  {Object.keys(editedManifest?.assets ?? {}).map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+            <StudioTreeView
+              nodes={buildStudioTree(sections, tree)}
+              section={section}
+              selection={section === "scenes" && !board ? selection : null}
+              onChoose={(target) => {
+                if (target.kind === "section") {
+                  setSection(target.section);
+                  if (target.section === "scenes") setBoard(true);
+                } else if (target.kind === "asset") {
+                  setSelected(target.selection);
+                  setBoard(false);
+                  setSection("scenes");
+                }
+                dismiss();
+              }}
             />
-          )}
-        </div>
-      )}
-    >
-      {section === "scenes" && editedManifest && board ? (
-        <Storyboard
-          frames={frames}
-          selected={boardScene}
-          assetsOf={(sceneId) =>
-            fullTree.scenes
-              .find((scene) => scene.sceneId === sceneId)
-              ?.categories.flatMap((category) => category.assets) ?? []
-          }
-          thumbnailUrl={(assetKey) =>
-            `${endpoint}/media-image?${new URLSearchParams({
-              language,
-              assetKey,
-              expectedRevision: detail.draft.contentRevision,
-              ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
-            })}`
-          }
-          onSelect={setBoardScene}
-          onOpen={(sceneId, key) => {
-            setKind("all");
-            setSelected({ sceneId, key });
-            setBoardScene(sceneId);
-            setBoard(false);
-          }}
-          onPlay={() => setShowPanel({ key: "player", at: Date.now() })}
-          onEditMedia={() => {
-            const first = frames.find((frame) => frame.sceneId === boardScene)?.firstAssetKey;
-            if (boardScene && first) setSelected({ sceneId: boardScene, key: first });
-            setBoard(false);
-          }}
-          onAssemble={() => setSection("module")}
-        />
-      ) : section === "scenes" && editedManifest ? (
-        <AssetEditor
-          manifest={editedManifest}
-          language={language}
-          selection={selection}
-          media={uploads}
-          mediaLoading={uploadsLoading}
-          onUpload={upload}
-          onMediaCopied={() => void loadUploads()}
-          runs={runs}
-          endpoint={endpoint}
-          editable={editable}
-          disabled={busy || !available}
-          mediaDirty={!!editedManifest && media !== pretty(detail.draft.mediaPlan?.manifest)}
-          onSaveMedia={() => void save("media")}
-          canGenerate={
-            editable &&
-            available &&
-            detail.draft.status === "valid" &&
-            !busy &&
-            !running &&
-            !dirty &&
-            !!selectedAgent
-          }
-          canGenerateMedia={
-            editable &&
-            available &&
-            detail.draft.status === "valid" &&
-            !busy &&
-            !running &&
-            !dirty &&
-            !!selectedAgent &&
-            !codingAgentId
-          }
-          revision={detail.draft.contentRevision}
-          mediaStats={currentMediaStats}
-          savedManifest={detail.draft.mediaPlan?.manifest}
-          canAccept={editable && available && !busy && !running && !dirty}
-          canPreview={editable && available && !busy && !dirty}
-          wafRoot={wafRoot}
-          voices={voiceOptions}
-          defaultVoice={bulkVoice}
-          onChange={(value) => setMedia(pretty(value))}
-          onGenerateAudio={(lang, assetKey, voice, provider) =>
-            startRun("generate-audio", { language: lang, assetKey, voice, provider })
-          }
-          soundProviders={soundProviders}
-          speechProviders={speechProviders}
-          onGenerateSound={(lang, assetKey, provider, model) =>
-            startRun("generate-sound", {
-              language: lang,
-              assetKey,
-              provider,
-              ...(model !== undefined ? { model } : {}),
-            })
-          }
-          onGenerateImage={(lang, assetKey) =>
-            startRun("generate-image", { language: lang, assetKey })
-          }
-          onAcceptAudio={(runId) => acceptRun(runId, "accept-audio")}
-          onAcceptImage={(runId) => acceptRun(runId, "accept-image")}
-          onGenerateText={(lang, assetKey) =>
-            startRun("generate-media-text", { language: lang, assetKey })
-          }
-          onAcceptText={(runId) => acceptRun(runId, "accept-media-text")}
-          defaultLanguage={languageSetup.defaultLanguage}
-          onLanguage={setLanguage}
-          onTranslate={
-            language === languageSetup.defaultLanguage
-              ? undefined
-              : (lang, assetKey) =>
-                  startRun("generate-media-text", { language: lang, assetKey, translate: true })
-          }
-          sceneNav={sceneNav}
-          spec={detail?.draft.spec}
-          onCompose={
-            videoSetup?.enabled
-              ? (lang, assetKey) =>
-                  startRun("compose-video", {
-                    language: lang,
-                    assetKey,
-                    // Scene images bound to checkout media are read from the chosen checkout.
-                    ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
-                  })
-              : undefined
-          }
-          onRecordVideo={
-            videoSetup?.enabled
-              ? (compositionRunId) => startRun("render-video", { compositionRunId })
-              : undefined
-          }
-          onAcceptVideo={
-            videoSetup?.enabled ? (runId) => acceptRun(runId, "accept-video") : undefined
-          }
-          onSaveSounds={(lang, assetKey, phonemes) =>
-            void action(async () => {
-              const draft = await apiFetch<ActivityDraft>(
-                `${endpoint}/book-words/${encodeURIComponent(assetKey)}/phonemes`,
-                {
-                  method: "PUT",
-                  body: {
-                    language: lang,
-                    phonemes,
-                    expectedRevision: detail.draft.contentRevision,
-                  },
-                },
-              );
-              if (!alive.current) return;
-              accept({ ...detail, draft });
-              toastSuccess(S.activities.bookWords.saved);
-            })
-          }
-        />
-      ) : section === "description" ? (
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <ScriptEditor
-            value={description}
-            saved={detail.draft.description}
-            proposal={scriptProposal}
-            access={!available ? "read" : editable ? "edit" : "disabled"}
-            status={scriptStatus}
-            canSave={editable}
-            saveDisabled={busy || description === detail.draft.description}
-            acceptBlocked={dirty ? S.activities.studioProposal.saveFirst : null}
-            onChange={setDescription}
-            onSave={() => void save("description")}
-            onAcceptProposal={
-              editable && available && scriptProposal !== null
-                ? () => void acceptProposal({ target: "description", text: scriptProposal })
+            {editable && available && (
+              <PipelineControls
+                choice={pipelineChoice}
+                pipeline={pipeline}
+                blocked={pipelineBlocked}
+                onChoose={setPipelineChoice}
+                onRun={() => runStages()}
+                onStop={stopStages}
+              />
+            )}
+          </div>
+        )}
+      >
+        {section === "scenes" && editedManifest && board ? (
+          <Storyboard
+            frames={frames}
+            selected={boardScene}
+            assetsOf={(sceneId) =>
+              fullTree.scenes
+                .find((scene) => scene.sceneId === sceneId)
+                ?.categories.flatMap((category) => category.assets) ?? []
+            }
+            thumbnailUrl={(assetKey) =>
+              `${endpoint}/media-image?${new URLSearchParams({
+                language,
+                assetKey,
+                expectedRevision: detail.draft.contentRevision,
+                ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
+              })}`
+            }
+            onSelect={setBoardScene}
+            onOpen={(sceneId, key) => {
+              setKind("all");
+              setSelected({ sceneId, key });
+              setBoardScene(sceneId);
+              setBoard(false);
+            }}
+            onPlay={() => setShowPanel({ key: "player", at: Date.now() })}
+            onEditMedia={() => {
+              const first = frames.find((frame) => frame.sceneId === boardScene)?.firstAssetKey;
+              if (boardScene && first) setSelected({ sceneId: boardScene, key: first });
+              setBoard(false);
+            }}
+            onAssemble={() => setSection("module")}
+          />
+        ) : section === "scenes" && editedManifest ? (
+          <AssetEditor
+            manifest={editedManifest}
+            language={language}
+            selection={selection}
+            media={uploads}
+            mediaLoading={uploadsLoading}
+            onUpload={upload}
+            onMediaCopied={() => void loadUploads()}
+            runs={runs}
+            endpoint={endpoint}
+            editable={editable}
+            disabled={busy || !available}
+            mediaDirty={!!editedManifest && media !== pretty(detail.draft.mediaPlan?.manifest)}
+            onSaveMedia={() => void save("media")}
+            canGenerate={
+              editable &&
+              available &&
+              detail.draft.status === "valid" &&
+              !busy &&
+              !running &&
+              !dirty &&
+              !!selectedAgent
+            }
+            canGenerateMedia={
+              editable &&
+              available &&
+              detail.draft.status === "valid" &&
+              !busy &&
+              !running &&
+              !dirty &&
+              !!selectedAgent &&
+              !codingAgentId
+            }
+            revision={detail.draft.contentRevision}
+            mediaStats={currentMediaStats}
+            savedManifest={detail.draft.mediaPlan?.manifest}
+            canAccept={editable && available && !busy && !running && !dirty}
+            canPreview={editable && available && !busy && !dirty}
+            wafRoot={wafRoot}
+            voices={voiceOptions}
+            defaultVoice={bulkVoice}
+            onChange={(value) => setMedia(pretty(value))}
+            onGenerateAudio={(lang, assetKey, voice, provider) =>
+              startRun("generate-audio", { language: lang, assetKey, voice, provider })
+            }
+            soundProviders={soundProviders}
+            speechProviders={speechProviders}
+            onGenerateSound={(lang, assetKey, provider, model) =>
+              startRun("generate-sound", {
+                language: lang,
+                assetKey,
+                provider,
+                ...(model !== undefined ? { model } : {}),
+              })
+            }
+            onGenerateImage={(lang, assetKey) =>
+              startRun("generate-image", { language: lang, assetKey })
+            }
+            onAcceptAudio={(runId) => acceptRun(runId, "accept-audio")}
+            onAcceptImage={(runId) => acceptRun(runId, "accept-image")}
+            onGenerateText={(lang, assetKey) =>
+              startRun("generate-media-text", { language: lang, assetKey })
+            }
+            onAcceptText={(runId) => acceptRun(runId, "accept-media-text")}
+            defaultLanguage={languageSetup.defaultLanguage}
+            onLanguage={setLanguage}
+            onTranslate={
+              language === languageSetup.defaultLanguage
+                ? undefined
+                : (lang, assetKey) =>
+                    startRun("generate-media-text", { language: lang, assetKey, translate: true })
+            }
+            sceneNav={sceneNav}
+            spec={detail?.draft.spec}
+            onCompose={
+              videoSetup?.enabled
+                ? (lang, assetKey) =>
+                    startRun("compose-video", {
+                      language: lang,
+                      assetKey,
+                      // Scene images bound to checkout media are read from the chosen checkout.
+                      ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
+                    })
                 : undefined
             }
+            onRecordVideo={
+              videoSetup?.enabled
+                ? (compositionRunId) => startRun("render-video", { compositionRunId })
+                : undefined
+            }
+            onAcceptVideo={
+              videoSetup?.enabled ? (runId) => acceptRun(runId, "accept-video") : undefined
+            }
+            onSaveSounds={(lang, assetKey, phonemes) =>
+              void action(async () => {
+                const draft = await apiFetch<ActivityDraft>(
+                  `${endpoint}/book-words/${encodeURIComponent(assetKey)}/phonemes`,
+                  {
+                    method: "PUT",
+                    body: {
+                      language: lang,
+                      phonemes,
+                      expectedRevision: detail.draft.contentRevision,
+                    },
+                  },
+                );
+                if (!alive.current) return;
+                accept({ ...detail, draft });
+                toastSuccess(S.activities.bookWords.saved);
+              })
+            }
           />
-          {editable && (
-            <div className="max-h-[45%] shrink-0 overflow-y-auto border-t border-gray-200 p-4 dark:border-gray-800">
-              <div className="mx-auto max-w-4xl">
-                <div className="space-y-3">
-                  <Select
-                    size="sm"
-                    label={S.activities.agent}
-                    value={selectedAgent}
-                    onChange={(e) => setAgentId(e.target.value)}
-                    disabled={busy || running}
-                  >
-                    <optgroup label={S.activities.penguinAgents}>
-                      {agents.map((agent) => (
-                        <option key={agent.agentId} value={agent.agentId}>
-                          {agent.name ?? agent.agentId}
-                        </option>
-                      ))}
-                    </optgroup>
-                    {codingAgents.length > 0 && (
-                      <optgroup label={S.activities.codingAgents}>
-                        {codingAgents.map((agent) => (
-                          <option key={agent.id} value={`coding:${agent.id}`}>
-                            {agent.title}
+        ) : section === "description" ? (
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <ScriptEditor
+              value={description}
+              saved={detail.draft.description}
+              proposal={scriptProposal}
+              access={!available ? "read" : editable ? "edit" : "disabled"}
+              status={scriptStatus}
+              canSave={editable}
+              saveDisabled={busy || description === detail.draft.description}
+              acceptBlocked={dirty ? S.activities.studioProposal.saveFirst : null}
+              onChange={setDescription}
+              onSave={() => void save("description")}
+              onAcceptProposal={
+                editable && available && scriptProposal !== null
+                  ? () => void acceptProposal({ target: "description", text: scriptProposal })
+                  : undefined
+              }
+            />
+            {editable && (
+              <div className="max-h-[45%] shrink-0 overflow-y-auto border-t border-gray-200 p-4 dark:border-gray-800">
+                <div className="mx-auto max-w-4xl">
+                  <div className="space-y-3">
+                    <Select
+                      size="sm"
+                      label={S.activities.agent}
+                      value={selectedAgent}
+                      onChange={(e) => setAgentId(e.target.value)}
+                      disabled={busy || running}
+                    >
+                      <optgroup label={S.activities.penguinAgents}>
+                        {agents.map((agent) => (
+                          <option key={agent.agentId} value={agent.agentId}>
+                            {agent.name ?? agent.agentId}
                           </option>
                         ))}
                       </optgroup>
+                      {codingAgents.length > 0 && (
+                        <optgroup label={S.activities.codingAgents}>
+                          {codingAgents.map((agent) => (
+                            <option key={agent.id} value={`coding:${agent.id}`}>
+                              {agent.title}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </Select>
+                    {codingAgentId && (
+                      <p className="text-xs text-gray-500">{S.activities.codingAgentMedia}</p>
                     )}
-                  </Select>
-                  {codingAgentId && (
-                    <p className="text-xs text-gray-500">{S.activities.codingAgentMedia}</p>
-                  )}
-                  {dirty && (
-                    <p className={`text-xs ${toneInk.attention}`}>{S.activities.saveFirst}</p>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    disabled={busy || running || dirty || !selectedAgent || !description.trim()}
-                    onClick={() =>
-                      void action(async () => {
-                        const run = await apiFetch<ActivityRun>(`${endpoint}/generate-spec`, {
-                          method: "POST",
-                          body: {
-                            ...runner,
-                            expectedRevision: detail.draft.contentRevision,
-                          },
-                        });
-                        if (alive.current) {
-                          setRuns((previous) => [
-                            summarize(run),
-                            ...previous.filter((item) => item.runId !== run.runId),
-                          ]);
-                          setRefreshVersion((value) => value + 1);
-                        }
-                      })
-                    }
-                  >
-                    {S.activities.generate}
-                  </Button>
+                    {dirty && (
+                      <p className={`text-xs ${toneInk.attention}`}>{S.activities.saveFirst}</p>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={busy || running || dirty || !selectedAgent || !description.trim()}
+                      onClick={() =>
+                        void action(async () => {
+                          const run = await apiFetch<ActivityRun>(`${endpoint}/generate-spec`, {
+                            method: "POST",
+                            body: {
+                              ...runner,
+                              expectedRevision: detail.draft.contentRevision,
+                            },
+                          });
+                          if (alive.current) {
+                            setRuns((previous) => [
+                              summarize(run),
+                              ...previous.filter((item) => item.runId !== run.runId),
+                            ]);
+                            setRefreshVersion((value) => value + 1);
+                          }
+                        })
+                      }
+                    >
+                      {S.activities.generate}
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </section>
-      ) : (
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <div className="mx-auto max-w-4xl space-y-5">
-              {section === "specification" && (
-                <>
-                  <section className="space-y-3">
-                    <h3 className="text-sm font-semibold">{S.activities.sceneReview}</h3>
-                    <SceneReview spec={detail.draft.spec} />
-                  </section>
-                  <details
-                    className="space-y-2"
-                    open={specOpen}
-                    onToggle={(event) => setSpecOpen(event.currentTarget.open)}
-                  >
-                    <summary className="cursor-pointer text-xs font-medium">
-                      {S.activities.advancedSpec}
-                    </summary>
-                    <Textarea
-                      size="sm"
-                      label={S.activities.spec}
-                      rows={15}
-                      className="font-mono"
-                      value={spec}
-                      onChange={(e) => setSpec(e.target.value)}
-                      disabled={available && (!editable || busy)}
-                      readOnly={!available}
-                      spellCheck={false}
-                    />
-                    <div className="flex flex-wrap items-center gap-2">
+            )}
+          </section>
+        ) : (
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <div className="mx-auto max-w-4xl space-y-5">
+                {section === "specification" && (
+                  <>
+                    <section className="space-y-3">
+                      <h3 className="text-sm font-semibold">{S.activities.sceneReview}</h3>
+                      <SceneReview spec={detail.draft.spec} />
+                    </section>
+                    <details
+                      className="space-y-2"
+                      open={specOpen}
+                      onToggle={(event) => setSpecOpen(event.currentTarget.open)}
+                    >
+                      <summary className="cursor-pointer text-xs font-medium">
+                        {S.activities.advancedSpec}
+                      </summary>
+                      <Textarea
+                        size="sm"
+                        label={S.activities.spec}
+                        rows={15}
+                        className="font-mono"
+                        value={spec}
+                        onChange={(e) => setSpec(e.target.value)}
+                        disabled={available && (!editable || busy)}
+                        readOnly={!available}
+                        spellCheck={false}
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        {editable && (
+                          <Button
+                            size="sm"
+                            disabled={busy || !spec.trim() || spec === pretty(detail.draft.spec)}
+                            onClick={() => void save("spec")}
+                          >
+                            {S.activities.saveSpec}
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          disabled={spec === pretty(detail.draft.spec)}
+                          onClick={() => setDiffOpen((value) => !value)}
+                        >
+                          {diffOpen ? S.activities.diffHide : S.activities.diffShow}
+                        </Button>
+                      </div>
+                      {diffOpen && (
+                        <SpecDiffView
+                          saved={pretty(detail.draft.spec)}
+                          edited={spec}
+                          onRevert={
+                            editable && !busy ? () => setSpec(pretty(detail.draft.spec)) : undefined
+                          }
+                        />
+                      )}
+                    </details>
+                  </>
+                )}
+                {section === "scenes" && (
+                  <>
+                    <section className="space-y-3">
+                      <h3 className="flex items-center gap-2 text-sm font-semibold">
+                        {S.activities.mediaTitle}
+                        <InfoPopover label={S.activities.mediaTitle}>
+                          <p>{S.activities.mediaHelp}</p>
+                          <p>{S.activities.speechHelp}</p>
+                          <p>{S.activities.imageHelp}</p>
+                          <p>{S.activities.textHelp}</p>
+                        </InfoPopover>
+                      </h3>
                       {editable && (
                         <Button
                           size="sm"
-                          disabled={busy || !spec.trim() || spec === pretty(detail.draft.spec)}
-                          onClick={() => void save("spec")}
-                        >
-                          {S.activities.saveSpec}
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        disabled={spec === pretty(detail.draft.spec)}
-                        onClick={() => setDiffOpen((value) => !value)}
-                      >
-                        {diffOpen ? S.activities.diffHide : S.activities.diffShow}
-                      </Button>
-                    </div>
-                    {diffOpen && (
-                      <SpecDiffView
-                        saved={pretty(detail.draft.spec)}
-                        edited={spec}
-                        onRevert={
-                          editable && !busy ? () => setSpec(pretty(detail.draft.spec)) : undefined
-                        }
-                      />
-                    )}
-                  </details>
-                </>
-              )}
-              {section === "scenes" && (
-                <>
-                  <section className="space-y-3">
-                    <h3 className="flex items-center gap-2 text-sm font-semibold">
-                      {S.activities.mediaTitle}
-                      <InfoPopover label={S.activities.mediaTitle}>
-                        <p>{S.activities.mediaHelp}</p>
-                        <p>{S.activities.speechHelp}</p>
-                        <p>{S.activities.imageHelp}</p>
-                        <p>{S.activities.textHelp}</p>
-                      </InfoPopover>
-                    </h3>
-                    {editable && (
-                      <Button
-                        size="sm"
-                        disabled={
-                          busy ||
-                          running ||
-                          dirty ||
-                          detail.draft.status !== "valid" ||
-                          !detail.draft.spec
-                        }
-                        onClick={() =>
-                          void action(async () => {
-                            const draft = await apiFetch<ActivityDraft>(`${endpoint}/plan-media`, {
-                              method: "POST",
-                              body: { expectedRevision: detail.draft.contentRevision },
-                            });
-                            if (alive.current) {
-                              accept({ ...detail, draft });
-                              toastSuccess(S.activities.saved);
-                            }
-                          })
-                        }
-                      >
-                        {detail.draft.mediaPlan
-                          ? S.activities.rebuildMedia
-                          : S.activities.planMedia}
-                      </Button>
-                    )}
-                  </section>
-                </>
-              )}
-              {section === "speech" && editedManifest && detail.activityType === "book" && (
-                <BookWordsPanel
-                  endpoint={endpoint}
-                  language={language}
-                  group={editedManifest.assets[language] ?? []}
-                  runs={runs}
-                  revision={detail.draft.contentRevision}
-                  chosenMode={bookMode}
-                  editable={editable}
-                  canChange={editable && available && !busy && !running && !dirty}
-                  canGenerate={
-                    editable && available && !busy && !running && !dirty && !!selectedAgent
-                  }
-                  onRefresh={(mode) =>
-                    void action(async () => {
-                      const result = await apiFetch<BookWordsRefresh>(
-                        `${endpoint}/book-words/refresh`,
-                        {
-                          method: "POST",
-                          body: {
-                            language,
-                            expectedRevision: detail.draft.contentRevision,
-                            ...(mode ? { bookMode: mode } : {}),
-                          },
-                        },
-                      );
-                      if (!alive.current) return;
-                      accept({ ...detail, draft: result.draft });
-                      const group = result.draft.mediaPlan?.manifest.assets[language] ?? [];
-                      announce({
-                        kind: "success",
-                        text: S.activities.bookWords.refreshed(
-                          group.length - withoutBookWords(group).length,
-                        ),
-                      });
-                    })
-                  }
-                  onAskModel={(words) => startRun("generate-phonemes", { language, words })}
-                  canRecord={
-                    editable &&
-                    available &&
-                    !busy &&
-                    pipelineBlocked === null &&
-                    !codingAgentId &&
-                    !!selectedAgent
-                  }
-                  onRecord={() => runStages("words", { language })}
-                  onUseSounds={(runId) =>
-                    void action(async () => {
-                      const before = wordsWithoutSounds(
-                        detail.draft.mediaPlan?.manifest.assets[language] ?? [],
-                      ).length;
-                      const draft = await apiFetch<ActivityDraft>(
-                        `${endpoint}/runs/${encodeURIComponent(runId)}/accept-phonemes`,
-                        {
-                          method: "POST",
-                          body: { expectedRevision: detail.draft.contentRevision },
-                        },
-                      );
-                      if (!alive.current) return;
-                      accept({ ...detail, draft });
-                      const after = wordsWithoutSounds(
-                        draft.mediaPlan?.manifest.assets[language] ?? [],
-                      ).length;
-                      announce({
-                        kind: "success",
-                        text: S.activities.bookWords.accepted(before - after),
-                      });
-                    })
-                  }
-                />
-              )}
-              {section === "speech" && editedManifest && (
-                <SpeechCoverage
-                  assets={withoutBookWords(editedManifest.assets[language] ?? [])}
-                  language={language}
-                  editable={editable}
-                  canGenerate={
-                    editable &&
-                    available &&
-                    !busy &&
-                    !running &&
-                    !dirty &&
-                    !!selectedAgent &&
-                    !codingAgentId
-                  }
-                  onSelect={(key) => {
-                    const usage = (editedManifest.assets[language] ?? [])
-                      .find((entry) => entry.key === key)
-                      ?.usages.map((entry) => entry.sceneId)[0];
-                    // A narration is only in the tree while the filter admits audio, and
-                    // a filter left on images would drop the selection and open whatever
-                    // came first instead.
-                    setKind((current) => (current === "all" ? current : "audio"));
-                    setSelected({ sceneId: usage ?? "", key });
-                    setBoard(false);
-                    setSection("scenes");
-                  }}
-                  onGenerateAll={(keys) => setSpeechQueue({ language, voice: bulkVoice, keys })}
-                  queued={speechQueue?.keys.length ?? 0}
-                  onCancelQueue={() => setSpeechQueue(null)}
-                  runs={runs}
-                  languages={Object.entries(editedManifest.assets).map(([code, group]) => {
-                    const tally = speechTally(withoutBookWords(group), runs, code);
-                    return { language: code, ready: tally.ready, total: tally.total };
-                  })}
-                  onLanguage={setLanguage}
-                  voices={voiceOptions}
-                  voice={bulkVoice}
-                  onVoice={setBulkVoice}
-                  voiceDisabled={busy || !available || running || pipelineRunning}
-                  speechProviders={speechProviders}
-                  onApplyProviderToAll={(provider: SpeechProviderId) => {
-                    const updated = structuredClone(editedManifest);
-                    const count = applyProvider(
-                      updated.assets[language] ?? [],
-                      provider,
-                      voiceOptions,
-                    );
-                    if (!count) return;
-                    setMedia(pretty(updated));
-                    void save("media", true, updated).then((ok) => {
-                      if (ok && alive.current)
-                        announce({
-                          kind: "success",
-                          text: S.activities.speechProvider.applied(count),
-                        });
-                    });
-                  }}
-                  onApplyVoiceToAll={(voice) => {
-                    const updated = structuredClone(editedManifest);
-                    const group = updated.assets[language] ?? [];
-                    // A voice belongs to one provider, which comes with it.
-                    const owner =
-                      voiceOptions.find((option) => option.id === voice)?.providerId ??
-                      (isElevenLabsVoiceId(voice) ? "elevenlabs" : "gemini");
-                    if (sharedProvider(group) !== owner) applyProvider(group, owner, voiceOptions);
-                    const count = applyVoice(group, voice);
-                    if (!count) return;
-                    // The choice shows at once and stays in the editor if the save fails.
-                    setMedia(pretty(updated));
-                    void save("media", true, updated).then((ok) => {
-                      if (ok && alive.current)
-                        announce({
-                          kind: "success",
-                          text: S.activities.voicePicker.applied(count),
-                        });
-                    });
-                  }}
-                  sources={
-                    language === languageSetup.defaultLanguage
-                      ? undefined
-                      : new Map(
-                          (editedManifest.assets[languageSetup.defaultLanguage] ?? [])
-                            .filter((asset) => asset.type === "audio" && asset.script)
-                            .map((asset) => [asset.key, asset.script!]),
-                        )
-                  }
-                  onTranslate={(key) =>
-                    startRun("generate-media-text", { language, assetKey: key, translate: true })
-                  }
-                  onTranslateAll={() => runStages("translations", { language })}
-                  soundProvider={
-                    soundProviders
-                      ? bulkSoundProvider(
-                          soundProviders,
-                          pendingSoundKinds(editedManifest.assets[language] ?? [], runs, language),
-                        )
-                      : undefined
-                  }
-                  onGenerateSounds={(provider) => runStages("sounds", { language }, provider)}
-                  onTranslateAndSpeak={(key) =>
-                    runStages("narration", { language, ...(key ? { assetKey: key } : {}) })
-                  }
-                  addable={languageSetup.languages
-                    .filter(
-                      (entry) =>
-                        entry.code !== languageSetup.defaultLanguage &&
-                        !(entry.code in editedManifest.assets),
-                    )
-                    .map((entry) => ({ code: entry.code, label: entry.label }))}
-                  onAddLanguage={(code) =>
-                    void action(async () => {
-                      const draft = await apiFetch<ActivityDraft>(`${endpoint}/languages`, {
-                        method: "POST",
-                        body: { language: code, expectedRevision: detail.draft.contentRevision },
-                      });
-                      if (!alive.current) return;
-                      accept({ ...detail, draft });
-                      setLanguage(code);
-                    })
-                  }
-                  onRetry={(key) =>
-                    startRun("generate-audio", {
-                      language,
-                      assetKey: key,
-                      ...speechChoice(
-                        editedManifest.assets[language]?.find((asset) => asset.key === key),
-                        voiceOptions,
-                        bulkVoice,
-                      ),
-                    })
-                  }
-                />
-              )}
-              {section === "library" && (
-                <AssetLibraryView
-                  assets={editedManifest?.assets[language] ?? []}
-                  uploads={uploads}
-                  uploadsLoading={uploadsLoading}
-                  endpoint={endpoint}
-                  onOpen={(key) => {
-                    const usage = (editedManifest?.assets[language] ?? []).find(
-                      (entry) => entry.key === key,
-                    )?.usages[0]?.sceneId;
-                    setKind("all");
-                    setSelected({ sceneId: usage ?? "", key });
-                    setBoard(false);
-                    setSection("scenes");
-                  }}
-                />
-              )}
-              {section === "features" && (
-                <ImplementationFeaturesView endpoint={endpoint} editable={editable && available} />
-              )}
-              {section === "stats" && (
-                <ActivityStatsView endpoint={endpoint} revision={detail.draft.contentRevision} />
-              )}
-              {(section === "configuration" || section === "assessment") && (
-                <ModuleDocumentView
-                  // One editor per document, so unsaved text never carries to the other kind.
-                  key={section}
-                  endpoint={endpoint}
-                  kind={section}
-                  revision={detail.draft.contentRevision}
-                  editable={editable && available}
-                  onSaved={(draft, text) => {
-                    // Only the draft changed; unsaved script or specification text stays.
-                    setDetail((current) => (current ? { ...current, draft } : current));
-                    announce({ kind: "success", text });
-                  }}
-                  generation={
-                    section === "assessment"
-                      ? {
-                          refNum: detail.refNum,
-                          usesAssessment,
-                          runs,
-                          blocked:
-                            running || pipelineRunning
-                              ? S.activities.studioRun.otherRun
-                              : !selectedAgent
-                                ? S.activities.studioRun.noAgent
-                                : null,
-                          onGenerate: () => startRun("generate-assessment", {}),
-                          onAccept: (runId) =>
+                          disabled={
+                            busy ||
+                            running ||
+                            dirty ||
+                            detail.draft.status !== "valid" ||
+                            !detail.draft.spec
+                          }
+                          onClick={() =>
                             void action(async () => {
                               const draft = await apiFetch<ActivityDraft>(
-                                `${endpoint}/runs/${encodeURIComponent(runId)}/accept-assessment`,
+                                `${endpoint}/plan-media`,
                                 {
                                   method: "POST",
                                   body: { expectedRevision: detail.draft.contentRevision },
                                 },
                               );
-                              if (!alive.current) return;
-                              // Only the draft changed; unsaved script or specification text stays.
-                              setDetail((current) => (current ? { ...current, draft } : current));
-                              announce({ kind: "success", text: S.activities.assessment.accepted });
-                            }),
-                        }
-                      : undefined
-                  }
-                />
-              )}
-              {section === "module" && (
-                <>
-                  <BuildPanel
+                              if (alive.current) {
+                                accept({ ...detail, draft });
+                                toastSuccess(S.activities.saved);
+                              }
+                            })
+                          }
+                        >
+                          {detail.draft.mediaPlan
+                            ? S.activities.rebuildMedia
+                            : S.activities.planMedia}
+                        </Button>
+                      )}
+                    </section>
+                  </>
+                )}
+                {section === "speech" && editedManifest && detail.activityType === "book" && (
+                  <BookWordsPanel
                     endpoint={endpoint}
-                    revision={detail.draft.contentRevision}
-                    wafRoot={wafRoot}
+                    language={language}
+                    group={editedManifest.assets[language] ?? []}
                     runs={runs}
-                    unsaved={dirty}
-                    proposalOpen={!!proposal.read?.proposal?.changes.length}
-                  >
-                    {(blocked) =>
-                      editable && (
-                        <div className="space-y-3">
-                          {detail.activityType === "book" && (
-                            <>
-                              <h3 className="flex items-center gap-2 text-xs font-semibold">
-                                {S.activities.readingMode}
-                                <InfoPopover label={S.activities.readingMode}>
-                                  <p>{S.activities.readingModeHelp}</p>
-                                </InfoPopover>
-                              </h3>
-                              <Select
-                                size="sm"
-                                aria-label={S.activities.readingMode}
-                                hint={S.activities.readingModeHint}
-                                value={bookMode}
-                                onChange={(e) => setBookMode(e.target.value as typeof bookMode)}
-                                disabled={busy || running}
-                              >
-                                <option value="">{S.activities.chooseReadingMode}</option>
-                                <option value="readAlong">{S.activities.readAlong}</option>
-                                <option value="decodable">{S.activities.decodable}</option>
-                              </Select>
-                            </>
-                          )}
-                          <Input
-                            size="sm"
-                            label={S.activities.wafRoot}
-                            value={wafRoot}
-                            onChange={(event) => setWafRoot(event.target.value)}
-                            disabled={busy || running}
-                            hint={S.activities.wafRootHint}
-                          />
-                          <Button
-                            size="sm"
-                            disabled={
-                              blocked ||
-                              busy ||
-                              running ||
-                              dirty ||
-                              !selectedAgent ||
-                              detail.draft.status !== "valid" ||
-                              !detail.draft.spec ||
-                              (detail.activityType === "book" &&
-                                (!bookMode || !detail.draft.mediaPlan))
-                            }
-                            onClick={() =>
+                    revision={detail.draft.contentRevision}
+                    chosenMode={bookMode}
+                    editable={editable}
+                    canChange={editable && available && !busy && !running && !dirty}
+                    canGenerate={
+                      editable && available && !busy && !running && !dirty && !!selectedAgent
+                    }
+                    onRefresh={(mode) =>
+                      void action(async () => {
+                        const result = await apiFetch<BookWordsRefresh>(
+                          `${endpoint}/book-words/refresh`,
+                          {
+                            method: "POST",
+                            body: {
+                              language,
+                              expectedRevision: detail.draft.contentRevision,
+                              ...(mode ? { bookMode: mode } : {}),
+                            },
+                          },
+                        );
+                        if (!alive.current) return;
+                        accept({ ...detail, draft: result.draft });
+                        const group = result.draft.mediaPlan?.manifest.assets[language] ?? [];
+                        announce({
+                          kind: "success",
+                          text: S.activities.bookWords.refreshed(
+                            group.length - withoutBookWords(group).length,
+                          ),
+                        });
+                      })
+                    }
+                    onAskModel={(words) => startRun("generate-phonemes", { language, words })}
+                    canRecord={
+                      editable &&
+                      available &&
+                      !busy &&
+                      pipelineBlocked === null &&
+                      !codingAgentId &&
+                      !!selectedAgent
+                    }
+                    onRecord={() => runStages("words", { language })}
+                    onUseSounds={(runId) =>
+                      void action(async () => {
+                        const before = wordsWithoutSounds(
+                          detail.draft.mediaPlan?.manifest.assets[language] ?? [],
+                        ).length;
+                        const draft = await apiFetch<ActivityDraft>(
+                          `${endpoint}/runs/${encodeURIComponent(runId)}/accept-phonemes`,
+                          {
+                            method: "POST",
+                            body: { expectedRevision: detail.draft.contentRevision },
+                          },
+                        );
+                        if (!alive.current) return;
+                        accept({ ...detail, draft });
+                        const after = wordsWithoutSounds(
+                          draft.mediaPlan?.manifest.assets[language] ?? [],
+                        ).length;
+                        announce({
+                          kind: "success",
+                          text: S.activities.bookWords.accepted(before - after),
+                        });
+                      })
+                    }
+                  />
+                )}
+                {section === "speech" && editedManifest && (
+                  <SpeechCoverage
+                    assets={withoutBookWords(editedManifest.assets[language] ?? [])}
+                    language={language}
+                    editable={editable}
+                    canGenerate={
+                      editable &&
+                      available &&
+                      !busy &&
+                      !running &&
+                      !dirty &&
+                      !!selectedAgent &&
+                      !codingAgentId
+                    }
+                    onSelect={(key) => {
+                      const usage = (editedManifest.assets[language] ?? [])
+                        .find((entry) => entry.key === key)
+                        ?.usages.map((entry) => entry.sceneId)[0];
+                      // A narration is only in the tree while the filter admits audio, and
+                      // a filter left on images would drop the selection and open whatever
+                      // came first instead.
+                      setKind((current) => (current === "all" ? current : "audio"));
+                      setSelected({ sceneId: usage ?? "", key });
+                      setBoard(false);
+                      setSection("scenes");
+                    }}
+                    onGenerateAll={(keys) => setSpeechQueue({ language, voice: bulkVoice, keys })}
+                    queued={speechQueue?.keys.length ?? 0}
+                    onCancelQueue={() => setSpeechQueue(null)}
+                    runs={runs}
+                    languages={Object.entries(editedManifest.assets).map(([code, group]) => {
+                      const tally = speechTally(withoutBookWords(group), runs, code);
+                      return { language: code, ready: tally.ready, total: tally.total };
+                    })}
+                    onLanguage={setLanguage}
+                    voices={voiceOptions}
+                    voice={bulkVoice}
+                    onVoice={setBulkVoice}
+                    voiceDisabled={busy || !available || running || pipelineRunning}
+                    speechProviders={speechProviders}
+                    onApplyProviderToAll={(provider: SpeechProviderId) => {
+                      const updated = structuredClone(editedManifest);
+                      const count = applyProvider(
+                        updated.assets[language] ?? [],
+                        provider,
+                        voiceOptions,
+                      );
+                      if (!count) return;
+                      setMedia(pretty(updated));
+                      void save("media", true, updated).then((ok) => {
+                        if (ok && alive.current)
+                          announce({
+                            kind: "success",
+                            text: S.activities.speechProvider.applied(count),
+                          });
+                      });
+                    }}
+                    onApplyVoiceToAll={(voice) => {
+                      const updated = structuredClone(editedManifest);
+                      const group = updated.assets[language] ?? [];
+                      // A voice belongs to one provider, which comes with it.
+                      const owner =
+                        voiceOptions.find((option) => option.id === voice)?.providerId ??
+                        (isElevenLabsVoiceId(voice) ? "elevenlabs" : "gemini");
+                      if (sharedProvider(group) !== owner)
+                        applyProvider(group, owner, voiceOptions);
+                      const count = applyVoice(group, voice);
+                      if (!count) return;
+                      // The choice shows at once and stays in the editor if the save fails.
+                      setMedia(pretty(updated));
+                      void save("media", true, updated).then((ok) => {
+                        if (ok && alive.current)
+                          announce({
+                            kind: "success",
+                            text: S.activities.voicePicker.applied(count),
+                          });
+                      });
+                    }}
+                    sources={
+                      language === languageSetup.defaultLanguage
+                        ? undefined
+                        : new Map(
+                            (editedManifest.assets[languageSetup.defaultLanguage] ?? [])
+                              .filter((asset) => asset.type === "audio" && asset.script)
+                              .map((asset) => [asset.key, asset.script!]),
+                          )
+                    }
+                    onTranslate={(key) =>
+                      startRun("generate-media-text", { language, assetKey: key, translate: true })
+                    }
+                    onTranslateAll={() => runStages("translations", { language })}
+                    soundProvider={
+                      soundProviders
+                        ? bulkSoundProvider(
+                            soundProviders,
+                            pendingSoundKinds(
+                              editedManifest.assets[language] ?? [],
+                              runs,
+                              language,
+                            ),
+                          )
+                        : undefined
+                    }
+                    onGenerateSounds={(provider) => runStages("sounds", { language }, provider)}
+                    onTranslateAndSpeak={(key) =>
+                      runStages("narration", { language, ...(key ? { assetKey: key } : {}) })
+                    }
+                    addable={languageSetup.languages
+                      .filter(
+                        (entry) =>
+                          entry.code !== languageSetup.defaultLanguage &&
+                          !(entry.code in editedManifest.assets),
+                      )
+                      .map((entry) => ({ code: entry.code, label: entry.label }))}
+                    onAddLanguage={(code) =>
+                      void action(async () => {
+                        const draft = await apiFetch<ActivityDraft>(`${endpoint}/languages`, {
+                          method: "POST",
+                          body: { language: code, expectedRevision: detail.draft.contentRevision },
+                        });
+                        if (!alive.current) return;
+                        accept({ ...detail, draft });
+                        setLanguage(code);
+                      })
+                    }
+                    onRetry={(key) =>
+                      startRun("generate-audio", {
+                        language,
+                        assetKey: key,
+                        ...speechChoice(
+                          editedManifest.assets[language]?.find((asset) => asset.key === key),
+                          voiceOptions,
+                          bulkVoice,
+                        ),
+                      })
+                    }
+                  />
+                )}
+                {section === "library" && (
+                  <AssetLibraryView
+                    assets={editedManifest?.assets[language] ?? []}
+                    uploads={uploads}
+                    uploadsLoading={uploadsLoading}
+                    endpoint={endpoint}
+                    onOpen={(key) => {
+                      const usage = (editedManifest?.assets[language] ?? []).find(
+                        (entry) => entry.key === key,
+                      )?.usages[0]?.sceneId;
+                      setKind("all");
+                      setSelected({ sceneId: usage ?? "", key });
+                      setBoard(false);
+                      setSection("scenes");
+                    }}
+                  />
+                )}
+                {section === "features" && (
+                  <ImplementationFeaturesView
+                    endpoint={endpoint}
+                    editable={editable && available}
+                  />
+                )}
+                {section === "stats" && (
+                  <ActivityStatsView endpoint={endpoint} revision={detail.draft.contentRevision} />
+                )}
+                {(section === "configuration" || section === "assessment") && (
+                  <ModuleDocumentView
+                    // One editor per document, so unsaved text never carries to the other kind.
+                    key={section}
+                    endpoint={endpoint}
+                    kind={section}
+                    revision={detail.draft.contentRevision}
+                    editable={editable && available}
+                    onSaved={(draft, text) => {
+                      // Only the draft changed; unsaved script or specification text stays.
+                      setDetail((current) => (current ? { ...current, draft } : current));
+                      announce({ kind: "success", text });
+                    }}
+                    generation={
+                      section === "assessment"
+                        ? {
+                            refNum: detail.refNum,
+                            usesAssessment,
+                            runs,
+                            blocked:
+                              running || pipelineRunning
+                                ? S.activities.studioRun.otherRun
+                                : !selectedAgent
+                                  ? S.activities.studioRun.noAgent
+                                  : null,
+                            onGenerate: () => startRun("generate-assessment", {}),
+                            onAccept: (runId) =>
                               void action(async () => {
-                                const run = await apiFetch<ActivityRun>(
-                                  `${endpoint}/assemble-module`,
+                                const draft = await apiFetch<ActivityDraft>(
+                                  `${endpoint}/runs/${encodeURIComponent(runId)}/accept-assessment`,
                                   {
                                     method: "POST",
-                                    body: {
-                                      ...runner,
-                                      expectedRevision: detail.draft.contentRevision,
-                                      wafRoot: wafRoot.trim() || undefined,
-                                      ...(detail.activityType === "book" ? { bookMode } : {}),
-                                    },
+                                    body: { expectedRevision: detail.draft.contentRevision },
                                   },
                                 );
-                                if (alive.current) {
-                                  setRuns((previous) => [
-                                    summarize(run),
-                                    ...previous.filter((item) => item.runId !== run.runId),
-                                  ]);
-                                  setRefreshVersion((value) => value + 1);
-                                }
-                              })
-                            }
-                          >
-                            {S.activities.assemble}
-                          </Button>
-                        </div>
-                      )
+                                if (!alive.current) return;
+                                // Only the draft changed; unsaved script or specification text stays.
+                                setDetail((current) => (current ? { ...current, draft } : current));
+                                announce({
+                                  kind: "success",
+                                  text: S.activities.assessment.accepted,
+                                });
+                              }),
+                          }
+                        : undefined
                     }
-                  </BuildPanel>
-                  {available && (
-                    <QualityChecksView
-                      endpoint={endpoint}
-                      runs={runs}
-                      editable={editable}
-                      onStarted={(run) => {
-                        setRuns((previous) => [
-                          summarize(run),
-                          ...previous.filter((item) => item.runId !== run.runId),
-                        ]);
-                        setRefreshVersion((value) => value + 1);
-                      }}
-                    />
-                  )}
-                  {available && (
-                    <TestResultsView
-                      endpoint={endpoint}
-                      runs={runs}
-                      editable={editable}
-                      runner={selectedAgent ? runner : null}
-                      revision={detail.draft.contentRevision}
-                      unsaved={dirty}
-                      onStarted={(run) => {
-                        setRuns((previous) => [
-                          summarize(run),
-                          ...previous.filter((item) => item.runId !== run.runId),
-                        ]);
-                        setRefreshVersion((value) => value + 1);
-                      }}
-                    />
-                  )}
-                  <SandboxPanel
-                    projectId={projectId}
-                    activityId={detail.id}
-                    spec={detail.draft.spec}
-                    languages={Object.keys(detail.draft.mediaPlan?.manifest.assets ?? {})}
                   />
-                  {available && (
-                    <ModulePreview
+                )}
+                {section === "module" && (
+                  <>
+                    <BuildPanel
+                      endpoint={endpoint}
+                      revision={detail.draft.contentRevision}
+                      wafRoot={wafRoot}
                       runs={runs}
+                      unsaved={dirty}
+                      proposalOpen={!!proposal.read?.proposal?.changes.length}
+                    >
+                      {(blocked) =>
+                        editable && (
+                          <div className="space-y-3">
+                            {detail.activityType === "book" && (
+                              <>
+                                <h3 className="flex items-center gap-2 text-xs font-semibold">
+                                  {S.activities.readingMode}
+                                  <InfoPopover label={S.activities.readingMode}>
+                                    <p>{S.activities.readingModeHelp}</p>
+                                  </InfoPopover>
+                                </h3>
+                                <Select
+                                  size="sm"
+                                  aria-label={S.activities.readingMode}
+                                  hint={S.activities.readingModeHint}
+                                  value={bookMode}
+                                  onChange={(e) => setBookMode(e.target.value as typeof bookMode)}
+                                  disabled={busy || running}
+                                >
+                                  <option value="">{S.activities.chooseReadingMode}</option>
+                                  <option value="readAlong">{S.activities.readAlong}</option>
+                                  <option value="decodable">{S.activities.decodable}</option>
+                                </Select>
+                              </>
+                            )}
+                            <Input
+                              size="sm"
+                              label={S.activities.wafRoot}
+                              value={wafRoot}
+                              onChange={(event) => setWafRoot(event.target.value)}
+                              disabled={busy || running}
+                              hint={S.activities.wafRootHint}
+                            />
+                            <Button
+                              size="sm"
+                              disabled={
+                                blocked ||
+                                busy ||
+                                running ||
+                                dirty ||
+                                !selectedAgent ||
+                                detail.draft.status !== "valid" ||
+                                !detail.draft.spec ||
+                                (detail.activityType === "book" &&
+                                  (!bookMode || !detail.draft.mediaPlan))
+                              }
+                              onClick={() =>
+                                void action(async () => {
+                                  const run = await apiFetch<ActivityRun>(
+                                    `${endpoint}/assemble-module`,
+                                    {
+                                      method: "POST",
+                                      body: {
+                                        ...runner,
+                                        expectedRevision: detail.draft.contentRevision,
+                                        wafRoot: wafRoot.trim() || undefined,
+                                        ...(detail.activityType === "book" ? { bookMode } : {}),
+                                      },
+                                    },
+                                  );
+                                  if (alive.current) {
+                                    setRuns((previous) => [
+                                      summarize(run),
+                                      ...previous.filter((item) => item.runId !== run.runId),
+                                    ]);
+                                    setRefreshVersion((value) => value + 1);
+                                  }
+                                })
+                              }
+                            >
+                              {S.activities.assemble}
+                            </Button>
+                          </div>
+                        )
+                      }
+                    </BuildPanel>
+                    {available && (
+                      <QualityChecksView
+                        endpoint={endpoint}
+                        runs={runs}
+                        editable={editable}
+                        onStarted={(run) => {
+                          setRuns((previous) => [
+                            summarize(run),
+                            ...previous.filter((item) => item.runId !== run.runId),
+                          ]);
+                          setRefreshVersion((value) => value + 1);
+                        }}
+                      />
+                    )}
+                    {available && (
+                      <TestResultsView
+                        endpoint={endpoint}
+                        runs={runs}
+                        editable={editable}
+                        runner={selectedAgent ? runner : null}
+                        revision={detail.draft.contentRevision}
+                        unsaved={dirty}
+                        onStarted={(run) => {
+                          setRuns((previous) => [
+                            summarize(run),
+                            ...previous.filter((item) => item.runId !== run.runId),
+                          ]);
+                          setRefreshVersion((value) => value + 1);
+                        }}
+                      />
+                    )}
+                    <SandboxPanel
+                      projectId={projectId}
+                      activityId={detail.id}
                       spec={detail.draft.spec}
                       languages={Object.keys(detail.draft.mediaPlan?.manifest.assets ?? {})}
-                      stale={(() => {
-                        const moduleRun = latestModuleRun(runs);
-                        return Boolean(
-                          moduleRun && moduleRun.inputRevision !== detail.draft.contentRevision,
-                        );
-                      })()}
                     />
-                  )}
-                </>
-              )}
-              {section === "newRef" && available && (
-                <CreateRefView
-                  key={detail.id}
-                  base={basePath(projectId)}
-                  endpoint={endpoint}
-                  template={detail}
-                  editable={editable}
-                  voices={voiceOptions}
-                  uploads={uploads}
-                  uploadsLoading={uploadsLoading}
-                  agents={agents}
-                  defaultAgent={currentAgent?.agentId ?? ""}
-                  wafRoot={wafRoot}
-                  onIdentity={(record) => {
-                    setDetail((current) => (current ? { ...current, ...record } : current));
-                    void onSaved();
-                  }}
-                  onOpenAssessment={() => setSection("assessment")}
-                  onCreated={(made, problem) => {
-                    announce(
-                      problem
-                        ? {
-                            kind: "attention",
-                            text: S.activities.createRef.createdWithProblem(made.refNum, problem),
-                          }
-                        : { kind: "success", text: S.activities.createRef.created(made.refNum) },
-                    );
-                    void onSaved();
-                    navigate(`/activities/${encodeURIComponent(made.id)}?section=scenes`);
-                  }}
-                />
-              )}
-              {section === "deploy" && available && (
-                <DeployPanel
-                  key={detail.id}
-                  endpoint={endpoint}
-                  productCode={detail.productCode}
-                  editable={editable}
-                  pinnedBuild={Boolean(detail.draft.pinnedModuleRunId)}
-                  onAnnounce={announce}
-                />
-              )}
-              {section === "history" && available && (
-                <GenerationHistory
-                  runs={runs}
-                  draftRevision={detail.draft.contentRevision}
-                  endpoint={endpoint}
-                  editable={editable}
-                  busy={busy}
-                  onCancel={(runId) =>
-                    void action(async () => {
-                      const result = await apiFetch<ActivityRun>(
-                        `${endpoint}/runs/${runId}/cancel`,
-                        { method: "POST", body: {} },
-                      );
-                      if (alive.current)
-                        setRuns((previous) =>
-                          previous.map((item) =>
-                            item.runId === result.runId ? summarize(result) : item,
-                          ),
-                        );
-                    })
-                  }
-                  onAnnounce={announce}
-                  unsaved={dirty}
-                  onRestored={(draft) =>
-                    accept({
-                      ...detail,
-                      title: draft.status === "valid" ? String(draft.spec?.title) : detail.title,
-                      draft,
-                    })
-                  }
-                  pinnedModuleRunId={detail.draft.pinnedModuleRunId}
-                  onDraft={(draft) =>
-                    // A pin changes only which build the preview plays; unsaved text stays.
-                    setDetail((current) => (current ? { ...current, draft } : current))
-                  }
-                  onUseCandidate={(candidate) => {
-                    if (!dirty || window.confirm(S.activities.discard)) {
-                      setSpec(candidate);
-                      setSpecOpen(true);
-                    }
-                  }}
-                />
-              )}
-              {section === "specification" && editedManifest && detail.draft.mediaPlan && (
-                <>
-                  <ul className="space-y-1 text-xs">
-                    {Object.entries(detail.draft.mediaPlan?.manifest.assets).map(
-                      ([language, assets]) => (
-                        <li key={language}>
-                          {language}:{" "}
-                          {S.activities.mediaCounts(
-                            assets.length,
-                            assets.filter((asset) => !!asset.path).length,
-                          )}
-                        </li>
-                      ),
+                    {available && (
+                      <ModulePreview
+                        runs={runs}
+                        spec={detail.draft.spec}
+                        languages={Object.keys(detail.draft.mediaPlan?.manifest.assets ?? {})}
+                        stale={(() => {
+                          const moduleRun = latestModuleRun(runs);
+                          return Boolean(
+                            moduleRun && moduleRun.inputRevision !== detail.draft.contentRevision,
+                          );
+                        })()}
+                      />
                     )}
-                  </ul>
-                  <details
-                    className="space-y-2"
-                    open={mediaOpen}
-                    onToggle={(event) => setMediaOpen(event.currentTarget.open)}
-                  >
-                    <summary className="cursor-pointer text-xs font-medium">
-                      {S.activities.advancedMedia}
-                    </summary>
-                    <Textarea
-                      size="sm"
-                      label={S.activities.mediaManifest}
-                      rows={12}
-                      className="font-mono"
-                      value={media}
-                      onChange={(event) => setMedia(event.target.value)}
-                      spellCheck={false}
-                      disabled={available && (!editable || busy)}
-                      readOnly={!available}
-                      hint={S.activities.mediaPathHint}
-                    />
-                  </details>
-                  {editable && (
-                    <Button
-                      size="sm"
-                      disabled={
-                        busy || !media.trim() || media === pretty(detail.draft.mediaPlan?.manifest)
-                      }
-                      onClick={() => void save("media")}
+                  </>
+                )}
+                {section === "newRef" && available && (
+                  <CreateRefView
+                    key={detail.id}
+                    base={basePath(projectId)}
+                    endpoint={endpoint}
+                    template={detail}
+                    editable={editable}
+                    voices={voiceOptions}
+                    uploads={uploads}
+                    uploadsLoading={uploadsLoading}
+                    agents={agents}
+                    defaultAgent={currentAgent?.agentId ?? ""}
+                    wafRoot={wafRoot}
+                    onIdentity={(record) => {
+                      setDetail((current) => (current ? { ...current, ...record } : current));
+                      void onSaved();
+                    }}
+                    onOpenAssessment={() => setSection("assessment")}
+                    onCreated={(made, problem) => {
+                      announce(
+                        problem
+                          ? {
+                              kind: "attention",
+                              text: S.activities.createRef.createdWithProblem(made.refNum, problem),
+                            }
+                          : { kind: "success", text: S.activities.createRef.created(made.refNum) },
+                      );
+                      void onSaved();
+                      navigate(`/activities/${encodeURIComponent(made.id)}?section=scenes`);
+                    }}
+                  />
+                )}
+                {section === "deploy" && available && (
+                  <DeployPanel
+                    key={detail.id}
+                    endpoint={endpoint}
+                    productCode={detail.productCode}
+                    editable={editable}
+                    pinnedBuild={Boolean(detail.draft.pinnedModuleRunId)}
+                    onAnnounce={announce}
+                  />
+                )}
+                {section === "history" && available && (
+                  <GenerationHistory
+                    runs={runs}
+                    draftRevision={detail.draft.contentRevision}
+                    endpoint={endpoint}
+                    editable={editable}
+                    busy={busy}
+                    onCancel={(runId) =>
+                      void action(async () => {
+                        const result = await apiFetch<ActivityRun>(
+                          `${endpoint}/runs/${runId}/cancel`,
+                          { method: "POST", body: {} },
+                        );
+                        if (alive.current)
+                          setRuns((previous) =>
+                            previous.map((item) =>
+                              item.runId === result.runId ? summarize(result) : item,
+                            ),
+                          );
+                      })
+                    }
+                    onAnnounce={announce}
+                    unsaved={dirty}
+                    onRestored={(draft) =>
+                      accept({
+                        ...detail,
+                        title: draft.status === "valid" ? String(draft.spec?.title) : detail.title,
+                        draft,
+                      })
+                    }
+                    pinnedModuleRunId={detail.draft.pinnedModuleRunId}
+                    onDraft={(draft) =>
+                      // A pin changes only which build the preview plays; unsaved text stays.
+                      setDetail((current) => (current ? { ...current, draft } : current))
+                    }
+                    onUseCandidate={(candidate) =>
+                      discard.ask(() => {
+                        setSpec(candidate);
+                        setSpecOpen(true);
+                      })
+                    }
+                  />
+                )}
+                {section === "specification" && editedManifest && detail.draft.mediaPlan && (
+                  <>
+                    <ul className="space-y-1 text-xs">
+                      {Object.entries(detail.draft.mediaPlan?.manifest.assets).map(
+                        ([language, assets]) => (
+                          <li key={language}>
+                            {language}:{" "}
+                            {S.activities.mediaCounts(
+                              assets.length,
+                              assets.filter((asset) => !!asset.path).length,
+                            )}
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                    <details
+                      className="space-y-2"
+                      open={mediaOpen}
+                      onToggle={(event) => setMediaOpen(event.currentTarget.open)}
                     >
-                      {S.activities.saveMedia}
-                    </Button>
-                  )}
-                </>
-              )}
+                      <summary className="cursor-pointer text-xs font-medium">
+                        {S.activities.advancedMedia}
+                      </summary>
+                      <Textarea
+                        size="sm"
+                        label={S.activities.mediaManifest}
+                        rows={12}
+                        className="font-mono"
+                        value={media}
+                        onChange={(event) => setMedia(event.target.value)}
+                        spellCheck={false}
+                        disabled={available && (!editable || busy)}
+                        readOnly={!available}
+                        hint={S.activities.mediaPathHint}
+                      />
+                    </details>
+                    {editable && (
+                      <Button
+                        size="sm"
+                        disabled={
+                          busy ||
+                          !media.trim() ||
+                          media === pretty(detail.draft.mediaPlan?.manifest)
+                        }
+                        onClick={() => void save("media")}
+                      >
+                        {S.activities.saveMedia}
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        </section>
-      )}
-    </WorkspaceShell>
+          </section>
+        )}
+      </WorkspaceShell>
+      {discard.modal}
+    </>
   );
 }
 

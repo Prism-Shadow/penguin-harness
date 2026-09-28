@@ -7,8 +7,9 @@
  * Only the trigger differs, so the trigger is the caller's: it is handed the menu's own open
  * state, which is what keeps "what opening means" here rather than in two places.
  *
- * The settings dialog is mounted OUTSIDE the panel: the panel's children unmount the moment
- * the menu closes, and the settings row closes the menu as it opens the dialog.
+ * The settings dialog is not mounted here: the settings row only opens it through the
+ * settings-dialog store, and the app layout mounts the one dialog — on phones two sidebars
+ * (and so two of these menus) are mounted at once, and a dialog per menu opened twice.
  *
  * The panel heads itself with the account it belongs to — avatar, nickname, and the id under
  * it once a nickname stands in for it. Both anchors are avatars, and the rail's is nothing but
@@ -26,7 +27,7 @@ import { UserAvatar } from "../ui/user-avatar";
 import type { DropdownPortal } from "../ui/dropdown";
 import { UpdateRow } from "../account/update-row";
 import { openUpdateModal } from "../../lib/use-update-flow";
-import { SettingsDialog } from "../../features/settings/settings-dialog";
+import { settingsDialog } from "../../lib/settings-dialog-store";
 
 export function UserMenu({
   trigger,
@@ -52,7 +53,6 @@ export function UserMenu({
   const navigate = useNavigate();
   const { user, logout, desktopMode } = useAuth();
   const [open, setOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   return (
@@ -98,7 +98,7 @@ export function UserMenu({
             className={menuItemClass}
             onClick={() => {
               setOpen(false);
-              setSettingsOpen(true);
+              settingsDialog.getState().open();
             }}
           >
             {S.settings.systemSettings}
@@ -133,10 +133,9 @@ export function UserMenu({
           )}
         </div>
       </Dropdown>
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       {/* Signing out is confirmed first: the row sits in a menu of harmless entries, and a
-          slip would end the session and land on the login page. Mounted beside the settings
-          dialog, outside the dropdown, so it outlives the menu that opened it. */}
+          slip would end the session and land on the login page. Mounted outside the dropdown,
+          so it outlives the menu that opened it. */}
       <ConfirmModal
         open={confirmingLogout}
         title={S.auth.logoutConfirmTitle}

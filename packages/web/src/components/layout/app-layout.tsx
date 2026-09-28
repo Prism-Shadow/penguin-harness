@@ -9,7 +9,7 @@ import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-route
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { navKeysFor } from "../../lib/nav-group-collapse";
-import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
+import { latestOwnConversation } from "../../lib/activity-sessions";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
@@ -39,8 +39,11 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
+import { SettingsDialog } from "../../features/settings/settings-dialog";
+import { settingsDialog, useSettingsDialog } from "../../lib/settings-dialog-store";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { setDockScope } from "../../features/dock/dock-state";
+import { effectiveCollapsed, wantsFocus } from "../../lib/sidebar-auto-collapse";
 import { toneStrip } from "../../lib/tone";
 
 /**
@@ -100,8 +103,8 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
 
-  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). An organization's desk and ticket Sessions are never conversations of this list. */
-  const lastSession = useMemo(() => latestConversation(withoutOrgSessions(sessions)), [sessions]);
+  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). An organization's desk and ticket Sessions and activity runs are never conversations of this list. */
+  const lastSession = useMemo(() => latestOwnConversation(sessions), [sessions]);
 
   /** Mirrors Sidebar.openSession: the current Agent follows the opened Session's Agent. */
   const openLastSession = () => {
@@ -354,6 +357,8 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 
 export function AppLayout() {
   const { user, desktopMode } = useAuth();
+  const settingsOpen = useSettingsDialog((s) => s.isOpen);
+  const settingsSection = useSettingsDialog((s) => s.section);
   // Quick Switcher (Ctrl/Cmd+K): one document-level listener for the whole shell; the
   // palette itself captures keys while open, so typing into its input is not a repeat
   // toggle. Repeats ignored — holding the chord must not flicker it. The docked terminal
@@ -433,15 +438,25 @@ export function AppLayout() {
     void api.putPrefs({ initialPasswordBannerDismissed: true }).catch(() => undefined);
   };
   // Desktop sidebar collapse (persisted): collapsed state leaves a narrow rail to expand from.
-  const [collapsed, setCollapsed] = useState(
+  const [storedCollapsed, setStoredCollapsed] = useState(
     () => localStorage.getItem("penguin.sidebarCollapsed") === "1",
   );
-  const toggleCollapsed = () =>
-    setCollapsed((v) => {
+  const { pathname } = useLocation();
+  const focus = wantsFocus(pathname);
+  const [override, setOverride] = useState<boolean | null>(null);
+  // Leaving the workspace forgets what was chosen inside it.
+  useEffect(() => {
+    if (!focus) setOverride(null);
+  }, [focus]);
+  const collapsed = effectiveCollapsed(storedCollapsed, focus, override);
+  const toggleCollapsed = () => {
+    if (focus) return setOverride(!collapsed);
+    setStoredCollapsed((v) => {
       const next = !v;
       localStorage.setItem("penguin.sidebarCollapsed", next ? "1" : "0");
       return next;
     });
+  };
 
   return (
     <div className="flex h-full">
@@ -548,6 +563,14 @@ export function AppLayout() {
       {/* The software-update modal, opened from the sidebar's update row and the draft
           page's version badge alike; mounted here so it outlives both. */}
       <UpdateModal />
+      {/* System settings: exactly one dialog for the whole shell, bound to the settings-dialog
+          store that the account menu's row and deep links (the deploy notice) open. Not in
+          the account menu — phones mount two sidebars, and a dialog per menu opened twice. */}
+      <SettingsDialog
+        open={settingsOpen}
+        initialSection={settingsSection}
+        onClose={() => settingsDialog.getState().close()}
+      />
       {/* Quick Switcher: mounted only while open, so its agents/sessions fetch fires on
           open rather than on app boot. */}
       {switcherOpen && <QuickSwitcherPalette onClose={() => setSwitcherOpen(false)} />}

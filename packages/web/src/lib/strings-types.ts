@@ -34,6 +34,7 @@ export type Strings = {
         | "deploy",
         string
       >;
+      phases: { write: string; media: string; build: string; more: string };
       groups: Record<"image" | "video" | "audio" | "animation" | "bookWord", string>;
       fold: (name: string) => string;
       unfold: (name: string) => string;
@@ -132,7 +133,11 @@ export type Strings = {
       close: string;
       names: Record<"run" | "player" | "conversation" | "sessions", string>;
       sessionsEmpty: string;
-      openSession: string;
+      showTranscript: string;
+      hideTranscript: string;
+      /** Accessible name for a run's Show/Hide toggle: distinguishes same-kind runs for assistive tech. */
+      transcriptToggle: (action: string, run: string, time: string) => string;
+      openFullPage: string;
     };
     /** Loom's refs: the product's refs in the header, and one ref's name and stability. */
     studioRefs: {
@@ -367,10 +372,23 @@ export type Strings = {
         activity_archived: string;
       };
     };
-    /** The list page's row of the activities opened most recently in this browser, and the heading of the full list under it. */
-    recent: {
-      title: string;
-      all: string;
+    /** The list page's product groups: sort, per-group counts and status, and one card's status line. */
+    home: {
+      sortLabel: string;
+      sort: { recent: string; code: string };
+      refs: (count: number) => string;
+      attention: (count: number) => string;
+      refLine: (refNum: number, when: string) => string;
+      canonical: string;
+      progress: (done: number, total: number) => string;
+      newRef: string;
+      newRefUnavailable: string;
+      status: {
+        running: (what: string) => string;
+        stale: string;
+        built: string;
+        next: { spec: string; mediaPlan: string; module: string };
+      };
     };
     /** The project media library: every activity's uploads, browsed and downloaded together. */
     projectMedia: {
@@ -463,6 +481,8 @@ export type Strings = {
       notReady: (n: number) => string;
       /** Where an admin fills in the deploy settings. */
       settingsHint: string;
+      /** The button an admin uses to jump straight to the Deploy settings page. */
+      openSettings: string;
       /** The preview plays a pinned build, which a release does not ship. */
       pinnedBuild: string;
       checksLabel: string;
@@ -1602,11 +1622,15 @@ export type Strings = {
     saved: string;
     unsaved: string;
     discard: string;
+    discardTitle: string;
+    discardConfirm: string;
     remoteChanged: string;
     saveFirst: string;
     readOnly: string;
     runningHelp: string;
     collection: string;
+    breadcrumb: string;
+    runningChip: (what: string) => string;
     refresh: string;
     status: {
       running: string;
@@ -1671,6 +1695,7 @@ export type Strings = {
     placeholder: string;
     recentsSection: string;
     pagesSection: string;
+    activitiesSection: string;
     loading: string;
     noMatches: string;
     navigateHint: string;
@@ -3036,6 +3061,8 @@ export type Strings = {
     };
     sessionList: string;
     defaultSessionTitle: string;
+    partOfActivity: string;
+    backToActivity: string;
     agent: string;
     model: string;
     workspace: string;

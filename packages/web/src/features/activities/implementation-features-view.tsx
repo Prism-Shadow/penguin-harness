@@ -9,6 +9,7 @@ import { apiFetch } from "../../api/client";
 import { Badge } from "../../components/ui/badge";
 import { FieldLabel } from "../../components/ui/field";
 import { InfoPopover } from "../../components/ui/info-popover";
+import { SkeletonList } from "../../components/ui/skeleton";
 import { Switch } from "../../components/ui/switch";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
@@ -109,7 +110,11 @@ export function ImplementationFeaturesView({
         </p>
       )}
       {!state ? (
-        !error && <p className="text-sm text-gray-500">{S.common.loading}</p>
+        !error && (
+          <div role="status" aria-label={S.common.loading}>
+            <SkeletonList rows={3} />
+          </div>
+        )
       ) : (
         <>
           <p className="text-xs text-gray-500">
