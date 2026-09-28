@@ -4,11 +4,13 @@
  * author goes from "an agent changed this" to the conversation and the steps behind it,
  * without leaving the activity to search the global session list for a `run_…` title.
  */
+import { useState } from "react";
 import { Link } from "react-router";
 import type { ActivityRunSummary } from "@prismshadow/penguin-server/api";
 import { EmptyState } from "../../components/ui/empty-state";
 import { S } from "../../lib/strings";
 import { toneDot, type Tone } from "../../lib/tone";
+import { RunTranscript } from "./run-transcript";
 
 const statusTone: Record<ActivityRunSummary["status"], Tone> = {
   running: "busy",
@@ -57,29 +59,46 @@ export function sessionRuns(runs: readonly ActivityRunSummary[]): ActivityRunSum
 }
 
 export function SessionsPanel({ runs }: { runs: readonly ActivityRunSummary[] }) {
+  const words = S.activities.studioPanels;
   const sessions = sessionRuns(runs);
-  if (!sessions.length) return <EmptyState title={S.activities.studioPanels.sessionsEmpty} />;
+  const [open, setOpen] = useState<string | null>(null);
+  if (!sessions.length) return <EmptyState title={words.sessionsEmpty} />;
   return (
     <ul className="divide-y divide-gray-200 dark:divide-gray-800">
       {sessions.map((run) => (
-        <li key={run.runId} className="flex items-center gap-3 px-4 py-2.5">
-          <span
-            aria-hidden
-            className={`size-1.5 shrink-0 rounded-full ${toneDot[statusTone[run.status]]}`}
-          />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm">{runTitle(run.kind)}</span>
-            <span className="block truncate text-xs text-gray-500">
-              {S.activities.status[run.status]} ·{" "}
-              <time dateTime={run.createdAt}>{new Date(run.createdAt).toLocaleString()}</time>
+        <li key={run.runId}>
+          <div className="flex items-center gap-3 px-4 py-2.5">
+            <span
+              aria-hidden
+              className={`size-1.5 shrink-0 rounded-full ${toneDot[statusTone[run.status]]}`}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm">{runTitle(run.kind)}</span>
+              <span className="block truncate text-xs text-gray-500">
+                {S.activities.status[run.status]} ·{" "}
+                <time dateTime={run.createdAt}>{new Date(run.createdAt).toLocaleString()}</time>
+              </span>
             </span>
-          </span>
-          <Link
-            to={`/chat/${encodeURIComponent(run.sessionId!)}`}
-            className="shrink-0 text-sm text-brand-600 hover:text-brand-700 dark:text-brand-300"
-          >
-            {S.activities.studioPanels.openSession}
-          </Link>
+            <button
+              type="button"
+              aria-expanded={open === run.runId}
+              onClick={() => setOpen((current) => (current === run.runId ? null : run.runId))}
+              className="shrink-0 text-sm text-brand-600 hover:text-brand-700 dark:text-brand-300"
+            >
+              {open === run.runId ? words.hideTranscript : words.showTranscript}
+            </button>
+          </div>
+          {open === run.runId && (
+            <>
+              <RunTranscript sessionId={run.sessionId!} running={run.status === "running"} />
+              <Link
+                to={`/chat/${encodeURIComponent(run.sessionId!)}`}
+                className="block px-4 py-2 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+              >
+                {words.openFullPage} ↗
+              </Link>
+            </>
+          )}
         </li>
       ))}
     </ul>

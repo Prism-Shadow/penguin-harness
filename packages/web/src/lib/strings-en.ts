@@ -148,7 +148,9 @@ export const en: Strings = {
         sessions: "Sessions",
       },
       sessionsEmpty: "No agent has worked on this activity yet.",
-      openSession: "Open",
+      showTranscript: "Show",
+      hideTranscript: "Hide",
+      openFullPage: "Open full page",
     },
     studioRefs: {
       ref: "Ref",

@@ -133,7 +133,9 @@ export type Strings = {
       close: string;
       names: Record<"run" | "player" | "conversation" | "sessions", string>;
       sessionsEmpty: string;
-      openSession: string;
+      showTranscript: string;
+      hideTranscript: string;
+      openFullPage: string;
     };
     /** Loom's refs: the product's refs in the header, and one ref's name and stability. */
     studioRefs: {

@@ -3359,6 +3359,30 @@ test("the conversation panel lists its threads and shows the open one's proposal
   expect(f.errors).toEqual([]);
 });
 
+test("a run's session transcript opens in place in the Sessions panel", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  await openSection(page, "Description");
+  await page.getByRole("button", { name: "Generate specification", exact: true }).click();
+  await page.route("**/*", (route) => {
+    const p = new URL(route.request().url()).pathname;
+    if (p === "/api/sessions/session_test/messages")
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ messages: [] }),
+      });
+    return route.fallback();
+  });
+  await page.getByRole("button", { name: "Sessions", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Sessions", exact: true });
+  await panel.getByRole("button", { name: "Show" }).first().click();
+  await expect(panel.getByRole("link", { name: /Open full page/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/activities\//);
+  await panel.getByRole("button", { name: "Hide" }).first().click();
+  await expect(panel.getByRole("link", { name: /Open full page/ })).toHaveCount(0);
+  expect(f.errors).toEqual([]);
+});
+
 /** A mono 16-bit PCM WAV of a quiet tone, `seconds` long, for clips the browser can decode. */
 function toneWav(seconds, rate = 8000) {
   const frames = Math.round(seconds * rate);
