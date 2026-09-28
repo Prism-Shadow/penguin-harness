@@ -51,12 +51,29 @@ const docWidths = (page) =>
     clientWidth: document.documentElement.clientWidth,
   }));
 
-/** Count of pairwise rectangle intersections among visible leaf text elements (2px tolerance; ancestor-descendant pairs excluded). */
+/**
+ * Count of pairwise rectangle intersections among visible leaf text elements (2px tolerance;
+ * ancestor-descendant pairs excluded). Each rectangle is first clipped to its overflow ancestors:
+ * text scrolled out of a scrollport is not painted, so it cannot overlap what sits below it.
+ */
 const textOverlapCount = (page) =>
   page.evaluate(() => {
     const isVisible = (el) => {
       const s = getComputedStyle(el);
       return s.visibility !== "hidden" && s.display !== "none" && Number(s.opacity) > 0.05;
+    };
+    const paintedRect = (el) => {
+      let { left, top, right, bottom } = el.getBoundingClientRect();
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        const s = getComputedStyle(p);
+        if (s.overflowX === "visible" && s.overflowY === "visible") continue;
+        const c = p.getBoundingClientRect();
+        left = Math.max(left, c.left);
+        top = Math.max(top, c.top);
+        right = Math.min(right, c.right);
+        bottom = Math.min(bottom, c.bottom);
+      }
+      return { left, top, right, bottom, width: right - left, height: bottom - top };
     };
     const leaves = [];
     for (const el of document.querySelectorAll("body *")) {
@@ -65,7 +82,7 @@ const textOverlapCount = (page) =>
         (n) => n.nodeType === 3 && n.textContent && n.textContent.trim(),
       );
       if (!hasText) continue;
-      const r = el.getBoundingClientRect();
+      const r = paintedRect(el);
       if (r.width < 2 || r.height < 2) continue;
       leaves.push({ el, r });
     }
@@ -532,7 +549,8 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  const panel = page.locator("div.anim-pop.z-40");
+  // In-flow menus sit at z-40, portaled ones (the permission button's) at z-[60].
+  const panel = page.locator('div.anim-pop.z-40, div.anim-pop[class~="z-[60]"]');
   /** Assert the one open menu panel and the page itself stay inside the viewport. */
   const checkPanel = async (name) => {
     await expect(panel, `${name}: menu open`).toHaveCount(1);
@@ -571,8 +589,15 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
     });
     expect(hit, `${name}: panel not clipped by an ancestor`).toBe(true);
   };
+  // The permission button's name carries the current level ("Permissions: Full access"), so it
+  // is matched by prefix; every other picker by its exact aria-label.
+  const PERMISSIONS = "Permissions";
   const open = async (label, name) => {
-    await page.locator(`button[aria-label="${label}"]`).click();
+    const selector =
+      label === PERMISSIONS
+        ? `button[aria-label^="${PERMISSIONS}:"]`
+        : `button[aria-label="${label}"]`;
+    await page.locator(selector).click();
     await checkPanel(name);
   };
   const close = async () => {
@@ -593,7 +618,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
     // Model / thinking-level buttons stay disabled until models and the agent config load.
     await expect(page.locator('button[aria-label="Choose model"]')).toBeEnabled();
     await expect(page.locator('button[aria-label="Thinking level"]')).toBeEnabled();
-    await open("Approval mode", `approval @${vp.width}`);
+    await open(PERMISSIONS, `permissions @${vp.width}`);
     await close();
     await open("Skills", `skills @${vp.width}`);
     await close();
@@ -619,7 +644,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
       data: { provider: "custom", modelId: "claude-4-8", approvalMode: "always-ask" },
     })
   ).json();
-  const sessionPickers = ["Approval mode", "Skills", "More input options", "Thinking level"];
+  const sessionPickers = [PERMISSIONS, "Skills", "More input options", "Thinking level"];
   for (const vp of [
     { width: 320, height: 640 },
     { width: 375, height: 667 },
@@ -641,7 +666,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   await page.getByRole("button", { name: /^Allow$/ }).waitFor();
   // Skills are deliberately locked mid-run; the rest must still open.
   await expect(page.locator('button[aria-label="Skills"]')).toBeDisabled();
-  for (const label of ["Approval mode", "More input options", "Thinking level"]) {
+  for (const label of [PERMISSIONS, "More input options", "Thinking level"]) {
     await open(label, `${label} @running 375`);
     await close();
   }
@@ -677,6 +702,20 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   await expect(page.getByRole("button", { name: /^Deny$/ })).toHaveText("Deny", {
     useInnerText: true,
   });
+  // This fixture's 200k window is under the Agent's default 256k compaction threshold, so the
+  // composer shows its small-window notice. At 390 its buttons must wrap below the text rather
+  // than squeeze the text into a narrow column: that grew the notice to ~490px and left the
+  // conversation a 48px scrollport, where the stuck work-group header covered Allow/Deny.
+  const notice = page
+    .getByText(/smaller than this agent's compaction threshold/)
+    .locator("xpath=..");
+  const scrollport = page
+    .getByRole("button", { name: /^Allow$/ })
+    .locator("xpath=ancestor::div[contains(@class, 'overflow-y-auto')][1]");
+  const noticeH = await notice.evaluate((el) => el.getBoundingClientRect().height);
+  const scrollportH = await scrollport.evaluate((el) => el.getBoundingClientRect().height);
+  expect(noticeH, "small-window notice wraps its buttons @390").toBeLessThanOrEqual(200);
+  expect(scrollportH, "conversation keeps a third of the screen @390").toBeGreaterThanOrEqual(280);
   expect(await textOverlapCount(page), "running @390 no overlapping text").toBe(0);
 
   // While PENDING the one-line rule yields on purpose: the user must read the whole command
