@@ -72,26 +72,36 @@ beforeEach(async () => {
   await writeChannel(w.root, "room_a", ["user:boss", "agent:acme_dev", "agent:acme_web"]);
 });
 
+const OPEN_A = {
+  name: "Queue migration",
+  channelId: "room_a",
+  employees: ["acme_dev", "acme_web"],
+  brief: "Move the queue",
+};
+
+/** Roadmap A opened over room_a; the desk lines the opening puts are taken off, so a test sees only what follows. */
 async function openA(): Promise<number> {
-  const { roadmap } = await service.create(
-    P,
-    O,
-    {
-      name: "Queue migration",
-      channelId: "room_a",
-      employees: ["acme_dev", "acme_web"],
-      brief: "Move the queue",
-    },
-    BOSS,
-  );
+  const { roadmap } = await service.create(P, O, OPEN_A, BOSS);
+  w.gateway.desks = [];
   return roadmap.number;
 }
 
 describe("opening a roadmap", () => {
-  it("clones the desk of every employee in the room — a session each, the first moderating — and puts nothing on a desk", async () => {
-    const n = await openA();
+  it("clones the desk of every employee in the room — a session each, the first moderating — and tells each desk where it is", async () => {
+    const n = (await service.create(P, O, OPEN_A, BOSS)).roadmap.number;
     expect(w.gateway.opened.map((s) => s.agentId)).toEqual(["acme_dev", "acme_web"]);
-    expect(w.gateway.desks).toEqual([]);
+    // One line on each desk, after the room sessions opened: the room, who moderates, the
+    // session that takes part — and that the desk itself says nothing there.
+    expect(w.gateway.desks).toEqual([
+      {
+        agentId: "acme_dev",
+        text: `[roadmap #${n} «Queue migration»] user:boss opened this roadmap and put you in its room \`room_a\` (you moderate). Your room session \`room-1\` takes part; nothing is needed from this desk, and do not speak in the room from here.`,
+      },
+      {
+        agentId: "acme_web",
+        text: `[roadmap #${n} «Queue migration»] user:boss opened this roadmap and put you in its room \`room_a\` (acme_dev moderates). Your room session \`room-2\` takes part; nothing is needed from this desk, and do not speak in the room from here.`,
+      },
+    ]);
     const [dev, web] = w.gateway.opened;
     expect(dev?.title).toBe(`Queue migration · roadmap #${n}`);
     expect(dev?.body).toContain("Moderator: acme_dev (you)");
@@ -105,6 +115,25 @@ describe("opening a roadmap", () => {
       { agentId: "acme_dev", sessionId: "room-1" },
       { agentId: "acme_web", sessionId: "room-2" },
     ]);
+  });
+
+  it("opens with the person who opened it: the moderator speaks to them first, the others hold back", async () => {
+    await openA();
+    const [dev, web] = w.gateway.opened;
+    expect(dev?.body).toContain(
+      "Open the room: user:boss (a person) opened this roadmap. Before anything else, send one message in the room to @user:boss",
+    );
+    expect(web?.body).toContain(
+      "The room opens with acme_dev and user:boss (the person who opened it) settling the question. Until one of them speaks to you, take the room in and do not answer.",
+    );
+    // A room session opened after the moderator has spoken joins a room already under way.
+    await post(w.root, "room_a", "agent:acme_dev", "@user:boss what do you want from this?");
+    w.sessions.deleted.add("room-2");
+    await service.relayOnce();
+    const again = w.gateway.opened.at(-1)!;
+    expect(again.agentId).toBe("acme_web");
+    expect(again.body).not.toContain("do not answer");
+    expect(again.body).toContain("what do you want from this?");
   });
 
   it("starts a room session on the room so far", async () => {
@@ -504,11 +533,13 @@ describe("the room a roadmap opens itself", () => {
     ]);
     expect(roadmap).toMatchObject({ channelId: `roadmap_${roadmap.number}`, status: "discussing" });
     expect(roadmap.openClones.map((c) => c.agentId)).toEqual(["acme_dev", "acme_web"]);
-    // The room is borrowed like any channel: a message there reaches the room sessions.
+    expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_dev", "acme_web"]);
+    // The room is borrowed like any channel: a message there reaches the room sessions, and
+    // no desk hears of it.
     await post(w.root, `roadmap_${roadmap.number}`, "user:boss", "What goes first?");
     await service.relayOnce();
     expect(w.runner.to("room-1")).toHaveLength(1);
-    expect(w.gateway.desks).toEqual([]);
+    expect(w.gateway.desks).toHaveLength(2);
   });
 
   it("takes the next id when roadmap_<n> is taken", async () => {

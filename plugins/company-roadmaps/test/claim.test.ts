@@ -26,6 +26,8 @@ async function openA(): Promise<number> {
     { name: "Queue migration", channelId: "room_a", employees: ["acme_dev", "acme_web"] },
     BOSS,
   );
+  // The opening tells each desk where it is; what is asked below is what the room does after.
+  w.gateway.desks = [];
   return roadmap.number;
 }
 

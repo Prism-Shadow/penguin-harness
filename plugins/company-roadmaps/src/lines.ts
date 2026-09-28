@@ -67,6 +67,17 @@ export function cloneBrief(args: {
     `Speak with \`penguin org channel send --org-id ${orgId} --channel ${channel} -m "<text>"\`. Every member reads every message here, so a mention is not needed; while the room discusses, a mention reaches this room and wakes no one's desk.`,
     `Read the roadmap: \`curl -sS "${routeOf(orgId, r.number)}" -H "authorization: Bearer $PENGUIN_API_TOKEN"\`.`,
   ];
+  // A room a person opened starts with that person: the moderator speaks first, to them, and
+  // the others hold back until the question is agreed — or until someone speaks to them.
+  const opener = r.createdBy.startsWith("user:") ? r.createdBy : null;
+  const started = args.recent.some((m) => m.sender === `agent:${moderator}`);
+  if (opener !== null && !started) {
+    lines.push(
+      moderating
+        ? `Open the room: ${opener} (a person) opened this roadmap. Before anything else, send one message in the room to @${opener} — who is here, the topic in a sentence, and what you need to know from them first: what they want from this roadmap, and what is out of it. Settle the question with them, then bring the others in.`
+        : `The room opens with ${moderator} and ${opener} (the person who opened it) settling the question. Until one of them speaks to you, take the room in and do not answer.`,
+    );
+  }
   if (moderating) {
     lines.push(
       [
@@ -86,6 +97,25 @@ export function cloneBrief(args: {
   }
   if (args.recent.length > 0) lines.push(`The room so far:\n${args.recent.map(quote).join("\n")}`);
   return lines.join("\n\n");
+}
+
+/**
+ * The line an employee's desk gets when a person puts it in a roadmap's room: where it is, who
+ * moderates, and that the room session — not this desk — takes part.
+ */
+export function roomJoinedLine(args: {
+  roadmap: Roadmap;
+  agentId: string;
+  moderator: string;
+  sessionId: string | null;
+}): string {
+  const { roadmap: r, agentId, moderator } = args;
+  const role = agentId === moderator ? "you moderate" : `${moderator} moderates`;
+  const session =
+    args.sessionId === null
+      ? "Your room session opens at the plugin's next pass"
+      : `Your room session \`${args.sessionId}\` takes part`;
+  return `${tag(r)} ${r.createdBy} opened this roadmap and put you in its room \`${r.channelId ?? ""}\` (${role}). ${session}; nothing is needed from this desk, and do not speak in the room from here.`;
 }
 
 /** One room message, relayed into a room session. */

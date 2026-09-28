@@ -42,6 +42,7 @@ import {
   delegationLine,
   relayLine,
   reopenLine,
+  roomJoinedLine,
   roomOpenedLine,
   roomRequestLine,
 } from "./lines.js";
@@ -496,8 +497,34 @@ export class RoadmapService {
       });
       return number;
     });
+    // The room sessions open now, before the answer — the moderator's first — and every
+    // employee's desk is told where it is.
     const hints = await this.relayRoadmap(projectId, orgId, result);
+    hints.push(...(await this.announce(projectId, orgId, result)));
     return { roadmap: await this.get(projectId, orgId, result, actor), hints };
+  }
+
+  /** One line on each opening employee's desk: the room it is in, and the session that takes part there. */
+  private announce(projectId: string, orgId: string, number: number): Promise<string[]> {
+    return this.withLock(projectId, orgId, async () => {
+      const hints: string[] = [];
+      const ledger = this.ledger(projectId, orgId);
+      await ledger.load();
+      const r = this.require(ledger, number);
+      if (r.channelId === null) return hints;
+      const moderator = moderatorOf(r) ?? "";
+      for (const agentId of r.employees) {
+        const clone = r.clones.find((c) => c.agentId === agentId && c.closedAt === undefined);
+        const line = roomJoinedLine({
+          roadmap: r,
+          agentId,
+          moderator,
+          sessionId: clone?.sessionId ?? null,
+        });
+        await this.deliver(projectId, orgId, ledger, number, agentId, line, r.createdBy, hints);
+      }
+      return hints;
+    });
   }
 
   /**
