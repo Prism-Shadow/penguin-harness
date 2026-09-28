@@ -79,8 +79,9 @@ export function SettingsDialog({
   });
   const [active, setActive] = useState<SettingsSectionKey | null>(null);
 
-  // Each opening starts on the viewer's first page: clearing the choice lets `current`
-  // below resolve it against the live list. Deliberately keyed on `open` alone — re-running
+  // Each opening starts on the requested page, or on the viewer's first page: clearing the
+  // choice lets `current` below resolve it against the live list. Keyed on `open` and
+  // `initialSection` only (a deep link to another page while open moves there) — re-running
   // on every sections identity change would yank the user off a page they navigated to.
   useEffect(() => {
     if (open) setActive(initialSection ?? null);

@@ -39,6 +39,8 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
+import { SettingsDialog } from "../../features/settings/settings-dialog";
+import { settingsDialog, useSettingsDialog } from "../../lib/settings-dialog-store";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { setDockScope } from "../../features/dock/dock-state";
 import { effectiveCollapsed, wantsFocus } from "../../lib/sidebar-auto-collapse";
@@ -355,6 +357,8 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 
 export function AppLayout() {
   const { user, desktopMode } = useAuth();
+  const settingsOpen = useSettingsDialog((s) => s.isOpen);
+  const settingsSection = useSettingsDialog((s) => s.section);
   // Quick Switcher (Ctrl/Cmd+K): one document-level listener for the whole shell; the
   // palette itself captures keys while open, so typing into its input is not a repeat
   // toggle. Repeats ignored — holding the chord must not flicker it. The docked terminal
@@ -559,6 +563,14 @@ export function AppLayout() {
       {/* The software-update modal, opened from the sidebar's update row and the draft
           page's version badge alike; mounted here so it outlives both. */}
       <UpdateModal />
+      {/* System settings: exactly one dialog for the whole shell, bound to the settings-dialog
+          store that the account menu's row and deep links (the deploy notice) open. Not in
+          the account menu — phones mount two sidebars, and a dialog per menu opened twice. */}
+      <SettingsDialog
+        open={settingsOpen}
+        initialSection={settingsSection}
+        onClose={() => settingsDialog.getState().close()}
+      />
       {/* Quick Switcher: mounted only while open, so its agents/sessions fetch fires on
           open rather than on app boot. */}
       {switcherOpen && <QuickSwitcherPalette onClose={() => setSwitcherOpen(false)} />}

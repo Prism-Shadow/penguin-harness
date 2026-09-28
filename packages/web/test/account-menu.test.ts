@@ -151,6 +151,17 @@ describe("the account menu", () => {
     expect(source).not.toContain("ChangePasswordDialog");
   });
 
+  it("opens the settings dialog the app layout mounts once, never one of its own", () => {
+    // Phones mount two sidebars, so two of these menus: a dialog per menu opened twice.
+    expect(source).not.toContain("<SettingsDialog");
+    const layout = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../src/components/layout/app-layout.tsx"),
+      "utf8",
+    );
+    expect(layout.split("<SettingsDialog").length - 1).toBe(1);
+    expect(layout).toContain("useSettingsDialog((s) => s.isOpen)");
+  });
+
   it("keeps the one update row outside the settings dialog, opening the modal the layout mounts", () => {
     // Updating is deliberately not a settings page: the menu carries the entry itself. One
     // row serves both backends (the server release, the shell's own updater in the desktop
