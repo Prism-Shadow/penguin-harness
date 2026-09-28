@@ -3284,8 +3284,8 @@ test("applies a whole proposal at once, and discards one after asking", async ({
     return route.fallback();
   });
   await page.reload();
-  await page.getByRole("button", { name: "Conversation", exact: true }).click();
-  const panel = page.getByRole("complementary", { name: "Conversation", exact: true });
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Chat", exact: true });
   await panel.getByRole("button", { name: "Apply 2 changes", exact: true }).click();
   await expect.poll(() => applied.length).toBe(1);
   expect(applied[0]).toHaveProperty("expectedRevision");
@@ -3348,8 +3348,8 @@ test("the conversation panel lists its threads and shows the open one's proposal
     return route.fallback();
   });
   await page.reload();
-  await page.getByRole("button", { name: "Conversation", exact: true }).click();
-  const panel = page.getByRole("complementary", { name: "Conversation", exact: true });
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Chat", exact: true });
   await expect(panel.getByText("Newest idea.", { exact: true })).toBeVisible();
   const threads = panel.getByRole("button", { name: "Conversation", exact: true });
   await expect(threads).toContainText("About the whole activity");
@@ -4828,7 +4828,7 @@ test("switches the studio to the Reviewing layout and saves a layout of its own"
     page.getByRole("separator", { name: "Activity rail width", exact: true }),
   ).toHaveAttribute("aria-valuenow", "300");
   await expect(
-    page.getByRole("complementary", { name: "Conversation", exact: true }),
+    page.getByRole("complementary", { name: "Chat", exact: true }),
   ).toBeVisible();
 
   // Save the arrangement under a name of the author's own; the same name twice is refused.

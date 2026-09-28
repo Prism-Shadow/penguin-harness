@@ -221,14 +221,13 @@ export function railWidthAfterKey(width: number, key: string, large = false): nu
 }
 
 /**
- * The panels the icon rail on the right opens beside the work, in rail order. Loom keeps
- * these behind a rail of its own so the main panel stays the only large thing on screen.
+ * The panels the studio header's tab group opens beside the work, in tab order. Loom keeps
+ * these behind a rail of its own; here the header's tabs choose which one is open.
  */
 export type StudioPanel = "run" | "player" | "conversation" | "sessions";
 export const STUDIO_PANELS: readonly StudioPanel[] = ["run", "player", "conversation", "sessions"];
 
-/** The icon rail's width and the width of the panel it opens, in pixels. */
-export const STUDIO_RAIL_WIDTH = 44;
+/** The width of the panel a tab opens, in pixels. */
 export const SIDE_PANEL_WIDTH = 400;
 
 /**
@@ -238,7 +237,7 @@ export const SIDE_PANEL_WIDTH = 400;
  */
 export function sidePanelFitsBeside(available: number): boolean {
   if (!Number.isFinite(available) || available <= 0) return true;
-  return available - STUDIO_RAIL_WIDTH - SIDE_PANEL_WIDTH >= WORKSPACE_TWO_PANE_WIDTH;
+  return available - SIDE_PANEL_WIDTH >= WORKSPACE_TWO_PANE_WIDTH;
 }
 
 export const SIDE_PANEL_KEY = "penguin.activitySidePanel";

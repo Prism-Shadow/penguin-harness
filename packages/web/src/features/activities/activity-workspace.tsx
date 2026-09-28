@@ -24,7 +24,6 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import {
   SIDE_PANEL_WIDTH,
-  STUDIO_RAIL_WIDTH,
   readSidePanel,
   sidePanelFitsBeside,
   writeSidePanel,
@@ -123,9 +122,7 @@ export function ActivityWorkspace({
   // The side panel takes its width before the tree is measured against what is left, so
   // opening the player never pushes the tree into its narrow, menu-over-the-work form.
   const sideBeside = sidePanelFitsBeside(available);
-  const reserved = panels.length
-    ? STUDIO_RAIL_WIDTH + (openPanel && sideBeside ? SIDE_PANEL_WIDTH : 0)
-    : 0;
+  const reserved = openPanel && sideBeside ? SIDE_PANEL_WIDTH : 0;
   const beside = railFitsBeside(available > 0 ? available - reserved : available);
   const open = beside ? !collapsed : narrowOpen;
   const applied = !open
@@ -244,6 +241,31 @@ export function ActivityWorkspace({
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2.5 dark:border-gray-800">
         {header}
         {layoutState && <LayoutMenu state={layoutState} onApply={applyLayout} />}
+        {panels.length > 0 && (
+          <div
+            role="group"
+            aria-label={S.activities.studioPanels.rail}
+            className="flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5 dark:bg-gray-800"
+          >
+            {panels.map((entry) => (
+              <button
+                key={entry.key}
+                type="button"
+                aria-pressed={panel === entry.key}
+                onClick={() => choosePanel(entry.key)}
+                className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors ${
+                  panel === entry.key
+                    ? "bg-white font-medium text-gray-900 shadow-sm dark:bg-gray-600 dark:text-gray-100"
+                    : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                }`}
+              >
+                <GlyphIcon d={entry.icon} size={14} />
+                <span className="hidden sm:inline">{entry.label}</span>
+                <span className="sr-only sm:hidden">{entry.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {notices && (
         <div className="shrink-0 space-y-2 border-b border-gray-200 px-4 py-2 empty:hidden dark:border-gray-800">
@@ -307,7 +329,7 @@ export function ActivityWorkspace({
             // Too narrow to sit beside the work: it covers the editor, up to the rail.
             style={{
               width: `${SIDE_PANEL_WIDTH}px`,
-              ...(sideBeside ? {} : { right: `${STUDIO_RAIL_WIDTH}px` }),
+              ...(sideBeside ? {} : { right: 0 }),
             }}
             className={`flex min-h-0 max-w-full shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 ${
               sideBeside ? "" : "absolute inset-y-0 z-50 shadow-lg"
@@ -327,31 +349,6 @@ export function ActivityWorkspace({
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">{openPanel.render()}</div>
           </aside>
-        )}
-        {panels.length > 0 && (
-          <nav
-            aria-label={S.activities.studioPanels.rail}
-            style={{ width: `${STUDIO_RAIL_WIDTH}px` }}
-            className="flex shrink-0 flex-col items-center gap-1 border-l border-gray-200 py-2 dark:border-gray-800"
-          >
-            {panels.map((entry) => (
-              <button
-                key={entry.key}
-                type="button"
-                aria-pressed={panel === entry.key}
-                aria-label={entry.label}
-                title={entry.label}
-                onClick={() => choosePanel(entry.key)}
-                className={`flex size-8 items-center justify-center rounded-md ${
-                  panel === entry.key
-                    ? "bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-200"
-                    : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                }`}
-              >
-                <GlyphIcon d={entry.icon} size={18} />
-              </button>
-            ))}
-          </nav>
         )}
       </div>
     </div>

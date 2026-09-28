@@ -144,8 +144,8 @@ export const en: Strings = {
       names: {
         run: "Stages",
         player: "Player",
-        conversation: "Conversation",
-        sessions: "Agent sessions",
+        conversation: "Chat",
+        sessions: "Sessions",
       },
       sessionsEmpty: "No agent has worked on this activity yet.",
       openSession: "Open",
