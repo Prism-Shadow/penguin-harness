@@ -49,4 +49,6 @@ done
 
 echo "== run playwright =="
 cd "$ROOT/packages/web"
+# pnpm passes the `--` of `test:e2e -- <spec>` through; playwright would then ignore the spec.
+[ "${1:-}" = "--" ] && shift
 npx playwright test -c "$HERE/playwright.config.mjs" "$@"
