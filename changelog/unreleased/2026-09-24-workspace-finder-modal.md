@@ -3,6 +3,7 @@
 - **Date:** 2026-09-24
 - **Type:** feature
 - **Scope:** `web`, `server`, `docs`
+- **PR:** [#858](https://github.com/Prism-Shadow/penguin-harness/pull/858)
 
 [中文版](2026-09-24-workspace-finder-modal.zh.md)
 
