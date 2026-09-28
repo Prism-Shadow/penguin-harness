@@ -34,6 +34,13 @@ export interface ModalProps {
   headerless?: boolean;
   /** Render children full-bleed: no built-in padding or 70vh scroller. For dialogs that own their inner layout and scroll regions (PagedDialog); the caller then also owns a close control. */
   bare?: boolean;
+  /**
+   * Fill the whole screen on a phone instead of rising as a bottom sheet, and lay the panel out
+   * as a column so a `bare` body can take the height between header and footer. For dialogs
+   * that are a workspace of their own (the Workspace finder) rather than a question; pair it
+   * with an `sm:` height in `widthClass`, since above the breakpoint the panel is a card again.
+   */
+  fullScreenOnPhone?: boolean;
 }
 
 /**
@@ -187,6 +194,7 @@ export function Modal({
   widthClass,
   headerless,
   bare,
+  fullScreenOnPhone,
 }: ModalProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -209,7 +217,11 @@ export function Modal({
         {...(headerless ? { "aria-label": title } : { "aria-labelledby": titleId })}
         tabIndex={-1}
         onKeyDown={onPanelKeyDown}
-        className={`anim-pop w-full ${widthClass ?? "sm:max-w-md"} rounded-t-lg border border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-lg sm:pb-0 dark:border-gray-800 dark:bg-gray-900`}
+        className={`anim-pop w-full ${widthClass ?? "sm:max-w-md"} ${
+          fullScreenOnPhone
+            ? "flex h-[100dvh] flex-col pt-[env(safe-area-inset-top)] sm:pt-0"
+            : "rounded-t-lg"
+        } border border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-lg sm:pb-0 dark:border-gray-800 dark:bg-gray-900`}
       >
         {!headerless && (
           <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">

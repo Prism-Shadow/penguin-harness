@@ -1534,19 +1534,30 @@ export interface SessionsResponse {
   workspaceLatest?: Record<string, string>;
 }
 
-/** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */
+/** Server directory browsing (the Workspace picker): starts from the home directory by default, can navigate up to the root. */
 export interface DirEntryInfo {
   name: string;
-  /** Absolute path of this subdirectory (can be submitted directly as a Workspace). */
+  /** Absolute path of this entry (a folder's can be submitted directly as a Workspace). */
   path: string;
+  /**
+   * `file` for anything that is not a folder (a symlink counts as what it points to). Absent
+   * means a folder: a machine listed over ssh reports folders only.
+   */
+  kind?: "dir" | "file";
+  /** Last modification, epoch milliseconds; absent when unknown (listings over ssh, an entry stat could not reach). */
+  mtime?: number;
 }
 export interface DirListResponse {
   /** Absolute path of the current directory (realpath). */
   path: string;
   /** Absolute path of the parent directory; null when already at the root. */
   parent: string | null;
-  /** Subdirectory list (sorted by name, files excluded). */
+  /** Entries sorted by name, hidden ones included (the picker drops them). */
   entries: DirEntryInfo[];
+  /** The listed machine's `process.platform`; absent for a machine listed over ssh. */
+  platform?: string;
+  /** Windows only, on the home request (no `path`): the drive roots that exist. */
+  roots?: string[];
 }
 
 /** One Skill found in a picked directory: metadata plus which of the two layouts it came from. */

@@ -192,7 +192,7 @@ These routes are admin only on a personal server as much as on a multi-user one:
 - `POST …/connect` holds an `ssh -T -D` session that never times out when idle, reconnects on its own if it drops, and is restored after a restart or a hot push. A Windows machine returns `409` `connect_unsupported`, because there is no shell to hold a session on.
 - `POST …/disconnect` leaves the remote server running because it belongs to that machine, and other people may be using it.
 - `POST …/restart` exists as its own action because a machine's files can be updated while it runs, and only a restart makes the process match them.
-- `GET …/dirs` addresses the machine by its own id, like the API proxy below. It returns `404` when the machine is not connected, because a read never opens ssh by itself.
+- `GET …/dirs` addresses the machine by its own id, like the API proxy below. It returns `404` when the machine is not connected, because a read never opens ssh by itself, and `403 dir_permission_denied` for a directory that machine refuses to list. Its entries are folders only, without `kind` or `mtime`.
 
 ### Machine fields
 
@@ -624,7 +624,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 - An explicit `workspace` must be an existing directory; it is never created. When omitted, the Workspace is a temporary one created automatically. The approval mode defaults to `allow-all`.
 - `client` is a provenance hint stored on the row: `"cli"` from the CLI, `"web"` by default. The server itself writes `"org"` on an organization's desk and ticket sessions, and a client cannot send that value. Only `excludeOrg` reads it as a filter, and only to drop those rows.
 - `source` accepts only `"benchmark"`, for a Session created by a Benchmark evaluation or optimization. The server sets `subagent` and `schedule` itself.
-- `GET /dirs` starts at the home directory when `path` is omitted; an explicit `path` must be absolute. It answers `{path, parent, entries}` with the subdirectories only, and an unreadable directory lists as empty so the user can still go back up.
+- `GET /dirs` starts at the home directory when `path` is omitted; an explicit `path` must be absolute. It answers `{path, parent, entries, platform}`: every entry carries its `kind` (`dir` or `file`) and `mtime`, and on Windows the home request adds `roots`, the drive roots that exist. A directory the server may not read answers `403 dir_permission_denied` rather than an empty list — on macOS that is usually a Files and Folders permission the user has not granted.
 - `GET /dir-skills` reads only `<path>/.agents/skills` and `<path>/.claude/skills` of an absolute `path`, and answers `{path, skills}`. A directory without Skills answers with an empty list. See `POST /agents` under [Agents](#agents).
 
 ## Usage and Traces (Agent Level)

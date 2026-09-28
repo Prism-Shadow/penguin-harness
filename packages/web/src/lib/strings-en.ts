@@ -2051,19 +2051,49 @@ export const en: Strings = {
       `Context compacted; thinking level switched to "${to}".`,
     thinkingSwitchCompactFailed:
       "The compaction did not finish; the thinking level was switched anyway.",
-    /** The machine a workspace lives on; the row only shows when more than one is reachable. */
-    workspaceMachine: "Machine",
     workspaceHere: "here",
     /** Why a listed machine cannot be picked — shown ON its row, where the question is asked. */
     workspaceMachineWhy: {
       "no-identity": "not identified",
     },
-    workspaceUseThis: "Use this dir",
-    workspaceUp: "Parent dir",
-    workspaceNoSubdirs: "No subdirectories",
     workspaceAuto: "Temporary workspace",
     workspaceClear: "Use a temporary workspace instead",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
+    /** The Workspace finder: the modal the Workspace pickers open (workspace-finder.tsx). */
+    finder: {
+      choose: "Choose",
+      back: "Back",
+      forward: "Forward",
+      /** Toolbar button and the inline path field that ⌘⇧G / Ctrl+Shift+G opens. */
+      goTo: "Go to folder",
+      goToPlaceholder: "An absolute path, or one starting with ~",
+      goToSubmit: "Go",
+      filter: "Filter",
+      showSidebar: "Show sidebar",
+      hideSidebar: "Hide sidebar",
+      favourites: "Favorites",
+      recent: "Recent",
+      machines: "Machines",
+      places: {
+        desktop: "Desktop",
+        documents: "Documents",
+        downloads: "Downloads",
+      },
+      /** Accessible name of the breadcrumb trail. */
+      path: "Current path",
+      columnName: "Name",
+      columnModified: "Date modified",
+      /** Tooltip on a file row: files are listed for context but cannot be picked. */
+      fileNotSelectable: "Only folders can be chosen",
+      empty: "This folder is empty",
+      noMatch: (q: string): string => `Nothing here has "${q}" in its name`,
+      deniedTitle: "Can't read this folder",
+      /** The server runs on macOS and privacy protection refused the folder. */
+      deniedMac:
+        "macOS is blocking access to this folder. Allow it in System Settings → Privacy & Security → Files and Folders, then retry.",
+      denied: "The account running the server is not allowed to read this folder.",
+      loadFailed: "Can't open this folder",
+    },
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
     groupByWorkspace: "Group by workspace",
     groupByAgent: "Group by agent",
@@ -4460,6 +4490,7 @@ Scenarios:
       image_too_large: "The image is too large to send inline.",
       dir_not_absolute: "The directory must be an absolute path.",
       dir_not_found: "That directory does not exist or is inaccessible.",
+      dir_permission_denied: "Reading that directory is not allowed.",
       not_a_dir: "That path is not a directory.",
       path_not_found: "That path does not exist.",
       reveal_failed: "Could not open the folder.",

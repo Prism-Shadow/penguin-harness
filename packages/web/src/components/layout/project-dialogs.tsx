@@ -539,9 +539,9 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
  * delete zone): the `[default_chat]` block (Agent / Workspace / approval mode / thinking
  * level) plus the Project's default model, laid out as a compact responsive two-column
  * grid. Workspace and model reuse the chat draft's own pickers — WorkspaceSelect (the
- * dir browser) and ModelSelect (the composer's model dropdown) — with their `form`
- * trigger variant, so the controls line up with the dialog's Input/Select while the
- * POPOVER menus stay exactly the composer's.
+ * folder finder, a modal stacked on this one) and ModelSelect (the composer's model
+ * dropdown) — with their `form` trigger variant, so the controls line up with the dialog's
+ * Input/Select while what they open stays exactly the composer's.
  * The model default is SINGLE-SOURCED with the models page — the picker renders and writes
  * the same top-level `default_model` (via the narrow PUT /models/default route), never a
  * second key; changing it also releases the draft-cached model pin exactly as the models
@@ -756,8 +756,8 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
             </div>
             <div className="sm:col-span-2">
               <FieldLabel>{S.chat.workspace}</FieldLabel>
-              {/* The draft page's dir-browser pill: browse server directories, edit the path
-                  inline, or clear back to a temporary workspace. */}
+              {/* The draft page's folder finder: browse server directories, go to a typed
+                  path, or clear back to a temporary workspace. */}
               <WorkspaceSelect
                 projectId={projectId}
                 workspace={workspace}

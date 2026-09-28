@@ -192,7 +192,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 - `POST …/connect` 维持一条 `ssh -T -D` 会话：空闲时永不超时，断开后自动重连，服务器重启或热推送后也会自动恢复。Windows 机器返回 `409` `connect_unsupported`，因为没有 shell 可以维持会话。
 - `POST …/disconnect` 断开后远端服务器继续运行：它属于那台机器，其他人可能还在使用。
 - `POST …/restart` 之所以是独立操作，是因为机器上的文件可以在运行期间更新，只有重启才能让进程与文件保持一致。
-- `GET …/dirs` 与下文的 API 代理一样，用机器自身的 id 寻址。机器未连接时返回 `404`，因为读取操作绝不会自行建立 ssh 连接。
+- `GET …/dirs` 与下文的 API 代理一样，用机器自身的 id 寻址。机器未连接时返回 `404`，因为读取操作绝不会自行建立 ssh 连接；那台机器拒绝列出的目录返回 `403 dir_permission_denied`。其条目只有文件夹，不带 `kind` 与 `mtime`。
 
 ### 机器字段
 
@@ -624,7 +624,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
 - `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，客户端不能发送这个值。只有 `excludeOrg` 会把它当作过滤条件，而且只用来剔除这些行。
 - `source` 只接受 `"benchmark"`，用于 Benchmark 评估或优化创建的 Session。`subagent` 和 `schedule` 由服务器自己设置。
-- `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries}`，只包含子目录；读不了的目录按空列表返回，用户仍然可以向上返回。
+- `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，请求主目录时另带 `roots`，即实际存在的各盘符根目录。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。
 - `GET /dir-skills` 只读取绝对路径下的 `<path>/.agents/skills` 和 `<path>/.claude/skills`，响应为 `{path, skills}`。没有 Skill 的目录返回空列表。参见 [Agent](#agent) 一节中的 `POST /agents`。
 
 ## 用量与 Trace（Agent 级别）
