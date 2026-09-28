@@ -3,6 +3,7 @@
 - **Date:** 2026-09-28
 - **Type:** process
 - **Scope:** `ci`
+- **PR:** [#872](https://github.com/Prism-Shadow/penguin-harness/pull/872)
 
 [中文版](2026-09-28-ci-ubuntu-runs-plugin-suites.zh.md)
 
