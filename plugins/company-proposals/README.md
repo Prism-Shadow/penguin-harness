@@ -7,6 +7,7 @@ Proposals for company mode: a person **delegates a change to an employee**, that
 - **A proposal.** Numbered per organization (`#12`), with an author, an implementer, the person who delegated it, a scope (`<file, optional name pattern>` pairs — the only place a file path appears), three sections — change, purpose, one test — and materials (the PR, an issue, a branch, a ticket). Every paragraph is a place to comment.
 - **Comments in batches.** A person comments as they read; nothing reaches the author until they click _Request changes_ — then the author gets one batch, resolves each comment, publishes a revision and marks the proposal ready again. Paragraphs that did not change keep their identity across revisions, and their comments with them.
 - **Implementation in parallel.** The author asks for an implementer; a session opens on the proposal's text, works on a `proposal/<n>-<slug>` branch, opens a PR against the dev branch, and merges into dev as soon as it is usable — before anyone approves. What the proposal did not foresee comes back as feedback, and the author revises.
+- **A discussion with the owner.** On the proposal page a person clicks Discuss: a session of the owner's Agent (the implementer, else the author) opens on the proposal — its model, its desk Workspace, the organization's approval mode — apart from its desk. When they agree, the session (or the person) sends the conclusion to the owner's desk, once.
 - **A test team.** Employees with the tester skill check the dev branch in batches: a problem in a merged proposal becomes a fix ticket; a problem in one not yet approved becomes runtime feedback to its author and implementer.
 - **A page, a nav entry, a link.** The proposals page (queue with unread counts on the left, the proposal on the right) sits in company mode's navigation while the plugin is installed. `proposal:12` in any Markdown — a channel message, a chat reply, another proposal — renders as a capsule with the title and the unread count.
 
@@ -38,6 +39,7 @@ penguin org proposal ready <n>
 penguin org proposal implement <n> --agent <id> [-m …]  # open the implementer's session
 penguin org proposal material <n> add pr=<url>
 penguin org proposal feedback <n> -m <text> [--runtime]
+penguin org proposal conclude <n> -m <text>             # inside a discussion: its conclusion, to your desk
 penguin org proposal comments <n> [--pending]
 penguin org proposal resolve <n> <commentId> [-m …]
 penguin org proposal merged <n>
@@ -74,7 +76,7 @@ The ledger is one append-only file per organization, `<root>/<project>/organizat
 
 ## API
 
-`/api/projects/:projectId/organizations/:orgId/proposals` — `GET /`, `POST /` (`{ author, brief, title? }`), `GET|PUT /:number` (`{ markdown }`), `PUT /:number/brief` (`{ brief }`, the author or a person), `POST /:number/ready|approve|reject|merged|implement|materials|feedback|comments|comments/request|comments/:id/resolve|read`. Every route answers 404 while company mode is off.
+`/api/projects/:projectId/organizations/:orgId/proposals` — `GET /`, `POST /` (`{ author, brief, title? }`), `GET|PUT /:number` (`{ markdown }`), `PUT /:number/brief` (`{ brief }`, the author or a person), `POST /:number/ready|approve|reject|merged|implement|materials|feedback|comments|comments/request|comments/:id/resolve|read`, `POST /:number/discussions` (a person; answers the session) and `POST /:number/discussions/:sessionId/conclude` (`{ text }`, a person or that session). Every route answers 404 while company mode is off.
 
 ## Development
 

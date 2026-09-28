@@ -14,6 +14,8 @@
  *   PUT    /:number/brief            rewrite the brief: { brief } (the author or a person; the revisions stay)
  *   POST   /:number/ready | approve | reject { reason } | merged
  *   POST   /:number/implement        { agentId?, message?, workspace? } → an implementation session (default: the author's own)
+ *   POST   /:number/discussions      a person opens a discussion with the owner (implementer, else author) → its session
+ *   POST   /:number/discussions/:sessionId/conclude { text }  the conclusion, to the owner's desk (a person, or that session)
  *   POST   /:number/materials        { kind, url, label? }
  *   POST   /:number/feedback         { text, runtime? }
  *   GET    /:number/comments[?pending=1]  the comments (pending: batched, unresolved) with the text marked for an agent
@@ -279,6 +281,37 @@ export function proposalRoutes(service: ProposalService): Hono {
         actorOf(c, body, { agentIdField: "callerAgentId" }),
       ),
       201,
+    );
+  });
+
+  app.post("/:number/discussions", async (c) => {
+    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
+    return c.json(
+      await service.discuss(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        actorOf(c, body),
+      ),
+      201,
+    );
+  });
+
+  app.post("/:number/discussions/:sessionId/conclude", async (c) => {
+    const body = await jsonBody(c);
+    const sessionId = c.req.param("sessionId");
+    if (sessionId === undefined || sessionId === "") {
+      throw new ProposalError(404, "discussion_not_found", "Missing discussion session id.");
+    }
+    return c.json(
+      await service.conclude(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        sessionId,
+        requireString(body, "text", 20000),
+        actorOf(c, body),
+      ),
     );
   });
 

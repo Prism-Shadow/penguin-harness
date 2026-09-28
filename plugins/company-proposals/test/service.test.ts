@@ -87,6 +87,8 @@ class FakeGateway implements OrgGateway {
   events: ServerEvent[] = [];
   /** Desks that refuse a line, with the reason (a paused employee, say). */
   refuse = new Map<string, string>();
+  /** The code a refusal carries, as the organization service's HttpError does (409 `employee_paused`, say). */
+  refuseCodes = new Map<string, string>();
 
   companyModeEnabled(): boolean {
     return this.enabled;
@@ -105,7 +107,12 @@ class FakeGateway implements OrgGateway {
   }
   async deliverToDesk(_p: string, _o: string, agentId: string, text: string) {
     const refused = this.refuse.get(agentId);
-    if (refused !== undefined) throw new Error(refused);
+    if (refused !== undefined) {
+      const code = this.refuseCodes.get(agentId);
+      throw code === undefined
+        ? new Error(refused)
+        : Object.assign(new Error(refused), { status: 409, code });
+    }
     this.desks.push({ agentId, text });
     return { sessionId: `desk-${agentId}`, queued: false };
   }
@@ -980,6 +987,280 @@ describe("ProposalService", () => {
     expect(started).toMatchObject({ implementer: "acme_dev", sessions: ["impl-1"] });
     expect(gateway.sessions[0]).toMatchObject({ agentId: "acme_dev" });
     expect(agents.updates).toEqual(["acme_dev"]);
+  });
+
+  describe("a discussion with the owner", () => {
+    /** The owner speaking from inside the discussion's own session (the CLI's control environment). */
+    const inside = (agentId: string, sessionId: string): OrgActor => ({
+      userId: "boss",
+      agentId,
+      sessionId,
+    });
+
+    it("opens a discussion with the owner, in a session of its own started on the proposal", async () => {
+      const n = await delegated();
+      await service.publish(PROJECT, ORG, n, DOC, author);
+      const desksBefore = gateway.desks.length;
+      // No implementer yet: the author holds it.
+      const opened = await service.discuss(PROJECT, ORG, n, BOSS);
+      expect(opened.sessionId).toBe("impl-1");
+      expect(gateway.sessions).toEqual([
+        {
+          projectId: PROJECT,
+          orgId: ORG,
+          agentId: "acme_dev",
+          title: "Discussion: proposal #1 — Batch the ticket notices",
+          body: expect.any(String),
+        },
+      ]);
+      const body = gateway.sessions[0]!.body;
+      // Where it stands, and the proposal itself.
+      expect(body).toContain(
+        `discussion of proposal #${n} (\`proposal:${n}\`) of organization ${ORG}`,
+      );
+      expect(body).toContain("with boss, a person of the Project. You are its author.");
+      expect(body).toContain("This is not your desk");
+      expect(body).toContain(`penguin org proposal conclude ${n} --org-id ${ORG} -m`);
+      expect(body).toContain("The proposal, revision 1:");
+      expect(body).toContain("## Change");
+      expect(body).toContain("`notifyTicket` writes `org_desk_notices`");
+      // The desk is not told of it.
+      expect(gateway.desks).toHaveLength(desksBefore);
+      expect(opened.discussions).toEqual([
+        {
+          sessionId: "impl-1",
+          agentId: "acme_dev",
+          by: "user:boss",
+          at: expect.any(String),
+          concluded: null,
+        },
+      ]);
+      expect(opened.events.at(-1)).toMatchObject({
+        kind: "discussion_started",
+        text: "acme_dev",
+        by: "user:boss",
+      });
+      expect(gateway.events.at(-1)).toMatchObject({
+        type: "plugin",
+        data: { number: n, kind: "discussion_started" },
+      });
+
+      // With an implementer named, the implementer holds it.
+      await service.implement(PROJECT, ORG, n, { agentId: "acme_impl" }, author);
+      const second = await service.discuss(PROJECT, ORG, n, BOSS);
+      expect(gateway.sessions.at(-1)).toMatchObject({ agentId: "acme_impl" });
+      expect(gateway.sessions.at(-1)!.body).toContain("You are its implementer.");
+      expect(second.discussions.map((d) => [d.sessionId, d.agentId])).toEqual([
+        ["impl-1", "acme_dev"],
+        ["impl-3", "acme_impl"],
+      ]);
+      // Not an implementation session: the implementation's list is unchanged.
+      expect(second.sessions).toEqual(["impl-2"]);
+    });
+
+    it("an unpublished proposal is discussed on its brief", async () => {
+      const n = await delegated();
+      await service.discuss(PROJECT, ORG, n, BOSS);
+      expect(gateway.sessions[0]!.body).toContain(
+        "No revision is published yet. The brief:\n\nBatch the notices",
+      );
+    });
+
+    it("delivers the conclusion to the owner's desk exactly once", async () => {
+      const n = await delegated();
+      await service.publish(PROJECT, ORG, n, DOC, author);
+      const { sessionId } = await service.discuss(PROJECT, ORG, n, BOSS);
+      const before = gateway.desks.length;
+      const concluded = await service.conclude(
+        PROJECT,
+        ORG,
+        n,
+        sessionId,
+        "  Keep notifyTicket; batch only the digest.  ",
+        inside("acme_dev", sessionId),
+      );
+      expect(gateway.desks.slice(before)).toEqual([
+        {
+          agentId: "acme_dev",
+          text: `[proposal #${n}] the discussion with boss concluded (session ${sessionId}):\n\nKeep notifyTicket; batch only the digest.\n\nRead it against the proposal (\`penguin org proposal show ${n}\`); if it changes what is proposed, revise the proposal or the branch.`,
+        },
+      ]);
+      expect(concluded.discussions[0]!.concluded).toEqual({
+        by: "agent:acme_dev",
+        at: expect.any(String),
+        text: "Keep notifyTicket; batch only the digest.",
+      });
+      expect(concluded.events.at(-1)).toMatchObject({
+        kind: "discussion_concluded",
+        text: "Keep notifyTicket; batch only the digest.",
+      });
+      // Once: a second conclusion is refused and nothing more reaches the desk.
+      expect(
+        await refused(() => service.conclude(PROJECT, ORG, n, sessionId, "again", BOSS)),
+      ).toEqual({ status: 409, code: "discussion_concluded" });
+      expect(gateway.desks.slice(before).filter((d) => d.agentId === "acme_dev")).toHaveLength(1);
+      // Two at once: one delivery.
+      const other = await service.discuss(PROJECT, ORG, n, BOSS);
+      const race = await Promise.allSettled([
+        service.conclude(PROJECT, ORG, n, other.sessionId, "first", BOSS),
+        service.conclude(PROJECT, ORG, n, other.sessionId, "second", BOSS),
+      ]);
+      expect(race.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+      expect(gateway.desks.slice(before)).toHaveLength(2);
+      // The ledger replays to the same discussions.
+      const again = new ProposalService({ gateway, agents, root, settings, log });
+      expect((await again.get(PROJECT, ORG, n, BOSS)).discussions).toEqual(
+        (await service.get(PROJECT, ORG, n, BOSS)).discussions,
+      );
+    });
+
+    it("only a person or the discussion's own session concludes it", async () => {
+      const n = await delegated();
+      await service.publish(PROJECT, ORG, n, DOC, author);
+      const { sessionId } = await service.discuss(PROJECT, ORG, n, BOSS);
+      const before = gateway.desks.length;
+      // The owner's desk is the same Agent, but not the discussion.
+      expect(
+        await refused(() => service.conclude(PROJECT, ORG, n, sessionId, "x", author)),
+      ).toEqual({
+        status: 403,
+        code: "not_discussion",
+      });
+      expect(
+        await refused(() =>
+          service.conclude(PROJECT, ORG, n, sessionId, "x", inside("acme_qa", sessionId)),
+        ),
+      ).toEqual({ status: 403, code: "not_discussion" });
+      expect(await refused(() => service.conclude(PROJECT, ORG, n, "nope", "x", BOSS))).toEqual({
+        status: 404,
+        code: "discussion_not_found",
+      });
+      expect(await refused(() => service.conclude(PROJECT, ORG, n, sessionId, "  ", BOSS))).toEqual(
+        {
+          status: 400,
+          code: "bad_request",
+        },
+      );
+      expect(gateway.desks).toHaveLength(before);
+      // A person may conclude it from the outside.
+      await service.conclude(PROJECT, ORG, n, sessionId, "Agreed.", BOSS);
+      expect(gateway.desks.slice(before).map((d) => d.agentId)).toEqual(["acme_dev"]);
+    });
+
+    it("refuses a discussion nobody can hold", async () => {
+      const n = await delegated();
+      // An employee does not open one: the button is a person's.
+      expect(await refused(() => service.discuss(PROJECT, ORG, n, author))).toEqual({
+        status: 403,
+        code: "person_required",
+      });
+      gateway.org!.status = "paused";
+      expect(await refused(() => service.discuss(PROJECT, ORG, n, BOSS))).toEqual({
+        status: 409,
+        code: "org_paused",
+      });
+      gateway.org!.status = "active";
+      // The author left the organization and nobody implements it.
+      gateway.org!.employees = gateway.org!.employees.filter((e) => e.agentId !== "acme_dev");
+      expect(await refused(() => service.discuss(PROJECT, ORG, n, BOSS))).toEqual({
+        status: 409,
+        code: "owner_unavailable",
+      });
+      expect(gateway.sessions).toEqual([]);
+      const m = (await service.create(PROJECT, ORG, { author: "acme_qa", brief: "Closed" }, BOSS))
+        .number;
+      await service.reject(PROJECT, ORG, m, "not now", BOSS);
+      expect(await refused(() => service.discuss(PROJECT, ORG, m, BOSS))).toEqual({
+        status: 409,
+        code: "proposal_status",
+      });
+      expect(gateway.sessions).toEqual([]);
+      expect(await refused(() => service.discuss(PROJECT, ORG, 99, BOSS))).toEqual({
+        status: 404,
+        code: "proposal_not_found",
+      });
+    });
+
+    it("a conclusion the desk cannot take is answered with the reason, recorded, and the discussion stays open", async () => {
+      const n = await delegated();
+      await service.publish(PROJECT, ORG, n, DOC, author);
+      const { sessionId } = await service.discuss(PROJECT, ORG, n, BOSS);
+      const before = gateway.desks.length;
+      gateway.refuse.set(
+        "acme_dev",
+        "acme_dev is paused by its budget for 2026-09; it was not told.",
+      );
+      gateway.refuseCodes.set("acme_dev", "employee_paused");
+      expect(
+        await refused(() => service.conclude(PROJECT, ORG, n, sessionId, "Ship it.", BOSS)),
+      ).toEqual({ status: 409, code: "employee_paused" });
+      const held = await service.get(PROJECT, ORG, n, BOSS);
+      expect(held.discussions[0]!.concluded).toBeNull();
+      expect(held.events.at(-1)).toMatchObject({
+        kind: "notify_failed",
+        text: "agent:acme_dev not notified: acme_dev is paused by its budget for 2026-09; it was not told.",
+      });
+      gateway.refuse.set("acme_dev", "Acme is paused; acme_dev was not told.");
+      gateway.refuseCodes.set("acme_dev", "org_paused");
+      expect(
+        await refused(() => service.conclude(PROJECT, ORG, n, sessionId, "Ship it.", BOSS)),
+      ).toEqual({ status: 409, code: "org_paused" });
+      gateway.refuse.set("acme_dev", "no desk");
+      gateway.refuseCodes.set("acme_dev", "desk_unavailable");
+      expect(
+        await refused(() => service.conclude(PROJECT, ORG, n, sessionId, "Ship it.", BOSS)),
+      ).toEqual({ status: 409, code: "desk_unavailable" });
+      expect(gateway.desks).toHaveLength(before);
+      // Resolved: the same discussion concludes, once.
+      gateway.refuse.clear();
+      const done = await service.conclude(PROJECT, ORG, n, sessionId, "Ship it.", BOSS);
+      expect(done.discussions[0]!.concluded?.text).toBe("Ship it.");
+      expect(gateway.desks.slice(before)).toHaveLength(1);
+    });
+
+    it("POST /:number/discussions opens one; POST …/:sessionId/conclude carries the session's identity", async () => {
+      const n = await delegated();
+      await service.publish(PROJECT, ORG, n, DOC, author);
+      const app = new Hono();
+      let via = "password";
+      app.use(async (c, next) => {
+        c.set("user" as never, { userId: "boss" } as never);
+        c.set("sessionVia" as never, via as never);
+        await next();
+      });
+      app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service));
+      const post = (suffix: string, body?: unknown) =>
+        app.request(`/p/${PROJECT}/o/${ORG}/proposals/${n}${suffix}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        });
+      const opened = await post("/discussions");
+      expect(opened.status).toBe(201);
+      const { sessionId } = (await opened.json()) as { sessionId: string };
+      expect(sessionId).toBe("impl-1");
+      const missing = await post(`/discussions/${sessionId}/conclude`, {});
+      expect(missing.status).toBe(400);
+      // Behind the local API token the session claim counts: the desk's is refused, the discussion's own is honoured.
+      via = "token";
+      const desk = await post(`/discussions/${sessionId}/conclude`, {
+        text: "x",
+        agentId: "acme_dev",
+        sessionId: "desk-dev",
+      });
+      expect(desk.status).toBe(403);
+      const ok = await post(`/discussions/${sessionId}/conclude`, {
+        text: "Agreed.",
+        agentId: "acme_dev",
+        sessionId,
+      });
+      expect(ok.status).toBe(200);
+      const detail = (await ok.json()) as {
+        discussions: Array<{ concluded: { by: string } | null }>;
+      };
+      expect(detail.discussions[0]!.concluded).toMatchObject({ by: "agent:acme_dev" });
+      expect(gateway.desks.filter((d) => d.text.includes("concluded (session"))).toHaveLength(1);
+    });
   });
 
   it("materials, feedback and runtime feedback: the author is told, runtime feedback tells the implementer too", async () => {

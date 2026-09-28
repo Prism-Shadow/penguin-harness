@@ -1758,6 +1758,44 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(out()).toBe(`${t.org.proposalStatusSet(5, "rejected")}\n`);
   });
 
+  it("conclude sends the discussion's conclusion from inside it, or from a person naming it", async () => {
+    // The CLI runs inside the discussion: PENGUIN_SESSION_ID is the discussion's session.
+    server.addProposal("acme", {
+      number: 6,
+      discussions: [
+        { sessionId: DESK_SESSION, agentId: "dev1", by: "user:admin", at: "x", concluded: null },
+        { sessionId: "disc-2", agentId: "dev1", by: "user:admin", at: "x", concluded: null },
+      ],
+    });
+    expect(await cli(["org", "proposal", "conclude", "6", "-m", "Keep the digest."])).toBe(0);
+    expect(lastRequest("POST", `/proposals/6/discussions/${DESK_SESSION}/conclude`)?.body).toEqual({
+      text: "Keep the digest.",
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(out()).toBe(`${t.org.proposalConcluded(6, "dev1")}\n`);
+
+    // A person outside any session names the discussion; without it nothing is sent.
+    delete process.env.PENGUIN_SESSION_ID;
+    delete process.env.PENGUIN_AGENT_ID;
+    const before = server.requests.length;
+    expect(await cli(["org", "proposal", "conclude", "6", "-m", "x"])).toBe(1);
+    expect(err()).toContain(t.org.proposalDiscussionMissing);
+    expect(server.requests.length).toBe(before);
+    stdout.length = 0;
+    expect(
+      await cli(["org", "proposal", "conclude", "6", "--discussion", "disc-2", "-m", "Agreed."]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/proposals/6/discussions/disc-2/conclude")?.body).toEqual({
+      text: "Agreed.",
+    });
+    // An unknown discussion is the server's 404, passed through.
+    expect(await cli(["org", "proposal", "conclude", "6", "--discussion", "nope", "-m", "x"])).toBe(
+      1,
+    );
+    expect(err()).toContain("discussion_not_found");
+  });
+
   it("comments prints the text with the passages marked under --pending, and resolve posts the note", async () => {
     server.addProposal("acme", {
       number: 4,

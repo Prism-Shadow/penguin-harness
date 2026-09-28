@@ -753,7 +753,24 @@ function DetailPage({ number }: { number: number }) {
           t.commentDeleted,
         );
 
+  /** A discussion with the owner: its session opens, and the page goes there. */
+  const discuss = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const next = await api.discussOrgProposal(projectId, orgId, number);
+      setDetail(next);
+      company.proposalsChanged();
+      toastSuccess(t.discussOpened);
+      navigate(`/chat/${next.sessionId}`);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const actions = detail === null ? null : proposalActions(detail.status, detail.pendingComments);
+  const owner = detail === null ? null : (detail.implementer ?? detail.author);
   const crumb = (
     <nav aria-label={S.nav.org.proposals} className="mb-3 text-xs text-gray-500 dark:text-gray-400">
       <TitleButton
@@ -818,6 +835,14 @@ function DetailPage({ number }: { number: number }) {
               actions={
                 actions === null ? null : (
                   <>
+                    <Button
+                      size="sm"
+                      disabled={busy || !actions.discuss}
+                      title={t.discussHint(owner === null ? "" : (names.get(owner) ?? owner))}
+                      onClick={() => void discuss()}
+                    >
+                      {t.discuss}
+                    </Button>
                     <Button
                       size="sm"
                       disabled={busy || !actions.requestChanges}
@@ -1153,6 +1178,30 @@ function ProposalView({
                   {sessionId}
                 </span>
                 <JumpButton label={t.openSession} onClick={() => onOpenSession(sessionId)} />
+              </li>
+            ))}
+          </ul>
+        </OrgSection>
+      )}
+
+      {detail.discussions.length > 0 && (
+        <OrgSection title={t.discussions} count={detail.discussions.length}>
+          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+            {detail.discussions.map((d) => (
+              <li
+                key={d.sessionId}
+                className="flex items-center justify-between gap-2 py-1.5 text-xs"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <PrincipalChip principal={`agent:${d.agentId}`} names={names} />
+                  <span className="text-gray-500 dark:text-gray-400">
+                    {d.concluded === null ? t.discussionOpen : t.discussionConcluded}
+                  </span>
+                  <span className="truncate font-mono text-gray-600 dark:text-gray-300">
+                    {d.sessionId}
+                  </span>
+                </span>
+                <JumpButton label={t.openSession} onClick={() => onOpenSession(d.sessionId)} />
               </li>
             ))}
           </ul>

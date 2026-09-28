@@ -17,6 +17,7 @@ import path from "node:path";
 import { locateQuote, paragraphAtOffset, paragraphSpan, sectionSource } from "./comments.js";
 import type {
   ProposalComment,
+  ProposalDiscussion,
   ProposalEvent,
   ProposalMaterial,
   ProposalMaterialKind,
@@ -127,7 +128,14 @@ export type LedgerEntry =
    */
   | { kind: "brief"; number: number; brief: string; by: string }
   /** A desk delivery the plugin had to make did not go through: to whom, and why. */
-  | { kind: "notify_failed"; number: number; reason: string; target: string[]; by: string };
+  | { kind: "notify_failed"; number: number; reason: string; target: string[]; by: string }
+  /** A person opened a discussion: a session of the owner's Agent, apart from its desk. */
+  | { kind: "discussion"; number: number; agentId: string; sessionId: string; by: string }
+  /**
+   * The discussion's conclusion, written once it reached the owner's desk — so a line here
+   * means it was delivered, and a delivery that failed leaves the discussion open.
+   */
+  | { kind: "discussion_concluded"; number: number; sessionId: string; text: string; by: string };
 
 /** A proposal as the fold produces it: every fact the ledger holds about it, before any caller-specific view. */
 export interface Proposal {
@@ -148,6 +156,7 @@ export interface Proposal {
   sections: ProposalSection[];
   materials: ProposalMaterial[];
   sessions: string[];
+  discussions: ProposalDiscussion[];
   comments: ProposalComment[];
   events: ProposalEvent[];
   /** The batches of requested changes since the last `ready` (or creation): what the author's next `ready` must have answered. */
@@ -195,6 +204,7 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       sections: [],
       materials: [],
       sessions: [],
+      discussions: [],
       comments: [],
       openBatches: [],
       events: [{ seq: line.seq, at: line.at, kind: "created", by: delegatedBy }],
@@ -316,6 +326,24 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
     case "notify_failed":
       event("notify_failed", line.by, { text: line.reason });
       return;
+    case "discussion":
+      p.discussions.push({
+        sessionId: line.sessionId,
+        agentId: line.agentId,
+        by: line.by,
+        at: line.at,
+        concluded: null,
+      });
+      event("discussion_started", line.by, { text: line.agentId });
+      return;
+    case "discussion_concluded": {
+      const d = p.discussions.find((x) => x.sessionId === line.sessionId);
+      // One conclusion per discussion: a second line (a replayed file, a race) changes nothing.
+      if (d === undefined || d.concluded !== null) return;
+      d.concluded = { by: line.by, at: line.at, text: line.text };
+      event("discussion_concluded", line.by, { text: line.text });
+      return;
+    }
   }
 }
 

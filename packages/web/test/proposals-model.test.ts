@@ -64,30 +64,42 @@ describe("sortProposals", () => {
 describe("proposalActions", () => {
   it("offers approval only when ready, changes only with pending comments, and nothing on a closed one", () => {
     expect(proposalActions("ready", 2)).toEqual({
+      discuss: true,
       requestChanges: true,
       approve: true,
       reject: true,
       markMerged: false,
     });
     expect(proposalActions("drafting", 0)).toEqual({
+      discuss: true,
       requestChanges: false,
       approve: false,
       reject: true,
       markMerged: false,
     });
     expect(proposalActions("approved", 1)).toEqual({
+      discuss: true,
       requestChanges: true,
       approve: false,
       reject: true,
       markMerged: true,
     });
     expect(proposalActions("merged", 3)).toEqual({
+      discuss: false,
       requestChanges: false,
       approve: false,
       reject: false,
       markMerged: false,
     });
     expect(proposalActions("rejected", 3).reject).toBe(false);
+  });
+
+  it("offers a discussion while the proposal is open, pending comments or not", () => {
+    for (const status of ["drafting", "ready", "approved"] as const) {
+      expect(proposalActions(status, 0).discuss).toBe(true);
+    }
+    expect(proposalActions("merged", 0).discuss).toBe(false);
+    expect(proposalActions("rejected", 0).discuss).toBe(false);
   });
 });
 
@@ -366,17 +378,32 @@ describe("eventLine", () => {
     expect(eventLine(ev({ kind: "brief_edited", text: "Batch the notices" }), names)).toBe(
       "rewrote the brief",
     );
+    expect(eventLine(ev({ kind: "discussion_started", text: "acme_impl" }), names)).toBe(
+      "opened a discussion with Impl",
+    );
+    expect(eventLine(ev({ kind: "discussion_concluded", text: "Keep it." }), names)).toBe(
+      "sent the discussion's conclusion to the owner's desk",
+    );
     setActiveStrings(zh);
     expect(eventLine(ev({ kind: "approved" }), names)).toBe("认可并请求合并");
     expect(eventLine(ev({ kind: "brief_edited" }), names)).toBe("改写了简介");
+    expect(eventLine(ev({ kind: "discussion_started", text: "acme_impl" }), names)).toBe(
+      "开了与 Impl 的讨论",
+    );
+    expect(eventLine(ev({ kind: "discussion_concluded" }), names)).toBe(
+      "把讨论的结论送到了负责人的工位",
+    );
   });
 
-  it("keeps prose under the line only for feedback, resolutions, rejections and a rewritten brief", () => {
+  it("keeps prose under the line only for feedback, resolutions, rejections, a rewritten brief and a conclusion", () => {
     expect(eventDetail(ev({ kind: "feedback", text: "scope grew" }))).toBe("scope grew");
     expect(eventDetail(ev({ kind: "rejected", text: "not now" }))).toBe("not now");
     expect(eventDetail(ev({ kind: "brief_edited", text: "Batch the notices" }))).toBe(
       "Batch the notices",
     );
+    expect(eventDetail(ev({ kind: "discussion_concluded", text: "Keep it." }))).toBe("Keep it.");
+    // The owner is named on the line itself.
+    expect(eventDetail(ev({ kind: "discussion_started", text: "acme_impl" }))).toBeNull();
     expect(eventDetail(ev({ kind: "material_added", text: "PR #5" }))).toBeNull();
     expect(eventDetail(ev({ kind: "feedback" }))).toBeNull();
   });

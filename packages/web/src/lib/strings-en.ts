@@ -6190,6 +6190,13 @@ Scenarios:
       events: "Events",
       sessions: "Implementation sessions",
       openSession: "Open the session",
+      discussions: "Discussions",
+      discuss: "Discuss",
+      discussHint: (who: string): string =>
+        `Open a session with ${who} to talk this proposal over; its conclusion reaches ${who}'s desk once`,
+      discussOpened: "Discussion opened",
+      discussionOpen: "Open",
+      discussionConcluded: "Conclusion sent",
       comment: "Comment",
       comments: (n: number): string => `${n} comments`,
       commentPlaceholder: "Say something about this passage…",
@@ -6246,6 +6253,8 @@ Scenarios:
         merged: "reported it merged",
         rejected: "rejected the proposal",
         brief_edited: "rewrote the brief",
+        discussion_started: (who: string): string => `opened a discussion with ${who}`,
+        discussion_concluded: "sent the discussion's conclusion to the owner's desk",
       },
       /** The capsule a `proposal:<n>` reference renders as: number, title, and the unread count when there is one. */
       capsule: (n: number, title: string): string => `#${n} ${title}`,

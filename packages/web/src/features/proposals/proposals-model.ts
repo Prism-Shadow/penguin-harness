@@ -51,9 +51,17 @@ export function isProposalClosed(status: ProposalStatus): boolean {
 export function proposalActions(
   status: ProposalStatus,
   pendingComments: number,
-): { requestChanges: boolean; approve: boolean; reject: boolean; markMerged: boolean } {
+): {
+  requestChanges: boolean;
+  approve: boolean;
+  reject: boolean;
+  markMerged: boolean;
+  discuss: boolean;
+} {
   const closed = isProposalClosed(status);
   return {
+    // A discussion with the owner, while there is still something to decide.
+    discuss: !closed,
     requestChanges: !closed && pendingComments > 0,
     approve: status === "ready",
     reject: !closed,
@@ -203,6 +211,10 @@ export function eventLine(ev: ProposalEvent, names: ReadonlyMap<string, string>)
       return t.notify_failed;
     case "brief_edited":
       return t.brief_edited;
+    case "discussion_started":
+      return t.discussion_started(ev.text === undefined ? "" : (names.get(ev.text) ?? ev.text));
+    case "discussion_concluded":
+      return t.discussion_concluded;
     default:
       return ev.kind;
   }
@@ -216,7 +228,8 @@ export function eventDetail(ev: ProposalEvent): string | null {
     ev.kind === "rejected" ||
     ev.kind === "resolved" ||
     ev.kind === "notify_failed" ||
-    ev.kind === "brief_edited"
+    ev.kind === "brief_edited" ||
+    ev.kind === "discussion_concluded"
     ? ev.text
     : null;
 }

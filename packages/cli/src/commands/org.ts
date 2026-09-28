@@ -31,6 +31,7 @@
  *                    | publish <n> --file <md> | brief <n> (-m <text> | --file <f>) | ready <n>
  *                    | implement <n> [--agent <agent_id>] [-m] [--workspace]
  *                    | material <n> add <kind>=<url> [--label <s>] | feedback <n> -m <text> [--runtime]
+ *                    | conclude <n> -m <text> [--discussion <session_id>]
  *                    | comments <n> [--pending] | resolve <n> <comment_id> [-m <text>] | merged <n>
  *                    | approve <n> | reject <n> --reason <s> | groups
  *                    (the company-proposals plugin's routes: without the plugin, every one is a 404)
@@ -148,6 +149,7 @@ const ORG_404_CODES: ReadonlySet<string> = new Set([
   "org_not_found",
   "proposal_not_found",
   "comment_not_found",
+  "discussion_not_found",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -2170,6 +2172,44 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (detail === null) return;
     if (opts.json === true) printJson(detail);
     else printLine(t.org.proposalFeedbackRecorded(detail.number));
+  });
+
+  scoped(
+    proposal
+      .command("conclude <number>")
+      .description(t.org.proposalConcludeDesc)
+      .requiredOption("-m, --message <text>", t.org.proposalConclusionText)
+      .option("--discussion <session_id>", t.org.proposalDiscussion),
+    t,
+  ).action(async (raw: string, opts) => {
+    const number = parseProposalNumber(raw, t);
+    if (number === null) return;
+    // Inside the discussion the session is the discussion; a person outside names it.
+    const discussion =
+      (typeof opts.discussion === "string" ? opts.discussion.trim() : "") || callerSessionId();
+    if (discussion === undefined) {
+      fail(t, t.org.proposalDiscussionMissing);
+      return;
+    }
+    if (refuseDotSegments(discussion, t)) return;
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const detail = await proposalRequest<ProposalDetail>(
+      scope,
+      t,
+      "POST",
+      `/${number}/discussions/${enc(discussion)}/conclude`,
+      { text: String(opts.message), ...actorFields() },
+    );
+    if (detail === null) return;
+    if (opts.json === true) printJson(detail);
+    else {
+      const owner =
+        detail.discussions.find((d) => d.sessionId === discussion)?.agentId ??
+        detail.implementer ??
+        detail.author;
+      printLine(t.org.proposalConcluded(detail.number, owner));
+    }
   });
 
   scoped(

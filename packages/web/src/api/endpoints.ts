@@ -2992,6 +2992,10 @@ export const implementOrgProposal = (
   body: ProposalImplementRequest,
 ) => proposalAction<ProposalDetail>(projectId, orgId, number, "implement", body);
 
+/** A discussion with the owner (the implementer, else the author): the answer names its session. */
+export const discussOrgProposal = (projectId: string, orgId: string, number: number) =>
+  proposalAction<ProposalDetail & { sessionId: string }>(projectId, orgId, number, "discussions");
+
 export const addOrgProposalMaterial = (
   projectId: string,
   orgId: string,

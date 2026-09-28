@@ -1282,6 +1282,7 @@ export class FakeServer {
       comments: [],
       events: [],
       sessions: [],
+      discussions: [],
       seq: 0,
       ...item,
     };
@@ -1446,6 +1447,16 @@ export class FakeServer {
         return this.json(
           bump(body.runtime === true ? "runtime_feedback" : "feedback", { text: body.text }),
         );
+      }
+      case "discussions": {
+        // `…/discussions/:sessionId/conclude`: the conclusion lands on the discussion, once.
+        const discussion = (proposal.discussions as Json[]).find((x) => x.sessionId === d);
+        if (d === undefined || !discussion) {
+          return this.error(404, "discussion_not_found", `No discussion ${d ?? ""}.`);
+        }
+        if (!isNonEmptyString(body?.text)) return this.badRequest("text is required.");
+        discussion.concluded = { by: "user:admin", at: ORG_NOW, text: body.text };
+        return this.json(bump("discussion_concluded", { text: body.text }));
       }
       case "comments": {
         if (d === "request" || d === undefined) return this.json(bump("changes_requested"));

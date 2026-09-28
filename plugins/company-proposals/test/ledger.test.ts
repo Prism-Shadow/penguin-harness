@@ -164,6 +164,57 @@ describe("foldLedger", () => {
     expect(state.lastSeq).toBe(5);
   });
 
+  it("folds a discussion: opened beside the implementation sessions, concluded once, a conclusion without its discussion skipped", () => {
+    const state = foldLedger(
+      lines(
+        {
+          kind: "created",
+          number: 1,
+          title: "T",
+          author: "dev",
+          delegatedBy: "user:boss",
+          brief: "b",
+        },
+        { kind: "discussion", number: 1, agentId: "dev", sessionId: "s-1", by: "user:boss" },
+        {
+          kind: "discussion_concluded",
+          number: 1,
+          sessionId: "s-1",
+          text: "Keep the digest.",
+          by: "agent:dev",
+        },
+        // A second conclusion of the same discussion changes nothing.
+        {
+          kind: "discussion_concluded",
+          number: 1,
+          sessionId: "s-1",
+          text: "Other.",
+          by: "user:boss",
+        },
+        // A conclusion of a discussion never opened is skipped.
+        { kind: "discussion_concluded", number: 1, sessionId: "s-9", text: "?", by: "user:boss" },
+      ),
+    );
+    const p = state.proposals.get(1)!;
+    expect(p.discussions).toEqual([
+      {
+        sessionId: "s-1",
+        agentId: "dev",
+        by: "user:boss",
+        at,
+        concluded: { by: "agent:dev", at, text: "Keep the digest." },
+      },
+    ]);
+    // A discussion is not an implementation: no implementer, no implementation session.
+    expect(p.implementer).toBeNull();
+    expect(p.sessions).toEqual([]);
+    expect(p.events.map((e) => [e.kind, e.text])).toEqual([
+      ["created", undefined],
+      ["discussion_started", "dev"],
+      ["discussion_concluded", "Keep the digest."],
+    ]);
+  });
+
   it("an approval covers one revision: it records the revision, a later revision puts the proposal back to ready, and a line written before the field reads as the revision current then", () => {
     const section = (text: string) => [
       { id: "s1", heading: "Change", paragraphs: [{ id: "p1", text }] },

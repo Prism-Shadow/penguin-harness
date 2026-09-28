@@ -6372,6 +6372,13 @@ Benchmark：
       events: "事件",
       sessions: "实施会话",
       openSession: "打开会话",
+      discussions: "讨论",
+      discuss: "讨论",
+      discussHint: (who: string): string =>
+        `以 ${who} 开一个临时会话讨论这份提案；结论只送到它的工位一次`,
+      discussOpened: "已开讨论会话",
+      discussionOpen: "进行中",
+      discussionConcluded: "已送出结论",
       comment: "评论",
       comments: (n: number): string => `${n} 条评论`,
       commentPlaceholder: "对这段文字说点什么…",
@@ -6428,6 +6435,8 @@ Benchmark：
         merged: "报告已合并",
         rejected: "拒绝了提案",
         brief_edited: "改写了简介",
+        discussion_started: (who: string): string => `开了与 ${who} 的讨论`,
+        discussion_concluded: "把讨论的结论送到了负责人的工位",
       },
       /** The capsule a `proposal:<n>` reference renders as: number, title, and the unread count when there is one. */
       capsule: (n: number, title: string): string => `#${n} ${title}`,

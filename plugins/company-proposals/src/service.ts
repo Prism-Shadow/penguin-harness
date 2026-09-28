@@ -142,8 +142,16 @@ export function slugOf(title: string): string {
   return words.length > 0 ? words.join("-") : "proposal";
 }
 
+/** Who answers for a proposal now: the implementer once one is named, else the author. */
+export function ownerOf(p: Pick<Proposal, "author" | "implementer">): string {
+  return p.implementer ?? p.author;
+}
+
 export class ProposalService {
   private readonly ledgers = new Map<string, Ledger>();
+
+  /** Conclusions being delivered (`<projectId>/<orgId>/<sessionId>`): a second one waits for nothing and is refused. */
+  private readonly concluding = new Set<string>();
 
   /** GitHub's word on each `pr` material, read when a proposal is read (pr-status.ts). */
   private readonly prStatus: PrStatusReader;
@@ -317,6 +325,7 @@ export class ProposalService {
       comments: this.visibleComments(p, caller),
       events: p.events,
       sessions: p.sessions,
+      discussions: p.discussions,
       approvedRevision: p.approvedRevision,
       seq: p.seq,
     };
@@ -973,6 +982,155 @@ export class ProposalService {
       ...(note !== "" ? [`Note from the author: ${note}`] : []),
       `The proposal, revision ${p.revision}:\n\n${renderProposalDocument({ title: p.title, root: p.root, scope: p.scope, tests: p.tests, sections: p.sections }).trimEnd()}`,
     ].join("\n\n");
+  }
+
+  /**
+   * A person opens a discussion of the proposal with its owner: a session of the owner's
+   * Agent, opened the way an implementation session is (the owner's model, its desk
+   * Workspace, the organization's approval mode), started on where it stands and the
+   * proposal itself. It is not the desk: the desk hears of it only when it concludes.
+   */
+  async discuss(
+    projectId: string,
+    orgId: string,
+    number: number,
+    actor: OrgActor,
+  ): Promise<ProposalDetail & { sessionId: string }> {
+    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(ledger, number);
+    this.requirePerson(caller, "open a discussion");
+    if (p.status === "merged" || p.status === "rejected") {
+      throw new ProposalError(409, "proposal_status", `Proposal #${number} is ${p.status}.`);
+    }
+    // The session itself would open, but its conclusion could not reach a paused desk.
+    if (org.status === "paused") {
+      throw new ProposalError(
+        409,
+        "org_paused",
+        `${org.orgId} is paused; resume it before opening a discussion.`,
+      );
+    }
+    const owner = ownerOf(p);
+    if (!org.employees.some((e) => e.agentId === owner)) {
+      throw new ProposalError(
+        409,
+        "owner_unavailable",
+        `Proposal #${number}'s ${p.implementer !== null ? "implementer" : "author"} (${owner}) is no longer an employee of ${org.orgId}; nobody can hold the discussion.`,
+      );
+    }
+    const opened = await this.deps.gateway.openEmployeeSession({
+      projectId,
+      orgId,
+      agentId: owner,
+      title: `Discussion: proposal #${number} — ${p.title}`,
+      body: this.discussionBrief(org, p, caller),
+    });
+    const line = await ledger.append({
+      kind: "discussion",
+      number,
+      agentId: owner,
+      sessionId: opened.sessionId,
+      by: caller.principal,
+    });
+    this.notify(org, number, line.seq, "discussion_started");
+    return {
+      ...this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+      sessionId: opened.sessionId,
+    };
+  }
+
+  /** The first message of a discussion: whose it is and what it is not, how it ends, the proposal. */
+  private discussionBrief(org: OrgView, p: Proposal, caller: Caller): string {
+    const n = p.number;
+    const role = p.implementer !== null ? "implementer" : "author";
+    const proposal =
+      p.revision === 0
+        ? `No revision is published yet. The brief:\n\n${p.brief}`
+        : `The proposal, revision ${p.revision}:\n\n${renderProposalDocument({ title: p.title, root: p.root, scope: p.scope, tests: p.tests, sections: p.sections }).trimEnd()}`;
+    return [
+      `This session is a discussion of proposal #${n} (\`proposal:${n}\`) of organization ${org.orgId} ("${p.title}", ${p.status}) with ${whoOf(caller)}, a person of the Project. You are its ${role}. The organization is at \`<app_data_dir>/organizations/${org.orgId}/\`; the shared workspace is ${org.workspace}.`,
+      [
+        "This is not your desk:",
+        "- Talk the proposal over — answer, ask, propose. Do not start work here: no revision, no branch, no file changed. That is your desk's, once the conclusion reaches it.",
+        "- Keep what is said here out of your memory; the conclusion is what your desk receives, and the desk decides what to keep.",
+        `- When the person agrees on a conclusion, or asks you to wrap up, send it to your desk once: \`penguin org proposal conclude ${n} --org-id ${org.orgId} -m "<what was decided, what changes in the proposal or the implementation, what stays open>"\`. If it is refused (the organization or you paused), tell the person; do not retry in a loop.`,
+      ].join("\n"),
+      proposal,
+    ].join("\n\n");
+  }
+
+  /**
+   * The discussion's conclusion goes to the owner's desk, once: from a person, or from the
+   * discussion's own session — not from the owner's desk, nor a colleague. The line is
+   * written only after the desk took it, so a desk that cannot (the organization or the
+   * owner paused, no desk) is answered with its reason, recorded as `notify_failed`, and the
+   * discussion stays open to be concluded again.
+   */
+  async conclude(
+    projectId: string,
+    orgId: string,
+    number: number,
+    sessionId: string,
+    text: string,
+    actor: OrgActor,
+  ): Promise<ProposalDetail> {
+    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const p = this.requireProposal(ledger, number);
+    const d = p.discussions.find((x) => x.sessionId === sessionId);
+    if (d === undefined) {
+      throw new ProposalError(
+        404,
+        "discussion_not_found",
+        `Proposal #${number} has no discussion ${sessionId}.`,
+      );
+    }
+    if (
+      !this.isPerson(caller) &&
+      !(caller.agentId === d.agentId && actor.sessionId === sessionId)
+    ) {
+      throw forbidden(
+        "not_discussion",
+        `Only a person or the discussion's own session (${sessionId}) can conclude it.`,
+      );
+    }
+    const conclusion = text.trim();
+    if (conclusion === "") throw badRequest("text must not be empty.");
+    const key = `${projectId}/${orgId}/${sessionId}`;
+    if (d.concluded !== null || this.concluding.has(key)) {
+      throw new ProposalError(
+        409,
+        "discussion_concluded",
+        `Discussion ${sessionId} of proposal #${number} is already concluded.`,
+      );
+    }
+    this.concluding.add(key);
+    try {
+      const line = `[proposal #${number}] the discussion with ${d.by.replace(/^user:/, "")} concluded (session ${sessionId}):\n\n${conclusion}\n\nRead it against the proposal (\`penguin org proposal show ${number}\`); if it changes what is proposed, revise the proposal or the branch.`;
+      try {
+        await this.deps.gateway.deliverToDesk(org.projectId, org.orgId, d.agentId, line);
+      } catch (err) {
+        await this.deliveryFailed(this.delivery(ledger), org, p, caller, d.agentId, err);
+        const e = err as { status?: unknown; code?: unknown; message?: unknown };
+        throw new ProposalError(
+          typeof e.status === "number" ? e.status : 409,
+          typeof e.code === "string" ? e.code : "notify_failed",
+          `The conclusion did not reach ${d.agentId}'s desk: ${
+            err instanceof Error ? err.message : String(err)
+          } The discussion stays open; conclude it again once that is resolved.`,
+        );
+      }
+      const written = await ledger.append({
+        kind: "discussion_concluded",
+        number,
+        sessionId,
+        text: conclusion,
+        by: caller.principal,
+      });
+      this.notify(org, number, written.seq, "discussion_concluded");
+    } finally {
+      this.concluding.delete(key);
+    }
+    return this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId));
   }
 
   async addMaterial(

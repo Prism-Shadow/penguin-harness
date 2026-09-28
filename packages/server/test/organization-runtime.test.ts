@@ -3397,3 +3397,37 @@ describe("organization runtime", () => {
           body: "y",
         }),
       ).rejects.toMatchObject({ status: 400, code: "not_an_employee" });
+    });
+
+    it("a session the gateway opens is not a desk: the desk is untouched, yet a write from it is the employee's", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      const desk = await service.desk(P, ORG, HR, {});
+      const before = started.length;
+      const opened = await service.gatewayOpenSession({
+        projectId: P,
+        orgId: ORG,
+        agentId: HR,
+        title: "Discussion: proposal #1 — batch the notices",
+        body: "Talk proposal #1 over with alice.",
+      });
+      expect(opened.sessionId).not.toBe(desk.sessionId);
+      // One Task, on the new session; nothing reaches the desk.
+      expect(started.slice(before).map((s) => s.sessionId)).toEqual([opened.sessionId]);
+      // Neither a desk nor a ticket session: no owner row, so the hop the open set lands nowhere
+      // and the desk's own hop is unchanged.
+      expect(cache.ownerOfSession(opened.sessionId)).toBeNull();
+      expect(cache.ownerOfSession(desk.sessionId)).toMatchObject({ kind: "desk", agentId: HR });
+      // Same Agent: a write carrying the session is attributed to the employee, as from its desk.
+      expect(
+        await service.gatewayPrincipal(P, ORG, { userId: "alice", sessionId: opened.sessionId }),
+      ).toBe(`agent:${HR}`);
+      // The conclusion goes to the desk, not back into the discussion.
+      const text = "[proposal #1] the discussion with alice concluded (session x):\n\nKeep it.";
+      expect(await service.gatewayDeliverToDesk(P, ORG, HR, text)).toMatchObject({
+        sessionId: desk.sessionId,
+      });
+      expect(started.at(-1)).toMatchObject({ sessionId: desk.sessionId, text });
+    });
+  });
+});

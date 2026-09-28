@@ -648,6 +648,8 @@ export interface Messages {
     proposalMaterialDesc: string;
     proposalMaterialAddDesc: string;
     proposalFeedbackDesc: string;
+    /** `proposal conclude <n>`: a discussion's conclusion, to the owner's desk. */
+    proposalConcludeDesc: string;
     proposalCommentsDesc: string;
     proposalResolveDesc: string;
     /** ls's --status: one lifecycle state. */
@@ -669,6 +671,11 @@ export interface Messages {
     proposalWorkspace: string;
     proposalMaterialLabel: string;
     proposalFeedbackText: string;
+    /** conclude's -m and --discussion (default: the calling session). */
+    proposalConclusionText: string;
+    proposalDiscussion: string;
+    /** conclude outside a session without --discussion. */
+    proposalDiscussionMissing: string;
     /** feedback's --runtime: from the test team's run of the dev branch. */
     proposalRuntime: string;
     /** comments' --pending: the batched, unresolved ones — the author's worklist. */
@@ -691,6 +698,7 @@ export interface Messages {
     proposalImplementing(number: number, implementer: string, sessionId: string): string;
     proposalMaterialAdded(number: number, kind: string): string;
     proposalFeedbackRecorded(number: number): string;
+    proposalConcluded(number: number, owner: string): string;
     proposalCommentResolved(number: number, commentId: string): string;
     /** `proposal show`: the head lines above the document. */
     proposalHead(number: number, title: string, status: string, revision: number): string;
@@ -1872,6 +1880,8 @@ const en: Messages = {
       "Attach material as <kind>=<url> (pr, issue, branch, doc, ticket, url)",
     proposalFeedbackDesc:
       "Send the author feedback from the implementation (or, with --runtime, from testing the dev branch)",
+    proposalConcludeDesc:
+      "Send a discussion's conclusion to the owner's desk, once (from inside the discussion, or as a person with --discussion)",
     proposalCommentsDesc:
       "Print the proposal's text with each commented passage marked ⟦<id>⟧…⟦/<id>⟧, then the comments by id",
     proposalResolveDesc: "Resolve one comment, with a note on what changed",
@@ -1891,6 +1901,10 @@ const en: Messages = {
       "Another directory inside the shared workspace (default: the employee's desk workspace)",
     proposalMaterialLabel: "How the material is listed (default: derived from the URL)",
     proposalFeedbackText: "What the implementation found",
+    proposalConclusionText: "The conclusion: what was decided, what changes, what stays open",
+    proposalDiscussion: "The discussion's session id (default: the session you run in)",
+    proposalDiscussionMissing:
+      "Name the discussion: run this inside the discussion's session, or pass --discussion <session_id>.",
     proposalRuntime: "The feedback comes from the test team's run of the dev branch",
     proposalPending: "Only the batched, unresolved comments — what the author has to work through",
     proposalResolveText: "What was changed for it",
@@ -1913,6 +1927,8 @@ const en: Messages = {
       `Proposal #${number}: ${implementer} is implementing it in session ${sessionId}.`,
     proposalMaterialAdded: (number, kind) => `Attached ${kind} to proposal #${number}.`,
     proposalFeedbackRecorded: (number) => `Feedback recorded on proposal #${number}.`,
+    proposalConcluded: (number, owner) =>
+      `Sent the discussion's conclusion to ${owner}'s desk (proposal #${number}).`,
     proposalCommentResolved: (number, commentId) =>
       `Resolved comment ${commentId} on proposal #${number}.`,
     proposalHead: (number, title, status, revision) =>
@@ -3062,6 +3078,8 @@ const zh: Messages = {
     proposalMaterialDesc: "关联材料：PR、issue、分支、文档、工单",
     proposalMaterialAddDesc: "以 <kind>=<url> 挂上材料（pr、issue、branch、doc、ticket、url）",
     proposalFeedbackDesc: "把实施中的发现反馈给作者（加 --runtime 则是测试 dev 分支的发现）",
+    proposalConcludeDesc:
+      "把一次讨论的结论送到负责人的工位，只送一次（在讨论会话里执行，或由人加 --discussion 指定）",
     proposalCommentsDesc: "打印提案正文，把每段被评论的文字标成 ⟦<id>⟧…⟦/<id>⟧，再按 id 列出评论",
     proposalResolveDesc: "解决一条评论，并说明改了什么",
     proposalStatusFilter: "只列这一状态的提案（drafting、ready、approved、merged、rejected）",
@@ -3077,6 +3095,9 @@ const zh: Messages = {
     proposalWorkspace: "共享工作区内的另一个目录（缺省：该员工工位的工作区）",
     proposalMaterialLabel: "材料在列表里的名字（缺省：由 URL 推导）",
     proposalFeedbackText: "实施中发现了什么",
+    proposalConclusionText: "结论：定了什么、要改什么、还有什么没定",
+    proposalDiscussion: "讨论的会话 id（缺省：你所在的会话）",
+    proposalDiscussionMissing: "请指明讨论：在讨论的会话里执行，或加 --discussion <session_id>。",
     proposalRuntime: "这条反馈来自测试团队对 dev 分支的一次测试",
     proposalPending: "只列已发出的、未解决的评论——作者要处理的那些",
     proposalResolveText: "为它改了什么",
@@ -3097,6 +3118,7 @@ const zh: Messages = {
       `提案 #${number}：${implementer} 正在会话 ${sessionId} 中实施。`,
     proposalMaterialAdded: (number, kind) => `已把 ${kind} 挂到提案 #${number}。`,
     proposalFeedbackRecorded: (number) => `已记录对提案 #${number} 的反馈。`,
+    proposalConcluded: (number, owner) => `已把讨论的结论送到 ${owner} 的工位（提案 #${number}）。`,
     proposalCommentResolved: (number, commentId) => `已解决提案 #${number} 的评论 ${commentId}。`,
     proposalHead: (number, title, status, revision) =>
       `提案 #${number}：${title}——${status}，第 ${revision} 次修订`,
