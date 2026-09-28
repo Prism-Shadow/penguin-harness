@@ -396,7 +396,7 @@ A desk or ticket session also creates its directory when it opens. `--budget` is
 
 - `ls` fetches the whole board and filters it locally. `--status` takes a column: `proposed`, `in_progress`, `review`, `done` or `rejected`. Under `--json`, `ls` prints the filtered list as `{ tickets, invalidFiles }`.
 - `show` prints the derived figures first (column, running state, cost and rolled-up cost, contributing sessions, child tickets), then the ticket's own fields, its prose sections, and its operation history under `History:`.
-- `create` takes either `--goal` (with `--criteria`) or the whole Markdown body from `--body-file`. The frontmatter is generated either way.
+- `create` takes either `--goal` (with `--criteria`) or the whole Markdown body from `--body-file`. The frontmatter is generated either way. The file's `## Goal`, `## Acceptance criteria`, `## Progress` and `## Result` sections become the ticket's and other sections are kept; text above the first `##` heading is refused, and a file with no `##` heading is all goal.
 - `start` prints the bare session id, as `run --background` does, for `penguin logs` and `penguin input` to pick up.
 - `--owner <principal>` names the one principal responsible: an employee (an agent id or `agent:<id>`) or a Project member (`user:<id>`). It defaults to the caller. When no `--notify` is given, the owner becomes the whole `notify` list, but only if the owner is an employee: a person is not notified about a ticket they own, and adds themselves with `--notify` to be told.
 - Who filed a ticket is not a flag. It is the `created` entry of the ticket's history, taken from the environment the command ran in.

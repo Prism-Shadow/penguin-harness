@@ -71,7 +71,13 @@ import type { Settings } from "../../mechanisms/settings.js";
 import type { Errors, UsageQueries } from "../../mechanisms/observability.js";
 import { OrgStore } from "../../organization/store.js";
 import { badRequest } from "../../http/validate.js";
-import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";
+import type {
+  ChannelConfig,
+  OrgConfig,
+  OrgEmployee,
+  TicketDoc,
+  TicketProse,
+} from "../../organization/files.js";
 import {
   BUDGET_RATIO_MAX,
   DEFAULT_CEO_BUDGET,
@@ -84,6 +90,7 @@ import {
   orgLanguage,
   parseCalendarEvent,
   parseOrgChart,
+  parseTicketBody,
   serializeCalendarEvent,
   serializeOrgChart,
   slugSuffix,
@@ -1682,6 +1689,14 @@ export class OrganizationService {
     req: OrgTicketCreateRequest,
     actor: Actor,
   ): Promise<OrgTicketDetail> {
+    // `body` is the whole Markdown body: its sections become the ticket's. Parsed before the
+    // lock and the slug ask, so a body that cannot be read costs neither.
+    let fromBody: TicketProse | null = null;
+    if (req.body !== undefined) {
+      const parsed = parseTicketBody(req.body);
+      if (!parsed.ok) throw badRequest(`body: ${parsed.error}`);
+      fromBody = parsed.value;
+    }
     const ticketId = await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireValidOrg(projectId, orgId);
       const title = req.title.trim();
@@ -1715,12 +1730,14 @@ export class OrganizationService {
         ...(req.due !== undefined ? { due: req.due } : {}),
         sessions: [],
         history: [],
-        goal: (req.body ?? req.goal ?? "").trim(),
-        acceptanceCriteria: req.body !== undefined ? "" : (req.acceptanceCriteria ?? "").trim(),
-        progress: [],
-        result: "",
+        ...(fromBody ?? {
+          goal: (req.goal ?? "").trim(),
+          acceptanceCriteria: (req.acceptanceCriteria ?? "").trim(),
+          progress: [],
+          result: "",
+          extraSections: [],
+        }),
         extra: {},
-        extraSections: [],
       };
       this.recordHistory(doc, by, "created");
       // Filing for somebody else is two facts: who filed it, and who it landed on.

@@ -1239,7 +1239,8 @@ const en: Messages = {
     ticketSlug: "The ticket id's words: lowercase English words joined by hyphens",
     goal: "The goal, naming every input it relies on by full path (mutually exclusive with --body-file)",
     criteria: "Acceptance criteria, naming the expected deliverables by full path (with --goal)",
-    bodyFile: "Read the whole Markdown body from this file (the header is still generated)",
+    bodyFile:
+      "Read the whole Markdown body from this file (the header is still generated): its ## Goal, ## Acceptance criteria, ## Progress and ## Result sections become the ticket's, nothing may stand above the first ## heading, and a file with no ## heading is all goal",
     owner: "The responsible principal (agent:<id> / user:<id>); defaults to you on create",
     parent: "Parent ticket id",
     notify: "Principals notified when the ticket ends, comma-separated",
@@ -2097,7 +2098,8 @@ const zh: Messages = {
     ticketSlug: "工单 id 的词：小写英文单词，用连字符连接",
     goal: "目标，所依赖的输入一律写完整路径（与 --body-file 互斥）",
     criteria: "验收标准，预期交付物一律写完整路径（与 --goal 配合）",
-    bodyFile: "从文件读取整个 Markdown 正文（头部仍由服务端生成）",
+    bodyFile:
+      "从文件读取整个 Markdown 正文（头部仍由服务端生成）：其中的 ## Goal、## Acceptance criteria、## Progress、## Result 各节成为工单的对应小节，第一个 ## 标题之前不能有文字；没有任何 ## 标题的文件整体作为目标",
     owner: "负责人（agent:<id> / user:<id>）；create 时缺省为调用方",
     parent: "父工单 id",
     notify: "工单结束时通知的对象，逗号分隔",

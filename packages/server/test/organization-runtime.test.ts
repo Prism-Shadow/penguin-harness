@@ -1804,6 +1804,55 @@ describe("organization runtime", () => {
       expect(again.ticketId).toBe("2026-09-01-launch-the-site-b");
     });
 
+    it("a whole body keeps its own sections: the criteria are the ticket's, not a second heading in the goal", async () => {
+      const body = [
+        "## Goal",
+        "Ship the site.",
+        "",
+        "## Acceptance criteria",
+        "- The home page answers 200.",
+        "- The docs link works.",
+        "",
+        "## Notes",
+        "Ask the designer first.",
+        "",
+      ].join("\n");
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Launch the site", body },
+        { userId: "alice" },
+      );
+      expect(t.goal).toBe("Ship the site.");
+      expect(t.acceptanceCriteria).toBe("- The home page answers 200.\n- The docs link works.");
+      const file = await fs.readFile(
+        path.join(orgDir(), "tickets", "2026-09", "proposed", `${t.ticketId}.md`),
+        "utf8",
+      );
+      expect(file.match(/^## Goal$/gm)).toHaveLength(1);
+      expect(file.match(/^## Acceptance criteria$/gm)).toHaveLength(1);
+      expect(file).toContain("## Notes\nAsk the designer first.");
+      // Plain prose without a single section heading is all goal, as before.
+      const plain = await service.createTicket(
+        P,
+        ORG,
+        { title: "Buy the domain", body: "Buy it before Friday.\n" },
+        { userId: "alice" },
+      );
+      expect(plain.goal).toBe("Buy it before Friday.");
+      // Text above the first heading is refused, naming it, and no ticket is written.
+      await expect(
+        service.createTicket(
+          P,
+          ORG,
+          { title: "Preamble first", body: "# Launch\n## Goal\nShip.\n" },
+          { userId: "alice" },
+        ),
+      ).rejects.toMatchObject({ status: 400, message: expect.stringContaining("# Launch") });
+      const filed = await fs.readdir(path.join(orgDir(), "tickets", "2026-09", "proposed"));
+      expect(filed.filter((f) => f.includes("preamble"))).toEqual([]);
+    });
+
     it("blocking notices the blocker and the owner's manager; closing the blocker tells the owner", async () => {
       const blocker = await service.createTicket(
         P,

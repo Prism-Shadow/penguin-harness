@@ -396,7 +396,7 @@ penguin org finance [--period <YYYY-MM>] [--json]
 
 - `ls` 拉取整个看板后在本地过滤。`--status` 接受一列：`proposed`、`in_progress`、`review`、`done` 或 `rejected`。`--json` 下，`ls` 以 `{ tickets, invalidFiles }` 打印过滤后的列表。
 - `show` 先打印派生数据（所在列、运行状态、成本和汇总成本、贡献会话、子工单），然后是工单自身字段、正文各节，以及 `History:` 下的操作历史。
-- `create` 接受 `--goal`（配合 `--criteria`），或从 `--body-file` 读取完整的 Markdown 正文。两种方式都会生成 frontmatter。
+- `create` 接受 `--goal`（配合 `--criteria`），或从 `--body-file` 读取完整的 Markdown 正文。两种方式都会生成 frontmatter。文件中的 `## Goal`、`## Acceptance criteria`、`## Progress`、`## Result` 各节成为工单的对应小节，其余小节原样保留；第一个 `##` 标题之前有文字时拒绝，没有任何 `##` 标题的文件整体作为目标。
 - `start` 打印裸 session id，与 `run --background` 一样，供 `penguin logs` 和 `penguin input` 接手。
 - `--owner <principal>` 指定唯一的负责主体：员工（Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`）。默认取调用方。未指定 `--notify` 时，负责人会成为完整的 `notify` 列表，但前提是负责人是员工：人不会就自己名下的工单收到通知，想收到通知需要用 `--notify` 把自己加进去。
 - 谁提交的工单不由选项指定：它就是工单历史里的 `created` 条目，取自命令运行时所处的环境。

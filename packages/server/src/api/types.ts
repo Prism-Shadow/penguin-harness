@@ -5167,7 +5167,12 @@ export interface OrgTicketCreateRequest {
   slug?: string;
   goal?: string;
   acceptanceCriteria?: string;
-  /** The whole Markdown body instead of goal + acceptanceCriteria (the frontmatter is still generated). */
+  /**
+   * The whole Markdown body instead of goal + acceptanceCriteria (the frontmatter is still
+   * generated): its `## Goal` / `## Acceptance criteria` / `## Progress` / `## Result` sections
+   * become the ticket's, other sections are kept as written, and text above the first section
+   * heading is a 400. A body without any `## ` heading is all goal.
+   */
   body?: string;
   /**
    * The responsible principal: an employee's `agent:<id>` (or bare Agent id) or a member's

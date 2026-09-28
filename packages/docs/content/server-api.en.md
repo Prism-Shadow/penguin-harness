@@ -573,6 +573,7 @@ Warnings never block the write. `PUT /:orgId/calendar/:agentId/:name` answers th
 ### Tickets
 
 - `POST /:orgId/tickets` takes `{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}`.
+- `body` is the whole Markdown body instead of `goal` + `acceptanceCriteria`, and the frontmatter is still generated. Its `## Goal`, `## Acceptance criteria`, `## Progress` and `## Result` sections become the ticket's and any other section is kept as written. Text above the first section heading is 400; a body with no `## ` heading at all is the goal.
 - `owner` is the one principal responsible: an employee (a bare agent id or `agent:<id>`) or a Project member (`user:<id>`). It defaults to the caller. When `notify` is absent, the owner becomes the whole `notify` list, but only if the owner is an employee, so a person is not @-mentioned about a ticket they own. Who filed the ticket is the `created` entry of its `history`.
 - The id's slug comes from `slug` when given, which must be lowercase English words joined by hyphens (400 otherwise). Without `slug`, it comes from the title. A title that yields fewer than two words is passed to the Project's model, and if that also fails, 400 `slug_required` asks the caller to name the slug.
 - `GET /:orgId/tickets/:ticketId` returns the frontmatter fields, the prose sections, `progress` as plain sentences, `history`, the contributing sessions, child tickets and the rolled-up cost.

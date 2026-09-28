@@ -573,6 +573,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 ### 工单
 
 - `POST /:orgId/tickets` 接收 `{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}`。
+- `body` 代替 `goal` + `acceptanceCriteria`，直接给出整个 Markdown 正文，frontmatter 仍由服务端生成。其中的 `## Goal`、`## Acceptance criteria`、`## Progress`、`## Result` 各节成为工单的对应小节，其余小节原样保留。第一个小节标题之前有文字时返回 400；完全没有 `## ` 标题的正文整体作为目标。
 - `owner` 是唯一的责任主体：员工（直接写 Agent id，或 `agent:<id>`）或 Project 成员（`user:<id>`）。缺省为调用者。不传 `notify` 时，负责人一人就是整份 `notify` 列表，但前提是负责人为员工，这样人不会因为自己名下的工单被 @。谁提交了工单，记录在 `history` 的 `created` 条目里。
 - id 的 slug 优先取 `slug`，它必须是由连字符连接的小写英文单词（否则返回 400）。不传 `slug` 时从标题提取。标题凑不出两个单词时，交给 Project 的模型处理；模型也失败时，返回 400 `slug_required`，让调用者自己指定 slug。
 - `GET /:orgId/tickets/:ticketId` 返回 frontmatter 字段、正文各节、纯文本形式的 `progress`、`history`、贡献会话、子工单和逐级汇总的成本。

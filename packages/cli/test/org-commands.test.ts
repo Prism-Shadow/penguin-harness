@@ -598,15 +598,18 @@ describe("penguin org ticket (writes carry the calling session)", () => {
   it("create takes the whole body from --body-file; --goal with it, --criteria without it and a bad priority are refused", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-org-test-"));
     const file = path.join(dir, "ticket.md");
-    fs.writeFileSync(file, "## Goal\nFrom a file\n");
+    // A sectioned body goes over as written: the server splits it into the ticket's sections,
+    // so the CLI must neither fold it into --goal nor drop the criteria.
+    const sectioned = "## Goal\nFrom a file\n\n## Acceptance criteria\n- It is read back\n";
+    fs.writeFileSync(file, sectioned);
     try {
       expect(await cli(["org", "ticket", "create", "--title", "Docs", "--body-file", file])).toBe(
         0,
       );
-      expect(lastRequest("POST", "/tickets")?.body).toMatchObject({
-        title: "Docs",
-        body: "## Goal\nFrom a file\n",
-      });
+      const sent = lastRequest("POST", "/tickets")?.body;
+      expect(sent).toMatchObject({ title: "Docs", body: sectioned });
+      expect(sent).not.toHaveProperty("goal");
+      expect(sent).not.toHaveProperty("acceptanceCriteria");
       const create = ["org", "ticket", "create", "--title", "Docs"];
       expect(await cli([...create, "--goal", "g", "--body-file", file])).toBe(1);
       expect(await cli([...create, "--criteria", "c", "--body-file", file])).toBe(1);
