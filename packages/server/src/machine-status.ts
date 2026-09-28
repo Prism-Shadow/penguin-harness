@@ -49,7 +49,7 @@ export async function readMachineStatus(
 }
 
 /**
- * Reads the id and changes nothing — and cannot: the connection is read-only.
+ * Reads the id and cannot change the database: the connection is read-only.
  *
  * `openDatabaseReadOnly`, never `openDatabase`: the latter is the SCHEMA path — CREATE TABLE,
  * the ensureColumn list, an ALTER with a backfill, and the migrations. A controller asking a
@@ -57,8 +57,16 @@ export async function readMachineStatus(
  * of the server running there, on a build that may be older than this question. A read-only
  * open makes that impossible rather than merely not done.
  *
- * Existence-checked first, because opening would create the file (and its directory) on a
- * root no server has ever used — a probe must not leave a data root behind it. A machine
+ * Read-only covers web.db, not the directory around it. The server keeps web.db in WAL mode,
+ * and SQLite reads a WAL database through `web.db-wal` and `web.db-shm` beside it, creating
+ * them when no connection holds the database — a machine whose server is stopped — and a
+ * read-only close does not remove them. So there the probe leaves an empty `web.db-wal` and a
+ * `web.db-shm` next to a web.db whose bytes it did not touch; with a server running they are
+ * already there and nothing new appears. Both are SQLite's own files, which the next server
+ * to open the database takes over.
+ *
+ * Existence-checked first, because a read-only open of a missing file is an error, while a
+ * root no server has ever used is an ordinary answer: no id, and no file left behind. A machine
  * whose database predates the `machine` table answers with no id rather than an error: it is
  * one that has never run a build that mints one, which is the truth about it.
  */
