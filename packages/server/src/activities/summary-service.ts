@@ -4,6 +4,7 @@
  * exists); a project holds tens of refs, not thousands.
  */
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import type { Log } from "../hmr/capabilities.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import type { ActivitySandbox } from "./sandbox-service.js";
 import { contentRevision, type ActivityRecord } from "./domain.js";
@@ -21,11 +22,25 @@ export class ActivitySummaryService implements ActivitySummaries {
   @Use() private readonly activities!: ActivityAuthoring;
   @Use() private readonly generation!: ActivityGeneration;
   @Use() private readonly sandbox!: ActivitySandbox;
+  @Use() private readonly log!: Log;
 
+  /**
+   * One broken activity must not take the whole list down: a caller asking for summaries
+   * across a project's refs would otherwise lose the page over a single bad row. A failing
+   * activity is simply left out of the map; the card renders without a status.
+   */
   async forActivities(projectId: string, activities: readonly ActivityRecord[]) {
-    const entries = await Promise.all(
+    const settled = await Promise.allSettled(
       activities.map(async (record) => [record.id, await this.one(projectId, record)] as const),
     );
+    const entries: (readonly [string, ActivitySummary])[] = [];
+    for (const [index, result] of settled.entries()) {
+      if (result.status === "fulfilled") entries.push(result.value);
+      else
+        this.log.line(
+          `[activities] Summary failed for ${activities[index]!.id}: ${String(result.reason)}`,
+        );
+    }
     return Object.fromEntries(entries);
   }
 
