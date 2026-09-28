@@ -1722,6 +1722,14 @@ test("member view is read-only and mobile layout does not overflow", async ({ pa
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+  // The breadcrumb's title truncates rather than pushing the row wider than the viewport:
+  // either it is long enough to be visibly clipped, or it simply fits at this width.
+  const crumbTitle = page.locator('nav[aria-label="Breadcrumb"] h2');
+  expect(
+    await crumbTitle.evaluate(
+      (el) => el.scrollWidth > el.clientWidth || el.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
   // Opening the rail here is a temporary answer to having no room for both, so a wider
   // window and back must not leave it covering the editor again. The emulated viewport
   // change does not notify the page the way a real window resize does, so the

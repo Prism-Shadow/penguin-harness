@@ -1236,7 +1236,7 @@ function ActivityEditor({
               >
                 {S.activities.backToActivities}
               </Link>
-              <span aria-hidden className="text-gray-300 dark:text-gray-600">
+              <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">
                 /
               </span>
               <span
@@ -1245,10 +1245,10 @@ function ActivityEditor({
               >
                 {detail.productCode}
               </span>
-              <span aria-hidden className="text-gray-300 dark:text-gray-600">
+              <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">
                 /
               </span>
-              <h2 className="truncate font-semibold" title={detail.title}>
+              <h2 className="min-w-0 truncate font-semibold" title={detail.title}>
                 {detail.title}
               </h2>
               <RefSwitcher
