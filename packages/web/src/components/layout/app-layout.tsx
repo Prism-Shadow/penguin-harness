@@ -9,7 +9,7 @@ import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-route
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { navKeysFor } from "../../lib/nav-group-collapse";
-import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
+import { latestOwnConversation } from "../../lib/activity-sessions";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
@@ -101,8 +101,8 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
 
-  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). An organization's desk and ticket Sessions are never conversations of this list. */
-  const lastSession = useMemo(() => latestConversation(withoutOrgSessions(sessions)), [sessions]);
+  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). An organization's desk and ticket Sessions and activity runs are never conversations of this list. */
+  const lastSession = useMemo(() => latestOwnConversation(sessions), [sessions]);
 
   /** Mirrors Sidebar.openSession: the current Agent follows the opened Session's Agent. */
   const openLastSession = () => {

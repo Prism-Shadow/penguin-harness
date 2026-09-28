@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
+  latestOwnConversation,
   sessionHref,
   settledActivityRuns,
   shouldReloadList,
@@ -31,5 +32,14 @@ describe("activity sessions", () => {
     expect(shouldReloadList("act", "act2")).toBe(false);
     // Came back from an activity to the list.
     expect(shouldReloadList("act", undefined)).toBe(true);
+  });
+  it("auto-opens the newest own conversation, never an activity run or an organization's session", () => {
+    const row = (sessionId: string, lastActiveAt: string, extra: Partial<SessionInfo> = {}) =>
+      ({ sessionId, lastActiveAt, status: "idle", ...extra }) as unknown as SessionInfo;
+    const own = row("own", "2026-09-01T00:00:00.000Z");
+    const run = row("run", "2026-09-03T00:00:00.000Z", { activityId: "act" });
+    const desk = row("desk", "2026-09-02T00:00:00.000Z", { orgId: "acme" });
+    expect(latestOwnConversation([run, desk, own])?.sessionId).toBe("own");
+    expect(latestOwnConversation([run, desk])).toBeNull();
   });
 });

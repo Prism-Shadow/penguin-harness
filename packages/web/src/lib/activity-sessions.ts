@@ -3,9 +3,19 @@
  * its studio, not in the global session list, and opening one goes back to the activity.
  */
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import { latestConversation, withoutOrgSessions } from "./session-grouping";
 
 export function withoutActivityRuns(sessions: readonly SessionInfo[]): SessionInfo[] {
   return sessions.filter((session) => session.activityId === undefined);
+}
+
+/**
+ * The conversation the app opens by itself (the chat page's auto-select, the rail's
+ * last-conversation entry): never an organization's session, never an activity's run.
+ * One helper so the two entry points cannot drift apart.
+ */
+export function latestOwnConversation(sessions: readonly SessionInfo[]): SessionInfo | null {
+  return latestConversation(withoutActivityRuns(withoutOrgSessions(sessions)));
 }
 
 export function sessionHref(session: Pick<SessionInfo, "sessionId" | "activityId">): string {

@@ -43,7 +43,7 @@ import {
   humanizeDurationLive,
   humanizeTokens,
 } from "../../lib/format";
-import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
+import { latestOwnConversation } from "../../lib/activity-sessions";
 import { sessionActivity, sessionBackgroundTasks } from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
 import {
@@ -765,8 +765,9 @@ export function ChatPage() {
     if (routeSessionPending) return;
     // An organization's desk or ticket Session is never auto-opened: landing in one by default
     // would put the user inside a conversation the scheduler drives, and company mode's own
-    // groups are where it is reached.
-    const last = latestConversation(withoutOrgSessions(sessions));
+    // groups are where it is reached. An activity's run is never auto-opened either: it
+    // lives in its activity's studio.
+    const last = latestOwnConversation(sessions);
     navigate(last ? `/chat/${last.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
   }, [sessionsLoading, draft, selected, routeSessionPending, sessions, navigate]);
 
