@@ -14,6 +14,15 @@ import type {
 import { ApiError, apiFetch } from "../../api/client";
 import { Button } from "../../components/ui/button";
 import { InfoPopover } from "../../components/ui/info-popover";
+import { SkeletonList } from "../../components/ui/skeleton";
+import {
+  TABLE,
+  TABLE_HEAD_ROW,
+  TABLE_WRAP,
+  TBODY,
+  TD,
+  TH,
+} from "../../components/ui/table-classes";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
@@ -29,11 +38,6 @@ import {
 import { DeployProd } from "./deploy-prod";
 import { DeployRelease } from "./deploy-release";
 import type { Announcement } from "./run-toasts";
-
-const HEAD =
-  "border-b border-gray-100 bg-gray-50 text-left text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400";
-const TH = "whitespace-nowrap px-3 py-2 font-medium";
-const TD = "px-3 py-2 align-top";
 
 /** Why a Prepare clones press failed, in words: the server sends the facts, not a sentence. */
 function prepareError(cause: unknown): string {
@@ -199,7 +203,11 @@ export function DeployPanel({
           {words.loadFailed(loadError)}
         </p>
       )}
-      {!loadError && !context && <p className="text-xs text-gray-500">{words.loading}</p>}
+      {!loadError && !context && (
+        <div role="status" aria-label={words.loading}>
+          <SkeletonList rows={3} />
+        </div>
+      )}
       {actionError && (
         <p role="alert" className={`text-xs ${toneInk.danger}`}>
           {actionError}
@@ -223,15 +231,15 @@ export function DeployPanel({
               {words.pinnedBuild}
             </p>
           )}
-          <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-            <table className="w-full text-sm" aria-label={words.checksLabel}>
+          <div className={TABLE_WRAP}>
+            <table className={TABLE} aria-label={words.checksLabel}>
               <thead>
-                <tr className={HEAD}>
+                <tr className={TABLE_HEAD_ROW}>
                   <th className={TH}>{words.columns.check}</th>
                   <th className={TH}>{words.columns.state}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
+              <tbody className={TBODY}>
                 {rows.map((row) => (
                   <tr key={row.id}>
                     <td className={`${TD} whitespace-nowrap font-medium`}>

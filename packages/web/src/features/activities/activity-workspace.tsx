@@ -18,6 +18,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Chevron } from "../../components/ui/chevron";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CloseIcon } from "../../components/ui/icons";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
@@ -309,7 +310,7 @@ export function ActivityWorkspace({
               ...(sideBeside ? {} : { right: `${STUDIO_RAIL_WIDTH}px` }),
             }}
             className={`flex min-h-0 max-w-full shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 ${
-              sideBeside ? "" : "absolute inset-y-0 z-30 shadow-lg"
+              sideBeside ? "" : "absolute inset-y-0 z-50 shadow-lg"
             }`}
           >
             <div className="flex h-10 shrink-0 items-center gap-2 border-b border-gray-200 px-3 dark:border-gray-800">
@@ -347,19 +348,7 @@ export function ActivityWorkspace({
                     : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                 }`}
               >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <path d={entry.icon} />
-                </svg>
+                <GlyphIcon d={entry.icon} size={18} />
               </button>
             ))}
           </nav>

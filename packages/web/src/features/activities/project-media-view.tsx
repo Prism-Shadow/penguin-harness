@@ -9,6 +9,7 @@ import type { LibraryFile, ProjectMediaListing } from "@prismshadow/penguin-serv
 import { ApiError, apiFetch } from "../../api/client";
 import { Button, labelButtonClass } from "../../components/ui/button";
 import { ChipGroup } from "../../components/ui/chip-group";
+import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { InfoPopover } from "../../components/ui/info-popover";
@@ -264,7 +265,7 @@ export function ProjectMediaView({
                 {words.loading}
               </p>
             ) : !files.length ? (
-              <p className="text-sm text-gray-500">{words.empty}</p>
+              <EmptyState title={words.empty} />
             ) : !shown.length ? (
               <p className="text-sm text-gray-500">{words.noMatches}</p>
             ) : view === "grid" ? (

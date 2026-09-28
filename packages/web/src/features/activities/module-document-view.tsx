@@ -21,6 +21,7 @@ import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Textarea } from "../../components/ui/input";
+import { SkeletonList } from "../../components/ui/skeleton";
 import { AssessmentItemsEditor } from "./assessment-items-editor";
 import { assessmentRunState, readItems } from "./assessment-items";
 import {
@@ -97,7 +98,12 @@ export function ModuleDocumentView({
   }, [endpoint, revision, kind]);
 
   if (error) return <p className={`text-sm ${toneInk.danger}`}>{words.unreadable(error)}</p>;
-  if (!documents) return <p className="text-sm text-gray-500">{words.loading}</p>;
+  if (!documents)
+    return (
+      <div role="status" aria-label={words.loading}>
+        <SkeletonList rows={3} />
+      </div>
+    );
   const document = documents.source ? documents[kind] : null;
   const canonical =
     documents.canonicalRefNum === null ||

@@ -18,6 +18,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
+import { TABLE, TABLE_HEAD_ROW, TABLE_WRAP, TBODY, TH } from "../../components/ui/table-classes";
 import { Modal } from "../../components/ui/modal";
 
 export function AdminUsersSection() {
@@ -57,19 +58,17 @@ export function AdminUsersSection() {
       {users === null ? (
         <p className="text-sm text-gray-400">{S.common.loading}</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-          <table className="w-full text-sm">
+        <div className={TABLE_WRAP}>
+          <table className={TABLE}>
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
-                <th className="whitespace-nowrap px-3 py-2 font-medium">{S.common.username}</th>
-                <th className="whitespace-nowrap px-3 py-2 font-medium">{S.common.role}</th>
-                <th className="whitespace-nowrap px-3 py-2 font-medium">{S.common.created}</th>
-                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">
-                  {S.common.actions}
-                </th>
+              <tr className={TABLE_HEAD_ROW}>
+                <th className={TH}>{S.common.username}</th>
+                <th className={TH}>{S.common.role}</th>
+                <th className={TH}>{S.common.created}</th>
+                <th className={`${TH} text-right`}>{S.common.actions}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
+            <tbody className={TBODY}>
               {users.map((u) => (
                 <tr key={u.userId}>
                   <td className="whitespace-nowrap px-3 py-2 font-medium">

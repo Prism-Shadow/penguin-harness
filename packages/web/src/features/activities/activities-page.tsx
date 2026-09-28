@@ -34,6 +34,7 @@ import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { InfoPopover } from "../../components/ui/info-popover";
+import { EmptyState } from "../../components/ui/empty-state";
 import { AssetLibraryView } from "./asset-library-view";
 import { settledPipeline, settledRuns, type Announcement } from "./run-toasts";
 import { CreateActivityDialog } from "./create-activity-dialog";
@@ -122,7 +123,7 @@ export function ActivitiesPage() {
   const project =
     currentProject ??
     (previousProject.current?.projectId === unavailableProjectId ? previousProject.current : null);
-  if (!project) return <p className="p-6 text-sm text-gray-500">{S.activities.noProject}</p>;
+  if (!project) return <EmptyState title={S.activities.noProject} />;
   return (
     <ActivityWorkspace
       key={project.projectId}

@@ -6,6 +6,7 @@
  */
 import { Link } from "react-router";
 import type { ActivityRunSummary } from "@prismshadow/penguin-server/api";
+import { EmptyState } from "../../components/ui/empty-state";
 import { S } from "../../lib/strings";
 import { toneDot, type Tone } from "../../lib/tone";
 
@@ -57,8 +58,7 @@ export function sessionRuns(runs: readonly ActivityRunSummary[]): ActivityRunSum
 
 export function SessionsPanel({ runs }: { runs: readonly ActivityRunSummary[] }) {
   const sessions = sessionRuns(runs);
-  if (!sessions.length)
-    return <p className="p-4 text-sm text-gray-500">{S.activities.studioPanels.sessionsEmpty}</p>;
+  if (!sessions.length) return <EmptyState title={S.activities.studioPanels.sessionsEmpty} />;
   return (
     <ul className="divide-y divide-gray-200 dark:divide-gray-800">
       {sessions.map((run) => (

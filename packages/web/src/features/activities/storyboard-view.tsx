@@ -7,6 +7,7 @@
 import { useState } from "react";
 import type { SceneAssetLeaf } from "./scene-assets";
 import { Button } from "../../components/ui/button";
+import { EmptyState } from "../../components/ui/empty-state";
 import { S } from "../../lib/strings";
 import { toneDot } from "../../lib/tone";
 import type { StoryboardFrame } from "./storyboard";
@@ -120,7 +121,7 @@ export function Storyboard({
       )}
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {frames.length === 0 ? (
-          <p className="text-sm text-gray-500">{words.empty}</p>
+          <EmptyState title={words.empty} />
         ) : (
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] gap-4">
             {frames.map((frame) => {
