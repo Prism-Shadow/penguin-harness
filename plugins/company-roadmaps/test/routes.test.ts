@@ -14,6 +14,7 @@ import plugin, {
   DEFAULT_POLL_SECONDS,
   DEFAULT_RELAY_DEPTH,
   ROUTES_ID,
+  RoadmapRoomClaim,
   configOf,
   roadmapRoutes,
 } from "../src/index.js";
@@ -125,15 +126,18 @@ describe("the manifest", () => {
       plugin: { modules: string[] };
     };
 
-  it("names the one module, its routes, and what it requires of the harness", () => {
-    expect(plugin.modules).toEqual([CompanyRoadmapsPlugin]);
+  it("names the two modules, their contributions, and what each requires of the harness", () => {
+    expect(plugin.modules).toEqual([CompanyRoadmapsPlugin, RoadmapRoomClaim]);
     const t = table();
-    expect(t.plugin.modules).toEqual(["CompanyRoadmapsPlugin"]);
+    expect(t.plugin.modules).toEqual(["CompanyRoadmapsPlugin", "RoadmapRoomClaim"]);
+    const claim = t.modules.RoadmapRoomClaim;
+    expect(
+      (claim?.contributes["OrganizationModule.channelClaims"]?.[0] as { id: string }).id,
+    ).toBe(CLAIM_ID);
+    // The claim node must not require what the organization module provides: that is a cycle.
+    expect(JSON.stringify(claim)).not.toContain("CompanyModule");
     const manifest = t.modules.CompanyRoadmapsPlugin;
     expect((manifest?.contributes["HttpModule.routes"]?.[0] as { id: string }).id).toBe(ROUTES_ID);
-    expect(
-      (manifest?.contributes["OrganizationModule.channelClaims"]?.[0] as { id: string }).id,
-    ).toBe(CLAIM_ID);
     const text = JSON.stringify(manifest);
     for (const from of [
       "CompanyModule",

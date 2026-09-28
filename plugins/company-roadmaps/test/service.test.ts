@@ -7,7 +7,7 @@
  * and the one stacked on it learns the number; an owner reopens it. Nothing here starts a
  * server or a Session.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { RoadmapError, type RoadmapService } from "../src/index.js";
 import { BOSS, ORG, PROJECT, asAgent, post, world, writeChannel, type World } from "./fakes.js";
 
@@ -456,45 +456,6 @@ describe("after the establishment", () => {
     await service.establish(P, O, n, BOSS);
     expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_web"]);
     expect(w.gateway.desks[0]?.text).toContain("The brief of your item changed");
-  });
-});
-
-describe("the channel claim", () => {
-  const room = (channelId: string) => ({ projectId: P, orgId: O, channelId });
-
-  it("claims the room of a roadmap under discussion, and handles the message at once — no poll, no desk", async () => {
-    await openA();
-    await post(w.root, "room_a", "user:boss", "@acme_dev what goes first?", {
-      mentions: ["agent:acme_dev"],
-    });
-    expect(service.claims(room("room_a"))).toBe(true);
-    await vi.waitFor(() => expect(w.runner.to("room-1")).toHaveLength(1));
-    expect(w.runner.to("room-1")[0]).toContain("what goes first?");
-    expect(w.runner.to("room-2")).toHaveLength(1);
-    expect(w.gateway.desks).toEqual([]);
-  });
-
-  it("does not claim a channel that is no roadmap's room, an established one, a shelved one, or any while company mode is off", async () => {
-    const n = await openA();
-    expect(service.claims(room("room_b"))).toBe(false);
-    w.gateway.enabled = false;
-    expect(service.claims(room("room_a"))).toBe(false);
-    w.gateway.enabled = true;
-    await service.setArchived(P, O, n, true, BOSS);
-    expect(service.claims(room("room_a"))).toBe(false);
-    await service.setArchived(P, O, n, false, BOSS);
-    expect(service.claims(room("room_a"))).toBe(true);
-    await service.draft(P, O, n, { body: BODY, items: [ITEMS[0]] }, BOSS);
-    await service.establish(P, O, n, BOSS);
-    expect(service.claims(room("room_a"))).toBe(false);
-  });
-
-  it("answers after a restart once the ledgers on disk are loaded", async () => {
-    await openA();
-    const again = w.service();
-    expect(again.claims(room("room_a"))).toBe(false);
-    await again.preload();
-    expect(again.claims(room("room_a"))).toBe(true);
   });
 });
 

@@ -1054,46 +1054,9 @@ export class RoadmapService {
     return this.relaying;
   }
 
-  /**
-   * The organization's question before it delivers a channel's mentions to desks
-   * (`OrganizationModule.channelClaims`): is this channel the room of a roadmap under
-   * discussion? If it is, the answer is yes — the message stays in the room, no desk is woken —
-   * and the message is handled here: a relay pass over that room is started at once, after
-   * the organization's pass that asked (it holds the organization's lock, and the answer must
-   * not wait on anything). An established, shelved or unknown room is not claimed, and its
-   * mentions reach desks as in any channel. Only ledgers already loaded are read: the
-   * question is synchronous; start() loads every ledger on disk.
-   */
-  claims(channel: { projectId: string; orgId: string; channelId: string }): boolean {
-    if (!this.deps.gateway.companyModeEnabled()) return false;
-    const ledger = this.ledgers.get(`${channel.projectId}/${channel.orgId}`);
-    const room = ledger
-      ?.roadmaps()
-      .find(
-        (r) => r.channelId === channel.channelId && r.status === "discussing" && !r.archived,
-      );
-    if (room === undefined) return false;
-    setImmediate(() => {
-      void this.relayRoadmap(channel.projectId, channel.orgId, room.number);
-    });
-    return true;
-  }
-
-  /** Loads the ledger of every organization with one on disk, so claims() can answer. */
-  async preload(): Promise<void> {
-    for (const { projectId, orgId } of await this.knownOrgs()) {
-      await this.ledger(projectId, orgId).load();
-    }
-  }
-
   /** Relays on a timer (the configured period, re-read every tick). */
   start(): void {
     if (this.timer !== null) return;
-    void this.preload().catch((err: unknown) =>
-      this.deps.log.line(
-        `[company-roadmaps] loading the ledgers failed: ${err instanceof Error ? err.message : String(err)}`,
-      ),
-    );
     let last = 0;
     this.timer = setInterval(() => {
       const period = this.config().pollSeconds * 1000;
