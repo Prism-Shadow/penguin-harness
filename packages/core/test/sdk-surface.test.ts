@@ -54,7 +54,7 @@ interface SubpathRecord {
 
 /**
  * The eight subpath exports of package.json, with the runtime names each one ships at revision
- * 9eebc91c (root 0.2.13).
+ * 8a2600d1 (root 0.2.13).
  */
 const SUBPATHS: SubpathRecord[] = [
   {
@@ -225,6 +225,7 @@ const SUBPATHS: SubpathRecord[] = [
       "createInputSubagentTool",
       "createReadFileTool",
       "createSubagentTool",
+      "createTempWorkspace",
       "createWriteFileTool",
       "defaultAgentsMd",
       "defaultProjectConfig",
@@ -242,6 +243,7 @@ const SUBPATHS: SubpathRecord[] = [
       "fastModeProtocol",
       "findLatestTraceFile",
       "formatModelRef",
+      "formatSessionId",
       "getModel",
       "groupHistoryToUniMessages",
       "groupPlugins",
@@ -415,6 +417,7 @@ const SUBPATHS: SubpathRecord[] = [
       "truncateTitle",
       "unwrapSyntheticBlock",
       "usageToTokenCounts",
+      "usePushedPluginLibrary",
       "userMemoryDir",
       "userSteeringText",
       "userText",
@@ -651,6 +654,7 @@ const SUBPATHS: SubpathRecord[] = [
       "boot",
       "bootModules",
       "checkTree",
+      "closedShape",
       "dataExtends",
       "defineIface",
       "defineModule",
@@ -703,7 +707,7 @@ type StatementRecord =
   | { kind: "decl"; declaration: string };
 
 /**
- * Every export statement of src/index.ts as it stands at 9eebc91c: 29 statements, of which 25
+ * Every export statement of src/index.ts as it stands at 8a2600d1: 29 statements, of which 25
  * re-export from a module and 4 declare the release identity and buildInfo(). A statement that
  * adds, drops or renames a name changes its record; one that disappears changes the count.
  */
@@ -801,7 +805,7 @@ const BARREL_STATEMENTS: StatementRecord[] = [
   {
     kind: "named",
     from: "./internal/session-support.js",
-    names: ["appendAttachmentLines"],
+    names: ["appendAttachmentLines", "createTempWorkspace", "formatSessionId"],
   },
   {
     kind: "named",
@@ -1004,7 +1008,7 @@ describe("the package barrel (src/index.ts)", () => {
  * barrel), and two bare imports of one name in one file are a compile error (TS2300), which would
  * make this file fail its own guard. Read the prefix as the subpath that must keep exporting it.
  */
-// . — 192 public names that exist only at compile time.
+// . — 193 public names that exist only at compile time.
 import type {
   AbortPayload as _barrel_AbortPayload,
   AgentAssembly as _barrel_AgentAssembly,
@@ -1133,6 +1137,7 @@ import type {
   ProjectConfig as _barrel_ProjectConfig,
   PromptSection as _barrel_PromptSection,
   ProxyEnvPolicy as _barrel_ProxyEnvPolicy,
+  QuickStart as _barrel_QuickStart,
   RequestBeginPayload as _barrel_RequestBeginPayload,
   RequestEndPayload as _barrel_RequestEndPayload,
   ResolveMCPServersResult as _barrel_ResolveMCPServersResult,
@@ -1310,12 +1315,14 @@ import type {
   VisionDescriberService as _interfaces_VisionDescriberService,
 } from "../src/interfaces/index.js";
 
-// ./plugin — 19 public names that exist only at compile time.
+// ./plugin — 29 public names that exist only at compile time.
 import type {
   ClassCtx as _plugin_ClassCtx,
   ComponentMeta as _plugin_ComponentMeta,
   ConfinedArgv as _plugin_ConfinedArgv,
   ConfinedSandboxMode as _plugin_ConfinedSandboxMode,
+  LanguageContribution as _plugin_LanguageContribution,
+  LanguageGrammar as _plugin_LanguageGrammar,
   ModuleClass as _plugin_ModuleClass,
   ModuleMeta as _plugin_ModuleMeta,
   Opaque as _plugin_Opaque,
@@ -1330,7 +1337,15 @@ import type {
   SandboxProviderLoad as _plugin_SandboxProviderLoad,
   SandboxProviderSource as _plugin_SandboxProviderSource,
   SandboxSettings as _plugin_SandboxSettings,
+  SessionSurface as _plugin_SessionSurface,
+  SessionSurfaceContribution as _plugin_SessionSurfaceContribution,
   Slot as _plugin_Slot,
+  SurfaceOpenOptions as _plugin_SurfaceOpenOptions,
+  SurfaceRendererRef as _plugin_SurfaceRendererRef,
+  SurfaceReport as _plugin_SurfaceReport,
+  SurfaceSessionRef as _plugin_SurfaceSessionRef,
+  SurfaceState as _plugin_SurfaceState,
+  SurfaceView as _plugin_SurfaceView,
 } from "../src/plugin/index.js";
 
 // ./model-catalog — 7 public names that exist only at compile time.
