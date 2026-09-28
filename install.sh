@@ -7,6 +7,8 @@
 #   PENGUIN_VERSION=vX.Y.Z    choose a version (same as --version vX.Y.Z); a published Release
 #                              installer defaults to its own version, an unstamped source copy to latest
 #   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
+#   PENGUIN_BIN_DIR=<dir>     absolute dir that receives the `penguin` symlink (same as --bin-dir <dir>);
+#                              default ~/.local/bin
 #   PENGUIN_ARCHIVE=<file>    install a local Release archive without network access (same as --archive <file>)
 #   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (speed-probed,
 #                              with the same-version other source as fallback)
@@ -14,8 +16,9 @@
 #   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
 #   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> fallback for PENGUIN_DOWNLOAD_BASE_URL
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
-#   --no-modify-path          do not put `penguin` on PATH (no ~/.local/bin/penguin symlink); for a second
-#                              installation beside the one the command belongs to
+#   --no-modify-path          do not put `penguin` on PATH (no symlink in the bin dir); for a second
+#                              installation beside the one the command belongs to. Wins over --bin-dir
+#                              and PENGUIN_BIN_DIR
 #
 # Each Release attaches exactly one artifact per target: penguin-<target>.tar.gz, a shallow
 # installer bundle holding this script, the program payload (payload.tar.gz) and the payload's
@@ -38,7 +41,7 @@ GITHUB_RELEASE_ROOT="$REPO/releases/download"
 GITHUB_LATEST_BASE="$REPO/releases/latest/download"
 VERSION="${PENGUIN_VERSION:-}"
 INSTALL_DIR="${PENGUIN_INSTALL_DIR:-$HOME/.penguin}"
-BIN_DIR="$HOME/.local/bin"
+BIN_DIR="${PENGUIN_BIN_DIR:-$HOME/.local/bin}"
 MODIFY_PATH=1
 UNIVERSAL=0
 ARCHIVE="${PENGUIN_ARCHIVE:-}"
@@ -126,6 +129,11 @@ while [ $# -gt 0 ]; do
       MODIFY_PATH=0
       shift
       ;;
+    --bin-dir)
+      [ $# -ge 2 ] || fail "--bin-dir requires a directory (e.g. --bin-dir /opt/penguin-test/bin)"
+      BIN_DIR="$2"
+      shift 2
+      ;;
     --archive)
       [ $# -ge 2 ] || fail "--archive requires a path to a Release archive"
       ARCHIVE="$2"
@@ -159,6 +167,14 @@ if [ -n "$ARCHIVE" ] && [ -n "$VERSION" ]; then
 fi
 if [ -n "$VERSION" ]; then
   validate_release_tag "$VERSION"
+fi
+# A relative PATH entry resolves against whatever directory the shell is in, so it never names
+# one place. Checked before anything is downloaded or staged.
+if [ "$MODIFY_PATH" -eq 1 ]; then
+  case "$BIN_DIR" in
+    /*) ;;
+    *) fail "--bin-dir/PENGUIN_BIN_DIR must be an absolute path, got: $BIN_DIR" ;;
+  esac
 fi
 case "$SOURCE_MODE" in
   auto | oss | github) ;;
@@ -764,9 +780,10 @@ OLD_DIR=""
 rm -rf "$STAGING"
 STAGING=""
 
-# --- Symlink into ~/.local/bin and check PATH only after the install is known to work.
-#     --no-modify-path skips both: ~/.local/bin/penguin is one name, and a second
-#     installation that took it would hand its program to whoever types `penguin`. ---
+# --- Symlink into the bin dir (~/.local/bin unless --bin-dir/PENGUIN_BIN_DIR) and check PATH
+#     only after the install is known to work. --no-modify-path skips both: <bin dir>/penguin is
+#     one name, and a second installation that took it would hand its program to whoever types
+#     `penguin`. ---
 PATH_MISSING=0
 PENGUIN_COMMAND="penguin"
 if [ "$MODIFY_PATH" -eq 1 ]; then
@@ -785,11 +802,17 @@ echo "PenguinHarness $installed_version installed to $INSTALL_DIR"
 if [ "$PATH_MISSING" -eq 1 ]; then
   echo ""
   echo "note: installation succeeded, but $BIN_DIR is not on your PATH. Add it to your shell profile:"
+  # The default is spelled through $HOME so the printed line stays valid if the home moves.
+  if [ "$BIN_DIR" = "$HOME/.local/bin" ]; then
+    path_hint_dir="\$HOME/.local/bin"
+  else
+    path_hint_dir="$BIN_DIR"
+  fi
   case "${SHELL:-}" in
-    */zsh) echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc" ;;
-    */bash) echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc && source ~/.bashrc" ;;
-    */fish) echo "  fish_add_path \$HOME/.local/bin" ;;
-    *) echo "  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+    */zsh) echo "  echo 'export PATH=\"$path_hint_dir:\$PATH\"' >> ~/.zshrc && source ~/.zshrc" ;;
+    */bash) echo "  echo 'export PATH=\"$path_hint_dir:\$PATH\"' >> ~/.bashrc && source ~/.bashrc" ;;
+    */fish) echo "  fish_add_path $path_hint_dir" ;;
+    *) echo "  export PATH=\"$path_hint_dir:\$PATH\"" ;;
   esac
 fi
 echo ""

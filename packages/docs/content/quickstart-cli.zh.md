@@ -164,7 +164,7 @@ pnpm install && pnpm build
 | 项目 | 说明 |
 | --- | --- |
 | 安装目录 | 默认为 `~/.penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖 |
-| 命令入口 | 符号链接 `~/.local/bin/penguin`。如果 `~/.local/bin` 不在 `PATH` 中，脚本会给出提示。脚本参数 `--no-modify-path` 则不改动这个链接，用于在 `penguin` 所属的安装之外再装一份 |
+| 命令入口 | 符号链接 `~/.local/bin/penguin`。可用环境变量 `PENGUIN_BIN_DIR=<dir>` 或脚本参数 `--bin-dir <dir>`（绝对路径）改放到别处；与 `PENGUIN_INSTALL_DIR` 合用，整份安装便落在一个可整体删除的目录里。如果该目录不在 `PATH` 中，脚本会给出提示。脚本参数 `--no-modify-path` 则不改动这个链接，用于在 `penguin` 所属的安装之外再装一份，且优先于链接目录的设置 |
 | 版本 | 环境变量 `PENGUIN_VERSION=vX.Y.Z`，或脚本参数 `--version vX.Y.Z`。稳定入口默认安装最新的 Release，某个版本的 Release 安装器默认安装自身的 tag |
 | 下载来源 | `PENGUIN_DOWNLOAD_SOURCE=auto`（默认）、`oss` 或 `github`。`auto` 会对测速文件计时，除非 OSS 镜像明显更快，否则保持免费的 GitHub 下载，并可回退到另一个来源的同一版本。`PENGUIN_DOWNLOAD_SPEED_PROBE=0` 跳过测速 |
 | 本地压缩包 | `PENGUIN_ARCHIVE=<file>` 或 `--archive <file>`。接受 Release 安装包（凭封入的负载校验值自行校验），或旁边带有 `<file>.sha256` 的负载、旧版程序压缩包。重命名过的旧版文件可以使用平台标准文件名的 `.sha256` |

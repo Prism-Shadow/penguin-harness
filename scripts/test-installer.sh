@@ -315,6 +315,42 @@ HOME="$TEST_HOME" PENGUIN_INSTALL_DIR="$THIRD_INSTALL" PENGUIN_ARCHIVE="$ARTIFAC
 [ "$(readlink "$TEST_HOME/.local/bin/penguin")" = "$OFFLINE_INSTALL/bin/penguin" ] \
   || fail_test "--no-modify-path over stdin repointed the penguin symlink"
 
+# PENGUIN_BIN_DIR moves the symlink, so an install plus its command fits in one removable
+# directory: nothing may appear under a HOME that is left untouched.
+SCRATCH_HOME="$WORK_DIR/bin-dir-home"
+SCRATCH_ROOT="$WORK_DIR/bin-dir-scratch"
+mkdir -p "$SCRATCH_HOME"
+HOME="$SCRATCH_HOME" PENGUIN_INSTALL_DIR="$SCRATCH_ROOT/install" PENGUIN_BIN_DIR="$SCRATCH_ROOT/bin" \
+  PATH="$STUB_BIN:$PATH" SHELL=/bin/sh sh "$OFFLINE_DIR/install.sh" > "$WORK_DIR/bin-dir-env.out" \
+  || fail_test "install with PENGUIN_BIN_DIR failed"
+[ "$(readlink "$SCRATCH_ROOT/bin/penguin")" = "$SCRATCH_ROOT/install/bin/penguin" ] \
+  || fail_test "PENGUIN_BIN_DIR did not receive the penguin symlink"
+[ "$("$SCRATCH_ROOT/bin/penguin" --version)" = "fixture-old" ] \
+  || fail_test "the PENGUIN_BIN_DIR symlink does not run the installed program"
+[ -z "$(ls -A "$SCRATCH_HOME")" ] || fail_test "an install with PENGUIN_BIN_DIR wrote under HOME"
+grep -Fq "export PATH=\"$SCRATCH_ROOT/bin:" "$WORK_DIR/bin-dir-env.out" \
+  || fail_test "the PATH hint does not name the PENGUIN_BIN_DIR directory"
+# The flag form, over `sh -s --`.
+HOME="$SCRATCH_HOME" PENGUIN_INSTALL_DIR="$SCRATCH_ROOT/install2" PENGUIN_ARCHIVE="$ARTIFACT_DIR/$HOST_ASSET" \
+  PATH="$STUB_BIN:$PATH" sh -s -- --bin-dir "$SCRATCH_ROOT/bin2" < "$OFFLINE_DIR/install.sh" >/dev/null \
+  || fail_test "install over stdin with --bin-dir failed"
+[ "$(readlink "$SCRATCH_ROOT/bin2/penguin")" = "$SCRATCH_ROOT/install2/bin/penguin" ] \
+  || fail_test "--bin-dir did not receive the penguin symlink"
+[ -z "$(ls -A "$SCRATCH_HOME")" ] || fail_test "an install with --bin-dir wrote under HOME"
+# --no-modify-path wins over an inherited PENGUIN_BIN_DIR: no symlink anywhere.
+HOME="$SCRATCH_HOME" PENGUIN_INSTALL_DIR="$SCRATCH_ROOT/install3" PENGUIN_BIN_DIR="$SCRATCH_ROOT/bin3" \
+  PATH="$STUB_BIN:$PATH" sh "$OFFLINE_DIR/install.sh" --no-modify-path >/dev/null \
+  || fail_test "install with --no-modify-path and PENGUIN_BIN_DIR failed"
+[ ! -e "$SCRATCH_ROOT/bin3" ] || fail_test "--no-modify-path still created PENGUIN_BIN_DIR"
+# A relative bin dir is refused before anything is installed.
+set +e
+HOME="$SCRATCH_HOME" PENGUIN_INSTALL_DIR="$SCRATCH_ROOT/install4" PENGUIN_BIN_DIR="relative/bin" \
+  PATH="$STUB_BIN:$PATH" sh "$OFFLINE_DIR/install.sh" >/dev/null 2>&1
+status=$?
+set -e
+[ "$status" -ne 0 ] || fail_test "a relative PENGUIN_BIN_DIR was accepted"
+[ ! -e "$SCRATCH_ROOT/install4" ] || fail_test "a relative PENGUIN_BIN_DIR still installed"
+
 # The stamped installer inside a released bundle must still prefer its sibling payload and
 # never resolve metadata or download an online asset.
 STAMPED_OFFLINE_DIR="$WORK_DIR/offline-stamped"
