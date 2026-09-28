@@ -129,7 +129,9 @@ async function page(
     },
     submit: async () => fire($("form[data-form]"), "submit"),
     press: async (key: string, selector: string) => {
-      $(selector).dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      $(selector).dispatchEvent(
+        new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      );
       await settle();
     },
     focused: () => document.activeElement?.getAttribute("name") ?? null,
