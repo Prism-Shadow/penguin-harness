@@ -68,8 +68,11 @@ export function useCompletionNotifications(): void {
         notification.onclick = () => {
           notification.close();
           window.focus();
-          // Mirrors the sidebar's openSession: the current agent follows the Session.
-          if (agentId !== null) setCurrentAgentIdRef.current(agentId);
+          // Mirrors the sidebar's openSession: the current agent follows the Session — but an
+          // activity's run opens its activity, not a chat, so the agent stays as it is.
+          if (agentId !== null && session?.activityId === undefined) {
+            setCurrentAgentIdRef.current(agentId);
+          }
           navigateRef.current(sessionHref(session ?? { sessionId, activityId: undefined }));
         };
       } catch {
