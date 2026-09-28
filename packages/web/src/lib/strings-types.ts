@@ -481,6 +481,8 @@ export type Strings = {
       notReady: (n: number) => string;
       /** Where an admin fills in the deploy settings. */
       settingsHint: string;
+      /** The button an admin uses to jump straight to the Deploy settings page. */
+      openSettings: string;
       /** The preview plays a pinned build, which a release does not ship. */
       pinnedBuild: string;
       checksLabel: string;

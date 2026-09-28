@@ -135,7 +135,7 @@ describe("the account menu", () => {
     // dialog, whose own section registry decides which pages this viewer sees — so the row
     // itself carries no isAdmin test, or a non-admin would lose the personal pages along
     // with the admin ones.
-    expect(source).toContain("setSettingsOpen(true)");
+    expect(source).toContain("settingsDialog.getState().open()");
     expect(source).not.toContain("offersChangePassword");
     expect(source).not.toContain("S.settings.language");
     expect(source).not.toContain("S.settings.theme");

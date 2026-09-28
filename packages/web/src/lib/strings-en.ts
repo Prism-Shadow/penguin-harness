@@ -531,6 +531,7 @@ export const en: Strings = {
       ready: "Ready to deploy.",
       notReady: (n) => `Not ready to deploy: ${n} ${n === 1 ? "thing is" : "things are"} missing.`,
       settingsHint: "An admin fills in the deploy settings under System settings, Deploy.",
+      openSettings: "Open deploy settings",
       pinnedBuild:
         "The preview plays a pinned module build. A release ships the newest build, not the pinned one. Unpin it under History, Module builds, to preview what ships.",
       checksLabel: "Deploy checks",

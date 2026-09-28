@@ -24,6 +24,7 @@ import {
   TH,
 } from "../../components/ui/table-classes";
 import { apiErrorText } from "../../lib/api-error";
+import { settingsDialog } from "../../lib/settings-dialog-store";
 import { S } from "../../lib/strings";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
@@ -268,7 +269,14 @@ export function DeployPanel({
                 ))}
               </ul>
               {needsSettings(context) && (
-                <p className="text-xs text-gray-500 dark:text-gray-400">{words.settingsHint}</p>
+                <p className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  {words.settingsHint}
+                  {user?.isAdmin === true && (
+                    <Button size="sm" onClick={() => settingsDialog.getState().open("deploy")}>
+                      {words.openSettings}
+                    </Button>
+                  )}
+                </p>
               )}
             </section>
           )}

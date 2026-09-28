@@ -60,7 +60,16 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
 };
 
-export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsDialog({
+  open,
+  initialSection,
+  onClose,
+}: {
+  open: boolean;
+  /** The page to land on when this opening is a shortcut to a specific setting (e.g. the deploy panel's missing settings), instead of the viewer's usual first page. */
+  initialSection?: SettingsSectionKey | null;
+  onClose: () => void;
+}) {
   // uploadLimits feeds the Upload limits page's "?" (sectionInfo below); the rest pick pages.
   const { user, desktopMode, sessionVia, uploadLimits } = useAuth();
   const sections = visibleSettingsSections({
@@ -74,8 +83,8 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   // below resolve it against the live list. Deliberately keyed on `open` alone — re-running
   // on every sections identity change would yank the user off a page they navigated to.
   useEffect(() => {
-    if (open) setActive(null);
-  }, [open]);
+    if (open) setActive(initialSection ?? null);
+  }, [open, initialSection]);
 
   const current = resolveSettingsSection(active, sections);
   if (current === null) return null;
