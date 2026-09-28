@@ -8,7 +8,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { migrate } from "./migrations.js";
+import { adoptAhead, migrate } from "./migrations.js";
 import { SCHEMA_SQL } from "./schema.js";
 
 // Fetch the runtime module via process.getBuiltinModule (node >=22.3): avoids static
@@ -57,6 +57,10 @@ export function openDatabase(dbPath: string): DatabaseSync {
   // lock rather than failing SQLITE_BUSY at once.
   db.exec("PRAGMA busy_timeout = 5000;");
   db.exec("PRAGMA foreign_keys = ON;");
+  // Before SCHEMA_SQL: a root another line numbered can hold a table in a form the current
+  // declarations cannot index (a `port_forwards` without `direction`), and the pending
+  // migrations' shape repairs are what bring it to one they can.
+  adoptAhead(db);
   db.exec(SCHEMA_SQL);
   // Columns added to the schema after a web.db was formed: CREATE TABLE IF NOT EXISTS never
   // touches an existing table, so they are ALTERed in here. Keep the list in sync with

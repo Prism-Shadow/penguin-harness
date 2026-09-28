@@ -9,8 +9,12 @@
  * usable), and the version stamp commits with the migration (so an interrupted run is never
  * half-applied). The swapPath suite pins the rule that keeps a hot push honest.
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
+import { openDatabase } from "../src/db/database.js";
 import {
   IrreversibleMigrationError,
   LATEST_VERSION,
@@ -927,6 +931,94 @@ describe("the first form of port_forwards → current: port-forwards-direction",
       expect(db.prepare("SELECT id FROM port_forwards").all()).toEqual([{ id: "f1" }]);
     } finally {
       db.close();
+    }
+  });
+});
+
+describe("a root the machines line stamped 14: numbering-fork-adoption", () => {
+  /**
+   * The shape that line's 14 leaves: every table of its own — port_forwards in the first form,
+   * a forward saved — and neither model table, which on this line's numbering 9 and 10 own.
+   */
+  function seedMachinesLine(db: DatabaseSync): void {
+    db.exec(SCHEMA_SQL);
+    db.exec("DROP TABLE model_promotions; DROP TABLE model_provider_auth_tokens;");
+    db.exec("DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP TABLE port_forwards;");
+    db.exec(PORT_FORWARDS_V1_DDL);
+    db.prepare(
+      "INSERT INTO port_forwards (id, machine_id, workspace, remote_port, local_port, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("f1", "m1", "/home/dev/site", 3000, 3000, "2026-09-21T00:00:00.000Z");
+    db.exec("PRAGMA user_version = 14");
+  }
+  const tables = (db: DatabaseSync): string[] =>
+    (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map(
+      (t) => t.name,
+    );
+  const writeModelRows = (db: DatabaseSync): void => {
+    db.prepare("INSERT INTO users (user_id, password_hash, created_at) VALUES ('u', 'x', 't')").run();
+    db.prepare("INSERT INTO projects (project_id, owner_user_id, created_at) VALUES ('p', 'u', 't')").run();
+    db.prepare(
+      "INSERT INTO model_promotions (project_id, provider, model_id, discount, updated_at) VALUES ('p', 'go', 'm', 0.5, 't')",
+    ).run();
+    db.prepare(
+      "INSERT INTO model_provider_auth_tokens (project_id, provider, refresh_token, updated_at) VALUES ('p', 'go', 'r', 't')",
+    ).run();
+  };
+
+  it("migrates on the swap path: port_forwards gains its direction ahead of 15, the model tables arrive", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      seedMachinesLine(db);
+      const r = migrate(db, { swapPath: true });
+      expect(r).toEqual({
+        from: 14,
+        to: LATEST_VERSION,
+        applied: MIGRATIONS.filter((m) => m.version > 14).map((m) => m.name),
+      });
+      expect(db.prepare("SELECT id, direction, local_port FROM port_forwards").all()).toEqual([
+        { id: "f1", direction: "in", local_port: 3000 },
+      ]);
+      expect(tables(db)).toEqual(expect.arrayContaining(["model_promotions", "model_provider_auth_tokens"]));
+      writeModelRows(db);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("opens on a runtime restart too, where SCHEMA_SQL's partial index would fail first", () => {
+    const dir = mkdtempSync(join(tmpdir(), "numbering-fork-"));
+    try {
+      const file = join(dir, "web.db");
+      const seed = new sqlite.DatabaseSync(file);
+      seedMachinesLine(seed);
+      seed.close();
+      const db = openDatabase(file);
+      try {
+        expect(schemaVersion(db)).toBe(LATEST_VERSION);
+        expect(db.prepare("SELECT id, direction FROM port_forwards").all()).toEqual([
+          { id: "f1", direction: "in" },
+        ]);
+        writeModelRows(db);
+      } finally {
+        db.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("finds its work done on a root of this line, at every stamp from 14 up", () => {
+    for (let stamp = 14; stamp <= LATEST_VERSION - 1; stamp++) {
+      const db = new sqlite.DatabaseSync(":memory:");
+      try {
+        db.exec(SCHEMA_SQL);
+        db.exec(`PRAGMA user_version = ${stamp}`);
+        const before = shape(db);
+        migrate(db, { swapPath: true });
+        expect(shape(db), `stamp ${stamp}`).toBe(before);
+      } finally {
+        db.close();
+      }
     }
   });
 });

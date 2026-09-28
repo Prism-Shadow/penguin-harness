@@ -64,6 +64,16 @@ export interface Migration {
   /** Applied inside a transaction; throw to abort and leave the version unchanged. */
   up: (db: DatabaseSync) => void;
   /**
+   * Shape repair that has to hold BEFORE the pending list starts, because an EARLIER pending
+   * migration's frozen DDL fails on the shape it finds. Only for a root numbered by another
+   * line: its stamp says an earlier migration is pending while a table that migration would
+   * create is already there in a form it cannot build an index on. Runs in its own
+   * transaction ahead of the first pending migration whenever this one is pending, and
+   * judges by the table's actual shape, so it must be idempotent. Stamps nothing — `up`
+   * still runs in its place in the order.
+   */
+  adoptFirst?: (db: DatabaseSync) => void;
+  /**
    * Undoes `up`, or null when this migration cannot be undone — required, not optional, so
    * "there is no undo" is something the author states rather than forgets.
    *
@@ -713,6 +723,75 @@ export const MIGRATIONS: readonly Migration[] = [
       db.exec(`DROP TABLE IF EXISTS browser_sites;`);
     },
   },
+  {
+    version: 19,
+    name: "numbering-fork-adoption",
+    // A data root the machines line stamped 14 (its 9–14: sessions-sandbox, machines-columns,
+    // sessions-surface, user-profile-adoption, port-forwards, browser-sites). On this line's
+    // numbering 14 is user-profile-adoption, so two things go wrong. Migration 15 finds that
+    // line's `port_forwards` — the first form, no `direction` — and its partial index on
+    // `direction` fails the whole migrate; 17, which would rebuild the table, never gets its
+    // turn. And 9 and 10 read as applied, so `model_promotions` and
+    // `model_provider_auth_tokens` are never created: pricing and provider token refresh
+    // would answer 500 on a server that booted fine.
+    //
+    // Judged by shape, not by stamp. `adoptFirst` brings a first-form `port_forwards` to the
+    // current form before 15 runs — migration 17's rebuild, rows kept as `in` forwards — and
+    // `up` creates the two tables with 9's and 10's frozen DDL. A root that took all of these
+    // in their proper place finds the work done and nothing happens. Remove once no root can
+    // still be stamped by the machines line.
+    //
+    // Swap-safe for 17's reason: the rebuilt table is a superset the predecessor still writes
+    // to (`direction` defaults to 'in') and reads unchanged, and the two tables are new to it.
+    swapSafe: true,
+    adoptFirst(db) {
+      const cols = db.prepare("PRAGMA table_info(port_forwards)").all() as { name: string }[];
+      if (cols.length === 0 || cols.some((c) => c.name === "direction")) return;
+      // Frozen copy of migration 17's rebuild; do not re-derive from schema.ts.
+      db.exec(`
+        CREATE TABLE port_forwards_v2 (
+          id          TEXT PRIMARY KEY,
+          machine_id  TEXT NOT NULL,
+          workspace   TEXT NOT NULL,
+          direction   TEXT NOT NULL DEFAULT 'in',
+          remote_port INTEGER NOT NULL,
+          local_port  INTEGER NOT NULL,
+          created_at  TEXT NOT NULL,
+          UNIQUE (machine_id, workspace, direction, remote_port)
+        );
+        INSERT INTO port_forwards_v2 (id, machine_id, workspace, direction, remote_port, local_port, created_at)
+          SELECT id, machine_id, workspace, 'in', remote_port, local_port, created_at FROM port_forwards;
+        DROP TABLE port_forwards;
+        ALTER TABLE port_forwards_v2 RENAME TO port_forwards;
+        CREATE INDEX IF NOT EXISTS idx_port_forwards_machine ON port_forwards(machine_id, workspace);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_port_forwards_local_in ON port_forwards(local_port) WHERE direction = 'in';
+      `);
+    },
+    up(db) {
+      // Frozen copies of migrations 9 and 10; do not re-derive from schema.ts.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS model_promotions ( -- NOT a cache rebuildable from files: the only record of a Project row's running promotion (.project_config.toml keeps the list price), written by preset seeding at Project creation, "sync presets" and Penguin Go authorization / sync, and read by cost; lost rows price usage at list until the next sync writes them back
+          project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+          provider   TEXT NOT NULL,
+          model_id   TEXT NOT NULL,
+          discount   REAL NOT NULL CHECK (discount > 0 AND discount < 1),
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (project_id, provider, model_id)
+        );
+        CREATE TABLE IF NOT EXISTS model_provider_auth_tokens ( -- Server-side OAuth refresh metadata for provider groups. The current request token remains in .project_config.toml as api_key; this table holds only the refresh material that must never be returned to the frontend or written into Project files.
+          project_id              TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+          provider                TEXT NOT NULL,
+          refresh_token           TEXT NOT NULL,
+          access_token_expires_at TEXT,
+          updated_at              TEXT NOT NULL,
+          PRIMARY KEY (project_id, provider)
+        );
+      `);
+    },
+    // Nothing to undo: the tables are 9's and 10's and the column is 17's; each one's own down
+    // takes it away.
+    down() {},
+  },
 ];
 
 /** The highest version this build knows how to reach. */
@@ -746,11 +825,34 @@ export class RestartRequiredError extends Error {
 }
 
 /**
+ * Runs the `adoptFirst` of every migration this database has not reached yet, each in its
+ * own transaction and without stamping. `migrate` calls it before the pending list, and
+ * `openDatabase` before SCHEMA_SQL, whose declarations fail on the same foreign shapes.
+ */
+export function adoptAhead(db: DatabaseSync): void {
+  const from = schemaVersion(db);
+  for (const m of MIGRATIONS) {
+    if (m.version <= from || !m.adoptFirst) continue;
+    db.exec("BEGIN");
+    try {
+      m.adoptFirst(db);
+      db.exec("COMMIT");
+    } catch (err) {
+      db.exec("ROLLBACK");
+      throw new Error(`adoption ahead of migration ${m.version} (${m.name}) failed: ${String(err)}`, {
+        cause: err,
+      });
+    }
+  }
+}
+
+/**
  * Applies every migration this database has not reached yet, in order.
  *
  * Each migration and its version stamp commit together, so an interrupted run leaves the
  * database at the last version that fully applied — never half-migrated. Already-current
- * databases do no work and touch nothing.
+ * databases do no work and touch nothing. Pending migrations' `adoptFirst` repairs run
+ * before the first of them (`adoptAhead`).
  *
  * `swapPath` marks the caller as a booting pushed platform: the first pending migration
  * that is not `swapSafe` throws RestartRequiredError BEFORE anything is applied, so the
@@ -768,6 +870,7 @@ export function migrate(
     const blocked = pending.find((m) => !m.swapSafe);
     if (blocked) throw new RestartRequiredError(blocked);
   }
+  adoptAhead(db);
   const applied: string[] = [];
   for (const m of pending) {
     db.exec("BEGIN");
