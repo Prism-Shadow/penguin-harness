@@ -103,6 +103,9 @@ function nullableString(
  * could quote the CEO desk session id `GET /:orgId` returns and write as `agent:<org>_ceo`.
  * Dropped rather than rejected because the field is not always a claim: `tickets/:id/attach`
  * takes the Session to attach in the same field, and the Web App sends it over a cookie.
+ * Over the token it is a claim, and one that does not hold is refused where it is judged: a
+ * channel message whose session names no employee is a 400 `unknown_session`, not the
+ * token holder's own line.
  */
 function callerSessionId(
   c: { var: { sessionVia: SessionVia } },
