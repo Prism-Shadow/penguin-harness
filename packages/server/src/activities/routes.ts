@@ -9,6 +9,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import type { ActivitySandbox } from "./sandbox-service.js";
+import type { ActivitySummaries } from "./summary-service.js";
 import type { Config } from "../hmr/capabilities.js";
 import { hostOnly, requestAuthority, resolvePreviewTarget } from "../services/preview-token.js";
 import { playBase } from "./play-routes.js";
@@ -91,6 +92,7 @@ export class ActivityRoutes {
   @Use() private readonly activities!: ActivityAuthoring;
   @Use() private readonly generation!: ActivityGeneration;
   @Use() private readonly sandbox!: ActivitySandbox;
+  @Use() private readonly summaries!: ActivitySummaries;
   @Use() private readonly pipelines!: ActivityPipelines;
   @Use() private readonly versions!: ActivityVersions;
   @Use() private readonly quality!: ActivityQuality;
@@ -128,11 +130,20 @@ export class ActivityRoutes {
       await next();
     });
     app.get("/", async (c) => {
+      const projectId = requireValidId(c, "projectId");
       const activities = await this.activities.listActivities(
-        requireValidId(c, "projectId"),
+        projectId,
         c.req.query("collectionId"),
       );
-      return c.json({ collectionId: activities[0]?.collectionId ?? null, activities });
+      const summaries =
+        c.req.query("summary") === "1"
+          ? await this.summaries.forActivities(projectId, activities)
+          : undefined;
+      return c.json({
+        collectionId: activities[0]?.collectionId ?? null,
+        activities,
+        ...(summaries ? { summaries } : {}),
+      });
     });
     app.get("/import-sources", async (c) => {
       this.access.requireProjectOwner(c.var.user.userId, requireValidId(c, "projectId"));
