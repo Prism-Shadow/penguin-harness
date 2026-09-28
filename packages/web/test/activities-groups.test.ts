@@ -95,4 +95,15 @@ describe("collapsed groups", () => {
     storage.setItem("penguin.activities.collapsedGroups", "{not json");
     expect(readCollapsed("p1", storage).size).toBe(0);
   });
+  it("readCollapsed with no storage argument returns empty set (node env)", () => {
+    // In Node.js test environment, localStorage does not exist and accessing it throws.
+    // readCollapsed should not throw; it should catch and return an empty Set.
+    expect(() => readCollapsed("p1")).not.toThrow();
+    expect(readCollapsed("p1").size).toBe(0);
+  });
+  it("writeCollapsed with no storage argument does not throw (node env)", () => {
+    // In Node.js test environment, localStorage does not exist and accessing it throws.
+    // writeCollapsed should not throw; it should catch the error silently.
+    expect(() => writeCollapsed("p1", new Set(["ants"]))).not.toThrow();
+  });
 });

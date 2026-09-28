@@ -36,6 +36,7 @@ export function groupByProduct(
     );
     return {
       productCode,
+      // refs[0]! is safe: refs is an array only created when there is at least one item in visible with this productCode.
       activityType: refs[0]!.activityType,
       items: ordered,
       canonicalId: canonical?.id ?? null,
@@ -55,33 +56,34 @@ export const COLLAPSED_GROUPS_KEY = "penguin.activities.collapsedGroups";
 type CollapsedStore = Record<string, string[]>;
 
 function readStore(storage: Pick<Storage, "getItem">): CollapsedStore {
-  try {
-    const parsed: unknown = JSON.parse(storage.getItem(COLLAPSED_GROUPS_KEY) ?? "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as CollapsedStore)
-      : {};
-  } catch {
-    return {};
-  }
+  const parsed: unknown = JSON.parse(storage.getItem(COLLAPSED_GROUPS_KEY) ?? "{}");
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (parsed as CollapsedStore)
+    : {};
 }
 
 export function readCollapsed(
   projectId: string,
-  storage: Pick<Storage, "getItem"> = localStorage,
+  storage?: Pick<Storage, "getItem">,
 ): Set<string> {
-  const codes = readStore(storage)[projectId];
-  return new Set(Array.isArray(codes) ? codes.filter((code) => typeof code === "string") : []);
+  try {
+    const codes = readStore(storage ?? localStorage)[projectId];
+    return new Set(Array.isArray(codes) ? codes.filter((code) => typeof code === "string") : []);
+  } catch {
+    return new Set();
+  }
 }
 
 export function writeCollapsed(
   projectId: string,
   collapsed: ReadonlySet<string>,
-  storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
+  storage?: Pick<Storage, "getItem" | "setItem">,
 ): void {
   try {
-    const store = readStore(storage);
+    const s = storage ?? localStorage;
+    const store = readStore(s);
     store[projectId] = [...collapsed];
-    storage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(store));
+    s.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(store));
   } catch {
     // Remembering folds is a convenience; a blocked storage just forgets them.
   }
