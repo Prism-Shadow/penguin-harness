@@ -24,7 +24,11 @@
  *
  * The chosen mode and the organization last opened are user preferences (`workMode`,
  * `lastOrgKey` in ui_prefs) mirrored into localStorage (lib/work-mode.ts) so a reload stands
- * in the right mode before the preferences arrive; the stored copy wins once it does. Both
+ * in the right mode before the preferences arrive; the stored copy wins once it does — unless
+ * the mode was already chosen in this load. A route claims its mode when it is entered (an
+ * organization route company mode, a conversation of the user's own development mode), and a
+ * preference read afterwards that overturned the claim would leave the switch and the sidebar
+ * in one mode around a page of the other. Both
  * the open and the remembered organization are forgotten once a complete listing comes back
  * without them: a deleted organization that keeps the shell aimed at it costs a broken
  * sidebar on every later visit.
@@ -226,6 +230,8 @@ interface CompanyStoreState {
   personalEnabled: boolean;
   /** The mode the user chose, held at development while company mode is unavailable (settleWorkMode). */
   workMode: WorkMode;
+  /** A switch or a route entry has set the mode in this load; the preferences no longer do. */
+  modeChosen: boolean;
   /** `<projectId>/<orgId>` of the organization last opened, or null. */
   lastOrgKey: string | null;
   /** The organization the shell is currently inside (set by the org routes), or null elsewhere. */
@@ -387,6 +393,7 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
     serverEnabled: options.serverEnabled ?? false,
     personalEnabled: true,
     workMode: initialWorkMode(),
+    modeChosen: false,
     lastOrgKey: initialLastOrgKey(),
     currentOrgKey: null,
     organizations: [],
@@ -409,6 +416,7 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
     versions: { orgs: 0, messages: 0, tickets: 0, runs: 0, budget: 0, proposals: 0 },
 
     setWorkMode: (mode) => {
+      if (!get().modeChosen) set({ modeChosen: true });
       if (mode === get().workMode) return;
       // Company mode is entered only while it is available: a company choice written while a
       // switch is off would come into force the moment the switch comes back on.
@@ -460,7 +468,9 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
     applyPrefs: (prefs) => {
       const patch: Partial<CompanyStoreState> = {};
       if (prefs.companyMode === false) patch.personalEnabled = false;
-      if (prefs.workMode === "company" || prefs.workMode === "dev") patch.workMode = prefs.workMode;
+      if ((prefs.workMode === "company" || prefs.workMode === "dev") && !get().modeChosen) {
+        patch.workMode = prefs.workMode;
+      }
       if (typeof prefs.lastOrgKey === "string" && parseOrgKey(prefs.lastOrgKey) !== null) {
         patch.lastOrgKey = prefs.lastOrgKey;
         storeLastOrgKey(prefs.lastOrgKey);

@@ -55,6 +55,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { switchDeskModel } from "../company/desk-model";
+import { conversationMode } from "../company/company-nav";
 import { useCompany } from "../../state/company";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -64,7 +65,7 @@ import type { PermissionPick } from "../../lib/permission-level";
 import { configuredCompactionLimit } from "../../lib/context";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
-import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
+import { isOrgSession, latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import {
   sessionActivity,
   sessionActivityLabel,
@@ -465,6 +466,22 @@ export function ChatPage() {
     probeKey !== null && probeFailedKey === probeKey,
   );
   const routed = draft ? null : heldSession.current;
+  // Entering a conversation is a choice of mode, as entering an organization route is
+  // (features/company/org-layout.tsx): the new-chat draft and the user's own conversations are
+  // development mode's, so the switch and the sidebar follow whichever way the page was reached
+  // — a typed URL, the tray's New Session, a link. Once per route, like the organization
+  // routes: the switch's own move to company mode leaves this page, and re-claiming on a mode
+  // change would undo the click before it does. A desk or ticket Session claims nothing.
+  const { available: companyAvailable, setWorkMode } = company;
+  const claimedMode = conversationMode(draft, routed === null ? null : isOrgSession(routed));
+  const claimedRoute = useRef<string | null>(null);
+  useEffect(() => {
+    if (routeSessionId === null || claimedMode === null) return;
+    if (claimedRoute.current === routeSessionId) return;
+    claimedRoute.current = routeSessionId;
+    if (companyAvailable) setWorkMode(claimedMode);
+  }, [routeSessionId, claimedMode, companyAvailable, setWorkMode]);
+
   /**
    * An archived Session the route names is shown as a stub (archived-session-stub.tsx), never as
    * a conversation (routedView). None of the conversation's machinery — its stream and history,
