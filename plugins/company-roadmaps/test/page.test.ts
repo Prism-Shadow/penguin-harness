@@ -334,13 +334,24 @@ describe("the page opens a roadmap, and never sends anyone to a terminal", () =>
     for (const lang of ["en", "zh"] as const) {
       for (const body of [{ roadmaps: [] }, { roadmaps: [ROADMAP] }]) {
         const out = await render("/org/proj/acme/roadmaps", () => ({ ok: true, body }), { lang });
-        expect(out.html).toContain(`<button type="button" data-open>${PAGE_STRINGS[lang].open}</button>`);
+        expect(out.html).toContain(
+          `<button type="button" data-open>${PAGE_STRINGS[lang].open}</button>`,
+        );
       }
     }
-    const empty = await render("/org/proj/acme/roadmaps", () => ({ ok: true, body: { roadmaps: [] } }));
+    const empty = await render("/org/proj/acme/roadmaps", () => ({
+      ok: true,
+      body: { roadmaps: [] },
+    }));
     expect(readable(empty.html)).toContain(PAGE_STRINGS.en.empty);
     const source = pageHtml();
-    for (const gone of ["curl", "PENGUIN_API_TOKEN", "only reads", "本页只读", "penguin org channel create"]) {
+    for (const gone of [
+      "curl",
+      "PENGUIN_API_TOKEN",
+      "only reads",
+      "本页只读",
+      "penguin org channel create",
+    ]) {
       expect(source).not.toContain(gone);
     }
   });

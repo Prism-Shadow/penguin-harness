@@ -51,7 +51,10 @@ const settle = async () => {
  * (which sees each call) — the organization's roadmaps kept in `roadmaps`.
  */
 async function page(
-  server: (call: Call, roadmaps: Array<Record<string, unknown>>) => { status: number; body: unknown },
+  server: (
+    call: Call,
+    roadmaps: Array<Record<string, unknown>>,
+  ) => { status: number; body: unknown },
 ) {
   const window = new Window({ url: "http://localhost:7364/api/company-roadmaps/page" });
   windows.push(window);
@@ -71,7 +74,10 @@ async function page(
     navigator: { language: "en-US" },
     setTimeout,
     clearTimeout,
-    fetch: async (url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) => {
+    fetch: async (
+      url: string,
+      init: { method?: string; headers?: Record<string, string>; body?: string } = {},
+    ) => {
       const call: Call = {
         method: init.method ?? "GET",
         url,
@@ -97,7 +103,7 @@ async function page(
     text: () => (main.textContent ?? "").replace(/\s+/g, " "),
     $,
     click: async (selector: string) => {
-      ($<HTMLElement>(selector)).click();
+      $<HTMLElement>(selector).click();
       await settle();
     },
     choose: async (value: string) => {
@@ -122,11 +128,18 @@ async function page(
 /** The organization's server as the page sees it: the roadmaps, its channels, one channel, and the open. */
 function organization(opts: { refuse?: { status: number; message: string } } = {}) {
   return (call: Call, roadmaps: Array<Record<string, unknown>>) => {
-    if (call.method === "GET" && call.url === `${ORG}/roadmaps`) return { status: 200, body: { roadmaps } };
-    if (call.method === "GET" && call.url === `${ORG}/channels`) return { status: 200, body: { channels: CHANNELS } };
-    if (call.method === "GET" && call.url === `${ORG}/channels/room_a`) return { status: 200, body: ROOM_A };
+    if (call.method === "GET" && call.url === `${ORG}/roadmaps`)
+      return { status: 200, body: { roadmaps } };
+    if (call.method === "GET" && call.url === `${ORG}/channels`)
+      return { status: 200, body: { channels: CHANNELS } };
+    if (call.method === "GET" && call.url === `${ORG}/channels/room_a`)
+      return { status: 200, body: ROOM_A };
     if (call.method === "POST" && call.url === `${ORG}/roadmaps`) {
-      if (opts.refuse) return { status: opts.refuse.status, body: { error: { code: "x", message: opts.refuse.message } } };
+      if (opts.refuse)
+        return {
+          status: opts.refuse.status,
+          body: { error: { code: "x", message: opts.refuse.message } },
+        };
       const b = call.body as { name: string; channelId: string; employees: string[] };
       const roadmap = {
         number: roadmaps.length + 1,
@@ -150,14 +163,14 @@ describe("the Open a roadmap button", () => {
     expect(p.text()).toContain(T.empty);
     await p.click("button[data-open]");
     // The rooms are the channels that can hold one: not the all-hands channel, not an archived one.
-    const options = [...p.$<HTMLSelectElement>('select[name="room"]').querySelectorAll("option")].map(
-      (o) => o.getAttribute("value"),
-    );
+    const options = [
+      ...p.$<HTMLSelectElement>('select[name="room"]').querySelectorAll("option"),
+    ].map((o) => o.getAttribute("value"));
     expect(options).toEqual(["", "room_a"]);
     await p.choose("room_a");
     // The employees are the room's agents, not its people.
-    const boxes = [...p.$<HTMLElement>("fieldset").querySelectorAll('input[name="employee"]')].map((b) =>
-      b.getAttribute("value"),
+    const boxes = [...p.$<HTMLElement>("fieldset").querySelectorAll('input[name="employee"]')].map(
+      (b) => b.getAttribute("value"),
     );
     expect(boxes).toEqual(["acme_dev", "acme_web"]);
     await p.pick("acme_web");
