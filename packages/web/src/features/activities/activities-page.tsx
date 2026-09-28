@@ -219,7 +219,7 @@ function ActivityWorkspace({
     } catch (e) {
       if (mounted.current && request === requested.current) setError(apiErrorText(e));
     } finally {
-      if (mounted.current) setLoading(false);
+      if (mounted.current && request === requested.current) setLoading(false);
     }
   }, [projectId]);
   useEffect(() => {
