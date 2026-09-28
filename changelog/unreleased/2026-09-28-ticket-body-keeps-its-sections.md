@@ -3,6 +3,7 @@
 - **Date:** 2026-09-28
 - **Type:** fix
 - **Scope:** `server`, `cli`, `docs`
+- **PR:** [#876](https://github.com/Prism-Shadow/penguin-harness/pull/876)
 
 [中文版](2026-09-28-ticket-body-keeps-its-sections.zh.md)
 
