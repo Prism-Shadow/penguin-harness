@@ -1771,6 +1771,9 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   await openSection(page, "Description");
   await expect(description).toHaveText("Keep this edit");
   // Switching Projects while dirty asks too; canceling leaves the switch and edit in place.
+  // The activity workspace auto-collapses the sidebar to its rail: expand it to reach the
+  // project switcher, which the rail does not carry.
+  await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
   await page.getByRole("button", { name: "Activities test", exact: true }).click();
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
   await expect(dialog).toBeVisible();
@@ -1793,6 +1796,8 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   await openSection(page, "Scenes and media");
   await openSection(page, "Description");
   await description.fill("Another edit");
+  // Re-entering the workspace collapsed the sidebar again; expand it for the switcher.
+  await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
   await page.getByRole("button", { name: "Activities test", exact: true }).click();
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
   // Discarding this time clears `dirty` and replays the switch, which now goes through.
@@ -1879,10 +1884,26 @@ test("polling errors recover without clearing a save conflict or unsaved edits",
   expect(f.errors).toEqual([]);
 });
 
+test("an activity collapses the sidebar without changing the stored choice", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  // On the activity workspace the sidebar steps back to its rail — the full sidebar's
+  // "Collapse sidebar" button (only the pinned Sidebar carries it) is not there to find.
+  await expect(page.getByRole("button", { name: "Collapse sidebar", exact: true })).toBeHidden();
+  await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await expect(page).toHaveURL(/\/agents$/);
+  await expect(page.getByRole("button", { name: "Collapse sidebar", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("penguin.sidebarCollapsed"))).not.toBe(
+    "1",
+  );
+  expect(f.errors).toEqual([]);
+});
+
 test("collapsed rail keeps Activities reachable through the page manifest", async ({ page }) => {
   const f = await fixture(page);
   await create(page);
-  await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();
+  // The activity workspace already auto-collapses the sidebar to its rail.
+  await expect(page.getByRole("button", { name: "Collapse sidebar", exact: true })).toBeHidden();
   const activities = page.getByRole("link", { name: "Activities", exact: true });
   await expect(activities).toBeVisible();
   await activities.click();
@@ -1891,6 +1912,9 @@ test("collapsed rail keeps Activities reachable through the page manifest", asyn
 });
 
 async function projectSettings(page) {
+  // The activity workspace auto-collapses the sidebar to its rail, which carries no project
+  // switcher; expand it first.
+  await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
   await page.getByRole("button", { name: "Activities test", exact: true }).click();
   await page.getByRole("button", { name: "Project settings", exact: true }).click();
   return page.getByRole("dialog", { name: "Project settings", exact: true });

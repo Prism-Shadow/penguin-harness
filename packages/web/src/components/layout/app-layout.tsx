@@ -41,6 +41,7 @@ import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { setDockScope } from "../../features/dock/dock-state";
+import { effectiveCollapsed, wantsFocus } from "../../lib/sidebar-auto-collapse";
 import { toneStrip } from "../../lib/tone";
 
 /**
@@ -433,15 +434,25 @@ export function AppLayout() {
     void api.putPrefs({ initialPasswordBannerDismissed: true }).catch(() => undefined);
   };
   // Desktop sidebar collapse (persisted): collapsed state leaves a narrow rail to expand from.
-  const [collapsed, setCollapsed] = useState(
+  const [storedCollapsed, setStoredCollapsed] = useState(
     () => localStorage.getItem("penguin.sidebarCollapsed") === "1",
   );
-  const toggleCollapsed = () =>
-    setCollapsed((v) => {
+  const { pathname } = useLocation();
+  const focus = wantsFocus(pathname);
+  const [override, setOverride] = useState<boolean | null>(null);
+  // Leaving the workspace forgets what was chosen inside it.
+  useEffect(() => {
+    if (!focus) setOverride(null);
+  }, [focus]);
+  const collapsed = effectiveCollapsed(storedCollapsed, focus, override);
+  const toggleCollapsed = () => {
+    if (focus) return setOverride(!collapsed);
+    setStoredCollapsed((v) => {
       const next = !v;
       localStorage.setItem("penguin.sidebarCollapsed", next ? "1" : "0");
       return next;
     });
+  };
 
   return (
     <div className="flex h-full">
