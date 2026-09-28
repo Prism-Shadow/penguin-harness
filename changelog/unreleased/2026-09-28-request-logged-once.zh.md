@@ -3,6 +3,7 @@
 - **Date:** 2026-09-28
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#875](https://github.com/Prism-Shadow/penguin-harness/pull/875)
 
 [English](2026-09-28-request-logged-once.md)
 
