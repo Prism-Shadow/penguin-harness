@@ -75,6 +75,31 @@ export interface StreamRenderContext {
   statFiles?: (paths: string[]) => Promise<ReadonlySet<string>>;
   /** Creates a new root Session through the selected completed assistant turn. */
   onFork?: (target: ForkTarget) => Promise<void>;
+  /** Leaves reasoning out of the stream (a run log's "Show reasoning" switch). */
+  hideReasoning?: boolean;
+  /** Offers Copy and Show all on tool output. */
+  toolOutputActions?: boolean;
+}
+
+/**
+ * The items a stream renders. With reasoning hidden, thinking items drop out, except the
+ * latest one while the Task is still running: that one stays so its row can say the agent is
+ * thinking, and a run whose reasoning is hidden does not look stalled.
+ */
+export function visibleStreamItems(items: ChatItem[], ctx: StreamRenderContext): ChatItem[] {
+  if (!ctx.hideReasoning) return items;
+  return items.filter((item, index) => !reasoningHidden(item, index, items, ctx));
+}
+
+/** Whether the "Show reasoning" switch leaves this item out (see visibleStreamItems). */
+function reasoningHidden(
+  item: ChatItem,
+  index: number,
+  items: ChatItem[],
+  ctx: StreamRenderContext,
+): boolean {
+  if (!ctx.hideReasoning || item.kind !== "thinking") return false;
+  return !(ctx.taskRunning && index === items.length - 1);
 }
 
 /** Pure list rendering (reused recursively inside subagent cards): consecutive thinking + tool-call items are aggregated into one "Reasoning & Tools" group. */
@@ -82,32 +107,44 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
   // Split into segments first — group (consecutive thinking + tool calls) or single (everything
   // else) — then render. WorkGroup needs to know whether it's the last segment (current turn
   // still in progress) to decide its default expanded/collapsed state.
-  type Seg = { type: "group"; items: ChatItem[] } | { type: "single"; item: ChatItem };
+  //
+  // Groups are formed from every item, reasoning included, and keyed by their first item, before
+  // hidden reasoning drops out of them. So flipping "Show reasoning" (or a hidden "Thinking…"
+  // line giving way to the first tool call) keeps each group's key, and the tool cards the
+  // author opened stay open. A group left with nothing to show renders nothing.
+  type Seg =
+    { type: "group"; key: string | number; items: ChatItem[] } | { type: "single"; item: ChatItem };
   const segs: Seg[] = [];
   let run: ChatItem[] = [];
+  let runKey: string | number | null = null;
   const flushRun = () => {
-    if (run.length > 0) {
-      segs.push({ type: "group", items: run });
+    if (runKey !== null) {
+      segs.push({ type: "group", key: runKey, items: run });
       run = [];
+      runKey = null;
     }
   };
-  for (const item of items) {
-    if (isWorkItem(item)) run.push(item);
-    else {
+  items.forEach((item, index) => {
+    if (isWorkItem(item)) {
+      if (runKey === null) runKey = item.id;
+      if (!reasoningHidden(item, index, items, ctx)) run.push(item);
+    } else {
       flushRun();
       segs.push({ type: "single", item });
     }
-  }
+  });
   flushRun();
 
   const renderSeg = (seg: Seg, i: number): ReactNode =>
     seg.type === "group" ? (
-      <WorkGroup
-        key={`wg-${seg.items[0]!.id}`}
-        items={seg.items}
-        ctx={ctx}
-        isLast={i === segs.length - 1}
-      />
+      seg.items.length === 0 ? null : (
+        <WorkGroup
+          key={`wg-${seg.key}`}
+          items={seg.items}
+          ctx={ctx}
+          isLast={i === segs.length - 1}
+        />
+      )
     ) : (
       <MessageItem key={seg.item.id} item={seg.item} ctx={ctx} />
     );
@@ -139,9 +176,11 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
   const flushTurn = () => {
     if (turn.length === 0) return;
     const first = turn[0]!.seg;
-    const key = first.type === "group" ? first.items[0]!.id : first.item.id;
+    const key = first.type === "group" ? first.key : first.item.id;
     const body = turn;
     turn = [];
+    // A turn holding only hidden reasoning so far has nothing to draw yet.
+    if (body.every((t) => t.seg.type === "group" && t.seg.items.length === 0)) return;
     nodes.push(
       <div key={`turn-${key}`} className="group">
         {body.map((t) => renderSeg(t.seg, t.i))}

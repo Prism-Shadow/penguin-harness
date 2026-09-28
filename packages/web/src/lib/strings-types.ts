@@ -30,10 +30,11 @@ export type Strings = {
         | "activityStats"
         | "unassigned"
         | "mediaLibrary"
-        | "history",
+        | "history"
+        | "deploy",
         string
       >;
-      groups: Record<"image" | "video" | "audio" | "animation", string>;
+      groups: Record<"image" | "video" | "audio" | "animation" | "bookWord", string>;
       fold: (name: string) => string;
       unfold: (name: string) => string;
       needsMedia: string;
@@ -60,6 +61,12 @@ export type Strings = {
         exit: (phase: string, event: string, target: string) => string;
         live: (phase: string) => string;
         graph: (scene: string) => string;
+        liveCount: (count: number) => string;
+        liveTargets: (phase: string) => string;
+        more: (count: number) => string;
+        targetTitle: (id: string, inputType: string) => string;
+        inputTypes: { CLICK: string; SELECT: string; SELECT_CLICK: string; DRAG: string };
+        resizeMap: string;
         zoom: string;
         zoomIn: string;
         zoomOut: string;
@@ -83,6 +90,42 @@ export type Strings = {
         };
       };
     };
+    /** Named workspace layouts, from the Layout menu in the activity header. */
+    layouts: {
+      menu: string;
+      current: string;
+      saveAs: string;
+      saveTitle: string;
+      save: string;
+      name: string;
+      nameHint: string;
+      manage: string;
+      manageTitle: string;
+      manageEmpty: string;
+      nameColumn: string;
+      kindColumn: string;
+      actionsColumn: string;
+      builtInTag: string;
+      savedTag: string;
+      rename: string;
+      renameTitle: (name: string) => string;
+      renameLabel: (name: string) => string;
+      deleteLabel: (name: string) => string;
+      delete: string;
+      deleteTitle: string;
+      deleteConfirm: (name: string) => string;
+      builtIn: Record<"writing" | "reviewing" | "media", string>;
+      shortcuts: string;
+      shortcutsHint: string;
+      shortcutKey: (n: number) => string;
+      saved: (name: string) => string;
+      renamed: (name: string) => string;
+      deleted: (name: string) => string;
+      limit: string;
+      duplicate: string;
+      tooLong: string;
+      empty: string;
+    };
     /** The icon rail on the right and the panels it opens. */
     studioPanels: {
       rail: string;
@@ -101,7 +144,293 @@ export type Strings = {
       settingsTitle: (productCode: string, refNum: number) => string;
       displayName: string;
       displayNameHint: string;
+      /** Renumbering a ref from the header, and why the server refused it. */
+      changeNumber: string;
+      changeNumberTitle: (productCode: string, refNum: number) => string;
+      newNumber: string;
+      numberHint: string;
+      stableBlocks: string;
+      numberTaken: (refNum: number) => string;
+      renumber: string;
+      renumbered: (from: number, to: number) => string;
+      reassemble: string;
+      renumberErrors: {
+        checkout_ref: string;
+        draft_conflict: string;
+        run_active: string;
+        pipeline_running: string;
+        activity_exists: string;
+      };
     };
+    /** Product tags: edited in ref settings, shown on list cards, and the list's tag filter. */
+    tags: {
+      label: string;
+      about: string;
+      add: string;
+      placeholder: string;
+      removeTag: (tag: string) => string;
+      all: string;
+      filter: string;
+      tooLong: string;
+      tooMany: string;
+      invalid: string;
+    };
+    /** Saved versions of the activity, listed in its History. */
+    versions: {
+      title: string;
+      about: string;
+      aboutMedia: string;
+      save: string;
+      saving: string;
+      saveTitle: string;
+      name: string;
+      nameHint: string;
+      nameTooLong: (max: number) => string;
+      saved: (seq: number) => string;
+      unchanged: (seq: number) => string;
+      loading: string;
+      empty: string;
+      loadFailed: string;
+      number: (seq: number) => string;
+      unnamed: string;
+      noMedia: string;
+      noAuthor: string;
+      current: string;
+      columns: {
+        version: string;
+        name: string;
+        kind: string;
+        created: string;
+        author: string;
+        media: string;
+        current: string;
+        actions: string;
+      };
+      kinds: { manual: string; auto: string; restore: string; deploy: string };
+      reasons: { before_restore: string; before_proposal: string };
+      compare: string;
+      /** Accessible name of a row's Compare button. */
+      compareVersion: (seq: number) => string;
+      compareTitle: (seq: number) => string;
+      compareAbout: (seq: number) => string;
+      comparing: string;
+      compareFailed: string;
+      closeCompare: string;
+      /** Accessible name of one part's line diff. */
+      diffLabel: (part: string) => string;
+      files: {
+        description: string;
+        spec: string;
+        mediaPlan: string;
+        configuration: string;
+        assessment: string;
+        features: string;
+      };
+      mediaTitle: string;
+      mediaColumns: { file: string; change: string; before: string; after: string };
+      media: { added: string; removed: string; changed: string };
+      /** A side of the media table without the file. */
+      noFile: string;
+      noChanges: string;
+      restore: string;
+      /** Accessible name of a row's Restore button, and the confirmation's title. */
+      restoreVersion: (seq: number) => string;
+      restoreConfirm: (seq: number) => string;
+      restoreUnsaved: string;
+      restoring: string;
+      restored: (seq: number) => string;
+      incomplete: (path: string) => string;
+      incompleteRecord: string;
+      /** Whether QA and PROD hold what the draft holds now, under the Versions heading. */
+      status: {
+        label: string;
+        qa: Record<"never" | "in_sync" | "changed", string>;
+        prod: Record<"never" | "in_sync" | "changed", string>;
+        /** The deployed version and when it went, after the status. */
+        deployed: (seq: number, when: string) => string;
+      };
+      /** Badges on the rows of the versions that went to QA or PROD. */
+      deployedBadge: Record<"qa" | "prod", string>;
+      /** The badge's accessible name: where the version went, and when. */
+      deployedOn: (target: string, when: string) => string;
+    };
+    /** Module builds: every succeeded assembly, compared two at a time, one played in the preview. */
+    moduleBuilds: {
+      title: string;
+      about: string;
+      aboutPin: string;
+      loading: string;
+      loadFailed: string;
+      empty: string;
+      /** A build's short name, from its run. */
+      label: (id: string) => string;
+      columns: {
+        select: string;
+        build: string;
+        built: string;
+        files: string;
+        preview: string;
+        actions: string;
+      };
+      files: (count: number) => string;
+      noFolder: string;
+      newest: string;
+      playing: string;
+      select: (label: string) => string;
+      selectHint: string;
+      compare: string;
+      compareTitle: (from: string, to: string) => string;
+      compareAbout: (from: string, to: string) => string;
+      comparing: string;
+      compareFailed: string;
+      closeCompare: string;
+      noChanges: string;
+      unchanged: (count: number) => string;
+      fileColumns: { file: string; change: string; before: string; after: string };
+      changes: Record<"added" | "removed" | "changed", string>;
+      noFile: string;
+      textFile: string;
+      text: Record<"binary" | "too_large", string>;
+      diffLabel: (file: string) => string;
+      play: string;
+      playBuild: (label: string) => string;
+      unpin: string;
+      pinnedNotice: string;
+      pinnedDetail: (label: string) => string;
+      pinned: (label: string) => string;
+      unpinned: string;
+      /** The pinned build no longer exists, so the newest plays. */
+      pinGone: string;
+      /** Why Play this build and Unpin wait: a run is in progress. */
+    };
+    /** A new ref made from the product's template ref, deciding about each of its assets. */
+    createRef: {
+      title: string;
+      about: string;
+      newRef: string;
+      refNum: string;
+      refNumHint: string;
+      name: string;
+      nameHint: string;
+      language: string;
+      voiceForAll: string;
+      voiceUnchanged: string;
+      keepAll: string;
+      regenerateImages: string;
+      agent: string;
+      noAgent: string;
+      columns: { asset: string; type: string; current: string; action: string; details: string };
+      actions: { keep: string; regenerate: string; upload: string; library: string };
+      actionsFor: (key: string) => string;
+      types: {
+        image: string;
+        narration: string;
+        sound: string;
+        video: string;
+        animation: string;
+      };
+      scenes: (ids: string) => string;
+      noScene: string;
+      copied: string;
+      unbound: string;
+      bound: string;
+      script: string;
+      description: string;
+      chooseFile: string;
+      chosenFile: (name: string) => string;
+      choose: string;
+      chosenUpload: (name: string) => string;
+      create: string;
+      creating: string;
+      created: (refNum: number) => string;
+      createdWithProblem: (refNum: number, reason: string) => string;
+      notStable: (refNum: number) => string;
+      markStable: string;
+      notCanonical: string;
+      assessmentShared: (refNum: number) => string;
+      openAssessment: string;
+      blockersTitle: string;
+      blockers: {
+        missingRefNum: string;
+        refNumTaken: (refNum: number) => string;
+        uploadMissing: (key: string) => string;
+        libraryMissing: (key: string) => string;
+        scriptMissing: (key: string) => string;
+        descriptionMissing: (key: string) => string;
+        scriptTooLong: (key: string, max: number) => string;
+        descriptionTooLong: (key: string, max: number) => string;
+      };
+      errors: {
+        not_canonical: string;
+        template_not_stable: string;
+        activity_exists: string;
+        activity_archived: string;
+      };
+    };
+    /** The list page's row of the activities opened most recently in this browser, and the heading of the full list under it. */
+    recent: {
+      title: string;
+      all: string;
+    };
+    /** The project media library: every activity's uploads, browsed and downloaded together. */
+    projectMedia: {
+      title: string;
+      about: string;
+      open: string;
+      back: string;
+      search: string;
+      kind: string;
+      kinds: { all: string; image: string; audio: string; video: string };
+      product: string;
+      anyProduct: string;
+      sort: string;
+      sorts: { name: string; newest: string; size: string; activity: string };
+      view: string;
+      views: { grid: string; table: string };
+      selectAll: string;
+      clear: string;
+      selectFile: (name: string) => string;
+      selectedCount: (count: number) => string;
+      download: (count: number) => string;
+      downloading: string;
+      downloadLimit: (max: number) => string;
+      columns: {
+        select: string;
+        name: string;
+        type: string;
+        size: string;
+        activity: string;
+        updated: string;
+      };
+      loading: string;
+      empty: string;
+      noMatches: string;
+      truncated: (count: number) => string;
+      details: string;
+      detailsEmpty: string;
+      openActivity: string;
+      files: string;
+      scope: { label: string; here: string; all: string };
+      otherEmpty: string;
+      copyHint: string;
+      copying: string;
+      copied: (name: string) => string;
+      tooLarge: string;
+    };
+    /** Deleting an activity: it is archived, so it leaves the list and its files stay. */
+    deleteActivity: {
+      action: string;
+      confirmTitle: string;
+      deleteConfirm: (title: string, ref: number) => string;
+      deleted: (title: string) => string;
+      errors: {
+        canonical_has_refs: string;
+        run_active: string;
+        pipeline_running: string;
+      };
+    };
+    /** Creating a ref whose number a deleted activity still holds. */
+    archivedConflict: string;
     /** The storyboard: every scene as a frame, the Scenes section's first view. */
     studioBoard: {
       title: string;
@@ -124,6 +453,366 @@ export type Strings = {
       noAssets: string;
       empty: string;
     };
+    /** The Deploy section: whether a deploy of this activity could start, and what is missing. */
+    deploy: {
+      title: string;
+      about: string;
+      loading: string;
+      loadFailed: (reason: string) => string;
+      ready: string;
+      notReady: (n: number) => string;
+      /** Where an admin fills in the deploy settings. */
+      settingsHint: string;
+      /** The preview plays a pinned build, which a release does not ship. */
+      pinnedBuild: string;
+      checksLabel: string;
+      columns: { check: string; state: string };
+      problemsTitle: string;
+      prepareClones: string;
+      preparing: string;
+      prepared: string;
+      checkRemote: string;
+      checkingRemote: string;
+      remoteChecked: string;
+      /** A clone failed: the repository and the end of git's own output ("" when none). */
+      cloneFailed: (repo: string, output: string) => string;
+      /** A clone ran past its time limit. */
+      cloneTimedOut: (repo: string) => string;
+      /** The long name of each setting, by its dotted path. */
+      fields: Record<string, string>;
+      repos: { module: string; activityData: string; media: string };
+      rows: {
+        ref: string;
+        layout: string;
+        settings: string;
+        git: string;
+        moduleRemote: string;
+        clone: (repo: string) => string;
+        branch: (name: string) => string;
+      };
+      states: {
+        canonical: string;
+        notCanonical: string;
+        noModule: string;
+        layout: (layout: string) => string;
+        noLayout: string;
+        settingsComplete: string;
+        settingsMissing: (n: number) => string;
+        gitAvailable: string;
+        gitUnavailable: string;
+        noRemote: string;
+        remoteInvalid: (remote: string) => string;
+      };
+      clone: {
+        present: (branch: string | null) => string;
+        missing: string;
+        dirty: string;
+        ahead: (n: number) => string;
+        remoteMismatch: string;
+        unknown: string;
+        /** What git could not say about a present clone. */
+        notKnown: { status: string; upstream: string; branch: string; sparse: string };
+        remoteUnreachable: string;
+        mediaPathMissing: (path: string) => string;
+      };
+      branch: {
+        local: string;
+        notYet: string;
+        unknown: string;
+        onRemote: string;
+        notOnRemote: string;
+        remoteUnknown: string;
+      };
+      problems: {
+        settings_missing: (field: string) => string;
+        module_remote_missing: string;
+        module_remote_invalid: string;
+        clone_missing: (repo: string) => string;
+        clone_unknown: (repo: string, what: "status" | "upstream" | "branch" | "sparse") => string;
+        remote_unreachable: (repo: string) => string;
+        media_path_missing: (path: string) => string;
+        clone_dirty: (repo: string) => string;
+        clone_ahead: (repo: string, n: number) => string;
+        clone_remote_mismatch: (repo: string) => string;
+        branch_missing: (repo: string, branch: string, where: "local" | "remote") => string;
+        not_canonical: string;
+        no_module: string;
+        layout_unsupported: (layout: string) => string;
+        git_unavailable: string;
+      };
+      /** The module release: its stages, their states and why one cannot run, the log. */
+      releaseTitle: string;
+      releaseAbout: string;
+      releaseModule: string;
+      releasing: string;
+      releaseStarted: string;
+      /** The confirm dialog's name and body: it pushes a branch and starts a Jenkins build. */
+      releaseConfirmTitle: string;
+      releaseConfirm: (branch: string) => string;
+      releaseConfirmLabel: string;
+      /** Running the push-and-build stage on its own asks the same. */
+      triggerConfirm: (branch: string) => string;
+      moduleVersion: string;
+      moduleVersionHint: string;
+      moduleVersionInvalid: string;
+      stop: string;
+      stopping: string;
+      log: string;
+      logEmpty: string;
+      /** The release tag the build made. */
+      resolvedVersion: (version: string) => string;
+      openBuild: string;
+      stagesLabel: string;
+      stageColumns: { stage: string; state: string };
+      advanced: string;
+      /** The per-stage Run button's accessible name. */
+      runStage: (stage: string) => string;
+      run: string;
+      stageStarted: (stage: string) => string;
+      stages: {
+        verify_module: string;
+        prepare_deploy: string;
+        trigger_module_build: string;
+        await_module_build: string;
+        export_activity_data: string;
+        verify_activity_data: string;
+        verify_media_assets: string;
+        publish_activity_data: string;
+        trigger_activity_deploy: string;
+        await_activity_deploy: string;
+        trigger_production_deploy: string;
+        await_production_deploy: string;
+      };
+      /** What Deploy to QA does, after the release, in the section's explanation. */
+      qaAbout: string;
+      deployQa: string;
+      deployingQa: string;
+      deployQaStarted: string;
+      /** The QA confirm dialog: what it pushes and starts, for this product code. */
+      deployQaConfirmTitle: string;
+      deployQaConfirm: (productCode: string) => string;
+      deployQaConfirmItems: {
+        release: (branch: string) => string;
+        media: string;
+        data: (branch: string) => string;
+        deploy: string;
+      };
+      deployQaConfirmLabel: string;
+      /** A stage run on its own that pushes or starts a Jenkins job asks first. */
+      stageConfirmTitle: (stage: string) => string;
+      stageConfirm: {
+        verify_media_assets: string;
+        publish_activity_data: (branch: string) => string;
+        trigger_activity_deploy: string;
+      };
+      /** The link to the activity on QA once a QA deploy finished. */
+      openQa: string;
+      /** The released module version the activity is on QA with. */
+      qaVersion: (version: string) => string;
+      /** A QA deploy left the release out because it was current. */
+      releaseSkipped: string;
+      /** The check of the exported data: its heading and each finding. */
+      preflightTitle: string;
+      preflightErrors: string;
+      preflightWarnings: string;
+      preflight: {
+        deploy_list_mismatch: (file: string) => string;
+        file_missing: (file: string) => string;
+        file_invalid: (file: string) => string;
+        layout_module_mismatch: (expected: string, found: string | null) => string;
+        no_sources: string;
+        assessment_empty: (file: string) => string;
+        assessment_count_mismatch: (file: string, items: number, maxItems: number) => string;
+        media_path_unsafe: (file: string, reference: string) => string;
+        media_preview_url: (file: string, reference: string) => string;
+        media_token_left: (file: string, reference: string) => string;
+        configuration_without_media: (file: string) => string;
+      };
+      /** The latest QA deploy's state, as the line above the stages says it. */
+      qaRunStatuses: {
+        running: (stage: string) => string;
+        succeeded: string;
+        failed: string;
+        cancelled: string;
+        interrupted: string;
+      };
+      statuses: {
+        pending: string;
+        running: string;
+        done: string;
+        failed: string;
+        cancelled: string;
+      };
+      /** The latest run's state, as the line above the stages says it. */
+      runStatuses: {
+        running: (stage: string) => string;
+        succeeded: string;
+        failed: string;
+        cancelled: string;
+        interrupted: string;
+      };
+      /** Why a stage cannot be run now. */
+      blockers: {
+        previous_stage: (stage: string) => string;
+        previous_rerun: (stage: string) => string;
+        run_active: string;
+        settings_missing: (field: string) => string;
+        clone_missing: (repo: string) => string;
+        clone_dirty: (repo: string) => string;
+        not_ready: (problem: string) => string;
+        qa_outdated: string;
+      };
+      /** Why a stage ended badly. */
+      errors: {
+        command_failed: (command: string, exitCode: number | null) => string;
+        command_timed_out: (command: string) => string;
+        command_missing: (command: string) => string;
+        jenkins_failed: (status: number) => string;
+        build_failed: (result: string) => string;
+        no_newer_tag: (before: string | null, after: string | null) => string;
+        build_timed_out: (minutes: number) => string;
+        missing_input: (stage: string) => string;
+        preflight_failed: (errors: number) => string;
+        /** Media found nowhere: the first paths, and how many there are in all. */
+        media_missing: (paths: string[], count: number) => string;
+        /** The activity deploy had not finished in time; `target` is absent for QA's. */
+        deploy_timed_out: (minutes: number, target?: "qa" | "prod") => string;
+        interrupted: string;
+        unexpected: string;
+      };
+      /** The PROD bar under the QA deploy: an admin who owns the project deploys what QA has. */
+      prod: {
+        title: string;
+        about: string;
+        /** Accessible name of the PROD stages table. */
+        stagesLabel: string;
+        deploy: string;
+        deploying: string;
+        started: string;
+        /** Shown in place of Deploy to PROD to an owner who is not an admin. */
+        adminOnly: string;
+        /** Nothing stands in the way. */
+        ready: string;
+        never: string;
+        /** The last PROD deploy: when, and the framework version when known. */
+        last: (when: string, frameworkVersion: string | null) => string;
+        openDeploy: string;
+        /** The confirm dialog: what it does, and the field the product code is typed into. */
+        confirmTitle: string;
+        confirm: (productCode: string) => string;
+        confirmItems: { data: (branch: string) => string; jenkins: string };
+        confirmLabel: (productCode: string) => string;
+        confirmHint: string;
+        confirmButton: string;
+        /** The latest PROD deploy's state, as the bar says it. */
+        runStatuses: {
+          running: (stage: string) => string;
+          succeeded: string;
+          failed: string;
+          cancelled: string;
+          interrupted: string;
+        };
+        /** Why the server refused a start, by its error code. */
+        refused: {
+          confirmation_mismatch: string;
+          prod_requires_admin: string;
+        };
+      };
+    };
+    /** Check quality, in the Module section: accessibility and reading level of the played activity. */
+    quality: {
+      title: string;
+      about: string;
+      check: string;
+      checking: string;
+      /** Why Check quality is not offered: the test browser is missing. */
+      browserMissing: string;
+      loadFailed: string;
+      lastChecked: (when: string) => string;
+      notChecked: string;
+      /** The last run ended without reports. */
+      lastFailed: (reason: string) => string;
+      accessibility: { title: string; about: string };
+      readability: {
+        title: string;
+        about: string;
+        gradeBand: (band: string) => string;
+        readingGrade: (grade: number) => string;
+      };
+      status: {
+        passed: string;
+        failed: string;
+        passed_with_warnings: string;
+        skipped: string;
+      };
+      skipped: {
+        no_grade_band: string;
+        unknown_grade_band: string;
+        not_english: string;
+        no_text: string;
+      };
+      severity: { must: string; should: string; minor: string; note: string };
+      noFindings: string;
+      /** Accessible name of a check's findings table. */
+      findingsLabel: (check: string) => string;
+      columns: { severity: string; rule: string; where: string; detail: string; link: string };
+      /** Where a finding is when it is not tied to a scene or an element. */
+      nowhere: string;
+      scene: (scene: string) => string;
+      learnMore: string;
+      /** The link's accessible name. */
+      learnMoreAbout: (rule: string) => string;
+      keyboard: {
+        "keyboard-focusable": string;
+        "keyboard-focus-visible": string;
+        "keyboard-activation": string;
+      };
+      readabilityRules: {
+        sentence_long: string;
+        word_long: string;
+        word_syllables: string;
+      };
+      readabilityDetail: {
+        sentence_long: (count: number, limit: number) => string;
+        word_long: (count: number, limit: number) => string;
+        word_syllables: (count: number, limit: number) => string;
+      };
+      waived: { vpat: string; captions: string };
+    };
+    /** Run tests, in the Module section: each acceptance criterion checked against the player. */
+    tests: {
+      title: string;
+      about: string;
+      run: string;
+      running: string;
+      /** Why Run tests is not offered: the test browser is missing. */
+      browserMissing: string;
+      noCriteria: string;
+      /** The report tested an earlier revision of the specification. */
+      stale: string;
+      noAgent: string;
+      saveFirst: string;
+      loadFailed: string;
+      lastRun: (when: string) => string;
+      notRun: string;
+      lastFailed: (reason: string) => string;
+      /** How many criteria passed, of how many. */
+      count: (passed: number, total: number) => string;
+      reused: string;
+      status: Record<"passed" | "failed" | "skipped", string>;
+      skipped: Record<"no_criteria", string>;
+      codes: Record<"not_run", string>;
+      resultsLabel: string;
+      columns: {
+        criterion: string;
+        test: string;
+        status: string;
+        duration: string;
+        error: string;
+      };
+      duration: (ms: number) => string;
+      noTestName: string;
+    };
     /** The Build stage: what stands between the draft and an assembled module. */
     studioBuild: {
       title: string;
@@ -135,6 +824,23 @@ export type Strings = {
       speech: (language: string, bound: number, total: number) => string;
       coverage: (language: string, covered: number, total: number) => string;
       media: (bound: number, total: number) => string;
+      /** Media keys one scene describes differently from another. */
+      mediaKeys: { ok: string; conflicting: (keys: string[]) => string };
+      /** A decodable book's word pronunciations in one language: recorded, and timed. */
+      words: {
+        ok: (language: string, total: number) => string;
+        none: (language: string) => string;
+        missing: (language: string, recorded: number, total: number, timed: number) => string;
+      };
+      /** Only for an assessed activity. */
+      assessment: {
+        ok: string;
+        missing: string;
+        /** Problems the assessment in effect adds to the module's own file. */
+        problems: (count: number) => string;
+        /** Problems the module's own file already had. */
+        inherited: (count: number) => string;
+      };
       canonical: Record<"ok" | "fail", string>;
       checkout: Record<"ok" | "fail", string>;
       unsaved: Record<"ok" | "fail", string>;
@@ -146,11 +852,28 @@ export type Strings = {
       noRun: string;
     };
     /** Running the stages: Loom's stage picker and Run, and the panel that follows a run. */
+    runLog: {
+      showReasoning: string;
+    };
     studioRun: {
       stage: string;
       all: string;
-      steps: Record<"spec" | "media" | "translations" | "speech" | "images" | "module", string>;
+      steps: Record<
+        | "spec"
+        | "media"
+        | "translations"
+        | "speech"
+        | "words"
+        | "sounds"
+        | "images"
+        | "assessment"
+        | "module"
+        | "test",
+        string
+      >;
       narration: string;
+      /** Speech, then images: what a ref made from its template generates next. */
+      assets: string;
       status: Record<
         "pending" | "running" | "succeeded" | "skipped" | "failed" | "cancelled",
         string
@@ -160,7 +883,20 @@ export type Strings = {
       idle: string;
       progress: (done: number, total: number) => string;
       notes: Record<
-        "planCurrent" | "allTranslated" | "needsPenguinAgent" | "noNarration" | "noImages",
+        | "planCurrent"
+        | "allTranslated"
+        | "needsPenguinAgent"
+        | "noNarration"
+        | "noImages"
+        | "notDecodable"
+        | "noWords"
+        | "wordsMissingSounds"
+        | "noSounds"
+        | "soundProviderUnavailable"
+        | "noAssessment"
+        | "notCanonical"
+        | "noCriteria"
+        | "noBrowser",
         string
       >;
       running: (step: string) => string;
@@ -249,7 +985,9 @@ export type Strings = {
       | "speech"
       | "library"
       | "module"
-      | "history",
+      | "history"
+      | "deploy"
+      | "newRef",
       string
     >;
     /** Loom's Implementation Features: patterns the module assembly reproduces exactly. */
@@ -272,7 +1010,64 @@ export type Strings = {
       total: string;
       missing: (n: number) => string;
     };
-    /** Loom's Configuration Data and Assessment Data: the module's own documents, read-only. */
+    /** A bound audio or video file's format, size, length, bitrate and dimensions. */
+    mediaDetails: {
+      title: string;
+      format: string;
+      size: string;
+      length: string;
+      bitrate: string;
+      dimensions: string;
+      measuring: string;
+      unknown: string;
+      formats: Record<"wav" | "mp3" | "ogg" | "mp4" | "webm" | "other", string>;
+      kbps: (n: number) => string;
+      pixels: (width: number, height: number) => string;
+    };
+    /** Generating the assessment, and editing its items without JSON. */
+    assessment: {
+      generate: string;
+      generating: string;
+      /** What generating does; shown in the Assessment Data title's popover. */
+      generateAbout: string;
+      useIt: string;
+      keepCurrent: string;
+      candidateTitle: string;
+      /** The candidate's size beside the current assessment's. */
+      candidate: (n: number) => string;
+      current: (n: number | null) => string;
+      candidateUnreadable: string;
+      failed: (reason: string) => string;
+      accepted: string;
+      unused: string;
+      items: string;
+      itemTitle: (n: number, title: string) => string;
+      interaction: Record<"SIMPLE_CHOICE" | "MULTIPLE_RESPONSE_CHOICE", string>;
+      question: string;
+      shuffle: string;
+      choice: (n: number) => string;
+      correct: string;
+      correctOf: (n: number) => string;
+      addItem: string;
+      addChoice: string;
+      removeItem: string;
+      removeChoice: string;
+      removeChoiceOf: (n: number) => string;
+      reset: string;
+      save: string;
+      editAsJson: string;
+      unsupported: string;
+      blockers: {
+        noItems: string;
+        fewChoices: (item: number) => string;
+        correctCount: (item: number) => string;
+        emptyQuestion: (item: number) => string;
+        emptyChoice: (item: number) => string;
+        duplicateChoiceId: (item: number) => string;
+      };
+    };
+    assessmentRun: string;
+    /** Loom's Configuration Data and Assessment Data: the module's own documents, editable in place. */
     moduleDocuments: {
       loading: string;
       unreadable: (reason: string) => string;
@@ -281,7 +1076,21 @@ export type Strings = {
       fromRun: (file: string) => string;
       fromCheckout: (file: string) => string;
       items: (n: number) => string;
-      readOnly: string;
+      /** What editing does, per document; shown in the heading's popover. */
+      about: Record<"configuration" | "assessment", string>;
+      field: string;
+      save: string;
+      saving: string;
+      saved: string;
+      discard: string;
+      discardConfirm: string;
+      discarded: string;
+      edited: string;
+      stale: Record<"configuration" | "assessment", string>;
+      sharedOnCanonical: (ref: number) => string;
+      notJson: (reason: string) => string;
+      notObject: string;
+      fromDraft: string;
     };
     librarySectionEmpty: string;
     sceneAssetTree: string;
@@ -358,6 +1167,14 @@ export type Strings = {
       "all" | "needs" | "translate" | "ready" | "failed" | "blocked",
       string
     >;
+    /** Narration sorted into main instructions and scaffolding by its words (instruction-type.ts). */
+    instructionType: {
+      title: string;
+      filterLabel: string;
+      filter: Record<"all" | "main" | "scaffolding", string>;
+      badge: Record<"main" | "scaffolding", string>;
+      about: string;
+    };
     /** One narration across the activity's languages, as Loom's audio panel lists it. */
     narrationLanguages: {
       title: string;
@@ -405,12 +1222,109 @@ export type Strings = {
     speechScript: string;
     speechScriptHint: string;
     acceptedAudio: string;
-    speechVoice: string;
     regenerateSpeech: string;
     generateSpeech: string;
     speechCandidates: string;
     speechCandidate: string;
     acceptSpeech: string;
+    voicePicker: {
+      label: string;
+      search: string;
+      provider: string;
+      model: string;
+      language: string;
+      anyValue: string;
+      resetFilters: string;
+      count: (n: number) => string;
+      id: (id: string) => string;
+      allLanguages: string;
+      preview: (voice: string) => string;
+      pause: (voice: string) => string;
+      mixed: string;
+      default: string;
+      applyToAll: string;
+      applied: (n: number) => string;
+      appliesNext: string;
+      noMatches: string;
+    };
+    /** A decodable book's word pronunciations: the words, their sounds, and where those came from. */
+    bookWords: {
+      group: string;
+      about: string;
+      refresh: string;
+      refreshed: (n: number) => string;
+      count: (n: number) => string;
+      missing: (n: number) => string;
+      allSounded: string;
+      askModel: string;
+      /** More words are missing than one run takes, so it asks for the first of them. */
+      askFirst: (n: number) => string;
+      asking: string;
+      proposal: string;
+      proposalFailed: string;
+      proposalStale: string;
+      noneProposed: string;
+      useSounds: string;
+      accepted: (n: number) => string;
+      word: string;
+      sounds: string;
+      soundsHint: string;
+      sound: (n: number) => string;
+      addSound: string;
+      removeSound: (n: number) => string;
+      saveSounds: string;
+      saved: string;
+      noSounds: string;
+      source: Record<"espeak" | "model" | "author", string>;
+      espeakMissing: string;
+      notDecodable: string;
+      run: string;
+      /** Record every word with sounds and no recording: the words stage for this language. */
+      record: (n: number) => string;
+      recordAbout: string;
+      recordBlocked: string;
+      recordTitle: string;
+      /** Asked before recording, because each word is a paid request to its provider. */
+      recordConfirm: (n: number, language: string) => string;
+      /** Words with sounds and no recording, and how many recorded words have no timings. */
+      toRecord: (n: number) => string;
+      untimed: (n: number) => string;
+      recording: string;
+      noRecording: string;
+      script: string;
+      scriptHint: string;
+      scriptYours: string;
+      writeScript: string;
+      useSoundsScript: string;
+      timeline: string;
+      timelineAbout: string;
+      timelineList: string;
+      noTimings: string;
+      /** A sound, or the whole word, and when it starts, for the timeline's accessible names. */
+      soundAt: (sound: string, start: string) => string;
+      wholeWordAt: (word: string, start: string) => string;
+    };
+    /** Who speaks a narration: Gemini or ElevenLabs, and the word timings ElevenLabs returns. */
+    speechProvider: {
+      label: string;
+      gemini: string;
+      elevenlabs: string;
+      /** An option the chosen agent cannot use, naming the Vault key it lacks. */
+      keyMissing: (key: string) => string;
+      /** The accepted clip's word timings, as the highlighting preview shows them. */
+      timings: string;
+      timingsAbout: string;
+      noTimings: string;
+      timingsList: string;
+      word: (word: string, start: string) => string;
+      voiceId: string;
+      voiceIdHint: string;
+      useVoiceId: string;
+      noVoice: string;
+      applyToAll: string;
+      mixed: string;
+      applied: (n: number) => string;
+    };
     audioPlayback: {
       type: string;
       kinds: Record<"speech" | "music" | "sfx", string>;
@@ -419,6 +1333,106 @@ export type Strings = {
       percent: (n: number) => string;
       hint: Record<"music" | "sfx", (channel: string) => string>;
       notSpoken: string;
+    };
+    /** Music and sound effects generated from a prompt. */
+    sound: {
+      prompt: string;
+      promptHint: string;
+      length: string;
+      lengthHint: string;
+      lengthInvalid: string;
+      provider: string;
+      /** The model picker shown when a provider offers several models for the kind. */
+      model: string;
+      generate: string;
+      regenerate: string;
+      generating: string;
+      providers: Record<"elevenlabs" | "agenthub", string>;
+      problems: {
+        credential_missing: (key: string) => string;
+        kind_unsupported: string;
+        provider_unknown: string;
+        no_model: string;
+        model_unknown: string;
+      };
+      unavailable: (provider: string, problem: string) => string;
+      noProvider: string;
+      refused: string;
+      candidate: (provider: string, seconds: string | null) => string;
+      candidates: string;
+      player: string;
+      /** The Audios section's block for music and effects, and the stage it starts. */
+      bulkTitle: string;
+      bulkHelp: string;
+      bulkTally: (ready: number, total: number) => string;
+      bulk: (count: number) => string;
+      bulkConfirm: (count: number, provider: string, language: string) => string;
+      bulkUnavailable: (provider: string) => string;
+      statuses: Record<"ready" | "missing" | "failed" | "generating" | "noPrompt", string>;
+    };
+    /** Scene videos (experimental): an agent composes an animated scene from its storyboard. */
+    video: {
+      title: string;
+      info: string;
+      experimental: string;
+      compose: string;
+      recompose: string;
+      composing: string;
+      /** The run's name in the history and the sessions panel. */
+      run: string;
+      noImages: string;
+      candidates: string;
+      frames: string;
+      frame: (index: number, seconds: string) => string;
+      seconds: (seconds: string) => string;
+      preview: string;
+      play: string;
+      pause: string;
+      restart: string;
+      older: string;
+      states: Record<
+        "loading" | "ready" | "playing" | "paused" | "ended" | "broken" | "unavailable",
+        string
+      >;
+      choiceWarning: string;
+      /** Recording a composition to a video: the action, its run, and the comparison. */
+      record: string;
+      rerecord: string;
+      recording: string;
+      /** The recording run's name in the history and the sessions panel. */
+      recordRun: string;
+      recordings: string;
+      /** The label of the bound recording's player. */
+      recorded: string;
+      useNew: string;
+      keepCurrent: string;
+      /** The recording's known limit: a blank moment before the animation starts. */
+      leadIn: string;
+      olderRecording: string;
+      noCurrent: string;
+      recordFailed: (cause: string) => string;
+      noCause: string;
+      /** A failed recording, by the code the server reports for the causes it knows. */
+      recordProblems: Record<
+        | "video_not_ready"
+        | "video_no_timeline"
+        | "video_timeout"
+        | "video_invalid"
+        | "video_too_large"
+        | "video_stopped",
+        string
+      >;
+      /** A failed check of what the agent wrote, by the code the server reports. */
+      problems: Record<
+        | "composition_network"
+        | "composition_reference"
+        | "composition_timeline"
+        | "composition_template"
+        | "composition_random"
+        | "composition_size"
+        | "composition_frames",
+        string
+      >;
     };
     assetLibrary: {
       kind: string;
@@ -491,6 +1505,7 @@ export type Strings = {
     previewImage: string;
     loadingImage: string;
     fullImage: string;
+    imageZoomHint: string;
     reloadImage: string;
     imageDimensions: (dimensions: string) => string;
     imageUnbound: string;
@@ -513,6 +1528,8 @@ export type Strings = {
     decodable: string;
     assemble: string;
     moduleRun: string;
+    qualityRun: string;
+    testRun: string;
     moduleReady: string;
     specRun: string;
     assistRun: string;
@@ -790,6 +1807,79 @@ export type Strings = {
     companyModePersonalInfo: string;
     companyModeServer: string;
     companyModeServerInfo: string;
+    /** The scene-videos experiment switch (admin), on the general page. */
+    videoExperiment: string;
+    videoExperimentInfo: string;
+    /** The deploy settings page (admin): where activities are deployed to. */
+    deploy: {
+      title: string;
+      about: string;
+      groups: {
+        qa: string;
+        prod: string;
+        jobs: string;
+        repos: string;
+        git: string;
+        timeouts: string;
+      };
+      jenkinsUrl: string;
+      jenkinsUrlHint: string;
+      username: string;
+      token: string;
+      tokenSaved: string;
+      tokenForget: string;
+      tokenWillClear: string;
+      tier: string;
+      environment: string;
+      frameworkVersion: string;
+      frameworkVersionHint: string;
+      activityBaseUrl: string;
+      activityBaseUrlHint: string;
+      moduleBuildJob: string;
+      activityDeployJob: string;
+      jobHint: string;
+      activityDataRemote: string;
+      mediaRemote: string;
+      remoteHint: string;
+      mediaPublicBase: string;
+      mediaPublicBaseHint: string;
+      gitUserName: string;
+      gitUserEmail: string;
+      buildMinutes: string;
+      deployMinutes: string;
+      minutesHint: string;
+      invalid: string;
+      /** Why the server refused a field, by the reason code it sends; `invalid` for others. */
+      reasons: Record<string, string>;
+      testConnection: (target: string) => string;
+      testing: string;
+      testOk: (status: number) => string;
+      testFailed: (status: number) => string;
+      testNoAnswer: string;
+      testUsesSaved: string;
+      targets: { qa: string; prod: string };
+    };
+    /** The test browser page (admin): the Chromium quality checks and tests open players in. */
+    testBrowser: {
+      title: string;
+      about: string;
+      /** `version` is the Chromium version, or null when the server could not tell. */
+      installed: (version: string | null) => string;
+      missing: string;
+      /** This copy of Penguin cannot install or run it (the desktop app ships no Playwright). */
+      unavailable: string;
+      location: (path: string) => string;
+      install: string;
+      installing: string;
+      failed: (reason: string) => string;
+      reasons: {
+        failed: string;
+        timed_out: string;
+        not_started: string;
+        incomplete: string;
+      };
+      logLabel: string;
+    };
     accentNames: Record<string, string>;
   };
   update: {
@@ -1991,6 +3081,11 @@ export type Strings = {
     decisionAuto: string;
     decisionPolicy: string;
     thinking: string;
+    /** Stands in for reasoning a run log hides, while the agent is still thinking. */
+    thinkingHidden: string;
+    copyToolOutput: string;
+    showAllOutput: string;
+    showLessOutput: string;
     subagent: string;
     subagentRunning: string;
     aborted: (item?: { errorCode?: string; errorMessage?: string; reason?: string }) => string;
@@ -3230,8 +4325,33 @@ export type Strings = {
   errors: {
     networkError: string;
     modelCredentialMissing: (modelId: string) => string;
+    speechCredentialMissing: (key: string) => string;
     noDefaultModel: string;
     byCode: {
+      experiment_off: string;
+      video_composition_missing: string;
+      video_asset_changed: string;
+      video_invalid: string;
+      video_changed: string;
+      test_browser_missing: string;
+      composition_no_images: string;
+      composition_asset_invalid: string;
+      composition_image_too_large: string;
+      composition_not_found: string;
+      deploy_clones_running: string;
+      deploy_running: string;
+      deploy_blocked: string;
+      deploy_run_not_found: string;
+      deploy_unavailable: string;
+      deploy_no_module: string;
+      deploy_not_canonical: string;
+      deploy_settings_missing: string;
+      deploy_module_remote_missing: string;
+      deploy_module_remote_invalid: string;
+      deploy_clone_path_taken: string;
+      deploy_clone_path: string;
+      deploy_clone_failed: string;
+      git_unavailable: string;
       activity_invalid: string;
       activity_exists: string;
       activity_not_found: string;
@@ -3311,6 +4431,8 @@ export type Strings = {
       nothing_to_compact: string;
       already_compacted: string;
       version_conflict: string;
+      version_media_changed: string;
+      version_media_missing: string;
       invalid_title: string;
       invalid_proxy_url: string;
       invalid_attachment_limit: string;

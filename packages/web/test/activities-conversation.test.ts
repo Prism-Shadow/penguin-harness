@@ -81,6 +81,7 @@ describe("conversation panel", () => {
 
   it("titles a conversation run and remembers the panel", () => {
     expect(runTitle("assist")).toBe("Conversation");
+    expect(runTitle("assessment")).toBe("Assessment");
     expect(STUDIO_PANELS).toContain("conversation");
     expect(readSidePanel({ getItem: () => "conversation" })).toBe("conversation");
   });

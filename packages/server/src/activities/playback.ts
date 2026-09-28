@@ -103,3 +103,40 @@ export function playbackFromScript(script: string | undefined): AudioPlayback | 
     volume: Number.isFinite(volume) ? volume : undefined,
   });
 }
+
+const BODY = /^\s*<audio\b[^>]*>([\s\S]*)<\/audio>\s*$/i;
+
+/** The shortest and longest sound an author may ask for, in milliseconds. */
+export const SOUND_MIN_DURATION_MS = 1000;
+export const SOUND_MAX_DURATION_MS = 60000;
+
+/**
+ * What a music or sound-effect script asks a provider for: the words inside a wrapping
+ * `<audio …>` tag, or the whole script when it has none.
+ */
+export function soundPromptOf(script: string | undefined): string {
+  if (!script) return "";
+  const tag = BODY.exec(script);
+  return (tag ? tag[1]! : script).trim();
+}
+
+/** A requested length clamped to what a provider accepts, in whole milliseconds. */
+export function clampSoundDuration(ms: number): number {
+  return Math.min(SOUND_MAX_DURATION_MS, Math.max(SOUND_MIN_DURATION_MS, Math.round(ms)));
+}
+
+/**
+ * The length a Loom script's tag asks for (`duration="8"` or `"8s"`, in seconds), clamped to
+ * 1–60 s; undefined when the script has no tag, no duration, or one that does not parse.
+ */
+export function durationFromScript(script: string | undefined): number | undefined {
+  const tag = script ? TAG.exec(script) : null;
+  if (!tag) return undefined;
+  for (const [, name, raw] of tag[1]!.matchAll(ATTR)) {
+    if (name!.toLowerCase() !== "duration") continue;
+    const value = /^\s*(\d+(?:\.\d*)?|\.\d+)\s*s?\s*$/i.exec(raw!.replace(/^["']|["']$/g, ""));
+    const seconds = value ? Number(value[1]) : NaN;
+    return Number.isFinite(seconds) && seconds > 0 ? clampSoundDuration(seconds * 1000) : undefined;
+  }
+  return undefined;
+}

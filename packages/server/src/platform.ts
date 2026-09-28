@@ -104,7 +104,47 @@ import { ActivityService } from "./activities/service.js";
 import { ActivityRoutes } from "./activities/routes.js";
 import { ActivitySandboxService } from "./activities/sandbox-service.js";
 import { ActivityPipelineService } from "./activities/pipeline-run.js";
+import { ActivityVersionService, ActivityVersions } from "./activities/version-service.js";
+import {
+  ActivityModuleBuildService,
+  ActivityModuleBuilds,
+} from "./activities/module-build-service.js";
 import { ActivityPlayRoutes } from "./activities/play-routes.js";
+import {
+  ActivityCompositionRoutes,
+  ActivityCompositionService,
+} from "./activities/composition-service.js";
+import {
+  ActivityVideoRenderService,
+  DefaultVideoRenderPorts,
+} from "./activities/video-render-service.js";
+import {
+  DefaultTestBrowserPorts,
+  TestBrowser,
+  TestBrowserService,
+} from "./activities/test-browser.js";
+import { TestBrowserRoutes } from "./activities/test-browser-routes.js";
+import { DefaultSoundModelPorts } from "./activities/sound-models.js";
+import { DefaultMediaLibraryPorts } from "./activities/media-bundle.js";
+import {
+  ActivityQuality,
+  ActivityQualityService,
+  DefaultQualityCheckPorts,
+} from "./activities/quality-check.js";
+import { QualityAdminRoutes } from "./activities/quality-routes.js";
+import {
+  ActivityDeploys,
+  ActivityDeployService,
+  DefaultDeployPorts,
+} from "./activities/deploy-service.js";
+import { DeployAdminRoutes } from "./activities/deploy-routes.js";
+import { ActivityDeployEventHub, ActivityDeployEvents } from "./activities/deploy-events.js";
+import { ActivityPhonemesService, DefaultEspeakPorts } from "./activities/phonemes.js";
+import { PhonemesAdminRoutes } from "./activities/phonemes-routes.js";
+import {
+  ActivityAcceptanceService,
+  DefaultAcceptancePorts,
+} from "./activities/acceptance-service.js";
 import { ActivityGenerationService } from "./activities/generation.js";
 import { ActivityAuthoring, ActivityGeneration } from "./mechanisms/activities.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
@@ -368,10 +408,42 @@ export class CodingAgentsModule {}
     ActivityGenerationService,
     ActivitySandboxService,
     ActivityPipelineService,
+    ActivityVersionService,
+    ActivityModuleBuildService,
     ActivityRoutes,
     ActivityPlayRoutes,
+    ActivityCompositionService,
+    ActivityCompositionRoutes,
+    DefaultVideoRenderPorts,
+    ActivityVideoRenderService,
+    DefaultTestBrowserPorts,
+    DefaultSoundModelPorts,
+    DefaultMediaLibraryPorts,
+    TestBrowserService,
+    TestBrowserRoutes,
+    DefaultQualityCheckPorts,
+    ActivityQualityService,
+    QualityAdminRoutes,
+    DefaultEspeakPorts,
+    ActivityPhonemesService,
+    PhonemesAdminRoutes,
+    DefaultAcceptancePorts,
+    ActivityAcceptanceService,
+    DefaultDeployPorts,
+    ActivityDeployEventHub,
+    ActivityDeployService,
+    DeployAdminRoutes,
   ],
-  exports: [ActivityAuthoring, ActivityGeneration],
+  exports: [
+    ActivityAuthoring,
+    ActivityGeneration,
+    ActivityVersions,
+    ActivityModuleBuilds,
+    TestBrowser,
+    ActivityQuality,
+    ActivityDeploys,
+    ActivityDeployEvents,
+  ],
 })
 export class ActivitiesModule {}
 

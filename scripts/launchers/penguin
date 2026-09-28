@@ -17,6 +17,10 @@ done
 DIR=$(dirname "$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)")
 
 export PENGUIN_WEB_DIST="${PENGUIN_WEB_DIST:-$DIR/web}"
+# The test browser a platform package ships (see scripts/package-release-bundles.sh).
+if [ -d "$DIR/browsers" ]; then
+  export PENGUIN_BUNDLED_BROWSERS="${PENGUIN_BUNDLED_BROWSERS:-$DIR/browsers}"
+fi
 if [ -x "$DIR/node/bin/node" ]; then
   exec "$DIR/node/bin/node" "$DIR/lib/dist/penguin.js" "$@"
 fi

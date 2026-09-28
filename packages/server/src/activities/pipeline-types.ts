@@ -2,26 +2,55 @@
  * The shapes of "Run all stages", on their own so the App can import them without
  * pulling in the service that runs the stages (see `pipeline-run.ts`).
  */
+import type { SoundProviderId } from "./sound-types.js";
+
 export const PIPELINE_STEPS = [
   "spec",
   "media",
   "translations",
   "speech",
+  "words",
+  "sounds",
   "images",
+  "assessment",
   "module",
+  "test",
 ] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
 /**
- * Every step, one step, or "narration": translating what a language lacks and then speaking
- * it, so a language with empty scripts is voiced in one go.
+ * Every step, one step, "narration": translating what a language lacks and then speaking
+ * it, so a language with empty scripts is voiced in one go, or "assets": speaking and drawing
+ * every unbound narration and image, as a ref made from its template does next.
  */
-export type PipelineSelection = "all" | "narration" | PipelineStep;
+export type PipelineSelection = "all" | "narration" | "assets" | PipelineStep;
 
 export type PipelineStepStatus =
   "pending" | "running" | "succeeded" | "skipped" | "failed" | "cancelled";
 
 export type PipelineNote =
-  "planCurrent" | "allTranslated" | "needsPenguinAgent" | "noNarration" | "noImages";
+  | "planCurrent"
+  | "allTranslated"
+  | "needsPenguinAgent"
+  | "noNarration"
+  | "noImages"
+  /** Word pronunciations are recorded for decodable books only. */
+  | "notDecodable"
+  /** No word pronunciation is waiting for a recording. */
+  | "noWords"
+  /** The words still without a recording have no sounds yet, so none can be recorded. */
+  | "wordsMissingSounds"
+  /** No music or sound effect has a prompt and no file. */
+  | "noSounds"
+  /** The sound provider cannot be used by the chosen agent (no key, or no model). */
+  | "soundProviderUnavailable"
+  /** The specification says the activity has no assessment. */
+  | "noAssessment"
+  /** Only the canonical ref writes the assessment every ref shares. */
+  | "notCanonical"
+  /** The specification has no acceptance criteria to test. */
+  | "noCriteria"
+  /** The test browser is not installed, so the tests cannot run. */
+  | "noBrowser";
 
 export interface PipelineStepState {
   step: PipelineStep;
@@ -66,6 +95,8 @@ export interface PipelineInput {
   agentId: string;
   codingAgentId?: string;
   voice?: string;
+  /** Who makes the music and sound effects the sounds step generates; ElevenLabs when absent. */
+  soundProvider?: SoundProviderId;
   wafRoot?: string;
   bookMode?: "readAlong" | "decodable";
 }

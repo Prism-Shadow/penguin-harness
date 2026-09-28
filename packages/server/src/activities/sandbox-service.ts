@@ -12,7 +12,7 @@
  * likewise: the draft's own files first, then the checkout's media root, which is where
  * every manifest path that is not an upload points.
  */
-import type { ModuleDocuments } from "./module-documents.js";
+import type { ModuleDocument, ModuleDocuments } from "./module-documents.js";
 import type { MediaStat } from "./media-stats.js";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
@@ -21,7 +21,8 @@ import { Component, Interface, Use, type Opaque } from "@prismshadow/penguin-cor
 import { HttpError } from "../http/errors.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import type { Config } from "../hmr/capabilities.js";
-import type { ActivityRecord } from "./domain.js";
+import type { ActivityDraft, ActivityRecord } from "./domain.js";
+import { playingBuild } from "./module-builds.js";
 import {
   activityPayload,
   scopeConfigurationToLanguage,
@@ -180,7 +181,14 @@ type RangeRequest = { range?: string | null; ifRange?: string | null; ifNoneMatc
 /** The sandbox as its callers see it. */
 export abstract class ActivitySandbox extends Interface<{
   status(projectId: string, activityId: string): Promise<SandboxStatus>;
-  moduleDocuments(projectId: string, activityId: string): Promise<ModuleDocuments>;
+  /** The module's configuration and assessment for a ref; `canEdit` says whether the viewer owns the project. */
+  moduleDocuments(
+    projectId: string,
+    activityId: string,
+    canEdit?: boolean,
+  ): Promise<ModuleDocuments>;
+  /** The module's own assessment for a ref, as its files have it: an author's edit is ignored. */
+  ownAssessment(projectId: string, activityId: string): Promise<unknown>;
   /** Every asset of the media plan with the size of the file it is bound to. */
   mediaStats(projectId: string, activityId: string): Promise<MediaStat[]>;
   payload(projectId: string, activityId: string, options: PayloadOptions): Promise<ActivityPayload>;
@@ -234,6 +242,9 @@ export abstract class ActivitySandbox extends Interface<{
   ): Promise<Record<string, unknown>>;
 }>() {}
 
+/** The media path a recorded scene video is bound to, below `media/`. */
+const RECORDING_PATH = /^generated\/run_[a-f0-9]{32}\.webm$/;
+
 @Component({})
 export class ActivitySandboxService implements ActivitySandbox {
   @Use() private readonly activities!: ActivityAuthoring;
@@ -276,16 +287,21 @@ export class ActivitySandboxService implements ActivitySandbox {
   >();
 
   /**
-   * The workspace of the most recent module build, or null when nothing has been built.
+   * The workspace of the module build the preview plays: the one an author pinned while it
+   * is still a succeeded build, else the most recent; null when nothing has been built.
    *
    * Only a succeeded run counts. A failed build leaves a half-written workspace behind, and
    * serving from it would give an author a preview of code that did not compile.
    */
-  private async builtModule(projectId: string, activityId: string): Promise<string | null> {
-    const runs = await this.generation.list(projectId, activityId);
-    const built = runs
-      .filter((run) => run.kind === "module" && run.status === "succeeded")
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+  private async builtModule(
+    projectId: string,
+    activityId: string,
+    pinnedRunId?: string,
+  ): Promise<string | null> {
+    const built = playingBuild(
+      await this.generation.moduleBuilds(projectId, activityId),
+      pinnedRunId,
+    );
     return built
       ? sandboxModuleRoot(path.join(this.config.root, "activity-runs", built.runId))
       : null;
@@ -297,9 +313,10 @@ export class ActivitySandboxService implements ActivitySandbox {
    */
   private async moduleSource(
     projectId: string,
-    activity: ActivityRecord,
+    // The draft, when the caller has it, names a pinned build.
+    activity: ActivityRecord & { draft?: Pick<ActivityDraft, "pinnedModuleRunId"> },
   ): Promise<ModuleSource | null> {
-    const run = await this.builtModule(projectId, activity.id);
+    const run = await this.builtModule(projectId, activity.id, activity.draft?.pinnedModuleRunId);
     if (run) return { kind: "run", root: run };
     const product = this.activities.productOf(activity);
     if (!product) return null;
@@ -334,17 +351,34 @@ export class ActivitySandboxService implements ActivitySandbox {
     ];
     const wafRoot = await this.locateWafRoot();
     if (wafRoot) roots.push(path.join(wafRoot, "media"));
+    const recorded = new Set(
+      Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
+        .flat()
+        .flatMap((asset) => (asset.generatedVideo && asset.path ? [asset.path] : [])),
+    );
     const sizeOf = async (bound: string | undefined): Promise<number | null> => {
       const normal = (bound ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
       if (!normal.startsWith("media/")) return null;
       const relative = previewMediaPath(normal.slice("media/".length));
       if (!relative) return null;
+      const recording = recorded.has(normal)
+        ? await this.activities.boundVideoFile(projectId, activityId, normal)
+        : null;
+      if (recording) {
+        const stat = await fs.stat(recording).catch(() => null);
+        if (stat?.isFile()) return stat.size;
+      }
       for (const root of roots) {
         const file = withinRoot(root, relative);
         const stat = file ? await fs.stat(file).catch(() => null) : null;
         if (stat?.isFile()) return stat.size;
       }
       return null;
+    };
+    // Named from the extension, as the media origin names it when it serves the file.
+    const mediaMimeType = (bound: string): string | null => {
+      const type = mediaContentType(bound);
+      return /^(audio|video|image)\//.test(type) ? type : null;
     };
     const stats: MediaStat[] = [];
     for (const [language, assets] of Object.entries(
@@ -357,15 +391,50 @@ export class ActivitySandboxService implements ActivitySandbox {
           type: asset.type,
           bound: !!asset.path,
           bytes: asset.path ? await sizeOf(asset.path) : null,
+          mimeType: asset.path ? mediaMimeType(asset.path) : null,
         });
     return stats;
   }
 
-  async moduleDocuments(projectId: string, activityId: string): Promise<ModuleDocuments> {
+  async ownAssessment(projectId: string, activityId: string): Promise<unknown> {
     const activity = await this.activities.getActivity(projectId, activityId);
     const source = await this.moduleSource(projectId, activity);
-    if (!source) return { source: null, configuration: null, assessment: null };
+    if (!source) return null;
+    const canonicalRefNum = this.activities.productOf(activity)?.canonicalRefNum ?? null;
+    for (const ref of [activity.refNum, canonicalRefNum]) {
+      if (ref == null) continue;
+      const file = path.join(source.root, "assessments", `${activity.productCode}-${ref}.json`);
+      const value = await readJsonFile(file);
+      if (value) return value;
+    }
+    return null;
+  }
+
+  async moduleDocuments(
+    projectId: string,
+    activityId: string,
+    canEdit = true,
+  ): Promise<ModuleDocuments> {
+    const activity = await this.activities.getActivity(projectId, activityId);
+    const source = await this.moduleSource(projectId, activity);
+    const product = this.activities.productOf(activity);
+    const canonicalRefNum = product?.canonicalRefNum ?? null;
+    const edits = {
+      configuration: await this.activities.effectiveModuleDocument(
+        projectId,
+        activity,
+        "configuration",
+      ),
+      assessment: await this.activities.effectiveModuleDocument(projectId, activity, "assessment"),
+    };
+    if (!source && !edits.configuration && !edits.assessment)
+      return { source: null, configuration: null, assessment: null, canonicalRefNum };
+    const editable = {
+      configuration: canEdit,
+      assessment: canEdit && this.activities.isCanonicalRef(activity),
+    };
     const read = async (folder: string, names: string[]) => {
+      if (!source) return null;
       for (const name of names) {
         const value = await readJsonFile(path.join(source.root, folder, name));
         if (value) return { file: `${folder}/${name}`, value };
@@ -374,15 +443,37 @@ export class ActivitySandboxService implements ActivitySandbox {
     };
     const own = `${activity.productCode}-${activity.refNum}.json`;
     // The assessment falls back to the canonical ref's, as the player's does.
-    const product = this.activities.productOf(activity);
-    const shared =
-      product?.canonicalRefNum != null && product.canonicalRefNum !== activity.refNum
-        ? [`${activity.productCode}-${product.canonicalRefNum}.json`]
-        : [];
+    const sharedName =
+      canonicalRefNum != null && canonicalRefNum !== activity.refNum
+        ? `${activity.productCode}-${canonicalRefNum}.json`
+        : null;
+    const document = async (
+      kind: "configuration" | "assessment",
+      folder: string,
+      names: string[],
+    ): Promise<ModuleDocument | null> => {
+      const edit = edits[kind];
+      // An edit names the file an assembly writes it to: this ref's configuration, or the
+      // canonical ref's assessment, which every ref shares.
+      if (edit)
+        return {
+          file: `${folder}/${names.at(-1)!}`,
+          value: edit.value,
+          edited: true,
+          stale: edit.stale,
+          editable: editable[kind],
+        };
+      const found = await read(folder, names);
+      return found ? { ...found, edited: false, stale: false, editable: editable[kind] } : null;
+    };
     return {
-      source: source.kind,
-      configuration: await read("configurations", [own]),
-      assessment: await read("assessments", [own, ...shared]),
+      source: source?.kind ?? "draft",
+      configuration: await document("configuration", "configurations", [own]),
+      assessment: await document("assessment", "assessments", [
+        own,
+        ...(sharedName ? [sharedName] : []),
+      ]),
+      canonicalRefNum,
     };
   }
 
@@ -551,7 +642,13 @@ export class ActivitySandboxService implements ActivitySandbox {
       "configurations",
       `${activity.productCode}-${activity.refNum}.json`,
     );
-    const raw = (await readJsonFile(configurationFile)) ?? {};
+    // An author's edit of the configuration stands in for the module's own.
+    const edited = await this.activities.effectiveModuleDocument(
+      projectId,
+      activity,
+      "configuration",
+    );
+    const raw = edited?.value ?? (await readJsonFile(configurationFile)) ?? {};
     let configuration = unwrapModuleConfiguration(raw, declaration.id);
     configuration = applyAliasesToLanguageGroups(configuration, assets, aliases);
     configuration = versionMediaUrls(
@@ -687,6 +784,16 @@ export class ActivitySandboxService implements ActivitySandbox {
     const wafRoot = await this.locateWafRoot();
     if (wafRoot) roots.push(path.join(wafRoot, "media"));
 
+    // A recorded scene video is kept beside the draft's media, not in it (see video-render.ts);
+    // its bound path names where the player asks for it.
+    const recording = RECORDING_PATH.test(relative)
+      ? await this.activities.boundVideoFile(projectId, activityId, `media/${relative}`)
+      : null;
+    if (recording) {
+      const served = await this.serveFile(recording, relative, request);
+      if (served) return served;
+    }
+
     for (const root of roots) {
       const file = withinRoot(root, relative);
       if (!file) throw new HttpError(400, "media_path_invalid", "That is not a media path.");
@@ -808,6 +915,7 @@ export class ActivitySandboxService implements ActivitySandbox {
     const configurationName = `${activity.productCode}-${activity.refNum}.json`;
     if (
       source.kind === "checkout" &&
+      !(await this.activities.effectiveModuleDocument(projectId, activity, "configuration")) &&
       !(await fs
         .stat(path.join(source.root, "configurations", configurationName))
         .catch(() => null))
@@ -956,8 +1064,11 @@ export class ActivitySandboxService implements ActivitySandbox {
     const names = [`${activity.productCode}-${activity.refNum}.json`];
     if (product?.canonicalRefNum != null && product.canonicalRefNum !== activity.refNum)
       names.push(`${activity.productCode}-${product.canonicalRefNum}.json`);
-    let data: unknown = null;
-    for (const name of names) {
+    // An author's edit of the shared assessment comes first; it lives on the canonical ref.
+    let data: unknown =
+      (await this.activities.effectiveModuleDocument(projectId, activity, "assessment"))?.value ??
+      null;
+    for (const name of data ? [] : names) {
       data = await readJsonFile(path.join(source.root, "assessments", name));
       if (data) break;
     }

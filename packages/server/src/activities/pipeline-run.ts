@@ -14,20 +14,47 @@
  *   translations  translate and accept every narration another language lacks, or whose
  *           default-language line changed since it was translated
  *   speech  generate and accept every unbound narration with a usable script
+ *   words   a decodable book only: record and accept every word pronunciation with sounds
+ *           and no recording, said slowly sound by sound and then normally (pronunciation.ts)
+ *   sounds  generate and accept every music and sound effect with a prompt and no file,
+ *           with the chosen sound provider (ElevenLabs unless the sequence names another)
  *   images  generate and accept every unbound image with a description
+ *   assessment  write and accept the assessment, when the specification uses one and this
+ *           is the canonical ref that owns it
  *   module  assemble the WAF module (scaffold, configuration and behavior in one run)
+ *   test    run the acceptance tests against the assembled module, when the specification
+ *           has acceptance criteria and the test browser is installed
  *
  * State lives in memory only: a sequence belongs to the server that runs it, and its runs
  * outlive it in the history either way. A step that fails stops the sequence; nothing is
  * rolled back, and nothing after it runs.
  */
+import { isBookWord } from "./book-words.js";
 import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../http/errors.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
-import { SPEECH_VOICES } from "./audio.js";
+import type { ActivitySandbox } from "./sandbox-service.js";
+import type { ActivityAcceptance } from "./acceptance-service.js";
+import { acceptanceCriteria } from "./acceptance-collect.js";
+import {
+  ELEVENLABS_DEFAULT_VOICE,
+  SPEECH_VOICES,
+  isSpeechVoice,
+  isVoiceOf,
+} from "./voice-catalogue.js";
 import { DEFAULT_LANGUAGE_CODE } from "./languages.js";
 import { contentRevision, type ActivityRun } from "./domain.js";
 import type { AssetManifest } from "./media.js";
+import { soundPromptOf } from "./playback.js";
+import { SOUND_PROMPT_MAX } from "./sound.js";
+import type { SoundProviderId } from "./sound-types.js";
+import { servesSoundKind } from "./audio-providers.js";
+import {
+  unrecordedWithSounds,
+  unrecordedWithoutSounds,
+  wordRecordingTargets,
+} from "./pronunciation.js";
+import type { SpeechProviderId } from "./speech-types.js";
 import {
   PIPELINE_STEPS,
   type PipelineInput,
@@ -53,18 +80,20 @@ export {
 export function parseSelection(value: unknown): PipelineSelection {
   if (value === undefined || value === "all") return "all";
   if (value === "narration") return "narration";
+  if (value === "assets") return "assets";
   if (typeof value === "string" && (PIPELINE_STEPS as readonly string[]).includes(value))
     return value as PipelineStep;
   throw new HttpError(
     400,
     "invalid_request",
-    "stage must be all, narration, or one of the pipeline steps.",
+    "stage must be all, narration, assets, or one of the pipeline steps.",
   );
 }
 
 export function stepsFor(selection: PipelineSelection): PipelineStep[] {
   if (selection === "all") return [...PIPELINE_STEPS];
   if (selection === "narration") return ["translations", "speech"];
+  if (selection === "assets") return ["speech", "images"];
   return [selection];
 }
 
@@ -85,14 +114,37 @@ type MediaAsset = AssetManifest["assets"][string][number];
 const TEXT_MAX = 5000;
 const usable = (text: string | undefined) => !!text?.trim() && text.length <= TEXT_MAX;
 
-/** Unbound narration with a script the speech run accepts, in every language, in manifest order. */
+/**
+ * Unbound narration with a script the speech run accepts, in every language, in manifest order.
+ * A book's word pronunciations are recorded with the words, not as narration.
+ */
 export function speechTargets(manifest: AssetManifest): { language: string; assetKey: string }[] {
   return Object.entries(manifest.assets).flatMap(([language, assets]) =>
     assets
       .filter(
         (asset: MediaAsset) =>
-          asset.type === "audio" && !asset.kind && !asset.path && usable(asset.script),
+          asset.type === "audio" &&
+          !asset.kind &&
+          !isBookWord(asset) &&
+          !asset.path &&
+          usable(asset.script),
       )
+      .map((asset) => ({ language, assetKey: asset.key })),
+  );
+}
+
+/**
+ * Unbound music and sound effects with a prompt a sound run accepts (1 to 2 000 characters),
+ * in every language, in manifest order.
+ */
+export function soundTargets(manifest: AssetManifest): { language: string; assetKey: string }[] {
+  return Object.entries(manifest.assets).flatMap(([language, assets]) =>
+    assets
+      .filter((asset: MediaAsset) => {
+        if (asset.type !== "audio" || !asset.kind || asset.path) return false;
+        const prompt = soundPromptOf(asset.script);
+        return !!prompt && prompt.length <= SOUND_PROMPT_MAX;
+      })
       .map((asset) => ({ language, assetKey: asset.key })),
   );
 }
@@ -117,7 +169,8 @@ export function translationTargets(
         .filter((asset: MediaAsset) => {
           const source = sources.get(asset.key);
           // Music and effects are not spoken, so there is nothing to translate.
-          if (asset.type !== "audio" || asset.kind || source === undefined) return false;
+          if (asset.type !== "audio" || asset.kind || isBookWord(asset) || source === undefined)
+            return false;
           return (
             !asset.script?.trim() ||
             (asset.translatedFrom !== undefined && asset.translatedFrom !== source)
@@ -138,6 +191,26 @@ export function imageTargets(manifest: AssetManifest): { language: string; asset
   );
 }
 
+/**
+ * The voice a narration or word is spoken in: its own saved voice when its provider speaks with
+ * it, else the sequence's choice when that provider does, else the provider's default (the
+ * Vault's ElevenLabs voice, or Gemini's first).
+ */
+export function voiceFor(
+  provider: SpeechProviderId,
+  saved: string | undefined,
+  chosen: string | undefined,
+): string {
+  if (provider === "elevenlabs")
+    return isVoiceOf("elevenlabs", saved)
+      ? saved!
+      : isVoiceOf("elevenlabs", chosen)
+        ? chosen!
+        : ELEVENLABS_DEFAULT_VOICE;
+  if (isSpeechVoice(saved)) return saved;
+  return isSpeechVoice(chosen) ? chosen : SPEECH_VOICES[0];
+}
+
 const TERMINAL = new Set<ActivityRun["status"]>([
   "succeeded",
   "failed",
@@ -152,6 +225,21 @@ class Stopped extends Error {}
 export interface PipelineDeps {
   generation: ActivityGeneration;
   activities: ActivityAuthoring;
+  /** The assessment in effect for a ref, which an assessment run updates; none when absent. */
+  currentAssessment?: (
+    projectId: string,
+    activityId: string,
+  ) => Promise<Record<string, unknown> | null>;
+  /** Starts an acceptance test run; the step fails without one. */
+  startTest?: (
+    projectId: string,
+    activityId: string,
+    agentId: string,
+    expectedRevision: string,
+    runtime?: { codingAgentId?: string },
+  ) => Promise<ActivityRun>;
+  /** Whether the test browser is installed; the test step is skipped without it. */
+  testBrowserInstalled?: () => Promise<boolean>;
   /** How long to wait between looks at a run; injected so tests do not wait. */
   pause?: (ms: number) => Promise<void>;
   now?: () => string;
@@ -373,11 +461,15 @@ export class PipelineRunner {
         step.note = step.step === "speech" ? "noNarration" : "noImages";
         return;
       }
-      const voice =
-        input.voice && (SPEECH_VOICES as readonly string[]).includes(input.voice)
-          ? input.voice
-          : SPEECH_VOICES[0];
       for (const target of targets) {
+        const narration = manifest.assets[target.language]?.find(
+          (item) => item.key === target.assetKey,
+        );
+        const voice = voiceFor(
+          narration?.speechProvider ?? "gemini",
+          narration?.voice,
+          input.voice,
+        );
         step.detail = target.assetKey;
         const before = await current();
         const run = await generation.start(
@@ -409,6 +501,132 @@ export class PipelineRunner {
       return;
     }
 
+    if (step.step === "words") {
+      await this.recordWords(state, step, input);
+      return;
+    }
+
+    if (step.step === "sounds") {
+      // Music and effects are made by a Penguin agent's helper; a coding agent writes code.
+      if (input.codingAgentId || !input.agentId) {
+        step.status = "skipped";
+        step.note = "needsPenguinAgent";
+        return;
+      }
+      const activity = await current();
+      const manifest = activity.draft.mediaPlan?.manifest;
+      if (!manifest) throw new Error("Plan media before generating it.");
+      const targets = inScope(soundTargets(manifest), input.scope);
+      step.total = targets.length;
+      if (!targets.length) {
+        step.status = "skipped";
+        step.note = "noSounds";
+        return;
+      }
+      const provider: SoundProviderId = input.soundProvider ?? "elevenlabs";
+      // Asked once: a missing key or model is the same for every sound of a kind, and is not a
+      // failure of the sequence, only of this provider for this agent. A sound whose kind the
+      // provider cannot make now is left for another provider rather than failing the stages.
+      const status = (await generation.soundSetup(projectId, input.agentId)).providers.find(
+        (entry) => entry.id === provider,
+      );
+      const served = status
+        ? targets.filter((target) => {
+            const kind = manifest.assets[target.language]?.find(
+              (item) => item.key === target.assetKey,
+            )?.kind;
+            return !!kind && servesSoundKind(status, kind);
+          })
+        : [];
+      step.total = served.length;
+      if (!served.length) {
+        step.status = "skipped";
+        step.note = "soundProviderUnavailable";
+        return;
+      }
+      for (const target of served) {
+        step.detail = target.assetKey;
+        const before = await current();
+        const run = await generation.start(
+          projectId,
+          activityId,
+          input.agentId,
+          before.draft.contentRevision,
+          { sound: { ...target, provider } },
+        );
+        await this.follow(state, step, run);
+        const after = await current();
+        await generation.acceptAudio(projectId, activityId, run.runId, after.draft.contentRevision);
+        step.done += 1;
+      }
+      step.detail = null;
+      return;
+    }
+
+    if (step.step === "assessment") {
+      const activity = await current();
+      if (!activity.draft.spec || activity.draft.status !== "valid")
+        throw new Error("Save a valid specification before generating the assessment.");
+      const specRuntime = activity.draft.spec.runtime as { usesAssessment?: unknown } | undefined;
+      if (specRuntime?.usesAssessment !== true) {
+        step.status = "skipped";
+        step.note = "noAssessment";
+        return;
+      }
+      if (!activities.isCanonicalRef(activity)) {
+        step.status = "skipped";
+        step.note = "notCanonical";
+        return;
+      }
+      const assessment = {
+        current: (await this.deps.currentAssessment?.(projectId, activityId)) ?? null,
+      };
+      const run = await generation.start(
+        projectId,
+        activityId,
+        input.agentId,
+        activity.draft.contentRevision,
+        { assessment },
+        runtime,
+      );
+      await this.follow(state, step, run);
+      const after = await current();
+      await generation.acceptAssessment(
+        projectId,
+        activityId,
+        run.runId,
+        after.draft.contentRevision,
+      );
+      return;
+    }
+
+    if (step.step === "test") {
+      const activity = await current();
+      if (!acceptanceCriteria(activity.draft.spec).length) {
+        step.status = "skipped";
+        step.note = "noCriteria";
+        return;
+      }
+      if (!(await this.deps.testBrowserInstalled?.())) {
+        step.status = "skipped";
+        step.note = "noBrowser";
+        return;
+      }
+      if (!this.deps.startTest) throw new Error("Acceptance tests are not available.");
+      await this.follow(
+        state,
+        step,
+        await this.deps.startTest(
+          projectId,
+          activityId,
+          input.agentId,
+          activity.draft.contentRevision,
+          runtime,
+        ),
+      );
+      return;
+    }
+
     const activity = await current();
     await this.follow(
       state,
@@ -425,6 +643,82 @@ export class PipelineRunner {
         runtime,
       ),
     );
+  }
+
+  /**
+   * The words step: a decodable book's word pronunciations with sounds and no recording, each
+   * recorded by the ordinary speech run with its own provider and voice and accepted. A word
+   * that names no provider is spoken by ElevenLabs when the agent can use it, else by Gemini,
+   * and keeps that choice; its script is made for the provider before anything is recorded.
+   */
+  private async recordWords(state: PipelineState, step: PipelineStepState, input: PipelineInput) {
+    const { projectId, activityId } = state;
+    const { activities, generation } = this.deps;
+    const current = () => activities.getActivity(projectId, activityId);
+    const activity = await current();
+    const manifest = activity.draft.mediaPlan?.manifest;
+    const hasWords =
+      !!manifest && Object.values(manifest.assets).some((group) => group.some(isBookWord));
+    const recorded =
+      activity.activityType === "book"
+        ? ((await activities.bookWordsState(projectId, activityId)).bookMode ?? null)
+        : null;
+    // The product's reading mode decides; where it records none, the sequence's choice, and a
+    // book that already has word pronunciations was refreshed as decodable.
+    const mode = recorded ?? input.bookMode ?? (hasWords ? "decodable" : null);
+    if (activity.activityType !== "book" || mode !== "decodable") {
+      step.status = "skipped";
+      step.note = "notDecodable";
+      return;
+    }
+    if (input.codingAgentId || !input.agentId) {
+      step.status = "skipped";
+      step.note = "needsPenguinAgent";
+      return;
+    }
+    if (!manifest) throw new Error("Plan media before recording the book's words.");
+    const waiting = inScope(unrecordedWithSounds(manifest), input.scope);
+    if (!waiting.length) {
+      step.status = "skipped";
+      step.note = inScope(unrecordedWithoutSounds(manifest), input.scope).length
+        ? "wordsMissingSounds"
+        : "noWords";
+      return;
+    }
+    const speech = await generation.speechSetup(projectId, input.agentId);
+    const fallback: SpeechProviderId = speech.providers?.some(
+      (entry) => entry.id === "elevenlabs" && entry.available,
+    )
+      ? "elevenlabs"
+      : "gemini";
+    const prepared = await activities.prepareWordRecordings(
+      projectId,
+      activityId,
+      fallback,
+      activity.draft.contentRevision,
+      input.scope?.language,
+    );
+    const ready = prepared.mediaPlan!.manifest;
+    const targets = inScope(wordRecordingTargets(ready), input.scope);
+    step.total = targets.length;
+    for (const target of targets) {
+      const word = ready.assets[target.language]?.find((item) => item.key === target.assetKey);
+      const provider = word?.speechProvider ?? "gemini";
+      step.detail = target.assetKey;
+      const before = await current();
+      const run = await generation.start(
+        projectId,
+        activityId,
+        input.agentId,
+        before.draft.contentRevision,
+        { audio: { ...target, voice: voiceFor(provider, word?.voice, input.voice), provider } },
+      );
+      await this.follow(state, step, run);
+      const after = await current();
+      await generation.acceptAudio(projectId, activityId, run.runId, after.draft.contentRevision);
+      step.done += 1;
+    }
+    step.detail = null;
   }
 
   /** Wait for one run to settle; anything but success ends the step with the run's own reason. */
@@ -462,12 +756,23 @@ export abstract class ActivityPipelines extends Interface<{
 export class ActivityPipelineService implements ActivityPipelines {
   @Use() private readonly generation!: ActivityGeneration;
   @Use() private readonly activities!: ActivityAuthoring;
+  @Use() private readonly sandbox!: ActivitySandbox;
+  @Use() private readonly acceptance!: ActivityAcceptance;
   private runner: PipelineRunner | null = null;
 
   setup({ effect }: ClassCtx) {
     const runner = new PipelineRunner({
       generation: this.generation,
       activities: this.activities,
+      currentAssessment: async (projectId, activityId) => {
+        const value = (await this.sandbox.moduleDocuments(projectId, activityId)).assessment?.value;
+        return value && typeof value === "object" && !Array.isArray(value)
+          ? (value as Record<string, unknown>)
+          : null;
+      },
+      startTest: (projectId, activityId, agentId, expectedRevision, runtime) =>
+        this.acceptance.start(projectId, activityId, agentId, expectedRevision, runtime),
+      testBrowserInstalled: () => this.acceptance.browserInstalled(),
     });
     this.runner = runner;
     effect(() => runner.dispose());

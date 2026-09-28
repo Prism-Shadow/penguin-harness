@@ -31,8 +31,15 @@ export const en: Strings = {
         unassigned: "Not in any scene",
         mediaLibrary: "Media Library",
         history: "Generation History",
+        deploy: "Deploy",
       },
-      groups: { image: "Images", video: "Videos", audio: "Audios", animation: "Animations" },
+      groups: {
+        image: "Images",
+        video: "Videos",
+        audio: "Audios",
+        animation: "Animations",
+        bookWord: "Word pronunciations",
+      },
       fold: (name: string) => `Fold ${name}`,
       unfold: (name: string) => `Unfold ${name}`,
       needsMedia: "Needs media",
@@ -60,6 +67,17 @@ export const en: Strings = {
           `${phase}, on ${event}, to ${target}`,
         live: (phase: string) => `${phase}, where the activity is now`,
         graph: (scene: string) => `Behavior of ${scene}`,
+        liveCount: (count: number) => `${count} live`,
+        liveTargets: (phase: string) => `What can be tapped in ${phase}`,
+        more: (count: number) => `+${count} more`,
+        targetTitle: (id: string, inputType: string) => `${id}, ${inputType}`,
+        inputTypes: {
+          CLICK: "tap",
+          SELECT: "select",
+          SELECT_CLICK: "select and tap",
+          DRAG: "drag",
+        },
+        resizeMap: "Resize the behavior map",
         zoom: "Zoom",
         zoomIn: "Zoom in",
         zoomOut: "Zoom out",
@@ -82,6 +100,42 @@ export const en: Strings = {
           close: "Close",
         },
       },
+    },
+    layouts: {
+      menu: "Layout",
+      current: "Current",
+      saveAs: "Save current as…",
+      saveTitle: "Save the current layout",
+      save: "Save",
+      name: "Name",
+      nameHint: "1 to 40 characters, different from every other layout's name.",
+      manage: "Manage…",
+      manageTitle: "Layouts",
+      manageEmpty: "No saved layouts yet. Use Save current as… to add one.",
+      nameColumn: "Name",
+      kindColumn: "Kind",
+      actionsColumn: "Actions",
+      builtInTag: "Built-in",
+      savedTag: "Saved",
+      rename: "Rename",
+      renameTitle: (name: string) => `Rename ${name}`,
+      renameLabel: (name: string) => `Rename ${name}`,
+      deleteLabel: (name: string) => `Delete ${name}`,
+      delete: "Delete",
+      deleteTitle: "Delete the layout",
+      deleteConfirm: (name: string) => `Delete the layout ${name}? This cannot be undone.`,
+      builtIn: { writing: "Writing", reviewing: "Reviewing", media: "Media" },
+      shortcuts: "Keyboard shortcuts",
+      shortcutsHint:
+        "Alt+1 to Alt+9 apply the layouts in list order, except while typing in a field.",
+      shortcutKey: (n: number) => `Alt+${n}`,
+      saved: (name: string) => `Saved the layout ${name}.`,
+      renamed: (name: string) => `Renamed the layout to ${name}.`,
+      deleted: (name: string) => `Deleted the layout ${name}.`,
+      limit: "You can save up to 20 layouts. Delete one to save another.",
+      duplicate: "Another layout already has this name.",
+      tooLong: "Use 40 characters or fewer.",
+      empty: "Enter a name.",
     },
     studioPanels: {
       rail: "Activity panels",
@@ -106,7 +160,328 @@ export const en: Strings = {
       settingsTitle: (productCode: string, refNum: number) => `${productCode}, ref ${refNum}`,
       displayName: "Display name",
       displayNameHint: "Up to 64 characters. Leave empty to show the ref's number.",
+      changeNumber: "Change number",
+      changeNumberTitle: (productCode: string, refNum: number) =>
+        `Change the number of ${productCode}, ref ${refNum}`,
+      newNumber: "New number",
+      numberHint: "A whole number, 0 or more, not used by another ref of this product.",
+      stableBlocks:
+        "This ref is marked stable, so others may build against its number. Clear Stable in Ref settings before renumbering.",
+      numberTaken: (refNum: number) => `Ref ${refNum} of this product already exists.`,
+      renumber: "Renumber",
+      renumbered: (from: number, to: number) => `Ref ${from} is now ref ${to}.`,
+      reassemble: "Assemble the module again so the preview plays under the new number.",
+      renumberErrors: {
+        checkout_ref:
+          "This ref's module lives in the read-only WAF checkout under its current number, so it cannot be renumbered here.",
+        draft_conflict:
+          "The draft changed since it was loaded. Reload the activity, then try again.",
+        run_active: "A run is working on this ref. Stop it before renumbering.",
+        pipeline_running: "This activity is running its stages. Stop them before renumbering.",
+        activity_exists: "Another ref of this product, or a deleted one, already uses that number.",
+      },
     },
+    tags: {
+      label: "Tags",
+      about:
+        "Shared by every ref of this product. Use them to group activities, then filter the list by one.",
+      add: "Add",
+      placeholder: "grade 1, phonics…",
+      removeTag: (tag: string) => `Remove tag ${tag}`,
+      all: "All",
+      filter: "Filter by tag",
+      tooLong: "A tag can be at most 32 characters.",
+      tooMany: "A product can have at most 20 tags.",
+      invalid: "A tag cannot contain control characters.",
+    },
+    versions: {
+      title: "Versions",
+      about:
+        "A version keeps the activity as it is when you save it: the script, the specification, the media plan, edited module documents, the implementation features, and a copy of every generated or uploaded media file. Saving again without a change keeps the latest version instead of making a new one.",
+      aboutMedia:
+        "Media in the WAF checkout is not copied: a version records its path only, so it shows whatever the checkout holds.",
+      save: "Save version",
+      saving: "Saving…",
+      saveTitle: "Save a version",
+      name: "Name",
+      nameHint: "Up to 80 characters.",
+      nameTooLong: (max: number) => `A name can be at most ${max} characters.`,
+      saved: (seq: number) => `Saved version v${seq}.`,
+      unchanged: (seq: number) => `Nothing changed since v${seq}, so no new version was saved.`,
+      loading: "Loading versions…",
+      empty: "No versions yet. Save one to keep the activity as it is now.",
+      loadFailed: "Could not load the versions.",
+      number: (seq: number) => `v${seq}`,
+      unnamed: "Unnamed",
+      noMedia: "None",
+      noAuthor: "Penguin",
+      current: "Current",
+      columns: {
+        version: "Version",
+        name: "Name",
+        kind: "Kind",
+        created: "Created",
+        author: "By",
+        media: "Media",
+        current: "Draft",
+        actions: "Actions",
+      },
+      kinds: { manual: "Saved", auto: "Automatic", restore: "Restore", deploy: "Deploy" },
+      reasons: {
+        before_restore: "Before a restore",
+        before_proposal: "Before an agent's proposal",
+      },
+      compare: "Compare",
+      compareVersion: (seq: number) => `Compare v${seq} with the current draft`,
+      compareTitle: (seq: number) => `v${seq} compared with the current draft`,
+      compareAbout: (seq: number) =>
+        `Removed lines are what v${seq} holds; added lines are what the current draft holds. Only the parts and media files that differ are listed.`,
+      comparing: "Comparing…",
+      compareFailed: "Could not compare this version.",
+      closeCompare: "Close",
+      diffLabel: (part: string) => `Differences in ${part}`,
+      files: {
+        description: "Script",
+        spec: "Specification",
+        mediaPlan: "Media plan",
+        configuration: "Configuration Data",
+        assessment: "Assessment Data",
+        features: "Implementation features",
+      },
+      mediaTitle: "Media files",
+      mediaColumns: {
+        file: "File",
+        change: "Change",
+        before: "In the version",
+        after: "In the draft",
+      },
+      media: { added: "Added", removed: "Removed", changed: "Changed" },
+      noFile: "None",
+      noChanges: "This version and the current draft are the same.",
+      restore: "Restore",
+      restoreVersion: (seq: number) => `Restore v${seq}`,
+      restoreConfirm: (seq: number) =>
+        `The draft becomes v${seq}: its script, specification, media plan, edited module documents, implementation features and media files. The draft as it is now is kept first as a version, so you can restore it again.`,
+      restoreUnsaved: "Edits you have not saved are replaced.",
+      restoring: "Restoring…",
+      restored: (seq: number) => `Restored v${seq}. The draft as it was is kept as a version.`,
+      incomplete: (path: string) =>
+        `This version cannot be restored: its file ${path} is missing or damaged. Nothing changed.`,
+      incompleteRecord:
+        "This version cannot be restored: its record is missing or damaged. Nothing changed.",
+      status: {
+        label: "Deploys",
+        qa: {
+          never: "Never deployed to QA",
+          in_sync: "In sync with QA",
+          changed: "Changed since the QA deploy",
+        },
+        prod: {
+          never: "Never deployed to PROD",
+          in_sync: "In sync with PROD",
+          changed: "Changed since the PROD deploy",
+        },
+        deployed: (seq: number, when: string) => `v${seq}, ${when}`,
+      },
+      deployedBadge: { qa: "QA", prod: "PROD" },
+      deployedOn: (target: string, when: string) => `Went to ${target} on ${when}`,
+    },
+    moduleBuilds: {
+      title: "Module builds",
+      about:
+        "Every successful assembly keeps the module it built. Select two builds to compare their files, or play an older build in the preview.",
+      aboutPin:
+        "Play this build keeps the preview on that build, even after newer ones, until you unpin it. Only the preview changes: a release uses the newest build. The draft itself does not change, so candidates waiting to be accepted stay as they are.",
+      loading: "Loading module builds…",
+      loadFailed: "Could not load the module builds.",
+      empty: "No module builds yet. Assembling the module makes one.",
+      label: (id: string) => `Build ${id}`,
+      columns: {
+        select: "Compare",
+        build: "Build",
+        built: "Built",
+        files: "Files",
+        preview: "Preview",
+        actions: "Actions",
+      },
+      files: (count: number) => (count === 1 ? "1 file" : `${count} files`),
+      noFolder: "Folder missing",
+      newest: "Newest",
+      playing: "Playing",
+      select: (label: string) => `Select ${label} to compare`,
+      selectHint: "Select two builds to compare them.",
+      compare: "Compare",
+      compareTitle: (from: string, to: string) => `${from} compared with ${to}`,
+      compareAbout: (from: string, to: string) =>
+        `Removed lines are what ${from} holds; added lines are what ${to} holds. Only the files that differ are listed. Installed packages and compiled output are left out.`,
+      comparing: "Comparing…",
+      compareFailed: "Could not compare these builds.",
+      closeCompare: "Close",
+      noChanges: "The two builds hold the same files.",
+      unchanged: (count: number) =>
+        count === 1 ? "1 other file is the same." : `${count} other files are the same.`,
+      fileColumns: { file: "File", change: "Change", before: "Older", after: "Newer" },
+      changes: { added: "Added", removed: "Removed", changed: "Changed" },
+      noFile: "None",
+      textFile: "File",
+      text: {
+        binary: "Not shown: not a text file.",
+        too_large: "Not shown: larger than 200 KB.",
+      },
+      diffLabel: (file: string) => `Differences in ${file}`,
+      play: "Play this build",
+      playBuild: (label: string) => `Play ${label} in the preview`,
+      unpin: "Unpin",
+      pinnedNotice: "The preview plays an older build.",
+      pinnedDetail: (label: string) =>
+        `${label} stays in the preview until you unpin it, even after newer builds.`,
+      pinned: (label: string) => `The preview plays ${label}.`,
+      unpinned: "The preview plays the newest build again.",
+      pinGone: "The pinned build is gone. The preview plays the newest build.",
+    },
+    createRef: {
+      title: "New ref from this template",
+      about:
+        "The new ref starts as a copy of this one: its script, specification, media plan, generated media, uploads and implementation features. Media in the WAF checkout stays shared rather than copied. Anything you mark to regenerate is generated after the ref is made, as a speech and images run you can follow in the new ref. The assessment is shared by every ref and is not copied.",
+      newRef: "New ref",
+      refNum: "Ref number",
+      refNumHint:
+        "A whole number no other ref of this product uses. The next free one is filled in.",
+      name: "Name",
+      nameHint: "Up to 64 characters.",
+      language: "Language",
+      voiceForAll: "Voice for all narration",
+      voiceUnchanged: "Each narration's own voice",
+      keepAll: "Keep all",
+      regenerateImages: "Regenerate all images",
+      agent: "Agent that generates",
+      noAgent: "Add an agent to the project to generate speech and images.",
+      columns: {
+        asset: "Asset",
+        type: "Type",
+        current: "Current",
+        action: "Action",
+        details: "Details",
+      },
+      actions: { keep: "Keep", regenerate: "Regenerate", upload: "Upload", library: "Library" },
+      actionsFor: (key: string) => `What to do with ${key}`,
+      types: {
+        image: "Image",
+        narration: "Narration",
+        sound: "Music or sound effect",
+        video: "Video",
+        animation: "Animation",
+      },
+      scenes: (ids: string) => `In ${ids}`,
+      noScene: "In no scene",
+      copied: "Copied as it is",
+      unbound: "Not bound",
+      bound: "Bound",
+      script: "Script",
+      description: "Description",
+      chooseFile: "Choose file",
+      chosenFile: (name: string) => `Chosen: ${name}`,
+      choose: "Choose…",
+      chosenUpload: (name: string) => `Chosen: ${name}`,
+      create: "Create ref",
+      creating: "Creating…",
+      created: (refNum: number) => `Ref ${refNum} was made from the template.`,
+      createdWithProblem: (refNum: number, reason: string) =>
+        `Ref ${refNum} was made, but finishing it failed: ${reason}`,
+      notStable: (refNum: number) =>
+        `Ref ${refNum} is not marked stable. New refs are made only from a stable template, so others build against settled content.`,
+      markStable: "Mark stable",
+      notCanonical:
+        "New refs are made from the product's template, its canonical ref. Open that ref to make one.",
+      assessmentShared: (refNum: number) =>
+        `The assessment is shared by every ref, so the new ref uses the one kept on ref ${refNum}.`,
+      openAssessment: "Open Assessment Data",
+      blockersTitle: "Before the ref can be made",
+      blockers: {
+        missingRefNum: "Give the new ref a number.",
+        refNumTaken: (refNum: number) => `Ref ${refNum} of this product already exists.`,
+        uploadMissing: (key: string) => `Choose a file to upload for ${key}.`,
+        libraryMissing: (key: string) => `Choose an uploaded file for ${key}.`,
+        scriptMissing: (key: string) => `Write a script for ${key}.`,
+        descriptionMissing: (key: string) => `Write a description for ${key}.`,
+        scriptTooLong: (key: string, max: number) =>
+          `The script of ${key} is longer than ${max} characters.`,
+        descriptionTooLong: (key: string, max: number) =>
+          `The description of ${key} is longer than ${max} characters.`,
+      },
+      errors: {
+        not_canonical: "Only the product's template ref makes new refs.",
+        template_not_stable: "Mark this ref stable before making refs from it.",
+        activity_exists: "Another ref of this product already uses that number.",
+        activity_archived: "A deleted ref of this product keeps that number.",
+      },
+    },
+    recent: {
+      title: "Recently opened",
+      all: "All activities",
+    },
+    projectMedia: {
+      title: "Project media library",
+      about:
+        "Every file uploaded to an activity of this project, in one place. Choose files to download them together as one zip. Generated media and files in the WAF checkout are not listed here.",
+      open: "Media library",
+      back: "All activities",
+      search: "Search files",
+      kind: "Media type",
+      kinds: { all: "All", image: "Images", audio: "Audio", video: "Video" },
+      product: "Product",
+      anyProduct: "All products",
+      sort: "Sort by",
+      sorts: { name: "Name", newest: "Newest", size: "Largest", activity: "Activity" },
+      view: "Layout",
+      views: { grid: "Grid", table: "Table" },
+      selectAll: "Select all shown",
+      clear: "Clear selection",
+      selectFile: (name: string) => `Select ${name}`,
+      selectedCount: (count: number) =>
+        count === 1 ? "1 file selected" : `${count} files selected`,
+      download: (count: number) => `Download (${count})`,
+      downloading: "Downloading…",
+      downloadLimit: (max: number) => `Choose at most ${max} files to download together.`,
+      columns: {
+        select: "Selected",
+        name: "Name",
+        type: "Type",
+        size: "Size",
+        activity: "Activity",
+        updated: "Uploaded",
+      },
+      loading: "Loading media…",
+      empty: "No files have been uploaded to this project's activities yet.",
+      noMatches: "No file matches these filters.",
+      truncated: (count: number) =>
+        `Only the newest ${count} files are listed. Older uploads are not shown.`,
+      details: "File details",
+      detailsEmpty: "Choose a file to see it here.",
+      openActivity: "Open activity",
+      files: "Files",
+      scope: { label: "Show files from", here: "This activity", all: "Other activities" },
+      otherEmpty: "No other activity in this project has a file of this type.",
+      copyHint:
+        "A file from another activity is copied into this one, so each activity keeps its own.",
+      copying: "Copying…",
+      copied: (name: string) => `Copied ${name} into this activity.`,
+      tooLarge: "The chosen files are more than 200 MiB together. Choose fewer.",
+    },
+    deleteActivity: {
+      action: "Delete activity",
+      confirmTitle: "Delete activity",
+      deleteConfirm: (title: string, ref: number) =>
+        `Delete "${title}" (ref ${ref})? It disappears from the Activities list. Its drafts and media stay on disk.`,
+      deleted: (title: string) => `Deleted "${title}".`,
+      errors: {
+        canonical_has_refs:
+          "Other refs of this product build on this ref's module. Delete them first.",
+        run_active: "A run is still working on this activity. Stop it, then delete.",
+        pipeline_running: "This activity is running its stages. Stop them, then delete.",
+      },
+    },
+    archivedConflict: "A deleted activity already uses this ref number. Choose another number.",
     studioBoard: {
       title: "Storyboard",
       count: (n: number) => `${n} ${n === 1 ? "scene" : "scenes"}`,
@@ -128,6 +503,430 @@ export const en: Strings = {
       noAssets: "This scene asks for no media.",
       empty: "The specification has no scenes yet.",
     },
+    deploy: {
+      title: "Deploy",
+      about:
+        "Whether this activity could be deployed now: the deploy settings are complete, the module's repository is known, and the three copies a deploy works in (the module, the activity data and the media) are on this server, clean and on the right remote. Nothing here deploys anything. Prepare clones makes the copies that are missing, and Check remote asks the remote whether the branches are there.",
+      loading: "Reading what a deploy needs…",
+      loadFailed: (reason) => `Could not read what a deploy needs: ${reason}`,
+      ready: "Ready to deploy.",
+      notReady: (n) => `Not ready to deploy: ${n} ${n === 1 ? "thing is" : "things are"} missing.`,
+      settingsHint: "An admin fills in the deploy settings under System settings, Deploy.",
+      pinnedBuild:
+        "The preview plays a pinned module build. A release ships the newest build, not the pinned one. Unpin it under History, Module builds, to preview what ships.",
+      checksLabel: "Deploy checks",
+      columns: { check: "Check", state: "State" },
+      problemsTitle: "What is missing",
+      prepareClones: "Prepare clones",
+      preparing: "Preparing the clones…",
+      prepared: "The clones are ready.",
+      checkRemote: "Check remote",
+      checkingRemote: "Asking the remote…",
+      remoteChecked: "Checked against the remote.",
+      cloneFailed: (repo, output) =>
+        output ? `The ${repo} clone failed. git said: ${output}` : `The ${repo} clone failed.`,
+      cloneTimedOut: (repo) => `The ${repo} clone took longer than its time limit and was stopped.`,
+      fields: {
+        "qa.jenkinsUrl": "QA Jenkins address",
+        "qa.username": "QA Jenkins user",
+        "qa.token": "QA Jenkins token",
+        "qa.tier": "QA tier",
+        "qa.environment": "QA environment",
+        "qa.frameworkVersion": "QA framework version",
+        "qa.activityBaseUrl": "QA activity address",
+        "prod.jenkinsUrl": "PROD Jenkins address",
+        "prod.username": "PROD Jenkins user",
+        "prod.token": "PROD Jenkins token",
+        "prod.tier": "PROD tier",
+        "prod.environment": "PROD environment",
+        "prod.frameworkVersion": "PROD framework version",
+        "jobs.moduleBuild": "Module build job",
+        "jobs.activityDeploy": "Activity deploy job",
+        "repos.activityDataRemote": "Activity data repository",
+        "repos.mediaRemote": "Media repository",
+        "repos.mediaPublicBase": "Media address",
+        "git.userName": "Git user name",
+        "git.userEmail": "Git email",
+      },
+      repos: { module: "Module", activityData: "Activity data", media: "Media" },
+      rows: {
+        ref: "Ref",
+        layout: "Layout",
+        settings: "Deploy settings",
+        git: "git",
+        moduleRemote: "Module repository",
+        clone: (repo) => `${repo} clone`,
+        branch: (name) => `Branch ${name}`,
+      },
+      states: {
+        canonical: "The canonical ref, which owns the module",
+        notCanonical: "Not the canonical ref: deploy from the ref that owns the module",
+        noModule: "This activity belongs to no product, so it has no module",
+        layout: (layout) => `${layout} is not a layout a deploy supports`,
+        noLayout: "The specification names no layout",
+        settingsComplete: "Complete",
+        settingsMissing: (n) => `${n} ${n === 1 ? "setting is" : "settings are"} empty`,
+        gitAvailable: "Available",
+        gitUnavailable: "git could not be run on this server",
+        noRemote: "The module's package.json names no repository",
+        remoteInvalid: (remote) => `${remote} cannot be cloned from`,
+      },
+      clone: {
+        present: (branch) => (branch ? `Cloned, on ${branch}, clean` : "Cloned, clean"),
+        missing: "Not cloned yet",
+        dirty: "Has uncommitted changes",
+        ahead: (n) => `${n} ${n === 1 ? "commit is" : "commits are"} not pushed`,
+        remoteMismatch: "Points at a different remote",
+        unknown: "On disk; git could not read it",
+        notKnown: {
+          status: "git could not say whether it is clean",
+          upstream: "git could not count unpushed commits; the branch may have no upstream",
+          branch: "git could not say whether main is there",
+          sparse: "git could not list the folders it checks out",
+        },
+        remoteUnreachable: "The remote could not be reached",
+        mediaPathMissing: (path) => `${path} is not checked out`,
+      },
+      branch: {
+        local: "Here",
+        notYet: "Not made yet; the deploy makes it",
+        unknown: "Not known until the clone is there",
+        onRemote: "on the remote",
+        notOnRemote: "not on the remote yet",
+        remoteUnknown: "remote not checked",
+      },
+      problems: {
+        settings_missing: (field) => `${field} is empty.`,
+        module_remote_missing:
+          "The module's package.json names no repository, so there is nowhere to clone it from.",
+        module_remote_invalid:
+          "The module's package.json names a repository that cannot be cloned from. Only an ssh remote, git@host:owner/repo or an https address without a password can.",
+        clone_missing: (repo) =>
+          `The ${repo} clone is not on this server yet. Prepare clones makes it.`,
+        clone_unknown: (repo, what) =>
+          what === "status"
+            ? `git could not say whether the ${repo} clone is clean.`
+            : what === "upstream"
+              ? `git could not count the ${repo} clone's unpushed commits. Its branch may have no upstream.`
+              : what === "branch"
+                ? `git could not say whether the ${repo} clone has a main branch.`
+                : `git could not list the folders the ${repo} clone checks out.`,
+        remote_unreachable: (repo) => `The ${repo} remote could not be reached.`,
+        media_path_missing: (path) =>
+          `The Media clone does not check out ${path} yet. Prepare clones adds it.`,
+        clone_dirty: (repo) => `The ${repo} clone has uncommitted changes.`,
+        clone_ahead: (repo, n) =>
+          `The ${repo} clone has ${n} ${n === 1 ? "commit" : "commits"} its remote does not.`,
+        clone_remote_mismatch: (repo) =>
+          `The ${repo} clone points at a different remote than the settings name.`,
+        branch_missing: (repo, branch, where) =>
+          where === "local"
+            ? `The ${repo} clone has no ${branch} branch.`
+            : `The ${repo} remote has no ${branch} branch.`,
+        not_canonical:
+          "Only the canonical ref deploys: every ref of this product shares its module.",
+        no_module: "This activity belongs to no product, so there is no module to deploy.",
+        layout_unsupported: (layout) =>
+          layout
+            ? `The layout ${layout} cannot be deployed yet. Only mainOnly can.`
+            : "The specification names no layout. Only mainOnly can be deployed.",
+        git_unavailable: "git could not be run on this server.",
+      },
+      releaseTitle: "Module release",
+      releaseAbout:
+        "Release module builds and checks the module in its clone on this server, makes the deploy branch's commit, pushes that branch, asks Jenkins to build the module, and waits for the release tag the build makes. Each stage runs only after the one before it has finished since it was last run, and Prepare runs once per Verify. Verify first puts the module clone back to main as origin has it, so a release can always start again. Stop ends the release at once; what a stage already pushed stays pushed.",
+      releaseModule: "Release module",
+      releasing: "Releasing…",
+      releaseStarted: "The module release started.",
+      releaseConfirmTitle: "Release the module",
+      releaseConfirm: (branch) =>
+        `This pushes the branch ${branch} to the module's repository and starts a Jenkins build of it. The build makes a new release tag.`,
+      releaseConfirmLabel: "Release",
+      triggerConfirm: (branch) =>
+        `This pushes the branch ${branch} to the module's repository and starts a Jenkins build of it.`,
+      moduleVersion: "Module version",
+      moduleVersionHint: "Like 1.2.3. Left empty, the version in package.json stays.",
+      moduleVersionInvalid: "Write the version as three numbers, like 1.2.3.",
+      stop: "Stop",
+      stopping: "Stopping…",
+      log: "Log",
+      logEmpty: "Nothing logged yet.",
+      resolvedVersion: (version) => `Released as ${version}.`,
+      openBuild: "Open the Jenkins build",
+      stagesLabel: "Release stages",
+      stageColumns: { stage: "Stage", state: "State" },
+      advanced: "Run one stage",
+      runStage: (stage) => `Run ${stage}`,
+      run: "Run",
+      stageStarted: (stage) => `${stage} started.`,
+      stages: {
+        verify_module: "Verify the module",
+        prepare_deploy: "Prepare the deploy branch",
+        trigger_module_build: "Push and start the build",
+        await_module_build: "Wait for the release tag",
+        export_activity_data: "Export the activity data",
+        verify_activity_data: "Check the activity data",
+        verify_media_assets: "Publish the media",
+        publish_activity_data: "Push the activity data",
+        trigger_activity_deploy: "Start the QA deploy",
+        await_activity_deploy: "Wait for the QA deploy",
+        trigger_production_deploy: "Start the PROD deploy",
+        await_production_deploy: "Wait for the PROD deploy",
+      },
+      qaAbout:
+        "Deploy to QA runs the release first, unless it is done for the module as it is now assembled, then writes every ref's configuration and assessment (archived refs left out), the template and the deploy list into the activity data clone, checks them, puts the media files only the draft holds into the media repository, pushes the activity data branch, asks Jenkins to deploy it to QA, and waits for that deploy. A media file found neither in the draft nor in the media repository stops it before anything is pushed.",
+      deployQa: "Deploy to QA",
+      deployingQa: "Deploying to QA…",
+      deployQaStarted: "The QA deploy started.",
+      deployQaConfirmTitle: "Deploy to QA",
+      deployQaConfirm: (productCode) => `This deploys ${productCode} to QA. It:`,
+      deployQaConfirmItems: {
+        release: (branch) =>
+          `releases the module first, pushing ${branch} and starting a Jenkins module build, unless its release is current`,
+        media: "pushes the media files only the draft holds to the media repository's main branch",
+        data: (branch) => `pushes the activity data to the branch ${branch}`,
+        deploy: "starts the Jenkins activity deploy to QA",
+      },
+      deployQaConfirmLabel: "Deploy",
+      stageConfirmTitle: (stage) => `Run ${stage}`,
+      stageConfirm: {
+        verify_media_assets:
+          "This pushes the media files only the draft holds to the media repository's main branch.",
+        publish_activity_data: (branch) =>
+          `This pushes the exported activity data to the branch ${branch}.`,
+        trigger_activity_deploy: "This starts the Jenkins activity deploy to QA.",
+      },
+      openQa: "Open on QA",
+      qaVersion: (version) => `On QA with module ${version}.`,
+      releaseSkipped: "The module's release was current, so it was not run again.",
+      preflightTitle: "What the check of the activity data found",
+      preflightErrors: "Errors: these stop the deploy",
+      preflightWarnings: "Warnings: these do not stop it",
+      preflight: {
+        deploy_list_mismatch: (file) => `${file} does not name exactly this product's template.`,
+        file_missing: (file) => `${file} is missing.`,
+        file_invalid: (file) => `${file} is not a JSON object the deploy can read.`,
+        layout_module_mismatch: (expected, found) =>
+          found
+            ? `The template names the module ${found}, not the released ${expected}.`
+            : `The template names no module; it should name ${expected}.`,
+        no_sources: "The template has no ref to deploy.",
+        assessment_empty: (file) => `${file} has no items, and a ref uses it.`,
+        assessment_count_mismatch: (file, items, maxItems) =>
+          `${file} has ${items} ${items === 1 ? "item" : "items"} but says it has ${maxItems}.`,
+        media_path_unsafe: (file, reference) =>
+          `${file} names media outside the media folder: ${reference}`,
+        media_preview_url: (file, reference) =>
+          `${file} still points at a preview on this server: ${reference}`,
+        media_token_left: (file, reference) =>
+          `${file} still carries the media token: ${reference}`,
+        configuration_without_media: (file) => `${file} names no media.`,
+      },
+      qaRunStatuses: {
+        running: (stage) => `Deploying to QA: ${stage}.`,
+        succeeded: "The last QA deploy finished.",
+        failed: "The last QA deploy failed.",
+        cancelled: "The last QA deploy was stopped.",
+        interrupted: "The last QA deploy was cut short when the server stopped.",
+      },
+      statuses: {
+        pending: "Not run",
+        running: "Running",
+        done: "Done",
+        failed: "Failed",
+        cancelled: "Stopped",
+      },
+      runStatuses: {
+        running: (stage) => `Releasing: ${stage}.`,
+        succeeded: "The last release finished.",
+        failed: "The last release failed.",
+        cancelled: "The last release was stopped.",
+        interrupted: "The last release was cut short when the server stopped.",
+      },
+      blockers: {
+        previous_stage: (stage) => `Waits for ${stage} to finish.`,
+        previous_rerun: (stage) =>
+          `Run ${stage} again first: this stage starts from what it leaves.`,
+        run_active: "A deploy is running on this server.",
+        settings_missing: (field) => `${field} is empty.`,
+        clone_missing: (repo) => `The ${repo} clone is not on this server yet.`,
+        clone_dirty: (repo) => `The ${repo} clone has uncommitted changes.`,
+        not_ready: (problem) => problem,
+        qa_outdated: "The activity changed after it went to QA. Deploy to QA again first.",
+      },
+      errors: {
+        command_failed: (command, exitCode) =>
+          exitCode === null
+            ? `${command} failed. The log shows its output.`
+            : `${command} failed with exit code ${exitCode}. The log shows its output.`,
+        command_timed_out: (command) =>
+          `${command} took longer than its time limit and was stopped.`,
+        command_missing: (command) => `${command} is not installed on this server.`,
+        jenkins_failed: (status) =>
+          status ? `Jenkins refused the request (HTTP ${status}).` : "Jenkins did not answer.",
+        build_failed: (result) => `The Jenkins build ended as ${result}.`,
+        no_newer_tag: (before, after) =>
+          `The build finished but made no newer release tag (before: ${before ?? "none"}, now: ${after ?? "none"}).`,
+        build_timed_out: (minutes) =>
+          `The build made no release tag within ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
+        missing_input: (stage) => `Run ${stage} first: this stage works from what it records.`,
+        preflight_failed: (errors) =>
+          `The activity data failed its check: ${errors} ${errors === 1 ? "problem" : "problems"}. The activity data and media were not pushed.`,
+        media_missing: (paths, count) =>
+          `${count} media ${count === 1 ? "file is" : "files are"} neither in the draft nor in the media repository: ${paths.join(", ")}${count > paths.length ? ", …" : ""}. The activity data and media were not pushed.`,
+        deploy_timed_out: (minutes, target) =>
+          `The ${target === "prod" ? "PROD" : "QA"} deploy had not finished within ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
+        interrupted: "The server stopped while this stage ran.",
+        unexpected: "The stage stopped on an unexpected error. The log shows it.",
+      },
+      prod: {
+        title: "PROD",
+        about:
+          "Deploy to PROD sends production the activity data QA has: it starts the same Jenkins activity deploy on the PROD Jenkins, with PROD's tier, environment and framework version, and waits for it. It is offered once the last QA deploy finished and the activity has not changed since. Only an admin who owns the project can start it, and only after typing the product code.",
+        stagesLabel: "PROD deploy stages",
+        deploy: "Deploy to PROD",
+        deploying: "Deploying to PROD…",
+        started: "The PROD deploy started.",
+        adminOnly: "Only an admin who owns the project can deploy to PROD.",
+        ready: "Ready to deploy what QA has to PROD.",
+        never: "Not deployed to PROD yet.",
+        last: (when, frameworkVersion) =>
+          frameworkVersion
+            ? `Last deployed to PROD on ${when}, with framework ${frameworkVersion}.`
+            : `Last deployed to PROD on ${when}.`,
+        openDeploy: "Open the PROD deploy",
+        confirmTitle: "Deploy to PROD",
+        confirm: (productCode) => `This deploys ${productCode} to production. It:`,
+        confirmItems: {
+          data: (branch) => `deploys the activity data QA has, from the branch ${branch}`,
+          jenkins: "starts the Jenkins activity deploy on the PROD Jenkins",
+        },
+        confirmLabel: (productCode) => `Type ${productCode} to confirm`,
+        confirmHint: "The product code, exactly as shown.",
+        confirmButton: "Deploy to PROD",
+        runStatuses: {
+          running: (stage) => `Deploying to PROD: ${stage}.`,
+          succeeded: "The last PROD deploy finished.",
+          failed: "The last PROD deploy failed.",
+          cancelled: "The last PROD deploy was stopped.",
+          interrupted: "The last PROD deploy was cut short when the server stopped.",
+        },
+        refused: {
+          confirmation_mismatch: "The product code typed did not match. Nothing was deployed.",
+          prod_requires_admin: "Only an admin who owns the project can deploy to PROD.",
+        },
+      },
+    },
+    quality: {
+      title: "Quality",
+      about:
+        "Check quality opens every scene of the played activity in the test browser and checks two things: whether it is easy for everyone to use, and whether its words suit its grade band. A failed check does not stop you assembling or deploying.",
+      check: "Check quality",
+      checking: "Checking quality…",
+      browserMissing:
+        "The test browser is not installed. An admin installs it in System settings, under Test browser.",
+      loadFailed: "Could not load the quality checks.",
+      lastChecked: (when: string) => `Last checked ${when}`,
+      notChecked: "Not checked yet.",
+      lastFailed: (reason: string) => `The last check did not finish: ${reason}`,
+      accessibility: {
+        title: "Easy for everyone to use",
+        about:
+          "Axe checks each scene against the WCAG 2.2 AA rules, and a keyboard probe checks that every control can be reached, shows focus, and works with Enter or Space. Must fix and Should fix fail the check. Captions rules, and rules an admin lists as VPAT exceptions, are reported but do not fail it.",
+      },
+      readability: {
+        title: "Right reading level",
+        about:
+          "Compares the narration and the text on screen with the grade band in the specification (audience.gradeBand). It points out long sentences and long or many-syllable words, except sight words and words quoted in the acceptance criteria. These are notes only: the check never fails. English only.",
+        gradeBand: (band: string) => `Grade band ${band}`,
+        readingGrade: (grade: number) => `Flesch-Kincaid grade ${grade}, for information`,
+      },
+      status: {
+        passed: "Passed",
+        failed: "Failed",
+        passed_with_warnings: "Passed with warnings",
+        skipped: "Skipped",
+      },
+      skipped: {
+        no_grade_band: "The specification has no grade band (audience.gradeBand).",
+        unknown_grade_band: "The grade band in the specification is not one this check knows.",
+        not_english: "The activity is not in English, and this check reads English only.",
+        no_text: "There is no narration or text on screen to read.",
+      },
+      severity: { must: "Must fix", should: "Should fix", minor: "Minor", note: "Note" },
+      noFindings: "Nothing found.",
+      findingsLabel: (check: string) => `${check}: findings`,
+      columns: {
+        severity: "Severity",
+        rule: "Rule or word",
+        where: "Where",
+        detail: "Detail",
+        link: "Link",
+      },
+      nowhere: "Whole activity",
+      scene: (scene: string) => `Scene ${scene}`,
+      learnMore: "Learn more",
+      learnMoreAbout: (rule: string) => `Learn more about ${rule}`,
+      keyboard: {
+        "keyboard-focusable": "Cannot be reached with the keyboard.",
+        "keyboard-focus-visible": "Shows no focus when reached with the keyboard.",
+        "keyboard-activation": "May not work with Enter or Space.",
+      },
+      readabilityRules: {
+        sentence_long: "Long sentence",
+        word_long: "Long word",
+        word_syllables: "Many syllables",
+      },
+      readabilityDetail: {
+        sentence_long: (count: number, limit: number) =>
+          `${count} words; up to ${limit} suit this grade band.`,
+        word_long: (count: number, limit: number) =>
+          `${count} letters; up to ${limit} suit this grade band.`,
+        word_syllables: (count: number, limit: number) =>
+          `${count} syllables; up to ${limit} suit this grade band.`,
+      },
+      waived: {
+        vpat: "Not blocking: listed as a VPAT exception.",
+        captions: "Not blocking: captions are reported only.",
+      },
+    },
+    tests: {
+      title: "Test results",
+      about:
+        "Run tests has the chosen agent write one check for each acceptance criterion in the specification (acceptance_criterias). The checks play the assembled module in the test browser: they tap, hold and drag like a learner, and wait for the states and sounds the criterion names. When neither the criteria nor the rest of the specification has changed, the checks written last time are reused. A failed test does not stop you assembling or deploying.",
+      run: "Run tests",
+      running: "Running tests…",
+      browserMissing:
+        "The test browser is not installed. An admin installs it in System settings, under Test browser.",
+      noCriteria:
+        "The specification has no acceptance criteria, so there is nothing to test. Add them to acceptance_criterias.",
+      stale:
+        "Out of date: the specification changed since these tests ran. Run tests again to check it.",
+      noAgent: "Choose an agent under the Activity Script first.",
+      saveFirst: "Save your edits before running the tests.",
+      loadFailed: "Could not load the test results.",
+      lastRun: (when: string) => `Last run ${when}`,
+      notRun: "No tests have run yet.",
+      lastFailed: (reason: string) => `The last test run did not finish: ${reason}`,
+      count: (passed: number, total: number) =>
+        `${passed} of ${total} ${total === 1 ? "criterion" : "criteria"} passed`,
+      reused: "Reused the checks written for these criteria last time.",
+      status: { passed: "Passed", failed: "Failed", skipped: "Skipped" },
+      skipped: {
+        no_criteria: "The specification has no acceptance criteria.",
+      },
+      codes: { not_run: "No check ran for this criterion." },
+      resultsLabel: "Acceptance criteria results",
+      columns: {
+        criterion: "Criterion",
+        test: "Test",
+        status: "Status",
+        duration: "Time",
+        error: "Why it failed",
+      },
+      duration: (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`),
+      noTestName: "None",
+    },
     studioBuild: {
       title: "Build",
       checking: "Checking what the module needs…",
@@ -148,6 +947,28 @@ export const en: Strings = {
         `${language} has ${covered} of ${total} narrations of the default language.`,
       media: (bound: number, total: number) =>
         `Images, video and animation: ${bound} of ${total} bound.`,
+      words: {
+        ok: (language: string, total: number) =>
+          `Word pronunciations in ${language}: all ${total} recorded and timed sound by sound.`,
+        none: (language: string) =>
+          `This decodable book lists no word pronunciations in ${language} yet. Refresh words in Audios.`,
+        missing: (language: string, recorded: number, total: number, timed: number) =>
+          `Word pronunciations in ${language}: ${recorded} of ${total} recorded, ${timed} timed sound by sound. The reader cannot sound out the others.`,
+      },
+      mediaKeys: {
+        ok: "Every media key means the same thing in every scene.",
+        conflicting: (keys: string[]) =>
+          `${keys.length === 1 ? "This media key is" : "These media keys are"} described differently in different scenes: ${keys.join(", ")}. Give different media different keys.`,
+      },
+      assessment: {
+        ok: "The assessment is valid.",
+        missing:
+          "This activity is assessed, but it has no assessment. Generate one in Assessment Data.",
+        problems: (count: number) =>
+          `The assessment has ${count} ${count === 1 ? "problem" : "problems"}. Fix ${count === 1 ? "it" : "them"} in Assessment Data.`,
+        inherited: (count: number) =>
+          `The module's assessment already had ${count} ${count === 1 ? "problem" : "problems"}. Assembly keeps ${count === 1 ? "it" : "them"}; fix ${count === 1 ? "it" : "them"} in Assessment Data.`,
+      },
       canonical: {
         ok: "This ref owns the module code.",
         fail: "Another ref owns this product's module code. Assemble from that ref.",
@@ -167,6 +988,9 @@ export const en: Strings = {
       openSession: "Open session",
       noRun: "This activity has not been assembled yet.",
     },
+    runLog: {
+      showReasoning: "Show reasoning",
+    },
     studioRun: {
       stage: "Stage",
       all: "All stages",
@@ -175,10 +999,15 @@ export const en: Strings = {
         media: "Plan media",
         translations: "Translate",
         speech: "Generate speech",
+        words: "Record words",
+        sounds: "Generate sounds",
         images: "Generate images",
+        assessment: "Generate assessment",
         module: "Assemble module",
+        test: "Run tests",
       },
       narration: "Translate and speak",
+      assets: "Generate speech and images",
       status: {
         pending: "Waiting",
         running: "Running",
@@ -197,6 +1026,17 @@ export const en: Strings = {
         needsPenguinAgent: "Media generation needs a Penguin agent, not a coding agent.",
         noNarration: "No narration is missing.",
         noImages: "No image is missing.",
+        notDecodable: "Word recordings are made for decodable books only.",
+        noWords: "No word is waiting for a recording.",
+        wordsMissingSounds:
+          "The words without a recording have no sounds yet. Give them sounds in Audios first.",
+        noSounds: "No music or sound effect is missing.",
+        soundProviderUnavailable:
+          "The sound provider cannot be used by this agent. Add its key to the agent's Vault.",
+        noAssessment: "The specification says this activity has no assessment.",
+        notCanonical: "The assessment is shared by every ref and is written on the canonical ref.",
+        noCriteria: "The specification has no acceptance criteria to test.",
+        noBrowser: "The test browser is not installed.",
       },
       running: (step: string) => `${step}…`,
       finished: "All chosen stages finished.",
@@ -319,6 +1159,8 @@ export const en: Strings = {
       library: "Media library",
       module: "Module preview",
       history: "Generation history",
+      deploy: "Deploy",
+      newRef: "New ref",
     },
     implementationFeatures: {
       help: "Patterns a shipped module already implements well. Each one selected here is reproduced by the next module assembly, with its source module's functions, selectors and animations, rather than reinvented.",
@@ -339,6 +1181,65 @@ export const en: Strings = {
       missing: (n: number) =>
         `${n} bound ${n === 1 ? "file was" : "files were"} not found, so ${n === 1 ? "its size is" : "their sizes are"} not counted.`,
     },
+    mediaDetails: {
+      title: "File details",
+      format: "Format",
+      size: "Size",
+      length: "Length",
+      bitrate: "Bitrate",
+      dimensions: "Dimensions",
+      measuring: "Measuring…",
+      unknown: "—",
+      formats: { wav: "WAV", mp3: "MP3", ogg: "Ogg", mp4: "MP4", webm: "WebM", other: "Other" },
+      kbps: (n: number) => `${n} kbps`,
+      pixels: (width: number, height: number) => `${width} × ${height}`,
+    },
+    assessment: {
+      generate: "Generate assessment",
+      generating: "Generating the assessment…",
+      generateAbout:
+        "An agent writes one question for each screen where the learner makes a choice, with its choices and the correct answer, updating the assessment in use. The result is checked so no question the screens imply is dropped, and nothing changes until you choose Use it.",
+      useIt: "Use it",
+      keepCurrent: "Keep current",
+      candidateTitle: "Generated assessment",
+      candidate: (n: number) => `Generated: ${n} ${n === 1 ? "item" : "items"}`,
+      current: (n: number | null) =>
+        n === null ? "Current: none" : `Current: ${n} ${n === 1 ? "item" : "items"}`,
+      candidateUnreadable: "The generated assessment could not be read.",
+      failed: (reason: string) => `The last generation failed: ${reason}`,
+      accepted: "Using the generated assessment.",
+      unused: "The specification says this activity has no assessment.",
+      items: "Items",
+      itemTitle: (n: number, title: string) => `Item ${n} · ${title}`,
+      interaction: {
+        SIMPLE_CHOICE: "Single choice",
+        MULTIPLE_RESPONSE_CHOICE: "Multiple choice",
+      },
+      question: "Question",
+      shuffle: "Shuffle choices",
+      choice: (n: number) => `Choice ${n}`,
+      correct: "Correct",
+      correctOf: (n: number) => `Choice ${n} is correct`,
+      addItem: "Add item",
+      addChoice: "Add choice",
+      removeItem: "Remove item",
+      removeChoice: "Remove",
+      removeChoiceOf: (n: number) => `Remove choice ${n}`,
+      reset: "Reset",
+      save: "Save items",
+      editAsJson: "Edit as JSON",
+      unsupported: "This assessment has items this editor does not show. Edit it as JSON below.",
+      blockers: {
+        noItems: "Add at least one item.",
+        fewChoices: (item: number) => `Item ${item} needs at least two choices.`,
+        correctCount: (item: number) =>
+          `Item ${item} needs its correct answer marked: one for a single choice, at least one for a multiple choice.`,
+        emptyQuestion: (item: number) => `Item ${item} needs a question.`,
+        emptyChoice: (item: number) => `Item ${item} has a choice with no text.`,
+        duplicateChoiceId: (item: number) => `Item ${item} repeats a choice id.`,
+      },
+    },
+    assessmentRun: "Assessment",
     moduleDocuments: {
       loading: "Reading the module…",
       unreadable: (reason: string) => `The module could not be read: ${reason}`,
@@ -350,8 +1251,29 @@ export const en: Strings = {
       fromRun: (file: string) => `${file}, from the module this activity assembled.`,
       fromCheckout: (file: string) => `${file}, from the module in the WAF checkout.`,
       items: (n: number) => `${n} ${n === 1 ? "item" : "items"}`,
-      readOnly:
-        "Read-only: the module owns this file. Change the activity and assemble again to change it.",
+      about: {
+        configuration:
+          "What the module reads for this ref: its media and settings. Your edit replaces the generated document in the preview and in every assembly until you discard it.",
+        assessment:
+          "The questions the module asks. Every ref of this product shares one assessment, so it is edited on the canonical ref. Your edit is used in the preview and in every assembly until you discard it.",
+      },
+      field: "Document JSON",
+      save: "Save",
+      saving: "Saving…",
+      saved: "Saved the document.",
+      discard: "Discard edit",
+      discardConfirm: "Go back to the generated document? Your edit is removed.",
+      discarded: "Discarded the edit.",
+      edited: "Edited here: the preview and the next assembly use this version.",
+      stale: {
+        configuration: "The media plan changed after this was edited. Check it still matches.",
+        assessment:
+          "The specification changed after this was edited. Check the questions still match.",
+      },
+      sharedOnCanonical: (ref: number) => `Shared by every ref. Edit it on ref ${ref}.`,
+      notJson: (reason: string) => `This is not valid JSON: ${reason}`,
+      notObject: "The document must be a JSON object.",
+      fromDraft: "Edited in this activity; no module has been assembled yet.",
     },
     librarySectionEmpty: "Nothing has been uploaded for this activity yet.",
     sceneAssetTree: "Scenes and their media",
@@ -448,6 +1370,14 @@ export const en: Strings = {
       blocked: "Needs a script",
     },
     bulkSpeechLanguages: "Languages",
+    instructionType: {
+      title: "Instruction",
+      filterLabel: "Show by instruction type",
+      filter: { all: "All", main: "Main instructions", scaffolding: "Scaffolding" },
+      badge: { main: "Main instruction", scaffolding: "Scaffolding" },
+      about:
+        "Sorted by the words in each line's key, description and script: lines that tell the learner to tap, select, or press and hold are main instructions; hints, retries and corrections are scaffolding. Everything else shows only under All.",
+    },
     narrationLanguages: {
       title: "In every language",
       absent: "Not in this language's media plan.",
@@ -480,7 +1410,7 @@ export const en: Strings = {
     diffHide: "Hide changes",
     diffTitle: "Changes since the last save",
     diffHelp:
-      "A draft specification has no version history, so the comparison is always against the specification currently saved.",
+      "The comparison is always against the specification currently saved. Saved versions are listed in the Generation History.",
     diffNone: "No changes since the last save.",
     diffStats: (added: number, removed: number, regions: number) =>
       `+${added} −${removed} in ${regions} ${regions === 1 ? "region" : "regions"}`,
@@ -513,12 +1443,120 @@ export const en: Strings = {
     speechScript: "Speech script",
     speechScriptHint: "1–5000 characters.",
     acceptedAudio: "Accepted audio",
-    speechVoice: "Voice",
     regenerateSpeech: "Regenerate speech",
     generateSpeech: "Generate speech",
     speechCandidates: "Speech candidates",
     speechCandidate: "Speech candidate",
     acceptSpeech: "Accept this audio",
+    voicePicker: {
+      label: "Voice",
+      search: "Search name or ID",
+      provider: "Provider",
+      model: "Model",
+      language: "Language",
+      anyValue: "Any",
+      resetFilters: "Reset filters",
+      count: (n: number) => (n === 1 ? "1 voice" : `${n} voices`),
+      id: (id: string) => `ID: ${id}`,
+      allLanguages: "All languages",
+      preview: (voice: string) => `Preview ${voice}`,
+      pause: (voice: string) => `Pause ${voice}`,
+      mixed: "Multiple voices",
+      default: "Default voice",
+      applyToAll: "Voice for every narration",
+      applied: (n: number) =>
+        n === 1 ? "Voice set on 1 narration." : `Voice set on ${n} narrations.`,
+      appliesNext: "The new voice is used the next time this line is generated.",
+      noMatches: "No voice matches these filters.",
+    },
+    bookWords: {
+      group: "Word pronunciations",
+      about:
+        "In a decodable book a child can tap any word the story shows and hear it sounded out. Each word gets its own recording, listed under the scenes that show it, with its sounds. Sounds come from espeak-ng on the server where it is installed; a model proposes the rest, and you check them. A word whose sounds you change is yours: refreshing never replaces it.",
+      refresh: "Refresh words",
+      refreshed: (n: number) => (n === 1 ? "1 word listed." : `${n} words listed.`),
+      count: (n: number) => (n === 1 ? "1 word" : `${n} words`),
+      missing: (n: number) =>
+        n === 1 ? "1 word has no sounds yet." : `${n} words have no sounds yet.`,
+      allSounded: "Every word has its sounds.",
+      askModel: "Ask a model for the rest",
+      askFirst: (n: number) => `A run asks for the first ${n} of them; ask again for the rest.`,
+      asking: "A model is proposing sounds…",
+      proposal: "Proposed sounds",
+      proposalFailed: "The model's proposal could not be used.",
+      proposalStale: "The words changed after this proposal. Ask again.",
+      noneProposed: "The model proposed no sounds.",
+      useSounds: "Use these sounds",
+      accepted: (n: number) =>
+        n === 1 ? "Sounds added to 1 word." : `Sounds added to ${n} words.`,
+      word: "Word",
+      sounds: "Sounds",
+      soundsHint: "One sound per box, in IPA, without stress marks: c-a-t is k, æ, t.",
+      sound: (n: number) => `Sound ${n}`,
+      addSound: "Add a sound",
+      removeSound: (n: number) => `Remove sound ${n}`,
+      saveSounds: "Save sounds",
+      saved: "Sounds saved. This word is now yours.",
+      noSounds: "No sounds yet.",
+      source: {
+        espeak: "From espeak-ng",
+        model: "Proposed by a model",
+        author: "Yours",
+      },
+      espeakMissing:
+        "espeak-ng is not installed on the server, so no word was sounded out automatically.",
+      notDecodable:
+        "Word pronunciations are for decodable books. Choose Decodable as the reading mode to list the story's words.",
+      run: "Word sounds",
+      record: (n: number) => `Record words (${n})`,
+      recordAbout:
+        "Records each word that has sounds and no recording yet: said slowly, sound by sound, then normally. ElevenLabs is used when the agent's Vault has its key, and times each sound so the book can highlight it; Gemini records without timings. Each recording is a paid request made by the selected agent.",
+      recordBlocked: "Save your edits and choose a Penguin agent to record words.",
+      recordTitle: "Record words",
+      recordConfirm: (n: number, language: string) =>
+        `Record ${n} ${n === 1 ? "word" : "words"} in ${language}? Each recording is a paid request to ElevenLabs or Gemini, made by the selected agent, and each is kept on its word.`,
+      toRecord: (n: number) =>
+        n === 1 ? "1 word is ready to record." : `${n} words are ready to record.`,
+      untimed: (n: number) =>
+        n === 1
+          ? "1 recorded word has no sound timings, so it is not highlighted."
+          : `${n} recorded words have no sound timings, so they are not highlighted.`,
+      recording: "Recording",
+      noRecording: "Not recorded yet. Record words in Audios records it.",
+      script: "Recording script",
+      scriptHint: "Made from the word's sounds for its provider each time you save.",
+      scriptYours: "Your own script. It is kept as you wrote it.",
+      writeScript: "Write my own script",
+      useSoundsScript: "Use the script from its sounds",
+      timeline: "Sound timeline",
+      timelineAbout:
+        "When each sound of the recording is said, drawn out, and then when the whole word is said. The book highlights each sound in turn from these. Only an ElevenLabs recording has them.",
+      timelineList: "Sounds, highlighted as the recording plays",
+      noTimings: "This recording has no sound timings, so the book does not highlight its sounds.",
+      soundAt: (sound: string, start: string) => `Sound ${sound}, at ${start} s`,
+      wholeWordAt: (word: string, start: string) => `Whole word ${word}, at ${start} s`,
+    },
+    speechProvider: {
+      label: "Provider",
+      gemini: "Gemini",
+      elevenlabs: "ElevenLabs",
+      keyMissing: (key: string) => `needs ${key}`,
+      timings: "Word timings",
+      timingsAbout:
+        "When each word of the accepted recording starts and ends. The book highlights each word as it is spoken from these. ElevenLabs returns them with the recording; Gemini returns none, so a Gemini recording plays without highlighting.",
+      noTimings: "This recording has no word timings, so words are not highlighted as it plays.",
+      timingsList: "Words, highlighted as the recording plays",
+      word: (word: string, start: string) => `${word}, at ${start} s`,
+      voiceId: "ElevenLabs voice ID",
+      voiceIdHint: "10 to 40 letters and digits, from your ElevenLabs voice library",
+      useVoiceId: "Use this voice",
+      noVoice:
+        "No ElevenLabs voice yet. Add ELEVENLABS_VOICE_ID to the agent's Vault, or enter a voice ID.",
+      applyToAll: "Provider for every narration",
+      mixed: "Several providers",
+      applied: (n: number) =>
+        n === 1 ? "Provider set on 1 narration." : `Provider set on ${n} narrations.`,
+    },
     audioPlayback: {
       type: "Audio type",
       kinds: { speech: "Narration", music: "Music", sfx: "Sound effect" },
@@ -530,8 +1568,121 @@ export const en: Strings = {
           `Plays in the background on the ${channel} channel, under narration.`,
         sfx: (channel: string) => `Plays on the ${channel} channel, over whatever else plays.`,
       },
-      notSpoken:
-        "Music and sound effects are not spoken: upload a file or choose one from the library.",
+      notSpoken: "Music and effects are not spoken: generate one from a prompt, or upload a file.",
+    },
+    sound: {
+      prompt: "Prompt",
+      promptHint: "Describe the sound, e.g. gentle marimba loop, playful. Up to 2000 characters.",
+      length: "Length (seconds)",
+      lengthHint: "1 to 60 seconds; empty lets the model choose",
+      lengthInvalid: "Enter a length from 1 to 60 seconds, or leave it empty.",
+      provider: "Provider",
+      model: "Model",
+      generate: "Generate",
+      regenerate: "Generate again",
+      generating: "Generating…",
+      providers: { elevenlabs: "ElevenLabs", agenthub: "Model" },
+      problems: {
+        credential_missing: (key: string) => `Add ${key} to the selected agent's Vault.`,
+        kind_unsupported: "This provider does not make this kind of sound.",
+        provider_unknown: "This provider is not available in this version.",
+        no_model: "No music or sound model is available through the model hub in this version.",
+        model_unknown: "This model is not offered for this kind of sound.",
+      },
+      unavailable: (provider: string, problem: string) => `${provider}: ${problem}`,
+      noProvider: "Choose a Penguin agent to see which sound providers it can use.",
+      refused: "The provider refused the request: check the plan or the key.",
+      candidate: (provider: string, seconds: string | null) =>
+        seconds ? `${provider} · ${seconds} s` : provider,
+      candidates: "Sound candidates",
+      player: "Sound candidate",
+      bulkTitle: "Sounds",
+      bulkHelp:
+        "Music and sound effects in this language. Generate missing sounds runs the Generate sounds stage: it makes every sound that has a prompt and no file, one run each, and keeps each result. Upload a file or choose one from the library in the asset's editor instead when you have one.",
+      bulkTally: (ready: number, total: number) => `${ready} of ${total} sounds bound`,
+      bulk: (count: number) => `Generate missing sounds (${count})`,
+      bulkConfirm: (count: number, provider: string, language: string) =>
+        `Generate ${count} ${count === 1 ? "sound" : "sounds"} in ${language} with ${provider}? Each sound is a paid request to ${provider}, made by the selected agent, and each result is kept on its sound.`,
+      bulkUnavailable: (provider: string) =>
+        `${provider} cannot be used by the selected agent. Add its key to the agent's Vault, or choose a Penguin agent that has it.`,
+      statuses: {
+        ready: "Bound",
+        missing: "Missing",
+        failed: "Failed",
+        generating: "Generating…",
+        noPrompt: "No prompt",
+      },
+    },
+    video: {
+      title: "Scene video",
+      info: "An agent composes a short animation for this scene from its description and the images bound to it. Watch it here and ask again until it fits. Record video then plays it once in the test browser and records it as a WebM video; nothing is bound to the asset until you choose Use new. The composition runs on the preview origin and may use only the scene's images.",
+      experimental: "Experimental",
+      compose: "Compose from storyboard",
+      recompose: "Compose again",
+      composing: "Composing…",
+      run: "Scene composition",
+      noImages:
+        "Bind an image to this scene first: the composition is made from the scene's images.",
+      candidates: "Compositions",
+      frames: "Frames",
+      frame: (index: number, seconds: string) => `Frame ${index} · ${seconds} s`,
+      seconds: (seconds: string) => `${seconds} s`,
+      preview: "Scene composition preview",
+      play: "Play",
+      pause: "Pause",
+      restart: "Restart",
+      older: "Composed from an earlier draft.",
+      states: {
+        loading: "Loading the composition…",
+        ready: "Ready to play",
+        playing: "Playing",
+        paused: "Paused",
+        ended: "Finished",
+        broken: "The composition has no timeline to play.",
+        unavailable:
+          "The composition could not be shown. It may have changed, or scene videos may have been turned off. Compose again or reload the page.",
+      },
+      choiceWarning:
+        "This scene asks the learner to choose something, and a video only plays. You can still compose it.",
+      record: "Record video",
+      rerecord: "Record again",
+      recording: "Recording…",
+      recordRun: "Scene video recording",
+      recordings: "Recordings",
+      recorded: "Recorded video",
+      useNew: "Use new",
+      keepCurrent: "Keep current",
+      leadIn:
+        "A recording opens with a short blank moment while the page loads, before the animation starts. It is not trimmed.",
+      olderRecording: "Recorded from an earlier draft. Record again to keep it.",
+      noCurrent: "No video is bound yet.",
+      recordFailed: (cause: string) => `The recording failed: ${cause}`,
+      noCause: "no reason was given.",
+      recordProblems: {
+        video_not_ready:
+          "The composition did not get ready to play within 30 seconds. Compose again, then record.",
+        video_no_timeline: "The composition has no animation timeline to play. Compose again.",
+        video_timeout:
+          "The recording took longer than it may and was stopped. Compose again, then record.",
+        video_invalid: "The browser did not write a WebM video, so nothing was kept. Record again.",
+        video_too_large: "The recording is larger than 100 MB, so it was not kept.",
+        video_stopped: "The server stopped before the recording finished. Record again.",
+      },
+      problems: {
+        composition_network:
+          "The composition tried to load something from the network. Compose again; it may use only the scene's images.",
+        composition_reference:
+          "The composition refers to a file that is not one of the scene's images. Compose again.",
+        composition_timeline:
+          "The composition has no paused animation timeline to play. Compose again.",
+        composition_template:
+          "The composition dropped part of the template it must keep. Compose again.",
+        composition_random:
+          "The composition uses randomness, so it would not play the same way twice. Compose again.",
+        composition_size: "The composition is larger than 512 KB. Compose again.",
+        composition_frames:
+          "The frame list is missing, unreadable, or not 6 to 60 seconds long. Compose again.",
+      },
     },
     assetLibrary: {
       kind: "Media type",
@@ -630,6 +1781,7 @@ export const en: Strings = {
     previewImage: "Preview image",
     loadingImage: "Loading image…",
     fullImage: "Open full-size image",
+    imageZoomHint: "Select the image to see it full size.",
     reloadImage: "Reload image",
     imageDimensions: (dimensions: string) => `${dimensions} pixels`,
     imageUnbound: "Assign and save a media path to preview this image.",
@@ -658,6 +1810,8 @@ export const en: Strings = {
     decodable: "Decodable",
     assemble: "Assemble WAF module",
     moduleRun: "Module assembly",
+    qualityRun: "Quality check",
+    testRun: "Acceptance tests",
     moduleReady: "Assembled",
     specRun: "Specification",
     assistRun: "Conversation",
@@ -1028,6 +2182,95 @@ export const en: Strings = {
     companyModeServer: "Enable company mode",
     companyModeServerInfo:
       "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger. Beta: it may be unstable; please report what you hit.",
+    videoExperiment: "Scene videos",
+    videoExperimentInfo:
+      "For every author on this server: a video or animation asset in the activity studio offers Compose from storyboard, where an agent writes a short animated scene from the scene's images. Off by default; turning it off hides it again and stops serving compositions.",
+    deploy: {
+      title: "Deploy",
+      about:
+        "Where activities are deployed to: the Jenkins that builds modules and deploys activities to QA and PROD, the repositories activity data and media are published to, and who the deploy's commits are made as. Tokens are kept in a file only this server can read and are never shown again. git uses this server's own SSH keys.",
+      groups: {
+        qa: "QA",
+        prod: "PROD",
+        jobs: "Jenkins jobs",
+        repos: "Repositories",
+        git: "Git identity",
+        timeouts: "Waiting",
+      },
+      jenkinsUrl: "Jenkins address",
+      jenkinsUrlHint: "https://… (http:// only for localhost)",
+      username: "Jenkins user",
+      token: "Jenkins token",
+      tokenSaved: "Saved. Leave empty to keep the saved token.",
+      tokenForget: "Forget token",
+      tokenWillClear: "The saved token is removed when you save.",
+      tier: "Tier",
+      environment: "Environment",
+      frameworkVersion: "Framework version",
+      frameworkVersionHint: "A version number, like 4.2.1",
+      activityBaseUrl: "Activity address",
+      activityBaseUrlHint: "https://… where a deployed activity opens on QA",
+      moduleBuildJob: "Module build job",
+      activityDeployJob: "Activity deploy job",
+      jobHint: "Leave empty for the default",
+      activityDataRemote: "Activity data repository",
+      mediaRemote: "Media repository",
+      remoteHint: "git@github.com:owner/repo.git or https://…",
+      mediaPublicBase: "Media address",
+      mediaPublicBaseHint:
+        "Where a deployed activity finds its media. Keep {{MEDIA}}/ unless the activity data deploy changes: it fills that in. Otherwise /media/ or https://…",
+      gitUserName: "Name",
+      gitUserEmail: "Email",
+      buildMinutes: "Module build, minutes",
+      deployMinutes: "Activity deploy, minutes",
+      minutesHint: "1 to 240",
+      invalid: "This value is not accepted.",
+      reasons: {
+        not_text: "This value is not accepted.",
+        not_object: "This value is not accepted.",
+        control_characters: "Remove the control characters.",
+        too_long: "This is too long.",
+        not_address: "Enter a full address, like https://jenkins.example.org.",
+        https_required: "Use https:// (http:// only on localhost).",
+        credentials_in_address: "Leave the user and password out of the address.",
+        query_in_address: "Leave out everything after ? or #.",
+        not_remote: "Enter a git remote, like git@github.com:owner/repo.git.",
+        remote_scheme: "Use an ssh:// or https:// remote, or git@host:owner/repo.git.",
+        password_in_remote: "Leave the password out of the remote.",
+        not_version: "Enter a version number, like 4.2.1.",
+        not_email: "Enter an email address.",
+        minutes_range: "Enter a whole number of minutes from 1 to 240.",
+        token_spaces: "A token has no spaces.",
+        not_media_base: "Use a path like /media/, an https:// address, or {{MEDIA}}/.",
+      },
+      testConnection: (target) => `Test ${target} connection`,
+      testing: "Testing…",
+      testOk: (status) => `Jenkins answered (${status}).`,
+      testFailed: (status) => `Jenkins refused the request (${status}).`,
+      testNoAnswer: "Jenkins did not answer.",
+      testUsesSaved: "The test uses the saved settings. Save first.",
+      targets: { qa: "QA", prod: "PROD" },
+    },
+    testBrowser: {
+      title: "Test browser",
+      about:
+        "The browser that quality checks and tests open an activity's player in: a copy of Chromium kept on this server for that use only. The Linux, macOS and Windows release packages include it. Anywhere else, install it here: it downloads once, a few hundred MB.",
+      installed: (version) => (version ? `Installed, Chromium ${version}` : "Installed"),
+      missing: "Not installed",
+      unavailable:
+        "Not available in this copy of Penguin. The desktop app does not include Playwright, which installs and runs the test browser. A Penguin server installed from a release package, Docker or source has it.",
+      location: (path) => `Location: ${path}`,
+      install: "Install test browser",
+      installing: "Installing the test browser. This can take several minutes.",
+      failed: (reason) => `The install did not finish: ${reason}`,
+      reasons: {
+        failed: "the installer stopped with an error.",
+        timed_out: "it took longer than 15 minutes and was stopped.",
+        not_started: "the installer could not start.",
+        incomplete: "the installer finished, but the browser is not where it should be.",
+      },
+      logLabel: "Installer output",
+    },
     accentNames: {
       neutral: "Neutral",
       blue: "Blue",
@@ -3077,6 +4320,10 @@ Scenarios:
     decisionAuto: "auto",
     decisionPolicy: "policy",
     thinking: "Thinking",
+    thinkingHidden: "Thinking…",
+    copyToolOutput: "Copy output",
+    showAllOutput: "Show all",
+    showLessOutput: "Show less",
     subagent: "Subagent",
     subagentRunning: "Running",
     /**
@@ -5076,9 +6323,45 @@ Scenarios:
     networkError: "Network error, please check your connection",
     modelCredentialMissing: (modelId: string) =>
       `Model ${modelId} has no API key yet — configure it on the Models page first`,
+    speechCredentialMissing: (key: string) =>
+      `Add ${key} to the selected Agent’s Vault before generating speech.`,
     noDefaultModel: "This project has no default model yet — add one on the Models page first",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
+      experiment_off: "Scene videos are an experiment an admin has not turned on.",
+      video_composition_missing:
+        "There is no composed scene to record. Compose the scene first, then record it.",
+      video_asset_changed:
+        "The video or animation this scene was composed for is no longer in the media plan.",
+      video_invalid: "The recording is not a WebM video, so it was not kept.",
+      video_changed: "The recorded video changed or is gone. Record it again.",
+      test_browser_missing:
+        "The test browser is not installed. An admin installs it in System settings.",
+      composition_no_images:
+        "Bind an image to this scene first: the composition is made from the scene's images.",
+      composition_asset_invalid:
+        "Only a video or animation asset that a scene uses can be composed.",
+      composition_image_too_large:
+        "One of the scene's images is larger than 8 MB. Bind a smaller image before composing.",
+      composition_not_found: "That composition is no longer available. Compose again.",
+      deploy_clones_running: "The clones are already being prepared.",
+      deploy_running: "A deploy is already running on this server.",
+      deploy_blocked: "That stage cannot run now. The stages say why.",
+      deploy_run_not_found: "That deploy run is no longer here.",
+      deploy_unavailable: "Deploys are not ready yet. Try again in a moment.",
+      deploy_no_module: "This activity belongs to no product, so there is no module to deploy.",
+      deploy_not_canonical:
+        "Only the canonical ref deploys: every ref of this product shares its module.",
+      deploy_settings_missing: "An admin has to fill in the deploy settings first.",
+      deploy_module_remote_missing: "The module's package.json names no repository.",
+      deploy_module_remote_invalid:
+        "The module's package.json names a repository that cannot be cloned from.",
+      deploy_clone_path:
+        "A clone would have been made outside the deploy directory or inside the WAF checkout, so nothing was cloned.",
+      deploy_clone_failed: "A clone failed.",
+      deploy_clone_path_taken:
+        "Something that is not the expected clone is already where the clone goes. It was left as it is.",
+      git_unavailable: "git could not be run on this server.",
       activity_invalid:
         "The activity details are invalid. Check the product code, reference number, and title.",
       activity_exists: "An activity already uses this product code and reference number.",
@@ -5096,7 +6379,7 @@ Scenarios:
       media_stale:
         "Rebuild the media plan from the saved specification before saving bindings or assembling a module.",
       speech_credential_missing:
-        "Add GEMINI_API_KEY to the selected Agent’s Vault before generating speech.",
+        "Add the speech provider’s key to the selected Agent’s Vault before generating speech.",
       speech_helper_missing:
         "The speech helper is missing. Rebuild the bundled plugins and restart the server.",
       audio_invalid:
@@ -5177,6 +6460,10 @@ Scenarios:
       already_compacted:
         "The context was just compacted and nothing has been said since — no need to compact again.",
       version_conflict: "The snapshot's version is not newer than the current one.",
+      version_media_changed:
+        "A generated or uploaded file changed since it was made. Generate or upload it again before saving a version.",
+      version_media_missing:
+        "A generated or uploaded file is missing. Generate or upload it again before saving a version.",
       invalid_title: "The title is invalid.",
       invalid_proxy_url:
         "Invalid proxy address — use an http(s):// or socks5:// proxy URL, or host[:port].",

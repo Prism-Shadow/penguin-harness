@@ -58,6 +58,8 @@ async function sandbox(options: {
   /** The product the activity belongs to, for finding its folder in the checkout. */
   moduleFolder?: string | null;
   canonical?: boolean;
+  /** An author's edits, as the authoring service would report them for this ref. */
+  edits?: Partial<Record<"configuration" | "assessment", { value: unknown; stale: boolean }>>;
 }) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-sandbox-"));
   const runs = options.runs ?? [
@@ -106,11 +108,14 @@ async function sandbox(options: {
     activities: {
       getActivity: async () => activity,
       isCanonicalRef: () => options.canonical ?? true,
+      effectiveModuleDocument: async (_project: string, _activity: unknown, kind: string) =>
+        options.edits?.[kind as "configuration"] ?? null,
       productOf: () =>
         options.moduleFolder ? { moduleFolder: options.moduleFolder, canonicalRefNum: 1 } : null,
       draftWorkspace: () => path.join(root, "draft"),
     },
-    generation: { list: async () => runs },
+    // The real query returns only succeeded module runs; the service filters them again.
+    generation: { list: async () => runs, moduleBuilds: async () => runs },
     config: { root },
     locateWafRoot: async () => options.wafRoot ?? null,
   });
@@ -421,10 +426,31 @@ describe("the payload a preview serves", () => {
     await fs.mkdir(path.join(checkout, "media", "images"), { recursive: true });
     await fs.writeFile(path.join(checkout, "media", "images", "cat.png"), Buffer.alloc(30));
     expect(await service.mediaStats(PROJECT, ACTIVITY)).toEqual([
-      { language: "en-US", key: "hi", type: "audio", bound: true, bytes: 120 },
-      { language: "en-US", key: "cat", type: "image", bound: true, bytes: 30 },
-      { language: "en-US", key: "gone", type: "image", bound: true, bytes: null },
-      { language: "en-US", key: "bye", type: "audio", bound: false, bytes: null },
+      {
+        language: "en-US",
+        key: "hi",
+        type: "audio",
+        bound: true,
+        bytes: 120,
+        mimeType: "audio/wav",
+      },
+      {
+        language: "en-US",
+        key: "cat",
+        type: "image",
+        bound: true,
+        bytes: 30,
+        mimeType: "image/png",
+      },
+      {
+        language: "en-US",
+        key: "gone",
+        type: "image",
+        bound: true,
+        bytes: null,
+        mimeType: "image/png",
+      },
+      { language: "en-US", key: "bye", type: "audio", bound: false, bytes: null, mimeType: null },
     ]);
   });
 
@@ -432,14 +458,70 @@ describe("the payload a preview serves", () => {
     const { service } = await build({ configuration: { rounds: 3 } });
     expect(await service.moduleDocuments(PROJECT, ACTIVITY)).toEqual({
       source: "run",
-      configuration: { file: "configurations/sight-words-1.json", value: { rounds: 3 } },
+      configuration: {
+        file: "configurations/sight-words-1.json",
+        value: { rounds: 3 },
+        edited: false,
+        stale: false,
+        editable: true,
+      },
       assessment: null,
+      canonicalRefNum: null,
     });
     const { service: none } = await build({ runs: [] });
     expect(await none.moduleDocuments(PROJECT, ACTIVITY)).toEqual({
       source: null,
       configuration: null,
       assessment: null,
+      canonicalRefNum: null,
     });
+  });
+
+  it("puts an author's edit before the module's own document, and says so", async () => {
+    const { service } = await build({
+      configuration: { rounds: 3 },
+      edits: { configuration: { value: { rounds: 5 }, stale: true } },
+    });
+    const documents = await service.moduleDocuments(PROJECT, ACTIVITY, false);
+    expect(documents.configuration).toEqual({
+      file: "configurations/sight-words-1.json",
+      value: { rounds: 5 },
+      edited: true,
+      stale: true,
+      editable: false,
+    });
+    // With no module yet, the edit is still there to read, from the draft.
+    const { service: unbuilt } = await build({
+      runs: [],
+      edits: { assessment: { value: { items: [] }, stale: false } },
+    });
+    const early = await unbuilt.moduleDocuments(PROJECT, ACTIVITY);
+    expect(early.source).toBe("draft");
+    expect(early.configuration).toBeNull();
+    expect(early.assessment).toMatchObject({
+      file: "assessments/sight-words-1.json",
+      edited: true,
+      editable: true,
+    });
+  });
+
+  it("does not offer the shared assessment for editing on a ref that is not canonical", async () => {
+    const { service } = await build({
+      canonical: false,
+      moduleFolder: "waf-module-sight-words",
+      edits: { assessment: { value: { items: [{ title: "q" }] }, stale: false } },
+    });
+    const documents = await service.moduleDocuments(PROJECT, ACTIVITY);
+    expect(documents.assessment).toMatchObject({ edited: true, editable: false });
+    expect(documents.configuration).toMatchObject({ edited: false, editable: true });
+    expect(documents.canonicalRefNum).toBe(1);
+  });
+
+  it("serves an edited configuration in the payload", async () => {
+    const { service } = await build({
+      edits: { configuration: { value: { sightWords: { intro: "Edited" } }, stale: false } },
+    });
+    const payload = await service.payload(PROJECT, ACTIVITY, {});
+    expect(payload.configuration.sightWords).toEqual({ intro: "Edited" });
   });
 });

@@ -1,5 +1,21 @@
 import { contentRevision, type ActivityDetail, type ActivityAddress } from "./domain.js";
-import { playbackFromScript, readPlayback, type AudioKind } from "./playback.js";
+import {
+  SOUND_MAX_DURATION_MS,
+  SOUND_MIN_DURATION_MS,
+  durationFromScript,
+  playbackFromScript,
+  readPlayback,
+  type AudioKind,
+} from "./playback.js";
+import type { SpeechProviderId } from "./speech-types.js";
+import type { PhonemeSource, PhonemeTiming, WholeWordTiming } from "./book-word-types.js";
+import {
+  BOOK_WORD_MAX,
+  BOOK_WORD_ROLE,
+  PHONEMES_MAX,
+  cleanPhonemes,
+  isBookWord,
+} from "./book-words.js";
 
 export interface MediaAsset {
   key: string;
@@ -12,6 +28,16 @@ export interface MediaAsset {
    * one was translated from. When the default line is rewritten, the translation is stale.
    */
   translatedFrom?: string;
+  /**
+   * The voice a narration is spoken in the next time it is generated. The bound clip keeps
+   * whatever voice it was recorded with, so choosing a voice leaves timings alone.
+   */
+  voice?: string;
+  /**
+   * Who speaks a narration the next time it is generated; absent is Gemini. Like the voice,
+   * the bound clip keeps whatever provider recorded it.
+   */
+  speechProvider?: SpeechProviderId;
   /**
    * When each spoken word of a narration's clip starts and ends, which a read-along
    * highlights by, and the clip's length. They describe one recording of one script, so
@@ -27,10 +53,46 @@ export interface MediaAsset {
   channel?: string;
   loop?: boolean;
   volume?: number;
+  /**
+   * Music and sound effects: how long a generated clip should be, in whole milliseconds
+   * (1 000 to 60 000). Absent lets the provider choose.
+   */
+  targetDurationMs?: number;
+  /**
+   * A decodable book's word pronunciation (see book-words.ts): the word as the story shows
+   * it, its normalized form, its sounds and where they came from, and whether the author
+   * changed it, which keeps it on every later refresh. All only on audio with this role.
+   */
+  role?: typeof BOOK_WORD_ROLE;
+  word?: string;
+  normalizedWord?: string;
+  phonemes?: string[];
+  phonemeSource?: PhonemeSource;
+  customized?: boolean;
+  /**
+   * A word pronunciation whose script the author wrote: it is kept as written rather than
+   * made again from the word's sounds and provider (see pronunciation.ts).
+   */
+  customScript?: boolean;
+  /**
+   * A word pronunciation's recording, timed: when each sound is said, drawn out, and when the
+   * whole word is said at its normal pace. Only from a provider that timed the recording.
+   */
+  phonemeTimings?: PhonemeTiming[];
+  wholeWordTiming?: WholeWordTiming;
   /** A reference in the WAF media checkout, never a server filesystem path. */
   path?: string;
-  generatedAudio?: { runId: string; sha256: string };
+  /**
+   * A clip a run made and the author accepted. `format` is absent for every WAV clip (all
+   * speech, and every record older than sound generation); a sound run's MP3 says "mp3".
+   */
+  generatedAudio?: { runId: string; sha256: string; format?: GeneratedAudioFormat };
   generatedImage?: { runId: string; sha256: string };
+  /**
+   * A scene video a run recorded from a composition and the author accepted (experimental),
+   * on a video or animation asset, bound to `media/generated/<runId>.webm`.
+   */
+  generatedVideo?: { runId: string; sha256: string };
   usages: {
     sceneId: string;
     sourceKey: string;
@@ -38,6 +100,13 @@ export interface MediaAsset {
     sceneOccurrenceCount: number;
   }[];
 }
+export type GeneratedAudioFormat = "wav" | "mp3";
+
+/** Where an accepted clip is bound: `media/generated/<runId>.<format>`, WAV when unnamed. */
+export function generatedAudioPath(generated: { runId: string; format?: GeneratedAudioFormat }) {
+  return `media/generated/${generated.runId}.${generated.format ?? "wav"}`;
+}
+
 export interface AssetManifest extends ActivityAddress {
   assets: Record<string, MediaAsset[]>;
 }
@@ -89,16 +158,29 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
               "sourceKey",
               "script",
               "translatedFrom",
+              "voice",
+              "speechProvider",
               "wordTimings",
               "durationMs",
               "kind",
               "channel",
               "loop",
               "volume",
+              "targetDurationMs",
+              "role",
+              "word",
+              "normalizedWord",
+              "phonemes",
+              "phonemeSource",
+              "customized",
+              "customScript",
+              "phonemeTimings",
+              "wholeWordTiming",
               "path",
               "usages",
               "generatedAudio",
               "generatedImage",
+              "generatedVideo",
             ].includes(key),
         )
       )
@@ -129,6 +211,23 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
       )
         throw new Error("Only a narration may record what it was translated from.");
       if (
+        asset.voice !== undefined &&
+        (typeof asset.voice !== "string" ||
+          asset.voice.length < 1 ||
+          asset.voice.length > 64 ||
+          !/^[A-Za-z0-9 _.-]+$/.test(asset.voice) ||
+          asset.type !== "audio" ||
+          asset.kind !== undefined)
+      )
+        throw new Error("Only a narration may name a voice.");
+      if (
+        asset.speechProvider !== undefined &&
+        (!["gemini", "elevenlabs"].includes(String(asset.speechProvider)) ||
+          asset.type !== "audio" ||
+          asset.kind !== undefined)
+      )
+        throw new Error("Only a narration names a speech provider: gemini or elevenlabs.");
+      if (
         asset.wordTimings !== undefined &&
         (asset.type !== "audio" ||
           !Array.isArray(asset.wordTimings) ||
@@ -156,6 +255,85 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           (asset.durationMs as number) < 0)
       )
         throw new Error("A duration belongs to a narration, in whole milliseconds.");
+      if (
+        asset.targetDurationMs !== undefined &&
+        (asset.type !== "audio" ||
+          asset.kind === undefined ||
+          !Number.isSafeInteger(asset.targetDurationMs) ||
+          (asset.targetDurationMs as number) < SOUND_MIN_DURATION_MS ||
+          (asset.targetDurationMs as number) > SOUND_MAX_DURATION_MS)
+      )
+        throw new Error(
+          "A requested length belongs to music or a sound effect, from 1000 to 60000 milliseconds.",
+        );
+      const bookWord = asset.role !== undefined;
+      if (
+        bookWord &&
+        (asset.role !== BOOK_WORD_ROLE ||
+          asset.type !== "audio" ||
+          asset.kind !== undefined ||
+          asset.word === undefined)
+      )
+        throw new Error('Only an audio word pronunciation has a role, "bookWord", with its word.');
+      const wordText = (value: unknown) =>
+        typeof value === "string" && value.length >= 1 && value.length <= BOOK_WORD_MAX;
+      if (
+        (asset.word !== undefined && (!bookWord || !wordText(asset.word))) ||
+        (asset.normalizedWord !== undefined && (!bookWord || !wordText(asset.normalizedWord)))
+      )
+        throw new Error("A word pronunciation's word is 1 to 64 characters.");
+      if (
+        asset.phonemes !== undefined &&
+        (!bookWord ||
+          !Array.isArray(asset.phonemes) ||
+          (asset.phonemes.length > 0 &&
+            JSON.stringify(cleanPhonemes(asset.phonemes)) !== JSON.stringify(asset.phonemes)))
+      )
+        throw new Error(
+          "A word pronunciation's sounds are at most 32, each 1 to 8 characters without stress marks.",
+        );
+      if (
+        asset.phonemeSource !== undefined &&
+        (!bookWord || !["espeak", "model", "author"].includes(String(asset.phonemeSource)))
+      )
+        throw new Error("A word's sounds come from espeak, a model or the author.");
+      if (asset.customized !== undefined && (!bookWord || typeof asset.customized !== "boolean"))
+        throw new Error("Only a word pronunciation is marked as customized.");
+      if (
+        asset.customScript !== undefined &&
+        (!bookWord || typeof asset.customScript !== "boolean")
+      )
+        throw new Error("Only a word pronunciation's script is marked as the author's.");
+      const span = (value: unknown): value is { startMs: number; endMs: number } => {
+        const timing = value as Record<string, unknown> | null;
+        return (
+          !!timing &&
+          typeof timing === "object" &&
+          Number.isSafeInteger(timing.startMs) &&
+          Number.isSafeInteger(timing.endMs) &&
+          (timing.startMs as number) >= 0 &&
+          (timing.endMs as number) > (timing.startMs as number)
+        );
+      };
+      if (
+        asset.phonemeTimings !== undefined &&
+        (!bookWord ||
+          !Array.isArray(asset.phonemeTimings) ||
+          asset.phonemeTimings.length > PHONEMES_MAX ||
+          asset.phonemeTimings.some((timing: unknown) => {
+            const phoneme = (timing as { phoneme?: unknown } | null)?.phoneme;
+            return (
+              !span(timing) ||
+              typeof phoneme !== "string" ||
+              cleanPhonemes([phoneme])?.[0] !== phoneme
+            );
+          }))
+      )
+        throw new Error(
+          "A word's sound timings are its sounds, each with a start and a later end.",
+        );
+      if (asset.wholeWordTiming !== undefined && (!bookWord || !span(asset.wholeWordTiming)))
+        throw new Error("A word's whole-word timing has a start and a later end.");
       const playback = readPlayback(asset);
       if (playback === "invalid" || (playback && asset.type !== "audio"))
         throw new Error(
@@ -185,12 +363,17 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         const generated = object(asset.generatedAudio);
         if (
           asset.type !== "audio" ||
-          Object.keys(generated).some((key) => !["runId", "sha256"].includes(key)) ||
+          Object.keys(generated).some((key) => !["runId", "sha256", "format"].includes(key)) ||
           typeof generated.runId !== "string" ||
           !/^run_[a-f0-9]{32}$/.test(generated.runId) ||
           typeof generated.sha256 !== "string" ||
           !/^[a-f0-9]{64}$/.test(generated.sha256) ||
-          asset.path !== `media/generated/${generated.runId}.wav`
+          (generated.format !== undefined && !["wav", "mp3"].includes(String(generated.format))) ||
+          asset.path !==
+            generatedAudioPath({
+              runId: generated.runId,
+              format: generated.format as GeneratedAudioFormat | undefined,
+            })
         )
           throw new Error("Invalid generated audio binding.");
       }
@@ -206,6 +389,19 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           asset.path !== `media/generated/${generated.runId}.png`
         )
           throw new Error("Invalid generated image binding.");
+      }
+      if (asset.generatedVideo !== undefined) {
+        const generated = object(asset.generatedVideo);
+        if (
+          (asset.type !== "video" && asset.type !== "animation") ||
+          Object.keys(generated).some((key) => !["runId", "sha256"].includes(key)) ||
+          typeof generated.runId !== "string" ||
+          !/^run_[a-f0-9]{32}$/.test(generated.runId) ||
+          typeof generated.sha256 !== "string" ||
+          !/^[a-f0-9]{64}$/.test(generated.sha256) ||
+          asset.path !== `media/generated/${generated.runId}.webm`
+        )
+          throw new Error("Invalid generated video binding.");
       }
       const usages = asset.usages.map((value) => {
         const usage = object(value);
@@ -236,6 +432,10 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         ...(asset.translatedFrom !== undefined
           ? { translatedFrom: String(asset.translatedFrom) }
           : {}),
+        ...(asset.voice !== undefined ? { voice: String(asset.voice) } : {}),
+        ...(asset.speechProvider !== undefined
+          ? { speechProvider: asset.speechProvider as SpeechProviderId }
+          : {}),
         ...(asset.wordTimings !== undefined
           ? {
               wordTimings: (asset.wordTimings as Record<string, unknown>[]).map((timing) => ({
@@ -247,12 +447,53 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
           : {}),
         ...(asset.durationMs !== undefined ? { durationMs: Number(asset.durationMs) } : {}),
         ...(playback ?? {}),
+        ...(asset.targetDurationMs !== undefined
+          ? { targetDurationMs: Number(asset.targetDurationMs) }
+          : {}),
+        ...(bookWord ? { role: BOOK_WORD_ROLE } : {}),
+        ...(asset.word !== undefined ? { word: String(asset.word) } : {}),
+        ...(asset.normalizedWord !== undefined
+          ? { normalizedWord: String(asset.normalizedWord) }
+          : {}),
+        ...(asset.phonemes !== undefined
+          ? { phonemes: (asset.phonemes as unknown[]).map(String) }
+          : {}),
+        ...(asset.phonemeSource !== undefined
+          ? { phonemeSource: asset.phonemeSource as PhonemeSource }
+          : {}),
+        ...(asset.customized !== undefined ? { customized: asset.customized === true } : {}),
+        ...(asset.customScript !== undefined ? { customScript: asset.customScript === true } : {}),
+        ...(asset.phonemeTimings !== undefined
+          ? {
+              phonemeTimings: (asset.phonemeTimings as Record<string, unknown>[]).map((timing) => ({
+                phoneme: String(timing.phoneme),
+                startMs: Number(timing.startMs),
+                endMs: Number(timing.endMs),
+              })),
+            }
+          : {}),
+        ...(asset.wholeWordTiming !== undefined
+          ? {
+              wholeWordTiming: {
+                startMs: Number((asset.wholeWordTiming as Record<string, unknown>).startMs),
+                endMs: Number((asset.wholeWordTiming as Record<string, unknown>).endMs),
+              },
+            }
+          : {}),
         ...(asset.path !== undefined ? { path: String(asset.path) } : {}),
         ...(asset.generatedAudio !== undefined
           ? { generatedAudio: asset.generatedAudio as MediaAsset["generatedAudio"] }
           : {}),
         ...(asset.generatedImage !== undefined
           ? { generatedImage: asset.generatedImage as MediaAsset["generatedImage"] }
+          : {}),
+        ...(asset.generatedVideo !== undefined
+          ? {
+              generatedVideo: {
+                runId: String((asset.generatedVideo as Record<string, unknown>).runId),
+                sha256: String((asset.generatedVideo as Record<string, unknown>).sha256),
+              },
+            }
           : {}),
         usages,
       };
@@ -285,6 +526,12 @@ export function planMedia(activity: ActivityDetail): MediaPlan {
           ...(type === "audio" && item.script !== undefined ? { script: String(item.script) } : {}),
           ...(type === "audio" && typeof item.script === "string"
             ? (playbackFromScript(item.script) ?? {})
+            : {}),
+          // A Loom tag's `duration` is the length its music or effect asks for.
+          ...(type === "audio" &&
+          playbackFromScript(item.script as string | undefined) &&
+          durationFromScript(item.script as string | undefined) !== undefined
+            ? { targetDurationMs: durationFromScript(item.script as string)! }
             : {}),
           usages: [],
         };
@@ -324,6 +571,18 @@ export function planMedia(activity: ActivityDetail): MediaPlan {
       // label freshly copied English scripts as translated speech.
       return language === "en-US" ? [{ ...asset }] : [];
     });
+    // A book's word pronunciations are not in the specification; they are planned from its
+    // narration (book-words.ts) and survive a re-plan. Usages of scenes the specification no
+    // longer has go, and a word left in no scene goes too, unless the author customized it.
+    const sceneIds = new Set(
+      ((spec.scenes ?? spec.stages) as Record<string, unknown>[]).map((scene) => String(scene.id)),
+    );
+    const planned = new Set(assets[language]!.map((asset) => asset.key));
+    for (const old of previous[language] ?? []) {
+      if (!isBookWord(old) || planned.has(old.key)) continue;
+      const usages = old.usages.filter((usage) => sceneIds.has(usage.sceneId));
+      if (usages.length || old.customized) assets[language]!.push({ ...old, usages });
+    }
   }
   return {
     specRevision: contentRevision(spec),
@@ -377,14 +636,29 @@ export function mediaConfiguration(manifest: AssetManifest): Record<string, unkn
   return { [manifest.productCode]: { telemetry: false, ...languages } };
 }
 
-/** Storage provenance belongs to Penguin, not Loom's runtime asset schema. */
+/**
+ * Storage provenance belongs to Penguin, not Loom's runtime asset schema; so do a word's
+ * authored-script mark and its sound timings, which reach the module through the book
+ * configuration instead.
+ */
 export function wafManifest(manifest: AssetManifest): AssetManifest {
   return {
     ...manifest,
     assets: Object.fromEntries(
       Object.entries(manifest.assets).map(([language, assets]) => [
         language,
-        assets.map(({ generatedAudio: _audio, generatedImage: _image, ...asset }) => asset),
+        assets.map(
+          ({
+            generatedAudio: _audio,
+            generatedImage: _image,
+            generatedVideo: _video,
+            phonemeSource: _source,
+            customScript: _script,
+            phonemeTimings: _sounds,
+            wholeWordTiming: _word,
+            ...asset
+          }) => asset,
+        ),
       ]),
     ),
   };

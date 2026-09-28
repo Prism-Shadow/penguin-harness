@@ -578,7 +578,7 @@ try {
     Fail "a renamed local archive must contain package-manifest.json; use the original filename for legacy packages."
   }
 
-  $Dirs = @("bin", "lib", "web", "node", "git")
+  $Dirs = @("bin", "lib", "web", "node", "git", "browsers")
   $MovedOld = @()
   $MovedNew = @()
   New-Item -ItemType Directory -Path $OldDir | Out-Null
@@ -613,6 +613,7 @@ try {
         'set "DIR=%~dp0.."'
         'if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"'
         'if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"'
+        'if not defined PENGUIN_BUNDLED_BROWSERS if exist "%DIR%\browsers" set "PENGUIN_BUNDLED_BROWSERS=%DIR%\browsers"'
         'if exist "%DIR%\node\node.exe" ('
         '  "%DIR%\node\node.exe" "%DIR%\lib\dist\penguin.js" %*'
         ') else ('

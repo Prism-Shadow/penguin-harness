@@ -22,7 +22,13 @@ import type { CarriedBinding, ImportMapping, MappedActivity } from "./import-map
 
 /** A product Penguin already holds under this code. */
 export interface ExistingProduct {
+  /** Its live refs. */
   refNums: number[];
+  /**
+   * Its deleted (archived) refs. A deleted ref keeps its number, so it cannot be created
+   * again, and it is not "already there" either: nobody can see it.
+   */
+  archivedRefNums: number[];
   canonicalRefNum: number | null;
 }
 
@@ -60,6 +66,8 @@ export interface ImportOutcome {
   created: number[];
   /** Refs that were already there, left untouched. */
   skipped: number[];
+  /** Refs deleted here earlier. Their numbers stay taken, so they were not recreated. */
+  archived: number[];
   /** Refs that could not be imported, and why. Named, never swallowed. */
   failed: { refNum: number; reason: string }[];
   /**
@@ -105,6 +113,7 @@ export async function applyImport(
   const outcome: ImportOutcome = {
     created: [],
     skipped: [],
+    archived: [],
     failed: [],
     partial: [],
     abandoned: false,
@@ -112,6 +121,7 @@ export async function applyImport(
   };
   const existing = await target.existingProduct(mapping.product.productCode);
   const present = new Set(existing?.refNums ?? []);
+  const deleted = new Set(existing?.archivedRefNums ?? []);
   // Joining a product Penguin already has means its canonical ref is already settled, and
   // creating the ref Loom called canonical will not move it. Reported rather than forced:
   // moving module ownership is an author's decision, not an importer's.
@@ -129,6 +139,10 @@ export async function applyImport(
     const isCanonical = ref.refNum === mapping.product.canonicalRefNum;
     if (present.has(ref.refNum)) {
       outcome.skipped.push(ref.refNum);
+      continue;
+    }
+    if (deleted.has(ref.refNum)) {
+      outcome.archived.push(ref.refNum);
       continue;
     }
     try {
@@ -210,6 +224,10 @@ export function describeOutcome(outcome: ImportOutcome, productCode: string): st
   if (outcome.skipped.length)
     parts.push(
       `${outcome.skipped.length} ${outcome.skipped.length === 1 ? "ref was" : "refs were"} already there and left alone.`,
+    );
+  if (outcome.archived.length)
+    parts.push(
+      `${outcome.archived.length === 1 ? "Ref" : "Refs"} ${outcome.archived.join(", ")} ${outcome.archived.length === 1 ? "was" : "were"} deleted here earlier and ${outcome.archived.length === 1 ? "was" : "were"} not imported again; ${outcome.archived.length === 1 ? "its number stays" : "their numbers stay"} taken.`,
     );
   if (outcome.failed.length)
     parts.push(

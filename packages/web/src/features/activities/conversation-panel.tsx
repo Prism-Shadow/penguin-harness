@@ -8,7 +8,7 @@
  * message starts an assist run that tells the agent where the author is, and a follow-up
  * says so again when the author has moved.
  */
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import type { ActivityRun, ActivityRunSummary } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
@@ -31,6 +31,8 @@ import type { ProposalBase, ProposalChange } from "./proposal";
 import { ProposalCard } from "./proposal-card";
 import type { ProposalRead } from "./use-assist-proposal";
 import { useSessionTranscript } from "./use-session-transcript";
+import { ShowReasoningSwitch } from "./show-reasoning-switch";
+import { useShowReasoning } from "./run-log-prefs";
 
 export function ConversationPanel({
   endpoint,
@@ -165,9 +167,19 @@ function Conversation({
   onStarted: (run: ActivityRun) => void;
 }) {
   const words = S.activities.studioConversation;
-  const { stream, running, ctx, items, older, error, setError } = useSessionTranscript(
-    sessionId,
-    initialStatus,
+  const {
+    stream,
+    running,
+    ctx: transcriptCtx,
+    items,
+    older,
+    error,
+    setError,
+  } = useSessionTranscript(sessionId, initialStatus);
+  const [showReasoning, setShowReasoning] = useShowReasoning();
+  const ctx = useMemo(
+    () => ({ ...transcriptCtx, hideReasoning: !showReasoning, toolOutputActions: true }),
+    [transcriptCtx, showReasoning],
   );
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -247,6 +259,7 @@ function Conversation({
               ))}
             </Select>
           </div>
+          {sessionId && <ShowReasoningSwitch checked={showReasoning} onChange={setShowReasoning} />}
           {sessionId && (
             <Link
               to={`/chat/${encodeURIComponent(sessionId)}`}

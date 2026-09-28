@@ -29,13 +29,6 @@ function countVisibleWords(text: string | undefined): number {
   return matches ? matches.length : 0;
 }
 
-function wholeWordTiming(word: unknown): NarrationTiming | null {
-  if (!word || typeof word !== 'object') return null;
-  const timing = (word as Record<string, unknown>).wholeWordTiming;
-  if (!timing || typeof timing !== 'object') return null;
-  return numericTiming(timing as Record<string, unknown>);
-}
-
 function numericTiming(value: Record<string, unknown>): NarrationTiming | null {
   const start = value.start;
   const end = value.end;
@@ -45,15 +38,15 @@ function numericTiming(value: Record<string, unknown>): NarrationTiming | null {
   return { start, end };
 }
 
+/**
+ * A narration word's time in the narration clip. Only the narration's own timings count:
+ * a listed word's wholeWordTiming is a time inside that word's own pronunciation clip.
+ */
 function narrationTimingAt(narration: NonNullable<AdapterNarration>, occurrence: number): NarrationTiming | null {
   const timings = Array.isArray(narration.timings) ? narration.timings : [];
   const fromTimings = timings[occurrence];
-  if (fromTimings && typeof fromTimings === 'object') {
-    const timing = numericTiming(fromTimings as Record<string, unknown>);
-    if (timing) return timing;
-  }
-  const words = Array.isArray(narration.words) ? narration.words : [];
-  return wholeWordTiming(words[occurrence]);
+  if (!fromTimings || typeof fromTimings !== 'object') return null;
+  return numericTiming(fromTimings as Record<string, unknown>);
 }
 
 /**

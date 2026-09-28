@@ -11,6 +11,10 @@
  * On the right, a thin icon rail opens one side panel at a time (the player, the agent
  * sessions) beside the work, the way Loom's right rail does, so the main panel stays the
  * only large thing on screen until an author asks for more.
+ *
+ * Given the open section, the header also carries the Layout menu (layout-menu.tsx): named
+ * arrangements of the rail, the side panel, the section, the player's map and the run log,
+ * applied here through the same setters the rail and the panels use.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Chevron } from "../../components/ui/chevron";
@@ -34,7 +38,12 @@ import {
   readRailWidth,
   writeRailCollapsed,
   writeRailWidth,
+  type WorkspaceSection,
 } from "./workspace-model";
+import { LayoutMenu } from "./layout-menu";
+import { applyOrder, type LayoutPreset, type LayoutState } from "./layout-presets";
+import { setMapVisible, setMapWidth, useMapVisible, useMapWidth } from "./map-prefs";
+import { setShowReasoning, useShowReasoning } from "./run-log-prefs";
 
 /** One entry of the right rail: its icon, and what its panel shows once opened. */
 export interface StudioPanelEntry {
@@ -51,6 +60,7 @@ export function ActivityWorkspace({
   rail,
   panels = [],
   showPanel = null,
+  layout,
   children,
 }: {
   header: ReactNode;
@@ -68,6 +78,8 @@ export function ActivityWorkspace({
    * `at` distinguishes a second request for the same panel from the first.
    */
   showPanel?: { key: StudioPanel; at: number } | null;
+  /** The open section and a way to open another, which turns on the Layout menu. */
+  layout?: { section: WorkspaceSection; onSection: (section: WorkspaceSection) => void };
   children: ReactNode;
 }) {
   const [panel, setPanel] = useState<StudioPanel | null>(() => readSidePanel());
@@ -180,6 +192,41 @@ export function ActivityWorkspace({
     writeSidePanel(next);
   }
 
+  const mapVisible = useMapVisible();
+  const mapWidth = useMapWidth();
+  const [showReasoning] = useShowReasoning();
+  const layoutState: LayoutState | null = layout
+    ? {
+        railWidth: width,
+        railCollapsed: collapsed,
+        sidePanel: panel,
+        section: layout.section,
+        mapWidth,
+        mapVisible,
+        showReasoning,
+      }
+    : null;
+
+  function applyLayout(preset: LayoutPreset) {
+    for (const write of applyOrder(preset.state)) {
+      if (write.kind === "railCollapsed") {
+        setCollapsed(write.value);
+        writeRailCollapsed(write.value);
+        // On a narrow workspace the rail is a menu over the work; an open layout opens it.
+        if (!beside) setNarrowOpen(!write.value);
+      } else if (write.kind === "railWidth") {
+        setWidth(write.value);
+        writeRailWidth(write.value);
+      } else if (write.kind === "sidePanel") {
+        setPanel(write.value);
+        writeSidePanel(write.value);
+      } else if (write.kind === "mapVisible") setMapVisible(write.value);
+      else if (write.kind === "mapWidth") setMapWidth(write.value);
+      else if (write.kind === "showReasoning") setShowReasoning(write.value);
+      else layout?.onSection(write.value);
+    }
+  }
+
   function toggle() {
     if (!beside) {
       setNarrowOpen((current) => !current);
@@ -195,6 +242,7 @@ export function ActivityWorkspace({
     <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2.5 dark:border-gray-800">
         {header}
+        {layoutState && <LayoutMenu state={layoutState} onApply={applyLayout} />}
       </div>
       {notices && (
         <div className="shrink-0 space-y-2 border-b border-gray-200 px-4 py-2 empty:hidden dark:border-gray-800">

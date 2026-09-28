@@ -43,11 +43,13 @@ check_shared_constant "the OSS switch ratio" "SPEED_PROBE_OSS_SWITCH_RATIO = 1.5
 LAUNCHER_SH="$ROOT_DIR/scripts/launchers/penguin"
 LAUNCHER_CMD="$ROOT_DIR/scripts/launchers/penguin.cmd"
 [ -x "$LAUNCHER_SH" ] || fail_test "scripts/launchers/penguin is missing or not executable"
-for marker in 'PENGUIN_WEB_DIST:-$DIR/web' '$DIR/node/bin/node' '$DIR/lib/dist/penguin.js'; do
+for marker in 'PENGUIN_WEB_DIST:-$DIR/web' '$DIR/node/bin/node' '$DIR/lib/dist/penguin.js' \
+  'PENGUIN_BUNDLED_BROWSERS:-$DIR/browsers'; do
   grep -qF "$marker" "$LAUNCHER_SH" || fail_test "the POSIX launcher does not carry $marker"
 done
 sh -n "$LAUNCHER_SH" || fail_test "the POSIX launcher is not valid sh"
-for marker in '%DIR%\web' '%DIR%\node\node.exe' '%DIR%\lib\dist\penguin.js'; do
+for marker in '%DIR%\web' '%DIR%\node\node.exe' '%DIR%\lib\dist\penguin.js' \
+  'PENGUIN_BUNDLED_BROWSERS=%DIR%\browsers'; do
   grep -qF "$marker" "$LAUNCHER_CMD" || fail_test "the Windows launcher does not carry $marker"
 done
 # .gitattributes keeps this one CRLF, the only form cmd.exe is fully reliable with.
@@ -115,7 +117,41 @@ printf '%s\r\n' '@echo off' 'echo fixture-old' > "$windows_payload/bin/penguin.c
 printf '%s\n' '{"schemaVersion":1,"target":"win32-x64"}' > "$windows_payload/package-manifest.json"
 (cd "$WORK_DIR/windows" && zip -qr "$PAYLOAD_DIR/win32-x64.zip" penguin)
 
-sh "$ROOT_DIR/scripts/package-release-bundles.sh" "$PAYLOAD_DIR" "$ARTIFACT_DIR"
+# The test browser each platform payload gains, from a stub installer: no download. It records
+# the Playwright platform it was asked for, so a payload carrying another target's browser fails.
+FAKE_BROWSER_INSTALLER="$STUB_BIN/fake-test-browser-installer"
+{
+  printf '%s\n' '#!/bin/sh'
+  printf '%s\n' 'mkdir -p "$1/chromium-0000"'
+  printf '%s\n' 'printf "%s\n" "$2" > "$1/chromium-0000/platform"'
+} > "$FAKE_BROWSER_INSTALLER"
+chmod +x "$FAKE_BROWSER_INSTALLER"
+
+PENGUIN_TEST_BROWSER_INSTALLER="$FAKE_BROWSER_INSTALLER" \
+  sh "$ROOT_DIR/scripts/package-release-bundles.sh" "$PAYLOAD_DIR" "$ARTIFACT_DIR"
+
+# --- The test browser: every platform payload carries one for its own platform at
+#     penguin/browsers/, the directory the launchers name; the universal payload has none. ---
+for target_platform in linux-x64:ubuntu22.04-x64 linux-arm64:ubuntu22.04-arm64 \
+  darwin-x64:mac14 darwin-arm64:mac14-arm64; do
+  target="${target_platform%%:*}"
+  platform="${target_platform#*:}"
+  browser_dir="$WORK_DIR/browser-check-$target"
+  mkdir -p "$browser_dir"
+  tar -xzf "$PAYLOAD_DIR/$target.tar.gz" -C "$browser_dir"
+  [ -f "$browser_dir/penguin/browsers/chromium-0000/platform" ] \
+    || fail_test "$target payload has no test browser at penguin/browsers"
+  [ "$(cat "$browser_dir/penguin/browsers/chromium-0000/platform")" = "$platform" ] \
+    || fail_test "$target payload carries a test browser for another platform"
+done
+if tar -tzf "$PAYLOAD_DIR/universal.tar.gz" | grep -q '^penguin/browsers/'; then
+  fail_test "the universal payload must not carry a platform's test browser"
+fi
+browser_dir="$WORK_DIR/browser-check-win32-x64"
+mkdir -p "$browser_dir"
+unzip -q "$PAYLOAD_DIR/win32-x64.zip" -d "$browser_dir"
+[ "$(cat "$browser_dir/penguin/browsers/chromium-0000/platform" 2>/dev/null)" = win64 ] \
+  || fail_test "win32-x64 payload has no Windows test browser at penguin/browsers"
 
 # Exercise the exact release-workflow stamping block against new, legacy, and inconsistent tag
 # sources. The workflow must keep this logic inline because it checks out the requested tag, which
@@ -296,6 +332,9 @@ HOME="$TEST_HOME" PENGUIN_INSTALL_DIR="$OFFLINE_INSTALL" PATH="$STUB_BIN:$PATH" 
   || fail_test "offline install from the extracted bundle failed"
 [ "$("$OFFLINE_INSTALL/bin/penguin" --version)" = "fixture-old" ] \
   || fail_test "offline install did not produce a working command"
+# The payload's test browser lands beside the program, where the launcher names it.
+[ -f "$OFFLINE_INSTALL/browsers/chromium-0000/platform" ] \
+  || fail_test "offline install did not carry the payload's test browser into the install"
 
 # The stamped installer inside a released bundle must still prefer its sibling payload and
 # never resolve metadata or download an online asset.
@@ -345,6 +384,8 @@ set -e
 [ "$status" -ne 0 ] || fail_test "failing POSIX upgrade unexpectedly succeeded"
 [ "$("$LOCAL_INSTALL/bin/penguin" --version)" = "fixture-old" ] \
   || fail_test "previous POSIX installation was not restored"
+[ -f "$LOCAL_INSTALL/browsers/chromium-0000/platform" ] \
+  || fail_test "rollback did not restore the previous test browser"
 
 # --- Pinned-directory upgrade: emulate a filesystem that refuses to rename in-use directories
 #     (overlayfs reports EBUSY when `penguin update` replaces the very lib/ its own process runs
@@ -387,6 +428,10 @@ rm -f "$STUB_BIN/mv" "$STUB_BIN/rmdir"
   || fail_test "pinned-lib upgrade did not install the new version"
 [ -f "$LOCAL_INSTALL/lib/vendor/data.txt" ] \
   || fail_test "pinned-lib upgrade lost the copied lib subdirectory"
+# A package without a test browser (the universal one, or this fixture) leaves none behind:
+# a browser from the previous package would not match the new program's Playwright.
+[ ! -e "$LOCAL_INSTALL/browsers" ] \
+  || fail_test "an upgrade to a package without a test browser kept the previous one"
 [ -z "$(ls -A "$LOCAL_INSTALL" | grep -E '^\.(old|staging)\.' || :)" ] \
   || fail_test "pinned-lib upgrade left staging or backup directories behind"
 

@@ -1,5 +1,5 @@
 /**
- * The behavior map under the player, so what the module does can be read beside it: the
+ * The behavior map beside or under the player, so what the module does can be read with it: the
  * scene's phases top to bottom, forward transitions as solid curves, returns dashed, and
  * the phase the activity reports itself in highlighted as it plays.
  *
@@ -24,6 +24,8 @@ import {
   type MapTrigger,
   type StateMachine,
 } from "./state-map";
+import { liveTargets } from "./map-split";
+import type { PlayerInteractable } from "./player-bridge";
 
 /** A trigger in the author's words; an event keeps the name the module gave it. */
 function triggerText(trigger: MapTrigger): string {
@@ -45,6 +47,57 @@ function centre(node: MapNode) {
   };
 }
 const nodeWidth = (node: MapNode) => Math.min(132, (WIDTH - PAD * 2) / node.columns - 14);
+
+/**
+ * The current state's tap targets under the drawing: the first few, each outlining its
+ * element in the player while pointed at or focused, and pinning the outline when pressed.
+ */
+function LiveTargets({
+  phase,
+  interactables,
+  outlined,
+  onOutline,
+  onPin,
+}: {
+  phase: string;
+  interactables: readonly PlayerInteractable[];
+  outlined: string | null;
+  onOutline: (id: string | null) => void;
+  onPin: (id: string) => void;
+}) {
+  const words = S.activities.studioPlayer.map;
+  const { shown, more } = liveTargets(interactables);
+  return (
+    <div
+      role="group"
+      aria-label={words.liveTargets(phase)}
+      className="flex flex-wrap items-center gap-1.5 text-xs"
+    >
+      <span className="text-gray-500">{words.liveCount(interactables.length)}</span>
+      {shown.map((entry) => (
+        <button
+          key={entry.id}
+          type="button"
+          aria-pressed={outlined === entry.id}
+          title={words.targetTitle(entry.id, words.inputTypes[entry.inputType])}
+          onMouseEnter={() => onOutline(entry.id)}
+          onMouseLeave={() => onOutline(null)}
+          onFocus={() => onOutline(entry.id)}
+          onBlur={() => onOutline(null)}
+          onClick={() => onPin(entry.id)}
+          className={`max-w-full truncate rounded-md border px-2 py-0.5 ${
+            outlined === entry.id
+              ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-200"
+              : "border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
+          }`}
+        >
+          {entry.description ?? entry.id}
+        </button>
+      ))}
+      {more > 0 && <span className="text-gray-500">{words.more(more)}</span>}
+    </div>
+  );
+}
 
 /** One labelled list of the inspector; says "Nothing" rather than vanish. */
 function Facts({ label, items }: { label: string; items: ReactNode[] }) {
@@ -146,10 +199,19 @@ function SceneGraph({
   livePhase,
   zoom,
   onZoom,
+  interactables,
+  outlined,
+  onOutline,
+  onPin,
 }: {
   machine: StateMachine;
   sceneId: string;
   livePhase: string | null;
+  /** What can be tapped in the live phase, as the player reports it. */
+  interactables: readonly PlayerInteractable[];
+  outlined: string | null;
+  onOutline: (id: string | null) => void;
+  onPin: (id: string) => void;
   /** The drawing's width as a multiple of the panel's; 1 fits it. */
   zoom: number;
   onZoom: (direction: 1 | -1) => void;
@@ -160,6 +222,9 @@ function SceneGraph({
   const marker = `arrow-${useId().replace(/[^a-zA-Z0-9-]/g, "")}`;
   const map = useMemo(() => sceneMap(machine, sceneId), [machine, sceneId]);
   if (!map) return null;
+  // The player reports only the state it is in, so only that node has tap targets.
+  const liveHere = !!livePhase && map.nodes.some((node) => node.id === livePhase);
+  const targets = liveHere ? interactables : [];
   const byId = new Map(map.nodes.map((node) => [node.id, node]));
   const height = PAD * 2 + NODE_HEIGHT + Math.max(0, ...map.nodes.map((n) => n.depth)) * ROW;
   // Two transitions between the same phases are one line with both names.
@@ -307,11 +372,31 @@ function SceneGraph({
                 >
                   {node.id.length > 18 ? `${node.id.slice(0, 17)}…` : node.id}
                 </text>
+                {live && targets.length > 0 && (
+                  <text
+                    x={x + width / 2 - 2}
+                    y={y - NODE_HEIGHT / 2 - 3}
+                    fontSize="9"
+                    textAnchor="end"
+                    className="fill-brand-700 dark:fill-brand-200"
+                  >
+                    {words.liveCount(targets.length)}
+                  </text>
+                )}
               </g>
             );
           })}
         </svg>
       </div>
+      {livePhase && targets.length > 0 && (
+        <LiveTargets
+          phase={livePhase}
+          interactables={targets}
+          outlined={outlined}
+          onOutline={onOutline}
+          onPin={onPin}
+        />
+      )}
       {inspected ? (
         <PhaseInspector
           machine={machine}
@@ -347,6 +432,10 @@ export function StateMapView({
   startScene,
   open,
   onToggle,
+  interactables,
+  outlined,
+  onOutline,
+  onPin,
 }: {
   /** Whether the map is shown; the header stays either way, so it can be shown again. */
   open: boolean;
@@ -357,6 +446,14 @@ export function StateMapView({
   reportedScene: string | null;
   reportedPhase: string | null;
   startScene: string;
+  /** The tap targets the player reports for the state it is in. */
+  interactables: readonly PlayerInteractable[];
+  /** The tap target pinned as outlined in the player, if any. */
+  outlined: string | null;
+  /** Outline a tap target while it is pointed at, or go back to the pinned one with null. */
+  onOutline: (id: string | null) => void;
+  /** Pin or unpin a tap target's outline, as its chip under the player does. */
+  onPin: (id: string) => void;
 }) {
   const words = S.activities.studioPlayer.map;
   const [read, setRead] = useState<
@@ -472,6 +569,10 @@ export function StateMapView({
           livePhase={shown === reportedScene ? reportedPhase : null}
           zoom={zoom}
           onZoom={(direction) => setZoom((current) => stepZoom(current, direction))}
+          interactables={interactables}
+          outlined={outlined}
+          onOutline={onOutline}
+          onPin={onPin}
         />
       )}
     </div>

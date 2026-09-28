@@ -18,8 +18,31 @@ import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 import { HttpError } from "../http/errors.js";
 import { ActivityLocks, atomicJson } from "./service.js";
-import { AUDIO_MAX_BYTES, audioTarget, audioPrompt, type AudioResult } from "./audio.js";
+import {
+  AUDIO_MAX_BYTES,
+  SPEECH_OUTPUT_FILES,
+  SPEECH_TIMINGS_FILE,
+  audioTarget,
+  speechPrompt,
+  speechProviderOf,
+  type AudioResult,
+  type AudioTarget,
+} from "./audio.js";
+import { SOUND_OUTPUT_FILES, soundPrompt, soundTarget } from "./sound.js";
+import { AGENTHUB_VERSION, SoundModelPorts } from "./sound-models.js";
+import { soundProviderFor, soundSetup, speechProviderFor, speechSetup } from "./audio-providers.js";
+import type { SoundFormat, SoundSetup } from "./sound-types.js";
+import type { SpeechSetup } from "./speech-types.js";
+import {
+  ELEVENLABS_DEFAULT_VOICE,
+  ELEVENLABS_VOICE_KEY,
+  SPEECH_MODEL,
+  SPEECH_VOICES,
+  speechCatalogue,
+} from "./voice-catalogue.js";
+import { alignmentProblems, normalizeAlignment } from "./word-timings.js";
 import { readArtifactBytes } from "./artifact.js";
+import { soundPromptOf } from "./playback.js";
 import {
   GENERATED_IMAGE_MAX_BYTES,
   imageTarget,
@@ -43,15 +66,176 @@ import {
   type AssistProposal,
 } from "./assist.js";
 import { mediaTextPrompt, mediaTextTarget, parseMediaTextCandidate } from "./media-text.js";
+import { coverageProblem } from "./assessment-hints.js";
+import { normalizeAssessment, parseHints, writtenItems } from "./assessment-document.js";
+import { validateAssessment } from "./module-overrides.js";
+import {
+  ACCEPTANCE_HARNESS_FILE,
+  ACCEPTANCE_INPUT_FILE,
+  ACCEPTANCE_REPORT_DIR,
+  ACCEPTANCE_REPORT_FILE,
+  ACCEPTANCE_RESULTS_FILE,
+  ACCEPTANCE_RUNNER_FILE,
+  ACCEPTANCE_TEST_FILE,
+  HARNESS_VERSION,
+  TEST_FILE_MAX_BYTES,
+  acceptancePrompt,
+  acceptanceReusePrompt,
+  activityHarnessSource,
+  runAcceptanceSource,
+} from "./acceptance-harness.js";
+import {
+  RESULTS_MAX_BYTES,
+  acceptanceReport,
+  parseAcceptanceResults,
+  testFileHash,
+} from "./acceptance-collect.js";
+import type { AcceptanceStage } from "./acceptance-types.js";
+import {
+  PHONEMES_FILE,
+  PHONEMES_INPUT_FILE,
+  parsePhonemesCandidate,
+  phonemesPrompt,
+  phonemesTarget,
+} from "./phonemes-run.js";
+import type { PhonemesCandidate } from "./book-word-types.js";
+import type { Settings } from "../mechanisms/settings.js";
+import { VIDEO_EXPERIMENT_SETTING, readVideoExperiment } from "./video-experiment.js";
+import {
+  COMPOSITION_BRIDGE,
+  COMPOSITION_BRIDGE_FILE,
+  COMPOSITION_FILE,
+  COMPOSITION_FRAMES_FILE,
+  COMPOSITION_FRAMES_MAX_BYTES,
+  COMPOSITION_GSAP_FILE,
+  COMPOSITION_IMAGE_DIR,
+  COMPOSITION_INPUT_FILE,
+  COMPOSITION_MAX_BYTES,
+  COMPOSITION_TEMPLATE_FILE,
+  CompositionProblem,
+  compositionInput,
+  compositionProblem,
+  compositionPrompt,
+  compositionScene,
+  compositionTemplate,
+  gsapSource,
+  imageExtension,
+  parseFrames,
+  sha256,
+  stagedFiles,
+  type CompositionFileContent,
+  type CompositionScene,
+} from "./composition.js";
+import { IMAGE_MAX_BYTES as COMPOSITION_IMAGE_MAX_BYTES } from "./image.js";
+import type { CompositionCandidate, CompositionTarget } from "./composition-types.js";
+import type { VideoProblemCode, VideoResult, VideoTarget } from "./video-types.js";
+import { mediaContentType } from "./media-origin.js";
 import {
   newId,
   contentRevision,
   validateActivitySpec,
+  type ActivityDetail,
   type ActivityRun,
   type ActivityRunSummary,
+  type DeterministicRunKind,
 } from "./domain.js";
 
 const MAX_CANDIDATE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Whether a test run left the test file it was handed as it was: only then did it reuse the
+ * earlier checks. False when it was handed none, or the file is gone or changed.
+ */
+async function testFileUnchanged(workspace: string, hash: string | undefined): Promise<boolean> {
+  if (!hash) return false;
+  try {
+    const bytes = await readArtifactBytes(
+      path.join(workspace, ACCEPTANCE_TEST_FILE),
+      TEST_FILE_MAX_BYTES,
+    );
+    return testFileHash(bytes) === hash;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The file a sound run must collect: the format its request named (a hub model's catalogued
+ * format), else MP3, the only format ElevenLabs' helper writes. The other file being present
+ * fails the run, so audio the helper did not write is never bound as the provider's
+ * candidate. Its name only picks the check; the bytes must still pass it.
+ */
+async function soundOutputFormat(workspace: string, expected: SoundFormat): Promise<SoundFormat> {
+  const other: SoundFormat = expected === "mp3" ? "wav" : "mp3";
+  const stray = await fs
+    .lstat(path.join(workspace, SOUND_OUTPUT_FILES[other]))
+    .then(() => true)
+    .catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    });
+  if (stray)
+    throw new Error(
+      `The sound run wrote ${SOUND_OUTPUT_FILES[other]}, but its model returns ${SOUND_OUTPUT_FILES[expected]}.`,
+    );
+  return expected;
+}
+/**
+ * The clip a speech run must collect: its provider's file. The other provider's file being
+ * present fails the run, as for sounds, so a clip the chosen provider did not make is never
+ * bound as its recording.
+ */
+async function speechOutputFile(workspace: string, target: AudioTarget): Promise<string> {
+  const provider = speechProviderOf(target);
+  const other = SPEECH_OUTPUT_FILES[provider === "gemini" ? "elevenlabs" : "gemini"];
+  const stray = await fs
+    .lstat(path.join(workspace, other))
+    .then(() => true)
+    .catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    });
+  if (stray)
+    throw new Error(
+      `The speech run wrote ${other}, but its provider returns ${SPEECH_OUTPUT_FILES[provider]}.`,
+    );
+  return SPEECH_OUTPUT_FILES[provider];
+}
+
+/** Word timings are small; a sidecar past this is not one. */
+const SPEECH_TIMINGS_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * The word timings a speech helper wrote beside its clip, checked against the script it
+ * spoke, or undefined when it wrote none (a provider without timestamps). Timings that do
+ * not fit the script fail the run rather than bind a read-along that highlights the wrong
+ * words.
+ */
+async function speechTimings(workspace: string, script: string) {
+  let text: string;
+  try {
+    text = (
+      await readArtifactBytes(path.join(workspace, SPEECH_TIMINGS_FILE), SPEECH_TIMINGS_MAX_BYTES)
+    ).toString("utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`${SPEECH_TIMINGS_FILE} is not JSON.`);
+  }
+  if (!Array.isArray(parsed)) throw new Error(`${SPEECH_TIMINGS_FILE} must be a list of timings.`);
+  const timings = normalizeAlignment(script, parsed);
+  if (!timings)
+    throw new Error(
+      `The provider's word timings do not fit the script: ${alignmentProblems(script, parsed)[0]}`,
+    );
+  return timings;
+}
+
 interface Observer {
   unsubscribe: () => void;
   completed: boolean;
@@ -74,6 +258,8 @@ export class ActivityGenerationService implements ActivityGeneration {
   @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly channels!: Channels;
   @Use() private readonly log!: Log;
+  @Use() private readonly soundModels!: SoundModelPorts;
+  @Use() private readonly settings!: Settings;
   private readonly locks = new ActivityLocks();
   private readonly observers = new Map<string, Observer>();
   private readonly operations = new Set<Promise<unknown>>();
@@ -251,6 +437,35 @@ export class ActivityGenerationService implements ActivityGeneration {
       });
   }
 
+  /** Which sound providers the agent can use now, judged by the keys its Vault holds. */
+  async soundSetup(projectId: string, agentId: string): Promise<SoundSetup> {
+    await this.agents.requireExists(projectId, agentId);
+    const keys = (await this.agents.getVault(projectId, agentId)).entries.map((entry) => entry.key);
+    return { providers: soundSetup(keys, this.soundModels.agenthubModels) };
+  }
+
+  /**
+   * The voices and speech providers the picker offers. With an agent, which providers its
+   * Vault has keys for and whether it names a default ElevenLabs voice: key names only, a
+   * value is never read.
+   */
+  async speechSetup(projectId: string, agentId?: string): Promise<SpeechSetup> {
+    const base = {
+      provider: "Gemini",
+      model: SPEECH_MODEL,
+      voices: SPEECH_VOICES,
+      vaultKey: "GEMINI_API_KEY",
+    };
+    if (!agentId) return { ...base, catalogue: speechCatalogue(null) };
+    await this.agents.requireExists(projectId, agentId);
+    const keys = (await this.agents.getVault(projectId, agentId)).entries.map((entry) => entry.key);
+    return { ...base, catalogue: speechCatalogue(keys), providers: speechSetup(keys) };
+  }
+
+  run(projectId: string, activityId: string, runId: string): Promise<ActivityRun> {
+    return this.getRun(projectId, activityId, runId);
+  }
+
   async candidate(projectId: string, activityId: string, runId: string): Promise<string | null> {
     return (await this.getRun(projectId, activityId, runId)).candidate;
   }
@@ -263,10 +478,25 @@ export class ActivityGenerationService implements ActivityGeneration {
     module?: {
       wafRoot?: string;
       bookMode?: string;
-      audio?: { language: string; assetKey: string; voice: string };
+      audio?: {
+        language: string;
+        assetKey: string;
+        voice: string;
+        provider?: string;
+        model?: string;
+      };
+      sound?: { language: string; assetKey: string; provider: string; model?: string };
       image?: { language: string; assetKey: string };
       mediaText?: { language: string; assetKey: string };
       assist?: { message: string; focus: AssistFocus | null };
+      /** An assessment run, given the assessment in effect now (null when there is none). */
+      assessment?: { current: Record<string, unknown> | null };
+      /** An acceptance test run, as the acceptance service prepared it. */
+      test?: AcceptanceStage;
+      /** A phonemes run: sounds for a decodable book's words of one language. */
+      phonemes?: { language: string; words: unknown };
+      /** A scene composition for a video or animation asset (experimental). */
+      composition?: { language: string; assetKey: string; wafRoot?: string };
     },
     runtime?: { codingAgentId?: string },
   ): Promise<ActivityRun> {
@@ -275,6 +505,9 @@ export class ActivityGenerationService implements ActivityGeneration {
       this.projectWork.run(projectId, () =>
         this.locks.run(activityId, async () => {
           if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+          // Scene videos are refused while the experiment is off, before anything about the
+          // draft is checked, so an author always learns first that the experiment is off.
+          if (module?.composition && !this.videoExperiment()) throw experimentOff();
           const activity = await this.activities.getActivity(projectId, activityId);
           if (activity.draft.contentRevision !== expectedRevision)
             throw new HttpError(
@@ -283,9 +516,13 @@ export class ActivityGenerationService implements ActivityGeneration {
               "Save or reload the draft before generating.",
             );
           const assist = module?.assist;
+          const assessment = module?.assessment;
+          const test = module?.test;
+          const phonemes = module?.phonemes ? phonemesTarget(activity, module.phonemes) : undefined;
           // An author may ask for help writing the script, so an empty one is no reason
-          // to refuse a conversation.
-          if (!assist && !activity.draft.description.trim())
+          // to refuse a conversation; an assessment is written from the specification, and
+          // tests from its acceptance criteria.
+          if (!assist && !assessment && !test && !phonemes && !activity.draft.description.trim())
             throw new HttpError(
               400,
               "description_required",
@@ -295,15 +532,70 @@ export class ActivityGenerationService implements ActivityGeneration {
           let bookMode: BookMode | undefined;
           if (
             module &&
-            [module.audio, module.image, module.mediaText, module.assist].filter(Boolean).length > 1
+            [
+              module.audio,
+              module.sound,
+              module.image,
+              module.mediaText,
+              module.assist,
+              module.assessment,
+              module.test,
+              module.phonemes,
+              module.composition,
+            ].filter(Boolean).length > 1
           )
             throw new HttpError(400, "generation_invalid", "Choose one media generation type.");
           const audio = module?.audio ? audioTarget(activity, module.audio) : undefined;
+          const sound = module?.sound
+            ? soundTarget(activity, module.sound, this.soundModels.agenthubModels)
+            : undefined;
           const image = module?.image ? imageTarget(activity, module.image) : undefined;
           const mediaText = module?.mediaText
             ? mediaTextTarget(activity, module.mediaText)
             : undefined;
-          if (module && !audio && !image && !mediaText && !assist) {
+          const composition = module?.composition
+            ? await this.compositionStage(projectId, activityId, activity, module.composition)
+            : undefined;
+          if (assessment) {
+            if (!activity.draft.spec || activity.draft.status !== "valid")
+              throw new HttpError(
+                400,
+                "assessment_spec_required",
+                "Save a valid specification before generating the assessment.",
+              );
+            const runtime = activity.draft.spec.runtime as { usesAssessment?: unknown } | undefined;
+            if (runtime?.usesAssessment !== true)
+              throw new HttpError(
+                409,
+                "assessment_unused",
+                "The specification says this activity has no assessment.",
+              );
+            // Every ref of the product shares one assessment, and only the canonical ref owns it.
+            if (!this.activities.isCanonicalRef(activity))
+              throw new HttpError(
+                409,
+                "not_canonical",
+                "The assessment is shared by every ref of this product. Generate it on the canonical ref.",
+              );
+          }
+          if (test && (!activity.draft.spec || activity.draft.status !== "valid"))
+            throw new HttpError(
+              400,
+              "test_spec_required",
+              "Save a valid specification before running the acceptance tests.",
+            );
+          if (
+            module &&
+            !audio &&
+            !sound &&
+            !image &&
+            !mediaText &&
+            !assist &&
+            !assessment &&
+            !test &&
+            !phonemes &&
+            !composition
+          ) {
             if (!activity.draft.spec || activity.draft.status !== "valid")
               throw new HttpError(
                 400,
@@ -347,13 +639,13 @@ export class ActivityGenerationService implements ActivityGeneration {
                 "WAF checkout not found. Select a root containing framework, modules and media.",
               );
           }
-          if (codingAgentId && (audio || image))
-            // Both call Gemini through a helper that reads the key from a Penguin agent's
-            // Vault, which an external agent's process never sees.
+          if (codingAgentId && (audio || image || sound))
+            // Each calls its provider through a helper that reads the key from a Penguin
+            // agent's Vault, which an external agent's process never sees.
             throw new HttpError(
               400,
               "runtime_unsupported",
-              `${image ? "Image" : "Speech"} generation runs on a Penguin agent. Choose one instead of a coding agent.`,
+              `${image ? "Image" : sound ? "Sound" : "Speech"} generation runs on a Penguin agent. Choose one instead of a coding agent.`,
             );
           // A coding agent's run is still a Session, filed under a Penguin Agent: the one
           // named, or the Project's default Agent when only the coding agent was.
@@ -361,16 +653,70 @@ export class ActivityGenerationService implements ActivityGeneration {
           await this.agents.requireExists(projectId, owner);
           if (
             !codingAgentId &&
-            (audio || image) &&
+            image &&
             !(await this.agents.getVault(projectId, agentId)).entries.some(
               (entry) => entry.key === "GEMINI_API_KEY",
             )
           )
             throw new HttpError(
               400,
-              image ? "image_credential_missing" : "speech_credential_missing",
-              `Add GEMINI_API_KEY to the selected Agent's Vault before generating ${image ? "an image" : "speech"}.`,
+              "image_credential_missing",
+              "Add GEMINI_API_KEY to the selected Agent's Vault before generating an image.",
             );
+          if (audio) {
+            const keys = (await this.agents.getVault(projectId, agentId)).entries.map(
+              (entry) => entry.key,
+            );
+            // The provider the run names is honoured strictly: without its key the run is
+            // refused, naming the key, and never spoken by another provider instead.
+            const choice = speechProviderFor({ speechProvider: speechProviderOf(audio) }, keys);
+            if ("problem" in choice) {
+              const credential = "credential" in choice ? choice.credential : undefined;
+              // The key travels as data too, so the App names it in its own words.
+              throw new HttpError(
+                400,
+                "speech_credential_missing",
+                `Add ${credential ?? "the provider's key"} to the selected Agent's Vault before generating speech.`,
+                undefined,
+                credential ? { credential } : undefined,
+              );
+            }
+            if (audio.voice === ELEVENLABS_DEFAULT_VOICE && !keys.includes(ELEVENLABS_VOICE_KEY))
+              throw new HttpError(
+                400,
+                "speech_voice_missing",
+                `Add ${ELEVENLABS_VOICE_KEY} to the selected Agent's Vault, or type an ElevenLabs voice id, before generating speech.`,
+              );
+          }
+          if (sound) {
+            const keys = (await this.agents.getVault(projectId, agentId)).entries.map(
+              (entry) => entry.key,
+            );
+            // The model the author named, or, with none named, the first the Vault has a key
+            // for, as setup reports it. The target's model was chosen before the keys were
+            // known, so the choice made here replaces it.
+            const choice = soundProviderFor(
+              sound.sound.kind,
+              sound.sound.provider,
+              keys,
+              module?.sound?.model,
+              this.soundModels.agenthubModels,
+            );
+            if ("problem" in choice)
+              throw new HttpError(
+                400,
+                "sound_credential_missing",
+                `Add ${choice.credential ?? "the provider's key"} to the selected Agent's Vault before generating a sound.`,
+              );
+            sound.model = choice.model;
+            sound.sound.model = choice.model;
+            delete sound.sound.credential;
+            delete sound.sound.format;
+            if (choice.format) {
+              sound.sound.credential = choice.credential;
+              sound.sound.format = choice.format;
+            }
+          }
           if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
           if (this.running().some((run) => run.activityId === activityId))
             throw new HttpError(
@@ -379,21 +725,44 @@ export class ActivityGenerationService implements ActivityGeneration {
               "This activity already has a running generation.",
             );
           const run: ActivityRun = {
-            kind: assist
-              ? "assist"
-              : mediaText
-                ? "media-text"
-                : image
-                  ? "image"
-                  : audio
-                    ? "audio"
-                    : module
-                      ? "module"
-                      : "spec",
-            ...(audio ? { audio } : {}),
+            kind: composition
+              ? "composition"
+              : phonemes
+                ? "phonemes"
+                : test
+                  ? "test"
+                  : assist
+                    ? "assist"
+                    : assessment
+                      ? "assessment"
+                      : mediaText
+                        ? "media-text"
+                        : image
+                          ? "image"
+                          : audio || sound
+                            ? "audio"
+                            : module
+                              ? "module"
+                              : "spec",
+            ...(audio ? { audio } : sound ? { audio: sound } : {}),
             ...(image ? { image } : {}),
             ...(mediaText ? { mediaText } : {}),
+            ...(phonemes ? { phonemes } : {}),
+            ...(composition ? { composition: composition.target } : {}),
             ...(assist ? { assist: { focus: assist.focus } } : {}),
+            ...(test
+              ? {
+                  test: {
+                    criteria: test.input.criteria,
+                    specRevision: test.input.specRevision,
+                    harnessVersion: HARNESS_VERSION,
+                    reused: test.cachedTest !== null,
+                    ...(test.cachedTest !== null
+                      ? { cachedTestHash: testFileHash(test.cachedTest) }
+                      : {}),
+                  },
+                }
+              : {}),
             ...(bookMode ? { bookMode } : {}),
             runId: newId("run"),
             activityId,
@@ -464,6 +833,12 @@ export class ActivityGenerationService implements ActivityGeneration {
                 workspace,
                 expectedRevision,
               );
+              await this.activities.prepareVideoMedia(
+                projectId,
+                activityId,
+                workspace,
+                expectedRevision,
+              );
               await this.activities.prepareUploadedMedia(
                 projectId,
                 activityId,
@@ -487,20 +862,109 @@ export class ActivityGenerationService implements ActivityGeneration {
                 path.join(workspace, image ? "image-input.json" : "speech-input.json"),
                 image ?? audio,
               );
+              // ElevenLabs is called with Node's own fetch, so nothing is installed for it;
+              // images and Gemini speech go through agenthub.
               await atomicJson(path.join(workspace, "package.json"), {
                 private: true,
                 type: "module",
-                dependencies: { "@prismshadow/agenthub": "0.4.15" },
+                ...(audio && speechProviderOf(audio) === "elevenlabs"
+                  ? {}
+                  : { dependencies: { "@prismshadow/agenthub": AGENTHUB_VERSION } }),
               });
               await fs.writeFile(path.join(workspace, helperName), helper, {
                 flag: "wx",
               });
             }
+            if (sound) {
+              const helper = libraryPlugin("agent-development")?.skills.find(
+                (skill) => skill.name === "unified-llm-api",
+              )?.files?.["scripts/generate-sound.mjs"];
+              if (!helper)
+                throw new HttpError(
+                  500,
+                  "sound_helper_missing",
+                  "The installed media helper is missing. Rebuild the bundled plugins.",
+                );
+              await atomicJson(path.join(workspace, "sound-input.json"), sound.sound);
+              // ElevenLabs is called with Node's own fetch, so nothing is installed for it; a
+              // hub model needs agenthub, and only that branch loads it.
+              await atomicJson(path.join(workspace, "package.json"), {
+                private: true,
+                type: "module",
+                ...(sound.sound.provider === "agenthub"
+                  ? { dependencies: { "@prismshadow/agenthub": AGENTHUB_VERSION } }
+                  : {}),
+              });
+              await fs.writeFile(path.join(workspace, "generate-sound.mjs"), helper, {
+                flag: "wx",
+              });
+            }
             if (mediaText)
               await atomicJson(path.join(workspace, "media-text-input.json"), mediaText);
+            if (phonemes) await atomicJson(path.join(workspace, PHONEMES_INPUT_FILE), phonemes);
+            if (composition) await stageComposition(workspace, composition);
+            if (assessment) {
+              const skill = libraryPlugin("waf-authoring")?.skills.find(
+                (entry) => entry.name === ASSESSMENT_SKILL,
+              )?.content;
+              if (!skill)
+                throw new HttpError(
+                  500,
+                  "assessment_skill_missing",
+                  "The installed assessment skill is missing. Rebuild the bundled plugins.",
+                );
+              await atomicJson(path.join(workspace, "activity-spec.json"), activity.draft.spec);
+              if (assessment.current)
+                await atomicJson(
+                  path.join(workspace, "current-assessment.json"),
+                  assessment.current,
+                );
+              await fs.writeFile(path.join(workspace, ASSESSMENT_SKILL_FILE), skill, {
+                flag: "wx",
+              });
+            }
+            if (test) {
+              await atomicJson(path.join(workspace, "activity-spec.json"), activity.draft.spec);
+              await atomicJson(path.join(workspace, ACCEPTANCE_INPUT_FILE), test.input);
+              await atomicJson(path.join(workspace, "package.json"), {
+                private: true,
+                type: "module",
+                dependencies: { "playwright-core": test.playwrightVersion },
+              });
+              await fs.writeFile(
+                path.join(workspace, ACCEPTANCE_HARNESS_FILE),
+                activityHarnessSource,
+                {
+                  flag: "wx",
+                },
+              );
+              await fs.writeFile(
+                path.join(workspace, ACCEPTANCE_RUNNER_FILE),
+                runAcceptanceSource,
+                {
+                  flag: "wx",
+                },
+              );
+              // The same criteria as a run that already wrote their tests: reuse them as they are.
+              if (test.cachedTest !== null)
+                await fs.writeFile(path.join(workspace, ACCEPTANCE_TEST_FILE), test.cachedTest, {
+                  flag: "wx",
+                });
+            }
             // An assembly is handed the implementation features its ref selected.
             let features: ImplementationFeature[] = [];
-            if (module && !audio && !image && !mediaText && !assist) {
+            if (
+              module &&
+              !audio &&
+              !sound &&
+              !image &&
+              !mediaText &&
+              !assist &&
+              !assessment &&
+              !test &&
+              !phonemes &&
+              !composition
+            ) {
               const chosen = await this.activities.implementationFeatures(projectId, activityId);
               features = chosen.features.filter((feature) =>
                 chosen.selectedIds.includes(feature.id),
@@ -512,17 +976,29 @@ export class ActivityGenerationService implements ActivityGeneration {
               this.finish(run, "interrupted", "Server stopped before generation started.");
               return run;
             }
-            const prompt = assist
-              ? assistPrompt(assist.message, assist.focus)
-              : mediaText
-                ? mediaTextPrompt(mediaText)
-                : image
-                  ? imagePrompt
-                  : audio
-                    ? audioPrompt
-                    : module
-                      ? modulePrompt + featureClause(features)
-                      : generationPrompt;
+            const prompt = composition
+              ? compositionPrompt
+              : phonemes
+                ? phonemesPrompt
+                : test
+                  ? test.cachedTest !== null
+                    ? acceptanceReusePrompt
+                    : acceptancePrompt
+                  : assist
+                    ? assistPrompt(assist.message, assist.focus)
+                    : assessment
+                      ? assessmentPrompt
+                      : mediaText
+                        ? mediaTextPrompt(mediaText)
+                        : image
+                          ? imagePrompt
+                          : audio
+                            ? speechPrompt(audio)
+                            : sound
+                              ? soundPrompt
+                              : module
+                                ? modulePrompt + featureClause(features)
+                                : generationPrompt;
             const session = await this.sessionService.createSession({
               projectId,
               agentId: owner,
@@ -601,12 +1077,142 @@ export class ActivityGenerationService implements ActivityGeneration {
     );
   }
 
+  openDeterministic(
+    projectId: string,
+    activityId: string,
+    kind: DeterministicRunKind,
+    target?: { video?: VideoTarget },
+  ): Promise<ActivityRun> {
+    return this.track(
+      this.locks.run(activityId, async () => {
+        if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+        const activity = await this.activities.getActivity(projectId, activityId);
+        if (this.running().some((run) => run.activityId === activityId))
+          throw new HttpError(
+            409,
+            "generation_running",
+            "This activity already has a running generation.",
+          );
+        const run: ActivityRun = {
+          kind,
+          runId: newId("run"),
+          activityId,
+          projectId,
+          draftId: activity.draft.draftId,
+          inputRevision: activity.draft.contentRevision,
+          ...(kind === "video" && target?.video ? { video: target.video } : {}),
+          // Nobody's agent does this work; the server does.
+          agentId: "",
+          sessionId: null,
+          status: "running",
+          createdAt: new Date().toISOString(),
+          finishedAt: null,
+          error: null,
+          candidate: null,
+        };
+        const { candidate: _candidate, kind: _kind, ...metadata } = run;
+        this.db
+          .prepare(
+            "INSERT INTO activity_runs (run_id, project_id, activity_id, status, created_at, kind, record_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            run.runId,
+            projectId,
+            activityId,
+            run.status,
+            run.createdAt,
+            run.kind,
+            JSON.stringify({ ...metadata, hasCandidate: false }),
+          );
+        await fs.mkdir(this.workspace(run), { recursive: true });
+        return run;
+      }),
+    );
+  }
+
+  settleDeterministic(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    status: "succeeded" | "failed",
+    error: string | null,
+    candidate?: string,
+    videoProblem?: VideoProblemCode,
+  ): Promise<boolean> {
+    return this.track(
+      this.locks.run(activityId, async () => {
+        if (this.stopped) return false;
+        const run = await this.getRun(projectId, activityId, runId);
+        if (run.status !== "running" || run.sessionId) return false;
+        if (status === "succeeded" && candidate !== undefined) run.candidate = candidate;
+        if (status === "failed" && videoProblem && run.video)
+          run.video = { ...run.video, problem: videoProblem };
+        this.finish(run, status, error);
+        return true;
+      }),
+    );
+  }
+
+  async isRunning(projectId: string, activityId: string, runId: string): Promise<boolean> {
+    const row = this.db
+      .prepare(
+        "SELECT status FROM activity_runs WHERE project_id = ? AND activity_id = ? AND run_id = ?",
+      )
+      .get(projectId, activityId, runId) as { status: string } | undefined;
+    return row?.status === "running";
+  }
+
+  async latestRun(
+    projectId: string,
+    activityId: string,
+    kind: ActivityRun["kind"],
+    status: ActivityRun["status"],
+  ): Promise<ActivityRunSummary | null> {
+    await this.activities.getActivity(projectId, activityId);
+    const row = this.db
+      .prepare(
+        "SELECT kind, record_json FROM activity_runs WHERE project_id = ? AND activity_id = ? AND kind = ? AND status = ? ORDER BY created_at DESC, run_id DESC LIMIT 1",
+      )
+      .get(projectId, activityId, kind, status) as
+      { kind: ActivityRun["kind"]; record_json: string } | undefined;
+    if (!row) return null;
+    const metadata = JSON.parse(row.record_json) as ActivityRunSummary;
+    return { ...metadata, kind: row.kind };
+  }
+
+  async moduleBuilds(projectId: string, activityId: string): Promise<ActivityRunSummary[]> {
+    await this.activities.getActivity(projectId, activityId);
+    return (
+      this.db
+        .prepare(
+          "SELECT kind, record_json FROM activity_runs WHERE project_id = ? AND activity_id = ? AND kind = 'module' AND status = 'succeeded' ORDER BY created_at DESC, run_id DESC",
+        )
+        .all(projectId, activityId) as { kind: ActivityRun["kind"]; record_json: string }[]
+    ).map((row) => {
+      const metadata = JSON.parse(row.record_json) as ActivityRunSummary;
+      return { ...metadata, kind: row.kind };
+    });
+  }
+
   async audioContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array> {
-    const run = await this.getRun(projectId, activityId, runId);
+    const run = await this.getRun(projectId, activityId, runId).catch((error: unknown) => {
+      if (error instanceof HttpError && error.code === "run_not_found") return null;
+      throw error;
+    });
+    if (!run) {
+      // A ref made from its template keeps the template's accepted clips, but not the runs
+      // that made them; a clip this draft binds is still this ref's to play.
+      const activity = await this.activities.getActivity(projectId, activityId);
+      const bound = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
+        .flat()
+        .find((asset) => asset.generatedAudio?.runId === runId)?.generatedAudio;
+      if (!bound) throw new HttpError(404, "run_not_found", "Speech candidate not available.");
+      return this.activities.readAudio(projectId, activityId, runId, bound.sha256, bound.format);
+    }
     if (run.kind !== "audio" || !run.candidate || !["succeeded", "conflict"].includes(run.status))
       throw new HttpError(404, "run_not_found", "Speech candidate not available.");
     const result = JSON.parse(run.candidate) as AudioResult;
-    return this.activities.readAudio(projectId, activityId, runId, result.sha256);
+    return this.activities.readAudio(projectId, activityId, runId, result.sha256, result.format);
   }
   async imageCandidateContent(
     projectId: string,
@@ -646,6 +1252,61 @@ export class ActivityGenerationService implements ActivityGeneration {
             projectId,
             activityId,
             run.image,
+            result,
+            expectedRevision,
+          );
+        }),
+      ),
+    );
+  }
+  async videoContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array> {
+    const run = await this.getRun(projectId, activityId, runId).catch((error: unknown) => {
+      if (error instanceof HttpError && error.code === "run_not_found") return null;
+      throw error;
+    });
+    if (!run) {
+      // A ref made from its template keeps the template's accepted recordings, but not the
+      // runs that made them; a recording this draft binds is still this ref's to play.
+      const activity = await this.activities.getActivity(projectId, activityId);
+      const bound = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
+        .flat()
+        .find((asset) => asset.generatedVideo?.runId === runId)?.generatedVideo;
+      if (!bound) throw new HttpError(404, "run_not_found", "Video candidate not available.");
+      return this.activities.readVideo(projectId, activityId, runId, bound.sha256);
+    }
+    if (run.kind !== "video" || !run.candidate || !["succeeded", "conflict"].includes(run.status))
+      throw new HttpError(404, "run_not_found", "Video candidate not available.");
+    const result = JSON.parse(run.candidate) as VideoResult;
+    if (result.runId !== runId)
+      throw new HttpError(409, "video_changed", "Video candidate metadata changed.");
+    return this.activities.readVideo(projectId, activityId, runId, result.sha256);
+  }
+  acceptVideo(projectId: string, activityId: string, runId: string, expectedRevision: string) {
+    return this.track(
+      this.projectWork.run(projectId, () =>
+        this.locks.run(activityId, async () => {
+          if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+          if (!this.videoExperiment()) throw experimentOff();
+          const run = await this.getRun(projectId, activityId, runId);
+          if (run.kind !== "video" || run.status !== "succeeded" || !run.video || !run.candidate)
+            throw new HttpError(
+              409,
+              "video_changed",
+              "Only a successful video recording can be kept.",
+            );
+          if (run.inputRevision !== expectedRevision)
+            throw new HttpError(
+              409,
+              "draft_conflict",
+              "The draft changed since the video was recorded. Record it again.",
+            );
+          const result = JSON.parse(run.candidate) as VideoResult;
+          if (result.runId !== runId)
+            throw new HttpError(409, "video_changed", "Video candidate metadata changed.");
+          return this.activities.applyVideo(
+            projectId,
+            activityId,
+            run.video,
             result,
             expectedRevision,
           );
@@ -698,6 +1359,73 @@ export class ActivityGenerationService implements ActivityGeneration {
     );
   }
 
+  /**
+   * Keep a generated assessment as the product's assessment edit, the way an author's own
+   * save keeps one: only a successful run, and only on the draft it was generated from.
+   */
+  acceptAssessment(projectId: string, activityId: string, runId: string, expectedRevision: string) {
+    return this.track(
+      this.projectWork.run(projectId, () =>
+        this.locks.run(activityId, async () => {
+          if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+          const run = await this.getRun(projectId, activityId, runId);
+          if (run.kind !== "assessment" || run.status !== "succeeded" || !run.candidate)
+            throw new HttpError(
+              409,
+              "assessment_changed",
+              "Only a successful assessment candidate can be accepted.",
+            );
+          if (run.inputRevision !== expectedRevision)
+            throw new HttpError(
+              409,
+              "draft_conflict",
+              "The draft changed since the assessment was generated. Generate a new one.",
+            );
+          return this.activities.setModuleDocument(
+            projectId,
+            activityId,
+            "assessment",
+            JSON.parse(run.candidate) as unknown,
+            expectedRevision,
+          );
+        }),
+      ),
+    );
+  }
+
+  /**
+   * Give the book words still without sounds the sounds a phonemes run proposed: only a
+   * successful run, and only on the draft it was run against.
+   */
+  acceptPhonemes(projectId: string, activityId: string, runId: string, expectedRevision: string) {
+    return this.track(
+      this.projectWork.run(projectId, () =>
+        this.locks.run(activityId, async () => {
+          if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+          const run = await this.getRun(projectId, activityId, runId);
+          if (run.kind !== "phonemes" || run.status !== "succeeded" || !run.candidate)
+            throw new HttpError(
+              409,
+              "phonemes_changed",
+              "Only a successful phonemes candidate can be accepted.",
+            );
+          if (run.inputRevision !== expectedRevision)
+            throw new HttpError(
+              409,
+              "draft_conflict",
+              "The draft changed since the sounds were proposed. Ask again.",
+            );
+          return this.activities.applyPhonemes(
+            projectId,
+            activityId,
+            JSON.parse(run.candidate) as PhonemesCandidate,
+            expectedRevision,
+          );
+        }),
+      ),
+    );
+  }
+
   acceptAudio(projectId: string, activityId: string, runId: string, expectedRevision: string) {
     return this.track(
       this.projectWork.run(projectId, () =>
@@ -710,12 +1438,28 @@ export class ActivityGenerationService implements ActivityGeneration {
               "audio_changed",
               "Only a successful speech candidate can be accepted.",
             );
-          if (run.inputRevision !== expectedRevision)
+          if (run.inputRevision !== expectedRevision) {
+            // A sound whose prompt was edited is not this take, whatever else changed.
+            if (run.audio.sound) {
+              const current = await this.activities.getActivity(projectId, activityId);
+              const asset = current.draft.mediaPlan?.manifest.assets[run.audio.language]?.find(
+                (entry) => entry.key === run.audio!.assetKey,
+              );
+              if (!asset || soundPromptOf(asset.script) !== run.audio.sound.prompt)
+                throw new HttpError(
+                  409,
+                  "audio_changed",
+                  "The sound's prompt changed. Generate a new candidate.",
+                );
+            }
             throw new HttpError(
               409,
               "draft_conflict",
-              "The draft changed since speech generation. Generate a new candidate.",
+              run.audio.sound
+                ? "The draft changed since the sound was generated. Generate a new candidate."
+                : "The draft changed since speech generation. Generate a new candidate.",
             );
+          }
           return this.activities.applyAudio(
             projectId,
             activityId,
@@ -726,6 +1470,125 @@ export class ActivityGenerationService implements ActivityGeneration {
         }),
       ),
     );
+  }
+
+  /** Whether an admin turned the scene-video experiment on. */
+  videoExperiment(): boolean {
+    return readVideoExperiment(this.settings.get(VIDEO_EXPERIMENT_SETTING));
+  }
+
+  /**
+   * Everything a composition run stages, read before the run is recorded so a refusal leaves
+   * no run behind: the scene, and the bytes of each of its bound images. 403 while the
+   * experiment is off; 409 `composition_no_images` for a scene with no image to compose from.
+   */
+  private async compositionStage(
+    projectId: string,
+    activityId: string,
+    activity: ActivityDetail,
+    input: { language: string; assetKey: string; wafRoot?: string },
+  ): Promise<CompositionStage> {
+    if (!this.videoExperiment()) throw experimentOff();
+    const scene = compositionScene(activity, input);
+    if (!scene.images.length)
+      throw new HttpError(
+        409,
+        "composition_no_images",
+        "Bind an image to this scene before composing its video.",
+      );
+    const images: CompositionTarget["images"] = [];
+    const bytes: Uint8Array[] = [];
+    for (const image of scene.images) {
+      // An image that cannot be read now is refused, never left out of the scene quietly.
+      const content = await this.activities.imageContent(projectId, activityId, {
+        language: input.language,
+        assetKey: image.key,
+        expectedRevision: activity.draft.contentRevision,
+        ...(input.wafRoot ? { wafRoot: input.wafRoot } : {}),
+      });
+      // Staged images are served back only up to this size, so a larger one is refused now
+      // rather than missing from the composition later.
+      if (content.bytes.byteLength > COMPOSITION_IMAGE_MAX_BYTES)
+        throw new HttpError(
+          409,
+          "composition_image_too_large",
+          "A scene image is larger than 8 MB. Bind a smaller image before composing.",
+        );
+      images.push({
+        key: image.key,
+        file: `${COMPOSITION_IMAGE_DIR}/${image.key}.${imageExtension(content.mimeType)}`,
+        sha256: sha256(content.bytes),
+      });
+      bytes.push(content.bytes);
+    }
+    return {
+      scene,
+      target: {
+        language: input.language,
+        assetKey: input.assetKey,
+        sceneId: scene.sceneId,
+        width: scene.width,
+        height: scene.height,
+        images,
+      },
+      bytes,
+    };
+  }
+
+  /**
+   * One file of a kept composition, for the preview origin to serve: the page, one of its
+   * staged images, or the vendored scripts. The page and images are served only while their
+   * bytes are the ones checked and staged; anything else is 404.
+   */
+  async compositionFile(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    rawPath: string,
+  ): Promise<CompositionFileContent> {
+    const missing = () =>
+      new HttpError(404, "composition_not_found", "Composition file not found.");
+    const run = await this.getRun(projectId, activityId, runId);
+    if (
+      run.kind !== "composition" ||
+      !run.composition ||
+      !run.candidate ||
+      !["succeeded", "conflict"].includes(run.status)
+    )
+      throw missing();
+    let file: string;
+    try {
+      file = decodeURIComponent(rawPath);
+    } catch {
+      throw missing();
+    }
+    if (file === COMPOSITION_GSAP_FILE)
+      return { contentType: "text/javascript; charset=utf-8", body: await gsapSource() };
+    if (file === COMPOSITION_BRIDGE_FILE)
+      return {
+        contentType: "text/javascript; charset=utf-8",
+        body: Buffer.from(COMPOSITION_BRIDGE, "utf8"),
+      };
+    const expected =
+      file === COMPOSITION_FILE
+        ? (JSON.parse(run.candidate) as CompositionCandidate).sha256
+        : run.composition.images.find((image) => image.file === file)?.sha256;
+    if (!expected) throw missing();
+    let bytes: Buffer;
+    try {
+      bytes = await readArtifactBytes(
+        path.join(this.workspace(run), ...file.split("/")),
+        file === COMPOSITION_FILE ? COMPOSITION_MAX_BYTES : COMPOSITION_IMAGE_MAX_BYTES,
+      );
+    } catch {
+      throw missing();
+    }
+    // Changed since it was checked or staged: the Session may still be writing here.
+    if (sha256(bytes) !== expected) throw missing();
+    return {
+      contentType: file === COMPOSITION_FILE ? "text/html; charset=utf-8" : mediaContentType(file),
+      body: bytes,
+    };
   }
 
   /** Deterministic reconciliation entry used by the timer and lifecycle tests. */
@@ -811,11 +1674,33 @@ export class ActivityGenerationService implements ActivityGeneration {
                 return;
               }
               if (run.kind === "audio") {
+                const sound = !!run.audio?.sound;
                 const observer = this.observers.get(run.runId);
                 if (!observer?.completed)
-                  throw new Error(observer?.error ?? "Speech Session did not complete.");
+                  throw new Error(
+                    observer?.error ?? `${sound ? "Sound" : "Speech"} Session did not complete.`,
+                  );
+                if (!run.audio) throw new Error("Audio target is missing.");
+                const soundFormat = run.audio.sound
+                  ? await soundOutputFormat(this.workspace(run), run.audio.sound.format ?? "mp3")
+                  : undefined;
+                const file = soundFormat
+                  ? SOUND_OUTPUT_FILES[soundFormat]
+                  : await speechOutputFile(this.workspace(run), run.audio);
+                const format =
+                  soundFormat ?? (speechProviderOf(run.audio) === "elevenlabs" ? "mp3" : undefined);
+                // Checked before the clip is kept, so a mismatch leaves nothing stored. Only a
+                // provider that returns timings is read; a timings file on any other run is
+                // not its provider's and is ignored.
+                const speech = run.audio.sound
+                  ? undefined
+                  : speechProviderFor({ speechProvider: speechProviderOf(run.audio) }, null);
+                const timings =
+                  speech && "provider" in speech && speech.timings
+                    ? await speechTimings(this.workspace(run), run.audio.script)
+                    : undefined;
                 const bytes = await readArtifactBytes(
-                  path.join(this.workspace(run), "speech.wav"),
+                  path.join(this.workspace(run), file),
                   AUDIO_MAX_BYTES,
                 );
                 const result = await this.activities.storeAudio(
@@ -823,8 +1708,11 @@ export class ActivityGenerationService implements ActivityGeneration {
                   run.activityId,
                   run.runId,
                   bytes,
+                  format,
                 );
-                run.candidate = JSON.stringify(result);
+                run.candidate = JSON.stringify(
+                  timings?.length ? { ...result, wordTimings: timings } : result,
+                );
                 this.save(run);
                 await this.projectWork.run(run.projectId, async () => {
                   const current = await this.activities.getActivity(run.projectId, run.activityId);
@@ -832,7 +1720,9 @@ export class ActivityGenerationService implements ActivityGeneration {
                     throw new HttpError(
                       409,
                       "draft_conflict",
-                      "The draft changed during speech generation.",
+                      sound
+                        ? "The draft changed while the sound was being generated."
+                        : "The draft changed during speech generation.",
                     );
                   this.finish(run, "succeeded");
                 });
@@ -864,6 +1754,120 @@ export class ActivityGenerationService implements ActivityGeneration {
                       409,
                       "draft_conflict",
                       "The draft changed during media text generation.",
+                    );
+                  this.finish(run, "succeeded");
+                });
+                return;
+              }
+              if (run.kind === "phonemes") {
+                const observer = this.observers.get(run.runId);
+                if (!observer?.completed)
+                  throw new Error(observer?.error ?? "Phonemes Session did not complete.");
+                if (!run.phonemes) throw new Error("The phonemes run has no words recorded.");
+                const candidate = parsePhonemesCandidate(
+                  await readCandidate(path.join(this.workspace(run), PHONEMES_FILE), 256 * 1024),
+                  run.phonemes,
+                );
+                run.candidate = JSON.stringify(candidate);
+                this.save(run);
+                if (this.stopped) return;
+                await this.projectWork.run(run.projectId, async () => {
+                  const current = await this.activities.getActivity(run.projectId, run.activityId);
+                  if (current.draft.contentRevision !== run.inputRevision)
+                    throw new HttpError(
+                      409,
+                      "draft_conflict",
+                      "The draft changed while the sounds were being proposed.",
+                    );
+                  this.finish(run, "succeeded");
+                });
+                return;
+              }
+              if (run.kind === "composition") {
+                const observer = this.observers.get(run.runId);
+                if (!observer?.completed)
+                  throw new Error(observer?.error ?? "Composition Session did not complete.");
+                if (!run.composition) throw new Error("The composition run has no scene recorded.");
+                const candidate = await collectComposition(this.workspace(run), run.composition);
+                run.candidate = JSON.stringify(candidate);
+                this.save(run);
+                if (this.stopped) return;
+                await this.projectWork.run(run.projectId, async () => {
+                  const current = await this.activities.getActivity(run.projectId, run.activityId);
+                  if (current.draft.contentRevision !== run.inputRevision)
+                    throw new HttpError(
+                      409,
+                      "draft_conflict",
+                      "The draft changed while the scene was being composed.",
+                    );
+                  this.finish(run, "succeeded");
+                });
+                return;
+              }
+              if (run.kind === "test") {
+                const observer = this.observers.get(run.runId);
+                if (!observer?.completed)
+                  throw new Error(observer?.error ?? "Test Session did not complete.");
+                if (!run.test) throw new Error("The test run has no criteria recorded.");
+                const workspace = this.workspace(run);
+                const reported = parseAcceptanceResults(
+                  await readCandidate(
+                    path.join(workspace, ACCEPTANCE_RESULTS_FILE),
+                    RESULTS_MAX_BYTES,
+                  ),
+                );
+                const report = acceptanceReport(run.test.criteria, reported, {
+                  checkedAt: new Date().toISOString(),
+                  specRevision: run.test.specRevision,
+                  reused: await testFileUnchanged(workspace, run.test.cachedTestHash),
+                });
+                const reports = path.join(workspace, ACCEPTANCE_REPORT_DIR);
+                await fs.mkdir(reports, { recursive: true });
+                await atomicJson(path.join(reports, ACCEPTANCE_REPORT_FILE), report);
+                if (this.stopped) return;
+                this.finish(run, "succeeded");
+                return;
+              }
+              if (run.kind === "assessment") {
+                const observer = this.observers.get(run.runId);
+                if (!observer?.completed)
+                  throw new Error(observer?.error ?? "Assessment Session did not complete.");
+                const workspace = this.workspace(run);
+                const parse = (text: string, name: string): unknown => {
+                  try {
+                    return JSON.parse(text);
+                  } catch {
+                    throw new Error(`${name} is not valid JSON.`);
+                  }
+                };
+                const hints = parseHints(
+                  parse(
+                    await readCandidate(path.join(workspace, ASSESSMENT_HINTS_FILE), 256 * 1024),
+                    ASSESSMENT_HINTS_FILE,
+                  ),
+                );
+                const input = await this.activities.getActivity(run.projectId, run.activityId);
+                const data = normalizeAssessment(
+                  parse(
+                    await readCandidate(path.join(workspace, ASSESSMENT_FILE)),
+                    ASSESSMENT_FILE,
+                  ),
+                  input.productCode,
+                  this.activities.productOf(input)?.canonicalRefNum ?? input.refNum,
+                );
+                validateAssessment(data);
+                const missing = coverageProblem(writtenItems(data), hints);
+                if (missing) throw new Error(missing);
+                run.candidate = JSON.stringify(data);
+                this.save(run);
+                if (this.stopped) return;
+                await this.projectWork.run(run.projectId, async () => {
+                  const current = await this.activities.getActivity(run.projectId, run.activityId);
+                  if (current.draft.contentRevision !== run.inputRevision)
+                    throw new HttpError(
+                      409,
+                      "draft_conflict",
+                      "The draft changed during assessment generation.",
                     );
                   this.finish(run, "succeeded");
                 });
@@ -932,18 +1936,31 @@ export class ActivityGenerationService implements ActivityGeneration {
             } catch (error) {
               if (this.stopped && run.candidate === null) return;
               const conflict = error instanceof HttpError && error.code === "draft_conflict";
+              // The App words a failed check by its code; the message stays for the trace.
+              if (error instanceof CompositionProblem && run.composition)
+                run.composition = { ...run.composition, problem: error.code };
               const message =
                 (error as NodeJS.ErrnoException).code === "ENOENT"
                   ? `The session ended without ${
                       run.kind === "image"
                         ? "image.png"
                         : run.kind === "audio"
-                          ? "speech.wav"
+                          ? run.audio?.sound
+                            ? SOUND_OUTPUT_FILES[run.audio.sound.format ?? "mp3"]
+                            : SPEECH_OUTPUT_FILES[speechProviderOf(run.audio ?? {})]
                           : run.kind === "module"
                             ? "module-result.json or a required artifact"
                             : run.kind === "media-text"
                               ? "media-text.json"
-                              : "activity-spec.json"
+                              : run.kind === "assessment"
+                                ? `${ASSESSMENT_FILE} or ${ASSESSMENT_HINTS_FILE}`
+                                : run.kind === "test"
+                                  ? ACCEPTANCE_RESULTS_FILE
+                                  : run.kind === "phonemes"
+                                    ? PHONEMES_FILE
+                                    : run.kind === "composition"
+                                      ? `${COMPOSITION_FILE} or ${COMPOSITION_FRAMES_FILE}`
+                                      : "activity-spec.json"
                     }.`
                   : error instanceof Error
                     ? error.message
@@ -965,6 +1982,24 @@ export async function readCandidate(file: string, maxBytes = MAX_CANDIDATE_BYTES
   return (await readArtifactBytes(file, maxBytes)).toString("utf8");
 }
 
+/** The assessment skill a run follows, staged into its workspace under a file name of its own. */
+const ASSESSMENT_SKILL = "waf-assessment-patterns";
+const ASSESSMENT_SKILL_FILE = "assessment-skill.md";
+const ASSESSMENT_FILE = "assessment.json";
+const ASSESSMENT_HINTS_FILE = "assessment-hints.json";
+
+/**
+ * One run writes both the questions the screens imply and the assessment. The collector
+ * checks the second covers the first.
+ */
+export const assessmentPrompt = `Write the WAF assessment for this activity. Work in this workspace.
+Read and follow the WAF assessment skill in ${ASSESSMENT_SKILL_FILE}. The activity is described by description.md, input.json and activity-spec.json. If current-assessment.json exists, it is the assessment in use now: update it to match the specification rather than replacing it, and keep what still fits.
+Write two files, each a JSON object without Markdown fences:
+1. ${ASSESSMENT_HINTS_FILE}: {"items": [{"sceneId": "scene id", "source": "loading|speaker|selection", "question": "what the learner answers", "choices": ["exact on-screen choice", "..."], "correct": "the correct choice text"}]}. List every learner answer or selection screen, in the order the screens appear, including intermediate loading screens, speaker or choice screens and final answer screens. Skip screens marked instructional-only and screens that never ask the learner to choose. Use the exact on-screen text for each choice and for correct; leave correct out when the screen does not settle it. If description.md contains <items><item>...</item></items> blocks, each non-empty <item> block is one question, in order.
+2. ${ASSESSMENT_FILE}: {"items": [...]} with one item per entry of ${ASSESSMENT_HINTS_FILE}, in the same order, each keeping that entry's choices and correct answer. An item is {"interactionKey": "SIMPLE_CHOICE" or "MULTIPLE_RESPONSE_CHOICE", "configuration": {"shuffle": boolean, "question": {"text": "..."}, "simpleChoice" or "multipleResponseChoice": [{"id": "string id", "isCorrect": boolean, "value": {"text": "..."}}]}}. Use only those two interactions. Every item needs non-empty question text and at least two choices with unique non-empty string ids and non-empty text; a SIMPLE_CHOICE item has exactly one correct choice, a MULTIPLE_RESPONSE_CHOICE item at least one. Do not copy <items> or <item> tags into the assessment. Do not include qa_, prod_ or dev_ keys. Titles, scores and the assessment's configuration are derived; you may leave them out.
+Do not edit the input files. Do not delegate this task.
+Use Harness's normal approval flow for tool actions. Finish only after writing both files as valid JSON.`;
+
 const generationPrompt = `Generate a WAF HTML activity specification from description.md and input.json.
 Work in this workspace. Write activity-spec.json as a JSON object, without Markdown fences.
 Do not edit the input files or any activity collection. Do not delegate this task.
@@ -980,3 +2015,78 @@ The specification contract:
 If input.json declares activityType book, scene order is page order. Give every page an explicit role: cover, title, or story. Cover is optional and first; title is optional and follows cover or is first; all remaining pages are story pages. Use unique scene IDs, exactly one image per page with a meaningful description, and no scene videos or animations. Each audio track must have a globally unique non-empty key. The first audio cue on a story page is its visible narration text and must contain words; later cues are hidden follow-up prompts. Cover/title lettering is baked into the image; story images contain no story text. Preserve authored narration order and wording.
 Describe the actual learning flow, interactions, feedback and media needs. Preserve useful existing draft details in input.json.
 Use Harness's normal approval flow for tool actions. Finish only after writing valid JSON.`;
+
+/** 403 while an admin has not turned the scene-video experiment on. */
+function experimentOff(): HttpError {
+  return new HttpError(
+    403,
+    "experiment_off",
+    "Scene videos are an experiment an admin has not turned on.",
+  );
+}
+
+/** What a composition run stages, read and checked before the run is recorded. */
+interface CompositionStage {
+  scene: CompositionScene;
+  target: CompositionTarget;
+  bytes: Uint8Array[];
+}
+
+/** Stages a composition run's input, template, scripts and images into its workspace. */
+async function stageComposition(workspace: string, stage: CompositionStage): Promise<void> {
+  const { scene, target } = stage;
+  await atomicJson(path.join(workspace, COMPOSITION_INPUT_FILE), compositionInput(scene, target));
+  await fs.writeFile(
+    path.join(workspace, COMPOSITION_TEMPLATE_FILE),
+    compositionTemplate(target.width, target.height),
+    { flag: "wx" },
+  );
+  // Copies for the agent to read; the preview serves the scripts from Penguin, not these.
+  await fs.writeFile(path.join(workspace, COMPOSITION_GSAP_FILE), await gsapSource(), {
+    flag: "wx",
+  });
+  await fs.writeFile(path.join(workspace, COMPOSITION_BRIDGE_FILE), COMPOSITION_BRIDGE, {
+    flag: "wx",
+  });
+  await fs.mkdir(path.join(workspace, COMPOSITION_IMAGE_DIR), { recursive: true });
+  for (const [index, image] of target.images.entries())
+    await fs.writeFile(path.join(workspace, ...image.file.split("/")), stage.bytes[index]!, {
+      flag: "wx",
+    });
+}
+
+/**
+ * What a composition run wrote, checked: the page (512 KB at most, only staged files, no
+ * network, no randomness, one timeline) and its frames. Throws a `CompositionProblem` naming
+ * the first thing wrong; a missing page stays ENOENT, which names both files.
+ */
+async function collectComposition(
+  workspace: string,
+  target: CompositionTarget,
+): Promise<CompositionCandidate> {
+  let html: Buffer;
+  try {
+    html = await readArtifactBytes(path.join(workspace, COMPOSITION_FILE), COMPOSITION_MAX_BYTES);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw error;
+    throw new CompositionProblem("composition_size", `${COMPOSITION_FILE} is larger than 512 KB.`);
+  }
+  let frames: string;
+  try {
+    frames = await readCandidate(
+      path.join(workspace, COMPOSITION_FRAMES_FILE),
+      COMPOSITION_FRAMES_MAX_BYTES,
+    );
+  } catch (error) {
+    throw new CompositionProblem(
+      "composition_frames",
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+        ? `The session ended without ${COMPOSITION_FRAMES_FILE}.`
+        : `${COMPOSITION_FRAMES_FILE} is larger than 64 KB.`,
+    );
+  }
+  const problem = compositionProblem(html.toString("utf8"), stagedFiles(target));
+  if (problem) throw problem;
+  const parsed = parseFrames(frames);
+  return { ...parsed, sha256: sha256(html), bytes: html.length };
+}

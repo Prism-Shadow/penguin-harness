@@ -7,6 +7,7 @@ import {
 } from "./media.js";
 import { interpretBookScenes, validateBookSpec, type BookScene } from "./book.js";
 import { bookActivityScenes, bookStateMachineDefinition, INTRO_VIDEO_KEY } from "./book-machine.js";
+import { compiledWords } from "./pronunciation.js";
 
 const DEFAULT_LANGUAGE = "en-US";
 const READING_DELAY = {
@@ -60,12 +61,12 @@ export function compileBookConfiguration(
   });
   product.stateMachine = bookStateMachineDefinition(String(spec.id));
   const languages = new Set([DEFAULT_LANGUAGE, ...Object.keys(manifest.assets)]);
-  const defaultScenes = compileScenes(scenes, index, DEFAULT_LANGUAGE);
+  const defaultScenes = compileScenes(scenes, index, DEFAULT_LANGUAGE, mode);
   const defaultMedia = { ...asObject(product[DEFAULT_LANGUAGE]) };
   delete defaultMedia.scenes;
   for (const language of languages) {
     const complete = language === DEFAULT_LANGUAGE || hasCompleteNarration(scenes, index, language);
-    const compiled = complete ? compileScenes(scenes, index, language) : clone(defaultScenes);
+    const compiled = complete ? compileScenes(scenes, index, language, mode) : clone(defaultScenes);
     product[language] = {
       ...defaultMedia,
       ...(complete ? asObject(product[language]) : {}),
@@ -81,6 +82,10 @@ class ManifestIndex {
 
   constructor(manifest: AssetManifest) {
     this.byLanguage = manifest.assets;
+  }
+
+  group(language: string): MediaAsset[] {
+    return this.byLanguage[language] ?? [];
   }
 
   asset(
@@ -100,7 +105,17 @@ class ManifestIndex {
   }
 }
 
-function compileScenes(scenes: BookScene[], index: ManifestIndex, language: string) {
+/**
+ * The scenes as the reader receives them. In a decodable book each story page's narration
+ * also lists its words with their pronunciations (pronunciation.ts `compiledWords`), from the
+ * language's own word assets; a read-along book lists none.
+ */
+function compileScenes(
+  scenes: BookScene[],
+  index: ManifestIndex,
+  language: string,
+  mode: BookMode,
+) {
   return scenes.map((scene) => {
     const imageAsset = index.asset("image", scene.image.key, language, true);
     const audioCues = scene.audioCues.map((cue) => {
@@ -123,7 +138,16 @@ function compileScenes(scenes: BookScene[], index: ManifestIndex, language: stri
           alt: textFromAsset(imageAsset?.description, scene.image.description),
         },
         audioCues,
-        narration: narrationCue ? { ...narrationCue, timings: [], words: [] } : null,
+        narration: narrationCue
+          ? {
+              ...narrationCue,
+              timings: [],
+              words:
+                mode === "decodable" && scene.role === "story"
+                  ? compiledWords(narrationCue.script, index.group(language))
+                  : [],
+            }
+          : null,
       },
     };
   });

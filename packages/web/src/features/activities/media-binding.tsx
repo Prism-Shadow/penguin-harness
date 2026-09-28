@@ -31,6 +31,7 @@ export function MediaBinding({
   onChange,
   onUpload,
   onUploaded,
+  onCopied,
 }: {
   asset: MediaAsset;
   /** Every asset in the same language group, the pool a reuse is drawn from. */
@@ -46,13 +47,15 @@ export function MediaBinding({
   onUpload: (file: File) => Promise<UploadedMedia>;
   /** Takes an upload of the right kind instead of binding it at once, to compare it first. */
   onUploaded?: (stored: UploadedMedia) => void;
+  /** A file was copied in from another activity, so this activity's uploads changed. */
+  onCopied?: () => void;
 }) {
   const [reuse, setReuse] = useState("");
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const kind = uploadKindFor(asset.type);
-  const generated = !!asset.generatedAudio || !!asset.generatedImage;
+  const generated = !!asset.generatedAudio || !!asset.generatedImage || !!asset.generatedVideo;
   const locked = !editable || disabled || generated;
   const problem = asset.path ? mediaPathProblem(asset.path) : null;
   const scenes = sharedScenes(asset);
@@ -172,9 +175,10 @@ export function MediaBinding({
                 endpoint={endpoint}
                 loading={mediaLoading}
                 onClose={() => setLibraryOpen(false)}
-                onPick={(path) => {
+                onPick={(path, copied) => {
                   onChange(path);
                   setLibraryOpen(false);
+                  if (copied) onCopied?.();
                 }}
               />
             )}

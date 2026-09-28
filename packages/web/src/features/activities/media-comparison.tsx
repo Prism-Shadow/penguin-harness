@@ -13,12 +13,17 @@ export function MediaComparison({
   disabled,
   onUse,
   onKeep,
+  useLabel,
+  keepLabel,
 }: {
   current: ReactNode;
   next: ReactNode;
   disabled: boolean;
   onUse: () => void;
   onKeep: () => void;
+  /** The two actions' words, where a kind of media names them itself. */
+  useLabel?: string;
+  keepLabel?: string;
 }) {
   const words = S.activities.mediaComparison;
   return (
@@ -43,10 +48,10 @@ export function MediaComparison({
       </div>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="primary" disabled={disabled} onClick={onUse}>
-          {words.use}
+          {useLabel ?? words.use}
         </Button>
         <Button size="sm" variant="ghost" onClick={onKeep}>
-          {words.keep}
+          {keepLabel ?? words.keep}
         </Button>
       </div>
     </section>

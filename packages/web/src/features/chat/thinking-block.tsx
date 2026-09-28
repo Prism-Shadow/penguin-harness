@@ -47,3 +47,20 @@ export function ThinkingBlock({ item }: { item: ThinkingItem }) {
     </DisclosureRow>
   );
 }
+
+/**
+ * What a stream with its reasoning hidden shows while the agent is still thinking: one muted
+ * line in the row's own metrics, so the run reads as working rather than stalled. The words
+ * carry the state; the spinner is decorative beside them.
+ */
+export function ThinkingHiddenLine() {
+  return (
+    <div
+      data-thinking-hidden
+      className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400"
+    >
+      <StatusIcon state="running" />
+      <span>{S.chat.thinkingHidden}</span>
+    </div>
+  );
+}

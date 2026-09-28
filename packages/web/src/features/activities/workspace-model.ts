@@ -17,7 +17,9 @@ export type WorkspaceSection =
   | "speech"
   | "library"
   | "module"
-  | "history";
+  | "history"
+  | "deploy"
+  | "newRef";
 
 export interface WorkspaceSectionEntry {
   key: WorkspaceSection;
@@ -32,6 +34,11 @@ export interface WorkspaceState {
   hasPlan: boolean;
   /** An assembled module exists, so a preview can be shown. */
   hasModule: boolean;
+  /**
+   * The saved specification says the activity asks an assessment, which can be generated
+   * before any module is assembled.
+   */
+  usesAssessment?: boolean;
 }
 
 /**
@@ -47,7 +54,7 @@ export function workspaceSections(state: WorkspaceState): WorkspaceSectionEntry[
     { key: "features", enabled: true },
     // The module's own documents, read from whichever module the player would play.
     { key: "configuration", enabled: state.hasModule },
-    { key: "assessment", enabled: state.hasModule },
+    { key: "assessment", enabled: state.hasModule || !!state.usesAssessment },
     // Always reachable: the action that builds the media plan lives inside this
     // section, so gating the section would hide its own entry point. The pane says
     // what is missing instead.
@@ -59,6 +66,11 @@ export function workspaceSections(state: WorkspaceState): WorkspaceSectionEntry[
     // assembles the first module lives in this section, as planning media lives in Scenes.
     { key: "module", enabled: state.hasModule || state.hasSpec },
     { key: "history", enabled: true },
+    // Whether a deploy could start: there is nothing to deploy until there is a module.
+    { key: "deploy", enabled: state.hasModule },
+    // Making a ref from this one, reached from the ref header rather than the tree: its
+    // table walks the media plan, so it waits for one.
+    { key: "newRef", enabled: state.hasPlan },
   ];
 }
 
