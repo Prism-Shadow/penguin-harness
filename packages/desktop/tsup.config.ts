@@ -1,6 +1,7 @@
 import { defineConfig } from "tsup";
 // Inlines this checkout's git identity into the artifact — see the helper's module doc:
 // the app bundles the server and the CLI whole, and a shipped bundle has no path back to the checkout it came from.
+// @ts-expect-error The build helper is a local JavaScript module without declarations.
 import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
 // The CJS globals these ESM bundles have to declare for the dependencies they absorb —
 // see the helper's module doc for what the shim covers and where it only approximates.
@@ -48,6 +49,6 @@ export default defineConfig({
   // `noExternal: [/.*/]` gets you. Everything else is bundled by default: tsup externalizes
   // this package's `dependencies`, and the only ones it declares are the data-only plugin
   // packages, which nothing imports.
-  external: ["electron"],
+  external: ["electron", "playwright-core"],
   define: buildGitDefine(),
 });

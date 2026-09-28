@@ -152,9 +152,22 @@ export type AgentSessionEvent =
 
 /** Error shape thrown by the kernel; `message` is safe to show, never a raw upstream payload. */
 export class AcpAgentError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
+  /**
+   * The agent's own words for why it failed, with the values it was started with masked.
+   * Unlike `message` it is third-party text, so the host decides who may read it.
+   */
+  readonly reason: string | undefined;
+  /** The agent said it failed for want of a sign-in (an expired login, a missing key). */
+  readonly signInFailed: boolean;
+
+  constructor(
+    message: string,
+    options?: { cause?: unknown; reason?: string; signInFailed?: boolean },
+  ) {
     super(message, options);
     this.name = "AcpAgentError";
+    this.reason = options?.reason;
+    this.signInFailed = options?.signInFailed ?? false;
   }
 }
 

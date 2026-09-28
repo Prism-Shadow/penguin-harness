@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CodingAgentManager } from "../src/manager.js";
 import { AcpConnection } from "../src/connection.js";
 import { AcpAgentError, parseDefinition } from "../src/types.js";
+import { RequestError } from "@agentclientprotocol/sdk";
 import { FakeCodingAgent } from "./fake-agent.js";
 import type { AgentServerDefinition, AgentSessionEvent } from "../src/types.js";
 
@@ -23,6 +24,7 @@ function harness(options: {
   reopen?: "resume" | "load" | "none";
   history?: string[];
   envFor?: (definition: AgentServerDefinition) => Record<string, string>;
+  onTurnEnd?: ConstructorParameters<typeof CodingAgentManager>[0]["onTurnEnd"];
 }): Harness {
   const fake = new FakeCodingAgent({
     modes: options.modes,
@@ -35,6 +37,7 @@ function harness(options: {
     clientInfo: CLIENT_INFO,
     envFor: options.envFor ?? (() => ({})),
     permissionTimeoutMs: options.permissionTimeoutMs,
+    ...(options.onTurnEnd !== undefined ? { onTurnEnd: options.onTurnEnd } : {}),
     createConnection: async (_definition, handlers) => {
       // Forward the kernel's events into the test's array as well as the manager's log.
       const wrapped: typeof handlers = {
@@ -83,6 +86,47 @@ describe("CodingAgentManager", () => {
     await expect(manager.createSession("fake", workspace)).rejects.toThrow(
       "the agent refused to open a session: This client is no longer supported.",
     );
+  });
+
+  // A turn that fails for want of a sign-in says so in the agent's error; the host hears
+  // every turn's outcome, so an agent's card can stop claiming it is ready (and recover).
+  it("reports each turn's outcome, flagging a failed sign-in", async () => {
+    const outcomes: unknown[] = [];
+    const { manager, fake } = harness({
+      onTurnEnd: (definitionId, outcome) => outcomes.push([definitionId, outcome]),
+    });
+    const session = await manager.createSession("fake", workspace);
+    fake.promptHandler = async () => {
+      throw new RequestError(-32603, "Internal error: Failed to authenticate: expired", {
+        errorKind: "authentication_failed",
+      });
+    };
+    const error = await manager.prompt(session.sessionId, "hi").catch((e: unknown) => e);
+    expect(error).toMatchObject({ signInFailed: true, reason: "Failed to authenticate: expired" });
+    fake.promptHandler = null;
+    await manager.prompt(session.sessionId, "again");
+    expect(outcomes).toEqual([
+      ["fake", { stopReason: "failed", signInFailed: true }],
+      ["fake", { stopReason: "end_turn", signInFailed: false }],
+    ]);
+  });
+
+  it("reads ACP's auth-required error as a failed sign-in, and other errors as not", async () => {
+    const { manager, fake } = harness({});
+    const session = await manager.createSession("fake", workspace);
+    fake.promptHandler = async () => {
+      throw new RequestError(-32000, "Authentication required");
+    };
+    expect(await manager.prompt(session.sessionId, "hi").catch((e: unknown) => e)).toMatchObject({
+      signInFailed: true,
+    });
+    fake.promptHandler = async () => {
+      throw new RequestError(-32603, "Internal error: disk full");
+    };
+    expect(await manager.prompt(session.sessionId, "hi").catch((e: unknown) => e)).toMatchObject({
+      signInFailed: false,
+      reason: "disk full",
+    });
   });
 
   it("runs a turn: chunks land in the log, and the view rebuilds the transcript", async () => {

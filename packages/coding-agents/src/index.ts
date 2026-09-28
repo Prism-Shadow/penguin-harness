@@ -15,6 +15,7 @@ export {
   type AgentSessionOptions,
   type AgentSessionView,
   type ProtectedRoot,
+  type AgentTurnOutcome,
   type CodingAgentManagerOptions,
 } from "./manager.js";
 export {

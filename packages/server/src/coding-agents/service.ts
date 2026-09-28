@@ -85,6 +85,18 @@ const DISCOVERY_CACHE_TTL_MS = 5 * 60_000;
 /** The settings key holding the last probed refresh (see `SavedProbes`). */
 const PROBES_KEY = "coding_agent_probes";
 
+/**
+ * The settings key holding, per agent id, when a real turn last failed for want of a
+ * sign-in (epoch ms). Cleared by that agent's next completed turn, or by a Rescan whose CLI
+ * check says it is signed in; outlived by a credentials file changed after it.
+ */
+const SIGNIN_FAILURES_KEY = "coding_agent_signin_failures";
+
+/** Whether the agent's credentials changed after `at`: a sign-in made since then. */
+function changedSince(candidate: AgentDiscoveryCandidate, at: number): boolean {
+  return candidate.signInChangedAt !== undefined && candidate.signInChangedAt > at;
+}
+
 /** One string per launch, for telling whether the probed launch is still the one found. */
 function launchKey(launch: { command: string; args: string[] } | null): string {
   return launch === null ? "" : JSON.stringify([launch.command, ...launch.args]);
@@ -211,6 +223,10 @@ export class CodingAgentService implements CodingAgents {
       this.manager = new CodingAgentManager({
         clientInfo: { name: "penguin", version: VERSION },
         envFor: (definition) => this.envFor(definition),
+        onTurnEnd: (agentId, outcome) => {
+          if (outcome.signInFailed) this.setSignInFailure(agentId, Date.now());
+          else if (outcome.stopReason === "end_turn") this.setSignInFailure(agentId, null);
+        },
       });
       this.manager.setDefinitions(this.loadDefinitions());
     }
@@ -249,7 +265,8 @@ export class CodingAgentService implements CodingAgents {
    * signed in since the last probe shows at once. What only a probe learns (a version, the
    * models, why it would not start) is carried over from the saved probe for agents still
    * detected at the same launch, and so is the CLI's own sign-in answer while it is recent;
-   * past that the stored sign-in speaks.
+   * past that the stored sign-in speaks — except that a "signed out" answer holds until the
+   * credentials change, since a file that merely exists cannot overrule it.
    */
   private async readDiscovery(): Promise<CodingAgentDiscoveryResponse> {
     const fresh = await discoverKnownAgents({
@@ -258,7 +275,9 @@ export class CodingAgentService implements CodingAgents {
       agentEnv: (id) => this.agentEnvFor(id),
     });
     const last = this.loadProbes();
-    if (last === null) return { candidates: this.annotate(fresh), agentModels: {} };
+    if (last === null) {
+      return { candidates: this.annotate(this.withSignInFailures(fresh)), agentModels: {} };
+    }
     const recent = Date.now() - last.at < DISCOVERY_CACHE_TTL_MS;
     // A recipe a definition now shadows runs the definition's command: the recipe's own
     // models and failure say nothing about it.
@@ -268,18 +287,19 @@ export class CodingAgentService implements CodingAgents {
       if (!candidate.detected || probed === undefined) return candidate;
       const sameLaunch =
         !saved.has(candidate.recipeId) && probed.launch === launchKey(candidate.launch);
+      const signedOutSince = probed.authStatus === "missing" && !changedSince(candidate, last.at);
       return {
         ...candidate,
         ...(probed.version !== undefined ? { version: probed.version } : {}),
         ...(sameLaunch && probed.models !== undefined ? { models: probed.models } : {}),
         ...(sameLaunch && probed.error !== undefined ? { probeError: probed.error } : {}),
-        ...(recent && probed.authStatus !== undefined
+        ...((recent || signedOutSince) && probed.authStatus !== undefined
           ? { authStatus: probed.authStatus, authSource: "cli" as const }
           : {}),
       };
     });
     return {
-      candidates: this.annotate(candidates),
+      candidates: this.annotate(this.withSignInFailures(candidates)),
       agentModels: last.agentModels,
       agentErrors: last.agentErrors,
       probedAt: last.at,
@@ -340,12 +360,64 @@ export class CodingAgentService implements CodingAgents {
     ]);
     const at = Date.now();
     this.saveProbes({ at, candidates: probed, agentModels, agentErrors });
+    // A CLI that now says it is signed in answers a failed sign-in: someone signed in since.
+    for (const candidate of candidates) {
+      if (candidate.authSource === "cli" && candidate.authStatus === "ok") {
+        this.setSignInFailure(candidate.recipeId, null);
+      }
+    }
     const withErrors = candidates.map((candidate) =>
       probed[candidate.recipeId]?.error !== undefined
         ? { ...candidate, probeError: probed[candidate.recipeId]!.error }
         : candidate,
     );
-    return { candidates: this.annotate(withErrors), agentModels, agentErrors, probedAt: at };
+    return {
+      candidates: this.annotate(this.withSignInFailures(withErrors)),
+      agentModels,
+      agentErrors,
+      probedAt: at,
+    };
+  }
+
+  /**
+   * A real turn's failed sign-in, laid over each detected candidate: it outranks the CLI's
+   * answer and the stored sign-in alike, until the credentials change after it.
+   */
+  private withSignInFailures<T extends AgentDiscoveryCandidate>(
+    candidates: T[],
+  ): (Omit<T, "authSource"> & { authSource?: "cli" | "stored" | "session" })[] {
+    const failures = this.loadSignInFailures();
+    return candidates.map((candidate) => {
+      const failedAt = failures[candidate.recipeId];
+      if (!candidate.detected || failedAt === undefined || changedSince(candidate, failedAt)) {
+        return candidate;
+      }
+      return { ...candidate, authStatus: "missing" as const, authSource: "session" as const };
+    });
+  }
+
+  private loadSignInFailures(): Record<string, number> {
+    try {
+      const parsed = JSON.parse(this.settings.get(SIGNIN_FAILURES_KEY) ?? "{}") as unknown;
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      return Object.fromEntries(
+        Object.entries(parsed).filter((e): e is [string, number] => typeof e[1] === "number"),
+      );
+    } catch {
+      return {};
+    }
+  }
+
+  /** Record when an agent's sign-in failed, or clear it with null. */
+  private setSignInFailure(agentId: string, at: number | null): void {
+    const failures = this.loadSignInFailures();
+    if (at === null) {
+      if (!Object.hasOwn(failures, agentId)) return;
+      delete failures[agentId];
+    } else {
+      failures[agentId] = at;
+    }
+    this.settings.set(SIGNIN_FAILURES_KEY, JSON.stringify(failures));
   }
 
   /**
@@ -543,12 +615,17 @@ export class CodingAgentService implements CodingAgents {
           manager.respondPermission(event.request.requestId, { outcome: "cancelled" });
         }
       });
+      // Why the turn failed, in the agent's own (masked) words; only an admin runs a test.
+      let reason: string | undefined;
       try {
         const turn = await within(
           manager.prompt(session, SMOKE_PROMPT).then(() => "done" as const),
           left(),
           "timeout" as const,
-        ).catch(() => "done" as const);
+        ).catch((error: unknown) => {
+          if (error instanceof AcpAgentError) reason = error.reason;
+          return "done" as const;
+        });
         if (turn === "timeout") {
           void manager.cancel(session).catch(() => undefined);
           return result({ ok: false, reply: reply.trim(), failure: "timeout" });
@@ -561,7 +638,10 @@ export class CodingAgentService implements CodingAgents {
           ok: false,
           reply: reply.trim(),
           failure: "failed",
-          message: `The agent ended its turn: ${stop ?? "failed"}.`,
+          message:
+            reason !== undefined
+              ? `The agent stopped with an error: ${reason.replace(/\.?$/, ".")}`
+              : `The agent ended its turn: ${stop ?? "failed"}.`,
         });
       }
       return isOk(reply)
@@ -959,12 +1039,16 @@ export class CodingAgentService implements CodingAgents {
 
   /** Merge the per-request facts (saved state, remembered model) into a discovery answer. */
   private annotate(
-    candidates: (AgentDiscoveryCandidate & { probeError?: string })[],
+    candidates: (Omit<AgentDiscoveryCandidate, "authSource"> & {
+      authSource?: CodingAgentDiscoveryCandidate["authSource"];
+      probeError?: string;
+    })[],
   ): CodingAgentDiscoveryCandidate[] {
     const definitions = this.loadDefinitions();
     const models = this.loadRememberedModels();
     const options = this.loadRememberedOptions();
-    return candidates.map((candidate) => ({
+    // The credentials' file time is only for judging sign-ins here, not for the API.
+    return candidates.map(({ signInChangedAt: _changed, ...candidate }) => ({
       ...candidate,
       alreadyAdded: definitions.some((d) => d.id === candidate.recipeId),
       rememberedModel: models[candidate.recipeId] ?? null,

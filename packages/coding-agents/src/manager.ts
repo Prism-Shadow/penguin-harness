@@ -38,6 +38,8 @@ import {
 
 const DEFAULT_PERMISSION_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_MAX_LOGGED_EVENTS = 4_000;
+/** How much of an agent's own error message is relayed. */
+const MAX_REASON = 500;
 /** After `session/cancel`, how long an agent gets to report the turn's end itself. */
 const CANCEL_GRACE_MS = 15_000;
 
@@ -64,6 +66,25 @@ export interface CodingAgentManagerOptions {
   ) => Promise<AcpConnection>;
   permissionTimeoutMs?: number;
   maxLoggedEvents?: number;
+  /**
+   * Told how every prompted turn ended, by definition: what a real turn learned (a
+   * sign-in that failed, or one that plainly works) outranks any guess from files.
+   */
+  onTurnEnd?: (definitionId: string, outcome: AgentTurnOutcome) => void;
+}
+
+export interface AgentTurnOutcome {
+  stopReason: AgentStopReason;
+  signInFailed: boolean;
+}
+
+/** ACP's own "authentication required" error code. */
+const AUTH_REQUIRED_CODE = -32000;
+
+/** Whether an agent's error says it failed for want of a sign-in. */
+function isSignInFailure(error: RequestError): boolean {
+  const data = error.data as { errorKind?: unknown } | null | undefined;
+  return error.code === AUTH_REQUIRED_CODE || data?.errorKind === "authentication_failed";
 }
 
 /**
@@ -134,6 +155,7 @@ export class CodingAgentManager {
   ) => Promise<AcpConnection>;
   private readonly permissionTimeoutMs: number;
   private readonly maxLoggedEvents: number;
+  private readonly onTurnEnd: CodingAgentManagerOptions["onTurnEnd"];
 
   constructor(options: CodingAgentManagerOptions) {
     this.clientInfo = options.clientInfo;
@@ -144,6 +166,7 @@ export class CodingAgentManager {
       ((definition, handlers) => this.spawnConnection(definition, handlers));
     this.permissionTimeoutMs = options.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
     this.maxLoggedEvents = options.maxLoggedEvents ?? DEFAULT_MAX_LOGGED_EVENTS;
+    this.onTurnEnd = options.onTurnEnd;
   }
 
   /** Replace the definition registry with the host's current list (storage lives host-side). */
@@ -345,13 +368,22 @@ export class CodingAgentManager {
     try {
       const { stopReason, usage } = await connection.prompt(sessionId, text);
       this.finishTurn(record, seq, stopReason, usage);
+      this.reportTurn(record.definitionId, { stopReason, signInFailed: false });
     } catch (error) {
       this.finishTurn(record, seq, "failed");
-      throw error instanceof AcpAgentError
-        ? error
-        : // The message stays generic — a third-party agent's error payload is not trusted
-          // to be secret-free — but the cause is preserved for diagnostics and tests.
-          new AcpAgentError("the agent connection failed during the turn", { cause: error });
+      const signInFailed = error instanceof RequestError && isSignInFailure(error);
+      this.reportTurn(record.definitionId, { stopReason: "failed", signInFailed });
+      if (error instanceof AcpAgentError) throw error;
+      // The message stays generic — a third-party agent's error payload is not trusted to
+      // be secret-free — but the agent's own reason (a sign-in that expired, a spent quota)
+      // is the only part that says what to do, so it rides along masked, as `reason`.
+      const reason =
+        error instanceof RequestError ? this.maskedReason(record.definitionId, error) : "";
+      throw new AcpAgentError("the agent connection failed during the turn", {
+        cause: error,
+        signInFailed,
+        ...(reason !== "" ? { reason } : {}),
+      });
     } finally {
       record.busy = false;
       signal?.removeEventListener("abort", onAbort);
@@ -544,6 +576,34 @@ export class CodingAgentManager {
     const record = this.sessions.get(sessionId);
     if (record === undefined) throw new AcpAgentError(`unknown session: ${sessionId}`);
     return record;
+  }
+
+  /** Tell the host how a turn ended; a listener that throws must not break the turn. */
+  private reportTurn(definitionId: string, outcome: AgentTurnOutcome): void {
+    try {
+      this.onTurnEnd?.(definitionId, outcome);
+    } catch {
+      // The outcome is advisory; the turn's own result stands.
+    }
+  }
+
+  /**
+   * An agent's error message, fit to relay: the JSON-RPC "Internal error: " prefix dropped,
+   * every value the agent was started with that the host's own environment lacks (its API
+   * keys, a proxy with credentials) masked, and the length capped. Values under 8
+   * characters are left alone — masking "1" would garble the text and hide nothing.
+   */
+  private maskedReason(definitionId: string, error: RequestError): string {
+    const definition = this.definitions.get(definitionId);
+    let text = error.message.replace(/^Internal error:\s*/i, "").trim();
+    if (definition !== undefined) {
+      const given = Object.entries(this.envFor(definition))
+        .filter(([key, value]) => value.length >= 8 && process.env[key] !== value)
+        .map(([, value]) => value)
+        .sort((a, b) => b.length - a.length);
+      for (const value of given) text = text.split(value).join("***");
+    }
+    return text.length > MAX_REASON ? `${text.slice(0, MAX_REASON)}…` : text;
   }
 
   private viewOf(record: SessionRecord): AgentSessionView {

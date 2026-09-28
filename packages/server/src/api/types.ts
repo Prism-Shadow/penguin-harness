@@ -5072,13 +5072,17 @@ export interface CodingAgentDiscoveryCandidate {
   /** The CLI's own `--version` line; present once a probed refresh has run. */
   version?: string;
   /**
-   * Whether the agent is signed in: read from its stored credentials on every call, and
-   * from its own status command after a probed refresh. Absent for an agent not detected,
-   * or one that keeps its sign-in nowhere Penguin knows to look.
+   * Whether the agent is signed in: read from its stored credentials on every call, from
+   * its own status command after a probed refresh, and "missing" once a real turn failed
+   * for want of a sign-in. Absent for an agent not detected, or one that keeps its sign-in
+   * nowhere Penguin knows to look.
    */
   authStatus?: "ok" | "missing" | "unknown";
-  /** Where `authStatus` came from: the CLI's own status command, or its stored sign-in. */
-  authSource?: "cli" | "stored";
+  /**
+   * Where `authStatus` came from: the CLI's own status command, its stored sign-in, or a
+   * session whose turn failed for want of one.
+   */
+  authSource?: "cli" | "stored" | "session";
   /** The ACP config options the last probe session observed (model choices, toggles). */
   models?: CodingAgentConfigOption[];
   /** The one command that installs the agent, when there is one for every OS. */

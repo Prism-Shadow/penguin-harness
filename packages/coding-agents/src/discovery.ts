@@ -114,6 +114,11 @@ export interface AgentDiscoveryCandidate {
   /** Where `authStatus` came from: the CLI's own status command, or its stored sign-in. */
   authSource?: "cli" | "stored";
   /**
+   * When the newest of the agent's credential files last changed (epoch ms), absent when
+   * it has none: a sign-in made after a failed one shows only as this moving on.
+   */
+  signInChangedAt?: number;
+  /**
    * The config options a live probe session observed (model choices, toggles); present
    * only when the caller probed the launch and the agent answered.
    */
@@ -168,6 +173,9 @@ const AGENT_RECIPES: AgentRecipe[] = [
         {
           at: (home, env) =>
             path.join(env.CLAUDE_CONFIG_DIR ?? path.join(home, ".claude"), ".credentials.json"),
+          // The file also keeps MCP sign-ins, and Claude Code empties its own token when a
+          // refresh fails: only a token present is a sign-in.
+          holds: (json) => nonEmpty(record(record(json).claudeAiOauth).accessToken),
         },
       ],
       absent: "unknown",
@@ -482,10 +490,13 @@ export async function discoverAgents(
         options.probe === true && detectedPath !== undefined
           ? await probeCli(detectedPath, recipe, childEnv)
           : {};
-      const stored =
+      const [stored, signInChangedAt] =
         detected && recipe.signIn !== undefined
-          ? await storedSignIn(recipe.signIn, home, childEnv)
-          : undefined;
+          ? await Promise.all([
+              storedSignIn(recipe.signIn, home, childEnv),
+              credentialsChangedAt(recipe.signIn, home, childEnv),
+            ])
+          : [undefined, undefined];
       // The CLI's own answer wins; where it could not tell, what it stored still says.
       const cliAnswered = probed.authStatus !== undefined && probed.authStatus !== "unknown";
       const authStatus = cliAnswered ? probed.authStatus : (stored ?? probed.authStatus);
@@ -507,6 +518,7 @@ export async function discoverAgents(
         ...(authStatus !== undefined
           ? { authStatus, authSource: cliAnswered ? ("cli" as const) : ("stored" as const) }
           : {}),
+        ...(signInChangedAt !== undefined ? { signInChangedAt } : {}),
       };
     }),
   );
@@ -547,6 +559,24 @@ async function storedSignIn(
     }
   }
   return signIn.absent;
+}
+
+/** The newest modification time among the agent's credential files; undefined when none exist. */
+async function credentialsChangedAt(
+  signIn: NonNullable<AgentRecipe["signIn"]>,
+  home: string,
+  env: NodeJS.ProcessEnv,
+): Promise<number | undefined> {
+  const times = await Promise.all(
+    signIn.files.map((file) =>
+      fs.stat(file.at(home, env)).then(
+        (stat) => stat.mtimeMs,
+        () => undefined,
+      ),
+    ),
+  );
+  const found = times.filter((t): t is number => t !== undefined);
+  return found.length > 0 ? Math.max(...found) : undefined;
 }
 
 /**
