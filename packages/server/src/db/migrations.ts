@@ -839,9 +839,12 @@ export function adoptAhead(db: DatabaseSync): void {
       db.exec("COMMIT");
     } catch (err) {
       db.exec("ROLLBACK");
-      throw new Error(`adoption ahead of migration ${m.version} (${m.name}) failed: ${String(err)}`, {
-        cause: err,
-      });
+      throw new Error(
+        `adoption ahead of migration ${m.version} (${m.name}) failed: ${String(err)}`,
+        {
+          cause: err,
+        },
+      );
     }
   }
 }

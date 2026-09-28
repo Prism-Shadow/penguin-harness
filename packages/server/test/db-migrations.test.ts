@@ -951,12 +951,16 @@ describe("a root the machines line stamped 14: numbering-fork-adoption", () => {
     db.exec("PRAGMA user_version = 14");
   }
   const tables = (db: DatabaseSync): string[] =>
-    (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map(
-      (t) => t.name,
-    );
+    (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]
+    ).map((t) => t.name);
   const writeModelRows = (db: DatabaseSync): void => {
-    db.prepare("INSERT INTO users (user_id, password_hash, created_at) VALUES ('u', 'x', 't')").run();
-    db.prepare("INSERT INTO projects (project_id, owner_user_id, created_at) VALUES ('p', 'u', 't')").run();
+    db.prepare(
+      "INSERT INTO users (user_id, password_hash, created_at) VALUES ('u', 'x', 't')",
+    ).run();
+    db.prepare(
+      "INSERT INTO projects (project_id, owner_user_id, created_at) VALUES ('p', 'u', 't')",
+    ).run();
     db.prepare(
       "INSERT INTO model_promotions (project_id, provider, model_id, discount, updated_at) VALUES ('p', 'go', 'm', 0.5, 't')",
     ).run();
@@ -978,7 +982,9 @@ describe("a root the machines line stamped 14: numbering-fork-adoption", () => {
       expect(db.prepare("SELECT id, direction, local_port FROM port_forwards").all()).toEqual([
         { id: "f1", direction: "in", local_port: 3000 },
       ]);
-      expect(tables(db)).toEqual(expect.arrayContaining(["model_promotions", "model_provider_auth_tokens"]));
+      expect(tables(db)).toEqual(
+        expect.arrayContaining(["model_promotions", "model_provider_auth_tokens"]),
+      );
       writeModelRows(db);
     } finally {
       db.close();
