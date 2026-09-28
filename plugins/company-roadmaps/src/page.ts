@@ -40,7 +40,8 @@ export const PAGE_STRINGS = {
   en: {
     title: "Roadmaps",
     empty: "No roadmap yet. A person opens one over a channel (see the plugin's README).",
-    unavailable: "Roadmaps are not available here: company mode is off, or this organization does not exist.",
+    unavailable:
+      "Roadmaps are not available here: company mode is off, or this organization does not exist.",
     number: "#",
     name: "Name",
     status: "Status",

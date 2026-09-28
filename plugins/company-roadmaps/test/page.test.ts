@@ -10,7 +10,14 @@ import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { PAGE_PREFIX, PAGE_ROUTES_ID, PAGE_SRC, PAGE_STRINGS, pageHtml, pageRoutes } from "../src/index.js";
+import {
+  PAGE_PREFIX,
+  PAGE_ROUTES_ID,
+  PAGE_SRC,
+  PAGE_STRINGS,
+  pageHtml,
+  pageRoutes,
+} from "../src/index.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -72,7 +79,14 @@ const ROADMAP = {
   record: "We agreed.",
   body: "## Why\nBecause.",
   items: [
-    { key: "a", kind: "proposal", title: "Ledger", brief: "An append-only ledger.", owner: "acme_dev", cites: ["Why"] },
+    {
+      key: "a",
+      kind: "proposal",
+      title: "Ledger",
+      brief: "An append-only ledger.",
+      owner: "acme_dev",
+      cites: ["Why"],
+    },
   ],
   delegations: { a: { proposal: 61 } },
 };
@@ -108,10 +122,14 @@ describe("the page route", () => {
 
 describe("the page's script", () => {
   it("lists the organization's roadmaps, read off the parent's URL, in the app's language, escaped", async () => {
-    const out = await render("/org/proj/acme/roadmaps", () => ({
-      ok: true,
-      body: { roadmaps: [ROADMAP] },
-    }), { lang: "zh", dark: true });
+    const out = await render(
+      "/org/proj/acme/roadmaps",
+      () => ({
+        ok: true,
+        body: { roadmaps: [ROADMAP] },
+      }),
+      { lang: "zh", dark: true },
+    );
     expect(out.fetched).toEqual(["/api/projects/proj/organizations/acme/roadmaps"]);
     expect(out.lang).toBe("zh");
     expect(out.dark).toBe(true);

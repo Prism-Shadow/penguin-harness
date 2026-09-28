@@ -58,7 +58,9 @@ describe("the company-roadmaps plugin on a real server", () => {
   });
 
   it("contributes the roadmaps page as a company-mode iframe page, and serves it behind the cookie gate", async () => {
-    const { pages } = await api.get<{ pages: Array<Record<string, unknown>> }>("/api/contributions");
+    const { pages } = await api.get<{ pages: Array<Record<string, unknown>> }>(
+      "/api/contributions",
+    );
     expect(pages.find((p) => p.key === "roadmaps")).toMatchObject({
       nav: "org",
       path: "roadmaps/:number?",
