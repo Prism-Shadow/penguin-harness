@@ -3,6 +3,7 @@
 - **Date:** 2026-09-28
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#869](https://github.com/Prism-Shadow/penguin-harness/pull/869)
 
 [中文版](2026-09-28-work-mode-follows-route.zh.md)
 
