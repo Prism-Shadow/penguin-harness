@@ -2,7 +2,7 @@
  * Sessions that are an activity's generation runs belong to that activity: they live in
  * its studio, not in the global session list, and opening one goes back to the activity.
  */
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { ActivitySummary, SessionInfo } from "@prismshadow/penguin-server/api";
 import { latestConversation, withoutOrgSessions } from "./session-grouping";
 
 export function withoutActivityRuns(sessions: readonly SessionInfo[]): SessionInfo[] {
@@ -51,4 +51,20 @@ export function shouldReloadList(
   activityId: string | undefined,
 ): boolean {
   return prevActivityId !== undefined && activityId === undefined;
+}
+
+/** How often the home list re-reads its summaries while a run is in flight. */
+export const RUNNING_POLL_MS = 5000;
+
+/**
+ * Whether the home list should poll: only while the list itself is shown (no activity open)
+ * and some activity's summary says a run is in flight. A run started after the sessions store
+ * loaded never reaches the store's settle signal, so polling is what notices it finishing.
+ */
+export function shouldPollSummaries(
+  activityId: string | undefined,
+  summaries: Readonly<Record<string, Pick<ActivitySummary, "status">>>,
+): boolean {
+  if (activityId !== undefined) return false;
+  return Object.values(summaries).some((summary) => summary.status.kind === "running");
 }

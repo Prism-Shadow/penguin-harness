@@ -4,6 +4,7 @@ import {
   latestOwnConversation,
   sessionHref,
   settledActivityRuns,
+  shouldPollSummaries,
   shouldReloadList,
   withoutActivityRuns,
 } from "../src/lib/activity-sessions";
@@ -41,5 +42,14 @@ describe("activity sessions", () => {
     const desk = row("desk", "2026-09-02T00:00:00.000Z", { orgId: "acme" });
     expect(latestOwnConversation([run, desk, own])?.sessionId).toBe("own");
     expect(latestOwnConversation([run, desk])).toBeNull();
+  });
+  it("polls the home list only while it is shown and some run is in flight", () => {
+    const running = { status: { kind: "running" as const, runKind: "spec" as const } };
+    const built = { status: { kind: "built" as const } };
+    expect(shouldPollSummaries(undefined, { a: built, b: running } as never)).toBe(true);
+    expect(shouldPollSummaries(undefined, { a: built } as never)).toBe(false);
+    expect(shouldPollSummaries(undefined, {})).toBe(false);
+    // Inside an activity the list is not shown: no poll, running or not.
+    expect(shouldPollSummaries("a", { b: running } as never)).toBe(false);
   });
 });

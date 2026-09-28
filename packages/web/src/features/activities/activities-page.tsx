@@ -40,7 +40,12 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { settledActivityRuns, shouldReloadList } from "../../lib/activity-sessions";
+import {
+  RUNNING_POLL_MS,
+  settledActivityRuns,
+  shouldPollSummaries,
+  shouldReloadList,
+} from "../../lib/activity-sessions";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
@@ -179,16 +184,22 @@ function ActivityWorkspace({
       mounted.current = false;
     };
   }, []);
+  // Read through a ref so `reload` keeps one identity across opening and leaving an activity.
+  const openActivityId = useRef(activityId);
+  openActivityId.current = activityId;
   const reload = useCallback(async () => {
     if (!accessible.current) return;
+    // Inside an activity (a studio save, say) only the records are needed: the summaries
+    // fan out over every activity, and the return-to-list reload fetches them fresh.
+    const withSummaries = openActivityId.current === undefined;
     try {
       const result = await apiFetch<{
         activities: ActivityRecord[];
         summaries?: Record<string, ActivitySummary>;
-      }>(`${basePath(projectId)}?summary=1`);
+      }>(withSummaries ? `${basePath(projectId)}?summary=1` : basePath(projectId));
       if (mounted.current) {
         setItems(result.activities);
-        setSummaries(result.summaries ?? {});
+        if (withSummaries) setSummaries(result.summaries ?? {});
         setError("");
       }
     } catch (e) {
@@ -220,6 +231,15 @@ function ActivityWorkspace({
     if (shouldReloadList(prevActivityId.current, activityId)) void reload();
     prevActivityId.current = activityId;
   }, [activityId, reload]);
+  // A run started after the sessions store loaded never reaches the settle signal above, so
+  // while the list is shown and some summary says a run is in flight, re-read it every few
+  // seconds; the poll stops once nothing is running or an activity is opened.
+  const polling = shouldPollSummaries(activityId, summaries);
+  useEffect(() => {
+    if (!polling) return;
+    const timer = window.setInterval(() => void reload(), RUNNING_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [polling, reload]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (dirty.current) event.preventDefault();
@@ -239,15 +259,15 @@ function ActivityWorkspace({
   // React batch (e.g. a browser-back thrown right after dismissing the previous dialog), and
   // React is then free to skip rendering the intermediate "unblocked" state entirely — this
   // effect would never see it and would wrongly treat the new attempt as already answered.
-  // `location.key` is unique per navigation attempt, so it survives that skip.
-  const askedForKey = useRef<string | null>(null);
+  // Each blocked attempt is a new blocker object, so its identity survives that skip.
+  const askedFor = useRef<typeof blocker | null>(null);
   useEffect(() => {
     if (blocker.state !== "blocked") {
-      askedForKey.current = null;
+      askedFor.current = null;
       return;
     }
-    if (askedForKey.current === blocker.location.key) return;
-    askedForKey.current = blocker.location.key;
+    if (askedFor.current === blocker) return;
+    askedFor.current = blocker;
     discard.ask(
       () => blocker.proceed(),
       () => blocker.reset(),
