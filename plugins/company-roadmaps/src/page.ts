@@ -178,6 +178,7 @@ export const PAGE_STRINGS = {
       "A roadmap is discussed in a channel: choose the channel and the employees who will discuss it, and it opens here.",
     retry: "Retry",
     close: "Close",
+    itemsOne: "1 item",
     itemsCount: "{n} items",
     moderator: "moderator",
     roomHint: "The all-hands channel and archived channels cannot hold a room.",
@@ -227,6 +228,7 @@ export const PAGE_STRINGS = {
     emptyHint: "路线图在一个频道里讨论：选好频道和参与讨论的员工，就在这里开出来。",
     retry: "重试",
     close: "关闭",
+    itemsOne: "1 个条目",
     itemsCount: "{n} 个条目",
     moderator: "主持",
     roomHint: "全员频道和已归档的频道不能当讨论室。",
@@ -434,7 +436,7 @@ try {
       const meta = [
         r.channelId ? '<span class="mono">#' + esc(r.channelId) + "</span>" : "",
         mod ? "<span>" + esc(T.moderator) + " " + esc(mod) + "</span>" : "",
-        "<span>" + esc(T.itemsCount.replace("{n}", String(r.items.length))) + "</span>",
+        "<span>" + esc(r.items.length === 1 ? T.itemsOne : T.itemsCount.replace("{n}", String(r.items.length))) + "</span>",
       ].filter(Boolean).join('<span aria-hidden="true">·</span>');
       return '<li class="row" data-n="' + r.number + '" tabindex="0"><span class="num mono">#' + r.number + '</span><div class="grow"><div class="line"><a class="title" href="#' + r.number + '" data-n="' + r.number + '">' + esc(r.name) + "</a>" + pill(r) + '</div><div class="meta">' + meta + "</div>" +
         (r.items.length === 0 ? "" : '<ul class="items">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul>") + "</div></li>";

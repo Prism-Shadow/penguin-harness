@@ -223,6 +223,7 @@ describe("the page's script", () => {
     expect(out.html).toContain(PAGE_STRINGS.zh.discussing);
     expect(out.html).toContain("acme_dev");
     expect(out.html).toContain("#61");
+    expect(out.html).toContain(PAGE_STRINGS.zh.itemsOne);
   });
 
   it("opens one roadmap — its record and body — when the parent's URL names it", async () => {
