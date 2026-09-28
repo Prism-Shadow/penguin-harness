@@ -10,14 +10,16 @@ It depends on [company-proposals](../company-proposals/README.md): a delegated p
 - **The desk, cloned for the room.** For every employee in the room the plugin opens a session of that employee's Agent (the way a ticket session opens) whose first input is the room: who is in it, who moderates, the last messages, how to speak there. Every later message reaches the other members' room sessions; an employee answers with `penguin org channel send`. An employee invited in gets a room session at the next pass; one removed has its session closed.
 - **A draft, then an establishment.** The moderator (or a person) writes the record, the body and the items; establishing checks every cite against the body's headings, archives the roadmap, puts one line on each proposal owner's desk — the brief, what it is stacked on, and the commands to create and link it — and turns every roadmap item into a derived roadmap waiting for its room.
 - **Stacking.** A proposal item is stacked on the previous proposal item unless it names another (`stackedOn`) or none (`stackedOn: null`). When the one below links its proposal number, the owners stacked on it are told.
+- **A room the organization leaves to the plugin.** While a roadmap is under discussion, its room is claimed from the organization's mention delivery (`OrganizationModule.channelClaims`): a message there is recorded and shown as in any channel, a mention in it wakes no desk, and the message is relayed to the room sessions at once. An established or shelved roadmap's room is not claimed, and its mentions reach desks again.
+- **An entry after the handbook.** Company mode's sidebar shows a **Roadmaps** row after the organization's own pages; it opens `/org/<project>/<org>/roadmaps`, a read-only page this plugin serves itself (in an iframe): the roadmaps with their status, room, items and owners, and one roadmap's record and body.
 - **Reopening, names, the shelf.** An owner, an employee of the room or a person reopens an established roadmap with a reason, which reaches every room session. A roadmap has a name (renamed at will), and a discussion can be shelved (archived) and taken back.
 
 ## Boundaries
 
-- **Do not @-mention in a room.** Every member's room session already reads every message; a mention is still delivered by the organization to that employee's own desk, which then answers too.
 - **A room session's cost is not in the organization's budget**, as with any session opened through the gateway (the organization counts desks and ticket sessions), and a budget-paused employee is not known to the plugin; a paused organization is not relayed to.
 - **The relay keeps its own depth.** A room session always sends at the organization's hop 1, so the chain limit does not stop two room sessions answering each other; the plugin's `relayDepth` does (a person's message is 0, a reply one more than what it answers).
-- The draft beside the room in the web app is not part of this package: the channel page can read `GET …/roadmaps?channel=<id>`.
+- The draft beside the room on the channel page is not part of this package: the channel page can read `GET …/roadmaps?channel=<id>`.
+- A mention in a room is taken over only while the plugin is loaded and the roadmap discusses; in any other channel, and in the room of an established roadmap, the organization delivers as always.
 
 ## Install
 
@@ -48,7 +50,7 @@ The employees are told the rest in their room sessions and on their desks.
 
 ## API
 
-`/api/projects/:projectId/organizations/:orgId/roadmaps` — `GET /[?channel=&status=]`, `POST /` (`{ name, channelId, employees, brief?, parent? }`, a person), `GET|PATCH /:number` (`{ name }`), `PUT /:number/draft` (`{ record?, body?, items? }`), `POST /:number/establish | reopen { reason } | room { channelId } | archive | unarchive | items/:key/link { proposal }`. Every route answers 404 while company mode is off.
+`GET /api/company-roadmaps/page` — the page (HTML). `/api/projects/:projectId/organizations/:orgId/roadmaps` — `GET /[?channel=&status=]`, `POST /` (`{ name, channelId, employees, brief?, parent? }`, a person), `GET|PATCH /:number` (`{ name }`), `PUT /:number/draft` (`{ record?, body?, items? }`), `POST /:number/establish | reopen { reason } | room { channelId } | archive | unarchive | items/:key/link { proposal }`. Every route answers 404 while company mode is off.
 
 ## Where things live
 
