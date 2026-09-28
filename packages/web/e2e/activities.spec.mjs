@@ -1762,10 +1762,12 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   await expect(page).toHaveURL(/activities\/act_test(\?section=\w+)?$/);
   await openSection(page, "Description");
   await expect(description).toHaveText("Keep this edit");
-  // Project switching has no dialog to answer: `setCurrentProjectId` decides in the same
-  // tick, so the now-pure `canLeave` just keeps it blocked outright while dirty.
+  // Switching Projects while dirty asks too; canceling leaves the switch and edit in place.
   await page.getByRole("button", { name: "Activities test", exact: true }).click();
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(page.getByRole("button", { name: "Activities test", exact: true })).toBeVisible();
   await expect(description).toHaveText("Keep this edit");
   expect(await page.evaluate(() => localStorage.getItem("penguin.lastProjectId"))).not.toBe(
@@ -1786,10 +1788,16 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   await description.fill("Another edit");
   await page.getByRole("button", { name: "Activities test", exact: true }).click();
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Activities test", exact: true })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("penguin.lastProjectId"))).not.toBe(
+  // Discarding this time clears `dirty` and replays the switch, which now goes through.
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Discard" }).click();
+  await expect(page.getByRole("button", { name: "Second project", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("penguin.lastProjectId"))).toBe(
     "second-project",
   );
+  await expect
+    .poll(() => f.prefsWrites.some((prefs) => prefs.lastProjectId === "second-project"))
+    .toBe(true);
   expect(f.errors).toEqual([]);
 });
 
@@ -1889,18 +1897,29 @@ test("canceling the dirty-editor guard prevents Project deletion and remount", a
   await openSection(page, "Description");
   await description.fill("Keep before deletion");
   const original = await description.elementHandle();
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
   const settings = await projectSettings(page);
   await settings.getByRole("button", { name: "Delete", exact: true }).click();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page
     .getByRole("dialog", { name: "Delete Project", exact: true })
     .getByRole("button", { name: "Confirm", exact: true })
     .click();
   await expect(page.getByRole("dialog", { name: "Delete Project", exact: true })).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   expect(f.deletedProjects).toBe(0);
-  await settings.getByRole("button", { name: "Close", exact: true }).click();
   await expect(description).toHaveText("Keep before deletion");
   expect(await description.evaluate((element, before) => element === before, original)).toBe(true);
+  // Discarding this time clears `dirty` and replays the delete, which now goes through.
+  await settings.getByRole("button", { name: "Delete", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Delete Project", exact: true })
+    .getByRole("button", { name: "Confirm", exact: true })
+    .click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Discard" }).click();
+  await expect.poll(() => f.deletedProjects).toBe(1);
   expect(f.errors).toEqual([]);
 });
 
@@ -1915,10 +1934,14 @@ test("declining a refresh fallback preserves detached text without retaining Pro
   await openSection(page, "Description");
   await description.fill("Copy this before leaving");
   const original = await description.elementHandle();
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
   const settings = await projectSettings(page);
   await settings.getByRole("textbox").fill("Refresh the project list");
   f.removeProject();
   await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(
     page.getByText("This Project is no longer available.", { exact: false }),
   ).toBeVisible();
@@ -1939,14 +1962,17 @@ test("declining a refresh fallback preserves detached text without retaining Pro
     page.getByRole("button", { name: "Activities test owner", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(description).toHaveText("Copy this before leaving");
   expect(await description.evaluate((element, before) => element === before, original)).toBe(true);
-  // No dialog answers this either way any more: `canLeave` is a pure, synchronous check, so
-  // the detached editor's unsaved text keeps the switch blocked with no escape hatch.
+  // Discarding this time clears `dirty` and replays the switch, which now goes through.
   await page.getByRole("button", { name: "Select a Project", exact: true }).click();
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
-  await expect(description).toHaveText("Copy this before leaving");
-  expect(await description.evaluate((element, before) => element === before, original)).toBe(true);
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Discard" }).click();
+  await expect(page.getByRole("button", { name: "Second project", exact: true })).toBeVisible();
   expect(f.errors).toEqual([]);
 });
 

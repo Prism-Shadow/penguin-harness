@@ -26,7 +26,13 @@ interface ProjectContextValue {
   /** A removed selection whose local editor declined to leave; never an accessible Project. */
   unavailableProjectId: string | null;
   setCurrentProjectId: (projectId: string) => void;
-  registerProjectChangeGuard: (guard: () => boolean) => () => void;
+  /**
+   * `guard(retry)` returns whether it's fine to proceed now. A guard that needs to ask first
+   * (through its own dialog) returns false immediately and calls `retry()` later if the
+   * answer is to go ahead — `retry` re-runs the exact same operation, which will consult the
+   * guard again (now free to return true). A guard with nothing to ask just ignores `retry`.
+   */
+  registerProjectChangeGuard: (guard: (retry: () => void) => boolean) => () => void;
   reloadProjects: () => Promise<void>;
   deleteProject: (projectId: string) => Promise<boolean>;
 
@@ -61,16 +67,31 @@ interface ProjectStoreState {
   currentAgentId: string | null;
 
   setCurrentProjectId: (projectId: string) => void;
-  registerProjectChangeGuard: (guard: () => boolean) => () => void;
+  registerProjectChangeGuard: (guard: (retry: () => void) => boolean) => () => void;
   reloadProjects: () => Promise<void>;
   deleteProject: (projectId: string) => Promise<boolean>;
   setCurrentAgentId: (agentId: string) => void;
   reloadAgents: () => Promise<void>;
 }
 
+/**
+ * Runs every registered project-change guard, in the shape `registerProjectChangeGuard`
+ * expects: each guard decides synchronously whether it's fine to proceed now, or asks its
+ * own question and calls `retry` later once answered "go ahead" — `retry` replays the exact
+ * operation, which consults the guards again. `.every` short-circuits on the first "no", so
+ * a guard after a declining one is never even asked (only one editor guard is registered in
+ * practice, but this keeps the aggregation honest if that ever changes).
+ */
+export function combineChangeGuards(
+  guards: Iterable<(retry: () => void) => boolean>,
+  retry: () => void,
+): boolean {
+  return [...guards].every((guard) => guard(retry));
+}
+
 export function createProjectStore() {
-  const changeGuards = new Set<() => boolean>();
-  const canLeave = () => [...changeGuards].every((guard) => guard());
+  const changeGuards = new Set<(retry: () => void) => boolean>();
+  const canLeave = (retry: () => void) => combineChangeGuards(changeGuards, retry);
   const rememberProject = (projectId: string) => {
     localStorage.setItem(PROJECT_KEY, projectId);
     void api.putPrefs({ lastProjectId: projectId }).catch(() => undefined);
@@ -95,9 +116,12 @@ export function createProjectStore() {
     reloadProjects: () => loadProjects(),
     deleteProject: async (projectId) => {
       // Confirm before the irreversible request. A refresh after this same deletion
-      // must not ask again after the Project is already gone.
+      // must not ask again after the Project is already gone. `retry` replays this exact
+      // call once a guard's own dialog (e.g. discarding unsaved edits) is answered "go
+      // ahead" — canLeave then sees no more dirty editors and returns true.
       const selected = get().currentProjectId ?? get().unavailableProjectId;
-      if (projectId === selected && !canLeave()) return false;
+      if (projectId === selected && !canLeave(() => void get().deleteProject(projectId)))
+        return false;
       await api.deleteProject(projectId);
       await loadProjects(projectId);
       return true;
@@ -112,8 +136,9 @@ export function createProjectStore() {
       if (projectId === get().currentProjectId) return;
       if (!get().projects.some((project) => project.projectId === projectId)) return;
       // Project selection is independent of the router. Consult editors before any
-      // selection, agent, localStorage, or server preference mutation takes place.
-      if (!canLeave()) return;
+      // selection, agent, localStorage, or server preference mutation takes place. `retry`
+      // replays this same call once a guard answers "go ahead" (e.g. after discarding).
+      if (!canLeave(() => get().setCurrentProjectId(projectId))) return;
       rememberProject(projectId);
       // Clear the Agent list in sync: avoids a transient render with "new projectId + old
       // Project's agents" that would make downstream consumers (Sessions) fetch with the
@@ -161,7 +186,14 @@ export function createProjectStore() {
       const wanted = previous ?? localStorage.getItem(PROJECT_KEY);
       const found = projects.find((project) => project.projectId === wanted);
       const next = (found ?? projects[0])?.projectId ?? null;
-      if (previous && next !== previous && approvedRemoval !== previous && !canLeave()) {
+      if (
+        previous &&
+        next !== previous &&
+        approvedRemoval !== previous &&
+        // `retry` replays this same reload once a guard answers "go ahead" (e.g. after
+        // discarding unsaved edits) — canLeave then returns true and the switch proceeds.
+        !canLeave(() => void loadProjects(approvedRemoval))
+      ) {
         // Access is gone regardless of the answer. Keep only an ID so an editor can
         // retain its local text, while every other consumer sees no active Project.
         store.setState({

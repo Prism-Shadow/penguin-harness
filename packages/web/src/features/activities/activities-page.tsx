@@ -210,9 +210,23 @@ function ActivityWorkspace({
       wasBlocked.current = false;
     }
   }, [blocker, discard.ask]);
+  // Switching or deleting a Project while dirty asks through the same dialog: declining
+  // just returns false (the switch/delete stays put); confirming clears `dirty` and replays
+  // the exact same operation, which this time finds nothing dirty and goes through.
+  const projectChangeGuard = useCallback(
+    (retry: () => void) => {
+      if (!dirty.current) return true;
+      discard.ask(() => {
+        dirty.current = false;
+        retry();
+      });
+      return false;
+    },
+    [discard.ask],
+  );
   useLayoutEffect(
-    () => registerProjectChangeGuard(canLeave),
-    [registerProjectChangeGuard, canLeave],
+    () => registerProjectChangeGuard(projectChangeGuard),
+    [registerProjectChangeGuard, projectChangeGuard],
   );
   // Read again whenever the author comes back from an activity, which recorded itself.
   const recent = useMemo(() => (activityId ? [] : readRecent(projectId)), [projectId, activityId]);
