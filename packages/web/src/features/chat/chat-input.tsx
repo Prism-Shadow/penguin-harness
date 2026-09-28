@@ -2183,18 +2183,21 @@ export function ChatInput({
           body text like the notices below it: the other two describe what the composer is about
           to do, this one asks for a settings change, and `attention` is the tone for a thing
           waiting on the user. Dismissible, because keeping the threshold high on purpose is a
-          legitimate answer and a notice with no way down stops being read. */}
+          legitimate answer and a notice with no way down stops being read. The row wraps: when
+          the text (at its 15rem floor) and the buttons don't fit side by side, the buttons drop
+          to their own line and the text takes the full width. Squeezing the text column instead
+          grew the notice to ~490px at 390 wide and crushed the conversation above it. */}
       {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
         <div
-          className={`anim-fade mb-1 flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs ${toneStrip.attention}`}
+          className={`anim-fade mb-1 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-2.5 py-2 text-xs ${toneStrip.attention}`}
         >
-          <p className="min-w-0">
+          <p className="min-w-0 flex-1 basis-60">
             {S.chat.contextWindowUnderThreshold(
               humanizeTokens(contextWindow),
               humanizeTokens(compactionLimit),
             )}
           </p>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button
               size="sm"
               onClick={() => {
