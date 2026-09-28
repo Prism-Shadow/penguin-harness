@@ -3,7 +3,7 @@
 - **Date:** 2026-09-28
 - **Type:** fix
 - **Scope:** `web`
-- **PR:** PR_URL
+- **PR:** [#874](https://github.com/Prism-Shadow/penguin-harness/pull/874)
 
 [English](2026-09-28-small-window-notice-on-phones.md)
 
