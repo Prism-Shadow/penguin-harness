@@ -24,12 +24,32 @@ When an agent opens a page from a conversation you are looking at, the dock swit
 ## Browse
 
 - The tab strip shows each tab's icon and title. Select **+** to open a new tab and **×** to close one.
-- The toolbar has **Back**, **Forward**, **Reload** (**Stop** while a page loads) and the address bar. Type a URL to open it. A bare domain such as `amazon.com` opens over `https://`. Anything else is searched with Bing. While you type, pages from the browser's history are suggested; use the arrow keys and Enter to pick one.
-- The toolbar's menu holds **Import from browser…**, **Clear browsing data…**, **Open in system browser** and **Developer tools**.
+- The toolbar has **Back**, **Forward**, **Reload** (**Stop loading** while a page loads) and the address bar. Type a URL to open it. A bare domain such as `amazon.com` opens over `https://`. Anything else is searched with Bing. While you type, pages from the browser's history are suggested; use the arrow keys and Enter to pick one.
+- The toolbar's menu holds **Import from browser…**, **Clear browsing data…**, **Set homepage…**, **Open in system browser** and **Developer tools**.
 - A link that opens a new window, and a page's pop-up, open as new tabs. A page can open at most three tabs every five seconds; more are ignored.
 - A download asks where to save the file, as the system browser does.
 
 The panel follows the app's light or dark theme; the pages themselves keep their own colors.
+
+## Set a homepage
+
+The homepage is the page a new tab opens. Without one, a new tab is blank.
+
+1. In the toolbar's menu, select **Set homepage…**.
+2. Enter an address. It is read as the address bar reads one: a bare domain such as `example.com` opens over `https://`, and the field shows the page it will open. To take the page on screen, select **Use current page**.
+3. Select **Save**.
+
+While a homepage is set, a **Home** button beside **Reload** goes to it, and **+** opens it in the new tab. To remove the homepage, select **Clear** in the same dialog and save the empty field.
+
+## Open links from a conversation
+
+Right-click a web link in a conversation, or press Shift+F10 or the Menu key while the link has focus, to open its menu:
+
+- **Open in built-in browser** opens the link in a new tab and brings the Browser panel up in that conversation's dock. It appears only in the desktop app, while the browser is available.
+- **Open in system browser** opens the link in your default browser. In a browser window, the item reads **Open in new tab**.
+- **Copy link address** copies the link.
+
+When text in the conversation is selected as well, **Copy** and **Add to conversation** follow below a divider. Links to files in the Workspace keep opening in the Files panel, and a right-click anywhere else in the conversation keeps the menu for selected text.
 
 ## When an agent uses the browser
 
@@ -100,7 +120,7 @@ Every command and its output format are in the [CLI Reference](/cli#penguin-brow
 - Each tab is a Chromium page hosted by the desktop app, in its own persistent profile. Pages see an ordinary Chrome browser.
 - The server drives pages through the Chrome DevTools Protocol, relayed by the desktop app. Reading, running scripts, clicking and typing all happen on the server's side of that link, so they improve with server updates.
 - Pages are read and changes are tracked by scripts adapted from [GenericAgent](https://github.com/lsdefine/genericagent) (MIT): its DOM simplification and its `web_scan` / `web_execute_js` design.
-- The history is a file in the data root, `builtin-browser/history.json`. Cookies and site storage live in the desktop app's own profile directory.
+- The history and the homepage are files in the data root, `builtin-browser/history.json` and `builtin-browser/settings.json`. Cookies and site storage live in the desktop app's own profile directory.
 - Everything goes through the server's `/api/builtin-browser` routes, which only administrators may call. See [Server API](/server-api).
 
 ## Limits
