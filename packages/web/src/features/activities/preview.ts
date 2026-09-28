@@ -48,15 +48,6 @@ export function previewUrl(
   return query ? `${base}&${query}` : base;
 }
 
-/** Two-letter mark for a project card, from the title or the product code. */
-export function activityInitials(title: string, productCode: string): string {
-  const words = title.trim().split(/\s+/).filter(Boolean);
-  const first = words[0] ?? productCode.trim();
-  if (!first) return "??";
-  const second = words[1] ?? first[1] ?? "";
-  return `${first.charAt(0)}${second.charAt(0)}`.toUpperCase();
-}
-
 export function filterActivities<T extends { productCode: string; refNum: number; title: string }>(
   items: readonly T[],
   query: string,

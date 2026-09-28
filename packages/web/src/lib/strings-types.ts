@@ -373,8 +373,6 @@ export type Strings = {
       sort: { recent: string; code: string };
       refs: (count: number) => string;
       attention: (count: number) => string;
-      collapse: (code: string) => string;
-      expand: (code: string) => string;
       refLine: (refNum: number, when: string) => string;
       canonical: string;
       progress: (done: number, total: number) => string;

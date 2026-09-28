@@ -2,7 +2,7 @@
  * The Activities home: every activity of the project grouped by product code, narrowed by a
  * search and by one product tag at a time, sorted by recency or by code.
  */
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Link } from "react-router";
 import type { ActivityRecord, ActivitySummary } from "@prismshadow/penguin-server/api";
 import { Button } from "../../components/ui/button";
@@ -15,7 +15,7 @@ import { S } from "../../lib/strings";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
 import { formatRelativeShort } from "../../lib/format";
-import { filterByTag, tagCounts } from "./activity-tags";
+import { tagCounts } from "./activity-tags";
 import {
   groupByProduct,
   readCollapsed,
@@ -208,14 +208,13 @@ function ProductGroup({
   // A new ref copies the canonical ref's media plan, so it waits for one — the same gate as
   // the studio's New ref section (`hasPlan`).
   const canAddRef = editable && !!canonical?.hasPlan;
-  const headingId = `group-${group.productCode}`;
+  const headingId = useId();
   return (
     <section aria-labelledby={headingId} className="space-y-3">
       <h2 id={headingId} className="border-b border-gray-200 pb-2 dark:border-gray-800">
         <button
           type="button"
           aria-expanded={!collapsed}
-          aria-label={collapsed ? home.expand(group.productCode) : home.collapse(group.productCode)}
           onClick={onToggle}
           className="flex w-full items-center gap-2 text-left"
         >
@@ -247,12 +246,11 @@ function ProductGroup({
                   + {home.newRef}
                 </Link>
               ) : (
-                <span
-                  aria-disabled
-                  title={home.newRefUnavailable}
-                  className="flex h-full min-h-24 items-center justify-center rounded-lg border border-dashed border-gray-200 text-sm text-gray-400 dark:border-gray-800"
-                >
-                  + {home.newRef}
+                <span className="flex h-full min-h-24 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-200 p-3 text-center text-sm text-gray-400 dark:border-gray-800">
+                  <span>+ {home.newRef}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-500">
+                    {home.newRefUnavailable}
+                  </span>
                 </span>
               )}
             </li>

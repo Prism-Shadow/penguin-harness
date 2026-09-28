@@ -421,8 +421,6 @@ export const en: Strings = {
       sort: { recent: "Recent", code: "A–Z" },
       refs: (count: number) => (count === 1 ? "1 ref" : `${count} refs`),
       attention: (count: number) => `${count} needs attention`,
-      collapse: (code: string) => `Collapse ${code}`,
-      expand: (code: string) => `Expand ${code}`,
       refLine: (refNum: number, when: string) => `ref ${refNum} · ${when}`,
       canonical: "Canonical ref",
       progress: (done: number, total: number) => `${done} of ${total} milestones`,

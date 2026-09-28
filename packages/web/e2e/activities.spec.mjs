@@ -4230,8 +4230,13 @@ test("tags a product, filters the list by tag, and deletes an activity after con
   ]);
   // Each product is its own group now, so cards and the ref link are found across the page.
   // The card itself no longer prints tags (the home page's ActivityCard is status-focused);
-  // the tag filter above is what proves they saved.
-  const cards = page.getByRole("listitem").filter({ has: page.getByRole("link") });
+  // the tag filter above is what proves they saved. Excluded by text rather than by "has a
+  // link" alone: a fixture with `hasPlan: true` would turn the group's own "+ New ref" item
+  // into a link too, and it must never count as an activity card.
+  const cards = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("link") })
+    .filter({ hasNotText: "New ref" });
   const sight = page.getByRole("link", { name: /Sight words/ });
   await expect(sight).toBeVisible();
   await filter.getByRole("button", { name: "math · 1", exact: true }).click();
@@ -4315,12 +4320,15 @@ test("the home page groups refs under their product code", async ({ page }) => {
   });
   await page.goto(`${origin}/activities`);
   const group = page.getByRole("region", { name: /ants/ });
+  const toggle = group.getByRole("button", { name: /ants/ });
   await expect(group.getByRole("link", { name: /ants 1/ })).toBeVisible();
   await expect(group.getByText("Specification next").first()).toBeVisible();
-  await group.getByRole("button", { name: "Collapse ants" }).click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await toggle.click();
   await expect(group.getByRole("link", { name: /ants 1/ })).toBeHidden();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await page.reload();
-  await expect(page.getByRole("button", { name: "Expand ants" })).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
   expect(f.errors).toEqual([]);
 });
 

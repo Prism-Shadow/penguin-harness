@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  activityInitials,
   filterActivities,
   fitScale,
   latestModuleRun,
@@ -34,13 +33,6 @@ describe("activity preview helpers", () => {
     expect(previewUrl("run-1", { scene: "scene-1", language: "es-MX" })).toBe(
       "/api/sessions/run-1/files/preview-redirect?path=preview%2Findex.html&scene=scene-1&language=es-MX",
     );
-  });
-
-  it("derives two-letter marks from the title or the product code", () => {
-    expect(activityInitials("Penguin Story", "PC")).toBe("PS");
-    expect(activityInitials("Penguin", "PC")).toBe("PE");
-    expect(activityInitials("  ", "penguin")).toBe("PE");
-    expect(activityInitials("a b", "PC")).toBe("AB");
   });
 
   it("filters activities by title, product code or reference number", () => {
