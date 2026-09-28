@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import plugin, {
+  CLAIM_ID,
   CONFIG_GROUP,
   CompanyRoadmapsPlugin,
   DEFAULT_POLL_SECONDS,
@@ -130,6 +131,9 @@ describe("the manifest", () => {
     expect(t.plugin.modules).toEqual(["CompanyRoadmapsPlugin"]);
     const manifest = t.modules.CompanyRoadmapsPlugin;
     expect((manifest?.contributes["HttpModule.routes"]?.[0] as { id: string }).id).toBe(ROUTES_ID);
+    expect(
+      (manifest?.contributes["OrganizationModule.channelClaims"]?.[0] as { id: string }).id,
+    ).toBe(CLAIM_ID);
     const text = JSON.stringify(manifest);
     for (const from of [
       "CompanyModule",

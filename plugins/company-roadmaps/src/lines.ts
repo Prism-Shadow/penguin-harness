@@ -64,7 +64,7 @@ export function cloneBrief(args: {
     `${tag(r)} This session is your desk, cloned for one discussion: the room \`${channel}\` of organization \`${orgId}\`. Everything said in the room reaches you here, and only here; your own desk is not told.`,
     `Topic: ${r.brief || r.name}`,
     `In the room: ${args.members.join(", ")}. Moderator: ${moderator}${moderating ? " (you)" : ""}.`,
-    `Speak with \`penguin org channel send --org-id ${orgId} --channel ${channel} -m "<text>"\`. Do not @-mention anyone: every member already reads every message here, and a mention would also wake that employee's own desk.`,
+    `Speak with \`penguin org channel send --org-id ${orgId} --channel ${channel} -m "<text>"\`. Every member reads every message here, so a mention is not needed; while the room discusses, a mention reaches this room and wakes no one's desk.`,
     `Read the roadmap: \`curl -sS "${routeOf(orgId, r.number)}" -H "authorization: Bearer $PENGUIN_API_TOKEN"\`.`,
   ];
   if (moderating) {

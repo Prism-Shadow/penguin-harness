@@ -20,6 +20,7 @@ import type { ClassCtx, Plugin } from "@prismshadow/penguin-core/plugin";
 import type {
   Log,
   MessagingTaskRunner,
+  OrgChannelRef,
   OrgGateway,
   Paths,
   PluginConfig,
@@ -76,6 +77,9 @@ export type { RoadmapView, ServiceDeps, WriteResult } from "./service.js";
 export { CONFIG_GROUP, DEFAULT_POLL_SECONDS, DEFAULT_RELAY_DEPTH, configOf } from "./config.js";
 export { ROUTES_ID, roadmapRoutes } from "./routes.js";
 
+/** The channel claim's contribution id, as the manifest names it. */
+export const CLAIM_ID = "company-roadmaps.channel-claim";
+
 /**
  * The plugin's one module: the service over the organization gateway, the session runtime and
  * the data root, its routes on the HttpModule.routes slot, its settings group, and the relay
@@ -89,6 +93,15 @@ export { ROUTES_ID, roadmapRoutes } from "./routes.js";
         prefix: "/api/projects/:projectId/organizations/:orgId/roadmaps",
         auth: "user",
         order: 141,
+      },
+    ],
+    "OrganizationModule.channelClaims": [
+      {
+        // The room of a roadmap under discussion is handled here: its mentions reach the room
+        // sessions through the relay, and no desk is woken (service.ts claims()).
+        id: "company-roadmaps.channel-claim",
+        description:
+          "The room of a roadmap under discussion: its messages reach the room sessions, not desks.",
       },
     ],
     "PluginConfigProvider.groups": [
@@ -147,6 +160,7 @@ export class CompanyRoadmapsPlugin {
   @Use("RuntimeModule") private readonly log!: Log;
   @Use("PluginConfigModule") private readonly pluginConfig!: PluginConfig;
   @Bind(ROUTES_ID) routes!: Hono;
+  @Bind(CLAIM_ID) claim!: (channel: OrgChannelRef) => boolean;
 
   setup({ effect }: ClassCtx) {
     const service = new RoadmapService({
@@ -162,6 +176,7 @@ export class CompanyRoadmapsPlugin {
       void service.stop();
     });
     this.routes = roadmapRoutes(service);
+    this.claim = (channel) => service.claims(channel);
   }
 }
 

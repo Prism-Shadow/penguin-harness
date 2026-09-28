@@ -611,8 +611,9 @@ function channelAgents(org: LoadedOrg, channel: ChannelConfig): Set<string> {
 
 /**
  * Tail-scans each channel's recent day files, publishes every new message and delivers its
- * mentions inside that channel's membership. Archived channels take no posts, so there is
- * nothing new to find in them; an invalid `channel.toml` is reported and the channel skipped.
+ * mentions inside that channel's membership — unless a plugin claims the channel, which then
+ * handles its messages itself. Archived channels take no posts, so there is nothing new to
+ * find in them; an invalid `channel.toml` is reported and the channel skipped.
  */
 export async function scanChannels(
   deps: OrgDeps,
@@ -634,6 +635,7 @@ export async function scanChannels(
     if (channel.archived) continue;
     const members = channelAgents(org, channel);
     const channelId = file.channelId;
+    let claimed: boolean | undefined;
     const days = (await deps.store.listMessageDays(org.dir, channelId)).slice(0, 3);
     for (const date of days.reverse()) {
       const offset = deps.cache.channelOffset(org.projectId, org.orgId, channelId, date);
@@ -670,6 +672,12 @@ export async function scanChannels(
         });
         if (!triggers || org.config.status === "paused" || msg.sender === "system") continue;
         if (msg.hop >= org.config.mentionChainLimit) continue;
+        // A channel a plugin handles itself (OrgGatewaySlots.channelClaims) keeps its message
+        // — recorded and published above — but wakes no desk. Asked once per channel per pass.
+        claimed ??=
+          deps.channelClaimed?.({ projectId: org.projectId, orgId: org.orgId, channelId }) ===
+          true;
+        if (claimed) continue;
         const senderAgent = principalAgentId(msg.sender);
         const targets = new Set<string>();
         for (const m of msg.mentions) {

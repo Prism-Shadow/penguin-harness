@@ -58,7 +58,7 @@ import { userChannelKey } from "../../http/routes/events.js";
 import type { Channels, Clock, Config, Log } from "../../hmr/capabilities.js";
 import type { ChannelHub } from "../channel.js";
 import { OrgGateway } from "../../mechanisms/organization.js";
-import type { OrgCache, OrgView } from "../../mechanisms/organization.js";
+import type { OrgCache, OrgChannelRef, OrgView } from "../../mechanisms/organization.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type {
   AgentIndex,
@@ -117,7 +117,14 @@ import { budgetLine, budgetRatio, computeSpend, pausedEmployees } from "./budget
 import type { OrgSpend } from "./budget.js";
 import { machineApi } from "../../machines/machine-api.js";
 import { Machines } from "../../machines/service.js";
-import { DEFAULT_EMPLOYEE_PLUGINS, OrgRuns, OrgSessions, employeePlugins, runsOn } from "./deps.js";
+import {
+  DEFAULT_EMPLOYEE_PLUGINS,
+  OrgRuns,
+  OrgSessions,
+  channelClaimsOf,
+  employeePlugins,
+  runsOn,
+} from "./deps.js";
 import type { OrgDeps } from "./deps.js";
 import { isMirrorPath, mirrorManifest, pullMirror, readMirrorFile } from "./mirror.js";
 import type { OrgMirrorEntry } from "./mirror.js";
@@ -3173,13 +3180,25 @@ export class OrganizationModule {
   @Provide() orgService!: OrgService;
   @Provide() orgScheduler!: OrgScheduler;
   @Provide() orgGateway!: OrgGateway;
-  setup({ effect }: ClassCtx) {
+  setup({ effect, contributions }: ClassCtx) {
     const channels = this.channels as ChannelHub;
     const agentService = this.agentService;
     const agentConfig = this.agentConfig;
     const agentsRepo = this.agentsRepo;
     const runner = this.runner;
     const projectConfig = this.projectConfig;
+    // The channels plugins handle themselves (OrgGatewaySlots.channelClaims): none, and every
+    // channel delivers its mentions as before.
+    const channelClaimed = channelClaimsOf(
+      (contributions.channelClaims ?? []).map((c) => c.code as (channel: OrgChannelRef) => boolean),
+      (err, channel) =>
+        this.errors.record({
+          source: "organization",
+          err,
+          code: "org_channel_claim_failed",
+          ctx: { projectId: channel.projectId },
+        }),
+    );
     const deps: OrgDeps = {
       root: this.config.root,
       store: new OrgStore(this.config.root),
@@ -3226,6 +3245,7 @@ export class OrganizationModule {
         }
       },
       companyModeEnabled: () => this.settings.getCompanyMode(),
+      ...(channelClaimed !== undefined ? { channelClaimed } : {}),
       machines: {
         ownId: () => this.machines.ownId(),
         api: async (machineId) => {
