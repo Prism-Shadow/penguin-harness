@@ -8,7 +8,13 @@
  */
 import vm from "node:vm";
 import { Window } from "happy-dom";
-import type { Element, HTMLElement, HTMLInputElement, HTMLSelectElement } from "happy-dom";
+import type {
+  Element,
+  HTMLButtonElement,
+  HTMLElement,
+  HTMLInputElement,
+  HTMLSelectElement,
+} from "happy-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { PAGE_STRINGS, pageHtml } from "../src/index.js";
 
@@ -122,6 +128,16 @@ async function page(
       await fire(input, "input");
     },
     submit: async () => fire($("form[data-form]"), "submit"),
+    press: async (key: string, selector: string) => {
+      $(selector).dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      await settle();
+    },
+    focused: () => document.activeElement?.getAttribute("name") ?? null,
+    hash: () => window.location.hash,
+    clearHash: () => {
+      window.location.hash = "";
+    },
+    reads: () => calls.filter((c) => c.method === "GET" && c.url === `${ORG}/roadmaps`).length,
   };
 }
 
@@ -226,5 +242,49 @@ describe("the Open a roadmap button", () => {
     await p.click("button[data-cancel]");
     expect(p.text()).toContain(T.empty);
     expect(p.$("button[data-open]")).not.toBeNull();
+  });
+
+  it("keeps Open disabled until the form is complete, and puts the cursor in the name", async () => {
+    const p = await page(organization());
+    await p.click("button[data-open]");
+    expect(p.focused()).toBe("name");
+    expect(p.$<HTMLButtonElement>("button[data-submit]").disabled).toBe(true);
+    await p.name("Queue migration");
+    expect(p.$<HTMLButtonElement>("button[data-submit]").disabled).toBe(true);
+    await p.choose("room_a");
+    await p.pick("acme_dev");
+    expect(p.$<HTMLButtonElement>("button[data-submit]").disabled).toBe(false);
+  });
+
+  it("closes the dialog on Esc, on the backdrop and on Cancel — back to the list as it was, without reading it again", async () => {
+    const p = await page(organization());
+    const reads = p.reads();
+    await p.click("button[data-open]");
+    expect(p.$("[data-overlay]")).not.toBeNull();
+    await p.press("Escape", 'input[name="name"]');
+    expect(p.$("[data-overlay]")).toBeNull();
+    expect(p.text()).toContain(T.empty);
+    await p.click("button[data-open]");
+    await p.click("[data-overlay]");
+    expect(p.$("[data-overlay]")).toBeNull();
+    await p.click("button[data-open]");
+    await p.click("button[data-cancel]");
+    expect(p.$("[data-overlay]")).toBeNull();
+    expect(p.$("button[data-open]")).not.toBeNull();
+    expect(p.reads()).toBe(reads);
+  });
+
+  it("opens a roadmap from anywhere on its row, and from the keyboard", async () => {
+    const p = await page(organization());
+    await p.click("button[data-open]");
+    await p.choose("room_a");
+    await p.pick("acme_dev");
+    await p.name("Queue migration");
+    await p.submit();
+    await p.click("li.row .meta");
+    expect(p.hash()).toBe("#1");
+    p.clearHash();
+    await p.press("Enter", "li.row");
+    expect(p.hash()).toBe("#1");
   });
 });

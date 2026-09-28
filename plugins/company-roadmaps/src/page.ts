@@ -7,8 +7,16 @@
  * The iframe's `src` is fixed (a contribution is data: it cannot carry the organization), so
  * the page reads the organization off its parent's URL — same origin, so it may — and asks
  * `GET /api/projects/<p>/organizations/<o>/roadmaps[/<n>]` with the cookie it already has. It
- * follows the app's language (`penguin.lang`) and its dark class, and shows the roadmaps
- * (number, name, status, room, items and their owners) and one roadmap's record and body.
+ * follows the app's language (`penguin.lang`) and shows the roadmaps (number, name, status,
+ * room, moderator, items and their owners) and one roadmap's record and body.
+ *
+ * It looks like the app because it is dressed in the app's own values rather than a palette of
+ * its own: it links the app's base stylesheet for framed pages (`/workflow-ui.css`), copies the
+ * app's resolved theme values from its parent's root (dark or light, the gray scale, the accent,
+ * the font, the root font size — the list workflow pages get), copies them again whenever the
+ * parent's root changes, and lays itself out the way the app's company-mode pages are: a header
+ * with its one primary action, rows in a bordered list with a status pill, an empty state in the
+ * middle, and a dialog for opening a roadmap.
  *
  * A person opens a roadmap here: the "Open a roadmap" button above the list unfolds a form —
  * a name, the room (an existing channel, read from the organization's own channel list; the
@@ -34,31 +42,130 @@ export const PAGE_SRC = `${PAGE_PREFIX}/page`;
 /** How long the page waits for an answer before it says the server did not answer. */
 export const PAGE_TIMEOUT_MS = 15_000;
 
+/**
+ * The app's resolved theme values the page copies from its parent: the same list
+ * packages/web's lib/workflow-theme.ts copies into a workflow's frame (a plugin cannot import the
+ * web app, so the list is repeated here). Read RESOLVED, so light/dark, the accent and the font
+ * size the person chose are already applied; the page recomputes none of it.
+ */
+export const THEME_VARS = [
+  "--font-app-sans",
+  "--accent-bg",
+  "--accent-fg",
+  "--color-gray-50",
+  "--color-gray-100",
+  "--color-gray-200",
+  "--color-gray-300",
+  "--color-gray-400",
+  "--color-gray-500",
+  "--color-gray-600",
+  "--color-gray-700",
+  "--color-gray-800",
+  "--color-gray-900",
+  "--color-gray-950",
+] as const;
+
+/** The app's base stylesheet for a page in a frame (packages/web/public), linked first so the rules below win. */
+export const THEME_HREF = "/workflow-ui.css";
+
+// Every colour is the app's: the `--wf-*` tokens workflow-ui.css derives from the copied values,
+// and, for the status pills and strips, the same Tailwind shades tone.ts spells (success = emerald,
+// attention = amber, danger = red, muted = gray). Sizes follow the app's rungs in rem, so the
+// person's font-size setting (copied onto the root) moves the whole page.
 const STYLE = `
-:root { color-scheme: light; --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --bg: #ffffff; --chip: #eaeef2; --link: #0969da; --bad: #cf222e; --code: #f6f8fa; }
-:root.dark { color-scheme: dark; --fg: #e6edf3; --muted: #8d96a0; --line: #30363d; --bg: #0d1117; --chip: #21262d; --link: #4493f8; --bad: #f85149; --code: #161b22; }
+:root {
+  --rm-bg: var(--wf-bg, #ffffff);
+  --rm-fg: var(--wf-fg, #111827);
+  --rm-muted: var(--wf-muted, #6b7280);
+  --rm-line: var(--wf-border, #e5e7eb);
+  --rm-hover: var(--wf-hover, #f3f4f6);
+  --rm-surface: var(--wf-surface, #f9fafb);
+  --rm-accent: var(--wf-accent, #111827);
+  --rm-accent-fg: var(--wf-accent-fg, #ffffff);
+  --rm-gray-bg: var(--color-gray-100, #f3f4f6); --rm-gray-fg: var(--color-gray-600, #4b5563);
+  --rm-ok-bg: #ecfdf5; --rm-ok-fg: #047857; --rm-ok-line: #5ee9b5;
+  --rm-warn-bg: #fffbeb; --rm-warn-fg: #b45309; --rm-warn-line: #ffd236;
+  --rm-bad-bg: #fef2f2; --rm-bad-fg: #c10007; --rm-bad-line: #ffa2a2;
+  --rm-skeleton: var(--color-gray-200, #e5e7eb);
+}
+:root.dark {
+  --rm-gray-bg: var(--color-gray-800, #1f1f1f); --rm-gray-fg: var(--color-gray-300, #d1d5db);
+  --rm-ok-bg: #002c22; --rm-ok-fg: #5ee9b5; --rm-ok-line: #006045;
+  --rm-warn-bg: #461901; --rm-warn-fg: #ffd236; --rm-warn-line: #bb4d00;
+  --rm-bad-bg: #460809; --rm-bad-fg: #ffa2a2; --rm-bad-line: #c10007;
+  --rm-skeleton: var(--color-gray-800, #1f1f1f);
+}
 * { box-sizing: border-box; }
-body { margin: 0; padding: 20px 24px; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
-h1 { font-size: 18px; margin: 0 0 12px; }
-h2 { font-size: 15px; margin: 20px 0 8px; }
-.muted { color: var(--muted); }
-.bad { color: var(--bad); }
-table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { font-weight: 600; color: var(--muted); font-size: 12px; }
-a { color: var(--link); text-decoration: none; cursor: pointer; }
-.chip { display: inline-block; padding: 0 8px; border-radius: 10px; background: var(--chip); font-size: 12px; }
-.text { white-space: pre-wrap; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
-code { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-ul { margin: 0; padding-left: 18px; }
-input, select, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
-input[name="name"], select { min-width: 280px; }
-input[type="checkbox"] { padding: 0; margin-right: 4px; }
-button { cursor: pointer; background: var(--chip); }
-button[data-open], button[type="submit"] { background: var(--link); border-color: var(--link); color: #ffffff; }
-fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 0 0 12px; padding: 8px 12px; }
-legend { color: var(--muted); font-size: 12px; padding: 0 4px; }
-label { line-height: 2; }
+body { margin: 0; padding: 1rem; background: var(--rm-bg); color: var(--rm-fg); font-size: 0.875rem; line-height: 1.5; }
+@media (min-width: 768px) { body { padding: 1.5rem; } }
+main { max-width: 72rem; margin: 0 auto; }
+.head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; margin-bottom: 1.25rem; }
+.head h1 { margin: 0; font-size: 1.25rem; font-weight: 600; line-height: 1.3; display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+h2 { margin: 0 0 0.5rem; font-size: 0.875rem; font-weight: 600; }
+section { margin-top: 1.25rem; }
+p { margin: 0 0 0.5rem; }
+a { color: inherit; text-decoration: none; cursor: pointer; }
+a:hover, a:focus-visible { text-decoration: underline; }
+.muted { color: var(--rm-muted); }
+.small { font-size: 0.6875rem; }
+.mono, code { font-family: var(--wf-mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
+code { font-size: 0.75rem; background: none; border: 0; padding: 0; }
+button { font: inherit; font-size: 0.75rem; font-weight: 500; line-height: 1.5; padding: 0.25rem 0.625rem; border-radius: 0.375rem; border: 1px solid var(--rm-line); background: var(--rm-bg); color: var(--rm-fg); cursor: pointer; transition: background-color 150ms, opacity 150ms; }
+button:hover:not(:disabled) { background: var(--rm-hover); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.primary { background: var(--rm-accent); border-color: var(--rm-accent); color: var(--rm-accent-fg); }
+button.primary:hover:not(:disabled) { background: var(--rm-accent); opacity: 0.9; }
+button.icon { padding: 0.25rem 0.5rem; border-color: transparent; background: transparent; color: var(--rm-muted); }
+button:focus-visible, a:focus-visible, .row:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 1px; }
+.pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 0.125rem 0.5rem; font-size: 0.6875rem; font-weight: 600; white-space: nowrap; }
+.pill.ok { background: var(--rm-ok-bg); color: var(--rm-ok-fg); }
+.pill.warn { background: var(--rm-warn-bg); color: var(--rm-warn-fg); }
+.pill.gray { background: var(--rm-gray-bg); color: var(--rm-gray-fg); }
+.strip { border: 1px solid; border-radius: 0.375rem; padding: 0.5rem 0.75rem; font-size: 0.75rem; margin-bottom: 0.75rem; }
+.strip.ok { background: var(--rm-ok-bg); color: var(--rm-ok-fg); border-color: var(--rm-ok-line); }
+.strip.warn { background: var(--rm-warn-bg); color: var(--rm-warn-fg); border-color: var(--rm-warn-line); }
+.strip.bad { background: var(--rm-bad-bg); color: var(--rm-bad-fg); border-color: var(--rm-bad-line); }
+.strip p { margin: 0; }
+.strip p + p { margin-top: 0.25rem; }
+.rows { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rm-line); border-radius: 0.375rem; }
+.row { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.625rem 0.75rem; border-top: 1px solid var(--rm-line); cursor: pointer; transition: background-color 150ms; }
+.row:first-child { border-top: 0; }
+.row:hover { background: var(--rm-hover); }
+.num { width: 2.5rem; flex-shrink: 0; margin-top: 0.125rem; font-size: 0.6875rem; color: var(--rm-muted); font-variant-numeric: tabular-nums; }
+.grow { min-width: 0; flex: 1; }
+.line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
+.title { font-weight: 500; }
+.meta { margin-top: 0.25rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; font-size: 0.6875rem; color: var(--rm-muted); }
+.items { list-style: none; margin: 0.375rem 0 0; padding: 0; font-size: 0.75rem; }
+.items li { margin: 0.125rem 0; }
+.items .brief { color: var(--rm-muted); }
+.empty { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 3rem 0; text-align: center; }
+.empty .title { font-size: 0.875rem; color: var(--rm-fg); }
+.empty .hint { font-size: 0.75rem; color: var(--rm-muted); max-width: 32rem; }
+.empty button { margin-top: 0.5rem; }
+.crumb { font-size: 0.75rem; margin-bottom: 0.75rem; }
+.crumb a { color: var(--rm-muted); }
+.card { background: var(--rm-surface); border: 1px solid var(--rm-line); border-radius: 0.375rem; padding: 0.625rem 0.75rem; white-space: pre-wrap; font-size: 0.8125rem; }
+.skeleton { height: 3.5rem; border-radius: 0.375rem; background: var(--rm-skeleton); margin-bottom: 0.5rem; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.5; } }
+.overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-start; justify-content: center; padding: 10vh 1rem 1rem; background: rgb(0 0 0 / 0.4); }
+.dialog { width: 100%; max-width: 28rem; background: var(--rm-bg); border: 1px solid var(--rm-line); border-radius: 0.5rem; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.25); animation: pop 150ms ease-out; }
+@keyframes pop { from { transform: translateY(0.5rem) scale(0.98); opacity: 0; } }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--rm-line); }
+.dialog-head h2 { margin: 0; font-size: 0.875rem; }
+.dialog-body { padding: 1rem; }
+.dialog-foot { display: flex; justify-content: flex-end; gap: 0.5rem; padding-top: 0.5rem; }
+.field { display: block; margin: 0 0 0.875rem; padding: 0; border: 0; min-width: 0; }
+.field > label, .field > legend { display: block; margin-bottom: 0.25rem; padding: 0; font-size: 0.75rem; font-weight: 500; color: var(--rm-fg); }
+.field .hint { margin-top: 0.25rem; font-size: 0.6875rem; color: var(--rm-muted); }
+input[name="name"], select { width: 100%; font: inherit; font-size: 0.75rem; padding: 0.3125rem 0.625rem; border-radius: 0.375rem; border: 1px solid var(--rm-line); background: var(--rm-bg); color: var(--rm-fg); }
+.picks { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rm-line); border-radius: 0.375rem; max-height: 14rem; overflow-y: auto; }
+.picks li { border-top: 1px solid var(--rm-line); }
+.picks li:first-child { border-top: 0; }
+.picks label { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.625rem; font-size: 0.75rem; cursor: pointer; }
+.picks label:hover { background: var(--rm-hover); }
+.picks input { accent-color: var(--rm-accent); margin: 0; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 `;
 
 /** The page's own words, in both languages; the script picks one. */
@@ -67,6 +174,13 @@ export const PAGE_STRINGS = {
     title: "Roadmaps",
     loading: "Reading this organization's roadmaps…",
     empty: "No roadmap yet in this organization.",
+    emptyHint:
+      "A roadmap is discussed in a channel: choose the channel and the employees who will discuss it, and it opens here.",
+    retry: "Retry",
+    close: "Close",
+    itemsCount: "{n} items",
+    moderator: "moderator",
+    roomHint: "The all-hands channel and archived channels cannot hold a room.",
     unavailable: "Company mode is off here, or this organization does not exist.",
     failed: "Could not read the roadmaps",
     signedOut: "Not signed in, or the sign-in has expired: sign in again and reload.",
@@ -110,6 +224,12 @@ export const PAGE_STRINGS = {
     title: "路线图",
     loading: "正在读取本组织的路线图……",
     empty: "本组织还没有路线图。",
+    emptyHint: "路线图在一个频道里讨论：选好频道和参与讨论的员工，就在这里开出来。",
+    retry: "重试",
+    close: "关闭",
+    itemsCount: "{n} 个条目",
+    moderator: "主持",
+    roomHint: "全员频道和已归档的频道不能当讨论室。",
     unavailable: "这里未开启公司模式，或该组织不存在。",
     failed: "读取路线图失败",
     signedOut: "未登录或登录已过期：请重新登录后刷新。",
@@ -152,22 +272,56 @@ export const PAGE_STRINGS = {
 const SCRIPT = `
 const STRINGS = ${JSON.stringify(PAGE_STRINGS)};
 const TIMEOUT_MS = ${PAGE_TIMEOUT_MS};
+const THEME_VARS = ${JSON.stringify(THEME_VARS)};
 const main = document.getElementById("main");
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 let T = STRINGS.en;
-const say = (html) => { main.innerHTML = "<h1>" + esc(T.title) + "</h1>" + html; };
+// The page header — the title, and the action beside it when there is one — then the view.
+const head = (action) => '<header class="head"><h1>' + esc(T.title) + "</h1>" + (action || "") + "</header>";
+const say = (html, action) => { main.innerHTML = head(action) + html; };
 try {
   const read = (f, fallback) => { try { return f(); } catch { return fallback; } };
   const lang = String(read(() => localStorage.getItem("penguin.lang"), null) || navigator.language || "en").startsWith("zh") ? "zh" : "en";
   T = STRINGS[lang];
   document.documentElement.lang = lang;
-  if (read(() => window.parent.document.documentElement.classList.contains("dark"), false)) document.documentElement.classList.add("dark");
   document.title = T.title;
+  // The app's appearance, carried in: its dark/light choice, its resolved gray scale, accent
+  // and font, and the root font size the person picked — copied from the parent's root, and
+  // copied again whenever the parent's root changes (a theme switch, a new accent, a font size).
+  const root = document.documentElement;
+  function syncTheme() {
+    const dark = read(() => window.parent.document.documentElement.classList.contains("dark"), false);
+    if (typeof root.classList.toggle === "function") { root.classList.toggle("dark", dark); root.classList.toggle("light", !dark); }
+    else if (dark) root.classList.add("dark");
+    const parent = read(() => window.parent.document.documentElement, null);
+    const computed = parent && parent !== root ? read(() => window.parent.getComputedStyle(parent), null) : null;
+    if (computed && root.style) {
+      for (const name of THEME_VARS) {
+        const value = String(computed.getPropertyValue(name) || "").trim();
+        if (value !== "") root.style.setProperty(name, value);
+      }
+      const size = read(() => parent.style.fontSize, "") || computed.fontSize;
+      if (size) root.style.fontSize = size;
+    }
+  }
+  syncTheme();
+  read(() => {
+    if (typeof MutationObserver !== "function" || window.parent === window) return;
+    new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ["class", "style"] });
+  }, null);
   const where = read(() => window.parent.location.pathname, location.pathname);
   const m = /\\/org\\/([^/]+)\\/([^/]+)\\/roadmaps(?:\\/(\\d+))?/.exec(where);
-  const status = (r) => esc(T[r.status] || r.status) + (r.archived && r.status !== "established" ? " · " + esc(T.archived) : "");
-  const itemLine = (i, d) => "<li>[" + esc(i.key) + "] " + esc(i.title) + " — " + (i.kind === "proposal" ? esc(T.owner) + " " + esc(i.owner) : esc(T.employees) + " " + esc(i.employees.join(", "))) + (d && d.proposal ? ' <span class="chip">' + esc(T.proposal) + " #" + d.proposal + "</span>" : "") + '<div class="muted">' + esc(i.brief) + "</div></li>";
   const org = m === null ? "" : "/api/projects/" + m[1] + "/organizations/" + m[2];
+  const openButton = '<button type="button" class="primary" data-open>' + esc(T.open) + "</button>";
+  // A status as a pill, in the app's tones: under discussion is live work, waiting for a room is
+  // unfinished, established is done well, a shelved discussion recedes.
+  const pill = (r) => {
+    const shelved = r.archived && r.status !== "established";
+    const tone = shelved ? "gray" : r.status === "awaiting_room" ? "warn" : r.status === "established" ? "ok" : "ok";
+    return '<span class="pill ' + tone + '">' + esc(T[r.status] || r.status) + (shelved ? " · " + esc(T.archived) : "") + "</span>";
+  };
+  const moderatorOf = (r) => r.moderator || (r.employees && r.employees[0]) || "";
+  const itemLine = (i, d) => "<li><span>" + esc(i.title) + '</span> <span class="muted">— ' + (i.kind === "proposal" ? esc(T.owner) + " " + esc(i.owner) : esc(T.employees) + " " + esc(i.employees.join(", "))) + "</span>" + (d && d.proposal ? ' <span class="pill gray">' + esc(T.proposal) + " #" + d.proposal + "</span>" : "") + '<div class="brief">' + esc(i.brief) + "</div></li>";
   // One request; an answer that has not come by TIMEOUT_MS is a failure of its own.
   async function request(method, url, body) {
     let timer;
@@ -186,10 +340,10 @@ try {
     })();
     try { return await Promise.race([ask, late]); } finally { clearTimeout(timer); }
   }
-  // A read of the roadmaps, first said out loud.
+  // A read of the roadmaps, first said out loud (with the rows it is about to fill sketched in).
   async function get(path) {
     const url = org + "/roadmaps" + path;
-    say('<p class="muted">' + esc(T.loading) + '</p><p class="muted"><code>GET ' + esc(url) + "</code></p>");
+    say('<p class="muted">' + esc(T.loading) + '</p><p class="muted small"><code>GET ' + esc(url) + '</code></p><div class="skeleton"></div><div class="skeleton"></div>');
     return request("GET", url);
   }
   // Why a request failed, in words: the deadline, the HTTP status with the server's message (or
@@ -202,37 +356,51 @@ try {
       why = "HTTP " + e.status + (hint ? " — " + esc(hint) : "");
     } else if (e && e.network) why = esc(T.network) + " " + esc(e.network);
     else why = esc(T.broken) + " " + esc((e && e.message) || e);
-    return '<p class="bad"><strong>' + esc(heading || T.failed) + "</strong>: " + why + "</p>" + (e && e.url ? '<p class="muted"><code>' + esc(e.method || "GET") + " " + esc(e.url) + "</code></p>" : "");
+    return '<div class="strip bad"><p><strong>' + esc(heading || T.failed) + "</strong>: " + why + "</p>" + (e && e.url ? '<p><code>' + esc(e.method || "GET") + " " + esc(e.url) + "</code></p>" : "") + "</div>";
   };
-  // The button that opens the form; above the list, empty or not.
-  const openBar = '<p><button type="button" data-open>' + esc(T.open) + "</button></p>";
-  // The form's state while it is open: the channels that can hold a room, the chosen one's
+  // What the page shows under a dialog: the view drawn last, kept so closing the dialog
+  // returns to it without asking the server again.
+  let view = "";
+  const draw = (html, action) => { say(html, action); view = main.innerHTML; };
+  // The dialog's state while it is open: the channels that can hold a room, the chosen one's
   // employees, and the employees picked, in the order picked (the first moderates).
   let form = null;
-  function drawForm(note) {
+  const ready = () => form !== null && form.name.trim() !== "" && form.room !== "" && form.picked.length > 0;
+  function drawForm(note, focus) {
     const f = form;
-    let html = "<h2>" + esc(T.open) + "</h2>";
-    if (f.rooms.length === 0) {
-      say(html + '<p class="muted">' + esc(T.noRooms) + '</p><p><button type="button" data-cancel>' + esc(T.cancel) + "</button></p>");
-      return;
+    let body;
+    if (f.rooms === null) body = '<p class="muted">' + esc(T.loading) + "</p>";
+    else if (f.rooms.length === 0) body = '<p class="muted">' + esc(T.noRooms) + '</p><div class="dialog-foot"><button type="button" data-cancel>' + esc(T.cancel) + "</button></div>";
+    else {
+      body = '<form data-form><div class="field"><label for="rm-name">' + esc(T.name) + '</label><input id="rm-name" name="name" maxlength="120" autocomplete="off" value="' + esc(f.name) + '"></div>';
+      body += '<div class="field"><label for="rm-room">' + esc(T.formRoom) + '</label><select id="rm-room" name="room"><option value="">' + esc(T.formRoomPick) + "</option>" +
+        f.rooms.map((c) => '<option value="' + esc(c.channelId) + '"' + (c.channelId === f.room ? " selected" : "") + ">" + esc(c.name) + (c.name === c.channelId ? "" : " (" + esc(c.channelId) + ")") + "</option>").join("") +
+        '</select><div class="hint">' + esc(T.roomHint) + "</div></div>";
+      if (f.room !== "") {
+        body += f.members.length === 0 ? '<p class="muted">' + esc(T.noMembers) + "</p>" :
+          '<fieldset class="field"><legend>' + esc(T.formEmployees) + '</legend><ul class="picks">' + f.members.map((e) => '<li><label><input type="checkbox" name="employee" value="' + esc(e.id) + '"' + (f.picked.includes(e.id) ? " checked" : "") + "> <span>" + esc(e.name) + '</span> <span class="muted mono small">' + esc(e.id) + "</span>" + (f.picked[0] === e.id ? ' <span class="pill gray">' + esc(T.moderates) + "</span>" : "") + "</label></li>").join("") + "</ul></fieldset>";
+      }
+      body += (note || "") + '<div class="dialog-foot"><button type="button" data-cancel>' + esc(T.cancel) + '</button><button type="submit" class="primary" data-submit' + (ready() ? "" : " disabled") + ">" + esc(T.submit) + "</button></div></form>";
     }
-    html += '<form data-form><p><label>' + esc(T.name) + '<br><input name="name" maxlength="120" value="' + esc(f.name) + '"></label></p>';
-    html += "<p><label>" + esc(T.formRoom) + '<br><select name="room"><option value="">' + esc(T.formRoomPick) + "</option>" +
-      f.rooms.map((c) => '<option value="' + esc(c.channelId) + '"' + (c.channelId === f.room ? " selected" : "") + ">" + esc(c.name) + (c.name === c.channelId ? "" : " (" + esc(c.channelId) + ")") + "</option>").join("") + "</select></label></p>";
-    if (f.room !== "") {
-      html += f.members.length === 0 ? '<p class="muted">' + esc(T.noMembers) + "</p>" :
-        "<fieldset><legend>" + esc(T.formEmployees) + "</legend>" + f.members.map((e) => '<label><input type="checkbox" name="employee" value="' + esc(e.id) + '"' + (f.picked.includes(e.id) ? " checked" : "") + "> " + esc(e.name) + ' <span class="muted">' + esc(e.id) + "</span>" + (f.picked[0] === e.id ? ' <span class="chip">' + esc(T.moderates) + "</span>" : "") + "</label><br>").join("") + "</fieldset>";
-    }
-    html += (note || "") + '<p><button type="submit" data-submit>' + esc(T.submit) + '</button> <button type="button" data-cancel>' + esc(T.cancel) + "</button></p></form>";
-    say(html);
+    main.innerHTML = view + '<div class="overlay" data-overlay><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="rm-dialog-title"><div class="dialog-head"><h2 id="rm-dialog-title">' + esc(T.open) + '</h2><button type="button" class="icon" data-cancel aria-label="' + esc(T.close) + '">✕</button></div><div class="dialog-body">' + body + "</div></div></div>";
+    if (focus && typeof main.querySelector === "function") read(() => main.querySelector(focus).focus(), null);
   }
+  const closeForm = () => { form = null; main.innerHTML = view; };
+  // The submit button follows the fields without redrawing them, so typing keeps its focus.
+  const syncSubmit = () => {
+    if (typeof main.querySelector !== "function") return;
+    const b = main.querySelector("[data-submit]");
+    if (b) b.disabled = !ready();
+  };
   async function openForm() {
-    say("<h2>" + esc(T.open) + '</h2><p class="muted">' + esc(T.loading) + "</p>");
+    form = { rooms: null, room: "", members: [], picked: [], name: "" };
+    drawForm("");
     try {
       const { channels } = await request("GET", org + "/channels");
-      form = { rooms: channels.filter((c) => !c.archived && !c.everyone), room: "", members: [], picked: [], name: "" };
-      drawForm("");
-    } catch (e) { say(failure(e, T.openFailed) + openBar); }
+      if (form === null) return;
+      form.rooms = channels.filter((c) => !c.archived && !c.everyone);
+      drawForm("", '[name="name"]');
+    } catch (e) { if (form !== null) { form.rooms = []; drawForm(failure(e, T.openFailed)); } }
   }
   async function chooseRoom(room) {
     form.room = room; form.members = []; form.picked = [];
@@ -246,42 +414,62 @@ try {
   }
   async function submit() {
     const name = form.name.trim();
-    if (name === "" || form.room === "" || form.picked.length === 0) { drawForm('<p class="bad">' + esc(T.incomplete) + "</p>"); return; }
+    if (!ready()) { drawForm('<div class="strip warn"><p>' + esc(T.incomplete) + "</p></div>"); return; }
     drawForm('<p class="muted">' + esc(T.opening) + "</p>");
     try {
       const made = await request("POST", org + "/roadmaps", { name, channelId: form.room, employees: form.picked });
       form = null;
-      const hints = (made.hints || []).map((h) => '<p class="muted">' + esc(h) + "</p>").join("");
-      await list('<p class="chip">' + esc(T.opened.replace("{n}", String(made.roadmap.number))) + "</p>" + hints);
+      const hints = (made.hints || []).map((h) => "<p>" + esc(h) + "</p>").join("");
+      await list('<div class="strip ok"><p>' + esc(T.opened.replace("{n}", String(made.roadmap.number))) + "</p></div>" + (hints ? '<div class="strip warn">' + hints + "</div>" : ""));
     } catch (e) { drawForm(failure(e, T.openFailed)); }
   }
   async function list(note) {
     const { roadmaps } = await get("");
-    const head = (note || "") + openBar;
-    if (roadmaps.length === 0) { say(head + "<p>" + esc(T.empty) + "</p>"); return; }
-    say(head + "<table><thead><tr><th>" + [T.number, T.name, T.status, T.room, T.items].map(esc).join("</th><th>") + "</th></tr></thead><tbody>" +
-      roadmaps.map((r) => '<tr><td><a data-n="' + r.number + '">#' + r.number + '</a></td><td><a data-n="' + r.number + '">' + esc(r.name) + "</a></td><td>" + status(r) + "</td><td>" + esc(r.channelId || "—") + "</td><td>" + (r.items.length === 0 ? '<span class="muted">' + esc(T.none) + "</span>" : "<ul>" + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul>") + "</td></tr>").join("") +
-      "</tbody></table>");
+    if (roadmaps.length === 0) {
+      draw((note || "") + '<div class="empty"><p class="title">' + esc(T.empty) + '</p><p class="hint">' + esc(T.emptyHint) + "</p>" + openButton + "</div>");
+      return;
+    }
+    draw((note || "") + '<ul class="rows">' + roadmaps.map((r) => {
+      const mod = moderatorOf(r);
+      const meta = [
+        r.channelId ? '<span class="mono">#' + esc(r.channelId) + "</span>" : "",
+        mod ? "<span>" + esc(T.moderator) + " " + esc(mod) + "</span>" : "",
+        "<span>" + esc(T.itemsCount.replace("{n}", String(r.items.length))) + "</span>",
+      ].filter(Boolean).join('<span aria-hidden="true">·</span>');
+      return '<li class="row" data-n="' + r.number + '" tabindex="0"><span class="num mono">#' + r.number + '</span><div class="grow"><div class="line"><a class="title" href="#' + r.number + '" data-n="' + r.number + '">' + esc(r.name) + "</a>" + pill(r) + '</div><div class="meta">' + meta + "</div>" +
+        (r.items.length === 0 ? "" : '<ul class="items">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul>") + "</div></li>";
+    }).join("") + "</ul>", openButton);
   }
   async function one(n) {
     const r = await get("/" + n);
-    main.innerHTML = '<p><a data-n="">' + esc(T.back) + "</a></p><h1>#" + r.number + " " + esc(r.name) + '</h1><p><span class="chip">' + status(r) + "</span> " + esc(T.room) + " " + esc(r.channelId || "—") + "</p>" +
-      "<h2>" + esc(T.record) + '</h2><div class="text">' + (r.record ? esc(r.record) : '<span class="muted">' + esc(T.none) + "</span>") + "</div>" +
-      "<h2>" + esc(T.body) + '</h2><div class="text">' + (r.body ? esc(r.body) : '<span class="muted">' + esc(T.none) + "</span>") + "</div>" +
-      "<h2>" + esc(T.items) + "</h2>" + (r.items.length === 0 ? '<p class="muted">' + esc(T.none) + "</p>" : "<ul>" + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul>");
+    const mod = moderatorOf(r);
+    const section = (title, text) => "<section><h2>" + esc(title) + '</h2><div class="card">' + (text ? esc(text) : '<span class="muted">' + esc(T.none) + "</span>") + "</div></section>";
+    main.innerHTML = '<nav class="crumb"><a href="#" data-n="">' + esc(T.back) + '</a></nav><header class="head"><h1><span class="muted mono">#' + r.number + "</span> " + esc(r.name) + " " + pill(r) + "</h1></header>" +
+      '<div class="meta">' + [r.channelId ? esc(T.room) + ' <span class="mono">#' + esc(r.channelId) + "</span>" : "", mod ? esc(T.moderator) + " " + esc(mod) : ""].filter(Boolean).join('<span aria-hidden="true">·</span>') + "</div>" +
+      section(T.record, r.record) + section(T.body, r.body) +
+      "<section><h2>" + esc(T.items) + "</h2>" + (r.items.length === 0 ? '<p class="muted">' + esc(T.none) + "</p>" : '<ul class="rows"><li class="row" style="cursor: default"><ul class="items grow">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul></li></ul>") + "</section>";
+    view = main.innerHTML;
   }
+  let current = "";
   async function show(n) {
-    try { await (n ? one(n) : list()); } catch (e) { say(failure(e)); }
+    current = n;
+    try { await (n ? one(n) : list()); } catch (e) { draw(failure(e) + '<p><button type="button" data-retry>' + esc(T.retry) + "</button></p>", n ? "" : openButton); }
   }
   // Every control is found through #main, whatever was drawn into it last.
   main.addEventListener("click", (e) => {
-    const a = e.target.closest("a[data-n]");
-    if (a) { e.preventDefault(); location.hash = a.dataset.n; return; }
+    if (e.target.closest("[data-overlay]") && !e.target.closest(".dialog")) { closeForm(); return; }
+    if (e.target.closest("[data-cancel]")) { closeForm(); return; }
     if (e.target.closest("[data-open]")) { void openForm(); return; }
-    if (e.target.closest("[data-cancel]")) { form = null; void show(""); }
+    if (e.target.closest("[data-retry]")) { void show(current); return; }
+    const a = e.target.closest("[data-n]");
+    if (a && !e.target.closest("input, select, button, label")) { e.preventDefault(); location.hash = a.dataset.n; }
+  });
+  main.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && form) { e.preventDefault(); closeForm(); return; }
+    if (e.key === "Enter" && e.target.matches && e.target.matches("li.row[data-n]")) { e.preventDefault(); location.hash = e.target.dataset.n; }
   });
   main.addEventListener("input", (e) => {
-    if (form && e.target.name === "name") form.name = e.target.value;
+    if (form && e.target.name === "name") { form.name = e.target.value; syncSubmit(); }
   });
   main.addEventListener("change", (e) => {
     if (!form) return;
@@ -297,10 +485,10 @@ try {
     if (form) void submit();
   });
   window.addEventListener("hashchange", () => show(location.hash.slice(1)));
-  if (m === null) say('<p class="bad">' + esc(T.elsewhere) + " <code>" + esc(where) + "</code></p>");
+  if (m === null) say('<div class="strip bad"><p>' + esc(T.elsewhere) + " <code>" + esc(where) + "</code></p></div>");
   else show(location.hash.slice(1) || m[3] || "");
 } catch (e) {
-  if (main) say('<p class="bad">' + esc(T.broken) + " " + esc((e && e.message) || e) + "</p>");
+  if (main) say('<div class="strip bad"><p>' + esc(T.broken) + " " + esc((e && e.message) || e) + "</p></div>");
   else document.body.textContent = T.title + " — " + T.broken + " " + ((e && e.message) || e);
 }
 `;
@@ -313,10 +501,11 @@ export function pageHtml(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Roadmaps</title>
+<link rel="stylesheet" href="${THEME_HREF}">
 <style>${STYLE}</style>
 </head>
 <body>
-<main id="main"><h1>${PAGE_STRINGS.en.title}</h1><p class="muted">${PAGE_STRINGS.en.loading}</p></main>
+<main id="main"><header class="head"><h1>${PAGE_STRINGS.en.title}</h1></header><p class="muted">${PAGE_STRINGS.en.loading}</p></main>
 <script>${SCRIPT}</script>
 </body>
 </html>

@@ -180,7 +180,7 @@ describe("the page route", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^text\/html/);
     const html = await res.text();
-    expect(html).toContain('<main id="main"><h1>Roadmaps</h1>');
+    expect(html).toContain('<main id="main"><header class="head"><h1>Roadmaps</h1></header>');
     expect(`${PAGE_PREFIX}/page`).toBe(PAGE_SRC);
   });
 
@@ -335,7 +335,7 @@ describe("the page opens a roadmap, and never sends anyone to a terminal", () =>
       for (const body of [{ roadmaps: [] }, { roadmaps: [ROADMAP] }]) {
         const out = await render("/org/proj/acme/roadmaps", () => ({ ok: true, body }), { lang });
         expect(out.html).toContain(
-          `<button type="button" data-open>${PAGE_STRINGS[lang].open}</button>`,
+          `<button type="button" class="primary" data-open>${PAGE_STRINGS[lang].open}</button>`,
         );
       }
     }

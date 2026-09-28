@@ -84,6 +84,8 @@ export {
   PAGE_SRC,
   PAGE_STRINGS,
   PAGE_TIMEOUT_MS,
+  THEME_HREF,
+  THEME_VARS,
   pageHtml,
   pageRoutes,
 } from "./page.js";

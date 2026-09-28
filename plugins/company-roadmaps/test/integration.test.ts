@@ -69,7 +69,7 @@ describe("the company-roadmaps plugin on a real server", () => {
     const res = await api.request("GET", PAGE_SRC);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^text\/html/);
-    expect(await res.text()).toContain('<main id="main"><h1>Roadmaps</h1>');
+    expect(await res.text()).toContain('<main id="main"><header class="head"><h1>Roadmaps</h1></header>');
     const anonymous = await fetch(`${harness.baseUrl}${PAGE_SRC}`);
     expect(anonymous.status).toBe(401);
   });
