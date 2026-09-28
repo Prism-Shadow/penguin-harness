@@ -3,8 +3,10 @@
  * script, a stand-in for the server's answers, and a person's clicks. The button unfolds a
  * form — a name and the organization's employees, no room to choose: the roadmap opens its own
  * — that sends the plugin's own `POST …/roadmaps` with the employees in the order picked (the
- * first moderates), and the new roadmap is on the list straight after, with the way into its
- * room. A refusal keeps the form and says why.
+ * first moderates), and the page goes straight to the new roadmap: its room beside its detail.
+ * Picking changes the form where it stands (nothing in the dialog is drawn again), a refusal
+ * keeps the form and says why, and the room column reads and sends through the channel's own
+ * routes.
  */
 import vm from "node:vm";
 import { Window } from "happy-dom";
@@ -49,6 +51,7 @@ async function page(
     call: Call,
     roadmaps: Array<Record<string, unknown>>,
   ) => { status: number; body: unknown },
+  seed: Array<Record<string, unknown>> = [],
 ) {
   const window = new Window({ url: "http://localhost:7364/api/company-roadmaps/page" });
   windows.push(window);
@@ -56,7 +59,10 @@ async function page(
   const html = pageHtml();
   document.body.innerHTML = /<body>([\s\S]*)<script>/.exec(html)![1]!;
   const calls: Call[] = [];
-  const roadmaps: Array<Record<string, unknown>> = [];
+  const roadmaps: Array<Record<string, unknown>> = [...seed];
+  // The room's poll: kept, and run when the test says a period has passed.
+  const ticks: Array<() => void> = [];
+  const heard: Array<{ type: string; f: () => void }> = [];
   // What the app's window was asked to do: history entries pushed, events raised.
   const pushed: string[] = [];
   const popped: string[] = [];
@@ -70,13 +76,18 @@ async function page(
         dispatchEvent: (ev: { type: string }) => popped.push(ev.type),
         PopStateEvent: window.PopStateEvent,
       },
-      addEventListener: () => {},
+      // The page's own window: what it listens for is kept here and raised by the test (follow).
+      addEventListener: (type: string, f: () => void) => heard.push({ type, f }),
     },
     location: window.location,
     localStorage: { getItem: () => "en" },
     navigator: { language: "en-US" },
     setTimeout,
     clearTimeout,
+    setInterval: (f: () => void) => ticks.push(f),
+    clearInterval: (id: number) => {
+      ticks[id - 1] = () => {};
+    },
     fetch: async (
       url: string,
       init: { method?: string; headers?: Record<string, string>; body?: string } = {},
@@ -111,10 +122,24 @@ async function page(
       $<HTMLElement>(selector).click();
       await settle();
     },
-    pick: async (id: string) => {
+    pick: async (id: string, checked = true) => {
       const box = $<HTMLInputElement>(`input[name="employee"][value="${id}"]`);
-      box.checked = true;
+      box.checked = checked;
       await fire(box, "change");
+    },
+    say: async (text: string, how: "button" | "enter" = "button") => {
+      const box = $<HTMLElement & { value: string }>('textarea[name="say"]');
+      box.value = text;
+      if (how === "enter") {
+        box.dispatchEvent(
+          new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+        );
+        await settle();
+      } else await fire($("form[data-compose]"), "submit");
+    },
+    tick: async () => {
+      for (const f of ticks) f();
+      await settle();
     },
     name: async (value: string) => {
       const input = $<HTMLInputElement>('input[name="name"]');
@@ -130,6 +155,11 @@ async function page(
     },
     focused: () => document.activeElement?.getAttribute("name") ?? null,
     hash: () => window.location.hash,
+    /** The hash changed: raise it to the page, as a browser does. */
+    follow: async () => {
+      for (const h of heard) if (h.type === "hashchange") h.f();
+      await settle();
+    },
     clearHash: () => {
       window.location.hash = "";
     },
@@ -137,11 +167,46 @@ async function page(
   };
 }
 
-/** The organization's server as the page sees it: the roadmaps, its chart, and the open (which opens the room). */
-function organization(opts: { refuse?: { status: number; message: string } } = {}) {
+interface Said {
+  id: string;
+  time: string;
+  sender: string;
+  text: string;
+}
+
+/**
+ * The organization's server as the page sees it: the Project's organization list, the roadmaps,
+ * its chart, the open (which opens the room) and the rooms' messages (`said`, by channel).
+ */
+function organization(
+  opts: { refuse?: { status: number; message: string }; said?: Record<string, Said[]> } = {},
+) {
+  const said = opts.said ?? {};
   return (call: Call, roadmaps: Array<Record<string, unknown>>) => {
+    if (call.method === "GET" && call.url === "/api/projects/proj/organizations")
+      return { status: 200, body: { organizations: [{ orgId: "acme" }] } };
     if (call.method === "GET" && call.url === `${ORG}/roadmaps`)
       return { status: 200, body: { roadmaps } };
+    const one = /\/roadmaps\/(\d+)$/.exec(call.url);
+    if (call.method === "GET" && one !== null) {
+      const r = roadmaps.find((x) => x.number === Number(one[1]));
+      return r ? { status: 200, body: r } : { status: 404, body: {} };
+    }
+    const room = /\/channels\/([a-z0-9_]+)\/messages$/.exec(call.url);
+    if (room !== null) {
+      const list = (said[room[1]!] ??= []);
+      if (call.method === "GET")
+        return { status: 200, body: { date: "2026-09-28", days: ["2026-09-28"], messages: list } };
+      const text = (call.body as { text: string }).text;
+      const msg = {
+        id: `m${list.length + 1}`,
+        time: "2026-09-28T10:00:00Z",
+        sender: "user:admin",
+        text,
+      };
+      list.push(msg);
+      return { status: 201, body: msg };
+    }
     if (call.method === "GET" && call.url === `${ORG}/chart`) return { status: 200, body: CHART };
     if (call.method === "POST" && call.url === `${ORG}/roadmaps`) {
       if (opts.refuse)
@@ -158,6 +223,9 @@ function organization(opts: { refuse?: { status: number; message: string } } = {
         archived: false,
         channelId: `roadmap_${number}`,
         employees: b.employees,
+        moderator: b.employees[0],
+        record: "",
+        body: "",
         items: [],
         delegations: {},
       };
@@ -169,7 +237,7 @@ function organization(opts: { refuse?: { status: number; message: string } } = {
 }
 
 describe("the Open a roadmap button", () => {
-  it("opens a roadmap: button → form (a name, the employees) → POST → the new roadmap on the list", async () => {
+  it("opens a roadmap: button → form (a name, the employees) → POST → straight into its room and detail", async () => {
     const p = await page(organization());
     expect(p.text()).toContain(T.empty);
     await p.click("button[data-open]");
@@ -195,28 +263,42 @@ describe("the Open a roadmap button", () => {
         contentType: "application/json",
       },
     ]);
-    // The list is read again, and the new roadmap is on it, with the way into its room.
-    expect(p.calls.at(-1)).toMatchObject({ method: "GET", url: `${ORG}/roadmaps` });
+    // Not the list: the new roadmap itself, its room read at once.
+    expect(p.calls.slice(-2).map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET ${ORG}/roadmaps/1`,
+      `GET ${ORG}/channels/roadmap_1/messages`,
+    ]);
+    expect(p.hash()).toBe("#1");
+    expect(p.$("[data-overlay]")).toBeNull();
     expect(p.text()).toContain(T.opened.replace("{n}", "1"));
-    expect(p.text()).toContain("Queue migration");
-    expect(p.$("a[data-room]")?.getAttribute("href")).toBe("/org/proj/acme/channels/roadmap_1");
-    expect(p.$("form[data-form]")).toBeNull();
+    expect(p.$("h1")?.textContent).toContain("Queue migration");
   });
 
-  it("enters the room inside the app: its own channel page, through the app's history", async () => {
+  it("changes the form where it stands when an employee is picked — nothing in the dialog is drawn again", async () => {
     const p = await page(organization());
     await p.click("button[data-open]");
-    await p.pick("acme_dev");
     await p.name("Queue migration");
-    await p.submit();
-    const link = p.$<HTMLElement>("a[data-room]");
-    expect(link.getAttribute("target")).toBe("_top");
-    expect(link.textContent).toBe(T.enterRoom);
-    await p.click("a[data-room]");
-    expect(p.pushed).toEqual(["/org/proj/acme/channels/roadmap_1"]);
-    expect(p.popped).toEqual(["popstate"]);
-    // A click on the room's link is not a click on the row.
-    expect(p.hash()).toBe("");
+    const dialog = p.$("[data-overlay]");
+    const picks = p.$<HTMLElement>("ul.picks");
+    const name = p.$("input[name=name]");
+    picks.scrollTop = 40;
+    await p.pick("acme_web");
+    await p.pick("acme_dev");
+    await p.pick("acme_web", false);
+    // The same elements, still where they were: the list keeps its scroll, the name its text.
+    expect(p.$("[data-overlay]")).toBe(dialog);
+    expect(p.$("ul.picks")).toBe(picks);
+    expect(p.$("input[name=name]")).toBe(name);
+    expect(picks.scrollTop).toBe(40);
+    expect(p.$<HTMLInputElement>("input[name=name]").value).toBe("Queue migration");
+    // The moderator's pill follows the first one picked, and there is only ever one.
+    expect(p.$<HTMLElement>("ul.picks").querySelectorAll("[data-moderates]")).toHaveLength(1);
+    expect(p.text()).toContain(`Dev acme_dev ${T.moderates}`);
+    expect(p.text()).not.toContain(`Web acme_web ${T.moderates}`);
+    expect(p.$<HTMLButtonElement>("button[data-submit]").disabled).toBe(false);
+    await p.pick("acme_dev", false);
+    expect(p.$<HTMLElement>("ul.picks").querySelectorAll("[data-moderates]")).toHaveLength(0);
+    expect(p.$<HTMLButtonElement>("button[data-submit]").disabled).toBe(true);
   });
 
   it("keeps the form and says why when the server refuses, and sends nothing until the form is complete", async () => {
@@ -237,6 +319,8 @@ describe("the Open a roadmap button", () => {
     expect(p.text()).toContain(T.openFailed);
     expect(p.text()).toContain("HTTP 409 — No free channel id for roadmap #1's room.");
     expect(p.$<HTMLInputElement>('input[name="name"]').value).toBe("Half done");
+    expect(p.$<HTMLInputElement>('input[value="acme_dev"]').checked).toBe(true);
+    expect(p.$<HTMLButtonElement>("button[data-submit]").disabled).toBe(false);
   });
 
   it("says the organization has no employee when it has none, and Cancel goes back to the list", async () => {
@@ -280,17 +364,94 @@ describe("the Open a roadmap button", () => {
     expect(p.$("button[data-open]")).not.toBeNull();
     expect(p.reads()).toBe(reads);
   });
+});
 
-  it("opens a roadmap from anywhere on its row, and from the keyboard", async () => {
-    const p = await page(organization());
-    await p.click("button[data-open]");
-    await p.pick("acme_dev");
-    await p.name("Queue migration");
-    await p.submit();
+const SEEDED = {
+  number: 1,
+  name: "Queue migration",
+  status: "discussing",
+  archived: false,
+  channelId: "roadmap_1",
+  employees: ["acme_dev", "acme_web"],
+  moderator: "acme_dev",
+  record: "We agreed on the ledger.",
+  body: "## Why\nBecause.",
+  items: [],
+  delegations: {},
+};
+
+describe("a roadmap's room beside its detail", () => {
+  it("opens a roadmap from anywhere on its row, from the keyboard, and from Enter the room", async () => {
+    const p = await page(organization(), [SEEDED]);
     await p.click("li.row .num");
     expect(p.hash()).toBe("#1");
     p.clearHash();
     await p.press("Enter", "li.row");
     expect(p.hash()).toBe("#1");
+    p.clearHash();
+    const enter = p.$<HTMLElement>("a.room");
+    expect(enter.textContent).toBe(T.enterRoom);
+    expect(enter.getAttribute("href")).toBe("#1");
+    await p.click("a.room");
+    expect(p.hash()).toBe("#1");
+    expect(p.pushed).toEqual([]);
+  });
+
+  it("shows the room on the left and the record, body and items on the right", async () => {
+    const said = {
+      roadmap_1: [
+        {
+          id: "m1",
+          time: "2026-09-28T09:00:00Z",
+          sender: "system",
+          text: "admin opened the channel",
+        },
+        {
+          id: "m2",
+          time: "2026-09-28T09:01:00Z",
+          sender: "agent:acme_dev",
+          text: "@user:admin what do you want from this?",
+        },
+      ],
+    };
+    const p = await page(organization({ said }), [SEEDED]);
+    await p.click("li.row .num");
+    await p.follow();
+    const split = p.$<HTMLElement>(".split");
+    expect([...split.children].map((c) => c.className)).toEqual(["room-col", "detail"]);
+    const room = p.$<HTMLElement>(".room-col");
+    expect(room.textContent).toContain("acme_dev");
+    expect(room.textContent).toContain("what do you want from this?");
+    expect(room.textContent).toContain(T.system);
+    expect(p.$<HTMLElement>(".detail").textContent).toContain("We agreed on the ledger.");
+    // The channel's own page is one link away, inside the app.
+    await p.click("a[data-room]");
+    expect(p.pushed).toEqual(["/org/proj/acme/channels/roadmap_1"]);
+    expect(p.popped).toEqual(["popstate"]);
+  });
+
+  it("sends into the room with the channel's own route — the button or Enter — and reads it again", async () => {
+    const said: Record<string, Said[]> = {};
+    const p = await page(organization({ said }), [SEEDED]);
+    await p.click("li.row .num");
+    await p.follow();
+    expect(p.text()).toContain(T.quiet);
+    await p.say("The ledger first.");
+    await p.say("Then the page.", "enter");
+    expect(p.calls.filter((c) => c.method === "POST").map((c) => [c.url, c.body])).toEqual([
+      [`${ORG}/channels/roadmap_1/messages`, { text: "The ledger first." }],
+      [`${ORG}/channels/roadmap_1/messages`, { text: "Then the page." }],
+    ]);
+    expect(p.$<HTMLElement>(".stream").textContent).toContain("Then the page.");
+    expect(p.$<HTMLElement & { value: string }>('textarea[name="say"]').value).toBe("");
+    // What others say arrives at the next period, without a reload.
+    said.roadmap_1!.push({
+      id: "m9",
+      time: "2026-09-28T10:05:00Z",
+      sender: "agent:acme_web",
+      text: "Agreed.",
+    });
+    await p.tick();
+    expect(p.$<HTMLElement>(".stream").textContent).toContain("Agreed.");
   });
 });

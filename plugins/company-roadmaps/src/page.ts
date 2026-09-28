@@ -19,11 +19,21 @@
  * middle, and a dialog for opening a roadmap.
  *
  * A person opens a roadmap here: the "Open a roadmap" button above the list unfolds a form —
- * a name, the room (an existing channel, read from the organization's own channel list; the
- * all-hands channel and archived ones cannot hold a room) and one or more of that channel's
- * employees (read from the channel itself; the first one picked moderates) — which sends the
- * plugin's own `POST …/roadmaps`, and the list is read again with the new roadmap on it. No
- * endpoint is added for it: the form asks only what the app's own pages ask.
+ * a name and one or more of the organization's employees (read from its chart; the first one
+ * picked moderates) — which sends the plugin's own `POST …/roadmaps`; the roadmap opens its own
+ * room, and the page goes straight to it. Picking an employee changes the form where it stands:
+ * the dialog is drawn once, and nothing in it is drawn again while it is used.
+ *
+ * One roadmap is shown as its room beside its detail: on the left the room — its messages, read
+ * from the channel's own `GET …/channels/<id>/messages` and read again every few seconds, and a
+ * box that sends with the channel's own `POST …/messages` — and on the right the record, the
+ * body and the items. Under a narrow window the two stack, the room first. The channel's own
+ * page is one link away, for what the room column does not do (members, archiving).
+ *
+ * An organization that runs on another machine is asked THERE, as the app asks it: the page
+ * reads the Project's organization list once, and when the organization names a machine every
+ * request goes through `/server/<machine>/…`. Asked here instead, the room would be opened in
+ * this server's mirror of the organization, which the next copy from the machine removes.
  *
  * The page is never a blank block. In the dark theme an empty `<main>` is a solid near-black
  * pane, which is what a person saw while the list was on its way and, for good, when the answer
@@ -118,7 +128,7 @@ button.primary:hover:not(:disabled) { background: var(--rm-accent); opacity: 0.9
 button.icon { padding: 0.25rem 0.5rem; border-color: transparent; background: transparent; color: var(--rm-muted); }
 a.button { display: inline-block; font-size: 0.75rem; font-weight: 500; line-height: 1.5; padding: 0.25rem 0.625rem; border-radius: 0.375rem; border: 1px solid var(--rm-accent); background: var(--rm-accent); color: var(--rm-accent-fg); text-decoration: none; }
 a.button:hover { opacity: 0.9; text-decoration: none; }
-a.room { color: var(--rm-fg); text-decoration: underline; text-underline-offset: 2px; }
+a.room, a.channel { color: var(--rm-fg); text-decoration: underline; text-underline-offset: 2px; }
 button:focus-visible, a:focus-visible, .row:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 1px; }
 .pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 0.125rem 0.5rem; font-size: 0.6875rem; font-weight: 600; white-space: nowrap; }
 .pill.ok { background: var(--rm-ok-bg); color: var(--rm-ok-fg); }
@@ -168,6 +178,22 @@ input[name="name"], select { width: 100%; font: inherit; font-size: 0.75rem; pad
 .picks label { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.625rem; font-size: 0.75rem; cursor: pointer; }
 .picks label:hover { background: var(--rm-hover); }
 .picks input { accent-color: var(--rm-accent); margin: 0; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+@media (max-width: 900px) { .split { grid-template-columns: minmax(0, 1fr); } }
+.split > section { margin-top: 0; }
+.room-col { display: flex; flex-direction: column; height: calc(100vh - 9rem); min-height: 22rem; border: 1px solid var(--rm-line); border-radius: 0.375rem; }
+.room-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--rm-line); }
+.room-head h2 { margin: 0; }
+.stream { flex: 1; min-height: 0; overflow-y: auto; padding: 0.5rem 0.75rem; }
+.msg { margin: 0 0 0.625rem; }
+.msg .who { font-size: 0.6875rem; color: var(--rm-muted); }
+.msg .who strong { color: var(--rm-fg); font-weight: 600; }
+.msg .text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8125rem; }
+.msg.system .text { color: var(--rm-muted); font-size: 0.75rem; }
+.compose { display: flex; gap: 0.5rem; align-items: flex-end; padding: 0.5rem 0.75rem; border-top: 1px solid var(--rm-line); }
+.compose textarea { flex: 1; min-width: 0; resize: none; font: inherit; font-size: 0.8125rem; padding: 0.3125rem 0.625rem; border-radius: 0.375rem; border: 1px solid var(--rm-line); background: var(--rm-bg); color: var(--rm-fg); }
+.room-col .strip { margin: 0.5rem 0.75rem; }
+.detail section:first-child { margin-top: 0; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 `;
 
@@ -221,6 +247,16 @@ export const PAGE_STRINGS = {
     discussing: "discussing",
     established: "established",
     proposal: "proposal",
+    channelPage: "Channel page",
+    say: "Say something in the room…",
+    send: "Send",
+    sendFailed: "Could not send",
+    roomFailed: "Could not read the room",
+    quiet: "Nothing said in the room yet.",
+    noRoom: "This roadmap has no room yet.",
+    system: "system",
+    onMachine:
+      "This organization runs on machine {m}; its roadmaps are asked there, so the plugin has to be installed on that machine too.",
   },
   zh: {
     title: "路线图",
@@ -268,6 +304,15 @@ export const PAGE_STRINGS = {
     discussing: "讨论中",
     established: "已确立",
     proposal: "提案",
+    channelPage: "频道页",
+    say: "在讨论室里说点什么……",
+    send: "发送",
+    sendFailed: "发送失败",
+    roomFailed: "读取讨论室失败",
+    quiet: "讨论室里还没有人说话。",
+    noRoom: "这份路线图还没有讨论室。",
+    system: "系统",
+    onMachine: "这个组织运行在机器 {m} 上；它的路线图要去那里问，所以那台机器上也得装这个插件。",
   },
 } as const;
 
@@ -313,29 +358,6 @@ try {
   }, null);
   const where = read(() => window.parent.location.pathname, location.pathname);
   const m = /\\/org\\/([^/]+)\\/([^/]+)\\/roadmaps(?:\\/(\\d+))?/.exec(where);
-  const org = m === null ? "" : "/api/projects/" + m[1] + "/organizations/" + m[2];
-  const openButton = '<button type="button" class="primary" data-open>' + esc(T.open) + "</button>";
-  // A roadmap's room is a channel of the app that the channel list leaves out: the way in is a
-  // link to the app's own channel page, followed inside the app (a history entry the app's
-  // router reads) and, where that cannot be done, as an ordinary link of the whole window.
-  const roomPath = (channelId) => "/org/" + m[1] + "/" + m[2] + "/channels/" + encodeURIComponent(channelId);
-  const roomLink = (r, cls) => r.channelId ? '<a class="' + cls + '" href="' + esc(roomPath(r.channelId)) + '" target="_top" data-room="' + esc(r.channelId) + '">' + esc(T.enterRoom) + "</a>" : "";
-  const enter = (path) => read(() => {
-    const parent = window.parent;
-    if (!parent || parent === window || !parent.history) return false;
-    parent.history.pushState(null, "", path);
-    parent.dispatchEvent(new parent.PopStateEvent("popstate"));
-    return true;
-  }, false);
-  // A status as a pill, in the app's tones: under discussion is live work, waiting for a room is
-  // unfinished, established is done well, a shelved discussion recedes.
-  const pill = (r) => {
-    const shelved = r.archived && r.status !== "established";
-    const tone = shelved ? "gray" : r.status === "awaiting_room" ? "warn" : r.status === "established" ? "ok" : "ok";
-    return '<span class="pill ' + tone + '">' + esc(T[r.status] || r.status) + (shelved ? " · " + esc(T.archived) : "") + "</span>";
-  };
-  const moderatorOf = (r) => r.moderator || (r.employees && r.employees[0]) || "";
-  const itemLine = (i, d) => "<li><span>" + esc(i.title) + '</span> <span class="muted">— ' + (i.kind === "proposal" ? esc(T.owner) + " " + esc(i.owner) : esc(T.employees) + " " + esc(i.employees.join(", "))) + "</span>" + (d && d.proposal ? ' <span class="pill gray">' + esc(T.proposal) + " #" + d.proposal + "</span>" : "") + '<div class="brief">' + esc(i.brief) + "</div></li>";
   // One request; an answer that has not come by TIMEOUT_MS is a failure of its own.
   async function request(method, url, body) {
     let timer;
@@ -354,6 +376,46 @@ try {
     })();
     try { return await Promise.race([ask, late]); } finally { clearTimeout(timer); }
   }
+  // The organization's API root: this server's, or — for an organization that runs on another
+  // machine — that machine's through this server's /server/<machine>/ (see resolveOrg).
+  let org = m === null ? "" : "/api/projects/" + m[1] + "/organizations/" + m[2];
+  let machine = null;
+  async function resolveOrg() {
+    const url = "/api/projects/" + m[1] + "/organizations";
+    say('<p class="muted">' + esc(T.loading) + '</p><p class="muted small"><code>GET ' + esc(url) + "</code></p>");
+    try {
+      const listing = await request("GET", url);
+      const mine = (listing.organizations || []).find((o) => o.orgId === decodeURIComponent(m[2]));
+      if (mine && typeof mine.machineId === "string" && mine.machineId !== "") {
+        machine = mine.machineId;
+        org = "/server/" + encodeURIComponent(machine) + org;
+      }
+    } catch {
+      // No listing: the organization is asked here, which is where it runs unless it says otherwise.
+    }
+  }
+  const openButton = '<button type="button" class="primary" data-open>' + esc(T.open) + "</button>";
+  // A roadmap's room is a channel of the app that the channel list leaves out. It is shown here,
+  // beside the roadmap; the channel's own page (members, archiving) is followed inside the app
+  // (a history entry the app's router reads) and, where that cannot be done, as an ordinary link.
+  const roomPath = (channelId) => "/org/" + m[1] + "/" + m[2] + "/channels/" + encodeURIComponent(channelId);
+  const roomLink = (r, cls) => r.channelId ? '<a class="' + cls + '" href="#' + r.number + '" data-n="' + r.number + '">' + esc(T.enterRoom) + "</a>" : "";
+  const enter = (path) => read(() => {
+    const parent = window.parent;
+    if (!parent || parent === window || !parent.history) return false;
+    parent.history.pushState(null, "", path);
+    parent.dispatchEvent(new parent.PopStateEvent("popstate"));
+    return true;
+  }, false);
+  // A status as a pill, in the app's tones: under discussion is live work, waiting for a room is
+  // unfinished, established is done well, a shelved discussion recedes.
+  const pill = (r) => {
+    const shelved = r.archived && r.status !== "established";
+    const tone = shelved ? "gray" : r.status === "awaiting_room" ? "warn" : r.status === "established" ? "ok" : "ok";
+    return '<span class="pill ' + tone + '">' + esc(T[r.status] || r.status) + (shelved ? " · " + esc(T.archived) : "") + "</span>";
+  };
+  const moderatorOf = (r) => r.moderator || (r.employees && r.employees[0]) || "";
+  const itemLine = (i, d) => "<li><span>" + esc(i.title) + '</span> <span class="muted">— ' + (i.kind === "proposal" ? esc(T.owner) + " " + esc(i.owner) : esc(T.employees) + " " + esc(i.employees.join(", "))) + "</span>" + (d && d.proposal ? ' <span class="pill gray">' + esc(T.proposal) + " #" + d.proposal + "</span>" : "") + '<div class="brief">' + esc(i.brief) + "</div></li>";
   // A read of the roadmaps, first said out loud (with the rows it is about to fill sketched in).
   async function get(path) {
     const url = org + "/roadmaps" + path;
@@ -366,7 +428,8 @@ try {
     let why;
     if (e && e.timeout) why = esc(T.timeout.replace("{s}", String(TIMEOUT_MS / 1000)));
     else if (e && e.status) {
-      const hint = e.message || (e.status === 404 ? T.unavailable : e.status === 401 ? T.signedOut : "");
+      const bare = e.status === 404 ? (machine ? T.onMachine.replace("{m}", machine) : T.unavailable) : e.status === 401 ? T.signedOut : "";
+      const hint = e.message || bare;
       why = "HTTP " + e.status + (hint ? " — " + esc(hint) : "");
     } else if (e && e.network) why = esc(T.network) + " " + esc(e.network);
     else why = esc(T.broken) + " " + esc((e && e.message) || e);
@@ -380,6 +443,10 @@ try {
   // the order picked (the first moderates). The room is not chosen: the roadmap opens its own.
   let form = null;
   const ready = () => form !== null && form.name.trim() !== "" && form.picked.length > 0;
+  const q = (sel) => (typeof main.querySelector === "function" ? main.querySelector(sel) : null);
+  // The dialog is drawn once, when it opens; after that only its body is replaced (when the
+  // employees arrive), and a pick, a keystroke or a note changes the one element it concerns —
+  // so the list of employees keeps its scroll, the name keeps its cursor, nothing jumps.
   function drawForm(note, focus) {
     const f = form;
     let body;
@@ -387,18 +454,32 @@ try {
     else if (f.members.length === 0) body = (note || "") + '<p class="muted">' + esc(T.noMembers) + '</p><div class="dialog-foot"><button type="button" data-cancel>' + esc(T.cancel) + "</button></div>";
     else {
       body = '<form data-form><div class="field"><label for="rm-name">' + esc(T.name) + '</label><input id="rm-name" name="name" maxlength="120" autocomplete="off" value="' + esc(f.name) + '"></div>';
-      body += '<fieldset class="field"><legend>' + esc(T.formEmployees) + '</legend><ul class="picks">' + f.members.map((e) => '<li><label><input type="checkbox" name="employee" value="' + esc(e.id) + '"' + (f.picked.includes(e.id) ? " checked" : "") + "> <span>" + esc(e.name) + '</span> <span class="muted mono small">' + esc(e.id) + "</span>" + (f.picked[0] === e.id ? ' <span class="pill gray">' + esc(T.moderates) + "</span>" : "") + "</label></li>").join("") + '</ul><div class="hint">' + esc(T.formRoomNote) + "</div></fieldset>";
-      body += (note || "") + '<div class="dialog-foot"><button type="button" data-cancel>' + esc(T.cancel) + '</button><button type="submit" class="primary" data-submit' + (ready() ? "" : " disabled") + ">" + esc(T.submit) + "</button></div></form>";
+      body += '<fieldset class="field"><legend>' + esc(T.formEmployees) + '</legend><ul class="picks">' + f.members.map((e) => '<li><label><input type="checkbox" name="employee" value="' + esc(e.id) + '"' + (f.picked.includes(e.id) ? " checked" : "") + "> <span>" + esc(e.name) + '</span> <span class="muted mono small">' + esc(e.id) + "</span>" + (f.picked[0] === e.id ? moderates : "") + "</label></li>").join("") + '</ul><div class="hint">' + esc(T.formRoomNote) + "</div></fieldset>";
+      body += '<div data-note>' + (note || "") + '</div><div class="dialog-foot"><button type="button" data-cancel>' + esc(T.cancel) + '</button><button type="submit" class="primary" data-submit' + (ready() ? "" : " disabled") + ">" + esc(T.submit) + "</button></div></form>";
     }
-    main.innerHTML = view + '<div class="overlay" data-overlay><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="rm-dialog-title"><div class="dialog-head"><h2 id="rm-dialog-title">' + esc(T.open) + '</h2><button type="button" class="icon" data-cancel aria-label="' + esc(T.close) + '">✕</button></div><div class="dialog-body">' + body + "</div></div></div>";
-    if (focus && typeof main.querySelector === "function") read(() => main.querySelector(focus).focus(), null);
+    const slot = q("[data-overlay] .dialog-body");
+    if (slot) slot.innerHTML = body;
+    else main.innerHTML = view + '<div class="overlay" data-overlay><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="rm-dialog-title"><div class="dialog-head"><h2 id="rm-dialog-title">' + esc(T.open) + '</h2><button type="button" class="icon" data-cancel aria-label="' + esc(T.close) + '">✕</button></div><div class="dialog-body">' + body + "</div></div></div>";
+    if (focus) read(() => q(focus).focus(), null);
   }
+  const moderates = ' <span class="pill gray" data-moderates>' + esc(T.moderates) + "</span>";
+  // A note under the fields (opening…, why it was refused), without touching the fields.
+  const formNote = (html) => { const n = q("[data-note]"); if (n) n.innerHTML = html; else drawForm(html); };
   const closeForm = () => { form = null; main.innerHTML = view; };
   // The submit button follows the fields without redrawing them, so typing keeps its focus.
   const syncSubmit = () => {
-    if (typeof main.querySelector !== "function") return;
-    const b = main.querySelector("[data-submit]");
+    const b = q("[data-submit]");
     if (b) b.disabled = !ready();
+  };
+  // The moderator's pill moves to whoever is picked first; nothing else in the list changes.
+  const syncModerator = () => {
+    const was = q("[data-moderates]");
+    if (was) was.remove();
+    const first = form.picked[0];
+    if (first === undefined) return;
+    for (const box of main.querySelectorAll('input[name="employee"]')) {
+      if (box.value === first) box.closest("label").insertAdjacentHTML("beforeend", moderates);
+    }
   };
   async function openForm() {
     form = { members: null, picked: [], name: "" };
@@ -410,16 +491,22 @@ try {
       drawForm("", '[name="name"]');
     } catch (e) { if (form !== null) { form.members = []; drawForm(failure(e, T.openFailed)); } }
   }
+  // The roadmap is opened, and the page goes straight to it: its room beside its detail.
   async function submit() {
     const name = form.name.trim();
-    if (!ready()) { drawForm('<div class="strip warn"><p>' + esc(T.incomplete) + "</p></div>"); return; }
-    drawForm('<p class="muted">' + esc(T.opening) + "</p>");
+    if (!ready()) { formNote('<div class="strip warn"><p>' + esc(T.incomplete) + "</p></div>"); return; }
+    formNote('<p class="muted">' + esc(T.opening) + "</p>");
+    const b = q("[data-submit]");
+    if (b) b.disabled = true;
     try {
       const made = await request("POST", org + "/roadmaps", { name, employees: form.picked });
       form = null;
       const hints = (made.hints || []).map((h) => "<p>" + esc(h) + "</p>").join("");
-      await list('<div class="strip ok"><p>' + esc(T.opened.replace("{n}", String(made.roadmap.number))) + "</p></div>" + (hints ? '<div class="strip warn">' + hints + "</div>" : ""));
-    } catch (e) { drawForm(failure(e, T.openFailed)); }
+      const n = String(made.roadmap.number);
+      current = n;
+      location.hash = n;
+      await one(n, '<div class="strip ok"><p>' + esc(T.opened.replace("{n}", n)) + "</p></div>" + (hints ? '<div class="strip warn">' + hints + "</div>" : ""));
+    } catch (e) { if (form !== null) { formNote(failure(e, T.openFailed)); syncSubmit(); } }
   }
   async function list(note) {
     const { roadmaps } = await get("");
@@ -438,19 +525,79 @@ try {
         (r.items.length === 0 ? "" : '<ul class="items">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul>") + "</div></li>";
     }).join("") + "</ul>", openButton);
   }
-  async function one(n) {
+  // The room column: what was said, oldest first, and a box to say more. Read again every
+  // ROOM_POLL_MS while the roadmap is shown; redrawn only when something new came.
+  let room = null;
+  const who = (sender) => sender === "system" ? T.system : sender.replace(/^(agent|user):/, "");
+  const clock = (iso) => { const d = new Date(iso); return isNaN(d.getTime()) ? "" : String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+  const message = (x) => '<div class="msg' + (x.sender === "system" ? " system" : "") + '" data-id="' + esc(x.id) + '"><div class="who"><strong>' + esc(who(x.sender)) + "</strong> " + esc(clock(x.time)) + '</div><div class="text">' + esc(x.text) + "</div></div>";
+  async function readRoom() {
+    const stream = q("[data-stream]");
+    if (room === null || !stream) return;
+    const mine = room;
+    const url = org + "/channels/" + encodeURIComponent(mine.channelId) + "/messages";
+    try {
+      let got = await request("GET", url);
+      // Today may be quiet: the last day anything was said is shown instead.
+      if ((got.messages || []).length === 0 && got.days && got.days[0] && got.days[0] !== got.date) got = await request("GET", url + "?date=" + got.days[0]);
+      if (room !== mine) return;
+      const messages = got.messages || [];
+      const last = messages.length === 0 ? "" : messages[messages.length - 1].id + "/" + messages.length;
+      if (last === mine.last && !mine.failed) return;
+      mine.last = last;
+      mine.failed = false;
+      const atEnd = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 32;
+      stream.innerHTML = messages.length === 0 ? '<p class="muted">' + esc(T.quiet) + "</p>" : messages.map(message).join("");
+      if (atEnd || mine.first) { stream.scrollTop = stream.scrollHeight; mine.first = false; }
+    } catch (e) {
+      if (room !== mine) return;
+      mine.failed = true;
+      stream.innerHTML = failure(e, T.roomFailed);
+    }
+  }
+  async function sendRoom() {
+    const box = q("[data-say]");
+    if (room === null || !box || box.value.trim() === "") return;
+    const text = box.value;
+    const b = q("[data-send]");
+    if (b) b.disabled = true;
+    const note = q("[data-send-note]");
+    try {
+      await request("POST", org + "/channels/" + encodeURIComponent(room.channelId) + "/messages", { text });
+      box.value = "";
+      if (note) note.innerHTML = "";
+      if (room) room.first = true;
+      await readRoom();
+    } catch (e) { if (note) note.innerHTML = failure(e, T.sendFailed); }
+    finally { if (b) b.disabled = false; }
+  }
+  const ROOM_POLL_MS = 4000;
+  let poll = null;
+  const stopRoom = () => { room = null; if (poll !== null) clearInterval(poll); poll = null; };
+  async function one(n, note) {
+    stopRoom();
     const r = await get("/" + n);
     const mod = moderatorOf(r);
     const section = (title, text) => "<section><h2>" + esc(title) + '</h2><div class="card">' + (text ? esc(text) : '<span class="muted">' + esc(T.none) + "</span>") + "</div></section>";
-    main.innerHTML = '<nav class="crumb"><a href="#" data-n="">' + esc(T.back) + '</a></nav><header class="head"><h1><span class="muted mono">#' + r.number + "</span> " + esc(r.name) + " " + pill(r) + "</h1>" + roomLink(r, "button primary") + "</header>" +
+    const roomColumn = r.channelId
+      ? '<section class="room-col" aria-label="' + esc(T.room) + '"><div class="room-head"><h2>' + esc(T.room) + ' <span class="muted mono small">#' + esc(r.channelId) + '</span></h2><a class="channel small" href="' + esc(roomPath(r.channelId)) + '" target="_top" data-room="' + esc(r.channelId) + '">' + esc(T.channelPage) + '</a></div><div class="stream" data-stream><p class="muted">' + esc(T.loading) + '</p></div><div data-send-note></div><form class="compose" data-compose><textarea name="say" data-say rows="2" placeholder="' + esc(T.say) + '"></textarea><button type="submit" class="primary" data-send>' + esc(T.send) + "</button></form></section>"
+      : '<section class="room-col"><div class="stream"><p class="muted">' + esc(T.noRoom) + "</p></div></section>";
+    main.innerHTML = '<nav class="crumb"><a href="#" data-n="">' + esc(T.back) + '</a></nav><header class="head"><h1><span class="muted mono">#' + r.number + "</span> " + esc(r.name) + " " + pill(r) + "</h1></header>" + (note || "") +
+      '<div class="split">' + roomColumn + '<div class="detail">' +
       '<div class="meta">' + [mod ? esc(T.moderator) + " " + esc(mod) : ""].filter(Boolean).join('<span aria-hidden="true">·</span>') + "</div>" +
       section(T.record, r.record) + section(T.body, r.body) +
-      "<section><h2>" + esc(T.items) + "</h2>" + (r.items.length === 0 ? '<p class="muted">' + esc(T.none) + "</p>" : '<ul class="rows"><li class="row" style="cursor: default"><ul class="items grow">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul></li></ul>") + "</section>";
+      "<section><h2>" + esc(T.items) + "</h2>" + (r.items.length === 0 ? '<p class="muted">' + esc(T.none) + "</p>" : '<ul class="rows"><li class="row" style="cursor: default"><ul class="items grow">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul></li></ul>") + "</section></div></div>";
     view = main.innerHTML;
+    if (r.channelId && q("[data-stream]")) {
+      room = { channelId: r.channelId, last: null, first: true, failed: false };
+      await readRoom();
+      poll = setInterval(() => { void readRoom(); }, ROOM_POLL_MS);
+    }
   }
   let current = "";
   async function show(n) {
     current = n;
+    stopRoom();
     try { await (n ? one(n) : list()); } catch (e) { draw(failure(e) + '<p><button type="button" data-retry>' + esc(T.retry) + "</button></p>", n ? "" : openButton); }
   }
   // Every control is found through #main, whatever was drawn into it last.
@@ -459,14 +606,16 @@ try {
     if (e.target.closest("[data-cancel]")) { closeForm(); return; }
     if (e.target.closest("[data-open]")) { void openForm(); return; }
     if (e.target.closest("[data-retry]")) { void show(current); return; }
-    const room = e.target.closest("[data-room]");
-    if (room) { if (enter(room.getAttribute("href"))) e.preventDefault(); return; }
+    const channel = e.target.closest("[data-room]");
+    if (channel) { if (enter(channel.getAttribute("href"))) e.preventDefault(); return; }
     const a = e.target.closest("[data-n]");
     if (a && !e.target.closest("input, select, button, label")) { e.preventDefault(); location.hash = a.dataset.n; }
   });
   main.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && form) { e.preventDefault(); closeForm(); return; }
-    if (e.key === "Enter" && e.target.matches && e.target.matches("li.row[data-n]")) { e.preventDefault(); location.hash = e.target.dataset.n; }
+    if (e.key === "Enter" && e.target.matches && e.target.matches("li.row[data-n]")) { e.preventDefault(); location.hash = e.target.dataset.n; return; }
+    // In the room's box, Enter sends and Shift+Enter starts a new line.
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.target.name === "say") { e.preventDefault(); void sendRoom(); }
   });
   main.addEventListener("input", (e) => {
     if (form && e.target.name === "name") { form.name = e.target.value; syncSubmit(); }
@@ -476,16 +625,18 @@ try {
     if (e.target.name === "employee") {
       const id = e.target.value;
       form.picked = e.target.checked ? form.picked.filter((x) => x !== id).concat(id) : form.picked.filter((x) => x !== id);
-      drawForm("");
+      syncModerator();
+      syncSubmit();
     }
   });
   main.addEventListener("submit", (e) => {
     e.preventDefault();
+    if (e.target.matches && e.target.matches("[data-compose]")) { void sendRoom(); return; }
     if (form) void submit();
   });
-  window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+  window.addEventListener("hashchange", () => { const n = location.hash.slice(1); if (n !== current) void show(n); });
   if (m === null) say('<div class="strip bad"><p>' + esc(T.elsewhere) + " <code>" + esc(where) + "</code></p></div>");
-  else show(location.hash.slice(1) || m[3] || "");
+  else void resolveOrg().then(() => show(location.hash.slice(1) || m[3] || ""));
 } catch (e) {
   if (main) say('<div class="strip bad"><p>' + esc(T.broken) + " " + esc((e && e.message) || e) + "</p></div>");
   else document.body.textContent = T.title + " — " + T.broken + " " + ((e && e.message) || e);

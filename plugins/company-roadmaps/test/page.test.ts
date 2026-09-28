@@ -66,6 +66,9 @@ interface Rendered {
   expire: () => Promise<string>;
 }
 
+/** Where the page asks which machine the organization runs on, before anything else. */
+const LISTING = "/api/projects/proj/organizations";
+
 const settle = async () => {
   for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
 };
@@ -77,7 +80,14 @@ const settle = async () => {
 async function render(
   parentPath: string,
   answer: (url: string) => Answer | Promise<Answer>,
-  opts: { lang?: string; dark?: boolean; hash?: string; brokenRoot?: boolean } = {},
+  opts: {
+    lang?: string;
+    dark?: boolean;
+    hash?: string;
+    brokenRoot?: boolean;
+    /** The Project's organization list; by default it names no machine for any of them. */
+    listing?: Answer;
+  } = {},
 ): Promise<Rendered> {
   const fetched: string[] = [];
   const writes: string[] = [];
@@ -117,7 +127,10 @@ async function render(
     clearTimeout: () => {},
     fetch: async (url: string) => {
       fetched.push(url);
-      const a = await answer(url);
+      const a =
+        url === LISTING
+          ? (opts.listing ?? { ok: true, body: { organizations: [{ orgId: "acme" }] } })
+          : await answer(url);
       return {
         ok: a.ok,
         status: a.status ?? (a.ok ? 200 : 404),
@@ -213,7 +226,7 @@ describe("the page's script", () => {
       }),
       { lang: "zh", dark: true },
     );
-    expect(out.fetched).toEqual(["/api/projects/proj/organizations/acme/roadmaps"]);
+    expect(out.fetched).toEqual([LISTING, "/api/projects/proj/organizations/acme/roadmaps"]);
     expect(out.lang).toBe("zh");
     expect(out.dark).toBe(true);
     expect(out.title).toBe(PAGE_STRINGS.zh.title);
@@ -228,7 +241,7 @@ describe("the page's script", () => {
 
   it("opens one roadmap — its record and body — when the parent's URL names it", async () => {
     const out = await render("/org/proj/acme/roadmaps/3", () => ({ ok: true, body: ROADMAP }));
-    expect(out.fetched).toEqual(["/api/projects/proj/organizations/acme/roadmaps/3"]);
+    expect(out.fetched).toEqual([LISTING, "/api/projects/proj/organizations/acme/roadmaps/3"]);
     expect(out.lang).toBe("en");
     expect(out.html).toContain(PAGE_STRINGS.en.record);
     expect(out.html).toContain("We agreed.");
@@ -245,6 +258,52 @@ describe("the page's script", () => {
   });
 });
 
+describe("an organization that runs on another machine", () => {
+  const onMachine = {
+    ok: true,
+    body: { organizations: [{ orgId: "other" }, { orgId: "acme", machineId: "m-1" }] },
+  };
+
+  it("is asked there, through this server's /server/<machine>/, as the app asks it", async () => {
+    const out = await render(
+      "/org/proj/acme/roadmaps",
+      () => ({ ok: true, body: { roadmaps: [] } }),
+      {
+        listing: onMachine,
+      },
+    );
+    expect(out.fetched).toEqual([
+      LISTING,
+      "/server/m-1/api/projects/proj/organizations/acme/roadmaps",
+    ]);
+    expect(readable(out.html)).toContain(PAGE_STRINGS.en.empty);
+  });
+
+  it("says the plugin must be there too when that machine answers a bare 404", async () => {
+    const out = await render(
+      "/org/proj/acme/roadmaps",
+      () => ({ ok: false, status: 404, body: {} }),
+      {
+        listing: onMachine,
+      },
+    );
+    expect(readable(out.html)).toContain(
+      `HTTP 404 — ${PAGE_STRINGS.en.onMachine.replace("{m}", "m-1")}`,
+    );
+  });
+
+  it("is asked here when the list cannot be read", async () => {
+    const out = await render(
+      "/org/proj/acme/roadmaps",
+      () => ({ ok: true, body: { roadmaps: [] } }),
+      {
+        listing: { ok: false, status: 500, body: {} },
+      },
+    );
+    expect(out.fetched).toEqual([LISTING, "/api/projects/proj/organizations/acme/roadmaps"]);
+  });
+});
+
 describe("the page is never blank", () => {
   it("the document says what it is before any script runs", () => {
     const body = /<body>([\s\S]*)<\/body>/.exec(pageHtml())![1]!;
@@ -257,7 +316,7 @@ describe("the page is never blank", () => {
     const out = await render("/org/proj/acme/roadmaps", () => new Promise<Answer>(() => {}), {
       dark: true,
     });
-    expect(out.fetched).toEqual(["/api/projects/proj/organizations/acme/roadmaps"]);
+    expect(out.fetched).toEqual([LISTING, "/api/projects/proj/organizations/acme/roadmaps"]);
     const text = readable(out.html);
     expect(text).toContain(PAGE_STRINGS.en.title);
     expect(text).toContain(PAGE_STRINGS.en.loading);
