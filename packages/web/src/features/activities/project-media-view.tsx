@@ -8,6 +8,7 @@ import { Link } from "react-router";
 import type { LibraryFile, ProjectMediaListing } from "@prismshadow/penguin-server/api";
 import { ApiError, apiFetch } from "../../api/client";
 import { Button, labelButtonClass } from "../../components/ui/button";
+import { ChipGroup } from "../../components/ui/chip-group";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { InfoPopover } from "../../components/ui/info-popover";
@@ -39,7 +40,6 @@ import {
   type LibraryView,
 } from "./project-media";
 import { SCENE_ASSET_ICON } from "./scene-asset-icons";
-import { SEGMENT, SEGMENTS, SEGMENT_OFF, SEGMENT_ON } from "./segment-styles";
 
 const HEAD =
   "border-b border-gray-100 bg-gray-50 text-left text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400";
@@ -172,19 +172,12 @@ export function ProjectMediaView({
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
-          <div role="group" aria-label={words.kind} className={SEGMENTS}>
-            {LIBRARY_KINDS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={option === kind}
-                onClick={() => setKind(option)}
-                className={`${SEGMENT} ${option === kind ? SEGMENT_ON : SEGMENT_OFF}`}
-              >
-                {words.kinds[option]}
-              </button>
-            ))}
-          </div>
+          <ChipGroup
+            label={words.kind}
+            value={kind}
+            onChange={setKind}
+            options={LIBRARY_KINDS.map((option) => ({ value: option, label: words.kinds[option] }))}
+          />
           <div className="w-44">
             <Select
               size="sm"

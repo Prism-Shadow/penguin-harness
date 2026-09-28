@@ -18,6 +18,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { ApiError, apiFetch } from "../../api/client";
 import { Button, labelButtonClass } from "../../components/ui/button";
+import { ChipGroup } from "../../components/ui/chip-group";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Input, Textarea } from "../../components/ui/input";
@@ -51,7 +52,6 @@ import {
   type RefPlanRow,
   type RowAction,
 } from "./ref-plan";
-import { SEGMENT, SEGMENTS, SEGMENT_OFF, SEGMENT_ON } from "./segment-styles";
 
 const HEAD =
   "border-b border-gray-100 bg-gray-50 text-left text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400";
@@ -481,26 +481,18 @@ export function CreateRefView({
                     <td className={`${TD} min-w-40`}>{current(row)}</td>
                     <td className={TD}>
                       {row.editable ? (
-                        <div
-                          role="group"
-                          aria-label={words.actionsFor(row.key)}
-                          className={SEGMENTS}
-                        >
-                          {ACTIONS.map((action) => (
-                            <button
-                              key={action}
-                              type="button"
-                              aria-pressed={row.action === action}
-                              disabled={creating}
-                              onClick={() =>
-                                setRows((previous) => setAction(previous, row.key, action))
-                              }
-                              className={`${SEGMENT} ${row.action === action ? SEGMENT_ON : SEGMENT_OFF}`}
-                            >
-                              {words.actions[action]}
-                            </button>
-                          ))}
-                        </div>
+                        <ChipGroup
+                          label={words.actionsFor(row.key)}
+                          value={row.action}
+                          disabled={creating}
+                          onChange={(action) =>
+                            setRows((previous) => setAction(previous, row.key, action))
+                          }
+                          options={ACTIONS.map((action) => ({
+                            value: action,
+                            label: words.actions[action],
+                          }))}
+                        />
                       ) : (
                         <span className="text-xs text-gray-500">{words.copied}</span>
                       )}

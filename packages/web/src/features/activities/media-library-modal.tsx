@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import type { LibraryFile, UploadedMedia } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
 import { Button } from "../../components/ui/button";
+import { ChipGroup } from "../../components/ui/chip-group";
 import { Input } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { toastSuccess } from "../../components/ui/toast";
@@ -23,7 +24,6 @@ import {
 import { MediaPlayer } from "./media-player";
 import { otherActivitiesFiles, selectionKey } from "./project-media";
 import type { SceneAssetType } from "./scene-assets";
-import { SEGMENT, SEGMENTS, SEGMENT_OFF, SEGMENT_ON } from "./segment-styles";
 
 type Scope = "here" | "all";
 
@@ -173,23 +173,19 @@ export function MediaLibraryModal({
           {scope === "here" ? S.activities.libraryHint : words.copyHint}
         </p>
         {!localOnly && (
-          <div role="group" aria-label={words.scope.label} className={SEGMENTS}>
-            {(["here", "all"] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={option === scope}
-                onClick={() => {
-                  setScope(option);
-                  setChosen("");
-                  setCopyError("");
-                }}
-                className={`${SEGMENT} ${option === scope ? SEGMENT_ON : SEGMENT_OFF}`}
-              >
-                {words.scope[option]}
-              </button>
-            ))}
-          </div>
+          <ChipGroup
+            label={words.scope.label}
+            value={scope}
+            onChange={(option) => {
+              setScope(option);
+              setChosen("");
+              setCopyError("");
+            }}
+            options={(["here", "all"] as const).map((option) => ({
+              value: option,
+              label: words.scope[option],
+            }))}
+          />
         )}
         <Input
           size="sm"

@@ -7,13 +7,13 @@ import { Link } from "react-router";
 import type { ActivityRecord } from "@prismshadow/penguin-server/api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { ChipGroup } from "../../components/ui/chip-group";
 import { Input } from "../../components/ui/input";
 import { S } from "../../lib/strings";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { filterByTag, tagCounts } from "./activity-tags";
 import { activityInitials, filterActivities } from "./preview";
 import { recentActivities, type RecentActivity } from "./recent-activities";
-import { SEGMENT, SEGMENTS, SEGMENT_OFF, SEGMENT_ON } from "./segment-styles";
 
 export function ActivityList({
   items,
@@ -123,24 +123,15 @@ export function ActivityList({
               className="max-w-sm"
             />
             {counts.length > 0 && (
-              <div role="group" aria-label={words.filter} className={SEGMENTS}>
-                {[null, ...counts].map((entry) => {
-                  const value = entry?.tag ?? null;
-                  const on =
-                    value === null ? tag === null : tag?.toLowerCase() === value.toLowerCase();
-                  return (
-                    <button
-                      key={value ?? ""}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => onTag(value)}
-                      className={`${SEGMENT} ${on ? SEGMENT_ON : SEGMENT_OFF}`}
-                    >
-                      {entry ? `${entry.tag} · ${entry.count}` : `${words.all} · ${items.length}`}
-                    </button>
-                  );
-                })}
-              </div>
+              <ChipGroup
+                label={words.filter}
+                value={counts.find((c) => c.tag.toLowerCase() === tag?.toLowerCase())?.tag ?? ""}
+                onChange={(v) => onTag(v === "" ? null : v)}
+                options={[
+                  { value: "", label: `${words.all} · ${items.length}` },
+                  ...counts.map((c) => ({ value: c.tag, label: `${c.tag} · ${c.count}` })),
+                ]}
+              />
             )}
           </div>
         )}

@@ -7,6 +7,7 @@
 import { useState } from "react";
 import type { AssetManifest, UploadedMedia } from "@prismshadow/penguin-server/api";
 import { Badge, type BadgeTone } from "../../components/ui/badge";
+import { ChipGroup } from "../../components/ui/chip-group";
 import { Input } from "../../components/ui/input";
 import { S } from "../../lib/strings";
 import {
@@ -19,7 +20,6 @@ import {
   type PlannedEntry,
 } from "./asset-library";
 import { fileSizeText } from "./media-library";
-import { SEGMENT, SEGMENTS, SEGMENT_OFF, SEGMENT_ON } from "./segment-styles";
 
 type MediaAsset = AssetManifest["assets"][string][number];
 
@@ -36,36 +36,6 @@ const HEAD =
 const TH = "whitespace-nowrap px-3 py-2 font-medium";
 const TD = "px-3 py-2 align-top";
 const LINK = "text-left font-medium text-brand-600 hover:text-brand-700 dark:text-brand-300";
-
-function Chips<T extends string>({
-  label,
-  options,
-  value,
-  onChange,
-  text,
-}: {
-  label: string;
-  options: readonly T[];
-  value: T;
-  onChange: (value: T) => void;
-  text: (value: T) => string;
-}) {
-  return (
-    <div role="group" aria-label={label} className={SEGMENTS}>
-      {options.map((option) => (
-        <button
-          key={option}
-          type="button"
-          aria-pressed={option === value}
-          onClick={() => onChange(option)}
-          className={`${SEGMENT} ${option === value ? SEGMENT_ON : SEGMENT_OFF}`}
-        >
-          {text(option)}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 export function AssetLibraryView({
   assets,
@@ -95,19 +65,17 @@ export function AssetLibraryView({
     <section className="space-y-4">
       <h3 className="text-sm font-semibold">{S.activities.libraryTitle}</h3>
       <div className="flex flex-wrap items-center gap-2">
-        <Chips
+        <ChipGroup
           label={words.kind}
-          options={KINDS}
           value={kind}
           onChange={setKind}
-          text={(value) => S.activities.mediaTypes[value]}
+          options={KINDS.map((value) => ({ value, label: S.activities.mediaTypes[value] }))}
         />
-        <Chips
+        <ChipGroup
           label={words.binding}
-          options={BINDINGS}
           value={binding}
           onChange={setBinding}
-          text={(value) => words.bindings[value]}
+          options={BINDINGS.map((value) => ({ value, label: words.bindings[value] }))}
         />
         <div className="w-56">
           <Input

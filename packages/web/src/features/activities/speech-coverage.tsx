@@ -14,6 +14,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { ChipGroup } from "../../components/ui/chip-group";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Select } from "../../components/ui/select";
 import { InfoPopover } from "../../components/ui/info-popover";
@@ -33,7 +34,6 @@ import {
   type InstructionFilter,
   type InstructionType,
 } from "./instruction-type";
-import { SEGMENT, SEGMENTS, SEGMENT_OFF, SEGMENT_ON } from "./segment-styles";
 import { soundStatuses, soundTally, type SoundState } from "./bulk-sound";
 import { providerLabel } from "./sound-model";
 import { mixedVoice } from "./voice-catalogue";
@@ -228,19 +228,19 @@ export function SpeechCoverage({
           </p>
         )}
         {languages.length > 1 && onLanguage && (
-          <div role="group" aria-label={S.activities.bulkSpeechLanguages} className={SEGMENTS}>
-            {languages.map((entry) => (
-              <button
-                key={entry.language}
-                type="button"
-                aria-pressed={entry.language === language}
-                onClick={() => onLanguage(entry.language)}
-                className={`${SEGMENT} tabular-nums ${entry.language === language ? SEGMENT_ON : SEGMENT_OFF}`}
-              >
-                {S.activities.bulkSpeechLanguage(entry.language, entry.ready, entry.total)}
-              </button>
-            ))}
-          </div>
+          <ChipGroup
+            label={S.activities.bulkSpeechLanguages}
+            value={language}
+            onChange={onLanguage}
+            options={languages.map((entry) => ({
+              value: entry.language,
+              label: (
+                <span className="tabular-nums">
+                  {S.activities.bulkSpeechLanguage(entry.language, entry.ready, entry.total)}
+                </span>
+              ),
+            }))}
+          />
         )}
         {editable && (toTranslate > 0 || addable.length > 0 || (voices.length > 0 && onVoice)) && (
           <div className="flex flex-wrap items-center gap-2">
@@ -342,22 +342,22 @@ export function SpeechCoverage({
             )}
           </div>
         )}
-        <div role="group" aria-label={S.activities.bulkSpeechFilters} className={SEGMENTS}>
-          {FILTERS.filter((entry) => entry === "all" || entry === filter || counts[entry] > 0).map(
-            (entry) => (
-              <button
-                key={entry}
-                type="button"
-                aria-pressed={filter === entry}
-                onClick={() => setFilter(entry)}
-                className={`${SEGMENT} ${filter === entry ? SEGMENT_ON : SEGMENT_OFF}`}
-              >
+        <ChipGroup
+          label={S.activities.bulkSpeechFilters}
+          value={filter}
+          onChange={setFilter}
+          options={FILTERS.filter(
+            (entry) => entry === "all" || entry === filter || counts[entry] > 0,
+          ).map((entry) => ({
+            value: entry,
+            label: (
+              <>
                 {S.activities.bulkSpeechFilter[entry]}{" "}
                 <span className="tabular-nums opacity-70">{counts[entry]}</span>
-              </button>
+              </>
             ),
-          )}
-        </div>
+          }))}
+        />
         {sorted && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="flex items-center gap-1 text-xs text-gray-500">
@@ -366,24 +366,20 @@ export function SpeechCoverage({
                 <p>{S.activities.instructionType.about}</p>
               </InfoPopover>
             </span>
-            <div
-              role="group"
-              aria-label={S.activities.instructionType.filterLabel}
-              className={SEGMENTS}
-            >
-              {INSTRUCTION_FILTERS.map((entry) => (
-                <button
-                  key={entry}
-                  type="button"
-                  aria-pressed={instruction === entry}
-                  onClick={() => setInstruction(entry)}
-                  className={`${SEGMENT} ${instruction === entry ? SEGMENT_ON : SEGMENT_OFF}`}
-                >
-                  {S.activities.instructionType.filter[entry]}{" "}
-                  <span className="tabular-nums opacity-70">{typeCounts[entry]}</span>
-                </button>
-              ))}
-            </div>
+            <ChipGroup
+              label={S.activities.instructionType.filterLabel}
+              value={instruction}
+              onChange={setInstruction}
+              options={INSTRUCTION_FILTERS.map((entry) => ({
+                value: entry,
+                label: (
+                  <>
+                    {S.activities.instructionType.filter[entry]}{" "}
+                    <span className="tabular-nums opacity-70">{typeCounts[entry]}</span>
+                  </>
+                ),
+              }))}
+            />
           </div>
         )}
         <ul className="space-y-1">
