@@ -34,6 +34,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { switchDeskModel } from "../company/desk-model";
+import { conversationMode } from "../company/company-nav";
 import { useCompany } from "../../state/company";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -47,7 +48,7 @@ import {
   humanizeDurationLive,
   humanizeTokens,
 } from "../../lib/format";
-import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
+import { isOrgSession, latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { sessionActivity, sessionBackgroundTasks } from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
 import {
@@ -465,6 +466,21 @@ export function ChatPage() {
     probeKey !== null && probeFailedKey === probeKey,
   );
   const selected = draft ? null : heldSession.current;
+  // Entering a conversation is a choice of mode, as entering an organization route is
+  // (features/company/org-layout.tsx): the new-chat draft and the user's own conversations are
+  // development mode's, so the switch and the sidebar follow whichever way the page was reached
+  // — a typed URL, the tray's New Session, a link. Once per route, like the organization
+  // routes: the switch's own move to company mode leaves this page, and re-claiming on a mode
+  // change would undo the click before it does. A desk or ticket Session claims nothing.
+  const { available: companyAvailable, setWorkMode } = company;
+  const claimedMode = conversationMode(draft, selected === null ? null : isOrgSession(selected));
+  const claimedRoute = useRef<string | null>(null);
+  useEffect(() => {
+    if (routeSessionId === null || claimedMode === null) return;
+    if (claimedRoute.current === routeSessionId) return;
+    claimedRoute.current = routeSessionId;
+    if (companyAvailable) setWorkMode(claimedMode);
+  }, [routeSessionId, claimedMode, companyAvailable, setWorkMode]);
   // The tabs beside a conversation are its OWN Agent's, asked of the server that Agent's
   // workflows live on: a Session on a machine runs a copy of the Agent there, and the workflows
   // it built are in that copy. The current Agent is always one of this server's, so going by

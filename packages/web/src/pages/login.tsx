@@ -71,7 +71,8 @@ export function LoginPage() {
     setErrors({});
     try {
       await login(userId.trim(), password);
-      navigate("/chat", { replace: true });
+      // The shell's home decides the page: the organizations in company mode (router.tsx).
+      navigate("/", { replace: true });
     } catch (e) {
       setErrors({ form: apiErrorText(e) });
     } finally {

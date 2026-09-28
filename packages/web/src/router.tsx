@@ -8,7 +8,7 @@ import { useAuth } from "./state/auth";
 import { useRuntimeLanguages } from "./features/chat/use-runtime-languages";
 import { ProjectProvider } from "./state/project";
 import { SessionsProvider } from "./state/sessions";
-import { CompanyProvider } from "./state/company";
+import { CompanyProvider, useCompany } from "./state/company";
 import { AppLayout } from "./components/layout/app-layout";
 import { LoginPage } from "./pages/login";
 import { ChatRoute } from "./features/chat/chat-route";
@@ -22,6 +22,7 @@ import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { BenchmarkDetailPage } from "./features/benchmark/benchmark-detail-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
 import { OrgIndexRedirect, OrgLayout } from "./features/company/org-layout";
+import { homePath } from "./features/company/company-nav";
 import { OverviewPage } from "./features/company/overview-page";
 import { OrgChartPage } from "./features/company/org-chart-page";
 import { CalendarPage } from "./features/company/calendar-page";
@@ -103,11 +104,21 @@ function RequireAuthBare({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** When already logged in, visiting /login redirects straight to the chat page. */
+/** When already logged in, visiting /login redirects to the shell's home (see HomeRedirect). */
 function LoginRoute() {
   const { user } = useAuth();
-  if (user) return <Navigate to="/chat" replace />;
+  if (user) return <Navigate to="/" replace />;
   return <LoginPage />;
+}
+
+/**
+ * `/` and every path nothing matches: the home of the mode the shell stands in (homePath) —
+ * the organizations in company mode, the conversations in development mode. A sign-in and
+ * the desktop shell's start both arrive at `/`.
+ */
+function HomeRedirect() {
+  const { workMode } = useCompany();
+  return <Navigate to={homePath(workMode)} replace />;
 }
 
 /** The renderer names a contributed page may point at; pages naming another are not mounted. */
@@ -159,7 +170,7 @@ function RouteTree() {
           />
         ))}
         <Route element={<RequireAuth />}>
-          <Route index element={<Navigate to="/chat" replace />} />
+          <Route index element={<HomeRedirect />} />
           {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused
               server-side (403); the sidebar hides their row, so a member only ever reaches
               one by typing the URL. */}
@@ -192,7 +203,7 @@ function RouteTree() {
           </Route>
           {/* Settings and user management live in the settings dialog now (see
               SettingsDialog); their old routes fall through to the catch-all. */}
-          <Route path="*" element={<Navigate to="/chat" replace />} />
+          <Route path="*" element={<HomeRedirect />} />
         </Route>
       </Routes>
     </>

@@ -178,6 +178,28 @@ export function isOrgRoute(pathname: string): boolean {
 }
 
 /**
+ * Where the shell lands when a route names no page — `/`, which is where a sign-in and the
+ * desktop shell's start both arrive, and any path nothing matches: the home of the mode the
+ * shell stands in. Landing company mode on the conversation page would put the development
+ * page inside the company sidebar, and that page would then claim development mode for itself.
+ */
+export function homePath(mode: WorkMode): string {
+  return mode === "company" ? ORG_ROUTE_PREFIX : "/chat";
+}
+
+/**
+ * The mode a conversation page claims when it is entered, the way an organization route claims
+ * company mode: the new-chat draft and the user's own conversations are development mode's;
+ * an organization's desk or ticket Session is reached from both modes and claims neither
+ * (null) — and so does a Session not resolved yet (`orgSession` null), which is decided once
+ * it is.
+ */
+export function conversationMode(draft: boolean, orgSession: boolean | null): WorkMode | null {
+  if (draft) return "dev";
+  return orgSession === false ? "dev" : null;
+}
+
+/**
  * Where `/org` lands when it names no organization: the one last opened if it still exists,
  * else the first organization of the current Project, else the first organization anywhere —
  * and null when the user has none, which is the empty landing's cue to offer creating one.

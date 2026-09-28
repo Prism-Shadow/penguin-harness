@@ -15,7 +15,11 @@
  *
  * The chosen mode and the organization last opened are user preferences (`workMode`,
  * `lastOrgKey` in ui_prefs) mirrored into localStorage (lib/work-mode.ts) so a reload stands
- * in the right mode before the preferences arrive; the stored copy wins once it does. Both
+ * in the right mode before the preferences arrive; the stored copy wins once it does — unless
+ * the mode was already chosen in this load. A route claims its mode when it is entered (an
+ * organization route company mode, a conversation of the user's own development mode), and a
+ * preference read afterwards that overturned the claim would leave the switch and the sidebar
+ * in one mode around a page of the other. Both
  * the open and the remembered organization are forgotten once a complete listing comes back
  * without them: a deleted organization that keeps the shell aimed at it costs a broken
  * sidebar on every later visit.
@@ -54,6 +58,7 @@ import type {
   ProposalItem,
   ProposalPluginEvent,
   ServerEvent,
+  UiPrefs,
 } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
@@ -213,6 +218,8 @@ interface CompanyStoreState {
   /** The preferences have been read once (before that the mirrors below stand in). */
   prefsLoaded: boolean;
   workMode: WorkMode;
+  /** A switch or a route entry has set the mode in this load; the preferences no longer do. */
+  modeChosen: boolean;
   /** `<projectId>/<orgId>` of the organization last opened, or null. */
   lastOrgKey: string | null;
   /** The organization the shell is currently inside (set by the org routes), or null elsewhere. */
@@ -269,6 +276,8 @@ interface CompanyStoreState {
   versions: CompanyVersions;
 
   setWorkMode: (mode: WorkMode) => void;
+  /** The stored preferences, read once per signed-in user; they win over the localStorage mirrors. */
+  applyPrefs: (prefs: UiPrefs) => void;
   setPersonalEnabled: (enabled: boolean) => void;
   setCurrentOrg: (key: string | null) => void;
   /** The last organization opened becomes the current one, unless a route already set one. */
@@ -337,6 +346,7 @@ export function createCompanyStore() {
     personalEnabled: true,
     prefsLoaded: false,
     workMode: initialWorkMode(),
+    modeChosen: false,
     lastOrgKey: initialLastOrgKey(),
     currentOrgKey: null,
     organizations: [],
@@ -359,6 +369,7 @@ export function createCompanyStore() {
     versions: { orgs: 0, messages: 0, tickets: 0, runs: 0, budget: 0, proposals: 0 },
 
     setWorkMode: (mode) => {
+      if (!get().modeChosen) set({ modeChosen: true });
       if (mode === get().workMode) return;
       storeWorkMode(mode);
       set({ workMode: mode });
@@ -376,6 +387,20 @@ export function createCompanyStore() {
       if (mode !== "company") get().setCurrentOrg(null);
       // Server-side copy is best-effort: a lost write only costs the choice on another browser.
       void api.putPrefs({ workMode: mode }).catch(() => undefined);
+    },
+
+    applyPrefs: (prefs) => {
+      const patch: Partial<CompanyStoreState> = { prefsLoaded: true };
+      if (prefs.companyMode === false) patch.personalEnabled = false;
+      if ((prefs.workMode === "company" || prefs.workMode === "dev") && !get().modeChosen) {
+        patch.workMode = prefs.workMode;
+        storeWorkMode(prefs.workMode);
+      }
+      if (typeof prefs.lastOrgKey === "string" && parseOrgKey(prefs.lastOrgKey) !== null) {
+        patch.lastOrgKey = prefs.lastOrgKey;
+        storeLastOrgKey(prefs.lastOrgKey);
+      }
+      set(patch);
     },
 
     setPersonalEnabled: (enabled) => {
@@ -802,27 +827,14 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const currentProjectId = currentProject?.projectId ?? null;
   const projectIdsKey = projects.map((p) => p.projectId).join(",");
 
-  // Preferences: the stored switch, mode and last organization win over the localStorage
-  // mirrors once they arrive. Read once per signed-in user.
+  // Preferences: read once per signed-in user (see applyPrefs).
   useEffect(() => {
     if (userId === null) return;
     let cancelled = false;
     void api
       .getPrefs()
       .then((res) => {
-        if (cancelled) return;
-        const prefs = res.prefs;
-        const patch: Partial<CompanyStoreState> = { prefsLoaded: true };
-        if (prefs.companyMode === false) patch.personalEnabled = false;
-        if (prefs.workMode === "company" || prefs.workMode === "dev") {
-          patch.workMode = prefs.workMode;
-          storeWorkMode(prefs.workMode);
-        }
-        if (typeof prefs.lastOrgKey === "string" && parseOrgKey(prefs.lastOrgKey) !== null) {
-          patch.lastOrgKey = prefs.lastOrgKey;
-          storeLastOrgKey(prefs.lastOrgKey);
-        }
-        store.setState(patch);
+        if (!cancelled) store.getState().applyPrefs(res.prefs);
       })
       .catch(() => {
         // Unreachable preferences leave the mirrors standing; nothing here is critical.

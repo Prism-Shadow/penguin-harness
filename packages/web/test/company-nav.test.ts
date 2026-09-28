@@ -17,6 +17,8 @@ import {
   orgPageSegment,
   orgProposalPath,
   isOrgRoute,
+  homePath,
+  conversationMode,
   orgChannelPath,
   orgCreatedPath,
   orgCreatedTarget,
@@ -161,6 +163,25 @@ describe("org keys and paths", () => {
     expect(isOrgRoute("/org/p1/acme/channels/site")).toBe(true);
     expect(isOrgRoute("/organizations")).toBe(false);
     expect(isOrgRoute("/chat/abc")).toBe(false);
+  });
+});
+
+describe("which mode a route stands in", () => {
+  it("lands a route that names no page on the home of the mode the shell is in", () => {
+    // `/` is where a sign-in and the desktop shell's start arrive: in company mode it must not
+    // be the conversation page, which would sit inside the company sidebar.
+    expect(homePath("company")).toBe("/org");
+    expect(homePath("dev")).toBe("/chat");
+  });
+
+  it("gives the new-chat draft and the user's own conversations to development mode", () => {
+    expect(conversationMode(true, null)).toBe("dev");
+    expect(conversationMode(false, false)).toBe("dev");
+  });
+
+  it("claims nothing for a desk or ticket Session, nor for one not resolved yet", () => {
+    expect(conversationMode(false, true)).toBeNull();
+    expect(conversationMode(false, null)).toBeNull();
   });
 });
 

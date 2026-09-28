@@ -7,7 +7,8 @@
  * a desk's messaging mark written into the loaded sessions route by a bind or an unbind, and the
  * user-channel forwarding in state/sessions.tsx's applyUserEvent — a company event reaches
  * every subscriber, a work run refreshes the session list of the Project it belongs to, and a
- * resync re-reads the company snapshots.
+ * resync re-reads the company snapshots; and the stored preferences arriving after this load
+ * already chose a mode (a switch, or a route entering its own mode) leave that choice standing.
  */
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -528,5 +529,35 @@ describe("the machine the open organization runs on", () => {
   it("is this server while nothing is open or the list has not named the organization", () => {
     expect(machineOfOpenOrg([here, away], null)).toBeNull();
     expect(machineOfOpenOrg([], "p1/away")).toBeNull();
+  });
+});
+
+describe("the stored preferences against a mode already chosen", () => {
+  it("apply the stored mode while nothing in this load has chosen one", () => {
+    const store = createCompanyStore();
+    expect(store.getState().workMode).toBe("dev");
+    store.getState().applyPrefs({ workMode: "company" });
+    expect(store.getState().workMode).toBe("company");
+    expect(store.getState().prefsLoaded).toBe(true);
+  });
+
+  it("leave a route's claim standing: the page and the switch keep one mode", () => {
+    // A browser whose mirror is empty opens /chat/new, which claims development mode; the
+    // preferences then arrive saying company. Taking them would put the company sidebar
+    // around the development page (QA round 1, 困难 2).
+    const store = createCompanyStore();
+    store.getState().setWorkMode("dev");
+    store.getState().applyPrefs({ workMode: "company", lastOrgKey: "p1/acme" });
+    expect(store.getState().workMode).toBe("dev");
+    // The rest of the preferences still land.
+    expect(store.getState().lastOrgKey).toBe("p1/acme");
+    expect(store.getState().prefsLoaded).toBe(true);
+  });
+
+  it("leave an organization route's claim standing the same way", () => {
+    const store = createCompanyStore();
+    store.getState().setWorkMode("company");
+    store.getState().applyPrefs({ workMode: "dev" });
+    expect(store.getState().workMode).toBe("company");
   });
 });
