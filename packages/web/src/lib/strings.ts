@@ -52,6 +52,8 @@ export const zh = {
       handbook: "手册",
       /** The proposals page a plugin contributes (ORG_PAGE_RENDERERS); the row exists only while the plugin does. */
       proposals: "提案",
+      /** The roadmaps page a plugin contributes and serves itself (an iframe row of ORG_PAGE_RENDERERS); the row exists only while the plugin does. */
+      roadmaps: "路线图",
     },
   },
 

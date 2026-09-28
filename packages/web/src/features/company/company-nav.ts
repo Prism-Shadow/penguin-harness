@@ -61,14 +61,17 @@ export function orgPagePath(projectId: string, orgId: string, page: CompanyNavKe
 
 /**
  * The company-mode pages a plugin contributes (`nav: "org"` in the page table): the nav rows
- * after the organization's six, each keyed by the builtin renderer the contribution names, so
- * the label (`S.nav.org.<label>`) and the glyph (company-nav-icons.ts) are this build's and the
- * contribution only says that the page exists. `segment` is the route's first segment under
- * `/org/:projectId/:orgId/`, where the row leads; the page's own params (`proposals/:number?`)
- * come after it.
+ * after the organization's six, each keyed by what the contribution names, so the label
+ * (`S.nav.org.<label>`) and the glyph (company-nav-icons.ts) are this build's and the
+ * contribution only says that the page exists. A page this build draws itself is named by its
+ * builtin renderer (`kind: "builtin"`); a page the plugin serves itself in an iframe is named by
+ * its key (`kind: "iframe"`) — the two never stand in for each other. `segment` is the route's
+ * first segment under `/org/:projectId/:orgId/`, where the row leads; the page's own params
+ * (`proposals/:number?`) come after it.
  */
 export const ORG_PAGE_RENDERERS = {
-  OrgProposalsPage: { label: "proposals", segment: "proposals" },
+  OrgProposalsPage: { label: "proposals", segment: "proposals", kind: "builtin" },
+  roadmaps: { label: "roadmaps", segment: "roadmaps", kind: "iframe" },
 } as const;
 export type OrgPageRenderer = keyof typeof ORG_PAGE_RENDERERS;
 
@@ -97,8 +100,9 @@ export interface OrgPageRow {
 
 /**
  * The nav rows of the contributed company-mode pages this build can draw, in contribution
- * order. A page whose renderer this build has no row for is skipped here (the router skips it
- * too: no renderer, no route).
+ * order. A page this build has no row for is skipped here: a builtin renderer it does not know
+ * (the router skips that one too: no renderer, no route), or an iframe page whose key it has no
+ * label and glyph for (routed, but reachable by URL only).
  */
 export function orgPageRows(
   pages: ReadonlyArray<{
@@ -111,9 +115,11 @@ export function orgPageRows(
 ): OrgPageRow[] {
   const rows: OrgPageRow[] = [];
   for (const page of pages) {
-    if (page.nav !== "org" || !("builtin" in page.renderer)) continue;
-    const renderer = page.renderer.builtin;
+    if (page.nav !== "org") continue;
+    const builtin = "builtin" in page.renderer;
+    const renderer = "builtin" in page.renderer ? page.renderer.builtin : page.key;
     if (!isOrgPageRenderer(renderer)) continue;
+    if (ORG_PAGE_RENDERERS[renderer].kind !== (builtin ? "builtin" : "iframe")) continue;
     rows.push({
       key: page.key,
       renderer,

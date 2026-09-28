@@ -28,6 +28,7 @@ import type {
 } from "@prismshadow/penguin-server/plugin";
 import { RoadmapService } from "./service.js";
 import { ROUTES_ID, roadmapRoutes } from "./routes.js";
+import { PAGE_ROUTES_ID, pageRoutes } from "./page.js";
 import { claimListeners, roomClaim, type ClaimListener } from "./claim.js";
 
 export {
@@ -77,6 +78,14 @@ export {
 export type { RoadmapView, ServiceDeps, WriteResult } from "./service.js";
 export { CONFIG_GROUP, DEFAULT_POLL_SECONDS, DEFAULT_RELAY_DEPTH, configOf } from "./config.js";
 export { ROUTES_ID, roadmapRoutes } from "./routes.js";
+export {
+  PAGE_PREFIX,
+  PAGE_ROUTES_ID,
+  PAGE_SRC,
+  PAGE_STRINGS,
+  pageHtml,
+  pageRoutes,
+} from "./page.js";
 export { claimListeners, discussingRoomOf, roomClaim } from "./claim.js";
 export type { ChannelRef, ClaimListener } from "./claim.js";
 
@@ -96,6 +105,27 @@ export const CLAIM_ID = "company-roadmaps.channel-claim";
         prefix: "/api/projects/:projectId/organizations/:orgId/roadmaps",
         auth: "user",
         order: 141,
+      },
+      {
+        // The page's own group: a prefix without parameters, since the iframe's src is data
+        // and cannot name the organization (page.ts). These literals repeat PAGE_ROUTES_ID and
+        // PAGE_PREFIX, and a test holds the copies together.
+        id: "company-roadmaps.page-routes",
+        prefix: "/api/company-roadmaps",
+        auth: "user",
+        order: 142,
+      },
+    ],
+    "WebModule.pages": [
+      {
+        // The entry after the handbook: a company-mode page (its row follows the organization's
+        // own six), drawn by the web app from this key and served whole by this plugin.
+        id: "company-roadmaps.page",
+        key: "roadmaps",
+        path: "roadmaps/:number?",
+        nav: "org",
+        admin: false,
+        renderer: { iframe: { src: "/api/company-roadmaps/page", namespace: "company-roadmaps" } },
       },
     ],
     "PluginConfigProvider.groups": [
@@ -154,6 +184,7 @@ export class CompanyRoadmapsPlugin {
   @Use("RuntimeModule") private readonly log!: Log;
   @Use("PluginConfigModule") private readonly pluginConfig!: PluginConfig;
   @Bind(ROUTES_ID) routes!: Hono;
+  @Bind(PAGE_ROUTES_ID) page!: Hono;
 
   setup({ effect }: ClassCtx) {
     const service = new RoadmapService({
@@ -169,6 +200,7 @@ export class CompanyRoadmapsPlugin {
       void service.stop();
     });
     this.routes = roadmapRoutes(service);
+    this.page = pageRoutes();
     // What the claim node claims is relayed at once, not at the next poll (claim.ts).
     const listener: ClaimListener = (channel, number) => {
       setImmediate(() => {

@@ -23,6 +23,7 @@ import {
   type HarnessApiError,
 } from "@prismshadow/penguin-plugin-test";
 import { CONFIG_GROUP, DEFAULT_POLL_SECONDS, DEFAULT_RELAY_DEPTH } from "../src/config.js";
+import { PAGE_SRC } from "../src/page.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = "/api/projects/default_project/organizations/acme/roadmaps";
@@ -54,6 +55,21 @@ describe("the company-roadmaps plugin on a real server", () => {
       modules: ["CompanyRoadmapsPlugin", "RoadmapRoomClaim"],
       replaces: [],
     });
+  });
+
+  it("contributes the roadmaps page as a company-mode iframe page, and serves it behind the cookie gate", async () => {
+    const { pages } = await api.get<{ pages: Array<Record<string, unknown>> }>("/api/contributions");
+    expect(pages.find((p) => p.key === "roadmaps")).toMatchObject({
+      nav: "org",
+      path: "roadmaps/:number?",
+      renderer: { iframe: { src: PAGE_SRC } },
+    });
+    const res = await api.request("GET", PAGE_SRC);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/^text\/html/);
+    expect(await res.text()).toContain('<main id="main"></main>');
+    const anonymous = await fetch(`${harness.baseUrl}${PAGE_SRC}`);
+    expect(anonymous.status).toBe(401);
   });
 
   it("declares its settings group on the Plugins page", async () => {

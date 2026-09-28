@@ -246,6 +246,32 @@ describe("contributed company-mode pages", () => {
     ).toEqual([]);
   });
 
+  it("draws a row for the roadmaps page a plugin serves in an iframe — after the proposals — and never lets one kind of page stand for the other", () => {
+    const roadmaps = page({
+      key: "roadmaps",
+      path: "roadmaps/:number?",
+      renderer: { iframe: { src: "/api/company-roadmaps/page", namespace: "company-roadmaps" } },
+    });
+    expect(orgPageRows([page(), roadmaps], { projectId: "p", orgId: "acme" })).toEqual([
+      { key: "org-proposals", renderer: "OrgProposalsPage", to: "/org/p/acme/proposals" },
+      { key: "roadmaps", renderer: "roadmaps", to: "/org/p/acme/roadmaps" },
+    ]);
+    expect(zh.nav.org.roadmaps).toBe("路线图");
+    expect(en.nav.org.roadmaps).toBe("Roadmaps");
+    expect(ORG_PAGE_ICONS.roadmaps).toMatch(/^M/);
+    // A builtin renderer named like the iframe key, or an iframe page keyed like a builtin
+    // renderer, draws nothing.
+    expect(
+      orgPageRows(
+        [
+          page({ key: "z", renderer: { builtin: "roadmaps" } }),
+          page({ key: "OrgProposalsPage", renderer: { iframe: { src: "x" } } }),
+        ],
+        { projectId: "p", orgId: "o" },
+      ),
+    ).toEqual([]);
+  });
+
   it("addresses one proposal by its number under the proposals page", () => {
     expect(orgProposalPath("p", "acme", 12)).toBe("/org/p/acme/proposals/12");
   });

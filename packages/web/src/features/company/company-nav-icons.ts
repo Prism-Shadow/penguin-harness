@@ -15,7 +15,8 @@ export const COMPANY_NAV_ICONS: Record<CompanyNavKey, string> = {
   handbook: NAV_ICONS.orgHandbook,
 };
 
-/** The glyph of each contributed company-mode page, by the renderer its contribution names. */
+/** The glyph of each contributed company-mode page, by what its contribution names (ORG_PAGE_RENDERERS). */
 export const ORG_PAGE_ICONS: Record<OrgPageRenderer, string> = {
   OrgProposalsPage: NAV_ICONS.orgProposals,
+  roadmaps: NAV_ICONS.orgRoadmaps,
 };

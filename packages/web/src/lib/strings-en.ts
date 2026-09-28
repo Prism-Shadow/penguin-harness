@@ -45,6 +45,8 @@ export const en: Strings = {
       handbook: "Handbook",
       /** The proposals page a plugin contributes (ORG_PAGE_RENDERERS); the row exists only while the plugin does. */
       proposals: "Proposals",
+      /** The roadmaps page a plugin contributes and serves itself (an iframe row of ORG_PAGE_RENDERERS); the row exists only while the plugin does. */
+      roadmaps: "Roadmaps",
     },
   },
 
