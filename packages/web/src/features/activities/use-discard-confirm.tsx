@@ -17,6 +17,13 @@ export function useDiscardConfirm(dirty: () => boolean): {
   const ask = useCallback(
     (then: () => void, onCancel?: () => void) => {
       if (!dirty()) return then();
+      // One dialog at a time: a second `ask` while it's already open would clobber the first
+      // request's `pending`/`cancel` (its own Cancel or Discard would then run whichever
+      // request happened to be overwritten last, silently dropping the other — e.g. the
+      // route blocker's `blocker.reset()` never firing because a Project-switch guard asked
+      // in the meantime). Refuse the new request instead: treat it the same as the author
+      // declining it.
+      if (pending.current !== null) return onCancel?.();
       pending.current = then;
       cancel.current = onCancel ?? null;
       setOpen(true);

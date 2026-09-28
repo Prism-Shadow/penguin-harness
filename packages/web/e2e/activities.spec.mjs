@@ -1752,9 +1752,6 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/activities\/act_test(\?section=\w+)?$/);
-  // A blocked browser-back is a real history.go() round trip inside react-router (it undoes
-  // the pop, then waits for proceed/reset), so give it a moment before asserting the dialog.
-  await page.waitForTimeout(200);
   await page.goBack();
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel" }).click();
@@ -1774,7 +1771,6 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
     "second-project",
   );
   expect(f.prefsWrites.some((prefs) => prefs.lastProjectId === "second-project")).toBe(false);
-  await page.waitForTimeout(200);
   await page.goBack();
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Discard" }).click();
@@ -1898,28 +1894,28 @@ test("canceling the dirty-editor guard prevents Project deletion and remount", a
   await description.fill("Keep before deletion");
   const original = await description.elementHandle();
   const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
+  const deleteDialog = page.getByRole("dialog", { name: "Delete Project", exact: true });
   const settings = await projectSettings(page);
   await settings.getByRole("button", { name: "Delete", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "Delete Project", exact: true })
-    .getByRole("button", { name: "Confirm", exact: true })
-    .click();
-  await expect(page.getByRole("dialog", { name: "Delete Project", exact: true })).toHaveCount(0);
+  await deleteDialog.getByRole("button", { name: "Confirm", exact: true }).click();
+  // deleteProject awaits the guard's dialog before settling, so the Delete Project dialog
+  // stays open (stacked behind the discard one) until that answer comes back.
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
+  await expect(deleteDialog).toHaveCount(0);
   expect(f.deletedProjects).toBe(0);
   await expect(description).toHaveText("Keep before deletion");
   expect(await description.evaluate((element, before) => element === before, original)).toBe(true);
-  // Discarding this time clears `dirty` and replays the delete, which now goes through.
+  // Discarding this time lets the same deleteProject call finish, and the delete goes through.
   await settings.getByRole("button", { name: "Delete", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "Delete Project", exact: true })
-    .getByRole("button", { name: "Confirm", exact: true })
-    .click();
+  await deleteDialog.getByRole("button", { name: "Confirm", exact: true }).click();
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Discard" }).click();
   await expect.poll(() => f.deletedProjects).toBe(1);
+  // The replayed delete is the same call doDelete is still awaiting, so its own success
+  // handling (onClose) runs and closes the whole settings dialog — not just the sub-dialog.
+  await expect(settings).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });
 
@@ -1990,7 +1986,10 @@ test("leaving with unsaved edits asks through the app's dialog", async ({ page }
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/\/activities\/[^/?]+/);
   await page.getByRole("link", { name: "All activities" }).click();
-  await page.getByRole("dialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard" }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Discard" })
+    .click();
   await expect(page).toHaveURL(/\/activities$/);
   expect(f.errors).toEqual([]);
 });
