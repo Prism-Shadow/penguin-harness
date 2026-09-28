@@ -10,12 +10,17 @@
  *
  * The hero module is the page's opening: its card bleeds to the main column's edges and carries no
  * frame of its own.
+ *
+ * A module designed at the app's own width (`viewport`) lays out at that width and is scaled down
+ * to the card (chrome/fit.tsx), so an app window reads as the app does rather than reflowed into
+ * the card's few hundred pixels.
  */
 import { THEME_IDS } from "@prismshadow/penguin-ui";
 import type { ThemeId } from "@prismshadow/penguin-ui";
 import { memo, useRef, useState } from "react";
 import { isSettled } from "../../../ui/src/scene";
 import { formatBreadcrumb } from "../lib/breadcrumb";
+import { naturalWidth } from "../lib/fit";
 import { absoluteUrl } from "../lib/location";
 import type { CollectedModule } from "../lib/modules";
 import { pickVariant, storedVariantKey } from "../lib/modules";
@@ -25,6 +30,7 @@ import { useGallery } from "../state";
 import { ThemeFrames } from "./compare";
 import { useCopy } from "./copy";
 import { CodeDrawer, PartsDrawer, TokensDrawer } from "./drawers";
+import { Fit } from "./fit";
 import { ChromeIcon } from "./icons";
 import type { ChromeIconName } from "./icons";
 import { Breadcrumb, VariantPills } from "./pills";
@@ -83,6 +89,7 @@ export const ModuleSection = memo(function ModuleSection({
   const compare = comparesModule(state, module.id);
   const phone = state.view === "phone";
   const framed = compare || phone;
+  const natural = naturalWidth(module);
   const { title, description } = text.module(module);
   const player = useScenePlayer(variant.scene, { reduced: state.motion === "reduced" });
   const { clock } = player;
@@ -167,12 +174,23 @@ export const ModuleSection = memo(function ModuleSection({
           />
         ) : (
           <div ref={preview} className="g-preview" data-module={module.id}>
-            <ModuleView
-              module={module}
-              variant={variant}
-              clock={clock}
-              controls={player.controls}
-            />
+            {natural === null ? (
+              <ModuleView
+                module={module}
+                variant={variant}
+                clock={clock}
+                controls={player.controls}
+              />
+            ) : (
+              <Fit natural={natural}>
+                <ModuleView
+                  module={module}
+                  variant={variant}
+                  clock={clock}
+                  controls={player.controls}
+                />
+              </Fit>
+            )}
           </div>
         )}
         <div className="g-card-foot g-chrome" data-scene={clock ? true : undefined}>

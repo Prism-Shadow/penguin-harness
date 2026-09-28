@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { CATALOG, catalogSection } from "../../ui/src/catalog";
-import { MODULE_IDS } from "../../ui/src/module";
+import { APP_COLUMN_WIDTH, APP_WINDOW_WIDTH, MODULE_IDS } from "../../ui/src/module";
 import type { Module } from "../../ui/src/module";
 import { collectModules, pickVariant, storedVariantKey, VARIANT_KEY } from "../src/lib/modules";
 import { DEMOS, MODULES } from "../src/registry";
@@ -62,6 +62,18 @@ describe("the collected modules", () => {
         for (const key of keys) expect(key, `${module.id} ${variant.key}`).toMatch(VARIANT_KEY);
       }
     }
+  });
+
+  it("lay app regions out at the app's widths, and leave narrow ones to their own", () => {
+    const widths = new Set<number>([APP_WINDOW_WIDTH, APP_COLUMN_WIDTH]);
+    for (const { module } of MODULES.list) {
+      if (module.viewport === undefined) continue;
+      expect(module.width, `${module.id}: a narrow composition keeps its own width`).toBe("wide");
+      expect(widths.has(module.viewport), `${module.id}: ${module.viewport}`).toBe(true);
+    }
+    // The app windows, whose sidebar alone would take half a card laid out at the card's width.
+    expect(MODULES.byId.get("navigation")?.module.viewport).toBe(APP_WINDOW_WIDTH);
+    expect(MODULES.byId.get("hero")?.module.viewport).toBe(APP_WINDOW_WIDTH);
   });
 
   it("open on the hero, then Foundations, and close on Screens, the sum", () => {
@@ -199,6 +211,7 @@ describe("collectModules", () => {
             variants: [{ key: "live", title: "Live", scene: { frames: [oneFrame] } }],
           }),
         },
+        "m/stats.module.tsx": { module: make("stats", { viewport: 0 }) },
         "x/actions.module.tsx": { module: make("actions") },
       },
       catalog,
@@ -217,8 +230,9 @@ describe("collectModules", () => {
     expect(text).toMatch(/frame keys of "tree" must be unique lowercase words .*: Open/);
     expect(text).toMatch(/frame holds of "tree" must be positive ms: Open/);
     expect(text).toMatch(/scene of "live" needs at least two frames/);
-    // A module with an unknown part still renders; its drawer lists what exists.
-    expect(registry.list.map(({ module }) => module.id)).toEqual(["actions"]);
+    expect(text).toMatch(/viewport of "stats" must be a positive width in px/);
+    // A module with an unknown part, or a width it cannot be laid out at, still renders.
+    expect(registry.list.map(({ module }) => module.id)).toEqual(["actions", "stats"]);
   });
 
   it("reads an unknown pick as the default variant, and stores the default as no pick", () => {

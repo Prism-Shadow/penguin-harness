@@ -10,6 +10,9 @@
  *   drawing, so a composition lays out at phone width — a real viewport, which is the only thing
  *   the responsive classes answer to — and the themes can be compared there too.
  *
+ * Outside the phone view, a module designed at the app's width (`viewport`) gets a frame that wide,
+ * scaled down to the figure, so each theme's copy lays out as the card's does.
+ *
  * A scene's frames all follow the card's clock (`sync=1`): each frame says when it is listening,
  * and gets the card's timeline then and on every change after; a composition's own move inside a
  * frame comes back as a command the card's clock runs.
@@ -20,11 +23,13 @@ import type { Module, ModuleVariant } from "../../../ui/src/module";
 import { isSettled } from "../../../ui/src/scene";
 import type { SceneClock, SceneCommand } from "../../../ui/src/scene";
 import { formatBreadcrumb } from "../lib/breadcrumb";
+import { embedWidth, naturalWidth } from "../lib/fit";
 import { clockMessage, CLOCK_READY, readControlMessage } from "../lib/live";
 import { BASE } from "../lib/location";
 import { formatGalleryQuery, PHONE_WIDTH } from "../lib/url-state";
 import { useText } from "../preview";
 import { useGallery } from "../state";
+import { Fit } from "./fit";
 import { Breadcrumb } from "./pills";
 
 export function ThemeFrames({
@@ -97,6 +102,10 @@ function ThemeFrame({
   const text = useText();
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(432);
+  // A module designed at the app's width gets a frame that wide, scaled to the figure like the
+  // card's own preview; at phone width the 390 px frame is the point, so it is never scaled.
+  const natural = naturalWidth(module);
+  const fitted = phone || natural === null ? null : embedWidth(module.id, natural);
   /** What the frame should hold now, re-sent when the frame says it is listening. */
   const message = useRef<ReturnType<typeof clockMessage> | null>(null);
   message.current = clock ? clockMessage(module.id, variant.key, clock) : null;
@@ -128,7 +137,7 @@ function ThemeFrame({
     };
     // `post` and `relay` read refs only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frames, theme, module.id, variant.key]);
+  }, [frames, theme, module.id, variant.key, fitted]);
   // Every change of the card's clock reaches the frame at once.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(post, [clock]);
@@ -155,13 +164,25 @@ function ThemeFrame({
           <Breadcrumb text={crumb} className="g-crumb-compact" />
         </figcaption>
       )}
-      <iframe
-        ref={frame}
-        title={S.section.compareFrame(text.theme(theme))}
-        src={src}
-        loading="lazy"
-        style={{ height, width: phone ? PHONE_WIDTH : undefined }}
-      />
+      {fitted === null ? (
+        <iframe
+          ref={frame}
+          title={S.section.compareFrame(text.theme(theme))}
+          src={src}
+          loading="lazy"
+          style={{ height, width: phone ? PHONE_WIDTH : undefined }}
+        />
+      ) : (
+        <Fit natural={fitted}>
+          <iframe
+            ref={frame}
+            title={S.section.compareFrame(text.theme(theme))}
+            src={src}
+            loading="lazy"
+            style={{ height }}
+          />
+        </Fit>
+      )}
     </figure>
   );
 }

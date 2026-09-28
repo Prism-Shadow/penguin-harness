@@ -89,7 +89,7 @@ export function LoginScreen({
   const f = fixturesFor(lang);
   const a = f.copy.auth;
   return (
-    <div className="relative flex h-screen w-full items-center justify-center overflow-hidden bg-canvas p-4 text-fg">
+    <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-canvas p-4 text-fg">
       <Circuit />
       <Corner f={f} />
       <div className="relative w-full max-w-sm">

@@ -21,7 +21,7 @@ import type {
   Fixtures,
   TicketFixture,
 } from "../fixtures";
-import { defineModule } from "../module";
+import { APP_COLUMN_WIDTH, defineModule } from "../module";
 import type { SceneSpec } from "../module";
 import { at, useScene } from "../scene";
 import { AgentTile, UserAvatar } from "../screens/parts";
@@ -457,7 +457,7 @@ function ChannelBubble({
 
 function Channel({ f }: { f: Fixtures }) {
   const c = f.copy.company;
-  const name = f.company.org.id;
+  const name = c.allHands;
   const people = f.company.employees;
   const messages = f.company.channel.messages;
   // The system line the running ticket's first Session posted.
@@ -500,7 +500,7 @@ function Channel({ f }: { f: Fixtures }) {
       </div>
       <div className="border-t border-line px-4 py-3">
         <span className="flex h-9 items-center rounded-md border border-line bg-surface px-3 text-sm text-fg-subtle">
-          {c.messagePlaceholder(name)}
+          {c.messagePlaceholder}
         </span>
       </div>
     </div>
@@ -515,6 +515,7 @@ export const module = defineModule({
   description:
     "Company mode's surfaces: the ticket board, the week's calendar with outcomes, the org chart with employee states, and the group chat.",
   width: "wide",
+  viewport: APP_COLUMN_WIDTH,
   variants: [
     { key: "board", title: "Board", scene: MOVE },
     { key: "calendar", title: "Calendar" },

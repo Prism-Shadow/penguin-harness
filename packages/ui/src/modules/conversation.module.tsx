@@ -22,7 +22,7 @@ import type {
   ToolCallItem,
   UserMessageItem,
 } from "../fixtures";
-import { defineModule } from "../module";
+import { APP_COLUMN_WIDTH, defineModule } from "../module";
 import type { SceneSpec } from "../module";
 import { at, reached, useScene } from "../scene";
 import { StreamedProse } from "../screens/markdown";
@@ -181,6 +181,7 @@ export const module = defineModule({
   description:
     "A Task's transcript: a user message with its attachment, settled prose with a table and code, a work group with thinking and tool rows, an opened diff, a running subagent, a pending approval and the stats line.",
   width: "wide",
+  viewport: APP_COLUMN_WIDTH,
   variants: [
     { key: "streaming", title: "Streaming", scene: STREAM },
     { key: "settled", title: "Settled" },

@@ -28,10 +28,8 @@ import {
   arriving,
   Field,
   GlyphIcon,
-  GroupHeader,
   Heading,
   IconButton,
-  NavRow,
   RunSpinner,
   Select,
   StatusWord,
@@ -43,8 +41,15 @@ import {
 import type { IconName } from "../modules/parts";
 import { at, reached, useScene } from "../scene";
 import { bytes, duration, tokens, usd } from "../screens/format";
-import { AgentTile, AppShell, UserAvatar } from "../screens/parts";
-import { StatsLine, Turn, UserBubble, WorkGroup } from "../screens/transcript";
+import { AgentTile, AppShell, NEUTRAL_FILL, SidebarBody, StatChip } from "../screens/parts";
+import {
+  ComposerToolbar,
+  StatsLine,
+  StopButton,
+  Turn,
+  UserBubble,
+  WorkGroup,
+} from "../screens/transcript";
 import type { WorkItem } from "../screens/transcript";
 import { heroComposer, heroTurn, useTypedPrompt } from "./scene";
 import type { HeroDrive } from "./scene";
@@ -84,49 +89,10 @@ function runningAt<T extends WorkItem>(step: T, share: number): T {
 // The navigation column
 // ---------------------------------------------------------------------------------------------
 
-function SessionRow({
-  item,
-  f,
-  active,
-  running,
-  onOpen,
-}: {
-  item: SessionListItem;
-  f: Fixtures;
-  active: boolean;
-  /** The Task in this row is running right now, so the row carries its spinner. */
-  running: boolean;
-  onOpen: () => void;
-}) {
-  const agent = f.agents.find((candidate) => candidate.id === item.agentId);
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-current={active ? "page" : undefined}
-        className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors duration-150 ${
-          active ? "bg-accent-muted text-fg" : "text-fg-muted"
-        }`}
-      >
-        <AgentTile id={item.agentId} name={agent?.name ?? item.agentId} />
-        <span className={`min-w-0 flex-1 truncate ${active ? "font-(--ui-weight-medium)" : ""}`}>
-          {item.title}
-        </span>
-        {item.pinned && <GlyphIcon name="pin" size={12} className="text-fg-subtle" />}
-        {running ? (
-          <RunSpinner label={f.copy.chat.runStates.running} />
-        ) : (
-          <span className="shrink-0 text-xs tabular-nums text-fg-subtle">{item.timeLabel}</span>
-        )}
-      </button>
-    </li>
-  );
-}
-
 /**
- * The session sidebar. It steps out below the `@3xl` mark rather than folding to the icon rail:
- * at phone width the window is one column, and the rail would be a second one.
+ * The session sidebar: the app's own (screens/parts.tsx), its rows opening their Session. It steps
+ * out below the `@3xl` mark rather than folding to the icon rail: at phone width the window is one
+ * column, and the rail would be a second one.
  */
 function HeroSidebar({
   f,
@@ -142,50 +108,20 @@ function HeroSidebar({
   running: boolean;
   drive: HeroDrive;
 }) {
-  const c = f.copy.nav;
   const group = f.sessionGroups[0];
+  // Only the open row's Task runs, and only while the scene has it running.
+  const items = sessions.map((item, index) => ({ ...item, running: index === open && running }));
   return (
     <aside
       data-slot="nav"
-      className="hidden w-56 shrink-0 flex-col border-r border-line bg-surface-muted @3xl:flex"
+      className="hidden w-72 shrink-0 flex-col border-r border-line bg-surface-muted @3xl:flex"
     >
-      <div className="flex items-center gap-2 px-3 py-2">
-        <UserAvatar name={f.user.name} size={22} />
-        <span className="min-w-0 flex-1 truncate text-sm font-(--ui-weight-medium) text-fg">
-          {f.user.name}
-        </span>
-        <IconButton label={c.collapseSidebar} icon="sidebar" size="sm" />
-      </div>
-      <nav className="grid grid-cols-[minmax(0,1fr)] gap-px px-2">
-        <NavRow icon="newChat" label={c.newChat} />
-        <NavRow icon="agents" label={c.agents} count={f.agents.length} />
-        <NavRow icon="models" label={c.models} />
-      </nav>
-      <div className="min-h-0 flex-1 overflow-hidden px-2 pt-3">
-        <GroupHeader
-          icon="folder"
-          label={group?.label ?? c.sessions}
-          name
-          count={sessions.length}
-        />
-        <ul className="grid grid-cols-[minmax(0,1fr)] gap-px">
-          {sessions.map((item, index) => (
-            <SessionRow
-              key={item.id}
-              item={item}
-              f={f}
-              active={index === open}
-              running={index === open && running}
-              onOpen={() => drive.openSession(index)}
-            />
-          ))}
-        </ul>
-      </div>
-      <div className="flex items-center gap-2 border-t border-line px-3 py-2">
-        <UserAvatar name={f.user.name} size={22} />
-        <span className="min-w-0 flex-1 truncate text-sm text-fg-muted">{f.user.name}</span>
-        <IconButton label={f.copy.settings.title} icon="settings" size="sm" />
-      </div>
+      <SidebarBody
+        f={f}
+        activeSessionId={sessions[open]?.id}
+        groups={group ? [{ ...group, items }] : []}
+        onOpenSession={(id) => drive.openSession(sessions.findIndex((item) => item.id === id))}
+      />
     </aside>
   );
 }
@@ -194,23 +130,25 @@ function HeroSidebar({
 // The main column
 // ---------------------------------------------------------------------------------------------
 
+/** The chat's toolbar as the app draws it: the title, a running Task's hourglass, the totals. */
 function ChatHead({ f, title, running }: { f: Fixtures; title: string; running: boolean }) {
   const s = f.session;
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-line px-3">
-      <span className="min-w-0 flex-1 truncate text-sm font-(--ui-weight-medium) text-fg">
-        {title}
-      </span>
+    <header className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
+      <span className="min-w-0 truncate text-sm font-(--ui-weight-strong) text-fg">{title}</span>
       {running && (
-        <span className="flex shrink-0 items-center gap-1 text-xs text-tone-success-fg">
-          <RunSpinner />
-          {f.copy.chat.running}
+        <span className="flex shrink-0 items-center gap-1 text-xs text-fg-muted">
+          <span className="text-tone-attention-fg">
+            <GlyphIcon name="hourglass" size={12} />
+          </span>
+          {f.copy.chat.runStates.running}
         </span>
       )}
-      <span className="hidden shrink-0 items-center gap-3 font-mono text-xs tabular-nums text-fg-muted @2xl:flex">
-        <span>{tokens(s.totals.tokens)}</span>
-        <span>{usd(s.totals.costUsd)}</span>
-        <span>{duration(s.totals.elapsedMs)}</span>
+      <span className="min-w-0 flex-1" />
+      <span className="hidden h-7 shrink-0 items-center gap-3 px-2 text-fg-muted @2xl:flex">
+        <StatChip glyph="tokens" value={tokens(s.totals.tokens)} />
+        <StatChip glyph="cost" value={usd(s.totals.costUsd)} />
+        <StatChip glyph="clock" value={duration(s.totals.elapsedMs)} />
       </span>
     </header>
   );
@@ -328,8 +266,6 @@ function Reading({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
 function ComposerCard({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
   const clock = useScene();
   const c = f.copy.chat;
-  const s = f.session;
-  const model = f.models.find((candidate) => candidate.modelId === s.model.modelId);
   const state = heroComposer(clock, drive);
   const typed = useTypedPrompt(scenePrompt(f));
   const value = state === "running" ? "" : state === "typing" ? typed : drive.draft;
@@ -340,7 +276,7 @@ function ComposerCard({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
           event.preventDefault();
           drive.send(value);
         }}
-        className="ui-glass rounded-lg border border-line-emphasis bg-surface px-2.5 pb-2 pt-2 focus-within:border-accent focus-within:[box-shadow:var(--ui-focus-ring-input)]"
+        className="ui-glass @container rounded-lg border border-line-emphasis bg-surface px-2.5 pb-2 pt-2 focus-within:border-accent focus-within:[box-shadow:var(--ui-focus-ring-input)]"
       >
         {/* The card wears the focus ring, as every other control in the set does. */}
         <input
@@ -349,45 +285,28 @@ function ComposerCard({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
           onChange={(event) => drive.write(event.target.value)}
           placeholder={c.inputPlaceholder}
           aria-label={c.inputPlaceholder}
-          className="w-full min-w-0 bg-transparent px-1 py-1.5 font-sans text-sm leading-6 text-fg outline-none placeholder:text-fg-subtle"
+          className="w-full min-w-0 bg-transparent px-1 py-0.5 font-sans text-base leading-6 text-fg outline-none placeholder:text-fg-subtle"
         />
-        <div className="mt-1 flex items-center gap-2 text-xs">
-          <IconButton label={c.attach} icon="plus" size="sm" />
-          <span className="hidden min-w-0 items-center gap-1.5 truncate text-fg-muted @2xl:flex">
-            <GlyphIcon name="shield" size={13} decor="menu" />
-            {c.approvalModes[s.composer.approvalMode]}
-          </span>
-          <span className="min-w-0 flex-1" />
-          <span className="hidden min-w-0 items-center gap-1.5 truncate text-fg-muted @xl:flex">
-            <AgentTile
-              id={s.model.provider}
-              name={model?.providerLabel ?? f.copy.models.provider}
-            />
-            <span className="min-w-0 truncate">{model?.displayName ?? s.model.modelId}</span>
-          </span>
-          {state === "running" ? (
-            <span
-              role="button"
-              aria-label={c.stop}
-              title={c.stop}
-              className="flex size-8 shrink-0 items-center justify-center rounded-control bg-tone-danger-emphasis text-tone-danger-emphasis-fg"
-            >
-              <span className="size-2.5 rounded-xs bg-current" />
-            </span>
-          ) : (
-            <button
-              type="submit"
-              aria-label={c.send}
-              title={c.send}
-              aria-disabled={value === "" || undefined}
-              className={`flex size-8 shrink-0 items-center justify-center rounded-control transition-colors duration-150 ${
-                value === "" ? "bg-surface-muted text-fg-subtle" : "bg-accent text-accent-fg"
-              }`}
-            >
-              <GlyphIcon name="arrowUp" size={16} />
-            </button>
-          )}
-        </div>
+        <ComposerToolbar
+          f={f}
+          send={
+            state === "running" ? (
+              <StopButton f={f} />
+            ) : (
+              <button
+                type="submit"
+                aria-label={c.send}
+                title={c.send}
+                aria-disabled={value === "" || undefined}
+                className={`flex size-8 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
+                  value === "" ? `${NEUTRAL_FILL} text-fg-subtle` : "bg-accent text-accent-fg"
+                }`}
+              >
+                <GlyphIcon name="arrowUp" size={17} />
+              </button>
+            )
+          }
+        />
       </form>
     </div>
   );
@@ -561,7 +480,7 @@ function DockFrame({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
       >
         <DockTabs panels={panels} open={open} drive={drive} />
         <span className="min-w-0 flex-1" />
-        <IconButton label={f.copy.dock.close} icon="cross" size="sm" />
+        <IconButton label={f.copy.dock.hideDock} icon="cross" size="sm" />
       </div>
       <div data-slot="body" className="min-h-0 flex-1 overflow-hidden">
         <DockPanel f={f} open={open} />

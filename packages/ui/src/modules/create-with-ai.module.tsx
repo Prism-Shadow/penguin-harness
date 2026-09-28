@@ -19,7 +19,7 @@
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { Fixtures } from "../fixtures";
-import { defineModule } from "../module";
+import { APP_COLUMN_WIDTH, defineModule } from "../module";
 import type { SceneSpec } from "../module";
 import { at, reached, useScene } from "../scene";
 import { AgentTile, DisclosureBody } from "../screens/parts";
@@ -264,7 +264,7 @@ function Prompt({ f }: { f: Fixtures }) {
       <div className="absolute inset-0 flex items-start justify-center px-6 py-8">
         <Presence show={open} side="center" className="w-full max-w-xl">
           <Modal
-            title={f.copy.agents.createWithAi}
+            title={f.copy.agents.aiCreateTitle}
             footer={
               <>
                 <Button variant="secondary" size="sm">
@@ -408,6 +408,7 @@ export const module = defineModule({
   description:
     "Describe what you want and an Agent builds it: the panel that hands a prompt to a new Session, the Agent it proposes, what it would write, and where it landed.",
   width: "wide",
+  viewport: APP_COLUMN_WIDTH,
   variants: [
     { key: "prompt", title: "Prompt", scene: PROMPT_SCENE },
     { key: "proposal", title: "Proposal" },

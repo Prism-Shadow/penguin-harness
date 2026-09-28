@@ -100,7 +100,7 @@ function SubagentsPanel({ f }: { f: Fixtures }) {
 export function ChatScreen({ lang }: { lang: FixtureLang }) {
   const f = fixturesFor(lang);
   return (
-    <AppShell className="flex h-screen w-full overflow-hidden bg-canvas text-fg">
+    <AppShell className="flex h-full w-full overflow-hidden bg-canvas text-fg">
       <Sidebar f={f} activeSessionId={f.session.id} />
       <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
         <ChatHeader f={f} dock="right" />
@@ -110,7 +110,7 @@ export function ChatScreen({ lang }: { lang: FixtureLang }) {
             <Composer f={f} />
           </main>
           <div className="w-[24rem] shrink-0">
-            <DockFrame f={f} tab={f.copy.dock.subagents(1)} glyph="bot" edge="right">
+            <DockFrame f={f} tab={f.copy.dock.agentsPanel} glyph="bot" edge="right">
               <SubagentsPanel f={f} />
             </DockFrame>
           </div>

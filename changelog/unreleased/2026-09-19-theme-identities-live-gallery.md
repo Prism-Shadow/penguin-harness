@@ -85,3 +85,24 @@ opens.
   root font size), language, viewport, compare and reduced motion. `accent=` and `view=` join the URL.
 - **Phone width works twice over**: `view=phone` renders any module in a 390px frame, and the gallery
   itself folds its rail into a top-bar drawer, goes single column and never scrolls sideways.
+
+## The gallery, at the app's size
+
+- **App regions render at the app's width.** A module that imitates part of the app window declares
+  the width it is designed at (`viewport` in `module.ts`): 1280px for a whole window (Sidebar & navigation,
+  Hero), 956px for what fills its main column (Conversation, Composer, Pages, Company board, Dialogs,
+  Empty states, Create with AI, Overlays, Files). The card lays the composition out at that width and
+  scales the picture down to fit, so it wraps and truncates as the app does. `/embed` and the
+  screenshots show it at that width unscaled; the phone view keeps its 390px frame.
+- **The stand-ins follow the app.** The sidebar leads with the collapse button and the Project
+  switcher, and carries the app's nav labels (新建对话, 插件市场), no counts, the Sessions header with
+  its three controls, Workspace groups, the running hourglass, and the user row with the role. The
+  chat header, the composer's control row (`+`, approval mode, Skills with its count, the slash hint,
+  the context gauge, thinking level, model, send), the stats line and the dock's labels match the app,
+  and the chat without a right dock shows the 快捷方式 launcher ball. The Pages module is the real
+  Plugins page and the Agents page with its create pair; page titles, the Files panel and company copy
+  use the app's words.
+- A guard test pins every label the gallery shares with the app to the app's own dictionaries
+  (`packages/web/src/lib/strings.ts` and `strings-en.ts`), in both languages.
+- `/screens/<name>` puts its toolbar in a strip above the composite instead of floating it over the
+  composer.

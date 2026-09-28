@@ -12,6 +12,7 @@ import { reached, useScene } from "../scene";
 import { AgentTile } from "../screens/parts";
 import {
   Button,
+  CreateButtons,
   GlyphIcon,
   Heading,
   IconButton,
@@ -34,8 +35,8 @@ const OPEN_PAGE: SceneSpec = {
 
 /**
  * The Agents page toolbar, and the scene that builds it: the title with the pair of create
- * buttons; the search row and its icon buttons under them; then the agents themselves, one row
- * after another — the page this variant shows when nothing is playing.
+ * buttons; the search box under them; then the agents themselves, one row after another — the
+ * page this variant shows when nothing is playing.
  */
 function Toolbar({ f }: { f: Fixtures }) {
   const clock = useScene();
@@ -45,20 +46,13 @@ function Toolbar({ f }: { f: Fixtures }) {
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <Heading level={3} className="mr-auto">
-          {f.copy.nav.agents}
+          {a.title}
         </Heading>
-        <Button variant="secondary" leading={<GlyphIcon name="sparkle" size={13} />}>
-          {a.createWithAi}
-        </Button>
-        <Button variant="primary" leading={<GlyphIcon name="plus" size={13} />}>
-          {a.newAgent}
-        </Button>
+        <CreateButtons f={f} />
       </div>
       {reached(clock, "search") && (
-        <div data-reveal={arriving(clock, "search")} className="flex items-center gap-2">
+        <div data-reveal={arriving(clock, "search")}>
           <SearchInput placeholder={a.search} />
-          <IconButton label={f.copy.nav.filterSessions} icon="sliders" />
-          <IconButton label={f.copy.common.more} icon="more" />
         </div>
       )}
       <ul className="grid grid-cols-[minmax(0,1fr)]">

@@ -28,6 +28,8 @@ export const GLYPHS = {
   chevronRight: "m9 6 6 6-6 6",
   chevronDown: "m6 9 6 6 6-6",
   chevronUp: "m18 15-6-6-6 6",
+  collapseLeft: "m17 18-6-6 6-6M7 6v12",
+  expandRight: "m7 18 6-6-6-6M17 6v12",
   sidebar:
     "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2ZM9 3v18M16 10l-2 2 2 2",
   plus: "M12 5v14M5 12h14",
@@ -82,6 +84,13 @@ export const GLYPHS = {
   // the modules' own extra glyphs.
   history: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5",
   terminal: "m4 17 6-6-6-6M12 19h8",
+  arrowUp: "m5 12 7-7 7 7M12 19V5",
+  alert:
+    "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3ZM12 9v4M12 17h.01",
+  ban: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM4.93 4.93l14.14 14.14",
+  more: "M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z",
+  workbench:
+    "M4 3h5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM15 3h5a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM15 12h5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1ZM4 16h5a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z",
 } as const;
 
 export type GlyphName = keyof typeof GLYPHS;

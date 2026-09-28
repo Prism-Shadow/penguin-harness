@@ -305,7 +305,7 @@ export const zh = {
       navigation: {
         title: "侧栏与导航",
         description:
-          "会话侧栏（导航行、计数与带标记的会话行）；带路径与下划线标签页的页头；停靠面板的标签页与图标栏。",
+          "固定侧栏（Project 切换器、页面入口、按工作区分组的带标记会话行）与对话及其快捷方式悬浮球；带路径与下划线标签页的页头；停靠面板的标签页与图标栏。",
         variants: {
           sidebar: "侧栏",
           "tabs-crumbs": "标签页与路径",
@@ -449,10 +449,11 @@ export const zh = {
       },
       pages: {
         title: "页面与分区",
-        description: "设置类页面：页头、细线分区、卡片网格与可折叠分区；实体页；空页面。",
+        description:
+          "插件页：页头、带搜索与可折叠列表栏的列表列，旁边是筛选列；实体页；只有内置 Agent 的智能体页。",
         variants: { settings: "设置页", entity: "实体页", empty: "空页面" },
         frames: {
-          settings: { header: "页头", installed: "已安装", marketplaces: "插件市场" },
+          settings: { header: "页头", installed: "已安装", marketplaces: "可安装" },
         },
       },
       company: {

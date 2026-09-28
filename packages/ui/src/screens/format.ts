@@ -42,3 +42,8 @@ export function bytes(n: number): string {
 export function percent(part: number, whole: number): string {
   return whole > 0 ? `${Math.round((part / whole) * 100)}%` : "0%";
 }
+
+/** The context gauge's reading, as the app titles it: `Context usage 42% · 84k/200k`. */
+export function contextReading(name: string, used: number, window: number): string {
+  return `${name} ${percent(used, window)} · ${tokens(used)}/${tokens(window)}`;
+}

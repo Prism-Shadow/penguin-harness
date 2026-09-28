@@ -15,7 +15,7 @@
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { FileNode, Fixtures } from "../fixtures";
-import { defineModule } from "../module";
+import { APP_COLUMN_WIDTH, defineModule } from "../module";
 import type { SceneSpec } from "../module";
 import { reached, useScene } from "../scene";
 import { bytes } from "../screens/format";
@@ -135,15 +135,12 @@ function TreePane({ f, live }: { f: Fixtures; live?: TreeState }) {
   const copy = f.copy.files;
   return (
     <aside className="flex w-72 shrink-0 flex-col border-r border-line">
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-2 border-b border-line p-2">
-        <div className="flex items-center gap-1 pl-1">
-          <span className="min-w-0 flex-1 text-sm font-(--ui-weight-medium) text-fg">
-            {f.copy.nav.files}
-          </span>
-          <IconButton label={f.copy.common.refresh} icon="refresh" size="sm" />
-          <IconButton label={copy.upload} icon="upload" size="sm" />
-        </div>
-        <SearchInput placeholder={copy.search} />
+      <div className="flex items-center gap-1 border-b border-line p-2">
+        <span className="min-w-0 flex-1">
+          <SearchInput placeholder={copy.search} />
+        </span>
+        <IconButton label={f.copy.common.refresh} icon="refresh" size="sm" />
+        <IconButton label={copy.upload} icon="upload" size="sm" />
       </div>
       <FileTree f={f} live={live} />
     </aside>
@@ -256,6 +253,7 @@ export const module = defineModule({
   description:
     "The Workspace's Files panel: the tree with search, refresh and upload; a file preview with breadcrumbs; the drop overlay.",
   width: "wide",
+  viewport: APP_COLUMN_WIDTH,
   variants: [
     { key: "tree", title: "Tree", scene: EXPAND },
     { key: "preview", title: "Preview" },

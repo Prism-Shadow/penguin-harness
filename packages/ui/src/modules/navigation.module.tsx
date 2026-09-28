@@ -1,32 +1,39 @@
 /**
  * Sidebar & navigation: how the app is moved through.
  *
- * - Sidebar: the session sidebar beside the chat header — the account switcher, nav rows with
- *   counts, the Sessions group label, a Workspace group and a time group of session rows with their
- *   marks (running, pinned, unread, scheduled), one row showing its hover actions, the user row.
- *   Its scene opens it: the icon rail, a rail icon's tooltip, then the sidebar unfolding;
+ * - Sidebar: the pinned sidebar beside the chat, as the app lays it out — the collapse button and
+ *   the Project switcher, New chat, the page entries and the seam that folds them, the Sessions
+ *   header, two Workspace groups of session rows with their marks (running, pinned, unread,
+ *   scheduled), one row showing its hover actions, and the user row — with the launcher ball on
+ *   the chat's right edge, since no dock is open there. Its scene opens it: the icon rail, a rail
+ *   icon's tooltip, then the sidebar unfolding;
  * - Tabs & crumbs: a page header under its breadcrumbs, with underline tabs;
- * - Dock & rail: the chat with the right dock open — dock tabs, the panel actions and a panel;
+ * - Dock & rail: the chat with the bottom dock open — dock tabs, the panel actions and a panel;
  * - Collapsed: the sidebar folded to the icon rail, one icon showing its tooltip.
  */
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
-import type { Fixtures, SessionListItem } from "../fixtures";
-import { defineModule } from "../module";
+import type { Fixtures } from "../fixtures";
+import { APP_WINDOW_WIDTH, defineModule } from "../module";
 import type { SceneSpec } from "../module";
 import { at, reached, useScene } from "../scene";
-import { AgentTile, AppShell, UserAvatar } from "../screens/parts";
-import { duration, tokens, usd } from "../screens/format";
+import {
+  AgentTile,
+  AppShell,
+  ChatHeader,
+  LauncherBall,
+  RailBody,
+  SidebarBody,
+} from "../screens/parts";
+import type { SidebarPage } from "../screens/parts";
+import { tokens, usd } from "../screens/format";
 import {
   Badge,
   Breadcrumbs,
   Button,
-  Dot,
   GlyphIcon,
-  GroupHeader,
   IconButton,
   KeyValue,
-  NavRow,
   PageHeader,
   Presence,
   RunSpinner,
@@ -34,17 +41,6 @@ import {
   Tooltip,
 } from "./parts";
 import type { IconName } from "./parts";
-
-const NAV: readonly {
-  key: "agents" | "plugins" | "models" | "usage" | "benchmark";
-  icon: IconName;
-}[] = [
-  { key: "agents", icon: "agents" },
-  { key: "plugins", icon: "plugins" },
-  { key: "models", icon: "models" },
-  { key: "usage", icon: "usage" },
-  { key: "benchmark", icon: "benchmark" },
-];
 
 /**
  * A mock app window the compositions sit in: the product's own frame (the app shell), at a fixed
@@ -68,172 +64,27 @@ function Window({
   );
 }
 
-function SessionRow({
-  item,
-  f,
-  active = false,
-  hovered = false,
-}: {
-  item: SessionListItem;
-  f: Fixtures;
-  active?: boolean;
-  hovered?: boolean;
-}) {
-  const agent = f.agents.find((a) => a.id === item.agentId);
-  return (
-    <li
-      aria-current={active ? "page" : undefined}
-      className={`flex h-8 items-center gap-2 rounded-md px-2 text-sm ${
-        active ? "bg-accent-muted text-fg" : hovered ? "bg-surface-muted text-fg" : "text-fg-muted"
-      }`}
-    >
-      <AgentTile id={item.agentId} name={agent?.name ?? item.agentId} />
-      <span className={`min-w-0 flex-1 truncate ${active ? "font-(--ui-weight-medium)" : ""}`}>
-        {item.title}
-      </span>
-      {hovered ? (
-        <span className="flex items-center">
-          <IconButton label={f.copy.nav.pin} icon="pin" size="sm" />
-          <IconButton label={f.copy.common.more} icon="more" size="sm" hovered />
-        </span>
-      ) : (
-        <>
-          {item.pinned && <GlyphIcon name="pin" size={12} className="text-fg-subtle" />}
-          {item.scheduled && (
-            <GlyphIcon name="calendarClock" size={12} className="text-fg-subtle" />
-          )}
-          {item.unread && <Dot tone="info" size="xs" />}
-          {item.running ? (
-            <RunSpinner label={f.copy.chat.runStates.running} />
-          ) : (
-            <span className="shrink-0 text-xs tabular-nums text-fg-subtle">{item.timeLabel}</span>
-          )}
-        </>
-      )}
-    </li>
-  );
-}
-
-/** What the sidebar holds, apart from the column it sits in, which the scene widens and narrows. */
-function SidebarBody({ f }: { f: Fixtures }) {
-  const c = f.copy.nav;
-  const [workspace, earlier] = f.sessionGroups;
-  return (
-    <>
-      <div className="flex items-center gap-1 px-2 pt-2">
-        <span className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5">
-          <UserAvatar name={f.user.name} size={22} />
-          <span className="min-w-0 flex-1 truncate text-sm font-(--ui-weight-medium) text-fg">
-            {f.user.name}
-          </span>
-          <GlyphIcon name="chevronDown" size={14} className="text-fg-subtle" />
-        </span>
-        <IconButton label={c.collapseSidebar} icon="sidebar" />
-      </div>
-      <nav className="grid grid-cols-[minmax(0,1fr)] gap-px px-2 pt-2">
-        <NavRow icon="newChat" label={c.newChat} />
-        {NAV.map((row) => (
-          <NavRow
-            key={row.key}
-            icon={row.icon}
-            label={c[row.key]}
-            count={row.key === "agents" ? f.agents.length : row.key === "plugins" ? 4 : undefined}
-          />
-        ))}
-      </nav>
-      <div className="min-h-0 flex-1 overflow-hidden px-2 pt-3">
-        <GroupHeader
-          label={c.sessions}
-          actions={
-            <span className="flex items-center">
-              <IconButton label={c.search} icon="search" size="sm" />
-              <IconButton label={c.filterSessions} icon="sliders" size="sm" />
-            </span>
-          }
-        />
-        {workspace && (
-          <>
-            <GroupHeader
-              icon="folder"
-              label={workspace.label}
-              name
-              count={workspace.items.length}
-            />
-            <ul className="grid grid-cols-[minmax(0,1fr)] gap-px">
-              {workspace.items.map((row, i) => (
-                <SessionRow
-                  key={row.id}
-                  item={row}
-                  f={f}
-                  active={row.id === f.session.id}
-                  hovered={i === 1}
-                />
-              ))}
-            </ul>
-          </>
-        )}
-        {earlier && (
-          <>
-            <GroupHeader icon="clock" label={earlier.label} count={earlier.items.length} />
-            <ul className="grid grid-cols-[minmax(0,1fr)] gap-px">
-              {earlier.items.map((row) => (
-                <SessionRow key={row.id} item={row} f={f} />
-              ))}
-            </ul>
-          </>
-        )}
-      </div>
-      <div className="flex items-center gap-2 border-t border-line px-3 py-2">
-        <UserAvatar name={f.user.name} size={24} />
-        <span className="min-w-0 flex-1 truncate text-sm text-fg">{f.user.name}</span>
-        <IconButton label={f.copy.settings.title} icon="settings" size="sm" />
-      </div>
-    </>
-  );
-}
-
-function ChatHead({ f, dock }: { f: Fixtures; dock?: "bottom" | "right" }) {
-  const s = f.session;
-  const d = f.copy.dock;
-  return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
-      <span className="min-w-0 flex-1 truncate text-sm font-(--ui-weight-medium) text-fg">
-        {s.title}
-      </span>
-      <span className="flex items-center gap-1 text-xs text-tone-success-fg">
-        <RunSpinner />
-        {f.copy.chat.running}
-      </span>
-      {dock && (
-        <span className="flex items-center">
-          <IconButton label={d.bottomDock} icon="panelBottom" pressed={dock === "bottom"} />
-          <IconButton label={d.rightDock} icon="panelRight" pressed={dock === "right"} />
-        </span>
-      )}
-      <span className="flex items-center gap-3 font-mono text-xs tabular-nums text-fg-muted">
-        <span>{tokens(s.totals.tokens)}</span>
-        <span>{usd(s.totals.costUsd)}</span>
-        <span>{duration(s.totals.elapsedMs)}</span>
-      </span>
-    </header>
-  );
-}
-
-/** The chat's latest exchange, quietly, so a frame has something in it. */
-function ChatBody({ f }: { f: Fixtures }) {
+/**
+ * The chat's latest exchange, quietly, so a frame has something in it. With no dock open on the
+ * right, the launcher ball rests on the body's right edge, as it does in the app.
+ */
+function ChatBody({ f, launcher = false }: { f: Fixtures; launcher?: boolean }) {
   const items = f.session.turns[1]!.items;
   const prompt = items.find((i) => i.kind === "user");
   const reply = items.find((i) => i.kind === "text");
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-6">
-      {prompt?.kind === "user" && (
-        <p className="ml-auto max-w-[80%] rounded-lg bg-surface-muted px-4 py-2 font-sans text-sm text-fg">
-          {prompt.text}
-        </p>
-      )}
-      {reply?.kind === "text" && (
-        <p className="font-sans text-sm leading-relaxed text-fg">{reply.markdown}</p>
-      )}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-4 overflow-hidden px-6 py-6">
+        {prompt?.kind === "user" && (
+          <p className="ml-auto max-w-[75%] rounded-lg bg-surface-muted px-4 py-2 font-sans text-base text-fg">
+            {prompt.text}
+          </p>
+        )}
+        {reply?.kind === "text" && (
+          <p className="font-sans text-base leading-relaxed text-fg">{reply.markdown}</p>
+        )}
+      </div>
+      {launcher && <LauncherBall f={f} />}
     </div>
   );
 }
@@ -246,6 +97,9 @@ const EXPAND: SceneSpec = {
   ],
 };
 
+/** The rail entry the tooltip frames point at. */
+const TIP: SidebarPage = "plugins";
+
 /**
  * The sidebar, and the scene that opens it: the icon rail; one rail icon's tooltip; then the
  * column widens to the sidebar — its width moves through `data-layout-motion` while the rail's
@@ -257,13 +111,15 @@ function Sidebar({ f }: { f: Fixtures }) {
   const clock = useScene();
   const expanded = reached(clock, "expanded");
   const tooltip = at(clock, "tooltip");
+  // A row of the second group, under the pointer: the open Task's own group keeps its marks.
+  const hovered = f.sessionGroups[1]?.items[0]?.id;
   return (
-    <Window height="h-[39rem]">
+    <Window height="h-[40rem]">
       <aside
         data-slot="nav"
         data-layout-motion
         className={`relative flex shrink-0 flex-col border-r border-line bg-surface-muted ${
-          expanded ? "w-64" : "w-12"
+          expanded ? "w-72" : "w-12"
         } ${tooltip ? "" : "overflow-hidden"}`}
       >
         {/*
@@ -272,21 +128,38 @@ function Sidebar({ f }: { f: Fixtures }) {
           their own, and a settled card draws them at rest.
         */}
         {expanded && (
-          <div className="absolute inset-y-0 left-0 flex w-64 flex-col">
-            <SidebarBody f={f} />
+          <div className="absolute inset-y-0 left-0 flex w-72 flex-col">
+            <SidebarBody f={f} activeSessionId={f.session.id} hoveredSessionId={hovered} />
           </div>
         )}
         <Presence
           show={!expanded}
           side="left"
-          className="absolute inset-y-0 left-0 flex w-12 flex-col items-center gap-1 py-2"
+          className="absolute inset-y-0 left-0 flex w-12 flex-col items-center gap-1 py-2.5"
         >
-          <RailBody f={f} tooltip={tooltip} live />
+          <RailBody
+            f={f}
+            hovered={tooltip ? TIP : undefined}
+            renderEntry={(node, page) =>
+              page === TIP ? (
+                <>
+                  {node}
+                  <span className="absolute left-full top-1/2 z-10 ml-2 -translate-y-1/2">
+                    <Presence show={tooltip} side="left" as="span" className="block">
+                      <Tooltip label={f.copy.nav[page]} />
+                    </Presence>
+                  </span>
+                </>
+              ) : (
+                node
+              )
+            }
+          />
         </Presence>
       </aside>
       <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
-        <ChatHead f={f} />
-        <ChatBody f={f} />
+        <ChatHeader f={f} dock="none" />
+        <ChatBody f={f} launcher />
       </div>
     </Window>
   );
@@ -341,10 +214,7 @@ function TabsAndCrumbs({ f }: { f: Fixtures }) {
 }
 
 function DockTabs({ f }: { f: Fixtures }) {
-  const subagents = f.session.turns
-    .flatMap((turn) => turn.items)
-    .filter((item) => item.kind === "tool_call" && item.subagent !== undefined).length;
-  const tabs = [f.copy.dock.subagents(subagents), f.copy.nav.traces, f.copy.nav.files];
+  const tabs = [f.copy.dock.agentsPanel, f.copy.nav.traces, f.copy.dock.filesPanel];
   const glyphs: readonly IconName[] = ["bot", "eye", "folder"];
   return (
     <span role="tablist" className="flex min-w-0 items-center gap-1">
@@ -359,7 +229,11 @@ function DockTabs({ f }: { f: Fixtures }) {
         >
           <GlyphIcon name={glyphs[i] ?? "eye"} size={13} />
           <span className="truncate">{tab}</span>
-          {i === 0 && <GlyphIcon name="cross" size={11} className="text-fg-subtle" />}
+          {i === 0 && (
+            <span title={f.copy.dock.closeTab}>
+              <GlyphIcon name="cross" size={11} className="text-fg-subtle" />
+            </span>
+          )}
         </span>
       ))}
     </span>
@@ -399,7 +273,7 @@ function CallGraph({ f }: { f: Fixtures }) {
   );
 }
 
-/** The bottom dock: its tabs and panel actions in the head, the Subagents panel in the body. */
+/** The bottom dock: its tabs and panel actions in the head, the Agents panel in the body. */
 function DockFrame({ f }: { f: Fixtures }) {
   const d = f.copy.dock;
   const call = f.session.turns[1]!.items.find((i) => i.kind === "tool_call" && i.subagent);
@@ -411,8 +285,8 @@ function DockFrame({ f }: { f: Fixtures }) {
         <DockTabs f={f} />
         <span className="min-w-0 flex-1" />
         <IconButton label={d.newPanel} icon="plus" size="sm" />
-        <IconButton label={d.movePanel} icon="panelRight" size="sm" />
-        <IconButton label={d.close} icon="cross" size="sm" />
+        <IconButton label={d.moveToRight} icon="panelRight" size="sm" />
+        <IconButton label={d.hideDock} icon="cross" size="sm" />
       </div>
       <div data-slot="body" className="grid min-h-0 flex-1 grid-cols-[16rem_minmax(0,1fr)]">
         <CallGraph f={f} />
@@ -428,10 +302,10 @@ function DockFrame({ f }: { f: Fixtures }) {
 
 function DockAndRail({ f }: { f: Fixtures }) {
   return (
-    <Window height="h-[32rem]">
+    <Window height="h-[36rem]">
       <Rail f={f} />
       <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
-        <ChatHead f={f} dock="bottom" />
+        <ChatHeader f={f} dock="bottom" />
         <ChatBody f={f} />
         <DockFrame f={f} />
       </div>
@@ -439,73 +313,40 @@ function DockAndRail({ f }: { f: Fixtures }) {
   );
 }
 
+/** The collapsed rail; `tooltip` shows the named entry's tooltip, as a still. */
 function Rail({ f, tooltip = false }: { f: Fixtures; tooltip?: boolean }) {
   return (
     <nav
       data-slot="nav"
-      className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-line bg-surface-muted py-2"
+      className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-line bg-surface-muted py-2.5"
     >
-      <RailBody f={f} tooltip={tooltip} />
-    </nav>
-  );
-}
-
-/**
- * What the rail holds, apart from its frame. `live` hangs the tooltip on a `Presence`, so the live
- * scene's tooltip comes in from the icon's side and leaves again.
- */
-function RailBody({
-  f,
-  tooltip = false,
-  live = false,
-}: {
-  f: Fixtures;
-  tooltip?: boolean;
-  live?: boolean;
-}) {
-  const c = f.copy.nav;
-  return (
-    <>
-      <IconButton label={c.expandSidebar} icon="sidebar" />
-      <IconButton label={c.newChat} icon="newChat" />
-      <span className="my-1 h-px w-6 bg-line" />
-      {NAV.map((row, i) => (
-        <span key={row.key} className="relative">
-          <IconButton
-            label={c[row.key]}
-            icon={row.icon}
-            pressed={i === 2}
-            hovered={tooltip && i === 1}
-          />
-          {live && i === 1 ? (
-            <span className="absolute left-full top-1/2 z-10 ml-2 -translate-y-1/2">
-              <Presence show={tooltip} side="left" as="span" className="block">
-                <Tooltip label={c[row.key]} />
-              </Presence>
-            </span>
-          ) : (
-            tooltip &&
-            i === 1 && (
+      <RailBody
+        f={f}
+        hovered={tooltip ? TIP : undefined}
+        renderEntry={(node, page) =>
+          tooltip && page === TIP ? (
+            <>
+              {node}
               <span className="absolute left-full top-1/2 z-10 ml-2 -translate-y-1/2">
-                <Tooltip label={c[row.key]} />
+                <Tooltip label={f.copy.nav[page]} />
               </span>
-            )
-          )}
-        </span>
-      ))}
-      <span className="min-h-0 flex-1" />
-      <UserAvatar name={f.user.name} size={24} />
-    </>
+            </>
+          ) : (
+            node
+          )
+        }
+      />
+    </nav>
   );
 }
 
 function Collapsed({ f }: { f: Fixtures }) {
   return (
-    <Window height="h-[28rem]">
+    <Window height="h-[32rem]">
       <Rail f={f} tooltip />
       <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
-        <ChatHead f={f} />
-        <ChatBody f={f} />
+        <ChatHeader f={f} dock="none" />
+        <ChatBody f={f} launcher />
       </div>
     </Window>
   );
@@ -522,8 +363,9 @@ export const module = defineModule({
   id: "navigation",
   title: "Sidebar & navigation",
   description:
-    "The session sidebar with nav rows, counts and marked session rows; a page header with breadcrumbs and underline tabs; the dock with its tabs and the icon rail.",
+    "The pinned sidebar — Project switcher, page entries, Workspace groups of marked session rows — beside the chat and its launcher ball; a page header with breadcrumbs and underline tabs; the dock with its tabs and the icon rail.",
   width: "wide",
+  viewport: APP_WINDOW_WIDTH,
   variants: [
     { key: "sidebar", title: "Sidebar", scene: EXPAND },
     { key: "tabs-crumbs", title: "Tabs & crumbs" },

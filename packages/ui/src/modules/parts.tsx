@@ -12,11 +12,12 @@
  */
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { AccentSwatchFixture } from "../fixtures";
+import type { AccentSwatchFixture, FixtureAgent, Fixtures } from "../fixtures";
 import { holdOf, reached, useFrameTime, useScene } from "../scene";
 import type { SceneClock } from "../scene";
 import type { ToneName } from "../tokens";
 import { GLYPHS } from "../screens/glyph";
+import { AgentTile } from "../screens/parts";
 import { INLINE, StreamingCaret, inline } from "../screens/markdown";
 import { Spinner } from "../components/icons/spinner/spinner";
 
@@ -29,15 +30,11 @@ export const ICON_PATHS = {
   ...GLYPHS,
   external: "M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6",
   refresh: "M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5",
-  more: "M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z",
   pencil: "M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z",
   trash: "M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
   check: "M20 6 9 17l-5-5",
   key: "M2.59 17.41A2 2 0 0 0 2 18.83V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.17a2 2 0 0 0 1.42-.59l.81-.81a6.5 6.5 0 1 0-4-4ZM16.5 7.5a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1Z",
   info: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 16v-4M12 8h.01",
-  alert:
-    "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3ZM12 9v4M12 17h.01",
-  arrowUp: "m5 12 7-7 7 7M12 19V5",
   arrowDown: "M12 5v14M19 12l-7 7-7-7",
   sort: "m21 16-4 4-4-4M17 20V4M3 8l4-4 4 4M7 4v16",
   image:
@@ -60,6 +57,8 @@ export const ICON_PATHS = {
     "m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48",
   stop: "M7 7h10v10H7z",
   chevronLeft: "m15 18-6-6 6-6",
+  wand: "m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72M14 7l3 3M5 6v4M19 14v4M10 2v2M7 8H3M21 16h-4M11 3H9",
+  hand: "M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15",
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;
@@ -282,28 +281,43 @@ export function Button({
   );
 }
 
-/** A square icon button: flat at rest, its ink deepening on hover, filled only when pressed. */
+/**
+ * A square icon button: flat at rest, its ink deepening on hover, filled only when pressed. A
+ * `danger` one deepens to the danger ink; a `disabled` one stays faint and takes no pointer.
+ */
 export function IconButton({
   label,
   icon,
   size = "md",
   pressed = false,
   hovered = false,
+  tone = "default",
 }: {
   label: string;
   icon: IconName;
   size?: "sm" | "md";
   pressed?: boolean;
   hovered?: boolean;
+  tone?: "default" | "danger" | "disabled";
 }) {
   const box = size === "md" ? "size-8" : "size-6";
-  const ink = pressed ? "bg-surface-muted text-fg" : hovered ? "text-fg" : "text-fg-subtle";
+  const ink =
+    tone === "disabled"
+      ? "text-fg-subtle opacity-50"
+      : pressed
+        ? "bg-surface-muted text-fg"
+        : hovered
+          ? tone === "danger"
+            ? "text-tone-danger-fg"
+            : "text-fg"
+          : "text-fg-subtle";
   return (
     <span
       role="button"
       aria-label={label}
       title={label}
       aria-pressed={pressed || undefined}
+      aria-disabled={tone === "disabled" || undefined}
       className={`inline-flex ${box} shrink-0 items-center justify-center rounded-control transition-colors duration-150 ${ink}`}
     >
       <GlyphIcon name={icon} size={size === "md" ? 16 : 14} />
@@ -484,8 +498,18 @@ export function EmptyState({
   title: string;
   description?: string;
   action?: ReactNode;
-  variant?: "page" | "slot";
+  /** `list`: what a list says when it has nothing yet — a quiet line under the page's header. */
+  variant?: "page" | "slot" | "list";
 }) {
+  if (variant === "list") {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+        <p className="text-sm font-(--ui-weight-medium) text-fg-muted">{title}</p>
+        {description && <p className="text-xs text-fg-muted">{description}</p>}
+        {action && <div className="mt-2">{action}</div>}
+      </div>
+    );
+  }
   if (variant === "slot") {
     return (
       <div className="rounded-md border border-dashed border-line px-4 py-6 text-center text-sm text-fg-muted">
@@ -1170,6 +1194,110 @@ export function PrefRow({
  */
 export const treeInset = (depth: number): string =>
   `calc(var(--ui-tree-inset) + var(--ui-tree-indent) * ${depth})`;
+
+// ---------------------------------------------------------------------------------------------
+// Create buttons and the Agents page (W4: CreateButtons; the Agents page's card)
+// ---------------------------------------------------------------------------------------------
+
+/** The two ways to make an object, the AI one first and filled: a wand, then a hand. */
+export function CreateButtons({ f }: { f: Fixtures }) {
+  const a = f.copy.agents;
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <Button variant="primary" leading={<GlyphIcon name="wand" size={13} />}>
+        {a.createWithAi}
+      </Button>
+      <Button variant="secondary" leading={<GlyphIcon name="hand" size={13} />}>
+        {a.createManually}
+      </Button>
+    </span>
+  );
+}
+
+/** The Agents page's title row: the title, the search box and the create pair. */
+export function AgentsHeader({ f }: { f: Fixtures }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h1 className="text-xl font-(--ui-weight-strong) text-fg">{f.copy.agents.title}</h1>
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="w-56">
+          <SearchInput placeholder={f.copy.agents.search} />
+        </span>
+        <CreateButtons f={f} />
+      </span>
+    </div>
+  );
+}
+
+const AGENT_COUNTS: readonly { key: keyof FixtureAgent["counts"]; icon: IconName }[] = [
+  { key: "sessions", icon: "message" },
+  { key: "tools", icon: "wrench" },
+  { key: "skills", icon: "book" },
+  { key: "hooks", icon: "link" },
+  { key: "memory", icon: "fileText" },
+  { key: "vaultKeys", icon: "key" },
+  { key: "schedules", icon: "calendarClock" },
+];
+
+/**
+ * One Agent's card on the Agents page: its tile, name, id and kernel version; its description;
+ * what it holds and when it last changed; then New chat, its settings, its usage and delete — a
+ * built-in Agent's delete greyed out. `deleting` draws the pointer on delete.
+ */
+export function AgentCard({
+  f,
+  agent,
+  deleting = false,
+}: {
+  f: Fixtures;
+  agent: FixtureAgent;
+  deleting?: boolean;
+}) {
+  const a = f.copy.agents;
+  return (
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-line bg-surface px-5 py-4">
+      <div className="min-w-[14rem] flex-1">
+        <div className="flex items-center gap-2">
+          <AgentTile id={agent.id} name={agent.name} size={18} />
+          <span className="min-w-0 truncate text-base font-(--ui-weight-strong) text-fg">
+            {agent.name}
+          </span>
+          <span className="shrink-0 font-mono text-xs text-fg-subtle">{agent.id}</span>
+          <Badge variant="soft">{agent.version}</Badge>
+        </div>
+        <p className="mt-1.5 truncate text-xs text-fg-muted">{agent.description}</p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted">
+          {AGENT_COUNTS.map(({ key, icon }) => (
+            <span key={key} className="inline-flex shrink-0 items-center gap-1 tabular-nums">
+              <GlyphIcon name={icon} size={12} />
+              {agent.counts[key]}
+            </span>
+          ))}
+          <span className="inline-flex shrink-0 items-center gap-1">
+            <GlyphIcon name="clock" size={12} />
+            {agent.updated}
+          </span>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button variant="primary" leading={<GlyphIcon name="plus" size={13} />}>
+          {f.copy.nav.newChat}
+        </Button>
+        <Button variant="secondary" leading={<GlyphIcon name="settings" size={13} />}>
+          {f.copy.common.settings}
+        </Button>
+        <IconButton label={f.copy.nav.usage} icon="usage" size="sm" />
+        <IconButton
+          label={agent.builtin ? a.builtinUndeletable : a.delete}
+          icon="trash"
+          size="sm"
+          tone={agent.builtin ? "disabled" : "danger"}
+          hovered={deleting}
+        />
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------------------------
 // Motion (a variant's scene): Presence, Backdrop, StreamText, TypingText, useArrivals

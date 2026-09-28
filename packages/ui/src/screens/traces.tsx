@@ -267,7 +267,7 @@ function TracePanel({ f }: { f: Fixtures }) {
 export function TracesScreen({ lang }: { lang: FixtureLang }) {
   const f = fixturesFor(lang);
   return (
-    <AppShell className="flex h-screen w-full overflow-hidden bg-canvas text-fg">
+    <AppShell className="flex h-full w-full overflow-hidden bg-canvas text-fg">
       <Sidebar f={f} activeSessionId={f.session.id} />
       <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
         <ChatHeader f={f} dock="bottom" />

@@ -9,7 +9,7 @@
  */
 import type { ReactNode } from "react";
 import { Spinner } from "../components/icons/spinner/spinner";
-import type { Fixtures, RunState, SessionListItem } from "../fixtures";
+import type { Fixtures, RunState, SessionGroup, SessionListItem } from "../fixtures";
 import type { ToneName } from "../tokens";
 import { usd, duration, tokens } from "./format";
 import { Glyph } from "./glyph";
@@ -168,12 +168,18 @@ export function IconButton({
   label,
   size = "md",
   pressed = false,
+  hovered = false,
+  glyphSize,
 }: {
   icon: GlyphName;
   label: string;
   /** 32 px in a header or toolbar, 24 px in a dense row. */
   size?: "sm" | "md";
   pressed?: boolean;
+  /** Drawn as if under the pointer: the ink deepened, still no fill. */
+  hovered?: boolean;
+  /** The glyph's own size where the app draws it larger or smaller than the box's default. */
+  glyphSize?: number;
 }) {
   const box = size === "md" ? "h-8 w-8" : "h-6 w-6";
   return (
@@ -182,10 +188,10 @@ export function IconButton({
       aria-label={label}
       role="button"
       className={`flex ${box} shrink-0 items-center justify-center rounded-control ${
-        pressed ? "bg-accent-muted text-fg" : "text-fg-subtle hover:text-fg"
+        pressed ? "bg-accent-muted text-fg" : hovered ? "text-fg" : "text-fg-subtle hover:text-fg"
       }`}
     >
-      <Glyph name={icon} size={size === "md" ? 15 : 14} />
+      <Glyph name={icon} size={glyphSize ?? (size === "md" ? 15 : 14)} />
     </span>
   );
 }
@@ -270,14 +276,20 @@ export function StatChip({
   glyph,
   value,
   title,
+  mono = true,
 }: {
   glyph: GlyphName;
   value: string;
   title?: string;
+  /** The chat header sets its figures in mono; the stats line under a reply does not. */
+  mono?: boolean;
 }) {
   return (
-    <span title={title} className="flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums">
-      <Glyph name={glyph} size={13} className="text-fg-subtle" />
+    <span
+      title={title}
+      className={`flex shrink-0 items-center gap-1 text-xs tabular-nums ${mono ? "font-mono" : ""}`}
+    >
+      <Glyph name={glyph} size={13} />
       {value}
     </span>
   );
@@ -285,14 +297,52 @@ export function StatChip({
 
 /**
  * A group label above a list (W4: GroupHeader), with the group's own actions on the right. The
- * `.ui-eyebrow` hook decides its case, weight and colour — Console uppercases it, the others do
- * not — so the markup carries only the caption rung as a floor for a theme with no recipe yet.
+ * `.ui-eyebrow` hook decides a group label's case, weight and colour — Console uppercases it, the
+ * others do not — so the markup carries only the caption rung as a floor for a theme with no
+ * recipe yet. A `name` (a Workspace folder) is set as written instead, after its folder glyph,
+ * with its count and the chevron that folds it.
  */
-export function GroupHeader({ label, actions }: { label: string; actions?: ReactNode }) {
+export function GroupHeader({
+  label,
+  actions,
+  name = false,
+  icon,
+  count,
+  subtle = false,
+}: {
+  label: string;
+  actions?: ReactNode;
+  name?: boolean;
+  icon?: GlyphName;
+  count?: number;
+  /** The faintest ink, as the sidebar's Sessions label is set. */
+  subtle?: boolean;
+}) {
+  if (!name) {
+    return (
+      <div className="flex items-center gap-1">
+        <span
+          className={`ui-eyebrow min-w-0 flex-1 px-1 text-xs font-(--ui-weight-strong) ${
+            subtle ? "text-fg-subtle" : "text-fg-muted"
+          }`}
+        >
+          {label}
+        </span>
+        {actions}
+      </div>
+    );
+  }
   return (
-    <div className="flex items-center gap-1">
-      <span className="ui-eyebrow min-w-0 flex-1 px-1 text-xs font-(--ui-weight-strong) text-fg-muted">
-        {label}
+    <div className="flex items-center gap-1 px-1 pb-px">
+      <span className="flex min-w-0 flex-1 items-center gap-1 px-1 py-0.5">
+        {icon && <Glyph name={icon} size={15} decor="group" className="text-fg-subtle" />}
+        <span className="min-w-0 truncate text-xs font-(--ui-weight-strong) text-fg-muted">
+          {label}
+        </span>
+        {count !== undefined && (
+          <span className="shrink-0 text-xs tabular-nums text-fg-subtle">{count}</span>
+        )}
+        <Glyph name="chevronDown" size={12} className="text-fg-subtle" />
       </span>
       {actions}
     </div>
@@ -303,105 +353,230 @@ export function GroupHeader({ label, actions }: { label: string; actions?: React
 // Sidebar (W7: SidebarFrame, SessionRow; W4: NavList, GroupHeader)
 // ---------------------------------------------------------------------------
 
-const NAV: ReadonlyArray<{ key: keyof Fixtures["copy"]["nav"]; glyph: GlyphName }> = [
+/** The page entries under New chat, in the app's order. */
+export const SIDEBAR_NAV = [
   { key: "agents", glyph: "agents" },
   { key: "plugins", glyph: "plugins" },
   { key: "models", glyph: "models" },
   { key: "usage", glyph: "usage" },
   { key: "benchmark", glyph: "benchmark" },
-];
+] as const satisfies ReadonlyArray<{ key: keyof Fixtures["copy"]["nav"]; glyph: GlyphName }>;
 
-function SessionRow({ item, active, f }: { item: SessionListItem; active: boolean; f: Fixtures }) {
-  const agent = f.agents.find((a) => a.id === item.agentId);
+export type SidebarPage = (typeof SIDEBAR_NAV)[number]["key"];
+
+/**
+ * A nav row. The app's rest ink is a step between the muted and the primary ink, which the token
+ * contract has no name for; the muted ink is the nearer.
+ */
+function NavRow({
+  glyph,
+  label,
+  active = false,
+  strong = false,
+}: {
+  glyph: GlyphName;
+  label: string;
+  active?: boolean;
+  /** New chat: the one pinned entry, set in the medium weight. */
+  strong?: boolean;
+}) {
   return (
-    <li
+    <span
       aria-current={active ? "page" : undefined}
-      className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 ${active ? "bg-accent-muted" : ""}`}
+      className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm ${
+        active
+          ? "bg-accent-muted font-(--ui-weight-medium) text-fg"
+          : `text-fg-muted ${strong ? "font-(--ui-weight-medium)" : ""}`
+      }`}
     >
+      <Glyph name={glyph} size={16} decor="nav" className="text-fg-muted" />
+      {label}
+    </span>
+  );
+}
+
+/**
+ * What a session row says about its Task after the title: a turning hourglass in the attention
+ * ink while it runs, a dot in the success ink once it finished with a reply not yet read, and an
+ * empty slot otherwise — the slot is kept so a title never reflows when a run starts.
+ */
+function ActivityMark({ item, f }: { item: SessionListItem; f: Fixtures }) {
+  if (item.running) {
+    return (
+      <span title={f.copy.chat.runStates.running} className="text-tone-attention-fg">
+        <Glyph name="hourglass" size={12} />
+      </span>
+    );
+  }
+  if (item.unread) {
+    return (
+      <span className="flex h-3 w-3 shrink-0 items-center justify-center">
+        <Dot className="bg-tone-success-emphasis" />
+      </span>
+    );
+  }
+  return <span aria-hidden className="block h-3 w-3 shrink-0" />;
+}
+
+/**
+ * A session row: the Agent's tile, the title, the standing marks, the activity mark, then a slot
+ * that holds the last-active time at rest and the row's own actions on hover. The slot is as wide
+ * as the widest time the language prints, so the marks before it line up from row to row.
+ */
+function SessionRow({
+  item,
+  active,
+  hovered,
+  f,
+  onOpen,
+}: {
+  item: SessionListItem;
+  active: boolean;
+  hovered: boolean;
+  f: Fixtures;
+  onOpen?: () => void;
+}) {
+  const agent = f.agents.find((a) => a.id === item.agentId);
+  const body = (
+    <>
       <AgentTile id={item.agentId} name={agent?.name ?? item.agentId} />
       <span
         className={`min-w-0 flex-1 truncate text-sm ${
-          active ? "font-(--ui-weight-medium) text-fg" : "text-fg-muted"
+          active ? "font-(--ui-weight-medium) text-fg" : "text-fg"
         }`}
       >
         {item.title}
       </span>
-      {item.pinned && <Glyph name="pin" size={12} className="text-tone-neutral-fg" />}
-      {item.scheduled && <Glyph name="calendarClock" size={12} className="text-tone-neutral-fg" />}
-      {item.unread && <Dot className="bg-accent" />}
-      {item.running ? (
-        <Spinner size="sm" tone="success" label={f.copy.chat.runStates.running} />
+      {item.pinned && <Glyph name="pin" size={12} className="text-fg-muted" />}
+      {item.scheduled && <Glyph name="calendarClock" size={12} className="text-fg-muted" />}
+      <ActivityMark item={item} f={f} />
+    </>
+  );
+  const main = "flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left";
+  return (
+    <li
+      aria-current={active ? "page" : undefined}
+      className={`flex items-center rounded-md pr-1 ${
+        active ? "bg-accent-muted" : hovered ? NEUTRAL_FILL : ""
+      }`}
+    >
+      {onOpen ? (
+        <button type="button" onClick={onOpen} className={main}>
+          {body}
+        </button>
       ) : (
-        <span className="shrink-0 text-xs tabular-nums text-fg-subtle">{item.timeLabel}</span>
+        <span className={main}>{body}</span>
       )}
+      <span
+        className={`flex h-6 shrink-0 items-center justify-end ${
+          f.lang === "zh" ? "w-[4.5rem]" : "w-14"
+        }`}
+      >
+        {hovered ? (
+          <>
+            <IconButton icon="pin" size="sm" label={f.copy.nav.pin} />
+            <IconButton icon="more" size="sm" label={f.copy.common.more} />
+          </>
+        ) : (
+          <span className="whitespace-nowrap px-1 text-xs tabular-nums text-fg-subtle">
+            {item.timeLabel}
+          </span>
+        )}
+      </span>
     </li>
   );
 }
 
-export function Sidebar({ f, activeSessionId }: { f: Fixtures; activeSessionId?: string }) {
+export interface SidebarProps {
+  f: Fixtures;
+  /** The open Session, whose row reads as current. */
+  activeSessionId?: string;
+  /** The page the app is on, whose nav row reads as current instead. */
+  activePage?: SidebarPage;
+  /** One row caught under the pointer, showing its actions. */
+  hoveredSessionId?: string;
+  /** The groups to list; the fixtures' own by default. */
+  groups?: readonly SessionGroup[];
+  /** Rows become buttons that open their Session. */
+  onOpenSession?: (id: string) => void;
+}
+
+/**
+ * The pinned sidebar's contents, top to bottom as the app lays them out: the collapse button and
+ * the Project switcher; New chat, pinned; then one scroll area with the page entries, the seam
+ * that folds them, the Sessions header with its three controls, and the Workspace groups; and
+ * the user row — the avatar, the name and the role — at the foot.
+ */
+export function SidebarBody({
+  f,
+  activeSessionId,
+  activePage,
+  hoveredSessionId,
+  groups = f.sessionGroups,
+  onOpenSession,
+}: SidebarProps) {
   const c = f.copy.nav;
   return (
-    <aside
-      data-slot="nav"
-      className="flex h-full w-72 shrink-0 flex-col border-r border-line bg-surface-muted"
-    >
+    <>
       <div className="flex shrink-0 items-center gap-1 px-2 pt-2">
-        <IconButton icon="sidebar" label={c.collapseSidebar} />
+        <IconButton icon="collapseLeft" label={c.collapseSidebar} glyphSize={18} />
         <span className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-base font-(--ui-weight-strong) text-fg">
-          <span className="min-w-0 flex-1 truncate">{f.user.name}</span>
+          <span className="min-w-0 flex-1 truncate">{f.project.name}</span>
           <Glyph name="chevronDown" size={14} className="text-fg-subtle" />
         </span>
       </div>
-      {/* A nav row's glyph repeats its label, so it is decorative: a theme may tint or drop it. */}
-      <nav className="shrink-0 space-y-1 px-2 pt-2">
-        <span className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-(--ui-weight-medium) text-fg">
-          <Glyph name="newChat" size={16} decor="nav" className="text-fg-muted" />
-          {c.newChat}
-        </span>
-        <div className="pt-1.5" />
-        {NAV.map((item) => (
-          <span
-            key={item.key}
-            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-fg-muted"
-          >
-            <Glyph name={item.glyph} size={16} decor="nav" className="text-fg-subtle" />
-            {c[item.key]}
-          </span>
-        ))}
-      </nav>
-      <div className="shrink-0 px-2 pt-1.5">
-        <span
-          className={`flex h-4 w-full items-center justify-center rounded-md text-fg-subtle ${NEUTRAL_FILL}`}
-        >
-          <Glyph name="chevronUp" size={12} />
-        </span>
+      <div className="shrink-0 px-2 pb-2 pt-2">
+        <NavRow glyph="newChat" label={c.newChat} strong />
       </div>
       <div className="min-h-0 flex-1 overflow-hidden px-2 pb-2">
+        <nav className="space-y-px">
+          {SIDEBAR_NAV.map((item) => (
+            <NavRow
+              key={item.key}
+              glyph={item.glyph}
+              label={c[item.key]}
+              active={item.key === activePage}
+            />
+          ))}
+          <span
+            title={c.collapseGroup}
+            className={`flex h-4 w-full items-center justify-center rounded-md text-fg-subtle ${NEUTRAL_FILL}`}
+          >
+            <Glyph name="chevronUp" size={12} />
+          </span>
+        </nav>
         <div className="mt-3 px-1 pt-2">
           <GroupHeader
             label={c.sessions}
+            subtle
             actions={
-              <span className="flex items-center gap-1">
-                <IconButton icon="search" size="sm" label={c.search} />
-                <IconButton icon="sliders" size="sm" label={c.filterSessions} />
-                <IconButton icon="folderPlus" size="sm" label={c.newFolder} />
+              <span className="flex items-center">
+                <IconButton icon="search" size="sm" label={c.search} glyphSize={14} />
+                <IconButton icon="sliders" size="sm" label={c.filterSessions} glyphSize={14} />
+                <IconButton icon="folderPlus" size="sm" label={c.newFolder} glyphSize={15} />
               </span>
             }
           />
         </div>
-        {f.sessionGroups.map((group, gi) => (
-          <div key={group.key} className="pt-3">
-            <div className="flex items-center gap-1 px-1.5 py-1 text-xs text-fg-subtle">
-              <Glyph name={gi === 0 ? "folder" : "clock"} size={15} decor="group" />
-              <span className="font-(--ui-weight-strong) text-fg-muted">{group.label}</span>
-              <span className="tabular-nums">{group.items.length}</span>
-              <Glyph name="chevronDown" size={12} />
-              <span className="min-w-0 flex-1" />
-              {gi === 0 && <Glyph name="plus" size={15} />}
-            </div>
-            <ul className="space-y-1">
+        {groups.map((group) => (
+          <div key={group.key} className="pt-2.5">
+            <GroupHeader
+              name
+              icon="folder"
+              label={group.label}
+              count={group.items.length}
+              actions={<IconButton icon="plus" size="sm" label={c.newChat} />}
+            />
+            <ul className="space-y-px">
               {group.items.map((item) => (
-                <SessionRow key={item.id} item={item} active={item.id === activeSessionId} f={f} />
+                <SessionRow
+                  key={item.id}
+                  item={item}
+                  active={item.id === activeSessionId}
+                  hovered={item.id === hoveredSessionId}
+                  f={f}
+                  onOpen={onOpenSession ? () => onOpenSession(item.id) : undefined}
+                />
               ))}
             </ul>
           </div>
@@ -413,9 +588,99 @@ export function Sidebar({ f, activeSessionId }: { f: Fixtures; activeSessionId?:
           <span className="min-w-0 flex-1 truncate text-sm font-(--ui-weight-medium) text-fg">
             {f.user.name}
           </span>
+          {f.user.isAdmin && <span className="text-xs text-fg-subtle">{f.copy.auth.admin}</span>}
         </span>
       </div>
+    </>
+  );
+}
+
+/** The pinned sidebar at the app's width beside a 1024 px or wider window (`lg:w-72`). */
+export function Sidebar(props: SidebarProps) {
+  return (
+    <aside
+      data-slot="nav"
+      className="flex h-full w-72 shrink-0 flex-col border-r border-line bg-surface-muted"
+    >
+      <SidebarBody {...props} />
     </aside>
+  );
+}
+
+/**
+ * The collapsed rail's entries, top to bottom: expand, the last conversation, New chat, the page
+ * entries, and the account avatar at the foot. `renderEntry` wraps each page entry, so a caller can
+ * hang a tooltip or a scene off one; every entry is an icon, named by its label.
+ */
+export function RailBody({
+  f,
+  activePage,
+  hovered,
+  renderEntry = (node) => node,
+}: {
+  f: Fixtures;
+  activePage?: SidebarPage;
+  /** A page entry caught under the pointer. */
+  hovered?: SidebarPage;
+  renderEntry?: (node: ReactNode, page: SidebarPage) => ReactNode;
+}) {
+  const c = f.copy.nav;
+  return (
+    <>
+      <IconButton icon="expandRight" label={c.expandSidebar} glyphSize={18} />
+      <span className="mt-1 flex flex-col items-center gap-1">
+        <IconButton icon="history" label={c.lastConversation} glyphSize={18} />
+        <IconButton icon="newChat" label={c.newChat} glyphSize={18} />
+        {SIDEBAR_NAV.map((item) => (
+          <span key={item.key} className="relative">
+            {renderEntry(
+              <IconButton
+                icon={item.glyph}
+                label={c[item.key]}
+                glyphSize={18}
+                pressed={item.key === activePage}
+                hovered={item.key === hovered}
+              />,
+              item.key,
+            )}
+          </span>
+        ))}
+      </span>
+      <span className="min-h-0 flex-1" />
+      <span title={c.userSettings} className="flex h-8 w-8 items-center justify-center">
+        <UserAvatar name={f.user.name} />
+      </span>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Launcher (W7: LauncherBall)
+// ---------------------------------------------------------------------------
+
+/**
+ * The floating ball on the chat body's right edge while no dock is open there, resting halfway
+ * down with its caption under it: a round button with the workbench glyph that fans out the
+ * dock's panels. Its caller places it (`absolute` in the chat body's own box).
+ */
+export function LauncherBall({ f }: { f: Fixtures }) {
+  const label = f.copy.dock.launcher;
+  return (
+    <span className="pointer-events-none absolute right-8 top-1/2 flex -translate-y-1/2 flex-col items-center gap-1">
+      <span
+        role="button"
+        aria-label={label}
+        className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-[var(--ui-radius-pill)] border border-line bg-surface text-fg-muted shadow-lg"
+      >
+        <Glyph name="workbench" size={22} />
+      </span>
+      <span
+        aria-hidden
+        className="whitespace-nowrap rounded-md border border-line bg-surface px-2 py-0.5 text-sm font-(--ui-weight-medium) text-fg shadow-sm"
+      >
+        {label}
+      </span>
+    </span>
   );
 }
 
@@ -423,6 +688,28 @@ export function Sidebar({ f, activeSessionId }: { f: Fixtures; activeSessionId?:
 // Chat header (W7: PanelsToolbar; W4: StatChip)
 // ---------------------------------------------------------------------------
 
+/** A dock toggle: a short labelled-by-tooltip button, filled while its dock is open. */
+function DockToggle({ glyph, label, open }: { glyph: GlyphName; label: string; open: boolean }) {
+  return (
+    <span
+      role="button"
+      aria-label={label}
+      aria-pressed={open}
+      title={label}
+      className={`flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-(--ui-weight-medium) ${
+        open ? "bg-accent-muted text-fg" : "text-fg-muted"
+      }`}
+    >
+      <Glyph name={glyph} size={15} />
+    </span>
+  );
+}
+
+/**
+ * The chat's toolbar: the Session title, a running Task's hourglass and word, the two dock
+ * toggles, and the Session's totals — tokens, cost, elapsed — on one button that opens its info
+ * card.
+ */
 export function ChatHeader({
   f,
   dock,
@@ -432,25 +719,40 @@ export function ChatHeader({
   dock: "none" | "bottom" | "right";
 }) {
   const s = f.session;
+  const c = f.copy.chat;
   return (
-    <header className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-2">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+    <header className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <h1 className="truncate text-sm font-(--ui-weight-strong) text-fg">{s.title}</h1>
         {s.running && (
-          <span className="flex shrink-0 items-center gap-1.5 text-xs text-tone-success-fg">
-            <Spinner size="sm" label={f.copy.chat.runStates.running} />
-            {f.copy.chat.runStates.running}
+          <span className="flex shrink-0 items-center gap-1 text-xs text-fg-muted">
+            <span className="text-tone-attention-fg">
+              <Glyph name="hourglass" size={12} />
+            </span>
+            {c.runStates.running}
           </span>
         )}
       </div>
       <span className="flex items-center gap-1">
-        <IconButton icon="panelBottom" label={f.copy.dock.bottomDock} pressed={dock === "bottom"} />
-        <IconButton icon="panelRight" label={f.copy.dock.rightDock} pressed={dock === "right"} />
+        <DockToggle glyph="panelBottom" label={f.copy.dock.bottomDock} open={dock === "bottom"} />
+        <DockToggle glyph="panelRight" label={f.copy.dock.rightDock} open={dock === "right"} />
       </span>
-      <span className="flex items-center gap-3 px-2 text-fg-muted">
-        <StatChip glyph="tokens" value={tokens(s.totals.tokens)} />
-        <StatChip glyph="cost" value={usd(s.totals.costUsd)} />
-        <StatChip glyph="clock" value={duration(s.totals.elapsedMs)} />
+      <span className="flex h-7 items-center gap-3 rounded-md px-2 text-fg-muted">
+        <StatChip
+          glyph="tokens"
+          value={tokens(s.totals.tokens)}
+          title={`${c.statTokens}（Token）`}
+        />
+        <StatChip
+          glyph="cost"
+          value={usd(s.totals.costUsd)}
+          title={`${f.copy.traces.cost}（USD）`}
+        />
+        <StatChip
+          glyph="clock"
+          value={duration(s.totals.elapsedMs)}
+          title={f.copy.traces.elapsed}
+        />
       </span>
     </header>
   );
@@ -486,7 +788,10 @@ export function DockFrame({
         <span className="flex h-7 max-w-56 items-center gap-1.5 rounded-md bg-accent-muted pl-2 pr-1 text-fg">
           <Glyph name={glyph} size={14} className="text-fg-muted" />
           <span className="min-w-0 truncate">{tab}</span>
-          <span className="flex h-4 w-4 items-center justify-center rounded-sm text-fg-subtle">
+          <span
+            title={f.copy.dock.closeTab}
+            className="flex h-4 w-4 items-center justify-center rounded-sm text-fg-subtle"
+          >
             <Glyph name="cross" size={11} />
           </span>
         </span>
@@ -495,9 +800,9 @@ export function DockFrame({
           <IconButton
             icon={edge === "right" ? "panelBottom" : "panelRight"}
             size="sm"
-            label={f.copy.dock.movePanel}
+            label={edge === "right" ? f.copy.dock.moveToBottom : f.copy.dock.moveToRight}
           />
-          <IconButton icon="cross" size="sm" label={f.copy.dock.close} />
+          <IconButton icon="cross" size="sm" label={f.copy.dock.hideDock} />
         </span>
       </div>
       <div data-slot="body" className="min-h-0 flex-1 overflow-hidden">

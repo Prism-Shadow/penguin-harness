@@ -1,8 +1,8 @@
 /**
  * The Screens module: the four full-viewport composites (`packages/ui/src/screens`) as scaled
  * thumbnails, each linking to its `/screens/<name>` page. It lives in the gallery because a
- * thumbnail is a frame of the gallery's own route: the screens fill `100vh`, which only a frame of a
- * desktop viewport gives them.
+ * thumbnail is a frame of the gallery's own route: a screen fills the viewport of its `bare=1`
+ * page, which only a frame of a desktop viewport gives it.
  */
 import { useEffect, useRef, useState } from "react";
 import { defineModule } from "../../../ui/src/module";

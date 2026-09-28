@@ -14,13 +14,16 @@
  */
 import { fixturesFor } from "../fixtures";
 import type { ExamplePromptFixture, Fixtures } from "../fixtures";
-import { defineModule } from "../module";
+import { APP_COLUMN_WIDTH, defineModule } from "../module";
 import type { SceneSpec } from "../module";
 import { reached, useScene } from "../scene";
 import { AgentTile } from "../screens/parts";
 import {
+  AgentCard,
+  AgentsHeader,
   Button,
   Card,
+  CreateButtons,
   EmptyState,
   GlyphIcon,
   Heading,
@@ -34,21 +37,6 @@ import {
 } from "./parts";
 
 const STAGE = "relative h-[32rem] overflow-hidden rounded-lg border border-line bg-canvas";
-
-/** The page's two create paths (W4: `CreateButtons`), the AI one first and emphasised. */
-function CreateButtons({ f }: { f: Fixtures }) {
-  const a = f.copy.agents;
-  return (
-    <span className="flex flex-wrap items-center justify-center gap-2">
-      <Button variant="primary" leading={<GlyphIcon name="sparkle" size={13} />}>
-        {a.createWithAi}
-      </Button>
-      <Button variant="secondary" leading={<GlyphIcon name="plus" size={13} />}>
-        {a.newAgent}
-      </Button>
-    </span>
-  );
-}
 
 /** The composer of a Session with nothing in it yet; the picked example arrives as its draft. */
 function ComposerCard({ f, draft }: { f: Fixtures; draft?: string }) {
@@ -168,15 +156,23 @@ function FirstSession({ f }: { f: Fixtures }) {
   );
 }
 
-/** Empty list: a Project with no Agent of its own. One sentence, and the two ways to make one. */
+/**
+ * Empty list: the Agents page of a Project with no Agent of its own — the built-in Agent's card,
+ * then one quiet line and the two ways to make one.
+ */
 function EmptyList({ f }: { f: Fixtures }) {
   const a = f.copy.agents;
   return (
     <div className={STAGE}>
-      <div className="mx-auto grid max-w-2xl grid-cols-[minmax(0,1fr)] gap-4 px-6 py-6">
-        <PageHeader title={f.copy.nav.agents} info={a.info} />
-        <SearchInput placeholder={a.search} />
+      <div className="mx-auto grid max-w-5xl grid-cols-[minmax(0,1fr)] gap-4 p-6">
+        <AgentsHeader f={f} />
+        {f.agents
+          .filter((agent) => agent.builtin)
+          .map((agent) => (
+            <AgentCard key={agent.id} f={f} agent={agent} />
+          ))}
         <EmptyState
+          variant="list"
           title={a.empty.title}
           description={a.empty.body}
           action={<CreateButtons f={f} />}
@@ -196,7 +192,7 @@ function NoResults({ f }: { f: Fixtures }) {
   return (
     <div className={STAGE}>
       <div className="mx-auto grid max-w-2xl grid-cols-[minmax(0,1fr)] gap-4 px-6 py-6">
-        <PageHeader title={f.copy.nav.models} info={m.pageInfo} />
+        <PageHeader title={m.title} info={m.pageInfo} />
         <SearchInput value={n.query} placeholder={m.search} />
         <div className="overflow-hidden rounded-lg border border-line">
           <div className="grid grid-cols-4 gap-4 border-b border-line bg-surface-muted px-3 py-2 text-xs text-fg-muted">
@@ -290,6 +286,7 @@ export const module = defineModule({
   description:
     "What a surface with nothing on it says instead: a Session's first prompts, a list with no rows, a search that missed, and the first-run checklist.",
   width: "wide",
+  viewport: APP_COLUMN_WIDTH,
   variants: [
     { key: "first-session", title: "First session", scene: FIRST_SESSION_SCENE },
     { key: "empty-list", title: "Empty list" },

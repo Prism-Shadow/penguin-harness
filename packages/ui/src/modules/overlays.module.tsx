@@ -15,7 +15,7 @@
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { ChatTurn, Fixtures } from "../fixtures";
-import { defineModule } from "../module";
+import { APP_COLUMN_WIDTH, defineModule } from "../module";
 import type { SceneSpec } from "../module";
 import { at, reached, useScene } from "../scene";
 import { bytes } from "../screens/format";
@@ -277,7 +277,7 @@ function DrawerPanel({ f }: { f: Fixtures }) {
         <p className="min-w-0 flex-1 truncate text-base font-(--ui-weight-medium) text-fg">
           {t.file(file.label)}
         </p>
-        <IconButton label={f.copy.dock.close} icon="cross" size="sm" />
+        <IconButton label={f.copy.common.close} icon="cross" size="sm" />
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)] min-h-0 flex-1 content-start gap-6 overflow-hidden p-4">
         <KeyValue
@@ -442,6 +442,7 @@ export const module = defineModule({
   description:
     "What opens over the chat: a context menu, an info popover and a tooltip; a dialog; a drawer; the toast stack; the command palette.",
   width: "wide",
+  viewport: APP_COLUMN_WIDTH,
   variants: [
     { key: "menu", title: "Menu", scene: OPEN },
     { key: "dialog", title: "Dialog" },

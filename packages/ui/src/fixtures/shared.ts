@@ -20,6 +20,23 @@ export const WORKSPACE = "~/penguin/workspaces/claude-code-expert";
 export const AGENT_ID = "default_agent";
 export const REVIEWER_AGENT_ID = "docs-reviewer";
 
+/**
+ * The Agents page's card figures for each Agent: its kernel, what it holds, and whether it ships
+ * built in.
+ */
+export const AGENT_CARDS = {
+  [AGENT_ID]: {
+    version: "v1",
+    counts: { sessions: 6, tools: 7, skills: 17, hooks: 1, memory: 0, vaultKeys: 0, schedules: 1 },
+    builtin: true,
+  },
+  [REVIEWER_AGENT_ID]: {
+    version: "v1",
+    counts: { sessions: 2, tools: 4, skills: 3, hooks: 0, memory: 2, vaultKeys: 1, schedules: 0 },
+    builtin: false,
+  },
+} as const;
+
 /** Turn 1 starts here; every other timestamp is derived from it so the story stays consistent. */
 export const T0 = Date.parse("2026-09-14T06:02:07.412Z");
 export const iso = (offsetMs: number): string => new Date(T0 + offsetMs).toISOString();
@@ -528,14 +545,56 @@ export const VAULT_ROWS: Readonly<Record<VaultKey, { name: string; agents: reado
 export const PLUGIN_KEYS = ["sdk", "docsReview", "github", "slackNotify"] as const;
 export type PluginKey = (typeof PLUGIN_KEYS)[number];
 
-/** An installed plugin's identity and switch state; its one-line description is prose. */
+/** The registry categories the plugin page files plugins under; their names are prose. */
+export const PLUGIN_CATEGORIES = ["office", "dev", "aiApps"] as const;
+export type PluginCategory = (typeof PLUGIN_CATEGORIES)[number];
+
+/** An installed plugin's identity, switch state, category and kind; its description is prose. */
 export const PLUGIN_ROWS: Readonly<
-  Record<PluginKey, { name: string; version: string; icon: GlyphName; enabled: boolean }>
+  Record<
+    PluginKey,
+    {
+      name: string;
+      version: string;
+      icon: GlyphName;
+      enabled: boolean;
+      category: PluginCategory;
+      kind: "skills" | "hooks" | "modules";
+    }
+  >
 > = {
-  sdk: { name: "penguin-sdk", version: "0.2.13", icon: "book", enabled: true },
-  docsReview: { name: "docs-review", version: "1.4.0", icon: "search", enabled: true },
-  github: { name: "github", version: "2.1.3", icon: "fork", enabled: false },
-  slackNotify: { name: "slack-notify", version: "0.9.1", icon: "message", enabled: true },
+  sdk: {
+    name: "penguin-sdk",
+    version: "0.2.13",
+    icon: "book",
+    enabled: true,
+    category: "aiApps",
+    kind: "skills",
+  },
+  docsReview: {
+    name: "docs-review",
+    version: "1.4.0",
+    icon: "search",
+    enabled: true,
+    category: "dev",
+    kind: "skills",
+  },
+  github: {
+    name: "github",
+    version: "2.1.3",
+    icon: "fork",
+    enabled: false,
+    category: "dev",
+    kind: "modules",
+  },
+  slackNotify: {
+    name: "slack-notify",
+    version: "0.9.1",
+    icon: "message",
+    enabled: true,
+    category: "office",
+    kind: "hooks",
+  },
 };
 
 /**
@@ -585,6 +644,8 @@ export const USAGE_SERIES: Readonly<Record<"cacheRead" | "cacheWrite" | "output"
 
 /** The user's id: the human in the organization's group chat. */
 export const USER_ID = "alex";
+/** Project ids are lowercase words joined by `_`: the server refuses a hyphen. */
+export const PROJECT_ID = "docs_expert";
 
 /** The citation test's output while the index still lists a file renamed upstream. */
 export const OUTPUT_TEST_FAILED = `TAP version 13
@@ -627,6 +688,9 @@ export const PLUGIN_LIBRARY = {
   updates: 2,
   marketplaces: 3,
   lastSync: "2026-09-14 14:02",
+  available: 4,
+  categoryCounts: { office: 6, dev: 2, aiApps: 4 },
+  kinds: { skills: 11, hooks: 2, modules: 4 },
 } as const;
 
 /** The group chat's stand-up about the citation ticket: who spoke when. The words are prose. */

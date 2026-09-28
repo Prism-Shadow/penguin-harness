@@ -23,6 +23,7 @@ import { duration, liveDuration, usd } from "../screens/format";
 import {
   Badge,
   Button,
+  CreateButtons,
   Dot,
   EmptyState,
   GlyphIcon,
@@ -341,13 +342,10 @@ function LoadingAndEmpty({ f }: { f: Fixtures }) {
         ))}
       </section>
       <EmptyState
+        variant="list"
         title={agents.empty.title}
         description={agents.empty.body}
-        action={
-          <Button variant="primary" leading={<GlyphIcon name="plus" size={13} />}>
-            {agents.newAgent}
-          </Button>
-        }
+        action={<CreateButtons f={f} />}
       />
       <EmptyState
         variant="slot"

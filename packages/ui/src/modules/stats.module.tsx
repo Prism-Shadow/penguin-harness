@@ -18,7 +18,7 @@ import type { Fixtures, TraceSegmentKind } from "../fixtures";
 import { defineModule } from "../module";
 import type { SceneSpec } from "../module";
 import { at, reached, useScene } from "../scene";
-import { duration, percent, tokens, usd } from "../screens/format";
+import { contextReading, duration, percent, tokens, usd } from "../screens/format";
 import { Badge, GlyphIcon, KeyValue, RuledSection, arriving, useFrameProgress } from "./parts";
 import type { IconName } from "./parts";
 
@@ -154,7 +154,7 @@ function Overview({ f }: { f: Fixtures }) {
   const o = f.trace.overall;
   const turn = f.trace.turns[1]!;
   const ctx = f.session.context;
-  const context = f.copy.chat.contextOf(tokens(ctx.tokens), tokens(ctx.window));
+  const context = contextReading(f.copy.chat.contextUsage, ctx.tokens, ctx.window);
   // The share of each number that has been counted out, and how far the ring has filled.
   const counted = at(clock, "tiles") ? progress : 1;
   const filled = at(clock, "gauges") ? progress : 1;

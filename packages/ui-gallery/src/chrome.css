@@ -788,6 +788,20 @@
   background: transparent;
 }
 
+/* ---- Fitted previews: a composition laid out at the app's width, scaled to the card -------- */
+
+/* The box the page sees takes the scaled height (set inline); the composition inside keeps its
+   natural width, so its unscaled layout box overflows and is clipped here. Centred when the card
+   is wider than the composition, which is never scaled up. */
+.g-fit {
+  min-width: 0;
+  overflow: hidden;
+}
+.g-fit-inner {
+  margin-inline: auto;
+  transform-origin: 0 0;
+}
+
 /* ---- Drawers ------------------------------------------------------------------------------- */
 
 .g-drawer {
@@ -972,11 +986,27 @@
 body:has(.g-embed) {
   margin: 0;
 }
+/* A composition designed at the app's width: the root grows past a narrower viewport to hold it at
+   that width, unscaled, so a screenshot of the root is the whole composition at full size. */
+.g-embed[data-natural-width] {
+  width: max-content;
+  min-width: 100%;
+}
 
 /* ---- /screens/<name> ---------------------------------------------------------------------- */
 
+/* The page is one viewport tall: the toolbar strip on top, the composite in the rest. The strip
+   takes its own room rather than floating, so it never covers the composite's controls (the
+   composer and its send button sit at the bottom edge, the stats at the top right). */
+.g-screen-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
 .g-screen-root {
-  min-height: 100vh;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
 }
 .g-screen-missing {
   max-width: 560px;
@@ -984,20 +1014,17 @@ body:has(.g-embed) {
   padding: 0 24px;
 }
 .g-screen-bar {
-  position: fixed;
-  right: 12px;
-  bottom: 12px;
-  z-index: 1000;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 6px 8px;
-  max-width: calc(100vw - 24px);
-  border-radius: 12px;
-  border: 1px solid var(--g-line);
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--g-line);
   background: var(--g-surface);
-  box-shadow: var(--g-float);
+}
+.g-screen-bar > .g-crumb {
+  margin-left: auto;
 }
 
 /* ---- /fonts ------------------------------------------------------------------------------ */

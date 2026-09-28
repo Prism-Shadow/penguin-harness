@@ -6,6 +6,7 @@
  */
 import {
   ACCENT_SWATCHES,
+  AGENT_CARDS,
   AGENT_ID,
   APP_URL,
   BM25_FORMULA,
@@ -25,6 +26,7 @@ import {
   OUTPUT_TEST_FAILED,
   OUTPUT_WRITE,
   PANEL_MENU,
+  PLUGIN_CATEGORIES,
   PLUGIN_LIBRARY,
   RAG_PATH,
   RAG_TS_AFTER,
@@ -32,6 +34,7 @@ import {
   PALETTE_COMMANDS,
   PLUGIN_KEYS,
   PLUGIN_ROWS,
+  PROJECT_ID,
   READ_LIMIT,
   READ_OFFSET,
   REVIEWER_AGENT_ID,
@@ -57,7 +60,7 @@ import {
   iso,
   workspaceTree,
 } from "./shared";
-import type { PluginKey, VaultKey } from "./shared";
+import type { PluginCategory, PluginKey, VaultKey } from "./shared";
 import type { ToneName } from "../tokens";
 import type {
   AppCopy,
@@ -111,7 +114,8 @@ const FIRST_RUN_DONE = [true, true, false, false] as const;
 export interface FixtureProse {
   copy: AppCopy;
   userName: string;
-  agents: Record<"default" | "reviewer", Omit<FixtureAgent, "id">>;
+  projectName: string;
+  agents: Record<"default" | "reviewer", Pick<FixtureAgent, "name" | "description" | "updated">>;
   session: {
     title: string;
     turn1: {
@@ -149,7 +153,6 @@ export interface FixtureProse {
   /** Titles and relative times of the other sessions in the sidebar. */
   sidebar: {
     groupWorkspace: string;
-    groupEarlier: string;
     now: string;
     rows: Record<
       "tokenizer" | "hooks" | "trace" | "weekly" | "deploy",
@@ -202,6 +205,8 @@ export interface FixtureProse {
   docsAnswer: Omit<DocsAnswerFixture, "formula">;
   vault: Record<VaultKey, { kind: string; updated: string }>;
   plugins: Record<PluginKey, { description: string }>;
+  /** The registry's categories, as the plugin page's filter column names them. */
+  pluginCategories: Record<PluginCategory, string>;
   palette: {
     groups: Record<"commands" | "sessions", string>;
     commands: Record<"newChat" | "switchModel" | "settings" | "search", string>;
@@ -265,8 +270,8 @@ export function buildFixtures(lang: FixtureLang, prose: FixtureProse): Fixtures 
   const at = (offsetMs: number) => iso(offsetMs);
 
   const agents: FixtureAgent[] = [
-    { id: AGENT_ID, ...prose.agents.default },
-    { id: REVIEWER_AGENT_ID, ...prose.agents.reviewer },
+    { id: AGENT_ID, ...AGENT_CARDS[AGENT_ID], ...prose.agents.default },
+    { id: REVIEWER_AGENT_ID, ...AGENT_CARDS[REVIEWER_AGENT_ID], ...prose.agents.reviewer },
   ];
 
   const answer = t1.answer
@@ -464,6 +469,7 @@ export function buildFixtures(lang: FixtureLang, prose: FixtureProse): Fixtures 
     lang,
     copy,
     user: { id: USER_ID, name: prose.userName, isAdmin: true },
+    project: { id: PROJECT_ID, name: prose.projectName },
     agents,
     session: {
       id: SESSION_ID,
@@ -710,8 +716,10 @@ export function buildFixtures(lang: FixtureLang, prose: FixtureProse): Fixtures 
         ],
       },
       {
-        key: "time:earlier",
-        label: sb.groupEarlier,
+        // The app groups by Workspace or by time, never both at once: the Sessions started
+        // without a Workspace of their own sit in the temporary-workspaces group.
+        key: "workspace:temp",
+        label: copy.nav.tempWorkspaces,
         items: [
           {
             id: "ses_0d47b2c9e81f5a63",
@@ -960,8 +968,15 @@ export function buildFixtures(lang: FixtureLang, prose: FixtureProse): Fixtures 
     plugins: PLUGIN_KEYS.map((key): PluginFixture => ({
       ...PLUGIN_ROWS[key],
       ...prose.plugins[key],
+      category: prose.pluginCategories[PLUGIN_ROWS[key].category],
     })),
-    pluginLibrary: { ...PLUGIN_LIBRARY },
+    pluginLibrary: {
+      ...PLUGIN_LIBRARY,
+      categories: PLUGIN_CATEGORIES.map((key) => ({
+        label: prose.pluginCategories[key],
+        count: PLUGIN_LIBRARY.categoryCounts[key],
+      })),
+    },
     commandPalette: [
       {
         label: prose.palette.groups.commands,

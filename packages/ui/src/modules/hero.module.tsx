@@ -10,7 +10,7 @@
  * the package; this module only gives it a card, a scene and two addresses.
  */
 import { Hero, HERO_SCENE } from "../hero";
-import { defineModule } from "../module";
+import { APP_WINDOW_WIDTH, defineModule } from "../module";
 
 export const module = defineModule({
   id: "hero",
@@ -18,6 +18,7 @@ export const module = defineModule({
   description:
     "The opening: a product line, one display title, a sentence and two buttons over an app window a reader can use — session rows switch the transcript, dock tabs switch panels, and the composer takes a prompt and answers it.",
   width: "wide",
+  viewport: APP_WINDOW_WIDTH,
   variants: [
     { key: "settled", title: "Settled", scene: HERO_SCENE },
     { key: "empty", title: "Empty" },

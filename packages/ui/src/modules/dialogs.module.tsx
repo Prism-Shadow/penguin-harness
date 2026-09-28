@@ -12,19 +12,19 @@
  * W7's `FileTree`.
  */
 import { fixturesFor } from "../fixtures";
-import type { FileNode, FixtureAgent, Fixtures } from "../fixtures";
-import { defineModule } from "../module";
+import type { FileNode, Fixtures } from "../fixtures";
+import { APP_COLUMN_WIDTH, defineModule } from "../module";
 import type { SceneSpec } from "../module";
 import { reached, useScene } from "../scene";
 import { bytes } from "../screens/format";
 import { Markdown } from "../screens/markdown";
-import { AgentTile } from "../screens/parts";
 import { UserBubble } from "../screens/transcript";
 import {
+  AgentCard,
+  AgentsHeader,
   Backdrop,
   Breadcrumbs,
   Button,
-  Card,
   ConfirmModal,
   Field,
   GlyphIcon,
@@ -34,10 +34,8 @@ import {
   MenuItem,
   MenuSeparator,
   Modal,
-  PageHeader,
   Presence,
   Radio,
-  SearchInput,
   Select,
   treeInset,
 } from "./parts";
@@ -51,35 +49,6 @@ const OVER = "absolute inset-0 flex bg-[var(--ui-overlay-backdrop)]";
 /** The approval modes the new-Agent form offers, in the order it lists them. */
 const APPROVALS = ["always-ask", "read-only", "allow-all"] as const;
 
-function AgentCard({
-  agent,
-  f,
-  hovered = false,
-}: {
-  agent: FixtureAgent;
-  f: Fixtures;
-  /** The row whose destructive action the pointer is on. */
-  hovered?: boolean;
-}) {
-  return (
-    <Card className="flex items-start gap-3 px-4 py-3">
-      <AgentTile id={agent.id} name={agent.name} size={28} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-(--ui-weight-medium) text-fg">{agent.name}</p>
-        <p className="mt-0.5 text-sm text-fg-muted">{agent.description}</p>
-      </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        state={hovered ? "hover" : "rest"}
-        leading={<GlyphIcon name="trash" size={13} />}
-      >
-        {f.copy.agents.delete}
-      </Button>
-    </Card>
-  );
-}
-
 /** The Agents page the dialogs open over: its two create paths, a search and one card per Agent. */
 function AgentsPage({
   f,
@@ -92,27 +61,12 @@ function AgentsPage({
   /** The pointer is on that Agent's destructive action. */
   pressed?: boolean;
 }) {
-  const a = f.copy.agents;
   return (
-    <div className="mx-auto grid max-w-2xl grid-cols-[minmax(0,1fr)] gap-4 px-6 py-6">
-      <PageHeader
-        title={f.copy.nav.agents}
-        info={a.info}
-        actions={
-          <>
-            <Button variant="primary" leading={<GlyphIcon name="sparkle" size={13} />}>
-              {a.createWithAi}
-            </Button>
-            <Button variant="secondary" leading={<GlyphIcon name="plus" size={13} />}>
-              {a.newAgent}
-            </Button>
-          </>
-        }
-      />
-      <SearchInput placeholder={a.search} />
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
+    <div className="mx-auto grid max-w-5xl grid-cols-[minmax(0,1fr)] gap-4 p-6">
+      <AgentsHeader f={f} />
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
         {f.agents.map((agent) => (
-          <AgentCard key={agent.id} agent={agent} f={f} hovered={pressed && agent.id === target} />
+          <AgentCard key={agent.id} f={f} agent={agent} deleting={pressed && agent.id === target} />
         ))}
       </div>
     </div>
@@ -398,6 +352,7 @@ export const module = defineModule({
   description:
     "What the product lays over a page to ask: the destructive confirmation, a dialog holding a form, the full-screen browser, and the sheet a phone gets instead of a centred card.",
   width: "wide",
+  viewport: APP_COLUMN_WIDTH,
   variants: [
     { key: "confirm", title: "Confirm", scene: CONFIRM_SCENE },
     { key: "form", title: "Form" },

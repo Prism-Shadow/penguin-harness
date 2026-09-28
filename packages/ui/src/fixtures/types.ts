@@ -31,10 +31,24 @@ export interface FixtureUser {
   isAdmin: boolean;
 }
 
+/** The Project the sidebar's switcher names: every Session and Agent here lives in it. */
+export interface FixtureProject {
+  id: string;
+  name: string;
+}
+
 export interface FixtureAgent {
   id: string;
   name: string;
   description: string;
+  /** Its card on the Agents page: the kernel version, what it holds, and when it last changed. */
+  version: string;
+  counts: Readonly<
+    Record<"sessions" | "tools" | "skills" | "hooks" | "memory" | "vaultKeys" | "schedules", number>
+  >;
+  updated: string;
+  /** Ships with the server, so its card cannot delete it. */
+  builtin: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -547,6 +561,10 @@ export interface PluginFixture {
   description: string;
   icon: GlyphName;
   enabled: boolean;
+  /** The registry category it is filed under, as the filter column prints it. */
+  category: string;
+  /** What it brings: Skills, a hook package, or a server module. */
+  kind: "skills" | "hooks" | "modules";
 }
 
 /** One entry of the command palette: a command, or a Session to jump to. */
@@ -585,6 +603,11 @@ export interface PluginLibraryFixture {
   updates: number;
   /** Plugin sources the library installs from. */
   marketplaces: number;
+  /** Registry entries this Project does not ask for yet. */
+  available: number;
+  /** The filter column's rows: each category with its count, and how many bring each kind. */
+  categories: readonly { label: string; count: number }[];
+  kinds: Readonly<Record<"skills" | "hooks" | "modules", number>>;
   /** `YYYY-MM-DD HH:MM` in the server's timezone, as the facts grid prints it. */
   lastSync: string;
 }
@@ -812,6 +835,9 @@ export interface AppCopy {
     range: (from: number, to: number, total: number) => string;
     /** Spend against its limit, both already formatted. */
     spentOf: (spent: string, limit: string) => string;
+    settings: string;
+    confirm: string;
+    create: string;
   };
   nav: {
     newChat: string;
@@ -825,9 +851,20 @@ export interface AppCopy {
     sessions: string;
     collapseSidebar: string;
     expandSidebar: string;
+    /** A collapsible group's toggle, and the nav group's seam under its last row. */
+    collapseGroup: string;
+    expandGroup: string;
+    /** The collapsed rail's entry back to the newest conversation. */
+    lastConversation: string;
+    /** The collapsed rail's avatar: what the control does. */
+    userSettings: string;
     search: string;
+    /** The Sessions header's grouping-and-sort menu. */
     filterSessions: string;
+    /** The Sessions header's create button while the list is grouped by Workspace. */
     newFolder: string;
+    /** The group that holds the Sessions with no Workspace of their own. */
+    tempWorkspaces: string;
     pin: string;
   };
   chat: {
@@ -837,7 +874,12 @@ export interface AppCopy {
     done: string;
     /** A step that waits for its turn to run. */
     queued: string;
-    attach: string;
+    /** The composer's `+`: the menu of further inputs (upload, goal mode). */
+    plusMenu: string;
+    /** The composer's pickers, by their accessible names. */
+    approvalMode: string;
+    thinkingLevel: string;
+    model: string;
     steps: (n: number) => string;
     thinking: string;
     approvalWaiting: string;
@@ -858,13 +900,19 @@ export interface AppCopy {
     /** The heading over the Task's to-do list. */
     plan: string;
     send: string;
+    /** Send while a Task runs: the draft steers the running agent. */
+    steerSend: string;
     stop: string;
     copy: string;
+    /** The stats line's copy button, under a reply. */
+    copyReply: string;
     fork: string;
+    /** The chat header's token chip. */
+    statTokens: string;
     approve: string;
     deny: string;
-    /** The context gauge's reading, both figures already formatted. */
-    contextOf: (used: string, window: string) => string;
+    /** The context gauge's name; its reading follows as `<name> <percent>% · <used>/<window>`. */
+    contextUsage: string;
     /** A command log's last line: its exit code and how long it ran. */
     exitStatus: (code: number, duration: string) => string;
     outputComplete: string;
@@ -872,16 +920,23 @@ export interface AppCopy {
     deleteMessage: { title: string; body: string; confirm: string; deleted: string };
   };
   dock: {
-    subagents: (n: number) => string;
+    /** A dock tab's name, by the panel it holds. */
+    agentsPanel: string;
+    filesPanel: string;
     topology: string;
     nodeRunning: string;
     nodeDone: string;
     openAsSession: string;
     newPanel: string;
-    movePanel: string;
+    moveToRight: string;
+    moveToBottom: string;
     bottomDock: string;
     rightDock: string;
-    close: string;
+    /** A tab's own ×, and the dock head's button that hides the whole dock. */
+    closeTab: string;
+    hideDock: string;
+    /** The floating ball on the chat's right edge while no dock is open there, and its caption. */
+    launcher: string;
   };
   traces: {
     filesTitle: string;
@@ -956,6 +1011,8 @@ export interface AppCopy {
   };
   /** The model library and a model's own page. */
   models: {
+    /** The Models page's own title. */
+    title: string;
     search: string;
     pageInfo: string;
     providerDocs: string;
@@ -981,11 +1038,20 @@ export interface AppCopy {
   };
   /** The Agents page. */
   agents: {
+    /** The page's own title, which the app leaves in English in both languages. */
+    title: string;
     info: string;
     search: string;
+    /** The manual create dialog's title. */
     newAgent: string;
     createWithAi: string;
+    /** The Create-with-AI dialog's title. */
+    aiCreateTitle: string;
+    /** The create pair's second button. */
+    createManually: string;
     delete: string;
+    /** The disabled delete on a built-in Agent's card. */
+    builtinUndeletable: string;
     deleteTitle: (name: string) => string;
     deleteBody: string;
     empty: { title: string; body: string };
@@ -995,9 +1061,22 @@ export interface AppCopy {
   };
   /** The Plugin library page. */
   plugins: {
+    /** The page's own title; the nav row names the page differently. */
+    title: string;
     info: string;
     search: string;
     install: string;
+    uninstall: string;
+    /** The two lists' headers, with how many each holds. */
+    installedSection: (n: number) => string;
+    availableSection: (n: number) => string;
+    /** A row's meta line: a plugin that runs, or one the Project does not ask for yet. */
+    running: string;
+    notInstalled: string;
+    /** The filter column beside the lists: its three groups, and the rows of two of them. */
+    filters: Record<"categories" | "kind" | "state", string>;
+    kinds: Record<"skills" | "hooks" | "modules", string>;
+    states: Record<"installed" | "available", string>;
     installed: string;
     installedHint: string;
     marketplaces: string;
@@ -1045,7 +1124,9 @@ export interface AppCopy {
     members: (n: number) => string;
     /** The system line a ticket's first Session posts in the chat. */
     started: (name: string, ticketId: string) => string;
-    messagePlaceholder: (channel: string) => string;
+    messagePlaceholder: string;
+    /** The organization's one channel everyone is in, by the name the app gives it. */
+    allHands: string;
     searchMessages: string;
   };
   /** The Cost Center's usage charts. */
@@ -1056,6 +1137,8 @@ export interface AppCopy {
     thresholds: string;
   };
   auth: {
+    /** The role tag beside an administrator's name on the sidebar's user row. */
+    admin: string;
     username: string;
     password: string;
     signIn: string;
@@ -1117,6 +1200,7 @@ export interface Fixtures {
   copy: AppCopy;
   hero: HeroFixture;
   user: FixtureUser;
+  project: FixtureProject;
   agents: FixtureAgent[];
   session: ChatSession;
   sessionGroups: SessionGroup[];

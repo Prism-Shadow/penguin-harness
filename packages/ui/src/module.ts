@@ -99,6 +99,18 @@ export interface ModuleVariant {
   scene?: SceneSpec;
 }
 
+/**
+ * The app window the window compositions are laid out at: a common laptop viewport, and the
+ * narrowest one where the app shows its full sidebar (`lg:w-72`) beside a roomy chat column.
+ */
+export const APP_WINDOW_WIDTH = 1280;
+
+/**
+ * The main column of that window: the window less the 18rem sidebar at the default 18 px root.
+ * Pages, the transcript and the composer live in this column in the app, so they lay out at it.
+ */
+export const APP_COLUMN_WIDTH = APP_WINDOW_WIDTH - 18 * 18;
+
 export interface Module {
   id: ModuleId;
   /** English. The gallery's Chinese dictionary translates it. */
@@ -110,6 +122,21 @@ export interface Module {
    * one in three stacked full-width frames (three transcripts at a third of the column are unreadable).
    */
   width: "narrow" | "wide";
+  /**
+   * The width in CSS px the composition is designed at, when it imitates a region of the app at
+   * the app's own size: {@link APP_WINDOW_WIDTH} for a whole window (sidebar and main column),
+   * {@link APP_COLUMN_WIDTH} for what fills the main column (a page, the transcript, the
+   * composer). The gallery lays such a composition out at exactly this width and scales the
+   * result down to its card — never up — so it wraps, truncates and breaks at its container
+   * queries as it does in the app, however narrow the card. `/embed` and the screenshots render
+   * it at this width unscaled; the phone view ignores it, since there the composition answers to
+   * the 390 px frame.
+   *
+   * Omitted, the composition reflows to whatever width it is given, which is right for the
+   * vocabulary modules (buttons, fields, a dialog on its stage, a table) and for every `narrow`
+   * one, which keeps its own width.
+   */
+  viewport?: number;
   /** At least one; the first is the default pick. */
   variants: readonly ModuleVariant[];
   /** The catalog section ids (catalog.ts) listed in the Parts drawer, in catalog order. */

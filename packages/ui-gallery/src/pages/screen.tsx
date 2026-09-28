@@ -1,7 +1,9 @@
 /**
- * `/screens/<name>` — a full-viewport composite on the themed root, with a small floating
- * unthemed toolbar (hidden by `bare=1`) carrying the view controls and the screen's breadcrumb,
- * `Primer › Screens › Chat · light`, the same address the Screens module's card quotes.
+ * `/screens/<name>` — a full-viewport composite on the themed root, under a slim unthemed toolbar
+ * strip (hidden by `bare=1`) carrying the view controls and the screen's breadcrumb,
+ * `Primer › Screens › Chat · light`, the same address the Screens module's card quotes. The strip
+ * takes its own height rather than floating over the composite, whose controls reach every edge;
+ * the composite fills what is left, and the whole viewport with `bare=1`.
  */
 import { useEffect } from "react";
 import { ModeSwitch, ViewControls } from "../chrome/rail";
@@ -46,7 +48,25 @@ export function ScreenPage({ name }: { name: string }) {
   const back = `${BASE}/${formatGalleryQuery({ ...state, compare: false, variants })}#screens`;
 
   return (
-    <>
+    <div className="g-screen-page">
+      {!bare && (
+        <div className="g-screen-bar g-chrome">
+          <a className="g-icon-button" href={back} title={S.screens.back}>
+            <ChromeIcon name="back" />
+          </a>
+          <ViewControls compact />
+          <ModeSwitch />
+          <button
+            type="button"
+            className="g-crumb"
+            onClick={() => copy("crumb", crumb)}
+            title={S.section.copyBreadcrumb}
+          >
+            <ChromeIcon name={copied ? "check" : "copy"} size={13} />
+            <span>{copied ? S.section.copied : crumb}</span>
+          </button>
+        </div>
+      )}
       <div className="g-screen-root">
         {screen ? (
           <screen.Component lang={state.lang} />
@@ -67,24 +87,6 @@ export function ScreenPage({ name }: { name: string }) {
           </div>
         )}
       </div>
-      {!bare && (
-        <div className="g-screen-bar g-chrome">
-          <a className="g-icon-button" href={back} title={S.screens.back}>
-            <ChromeIcon name="back" />
-          </a>
-          <ViewControls compact />
-          <ModeSwitch />
-          <button
-            type="button"
-            className="g-crumb"
-            onClick={() => copy("crumb", crumb)}
-            title={S.section.copyBreadcrumb}
-          >
-            <ChromeIcon name={copied ? "check" : "copy"} size={13} />
-            <span>{copied ? S.section.copied : crumb}</span>
-          </button>
-        </div>
-      )}
-    </>
+    </div>
   );
 }

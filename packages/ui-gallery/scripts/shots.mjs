@@ -28,7 +28,10 @@
  *                                               also shoots every other frame of a scene)
  *   --parts     also shoot every part demo     (flag)
  *   --width     viewport width in px           (default 758: the main page's card, so a shot
- *                                               lays out exactly as the card does; 390 for phone)
+ *                                               lays out exactly as the card does; 390 for phone.
+ *                                               A module designed at the app's width — `viewport`
+ *                                               in module.ts — is shot at that width, unscaled,
+ *                                               where the card shows it scaled down)
  *
  * Animations are frozen (`motion=reduced`) so two runs of the same tree compare pixel for pixel;
  * under it a scene's frame shows its end state (a stream's whole text), as a still should.
@@ -232,7 +235,21 @@ async function shoot() {
             }));
             if (!info.renderable) return info;
             const file = path.join(dir, `${name(info)}.png`);
+            // A composition designed at the app's width holds that width and the root grows past a
+            // narrower viewport to fit it; widen the viewport to the root for the shot, so the
+            // capture never depends on scrolling past the viewport's edge.
+            const rootWidth = await root.evaluate((el) =>
+              Math.ceil(el.getBoundingClientRect().width),
+            );
+            const widened = rootWidth > width;
+            if (widened) {
+              await page.setViewportSize({ width: rootWidth, height: 900 });
+              await page.evaluate(
+                () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))),
+              );
+            }
             await root.screenshot({ path: file, animations: "disabled" });
+            if (widened) await page.setViewportSize({ width, height: 900 });
             written++;
             console.log(file);
             return info;

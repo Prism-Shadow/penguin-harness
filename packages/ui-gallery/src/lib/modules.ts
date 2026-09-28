@@ -11,6 +11,7 @@
 import type { ComponentSection } from "../../../ui/src/catalog";
 import { MODULE_IDS } from "../../../ui/src/module";
 import type { Module, ModuleVariant } from "../../../ui/src/module";
+import { naturalWidth } from "./fit";
 
 /** Variant and frame keys double as URL and file-name segments. */
 export const VARIANT_KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -99,6 +100,10 @@ export function collectModules(
     if (badScenes.length > 0) {
       for (const problem of badScenes) problems.push(`${path}: ${problem}`);
       continue;
+    }
+    // Reported, not skipped: the module still renders, just reflowed to the card as if undeclared.
+    if (module.viewport !== undefined && naturalWidth(module) === null) {
+      problems.push(`${path}: viewport of "${module.id}" must be a positive width in px`);
     }
     const unknownParts = module.parts.filter((id) => !known.has(id));
     if (unknownParts.length > 0) {

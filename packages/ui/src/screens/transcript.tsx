@@ -18,8 +18,9 @@ import type {
   ToolCallItem,
   TurnStats,
 } from "../fixtures";
-import { duration, liveDuration, percent, tokens, usd } from "./format";
+import { contextReading, duration, liveDuration, tokens, usd } from "./format";
 import { Glyph } from "./glyph";
+import type { GlyphName } from "./glyph";
 import { Markdown, StreamingCaret } from "./markdown";
 import {
   AgentTile,
@@ -53,7 +54,7 @@ export function UserBubble({
   return (
     <div className={`${dense ? "my-2" : "my-4"} flex flex-col items-end`}>
       <div
-        className={`max-w-[85%] rounded-lg ${NEUTRAL_FILL} ${dense ? "px-3 py-2" : "px-4 py-2.5"}`}
+        className={`max-w-[75%] rounded-lg ${NEUTRAL_FILL} ${dense ? "px-3 py-2" : "px-4 py-2.5"}`}
       >
         <p
           className={`whitespace-pre-wrap font-sans leading-relaxed text-fg [overflow-wrap:anywhere] ${
@@ -81,24 +82,32 @@ export function UserBubble({
   );
 }
 
-/** The per-turn footer under a settled reply (the app's TaskStatsLine). */
+/**
+ * The per-turn footer under a settled reply (the app's TaskStatsLine), in the app's order: input,
+ * output, output speed, cost, elapsed, then copy and fork. The app shows it on hover at desktop
+ * width; a still shows it, since a still has no pointer.
+ */
 export function StatsLine({ stats, f }: { stats: TurnStats; f: Fixtures }) {
   const t = f.copy.traces;
-  const input = stats.inputTokens;
   return (
-    <div className="-mt-1 mb-3 flex h-5 items-center gap-3 whitespace-nowrap text-fg-subtle">
-      <StatChip glyph="wrench" value={String(stats.toolCalls)} title={t.toolCalls} />
+    <div className="-mt-2 mb-3 flex h-5 items-center gap-3 whitespace-nowrap text-xs text-fg-subtle">
       <StatChip
+        mono={false}
         glyph="arrowUpLine"
-        value={`${tokens(input)} (${percent(stats.cacheReadTokens, input)})`}
+        value={tokens(stats.inputTokens)}
         title={t.inputTokens}
       />
-      <StatChip glyph="arrowDownLine" value={tokens(stats.outputTokens)} title={t.outputTokens} />
-      <StatChip glyph="cost" value={usd(stats.costUsd)} title={t.cost} />
-      <StatChip glyph="clock" value={duration(stats.elapsedMs)} title={t.elapsed} />
-      <StatChip glyph="gauge" value={`${stats.outputTps} tok/s`} title={t.outputTps} />
+      <StatChip
+        mono={false}
+        glyph="arrowDownLine"
+        value={tokens(stats.outputTokens)}
+        title={t.outputTokens}
+      />
+      <StatChip mono={false} glyph="gauge" value={`${stats.outputTps} tok/s`} title={t.outputTps} />
+      <StatChip mono={false} glyph="cost" value={usd(stats.costUsd)} title={`${t.cost}（USD）`} />
+      <StatChip mono={false} glyph="clock" value={duration(stats.elapsedMs)} title={t.elapsed} />
       <span className="flex items-center gap-1">
-        <IconButton icon="copy" size="sm" label={f.copy.chat.copy} />
+        <IconButton icon="copy" size="sm" label={f.copy.chat.copyReply} />
         <IconButton icon="fork" size="sm" label={f.copy.chat.fork} />
       </span>
     </div>
@@ -476,25 +485,236 @@ export function Turn({
 // Composer (W6: ComposerCard, ChipRow, ToolbarTrigger, SendButton)
 // ---------------------------------------------------------------------------
 
-/** The 14 px context gauge: a ring filled to the share of the model's window in use. */
-function ContextRing({ used, window }: { used: number; window: number }) {
-  const r = 5.5;
+/** Each approval mode's glyph: what the mode lets through, at a glance. */
+const APPROVAL_GLYPH: Record<Fixtures["session"]["composer"]["approvalMode"], GlyphName> = {
+  "allow-all": "alert",
+  "read-only": "eye",
+  "always-ask": "help",
+  "deny-all": "ban",
+};
+
+/**
+ * The context gauge: a 14 px ring filled to the share of the model's window in use, in a
+ * button-sized box, its reading in the tooltip.
+ */
+function ContextGauge({ f }: { f: Fixtures }) {
+  const { tokens: used, window } = f.session.context;
+  const r = 5;
   const c = 2 * Math.PI * r;
   const share = Math.min(1, used / window);
+  const reading = contextReading(f.copy.chat.contextUsage, used, window);
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="shrink-0">
-      <circle cx="7" cy="7" r={r} fill="none" stroke="var(--ui-line)" strokeWidth="2" />
-      <circle
-        cx="7"
-        cy="7"
-        r={r}
-        fill="none"
-        stroke="var(--ui-fg-muted)"
-        strokeWidth="2"
-        strokeDasharray={`${Math.max(share * c, 1)} ${c}`}
-        transform="rotate(-90 7 7)"
-      />
-    </svg>
+    <span
+      role="img"
+      title={reading}
+      aria-label={reading}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-fg-subtle"
+    >
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+        <circle
+          cx="7"
+          cy="7"
+          r={r}
+          fill="none"
+          stroke="currentColor"
+          strokeOpacity="0.25"
+          strokeWidth="2"
+        />
+        <circle
+          cx="7"
+          cy="7"
+          r={r}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={`${Math.max(share * c, 1)} ${c}`}
+          transform="rotate(-90 7 7)"
+        />
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * A composer picker's trigger: its glyph, its current choice — hidden while the card is narrow —
+ * and a small chevron, all in the trigger's own muted ink.
+ */
+export function ToolbarTrigger({
+  glyph,
+  lead,
+  label,
+  name,
+  count,
+  chevron = true,
+}: {
+  glyph?: GlyphName;
+  /** A leading mark drawn by the caller instead of a glyph: the model's provider tile. */
+  lead?: ReactNode;
+  label: string;
+  /** The picker's accessible name, when the label is its current choice. */
+  name?: string;
+  /** How many are picked, where the picker takes several (Skills). */
+  count?: number;
+  chevron?: boolean;
+}) {
+  return (
+    <span
+      role="button"
+      aria-label={name ?? label}
+      title={name ? `${name}：${label}` : label}
+      className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-fg-muted"
+    >
+      {lead ?? (glyph && <Glyph name={glyph} size={13} />)}
+      <span className="hidden min-w-0 truncate @md:block">{label}</span>
+      {count !== undefined && count > 0 && (
+        <span
+          className={`rounded-[var(--ui-radius-pill)] px-1.5 py-px font-mono text-xs font-(--ui-weight-strong) tabular-nums text-fg ${NEUTRAL_FILL}`}
+        >
+          {count}
+        </span>
+      )}
+      {chevron && <Glyph name="chevronDown" size={10} />}
+    </span>
+  );
+}
+
+/** The attachment chips over the draft: the Skills first, then the file references. */
+export function ComposerChips({ chips }: { chips: Fixtures["session"]["composer"]["chips"] }) {
+  if (chips.length === 0) return null;
+  const ordered = [
+    ...chips.filter((chip) => chip.kind === "skill"),
+    ...chips.filter((chip) => chip.kind !== "skill"),
+  ];
+  return (
+    <div className="mb-1 flex flex-wrap items-center gap-1">
+      {ordered.map((chip) => (
+        <span
+          key={chip.label}
+          className={`flex max-w-48 items-center gap-1 rounded-md py-0.5 pl-2 pr-1 font-mono text-xs text-fg ${NEUTRAL_FILL}`}
+        >
+          <Glyph
+            name={chip.kind === "skill" ? "book" : "fileText"}
+            size={13}
+            className="text-fg-muted"
+          />
+          <span className="truncate">{chip.label}</span>
+          {chip.lines && <span className="shrink-0">{chip.lines}</span>}
+          <span className="rounded-sm p-px text-fg-subtle">
+            <Glyph name="cross" size={11} />
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The composer's control row, left to right as the app lays it out: `+`, the approval mode, the
+ * Skills picker with its count, the slash hint; then the context gauge, the thinking level, the
+ * model, and the send button the caller draws. In a Session the model is fixed, so its trigger
+ * has no chevron and no gauge is shown until a Session exists (`session`).
+ */
+export function ComposerToolbar({
+  f,
+  send,
+  session = true,
+  skills = 0,
+  modelTrigger,
+}: {
+  f: Fixtures;
+  send: ReactNode;
+  session?: boolean;
+  /** Skills picked for the next message. */
+  skills?: number;
+  /** A caller's own model trigger, to hang a picker off it. */
+  modelTrigger?: ReactNode;
+}) {
+  const s = f.session;
+  const c = f.copy.chat;
+  const model = f.models.find((m) => m.modelId === s.model.modelId);
+  return (
+    <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+        <span
+          role="button"
+          aria-label={c.plusMenu}
+          title={c.plusMenu}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-fg-muted"
+        >
+          <Glyph name="plus" size={15} />
+        </span>
+        <ToolbarTrigger
+          glyph={APPROVAL_GLYPH[s.composer.approvalMode]}
+          label={c.approvalModes[s.composer.approvalMode]}
+          name={c.approvalMode}
+        />
+        <ToolbarTrigger glyph="book" label={c.skills} count={skills} />
+        <span title={c.slashHint} className="hidden min-w-0 truncate text-fg-subtle @lg:block">
+          {c.slashHint}
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {session && <ContextGauge f={f} />}
+        <ToolbarTrigger
+          glyph="sparkle"
+          label={c.thinkingLevels[s.composer.thinkingLevel]}
+          name={c.thinkingLevel}
+        />
+        {modelTrigger ?? (
+          <ToolbarTrigger
+            lead={<AgentTile id={s.model.provider} name={model?.providerLabel ?? "?"} size={16} />}
+            label={model?.displayName ?? s.model.modelId}
+            name={`${c.model} ${s.model.modelId}`}
+            chevron={!session}
+          />
+        )}
+        {send}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The send button: the accent's solid fill once there is something to send, a quiet neutral well
+ * while the draft is empty. While a Task runs, sending steers it, and the button says so.
+ */
+export function SendButton({
+  f,
+  ready,
+  steer = false,
+}: {
+  f: Fixtures;
+  ready: boolean;
+  steer?: boolean;
+}) {
+  const label = steer ? f.copy.chat.steerSend : f.copy.chat.send;
+  return (
+    <span
+      role="button"
+      aria-label={label}
+      title={label}
+      aria-disabled={ready ? undefined : true}
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
+        ready ? "bg-accent text-accent-fg" : `${NEUTRAL_FILL} text-fg-subtle`
+      }`}
+    >
+      <Glyph name="arrowUp" size={17} />
+    </span>
+  );
+}
+
+/** Stop is a control, not a status: a solid fill, never danger ink on a danger tint. */
+export function StopButton({ f }: { f: Fixtures }) {
+  return (
+    <span
+      role="button"
+      aria-label={f.copy.chat.stop}
+      title={f.copy.chat.stop}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-tone-danger-emphasis text-tone-danger-emphasis-fg"
+    >
+      <span className="h-2.5 w-2.5 rounded-xs bg-current" />
+    </span>
   );
 }
 
@@ -510,85 +730,42 @@ function ComposerCard({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * The chat's composer on a running Task: the chips, the draft behind its caret, and the control
+ * row. With a draft written, the button sends it to the running agent; with none, it stops the
+ * Task.
+ */
 export function Composer({ f, compact = false }: { f: Fixtures; compact?: boolean }) {
   const s = f.session;
   const c = f.copy.chat;
-  const model = f.models.find((m) => m.modelId === s.model.modelId);
+  const chips = compact ? [] : s.composer.chips;
+  const draft = s.composer.draft;
   return (
     <div className="shrink-0 border-t border-line px-3 py-3">
       <div className="mx-auto max-w-3xl">
         <ComposerCard>
-          {!compact && s.composer.chips.length > 0 && (
-            <div className="mb-1.5 flex flex-wrap items-center gap-1.5 px-1">
-              {s.composer.chips.map((chip) => (
-                <span
-                  key={chip.label}
-                  className={`flex max-w-48 items-center gap-1 rounded-md py-0.5 pl-2 pr-1 font-mono text-xs text-fg ${NEUTRAL_FILL}`}
-                >
-                  <Glyph
-                    name={chip.kind === "skill" ? "book" : "fileText"}
-                    size={12}
-                    className="text-fg-muted"
-                  />
-                  <span className="truncate">{chip.label}</span>
-                  {chip.lines && <span className="shrink-0 text-fg-subtle">{chip.lines}</span>}
-                  <Glyph name="cross" size={11} className="ml-0.5 text-fg-subtle" />
-                </span>
-              ))}
-            </div>
-          )}
+          <ComposerChips chips={chips} />
           <p
             className={`px-1 py-0.5 font-sans text-base leading-6 ${
-              s.composer.draft ? "text-fg" : "text-fg-subtle"
+              draft ? "text-fg" : "text-fg-subtle"
             } ${compact ? "min-h-6" : "min-h-[3.75rem]"}`}
           >
-            {s.composer.draft || c.inputPlaceholder}
-            {s.composer.draft && (
+            {draft || c.inputPlaceholder}
+            {draft && (
               <span aria-hidden className="ml-px inline-block h-5 w-px translate-y-1 bg-fg" />
             )}
           </p>
-          <div className="mt-1 flex items-center gap-2 text-xs">
-            <div className="flex shrink-0 items-center gap-1">
-              <IconButton icon="plus" label={c.attach} />
-              <span className="flex h-8 shrink-0 items-center gap-1.5 rounded-control px-2 text-fg-muted">
-                <Glyph name="shield" size={14} />
-                {c.approvalModes[s.composer.approvalMode]}
-                <Glyph name="chevronDown" size={12} className="text-fg-subtle" />
-              </span>
-              <span className="flex h-8 shrink-0 items-center gap-1.5 rounded-control px-2 text-fg-muted">
-                <Glyph name="book" size={14} />
-                {c.skills}
-                <Glyph name="chevronDown" size={12} className="text-fg-subtle" />
-              </span>
-              {!compact && (
-                <span className="hidden min-w-0 truncate px-1 text-fg-subtle @2xl:block">
-                  {c.slashHint}
-                </span>
-              )}
-            </div>
-            <div className="min-w-0 flex-1" />
-            <div className="flex min-w-0 items-center gap-2">
-              <ContextRing used={s.context.tokens} window={s.context.window} />
-              <span className="flex h-8 shrink-0 items-center gap-1.5 rounded-control px-2 text-fg-muted">
-                <Glyph name="sparkle" size={13} />
-                {c.thinkingLevels[s.composer.thinkingLevel]}
-                <Glyph name="chevronDown" size={12} className="text-fg-subtle" />
-              </span>
-              <span className="flex h-8 min-w-0 items-center gap-1.5 rounded-control px-1 text-fg-muted">
-                <AgentTile id={s.model.provider} name={model?.providerLabel ?? "?"} size={16} />
-                <span className="min-w-0 truncate">{model?.displayName}</span>
-              </span>
-              {/* Stop is a control, not a status: a solid fill, never danger ink on a danger tint. */}
-              <span
-                role="button"
-                aria-label={c.stop}
-                title={c.stop}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-tone-danger-emphasis text-tone-danger-emphasis-fg"
-              >
-                <span className="h-2.5 w-2.5 rounded-xs bg-current" />
-              </span>
-            </div>
-          </div>
+          <ComposerToolbar
+            f={f}
+            skills={chips.filter((chip) => chip.kind === "skill").length}
+            send={
+              s.running && !draft ? (
+                <StopButton f={f} />
+              ) : (
+                <SendButton f={f} ready={draft !== ""} steer={s.running} />
+              )
+            }
+          />
         </ComposerCard>
       </div>
     </div>

@@ -5,7 +5,9 @@
  * the package component it imitates.
  *
  * Every screen takes `lang` and nothing else it needs from outside: theme, mode and the root
- * font tier are attributes on <html>, set by whoever renders the page.
+ * font tier are attributes on <html>, set by whoever renders the page. A screen fills the height
+ * of the box it is placed in (`h-full`), so the page decides how much of the viewport it gets —
+ * all of it, or what is left under the gallery's toolbar.
  */
 import type { ComponentType } from "react";
 import type { FixtureLang } from "../fixtures";

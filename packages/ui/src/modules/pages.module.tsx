@@ -1,36 +1,40 @@
 /**
- * Pages & sections: how a page is put together.
+ * Pages & sections: how a page is put together, after the app's own pages.
  *
- * - Settings: the Plugin library page — page frame, page header with its "?" and toolbar, a ruled
- *   section holding one level of cards, and a collapsed section below. Its scene builds the page
- *   section by section, the cards landing one after another;
+ * - Settings: the Plugins page — the title and its "?", then the list column (a full-width
+ *   search, the installed list under its bar, the available list folded) beside the filter column.
+ *   Its scene builds the page section by section, the rows landing one after another;
  * - Entity: a model's page — the entity header (logo, name, id, badges, a link) above ruled
  *   sections of facts and of the agents that use it;
- * - Empty: the Agents page before any exists — the page's empty state, and a section's empty slot.
+ * - Empty: the Agents page of a Project with no Agent of its own — the title row with its search
+ *   and create pair, the built-in Agent's card, and the list's empty line under it.
  *
- * Static stand-ins for W4's `PageFrame`, `PageHeader`, `RuledSection`, `Card`, `CollapsibleSection`,
- * `EntityHeader` and W1's `EmptyState`.
+ * Static stand-ins for W4's `PageFrame`, `PageHeader`, `RuledSection`, `CollapsibleSection`,
+ * `EntityHeader`, `CreateButtons` and W1's `EmptyState`.
  */
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
-import type { Fixtures } from "../fixtures";
-import { defineModule } from "../module";
+import type { Fixtures, PluginFixture } from "../fixtures";
+import { APP_COLUMN_WIDTH, defineModule } from "../module";
 import type { SceneSpec } from "../module";
 import { reached, useScene } from "../scene";
 import { AgentTile } from "../screens/parts";
 import { tokens, usd } from "../screens/format";
 import {
+  AgentCard,
+  AgentsHeader,
   Badge,
   Button,
-  Card,
+  Checkbox,
+  CreateButtons,
   EmptyState,
   GlyphIcon,
+  IconButton,
   KeyValue,
   Link,
   PageHeader,
   RuledSection,
   SearchInput,
-  Switch,
   arriving,
   useArrivals,
 } from "./parts";
@@ -39,30 +43,120 @@ const BUILD: SceneSpec = {
   frames: [
     { key: "header", title: "Header", hold: 900 },
     { key: "installed", title: "Installed", hold: 1600 },
-    { key: "marketplaces", title: "Marketplaces", hold: 1200 },
+    { key: "marketplaces", title: "Available", hold: 1200 },
   ],
 };
 
-/** The page's scroll container and width cap. */
+/** The page's scroll container and width cap, with the app's page padding. */
 function PageFrame({ children }: { children: ReactNode }) {
-  return <div className="mx-auto grid max-w-3xl gap-10 py-2">{children}</div>;
+  return <div className="mx-auto grid max-w-5xl gap-6 p-6">{children}</div>;
 }
 
-/** A section behind a header bar that folds it away (shown folded). */
-function CollapsibleSection({ title, count }: { title: string; count: number }) {
+/** A list's header bar: its title with the count inside it, and the fold chevron on the right. */
+function CollapsibleSection({
+  title,
+  open,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  children?: ReactNode;
+}) {
   return (
-    <section className="flex items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-sm">
-      <GlyphIcon name="chevronRight" size={14} className="text-fg-subtle" />
-      <span className="font-(--ui-weight-medium) text-fg">{title}</span>
-      <span className="text-xs tabular-nums text-fg-muted">{count}</span>
+    <section>
+      <div className="flex items-center gap-2 rounded-md bg-surface-muted px-3 py-2.5">
+        <span className="min-w-0 flex-1 truncate text-base font-(--ui-weight-strong) text-fg">
+          {title}
+        </span>
+        <GlyphIcon
+          name={open ? "chevronDown" : "chevronRight"}
+          size={14}
+          className="text-fg-subtle"
+        />
+      </div>
+      {open && children}
     </section>
   );
 }
 
 /**
- * The Plugin library page, and the scene that builds it: the page header with its toolbar; the
- * Installed section, its cards landing one after another; then the folded Marketplaces section —
- * the page this variant shows when nothing is playing.
+ * A plugin's row: its tile, its name and one line of description, the meta line (version and
+ * state), its tags, and the action on the right.
+ */
+function PluginRow({ f, plugin }: { f: Fixtures; plugin: PluginFixture }) {
+  const p = f.copy.plugins;
+  return (
+    <div className="flex items-center gap-4 px-6 py-4">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-surface-muted text-fg-muted">
+          <GlyphIcon name={plugin.icon} size={18} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-mono text-sm font-(--ui-weight-strong) text-fg">
+            {plugin.name}
+          </p>
+          <p className="truncate text-sm text-fg-muted">{plugin.description}</p>
+          <p className="mt-1 text-xs text-fg-subtle">
+            v{plugin.version} · {plugin.enabled ? p.running : p.notInstalled}
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            <Badge variant="soft">{plugin.category}</Badge>
+            <Badge variant="soft">{p.kinds[plugin.kind]}</Badge>
+          </div>
+        </div>
+      </div>
+      <IconButton label={p.uninstall} icon="trash" size="md" />
+    </div>
+  );
+}
+
+/** The filter column: one group of checkbox rows per facet, each row with its count. */
+function PluginFilters({ f }: { f: Fixtures }) {
+  const p = f.copy.plugins;
+  const lib = f.pluginLibrary;
+  const groups: readonly {
+    title: string;
+    rows: readonly { label: string; count: number }[];
+  }[] = [
+    { title: p.filters.categories, rows: lib.categories },
+    {
+      title: p.filters.kind,
+      rows: (["skills", "hooks", "modules"] as const).map((key) => ({
+        label: p.kinds[key],
+        count: lib.kinds[key],
+      })),
+    },
+    {
+      title: p.filters.state,
+      rows: [
+        { label: p.states.installed, count: lib.installed },
+        { label: p.states.available, count: lib.available },
+      ],
+    },
+  ];
+  return (
+    <aside className="grid content-start gap-6 pt-10">
+      {groups.map((group) => (
+        <div key={group.title} className="grid gap-2">
+          <p className="text-xs font-(--ui-weight-strong) text-fg-subtle">{group.title}</p>
+          {group.rows.map((row) => (
+            <span key={row.label} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1">
+                <Checkbox checked={false} label={row.label} />
+              </span>
+              <span className="text-xs tabular-nums text-fg-subtle">{row.count}</span>
+            </span>
+          ))}
+        </div>
+      ))}
+    </aside>
+  );
+}
+
+/**
+ * The Plugins page, and the scene that builds it: the title with its "?"; the installed list, its
+ * rows landing one after another; then the available list, folded — the page this variant shows
+ * when nothing is playing.
  */
 function Settings({ f }: { f: Fixtures }) {
   const clock = useScene();
@@ -70,50 +164,30 @@ function Settings({ f }: { f: Fixtures }) {
   const landed = useArrivals(f.plugins.length, "installed");
   return (
     <PageFrame>
-      <PageHeader
-        title={f.copy.nav.plugins}
-        info={p.info}
-        actions={
-          <>
-            <span className="w-56">
-              <SearchInput placeholder={p.search} />
-            </span>
-            <Button variant="primary" leading={<GlyphIcon name="plus" size={13} />}>
-              {p.install}
-            </Button>
-          </>
-        }
-      />
-      {reached(clock, "installed") && (
-        <RuledSection title={p.installed} description={p.installedHint} count={f.plugins.length}>
-          <div className="grid grid-cols-2 gap-3">
-            {f.plugins.slice(0, landed).map((row) => (
-              <div key={row.name} data-reveal={arriving(clock, "installed")}>
-                <Card className="grid h-full grid-cols-[minmax(0,1fr)] gap-3 p-4">
-                  <div className="flex items-start gap-3">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-muted text-fg">
-                      <GlyphIcon name={row.icon} size={16} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-(--ui-weight-medium) text-fg">
-                        {row.name}
-                      </span>
-                      <span className="block font-mono text-xs text-fg-subtle">{row.version}</span>
-                    </span>
-                    <Switch on={row.enabled} />
-                  </div>
-                  <p className="text-sm text-fg-muted">{row.description}</p>
-                </Card>
-              </div>
-            ))}
-          </div>
-        </RuledSection>
-      )}
-      {reached(clock, "marketplaces") && (
-        <div data-reveal={arriving(clock, "marketplaces")}>
-          <CollapsibleSection title={p.marketplaces} count={f.pluginLibrary.marketplaces} />
+      <PageHeader title={p.title} info={p.info} />
+      <div className="grid grid-cols-[minmax(0,1fr)_13rem] gap-6">
+        <div className="grid content-start gap-3">
+          <SearchInput placeholder={p.search} />
+          {reached(clock, "installed") && (
+            <CollapsibleSection title={p.installedSection(f.pluginLibrary.installed)} open>
+              {f.plugins.slice(0, landed).map((plugin) => (
+                <div key={plugin.name} data-reveal={arriving(clock, "installed")}>
+                  <PluginRow f={f} plugin={plugin} />
+                </div>
+              ))}
+            </CollapsibleSection>
+          )}
+          {reached(clock, "marketplaces") && (
+            <div data-reveal={arriving(clock, "marketplaces")}>
+              <CollapsibleSection
+                title={p.availableSection(f.pluginLibrary.available)}
+                open={false}
+              />
+            </div>
+          )}
         </div>
-      )}
+        <PluginFilters f={f} />
+      </div>
     </PageFrame>
   );
 }
@@ -190,33 +264,27 @@ function Entity({ f }: { f: Fixtures }) {
   );
 }
 
+/**
+ * The Agents page before the Project has an Agent of its own: the title row, the built-in Agent's
+ * card, and the list's empty line with the create pair under it.
+ */
 function Empty({ f }: { f: Fixtures }) {
   const a = f.copy.agents;
+  const builtin = f.agents.filter((agent) => agent.builtin);
   return (
     <PageFrame>
-      <PageHeader title={f.copy.nav.agents} info={a.info} />
-      <EmptyState
-        title={a.empty.title}
-        description={a.empty.body}
-        action={
-          <span className="flex items-center gap-2">
-            <Button variant="secondary" leading={<GlyphIcon name="sparkle" size={13} />}>
-              {a.createWithAi}
-            </Button>
-            <Button variant="primary" leading={<GlyphIcon name="plus" size={13} />}>
-              {a.newAgent}
-            </Button>
-          </span>
-        }
-      />
-      <RuledSection title={a.schedules}>
+      <AgentsHeader f={f} />
+      <div className="grid gap-3">
+        {builtin.map((agent) => (
+          <AgentCard key={agent.id} f={f} agent={agent} />
+        ))}
         <EmptyState
-          variant="slot"
-          title={a.schedulesEmpty.title}
-          description={a.schedulesEmpty.body}
-          action={<Button variant="secondary">{a.schedulesEmpty.action}</Button>}
+          variant="list"
+          title={a.empty.title}
+          description={a.empty.body}
+          action={<CreateButtons f={f} />}
         />
-      </RuledSection>
+      </div>
     </PageFrame>
   );
 }
@@ -227,8 +295,9 @@ export const module = defineModule({
   id: "pages",
   title: "Pages & sections",
   description:
-    "A settings-style page: the page header, ruled sections, a card grid and a collapsible section; an entity page; an empty page.",
+    "The Plugins page: its header, the list column with search and folding list bars beside the filter column; an entity page; the Agents page with only the built-in Agent.",
   width: "wide",
+  viewport: APP_COLUMN_WIDTH,
   variants: [
     { key: "settings", title: "Settings", scene: BUILD },
     { key: "entity", title: "Entity" },
