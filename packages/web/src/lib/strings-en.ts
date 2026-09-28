@@ -1892,6 +1892,8 @@ export const en: Strings = {
     saved: "Saved",
     unsaved: "Unsaved changes",
     discard: "Discard your unsaved edits and load another draft?",
+    discardTitle: "Discard unsaved changes?",
+    discardConfirm: "Discard",
     remoteChanged:
       "The saved draft changed. Your edits are still here; reload before applying them.",
     saveFirst: "Save your description before generating. Review or save specification edits first.",

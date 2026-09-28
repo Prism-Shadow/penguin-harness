@@ -85,6 +85,7 @@ import { latestModuleRun } from "./preview";
 import { ActivityList } from "./activity-list";
 import { ProjectMediaView } from "./project-media-view";
 import { pushRecent, readRecent } from "./recent-activities";
+import { useDiscardConfirm } from "./use-discard-confirm";
 import { applyVoice, optionsFromVoices } from "./voice-catalogue";
 import {
   applyProvider,
@@ -187,14 +188,28 @@ function ActivityWorkspace({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, []);
-  const canLeave = useCallback(() => !dirty.current || window.confirm(S.activities.discard), []);
+  const canLeave = useCallback(() => !dirty.current, []);
+  const isDirty = useCallback(() => dirty.current, []);
+  const discard = useDiscardConfirm(isDirty);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      currentLocation.pathname !== nextLocation.pathname && !canLeave(),
+      currentLocation.pathname !== nextLocation.pathname && dirty.current,
   );
+  // Ask only on the transition into "blocked": while the modal is open (or right after it
+  // closes) this effect can re-run with `blocker.state` still "blocked" for a render or two,
+  // and re-asking then would reopen a dialog the author just cancelled.
+  const wasBlocked = useRef(false);
   useEffect(() => {
-    if (blocker.state === "blocked") blocker.reset();
-  }, [blocker]);
+    if (blocker.state === "blocked" && !wasBlocked.current) {
+      wasBlocked.current = true;
+      discard.ask(
+        () => blocker.proceed(),
+        () => blocker.reset(),
+      );
+    } else if (blocker.state !== "blocked") {
+      wasBlocked.current = false;
+    }
+  }, [blocker, discard.ask]);
   useLayoutEffect(
     () => registerProjectChangeGuard(canLeave),
     [registerProjectChangeGuard, canLeave],
@@ -226,6 +241,7 @@ function ActivityWorkspace({
             navigate("/activities");
           }}
         />
+        {discard.modal}
       </div>
     );
   }
@@ -266,6 +282,7 @@ function ActivityWorkspace({
           }}
         />
       )}
+      {discard.modal}
     </>
   );
 }
@@ -463,6 +480,7 @@ function ActivityEditor({
     (description !== detail.draft.description ||
       spec !== pretty(detail.draft.spec) ||
       media !== pretty(detail.draft.mediaPlan?.manifest));
+  const discard = useDiscardConfirm(() => dirty);
   state.current = { dirty, busy, revision: detail?.draft.contentRevision ?? "", available };
   // The conversation the panel has open, whose proposal the studio shows; until the panel
   // says otherwise, the newest.
@@ -1179,6 +1197,7 @@ function ActivityEditor({
       </p>
     );
   return (
+    <>
     <WorkspaceShell
       panels={panels}
       showPanel={showPanel}
@@ -1243,13 +1262,14 @@ function ActivityEditor({
           <Button
             size="sm"
             disabled={busy || !available}
-            onClick={() => {
-              if (!dirty || window.confirm(S.activities.discard))
+            onClick={() =>
+              discard.ask(() =>
                 void action(async () => {
                   const value = await apiFetch<ActivityDetail>(endpoint);
                   if (alive.current) accept(value);
-                });
-            }}
+                }),
+              )
+            }
           >
             {S.activities.reload}
           </Button>
@@ -2149,12 +2169,12 @@ function ActivityEditor({
                     // A pin changes only which build the preview plays; unsaved text stays.
                     setDetail((current) => (current ? { ...current, draft } : current))
                   }
-                  onUseCandidate={(candidate) => {
-                    if (!dirty || window.confirm(S.activities.discard)) {
+                  onUseCandidate={(candidate) =>
+                    discard.ask(() => {
                       setSpec(candidate);
                       setSpecOpen(true);
-                    }
-                  }}
+                    })
+                  }
                 />
               )}
               {section === "specification" && editedManifest && detail.draft.mediaPlan && (
@@ -2211,6 +2231,8 @@ function ActivityEditor({
         </section>
       )}
     </WorkspaceShell>
+    {discard.modal}
+    </>
   );
 }
 

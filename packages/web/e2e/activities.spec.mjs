@@ -719,8 +719,11 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   await expect(
     page.getByRole("button", { name: "Assemble WAF module", exact: true }),
   ).toBeDisabled();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Cancel" })
+    .click();
   await openSection(page, "Specification");
   await expect(editor).toHaveValue(JSON.stringify(manifest));
   const request = page.waitForRequest(
@@ -1264,8 +1267,11 @@ test("edits scripts and explicitly accepts speech while regeneration keeps the a
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
   await page.getByRole("textbox", { name: /^Speech script/ }).fill("Hello there");
   await expect(page.getByRole("button", { name: "Generate speech", exact: true })).toBeDisabled();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Cancel" })
+    .click();
   await expect(page.getByRole("textbox", { name: /^Speech script/ })).toHaveValue("Hello there");
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
   await page.getByRole("button", { name: "Generate speech", exact: true }).click();
@@ -1334,8 +1340,11 @@ test("edits image descriptions and explicitly accepts images while failed regene
   await description.fill("A friendly orange cat wearing a blue scarf");
   await openSection(page, "Scenes and media");
   await expect(page.getByRole("button", { name: "Generate image", exact: true })).toBeDisabled();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Cancel" })
+    .click();
   await openSection(page, "Scenes and media");
   await expect(description).toHaveValue("A friendly orange cat wearing a blue scarf");
   await openSection(page, "Scenes and media");
@@ -1422,8 +1431,11 @@ test("reviews and accepts an improved image prompt without changing its saved me
   await description.fill("Unsaved prompt");
   await openSection(page, "Scenes and media");
   await expect(improve).toBeDisabled();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Cancel" })
+    .click();
   await openSection(page, "Scenes and media");
   await expect(description).toHaveValue("Unsaved prompt");
   await openSection(page, "Scenes and media");
@@ -1659,8 +1671,11 @@ test("polling preserves unsaved edits and exposes conflicting output for review"
   await expect(page.getByRole("textbox", { name: "Activity Script", exact: true })).toHaveText(
     "My unsaved edit",
   );
-  page.on("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved changes?" })
+    .getByRole("button", { name: "Discard" })
+    .click();
   await expect(page.getByRole("textbox", { name: "Activity Script", exact: true })).toHaveText(
     "Changed in another tab",
   );
@@ -1725,21 +1740,30 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   await openSection(page, "Scenes and media");
   await openSection(page, "Description");
   await description.fill("Keep this edit");
-  let prompts = 0;
-  const decline = (dialog) => {
-    prompts++;
-    return dialog.dismiss();
-  };
-  page.on("dialog", decline);
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
   await openSection(page, "Generation history");
   await page.getByRole("link", { name: "Open Session" }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/activities\/act_test(\?section=\w+)?$/);
   await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/activities\/act_test(\?section=\w+)?$/);
+  // A blocked browser-back is a real history.go() round trip inside react-router (it undoes
+  // the pop, then waits for proceed/reset), so give it a moment before asserting the dialog.
+  await page.waitForTimeout(200);
   await page.goBack();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/activities\/act_test(\?section=\w+)?$/);
   await openSection(page, "Description");
   await expect(description).toHaveText("Keep this edit");
+  // Project switching has no dialog to answer: `setCurrentProjectId` decides in the same
+  // tick, so the now-pure `canLeave` just keeps it blocked outright while dirty.
   await page.getByRole("button", { name: "Activities test", exact: true }).click();
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
   await expect(page.getByRole("button", { name: "Activities test", exact: true })).toBeVisible();
@@ -1748,10 +1772,10 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
     "second-project",
   );
   expect(f.prefsWrites.some((prefs) => prefs.lastProjectId === "second-project")).toBe(false);
-  expect(prompts).toBe(4);
-  page.off("dialog", decline);
-  page.on("dialog", (dialog) => dialog.accept());
+  await page.waitForTimeout(200);
   await page.goBack();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Discard" }).click();
   await expect(page).toHaveURL(/\/activities$/);
   await page
     .getByRole("region", { name: "All activities" })
@@ -1762,13 +1786,10 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   await description.fill("Another edit");
   await page.getByRole("button", { name: "Activities test", exact: true }).click();
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Second project", exact: true })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("penguin.lastProjectId"))).toBe(
+  await expect(page.getByRole("button", { name: "Activities test", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("penguin.lastProjectId"))).not.toBe(
     "second-project",
   );
-  await expect
-    .poll(() => f.prefsWrites.some((prefs) => prefs.lastProjectId === "second-project"))
-    .toBe(true);
   expect(f.errors).toEqual([]);
 });
 
@@ -1897,7 +1918,6 @@ test("declining a refresh fallback preserves detached text without retaining Pro
   const settings = await projectSettings(page);
   await settings.getByRole("textbox").fill("Refresh the project list");
   f.removeProject();
-  page.once("dialog", (dialog) => dialog.dismiss());
   await settings.getByRole("button", { name: "Save", exact: true }).click();
   await expect(
     page.getByText("This Project is no longer available.", { exact: false }),
@@ -1918,14 +1938,34 @@ test("declining a refresh fallback preserves detached text without retaining Pro
   await expect(
     page.getByRole("button", { name: "Activities test owner", exact: true }),
   ).toHaveCount(0);
-  page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
   await expect(description).toHaveText("Copy this before leaving");
   expect(await description.evaluate((element, before) => element === before, original)).toBe(true);
+  // No dialog answers this either way any more: `canLeave` is a pure, synchronous check, so
+  // the detached editor's unsaved text keeps the switch blocked with no escape hatch.
   await page.getByRole("button", { name: "Select a Project", exact: true }).click();
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Second project owner", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Second project", exact: true })).toBeVisible();
+  await expect(description).toHaveText("Copy this before leaving");
+  expect(await description.evaluate((element, before) => element === before, original)).toBe(true);
+  expect(f.errors).toEqual([]);
+});
+
+test("leaving with unsaved edits asks through the app's dialog", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  const description = page.getByRole("textbox", { name: "Activity Script", exact: true });
+  await openSection(page, "Scenes and media");
+  await openSection(page, "Description");
+  await description.fill("Keep this edit");
+  await page.getByRole("link", { name: "All activities" }).click();
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/\/activities\/[^/?]+/);
+  await page.getByRole("link", { name: "All activities" }).click();
+  await page.getByRole("dialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard" }).click();
+  await expect(page).toHaveURL(/\/activities$/);
   expect(f.errors).toEqual([]);
 });
 

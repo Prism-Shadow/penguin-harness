@@ -1602,6 +1602,8 @@ export type Strings = {
     saved: string;
     unsaved: string;
     discard: string;
+    discardTitle: string;
+    discardConfirm: string;
     remoteChanged: string;
     saveFirst: string;
     readOnly: string;
