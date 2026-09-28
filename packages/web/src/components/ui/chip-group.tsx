@@ -17,6 +17,7 @@ export function ChipGroup<T extends string>({
   options,
   disabled = false,
   className = "",
+  chipClassName = "",
 }: {
   label: string;
   value: T;
@@ -24,6 +25,8 @@ export function ChipGroup<T extends string>({
   options: ReadonlyArray<{ value: T; label: ReactNode; ariaLabel?: string }>;
   disabled?: boolean;
   className?: string;
+  /** Extra classes on every chip, for content that needs its own layout (an icon and a label). */
+  chipClassName?: string;
 }) {
   return (
     <div role="group" aria-label={label} className={`${TRACK} ${className}`}>
@@ -37,7 +40,7 @@ export function ChipGroup<T extends string>({
             aria-label={option.ariaLabel}
             disabled={disabled}
             onClick={() => onChange(option.value)}
-            className={`${CHIP} ${on ? ON : OFF}`}
+            className={`${CHIP} ${chipClassName} ${on ? ON : OFF}`}
           >
             {option.label}
           </button>

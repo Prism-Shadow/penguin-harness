@@ -18,6 +18,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Chevron } from "../../components/ui/chevron";
+import { ChipGroup } from "../../components/ui/chip-group";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CloseIcon } from "../../components/ui/icons";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -242,29 +243,24 @@ export function ActivityWorkspace({
         {header}
         {layoutState && <LayoutMenu state={layoutState} onApply={applyLayout} />}
         {panels.length > 0 && (
-          <div
-            role="group"
-            aria-label={S.activities.studioPanels.rail}
-            className="flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5 dark:bg-gray-800"
-          >
-            {panels.map((entry) => (
-              <button
-                key={entry.key}
-                type="button"
-                aria-pressed={panel === entry.key}
-                onClick={() => choosePanel(entry.key)}
-                className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors ${
-                  panel === entry.key
-                    ? "bg-white font-medium text-gray-900 shadow-sm dark:bg-gray-600 dark:text-gray-100"
-                    : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-                }`}
-              >
-                <GlyphIcon d={entry.icon} size={14} />
-                <span className="hidden sm:inline">{entry.label}</span>
-                <span className="sr-only sm:hidden">{entry.label}</span>
-              </button>
-            ))}
-          </div>
+          <ChipGroup<StudioPanel | "">
+            label={S.activities.studioPanels.rail}
+            value={panel ?? ""}
+            onChange={(key) => {
+              if (key !== "") choosePanel(key);
+            }}
+            chipClassName="inline-flex items-center gap-1.5"
+            options={panels.map((entry) => ({
+              value: entry.key,
+              label: (
+                <>
+                  <GlyphIcon d={entry.icon} size={14} />
+                  <span className="hidden sm:inline">{entry.label}</span>
+                  <span className="sr-only sm:hidden">{entry.label}</span>
+                </>
+              ),
+            }))}
+          />
         )}
       </div>
       {notices && (
