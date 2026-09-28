@@ -42,6 +42,8 @@ export class FakeCodingAgent {
   protocolVersionOverride: number | null = null;
   /** When set, `session/new` fails with this message, as an agent whose account is refused does. */
   newSessionRefusal: string | null = null;
+  /** When set, `initialize` fails with this message, as an agent refusing the handshake does. */
+  initializeRefusal: string | null = null;
   readonly cancelNotifications: string[] = [];
   readonly answeredPermissions: RequestPermissionResponse[] = [];
   readonly setConfigRequests: { configId: string; value: boolean | string }[] = [];
@@ -65,13 +67,16 @@ export class FakeCodingAgent {
       .onConnect((conn) => {
         this.connection = conn;
       })
-      .onRequest(methods.agent.initialize, () => ({
-        protocolVersion: this.protocolVersionOverride ?? PROTOCOL_VERSION,
-        agentCapabilities: {
-          loadSession: reopen === "load",
-          ...(reopen === "resume" ? { sessionCapabilities: { resume: {} } } : {}),
-        },
-      }))
+      .onRequest(methods.agent.initialize, () => {
+        if (this.initializeRefusal !== null) throw new RequestError(-32000, this.initializeRefusal);
+        return {
+          protocolVersion: this.protocolVersionOverride ?? PROTOCOL_VERSION,
+          agentCapabilities: {
+            loadSession: reopen === "load",
+            ...(reopen === "resume" ? { sessionCapabilities: { resume: {} } } : {}),
+          },
+        };
+      })
       .onRequest(methods.agent.session.load, async (ctx) => {
         this.reopenRequests.push({
           method: "load",

@@ -230,10 +230,12 @@ export class CodingAgentManager {
     } catch (error) {
       if (error instanceof AcpAgentError) throw error;
       // Like the handshake, session/new carries no user content, so the agent's own reason
-      // (an account it no longer serves, a missing sign-in) is safe to relay and is the
-      // only part that says what to do.
+      // (an account it no longer serves, a missing sign-in) is the only part that says what
+      // to do. It may still quote a value the agent was started with, so those are masked.
       const detail =
-        error instanceof RequestError && error.message !== "" ? `: ${error.message}` : "";
+        error instanceof RequestError && error.message !== ""
+          ? `: ${this.maskGiven(definitionId, error.message)}`
+          : "";
       throw new AcpAgentError(`the agent refused to open a session${detail}`, { cause: error });
     }
     const record = this.newRecord(
@@ -523,11 +525,14 @@ export class CodingAgentManager {
     try {
       return await this.connectionFor(definition);
     } catch (error) {
-      throw error instanceof AcpAgentError
-        ? error
-        : new AcpAgentError(`the agent command could not be started: ${definition.command}`, {
-            cause: error,
-          });
+      if (error instanceof AcpAgentError) {
+        // A handshake refusal carries the agent's own words, which may quote its keys.
+        const masked = this.maskGiven(definitionId, error.message);
+        throw masked === error.message ? error : new AcpAgentError(masked, { cause: error.cause });
+      }
+      throw new AcpAgentError(`the agent command could not be started: ${definition.command}`, {
+        cause: error,
+      });
     }
   }
 
@@ -594,8 +599,16 @@ export class CodingAgentManager {
    * characters are left alone — masking "1" would garble the text and hide nothing.
    */
   private maskedReason(definitionId: string, error: RequestError): string {
+    const text = this.maskGiven(
+      definitionId,
+      error.message.replace(/^Internal error:\s*/i, "").trim(),
+    );
+    return text.length > MAX_REASON ? `${text.slice(0, MAX_REASON)}…` : text;
+  }
+
+  /** `text` with every value the agent was started with that the host's environment lacks masked. */
+  private maskGiven(definitionId: string, text: string): string {
     const definition = this.definitions.get(definitionId);
-    let text = error.message.replace(/^Internal error:\s*/i, "").trim();
     if (definition !== undefined) {
       const given = Object.entries(this.envFor(definition))
         .filter(([key, value]) => value.length >= 8 && process.env[key] !== value)
@@ -603,7 +616,7 @@ export class CodingAgentManager {
         .sort((a, b) => b.length - a.length);
       for (const value of given) text = text.split(value).join("***");
     }
-    return text.length > MAX_REASON ? `${text.slice(0, MAX_REASON)}…` : text;
+    return text;
   }
 
   private viewOf(record: SessionRecord): AgentSessionView {

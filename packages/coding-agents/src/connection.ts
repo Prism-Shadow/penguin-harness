@@ -191,7 +191,7 @@ export class AcpConnection {
    * A dead child surfaces as a generic stream failure; lead with the spawn error it came
    * from. A RequestError is the opposite case — the live agent refusing the handshake —
    * and its diagnostic is the useful part: initialize carries no user content, so unlike
-   * turn errors it is safe to relay.
+   * turn errors it is relayed whole (the manager masks the values the agent was given).
    */
   private startupError(error: unknown): AcpAgentError {
     if (this.spawnError !== null) {

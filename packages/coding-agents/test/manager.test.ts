@@ -88,6 +88,26 @@ describe("CodingAgentManager", () => {
     );
   });
 
+  // A refusal may quote the key the agent was started with; it reaches an HTTP response.
+  it("masks the agent's credentials in a session refusal", async () => {
+    const { manager, fake } = harness({ envFor: () => ({ AGENT_KEY: "sk-secret-123456" }) });
+    fake.newSessionRefusal = "key sk-secret-123456 is not valid";
+    const error = await manager.createSession("fake", workspace).catch((e: unknown) => e);
+    expect((error as Error).message).toBe(
+      "the agent refused to open a session: key *** is not valid",
+    );
+  });
+
+  it("masks the agent's credentials in a handshake refusal", async () => {
+    const { manager, fake } = harness({ envFor: () => ({ AGENT_KEY: "sk-secret-123456" }) });
+    fake.initializeRefusal = "key sk-secret-123456 is not valid";
+    const error = await manager.createSession("fake", workspace).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AcpAgentError);
+    expect((error as Error).message).toBe(
+      "the agent refused the ACP handshake: key *** is not valid",
+    );
+  });
+
   // A turn that fails for want of a sign-in says so in the agent's error; the host hears
   // every turn's outcome, so an agent's card can stop claiming it is ready (and recover).
   it("reports each turn's outcome, flagging a failed sign-in", async () => {
