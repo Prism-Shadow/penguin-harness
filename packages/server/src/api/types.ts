@@ -4860,6 +4860,11 @@ export type {
   ModuleDocumentOverride,
 } from "../activities/domain.js";
 export type { SandboxStatus, SandboxBuildReport } from "../activities/sandbox-paths.js";
+export type {
+  ActivitySummary,
+  ActivitySummaryStatus,
+  SummaryMilestone,
+} from "../activities/activity-summary.js";
 export type { ModuleDocument, ModuleDocuments } from "../activities/module-documents.js";
 export type { MediaStat } from "../activities/media-stats.js";
 export type { ImplementationFeature } from "../activities/implementation-features.js";
