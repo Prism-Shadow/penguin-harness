@@ -6925,6 +6925,128 @@ test("shows what a deploy still needs", async ({ page }) => {
   expect(f.errors).toEqual([]);
 });
 
+test("an admin opens the deploy settings from what a deploy still needs", async ({ page }) => {
+  const f = await fixture(page);
+  const absent = { present: false, branch: null, clean: null, ahead: null, remoteUrlMatches: null };
+  const context = {
+    ready: false,
+    problems: [{ code: "settings_missing", field: "qa.jenkinsUrl" }],
+    remoteChecked: false,
+    module: {
+      folder: "waf-module-words",
+      remote: "git@github.com:org/waf-module-words.git",
+      clone: absent,
+    },
+    activityData: { clone: absent },
+    media: { clone: absent },
+    branches: { deploy: "loom/words-deploy", activityData: "loom/words-activity-data" },
+    branchState: {
+      deploy: { local: null, remote: null },
+      activityData: { local: null, remote: null },
+    },
+  };
+  const settings = {
+    qa: {
+      jenkinsUrl: "",
+      username: "",
+      token: { set: false },
+      tier: "qa",
+      environment: "loom",
+      frameworkVersion: "",
+      activityBaseUrl: "",
+    },
+    prod: {
+      jenkinsUrl: "",
+      username: "",
+      token: { set: false },
+      tier: "prod",
+      environment: "DEFAULT",
+      frameworkVersion: "",
+    },
+    jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
+    repos: { activityDataRemote: "", mediaRemote: "" },
+    git: { userName: "", userEmail: "" },
+    timeouts: { buildMinutes: 30, deployMinutes: 30 },
+  };
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const json = (value, status = 200) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+    if (url.pathname === "/api/me")
+      return json({
+        user: { userId: "author", isAdmin: true, passwordIsInitial: false },
+        previewIsolated: true,
+        desktopMode: false,
+        companyMode: false,
+        sessionVia: "password",
+        uploadLimits: {
+          attachmentMaxMb: 100,
+          attachmentTotalMb: 120,
+          attachmentMaxCount: 20,
+          imageMaxMb: 20,
+          attachmentLimitMinMb: 1,
+          attachmentLimitMaxMb: 200,
+        },
+      });
+    if (url.pathname === "/api/admin/activity-deploy/settings") return json({ settings });
+    if (url.pathname === `${base}/act_test/sandbox/status`)
+      return json({
+        state: "ready",
+        playable: true,
+        buildable: true,
+        message: "Ready.",
+        buildLog: null,
+      });
+    if (url.pathname === `${base}/act_test/deploy` && request.method() === "GET") {
+      const blocker = { code: "settings_missing", field: "qa.jenkinsUrl" };
+      return json({
+        context,
+        run: null,
+        stages: [
+          "verify_module",
+          "prepare_deploy",
+          "trigger_module_build",
+          "await_module_build",
+        ].map((stage) => ({ stage, status: "pending", finishedAt: null, metadata: {}, blocker })),
+      });
+    }
+    if (url.pathname === `${base}/act_test/deploy/context` && request.method() === "GET")
+      return json({ context });
+    return route.fallback();
+  });
+  await create(page);
+  await openSection(page, "Deploy");
+  const problems = page.getByRole("region", { name: "What is missing" });
+  await expect(problems.getByText("QA Jenkins address is empty.", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Open deploy settings", exact: true }).click();
+  // Exactly one settings dialog, and it opens on the Deploy page.
+  const dialogs = page.getByRole("dialog", { name: "System settings" });
+  await expect(dialogs).toHaveCount(1);
+  const qa = dialogs.getByRole("group", { name: "QA" });
+  await expect(qa.getByRole("textbox", { name: "Tier" })).toHaveValue("qa");
+  await expect(qa.getByRole("textbox", { name: "Jenkins address" })).toBeVisible();
+  await expect(dialogs).toHaveCount(1);
+  expect(f.errors).toEqual([]);
+});
+
+test("on a phone, System settings from the drawer's account menu opens one dialog", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(`${origin}/activities`);
+  // The drawer's sidebar and the hidden desktop pane are both mounted now, each with an
+  // account menu; the dialog they open is the layout's one.
+  await page.getByRole("button", { name: /^Sessions/ }).first().click();
+  // Only the drawer's user row is on screen; the desktop pane's is hidden at this width.
+  await page.getByRole("button", { name: "author", exact: true }).click();
+  await page.getByRole("button", { name: "System settings", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "System settings" })).toHaveCount(1);
+  expect(f.errors).toEqual([]);
+});
+
 test("an admin fills in the deploy settings and tests the QA connection", async ({ page }) => {
   const f = await fixture(page);
   let settings = {
