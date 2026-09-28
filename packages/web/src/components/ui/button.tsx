@@ -29,9 +29,15 @@ const sizeClass: Record<Size, string> = {
   icon: "p-1.5 rounded-md",
 };
 
-/** Layout and type shared by a real button and the `<label>` that stands in for one. */
+/**
+ * Layout and type shared by a real button and the `<label>` that stands in for one.
+ * `whitespace-nowrap`: as a flex child, a button's default min-width is its content's
+ * min-content size, which for wrappable text is only the longest word — so a squeezed row
+ * (the studio header, a ref switcher) would otherwise break "Ref settings" or "Change
+ * number" onto two lines instead of shrinking the button as a whole or wrapping the row.
+ */
 const buttonBase =
-  "inline-flex items-center justify-center gap-1 font-medium transition-colors duration-150";
+  "inline-flex items-center justify-center gap-1 whitespace-nowrap font-medium transition-colors duration-150";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;

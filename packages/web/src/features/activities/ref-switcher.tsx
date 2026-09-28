@@ -246,7 +246,7 @@ export function RefSwitcher({
   }
 
   return (
-    <span className="inline-flex min-w-0 items-center gap-2">
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
       {others ? (
         <span className="w-44">
           <Select

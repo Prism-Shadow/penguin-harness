@@ -1228,7 +1228,7 @@ function ActivityEditor({
           <>
             <nav
               aria-label={S.activities.breadcrumb}
-              className="flex min-w-0 flex-1 items-center gap-1.5 text-sm"
+              className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm"
             >
               <Link
                 to="/activities"
@@ -1297,7 +1297,7 @@ function ActivityEditor({
             </nav>
             <p
               aria-live="polite"
-              className={`text-xs ${dirty ? toneInk.attention : toneInk.muted}`}
+              className={`whitespace-nowrap text-xs ${dirty ? toneInk.attention : toneInk.muted}`}
             >
               {dirty ? S.activities.unsaved : S.activities.draftStatus[detail.draft.status]}
             </p>

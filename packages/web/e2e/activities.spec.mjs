@@ -1748,6 +1748,41 @@ test("member view is read-only and mobile layout does not overflow", async ({ pa
   expect(f.errors).toEqual([]);
 });
 
+test("the studio header wraps its controls instead of overlapping them", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+
+  // Two of a set of locators overlap when their boxes intersect on both axes.
+  const intersects = (a, b) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  const assertNoOverlap = async (locators) => {
+    const boxes = [];
+    for (const locator of locators) {
+      const box = await locator.boundingBox();
+      expect(box, `expected a visible bounding box for ${await locator.evaluate((el) => el.outerHTML.slice(0, 80))}`).not.toBeNull();
+      boxes.push(box);
+    }
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++)
+        expect(intersects(boxes[i], boxes[j]), `boxes ${i} and ${j} overlap`).toBe(false);
+  };
+  const headerControls = () => [
+    page.locator('nav[aria-label="Breadcrumb"] h2'),
+    page.getByRole("button", { name: "Ref settings", exact: true }),
+    page.getByRole("button", { name: "Reload draft", exact: true }),
+    page.getByRole("button", { name: "Layout", exact: true }),
+  ];
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.reload();
+  await assertNoOverlap(headerControls());
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+  await assertNoOverlap(headerControls());
+  expect(f.errors).toEqual([]);
+});
+
 test("dirty drafts block sidebar, Session, browser back, and project switches", async ({
   page,
 }) => {
