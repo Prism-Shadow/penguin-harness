@@ -1980,6 +1980,62 @@ describe("organization runtime", () => {
       ).toBe(0);
     });
 
+    it("refuses a sessionId that names no employee's session: nothing is written, nobody is woken", async () => {
+      const at = new Date(nowMs).toISOString();
+      const row = (sessionId: string, projectId: string, agentId: string) => ({
+        sessionId,
+        projectId,
+        agentId,
+        provider: "custom",
+        modelId: "m-bench",
+        workspace: root,
+        approvalMode: "allow-all" as const,
+        title: null,
+        client: "web" as const,
+        lastActiveAt: at,
+        createdAt: at,
+      });
+      // One the server never had, one of an Agent the organization does not employ, and one
+      // of an employee but filed under another Project.
+      const outsider = "session-2026-09-01-02-00-00-00000098";
+      const elsewhere = "session-2026-09-01-02-00-00-00000099";
+      wire(ProjectsRepo, { db }).insert({
+        projectId: "p2",
+        ownerUserId: "alice",
+        createdAt: "2026-08-01T00:00:00Z",
+      });
+      sessions.insert(row(outsider, P, "outsider"));
+      sessions.insert(row(elsewhere, "p2", HR));
+      const before = (
+        await service.channelMessages(P, ORG, { userId: "alice" }, DEFAULT_CHANNEL_ID, {})
+      ).messages.length;
+      for (const sessionId of ["session-2026-09-01-02-00-00-00000097", outsider, elsewhere]) {
+        await expect(
+          service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+            text: `@${HR} ship it`,
+            sessionId,
+          }),
+        ).rejects.toMatchObject({ status: 400, code: "unknown_session" });
+      }
+      // Refused, not recorded as the token holder's own line at hop 0.
+      const after = await service.channelMessages(
+        P,
+        ORG,
+        { userId: "alice" },
+        DEFAULT_CHANNEL_ID,
+        {},
+      );
+      expect(after.messages).toHaveLength(before);
+      expect(started).toHaveLength(0);
+
+      // Without a sessionId the person is the sender, as before.
+      const own = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: `@${HR} ship it`,
+      });
+      expect(own).toMatchObject({ sender: "user:alice", hop: 0 });
+      expect(started).toHaveLength(1);
+    });
+
     it("the system's own lines and a paused organization deliver nothing", async () => {
       await service.patch(P, ORG, { status: "paused" }, "alice");
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {

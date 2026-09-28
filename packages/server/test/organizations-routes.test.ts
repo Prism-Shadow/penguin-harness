@@ -587,6 +587,60 @@ describe("organization routes", () => {
   });
 });
 
+const ACME_PROJECT = "olivia-default_project";
+const ACME_CEO_DESK = "session-2026-09-01-09-00-00-0abc0021";
+const ACME_DEV_DESK = "session-2026-09-01-09-05-00-0abc0022";
+
+/**
+ * The organization as its files describe it, served by the real service: a CEO and one report,
+ * each with a desk whose Session row is in the database.
+ */
+async function writeAcme(t: TestApp): Promise<void> {
+  const projectId = ACME_PROJECT;
+  const ceoDesk = ACME_CEO_DESK;
+  const devDesk = ACME_DEV_DESK;
+  const store = new OrgStore(t.deps.config.root);
+  const dir = store.dir(projectId, "acme");
+  await store.createLayout(dir);
+  await store.writeConfig(dir, {
+    ...ORG_CONFIG_DEFAULTS,
+    name: "Acme",
+    mission: "Ship the site",
+    timezone: "UTC",
+    createdBy: "olivia",
+  });
+  await store.writeChart(dir, {
+    employees: [
+      { agentId: "acme_ceo", title: "CEO", reportsTo: null, workspace: "." },
+      { agentId: "acme_dev", title: "Developer", reportsTo: "acme_ceo", workspace: "." },
+    ],
+  });
+  const openedAt = "2026-09-01T09:00:00.000Z";
+  const workspace = path.join(dir, "workspace");
+  await store.writeDesks(dir, {
+    acme_ceo: { sessionId: ceoDesk, workspace, openedAt, previous: [] },
+    acme_dev: { sessionId: devDesk, workspace, openedAt, previous: [] },
+  });
+  for (const [sessionId, agentId] of [
+    [ceoDesk, "acme_ceo"],
+    [devDesk, "acme_dev"],
+  ] as const) {
+    t.deps.sessionsRepo.insert({
+      sessionId,
+      projectId,
+      agentId,
+      provider: "custom",
+      modelId: "m-org",
+      workspace,
+      approvalMode: "allow-all",
+      title: null,
+      client: "org",
+      createdAt: openedAt,
+      lastActiveAt: openedAt,
+    });
+  }
+}
+
 describe("organization sessions route over the real service", () => {
   it("marks a desk whose Session has an enabled messaging binding, as the Session's own row is marked", async () => {
     const t = await createTestApp();
@@ -594,51 +648,10 @@ describe("organization sessions route over the real service", () => {
       t.deps.serverSettingsRepo.setCompanyMode(true);
       const u = await provisionUser(t.app, "olivia");
       const api = apiClient(t.app, u.cookie);
-      const projectId = "olivia-default_project";
-      const ceoDesk = "session-2026-09-01-09-00-00-0abc0021";
-      const devDesk = "session-2026-09-01-09-05-00-0abc0022";
-
-      // The organization as its files describe it: a CEO and one report, each with a desk.
-      const store = new OrgStore(t.deps.config.root);
-      const dir = store.dir(projectId, "acme");
-      await store.createLayout(dir);
-      await store.writeConfig(dir, {
-        ...ORG_CONFIG_DEFAULTS,
-        name: "Acme",
-        mission: "Ship the site",
-        timezone: "UTC",
-        createdBy: "olivia",
-      });
-      await store.writeChart(dir, {
-        employees: [
-          { agentId: "acme_ceo", title: "CEO", reportsTo: null, workspace: "." },
-          { agentId: "acme_dev", title: "Developer", reportsTo: "acme_ceo", workspace: "." },
-        ],
-      });
-      const openedAt = "2026-09-01T09:00:00.000Z";
-      const workspace = path.join(dir, "workspace");
-      await store.writeDesks(dir, {
-        acme_ceo: { sessionId: ceoDesk, workspace, openedAt, previous: [] },
-        acme_dev: { sessionId: devDesk, workspace, openedAt, previous: [] },
-      });
-      for (const [sessionId, agentId] of [
-        [ceoDesk, "acme_ceo"],
-        [devDesk, "acme_dev"],
-      ] as const) {
-        t.deps.sessionsRepo.insert({
-          sessionId,
-          projectId,
-          agentId,
-          provider: "custom",
-          modelId: "m-org",
-          workspace,
-          approvalMode: "allow-all",
-          title: null,
-          client: "org",
-          createdAt: openedAt,
-          lastActiveAt: openedAt,
-        });
-      }
+      const projectId = ACME_PROJECT;
+      const ceoDesk = ACME_CEO_DESK;
+      const devDesk = ACME_DEV_DESK;
+      await writeAcme(t);
       const desks = async () => {
         const res = await api.get(`/api/projects/${projectId}/organizations/acme/sessions`);
         expect(res.status).toBe(200);
@@ -671,6 +684,65 @@ describe("organization sessions route over the real service", () => {
       // Unbinding takes the mark away with it.
       t.deps.messagingRepo.setEnabled(ceoDesk, "telegram", false);
       expect((await desks()).get("acme_ceo")).not.toHaveProperty("messagingChannel");
+    } finally {
+      await t.cleanup();
+    }
+  });
+});
+
+describe("channel messages over the real service", () => {
+  it("refuses a control-environment message whose sessionId names no employee's session", async () => {
+    const t = await createTestApp();
+    try {
+      t.deps.serverSettingsRepo.setCompanyMode(true);
+      const u = await provisionUser(t.app, "olivia");
+      const api = apiClient(t.app, u.cookie);
+      await writeAcme(t);
+      // The control environment's credential: the admin joins the Project the CLI writes to.
+      const grant = await api.post(`/api/projects/${ACME_PROJECT}/members`, { userId: "admin" });
+      expect([200, 201]).toContain(grant.status);
+      const messages = `/api/projects/${ACME_PROJECT}/organizations/acme/channels/default_channel/messages`;
+      const sent = async (res: Response) => {
+        expect(res.status).toBe(201);
+        return (await res.json()) as { sender: string; hop: number };
+      };
+      const texts = async () =>
+        (
+          (await (await api.get(messages)).json()) as { messages: Array<{ text: string }> }
+        ).messages.map((m) => m.text);
+
+      // A desk's own id is a claim that holds: the line is the employee's, one hop in.
+      expect(
+        await sent(
+          await fromSession(t, messages, { text: "from the desk", sessionId: ACME_CEO_DESK }),
+        ),
+      ).toMatchObject({ sender: "agent:acme_ceo", hop: 1 });
+
+      // An id the server cannot place is a claim that fails: 400, and no line under anyone's name.
+      const forged = await fromSession(t, messages, {
+        text: "not from a desk",
+        sessionId: "session-2026-09-01-09-10-00-0abc0099",
+      });
+      expect(forged.status).toBe(400);
+      expect(((await forged.json()) as { error: { code: string } }).error.code).toBe(
+        "unknown_session",
+      );
+      expect(await texts()).not.toContain("not from a desk");
+
+      // Unchanged: without a sessionId the token holder writes as itself …
+      expect(await sent(await fromSession(t, messages, { text: "from the token" }))).toMatchObject({
+        sender: "user:admin",
+        hop: 0,
+      });
+      // … and over a cookie the field is dropped, not judged — the person is the sender.
+      expect(
+        await sent(
+          await api.post(messages, {
+            text: "from the web",
+            sessionId: "session-2026-09-01-09-10-00-0abc0099",
+          }),
+        ),
+      ).toMatchObject({ sender: "user:olivia", hop: 0 });
     } finally {
       await t.cleanup();
     }

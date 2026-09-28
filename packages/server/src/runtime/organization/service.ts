@@ -2541,6 +2541,15 @@ export class OrganizationService {
           if (row && row.projectId === projectId && org.byId.has(row.agentId)) {
             sender = agentPrincipal(row.agentId);
             hop = 1;
+          } else {
+            // The id is a claim that an employee is speaking (only the control environment's
+            // token carries it here). Recording the line under the token holder's name at
+            // hop 0 instead would put a person's name on it and deliver it unconditionally.
+            throw new HttpError(
+              400,
+              "unknown_session",
+              `Session ${req.sessionId} is not a session of an employee of ${orgId}; the message was not sent.`,
+            );
           }
         }
       }
