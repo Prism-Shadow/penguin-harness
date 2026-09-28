@@ -207,11 +207,18 @@ jobs:
       # bin/penguin is scripts/launchers/penguin, shipped verbatim — it is the one spelling of
       # the payload layout (lib/dist/penguin.js, web/, an optional node/), and the shape
       # scripts/test-installer.sh pins.
-      - name: Assemble penguin/ (lib + web + bin)
+      # lib/plugins/: the builtin plugins (the sandbox backends among them) as the npm prefix
+      # the desktop app ships too — the server looks one directory above dist/ for it — so an
+      # installed CLI enables this platform's sandbox backend from the Plugins page with no
+      # registry, the same as the desktop app. Shipped, not installed: nothing loads until the
+      # operator adds it. One prefix serves every payload below (native parts per platform).
+      - name: Assemble penguin/ (lib + web + bin + plugins)
         run: |
           pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"
           cp -r packages/web/dist out/penguin/web
           install -D -m 755 scripts/launchers/penguin out/penguin/bin/penguin
+          node scripts/build-plugins.mjs --out out/penguin/lib/plugins
+          test -f out/penguin/lib/plugins/node_modules/@prismshadow/penguin-plugin-sandbox-bwrap/package.json
 
       # Program payloads: linux runtimes use .tar.xz, darwin .tar.gz (nodejs.org naming);
       # node/ is only lightly trimmed (drop share/doc and share/man, keep the rest). Payloads

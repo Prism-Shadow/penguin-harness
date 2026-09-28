@@ -31,7 +31,13 @@ import type { TestApp } from "./helpers.js";
 
 /** What GET serves beside the block: the sandbox policy a new Session starts with (read-only). */
 const SERVED = {
-  sandbox: { mode: "danger-full-access", network: "open", localNetworkSupported: false },
+  sandbox: {
+    mode: "danger-full-access",
+    network: "open",
+    confinementSupported: false,
+    noNetworkSupported: false,
+    localNetworkSupported: false,
+  },
 };
 
 /** The file's app and its three users; every case below works in a Project of its own. */

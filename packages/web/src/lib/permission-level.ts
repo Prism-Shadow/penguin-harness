@@ -55,5 +55,32 @@ export const PERMISSION_LEVEL_GLYPH: Record<PermissionLevel, string> = {
     "M9.309 3.652A12.252 12.252 0 0 0 11.24 2.28a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1v7a9.784 9.784 0 0 1-.08 1.264",
 };
 
+/**
+ * Why a sandbox level cannot be picked on this server, or null when it can: `no-backend` when
+ * no sandbox backend is installed (every level short of full access would refuse every
+ * command), otherwise the network level the mounted backends cannot enforce. Only an explicit
+ * false from the server counts — one that does not report a level is not second-guessed.
+ */
+export type LevelBlock = "no-backend" | "local-unsupported" | "none-unsupported";
+
+export function fsModeBlock(
+  sandbox: SessionSandbox,
+  mode: SessionSandbox["mode"],
+): LevelBlock | null {
+  if (mode === "danger-full-access") return null;
+  return sandbox.confinementSupported === false ? "no-backend" : null;
+}
+
+export function networkBlock(
+  sandbox: SessionSandbox,
+  network: SessionSandbox["network"],
+): LevelBlock | null {
+  if (network === "open") return null;
+  if (sandbox.confinementSupported === false) return "no-backend";
+  // `local` predates the other two flags, and has always been refused unless reported true.
+  if (network === "local") return sandbox.localNetworkSupported === true ? null : "local-unsupported";
+  return sandbox.noNetworkSupported === false ? "none-unsupported" : null;
+}
+
 /** What a Session starts from when the server has not said: confinement off, network open. */
 export const UNCONFINED: SessionSandbox = { mode: "danger-full-access", network: "open" };

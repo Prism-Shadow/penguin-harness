@@ -2713,6 +2713,10 @@ Benchmark：
       } as Record<string, string>,
       unsupported: "不支持",
       localUnsupported: "本机的沙盒后端不支持只允许 localhost",
+      notInstalled: "未安装",
+      noBackend:
+        "本服务器没有安装沙盒后端，命令无法被封禁。管理员可在插件页启用适用于本平台的后端（更多…）。",
+      noNetworkUnsupported: "本机的沙盒后端不支持断开网络",
       more: "更多…",
       approval: "审批",
     },

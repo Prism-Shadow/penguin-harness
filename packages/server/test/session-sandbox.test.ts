@@ -16,6 +16,13 @@ import { applySandboxPick, sessionSandboxOf } from "../src/services/session-serv
 
 const sqlite = process.getBuiltinModule("node:sqlite");
 
+/** What a server with no sandbox backend mounted says it can enforce: nothing. */
+const NO_BACKEND = {
+  confinementSupported: false,
+  noNetworkSupported: false,
+  localNetworkSupported: false,
+};
+
 const ROW: SessionRow = {
   sessionId: "session-1",
   projectId: "p",
@@ -43,6 +50,23 @@ describe("picking a Session's sandbox from the composer", () => {
     expect(sessionSandboxOf(next)).toEqual({
       mode: "read-only",
       network: "none",
+      ...NO_BACKEND,
+    });
+  });
+
+  it("says which levels the mounted backends can enforce, and none without a backend", () => {
+    const policy: SandboxSettings = { mode: "danger-full-access" };
+    expect(sessionSandboxOf(policy)).toEqual({
+      mode: "danger-full-access",
+      network: "open",
+      ...NO_BACKEND,
+    });
+    // A filesystem-only backend (the DSH adaptor) confines, but cannot cut the network.
+    expect(sessionSandboxOf(policy, ["fs-write"])).toEqual({
+      mode: "danger-full-access",
+      network: "open",
+      confinementSupported: true,
+      noNetworkSupported: false,
       localNetworkSupported: false,
     });
   });
@@ -63,9 +87,11 @@ describe("picking a Session's sandbox from the composer", () => {
     const open: SandboxSettings = { mode: "workspace-write" };
     const local = applySandboxPick(open, { network: "local" }, open, false, true);
     expect(local.network).toBe("local");
-    expect(sessionSandboxOf(local, true)).toEqual({
+    expect(sessionSandboxOf(local, ["fs-write", "network", "network-local"])).toEqual({
       mode: "workspace-write",
       network: "local",
+      confinementSupported: true,
+      noNetworkSupported: true,
       localNetworkSupported: true,
     });
     // Under settings of "local", a non-admin may cut the network but not open it.
@@ -187,7 +213,7 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
       expect(first.session.sandbox).toEqual({
         mode: "workspace-write",
         network: "none",
-        localNetworkSupported: false,
+        ...NO_BACKEND,
       });
 
       // The settings change: a new Session starts from it, the existing one does not move.
@@ -198,13 +224,13 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
       expect(again.session.sandbox).toEqual({
         mode: "workspace-write",
         network: "none",
-        localNetworkSupported: false,
+        ...NO_BACKEND,
       });
       const second = (await (await create()).json()) as Created;
       expect(second.session.sandbox).toEqual({
         mode: "read-only",
         network: "open",
-        localNetworkSupported: false,
+        ...NO_BACKEND,
       });
 
       // A non-admin tightens freely, and may not loosen past the settings.
@@ -215,7 +241,7 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
       expect(((await tightened.json()) as Created).session.sandbox).toEqual({
         mode: "read-only",
         network: "none",
-        localNetworkSupported: false,
+        ...NO_BACKEND,
       });
       const loosened = await owner.patch(`/api/sessions/${second.session.sessionId}`, {
         sandbox: { mode: "danger-full-access" },

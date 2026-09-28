@@ -1470,6 +1470,15 @@ export interface SessionSandbox {
   network: SessionSandboxNetwork;
   /**
    * Response only, ignored in requests: whether a sandbox backend on this server can enforce
+   * the `read-only` and `workspace-write` modes. False on a deployment with no backend
+   * installed, where either mode would refuse every command: the composer shows them greyed
+   * out, saying no backend is installed.
+   */
+  confinementSupported?: boolean;
+  /** Response only, ignored in requests: the same for the `none` network level. */
+  noNetworkSupported?: boolean;
+  /**
+   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
    * the `local` level. When false the composer shows it greyed out, and picking it is refused
    * (400 `sandbox_unsupported`).
    */
