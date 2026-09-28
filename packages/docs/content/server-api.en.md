@@ -27,7 +27,7 @@ packages/server/src
 ├── db/                             # node:sqlite connection, schema SQL, one repo per table
 ├── hmr/                            # hot update: the platform seam and the /api/hmr routes
 ├── http/                           # the business routes' assembly (app.ts), error bodies, request validation, SSE adapter, routes/
-├── machines/                       # remote machines: ssh config, install and connect jobs, the /server/<machineId> proxy
+├── machines/                       # remote machines: the kinds plugins contribute, install and connect jobs, the /server/<machineId> proxy
 ├── organization/                   # company mode's files: chart, tickets, channels, handbook
 ├── runtime/                        # session-manager (runtime driving) · channel (SSE ring buffer)
 │                                   # approvals · usage-recorder · scheduler · title-generator · messaging/ · organization/
@@ -173,47 +173,56 @@ On PUT, fields the request omits keep their value, `null` or `""` clears one, an
 
 ## Machines (admin only)
 
-Installs this server's build on other hosts over ssh and manages the connections to them.
+Installs this server's build on other machines and manages the connections to them. Machines come in kinds, and each kind is a plugin: `ssh` (hosts from the server account's `~/.ssh/config`, from the resident `machine-ssh` plugin), `wsl` (WSL distros on a Windows server, `machine-wsl`) and `docker` (containers, `machine-docker`). A machine's id is `<kind>:<name>`, such as `ssh:build-box`.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/machines` | This machine and the host aliases in the server's own `~/.ssh/config`, with this Project's installs, the last statuses and the current job: `{machines: [{id, alias, machineId, installed, elsewhere?, local, connection, api, status}], imageVersion, job}` |
-| POST | `/api/projects/:projectId/machines/probe` | Asks this Project's installed machines what they are doing (one ssh round trip each, five at a time) and returns the list with fresh statuses |
+| GET | `/api/projects/:projectId/machines` | This machine and the machines of every loaded kind, the kinds themselves, this Project's installs, the last statuses and the current job: `{machines: [{id, alias, kind, unavailable?, machineId, installed, elsewhere?, local, connection, api, status}], kinds: [{kind, title, titleZh?, form}], imageVersion, job}` |
+| POST | `/api/projects/:projectId/machines/probe` | Asks this Project's installed machines what they are doing (one round trip each, five at a time) and returns the list with fresh statuses |
 | POST | `/api/projects/:projectId/machines/:machineId/install` | Starts installing this build on that host and assigns the host to this Project; `202` with the same body while the job runs |
 | POST | `/api/projects/:projectId/machines/:machineId/connect` | Starts that machine's server and holds the one connection to it; `202` with the same body while the connect job runs |
 | POST | `/api/projects/:projectId/machines/:machineId/disconnect` | Drops the connection and leaves the remote server running |
 | POST | `/api/projects/:projectId/machines/:machineId/restart` | Stops that machine's server and starts it again on the same port; `202`, or `409` while a job runs |
 | GET | `/api/projects/:projectId/machines/:machineId/dirs?path=` | The subdirectories of `path` on that machine, read over the held connection; the Workspace picker browses these |
 | POST | `/api/projects/:projectId/machines/:machineId/release` | Removes that machine from this Project; the install on it stays |
+| POST | `/api/projects/:projectId/machines/kinds/:kind/definitions` | Defines a machine of that kind by hand, with `{name, values}` (an ssh host, a container); `201` with the list |
+| GET | `/api/projects/:projectId/machines/kinds/:kind/definitions/:name` | That definition read back: `{name, values, editable, forgettable}` |
+| PUT | `/api/projects/:projectId/machines/kinds/:kind/definitions/:name` | Rewrites it with `{values}`; the name stays |
+| DELETE | `/api/projects/:projectId/machines/kinds/:kind/definitions/:name` | Forgets a definition this server keeps (a container's); nothing on the machine is removed |
 
-These routes are admin only on a personal server as much as on a multi-user one: an install runs ssh with the server account's keys and writes a program directory on another machine, which is an owner's capability rather than a visitor's. The server never writes to its ssh config and never resolves it. The list is the config's text, read once however many hosts it declares, and each alias goes to ssh exactly as written, so ssh applies its own config every time.
+These routes are admin only on a personal server as much as on a multi-user one: an install reaches another machine with the server account's credentials (its ssh keys, its container runtime) and writes a program directory there, which is an owner's capability rather than a visitor's. Listing starts no process and opens no connection: the ssh kind reads its config's text, the WSL kind answers from a listing it refreshes in the background, and containers are the definitions this server keeps. The ssh kind never resolves an alias. Each alias goes to ssh exactly as written, so ssh applies its own config every time; the only writes to that config are host blocks a person adds from the Machines page, each marked as added there.
+
+A machine on record whose kind is not loaded stays in the list, with `unavailable` saying why. Install, connect and restart answer `409` `machine_kind_unavailable` for it, and the automatic re-connect passes it by.
 
 - `POST …/install` accepts the body `{replaceProgram: true}` to answer a job that came back asking for it: the server installs the program even though its version already matches, and restarts it.
-- `POST …/connect` holds an `ssh -T -D` session that never times out when idle, reconnects on its own if it drops, and is restored after a restart or a hot push. A Windows machine returns `409` `connect_unsupported`, because there is no shell to hold a session on.
+- `POST …/connect` holds the session the machine's kind launches (`ssh -T -D` for ssh, `wsl.exe … --exec sh` for WSL, `docker exec -i … sh` for a container). It never times out when idle, reconnects on its own if it drops, and is restored after a restart or a hot push. A connect first brings the target to where it can hold a shell: a stopped container is started, and an image definition's container is created. The automatic re-connect never does this. A Windows machine returns `409` `connect_unsupported`, because there is no shell to hold a session on.
 - `POST …/disconnect` leaves the remote server running because it belongs to that machine, and other people may be using it.
 - `POST …/restart` exists as its own action because a machine's files can be updated while it runs, and only a restart makes the process match them.
-- `GET …/dirs` addresses the machine by its own id, like the API proxy below. It returns `404` when the machine is not connected, because a read never opens ssh by itself.
+- `GET …/dirs` addresses the machine by its own id, like the API proxy below. It returns `404` when the machine is not connected, because a read never opens a connection by itself.
+- `POST …/kinds/:kind/definitions` answers `400` `machine_definition_invalid` with the field in the message (`<field>: <why>`), `409` `machine_exists` for a name the kind already has, and `409` `definitions_not_accepted` for a kind that is not defined by hand (WSL). `PUT` answers `409` `machine_definition_foreign` for an ssh host block written by hand. `DELETE` answers `409` `machine_definition_kind_stored` for a kind that keeps its own definitions (ssh).
 
 ### Machine fields
 
 - `elsewhere`: the host was installed by another Project, so it can be adopted instead of installed.
+- `kind`: the kind the machine is of, the prefix of its id; `local` for this server. `kinds` lists the loaded kinds, with the form (`{name, fields}`, in the shape of plugin settings) that defines one by hand, or `null`.
+- `unavailable`: present when the machine's kind is not loaded here, saying why.
 - `imageVersion`: the version that would be pushed, or `null` when this server has no install image at all. A development checkout that was never hot-pushed to is the only such case, and every install then fails with `409` `no_install_image`. The version is the running install's own: a hot-pushed server sends the bundle it runs (`0.0.0-hmr.<cli>.<web>`), and a tarball or packaged install sends its own tree, so both ends match by construction.
 - `installed`: the last install this server carried out on that machine, as `{version, at}`, or `null` if there was none. It is stored under the data root, so it survives a restart, a hot push and installs on other machines. It records what was done rather than checking the far side, so a machine wiped by hand still shows as installed until the next install corrects it. A failed install records nothing.
 - `machineId`: the machine's own id, 16 base64url characters minted by the server running there (in its `machine` table). It stays the same across renames, alias changes and reinstalls, and stored references should point at it. It is `null` until a server has started on that machine, since nothing has minted it yet. The server learns it on the same round trip as `status` and stores it beside the install record. Two aliases for one host report the same `machineId`.
 - `local`: marks the machine this server runs on. It is always listed, always installed and always running, since it is the one answering, and it is never an install target: `POST …/install` on it returns `409` `self_install`.
-- `status`: `{state, checkedAt, port?, detail?}`, where `state` is `running`, `stopped` or `unreachable`; `null` when the machine has never been probed. There is no separate ssh status. Because ssh is the transport, a machine ssh cannot reach is `unreachable`, and `detail` carries OpenSSH's own message. `GET` never probes and reports the last answer, because a probe costs one ssh round trip per machine while the list itself is only the config's text. Only `POST …/machines/probe` spends those round trips, and only on machines that have an install.
+- `status`: `{state, checkedAt, port?, detail?}`, where `state` is `running`, `stopped` or `unreachable`; `null` when the machine has never been probed. There is no separate transport status. A machine its kind cannot reach is `unreachable`, and `detail` carries the far side's own message (OpenSSH's, the container CLI's). `GET` never probes and reports the last answer, because a probe costs one round trip per machine while the list itself costs none. Only `POST …/machines/probe` spends those round trips, and only on machines that have an install.
 
 ### Connected machine API
 
-A connected machine's API is reachable at `/server/<machineId>/api/…` on this server's origin. Requests travel through the single ssh session this server holds to that machine, as a channel inside the session through its SOCKS port, never as a second connection.
+A connected machine's API is reachable at `/server/<machineId>/api/…` on this server's origin. Requests travel through the single session this server holds to that machine, dialled by its kind and never as a second held connection. For ssh, each request is a channel inside the session through its SOCKS port. For WSL and containers, each is a short bridge process run with the Node the installed program carries.
 
-The URL uses the machine's own id rather than the ssh alias it was reached through. An alias lives in one config file, so keying on it would change a machine's URLs as soon as someone renamed a host. The id is base64url, so it needs no percent-encoding in a path.
+The URL uses the machine's own id rather than the name it was reached through (an ssh alias, a container definition's name). An alias lives in one config file, so keying on it would change a machine's URLs as soon as someone renamed a host. The id is base64url, so it needs no percent-encoding in a path.
 
-This proxy is admin only and uses one identity: the request runs on the far side as that machine's admin, with a session this server mints through its own ssh access (`penguin auth token` on the machine). The browser's cookies never go across, and the machine's cookies never come back. Only `/api` is forwarded; the frontend stays local.
+This proxy is admin only and uses one identity: the request runs on the far side as that machine's admin, with a session this server mints through its own access to that machine (`penguin auth token` on the machine). The browser's cookies never go across, and the machine's cookies never come back. Only `/api` is forwarded; the frontend stays local.
 
 ### Jobs
 
-An install is a job, not a single request. It probes the far side, may download and verify a Node runtime, and copies an image over scp, which can take minutes. `POST` starts the job and returns at once. The client polls `GET` for `job.log`, which carries the far side's own output (ssh's diagnostics and the remote installer's output).
+An install is a job, not a single request. It probes the far side, may download and verify a Node runtime, and copies an image over scp, which can take minutes. `POST` starts the job and returns at once. The client polls `GET` for `job.log`, which carries the far side's own output (the transport's diagnostics and the remote installer's output).
 
 A connect (`POST …/connect`) and a restart (`POST …/restart`) are jobs of the same shape, told apart by `job.kind` (`install`, `connect` or `restart`). `job.result` is `null` while the job runs, and then one of:
 
@@ -227,11 +236,12 @@ Only one job runs at a time. Jobs live in memory and do not survive a hot push o
 
 ### Refusals
 
-These refusals are decided before any ssh command runs, and each has its own code:
+These refusals are decided before anything reaches the machine, and each has its own code:
 
 - `409` `install_running`
 - `404` `unknown_machine`
 - `409` `no_install_image`
+- `409` `machine_kind_unavailable`: the machine's kind is not loaded here.
 - `409` `self_install`: this server will not push its build over the program directory it runs from. Besides the `local` row, this also covers an alias that points back to this host (such as `Host localhost` or a second name for this host) once a probe has heard this server's own id from it.
 
 ## Version and Self-Update

@@ -27,7 +27,7 @@ packages/server/src
 ├── db/                             # node:sqlite connection, schema SQL, one repo per table
 ├── hmr/                            # hot update: the platform seam and the /api/hmr routes
 ├── http/                           # the business routes' assembly (app.ts), error bodies, request validation, SSE adapter, routes/
-├── machines/                       # remote machines: ssh config, install and connect jobs, the /server/<machineId> proxy
+├── machines/                       # remote machines: the kinds plugins contribute, install and connect jobs, the /server/<machineId> proxy
 ├── organization/                   # company mode's files: chart, tickets, channels, handbook
 ├── runtime/                        # session-manager (runtime driving) · channel (SSE ring buffer)
 │                                   # approvals · usage-recorder · scheduler · title-generator · messaging/ · organization/
@@ -173,47 +173,56 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 
 ## 机器（仅管理员）
 
-通过 ssh 在其他主机上安装本服务器的构建，并管理与这些主机的连接。
+在其他机器上安装本服务器的构建，并管理与这些机器的连接。机器分种类，每个种类是一个插件：`ssh`（服务器账户 `~/.ssh/config` 中的主机，来自常驻插件 `machine-ssh`）、`wsl`（Windows 服务器上的 WSL 发行版，`machine-wsl`）与 `docker`（容器，`machine-docker`）。机器的 id 是 `<种类>:<名字>`，例如 `ssh:build-box`。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/machines` | 本机以及服务器自身 `~/.ssh/config` 中的主机别名，连同本 Project 的安装记录、最近状态和当前任务：`{machines: [{id, alias, machineId, installed, elsewhere?, local, connection, api, status}], imageVersion, job}` |
-| POST | `/api/projects/:projectId/machines/probe` | 逐台询问本 Project 已安装机器正在做什么（每台一次 ssh 往返，最多 5 台并发），返回携带最新状态的列表 |
+| GET | `/api/projects/:projectId/machines` | 本机与每个已加载种类的机器、这些种类本身，连同本 Project 的安装记录、最近状态和当前任务：`{machines: [{id, alias, kind, unavailable?, machineId, installed, elsewhere?, local, connection, api, status}], kinds: [{kind, title, titleZh?, form}], imageVersion, job}` |
+| POST | `/api/projects/:projectId/machines/probe` | 逐台询问本 Project 已安装机器正在做什么（每台一次往返，最多 5 台并发），返回携带最新状态的列表 |
 | POST | `/api/projects/:projectId/machines/:machineId/install` | 开始在这台主机上安装当前构建，并将这台主机分配给本 Project；任务运行期间返回 `202`，响应体相同 |
 | POST | `/api/projects/:projectId/machines/:machineId/connect` | 启动那台机器的服务器，并维持那条唯一的连接；connect 任务运行期间返回 `202`，响应体相同 |
 | POST | `/api/projects/:projectId/machines/:machineId/disconnect` | 断开连接，远端服务器继续运行 |
 | POST | `/api/projects/:projectId/machines/:machineId/restart` | 停止那台机器的服务器，并在同一端口重新启动；返回 `202`，任务运行期间返回 `409` |
 | GET | `/api/projects/:projectId/machines/:machineId/dirs?path=` | 那台机器上 `path` 的子目录，经由保持中的连接读取；Workspace 选择器浏览的就是这些目录 |
 | POST | `/api/projects/:projectId/machines/:machineId/release` | 将那台机器移出本 Project；机器上的安装保持不变 |
+| POST | `/api/projects/:projectId/machines/kinds/:kind/definitions` | 手工定义一台该种类的机器，请求体 `{name, values}`（一台 ssh 主机、一个容器）；返回 `201` 与列表 |
+| GET | `/api/projects/:projectId/machines/kinds/:kind/definitions/:name` | 读回这份定义：`{name, values, editable, forgettable}` |
+| PUT | `/api/projects/:projectId/machines/kinds/:kind/definitions/:name` | 以 `{values}` 改写它，名字不变 |
+| DELETE | `/api/projects/:projectId/machines/kinds/:kind/definitions/:name` | 忘记一份由本服务器保存的定义（容器的）；机器那边的东西不会被删除 |
 
-无论个人服务器还是多用户服务器，这组路由都仅限管理员：安装会以服务器账号的密钥运行 ssh，并在另一台机器上写入程序目录——这是所有者才有的能力，不是访客该有的。服务器从不写入自己的 ssh 配置，也从不解析它。机器列表就是配置文件的原文，不管声明了多少台主机都只读取一次；每个别名都按原样传给 ssh，因此每次都由 ssh 套用自己的配置。
+无论个人服务器还是多用户服务器，这组路由都仅限管理员：安装会以服务器账号的凭据（它的 ssh 密钥、它的容器运行时）连到另一台机器，并在那里写入程序目录——这是所有者才有的能力，不是访客该有的。列出机器不起进程、不建连接：ssh 种类读配置文件的原文，WSL 种类用它在后台刷新的列表作答，容器就是本服务器保存的那些定义。ssh 种类从不解析别名，每个别名都按原样传给 ssh，因此每次都由 ssh 套用自己的配置；对这份配置唯一的写入，是有人在机器页上新建的主机段，每段都标明是从那里加的。
+
+库里有记录、但种类没有加载的机器仍留在列表里，`unavailable` 写明原因。对它的安装、连接与重启都返回 `409` `machine_kind_unavailable`，自动重连也会跳过它。
 
 - `POST …/install` 可以携带请求体 `{replaceProgram: true}`，用来回应任务过程中提出的这个要求：即使版本已经一致，服务器也会重新安装程序并重启它。
-- `POST …/connect` 维持一条 `ssh -T -D` 会话：空闲时永不超时，断开后自动重连，服务器重启或热推送后也会自动恢复。Windows 机器返回 `409` `connect_unsupported`，因为没有 shell 可以维持会话。
+- `POST …/connect` 维持机器的种类所启动的那条会话（ssh 为 `ssh -T -D`，WSL 为 `wsl.exe … --exec sh`，容器为 `docker exec -i … sh`）：空闲时永不超时，断开后自动重连，服务器重启或热推送后也会自动恢复。连接前会先让目标能够维持 shell：已停的容器会被启动，按镜像定义的容器会被创建；自动重连从不做这件事。Windows 机器返回 `409` `connect_unsupported`，因为没有 shell 可以维持会话。
 - `POST …/disconnect` 断开后远端服务器继续运行：它属于那台机器，其他人可能还在使用。
 - `POST …/restart` 之所以是独立操作，是因为机器上的文件可以在运行期间更新，只有重启才能让进程与文件保持一致。
-- `GET …/dirs` 与下文的 API 代理一样，用机器自身的 id 寻址。机器未连接时返回 `404`，因为读取操作绝不会自行建立 ssh 连接。
+- `GET …/dirs` 与下文的 API 代理一样，用机器自身的 id 寻址。机器未连接时返回 `404`，因为读取操作绝不会自行建立连接。
+- `POST …/kinds/:kind/definitions` 在字段有误时返回 `400` `machine_definition_invalid`，消息里点名字段（`<字段>: <原因>`）；名字已被该种类占用时返回 `409` `machine_exists`；种类不接受手工定义（WSL）时返回 `409` `definitions_not_accepted`。`PUT` 对手写的 ssh 主机段返回 `409` `machine_definition_foreign`。`DELETE` 对自带定义存储的种类（ssh）返回 `409` `machine_definition_kind_stored`。
 
 ### 机器字段
 
 - `elsewhere`：这台主机已由其他 Project 安装，可以直接接管，而不必重新安装。
+- `kind`：机器所属的种类，即 id 的前缀；本服务器为 `local`。`kinds` 列出已加载的种类，以及手工定义该种类机器所用的表单（`{name, fields}`，形状与插件设置相同），不接受手工定义的为 `null`。
+- `unavailable`：机器的种类在这里没有加载时出现，写明原因。
 - `imageVersion`：将要推送的版本；本服务器完全没有安装镜像时为 `null`。只有从未接收过热推送的开发检出属于这种情况，此时每次安装都会失败，返回 `409` `no_install_image`。这个版本就是当前运行安装自身的版本：热推送的服务器发送它正在运行的 bundle（`0.0.0-hmr.<cli>.<web>`），tarball 或打包安装则发送自己的目录树，所以两端天然一致。
 - `installed`：本服务器最近一次在那台机器上执行的安装，格式为 `{version, at}`；从未安装过则为 `null`。它保存在数据根目录下，因此重启、热推送和其他机器上的安装都不会使它丢失。它记录的是实际执行过的操作，并不核对远端状态，所以手动清空过的机器仍会显示为已安装，直到下一次安装把它纠正过来。安装失败不会留下任何记录。
 - `machineId`：机器自身的 id，由运行在那台机器上的服务器生成（记录在它的 `machine` 表中），共 16 个 base64url 字符。重命名、修改别名和重新安装都不会改变它，持久化引用应指向它。在那台机器上启动过服务器之前，它为 `null`，因为还没有任何东西生成过它。本服务器在与 `status` 同一次往返中获知它，并把它与安装记录存放在一起。同一主机的两个别名报告相同的 `machineId`。
 - `local`：标记本服务器所在的机器。由于应答请求的正是它，这条记录始终在列表中，始终显示为已安装且正在运行；它也永远不会成为安装目标：对它调用 `POST …/install` 返回 `409` `self_install`。
-- `status`：`{state, checkedAt, port?, detail?}`，其中 `state` 为 `running`、`stopped` 或 `unreachable`；从未探测过的机器为 `null`。没有单独的 ssh 状态。ssh 就是传输通道，连不上的机器即为 `unreachable`，`detail` 携带 OpenSSH 自己的报错信息。`GET` 从不主动探测，只报告最近一次的结果，因为每探测一台机器都要花费一次 ssh 往返，而列表本身只是配置文本。只有 `POST …/machines/probe` 会付出这些往返开销，而且只针对已安装的机器。
+- `status`：`{state, checkedAt, port?, detail?}`，其中 `state` 为 `running`、`stopped` 或 `unreachable`；从未探测过的机器为 `null`。没有单独的传输状态。种类连不上的机器即为 `unreachable`，`detail` 携带对端自己的报错信息（OpenSSH 的、容器命令行的）。`GET` 从不主动探测，只报告最近一次的结果，因为每探测一台机器都要花费一次往返，而列出机器本身没有开销。只有 `POST …/machines/probe` 会付出这些往返开销，而且只针对已安装的机器。
 
 ### 已连接机器的 API
 
-已连接机器的 API 可以通过本服务器 origin 上的 `/server/<machineId>/api/…` 访问。请求经由本服务器与那台机器之间唯一的那条 ssh 会话传输，走的是会话内部经由它的 SOCKS 端口的一条通道，绝不另开第二条连接。
+已连接机器的 API 可以通过本服务器 origin 上的 `/server/<machineId>/api/…` 访问。请求经由本服务器与那台机器之间唯一的那条会话、由它的种类拨通，绝不另开第二条常驻连接：ssh 走会话内部经由它的 SOCKS 端口的一条通道；WSL 与容器则是一个短命的桥接进程，用装好的程序自带的 Node 运行。
 
-URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只存在于某个配置文件里，若以别名为准，主机一改名，机器的 URL 就会跟着变。id 采用 base64url 编码，放进路径无需百分号转义。
+URL 使用机器自身的 id，而不是连接所用的名字（ssh 别名、容器定义的名字）。别名只存在于某个配置文件里，若以别名为准，主机一改名，机器的 URL 就会跟着变。id 采用 base64url 编码，放进路径无需百分号转义。
 
-该代理仅限管理员，且只使用单一身份：请求在对端以那台机器的管理员身份执行，所用会话由本服务器凭借自身的 ssh 访问能力签发（在那台机器上执行 `penguin auth token`）。浏览器的 Cookie 不会传到对端，机器上的 Cookie 也不会带回本地。只有 `/api` 会转发，前端仍在本地运行。
+该代理仅限管理员，且只使用单一身份：请求在对端以那台机器的管理员身份执行，所用会话由本服务器凭借自己对那台机器的访问能力签发（在那台机器上执行 `penguin auth token`）。浏览器的 Cookie 不会传到对端，机器上的 Cookie 也不会带回本地。只有 `/api` 会转发，前端仍在本地运行。
 
 ### 任务
 
-安装是一个任务，而不是单次请求。它要探测对端，可能还要下载并校验 Node 运行时，再通过 scp 复制镜像，整个过程可能耗时数分钟。`POST` 启动任务后立即返回。客户端轮询 `GET` 获取 `job.log`，其中是对端自己的输出（ssh 的诊断信息和远端安装器的输出）。
+安装是一个任务，而不是单次请求。它要探测对端，可能还要下载并校验 Node 运行时，再通过 scp 复制镜像，整个过程可能耗时数分钟。`POST` 启动任务后立即返回。客户端轮询 `GET` 获取 `job.log`，其中是对端自己的输出（传输通道的诊断信息和远端安装器的输出）。
 
 连接（`POST …/connect`）和重启（`POST …/restart`）也是同样形式的任务，通过 `job.kind`（`install`、`connect` 或 `restart`）区分。任务运行期间 `job.result` 为 `null`，结束后为以下之一：
 
@@ -227,11 +236,12 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 
 ### 拒绝情形
 
-这些拒绝在运行任何 ssh 命令之前就已判定，每个都有专属错误码：
+这些拒绝在触及那台机器之前就已判定，每个都有专属错误码：
 
 - `409` `install_running`
 - `404` `unknown_machine`
 - `409` `no_install_image`
+- `409` `machine_kind_unavailable`：机器的种类在这里没有加载。
 - `409` `self_install`：本服务器不会把自己的构建推送覆盖到自身正在运行的程序目录上。除了 `local` 这一行，指回本主机的别名（例如 `Host localhost` 或本主机的另一个名字）同样会拒绝，前提是某次探测已从它那里读到本服务器自己的 id。
 
 ## 版本与自更新

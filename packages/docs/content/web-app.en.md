@@ -128,7 +128,7 @@ Two parts of the app have no sidebar entry.
 
 **Trajectories** is a side panel of the chat page, not a page of its own. It shows the open conversation's Trace files, with a summary, per-turn statistics, an execution timeline, and the individual events. **Export** downloads a file. See [Chat](/chat).
 
-**Machines** installs this PenguinHarness build on other hosts over ssh, choosing from the server account's `~/.ssh/config`. It is not offered in the sidebar in this release. An admin can reach it at `/machines`.
+**Machines** installs this PenguinHarness build on other machines and connects to them. Machines come in kinds, and each kind is a plugin. ssh hosts from the server account's `~/.ssh/config` are always available. WSL distros on a Windows server and containers appear once their plugin is enabled on the Plugins page. The **+** in the machine picker defines a new ssh host or container. It is not offered in the sidebar in this release. An admin can reach it at `/machines`.
 
 ### Language and theme
 
