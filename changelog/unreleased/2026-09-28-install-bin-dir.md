@@ -3,6 +3,7 @@
 - **Date:** 2026-09-28
 - **Type:** feature
 - **Scope:** `tooling`, `docs`
+- **PR:** [#867](https://github.com/Prism-Shadow/penguin-harness/pull/867)
 
 [中文版](2026-09-28-install-bin-dir.zh.md)
 
