@@ -29,7 +29,7 @@
  *   penguin org proposal ls [--status <s>] | show <n> | create [--author <agent_id>] --brief <s> [--title <s>]
  *                    | publish <n> --file <md> | brief <n> (-m <text> | --file <f>) | ready <n>
  *                    | implement <n> [--agent <agent_id>] [-m] [--workspace]
- *                    | material <n> add <kind>=<url> [--label <s>] | feedback <n> -m <text> [--runtime]
+ *                    | material add <n> <kind>=<url> [--label <s>] | feedback <n> -m <text> [--runtime]
  *                    | conclude <n> -m <text> [--discussion <session_id>]
  *                    | comments <n> [--pending] | resolve <n> <comment_id> [-m <text>] | merged <n>
  *                    | approve <n> | reject <n> --reason <s> | groups
