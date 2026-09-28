@@ -246,15 +246,15 @@ describe("contributed company-mode pages", () => {
     ).toEqual([]);
   });
 
-  it("draws a row for the roadmaps page a plugin serves in an iframe — after the proposals — and never lets one kind of page stand for the other", () => {
+  it("draws a row for the roadmaps page a plugin serves in an iframe — above the proposals — and never lets one kind of page stand for the other", () => {
     const roadmaps = page({
       key: "roadmaps",
       path: "roadmaps/:number?",
       renderer: { iframe: { src: "/api/company-roadmaps/page", namespace: "company-roadmaps" } },
     });
     expect(orgPageRows([page(), roadmaps], { projectId: "p", orgId: "acme" })).toEqual([
-      { key: "org-proposals", renderer: "OrgProposalsPage", to: "/org/p/acme/proposals" },
       { key: "roadmaps", renderer: "roadmaps", to: "/org/p/acme/roadmaps" },
+      { key: "org-proposals", renderer: "OrgProposalsPage", to: "/org/p/acme/proposals" },
     ]);
     expect(zh.nav.org.roadmaps).toBe("路线图");
     expect(en.nav.org.roadmaps).toBe("Roadmaps");
@@ -270,6 +270,28 @@ describe("contributed company-mode pages", () => {
         { projectId: "p", orgId: "o" },
       ),
     ).toEqual([]);
+  });
+
+  it("orders the rows by this build, not by the order the plugins are listed and loaded in", () => {
+    // Contribution order is the Project's `[plugins]` order: company-proposals listed before
+    // company-roadmaps, or after it. Either way Roadmaps is the row above Proposals.
+    const roadmaps = page({
+      key: "roadmaps",
+      path: "roadmaps/:number?",
+      renderer: { iframe: { src: "/api/company-roadmaps/page", namespace: "company-roadmaps" } },
+    });
+    const org = { projectId: "p", orgId: "acme" };
+    for (const listed of [
+      [page(), roadmaps],
+      [roadmaps, page()],
+    ]) {
+      expect(orgPageRows(listed, org).map((row) => row.key)).toEqual(["roadmaps", "org-proposals"]);
+    }
+    expect(Object.keys(ORG_PAGE_RENDERERS)).toEqual(["roadmaps", "OrgProposalsPage"]);
+    // Two pages with one renderer keep the order they were contributed in.
+    expect(
+      orgPageRows([page({ key: "b" }), roadmaps, page({ key: "a" })], org).map((row) => row.key),
+    ).toEqual(["roadmaps", "b", "a"]);
   });
 
   it("addresses one proposal by its number under the proposals page", () => {

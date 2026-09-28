@@ -68,10 +68,15 @@ export function orgPagePath(projectId: string, orgId: string, page: CompanyNavKe
  * its key (`kind: "iframe"`) — the two never stand in for each other. `segment` is the route's
  * first segment under `/org/:projectId/:orgId/`, where the row leads; the page's own params
  * (`proposals/:number?`) come after it.
+ *
+ * The entries' order is the rows' order: the roadmaps a discussion settles into come before the
+ * proposals they delegate. Contribution order cannot say it — it is the Project's `[plugins]`
+ * order, the order the plugins happen to be listed and loaded in — so the build does, as it
+ * does the label and the glyph.
  */
 export const ORG_PAGE_RENDERERS = {
-  OrgProposalsPage: { label: "proposals", segment: "proposals", kind: "builtin" },
   roadmaps: { label: "roadmaps", segment: "roadmaps", kind: "iframe" },
+  OrgProposalsPage: { label: "proposals", segment: "proposals", kind: "builtin" },
 } as const;
 export type OrgPageRenderer = keyof typeof ORG_PAGE_RENDERERS;
 
@@ -98,9 +103,15 @@ export interface OrgPageRow {
   to: string | null;
 }
 
+/** Each renderer's place among the rows: its position in ORG_PAGE_RENDERERS. */
+const ORG_PAGE_RANK: ReadonlyMap<string, number> = new Map(
+  Object.keys(ORG_PAGE_RENDERERS).map((renderer, rank) => [renderer, rank]),
+);
+
 /**
- * The nav rows of the contributed company-mode pages this build can draw, in contribution
- * order. A page this build has no row for is skipped here: a builtin renderer it does not know
+ * The nav rows of the contributed company-mode pages this build can draw, in ORG_PAGE_RENDERERS
+ * order — never in contribution order, which follows the Project's `[plugins]` list — and, for
+ * two pages with the same renderer, in contribution order (the sort is stable). A page this build has no row for is skipped here: a builtin renderer it does not know
  * (the router skips that one too: no renderer, no route), or an iframe page whose key it has no
  * label and glyph for (routed, but reachable by URL only).
  */
@@ -129,7 +140,7 @@ export function orgPageRows(
           : orgContributedPagePath(org.projectId, org.orgId, orgPageSegment(page.path)),
     });
   }
-  return rows;
+  return rows.sort((a, b) => ORG_PAGE_RANK.get(a.renderer)! - ORG_PAGE_RANK.get(b.renderer)!);
 }
 
 /** Path of one proposal of one organization (the proposals page with that proposal selected). */
