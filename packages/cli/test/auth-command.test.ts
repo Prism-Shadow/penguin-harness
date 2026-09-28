@@ -6,8 +6,12 @@
  * guard, no web.db, a web.db that is not a Penguin database, PENGUIN_WEB_DB honored), and the
  * reset's refusal while a live server owns the root (no web.db created as a side effect).
  *
- * The success branch of `auth token` is not driven: seeding a real web.db needs the server's
- * openDatabase/UsersRepo, which are neither exported nor emitted as separate dist files.
+ * The success branch of `auth token` is driven with `mintApiToken` stubbed: seeding a real
+ * web.db needs the server's openDatabase/UsersRepo, which are neither exported nor emitted as
+ * separate dist files. The mock passes through to the real function unless a test queues a
+ * result, so the failure cases above still run the real minting code; the minting itself is
+ * pinned by the server's own auth-token test. What is pinned here is the command's wiring:
+ * the arguments it mints with, what it prints, and when it writes the session file.
  */
 import fs from "node:fs";
 import http from "node:http";
@@ -15,11 +19,19 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
+import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
+import type { MintTokenResult } from "@prismshadow/penguin-server/auth-token";
 import { acquireServerLock } from "@prismshadow/penguin-server/lock";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readSession, sessionFile, writeSession } from "../src/auth-session.js";
+import { TOKEN_MARK } from "../src/commands/auth.js";
 import { getMessages } from "../src/i18n.js";
 import { cli } from "../src/index.js";
+
+vi.mock("@prismshadow/penguin-server/auth-token", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@prismshadow/penguin-server/auth-token")>();
+  return { ...actual, mintApiToken: vi.fn(actual.mintApiToken) };
+});
 
 const t = getMessages("en");
 
@@ -389,6 +401,100 @@ describe("penguin auth token", () => {
     // Not no_server: the file it opened is the one the variable names.
     expect(code).toBe(1);
     expect(err().startsWith(t.authToken.failed(""))).toBe(true);
+  });
+});
+
+describe("penguin auth token, minted (mintApiToken stubbed)", () => {
+  const minted: MintTokenResult = {
+    outcome: "minted",
+    token: "tok-minted",
+    userId: "admin",
+    expiresAt: "2026-09-29T00:00:00.000Z",
+  };
+  const mint = vi.mocked(mintApiToken);
+  // mockReset puts back the pass-through and drops a queued result a failed test left behind,
+  // so nothing queued here reaches a test outside this block.
+  beforeEach(() => {
+    mint.mockReset();
+    mint.mockReturnValueOnce(minted);
+  });
+  afterEach(() => mint.mockReset());
+
+  it("prints the token alone on stdout and, with no live server, writes no session", async () => {
+    const code = await cli(["auth", "token", "--root", root]);
+    expect(code).toBe(0);
+    expect(out()).toBe("tok-minted\n");
+    expect(err()).toBe("");
+    expect(mint).toHaveBeenCalledTimes(1);
+    // Defaults are the minting side's: no ttlMs, no dbPath, the admin account.
+    expect(mint).toHaveBeenCalledWith(root, { userId: "admin" });
+    expect(fs.existsSync(sessionFile(root))).toBe(false);
+  });
+
+  it("--mark puts the fixed marker line before the token", async () => {
+    const code = await cli(["auth", "token", "--mark", "--root", root]);
+    expect(code).toBe(0);
+    expect(out()).toBe(`${TOKEN_MARK}\ntok-minted\n`);
+  });
+
+  it("--user-id and --ttl-seconds reach the mint as the account and milliseconds", async () => {
+    const code = await cli([
+      "auth",
+      "token",
+      "--user-id",
+      "alice",
+      "--ttl-seconds",
+      "90",
+      "--root",
+      root,
+    ]);
+    expect(code).toBe(0);
+    expect(mint).toHaveBeenCalledWith(root, { userId: "alice", ttlMs: 90_000 });
+  });
+
+  it("PENGUIN_WEB_DB is handed over as the database path", async () => {
+    const elsewhere = path.join(root, "db", "custom.db");
+    process.env.PENGUIN_WEB_DB = elsewhere;
+    const code = await cli(["auth", "token", "--root", root]);
+    expect(code).toBe(0);
+    expect(mint).toHaveBeenCalledWith(root, { userId: "admin", dbPath: elsewhere });
+  });
+
+  it("without --root, the root is PENGUIN_HOME", async () => {
+    process.env.PENGUIN_HOME = root;
+    const code = await cli(["auth", "token"]);
+    expect(code).toBe(0);
+    expect(mint).toHaveBeenCalledWith(root, { userId: "admin" });
+  });
+
+  it("with a live server on the root, writes the session a later logout can use", async () => {
+    const port = await liveLock(root);
+    const code = await cli(["auth", "token", "--root", root]);
+    expect(code).toBe(0);
+    expect(out()).toBe("tok-minted\n");
+    expect(readSession(root)).toEqual({
+      server: `http://localhost:${port}`,
+      userId: "admin",
+      token: "tok-minted",
+      expiresAt: "2026-09-29T00:00:00.000Z",
+    });
+  });
+
+  it("the session names the account the mint answered with, not the flag", async () => {
+    mint.mockReset();
+    mint.mockReturnValueOnce({ ...minted, userId: "bob" });
+    await liveLock(root);
+    const code = await cli(["auth", "token", "--user-id", "alice", "--root", root]);
+    expect(code).toBe(0);
+    expect(readSession(root)?.userId).toBe("bob");
+  });
+
+  it("a stale lock (port no longer answering) is not a server: no session is written", async () => {
+    acquireServerLock(root, { pid: process.pid, port: await deadPort(), startedAt: "" });
+    const code = await cli(["auth", "token", "--root", root]);
+    expect(code).toBe(0);
+    expect(out()).toBe("tok-minted\n");
+    expect(fs.existsSync(sessionFile(root))).toBe(false);
   });
 });
 
