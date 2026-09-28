@@ -2195,7 +2195,10 @@ export function ChatInput({
           body text like the notices below it: the other two describe what the composer is about
           to do, this one asks for a settings change, and `attention` is the tone for a thing
           waiting on the user. Dismissible, because keeping the threshold high on purpose is a
-          legitimate answer and a notice with no way down stops being read. */}
+          legitimate answer and a notice with no way down stops being read. The row wraps: when
+          the text (at its 15rem floor) and the buttons don't fit side by side, the buttons drop
+          to their own line and the text takes the full width. Squeezing the text column instead
+          grew the notice to ~490px at 390 wide and crushed the conversation above it. */}
       {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
         // The buttons keep their labels whole, so where the sentence would be left a few
         // characters a line beside them (a phone at a large text size), they drop to a row
