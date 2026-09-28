@@ -137,6 +137,15 @@ export function roomRequestLine(args: { orgId: string; parent: Roadmap; child: R
   ].join("\n");
 }
 
+/** The desk line telling a derived roadmap's moderator that its room is open already. */
+export function roomOpenedLine(args: { parent: Roadmap; child: Roadmap }): string {
+  const { parent, child } = args;
+  return [
+    `${tag(parent)} established; it derives ${tag(child)}, which you moderate. Brief: ${child.brief}`,
+    `Its room is open — the channel \`${child.channelId ?? ""}\`, with ${child.employees.join(", ")} — and your room session there starts on its own.`,
+  ].join("\n");
+}
+
 /** The input a reopening puts in every open room session. */
 export function reopenLine(r: Roadmap, by: string, reason: string, moderator: string): string {
   return `${tag(r)} reopened by ${by}: ${reason}\n\nThe room is discussing again. ${moderator === "" ? "" : `${moderator}, as moderator: put this in the room and revise the draft.`}`.trimEnd();

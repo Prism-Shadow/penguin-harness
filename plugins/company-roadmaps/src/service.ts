@@ -42,6 +42,7 @@ import {
   delegationLine,
   relayLine,
   reopenLine,
+  roomOpenedLine,
   roomRequestLine,
 } from "./lines.js";
 import { planRelay } from "./relay.js";
@@ -79,7 +80,12 @@ const badRequest = (message: string): RoadmapError => new RoadmapError(400, "bad
 export interface ServiceDeps {
   gateway: Pick<
     OrgGateway,
-    "companyModeEnabled" | "organization" | "principalOf" | "deliverToDesk" | "openEmployeeSession"
+    | "companyModeEnabled"
+    | "organization"
+    | "principalOf"
+    | "deliverToDesk"
+    | "openEmployeeSession"
+    | "openRoom"
   >;
   /** The session runtime's input: a later room message into an existing room session. */
   runner: Pick<MessagingTaskRunner, "startTask">;
@@ -118,7 +124,8 @@ export interface WriteResult {
 
 export interface OpenRequest {
   name: string;
-  channelId: string;
+  /** An existing channel to hold the room; absent (the page's way), the roadmap opens its own. */
+  channelId?: string;
   employees: string[];
   brief?: string;
   parent?: number;
@@ -459,11 +466,16 @@ export class RoadmapService {
         );
       }
       const name = text(req.name, "name", 120);
-      const channelId = text(req.channelId, "channelId", 64);
+      const given = req.channelId === undefined ? null : text(req.channelId, "channelId", 64);
       const employees = this.employeeList(req.employees, org, "employees");
       if (req.parent !== undefined) this.require(ledger, req.parent);
-      await this.requireRoom(projectId, orgId, channelId, employees);
+      if (given !== null) await this.requireRoom(projectId, orgId, given, employees);
       const number = ledger.nextNumber();
+      // The room: the channel named, or one this roadmap opens for itself — unlisted, reached
+      // from the roadmap, with the person who opened it and the employees in it.
+      const channelId =
+        given ??
+        (await this.openRoomFor(projectId, orgId, number, name, req.brief?.trim() ?? "", caller.principal, employees));
       await ledger.append({
         kind: "opened",
         number,
@@ -478,6 +490,47 @@ export class RoadmapService {
     });
     const hints = await this.relayRoadmap(projectId, orgId, result);
     return { roadmap: await this.get(projectId, orgId, result, actor), hints };
+  }
+
+  /**
+   * Opens the room of roadmap `number` through the organization gateway: an unlisted channel
+   * `roadmap_<number>` (a suffix when that id is taken — a channel made by hand, or a ledger
+   * restored from elsewhere), named after the roadmap, with `by` and the employees in it.
+   */
+  private async openRoomFor(
+    projectId: string,
+    orgId: string,
+    number: number,
+    name: string,
+    brief: string,
+    by: string,
+    employees: readonly string[],
+  ): Promise<string> {
+    const purpose = (brief === "" ? `Roadmap #${number}` : `Roadmap #${number} — ${brief}`).slice(0, 500);
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const channelId = attempt === 1 ? `roadmap_${number}` : `roadmap_${number}_${attempt}`;
+      try {
+        await this.deps.gateway.openRoom({
+          projectId,
+          orgId,
+          channelId,
+          name,
+          purpose,
+          by,
+          agentIds: [...employees],
+        });
+        return channelId;
+      } catch (err) {
+        const e = err as { status?: number; code?: string; message?: string };
+        if (e.code === "channel_exists") continue;
+        throw new RoadmapError(
+          typeof e.status === "number" ? e.status : 500,
+          e.code ?? "room_failed",
+          `The room could not be opened: ${e.message ?? String(err)}`,
+        );
+      }
+    }
+    throw new RoadmapError(409, "room_taken", `No free channel id for roadmap #${number}'s room.`);
   }
 
   /** The moderator (or a person) keeps the draft; nothing is created by it. */
@@ -530,7 +583,9 @@ export class RoadmapService {
     number: number,
     actor: OrgActor,
   ): Promise<WriteResult> {
-    return this.withLock(projectId, orgId, async () => {
+    // The derived roadmaps that got a room: their room sessions open once the lock is let go.
+    const discussing: number[] = [];
+    const result = await this.withLock(projectId, orgId, async () => {
       const { caller, ledger } = await this.open(projectId, orgId, actor);
       const r = this.require(ledger, number);
       this.requireStatus(r, "discussing", false);
@@ -601,25 +656,44 @@ export class RoadmapService {
         } else {
           if (prior !== undefined && prior.child !== null) continue;
           const child = ledger.nextNumber();
+          // Its room is opened at once; only when that fails does it wait for one to be bound.
+          let room: string | null = null;
+          try {
+            room = await this.openRoomFor(
+              projectId,
+              orgId,
+              child,
+              item.title,
+              item.brief,
+              caller.principal,
+              item.employees,
+            );
+          } catch (err) {
+            hints.push(`The room of "${item.title}" was not opened: ${err instanceof Error ? err.message : String(err)}`);
+          }
           await ledger.append({
             kind: "opened",
             number: child,
             name: item.title,
             brief: item.brief,
-            channelId: null,
+            channelId: room,
             employees: item.employees,
             parent: number,
             parentItem: item.key,
             by: caller.principal,
           });
+          if (room !== null) discussing.push(child);
           const moderator = item.employees[0]!;
+          const derived = this.require(ledger, child);
           const res = await this.deliver(
             projectId,
             orgId,
             ledger,
             child,
             moderator,
-            roomRequestLine({ orgId, parent: r, child: this.require(ledger, child) }),
+            room !== null
+              ? roomOpenedLine({ parent: r, child: derived })
+              : roomRequestLine({ orgId, parent: r, child: derived }),
             caller.principal,
             hints,
           );
@@ -639,6 +713,10 @@ export class RoadmapService {
       }
       return { roadmap: this.view(this.require(ledger, number)), hints };
     });
+    for (const child of discussing) {
+      result.hints.push(...(await this.relayRoadmap(projectId, orgId, child)));
+    }
+    return result;
   }
 
   /** The owner links the proposal it created; the owners stacked on it learn its number. */

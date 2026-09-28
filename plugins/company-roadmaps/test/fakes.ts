@@ -20,9 +20,21 @@ export const asAgent = (agentId: string): OrgActor => ({
 
 export class FakeGateway implements Pick<
   OrgGateway,
-  "companyModeEnabled" | "organization" | "principalOf" | "deliverToDesk" | "openEmployeeSession"
+  | "companyModeEnabled"
+  | "organization"
+  | "principalOf"
+  | "deliverToDesk"
+  | "openEmployeeSession"
+  | "openRoom"
 > {
   enabled = true;
+  /** Where the organization's files are: a room is written there, the way the server writes one. */
+  root = "";
+  /** Every room opened, in order. */
+  rooms: Array<{ channelId: string; name: string; purpose: string; by: string; agentIds: string[] }> =
+    [];
+  /** Set by a test to make opening a room fail (not a taken id). */
+  refuseRooms: string | null = null;
   org: OrgView = {
     projectId: PROJECT,
     orgId: ORG,
@@ -71,6 +83,35 @@ export class FakeGateway implements Pick<
     this.opened.push({ ...args, sessionId });
     return { sessionId, workspace: "/tmp/acme" };
   }
+  /** An unlisted channel with its members, on disk as the server writes one; a taken id is refused as the server refuses it. */
+  async openRoom(args: {
+    channelId: string;
+    name: string;
+    purpose: string;
+    by: string;
+    agentIds: string[];
+  }) {
+    if (this.refuseRooms !== null) throw Object.assign(new Error(this.refuseRooms), { status: 500 });
+    const toml = path.join(orgDir(this.root), "channels", args.channelId, "channel.toml");
+    const taken = await fs.access(toml).then(
+      () => true,
+      () => false,
+    );
+    if (taken) {
+      throw Object.assign(new Error(`Channel id is already taken: ${args.channelId}`), {
+        status: 409,
+        code: "channel_exists",
+      });
+    }
+    this.rooms.push({ ...args, agentIds: [...args.agentIds] });
+    await writeChannel(
+      this.root,
+      args.channelId,
+      [...(args.by.startsWith("user:") ? [args.by] : []), ...args.agentIds.map((a) => `agent:${a}`)],
+      { unlisted: true },
+    );
+    return { channelId: args.channelId };
+  }
 }
 
 /** The session runtime's input: every later input a session was sent. */
@@ -115,7 +156,7 @@ export async function writeChannel(
   root: string,
   channelId: string,
   members: string[],
-  opts: { archived?: boolean } = {},
+  opts: { archived?: boolean; unlisted?: boolean } = {},
 ): Promise<void> {
   const dir = path.join(orgDir(root), "channels", channelId);
   await fs.mkdir(dir, { recursive: true });
@@ -127,6 +168,7 @@ export async function writeChannel(
     'created_at = "2026-09-27T00:00:00.000Z"',
     `archived = ${opts.archived === true}`,
     `members = [ ${members.map((m) => `"${m}"`).join(", ")} ]`,
+    ...(opts.unlisted === true ? ["unlisted = true"] : []),
     "",
   ].join("\n");
   await fs.writeFile(path.join(dir, "channel.toml"), toml, "utf8");
@@ -174,7 +216,7 @@ export async function world(): Promise<World> {
   const root = await tempRoot();
   const w: World = {
     root,
-    gateway: new FakeGateway(),
+    gateway: Object.assign(new FakeGateway(), { root }),
     runner: new FakeRunner(),
     sessions: new FakeSessions(),
     config: {},

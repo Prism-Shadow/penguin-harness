@@ -1,10 +1,10 @@
 /**
  * The "Open a roadmap" button, clicked in a real DOM (happy-dom): the page's own document and
  * script, a stand-in for the server's answers, and a person's clicks. The button unfolds a
- * form whose rooms are the organization's channels (never the all-hands one, never an archived
- * one) and whose employees are the chosen channel's; the form sends the plugin's own
- * `POST …/roadmaps` with the employees in the order picked (the first moderates), and the new
- * roadmap is on the list straight after. A refusal keeps the form and says why.
+ * form — a name and the organization's employees, no room to choose: the roadmap opens its own
+ * — that sends the plugin's own `POST …/roadmaps` with the employees in the order picked (the
+ * first moderates), and the new roadmap is on the list straight after, with the way into its
+ * room. A refusal keeps the form and says why.
  */
 import vm from "node:vm";
 import { Window } from "happy-dom";
@@ -13,7 +13,6 @@ import type {
   HTMLButtonElement,
   HTMLElement,
   HTMLInputElement,
-  HTMLSelectElement,
 } from "happy-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { PAGE_STRINGS, pageHtml } from "../src/index.js";
@@ -28,17 +27,11 @@ interface Call {
   contentType: string | null;
 }
 
-const CHANNELS = [
-  { channelId: "default_channel", name: "default_channel", everyone: true, archived: false },
-  { channelId: "room_a", name: "Queue room", everyone: false, archived: false },
-  { channelId: "old_room", name: "Old room", everyone: false, archived: true },
-];
-const ROOM_A = {
-  channelId: "room_a",
-  members: [
-    { principal: "user:boss", name: "boss", kind: "user" },
-    { principal: "agent:acme_dev", name: "Dev", kind: "agent" },
-    { principal: "agent:acme_web", name: "Web", kind: "agent" },
+const CHART = {
+  ceoAgentId: "acme_ceo",
+  employees: [
+    { agentId: "acme_dev", name: "Dev" },
+    { agentId: "acme_web", name: "Web" },
   ],
 };
 
@@ -69,10 +62,19 @@ async function page(
   document.body.innerHTML = /<body>([\s\S]*)<script>/.exec(html)![1]!;
   const calls: Call[] = [];
   const roadmaps: Array<Record<string, unknown>> = [];
+  // What the app's window was asked to do: history entries pushed, events raised.
+  const pushed: string[] = [];
+  const popped: string[] = [];
   const sandbox = {
     document,
     window: {
-      parent: { location: { pathname: "/org/proj/acme/roadmaps" }, document },
+      parent: {
+        location: { pathname: "/org/proj/acme/roadmaps" },
+        document,
+        history: { pushState: (_s: unknown, _t: string, url: string) => pushed.push(url) },
+        dispatchEvent: (ev: { type: string }) => popped.push(ev.type),
+        PopStateEvent: window.PopStateEvent,
+      },
       addEventListener: () => {},
     },
     location: window.location,
@@ -106,16 +108,13 @@ async function page(
   return {
     calls,
     roadmaps,
+    pushed,
+    popped,
     text: () => (main.textContent ?? "").replace(/\s+/g, " "),
     $,
     click: async (selector: string) => {
       $<HTMLElement>(selector).click();
       await settle();
-    },
-    choose: async (value: string) => {
-      const select = $<HTMLSelectElement>('select[name="room"]');
-      select.value = value;
-      await fire(select, "change");
     },
     pick: async (id: string) => {
       const box = $<HTMLInputElement>(`input[name="employee"][value="${id}"]`);
@@ -143,28 +142,27 @@ async function page(
   };
 }
 
-/** The organization's server as the page sees it: the roadmaps, its channels, one channel, and the open. */
+/** The organization's server as the page sees it: the roadmaps, its chart, and the open (which opens the room). */
 function organization(opts: { refuse?: { status: number; message: string } } = {}) {
   return (call: Call, roadmaps: Array<Record<string, unknown>>) => {
     if (call.method === "GET" && call.url === `${ORG}/roadmaps`)
       return { status: 200, body: { roadmaps } };
-    if (call.method === "GET" && call.url === `${ORG}/channels`)
-      return { status: 200, body: { channels: CHANNELS } };
-    if (call.method === "GET" && call.url === `${ORG}/channels/room_a`)
-      return { status: 200, body: ROOM_A };
+    if (call.method === "GET" && call.url === `${ORG}/chart`) return { status: 200, body: CHART };
     if (call.method === "POST" && call.url === `${ORG}/roadmaps`) {
       if (opts.refuse)
         return {
           status: opts.refuse.status,
           body: { error: { code: "x", message: opts.refuse.message } },
         };
-      const b = call.body as { name: string; channelId: string; employees: string[] };
+      const b = call.body as { name: string; employees: string[] };
+      const number = roadmaps.length + 1;
       const roadmap = {
-        number: roadmaps.length + 1,
+        number,
         name: b.name,
         status: "discussing",
         archived: false,
-        channelId: b.channelId,
+        channelId: `roadmap_${number}`,
+        employees: b.employees,
         items: [],
         delegations: {},
       };
@@ -176,17 +174,13 @@ function organization(opts: { refuse?: { status: number; message: string } } = {
 }
 
 describe("the Open a roadmap button", () => {
-  it("opens a roadmap: button → form (a room, its employees, a name) → POST → the new roadmap on the list", async () => {
+  it("opens a roadmap: button → form (a name, the employees) → POST → the new roadmap on the list", async () => {
     const p = await page(organization());
     expect(p.text()).toContain(T.empty);
     await p.click("button[data-open]");
-    // The rooms are the channels that can hold one: not the all-hands channel, not an archived one.
-    const options = [
-      ...p.$<HTMLSelectElement>('select[name="room"]').querySelectorAll("option"),
-    ].map((o) => o.getAttribute("value"));
-    expect(options).toEqual(["", "room_a"]);
-    await p.choose("room_a");
-    // The employees are the room's agents, not its people.
+    // No room to choose: the roadmap opens its own; the employees are the organization's.
+    expect(p.$('select[name="room"]')).toBeNull();
+    expect(p.text()).toContain(T.formRoomNote);
     const boxes = [...p.$<HTMLElement>("fieldset").querySelectorAll('input[name="employee"]')].map(
       (b) => b.getAttribute("value"),
     );
@@ -202,21 +196,37 @@ describe("the Open a roadmap button", () => {
       {
         method: "POST",
         url: `${ORG}/roadmaps`,
-        body: { name: "Queue migration", channelId: "room_a", employees: ["acme_web", "acme_dev"] },
+        body: { name: "Queue migration", employees: ["acme_web", "acme_dev"] },
         contentType: "application/json",
       },
     ]);
-    // The list is read again, and the new roadmap is on it.
+    // The list is read again, and the new roadmap is on it, with the way into its room.
     expect(p.calls.at(-1)).toMatchObject({ method: "GET", url: `${ORG}/roadmaps` });
     expect(p.text()).toContain(T.opened.replace("{n}", "1"));
     expect(p.text()).toContain("Queue migration");
-    expect(p.text()).toContain("room_a");
+    expect(p.$("a[data-room]")?.getAttribute("href")).toBe("/org/proj/acme/channels/roadmap_1");
     expect(p.$("form[data-form]")).toBeNull();
+  });
+
+  it("enters the room inside the app: its own channel page, through the app's history", async () => {
+    const p = await page(organization());
+    await p.click("button[data-open]");
+    await p.pick("acme_dev");
+    await p.name("Queue migration");
+    await p.submit();
+    const link = p.$<HTMLElement>("a[data-room]");
+    expect(link.getAttribute("target")).toBe("_top");
+    expect(link.textContent).toBe(T.enterRoom);
+    await p.click("a[data-room]");
+    expect(p.pushed).toEqual(["/org/proj/acme/channels/roadmap_1"]);
+    expect(p.popped).toEqual(["popstate"]);
+    // A click on the room's link is not a click on the row.
+    expect(p.hash()).toBe("");
   });
 
   it("keeps the form and says why when the server refuses, and sends nothing until the form is complete", async () => {
     const p = await page(
-      organization({ refuse: { status: 400, message: "Not in channel room_a: acme_dev." } }),
+      organization({ refuse: { status: 409, message: "No free channel id for roadmap #1's room." } }),
     );
     await p.click("button[data-open]");
     await p.name("Half done");
@@ -224,23 +234,22 @@ describe("the Open a roadmap button", () => {
     expect(p.text()).toContain(T.incomplete);
     expect(p.calls.filter((c) => c.method === "POST")).toEqual([]);
 
-    await p.choose("room_a");
     await p.pick("acme_dev");
     await p.submit();
     expect(p.calls.filter((c) => c.method === "POST")).toHaveLength(1);
     expect(p.text()).toContain(T.openFailed);
-    expect(p.text()).toContain("HTTP 400 — Not in channel room_a: acme_dev.");
+    expect(p.text()).toContain("HTTP 409 — No free channel id for roadmap #1's room.");
     expect(p.$<HTMLInputElement>('input[name="name"]').value).toBe("Half done");
   });
 
-  it("says no channel can hold a room when there is none, and Cancel goes back to the list", async () => {
+  it("says the organization has no employee when it has none, and Cancel goes back to the list", async () => {
     const p = await page((call, roadmaps) =>
-      call.url === `${ORG}/channels`
-        ? { status: 200, body: { channels: [CHANNELS[0], CHANNELS[2]] } }
+      call.url === `${ORG}/chart`
+        ? { status: 200, body: { ceoAgentId: "", employees: [] } }
         : organization()(call, roadmaps),
     );
     await p.click("button[data-open]");
-    expect(p.text()).toContain(T.noRooms);
+    expect(p.text()).toContain(T.noMembers);
     await p.click("button[data-cancel]");
     expect(p.text()).toContain(T.empty);
     expect(p.$("button[data-open]")).not.toBeNull();
@@ -253,7 +262,6 @@ describe("the Open a roadmap button", () => {
     expect(p.$<HTMLButtonElement>("button[data-submit]").disabled).toBe(true);
     await p.name("Queue migration");
     expect(p.$<HTMLButtonElement>("button[data-submit]").disabled).toBe(true);
-    await p.choose("room_a");
     await p.pick("acme_dev");
     expect(p.$<HTMLButtonElement>("button[data-submit]").disabled).toBe(false);
   });
@@ -279,11 +287,10 @@ describe("the Open a roadmap button", () => {
   it("opens a roadmap from anywhere on its row, and from the keyboard", async () => {
     const p = await page(organization());
     await p.click("button[data-open]");
-    await p.choose("room_a");
     await p.pick("acme_dev");
     await p.name("Queue migration");
     await p.submit();
-    await p.click("li.row .meta");
+    await p.click("li.row .num");
     expect(p.hash()).toBe("#1");
     p.clearHash();
     await p.press("Enter", "li.row");

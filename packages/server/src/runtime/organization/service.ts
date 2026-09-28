@@ -2319,6 +2319,8 @@ export class OrganizationService {
     const channels: OrgChannelItem[] = [];
     for (const file of await this.deps.store.listChannels(org.dir)) {
       if (!file.parsed.ok) continue;
+      // An unlisted channel (a roadmap's room) is reached from the work it was opened for.
+      if (file.parsed.value.unlisted === true) continue;
       const item = await this.channelItem(org, file.channelId, file.parsed.value, caller);
       if (caller.agentId !== null && !item.isMember) continue;
       channels.push(item);
@@ -2762,6 +2764,55 @@ export class OrganizationService {
       );
       return { sessionId: desk.desk.sessionId, queued: res.queued === true };
     });
+  }
+
+  /** OrgGateway.openRoom: the routes' channel creation, unlisted, with its employees in it from the start. */
+  async gatewayOpenRoom(args: {
+    projectId: string;
+    orgId: string;
+    channelId: string;
+    name: string;
+    purpose: string;
+    by: string;
+    agentIds: string[];
+  }): Promise<{ channelId: string }> {
+    const { projectId, orgId, channelId } = args;
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      const org = await this.requireOrg(projectId, orgId);
+      if (!isChannelId(channelId)) {
+        throw badRequest(
+          "Channel id must be 2–64 characters: a lowercase letter, then lowercase letters, digits or underscores.",
+        );
+      }
+      if ((await this.deps.store.readChannel(org.dir, channelId)) !== null) {
+        throw new HttpError(409, "channel_exists", `Channel id is already taken: ${channelId}`);
+      }
+      const creator = parsePrincipal(args.by);
+      if (creator?.kind !== "agent" && creator?.kind !== "user") {
+        throw badRequest(`Not a principal: ${args.by}`);
+      }
+      const members: string[] = creator.kind === "user" ? [args.by] : [];
+      for (const agentId of args.agentIds) {
+        if (!org.byId.has(agentId)) {
+          throw new HttpError(400, "not_an_employee", `${agentId} is not an employee of ${orgId}`);
+        }
+        const principal = agentPrincipal(agentId);
+        if (!members.includes(principal)) members.push(principal);
+      }
+      const cfg: ChannelConfig = {
+        name: args.name.trim() || channelId,
+        purpose: args.purpose.trim(),
+        createdBy: args.by,
+        createdAt: new Date(this.now()).toISOString(),
+        archived: false,
+        members,
+        unlisted: true,
+      };
+      await this.deps.store.writeChannel(org.dir, channelId, cfg);
+      await appendChannelMessage(this.deps, org, channelId, systemMessage(channelCreated(args.by)));
+    });
+    await this.scheduler.reconcile(projectId, orgId);
+    return { channelId };
   }
 
   /** {@link openTicketSession} without the ticket: the session is the employee's, marked as the organization's, and started on `body`. */
@@ -3280,6 +3331,7 @@ export class OrganizationModule {
       deliverToDesk: (projectId, orgId, agentId, text) =>
         orgService.gatewayDeliverToDesk(projectId, orgId, agentId, text),
       openEmployeeSession: (args) => orgService.gatewayOpenSession(args),
+      openRoom: (args) => orgService.gatewayOpenRoom(args),
       notifyProject: deps.notifyProject,
     };
     // Only active while this App is; the successor's start() reconciles from the files.

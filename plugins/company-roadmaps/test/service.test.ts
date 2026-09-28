@@ -345,8 +345,28 @@ describe("establishing", () => {
     });
   });
 
-  it("derives a roadmap item as a roadmap waiting for its room, and asks its moderator to open one", async () => {
+  it("derives a roadmap item with its own room, discussing at once, and tells its moderator the room is open", async () => {
     const n = await drafted();
+    const { roadmap, hints } = await service.establish(P, O, n, BOSS);
+    expect(hints).toEqual([]);
+    const child = roadmap.delegations.tests!.child!;
+    expect(w.gateway.rooms.at(-1)).toMatchObject({
+      channelId: `roadmap_${child}`,
+      name: "Test plan",
+      by: "user:boss",
+      agentIds: ["acme_qa", "acme_dev"],
+    });
+    const derived = await service.get(P, O, child, BOSS);
+    expect(derived).toMatchObject({ status: "discussing", channelId: `roadmap_${child}`, moderator: "acme_qa" });
+    expect(derived.openClones.map((c) => c.agentId)).toEqual(["acme_qa", "acme_dev"]);
+    const told = w.gateway.desks.find((d) => d.agentId === "acme_qa")!.text;
+    expect(told).toContain("Its room is open");
+    expect(told).not.toContain("penguin org channel create");
+  });
+
+  it("derives a roadmap item as a roadmap waiting for its room when no room can be opened, and asks its moderator to open one", async () => {
+    const n = await drafted();
+    w.gateway.refuseRooms = "the organization is being moved";
     const { roadmap } = await service.establish(P, O, n, BOSS);
     const child = roadmap.delegations.tests?.child;
     expect(child).toBe(n + 1);
@@ -456,6 +476,47 @@ describe("after the establishment", () => {
     await service.establish(P, O, n, BOSS);
     expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_web"]);
     expect(w.gateway.desks[0]?.text).toContain("The brief of your item changed");
+  });
+});
+
+describe("the room a roadmap opens itself", () => {
+  it("opens an unlisted room — the person and the employees in it — and discusses in it at once", async () => {
+    const { roadmap } = await service.create(
+      P,
+      O,
+      { name: "Queue migration", employees: ["acme_dev", "acme_web"], brief: "Move the queue" },
+      BOSS,
+    );
+    expect(w.gateway.rooms).toEqual([
+      {
+        channelId: `roadmap_${roadmap.number}`,
+        name: "Queue migration",
+        purpose: `Roadmap #${roadmap.number} — Move the queue`,
+        by: "user:boss",
+        agentIds: ["acme_dev", "acme_web"],
+      },
+    ]);
+    expect(roadmap).toMatchObject({ channelId: `roadmap_${roadmap.number}`, status: "discussing" });
+    expect(roadmap.openClones.map((c) => c.agentId)).toEqual(["acme_dev", "acme_web"]);
+    // The room is borrowed like any channel: a message there reaches the room sessions.
+    await post(w.root, `roadmap_${roadmap.number}`, "user:boss", "What goes first?");
+    await service.relayOnce();
+    expect(w.runner.to("room-1")).toHaveLength(1);
+    expect(w.gateway.desks).toEqual([]);
+  });
+
+  it("takes the next id when roadmap_<n> is taken", async () => {
+    await writeChannel(w.root, "roadmap_1", ["user:boss"]);
+    const { roadmap } = await service.create(P, O, { name: "Q", employees: ["acme_dev"] }, BOSS);
+    expect(roadmap.channelId).toBe("roadmap_1_2");
+  });
+
+  it("opens no roadmap when its room cannot be opened, and says why", async () => {
+    w.gateway.refuseRooms = "disk full";
+    expect(
+      await refusal(service.create(P, O, { name: "Q", employees: ["acme_dev"] }, BOSS)),
+    ).toEqual({ status: 500, code: "room_failed" });
+    expect((await service.list(P, O, BOSS)).roadmaps).toEqual([]);
   });
 });
 

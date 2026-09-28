@@ -116,6 +116,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 button.primary { background: var(--rm-accent); border-color: var(--rm-accent); color: var(--rm-accent-fg); }
 button.primary:hover:not(:disabled) { background: var(--rm-accent); opacity: 0.9; }
 button.icon { padding: 0.25rem 0.5rem; border-color: transparent; background: transparent; color: var(--rm-muted); }
+a.button { display: inline-block; font-size: 0.75rem; font-weight: 500; line-height: 1.5; padding: 0.25rem 0.625rem; border-radius: 0.375rem; border: 1px solid var(--rm-accent); background: var(--rm-accent); color: var(--rm-accent-fg); text-decoration: none; }
+a.button:hover { opacity: 0.9; text-decoration: none; }
+a.room { color: var(--rm-fg); text-decoration: underline; text-underline-offset: 2px; }
 button:focus-visible, a:focus-visible, .row:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 1px; }
 .pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 0.125rem 0.5rem; font-size: 0.6875rem; font-weight: 600; white-space: nowrap; }
 .pill.ok { background: var(--rm-ok-bg); color: var(--rm-ok-fg); }
@@ -175,13 +178,13 @@ export const PAGE_STRINGS = {
     loading: "Reading this organization's roadmaps…",
     empty: "No roadmap yet in this organization.",
     emptyHint:
-      "A roadmap is discussed in a channel: choose the channel and the employees who will discuss it, and it opens here.",
+      "A roadmap opens its own room — a channel only the roadmap leads to — with the employees you pick.",
     retry: "Retry",
     close: "Close",
     itemsOne: "1 item",
     itemsCount: "{n} items",
     moderator: "moderator",
-    roomHint: "The all-hands channel and archived channels cannot hold a room.",
+    enterRoom: "Enter the room",
     unavailable: "Company mode is off here, or this organization does not exist.",
     failed: "Could not read the roadmaps",
     signedOut: "Not signed in, or the sign-in has expired: sign in again and reload.",
@@ -191,14 +194,12 @@ export const PAGE_STRINGS = {
       "This page shows an organization's roadmaps at /org/<project>/<org>/roadmaps; it was opened at:",
     broken: "The page could not start:",
     open: "Open a roadmap",
-    formRoom: "Room — an existing channel",
-    formRoomPick: "Choose a channel…",
-    formEmployees: "Employees in that channel — the first one picked moderates",
+    formEmployees: "Employees — the first one picked moderates",
+    formRoomNote:
+      "The roadmap opens its own room with the employees you pick: a channel that is not on the channel list, reached from this page.",
     moderates: "moderates",
-    noRooms:
-      "No channel can hold a room yet: create a channel from the sidebar and invite the employees into it. The all-hands channel cannot hold one.",
-    noMembers: "No employee is in this channel yet: invite them from the channel first.",
-    incomplete: "Give it a name, choose a room and pick at least one employee.",
+    noMembers: "This organization has no employee yet.",
+    incomplete: "Give it a name and pick at least one employee.",
     submit: "Open",
     cancel: "Cancel",
     opening: "Opening…",
@@ -225,13 +226,13 @@ export const PAGE_STRINGS = {
     title: "路线图",
     loading: "正在读取本组织的路线图……",
     empty: "本组织还没有路线图。",
-    emptyHint: "路线图在一个频道里讨论：选好频道和参与讨论的员工，就在这里开出来。",
+    emptyHint: "路线图会自己开一间讨论室——一个只有从路线图才进得去的频道——里面是你选的员工。",
     retry: "重试",
     close: "关闭",
     itemsOne: "1 个条目",
     itemsCount: "{n} 个条目",
     moderator: "主持",
-    roomHint: "全员频道和已归档的频道不能当讨论室。",
+    enterRoom: "进入讨论室",
     unavailable: "这里未开启公司模式，或该组织不存在。",
     failed: "读取路线图失败",
     signedOut: "未登录或登录已过期：请重新登录后刷新。",
@@ -240,13 +241,11 @@ export const PAGE_STRINGS = {
     elsewhere: "本页展示 /org/<project>/<org>/roadmaps 下一个组织的路线图；它现在打开在：",
     broken: "页面启动失败：",
     open: "开一份路线图",
-    formRoom: "讨论室——一个已有的频道",
-    formRoomPick: "选一个频道……",
-    formEmployees: "这个频道里的员工——先选的那位主持",
+    formEmployees: "员工——先选的那位主持",
+    formRoomNote: "路线图会带着你选的员工自己开一间讨论室：它是一个不在频道列表里的频道，从这一页进去。",
     moderates: "主持",
-    noRooms: "还没有能当讨论室的频道：先在侧栏里建一个频道，把员工邀请进去。全员频道不能当讨论室。",
-    noMembers: "这个频道里还没有员工：先在频道里邀请他们。",
-    incomplete: "请填上名称、选一个讨论室，并至少选一名员工。",
+    noMembers: "这个组织还没有员工。",
+    incomplete: "请填上名称，并至少选一名员工。",
     submit: "开",
     cancel: "取消",
     opening: "正在开……",
@@ -315,6 +314,18 @@ try {
   const m = /\\/org\\/([^/]+)\\/([^/]+)\\/roadmaps(?:\\/(\\d+))?/.exec(where);
   const org = m === null ? "" : "/api/projects/" + m[1] + "/organizations/" + m[2];
   const openButton = '<button type="button" class="primary" data-open>' + esc(T.open) + "</button>";
+  // A roadmap's room is a channel of the app that the channel list leaves out: the way in is a
+  // link to the app's own channel page, followed inside the app (a history entry the app's
+  // router reads) and, where that cannot be done, as an ordinary link of the whole window.
+  const roomPath = (channelId) => "/org/" + m[1] + "/" + m[2] + "/channels/" + encodeURIComponent(channelId);
+  const roomLink = (r, cls) => r.channelId ? '<a class="' + cls + '" href="' + esc(roomPath(r.channelId)) + '" target="_top" data-room="' + esc(r.channelId) + '">' + esc(T.enterRoom) + "</a>" : "";
+  const enter = (path) => read(() => {
+    const parent = window.parent;
+    if (!parent || parent === window || !parent.history) return false;
+    parent.history.pushState(null, "", path);
+    parent.dispatchEvent(new parent.PopStateEvent("popstate"));
+    return true;
+  }, false);
   // A status as a pill, in the app's tones: under discussion is live work, waiting for a room is
   // unfinished, established is done well, a shelved discussion recedes.
   const pill = (r) => {
@@ -364,24 +375,18 @@ try {
   // returns to it without asking the server again.
   let view = "";
   const draw = (html, action) => { say(html, action); view = main.innerHTML; };
-  // The dialog's state while it is open: the channels that can hold a room, the chosen one's
-  // employees, and the employees picked, in the order picked (the first moderates).
+  // The dialog's state while it is open: the organization's employees, and the ones picked, in
+  // the order picked (the first moderates). The room is not chosen: the roadmap opens its own.
   let form = null;
-  const ready = () => form !== null && form.name.trim() !== "" && form.room !== "" && form.picked.length > 0;
+  const ready = () => form !== null && form.name.trim() !== "" && form.picked.length > 0;
   function drawForm(note, focus) {
     const f = form;
     let body;
-    if (f.rooms === null) body = '<p class="muted">' + esc(T.loading) + "</p>";
-    else if (f.rooms.length === 0) body = '<p class="muted">' + esc(T.noRooms) + '</p><div class="dialog-foot"><button type="button" data-cancel>' + esc(T.cancel) + "</button></div>";
+    if (f.members === null) body = '<p class="muted">' + esc(T.loading) + "</p>";
+    else if (f.members.length === 0) body = (note || "") + '<p class="muted">' + esc(T.noMembers) + '</p><div class="dialog-foot"><button type="button" data-cancel>' + esc(T.cancel) + "</button></div>";
     else {
       body = '<form data-form><div class="field"><label for="rm-name">' + esc(T.name) + '</label><input id="rm-name" name="name" maxlength="120" autocomplete="off" value="' + esc(f.name) + '"></div>';
-      body += '<div class="field"><label for="rm-room">' + esc(T.formRoom) + '</label><select id="rm-room" name="room"><option value="">' + esc(T.formRoomPick) + "</option>" +
-        f.rooms.map((c) => '<option value="' + esc(c.channelId) + '"' + (c.channelId === f.room ? " selected" : "") + ">" + esc(c.name) + (c.name === c.channelId ? "" : " (" + esc(c.channelId) + ")") + "</option>").join("") +
-        '</select><div class="hint">' + esc(T.roomHint) + "</div></div>";
-      if (f.room !== "") {
-        body += f.members.length === 0 ? '<p class="muted">' + esc(T.noMembers) + "</p>" :
-          '<fieldset class="field"><legend>' + esc(T.formEmployees) + '</legend><ul class="picks">' + f.members.map((e) => '<li><label><input type="checkbox" name="employee" value="' + esc(e.id) + '"' + (f.picked.includes(e.id) ? " checked" : "") + "> <span>" + esc(e.name) + '</span> <span class="muted mono small">' + esc(e.id) + "</span>" + (f.picked[0] === e.id ? ' <span class="pill gray">' + esc(T.moderates) + "</span>" : "") + "</label></li>").join("") + "</ul></fieldset>";
-      }
+      body += '<fieldset class="field"><legend>' + esc(T.formEmployees) + '</legend><ul class="picks">' + f.members.map((e) => '<li><label><input type="checkbox" name="employee" value="' + esc(e.id) + '"' + (f.picked.includes(e.id) ? " checked" : "") + "> <span>" + esc(e.name) + '</span> <span class="muted mono small">' + esc(e.id) + "</span>" + (f.picked[0] === e.id ? ' <span class="pill gray">' + esc(T.moderates) + "</span>" : "") + "</label></li>").join("") + '</ul><div class="hint">' + esc(T.formRoomNote) + "</div></fieldset>";
       body += (note || "") + '<div class="dialog-foot"><button type="button" data-cancel>' + esc(T.cancel) + '</button><button type="submit" class="primary" data-submit' + (ready() ? "" : " disabled") + ">" + esc(T.submit) + "</button></div></form>";
     }
     main.innerHTML = view + '<div class="overlay" data-overlay><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="rm-dialog-title"><div class="dialog-head"><h2 id="rm-dialog-title">' + esc(T.open) + '</h2><button type="button" class="icon" data-cancel aria-label="' + esc(T.close) + '">✕</button></div><div class="dialog-body">' + body + "</div></div></div>";
@@ -395,31 +400,21 @@ try {
     if (b) b.disabled = !ready();
   };
   async function openForm() {
-    form = { rooms: null, room: "", members: [], picked: [], name: "" };
+    form = { members: null, picked: [], name: "" };
     drawForm("");
     try {
-      const { channels } = await request("GET", org + "/channels");
+      const chart = await request("GET", org + "/chart");
       if (form === null) return;
-      form.rooms = channels.filter((c) => !c.archived && !c.everyone);
+      form.members = (chart.employees || []).map((e) => ({ id: e.agentId, name: e.name || e.agentId }));
       drawForm("", '[name="name"]');
-    } catch (e) { if (form !== null) { form.rooms = []; drawForm(failure(e, T.openFailed)); } }
-  }
-  async function chooseRoom(room) {
-    form.room = room; form.members = []; form.picked = [];
-    if (room !== "") {
-      try {
-        const detail = await request("GET", org + "/channels/" + encodeURIComponent(room));
-        form.members = detail.members.filter((x) => x.kind === "agent").map((x) => ({ id: x.principal.slice("agent:".length), name: x.name }));
-      } catch (e) { drawForm(failure(e, T.openFailed)); return; }
-    }
-    drawForm("");
+    } catch (e) { if (form !== null) { form.members = []; drawForm(failure(e, T.openFailed)); } }
   }
   async function submit() {
     const name = form.name.trim();
     if (!ready()) { drawForm('<div class="strip warn"><p>' + esc(T.incomplete) + "</p></div>"); return; }
     drawForm('<p class="muted">' + esc(T.opening) + "</p>");
     try {
-      const made = await request("POST", org + "/roadmaps", { name, channelId: form.room, employees: form.picked });
+      const made = await request("POST", org + "/roadmaps", { name, employees: form.picked });
       form = null;
       const hints = (made.hints || []).map((h) => "<p>" + esc(h) + "</p>").join("");
       await list('<div class="strip ok"><p>' + esc(T.opened.replace("{n}", String(made.roadmap.number))) + "</p></div>" + (hints ? '<div class="strip warn">' + hints + "</div>" : ""));
@@ -434,7 +429,7 @@ try {
     draw((note || "") + '<ul class="rows">' + roadmaps.map((r) => {
       const mod = moderatorOf(r);
       const meta = [
-        r.channelId ? '<span class="mono">#' + esc(r.channelId) + "</span>" : "",
+        roomLink(r, "room"),
         mod ? "<span>" + esc(T.moderator) + " " + esc(mod) + "</span>" : "",
         "<span>" + esc(r.items.length === 1 ? T.itemsOne : T.itemsCount.replace("{n}", String(r.items.length))) + "</span>",
       ].filter(Boolean).join('<span aria-hidden="true">·</span>');
@@ -446,8 +441,8 @@ try {
     const r = await get("/" + n);
     const mod = moderatorOf(r);
     const section = (title, text) => "<section><h2>" + esc(title) + '</h2><div class="card">' + (text ? esc(text) : '<span class="muted">' + esc(T.none) + "</span>") + "</div></section>";
-    main.innerHTML = '<nav class="crumb"><a href="#" data-n="">' + esc(T.back) + '</a></nav><header class="head"><h1><span class="muted mono">#' + r.number + "</span> " + esc(r.name) + " " + pill(r) + "</h1></header>" +
-      '<div class="meta">' + [r.channelId ? esc(T.room) + ' <span class="mono">#' + esc(r.channelId) + "</span>" : "", mod ? esc(T.moderator) + " " + esc(mod) : ""].filter(Boolean).join('<span aria-hidden="true">·</span>') + "</div>" +
+    main.innerHTML = '<nav class="crumb"><a href="#" data-n="">' + esc(T.back) + '</a></nav><header class="head"><h1><span class="muted mono">#' + r.number + "</span> " + esc(r.name) + " " + pill(r) + "</h1>" + roomLink(r, "button primary") + "</header>" +
+      '<div class="meta">' + [mod ? esc(T.moderator) + " " + esc(mod) : ""].filter(Boolean).join('<span aria-hidden="true">·</span>') + "</div>" +
       section(T.record, r.record) + section(T.body, r.body) +
       "<section><h2>" + esc(T.items) + "</h2>" + (r.items.length === 0 ? '<p class="muted">' + esc(T.none) + "</p>" : '<ul class="rows"><li class="row" style="cursor: default"><ul class="items grow">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul></li></ul>") + "</section>";
     view = main.innerHTML;
@@ -463,6 +458,8 @@ try {
     if (e.target.closest("[data-cancel]")) { closeForm(); return; }
     if (e.target.closest("[data-open]")) { void openForm(); return; }
     if (e.target.closest("[data-retry]")) { void show(current); return; }
+    const room = e.target.closest("[data-room]");
+    if (room) { if (enter(room.getAttribute("href"))) e.preventDefault(); return; }
     const a = e.target.closest("[data-n]");
     if (a && !e.target.closest("input, select, button, label")) { e.preventDefault(); location.hash = a.dataset.n; }
   });
@@ -475,8 +472,7 @@ try {
   });
   main.addEventListener("change", (e) => {
     if (!form) return;
-    if (e.target.name === "room") void chooseRoom(e.target.value);
-    else if (e.target.name === "employee") {
+    if (e.target.name === "employee") {
       const id = e.target.value;
       form.picked = e.target.checked ? form.picked.filter((x) => x !== id).concat(id) : form.picked.filter((x) => x !== id);
       drawForm("");

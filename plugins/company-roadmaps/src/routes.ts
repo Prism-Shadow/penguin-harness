@@ -3,7 +3,8 @@
  * `/api/projects/:projectId/organizations/:orgId/roadmaps` behind its cookie gate.
  *
  *   GET    /[?channel=&status=]      the roadmaps (a room's, for the channel page's side panel)
- *   POST   /                         open one (a person): { name, channelId, employees, brief?, parent? }
+ *   POST   /                         open one (a person): { name, employees, channelId?, brief?, parent? } — without
+ *                                    a channelId the roadmap opens its own unlisted room
  *   GET    /:number                  one roadmap: record, body, items, delegations, room sessions, events
  *   PATCH  /:number                  { name } rename (a person or the moderator)
  *   PUT    /:number/draft            { record?, body?, items? } (a person or the moderator; while discussing)
@@ -108,7 +109,7 @@ export function roadmapRoutes(service: RoadmapService): Hono {
         o,
         {
           name: body.name as string,
-          channelId: body.channelId as string,
+          ...(body.channelId !== undefined ? { channelId: body.channelId as string } : {}),
           employees: body.employees as string[],
           ...(typeof body.brief === "string" ? { brief: body.brief } : {}),
           ...(parent !== undefined ? { parent: parent as number } : {}),
