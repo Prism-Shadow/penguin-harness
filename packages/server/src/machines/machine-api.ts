@@ -32,7 +32,6 @@ export interface MachineApi {
 
 /** One client per (machine, session): `agent` dials the machine's server through its session, `port` is the server's port over there. */
 export function machineApi(agent: http.Agent, port: number, cookie: string): MachineApi {
-  /** One request, answered whole — so both shapes agree on Host, cookie and what a failure is. */
   const send = (
     method: string,
     path: string,
@@ -40,51 +39,7 @@ export function machineApi(agent: http.Agent, port: number, cookie: string): Mac
     contentType: string,
     timeoutMs: number,
   ): Promise<{ status: number; text: string }> =>
-    new Promise((resolve, reject) => {
-      const req = http.request(
-        {
-          agent,
-          host: "127.0.0.1",
-          port,
-          path,
-          method,
-          headers: {
-            host: `localhost:${port}`,
-            cookie,
-            ...(payload === null
-              ? {}
-              : { "content-type": contentType, "content-length": String(payload.length) }),
-          },
-          timeout: timeoutMs,
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on("data", (chunk: Buffer) => chunks.push(chunk));
-          res.on("end", () =>
-            resolve({
-              status: res.statusCode ?? 0,
-              text: Buffer.concat(chunks).toString("utf8"),
-            }),
-          );
-          // `end` is the only settling event on the happy path. A machine that closes the
-          // channel after the headers and before the body — its server restarting under a
-          // hot update, the session dropping mid-answer — ends the response without `end`,
-          // and the request itself need not error once headers were received. Left alone,
-          // the promise would hang the job that made it.
-          res.on("error", reject);
-          res.on("close", () => {
-            if (!res.complete) reject(new Error("the machine's server closed mid-answer"));
-          });
-        },
-      );
-      req.on("timeout", () => {
-        req.destroy();
-        reject(new Error("the machine's server did not answer in time"));
-      });
-      req.on("error", reject);
-      if (payload === null) req.end();
-      else req.end(payload);
-    });
+    sendTo(agent, port, cookie, method, path, payload, contentType, timeoutMs);
 
   return {
     request: (method, path, body) =>
@@ -98,4 +53,89 @@ export function machineApi(agent: http.Agent, port: number, cookie: string): Mac
     postBytes: (path, contentType, body, timeoutMs) =>
       send("POST", path, body, contentType, timeoutMs),
   };
+}
+
+/**
+ * A PUT whose body is streamed from `body`, never held whole: one blob of the hot update can be
+ * gigabytes. `length` is declared up front, so the far side can refuse early and a short stream is
+ * a transport error rather than a silently truncated blob. `timeoutMs` is an idle timeout — how
+ * long the socket may sit with nothing moving — not a deadline for the whole transfer, which would
+ * be a size limit in disguise.
+ */
+export function putStream(
+  agent: http.Agent,
+  port: number,
+  cookie: string,
+  path: string,
+  body: { stream: NodeJS.ReadableStream; length: number },
+  timeoutMs: number,
+): Promise<{ status: number; text: string }> {
+  return sendTo(agent, port, cookie, "PUT", path, body, "application/octet-stream", timeoutMs);
+}
+
+/** One request, answered whole — so every shape agrees on Host, cookie and what a failure is. */
+function sendTo(
+  agent: http.Agent,
+  port: number,
+  cookie: string,
+  method: string,
+  path: string,
+  payload: Buffer | { stream: NodeJS.ReadableStream; length: number } | null,
+  contentType: string,
+  timeoutMs: number,
+): Promise<{ status: number; text: string }> {
+  const length = payload === null ? 0 : payload.length;
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        agent,
+        host: "127.0.0.1",
+        port,
+        path,
+        method,
+        headers: {
+          host: `localhost:${port}`,
+          cookie,
+          ...(payload === null
+            ? {}
+            : { "content-type": contentType, "content-length": String(length) }),
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            text: Buffer.concat(chunks).toString("utf8"),
+          }),
+        );
+        // `end` is the only settling event on the happy path. A machine that closes the
+        // channel after the headers and before the body — its server restarting under a
+        // hot update, the session dropping mid-answer — ends the response without `end`,
+        // and the request itself need not error once headers were received. Left alone,
+        // the promise would hang the job that made it.
+        res.on("error", reject);
+        res.on("close", () => {
+          if (!res.complete) reject(new Error("the machine's server closed mid-answer"));
+        });
+      },
+    );
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("the machine's server did not answer in time"));
+    });
+    req.on("error", reject);
+    if (payload === null) req.end();
+    else if (Buffer.isBuffer(payload)) req.end(payload);
+    else {
+      // Piped, so the socket's backpressure paces the read: nothing is held but what is in flight.
+      payload.stream.on("error", (err) => {
+        req.destroy(err);
+        reject(err);
+      });
+      payload.stream.pipe(req);
+    }
+  });
 }

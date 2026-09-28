@@ -65,9 +65,11 @@
  * Reload is strictly request-driven: nothing watches, nothing auto-triggers.
  */
 import crypto from "node:crypto";
+import { once } from "node:events";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { finished } from "node:stream/promises";
 import zlib from "node:zlib";
 import { pathToFileURL } from "node:url";
 import type { Instance, Json, AnyIface, AnyImpl, Park } from "@prismshadow/penguin-core/kernel";
@@ -104,18 +106,17 @@ export interface GitSource {
  * fails to load from a bundle placed outside the server's own module graph).
  */
 export interface UpgradeAssets {
-  /** relPath → base64 content. */
-  files: Record<string, string>;
+  /** relPath → the blob holding its content. */
+  files: Record<string, BlobRef>;
   /** relPaths that must land executable (a helper binary the platform spawns). */
   exec?: string[];
 }
 
-/**
- * One atomic push: the platform bundle and the cli bundle (each inline ESM source,
- * independent single-file artifacts) plus the web dist as a { relPath: base64 }
- * manifest. All three travel in the SAME request — there is no partial-target
- * upgrade.
- */
+/** One part of a push, by the sha256 of its bytes: the name the blob store holds it under. */
+export interface BlobRef {
+  sha: string;
+}
+
 /** One materialized assets directory's own record of what it was built from. */
 interface AssetsRecord {
   /** relPath → sha256, the same map the pusher named (or the one derived from inline files). */
@@ -123,12 +124,43 @@ interface AssetsRecord {
 }
 const ASSETS_RECORD = ".manifest.json";
 
+/**
+ * One atomic push: the platform bundle and the cli bundle (independent single-file ESM
+ * artifacts) plus the web dist as a { relPath: blob } manifest. All three travel in the SAME
+ * request — there is no partial-target upgrade. Every part is already in the blob store by the
+ * time a target exists: whatever a push carried inline was written there as it was read (see
+ * main.ts's parseUpgradeTarget), so a target never holds content, only names.
+ */
 export interface UpgradeAllTarget {
-  platform: string;
-  cli: string;
-  web: Record<string, string>;
+  platform: BlobRef;
+  cli: BlobRef;
+  web: Record<string, BlobRef>;
   assets?: UpgradeAssets;
   source?: GitSource;
+}
+
+/** Bytes on their way into the blob store, hashed as they are written. */
+export interface BlobWriter {
+  write(chunk: Uint8Array): Promise<void>;
+  /**
+   * Finishes the blob and returns the sha256 of what was written. With `expect`, content that
+   * hashes to anything else is discarded rather than stored.
+   */
+  close(expect?: string): Promise<string>;
+  /** Drops whatever was written; nothing reaches the store. */
+  abort(): Promise<void>;
+}
+
+/**
+ * The blobs one request writes or names, kept alive against a concurrent commit's sweep until
+ * the request is done with them: a push that is still being read has referenced nothing yet as
+ * far as harness.json knows, and a large one is read for minutes.
+ */
+export interface BlobLease {
+  open(): Promise<BlobWriter>;
+  /** Holds a blob the store already has; false when it does not have it. */
+  hold(sha: string): boolean;
+  release(): void;
 }
 
 export type UpgradeOutcome =
@@ -376,17 +408,21 @@ export class HmrHost<Api extends Park = Park> {
   ): Promise<UpgradeOutcome> {
     const current = await this.ensure();
 
-    if (typeof target.web["index.html"] !== "string") {
+    if (target.web["index.html"] === undefined) {
       throw new Error("web dist manifest has no index.html");
     }
+    // The web dist and the two bundles are read back whole: the dist is served from memory
+    // (see resolveWebSource), and a bundle is source text a module loader takes as one string.
+    // Assets are the part that is never read here — they are copied from the store as files.
     const webMem = new Map<string, Buffer>();
-    for (const [rel, b64] of Object.entries(target.web)) {
+    for (const [rel, ref] of Object.entries(target.web)) {
       if (!isSafeRelPath(rel)) throw new Error(`unsafe path in web dist manifest: ${rel}`);
-      webMem.set(rel, Buffer.from(b64, "base64"));
+      webMem.set(rel, this.blobBytes(ref.sha));
     }
+    const cliContent = this.blobBytes(target.cli.sha).toString("utf8");
 
     const { file: platformPath, sha: platformSha } = await this.storePlatformBundle(
-      target.platform,
+      this.blobBytes(target.platform.sha).toString("utf8"),
     );
     const bundle = await this.importBundleFile(platformPath);
     const source = target.source ?? null;
@@ -446,18 +482,21 @@ export class HmrHost<Api extends Park = Park> {
     this.current = bundle;
     this.webMem = webMem;
 
-    const digest = filesDigest(target.web);
-    const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files: target.web })));
+    const webFiles = Object.fromEntries(
+      [...webMem].map(([rel, bytes]) => [rel, bytes.toString("base64")]),
+    );
+    const digest = filesDigest(webFiles);
+    const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files: webFiles })));
     // The parts by the names a pusher gives them (HMR_BLOBS_PATH), whether or not this push
     // named them: what the sweep keeps alive so an unchanged part is never uploaded twice.
     const blobs = [
-      sha256(Buffer.from(target.platform, "utf8")),
-      sha256(Buffer.from(target.cli, "utf8")),
-      ...[...webMem.values()].map(sha256),
+      target.platform.sha,
+      target.cli.sha,
+      ...Object.values(target.web).map((ref) => ref.sha),
     ];
     const persisted = await this.persistVersion(
       platformSha,
-      target.cli,
+      cliContent,
       gz,
       digest.slice(0, 16),
       assetsDir,
@@ -569,8 +608,12 @@ export class HmrHost<Api extends Park = Park> {
   /**
    * Unpacks a push's assets under store/assets/<sha>/, content-addressed like every other
    * artifact so an unchanged set reuses its directory. Modes are restored from the push's
-   * `exec` list: an asset arrives as base64 with no mode of its own, and a helper binary
-   * without its exec bit is exactly the failure this whole path exists to avoid.
+   * `exec` list: an asset reaches the store as bytes with no mode of its own, and a helper
+   * binary without its exec bit is exactly the failure this whole path exists to avoid.
+   *
+   * Every file is copied from the blob store as a file, never read into memory: assets are
+   * the part of a push that can be arbitrarily large (a native module, a helper binary, a
+   * model), and holding them here is what used to make a push's size a memory question.
    *
    * An identical set is NOT re-written. That is a correctness requirement, not a saving:
    * these assets are native modules, and on Windows the copies from the last push are
@@ -580,12 +623,12 @@ export class HmrHost<Api extends Park = Park> {
    * push interrupted halfway is repaired rather than trusted.
    */
   private async materializeAssets(assets: UpgradeAssets): Promise<string> {
-    // Every file goes through the blob store first, so a set is one map of relPath → sha256
-    // whether its content arrived in this push or was already here.
+    // A set is one map of relPath → sha256 whether its content arrived in this push or was
+    // already here: parseUpgradeTarget put everything inline into the blob store first.
     const files: Record<string, string> = {};
-    for (const [rel, b64] of Object.entries(assets.files)) {
+    for (const [rel, ref] of Object.entries(assets.files)) {
       if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
-      files[rel] = await this.storeBlob(Buffer.from(b64, "base64"));
+      files[rel] = ref.sha;
     }
 
     const sha = recordDigest(files).slice(0, 16);
@@ -600,10 +643,9 @@ export class HmrHost<Api extends Park = Park> {
       // Repairing an incomplete directory: whatever already matches is left alone. The
       // content comes from the blob store, never from the payload — after the first push
       // of a given file the payload does not carry it any more.
-      const content = await fsp.readFile(this.blobPath(blob));
-      if (!(await sameFileContent(file, content))) await fsp.writeFile(file, content);
-      // Explicit chmod: writeFile's mode is masked by umask, and ignored outright when
-      // the file already exists (a reused, content-addressed directory).
+      if (!(await holdsBlob(file, blob))) await fsp.copyFile(this.blobPath(blob), file);
+      // Explicit chmod: a copy takes the blob's mode, and a reused, content-addressed
+      // directory keeps whatever mode its file already had.
       await fsp.chmod(file, exec.has(rel) ? 0o755 : 0o644);
     }
     const record: AssetsRecord = { files };
@@ -621,19 +663,81 @@ export class HmrHost<Api extends Park = Park> {
     return path.join(this.storeDir, "blobs", sha.slice(0, 2), sha);
   }
 
-  /** Writes a blob under its hash (a no-op when it is already there) and returns the hash. */
-  async storeBlob(content: Buffer): Promise<string> {
-    const sha = sha256(content);
-    const file = this.blobPath(sha);
-    if (!fs.existsSync(file)) {
-      await fsp.mkdir(path.dirname(file), { recursive: true });
-      // Written beside and renamed in: a crash mid-write must not leave a blob whose name
-      // promises content it does not have.
-      const tmp = `${file}.${process.pid}.tmp`;
-      await fsp.writeFile(tmp, content);
-      await fsp.rename(tmp, file);
-    }
-    return sha;
+  /** The blobs every live lease writes or names: the sweep keeps them (see pruneStore). */
+  private readonly leases = new Set<Set<string>>();
+  /** Temp files a writer is filling right now: the sweep leaves them alone. */
+  private readonly incoming = new Set<string>();
+
+  /** Opens a lease for one request's blobs; see BlobLease. */
+  blobLease(): BlobLease {
+    const held = new Set<string>();
+    this.leases.add(held);
+    return {
+      open: () => this.openBlob(held),
+      hold: (sha) => {
+        if (!isBlobName(sha) || !fs.existsSync(this.blobPath(sha))) return false;
+        held.add(sha);
+        return true;
+      },
+      release: () => {
+        this.leases.delete(held);
+      },
+    };
+  }
+
+  /**
+   * One blob, streamed to disk: bytes go to a temp file under store/incoming/ as they arrive
+   * and are hashed on the way, so a blob of any size costs one chunk of memory. Only once the
+   * hash is known is the file renamed in under it — a crash mid-write must not leave a blob
+   * whose name promises content it does not have. Every temp name is unique, so two uploads
+   * of the same content never write into one file.
+   */
+  private async openBlob(held: Set<string>): Promise<BlobWriter> {
+    const dir = path.join(this.storeDir, "incoming");
+    await fsp.mkdir(dir, { recursive: true });
+    const tmp = path.join(dir, `${process.pid}-${crypto.randomBytes(8).toString("hex")}.tmp`);
+    this.incoming.add(tmp);
+    const hash = crypto.createHash("sha256");
+    const out = fs.createWriteStream(tmp);
+    let failed: Error | null = null;
+    // Attached for the writer's whole life: a write error with no listener would take the
+    // process down; this way the next write or the close reports it.
+    out.on("error", (err) => {
+      failed = err;
+    });
+    const done = async (): Promise<void> => {
+      await fsp.rm(tmp, { force: true }).catch(() => undefined);
+      this.incoming.delete(tmp);
+    };
+    return {
+      write: async (chunk) => {
+        if (failed !== null) throw failed;
+        hash.update(chunk);
+        if (!out.write(chunk)) await once(out, "drain");
+      },
+      close: async (expect) => {
+        try {
+          out.end();
+          await finished(out);
+          const sha = hash.digest("hex");
+          if (expect !== undefined && sha !== expect) return sha;
+          // Held before it is visible under its name, so no sweep ever finds it unowned.
+          held.add(sha);
+          const file = this.blobPath(sha);
+          if (!fs.existsSync(file)) {
+            await fsp.mkdir(path.dirname(file), { recursive: true });
+            await fsp.rename(tmp, file);
+          }
+          return sha;
+        } finally {
+          await done();
+        }
+      },
+      abort: async () => {
+        out.destroy();
+        await done();
+      },
+    };
   }
 
   /** The bytes of a blob the store holds, or null: what a push that names its parts by hash is resolved from. */
@@ -644,6 +748,13 @@ export class HmrHost<Api extends Park = Park> {
     } catch {
       return null;
     }
+  }
+
+  /** readBlob for a part a lease already holds: its absence is a fault, not an answer. */
+  private blobBytes(sha: string): Buffer {
+    const bytes = this.readBlob(sha);
+    if (bytes === null) throw new Error(`blob ${sha.slice(0, 12)} left the store mid-push`);
+    return bytes;
   }
 
   /**
@@ -828,6 +939,9 @@ export class HmrHost<Api extends Park = Park> {
     // (materialized before records existed) keeps nothing alive through the blob store
     // because it never read from it, and its own files stay untouched.
     const live = new Set<string>(manifest.blobs ?? []);
+    // And whatever a request still in flight has written or named (see BlobLease): until its
+    // own commit, harness.json knows nothing about it.
+    for (const held of this.leases) for (const sha of held) live.add(sha);
     for (const name of await fsp.readdir(assetsRoot).catch(() => [] as string[])) {
       try {
         const record = JSON.parse(
@@ -859,6 +973,13 @@ export class HmrHost<Api extends Park = Park> {
       }
       if (left === 0) await fsp.rmdir(shardDir).catch(() => undefined);
     }
+
+    // Temp files no writer owns: left by a request that died with the process.
+    const incomingDir = path.join(this.storeDir, "incoming");
+    for (const name of await fsp.readdir(incomingDir).catch(() => [] as string[])) {
+      const file = path.join(incomingDir, name);
+      if (!this.incoming.has(file)) await fsp.rm(file, { force: true }).catch(() => undefined);
+    }
   }
 
   /** Process-exit sweep only; never part of an upgrade. */
@@ -878,8 +999,18 @@ export function isBlobName(name: string): boolean {
   return /^[0-9a-f]{64}$/.test(name);
 }
 
-function sha256(content: Buffer): string {
-  return crypto.createHash("sha256").update(content).digest("hex");
+/**
+ * Whether `file` already holds the blob `sha` (missing/unreadable counts as no). Hashed as a
+ * stream: an asset may be larger than anything this process should hold at once.
+ */
+async function holdsBlob(file: string, sha: string): Promise<boolean> {
+  try {
+    const hash = crypto.createHash("sha256");
+    for await (const chunk of fs.createReadStream(file)) hash.update(chunk as Buffer);
+    return hash.digest("hex") === sha;
+  } catch {
+    return false;
+  }
 }
 
 function sha1(content: string): string {

@@ -186,6 +186,10 @@ export class HttpModule {
     }
     let capped: { size: number; mw: MiddlewareHandler } | null = null;
     app.use("/api/*", (c, next) => {
+      // The upgrade channel streams a push into the blob store and buffers nothing, and the
+      // attachment budget says nothing about how large a push may be; a push-size policy, if a
+      // deployment wants one, belongs on that route group itself (hmr/routes.ts).
+      if (c.req.path === "/api/hmr" || c.req.path.startsWith("/api/hmr/")) return next();
       const size = bodyLimitBytes(this.settings.getAttachmentLimitsMb());
       if (capped === null || capped.size !== size) {
         capped = {

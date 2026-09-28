@@ -118,7 +118,7 @@ import { UpdateCheckService } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
-import { HmrHost, hmrControl } from "@prismshadow/penguin-hmr";
+import { HMR_ROUTE_PREFIX, HmrHost, hmrControl } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
 import { packagedPlatform } from "./hmr/platform.js";
@@ -442,17 +442,25 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   // 300MB bodies on a server whose limits were left at 10MB. It is re-derived per request, so an
   // admin's change takes effect immediately; the middleware itself is memoized on the resulting
   // size so the steady state allocates nothing.
+  //
+  // `/api/hmr` is outside the cap on every host. The cap exists because the sinks behind it buffer
+  // what arrives, and the upgrade channel's endpoints no longer do (packages/hmr streams a push
+  // into the blob store a chunk at a time); the attachment budget is a statement about chat
+  // attachments, not about how large a push may be. How large a push may be, if a deployment wants
+  // a number at all, is the platform's to decide on its own route group — not this layer's, which
+  // ships only by reinstall.
+  //
   // A host of the platform's own — the Browser's `<label>.localhost` sites — is not the App:
   // its `/api/*` is a browsed site's, whose writes are that site's business (a form post,
   // a multipart upload), so the two App defenses below step aside there. The one path that
-  // is never a site's is the upgrade channel, which keeps its defenses on every host.
+  // is never a site's is the upgrade channel, which keeps its write defense on every host.
   const siteHost = (c: Context): boolean => {
     const host = hostOnly(requestAuthority(c.req.url, c.req.header("host"))).toLowerCase();
     return host.endsWith(".localhost") && !c.req.path.startsWith("/api/hmr");
   };
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
-    if (siteHost(c)) return next();
+    if (siteHost(c) || isHmrPath(c.req.path)) return next();
     const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
@@ -531,6 +539,11 @@ export type WebSource = { kind: "mem"; files: Map<string, Buffer> } | { kind: "d
  *   makes that ask a 304 instead of a re-download. A web push changes the ETag, so the
  *   very next load anywhere picks the new app up.
  */
+/** The upgrade channel's own paths: streamed by the mechanism, so no body cap applies (see createApp). */
+function isHmrPath(pathname: string): boolean {
+  return pathname === HMR_ROUTE_PREFIX || pathname.startsWith(`${HMR_ROUTE_PREFIX}/`);
+}
+
 function cacheControlFor(servedPath: string): string {
   return servedPath.startsWith("assets/") ? "public, max-age=31536000, immutable" : "no-cache";
 }
