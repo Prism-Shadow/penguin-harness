@@ -503,6 +503,12 @@ const prepareDeploy: DeployStageDefinition = {
   },
 };
 
+/**
+ * How a trigger reads the newest build before starting one: past the queue, whose matching
+ * item has no number yet — reading it would leave no floor, and an older success could pass.
+ */
+const BEFORE_TRIGGER = { skipQueue: true } as const;
+
 const triggerModuleBuild: DeployStageDefinition = {
   id: "trigger_module_build",
   async run(ctx) {
@@ -511,7 +517,7 @@ const triggerModuleBuild: DeployStageDefinition = {
     const params = { Modules: moduleBuildLine(ctx.module.folder) };
     ctx.metadata.preBuildTag = await tagsOf(ctx);
     ctx.log(`Newest release tag before the build: ${ctx.metadata.preBuildTag ?? "none"}.`);
-    const before = await jenkinsCall(() => ctx.jenkins.status(job, params));
+    const before = await jenkinsCall(() => ctx.jenkins.status(job, params, BEFORE_TRIGGER));
     ctx.metadata.preBuildNumber = before.number ?? null;
     const remoteMain = await git(
       ctx,
@@ -840,7 +846,9 @@ const triggerActivityDeploy: DeployStageDefinition = {
     const qa = qaOf(ctx);
     const job = ctx.settings.jobs.activityDeploy;
     const params = activityDeployParams(ctx.productCode, qa.target);
-    const before = await jenkinsCall(() => ctx.jenkins.status(job, activityDeployMatch(params)));
+    const before = await jenkinsCall(() =>
+      ctx.jenkins.status(job, activityDeployMatch(params), BEFORE_TRIGGER),
+    );
     ctx.metadata.preDeployNumber = before.number ?? null;
     ctx.metadata.qaFrameworkVersion = qa.target.frameworkVersion;
     ctx.metadata.qaActivityUrl = qaActivityUrl(
@@ -972,7 +980,9 @@ const triggerProductionDeploy: DeployStageDefinition = {
     if (qa.resolvedModuleVersion) ctx.metadata.resolvedModuleVersion = qa.resolvedModuleVersion;
     const job = ctx.settings.jobs.activityDeploy;
     const params = activityDeployParams(ctx.productCode, prod.target);
-    const before = await jenkinsCall(() => ctx.jenkins.status(job, activityDeployMatch(params)));
+    const before = await jenkinsCall(() =>
+      ctx.jenkins.status(job, activityDeployMatch(params), BEFORE_TRIGGER),
+    );
     ctx.metadata.preProductionDeployNumber = before.number ?? null;
     ctx.metadata.prodFrameworkVersion = prod.target.frameworkVersion;
     checkStopped(ctx);

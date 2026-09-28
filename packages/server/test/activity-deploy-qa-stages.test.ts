@@ -68,14 +68,22 @@ function fakeGit(options: { tracked?: string[]; remoteBranch?: boolean; staged?:
 
 function fakeJenkins(statuses: JenkinsBuildStatus[] = [{ state: "unknown" }]) {
   const triggers: Array<{ job: string; params: Record<string, string> }> = [];
-  const polls: Array<{ params: Record<string, string>; after: number | null | undefined }> = [];
+  const polls: Array<{
+    params: Record<string, string>;
+    after: number | null | undefined;
+    skipQueue?: boolean;
+  }> = [];
   const jenkins: DeployJenkins = {
     async trigger(job, params) {
       triggers.push({ job, params });
       return { queueUrl: null };
     },
     async status(_job, params, options) {
-      polls.push({ params, after: options?.after });
+      polls.push({
+        params,
+        after: options?.after,
+        ...(options?.skipQueue ? { skipQueue: true } : {}),
+      });
       return statuses.length > 1 ? statuses.shift()! : statuses[0]!;
     },
   };
@@ -406,6 +414,8 @@ describe("trigger_activity_deploy and await_activity_deploy", () => {
       deploy_environment: "loom",
       template_names: "words",
     });
+    // A queued deploy has no number; the floor is the newest build Jenkins has.
+    expect(jenkins.polls[0]!.skipQueue).toBe(true);
     expect(ctx.metadata).toMatchObject({
       preDeployNumber: null,
       qaFrameworkVersion: "4.2.1",

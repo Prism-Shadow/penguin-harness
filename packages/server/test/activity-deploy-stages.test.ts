@@ -102,14 +102,14 @@ function fakeProcess(
 
 function fakeJenkins(statuses: Array<JenkinsBuildStatus | Error> = [{ state: "unknown" }]) {
   const triggers: Array<{ job: string; params: Record<string, string> }> = [];
-  const polls: Array<{ after: number | null | undefined }> = [];
+  const polls: Array<{ after: number | null | undefined; skipQueue?: boolean }> = [];
   const jenkins: DeployJenkins = {
     async trigger(job, params) {
       triggers.push({ job, params });
       return { queueUrl: "https://jenkins.example.org/queue/item/7/" };
     },
     async status(_job, _params, options) {
-      polls.push({ after: options?.after });
+      polls.push({ after: options?.after, ...(options?.skipQueue ? { skipQueue: true } : {}) });
       const next = statuses.length > 1 ? statuses.shift()! : statuses[0]!;
       if (next instanceof Error) throw next;
       return next;
@@ -317,6 +317,8 @@ describe("trigger_module_build", () => {
     const { ctx } = context({ dir, git: git.git, jenkins: jenkins.jenkins });
     await run("trigger_module_build", ctx);
     expect(ctx.metadata).toEqual({ preBuildTag: "1.2.0", preBuildNumber: 41 });
+    // A queued build has no number; the floor is the newest build Jenkins has.
+    expect(jenkins.polls).toEqual([{ after: undefined, skipQueue: true }]);
     expect(git.calls).toContainEqual(["fetch", "--tags", "origin"]);
     const pushes = git.calls.filter((args) => args[0] === "push");
     expect(pushes).toEqual([

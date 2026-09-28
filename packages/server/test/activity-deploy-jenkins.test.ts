@@ -161,6 +161,39 @@ describe("deploy Jenkins client", () => {
     );
   });
 
+  // Before a trigger, a matching item already in the queue has no number yet: the floor the
+  // new build is found above is the newest build Jenkins has, or an older success could pass.
+  it("passes over the queue when asked, for the newest build before a trigger", async () => {
+    const fake = fakeFetch((call) =>
+      call.url.includes("/queue/")
+        ? respond(200, {
+            items: [
+              {
+                url: "queue/item/7/",
+                actions: [{ parameters: [{ name: "Modules", value: PARAMS.Modules }] }],
+              },
+            ],
+          })
+        : respond(200, {
+            builds: [
+              {
+                number: 9,
+                url: "job/x/9/",
+                building: false,
+                result: "SUCCESS",
+                actions: [{ parameters: [{ name: "Modules", value: PARAMS.Modules }] }],
+              },
+            ],
+          }),
+    );
+    const jenkins = createDeployJenkins(TARGET, fake.request);
+    expect(await jenkins.status("job", PARAMS, { skipQueue: true })).toMatchObject({
+      state: "succeeded",
+      number: 9,
+    });
+    expect(fake.calls.some((call) => call.url.includes("/queue/"))).toBe(false);
+  });
+
   it("keeps only a web address for a build's page", async () => {
     const fake = fakeFetch((call) =>
       call.url.includes("/queue/")
