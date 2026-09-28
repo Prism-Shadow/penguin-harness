@@ -117,7 +117,10 @@ export function PermissionSelect({
       ? {}
       : block === "no-backend"
         ? { unavailable: P.noBackend, note: P.notInstalled }
-        : { unavailable: block === "local-unsupported" ? P.localUnsupported : P.noNetworkUnsupported };
+        : {
+            unavailable:
+              block === "local-unsupported" ? P.localUnsupported : P.noNetworkUnsupported,
+          };
   const level = permissionLevel(approvalMode, sandbox);
   // The swap animation plays only for a CHANGE of level, never on the first paint — React's
   // "adjust state while rendering" pattern for information from the previous render.

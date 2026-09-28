@@ -78,7 +78,9 @@ export function networkBlock(
   if (network === "open") return null;
   if (sandbox.confinementSupported === false) return "no-backend";
   // `local` predates the other two flags, and has always been refused unless reported true.
-  if (network === "local") return sandbox.localNetworkSupported === true ? null : "local-unsupported";
+  if (network === "local") {
+    return sandbox.localNetworkSupported === true ? null : "local-unsupported";
+  }
   return sandbox.noNetworkSupported === false ? "none-unsupported" : null;
 }
 
