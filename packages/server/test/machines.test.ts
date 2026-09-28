@@ -20,11 +20,12 @@ import {
 } from "../src/machines/server-state.js";
 import { parseProbeOutput, posixProbe, windowsProbe } from "../src/machines/detect.js";
 import { profileFromEnv, remoteLayoutFor } from "../src/machines/layout.js";
-import { startRemoteServer } from "../src/machines/server-control.js";
+import { startRemoteServer, stopRemoteServer } from "../src/machines/server-control.js";
 import {
   cmdQuote,
   isAliveCommand,
   launchedPid,
+  remotePenguin,
   runInstallScriptCommand,
   startServerCommand,
   unpackStoreCommand,
@@ -667,6 +668,51 @@ describe("startRemoteServer", () => {
       }),
     );
     expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("stopRemoteServer", () => {
+  const target = { alias: "nas", user: "deploy" };
+  const ran = (code: number, stdout: string) => ({ code, stdout, stderr: "", timedOut: false });
+
+  it("asks the pushed CLI for `server stop`, once, and reads its JSON line past the shell's noise", async () => {
+    const asked: Array<{ target: unknown; command: string }> = [];
+    const result = await stopRemoteServer(target, DEV, async (t, command) => {
+      asked.push({ target: t, command });
+      return ran(0, 'Welcome to nas\n{"ok":true}\n');
+    });
+    expect(result).toEqual({ ok: true });
+    expect(asked).toEqual([
+      {
+        target,
+        command:
+          'env PENGUIN_HOME="$HOME/.penguin-dev/data" PENGUIN_PROFILE=dev ' +
+          '"$HOME/.penguin-dev/node/bin/node" "$HOME/.penguin-dev/lib/dist/penguin-hmr.js" ' +
+          "server stop 2>&1",
+      },
+    ]);
+    // The same spelling every other command on the machine runs its CLI with.
+    expect(asked[0]!.command).toBe(`${remotePenguin("linux", DEV)} server stop 2>&1`);
+  });
+
+  it("a non-zero exit that answered hands back the machine's own words", async () => {
+    const result = await stopRemoteServer(target, DEV, async () =>
+      ran(1, '{"ok":false,"detail":"no server is running on this root"}\n'),
+    );
+    expect(result).toEqual({ ok: false, detail: "no server is running on this root" });
+  });
+
+  it("a non-zero exit with no answer hands back what it printed, or says it said nothing", async () => {
+    const said = await stopRemoteServer(target, DEV, async () =>
+      ran(127, "  sh: 1: /home/deploy/.penguin-dev/node/bin/node: not found\n"),
+    );
+    expect(said).toEqual({
+      ok: false,
+      detail: "sh: 1: /home/deploy/.penguin-dev/node/bin/node: not found",
+    });
+
+    const silent = await stopRemoteServer(target, DEV, async () => ran(255, ""));
+    expect(silent).toEqual({ ok: false, detail: "the machine said nothing." });
   });
 });
 
