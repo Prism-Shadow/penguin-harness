@@ -130,7 +130,9 @@ jobs:
 
   # The unit suite, split four ways. Shards are drawn so that build cost and test cost
   # roughly balance: core and server are the two long suites and get one each, the rest
-  # pair up behind them.
+  # pair up behind them. `rest` is recursive with exclusions, like macOS and Windows: an
+  # explicit list silently drops every package nobody remembered to add (all of plugins/
+  # once was), whereas a new package lands here by default.
   test:
     name: test (${{ matrix.shard }})
     runs-on: ubuntu-latest
@@ -149,16 +151,37 @@ jobs:
             tests: >-
               pnpm --filter @prismshadow/penguin-web --filter @prismshadow/penguin-ui
               --filter @prismshadow/penguin-cli test
+          # sandbox-bwrap is built so its live suite confines with the bwrap the plugin ships
+          # (the build vendors it), not whatever the runner has on PATH.
           - shard: rest
-            build: "@prismshadow/penguin-desktop..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/penguin-plugin-sandbox-bwrap..."
             tests: >-
-              pnpm --filter @prismshadow/penguin-desktop --filter @prismshadow/penguin-landing
-              --filter @prismshadow/penguin-docs --filter @prismshadow/penguin-ui-gallery test
+              pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server'
+              --filter '!@prismshadow/penguin-web' --filter '!@prismshadow/penguin-ui'
+              --filter '!@prismshadow/penguin-cli' test
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with:
           build: ${{ matrix.build }}
+      # The Linux sandbox plugins' live suites (sandbox-bwrap, sandbox-dsh) are host-gated:
+      # they skip unless bwrap can build a user namespace, and this is the only runner where
+      # they can open. Ubuntu 24.04 lets only AppArmor-profiled programs do that, and the
+      # vendored bwrap has no profile, so lift the restriction for this shard -- it is a
+      # host prerequisite, the same one the plugin's own error message names. Printed so a
+      # skip in the log can be told apart from a refusal by the product.
+      - name: Let the sandbox live suites open (unprivileged user namespaces)
+        if: matrix.shard == 'rest'
+        run: |
+          knob=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -e "$knob" ]; then
+            echo "apparmor_restrict_unprivileged_userns was $(cat "$knob")"
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          else
+            echo "apparmor_restrict_unprivileged_userns: not present on this kernel"
+          fi
+          echo "unprivileged_userns_clone: $(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || echo n/a)"
+          echo "bwrap on PATH: $(command -v bwrap || echo none)"
       - name: Unit tests (vitest)
         run: ${{ matrix.tests }}
 
