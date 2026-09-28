@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
 import type {
   ActivityDetail,
@@ -6,6 +6,7 @@ import type {
   ActivityRecord,
   ActivityRun,
   ActivityRunSummary,
+  ActivitySummary,
   AssetManifest,
   BookWordsRefresh,
   MediaStat,
@@ -85,7 +86,7 @@ import { SpecDiffView } from "./spec-diff-view";
 import { latestModuleRun } from "./preview";
 import { ActivityList } from "./activity-list";
 import { ProjectMediaView } from "./project-media-view";
-import { pushRecent, readRecent } from "./recent-activities";
+import type { GroupSort } from "./activity-groups";
 import { useDiscardConfirm } from "./use-discard-confirm";
 import { applyVoice, optionsFromVoices } from "./voice-catalogue";
 import {
@@ -148,11 +149,13 @@ function ActivityWorkspace({
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [items, setItems] = useState<ActivityRecord[]>([]);
+  const [summaries, setSummaries] = useState<Record<string, ActivitySummary>>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   // Kept here rather than in the list, so opening an activity and coming back keeps them.
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState<string | null>(null);
+  const [sort, setSort] = useState<GroupSort>("recent");
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const dirty = useRef(false);
@@ -168,9 +171,13 @@ function ActivityWorkspace({
   const reload = useCallback(async () => {
     if (!accessible.current) return;
     try {
-      const result = await apiFetch<{ activities: ActivityRecord[] }>(basePath(projectId));
+      const result = await apiFetch<{
+        activities: ActivityRecord[];
+        summaries?: Record<string, ActivitySummary>;
+      }>(`${basePath(projectId)}?summary=1`);
       if (mounted.current) {
         setItems(result.activities);
+        setSummaries(result.summaries ?? {});
         setError("");
       }
     } catch (e) {
@@ -235,8 +242,6 @@ function ActivityWorkspace({
     () => registerProjectChangeGuard(projectChangeGuard),
     [registerProjectChangeGuard, projectChangeGuard],
   );
-  // Read again whenever the author comes back from an activity, which recorded itself.
-  const recent = useMemo(() => (activityId ? [] : readRecent(projectId)), [projectId, activityId]);
   if (!activityId && searchParams.get("view") === "media")
     return <ProjectMediaView projectId={projectId} available={available} />;
   if (activityId) {
@@ -275,7 +280,10 @@ function ActivityWorkspace({
         editable={editable}
         available={available}
         createDisabled={!canLeave()}
-        recent={recent}
+        projectId={projectId}
+        summaries={summaries}
+        sort={sort}
+        onSort={setSort}
         search={search}
         onSearch={setSearch}
         tag={tag}
@@ -328,14 +336,6 @@ function ActivityEditor({
   const { agents, currentAgent } = useProject();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
-  // Opening counts once the activity has loaded (a missing one never does), once per
-  // activity: the editor is keyed by it, and polling reloads it.
-  const recorded = useRef(false);
-  useEffect(() => {
-    if (!detail || detail.id !== activityId || recorded.current) return;
-    recorded.current = true;
-    pushRecent(projectId, activityId, new Date().toISOString());
-  }, [detail, activityId, projectId]);
   const [description, setDescription] = useState("");
   const [spec, setSpec] = useState("");
   const [specOpen, setSpecOpen] = useState(false);

@@ -416,9 +416,25 @@ export const en: Strings = {
         activity_archived: "A deleted ref of this product keeps that number.",
       },
     },
-    recent: {
-      title: "Recently opened",
-      all: "All activities",
+    home: {
+      sortLabel: "Sort",
+      sort: { recent: "Recent", code: "A–Z" },
+      refs: (count: number) => (count === 1 ? "1 ref" : `${count} refs`),
+      attention: (count: number) => `${count} needs attention`,
+      collapse: (code: string) => `Collapse ${code}`,
+      expand: (code: string) => `Expand ${code}`,
+      refLine: (refNum: number, when: string) => `ref ${refNum} · ${when}`,
+      canonical: "Canonical ref",
+      progress: (done: number, total: number) => `${done} of ${total} milestones`,
+      newRef: "New ref",
+      newRefUnavailable:
+        "Plan the canonical ref's media first; a new ref copies its media plan.",
+      status: {
+        running: (what: string) => `${what} running`,
+        stale: "Media plan out of date",
+        built: "Built",
+        next: { spec: "Specification next", mediaPlan: "Media plan next", module: "Module next" },
+      },
     },
     projectMedia: {
       title: "Project media library",

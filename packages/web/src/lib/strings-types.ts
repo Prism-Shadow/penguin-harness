@@ -367,10 +367,25 @@ export type Strings = {
         activity_archived: string;
       };
     };
-    /** The list page's row of the activities opened most recently in this browser, and the heading of the full list under it. */
-    recent: {
-      title: string;
-      all: string;
+    /** The list page's product groups: sort, per-group counts and status, and one card's status line. */
+    home: {
+      sortLabel: string;
+      sort: { recent: string; code: string };
+      refs: (count: number) => string;
+      attention: (count: number) => string;
+      collapse: (code: string) => string;
+      expand: (code: string) => string;
+      refLine: (refNum: number, when: string) => string;
+      canonical: string;
+      progress: (done: number, total: number) => string;
+      newRef: string;
+      newRefUnavailable: string;
+      status: {
+        running: (what: string) => string;
+        stale: string;
+        built: string;
+        next: { spec: string; mediaPlan: string; module: string };
+      };
     };
     /** The project media library: every activity's uploads, browsed and downloaded together. */
     projectMedia: {

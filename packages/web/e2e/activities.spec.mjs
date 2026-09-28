@@ -135,8 +135,19 @@ async function fixture(page) {
           },
         ],
       });
-    if (p === base && request.method() === "GET")
-      return json({ activities: activity ? [activity] : [] });
+    if (p === base && request.method() === "GET") {
+      const activities = activity ? [activity] : [];
+      if (url.searchParams.get("summary") !== "1") return json({ activities });
+      // A fixed "next spec" summary per activity: nothing here computes the real facts, and
+      // no test in this file reads the home page's status text off the default fixture.
+      const summaries = Object.fromEntries(
+        activities.map((entry) => [
+          entry.id,
+          { canonical: true, hasPlan: false, done: 0, total: 3, status: { kind: "next", milestone: "spec" } },
+        ]),
+      );
+      return json({ activities, summaries });
+    }
     if (p === `${base}/module-setup`) return json({ wafRoot: "C:/WAF checkout" });
     if (p === `${base}/speech-setup`) return json({ voices: ["Kore", "Puck"] });
     if (p === `${base}/act_test/media-uploads`) {
@@ -1776,7 +1787,7 @@ test("dirty drafts block sidebar, Session, browser back, and project switches", 
   await dialog.getByRole("button", { name: "Discard" }).click();
   await expect(page).toHaveURL(/\/activities$/);
   await page
-    .getByRole("region", { name: "All activities" })
+    .getByRole("region", { name: /words/ })
     .getByRole("link", { name: /Sight words/ })
     .click();
   await openSection(page, "Scenes and media");
@@ -4217,12 +4228,12 @@ test("tags a product, filters the list by tag, and deletes an activity after con
     "math · 1",
     "Phonics · 1",
   ]);
-  // The activity just opened also sits under Recently opened; the full list is its own region.
-  const all = page.getByRole("region", { name: "All activities" });
-  const cards = all.getByRole("listitem").filter({ has: page.getByRole("link") });
-  const sight = all.getByRole("link", { name: /Sight words/ });
-  await expect(sight).toContainText("Phonics");
-  await expect(sight).toContainText("grade 1");
+  // Each product is its own group now, so cards and the ref link are found across the page.
+  // The card itself no longer prints tags (the home page's ActivityCard is status-focused);
+  // the tag filter above is what proves they saved.
+  const cards = page.getByRole("listitem").filter({ has: page.getByRole("link") });
+  const sight = page.getByRole("link", { name: /Sight words/ });
+  await expect(sight).toBeVisible();
   await filter.getByRole("button", { name: "math · 1", exact: true }).click();
   await expect(filter.getByRole("button", { name: "math · 1", exact: true })).toHaveAttribute(
     "aria-pressed",
@@ -4260,13 +4271,13 @@ test("tags a product, filters the list by tag, and deletes an activity after con
   expect(f.errors).toEqual([]);
 });
 
-test("shows the activity just opened under Recently opened", async ({ page }) => {
+test("the home page groups refs under their product code", async ({ page }) => {
   const f = await fixture(page);
-  const record = (id, productCode, refNum, title) => ({
+  const record = (id, refNum, title) => ({
     id,
     collectionId: "col_test",
-    productId: `prd_${productCode}`,
-    productCode,
+    productId: "prd_ants",
+    productCode: "ants",
     refNum,
     title,
     displayName: null,
@@ -4277,71 +4288,39 @@ test("shows the activity just opened under Recently opened", async ({ page }) =>
     archived: false,
     tags: [],
   });
-  const list = () => [
-    record("act_test", "words", 12, "Sight words"),
-    record("act_letters", "letters", 1, "Letter hunt"),
-    record("act_count", "count", 3, "Counting"),
-  ];
+  const activities = [record("act_ants1", 1, "ants 1"), record("act_ants2", 2, "ants 2")];
+  const summaries = Object.fromEntries(
+    activities.map((entry, index) => [
+      entry.id,
+      {
+        canonical: index === 0,
+        hasPlan: false,
+        done: 0,
+        total: 3,
+        status: { kind: "next", milestone: "spec" },
+      },
+    ]),
+  );
   await page.route("**/*", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === base && request.method() === "GET")
       return route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify({ activities: list() }),
+        body: JSON.stringify(
+          url.searchParams.get("summary") === "1" ? { activities, summaries } : { activities },
+        ),
       });
     return route.fallback();
   });
-  // Opened earlier in this browser: Letter hunt, then one since deleted, and one in another
-  // project.
   await page.goto(`${origin}/activities`);
-  await page.evaluate(
-    ([key, projectId]) =>
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          [projectId]: [
-            { id: "act_gone", at: "2026-09-25T09:00:00.000Z" },
-            { id: "act_letters", at: "2026-09-25T08:00:00.000Z" },
-          ],
-          other: [{ id: "act_count", at: "2026-09-25T09:30:00.000Z" }],
-        }),
-      ),
-    ["penguin.activities.recent", projectId],
-  );
-  await create(page);
-  await page.getByRole("link", { name: "All activities", exact: true }).click();
-  await expect(page).toHaveURL(/\/activities$/);
-  const recent = page.getByRole("region", { name: "Recently opened" });
-  await expect(recent.getByRole("link")).toHaveCount(2);
-  await expect(recent.getByRole("link").nth(0)).toContainText("Sight words");
-  await expect(recent.getByRole("link").nth(1)).toContainText("Letter hunt");
-  await expect(page.getByRole("region", { name: "All activities" }).getByRole("link")).toHaveCount(
-    3,
-  );
-
-  // Searching is looking for something else, so the row steps aside.
-  const search = page.getByRole("textbox", { name: "Search activities", exact: true });
-  await search.fill("count");
-  await expect(recent).toHaveCount(0);
-  await search.fill("");
-  await expect(recent.getByRole("link")).toHaveCount(2);
-
-  // Opening it again from the row keeps it once, first.
-  await recent.getByRole("link", { name: /Sight words/ }).click();
-  await expect(page).toHaveURL(/activities\/act_test$/);
-  await page.getByRole("link", { name: "All activities", exact: true }).click();
-  await expect(recent.getByRole("link")).toHaveCount(2);
-  await expect(recent.getByRole("link").nth(0)).toContainText("Sight words");
-
-  // What this browser stored is unreadable: no row, no error.
-  await page.evaluate((key) => localStorage.setItem(key, "{not json"), "penguin.activities.recent");
+  const group = page.getByRole("region", { name: /ants/ });
+  await expect(group.getByRole("link", { name: /ants 1/ })).toBeVisible();
+  await expect(group.getByText("Specification next").first()).toBeVisible();
+  await group.getByRole("button", { name: "Collapse ants" }).click();
+  await expect(group.getByRole("link", { name: /ants 1/ })).toBeHidden();
   await page.reload();
-  await expect(page.getByRole("region", { name: "All activities" }).getByRole("link")).toHaveCount(
-    3,
-  );
-  await expect(recent).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "All activities" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Expand ants" })).toBeVisible();
   expect(f.errors).toEqual([]);
 });
 
