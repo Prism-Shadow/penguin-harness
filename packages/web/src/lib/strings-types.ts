@@ -1627,6 +1627,8 @@ export type Strings = {
     readOnly: string;
     runningHelp: string;
     collection: string;
+    breadcrumb: string;
+    runningChip: (what: string) => string;
     refresh: string;
     status: {
       running: string;

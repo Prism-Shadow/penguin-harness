@@ -1919,6 +1919,8 @@ export const en: Strings = {
     readOnly: "Only the Project owner can edit activities.",
     runningHelp: "Generation continues when you leave this page. Open its Session to follow along.",
     collection: "Collection",
+    breadcrumb: "Breadcrumb",
+    runningChip: (what: string) => `${what} running`,
     refresh: "Refresh list",
     status: {
       running: "Running",
