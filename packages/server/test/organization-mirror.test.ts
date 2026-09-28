@@ -223,4 +223,49 @@ describe("an organization on another machine", () => {
     ).rejects.toMatchObject({ status: 400 });
     expect(await here.store.exists(P, ORG)).toBe(false);
   });
+  it("opens a roadmap's room where the organization runs, never in the mirror, which the next copy would empty", async () => {
+    const { machine, here, workspace } = await twoServers();
+    await here.service.create(
+      P,
+      { orgId: ORG, mission: "Ship it", workspace, workspaceMachine: MACHINE },
+      "alice",
+    );
+    const room = {
+      projectId: P,
+      orgId: ORG,
+      channelId: "roadmap_1",
+      name: "Queue migration",
+      purpose: "Roadmap #1",
+      by: "user:alice",
+      agentIds: [`${ORG}_ceo`],
+    };
+    const alice = { userId: "alice" };
+    // Here it is refused, and nothing is written.
+    await expect(here.service.gatewayOpenRoom(room)).rejects.toMatchObject({
+      status: 409,
+      code: "org_runs_elsewhere",
+    });
+    expect(await here.store.readChannel(here.store.dir(P, ORG), "roadmap_1")).toBeNull();
+    // What the refusal prevents: a channel written into the mirror is gone at the next copy,
+    // and the channel page then reads "Channel does not exist".
+    await here.store.writeChannel(here.store.dir(P, ORG), "roadmap_1", {
+      name: room.name,
+      purpose: room.purpose,
+      createdBy: room.by,
+      createdAt: new Date(NOW).toISOString(),
+      archived: false,
+      members: ["user:alice"],
+      unlisted: true,
+    });
+    await here.scheduler.tickOnce();
+    await expect(here.service.channel(P, ORG, "roadmap_1", alice)).rejects.toMatchObject({
+      status: 404,
+      message: "Channel does not exist: roadmap_1",
+    });
+    // There it opens, and the mirror copies it here like every other file of the organization.
+    await machine.service.gatewayOpenRoom(room);
+    await here.scheduler.tickOnce();
+    const copied = await here.store.readChannel(here.store.dir(P, ORG), "roadmap_1");
+    expect(copied?.parsed.ok && copied.parsed.value.unlisted).toBe(true);
+  });
 });

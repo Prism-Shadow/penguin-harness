@@ -2766,7 +2766,12 @@ export class OrganizationService {
     });
   }
 
-  /** OrgGateway.openRoom: the routes' channel creation, unlisted, with its employees in it from the start. */
+  /**
+   * OrgGateway.openRoom: the routes' channel creation, unlisted, with its employees in it from
+   * the start. Refused (409 `org_runs_elsewhere`, as the routes refuse a write) for an
+   * organization that runs on another machine: what this server holds of it is a mirror, and the
+   * next copy from that machine would remove the room again.
+   */
   async gatewayOpenRoom(args: {
     projectId: string;
     orgId: string;
@@ -2779,6 +2784,14 @@ export class OrganizationService {
     const { projectId, orgId, channelId } = args;
     await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireOrg(projectId, orgId);
+      const elsewhere = runsOn(this.deps, org.config);
+      if (elsewhere !== null) {
+        throw new HttpError(
+          409,
+          "org_runs_elsewhere",
+          `This organization runs on machine ${elsewhere}; open the room there.`,
+        );
+      }
       if (!isChannelId(channelId)) {
         throw badRequest(
           "Channel id must be 2–64 characters: a lowercase letter, then lowercase letters, digits or underscores.",
