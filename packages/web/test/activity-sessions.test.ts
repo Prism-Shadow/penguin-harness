@@ -6,6 +6,7 @@ import {
   settledActivityRuns,
   shouldPollSummaries,
   shouldReloadList,
+  startedUnlistedRuns,
   withoutActivityRuns,
 } from "../src/lib/activity-sessions";
 
@@ -24,6 +25,15 @@ describe("activity sessions", () => {
     const before = new Map([["a", "running"], ["b", "running"]]);
     expect(settledActivityRuns(before, [s("a", "idle"), s("b", "running", "act")])).toBe(false);
     expect(settledActivityRuns(before, [s("a", "running"), s("b", "idle", "act")])).toBe(true);
+  });
+  it("notices a run starting that the list holds no row for", () => {
+    const listed = [s("a", "idle")];
+    // A listed session going live is the settle signal's business, not this one's.
+    expect(startedUnlistedRuns(new Map(), new Map([["a", "running"]]), listed)).toBe(false);
+    expect(startedUnlistedRuns(new Map(), new Map([["x", "running"]]), listed)).toBe(true);
+    // Only the start: a repeat of the same live status is not a new run.
+    expect(startedUnlistedRuns(new Map([["x", "running"]]), new Map([["x", "running"]]), listed)).toBe(false);
+    expect(startedUnlistedRuns(new Map(), new Map([["x", "idle"]]), listed)).toBe(false);
   });
   it("reloads the list only on a genuine return from an activity", () => {
     // First mount of the list: no previous activity to have come back from.

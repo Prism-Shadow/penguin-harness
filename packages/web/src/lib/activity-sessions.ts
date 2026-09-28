@@ -40,6 +40,25 @@ export function settledActivityRuns(
 }
 
 /**
+ * A run this tab has no row for — started from another tab after the list loaded — reaches
+ * the store only as a live status, so `settledActivityRuns` never sees it settle and no
+ * summary says "running" to start the poll. Its start is the signal instead: a session this
+ * list does not hold going live may be an activity run, and one reload tells.
+ */
+export function startedUnlistedRuns(
+  before: ReadonlyMap<string, string>,
+  live: ReadonlyMap<string, string>,
+  sessions: readonly Pick<SessionInfo, "sessionId">[],
+): boolean {
+  const listed = new Set(sessions.map((session) => session.sessionId));
+  for (const [sessionId, status] of live) {
+    if (LIVE.has(status) && !LIVE.has(before.get(sessionId) ?? "") && !listed.has(sessionId))
+      return true;
+  }
+  return false;
+}
+
+/**
  * The list can go stale while the user is inside an activity's own workspace: a run may
  * settle there (its session leaves the "live" set) without the list-level effect ever
  * seeing it, because that effect only fires while `!activityId`. Returning to the list is

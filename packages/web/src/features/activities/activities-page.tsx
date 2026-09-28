@@ -44,6 +44,7 @@ import {
   RUNNING_POLL_MS,
   settledActivityRuns,
   shouldPollSummaries,
+  startedUnlistedRuns,
   shouldReloadList,
 } from "../../lib/activity-sessions";
 import { Button } from "../../components/ui/button";
@@ -216,12 +217,19 @@ function ActivityWorkspace({
   // is the signal that this list may be stale. Only while looking at the list itself
   // (not a single activity's own workspace), and only on the running -> settled edge, so a
   // page that never had a run in flight does not reload on every unrelated session tick.
-  const { sessions } = useSessions();
+  const { sessions, liveStatuses } = useSessions();
   const seenRunStatus = useRef(new Map<string, string>());
   useEffect(() => {
     if (!activityId && settledActivityRuns(seenRunStatus.current, sessions)) void reload();
     seenRunStatus.current = new Map(sessions.map((session) => [session.sessionId, session.status]));
   }, [sessions, activityId, reload]);
+  // A run started elsewhere after the store loaded has no row, only a live status: reload on
+  // its start, so its summary says "running" and the poll below takes it to its end.
+  const seenLive = useRef<ReadonlyMap<string, string>>(liveStatuses);
+  useEffect(() => {
+    if (!activityId && startedUnlistedRuns(seenLive.current, liveStatuses, sessions)) void reload();
+    seenLive.current = liveStatuses;
+  }, [liveStatuses, sessions, activityId, reload]);
   // A run can settle while the user is still inside that activity's own workspace — the
   // effect above never fires then, since it only watches while `!activityId`, so the run
   // "settling" is missed there. Coming back to the list is itself a reason to check again:

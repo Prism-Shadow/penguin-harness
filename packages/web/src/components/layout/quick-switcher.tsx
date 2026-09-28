@@ -107,13 +107,16 @@ export function QuickSwitcherPalette({ onClose }: { onClose: () => void }) {
   }, []);
 
   // This project's activities, one entry each; a project without activities access (or no
-  // current project) simply shows none — the error is swallowed, not surfaced.
+  // current project, or a failed fetch) simply shows none — the error is swallowed, not surfaced.
   const [activities, setActivities] = useState<ActivityRecord[]>([]);
+  const projectId = currentProject?.projectId;
   useEffect(() => {
-    if (!currentProject) return;
+    // The previous project's entries would navigate outside this one; drop them first.
+    setActivities([]);
+    if (!projectId) return;
     let cancelled = false;
     apiFetch<{ activities: ActivityRecord[] }>(
-      `/api/projects/${encodeURIComponent(currentProject.projectId)}/activities`,
+      `/api/projects/${encodeURIComponent(projectId)}/activities`,
     )
       .then((res) => {
         if (!cancelled) setActivities(res.activities);
@@ -124,7 +127,7 @@ export function QuickSwitcherPalette({ onClose }: { onClose: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [currentProject]);
+  }, [projectId]);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);

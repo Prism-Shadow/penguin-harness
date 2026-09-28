@@ -82,6 +82,20 @@ describe("groupByProduct", () => {
     expect(groupByProduct(items, summaries, { ...all, tag: "reading" }).map((g) => g.productCode)).toEqual(["book"]);
   });
 
+  it("keeps two collections' refs of one product code apart", () => {
+    const first = item("c1r1", "ants", 1, "2026-09-01T00:00:00Z", { collectionId: "c1" });
+    const second = item("c2r1", "ants", 1, "2026-09-02T00:00:00Z", { collectionId: "c2" });
+    const groups = groupByProduct([first, second], { c2r1: { canonical: true } as ActivitySummary }, all);
+    expect(groups.map((group) => [group.key, group.items.map((entry) => entry.id), group.canonicalId])).toEqual([
+      ["c2:ants", ["c2r1"], "c2r1"],
+      ["c1:ants", ["c1r1"], null],
+    ]);
+  });
+  it("marks a legacy canonical ref as no template", () => {
+    const legacy = item("l1", "legacy", 1, "2026-09-01T00:00:00Z", { productId: null });
+    const [group] = groupByProduct([legacy], { l1: { canonical: true } as ActivitySummary }, all);
+    expect(group).toEqual(expect.objectContaining({ canonicalId: "l1", canonicalHasProduct: false }));
+  });
   it("keeps an activity without a product or summary", () => {
     const orphan = item("o1", "legacy", 1, "2026-09-01T00:00:00Z", { productId: null });
     const groups = groupByProduct([orphan], {}, all);

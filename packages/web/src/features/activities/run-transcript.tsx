@@ -11,9 +11,14 @@ export function RunTranscript({ sessionId, running }: { sessionId: string; runni
     sessionId,
     running ? "running" : "idle",
   );
+  // A fixed height, not a max: MessageStream fills its parent and scrolls itself, and its
+  // follow, jump-to-latest and load-older all read that inner scroller. A wrapper that
+  // scrolled instead would leave them reading a scroller that never moves.
   return (
-    <div className="max-h-[28rem] min-h-40 overflow-y-auto border-t border-gray-200 dark:border-gray-800">
-      <MessageStream items={items} version={stream.version} ctx={ctx} older={older} />
+    <div className="flex h-[28rem] flex-col border-t border-gray-200 dark:border-gray-800">
+      <div className="min-h-0 flex-1">
+        <MessageStream items={items} version={stream.version} ctx={ctx} older={older} />
+      </div>
       {(error ?? stream.error) && (
         <p role="alert" className={`px-4 py-2 text-xs ${toneInk.danger}`}>
           {error ?? stream.error}

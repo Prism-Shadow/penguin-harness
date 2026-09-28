@@ -80,11 +80,11 @@ export function ActivityList({
     [items, summaries, sort, search, tag],
   );
   const [collapsed, setCollapsed] = useState(() => readCollapsed(projectId));
-  function toggle(code: string) {
+  function toggle(key: string) {
     setCollapsed((current) => {
       const next = new Set(current);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       writeCollapsed(projectId, next);
       return next;
     });
@@ -176,11 +176,11 @@ export function ActivityList({
         ) : (
           groups.map((group) => (
             <ProductGroup
-              key={group.productCode}
+              key={group.key}
               group={group}
               summaries={summaries}
-              collapsed={collapsed.has(group.productCode)}
-              onToggle={() => toggle(group.productCode)}
+              collapsed={collapsed.has(group.key)}
+              onToggle={() => toggle(group.key)}
               editable={editable && available}
             />
           ))
@@ -206,8 +206,10 @@ function ProductGroup({
   const home = S.activities.home;
   const canonical = group.canonicalId ? summaries[group.canonicalId] : undefined;
   // A new ref copies the canonical ref's media plan, so it waits for one — the same gate as
-  // the studio's New ref section (`hasPlan`).
-  const canAddRef = editable && !!canonical?.hasPlan && group.canonicalId !== null;
+  // the studio's New ref section (`hasPlan`). A legacy canonical ref with no product row is
+  // refused as a template by the server, so it offers no New ref either.
+  const canAddRef =
+    editable && !!canonical?.hasPlan && group.canonicalId !== null && group.canonicalHasProduct;
   const newRefHref =
     group.canonicalId !== null
       ? `/activities/${encodeURIComponent(group.canonicalId)}?section=newRef`
