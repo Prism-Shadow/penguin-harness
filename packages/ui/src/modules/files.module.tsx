@@ -2,9 +2,8 @@
  * Files & trees: the Workspace's Files panel.
  *
  * - Tree: the tree pane — search, refresh and upload in its header, folders open to the files this
- *   session changed (marked added or modified), the selected file — beside an empty preview. Its
- *   scene opens it: the Workspace folder closed, then its folders and files arriving, then the
- *   previewed file picked out;
+ *   session changed (marked added or modified), the selected file — beside an empty preview. The
+ *   reader drives it: a folder's row opens and folds it, and a file's row picks it and previews it;
  * - Preview: the same tree beside `src/rag.ts` previewed as source, under its breadcrumbs and
  *   actions;
  * - Drop: files dragged over the preview, the drop overlay naming the target folder.
@@ -12,12 +11,11 @@
  * Static stand-ins for W7's `TreePane`, `FileTree`, `PreviewPane`, `Breadcrumbs`, `DropOverlay` and
  * `ResizeHandle`.
  */
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
-import type { FileNode, Fixtures } from "../fixtures";
+import type { FileNode, FilePreview, Fixtures } from "../fixtures";
 import { APP_COLUMN_WIDTH, defineModule } from "../module";
-import type { SceneSpec } from "../module";
-import { reached, useScene } from "../scene";
 import { bytes } from "../screens/format";
 import { DisclosureBody } from "../screens/parts";
 import { Breadcrumbs, EmptyState, GlyphIcon, IconButton, SearchInput, treeInset } from "./parts";
@@ -25,10 +23,14 @@ import { Breadcrumbs, EmptyState, GlyphIcon, IconButton, SearchInput, treeInset 
 /** Folders shown open: the ones leading to this session's changes. */
 const OPEN = new Set(["claude-code-expert", "claude-code-expert/src", "claude-code-expert/test"]);
 
-/** What a live tree shows: the folders open, and the file selected, if any. */
+/** What a live tree shows — the folders open and the file selected — and what its rows do. */
 interface TreeState {
   open: ReadonlySet<string>;
   selected: string | null;
+  /** A folder's row: open it, or fold it. */
+  toggle: (path: string) => void;
+  /** A file's row: pick it. */
+  select: (path: string) => void;
 }
 
 function TreeRow({
@@ -44,20 +46,42 @@ function TreeRow({
   last: boolean;
   f: Fixtures;
   /**
-   * A scene's tree: every folder's children sit in a disclosure body that opens and folds by
-   * height, and the frame says which folders are open and which file is selected.
+   * The reader's tree: every folder's children sit in a disclosure body that opens and folds by
+   * height, and the rows are buttons that open, fold and pick.
    */
   live?: TreeState;
 }) {
   const copy = f.copy.files;
   const open = node.kind === "dir" && (live ? live.open : OPEN).has(node.path);
   const selected = node.path === (live ? live.selected : f.filePreview.path);
+  const press =
+    live === undefined
+      ? undefined
+      : node.kind === "dir"
+        ? () => live.toggle(node.path)
+        : () => live.select(node.path);
   return (
     <>
       <li
         data-depth={depth}
         data-last={last ? "true" : undefined}
-        className={`flex h-7 items-center gap-1.5 rounded-sm pr-2 text-sm ${selected ? "bg-accent-muted text-fg" : "text-fg"}`}
+        role={press && "treeitem"}
+        aria-expanded={node.kind === "dir" && press ? open : undefined}
+        aria-selected={node.kind === "file" && press ? selected : undefined}
+        tabIndex={press && 0}
+        onClick={press}
+        onKeyDown={
+          press &&
+          ((event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              press();
+            }
+          })
+        }
+        className={`flex h-7 items-center gap-1.5 rounded-sm pr-2 text-sm ${selected ? "bg-accent-muted text-fg" : "text-fg"} ${
+          press && !selected ? "transition-colors duration-150 hover:bg-surface-muted" : ""
+        }`}
         style={{ paddingLeft: treeInset(depth) }}
       >
         {node.kind === "dir" ? (
@@ -147,20 +171,17 @@ function TreePane({ f, live }: { f: Fixtures; live?: TreeState }) {
   );
 }
 
-function PreviewPane({ f }: { f: Fixtures }) {
+/** The previewed file: its path, its lines numbered, under its actions. */
+function PreviewPane({ f, file = f.filePreview }: { f: Fixtures; file?: FilePreview }) {
   const copy = f.copy.files;
-  const lines = f.filePreview.content.split("\n");
+  const lines = file.content.split("\n");
   return (
     <section className="flex min-w-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-        <Breadcrumbs items={f.filePreview.path.split("/")} />
+      <PreviewHead f={f} path={file.path}>
         <span className="shrink-0 text-xs tabular-nums text-fg-subtle">
           {copy.lines(lines.length)}
         </span>
-        <span className="min-w-0 flex-1" />
-        <IconButton label={copy.copyPath} icon="copy" size="sm" />
-        <IconButton label={f.copy.common.download} icon="download" size="sm" />
-      </div>
+      </PreviewHead>
       <pre className="min-h-0 flex-1 overflow-hidden bg-[var(--ui-code-bg)] py-2 font-mono text-xs leading-relaxed text-fg">
         {lines.slice(0, 26).map((line, i) => (
           <span key={i} className="flex">
@@ -175,6 +196,20 @@ function PreviewPane({ f }: { f: Fixtures }) {
   );
 }
 
+/** The preview's head: the file's breadcrumbs, what the caller adds, and the file's actions. */
+function PreviewHead({ f, path, children }: { f: Fixtures; path: string; children?: ReactNode }) {
+  const copy = f.copy.files;
+  return (
+    <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+      <Breadcrumbs items={path.split("/")} />
+      {children}
+      <span className="min-w-0 flex-1" />
+      <IconButton label={copy.copyPath} icon="copy" size="sm" />
+      <IconButton label={f.copy.common.download} icon="download" size="sm" />
+    </div>
+  );
+}
+
 function Panel({ f, live, children }: { f: Fixtures; live?: TreeState; children: ReactNode }) {
   return (
     <div className="flex h-[34rem] overflow-hidden rounded-lg border border-line bg-canvas">
@@ -184,30 +219,72 @@ function Panel({ f, live, children }: { f: Fixtures; live?: TreeState; children:
   );
 }
 
-const EXPAND: SceneSpec = {
-  frames: [
-    { key: "closed", title: "Closed", hold: 1000 },
-    { key: "open", title: "Open", hold: 1600 },
-    { key: "selected", title: "Selected", hold: 1400 },
-  ],
-};
+/** A file in the tree by its path. */
+function findNode(node: FileNode, path: string): FileNode | undefined {
+  if (node.path === path) return node;
+  for (const child of node.children ?? []) {
+    const found = findNode(child, path);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
 
 /**
- * The tree pane, and the scene that opens it: the Workspace folder closed; opened, its folders and
- * the files this session changed arriving through their disclosure bodies; then the previewed file
- * picked out — the tree this variant shows when nothing is playing. The preview pane stays empty
- * throughout: the scene is about the tree.
+ * The tree pane as the reader uses it. It opens as the still does — the folders leading to this
+ * session's changes open, the edited file picked out, the preview still empty — and from there a
+ * folder's row opens or folds it through its disclosure body, and a file's row picks it and
+ * shows it in the preview: its source when the Workspace has it to show, else a line saying so
+ * under its path.
  */
 function Tree({ f }: { f: Fixtures }) {
-  const clock = useScene();
   const copy = f.copy.files;
-  const open = new Set<string>();
-  if (reached(clock, "open")) for (const path of OPEN) open.add(path);
+  const [open, setOpen] = useState<ReadonlySet<string>>(OPEN);
+  const [selected, setSelected] = useState<string>(f.filePreview.path);
+  // The still names the edited file but previews nothing: a pick is what fills the pane.
+  const [previewing, setPreviewing] = useState(false);
+  const live: TreeState = {
+    open,
+    selected,
+    toggle: (path) =>
+      setOpen((now) => {
+        const next = new Set(now);
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+        return next;
+      }),
+    select: (path) => {
+      setSelected(path);
+      setPreviewing(true);
+    },
+  };
+  const file = f.filePreviews.find((preview) => preview.path === selected);
+  const node = findNode(f.fileTree, selected);
   return (
-    <Panel f={f} live={reached(clock, "selected") ? undefined : { open, selected: null }}>
-      <div className="flex min-w-0 flex-1 items-center justify-center p-6">
-        <EmptyState variant="slot" title={copy.empty.title} description={copy.empty.body} />
-      </div>
+    <Panel f={f} live={live}>
+      {!previewing ? (
+        <div className="flex min-w-0 flex-1 items-center justify-center p-6">
+          <EmptyState variant="slot" title={copy.empty.title} description={copy.empty.body} />
+        </div>
+      ) : file !== undefined ? (
+        <PreviewPane f={f} file={file} />
+      ) : (
+        <section className="flex min-w-0 flex-1 flex-col">
+          <PreviewHead f={f} path={selected}>
+            {node?.sizeBytes !== undefined && (
+              <span className="shrink-0 text-xs tabular-nums text-fg-subtle">
+                {bytes(node.sizeBytes)}
+              </span>
+            )}
+          </PreviewHead>
+          <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+            <EmptyState
+              variant="slot"
+              title={copy.noPreview.title}
+              description={copy.noPreview.body}
+            />
+          </div>
+        </section>
+      )}
     </Panel>
   );
 }
@@ -255,9 +332,9 @@ export const module = defineModule({
   width: "wide",
   viewport: APP_COLUMN_WIDTH,
   variants: [
-    { key: "tree", title: "Tree", scene: EXPAND },
-    { key: "preview", title: "Preview" },
-    { key: "drop", title: "Drop" },
+    { key: "tree", title: "Tree", kind: "interactive" },
+    { key: "preview", title: "Preview", kind: "static" },
+    { key: "drop", title: "Drop", kind: "static" },
   ],
   parts: [
     "files-file-tree",

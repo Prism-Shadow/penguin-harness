@@ -3,16 +3,13 @@
  * set in an en and a zh paragraph at the three root sizes, the `@font-face` rules the page's styles
  * declare — one row per family, weight and style, with the number of `unicode-range` slices behind
  * it and their load status (MiSans alone declares ~200 slice faces) — and the licence texts under
- * `fonts/LICENSES/`.
+ * `fonts/LICENSES/`. A docs page like the others: the top bar's controls pick the mode.
  */
 import { THEME_IDS } from "@prismshadow/penguin-ui";
 import { useEffect, useState } from "react";
-import { ModeSwitch, ViewControls } from "../chrome/rail";
-import { ChromeIcon } from "../chrome/icons";
+import { Site } from "../chrome/site";
 import { SPECIMENS } from "../foundations/specimens";
-import { BASE } from "../lib/location";
 import { TIER_PX } from "../lib/themes";
-import { formatGalleryQuery } from "../lib/url-state";
 import { useText } from "../preview";
 import { FONT_LICENSES, licencePath } from "../sources";
 import { useGallery } from "../state";
@@ -83,11 +80,10 @@ function Licence({ path }: { path: string }) {
 }
 
 export function FontsPage() {
-  const { S, state, mode, tokens } = useGallery();
+  const { S, mode, tokens } = useGallery();
   const text = useText();
   const faces = useFaces();
   const licences = Object.keys(FONT_LICENSES).sort();
-  const query = formatGalleryQuery({ ...state, variants: {} });
 
   useEffect(() => {
     if (!tokens) return;
@@ -97,22 +93,16 @@ export function FontsPage() {
   }, [tokens]);
 
   return (
-    <div className="g-app">
-      <div className="g-page g-chrome">
-        <header className="g-page-head">
-          <a className="g-icon-button" href={`${BASE}/${query}`} title={S.screens.back}>
-            <ChromeIcon name="back" />
-          </a>
-          <h1>{S.fonts.title}</h1>
-          <span className="g-page-head-controls">
-            <ViewControls compact />
-            <ModeSwitch />
-          </span>
+    <Site page="fonts">
+      <article className="g-doc g-doc-wide">
+        <header className="g-doc-head">
+          <p className="g-eyebrow">{S.site.fonts}</p>
+          <h1 className="g-h1">{S.fonts.title}</h1>
+          <p className="g-lead">{S.fonts.specimensHint}</p>
         </header>
 
-        <section className="g-page-section">
-          <h2>{S.fonts.specimens}</h2>
-          <p className="g-muted">{S.fonts.specimensHint}</p>
+        <section id="specimens" className="g-section">
+          <h2 className="g-h2">{S.fonts.specimens}</h2>
           {!tokens && <p className="g-muted">{S.intro.resolving}</p>}
           {tokens &&
             THEME_IDS.map((themeId) => {
@@ -156,9 +146,9 @@ export function FontsPage() {
             })}
         </section>
 
-        <section className="g-page-section">
-          <h2>{S.fonts.declared}</h2>
-          <p className="g-muted">{S.fonts.declaredHint}</p>
+        <section id="declared" className="g-section">
+          <h2 className="g-h2">{S.fonts.declared}</h2>
+          <p className="g-section-lead">{S.fonts.declaredHint}</p>
           {faces.length === 0 ? (
             <p className="g-muted">{S.fonts.noFaces}</p>
           ) : (
@@ -202,15 +192,15 @@ export function FontsPage() {
           )}
         </section>
 
-        <section className="g-page-section">
-          <h2>{S.fonts.licences}</h2>
+        <section id="licences" className="g-section">
+          <h2 className="g-h2">{S.fonts.licences}</h2>
           {licences.length === 0 ? (
             <p className="g-muted">{S.fonts.noLicences}</p>
           ) : (
             licences.map((path) => <Licence key={path} path={path} />)
           )}
         </section>
-      </div>
-    </div>
+      </article>
+    </Site>
   );
 }

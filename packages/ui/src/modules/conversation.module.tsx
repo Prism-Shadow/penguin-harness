@@ -183,10 +183,10 @@ export const module = defineModule({
   width: "wide",
   viewport: APP_COLUMN_WIDTH,
   variants: [
-    { key: "streaming", title: "Streaming", scene: STREAM },
-    { key: "settled", title: "Settled" },
-    { key: "approval", title: "Approval" },
-    { key: "failed", title: "Failed" },
+    { key: "streaming", title: "Streaming", kind: "animated", scene: STREAM },
+    { key: "settled", title: "Settled", kind: "static" },
+    { key: "approval", title: "Approval", kind: "static" },
+    { key: "failed", title: "Failed", kind: "static" },
   ],
   parts: [
     "chat-message-bubble",

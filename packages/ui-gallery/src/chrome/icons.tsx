@@ -25,6 +25,11 @@ const PATHS = {
   next: "m5 4 10 8-10 8zM19 5v14",
   menu: "M4 7h16M4 12h16M4 17h16",
   close: "M6 6l12 12M18 6 6 18",
+  search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.35-4.35",
+  columns: "M3 5h18v14H3zM9 5v14M15 5v14",
+  pointer: "M5 3l7 17 2.5-7 7-2.5z",
+  still: "M4 5h16v14H4zM8 15l3-3 2 2 3-4 4 5M9 9.5h.01",
+  motion: "M3 12h4l3-8 4 16 3-8h4",
 } as const;
 
 export type ChromeIconName = keyof typeof PATHS;

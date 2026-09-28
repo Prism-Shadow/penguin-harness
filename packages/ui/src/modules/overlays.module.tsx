@@ -2,8 +2,8 @@
  * Overlays: what opens over the chat, each on the same settled transcript.
  *
  * - Menu: a message's context menu (compact rows, separators, a danger item, shortcuts), the dock's
- *   add-panel menu (rows with descriptions), an info popover and a tooltip — its scene opens them,
- *   each layer coming in from the edge it hangs off;
+ *   add-panel menu (rows with descriptions), an info popover and a tooltip, each under the control
+ *   that opens it — the reader opens and closes them, and a switch raises a toast;
  * - Dialog: the paged settings dialog over the dimmed chat, a discard confirmation above it;
  * - Drawer: a Trace file's details in a side drawer;
  * - Toasts: the stack in the corner, its scene stacking them one after another;
@@ -12,6 +12,7 @@
  * Static stand-ins for W3's `Menu`, `FloatingPanel`, `InfoPopover`, `Tooltip`, `Modal`,
  * `PagedDialog`, `ConfirmModal`, `Drawer` and `Toaster`, and W8's `CommandPalette`.
  */
+import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { ChatTurn, Fixtures } from "../fixtures";
@@ -39,6 +40,9 @@ import {
   Switch,
   Toast,
   Tooltip,
+  useDismiss,
+  useLater,
+  usePointer,
 } from "./parts";
 
 /**
@@ -84,16 +88,30 @@ function Stage({
 /**
  * W3's `InfoPopover`: the circled "?" that sits after the title it explains, and the panel it
  * discloses. The app portals the panel; here it hangs below the row that holds the title (the
- * nearest positioned box), and comes in from that row's edge.
+ * nearest positioned box), and comes in from that row's edge. Given `onToggle`, the "?" is the
+ * button that opens and closes it.
  */
-function InfoPopover({ f, open }: { f: Fixtures; open: boolean }) {
+function InfoPopover({ f, open, onToggle }: { f: Fixtures; open: boolean; onToggle?: () => void }) {
   const s = f.copy.settings;
   return (
     <>
-      <GlyphIcon name="help" size={14} />
+      {onToggle === undefined ? (
+        <GlyphIcon name="help" size={14} />
+      ) : (
+        <button
+          type="button"
+          aria-label={s.toolAliases}
+          aria-expanded={open}
+          onClick={onToggle}
+          className={`rounded-full transition-colors duration-150 ${open ? "text-fg" : "text-fg-subtle hover:text-fg"}`}
+        >
+          <GlyphIcon name="help" size={14} />
+        </button>
+      )}
       <Presence
         show={open}
         side="top"
+        appear={false}
         className="absolute right-0 top-[calc(100%+0.375rem)] z-10 w-72"
       >
         <FloatingPanel>
@@ -109,28 +127,81 @@ function InfoPopover({ f, open }: { f: Fixtures; open: boolean }) {
   );
 }
 
-const OPEN: SceneSpec = {
-  frames: [
-    { key: "idle", title: "Idle", hold: 900 },
-    { key: "menu", title: "Menu", hold: 1400 },
-    { key: "panels", title: "Panels", hold: 1600 },
-  ],
-};
+/** How long a toast stays before it goes on its own. */
+const TOAST_MS = 4000;
 
 /**
- * Menus, and the scene that opens them: the quiet chat on its own; the message's menu drops under
- * its trigger and the tooltip comes off the button it names; then the dock's add-panel menu and
- * the "?" of the row it explains. Settled, that is the view this variant shows.
+ * One menu the reader opens: the trigger, and the panel dropping under it. Open or shut is the
+ * caller's, so it can start open; a press outside the pair or Esc shuts it, as does picking a
+ * row. `active` follows the pointer over the rows.
+ */
+function MenuWithTrigger({
+  trigger,
+  open,
+  setOpen,
+  className,
+  children,
+}: {
+  trigger: (toggle: () => void) => ReactNode;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  className: string;
+  children: ReactNode;
+}) {
+  const close = useCallback(() => setOpen(false), [setOpen]);
+  const box = useDismiss<HTMLDivElement>(open, close);
+  return (
+    <div ref={box} className={className}>
+      {trigger(() => setOpen(!open))}
+      <Presence show={open} side="top" appear={false} className="w-full">
+        {children}
+      </Presence>
+    </div>
+  );
+}
+
+/**
+ * Menus, as the reader uses them. They open as the still shows them — the message's menu under
+ * its "…", the send button's tooltip, the dock's add-panel menu under its "+", and the "?" of the
+ * row it explains — and from there each trigger opens and closes its own layer, a press outside
+ * or Esc closes it, and picking a row closes its menu. The row's switch turns the short tool
+ * names on, which a toast confirms from the corner and then takes back.
  */
 function Menus({ f }: { f: Fixtures }) {
-  const clock = useScene();
   const tooltip = f.copy.chat.sendToBackground;
-  const menu = reached(clock, "menu");
-  const panels = reached(clock, "panels");
+  const later = useLater();
+  const [menu, setMenu] = useState(true);
+  const [menuRow, setMenuRow] = useState(1);
+  const [panels, setPanels] = useState(true);
+  const [panelRow, setPanelRow] = useState(0);
+  const [info, setInfo] = useState(true);
+  const closeInfo = useCallback(() => setInfo(false), []);
+  const infoBox = useDismiss<HTMLDivElement>(info, closeInfo);
+  const [aliases, setAliases] = useState(false);
+  const [toast, setToast] = useState(false);
+  // The send button starts under the pointer, as the still draws it with its tooltip out.
+  const [tipped, setTipped] = useState(true);
+  const more = usePointer();
+  const add = usePointer();
+  const notice = f.notices.byTone.neutral;
   return (
     <Stage f={f} className="items-start justify-between">
       <div className="grid grid-cols-[minmax(0,1fr)] w-60 gap-6">
-        <Presence show={menu} side="top">
+        <MenuWithTrigger
+          open={menu}
+          setOpen={setMenu}
+          className="grid grid-cols-[minmax(0,1fr)] justify-items-start gap-1"
+          trigger={(toggle) => (
+            <IconButton
+              label={f.copy.common.more}
+              icon="more"
+              pressed={menu}
+              hovered={more.hovered}
+              pointer={more.bind}
+              onClick={toggle}
+            />
+          )}
+        >
           <FloatingPanel>
             {f.menus.message.map((item, i) =>
               item === "separator" ? (
@@ -142,21 +213,41 @@ function Menus({ f }: { f: Fixtures }) {
                   label={item.label}
                   shortcut={item.shortcut}
                   danger={item.danger}
-                  active={i === 1}
+                  active={i === menuRow}
+                  onHover={() => setMenuRow(i)}
+                  onClick={() => setMenu(false)}
                 />
               ),
             )}
           </FloatingPanel>
-        </Presence>
-        <span className="flex items-center gap-2">
-          <IconButton label={tooltip} icon="arrowDownLine" hovered />
-          <Presence show={menu} side="left" as="span" className="inline-flex">
+        </MenuWithTrigger>
+        <span
+          className="flex items-center gap-2"
+          onPointerEnter={() => setTipped(true)}
+          onPointerLeave={() => setTipped(false)}
+        >
+          <IconButton label={tooltip} icon="arrowDownLine" hovered={tipped} />
+          <Presence show={tipped} side="left" as="span" appear={false} className="inline-flex">
             <Tooltip label={tooltip} />
           </Presence>
         </span>
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)] w-80 justify-items-end gap-6">
-        <Presence show={panels} side="top" className="w-full">
+        <MenuWithTrigger
+          open={panels}
+          setOpen={setPanels}
+          className="grid w-full grid-cols-[minmax(0,1fr)] justify-items-end gap-1"
+          trigger={(toggle) => (
+            <IconButton
+              label={f.copy.dock.newPanel}
+              icon="plus"
+              pressed={panels}
+              hovered={add.hovered}
+              pointer={add.bind}
+              onClick={toggle}
+            />
+          )}
+        >
           <FloatingPanel className="w-full">
             <MenuLabel>{f.copy.dock.newPanel}</MenuLabel>
             {f.menus.panels.map((panel, i) =>
@@ -168,21 +259,37 @@ function Menus({ f }: { f: Fixtures }) {
                   icon={panel.icon}
                   label={panel.label}
                   description={panel.description}
-                  active={i === 0}
+                  active={i === panelRow}
+                  onHover={() => setPanelRow(i)}
+                  onClick={() => setPanels(false)}
                 />
               ),
             )}
           </FloatingPanel>
-        </Presence>
+        </MenuWithTrigger>
         {/* Where this "?" lives in the app: the Appearance row it explains. */}
-        <div className="relative flex w-full items-center justify-between gap-4 rounded-md border border-line bg-surface px-3 py-2.5">
+        <div
+          ref={infoBox}
+          className="relative flex w-full items-center justify-between gap-4 rounded-md border border-line bg-surface px-3 py-2.5"
+        >
           <div className="flex items-center gap-1 text-sm font-(--ui-weight-medium) text-fg">
             {f.copy.settings.toolAliases}
-            <InfoPopover f={f} open={panels} />
+            <InfoPopover f={f} open={info} onToggle={() => setInfo(!info)} />
           </div>
-          <Switch on={false} />
+          <Switch
+            on={aliases}
+            label={f.copy.settings.toolAliases}
+            onChange={(on) => {
+              setAliases(on);
+              setToast(on);
+              if (on) later(() => setToast(false), TOAST_MS);
+            }}
+          />
         </div>
       </div>
+      <Presence show={toast} side="bottom" className="absolute bottom-6 right-6 w-80">
+        <Toast tone={notice.tone} title={notice.title} description={notice.body} />
+      </Presence>
     </Stage>
   );
 }
@@ -444,11 +551,11 @@ export const module = defineModule({
   width: "wide",
   viewport: APP_COLUMN_WIDTH,
   variants: [
-    { key: "menu", title: "Menu", scene: OPEN },
-    { key: "dialog", title: "Dialog" },
-    { key: "drawer", title: "Drawer" },
-    { key: "toasts", title: "Toasts", scene: STACK },
-    { key: "palette", title: "Palette" },
+    { key: "menu", title: "Menu", kind: "interactive" },
+    { key: "dialog", title: "Dialog", kind: "static" },
+    { key: "drawer", title: "Drawer", kind: "static" },
+    { key: "toasts", title: "Toasts", kind: "animated", scene: STACK },
+    { key: "palette", title: "Palette", kind: "static" },
   ],
   parts: [
     "overlays-modal",

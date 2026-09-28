@@ -1,14 +1,14 @@
 /**
- * Playing scenes: the clock a card owns, the clock a framed embed follows, and the transport in
- * the card's foot.
+ * Playing scenes: the clock a variant's section owns, the clock a framed embed follows, and the
+ * controls in the section's toolbar and under its preview.
  *
- * Nothing plays unasked. A card's clock starts settled — paused at the end of the last frame,
+ * Nothing plays unasked. A section's clock starts settled — paused at the end of the last frame,
  * which is the variant itself — and moves only when the reader presses play; the scene then runs
  * once and settles again. The clock wakes only when the current frame's hold runs out — nothing
- * ticks in between, so a frame change re-renders the card once; a composition that moves within a
- * frame (a stream, a typing field) asks `useFrameTime()` for its own animation-frame updates.
+ * ticks in between, so a frame change re-renders the section once; a composition that moves within
+ * a frame (a stream, a typing field) asks `useFrameTime()` for its own animation-frame updates.
  *
- * Compare mode and the phone view keep one clock: the card's. It posts its timeline to each
+ * Compare mode and the phone view keep one clock: the section's. It posts its timeline to each
  * `/embed` frame, which renders from that timeline and `Date.now()` alone and never advances on
  * its own, so the three themes show the same frame at the same moment.
  */
@@ -55,15 +55,15 @@ export interface ScenePlayer {
   clock: SceneClock | null;
   /** True once the reader has pressed play on this variant's scene. */
   ran: boolean;
-  /** A reader's command from the transport, or a framed embed's relayed one. */
+  /** A reader's command from the controls, or a framed embed's relayed one. */
   control: (command: SceneCommand) => void;
   /** The same clock as a composition may drive it; null without a scene. */
   controls: SceneControls | null;
 }
 
 /**
- * The clock a card (or a standalone `/embed`) owns for the variant it shows. A different variant
- * starts its own scene afresh, settled; a variant without a scene has no clock.
+ * The clock a section (or a standalone `/embed`) owns for the variant it shows. A different
+ * scene starts afresh, settled; no scene, no clock.
  */
 export function useScenePlayer(
   scene: SceneSpec | undefined,
@@ -89,7 +89,7 @@ export function useScenePlayer(
   const [held, setHeld] = useState<Held | null>(() => (frames ? begin(frames) : null));
   let current = held;
   if ((frames ?? null) !== (held?.frames ?? null)) {
-    // Another variant was picked: its scene starts afresh (React re-renders before painting).
+    // Another scene: it starts afresh (React re-renders before painting).
     current = frames ? begin(frames) : null;
     setHeld(current);
   }
@@ -131,10 +131,10 @@ export function useScenePlayer(
 }
 
 /**
- * A framed embed's clock: the card's timeline, as its `gallery:clock` messages deliver it. Until
- * the first message the frame holds still, settled, as any embed does. Its controls send each
- * command up to the card as a `gallery:control` message, so a reader's move inside a framed mock
- * moves the one clock the card owns.
+ * A framed embed's clock: the section's timeline, as its `gallery:clock` messages deliver it.
+ * Until the first message the frame holds still, settled, as any embed does. Its controls send
+ * each command up to the section as a `gallery:control` message, so a reader's move inside a
+ * framed mock moves the one clock the section owns.
  */
 export function useFollowedClock(
   scene: SceneSpec | undefined,
@@ -169,10 +169,43 @@ export function useFollowedClock(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Transport
+// The controls
 // ---------------------------------------------------------------------------------------------
 
-function TransportButton({
+/**
+ * The toolbar's play control: Play on a settled clock (the scene runs once from the top), Pause
+ * while it runs, Play again from wherever it was paused, Replay once it has run and settled again.
+ */
+export function PlayButton({
+  clock,
+  ran,
+  control,
+}: {
+  clock: SceneClock;
+  ran: boolean;
+  control: (command: SceneCommand) => void;
+}) {
+  const { S } = useGallery();
+  const replay = ran && isSettled(clock.frames, clock);
+  const primary: { icon: ChromeIconName; label: string; command: SceneCommand } = clock.playing
+    ? { icon: "pause", label: S.transport.pause, command: { type: "pause" } }
+    : replay
+      ? { icon: "restart", label: S.transport.replay, command: { type: "restart" } }
+      : { icon: "play", label: S.transport.play, command: { type: "play" } };
+  return (
+    <button
+      type="button"
+      className="g-tool g-tool-primary"
+      data-playing={clock.playing || undefined}
+      onClick={() => control(primary.command)}
+    >
+      <ChromeIcon name={primary.icon} size={13} />
+      <span>{primary.label}</span>
+    </button>
+  );
+}
+
+function StepButton({
   icon,
   title,
   onClick,
@@ -184,12 +217,12 @@ function TransportButton({
   return (
     <button
       type="button"
-      className="g-icon-button"
+      className="g-tool g-tool-icon"
       title={title}
       aria-label={title}
       onClick={onClick}
     >
-      <ChromeIcon name={icon} size={15} />
+      <ChromeIcon name={icon} size={14} />
     </button>
   );
 }
@@ -217,48 +250,25 @@ function FrameProgress({ clock }: { clock: SceneClock }) {
 }
 
 /**
- * The play control first — Play on a settled clock (the scene runs once from the top), Pause
- * while it runs, Play again from wherever it was paused, Replay once it has run and settled again
- * — then the previous and next frame, a chip per frame (the current one pressed, with its
- * progress), and the speed.
+ * The strip under an animated preview: the previous and next frame, a chip per frame (the current
+ * one pressed, with its progress), and the speed. Quiet — plain text on the page, no box.
  */
-export function Transport({
+export function FrameStrip({
   module,
   variant,
   clock,
-  ran,
   control,
 }: {
   module: Module;
   variant: ModuleVariant;
   clock: SceneClock;
-  ran: boolean;
   control: (command: SceneCommand) => void;
 }) {
   const { S } = useGallery();
   const text = useText();
-  const replay = ran && isSettled(clock.frames, clock);
-  const primary = clock.playing
-    ? { icon: "pause" as const, label: S.transport.pause, command: { type: "pause" as const } }
-    : replay
-      ? {
-          icon: "restart" as const,
-          label: S.transport.replay,
-          command: { type: "restart" as const },
-        }
-      : { icon: "play" as const, label: S.transport.play, command: { type: "play" as const } };
   return (
-    <div className="g-transport" role="group" aria-label={S.transport.label}>
-      <button
-        type="button"
-        className="g-play"
-        data-playing={clock.playing || undefined}
-        onClick={() => control(primary.command)}
-      >
-        <ChromeIcon name={primary.icon} size={13} />
-        <span>{primary.label}</span>
-      </button>
-      <TransportButton
+    <div className="g-frames" role="group" aria-label={S.transport.label}>
+      <StepButton
         icon="previous"
         title={S.transport.previous}
         onClick={() => control({ type: "step", by: -1 })}
@@ -278,7 +288,7 @@ export function Transport({
           </button>
         ))}
       </div>
-      <TransportButton
+      <StepButton
         icon="next"
         title={S.transport.next}
         onClick={() => control({ type: "step", by: 1 })}

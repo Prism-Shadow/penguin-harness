@@ -5,18 +5,19 @@
  *   the Project switcher, New chat, the page entries and the seam that folds them, the Sessions
  *   header, two Workspace groups of session rows with their marks (running, pinned, unread,
  *   scheduled), one row showing its hover actions, and the user row — with the launcher ball on
- *   the chat's right edge, since no dock is open there. Its scene opens it: the icon rail, a rail
- *   icon's tooltip, then the sidebar unfolding;
+ *   the chat's right edge, since no dock is open there. The reader drives it: the collapse button
+ *   folds it to the icon rail and the rail's expand button unfolds it, a rail icon under the
+ *   pointer shows its tooltip, a row under the pointer shows its actions, and a clicked row
+ *   becomes the open Session;
  * - Tabs & crumbs: a page header under its breadcrumbs, with underline tabs;
  * - Dock & rail: the chat with the bottom dock open — dock tabs, the panel actions and a panel;
  * - Collapsed: the sidebar folded to the icon rail, one icon showing its tooltip.
  */
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { Fixtures } from "../fixtures";
 import { APP_WINDOW_WIDTH, defineModule } from "../module";
-import type { SceneSpec } from "../module";
-import { at, reached, useScene } from "../scene";
 import {
   AgentTile,
   AppShell,
@@ -89,30 +90,30 @@ function ChatBody({ f, launcher = false }: { f: Fixtures; launcher?: boolean }) 
   );
 }
 
-const EXPAND: SceneSpec = {
-  frames: [
-    { key: "rail", title: "Rail", hold: 1400 },
-    { key: "tooltip", title: "Tooltip", hold: 1400 },
-    { key: "expanded", title: "Expanded", hold: 1600 },
-  ],
-};
-
-/** The rail entry the tooltip frames point at. */
+/** The rail entry the Collapsed still shows the tooltip of. */
 const TIP: SidebarPage = "plugins";
 
 /**
- * The sidebar, and the scene that opens it: the icon rail; one rail icon's tooltip; then the
- * column widens to the sidebar — its width moves through `data-layout-motion` while the rail's
- * contents leave and the sidebar's arrive, each laid out at its own width so neither reflows on
- * the way. The column clips while the width moves and stops clipping for the tooltip, so that can
- * hang over the chat. Settled, it is the sidebar the variant shows when nothing is playing.
+ * The sidebar as the reader drives it. It opens as the app shows it — unfolded, the fixtures'
+ * Session open, one row of the second group under the pointer — and from there the collapse
+ * button folds the column to the icon rail and the rail's first button unfolds it again. The
+ * width moves through `data-layout-motion` while one body leaves and the other arrives, each laid
+ * out at its own width so neither reflows on the way; the column clips while it moves, and stops
+ * clipping while a rail tooltip is out, so that can hang over the chat. A clicked row becomes the
+ * open Session, and the chat's header takes its title.
  */
 function Sidebar({ f }: { f: Fixtures }) {
-  const clock = useScene();
-  const expanded = reached(clock, "expanded");
-  const tooltip = at(clock, "tooltip");
-  // A row of the second group, under the pointer: the open Task's own group keeps its marks.
-  const hovered = f.sessionGroups[1]?.items[0]?.id;
+  const rows = f.sessionGroups.flatMap((group) => group.items);
+  const [expanded, setExpanded] = useState(true);
+  const [open, setOpen] = useState(f.session.id);
+  // A row of the second group starts under the pointer: the open Task's own group keeps its marks.
+  const [hovered, setHovered] = useState(f.sessionGroups[1]?.items[0]?.id);
+  const [tip, setTip] = useState<SidebarPage | undefined>(undefined);
+  const row = rows.find((item) => item.id === open);
+  const shown =
+    row === undefined || row.id === f.session.id
+      ? f
+      : { ...f, session: { ...f.session, title: row.title, running: row.running === true } };
   return (
     <Window height="h-[40rem]">
       <aside
@@ -120,18 +121,26 @@ function Sidebar({ f }: { f: Fixtures }) {
         data-layout-motion
         className={`relative flex shrink-0 flex-col border-r border-line bg-surface-muted ${
           expanded ? "w-72" : "w-12"
-        } ${tooltip ? "" : "overflow-hidden"}`}
+        } ${expanded || tip === undefined ? "overflow-hidden" : ""}`}
       >
-        {/*
-          The sidebar's contents are laid out at their own width from the moment they mount and
-          the column clips them, so the widening column is what uncovers them — no entrance of
-          their own, and a settled card draws them at rest.
-        */}
-        {expanded && (
-          <div className="absolute inset-y-0 left-0 flex w-72 flex-col">
-            <SidebarBody f={f} activeSessionId={f.session.id} hoveredSessionId={hovered} />
-          </div>
-        )}
+        <Presence
+          show={expanded}
+          side="left"
+          appear={false}
+          className="absolute inset-y-0 left-0 flex w-72 flex-col"
+        >
+          <SidebarBody
+            f={f}
+            activeSessionId={open}
+            hoveredSessionId={hovered}
+            onOpenSession={setOpen}
+            onHoverSession={setHovered}
+            onCollapse={() => {
+              setExpanded(false);
+              setHovered(undefined);
+            }}
+          />
+        </Presence>
         <Presence
           show={!expanded}
           side="left"
@@ -139,26 +148,27 @@ function Sidebar({ f }: { f: Fixtures }) {
         >
           <RailBody
             f={f}
-            hovered={tooltip ? TIP : undefined}
-            renderEntry={(node, page) =>
-              page === TIP ? (
-                <>
-                  {node}
-                  <span className="absolute left-full top-1/2 z-10 ml-2 -translate-y-1/2">
-                    <Presence show={tooltip} side="left" as="span" className="block">
-                      <Tooltip label={f.copy.nav[page]} />
-                    </Presence>
-                  </span>
-                </>
-              ) : (
-                node
-              )
-            }
+            hovered={tip}
+            onHoverEntry={setTip}
+            onExpand={() => {
+              setExpanded(true);
+              setTip(undefined);
+            }}
+            renderEntry={(node, page) => (
+              <>
+                {node}
+                <span className="pointer-events-none absolute left-full top-1/2 z-10 ml-2 -translate-y-1/2">
+                  <Presence show={tip === page} side="left" as="span" className="block">
+                    <Tooltip label={f.copy.nav[page]} />
+                  </Presence>
+                </span>
+              </>
+            )}
           />
         </Presence>
       </aside>
       <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
-        <ChatHeader f={f} dock="none" />
+        <ChatHeader f={shown} dock="none" />
         <ChatBody f={f} launcher />
       </div>
     </Window>
@@ -313,7 +323,7 @@ function DockAndRail({ f }: { f: Fixtures }) {
   );
 }
 
-/** The collapsed rail; `tooltip` shows the named entry's tooltip, as a still. */
+/** The collapsed rail; `tooltip` shows the entry's tooltip, as a still. */
 function Rail({ f, tooltip = false }: { f: Fixtures; tooltip?: boolean }) {
   return (
     <nav
@@ -367,10 +377,10 @@ export const module = defineModule({
   width: "wide",
   viewport: APP_WINDOW_WIDTH,
   variants: [
-    { key: "sidebar", title: "Sidebar", scene: EXPAND },
-    { key: "tabs-crumbs", title: "Tabs & crumbs" },
-    { key: "dock-rail", title: "Dock & rail" },
-    { key: "collapsed", title: "Collapsed" },
+    { key: "sidebar", title: "Sidebar", kind: "interactive" },
+    { key: "tabs-crumbs", title: "Tabs & crumbs", kind: "static" },
+    { key: "dock-rail", title: "Dock & rail", kind: "static" },
+    { key: "collapsed", title: "Collapsed", kind: "static" },
   ],
   parts: [
     "navigation-tabs",

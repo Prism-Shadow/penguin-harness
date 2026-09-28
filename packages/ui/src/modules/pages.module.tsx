@@ -3,7 +3,9 @@
  *
  * - Settings: the Plugins page — the title and its "?", then the list column (a full-width
  *   search, the installed list under its bar, the available list folded) beside the filter column.
- *   Its scene builds the page section by section, the rows landing one after another;
+ *   The reader works it: the bars fold and open their lists, the search and the filter column
+ *   narrow the rows, and a row's remove moves it to the available list, whose install moves it
+ *   back;
  * - Entity: a model's page — the entity header (logo, name, id, badges, a link) above ruled
  *   sections of facts and of the agents that use it;
  * - Empty: the Agents page of a Project with no Agent of its own — the title row with its search
@@ -12,13 +14,12 @@
  * Static stand-ins for W4's `PageFrame`, `PageHeader`, `RuledSection`, `CollapsibleSection`,
  * `EntityHeader`, `CreateButtons` and W1's `EmptyState`.
  */
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { Fixtures, PluginFixture } from "../fixtures";
 import { APP_COLUMN_WIDTH, defineModule } from "../module";
-import type { SceneSpec } from "../module";
-import { reached, useScene } from "../scene";
-import { AgentTile } from "../screens/parts";
+import { AgentTile, DisclosureBody } from "../screens/parts";
 import { tokens, usd } from "../screens/format";
 import {
   AgentCard,
@@ -35,46 +36,57 @@ import {
   PageHeader,
   RuledSection,
   SearchInput,
-  arriving,
-  useArrivals,
 } from "./parts";
-
-const BUILD: SceneSpec = {
-  frames: [
-    { key: "header", title: "Header", hold: 900 },
-    { key: "installed", title: "Installed", hold: 1600 },
-    { key: "marketplaces", title: "Available", hold: 1200 },
-  ],
-};
+import { filterPlugins, toggled } from "./interaction";
 
 /** The page's scroll container and width cap, with the app's page padding. */
 function PageFrame({ children }: { children: ReactNode }) {
   return <div className="mx-auto grid max-w-5xl gap-6 p-6">{children}</div>;
 }
 
-/** A list's header bar: its title with the count inside it, and the fold chevron on the right. */
+/**
+ * A list's header bar: its title with the count inside it, and the fold chevron on the right.
+ * Given `onToggle` the bar is the button that folds it, and the list opens and folds by height
+ * through a disclosure body; without, the list is simply there or not.
+ */
 function CollapsibleSection({
   title,
   open,
+  onToggle,
   children,
 }: {
   title: string;
   open: boolean;
+  onToggle?: () => void;
   children?: ReactNode;
 }) {
+  const bar = "flex w-full items-center gap-2 rounded-md bg-surface-muted px-3 py-2.5 text-left";
+  const head = (
+    <>
+      <span className="min-w-0 flex-1 truncate text-base font-(--ui-weight-strong) text-fg">
+        {title}
+      </span>
+      <GlyphIcon
+        name={open ? "chevronDown" : "chevronRight"}
+        size={14}
+        className="text-fg-subtle"
+      />
+    </>
+  );
+  if (onToggle === undefined) {
+    return (
+      <section>
+        <div className={bar}>{head}</div>
+        {open && children}
+      </section>
+    );
+  }
   return (
     <section>
-      <div className="flex items-center gap-2 rounded-md bg-surface-muted px-3 py-2.5">
-        <span className="min-w-0 flex-1 truncate text-base font-(--ui-weight-strong) text-fg">
-          {title}
-        </span>
-        <GlyphIcon
-          name={open ? "chevronDown" : "chevronRight"}
-          size={14}
-          className="text-fg-subtle"
-        />
-      </div>
-      {open && children}
+      <button type="button" aria-expanded={open} onClick={onToggle} className={bar}>
+        {head}
+      </button>
+      <DisclosureBody open={open}>{children}</DisclosureBody>
     </section>
   );
 }
@@ -83,7 +95,19 @@ function CollapsibleSection({
  * A plugin's row: its tile, its name and one line of description, the meta line (version and
  * state), its tags, and the action on the right.
  */
-function PluginRow({ f, plugin }: { f: Fixtures; plugin: PluginFixture }) {
+function PluginRow({
+  f,
+  plugin,
+  installed = true,
+  onAction,
+}: {
+  f: Fixtures;
+  plugin: PluginFixture;
+  /** An installed row offers remove; an available one, install. */
+  installed?: boolean;
+  /** Makes the row's action a real button. */
+  onAction?: () => void;
+}) {
   const p = f.copy.plugins;
   return (
     <div className="flex items-center gap-4 px-6 py-4">
@@ -105,13 +129,30 @@ function PluginRow({ f, plugin }: { f: Fixtures; plugin: PluginFixture }) {
           </div>
         </div>
       </div>
-      <IconButton label={p.uninstall} icon="trash" size="md" />
+      {installed ? (
+        <IconButton label={p.uninstall} icon="trash" size="md" onClick={onAction} />
+      ) : (
+        <Button variant="secondary" onClick={onAction}>
+          {p.install}
+        </Button>
+      )}
     </div>
   );
 }
 
-/** The filter column: one group of checkbox rows per facet, each row with its count. */
-function PluginFilters({ f }: { f: Fixtures }) {
+/**
+ * The filter column: one group of checkbox rows per facet, each row with its count. `checked`
+ * and `onToggle` make the rows live, keyed by facet and row label.
+ */
+function PluginFilters({
+  f,
+  checked,
+  onToggle,
+}: {
+  f: Fixtures;
+  checked?: (facet: string, label: string) => boolean;
+  onToggle?: (facet: string, label: string) => void;
+}) {
   const p = f.copy.plugins;
   const lib = f.pluginLibrary;
   const groups: readonly {
@@ -142,7 +183,11 @@ function PluginFilters({ f }: { f: Fixtures }) {
           {group.rows.map((row) => (
             <span key={row.label} className="flex items-center gap-2">
               <span className="min-w-0 flex-1">
-                <Checkbox checked={false} label={row.label} />
+                <Checkbox
+                  checked={checked?.(group.title, row.label) ?? false}
+                  label={row.label}
+                  onChange={onToggle && (() => onToggle(group.title, row.label))}
+                />
               </span>
               <span className="text-xs tabular-nums text-fg-subtle">{row.count}</span>
             </span>
@@ -154,39 +199,87 @@ function PluginFilters({ f }: { f: Fixtures }) {
 }
 
 /**
- * The Plugins page, and the scene that builds it: the title with its "?"; the installed list, its
- * rows landing one after another; then the available list, folded — the page this variant shows
- * when nothing is playing.
+ * The Plugins page as the reader works it. It opens as the still does — the installed list open,
+ * the available list folded, no filter ticked — and from there each bar folds or opens its list,
+ * the search and the ticked categories and kinds narrow both lists, the status boxes pick which
+ * lists show, and a row's remove moves it to the available list, whose install moves it back —
+ * the two bars' counts following.
  */
 function Settings({ f }: { f: Fixtures }) {
-  const clock = useScene();
   const p = f.copy.plugins;
-  const landed = useArrivals(f.plugins.length, "installed");
+  const lib = f.pluginLibrary;
+  const [query, setQuery] = useState("");
+  const [installedOpen, setInstalledOpen] = useState(true);
+  const [availableOpen, setAvailableOpen] = useState(false);
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
+  // The ticked rows of the filter column, by facet title.
+  const [ticks, setTicks] = useState<Readonly<Record<string, ReadonlySet<string>>>>({});
+  const ticked = (facet: string): ReadonlySet<string> => ticks[facet] ?? new Set();
+  const categories = ticked(p.filters.categories);
+  const kinds = new Set(
+    (["skills", "hooks", "modules"] as const).filter((kind) =>
+      ticked(p.filters.kind).has(p.kinds[kind]),
+    ),
+  );
+  const states = ticked(p.filters.state);
+  const showInstalled = states.size === 0 || states.has(p.states.installed);
+  const showAvailable = states.size === 0 || states.has(p.states.available);
+  const shown = filterPlugins(f.plugins, query, categories, kinds);
+  const installed = shown.filter((plugin) => !removed.has(plugin.name));
+  const available = shown.filter((plugin) => removed.has(plugin.name));
+  const move = (name: string) => setRemoved((now) => toggled(now, name));
   return (
     <PageFrame>
       <PageHeader title={p.title} info={p.info} />
       <div className="grid grid-cols-[minmax(0,1fr)_13rem] gap-6">
         <div className="grid content-start gap-3">
-          <SearchInput placeholder={p.search} />
-          {reached(clock, "installed") && (
-            <CollapsibleSection title={p.installedSection(f.pluginLibrary.installed)} open>
-              {f.plugins.slice(0, landed).map((plugin) => (
-                <div key={plugin.name} data-reveal={arriving(clock, "installed")}>
-                  <PluginRow f={f} plugin={plugin} />
-                </div>
+          <SearchInput
+            value={query}
+            placeholder={p.search}
+            clearLabel={f.copy.common.remove}
+            onValueChange={setQuery}
+          />
+          {showInstalled && (
+            <CollapsibleSection
+              title={p.installedSection(lib.installed - removed.size)}
+              open={installedOpen}
+              onToggle={() => setInstalledOpen(!installedOpen)}
+            >
+              {installed.map((plugin) => (
+                <PluginRow
+                  key={plugin.name}
+                  f={f}
+                  plugin={plugin}
+                  onAction={() => move(plugin.name)}
+                />
               ))}
             </CollapsibleSection>
           )}
-          {reached(clock, "marketplaces") && (
-            <div data-reveal={arriving(clock, "marketplaces")}>
-              <CollapsibleSection
-                title={p.availableSection(f.pluginLibrary.available)}
-                open={false}
-              />
-            </div>
+          {showAvailable && (
+            <CollapsibleSection
+              title={p.availableSection(lib.available + removed.size)}
+              open={availableOpen}
+              onToggle={() => setAvailableOpen(!availableOpen)}
+            >
+              {available.map((plugin) => (
+                <PluginRow
+                  key={plugin.name}
+                  f={f}
+                  plugin={plugin}
+                  installed={false}
+                  onAction={() => move(plugin.name)}
+                />
+              ))}
+            </CollapsibleSection>
           )}
         </div>
-        <PluginFilters f={f} />
+        <PluginFilters
+          f={f}
+          checked={(facet, label) => ticked(facet).has(label)}
+          onToggle={(facet, label) =>
+            setTicks((now) => ({ ...now, [facet]: toggled(now[facet] ?? new Set(), label) }))
+          }
+        />
       </div>
     </PageFrame>
   );
@@ -299,9 +392,9 @@ export const module = defineModule({
   width: "wide",
   viewport: APP_COLUMN_WIDTH,
   variants: [
-    { key: "settings", title: "Settings", scene: BUILD },
-    { key: "entity", title: "Entity" },
-    { key: "empty", title: "Empty" },
+    { key: "settings", title: "Settings", kind: "interactive" },
+    { key: "entity", title: "Entity", kind: "static" },
+    { key: "empty", title: "Empty", kind: "static" },
   ],
   parts: [
     "layout-card",

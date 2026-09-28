@@ -255,6 +255,7 @@ export const en: Fixtures = buildFixtures("en", {
       builtinUndeletable: "Built-in agents cannot be deleted",
       deleteTitle: (name) => `Delete “${name}”?`,
       deleteBody: "Its Sessions stay in the sidebar; schedules that start it are turned off.",
+      deleted: (name) => `Deleted “${name}”`,
       empty: {
         title: "No agent of your own yet",
         body: "Describe the agent you want and let AI create it — or set one up manually.",
@@ -308,6 +309,10 @@ export const en: Fixtures = buildFixtures("en", {
       empty: {
         title: "Select a file to preview",
         body: "Pick a file in the tree to preview it here.",
+      },
+      noPreview: {
+        title: "No preview for this file",
+        body: "Download it to open it on your computer.",
       },
       copyPath: "Copy relative path",
       lines: (n) => `${n} ${n === 1 ? "line" : "lines"}`,

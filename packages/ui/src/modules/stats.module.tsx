@@ -422,9 +422,9 @@ export const module = defineModule({
     "A Trace's numbers: the overall summary, stat tiles and chips, a context ring and a sparkline; the execution timeline and its legend; spend by day against the budget.",
   width: "wide",
   variants: [
-    { key: "overview", title: "Overview", scene: COUNT_UP },
-    { key: "timeline", title: "Timeline" },
-    { key: "usage", title: "Usage" },
+    { key: "overview", title: "Overview", kind: "animated", scene: COUNT_UP },
+    { key: "timeline", title: "Timeline", kind: "static" },
+    { key: "usage", title: "Usage", kind: "static" },
   ],
   parts: [
     "data-stat-tile",

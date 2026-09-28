@@ -1,18 +1,17 @@
 /**
  * Buttons & actions, where they occur: the Agents page toolbar (search, the create pair, an icon
  * button), a confirm dialog's footer, dense rows with their hover actions beside a code header's
- * copy button, an external link and key hints, and every button variant in every state. Static
- * stand-ins for W1's `Button`, `IconButton`, `Link`, `CopyButton`, `Kbd` and `CreateButtons`.
+ * copy button, an external link and key hints, and every button variant in every state. The
+ * toolbar is the reader's: its buttons answer the pointer and the AI one works for a moment.
+ * Static stand-ins for W1's `Button`, `IconButton`, `Link`, `CopyButton`, `Kbd` and `CreateButtons`.
  */
+import { useState } from "react";
 import { fixturesFor } from "../fixtures";
 import type { Fixtures } from "../fixtures";
 import { defineModule } from "../module";
-import type { SceneSpec } from "../module";
-import { reached, useScene } from "../scene";
 import { AgentTile } from "../screens/parts";
 import {
   Button,
-  CreateButtons,
   GlyphIcon,
   Heading,
   IconButton,
@@ -20,48 +19,87 @@ import {
   Link,
   Modal,
   SearchInput,
-  arriving,
-  useArrivals,
+  useLater,
+  usePointer,
 } from "./parts";
 import type { ButtonState, ButtonVariant } from "./parts";
 
-const OPEN_PAGE: SceneSpec = {
-  frames: [
-    { key: "header", title: "Header", hold: 900 },
-    { key: "search", title: "Search", hold: 1000 },
-    { key: "agents", title: "Agents", hold: 1600 },
-  ],
-};
+/** How long the AI create works before it settles again. */
+const LOADING_MS = 1600;
+
+/** A pointer-bound button's look: pressed, then under the pointer, then at rest. */
+function lookOf(pointer: { hovered: boolean; pressed: boolean }): ButtonState {
+  return pointer.pressed ? "active" : pointer.hovered ? "hover" : "rest";
+}
 
 /**
- * The Agents page toolbar, and the scene that builds it: the title with the pair of create
- * buttons; the search box under them; then the agents themselves, one row after another — the
- * page this variant shows when nothing is playing.
+ * The create pair, live: each button deepens under the pointer and again while it is held down,
+ * and the AI one — the create that goes off and does work — shows its spinner for a moment when
+ * pressed, then settles back, as a request that came back does.
+ */
+function LiveCreateButtons({ f }: { f: Fixtures }) {
+  const a = f.copy.agents;
+  const later = useLater();
+  const ai = usePointer();
+  const hand = usePointer();
+  const [loading, setLoading] = useState(false);
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <Button
+        variant="primary"
+        state={loading ? "loading" : lookOf(ai)}
+        leading={<GlyphIcon name="wand" size={13} />}
+        pointer={ai.bind}
+        onClick={() => {
+          setLoading(true);
+          later(() => setLoading(false), LOADING_MS);
+        }}
+      >
+        {a.createWithAi}
+      </Button>
+      <Button
+        variant="secondary"
+        state={lookOf(hand)}
+        leading={<GlyphIcon name="hand" size={13} />}
+        pointer={hand.bind}
+      >
+        {a.createManually}
+      </Button>
+    </span>
+  );
+}
+
+/**
+ * The Agents page toolbar as the reader uses it: the title with the pair of create buttons, the
+ * search box, and the agents. The buttons answer the pointer, the AI create works for a moment,
+ * and the search narrows the list as it is typed.
  */
 function Toolbar({ f }: { f: Fixtures }) {
-  const clock = useScene();
   const a = f.copy.agents;
-  const landed = useArrivals(f.agents.length, "agents");
+  const [query, setQuery] = useState("");
+  const typed = query.trim().toLowerCase();
+  const agents = f.agents.filter(
+    (agent) =>
+      typed === "" ||
+      `${agent.id} ${agent.name} ${agent.description}`.toLowerCase().includes(typed),
+  );
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <Heading level={3} className="mr-auto">
           {a.title}
         </Heading>
-        <CreateButtons f={f} />
+        <LiveCreateButtons f={f} />
       </div>
-      {reached(clock, "search") && (
-        <div data-reveal={arriving(clock, "search")}>
-          <SearchInput placeholder={a.search} />
-        </div>
-      )}
+      <SearchInput
+        value={query}
+        placeholder={a.search}
+        clearLabel={f.copy.common.remove}
+        onValueChange={setQuery}
+      />
       <ul className="grid grid-cols-[minmax(0,1fr)]">
-        {f.agents.slice(0, landed).map((agent) => (
-          <li
-            key={agent.id}
-            data-reveal={arriving(clock, "agents")}
-            className="flex items-center gap-3 border-t border-line-muted py-2.5"
-          >
+        {agents.map((agent) => (
+          <li key={agent.id} className="flex items-center gap-3 border-t border-line-muted py-2.5">
             <AgentTile id={agent.id} name={agent.name} size={24} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-(--ui-weight-medium) text-fg">
@@ -235,10 +273,10 @@ export const module = defineModule({
     "Buttons where they occur: a page toolbar, a dialog footer, a dense row's hover actions with links, keys and a copy button, and every variant in every state.",
   width: "narrow",
   variants: [
-    { key: "toolbar", title: "Toolbar", scene: OPEN_PAGE },
-    { key: "footer", title: "Footer" },
-    { key: "dense-row", title: "Dense row" },
-    { key: "states", title: "States" },
+    { key: "toolbar", title: "Toolbar", kind: "interactive" },
+    { key: "footer", title: "Footer", kind: "static" },
+    { key: "dense-row", title: "Dense row", kind: "static" },
+    { key: "states", title: "States", kind: "static" },
   ],
   parts: [
     "actions-button",

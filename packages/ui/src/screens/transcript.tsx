@@ -579,8 +579,19 @@ export function ToolbarTrigger({
   );
 }
 
-/** The attachment chips over the draft: the Skills first, then the file references. */
-export function ComposerChips({ chips }: { chips: Fixtures["session"]["composer"]["chips"] }) {
+/**
+ * The attachment chips over the draft: the Skills first, then the file references. Given
+ * `onRemove`, each chip's cross is a real button that drops it, named by `removeLabel`.
+ */
+export function ComposerChips({
+  chips,
+  onRemove,
+  removeLabel,
+}: {
+  chips: readonly Fixtures["session"]["composer"]["chips"][number][];
+  onRemove?: (label: string) => void;
+  removeLabel?: string;
+}) {
   if (chips.length === 0) return null;
   const ordered = [
     ...chips.filter((chip) => chip.kind === "skill"),
@@ -600,9 +611,21 @@ export function ComposerChips({ chips }: { chips: Fixtures["session"]["composer"
           />
           <span className="truncate">{chip.label}</span>
           {chip.lines && <span className="shrink-0">{chip.lines}</span>}
-          <span className="rounded-sm p-px text-fg-subtle">
-            <Glyph name="cross" size={11} />
-          </span>
+          {onRemove === undefined ? (
+            <span className="rounded-sm p-px text-fg-subtle">
+              <Glyph name="cross" size={11} />
+            </span>
+          ) : (
+            <button
+              type="button"
+              aria-label={removeLabel ? `${removeLabel} ${chip.label}` : chip.label}
+              title={removeLabel}
+              onClick={() => onRemove(chip.label)}
+              className="rounded-sm p-px text-fg-subtle transition-colors duration-150 hover:text-fg"
+            >
+              <Glyph name="cross" size={11} />
+            </button>
+          )}
         </span>
       ))}
     </div>
@@ -621,6 +644,7 @@ export function ComposerToolbar({
   session = true,
   skills = 0,
   modelTrigger,
+  onPlus,
 }: {
   f: Fixtures;
   send: ReactNode;
@@ -629,6 +653,8 @@ export function ComposerToolbar({
   skills?: number;
   /** A caller's own model trigger, to hang a picker off it. */
   modelTrigger?: ReactNode;
+  /** Makes `+` a real button: what it attaches is the caller's to decide. */
+  onPlus?: () => void;
 }) {
   const s = f.session;
   const c = f.copy.chat;
@@ -636,14 +662,26 @@ export function ComposerToolbar({
   return (
     <div className="mt-1 flex items-center justify-between gap-2 text-xs">
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-        <span
-          role="button"
-          aria-label={c.plusMenu}
-          title={c.plusMenu}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-fg-muted"
-        >
-          <Glyph name="plus" size={15} />
-        </span>
+        {onPlus === undefined ? (
+          <span
+            role="button"
+            aria-label={c.plusMenu}
+            title={c.plusMenu}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-fg-muted"
+          >
+            <Glyph name="plus" size={15} />
+          </span>
+        ) : (
+          <button
+            type="button"
+            aria-label={c.plusMenu}
+            title={c.plusMenu}
+            onClick={onPlus}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:text-fg"
+          >
+            <Glyph name="plus" size={15} />
+          </button>
+        )}
         <ToolbarTrigger
           glyph={APPROVAL_GLYPH[s.composer.approvalMode]}
           label={c.approvalModes[s.composer.approvalMode]}
@@ -683,38 +721,68 @@ export function SendButton({
   f,
   ready,
   steer = false,
+  onClick,
 }: {
   f: Fixtures;
   ready: boolean;
   steer?: boolean;
+  /** Makes it a real button; a press while it is not ready does nothing. */
+  onClick?: () => void;
 }) {
   const label = steer ? f.copy.chat.steerSend : f.copy.chat.send;
-  return (
+  const className = `flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
+    ready ? "bg-accent text-accent-fg" : `${NEUTRAL_FILL} text-fg-subtle`
+  }`;
+  return onClick === undefined ? (
     <span
       role="button"
       aria-label={label}
       title={label}
       aria-disabled={ready ? undefined : true}
-      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
-        ready ? "bg-accent text-accent-fg" : `${NEUTRAL_FILL} text-fg-subtle`
-      }`}
+      className={className}
     >
       <Glyph name="arrowUp" size={17} />
     </span>
+  ) : (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-disabled={ready ? undefined : true}
+      onClick={() => {
+        if (ready) onClick();
+      }}
+      className={className}
+    >
+      <Glyph name="arrowUp" size={17} />
+    </button>
   );
 }
 
 /** Stop is a control, not a status: a solid fill, never danger ink on a danger tint. */
-export function StopButton({ f }: { f: Fixtures }) {
-  return (
+export function StopButton({ f, onClick }: { f: Fixtures; onClick?: () => void }) {
+  const className =
+    "flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-tone-danger-emphasis text-tone-danger-emphasis-fg";
+  const mark = <span className="h-2.5 w-2.5 rounded-xs bg-current" />;
+  return onClick === undefined ? (
     <span
       role="button"
       aria-label={f.copy.chat.stop}
       title={f.copy.chat.stop}
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-tone-danger-emphasis text-tone-danger-emphasis-fg"
+      className={className}
     >
-      <span className="h-2.5 w-2.5 rounded-xs bg-current" />
+      {mark}
     </span>
+  ) : (
+    <button
+      type="button"
+      aria-label={f.copy.chat.stop}
+      title={f.copy.chat.stop}
+      onClick={onClick}
+      className={className}
+    >
+      {mark}
+    </button>
   );
 }
 

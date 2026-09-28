@@ -10,13 +10,60 @@
  * so only `zh` fills it; a test checks it covers every module, variant, frame and section.
  */
 import type { HookName, ThemeId, ToneName } from "@prismshadow/penguin-ui";
-import type { ModuleId } from "../../ui/src/module";
+import type { ModuleId, VariantKind } from "../../ui/src/module";
+import type { GroupId } from "./lib/groups";
 
 export const zh = {
   brand: {
     title: "Penguin UI",
-    tagline: "共享 UI 包的每个模块，在三套主题下的真实界面。",
   },
+  /** The top bar's page links, the left nav, the "on this page" list and the phone drawer. */
+  site: {
+    home: "首页",
+    components: "组件",
+    screens: "整页",
+    fonts: "字体",
+    pages: "页面",
+    search: "搜索模块",
+    searchShortcut: "Ctrl K",
+    noMatches: "没有匹配的模块。",
+    modules: "模块",
+    onThisPage: "本页目录",
+    settings: "显示设置",
+    menu: "打开菜单",
+    closeMenu: "关闭菜单",
+    notFound: (id: string) => `没有名为「${id}」的模块。`,
+    allModules: "全部模块",
+    feedbackTitle: "反馈",
+    feedbackBody: "引用预览工具条末尾的路径，或用链接按钮复制这一节的地址。",
+    feedbackExample: "白领 › 对话 › 待审批 · 深色",
+  },
+  /** The module groups (lib/groups.ts): the index's headings, the nav's eyebrows, a page's eyebrow. */
+  groups: {
+    foundations: "基础",
+    conversation: "对话与输入",
+    navigation: "导航与布局",
+    actions: "操作与反馈",
+    forms: "表单与浮层",
+    data: "数据",
+    content: "内容",
+    flows: "产品流程",
+    screens: "整页",
+  } as Record<GroupId, string>,
+  home: {
+    eyebrow: "组件画廊",
+    title: "Penguin UI",
+    lead: "共享 UI 包的每个模块，在三套主题、两种明暗、三档字号与两种语言下的真实界面。",
+    shell: "应用外壳",
+    shellLead:
+      "按真实比例的应用窗口，用各模块现成的合成拼成：切换侧栏的页面入口、打开会话、收起侧栏、在输入框打字并发送——每套主题各自排布。",
+    index: "组件索引",
+    indexLead: "每个模块一页：每个变体一节，随后是它的组件、令牌与源码。",
+  },
+  /**
+   * The view controls' copy, in the top bar now; the key keeps the name of the rail that held
+   * them, which the Foundations boards read (`S.rail.langNames`).
+   */
   rail: {
     theme: "主题",
     themeNames: { github: "通用", modern: "白领", geek: "极客" } as Record<ThemeId, string>,
@@ -32,13 +79,6 @@ export const zh = {
     sizeTitle: (px: number) => `根字号 ${px}px`,
     compare: "三主题对比",
     reducedMotion: "减弱动效",
-    fonts: "字体与许可",
-    modules: "模块",
-    menu: "打开菜单",
-    closeMenu: "关闭菜单",
-    feedbackTitle: "反馈",
-    feedbackBody: "引用卡片左下角的路径，或用标题行的链接按钮复制地址。",
-    feedbackExample: "白领 › 对话 › 待审批 · 深色",
   },
   /** The breadcrumb's own words; everything else in it is a name from elsewhere. */
   crumb: {
@@ -49,13 +89,26 @@ export const zh = {
     resolving: "正在解析令牌…",
     problems: "模块与演示的问题",
   },
+  /** A variant's section: its kind, and the toolbar over its preview. */
+  variant: {
+    kinds: { animated: "动画", interactive: "交互", static: "静态" } as Record<VariantKind, string>,
+    kindHints: {
+      animated: "按播放观看这一幕；不播放时停在完成态。",
+      interactive: "可以直接点击与输入；重置回到初始状态。",
+      static: "一帧画面。",
+    } as Record<VariantKind, string>,
+    reset: "重置",
+    open: "单独打开",
+    compare: "三主题对比",
+    compareOn: "退出对比",
+  },
   section: {
     copyLink: "复制链接",
     copied: "已复制",
     copyBreadcrumb: "复制路径",
     parts: "组件",
     tokens: "令牌",
-    code: "代码",
+    source: "源码",
     variants: "变体",
     tokensIn: (where: string, count: number) => `${where} 下读取的 ${count} 个令牌`,
     noTokens: "这个合成没有读取任何令牌。",
@@ -75,7 +128,6 @@ export const zh = {
     next: "下一帧",
     frames: "帧",
     rate: "播放速度",
-    scene: "带动画：按播放键观看",
   },
   embed: {
     unknownModule: (id: string) => `没有名为「${id}」的模块。`,
@@ -84,7 +136,7 @@ export const zh = {
   },
   screens: {
     open: "打开整页",
-    back: "返回画廊",
+    back: "返回整页一节",
     notFound: (name: string) => `没有名为「${name}」的整页。`,
     descriptions: {
       chat: "运行中的 Task：定稿回答、展开的差异、运行中的子 Agent、待审批的命令、输入框与子 Agent 停靠面板。",
@@ -246,17 +298,8 @@ export const zh = {
       hero: {
         title: "首屏",
         description:
-          "开场：产品名、一句标题、一句说明和两个按钮，下面是一扇能用的应用窗口——点会话行切换对话记录，点停靠标签切换面板，输入框可以写提示词并发送。",
-        variants: { settled: "已完成", empty: "空窗口" },
-        frames: {
-          settled: {
-            idle: "静止",
-            prompt: "输入提示词",
-            working: "运行中",
-            answer: "生成回答",
-            settled: "已完成",
-          },
-        },
+          "开场：产品名、一句标题、一句说明和两个按钮，下面就是应用本身——侧栏切换页面、会话可以打开、侧栏能收起成图标栏，输入框可以写提示词并得到回答。",
+        variants: { shell: "应用骨架", empty: "空窗口" },
       },
       foundations: {
         title: "基础",
@@ -298,9 +341,6 @@ export const zh = {
           "slash-menu": "斜杠菜单",
           "model-picker": "模型选择",
         },
-        frames: {
-          idle: { typing: "输入中", ready: "就绪", sent: "已发送" },
-        },
       },
       navigation: {
         title: "侧栏与导航",
@@ -312,9 +352,6 @@ export const zh = {
           "dock-rail": "停靠面板与图标栏",
           collapsed: "折叠",
         },
-        frames: {
-          sidebar: { rail: "图标栏", tooltip: "悬停提示", expanded: "展开" },
-        },
       },
       actions: {
         title: "按钮与操作",
@@ -325,9 +362,6 @@ export const zh = {
           footer: "对话框底栏",
           "dense-row": "紧凑行",
           states: "状态",
-        },
-        frames: {
-          toolbar: { header: "页头", search: "搜索栏", agents: "Agent 列表" },
         },
       },
       status: {
@@ -354,7 +388,6 @@ export const zh = {
           disabled: "禁用",
         },
         frames: {
-          settings: { appearance: "外观", general: "通用" },
           errors: { filled: "已填写", errors: "错误" },
         },
       },
@@ -370,7 +403,6 @@ export const zh = {
           palette: "命令面板",
         },
         frames: {
-          menu: { idle: "静止", menu: "菜单", panels: "面板菜单" },
           toasts: { first: "第一条", stack: "堆叠" },
         },
       },
@@ -379,18 +411,12 @@ export const zh = {
         description:
           "为了发问而盖在页面上的那一层：写明后果的删除确认、装着表单的对话框、整窗的目录浏览器，以及手机上改为从底部升起的抽屉。",
         variants: { confirm: "确认", form: "表单", full: "整窗", sheet: "底部抽屉" },
-        frames: {
-          confirm: { trigger: "触发", dialog: "弹窗" },
-        },
       },
       tables: {
         title: "表格与列表",
         description:
           "带底色表头、可排序列与可展开行的模型表；朴素表头的密钥表；键值信息，以及以列表行呈现、带分页的已安装插件。",
         variants: { band: "底色表头", plain: "朴素表头", dense: "紧凑", expandable: "可展开" },
-        frames: {
-          band: { head: "表头", rows: "数据行", actions: "行内操作" },
-        },
       },
       stats: {
         title: "统计与图表",
@@ -415,9 +441,6 @@ export const zh = {
         description:
           "Workspace 的文件面板：带搜索、刷新与上传的目录树；带路径的文件预览；拖放遮罩。",
         variants: { tree: "目录树", preview: "预览", drop: "拖放" },
-        frames: {
-          tree: { closed: "收起", open: "展开", selected: "选中" },
-        },
       },
       "create-with-ai": {
         title: "用 AI 创建",
@@ -443,18 +466,12 @@ export const zh = {
           "no-results": "无结果",
           "first-run": "首次使用",
         },
-        frames: {
-          "first-session": { loading: "加载中", empty: "空状态", picked: "已选择" },
-        },
       },
       pages: {
         title: "页面与分区",
         description:
           "插件页：页头、带搜索与可折叠列表栏的列表列，旁边是筛选列；实体页；只有内置 Agent 的智能体页。",
         variants: { settings: "设置页", entity: "实体页", empty: "空页面" },
-        frames: {
-          settings: { header: "页头", installed: "已安装", marketplaces: "可安装" },
-        },
       },
       company: {
         title: "公司看板",

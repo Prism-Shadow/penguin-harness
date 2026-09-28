@@ -1,23 +1,23 @@
 /**
  * The gallery is the modules `MODULE_IDS` names: one file per entry, each listing the catalog
- * sections its Parts drawer shows, every section listed by its own module, every demo reachable
- * from some module, a scene on every product module's default variant with addressable frames,
- * and a Chinese title for each module, variant, frame and section.
+ * sections its Parts section shows, every section listed by its own module, every demo reachable
+ * from some module, every variant of a kind that agrees with what it carries, no default variant
+ * a still, and a Chinese title for each module, variant, frame and section.
  */
 import { describe, expect, it } from "vitest";
 import { CATALOG, catalogSection } from "../../ui/src/catalog";
 import { APP_COLUMN_WIDTH, APP_WINDOW_WIDTH, MODULE_IDS } from "../../ui/src/module";
-import type { Module } from "../../ui/src/module";
-import { collectModules, pickVariant, storedVariantKey, VARIANT_KEY } from "../src/lib/modules";
+import type { Module, ModuleVariant, VariantKind } from "../../ui/src/module";
+import {
+  collectModules,
+  GALLERY_OWN,
+  PAGE_SECTION_IDS,
+  pickVariant,
+  VARIANT_KEY,
+  variantKind,
+} from "../src/lib/modules";
 import { DEMOS, MODULES } from "../src/registry";
 import { zh } from "../src/strings";
-
-/**
- * The gallery's own two modules render gallery machinery — the Foundations boards and the
- * Screens thumbnails, which are frames of other routes — and have nothing to animate; every
- * product module's default variant plays.
- */
-const GALLERY_OWN = new Set<string>(["foundations", "screens"]);
 
 describe("the collected modules", () => {
   it("are one file per MODULE_IDS entry, in that order, with nothing to report", () => {
@@ -38,16 +38,58 @@ describe("the collected modules", () => {
     }
   });
 
-  it("play: every product module's default variant carries a scene, and no variant is a live-* twin", () => {
+  it("open every product module on something that moves or answers, never a still", () => {
     for (const { module } of MODULES.list) {
       if (GALLERY_OWN.has(module.id)) continue;
-      expect(
-        module.variants[0]?.scene,
-        `${module.id}: the default variant has a scene`,
-      ).toBeDefined();
+      const kind = variantKind(module.variants[0]!);
+      expect(["animated", "interactive"], `${module.id}: default variant is ${kind}`).toContain(
+        kind,
+      );
       for (const variant of module.variants) {
         // Round 1's separate live variants folded onto the static ones they end in.
         expect(variant.key, `${module.id} ${variant.key}`).not.toMatch(/^live-/);
+      }
+    }
+  });
+
+  it("give an animated variant a scene and an interactive one none", () => {
+    for (const { module } of MODULES.list) {
+      for (const variant of module.variants) {
+        const kind = variantKind(variant);
+        const where = `${module.id} ${variant.key} (${kind})`;
+        if (kind === "animated") expect(variant.scene, where).toBeDefined();
+        if (kind === "interactive") expect(variant.scene, where).toBeUndefined();
+      }
+    }
+  });
+
+  it("are of the kinds the redesign settled on, variant by variant", () => {
+    const expected: Record<string, Record<string, VariantKind>> = {
+      hero: { shell: "interactive", empty: "interactive" },
+      conversation: { streaming: "animated" },
+      composer: { idle: "interactive" },
+      navigation: { sidebar: "interactive" },
+      actions: { toolbar: "interactive" },
+      status: { live: "animated" },
+      forms: { settings: "interactive" },
+      overlays: { menu: "interactive" },
+      dialogs: { confirm: "interactive" },
+      tables: { band: "interactive" },
+      stats: { overview: "animated" },
+      content: { prose: "animated" },
+      files: { tree: "interactive" },
+      "create-with-ai": { prompt: "animated" },
+      "empty-states": { "first-session": "interactive" },
+      pages: { settings: "interactive" },
+      company: { board: "animated" },
+    };
+    for (const [id, kinds] of Object.entries(expected)) {
+      const module = MODULES.byId.get(id)?.module;
+      expect(module, id).toBeDefined();
+      for (const [key, kind] of Object.entries(kinds)) {
+        const variant = module?.variants.find((v) => v.key === key);
+        expect(variant, `${id} ${key}`).toBeDefined();
+        expect(variantKind(variant!), `${id} ${key}`).toBe(kind);
       }
     }
   });
@@ -64,6 +106,19 @@ describe("the collected modules", () => {
     }
   });
 
+  it("keep a page's addresses apart: no variant or part is named like a page section or each other", () => {
+    for (const { module } of MODULES.list) {
+      const keys = module.variants.map((variant) => variant.key);
+      for (const key of keys) {
+        expect(PAGE_SECTION_IDS as readonly string[], `${module.id} ${key}`).not.toContain(key);
+        expect(module.parts, `${module.id} ${key}`).not.toContain(key);
+      }
+      for (const part of module.parts) {
+        expect(PAGE_SECTION_IDS as readonly string[], `${module.id} ${part}`).not.toContain(part);
+      }
+    }
+  });
+
   it("lay app regions out at the app's widths, and leave narrow ones to their own", () => {
     const widths = new Set<number>([APP_WINDOW_WIDTH, APP_COLUMN_WIDTH]);
     for (const { module } of MODULES.list) {
@@ -71,7 +126,7 @@ describe("the collected modules", () => {
       expect(module.width, `${module.id}: a narrow composition keeps its own width`).toBe("wide");
       expect(widths.has(module.viewport), `${module.id}: ${module.viewport}`).toBe(true);
     }
-    // The app windows, whose sidebar alone would take half a card laid out at the card's width.
+    // The app windows, whose sidebar alone would take half a column laid out at the column's width.
     expect(MODULES.byId.get("navigation")?.module.viewport).toBe(APP_WINDOW_WIDTH);
     expect(MODULES.byId.get("hero")?.module.viewport).toBe(APP_WINDOW_WIDTH);
   });
@@ -102,7 +157,7 @@ describe("the collected modules", () => {
     }
   });
 
-  it("never share an address with a part: module ids have no `-`, part ids always do", () => {
+  it("never share an address with a part: part ids always carry a `-` and name their module", () => {
     // `create-with-ai` and `empty-states` are the exceptions the picks' `v.<id>` form allows:
     // a module id is still never a part id, since every part id names its module first.
     for (const id of MODULE_IDS) expect(id).toMatch(/^[a-z]+(?:-[a-z]+)*$/);
@@ -139,6 +194,27 @@ describe("the collected modules", () => {
   });
 });
 
+describe("variantKind", () => {
+  const scene = {
+    frames: [
+      { key: "a", title: "A", hold: 500 },
+      { key: "b", title: "B", hold: 500 },
+    ],
+  };
+
+  it("reads a declared kind as it is, whatever the variant carries", () => {
+    expect(variantKind({ kind: "interactive" })).toBe("interactive");
+    expect(variantKind({ kind: "interactive", scene })).toBe("interactive");
+    expect(variantKind({ kind: "static", scene })).toBe("static");
+    expect(variantKind({ kind: "animated" })).toBe("animated");
+  });
+
+  it("reads an undeclared kind from the scene: animated with one, static without", () => {
+    expect(variantKind({ scene })).toBe("animated");
+    expect(variantKind({})).toBe("static");
+  });
+});
+
 describe("the catalog", () => {
   it("gives every section a unique kebab-case id and at least one export", () => {
     const ids = CATALOG.map((section) => section.id);
@@ -158,13 +234,19 @@ describe("the catalog", () => {
 
 describe("collectModules", () => {
   const catalog = [{ id: "actions-button" }];
+  const scene = {
+    frames: [
+      { key: "one", title: "One", hold: 1000 },
+      { key: "two", title: "Two", hold: 1000 },
+    ],
+  };
   const make = (id: string, extra: Partial<Module> = {}): Module =>
     ({
       id,
       title: id,
       description: "",
       width: "wide",
-      variants: [{ key: "default", title: "Default" }],
+      variants: [{ key: "default", title: "Default", scene }],
       parts: [],
       render: () => null,
       ...extra,
@@ -235,17 +317,50 @@ describe("collectModules", () => {
     expect(registry.list.map(({ module }) => module.id)).toEqual(["actions", "stats"]);
   });
 
-  it("reads an unknown pick as the default variant, and stores the default as no pick", () => {
+  it("reports, without skipping, a kind that disagrees with the variant or an address a page reserves", () => {
+    const variants: ModuleVariant[] = [
+      { key: "still", title: "Still" },
+      { key: "mute", title: "Mute", kind: "animated" },
+      { key: "driven", title: "Driven", kind: "interactive", scene },
+      { key: "parts", title: "Parts", kind: "interactive" },
+      { key: "actions-button", title: "Button", kind: "interactive" },
+    ];
+    const registry = collectModules(
+      {
+        "m/actions.module.tsx": {
+          module: make("actions", { variants, parts: ["actions-button"] }),
+        },
+      },
+      catalog,
+    );
+    const text = registry.problems.join("\n");
+    expect(text).toMatch(/the default variant "still" is static/);
+    expect(text).toMatch(/variant "mute" is animated but carries no scene/);
+    expect(text).toMatch(/variant "driven" is interactive and must not carry a scene/);
+    expect(text).toMatch(/variant "parts" takes a page section's address/);
+    expect(text).toMatch(/variant "actions-button" takes a part's address/);
+    expect(registry.list.map(({ module }) => module.id)).toEqual(["actions"]);
+    // The gallery's own modules may open on a still: their boards and thumbnails have nothing to play.
+    const own = collectModules(
+      {
+        "m/foundations.module.tsx": {
+          module: make("foundations", { variants: [{ key: "colour", title: "Colour" }] }),
+        },
+      },
+      catalog,
+    );
+    expect(own.problems.join("\n")).not.toMatch(/is static/);
+  });
+
+  it("reads an unknown pick as the default variant", () => {
     const module = make("status", {
       variants: [
-        { key: "live", title: "Live" },
+        { key: "live", title: "Live", scene },
         { key: "notices", title: "Notices" },
       ],
     });
     expect(pickVariant(module, "notices").key).toBe("notices");
     expect(pickVariant(module, "gone").key).toBe("live");
     expect(pickVariant(module, undefined).key).toBe("live");
-    expect(storedVariantKey(module, "live")).toBeNull();
-    expect(storedVariantKey(module, "notices")).toBe("notices");
   });
 });

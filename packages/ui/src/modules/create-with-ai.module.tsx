@@ -410,10 +410,10 @@ export const module = defineModule({
   width: "wide",
   viewport: APP_COLUMN_WIDTH,
   variants: [
-    { key: "prompt", title: "Prompt", scene: PROMPT_SCENE },
-    { key: "proposal", title: "Proposal" },
-    { key: "review", title: "Review" },
-    { key: "created", title: "Created" },
+    { key: "prompt", title: "Prompt", kind: "animated", scene: PROMPT_SCENE },
+    { key: "proposal", title: "Proposal", kind: "static" },
+    { key: "review", title: "Review", kind: "static" },
+    { key: "created", title: "Created", kind: "static" },
   ],
   parts: [
     "chat-message-bubble",

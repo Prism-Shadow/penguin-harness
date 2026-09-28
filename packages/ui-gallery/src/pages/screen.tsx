@@ -1,17 +1,17 @@
 /**
  * `/screens/<name>` — a full-viewport composite on the themed root, under a slim unthemed toolbar
  * strip (hidden by `bare=1`) carrying the view controls and the screen's breadcrumb,
- * `Primer › Screens › Chat · light`, the same address the Screens module's card quotes. The strip
- * takes its own height rather than floating over the composite, whose controls reach every edge;
- * the composite fills what is left, and the whole viewport with `bare=1`.
+ * `Primer › Screens › Chat · light`, the same address the Screens page's section quotes. The
+ * strip takes its own height rather than floating over the composite, whose controls reach every
+ * edge; the composite fills what is left, and the whole viewport with `bare=1`.
  */
 import { useEffect } from "react";
-import { ModeSwitch, ViewControls } from "../chrome/rail";
 import { useCopy } from "../chrome/copy";
 import { ChromeIcon } from "../chrome/icons";
+import { ModeSwitch, ViewControls } from "../chrome/topbar";
 import { formatBreadcrumb } from "../lib/breadcrumb";
 import { BASE } from "../lib/location";
-import { formatGalleryQuery } from "../lib/url-state";
+import { moduleHref, routeHref } from "../lib/routes";
 import { useText } from "../preview";
 import { MODULES } from "../registry";
 import { SCREENS } from "../screens";
@@ -31,7 +31,7 @@ export function ScreenPage({ name }: { name: string }) {
     });
   }, [tokens]);
 
-  // The Screens module's own names, so the toolbar quotes the same address as its card.
+  // The Screens module's own names, so the toolbar quotes the same address as its section.
   const screens = MODULES.byId.get("screens")?.module;
   const screenVariant = screens?.variants.find((variant) => variant.key === screen?.id);
   const crumb = formatBreadcrumb({
@@ -43,9 +43,7 @@ export function ScreenPage({ name }: { name: string }) {
     tier: state.tier,
     ...text.qualifiers(),
   });
-  const variants: Record<string, string> =
-    screen && screen.id !== Object.keys(SCREENS)[0] ? { screens: screen.id } : {};
-  const back = `${BASE}/${formatGalleryQuery({ ...state, compare: false, variants })}#screens`;
+  const back = moduleHref(BASE, state, "screens", screen?.id);
 
   return (
     <div className="g-screen-page">
@@ -76,11 +74,7 @@ export function ScreenPage({ name }: { name: string }) {
             <ul>
               {Object.keys(SCREENS).map((known) => (
                 <li key={known}>
-                  <a
-                    href={`${BASE}/screens/${known}${formatGalleryQuery({ ...state, variants: {} })}`}
-                  >
-                    {known}
-                  </a>
+                  <a href={routeHref(BASE, state, `/screens/${known}`)}>{known}</a>
                 </li>
               ))}
             </ul>

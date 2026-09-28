@@ -236,11 +236,14 @@
     --ui-h5-tracking: normal;
     --ui-h5-transform: none;
     --ui-h5-font: var(--ui-font-sans);
-    --ui-h6-size: 0.75rem;
+    /* The h6 rung is the group label's (the eyebrow's): the app sets the Sessions label, its time
+       and Agent groups and the settings dialog's rail in 11 px semibold capitals tracked wide, in
+       px so they hold at every root size. */
+    --ui-h6-size: 11px;
     --ui-h6-lh: 1rem;
     --ui-h6-weight: 600;
-    --ui-h6-tracking: normal;
-    --ui-h6-transform: none;
+    --ui-h6-tracking: 0.025em;
+    --ui-h6-transform: uppercase;
     --ui-h6-font: var(--ui-font-sans);
     --ui-md-h1-size: 1.25rem;
     --ui-md-h2-size: 1.125rem;
@@ -418,14 +421,26 @@
   }
 
   /*
-   * Style hooks (hooks.ts): every one of the ten is a no-op in Primer. The app's look is what
-   * the components' own classes render — an opaque overlay, a sentence-case group label, a
-   * semibold h1, a linear pulse, a bordered card with a muted head, the accent bar under a tab,
-   * the sidebar's muted fill beside the canvas, monochrome icons, a bordered tree box with the
-   * host's own indent, a form's label above its control and a settings row's label beside it —
-   * so no recipe is written here, and none may be until a Primer polish wave changes that look
-   * on purpose.
+   * Style hooks (hooks.ts): all but the eyebrow are no-ops in Primer. The app's look is what the
+   * components' own classes render — an opaque overlay, a semibold h1, a linear pulse, a bordered
+   * card with a muted head, the accent bar under a tab, the sidebar's muted fill beside the
+   * canvas, monochrome icons, a bordered tree box with the host's own indent, a form's label
+   * above its control and a settings row's label beside it — so no recipe is written for those,
+   * and none may be until a Primer polish wave changes that look on purpose.
+   *
+   * The eyebrow is the exception because the app's group labels are not what the markup's
+   * caption rung draws: they are small capitals tracked wide, which only a recipe can say. It
+   * reads the h6 rung, as the other themes' do, and leaves the ink to the markup — the app sets
+   * the Sessions label a step fainter than a group's.
    */
+  :root:not([data-theme]) .ui-eyebrow,
+  :root[data-theme="github"] .ui-eyebrow {
+    font-size: var(--ui-h6-size);
+    line-height: var(--ui-h6-lh);
+    font-weight: var(--ui-h6-weight);
+    letter-spacing: var(--ui-h6-tracking);
+    text-transform: var(--ui-h6-transform);
+  }
 }
 
 /*

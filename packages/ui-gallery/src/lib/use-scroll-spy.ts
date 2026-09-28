@@ -1,6 +1,7 @@
 /**
- * Scroll-spy for the rail: the id of the last section whose top has crossed the activation line,
- * measured with viewport rects on a rAF-throttled capture-phase scroll listener.
+ * Scroll-spy for "on this page": the id of the last section whose top has crossed the activation
+ * line — just under the sticky top bar — measured with viewport rects on a rAF-throttled
+ * capture-phase scroll listener.
  */
 import { useEffect, useState } from "react";
 

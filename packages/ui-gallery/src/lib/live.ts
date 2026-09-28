@@ -8,11 +8,11 @@
  *
  * An embed is a screenshot unit before it is anything else, so by default it holds still on the
  * frame a scene settles into — which is the variant itself; `frame=` picks another (an unknown key
- * reads as the last frame). A frame inside a card (compare mode, the phone view) carries `sync=1`
- * instead: its clock belongs to the card around it, which posts its timeline as `gallery:clock`
- * messages — the frame's src never changes with the frame, so it never reloads mid-scene — and a
- * composition's own move on that clock goes back up as a `gallery:control` message, one command
- * the card's reducer runs as if its transport had asked.
+ * reads as the last frame). A frame inside a section (compare mode, the phone view) carries
+ * `sync=1` instead: its clock belongs to the section around it, which posts its timeline as
+ * `gallery:clock` messages — the frame's src never changes with the frame, so it never reloads
+ * mid-scene — and a composition's own move on that clock goes back up as a `gallery:control`
+ * message, one command the section's reducer runs as if its play control had asked.
  */
 import type { SceneFrame } from "../../../ui/src/module";
 import { frameIndexOf } from "../../../ui/src/scene";
@@ -34,9 +34,9 @@ export function parseEmbedCue(frames: readonly SceneFrame[], search: string): Sc
   return { index: index === -1 ? last : index, playing };
 }
 
-/** The card → framed embed message: the one clock, for one module variant. */
+/** The section → framed embed message: the one clock, for one module variant. */
 export const CLOCK_MESSAGE = "gallery:clock";
-/** Framed embed → card: "I am listening", answered with the current timeline. */
+/** Framed embed → section: "I am listening", answered with the current timeline. */
 export const CLOCK_READY = "gallery:clock-ready";
 
 export interface ClockMessage {
@@ -79,7 +79,7 @@ export function readClockMessage(
   return { index, playing, rate, frameStartedAt, pausedElapsed };
 }
 
-/** Framed embed → card: a composition's command for the card's clock. */
+/** Framed embed → section: a composition's command for the section's clock. */
 export const CONTROL_MESSAGE = "gallery:control";
 
 export interface ControlMessage {

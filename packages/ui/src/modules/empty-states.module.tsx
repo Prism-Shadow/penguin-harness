@@ -3,7 +3,7 @@
  * what to do next.
  *
  * - First session: a Session before its first message — the question it opens with and three
- *   prompts to start from, one of which fills the composer;
+ *   prompts to start from; the reader picks one and its prompt fills the composer;
  * - Empty list: the Agents page of a Project that has none, with the two create paths as its
  *   action;
  * - No results: a search that missed, the table frame kept so the page does not jump when a row
@@ -12,11 +12,10 @@
  *
  * Static stand-ins for W1's `Skeleton` and `EmptyState`, W4's `ProgressBar` and W6's `Composer`.
  */
+import { useState } from "react";
 import { fixturesFor } from "../fixtures";
 import type { ExamplePromptFixture, Fixtures } from "../fixtures";
 import { APP_COLUMN_WIDTH, defineModule } from "../module";
-import type { SceneSpec } from "../module";
-import { reached, useScene } from "../scene";
 import { AgentTile } from "../screens/parts";
 import {
   AgentCard,
@@ -31,23 +30,47 @@ import {
   PageHeader,
   ProgressBar,
   SearchInput,
-  Skeleton,
   Text,
-  useArrivals,
 } from "./parts";
 
 const STAGE = "relative h-[32rem] overflow-hidden rounded-lg border border-line bg-canvas";
 
-/** The composer of a Session with nothing in it yet; the picked example arrives as its draft. */
-function ComposerCard({ f, draft }: { f: Fixtures; draft?: string }) {
+/**
+ * The composer of a Session with nothing in it yet; the picked example arrives as its draft, and
+ * the reader can go on writing it.
+ */
+function ComposerCard({
+  f,
+  draft,
+  onDraft,
+}: {
+  f: Fixtures;
+  draft: string;
+  onDraft: (draft: string) => void;
+}) {
   return (
     <div className="shrink-0 px-4 pb-4">
-      <div className="mx-auto max-w-2xl rounded-lg border border-line-emphasis bg-surface px-3 py-2">
-        <p
-          className={`min-h-6 font-sans text-base leading-6 ${draft ? "text-fg" : "text-fg-subtle"}`}
-        >
-          {draft ?? f.copy.chat.inputPlaceholder}
-        </p>
+      <div className="mx-auto max-w-2xl rounded-lg border border-line-emphasis bg-surface px-3 py-2 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:[box-shadow:var(--ui-focus-ring-input)]">
+        {/*
+          The field grows with its draft: an invisible copy of the text sits in the same grid cell
+          and sets the height, so a long example shows whole, as the still prints it.
+        */}
+        <div className="grid">
+          <span
+            aria-hidden
+            className="invisible col-start-1 row-start-1 min-h-6 whitespace-pre-wrap break-words font-sans text-base leading-6"
+          >
+            {`${draft} `}
+          </span>
+          <textarea
+            value={draft}
+            onChange={(event) => onDraft(event.target.value)}
+            placeholder={f.copy.chat.inputPlaceholder}
+            aria-label={f.copy.chat.inputPlaceholder}
+            rows={1}
+            className="col-start-1 row-start-1 min-h-6 w-full resize-none overflow-hidden bg-transparent font-sans text-base leading-6 text-fg outline-none placeholder:text-fg-subtle"
+          />
+        </div>
         <div className="mt-1 flex items-center gap-2">
           <GlyphIcon name="plus" size={16} className="text-fg-subtle" />
           <span className="min-w-0 flex-1" />
@@ -65,59 +88,43 @@ function ComposerCard({ f, draft }: { f: Fixtures; draft?: string }) {
  * apart at a glance and says nothing the title does not, so it takes `ui-icon-decor` with the
  * empty state's role and a theme may tint it or drop it.
  */
-function ExampleCard({ example, picked }: { example: ExamplePromptFixture; picked: boolean }) {
+function ExampleCard({
+  example,
+  picked,
+  onPick,
+}: {
+  example: ExamplePromptFixture;
+  picked: boolean;
+  onPick: () => void;
+}) {
   return (
-    <span
-      role="button"
-      data-reveal
-      className={`grid grid-cols-[minmax(0,1fr)] content-start gap-1 rounded-md border px-3 py-3 ${
-        picked ? "border-accent bg-accent-muted" : "border-line"
+    <button
+      type="button"
+      aria-pressed={picked}
+      onClick={onPick}
+      className={`grid grid-cols-[minmax(0,1fr)] content-start gap-1 rounded-md border px-3 py-3 text-left transition-colors duration-150 ${
+        picked ? "border-accent bg-accent-muted" : "border-line hover:bg-surface-muted"
       }`}
     >
       <GlyphIcon name={example.icon} size={15} decor="empty" className="text-fg-subtle" />
       <span className="text-sm font-(--ui-weight-medium) text-fg">{example.title}</span>
       <span className="font-sans text-xs leading-5 text-fg-muted">{example.prompt}</span>
-    </span>
+    </button>
   );
 }
-
-/** What the Session shows while it is still asking the server what it has. */
-function Loading() {
-  return (
-    <div className="grid w-full max-w-2xl grid-cols-[minmax(0,1fr)] justify-items-center gap-4">
-      <Skeleton className="h-6 w-64" />
-      <Skeleton className="h-4 w-80" />
-      <div className="grid w-full grid-cols-3 gap-2">
-        <Skeleton className="h-20 w-full" />
-        <Skeleton className="h-20 w-full" />
-        <Skeleton className="h-20 w-full" />
-      </div>
-    </div>
-  );
-}
-
-const FIRST_SESSION_SCENE: SceneSpec = {
-  frames: [
-    { key: "loading", title: "Loading", hold: 1100 },
-    { key: "empty", title: "Empty", hold: 1800 },
-    { key: "picked", title: "Picked", hold: 1600 },
-  ],
-};
 
 /**
- * First session: the placeholders give way to the question and its three prompts, which land one
- * after another; then one is picked and its whole prompt is in the composer, waiting to be sent.
- * An empty Session is the first thing a new reader sees, so it says what this thing does by
- * offering work rather than by explaining itself.
+ * First session, for the reader to start from: the question and its three prompts, with the
+ * middle one picked and its whole prompt in the composer, as the still shows it. Clicking another
+ * prompt puts that one in the composer instead, and the draft can be written on from there; send
+ * lights up while there is something to send. An empty Session is the first thing a new reader
+ * sees, so it says what this thing does by offering work rather than by explaining itself.
  */
 function FirstSession({ f }: { f: Fixtures }) {
-  const clock = useScene();
   const e = f.emptyStates.firstSession;
-  const settled = reached(clock, "empty");
-  const picked = reached(clock, "picked");
-  const shown = useArrivals(e.examples.length, "empty");
   // The middle prompt: the one a reader picks is the one they did not have to scroll to.
-  const chosen = e.examples[1]!;
+  const [chosen, setChosen] = useState<ExamplePromptFixture | undefined>(e.examples[1]);
+  const [draft, setDraft] = useState(chosen?.prompt ?? "");
   return (
     <div className={STAGE}>
       <div className="flex h-full flex-col">
@@ -129,28 +136,36 @@ function FirstSession({ f }: { f: Fixtures }) {
           <IconButton label={f.copy.common.more} icon="more" size="sm" />
         </header>
         <div className="flex min-h-0 flex-1 items-center justify-center px-6">
-          {settled ? (
-            <div className="grid w-full max-w-2xl grid-cols-[minmax(0,1fr)] justify-items-center gap-4">
-              <div className="grid grid-cols-[minmax(0,1fr)] justify-items-center gap-2 text-center">
-                <Heading level={2}>{e.title}</Heading>
-                <p className="max-w-md text-sm text-fg-muted">{e.body}</p>
-              </div>
-              <Text variant="eyebrow">{e.examplesLabel}</Text>
-              <div className="grid w-full grid-cols-3 gap-2">
-                {e.examples.slice(0, shown).map((example) => (
-                  <ExampleCard
-                    key={example.title}
-                    example={example}
-                    picked={picked && example === chosen}
-                  />
-                ))}
-              </div>
+          <div className="grid w-full max-w-2xl grid-cols-[minmax(0,1fr)] justify-items-center gap-4">
+            <div className="grid grid-cols-[minmax(0,1fr)] justify-items-center gap-2 text-center">
+              <Heading level={2}>{e.title}</Heading>
+              <p className="max-w-md text-sm text-fg-muted">{e.body}</p>
             </div>
-          ) : (
-            <Loading />
-          )}
+            <Text variant="eyebrow">{e.examplesLabel}</Text>
+            <div className="grid w-full grid-cols-3 gap-2">
+              {e.examples.map((example) => (
+                <ExampleCard
+                  key={example.title}
+                  example={example}
+                  picked={example === chosen}
+                  onPick={() => {
+                    setChosen(example);
+                    setDraft(example.prompt);
+                  }}
+                />
+              ))}
+            </div>
+          </div>
         </div>
-        <ComposerCard f={f} draft={picked ? chosen.prompt : undefined} />
+        <ComposerCard
+          f={f}
+          draft={draft}
+          onDraft={(next) => {
+            setDraft(next);
+            // A prompt written away from the example is the reader's own: the card lets go.
+            if (chosen !== undefined && next !== chosen.prompt) setChosen(undefined);
+          }}
+        />
       </div>
     </div>
   );
@@ -288,10 +303,10 @@ export const module = defineModule({
   width: "wide",
   viewport: APP_COLUMN_WIDTH,
   variants: [
-    { key: "first-session", title: "First session", scene: FIRST_SESSION_SCENE },
-    { key: "empty-list", title: "Empty list" },
-    { key: "no-results", title: "No results" },
-    { key: "first-run", title: "First run" },
+    { key: "first-session", title: "First session", kind: "interactive" },
+    { key: "empty-list", title: "Empty list", kind: "static" },
+    { key: "no-results", title: "No results", kind: "static" },
+    { key: "first-run", title: "First run", kind: "static" },
   ],
   parts: [
     "feedback-empty-state",

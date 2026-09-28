@@ -252,6 +252,7 @@ export const zh: Fixtures = buildFixtures("zh", {
       builtinUndeletable: "内置 Agent 不可被删除",
       deleteTitle: (name) => `删除「${name}」？`,
       deleteBody: "它的 Session 仍保留在侧栏中；启动它的定时任务会被关闭。",
+      deleted: (name) => `已删除「${name}」`,
       empty: {
         title: "还没有自己的智能体",
         body: "描述你想要的智能体，让 AI 帮你创建；也可以手动配置。",
@@ -303,6 +304,7 @@ export const zh: Fixtures = buildFixtures("zh", {
       added: "本次会话新增",
       modified: "本次会话修改",
       empty: { title: "选择一个文件以预览", body: "在左侧目录树中选择一个文件即可在此预览。" },
+      noPreview: { title: "该文件暂无预览", body: "下载后可在本机打开。" },
       copyPath: "复制相对路径",
       lines: (n) => `${n} 行`,
       dropTitle: (folder) => `松开即上传到 ${folder}`,

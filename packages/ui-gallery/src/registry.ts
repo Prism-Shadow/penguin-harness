@@ -6,7 +6,7 @@
  *   `src/modules/*.module.tsx` (Foundations and Screens, which render gallery machinery), eager and
  *   checked against `MODULE_IDS`;
  * - demos: every `*.demo.tsx` under `packages/ui/src`, eager, checked against the catalog;
- * - both again as text, lazy, for the code drawer.
+ * - both again as text, lazy, for a page's Source section.
  *
  * Web App sources and font licences are read in sources.ts; screens have their own registry in
  * `packages/ui/src/screens/index.ts`.

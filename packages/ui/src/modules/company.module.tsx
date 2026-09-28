@@ -517,10 +517,10 @@ export const module = defineModule({
   width: "wide",
   viewport: APP_COLUMN_WIDTH,
   variants: [
-    { key: "board", title: "Board", scene: MOVE },
-    { key: "calendar", title: "Calendar" },
-    { key: "org", title: "Org" },
-    { key: "channel", title: "Channel" },
+    { key: "board", title: "Board", kind: "animated", scene: MOVE },
+    { key: "calendar", title: "Calendar", kind: "static" },
+    { key: "org", title: "Org", kind: "static" },
+    { key: "channel", title: "Channel", kind: "static" },
   ],
   parts: [
     "chat-channel-bubble",

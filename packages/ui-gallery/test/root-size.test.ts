@@ -2,10 +2,10 @@
  * The root font size is real, and only the previews follow it. The gallery's vitest is node-only,
  * so the proof is the source contract, each link of it: the size step writes `<html
  * style="font-size">` through the package's own `applyThemeAttributes` (which the app's boot
- * script and theme provider also use), the three tiers are 16 / 18 / 20 px and the rail labels
- * them so, the framed embeds and `/embed` take the same `tier=` on their own roots, and the
- * chrome's stylesheet has no rem or em in it — a px-sized chrome cannot move when the root does,
- * while every rem in a composition does.
+ * script and theme provider also use), the three tiers are 16 / 18 / 20 px and the top bar
+ * labels them so, the framed embeds and `/embed` take the same `tier=` on their own roots, and
+ * the chrome's stylesheet has no rem or em in it — a px-sized chrome cannot move when the root
+ * does, while every rem in a composition does.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -37,8 +37,8 @@ describe("the root font size", () => {
     expect(TIERS).toEqual(["sm", "md", "lg"]);
     expect(TIERS.map((tier) => TIER_PX[tier])).toEqual([16, 18, 20]);
     for (const tier of TIERS) expect(FONT_SCALE_PX[tier]).toBe(`${TIER_PX[tier]}px`);
-    // The rail prints the size, not the tier id.
-    expect(read("../src/chrome/rail.tsx")).toMatch(/label: `\$\{TIER_PX\[tier\]\}px`/);
+    // The top bar prints the size, not the tier id.
+    expect(read("../src/chrome/topbar.tsx")).toMatch(/label: `\$\{TIER_PX\[tier\]\}px`/);
   });
 
   it("is written onto <html> by the package's own contract, per step", () => {

@@ -1054,6 +1054,8 @@ export interface AppCopy {
     builtinUndeletable: string;
     deleteTitle: (name: string) => string;
     deleteBody: string;
+    /** The toast a confirmed delete leaves. */
+    deleted: (name: string) => string;
     empty: { title: string; body: string };
     schedules: string;
     schedulesEmpty: { title: string; body: string; action: string };
@@ -1097,6 +1099,8 @@ export interface AppCopy {
     added: string;
     modified: string;
     empty: { title: string; body: string };
+    /** A picked file the preview pane cannot show. */
+    noPreview: { title: string; body: string };
     copyPath: string;
     lines: (n: number) => string;
     dropTitle: (folder: string) => string;
@@ -1208,6 +1212,8 @@ export interface Fixtures {
   models: ModelFixture[];
   fileTree: FileNode;
   filePreview: FilePreview;
+  /** Every file the preview pane can show, `filePreview` among them; any other has no preview. */
+  filePreviews: FilePreview[];
   company: CompanyFixture;
   notices: NoticeFixtures;
   forms: FormFixture;

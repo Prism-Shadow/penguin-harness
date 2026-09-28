@@ -1,9 +1,11 @@
 /**
- * Chrome controls, styled by chrome.css only: a segmented pill, a switch row, and a swatch row
- * for the accent — each swatch painted in the colour it would apply, so the row previews the
- * theme's palette before anything is chosen.
+ * Chrome controls, styled by chrome.css only: a segmented control, a toggle, and a swatch row for
+ * the accent — each swatch painted in the colour it would apply, so the row previews the theme's
+ * palette before anything is chosen.
  */
 import type { CSSProperties, ReactNode } from "react";
+import { ChromeIcon } from "./icons";
+import type { ChromeIconName } from "./icons";
 
 export interface SegmentOption<T extends string> {
   value: T;
@@ -39,25 +41,28 @@ export function Segmented<T extends string>({
   );
 }
 
-export function SwitchRow({
+/** A pressed-or-not switch drawn as a quiet text button: compare, reduced motion. */
+export function Toggle({
+  icon,
   label,
-  checked,
+  pressed,
   onChange,
 }: {
+  icon: ChromeIconName;
   label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
+  pressed: boolean;
+  onChange: (pressed: boolean) => void;
 }) {
   return (
-    <label className="g-switch-row">
+    <button
+      type="button"
+      className="g-toggle"
+      aria-pressed={pressed}
+      onClick={() => onChange(!pressed)}
+    >
+      <ChromeIcon name={icon} size={14} />
       <span>{label}</span>
-      <input
-        type="checkbox"
-        className="g-switch"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-    </label>
+    </button>
   );
 }
 

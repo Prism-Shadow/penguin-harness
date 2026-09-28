@@ -1,7 +1,8 @@
 /**
- * Fitting a composition that is designed at the app's own width (`Module.viewport`) into a card:
- * the composition lays out at its natural width and the result is scaled down to the room the
- * card has, never up. Pure, so the rule is unit-tested; chrome/fit.tsx measures and applies it.
+ * Fitting a composition that is designed at the app's own width (`Module.viewport`) into a
+ * preview frame: the composition lays out at its natural width and the result is scaled down to
+ * the room the frame has, never up. Pure, so the rule is unit-tested; chrome/fit.tsx measures and
+ * applies it.
  */
 import type { Module } from "../../../ui/src/module";
 
@@ -18,9 +19,9 @@ export function naturalWidth(module: Pick<Module, "viewport">): number | null {
 }
 
 /**
- * The factor that fits `natural` px into `available` px. Never above 1: a narrow card shrinks the
- * composition, a wide one centres it at its natural size rather than blowing it up. A width not
- * measured yet (0) reads as no scaling, so the first paint is the composition at rest.
+ * The factor that fits `natural` px into `available` px. Never above 1: a narrow frame shrinks
+ * the composition, a wide one centres it at its natural size rather than blowing it up. A width
+ * not measured yet (0) reads as no scaling, so the first paint is the composition at rest.
  */
 export function fitScale(natural: number, available: number): number {
   if (!(natural > 0) || !(available > 0)) return 1;

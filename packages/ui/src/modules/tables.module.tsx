@@ -1,36 +1,30 @@
 /**
- * Tables & lists: the models table with a band header, a sorted column and hover actions; the vault
- * table under a plain header; a dense view of key-value facts and installed plugins as list rows
- * with a group header and a pager; and the models table with a row expanded to its details.
+ * Tables & lists: the models table with a band header, sortable columns, a filter, hover actions
+ * and rows that open to their details — the reader's to sort, narrow and open; the vault table
+ * under a plain header; a dense view of key-value facts and installed plugins as list rows with a
+ * group header and a pager; and the models table with a row expanded to its details.
  * Static stand-ins for W4's `Table`, `KeyValue`, `ListRow`, `GroupHeader` and `Pager`.
  */
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { Fixtures, ModelFixture } from "../fixtures";
 import { defineModule } from "../module";
-import type { SceneSpec } from "../module";
-import { reached, useScene } from "../scene";
 import { AgentTile } from "../screens/parts";
 import { tokens, usd } from "../screens/format";
 import {
   Badge,
   Button,
+  EmptyState,
   GlyphIcon,
   GroupHeader,
   IconButton,
   KeyValue,
+  SearchInput,
   Switch,
-  arriving,
-  useArrivals,
 } from "./parts";
-
-const LAND: SceneSpec = {
-  frames: [
-    { key: "head", title: "Header", hold: 800 },
-    { key: "rows", title: "Rows", hold: 2000 },
-    { key: "actions", title: "Actions", hold: 1200 },
-  ],
-};
+import { filterModels, nextModelSort, sortModels } from "./interaction";
+import type { ModelSort, ModelSortKey } from "./interaction";
 
 /** A table's header row: `band` is a filled row, `plain` a rule under the labels. */
 function TableHead({ band, children }: { band: boolean; children: ReactNode }) {
@@ -45,25 +39,44 @@ function TableHead({ band, children }: { band: boolean; children: ReactNode }) {
   );
 }
 
+/**
+ * A column head. `sorted` draws the direction the column is sorted in; `onSort` makes the head a
+ * button that sorts by it, which is how a reader finds out the others sort too.
+ */
 function Th({
   children,
   align = "left",
   sorted,
+  onSort,
 }: {
   children?: ReactNode;
   align?: "left" | "right";
-  sorted?: boolean;
+  sorted?: "asc" | "desc";
+  onSort?: () => void;
 }) {
+  const inner = `inline-flex items-center gap-1 ${align === "right" ? "flex-row-reverse" : ""}`;
+  const label = (
+    <>
+      {children}
+      {sorted && <GlyphIcon name={sorted === "asc" ? "arrowUp" : "arrowDown"} size={12} />}
+    </>
+  );
   return (
     <th
+      aria-sort={sorted === undefined ? undefined : sorted === "asc" ? "ascending" : "descending"}
       className={`whitespace-nowrap px-3 py-2 font-(--ui-weight-medium) ${align === "right" ? "text-right" : "text-left"} ${sorted ? "text-fg" : ""}`}
     >
-      <span
-        className={`inline-flex items-center gap-1 ${align === "right" ? "flex-row-reverse" : ""}`}
-      >
-        {children}
-        {sorted && <GlyphIcon name="arrowDown" size={12} />}
-      </span>
+      {onSort === undefined ? (
+        <span className={inner}>{label}</span>
+      ) : (
+        <button
+          type="button"
+          onClick={onSort}
+          className={`${inner} rounded-xs transition-colors duration-150 hover:text-fg`}
+        >
+          {label}
+        </button>
+      )}
     </th>
   );
 }
@@ -84,52 +97,85 @@ function ModelCell({ model, badge }: { model: ModelFixture; badge?: string }) {
 }
 
 /**
- * The models table. On the `band` variant a scene fills it: the header band alone, the six rows
- * landing one after another, then the pointer on a row and its actions — the table this variant
- * shows when nothing is playing.
+ * The models table. As a still it lists the first six models, the output column sorted, with one
+ * row opened (`expanded`) or one row under the pointer; `live` hands it the reader's rows, sort,
+ * pointer and opened rows instead, and makes the heads and rows answer.
  */
 function Table({
   f,
+  models = f.models.slice(0, 6),
   expanded,
+  hovered,
+  live,
 }: {
   f: Fixtures;
-  /** A model id whose row is opened on its details. */
+  models?: readonly ModelFixture[];
+  /** A model id whose row is opened on its details; any value draws the chevron column. */
   expanded?: string;
+  /** A model id whose row is under the pointer, its actions showing. */
+  hovered?: string;
+  live?: {
+    sort: ModelSort;
+    onSort: (key: ModelSortKey) => void;
+    open: ReadonlySet<string>;
+    onToggle: (modelId: string) => void;
+    onHover: (modelId: string | undefined) => void;
+    /** What to show when the filter left no row. */
+    empty: ReactNode;
+  };
 }) {
-  const clock = useScene();
   const m = f.copy.models;
-  const models = f.models.slice(0, 6);
-  const landed = useArrivals(models.length, "rows");
+  const expandable = live !== undefined || expanded !== undefined;
+  // A still sorts the output column, largest first.
+  const sortOf = (key: ModelSortKey): ModelSort["dir"] | undefined =>
+    live
+      ? live.sort.key === key
+        ? live.sort.dir
+        : undefined
+      : key === "output"
+        ? "desc"
+        : undefined;
+  const onSort = (key: ModelSortKey) => live && (() => live.onSort(key));
   return (
     <div className="overflow-hidden rounded-lg border border-line">
       <table className="w-full border-collapse">
         <TableHead band>
-          {expanded !== undefined && <th className="w-8" />}
-          <Th>{m.model}</Th>
-          <Th align="right">{m.context}</Th>
-          <Th align="right">{m.cacheRead}</Th>
-          <Th align="right" sorted>
+          {expandable && <th className="w-8" />}
+          <Th sorted={sortOf("model")} onSort={onSort("model")}>
+            {m.model}
+          </Th>
+          <Th align="right" sorted={sortOf("context")} onSort={onSort("context")}>
+            {m.context}
+          </Th>
+          <Th align="right" sorted={sortOf("cacheRead")} onSort={onSort("cacheRead")}>
+            {m.cacheRead}
+          </Th>
+          <Th align="right" sorted={sortOf("output")} onSort={onSort("output")}>
             {m.output}
           </Th>
           <Th align="right">{m.images}</Th>
           <th className="w-20" />
         </TableHead>
         <tbody>
-          {models.slice(0, landed).map((model, i) => {
-            const open = model.modelId === expanded;
-            const hovered = expanded === undefined && i === 2 && reached(clock, "actions");
-            return (
-              <ModelRows
-                key={model.modelId}
-                f={f}
-                model={model}
-                open={open}
-                hovered={hovered}
-                arrived={arriving(clock, "rows")}
-                expandable={expanded !== undefined}
-              />
-            );
-          })}
+          {models.map((model) => (
+            <ModelRows
+              key={model.modelId}
+              f={f}
+              model={model}
+              open={live ? live.open.has(model.modelId) : model.modelId === expanded}
+              hovered={model.modelId === hovered}
+              expandable={expandable}
+              onToggle={live && (() => live.onToggle(model.modelId))}
+              onHover={live && ((inside) => live.onHover(inside ? model.modelId : undefined))}
+            />
+          ))}
+          {live && models.length === 0 && (
+            <tr>
+              <td colSpan={7} className="border-t border-line">
+                {live.empty}
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -141,25 +187,49 @@ function ModelRows({
   model,
   open,
   hovered,
-  arrived,
   expandable,
+  onToggle,
+  onHover,
 }: {
   f: Fixtures;
   model: ModelFixture;
   open: boolean;
   hovered: boolean;
-  /** Set while the row is landing, so the theme brings it in. */
-  arrived?: true;
   expandable: boolean;
+  /** Makes the row open and fold on a click, its chevron the keyboard's way in. */
+  onToggle?: () => void;
+  /** The pointer came onto the row (true) or left it (false). */
+  onHover?: (inside: boolean) => void;
 }) {
   const m = f.copy.models;
   const cell = "border-t border-line px-3 py-2 text-right font-mono text-xs tabular-nums text-fg";
   return (
     <>
-      <tr data-reveal={arrived} className={hovered || open ? "bg-surface-muted" : ""}>
+      <tr
+        onClick={onToggle}
+        onPointerEnter={onHover && (() => onHover(true))}
+        onPointerLeave={onHover && (() => onHover(false))}
+        className={`${hovered || open ? "bg-surface-muted" : ""} ${onToggle ? "cursor-pointer" : ""}`}
+      >
         {expandable && (
           <td className="border-t border-line pl-3 text-fg-subtle">
-            <GlyphIcon name={open ? "chevronDown" : "chevronRight"} size={14} />
+            {onToggle === undefined ? (
+              <GlyphIcon name={open ? "chevronDown" : "chevronRight"} size={14} />
+            ) : (
+              <button
+                type="button"
+                aria-expanded={open}
+                aria-label={model.displayName}
+                onClick={(event) => {
+                  // The row answers the click too; the button is only the keyboard's way in.
+                  event.stopPropagation();
+                  onToggle();
+                }}
+                className="flex rounded-xs"
+              >
+                <GlyphIcon name={open ? "chevronDown" : "chevronRight"} size={14} />
+              </button>
+            )}
           </td>
         )}
         <td className="border-t border-line px-3 py-2">
@@ -221,8 +291,66 @@ function ModelRows({
   );
 }
 
+/**
+ * The band table as the reader uses it. It opens on the still — the first six models under the
+ * output column sorted largest first, the third row under the pointer — and from there a column
+ * head sorts by it (again to flip it), the search narrows the rows by name, id or provider, a row
+ * under the pointer shows its actions, and a click opens the row on its prices and capabilities.
+ */
 function Band({ f }: { f: Fixtures }) {
-  return <Table f={f} />;
+  const all = f.models.slice(0, 6);
+  const [sort, setSort] = useState<ModelSort>({ key: "output", dir: "desc" });
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const [hovered, setHovered] = useState(() => sortModels(all, sort)[2]?.modelId);
+  const rows = sortModels(filterModels(all, query), sort);
+  const n = f.emptyStates.noResults;
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
+      <div className="w-72">
+        <SearchInput
+          value={query}
+          placeholder={f.copy.models.search}
+          clearLabel={n.clear}
+          onValueChange={setQuery}
+        />
+      </div>
+      <Table
+        f={f}
+        models={rows}
+        hovered={hovered}
+        live={{
+          sort,
+          onSort: (key) => setSort((now) => nextModelSort(now, key)),
+          open,
+          onToggle: (id) =>
+            setOpen((now) => {
+              const next = new Set(now);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            }),
+          onHover: setHovered,
+          empty: (
+            <EmptyState
+              variant="list"
+              title={n.title}
+              description={n.body}
+              action={
+                <Button
+                  variant="secondary"
+                  leading={<GlyphIcon name="cross" size={13} />}
+                  onClick={() => setQuery("")}
+                >
+                  {n.clear}
+                </Button>
+              }
+            />
+          ),
+        }}
+      />
+    </div>
+  );
 }
 
 function Plain({ f }: { f: Fixtures }) {
@@ -355,10 +483,10 @@ export const module = defineModule({
     "The models table with a band header, sortable columns and an expandable row; a plain vault table; key-value facts and installed plugins as list rows with a pager.",
   width: "wide",
   variants: [
-    { key: "band", title: "Band", scene: LAND },
-    { key: "plain", title: "Plain" },
-    { key: "dense", title: "Dense" },
-    { key: "expandable", title: "Expandable" },
+    { key: "band", title: "Band", kind: "interactive" },
+    { key: "plain", title: "Plain", kind: "static" },
+    { key: "dense", title: "Dense", kind: "static" },
+    { key: "expandable", title: "Expandable", kind: "static" },
   ],
   parts: [
     "data-table",

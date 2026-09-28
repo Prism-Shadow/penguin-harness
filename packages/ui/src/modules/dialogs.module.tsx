@@ -2,7 +2,8 @@
  * Dialogs & confirmation: what the product lays over a page when it has to ask.
  *
  * - Confirm: the Agents page, an Agent about to be deleted — the card's mark says how serious it
- *   is and its body names the Agent and what deleting it costs;
+ *   is and its body names the Agent and what deleting it costs. The reader answers it: cancel,
+ *   or delete and see the toast, then ask again from another card's delete;
  * - Form: the manual path to the same object, a form inside a dialog — a name, a model and how it
  *   asks before it acts;
  * - Full screen: the Workspace browser, the dialog that takes the whole window;
@@ -11,11 +12,10 @@
  * Static stand-ins for W3's `Modal`, `ConfirmModal`, `PagedDialog` and `Drawer` / `Sheet`, and
  * W7's `FileTree`.
  */
+import { useCallback, useState } from "react";
 import { fixturesFor } from "../fixtures";
-import type { FileNode, Fixtures } from "../fixtures";
+import type { FileNode, FixtureAgent, Fixtures } from "../fixtures";
 import { APP_COLUMN_WIDTH, defineModule } from "../module";
-import type { SceneSpec } from "../module";
-import { reached, useScene } from "../scene";
 import { bytes } from "../screens/format";
 import { Markdown } from "../screens/markdown";
 import { UserBubble } from "../screens/transcript";
@@ -37,7 +37,10 @@ import {
   Presence,
   Radio,
   Select,
+  Toast,
   treeInset,
+  useDismiss,
+  useLater,
 } from "./parts";
 
 /** Every dialog here opens over the same page, so the four cards read as one language. */
@@ -54,62 +57,100 @@ function AgentsPage({
   f,
   target,
   pressed = false,
+  agents = f.agents,
+  onDelete,
 }: {
   f: Fixtures;
   /** The Agent the dialog is about. */
   target: string;
   /** The pointer is on that Agent's destructive action. */
   pressed?: boolean;
+  /** The cards to list: the fixtures' Agents, less any the reader has deleted. */
+  agents?: readonly FixtureAgent[];
+  /** Makes each card's delete a real button asking about that Agent. */
+  onDelete?: (agentId: string) => void;
 }) {
   return (
     <div className="mx-auto grid max-w-5xl grid-cols-[minmax(0,1fr)] gap-4 p-6">
       <AgentsHeader f={f} />
       <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
-        {f.agents.map((agent) => (
-          <AgentCard key={agent.id} f={f} agent={agent} deleting={pressed && agent.id === target} />
+        {agents.map((agent) => (
+          <AgentCard
+            key={agent.id}
+            f={f}
+            agent={agent}
+            deleting={pressed && agent.id === target}
+            onDelete={onDelete && (() => onDelete(agent.id))}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-const CONFIRM_SCENE: SceneSpec = {
-  frames: [
-    { key: "trigger", title: "Trigger", hold: 1000 },
-    { key: "dialog", title: "Dialog", hold: 2000 },
-  ],
-};
+/** How long the toast a confirmed delete leaves stays before it goes. */
+const TOAST_MS = 4000;
 
 /**
- * Confirm: the pointer reaches the row's destructive action, then the scrim and the card come in
- * over the page and stay — the card is what this module is about, so it is what the scene rests
- * on rather than the toast an answer would leave behind. Nothing here says how it moves: the
- * card enters from the centre, and each theme animates that word its own way.
+ * Confirm, as the reader uses it. It opens as the still does — the reviewer's delete under the
+ * pointer, the scrim and the card over the page — and from there Cancel, Esc or a press on the
+ * scrim closes it, Delete removes the card from the page and leaves a toast in the corner, and
+ * any other deletable card's delete asks about that Agent. The card enters from the centre and
+ * the scrim fades; each theme animates those words its own way.
  */
 function Confirm({ f }: { f: Fixtures }) {
-  const clock = useScene();
   const a = f.copy.agents;
+  const later = useLater();
   // The reviewer, not the Project's own Agent: a confirmation is worth reading when the thing
   // behind it is one of several.
-  const agent = f.agents[f.agents.length - 1]!;
-  const open = reached(clock, "dialog");
+  const [target, setTarget] = useState(f.agents[f.agents.length - 1]!.id);
+  const [open, setOpen] = useState(true);
+  const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
+  const [toast, setToast] = useState<string | null>(null);
+  const agent = f.agents.find((candidate) => candidate.id === target)!;
+  const close = useCallback(() => setOpen(false), []);
+  const card = useDismiss<HTMLDivElement>(open, close);
+  const confirm = () => {
+    setGone((now) => new Set(now).add(agent.id));
+    setOpen(false);
+    setToast(a.deleted(agent.name));
+    later(() => setToast(null), TOAST_MS);
+  };
   return (
     <div className={STAGE}>
       <div className="h-full overflow-hidden">
-        <AgentsPage f={f} target={agent.id} pressed />
+        <AgentsPage
+          f={f}
+          target={target}
+          pressed={open}
+          agents={f.agents.filter((candidate) => !gone.has(candidate.id))}
+          onDelete={(id) => {
+            setTarget(id);
+            setOpen(true);
+          }}
+        />
       </div>
-      <Backdrop show={open} />
-      <div className="absolute inset-0 flex items-center justify-center p-6">
-        <Presence show={open} side="center" className="w-full max-w-sm">
-          <ConfirmModal
-            tone="danger"
-            title={a.deleteTitle(agent.name)}
-            body={a.deleteBody}
-            cancel={f.copy.common.cancel}
-            confirm={f.copy.common.delete}
-          />
+      <Backdrop show={open} appear={false} />
+      <div
+        className={`absolute inset-0 flex items-center justify-center p-6 ${open ? "" : "pointer-events-none"}`}
+      >
+        <Presence show={open} side="center" appear={false} className="w-full max-w-sm">
+          <div ref={card}>
+            <ConfirmModal
+              tone="danger"
+              title={a.deleteTitle(agent.name)}
+              body={a.deleteBody}
+              cancel={f.copy.common.cancel}
+              confirm={f.copy.common.delete}
+              onCancel={close}
+              onConfirm={confirm}
+            />
+          </div>
         </Presence>
       </div>
+      <Presence show={toast !== null} side="bottom" className="absolute bottom-4 right-4 w-80">
+        <Toast tone="success" title={toast ?? ""} />
+      </Presence>
     </div>
   );
 }
@@ -354,10 +395,10 @@ export const module = defineModule({
   width: "wide",
   viewport: APP_COLUMN_WIDTH,
   variants: [
-    { key: "confirm", title: "Confirm", scene: CONFIRM_SCENE },
-    { key: "form", title: "Form" },
-    { key: "full", title: "Full screen" },
-    { key: "sheet", title: "Sheet" },
+    { key: "confirm", title: "Confirm", kind: "interactive" },
+    { key: "form", title: "Form", kind: "static" },
+    { key: "full", title: "Full screen", kind: "static" },
+    { key: "sheet", title: "Sheet", kind: "static" },
   ],
   parts: [
     "overlays-modal",

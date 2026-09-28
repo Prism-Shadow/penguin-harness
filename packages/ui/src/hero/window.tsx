@@ -1,7 +1,15 @@
 /**
- * The app window the hero shows: the session sidebar, a Task transcript and the dock, composed
- * from the same fixtures as the rest of the gallery and wired to the reader — session rows switch
- * the transcript, dock tabs switch panels, and the composer sends.
+ * The app window a reader can use: the sidebar, the main column and the dock, at the app's own
+ * proportions, composed from the same fixtures and parts as the rest of the gallery.
+ *
+ * - The sidebar's page entries switch the main column between the chat and the product's pages
+ *   (hero/pages.tsx), and the user row at its foot opens Settings;
+ * - session rows open their Session's transcript;
+ * - the collapse button folds the sidebar to the icon rail, and the rail's expand button opens it;
+ * - the composer takes typing and sends, which plays the scripted reply (hero/scene.ts);
+ * - the dock's tabs switch panels, and the model trigger opens the model picker.
+ *
+ * All of it is local state (hero/shell.ts); nothing moves until the reader sends.
  *
  * The window is an `AppShell`, so the three themes lay its columns out themselves: Frost floats
  * the main column as a sheet on its colour field, Console rules the columns apart edge to edge,
@@ -12,11 +20,13 @@
  * Pieces that carry a style hook take the name of the component they imitate — `ComposerCard`,
  * `DockFrame`, `DockTabs`, `SubagentsPanel` — because a hook belongs to its host (hooks.ts).
  */
-import { Fragment } from "react";
+import { Fragment, useReducer, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import type {
   ChatItem,
   ChatTurn,
   FileNode,
+  FixtureLang,
   Fixtures,
   SessionListItem,
   SubagentRef,
@@ -24,35 +34,57 @@ import type {
   ToolCallItem,
   UserMessageItem,
 } from "../fixtures";
+import { module as composer } from "../modules/composer.module";
 import {
   arriving,
   Field,
   GlyphIcon,
   Heading,
   IconButton,
+  Presence,
   RunSpinner,
   Select,
   StatusWord,
   StreamText,
   Text,
+  Tooltip,
   treeInset,
   useFrameProgress,
 } from "../modules/parts";
 import type { IconName } from "../modules/parts";
-import { at, reached, useScene } from "../scene";
+import { at, reached, SceneContext, SceneControlsContext, useScene } from "../scene";
 import { bytes, duration, tokens, usd } from "../screens/format";
-import { AgentTile, AppShell, NEUTRAL_FILL, SidebarBody, StatChip } from "../screens/parts";
+import {
+  AgentTile,
+  AppShell,
+  NEUTRAL_FILL,
+  RailBody,
+  SidebarBody,
+  StatChip,
+} from "../screens/parts";
+import type { SidebarPage } from "../screens/parts";
 import {
   ComposerToolbar,
   StatsLine,
   StopButton,
+  ToolbarTrigger,
   Turn,
   UserBubble,
   WorkGroup,
 } from "../screens/transcript";
 import type { WorkItem } from "../screens/transcript";
-import { heroComposer, heroTurn, useTypedPrompt } from "./scene";
-import type { HeroDrive } from "./scene";
+import type { ThemeModeName } from "../tokens";
+import { ShellPageView } from "./pages";
+import { heroComposer, heroTurn, useReplyClock } from "./scene";
+import { SHELL_START, shellReducer } from "./shell";
+import type { ShellAction, ShellPage, ShellState } from "./shell";
+
+/** The reader's hold on the window: the state, the moves, and send, which also starts the reply. */
+interface Drive {
+  shell: ShellState;
+  dispatch: (action: ShellAction) => void;
+  send: (prompt: string) => void;
+}
 
 /** An item of the fixture story by its id; the dataset is fixed, so a miss is a bug. */
 function turnItem<T extends ChatItem = ChatItem>(turn: ChatTurn, id: string): T {
@@ -61,8 +93,8 @@ function turnItem<T extends ChatItem = ChatItem>(turn: ChatTurn, id: string): T 
   return found as T;
 }
 
-/** The prompt the scene types and sends: turn 2's, the one the open Task is answering. */
-function scenePrompt(f: Fixtures): string {
+/** The prompt of turn 2, the one the open Task is answering. */
+function storyPrompt(f: Fixtures): string {
   return turnItem<UserMessageItem>(f.session.turns[1]!, "u2").text;
 }
 
@@ -90,9 +122,27 @@ function runningAt<T extends WorkItem>(step: T, share: number): T {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The session sidebar: the app's own (screens/parts.tsx), its rows opening their Session. It steps
- * out below the `@3xl` mark rather than folding to the icon rail: at phone width the window is one
- * column, and the rail would be a second one.
+ * Where a sidebar or rail entry goes: New chat to the chat, a page entry to its page. The app's
+ * New chat opens an empty Session; here it returns to the chat, which is the one the window has.
+ */
+function pageOf(entry: SidebarPage | "new-chat"): ShellPage {
+  return entry === "new-chat" ? "chat" : entry;
+}
+
+/**
+ * The session sidebar, or the icon rail it folds to. The column's width moves through
+ * `data-layout-motion` while the rail comes and goes; the sidebar's contents are laid out at their
+ * own width and clipped by the column, so the widening column uncovers them rather than reflowing
+ * them. It steps out below the `@3xl` mark: at phone width the window is one column, and the rail
+ * would be a second one.
+ *
+ * The user row at the sidebar's foot and the avatar at the rail's open Settings, as they do in
+ * the app. Neither piece takes a handler for it, so the column reads a click that lands inside
+ * the last child of either — that row, that avatar.
+ *
+ * The pointer is local state too: a session row under it shows its actions, and a rail icon
+ * under it its tooltip. The column clips only while it holds the sidebar, whose width it
+ * uncovers; folded to the rail it lets the tooltip hang over the main column.
  */
 function HeroSidebar({
   f,
@@ -103,31 +153,92 @@ function HeroSidebar({
 }: {
   f: Fixtures;
   sessions: readonly SessionListItem[];
-  /** Which row reads as the open one; -1 when no Session is open yet. */
+  /** Which row reads as the open one; -1 when no Session is open. */
   open: number;
   running: boolean;
-  drive: HeroDrive;
+  drive: Drive;
 }) {
+  const body = useRef<HTMLDivElement>(null);
+  const [hoveredRow, setHoveredRow] = useState<string>();
+  const [hoveredEntry, setHoveredEntry] = useState<SidebarPage>();
+  const { shell, dispatch } = drive;
+  const collapsed = shell.collapsed;
   const group = f.sessionGroups[0];
-  // Only the open row's Task runs, and only while the scene has it running.
+  // Only the open row's Task runs, and only while its reply plays.
   const items = sessions.map((item, index) => ({ ...item, running: index === open && running }));
+  const page = shell.page === "chat" || shell.page === "settings" ? undefined : shell.page;
+  const navigate = (entry: SidebarPage | "new-chat") =>
+    dispatch({ type: "page", page: pageOf(entry) });
+  // A column that folds or unfolds under the pointer never sends the leave of what it unmounts.
+  const fold = (next: boolean) => {
+    setHoveredRow(undefined);
+    setHoveredEntry(undefined);
+    dispatch({ type: "collapse", collapsed: next });
+  };
+  const onClick = (event: MouseEvent<HTMLElement>) => {
+    const foot = body.current?.lastElementChild;
+    if (event.target instanceof Node && foot?.contains(event.target)) {
+      dispatch({ type: "page", page: "settings" });
+    }
+  };
   return (
     <aside
       data-slot="nav"
-      className="hidden w-72 shrink-0 flex-col border-r border-line bg-surface-muted @3xl:flex"
+      data-layout-motion
+      onClick={onClick}
+      className={`relative hidden shrink-0 flex-col border-r border-line bg-surface-muted @3xl:flex ${
+        collapsed ? "w-12" : "w-72 overflow-hidden"
+      }`}
     >
-      <SidebarBody
-        f={f}
-        activeSessionId={sessions[open]?.id}
-        groups={group ? [{ ...group, items }] : []}
-        onOpenSession={(id) => drive.openSession(sessions.findIndex((item) => item.id === id))}
-      />
+      {!collapsed && (
+        <div ref={body} className="absolute inset-y-0 left-0 flex w-72 flex-col">
+          <SidebarBody
+            f={f}
+            activePage={page}
+            activeSessionId={shell.page === "chat" ? sessions[open]?.id : undefined}
+            groups={group ? [{ ...group, items }] : []}
+            onOpenSession={(id) =>
+              dispatch({ type: "session", index: sessions.findIndex((item) => item.id === id) })
+            }
+            hoveredSessionId={hoveredRow}
+            onHoverSession={setHoveredRow}
+            onCollapse={() => fold(true)}
+            onNavigate={navigate}
+          />
+        </div>
+      )}
+      <Presence
+        show={collapsed}
+        side="left"
+        className="absolute inset-y-0 left-0 flex w-12 flex-col items-center gap-1 py-2"
+      >
+        <div ref={collapsed ? body : undefined} className="contents">
+          <RailBody
+            f={f}
+            activePage={page}
+            hovered={hoveredEntry}
+            onHoverEntry={setHoveredEntry}
+            onExpand={() => fold(false)}
+            onNavigate={navigate}
+            renderEntry={(node, entry) => (
+              <>
+                {node}
+                <span className="absolute left-full top-1/2 z-10 ml-2 -translate-y-1/2">
+                  <Presence show={entry === hoveredEntry} side="left" as="span" className="block">
+                    <Tooltip label={f.copy.nav[entry]} />
+                  </Presence>
+                </span>
+              </>
+            )}
+          />
+        </div>
+      </Presence>
     </aside>
   );
 }
 
 // ---------------------------------------------------------------------------------------------
-// The main column
+// The chat
 // ---------------------------------------------------------------------------------------------
 
 /** The chat's toolbar as the app draws it: the title, a running Task's hourglass, the totals. */
@@ -161,7 +272,7 @@ const EDIT_START = 0.5;
 const EDIT_DONE = 0.9;
 
 /**
- * The work group through the scene: a live Thinking row, then the read and the edit arriving on
+ * The work group through the reply: a live Thinking row, then the read and the edit arriving on
  * the working frame's clock. It says Done once the reply starts, and folds to its summary when
  * the turn settles.
  */
@@ -195,35 +306,30 @@ function HeroWork({ f, turn }: { f: Fixtures; turn: ChatTurn }) {
 }
 
 /**
- * The open Session as the scene tells it: turn 1 settled on its answer, then turn 2 arriving —
- * the prompt lands, the work group runs, the reply streams and the stats line closes it. The
- * prompt is the reader's own once they have sent one.
+ * The open Session: turn 1 settled on its answer, then turn 2 — the prompt, the work group, the
+ * reply and the stats line. At rest it is the story's own finished turn; once the reader sends,
+ * the prompt is theirs and the rest plays in again.
  */
-function TaskReading({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
+function TaskReading({ f, drive }: { f: Fixtures; drive: Drive }) {
   const clock = useScene();
   const [turn1, turn2] = f.session.turns;
-  const phase = heroTurn(clock);
   const { reply, stats } = f.streamedReply;
   return (
     <>
       <Turn turn={turn1!} f={f} from="tx3" dense />
-      {phase !== "none" && (
-        <>
-          <div data-reveal={arriving(clock, "working")}>
-            <UserBubble item={{ text: drive.sent ?? scenePrompt(f) }} dense />
-          </div>
-          <HeroWork f={f} turn={turn2!} />
-          {reached(clock, "answer") && (
-            <p className="my-3 font-sans text-sm leading-relaxed text-fg [overflow-wrap:break-word]">
-              <StreamText text={reply.markdown} frame="answer" />
-            </p>
-          )}
-          {phase === "settled" && (
-            <div data-reveal={arriving(clock, "settled")}>
-              <StatsLine stats={stats} f={f} />
-            </div>
-          )}
-        </>
+      <div data-reveal={arriving(clock, "working")}>
+        <UserBubble item={{ text: drive.shell.sent ?? storyPrompt(f) }} dense />
+      </div>
+      <HeroWork f={f} turn={turn2!} />
+      {reached(clock, "answer") && (
+        <p className="my-3 font-sans text-sm leading-relaxed text-fg [overflow-wrap:break-word]">
+          <StreamText text={reply.markdown} frame="answer" />
+        </p>
+      )}
+      {heroTurn(clock) === "settled" && (
+        <div data-reveal={arriving(clock, "settled")}>
+          <StatsLine stats={stats} f={f} />
+        </div>
       )}
     </>
   );
@@ -250,25 +356,47 @@ function ReviewReading({ f }: { f: Fixtures }) {
 
 /**
  * Three prepared readings behind the sidebar's three rows: the open Task, the run that failed and
- * the reviewer's child Session. Only the first follows the scene; the other two are settled,
- * which is where a reader who picked a row has already put the mock.
+ * the reviewer's child Session. Only the first answers the composer; the other two are settled.
  */
-function Reading({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
-  if (drive.session === 1) return <FailedReading f={f} />;
-  if (drive.session >= 2) return <ReviewReading f={f} />;
+function Reading({ f, open, drive }: { f: Fixtures; open: number; drive: Drive }) {
+  if (open === 1) return <FailedReading f={f} />;
+  if (open >= 2) return <ReviewReading f={f} />;
   return <TaskReading f={f} drive={drive} />;
 }
 
+/** The composer's model trigger, pressable: it opens the picker the composer module draws. */
+function ModelTrigger({ f, drive }: { f: Fixtures; drive: Drive }) {
+  const s = f.session;
+  const c = f.copy.chat;
+  const model = f.models.find((m) => m.modelId === s.model.modelId);
+  const open = drive.shell.picker;
+  return (
+    <button
+      type="button"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      onClick={() => drive.dispatch({ type: "picker", open: !open })}
+      className="flex shrink-0 rounded-md"
+    >
+      <ToolbarTrigger
+        lead={<AgentTile id={s.model.provider} name={model?.providerLabel ?? "?"} size={16} />}
+        label={model?.displayName ?? s.model.modelId}
+        name={`${c.model} ${s.model.modelId}`}
+        chevron={false}
+      />
+    </button>
+  );
+}
+
 /**
- * The composer, with a real input: the scene types its prompt into it, and a reader can write
- * their own over it and send. Sending starts the scripted reply (hero/scene.ts).
+ * The composer, with a real input. Sending plays the reply; while it plays the button stops
+ * instead, until the reader writes again.
  */
-function ComposerCard({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
+function ComposerCard({ f, drive }: { f: Fixtures; drive: Drive }) {
   const clock = useScene();
   const c = f.copy.chat;
-  const state = heroComposer(clock, drive);
-  const typed = useTypedPrompt(scenePrompt(f));
-  const value = state === "running" ? "" : state === "typing" ? typed : drive.draft;
+  const value = drive.shell.draft;
+  const state = heroComposer(clock, value);
   return (
     <div className="shrink-0 border-t border-line px-3 py-3">
       <form
@@ -282,13 +410,14 @@ function ComposerCard({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
         <input
           type="text"
           value={value}
-          onChange={(event) => drive.write(event.target.value)}
+          onChange={(event) => drive.dispatch({ type: "write", draft: event.target.value })}
           placeholder={c.inputPlaceholder}
           aria-label={c.inputPlaceholder}
           className="w-full min-w-0 bg-transparent px-1 py-0.5 font-sans text-base leading-6 text-fg outline-none placeholder:text-fg-subtle"
         />
         <ComposerToolbar
           f={f}
+          modelTrigger={<ModelTrigger f={f} drive={drive} />}
           send={
             state === "running" ? (
               <StopButton f={f} />
@@ -312,19 +441,88 @@ function ComposerCard({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
   );
 }
 
+/**
+ * The model picker over the composer: the composer module's own `model-picker` composition — the
+ * picker above the card it hangs off — laid over the chat's composer, bottom edges together. A
+ * click anywhere, a pick included, or Escape closes it. It renders with no clock over it, like
+ * every composition the window borrows.
+ */
+function ModelPickerLayer({
+  drive,
+  lang,
+  mode,
+}: {
+  drive: Drive;
+  lang: FixtureLang;
+  mode: ThemeModeName;
+}) {
+  const open = drive.shell.picker;
+  const close = () => drive.dispatch({ type: "picker", open: false });
+  return (
+    <>
+      {open && <div aria-hidden onClick={close} className="absolute inset-0" />}
+      <Presence show={open} side="bottom" className="absolute inset-x-0 bottom-0 px-3 pb-3">
+        <div onClick={close}>
+          <SceneContext.Provider value={null}>
+            <SceneControlsContext.Provider value={null}>
+              {composer.render("model-picker", { lang, mode })}
+            </SceneControlsContext.Provider>
+          </SceneContext.Provider>
+        </div>
+      </Presence>
+    </>
+  );
+}
+
+/**
+ * The chat before any Session exists: the question it opens with, the prompts the product offers
+ * (a pick lands in the composer), and the picks a first Task starts on. The labelled rows are
+ * where the themes' form layouts show — Primer's label above a full-width control, Frost's
+ * roomier, Console's in a fixed label column.
+ */
+function HeroStart({ f, drive }: { f: Fixtures; drive: Drive }) {
+  const model = f.models.find((candidate) => candidate.modelId === f.session.model.modelId);
+  const skill = f.plugins.find((plugin) => plugin.enabled);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col justify-center gap-4 px-6 text-center">
+      <Heading level={4}>{f.hero.empty.title}</Heading>
+      <p className="mx-auto max-w-sm font-sans text-sm leading-relaxed text-fg-muted">
+        {f.hero.empty.body}
+      </p>
+      <div className="mx-auto grid w-full max-w-md grid-cols-[minmax(0,1fr)] gap-2">
+        {f.hero.empty.examples.map((example) => (
+          <button
+            key={example}
+            type="button"
+            onClick={() => drive.dispatch({ type: "write", draft: example })}
+            className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-left text-sm text-fg-muted transition-colors duration-150"
+          >
+            <GlyphIcon name="sparkle" size={13} decor="empty" className="text-fg-subtle" />
+            <span className="min-w-0 flex-1 truncate">{example}</span>
+          </button>
+        ))}
+      </div>
+      <div className="mx-auto grid w-full max-w-md grid-cols-[minmax(0,1fr)] gap-3 text-left @2xl:grid-cols-2">
+        <Field label={f.forms.search.label}>
+          <Select value={model?.displayName ?? f.session.model.modelId} />
+        </Field>
+        <Field label={f.copy.chat.skills}>
+          <Select value={skill?.name ?? f.copy.chat.skills} />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------------------------
 // The dock
 // ---------------------------------------------------------------------------------------------
 
-/**
- * The call graph, as a tree: the Session's own Agent, and the child it started under it. The
- * child arrives with the working frame, which is the dock filling as the Task runs.
- */
+/** The call graph, as a tree: the Session's own Agent, and the child it started under it. */
 function SubagentsPanel({ f }: { f: Fixtures }) {
   const clock = useScene();
   const sub = subagentOf(f);
   const main = f.agents.find((agent) => agent.id === f.session.agentId)!;
-  const started = reached(clock, "working");
   const done = reached(clock, "settled");
   const reply = sub.transcript.find((item) => item.kind === "text");
   return (
@@ -340,29 +538,25 @@ function SubagentsPanel({ f }: { f: Fixtures }) {
           <span className="min-w-0 flex-1 truncate">{main.name}</span>
           <span className="shrink-0 font-mono text-fg-subtle">{f.session.id.slice(-6)}</span>
         </li>
-        {started && (
-          <li
-            data-depth={1}
-            data-last="true"
-            data-reveal={arriving(clock, "working")}
-            style={{ paddingLeft: treeInset(1) }}
-            className="flex h-7 items-center gap-2 rounded-md bg-accent-muted pr-1 text-xs text-fg"
-          >
-            <AgentTile id={sub.agentId} name={sub.agentName} />
-            <span className="min-w-0 flex-1 truncate font-(--ui-weight-medium)">
-              {sub.agentName}
-            </span>
-            {done ? (
-              <StatusWord tone="success" icon="circleCheck">
-                {f.copy.dock.nodeDone}
-              </StatusWord>
-            ) : (
-              <RunSpinner label={f.copy.chat.runStates.running} />
-            )}
-          </li>
-        )}
+        <li
+          data-depth={1}
+          data-last="true"
+          data-reveal={arriving(clock, "working")}
+          style={{ paddingLeft: treeInset(1) }}
+          className="flex h-7 items-center gap-2 rounded-md bg-accent-muted pr-1 text-xs text-fg"
+        >
+          <AgentTile id={sub.agentId} name={sub.agentName} />
+          <span className="min-w-0 flex-1 truncate font-(--ui-weight-medium)">{sub.agentName}</span>
+          {done ? (
+            <StatusWord tone="success" icon="circleCheck">
+              {f.copy.dock.nodeDone}
+            </StatusWord>
+          ) : (
+            <RunSpinner label={f.copy.chat.runStates.running} />
+          )}
+        </li>
       </ul>
-      {started && reply?.kind === "text" && (
+      {reply?.kind === "text" && (
         <p
           data-reveal={arriving(clock, "working")}
           className="line-clamp-4 font-sans text-xs leading-relaxed text-fg-muted [overflow-wrap:break-word]"
@@ -440,7 +634,7 @@ function DockTabs({
 }: {
   panels: readonly { icon: IconName; label: string }[];
   open: number;
-  drive: HeroDrive;
+  drive: Drive;
 }) {
   return (
     <span role="tablist" className="flex min-w-0 items-center gap-1">
@@ -450,7 +644,7 @@ function DockTabs({
           type="button"
           role="tab"
           aria-selected={index === open}
-          onClick={() => drive.openPanel(index)}
+          onClick={() => drive.dispatch({ type: "panel", index })}
           className={`flex h-7 min-w-0 items-center gap-1.5 rounded-control px-2 text-xs transition-colors duration-150 ${
             index === open ? "bg-accent-muted text-fg" : "text-fg-muted"
           }`}
@@ -464,11 +658,11 @@ function DockTabs({
   );
 }
 
-function DockFrame({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
+function DockFrame({ f, drive }: { f: Fixtures; drive: Drive }) {
   const panels = f.menus.panels
     .flatMap((entry) => (entry === "separator" ? [] : [entry]))
     .slice(0, 3);
-  const open = Math.min(Math.max(0, drive.panel), panels.length - 1);
+  const open = Math.min(Math.max(0, drive.shell.panel), panels.length - 1);
   return (
     <section
       data-slot="dock"
@@ -490,78 +684,98 @@ function DockFrame({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The two windows
+// The window
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * A window at the app's proportions: one column on a phone, and at the `@3xl` mark the sidebar,
+ * the main column and the dock side by side, as tall as a laptop window is for its width.
+ */
 const FRAME =
-  "flex h-[30rem] flex-col overflow-hidden rounded-lg border border-line bg-canvas @3xl:h-[34rem] @3xl:flex-row";
-
-/** The window with a Task in it: what the scene plays, and what a reader drives. */
-export function HeroWindow({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
-  const clock = useScene();
-  const sessions = f.sessionGroups[0]?.items ?? [];
-  const open = Math.min(Math.max(0, drive.session), Math.max(0, sessions.length - 1));
-  const phase = heroTurn(clock);
-  const running = open === 0 && (phase === "working" || phase === "answering");
-  return (
-    <AppShell className={FRAME}>
-      <HeroSidebar f={f} sessions={sessions} open={open} running={running} drive={drive} />
-      <div data-slot="main" className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <ChatHead f={f} title={sessions[open]?.title ?? f.session.title} running={running} />
-        <div className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden px-3 @2xl:px-6">
-          <div>
-            <Reading f={f} drive={drive} />
-          </div>
-        </div>
-        <ComposerCard f={f} drive={drive} />
-      </div>
-      <DockFrame f={f} drive={drive} />
-    </AppShell>
-  );
-}
+  "flex h-[30rem] flex-col overflow-hidden rounded-lg border border-line bg-canvas @3xl:h-[44rem] @3xl:flex-row";
 
 /**
- * The window before a Session exists: an empty list, the two prompts the product offers, and the
- * picks a first Task starts on. The labelled rows are where the themes' form layouts show —
- * Primer's label above a full-width control, Frost's roomier, Console's in a fixed label column.
+ * The whole window with its state. `start` opens it before any Session exists — an empty list and
+ * the new-chat page — until the reader's first send starts one; `page` is the page it opens on.
+ * Remounting it (a new `key`) is the one way back to how it opened.
  */
-export function HeroStart({ f, drive }: { f: Fixtures; drive: HeroDrive }) {
-  const model = f.models.find((candidate) => candidate.modelId === f.session.model.modelId);
-  const skill = f.plugins.find((plugin) => plugin.enabled);
+export function ShellWindow({
+  f,
+  lang,
+  mode,
+  start = false,
+  page = "chat",
+}: {
+  f: Fixtures;
+  lang: FixtureLang;
+  mode: ThemeModeName;
+  start?: boolean;
+  page?: ShellPage;
+}) {
+  const [shell, dispatch] = useReducer(shellReducer, page, (first) => ({
+    ...SHELL_START,
+    page: first,
+  }));
+  const { clock, controls } = useReplyClock();
+  const drive: Drive = {
+    shell,
+    dispatch,
+    send: (prompt) => {
+      if (prompt.trim() === "") return;
+      dispatch({ type: "send", prompt });
+      controls.playFrom("working");
+    },
+  };
+  // Before the first send the window has no Session: the list is empty and the chat is new.
+  const fresh = start && shell.sent === null;
+  const sessions = fresh ? [] : (f.sessionGroups[0]?.items ?? []);
+  const open = Math.min(Math.max(0, shell.session), Math.max(0, sessions.length - 1));
+  const running = !fresh && open === 0 && heroTurn(clock) !== "settled";
   return (
-    <AppShell className={FRAME}>
-      <HeroSidebar f={f} sessions={[]} open={-1} running={false} drive={drive} />
-      <div data-slot="main" className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <ChatHead f={f} title={f.copy.nav.newChat} running={false} />
-        <div className="flex min-h-0 flex-1 flex-col justify-center gap-4 px-6 text-center">
-          <Heading level={4}>{f.hero.empty.title}</Heading>
-          <p className="mx-auto max-w-sm font-sans text-sm leading-relaxed text-fg-muted">
-            {f.hero.empty.body}
-          </p>
-          <div className="mx-auto grid w-full max-w-md grid-cols-[minmax(0,1fr)] gap-2">
-            {f.hero.empty.examples.map((example) => (
-              <button
-                key={example}
-                type="button"
-                onClick={() => drive.write(example)}
-                className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-left text-sm text-fg-muted transition-colors duration-150"
-              >
-                <GlyphIcon name="sparkle" size={13} decor="empty" className="text-fg-subtle" />
-                <span className="min-w-0 flex-1 truncate">{example}</span>
-              </button>
-            ))}
-          </div>
-          <div className="mx-auto grid w-full max-w-md grid-cols-[minmax(0,1fr)] gap-3 text-left @2xl:grid-cols-2">
-            <Field label={f.forms.search.label}>
-              <Select value={model?.displayName ?? f.session.model.modelId} />
-            </Field>
-            <Field label={f.copy.chat.skills}>
-              <Select value={skill?.name ?? f.copy.chat.skills} />
-            </Field>
-          </div>
-        </div>
-        <ComposerCard f={f} drive={drive} />
-      </div>
-    </AppShell>
+    <div
+      className="@container"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && shell.picker) dispatch({ type: "picker", open: false });
+      }}
+    >
+      <SceneContext.Provider value={clock}>
+        <SceneControlsContext.Provider value={controls}>
+          <AppShell className={FRAME}>
+            <HeroSidebar
+              f={f}
+              sessions={sessions}
+              open={fresh ? -1 : open}
+              running={running}
+              drive={drive}
+            />
+            {shell.page === "chat" ? (
+              <>
+                <div data-slot="main" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                  <ChatHead
+                    f={f}
+                    title={fresh ? f.copy.nav.newChat : (sessions[open]?.title ?? f.session.title)}
+                    running={running}
+                  />
+                  {fresh ? (
+                    <HeroStart f={f} drive={drive} />
+                  ) : (
+                    <div className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden px-3 @2xl:px-6">
+                      <div>
+                        <Reading f={f} open={open} drive={drive} />
+                      </div>
+                    </div>
+                  )}
+                  <ComposerCard f={f} drive={drive} />
+                  <ModelPickerLayer drive={drive} lang={lang} mode={mode} />
+                </div>
+                {!fresh && <DockFrame f={f} drive={drive} />}
+              </>
+            ) : (
+              <ShellPageView f={f} page={shell.page} lang={lang} mode={mode} />
+            )}
+          </AppShell>
+        </SceneControlsContext.Provider>
+      </SceneContext.Provider>
+    </div>
   );
 }

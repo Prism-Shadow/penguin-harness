@@ -1,12 +1,12 @@
 /**
- * A module's three drawers:
+ * The three sections after a module page's variants:
  *
- * - Parts: the catalog sections the module lists. A part with a demo is a small card with its own
- *   axis pills, `all` matrix and breadcrumb in the part form; a planned part is one grey line.
- * - Tokens: the contract tokens the composition reads — each part's declared `tokensUsed`, plus what
- *   the rendered composition's CSS actually references — resolved in the active theme and mode,
- *   with the WCAG ratio of every ink against the surfaces it sits on.
- * - Code: the module file's source.
+ * - Parts: the catalog sections the module lists. A part with a demo is a small framed preview
+ *   with its own axis controls and breadcrumb in the part form; a planned part is one grey line.
+ * - Tokens: the contract tokens the page's compositions read — each part's declared `tokensUsed`,
+ *   plus what the rendered compositions' CSS actually references — resolved in the active theme
+ *   and mode, with the WCAG ratio of every ink against the surfaces it sits on.
+ * - Source: the module file's text.
  */
 import { useEffect, useState } from "react";
 import type { ComponentSection } from "../../../ui/src/catalog";
@@ -24,8 +24,9 @@ import { withVariant } from "../lib/url-state";
 import { DemoView, useText } from "../preview";
 import { DEMOS, loadSource, repoPath } from "../registry";
 import { useGallery } from "../state";
+import { AxisPills } from "./axes";
 import { useCopy } from "./copy";
-import { AxisPills, Breadcrumb } from "./pills";
+import { Breadcrumb } from "./crumb";
 
 // ---------------------------------------------------------------------------------------------
 // Parts
@@ -62,22 +63,22 @@ function PartCard({
   };
   return (
     <div id={section.id} className="g-part">
-      <div className="g-part-head g-chrome">
+      <div className="g-part-head">
         <strong>{title}</strong>
         <span className="g-muted">{description}</span>
       </div>
       <div className="g-preview g-part-preview">
         <DemoView demo={demo} pick={pick} />
       </div>
-      <div className="g-card-foot g-part-foot g-chrome">
-        <Breadcrumb text={crumb} />
+      <div className="g-part-foot">
         <AxisPills axes={demo.axes} matrix={demo.matrix} pick={pick} onPick={onPick} />
+        <Breadcrumb text={crumb} />
       </div>
     </div>
   );
 }
 
-export function PartsDrawer({ module }: { module: Module }) {
+export function PartsSection({ module }: { module: Module }) {
   const { S } = useGallery();
   const text = useText();
   const sections = module.parts.flatMap((id) => {
@@ -85,8 +86,9 @@ export function PartsDrawer({ module }: { module: Module }) {
     return section ? [section] : [];
   });
   return (
-    <div className="g-drawer-panel">
-      <div className="g-drawer-title">{S.section.partsOf(sections.length)}</div>
+    <section id="parts" className="g-section">
+      <h2 className="g-h2">{S.section.parts}</h2>
+      <p className="g-section-meta">{S.section.partsOf(sections.length)}</p>
       {sections.length === 0 ? (
         <p className="g-muted">{S.section.noParts}</p>
       ) : (
@@ -111,7 +113,7 @@ export function PartsDrawer({ module }: { module: Module }) {
           })}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -119,21 +121,25 @@ export function PartsDrawer({ module }: { module: Module }) {
 // Tokens
 // ---------------------------------------------------------------------------------------------
 
-/** Measures the tokens a rendered composition reads, retrying while its root is not mounted yet. */
-function useMeasuredTokens(root: () => Element | null, key: string): string[] | null {
+/**
+ * Measures the tokens the page's rendered compositions read, retrying while none is mounted yet
+ * (framed embeds load lazily).
+ */
+function useMeasuredTokens(roots: () => Element[], key: string): string[] | null {
   const [names, setNames] = useState<string[] | null>(null);
   useEffect(() => {
     let tries = 0;
     let timer = 0;
     const measure = () => {
-      const el = root();
-      if (el) setNames(tokensReadBy(el));
-      else if (tries++ < 20) timer = window.setTimeout(measure, 250);
+      const found = roots();
+      if (found.length > 0) {
+        setNames(sortTokens(new Set(found.flatMap((root) => tokensReadBy(root)))));
+      } else if (tries++ < 20) timer = window.setTimeout(measure, 250);
     };
-    // After paint, so the composition and any frame have mounted.
+    // After paint, so the compositions and any frame have mounted.
     timer = window.setTimeout(measure, 50);
     return () => window.clearTimeout(timer);
-    // `root` is read afresh on every attempt; `key` says when to measure again.
+    // `roots` is read afresh on every attempt; `key` says when to measure again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   return names;
@@ -164,28 +170,29 @@ function Ratios({ name, values }: { name: string; values: TokenValues }) {
   );
 }
 
-export function TokensDrawer({
+export function TokensSection({
   module,
-  root,
+  roots,
   measureKey,
 }: {
   module: Module;
-  /** The rendered composition to measure (the card's preview, or the active theme's frame). */
-  root: () => Element | null;
+  /** The rendered compositions to measure: the page's previews, and the active theme's frames. */
+  roots: () => Element[];
   measureKey: string;
 }) {
   const { S, tokens, state, mode } = useGallery();
   const text = useText();
   const [copied, copy] = useCopy();
-  const measured = useMeasuredTokens(root, measureKey);
+  const measured = useMeasuredTokens(roots, measureKey);
   const declared = module.parts.flatMap((id) => DEMOS.byId.get(id)?.demo.tokensUsed ?? []);
   const names = sortTokens(new Set([...declared, ...(measured ?? [])]));
   const values = tokens?.[state.theme][mode] ?? {};
   return (
-    <div className="g-drawer-panel">
-      <div className="g-drawer-title">
+    <section id="tokens" className="g-section">
+      <h2 className="g-h2">{S.section.tokens}</h2>
+      <p className="g-section-meta">
         {S.section.tokensIn(`${text.theme(state.theme)} · ${S.rail.modes[mode]}`, names.length)}
-      </div>
+      </p>
       {measured === null ? (
         <p className="g-muted">{S.intro.resolving}</p>
       ) : names.length === 0 ? (
@@ -217,15 +224,15 @@ export function TokensDrawer({
           })}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
 // ---------------------------------------------------------------------------------------------
-// Code
+// Source
 // ---------------------------------------------------------------------------------------------
 
-export function CodeDrawer({ path }: { path: string }) {
+export function SourceSection({ path }: { path: string }) {
   const { S } = useGallery();
   const [source, setSource] = useState<string | null>(null);
   useEffect(() => {
@@ -236,9 +243,12 @@ export function CodeDrawer({ path }: { path: string }) {
     };
   }, [path]);
   return (
-    <div className="g-drawer-panel">
-      <div className="g-drawer-title">{repoPath(path)}</div>
+    <section id="source" className="g-section">
+      <h2 className="g-h2">{S.section.source}</h2>
+      <p className="g-section-meta">
+        <code>{repoPath(path)}</code>
+      </p>
       <pre className="g-code">{source ?? S.section.loadingCode}</pre>
-    </div>
+    </section>
   );
 }

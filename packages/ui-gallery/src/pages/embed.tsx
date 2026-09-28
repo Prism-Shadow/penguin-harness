@@ -1,16 +1,17 @@
 /**
- * One card alone, on a real themed root — the unit the framed previews (compare mode, the phone
- * view) and `scripts/shots.mjs` render:
+ * One preview alone, on a real themed root — the unit the framed previews (compare mode, the
+ * phone view) and `scripts/shots.mjs` render:
  *
  *   /embed?module=<module-id>&variant=<key>&theme=&mode=&tier=&lang=&accent=
  *   /embed?module=<module-id>&variant=<key>&frame=<frame-key>&play=0|1&…
  *   /embed?demo=<part-id>&variant=<key>&theme=&mode=&tier=&lang=&accent=
  *
- * A variant with a scene holds still, settled on its last frame, unless `frame` or `play` say
- * otherwise (see lib/live.ts); inside a card's frame (`sync=1`) it follows the clock of the card
- * around it instead, and sends the composition's own commands for that clock up to the card. The
- * root font size is the page's own: `tier=` applies to `<html>` here as on the main page, so a
- * framed preview is sized like the card's.
+ * An animated variant holds still, settled on its last frame, unless `frame` or `play` say
+ * otherwise (see lib/live.ts); inside a section's frame (`sync=1`) it follows the clock of the
+ * section around it instead, and sends the composition's own commands for that clock up to it.
+ * An interactive variant renders its first state and answers the reader from there; a still is a
+ * still. The root font size is the page's own: `tier=` applies to `<html>` here as on a module
+ * page, so a framed preview is sized like the page's.
  *
  * A module designed at the app's width (`viewport`) lays out at exactly that width, unscaled, and
  * the root grows to hold it (`data-natural-width`), so a shot is the composition at full size; the
@@ -19,9 +20,9 @@
  * It posts its height to a parent frame (`{ type: "gallery:height" }`) and marks
  * `<html data-gallery-ready>` once tokens are resolved and fonts have loaded, which is what the
  * screenshot script waits for. `#embed-root` carries what the script needs to walk the picks:
- * `data-kind`, `data-renderable`, `data-variants` (a module's keys), `data-frames`, `data-frame`
- * and `data-settled` (a scene's frame keys, the one showing, and whether it is the settled last
- * one), or `data-axes` and `data-matrix` (a demo's).
+ * `data-kind`, `data-renderable`, `data-variants` (a module's keys), `data-kind-of-variant`,
+ * `data-frames`, `data-frame` and `data-settled` (an animated variant's frame keys, the one
+ * showing, and whether it is the settled last one), or `data-axes` and `data-matrix` (a demo's).
  */
 import { useEffect, useRef } from "react";
 import { isSettled } from "../../../ui/src/scene";
@@ -29,7 +30,7 @@ import { useFollowedClock, useScenePlayer } from "../chrome/player";
 import { parseVariantKey } from "../lib/demos";
 import { naturalWidth } from "../lib/fit";
 import { parseEmbedCue } from "../lib/live";
-import { pickVariant } from "../lib/modules";
+import { pickVariant, variantKind } from "../lib/modules";
 import { DemoView, ModuleView } from "../preview";
 import { DEMOS, MODULES } from "../registry";
 import { useGallery } from "../state";
@@ -45,16 +46,18 @@ export function EmbedPage() {
   const root = useRef<HTMLDivElement>(null);
 
   const variant = entry ? pickVariant(entry.module, key) : undefined;
-  // At its natural width and unscaled: a card scales it, but a screenshot is for pixel review.
+  // At its natural width and unscaled: a page scales it, but a screenshot is for pixel review.
   const natural = entry && state.view !== "phone" ? naturalWidth(entry.module) : null;
   const reduced = state.motion === "reduced";
   const sync = params.get("sync") === "1";
-  const own = useScenePlayer(sync ? undefined : variant?.scene, {
+  // Only an animated variant runs on a clock; an interactive one drives itself, a still holds.
+  const scene = variant && variantKind(variant) === "animated" ? variant.scene : undefined;
+  const own = useScenePlayer(sync ? undefined : scene, {
     reduced,
     start: (frames) => parseEmbedCue(frames, window.location.search),
   });
   const followed = useFollowedClock(
-    sync ? variant?.scene : undefined,
+    sync ? scene : undefined,
     entry?.module.id ?? "",
     variant?.key ?? "",
     reduced,
@@ -103,9 +106,8 @@ export function EmbedPage() {
         data-view={state.view}
         data-variant={variant.key}
         data-variants={JSON.stringify(entry.module.variants.map((v) => v.key))}
-        data-frames={
-          variant.scene ? JSON.stringify(variant.scene.frames.map((f) => f.key)) : undefined
-        }
+        data-kind-of-variant={variantKind(variant)}
+        data-frames={scene ? JSON.stringify(scene.frames.map((f) => f.key)) : undefined}
         data-frame={clock?.frame}
         data-settled={clock ? isSettled(clock.frames, clock) : undefined}
       >

@@ -330,10 +330,10 @@ export const module = defineModule({
     "A docs answer in Markdown — headings, links, inline code, a table, math and a quote — a code block, a unified diff and a command log.",
   width: "wide",
   variants: [
-    { key: "prose", title: "Prose", scene: WRITE },
-    { key: "code", title: "Code" },
-    { key: "diff", title: "Diff" },
-    { key: "log", title: "Log" },
+    { key: "prose", title: "Prose", kind: "animated", scene: WRITE },
+    { key: "code", title: "Code", kind: "static" },
+    { key: "diff", title: "Diff", kind: "static" },
+    { key: "log", title: "Log", kind: "static" },
   ],
   parts: [
     "content-prose",

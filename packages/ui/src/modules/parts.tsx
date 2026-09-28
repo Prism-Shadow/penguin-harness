@@ -3,15 +3,21 @@
  * is named after the component it imitates (A-architecture §3, K-redesign §5.1) and takes that
  * component's props, so a wave swaps it for the real thing by changing an import. Token utilities
  * and the declared style hooks only; no state, except in the motion helpers at the end, which a
- * variant's scene plays its frames through.
+ * variant's scene plays its frames through, and the interaction helpers after them.
+ *
+ * A stand-in draws its states as props (`hovered`, `state="focus"`, `on`), never from real pointer
+ * state, so a still reproduces them. An interactive variant drives those same props from its own
+ * state: a control given a handler (`onClick`, `onChange`, `onValueChange`) renders as the real
+ * element — a `<button>`, an `<input>` — in the same classes, and one given none stays the inert
+ * span the stills are made of.
  *
  * The names are load-bearing beyond readability: a style hook is allowed only inside the component
  * that hosts it (`FloatingPanel`, `Modal` and `Tooltip` wear `.ui-glass`, `GroupHeader`, `MenuLabel`
  * and `Text` the eyebrow, `Heading` the display face, `Dot` the live pulse, `Tabs` the underline),
  * and the package's de-slop guard reads the enclosing function's name to check it.
  */
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import type { AccentSwatchFixture, FixtureAgent, Fixtures } from "../fixtures";
 import { holdOf, reached, useFrameTime, useScene } from "../scene";
 import type { SceneClock } from "../scene";
@@ -220,7 +226,8 @@ export function RunSpinner({
 // ---------------------------------------------------------------------------------------------
 
 export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost" | "link";
-export type ButtonState = "rest" | "hover" | "focus" | "disabled" | "loading";
+/** `active` is the press: drawn while the pointer holds the button down. */
+export type ButtonState = "rest" | "hover" | "active" | "focus" | "disabled" | "loading";
 
 const BUTTON_SIZE = {
   xs: "h-6 gap-1 px-2 text-xs",
@@ -245,13 +252,35 @@ const BUTTON_HOVER: Record<ButtonVariant, string> = {
   link: "border border-transparent text-link-hover underline underline-offset-2",
 };
 
-/** Hover and focus as props, never real pointer state, so a screenshot reproduces them. */
+/** The press: one step past hover, the fill deepening rather than the button moving. */
+const BUTTON_ACTIVE: Record<ButtonVariant, string> = {
+  primary: "border border-accent-active bg-accent-active text-accent-fg",
+  secondary: "border border-line-emphasis bg-surface-inset text-fg",
+  danger: "border border-tone-danger-fg bg-tone-danger-fg text-tone-danger-emphasis-fg",
+  ghost: "border border-transparent bg-surface-inset text-fg",
+  link: "border border-transparent text-link-hover underline underline-offset-2",
+};
+
+/**
+ * A real control's keyboard focus: the ring the `focus` state draws, on `:focus-visible` only, so
+ * a click leaves no ring and a control that draws its own outline (a picked swatch) keeps it.
+ */
+const FOCUS_VISIBLE =
+  "focus-visible:[outline:var(--ui-focus-ring)] focus-visible:[outline-offset:var(--ui-focus-ring-offset)]";
+
+/**
+ * Hover, press and focus as props, never real pointer state, so a screenshot reproduces them. An
+ * interactive composition passes `onClick` and, to draw hover and press, a `usePointer` binding
+ * whose state it feeds back as `state`; a disabled or loading button then swallows the click.
+ */
 export function Button({
   variant = "secondary",
   size = "sm",
   state = "rest",
   leading,
   trailing,
+  onClick,
+  pointer,
   children,
 }: {
   variant?: ButtonVariant;
@@ -259,25 +288,42 @@ export function Button({
   state?: ButtonState;
   leading?: ReactNode;
   trailing?: ReactNode;
+  onClick?: () => void;
+  pointer?: PointerBinding;
   children: ReactNode;
 }) {
-  const look = state === "hover" ? BUTTON_HOVER[variant] : BUTTON_REST[variant];
+  const look =
+    state === "hover"
+      ? BUTTON_HOVER[variant]
+      : state === "active"
+        ? BUTTON_ACTIVE[variant]
+        : BUTTON_REST[variant];
   const focus =
     state === "focus"
       ? "[outline:var(--ui-focus-ring)] [outline-offset:var(--ui-focus-ring-offset)]"
       : "";
   const dim = state === "disabled" ? "opacity-50" : "";
   const pad = variant === "link" ? "px-0" : "";
+  const held = state === "disabled" || state === "loading";
   return (
-    <span
+    <Pressable
       role="button"
-      aria-disabled={state === "disabled" || undefined}
+      aria-disabled={held || undefined}
+      aria-busy={state === "loading" || undefined}
+      onPress={
+        onClick === undefined
+          ? undefined
+          : () => {
+              if (!held) onClick();
+            }
+      }
+      pointer={pointer}
       className={`inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-control font-(--ui-weight-medium) transition-colors duration-150 ${BUTTON_SIZE[size]} ${look} ${focus} ${dim} ${pad}`}
     >
       {state === "loading" ? <RunSpinner tone="inherit" /> : leading}
       {children}
       {trailing}
-    </span>
+    </Pressable>
   );
 }
 
@@ -292,6 +338,8 @@ export function IconButton({
   pressed = false,
   hovered = false,
   tone = "default",
+  onClick,
+  pointer,
 }: {
   label: string;
   icon: IconName;
@@ -299,6 +347,8 @@ export function IconButton({
   pressed?: boolean;
   hovered?: boolean;
   tone?: "default" | "danger" | "disabled";
+  onClick?: () => void;
+  pointer?: PointerBinding;
 }) {
   const box = size === "md" ? "size-8" : "size-6";
   const ink =
@@ -312,16 +362,18 @@ export function IconButton({
             : "text-fg"
           : "text-fg-subtle";
   return (
-    <span
+    <Pressable
       role="button"
       aria-label={label}
       title={label}
       aria-pressed={pressed || undefined}
       aria-disabled={tone === "disabled" || undefined}
+      onPress={onClick === undefined || tone === "disabled" ? undefined : onClick}
+      pointer={pointer}
       className={`inline-flex ${box} shrink-0 items-center justify-center rounded-control transition-colors duration-150 ${ink}`}
     >
       <GlyphIcon name={icon} size={size === "md" ? 16 : 14} />
-    </span>
+    </Pressable>
   );
 }
 
@@ -798,20 +850,28 @@ export function MenuItem({
   danger = false,
   active = false,
   checked = false,
+  onClick,
+  onHover,
 }: {
   icon?: IconName;
   label: string;
   description?: string;
   shortcut?: readonly string[];
   danger?: boolean;
+  /** The row under the pointer or the keyboard's cursor. */
   active?: boolean;
   checked?: boolean;
+  onClick?: () => void;
+  /** The pointer came onto the row, so a composition can move `active` to it. */
+  onHover?: () => void;
 }) {
   const ink = danger ? "text-tone-danger-fg" : "text-fg";
   return (
-    <span
+    <Pressable
       role="menuitem"
-      className={`flex items-center gap-2 rounded-[var(--radius-inner)] px-2 ${description ? "py-1.5" : "py-1"} text-sm ${ink} ${
+      onPress={onClick}
+      onPointerEnter={onHover}
+      className={`flex w-full items-center gap-2 rounded-[var(--radius-inner)] px-2 text-left ${description ? "py-1.5" : "py-1"} text-sm ${ink} ${
         active ? "bg-surface-muted" : ""
       }`}
     >
@@ -825,7 +885,7 @@ export function MenuItem({
       </span>
       {checked && <GlyphIcon name="check" size={14} className="text-fg-muted" />}
       {shortcut && <Kbd keys={shortcut} />}
-    </span>
+    </Pressable>
   );
 }
 
@@ -975,6 +1035,18 @@ export function Field({
   );
 }
 
+/** What an editable control reports: every keystroke's value, and when focus comes and goes. */
+export interface EditHandlers {
+  onValueChange?: (value: string) => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
+}
+
+/**
+ * A text field. Drawn as a still, its value is text and `state="focus"` draws the caret; given
+ * `onValueChange` it holds a real `<input>` (a `<textarea>` when `multiline`) in the same box,
+ * and the caller feeds focus back through `state` — the box wears the ring, as the app's does.
+ */
 export function Input({
   value,
   placeholder,
@@ -983,6 +1055,11 @@ export function Input({
   state = "rest",
   mono = false,
   multiline = false,
+  type = "text",
+  label,
+  onValueChange,
+  onFocus,
+  onBlur,
 }: {
   value?: string;
   placeholder?: string;
@@ -991,39 +1068,143 @@ export function Input({
   state?: FieldState;
   mono?: boolean;
   multiline?: boolean;
-}) {
-  return (
-    <span
-      className={`flex w-full ${multiline ? "min-h-20 items-start py-2" : "h-9 items-center"} gap-2 rounded-md border px-3 text-sm ${CONTROL_STATE[state]}`}
-    >
-      {leading && <span className="shrink-0 text-fg-subtle">{leading}</span>}
+  /** A real field's type: `password` hides what is typed. */
+  type?: "text" | "password";
+  /** A real field's accessible name, where no `<label>` wraps it. */
+  label?: string;
+} & EditHandlers) {
+  const text = `min-w-0 flex-1 ${mono ? "font-mono" : ""}`;
+  // A real field inks its value and leaves the placeholder to `placeholder:`.
+  const typed = `${text} bg-transparent text-fg outline-none placeholder:text-fg-subtle`;
+  const field =
+    onValueChange === undefined ? (
       <span
-        className={`min-w-0 flex-1 ${multiline ? "whitespace-pre-wrap" : "truncate"} ${value ? "text-fg" : "text-fg-subtle"} ${mono ? "font-mono" : ""}`}
+        className={`${text} ${multiline ? "whitespace-pre-wrap" : "truncate"} ${value ? "text-fg" : "text-fg-subtle"}`}
       >
         {value || placeholder}
         {state === "focus" && (
           <span aria-hidden className="ml-px inline-block h-4 w-px translate-y-0.5 bg-fg" />
         )}
       </span>
+    ) : multiline ? (
+      <textarea
+        value={value ?? ""}
+        placeholder={placeholder}
+        aria-label={label}
+        disabled={state === "disabled"}
+        rows={3}
+        onChange={(event) => onValueChange(event.target.value)}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        className={`${typed} resize-none`}
+      />
+    ) : (
+      <input
+        type={type}
+        value={value ?? ""}
+        placeholder={placeholder}
+        aria-label={label}
+        aria-invalid={state === "error" || undefined}
+        disabled={state === "disabled"}
+        onChange={(event) => onValueChange(event.target.value)}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        className={typed}
+      />
+    );
+  return (
+    <span
+      className={`flex w-full ${multiline ? "min-h-20 items-start py-2" : "h-9 items-center"} gap-2 rounded-md border px-3 text-sm ${CONTROL_STATE[state]}`}
+    >
+      {leading && <span className="shrink-0 text-fg-subtle">{leading}</span>}
+      {field}
       {trailing && <span className="shrink-0 text-fg-subtle">{trailing}</span>}
     </span>
   );
 }
 
-export function Select({ value, state = "rest" }: { value: string; state?: FieldState }) {
-  return (
+/**
+ * A select. As a still, the field with its chevron; given `options` and `onValueChange`, a native
+ * `<select>` lies over the same box, invisible, so the platform's own list opens from it.
+ */
+export function Select({
+  value,
+  state = "rest",
+  options,
+  label,
+  onValueChange,
+}: {
+  value: string;
+  state?: FieldState;
+  options?: readonly string[];
+  label?: string;
+  onValueChange?: (value: string) => void;
+}) {
+  const field = (
     <Input value={value} state={state} trailing={<GlyphIcon name="chevronDown" size={14} />} />
+  );
+  if (options === undefined || onValueChange === undefined) return field;
+  return (
+    <span className="relative block">
+      {field}
+      <select
+        value={value}
+        aria-label={label}
+        onChange={(event) => onValueChange(event.target.value)}
+        className="absolute inset-0 size-full opacity-0"
+      >
+        {options.map((option) => (
+          <option key={option}>{option}</option>
+        ))}
+      </select>
+    </span>
   );
 }
 
-export function SearchInput({ value, placeholder }: { value?: string; placeholder: string }) {
+/** The search box; given `onValueChange` it takes typing, and its cross clears it. */
+export function SearchInput({
+  value,
+  placeholder,
+  clearLabel,
+  onValueChange,
+}: {
+  value?: string;
+  placeholder: string;
+  /** The cross's name, for a box that takes typing. */
+  clearLabel?: string;
+  onValueChange?: (value: string) => void;
+}) {
   return (
-    <span className="flex h-8 w-full min-w-40 items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-sm">
+    <span className="flex h-8 w-full min-w-40 items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-sm focus-within:border-accent">
       <GlyphIcon name="search" size={14} className="text-fg-subtle" />
-      <span className={`min-w-0 flex-1 truncate ${value ? "text-fg" : "text-fg-subtle"}`}>
-        {value || placeholder}
-      </span>
-      {value && <GlyphIcon name="cross" size={12} className="text-fg-subtle" />}
+      {onValueChange === undefined ? (
+        <span className={`min-w-0 flex-1 truncate ${value ? "text-fg" : "text-fg-subtle"}`}>
+          {value || placeholder}
+        </span>
+      ) : (
+        <input
+          type="text"
+          value={value ?? ""}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          onChange={(event) => onValueChange(event.target.value)}
+          className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-fg-subtle"
+        />
+      )}
+      {value &&
+        (onValueChange === undefined ? (
+          <GlyphIcon name="cross" size={12} className="text-fg-subtle" />
+        ) : (
+          <button
+            type="button"
+            aria-label={clearLabel}
+            title={clearLabel}
+            onClick={() => onValueChange("")}
+            className={`shrink-0 rounded-xs text-fg-subtle ${FOCUS_VISIBLE}`}
+          >
+            <GlyphIcon name="cross" size={12} />
+          </button>
+        ))}
     </span>
   );
 }
@@ -1033,14 +1214,22 @@ export function Checkbox({
   label,
   hint,
   disabled = false,
+  onChange,
 }: {
   checked: boolean;
   label: string;
   hint?: string;
   disabled?: boolean;
+  onChange?: (checked: boolean) => void;
 }) {
   return (
-    <span className={`flex items-start gap-2 ${disabled ? "opacity-60" : ""}`}>
+    <Pressable
+      role="checkbox"
+      aria-checked={checked}
+      aria-disabled={disabled || undefined}
+      onPress={onChange === undefined || disabled ? undefined : () => onChange(!checked)}
+      className={`flex items-start gap-2 text-left ${disabled ? "opacity-60" : ""}`}
+    >
       <span
         aria-hidden
         className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-xs border ${
@@ -1053,7 +1242,7 @@ export function Checkbox({
         <span className="block text-fg">{label}</span>
         {hint && <span className="block text-xs text-fg-muted">{hint}</span>}
       </span>
-    </span>
+    </Pressable>
   );
 }
 
@@ -1061,13 +1250,21 @@ export function Radio({
   checked,
   label,
   hint,
+  onChange,
 }: {
   checked: boolean;
   label: string;
   hint?: string;
+  /** Picked: a radio only ever turns on; its group turns the others off. */
+  onChange?: () => void;
 }) {
   return (
-    <span className="flex items-start gap-2">
+    <Pressable
+      role="radio"
+      aria-checked={checked}
+      onPress={onChange}
+      className="flex items-start gap-2 text-left"
+    >
       <span
         aria-hidden
         className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border ${
@@ -1080,7 +1277,7 @@ export function Radio({
         <span className="block text-fg">{label}</span>
         {hint && <span className="block text-xs text-fg-muted">{hint}</span>}
       </span>
-    </span>
+    </Pressable>
   );
 }
 
@@ -1089,19 +1286,33 @@ export function Radio({
  * modes, as the app's is, and keeps a hairline so it still reads on a near-white accent (Primer's
  * dark one).
  */
-export function Switch({ on, disabled = false }: { on: boolean; disabled?: boolean }) {
+export function Switch({
+  on,
+  disabled = false,
+  label,
+  onChange,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  /** A real switch's accessible name, where the row's label is not its `<label>`. */
+  label?: string;
+  onChange?: (on: boolean) => void;
+}) {
   return (
-    <span
+    <Pressable
       role="switch"
       aria-checked={on}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full ${on ? "bg-accent" : "bg-line-emphasis"} ${
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+      onPress={onChange === undefined || disabled ? undefined : () => onChange(!on)}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-150 ${on ? "bg-accent" : "bg-line-emphasis"} ${
         disabled ? "opacity-50" : ""
       }`}
     >
       <span
         className={`absolute size-4 rounded-full border border-line bg-tone-neutral-emphasis-fg ${on ? "left-4.5" : "left-0.5"}`}
       />
-    </span>
+    </Pressable>
   );
 }
 
@@ -1109,24 +1320,30 @@ export function Segmented({
   options,
   value,
   disabled = false,
+  onChange,
 }: {
   options: readonly string[];
   value: number;
   disabled?: boolean;
+  onChange?: (index: number) => void;
 }) {
   return (
     <span
+      role="radiogroup"
       className={`inline-flex gap-px rounded-control bg-surface-muted p-px ${disabled ? "opacity-60" : ""}`}
     >
       {options.map((option, i) => (
-        <span
+        <Pressable
           key={option}
-          className={`rounded-control px-2.5 py-0.5 text-xs ${
+          role="radio"
+          aria-checked={i === value}
+          onPress={onChange === undefined || disabled ? undefined : () => onChange(i)}
+          className={`rounded-control px-2.5 py-0.5 text-xs transition-colors duration-150 ${
             i === value ? "bg-surface font-(--ui-weight-medium) text-fg shadow-sm" : "text-fg-muted"
           }`}
         >
           {option}
-        </span>
+        </Pressable>
       ))}
     </span>
   );
@@ -1136,20 +1353,24 @@ export function Segmented({
 export function SwatchPicker({
   value,
   swatches,
+  onChange,
 }: {
   value: number;
   swatches: readonly AccentSwatchFixture[];
+  onChange?: (index: number) => void;
 }) {
   return (
-    <span className="flex items-center gap-2">
+    <span role="radiogroup" className="flex items-center gap-2">
       {swatches.map((swatch, i) => (
-        <span
+        <Pressable
           key={swatch.id}
           role="radio"
           aria-checked={i === value}
           aria-label={swatch.label}
+          title={onChange === undefined ? undefined : swatch.label}
+          onPress={onChange === undefined ? undefined : () => onChange(i)}
           style={{ background: swatch.color }}
-          className={`size-5 rounded-full ${i === value ? "outline-2 outline-offset-2 outline-line-emphasis" : ""}`}
+          className={`block size-5 rounded-full ${i === value ? "outline-2 outline-offset-2 outline-line-emphasis" : ""}`}
         />
       ))}
     </span>
@@ -1242,16 +1463,19 @@ const AGENT_COUNTS: readonly { key: keyof FixtureAgent["counts"]; icon: IconName
 /**
  * One Agent's card on the Agents page: its tile, name, id and kernel version; its description;
  * what it holds and when it last changed; then New chat, its settings, its usage and delete — a
- * built-in Agent's delete greyed out. `deleting` draws the pointer on delete.
+ * built-in Agent's delete greyed out. `deleting` draws the pointer on delete; `onDelete` makes
+ * delete a real button, except on a built-in Agent.
  */
 export function AgentCard({
   f,
   agent,
   deleting = false,
+  onDelete,
 }: {
   f: Fixtures;
   agent: FixtureAgent;
   deleting?: boolean;
+  onDelete?: () => void;
 }) {
   const a = f.copy.agents;
   return (
@@ -1293,6 +1517,7 @@ export function AgentCard({
           size="sm"
           tone={agent.builtin ? "disabled" : "danger"}
           hovered={deleting}
+          onClick={agent.builtin ? undefined : onDelete}
         />
       </div>
     </div>
@@ -1404,6 +1629,7 @@ export function Presence({
   show,
   side,
   as: Tag = "div",
+  appear = true,
   className = "",
   children,
 }: {
@@ -1411,15 +1637,23 @@ export function Presence({
   side: PresenceSide;
   /** A `span` inside phrasing content. */
   as?: "div" | "span";
+  /**
+   * False: a layer already showing on the first render is drawn at rest, without its entrance —
+   * an interactive variant's first render is its still, and a first paint should not replay how
+   * it opened. Once the reader closes it, it enters and leaves as any other.
+   */
+  appear?: boolean;
   className?: string;
   children: ReactNode;
 }) {
   const { present, attach } = usePresence(show);
+  const [resting, setResting] = useState(show && !appear);
+  if (resting && !show) setResting(false);
   if (!present) return null;
   return (
     <Tag
       ref={attach}
-      data-presence={show ? "enter" : "exit"}
+      data-presence={show ? (resting ? undefined : "enter") : "exit"}
       data-side={side}
       aria-hidden={show ? undefined : true}
       className={className}
@@ -1429,15 +1663,20 @@ export function Presence({
   );
 }
 
-/** A dialog's scrim over the page it covers: it comes and goes with the dialog, and only fades. */
-export function Backdrop({ show }: { show: boolean }) {
+/**
+ * A dialog's scrim over the page it covers: it comes and goes with the dialog, and only fades.
+ * `appear` as on `Presence`.
+ */
+export function Backdrop({ show, appear = true }: { show: boolean; appear?: boolean }) {
   const { present, attach } = usePresence(show);
+  const [resting, setResting] = useState(show && !appear);
+  if (resting && !show) setResting(false);
   if (!present) return null;
   return (
     <div
       ref={attach}
       aria-hidden
-      data-backdrop={show ? "enter" : "exit"}
+      data-backdrop={show ? (resting ? undefined : "enter") : "exit"}
       className="absolute inset-0 bg-[var(--ui-overlay-backdrop)]"
     />
   );
@@ -1553,21 +1792,25 @@ export function ConfirmModal({
   body,
   cancel,
   confirm,
+  onCancel,
+  onConfirm,
 }: {
   tone: ToneName;
   title: string;
   body: string;
   cancel: string;
   confirm: string;
+  onCancel?: () => void;
+  onConfirm?: () => void;
 }) {
   return (
     <Modal
       footer={
         <>
-          <Button variant="secondary" size="sm">
+          <Button variant="secondary" size="sm" onClick={onCancel}>
             {cancel}
           </Button>
-          <Button variant={tone === "danger" ? "danger" : "primary"} size="sm">
+          <Button variant={tone === "danger" ? "danger" : "primary"} size="sm" onClick={onConfirm}>
             {confirm}
           </Button>
         </>
@@ -1583,5 +1826,127 @@ export function ConfirmModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Interaction (an interactive variant's own state): Pressable, usePointer, useDismiss, useLater
+//
+// An interactive variant has no clock: the reader drives it. These helpers are the few pieces of
+// behaviour its compositions share — a control that becomes a real button once it is handled, the
+// pointer state a stand-in draws as props, the ways a layer closes, and a timer that dies with its
+// component. The motion stays where it was: a layer that opens is a `Presence`, a box that
+// resizes carries `data-layout-motion`, and the theme decides how either moves.
+// ---------------------------------------------------------------------------------------------
+
+/** Pointer handlers that report hover and press, as `usePointer` hands them out. */
+export interface PointerBinding {
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
+  onPointerDown: () => void;
+  onPointerUp: () => void;
+}
+
+/**
+ * A stand-in's pressable root. With no handler it is the inert span a still is made of; handed a
+ * press or a pointer binding it is a real `<button>` in the same classes, which takes focus, Enter
+ * and Space for free. A row that fills its line says `text-left`, since a button centres its text.
+ */
+function Pressable({
+  onPress,
+  pointer,
+  className = "",
+  ...rest
+}: Omit<HTMLAttributes<HTMLElement>, "onClick"> & {
+  onPress?: () => void;
+  pointer?: PointerBinding;
+}) {
+  if (onPress === undefined && pointer === undefined) {
+    return <span className={className} {...rest} />;
+  }
+  return (
+    <button
+      type="button"
+      className={`${className} ${FOCUS_VISIBLE}`}
+      {...rest}
+      {...pointer}
+      onClick={onPress}
+    />
+  );
+}
+
+/**
+ * Hover and press as state, for a composition that draws them through a stand-in's props
+ * (`state="hover"`, `hovered`). Leaving the control lets go of the press too.
+ */
+export function usePointer(): { hovered: boolean; pressed: boolean; bind: PointerBinding } {
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  return {
+    hovered,
+    pressed,
+    bind: {
+      onPointerEnter: () => setHovered(true),
+      onPointerLeave: () => {
+        setHovered(false);
+        setPressed(false);
+      },
+      onPointerDown: () => setPressed(true),
+      onPointerUp: () => setPressed(false),
+    },
+  };
+}
+
+/**
+ * Closes an open layer the way the app's layers close: a press anywhere outside the box the
+ * returned ref is put on, or Esc. Put the ref on a box holding the trigger as well as the layer,
+ * so pressing the trigger toggles it rather than closing and reopening it. A closed layer listens
+ * to nothing.
+ */
+export function useDismiss<T extends HTMLElement>(open: boolean, close: () => void) {
+  const box = useRef<T | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const press = (event: PointerEvent) => {
+      const inside = box.current;
+      if (inside !== null && event.target instanceof Node && !inside.contains(event.target)) {
+        close();
+      }
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("pointerdown", press);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", press);
+      document.removeEventListener("keydown", key);
+    };
+  }, [open, close]);
+  return box;
+}
+
+/**
+ * `later(run, ms)`: run once after `ms` — a toast that goes, a button that finishes loading, a
+ * run that stops — and never after the component has gone (a Reset remounts it mid-wait).
+ */
+export function useLater(): (run: () => void, ms: number) => void {
+  const pending = useRef(new Set<number>());
+  useEffect(() => {
+    const timers = pending.current;
+    return () => {
+      for (const id of timers) window.clearTimeout(id);
+      timers.clear();
+    };
+  }, []);
+  return useMemo(
+    () => (run: () => void, ms: number) => {
+      const id = window.setTimeout(() => {
+        pending.current.delete(id);
+        run();
+      }, ms);
+      pending.current.add(id);
+    },
+    [],
   );
 }

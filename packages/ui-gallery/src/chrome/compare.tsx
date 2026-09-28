@@ -11,11 +11,12 @@
  *   the responsive classes answer to — and the themes can be compared there too.
  *
  * Outside the phone view, a module designed at the app's width (`viewport`) gets a frame that wide,
- * scaled down to the figure, so each theme's copy lays out as the card's does.
+ * scaled down to the figure, so each theme's copy lays out as the section's does.
  *
- * A scene's frames all follow the card's clock (`sync=1`): each frame says when it is listening,
- * and gets the card's timeline then and on every change after; a composition's own move inside a
- * frame comes back as a command the card's clock runs.
+ * An animated variant's frames all follow the section's clock (`sync=1`): each frame says when it
+ * is listening, and gets the section's timeline then and on every change after; a composition's
+ * own move inside a frame comes back as a command the section's clock runs. An interactive or
+ * static variant's frames own themselves.
  */
 import type { ThemeId } from "@prismshadow/penguin-ui";
 import { useEffect, useRef, useState } from "react";
@@ -29,26 +30,23 @@ import { BASE } from "../lib/location";
 import { formatGalleryQuery, PHONE_WIDTH } from "../lib/url-state";
 import { useText } from "../preview";
 import { useGallery } from "../state";
+import { Breadcrumb } from "./crumb";
 import { Fit } from "./fit";
-import { Breadcrumb } from "./pills";
 
 export function ThemeFrames({
   module,
   variant,
   clock = null,
   control,
-  frames,
   themes,
   phone,
 }: {
   module: Module;
   variant: ModuleVariant;
-  /** A scene's clock, owned by the card; the frames follow it. */
+  /** An animated variant's clock, owned by the section; the frames follow it. Null: none. */
   clock?: SceneClock | null;
   /** Runs a command a framed composition sends up for that clock. */
   control?: (command: SceneCommand) => void;
-  /** Filled with each theme's frame, for the tokens drawer to measure the active theme's copy. */
-  frames?: Map<ThemeId, HTMLIFrameElement>;
   /** The active theme alone, or all three when comparing. */
   themes: readonly ThemeId[];
   /** Frame each theme at phone width. */
@@ -69,7 +67,6 @@ export function ThemeFrames({
           clock={clock}
           control={control}
           theme={theme}
-          frames={frames}
           phone={phone}
           captioned={themes.length > 1}
         />
@@ -84,7 +81,6 @@ function ThemeFrame({
   clock,
   control,
   theme,
-  frames,
   phone,
   captioned,
 }: {
@@ -93,7 +89,6 @@ function ThemeFrame({
   clock: SceneClock | null;
   control?: (command: SceneCommand) => void;
   theme: ThemeId;
-  frames?: Map<ThemeId, HTMLIFrameElement>;
   phone: boolean;
   /** Name the theme above the frame: only when there is more than one to tell apart. */
   captioned: boolean;
@@ -103,13 +98,15 @@ function ThemeFrame({
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(432);
   // A module designed at the app's width gets a frame that wide, scaled to the figure like the
-  // card's own preview; at phone width the 390 px frame is the point, so it is never scaled.
+  // section's own preview; at phone width the 390 px frame is the point, so it is never scaled.
   const natural = naturalWidth(module);
   const fitted = phone || natural === null ? null : embedWidth(module.id, natural);
+  /** Whether the frame follows this section's clock. Fixed for the variant: it is in the src. */
+  const [synced] = useState(clock !== null);
   /** What the frame should hold now, re-sent when the frame says it is listening. */
   const message = useRef<ReturnType<typeof clockMessage> | null>(null);
   message.current = clock ? clockMessage(module.id, variant.key, clock) : null;
-  /** The card's reducer, for a command the frame's composition sends up. */
+  /** The section's reducer, for a command the frame's composition sends up. */
   const relay = useRef(control);
   relay.current = control;
   const post = () => {
@@ -117,8 +114,6 @@ function ThemeFrame({
       frame.current?.contentWindow?.postMessage(message.current, window.location.origin);
   };
   useEffect(() => {
-    const el = frame.current;
-    if (el && frames) frames.set(theme, el);
     const onMessage = (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow) return;
       const data = event.data as { type?: string; height?: number };
@@ -131,14 +126,11 @@ function ThemeFrame({
       }
     };
     window.addEventListener("message", onMessage);
-    return () => {
-      window.removeEventListener("message", onMessage);
-      if (frames?.get(theme) === el) frames?.delete(theme);
-    };
+    return () => window.removeEventListener("message", onMessage);
     // `post` and `relay` read refs only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frames, theme, module.id, variant.key, fitted]);
-  // Every change of the card's clock reaches the frame at once.
+  }, [theme, module.id, variant.key, fitted]);
+  // Every change of the section's clock reaches the frame at once.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(post, [clock]);
   const paused = clock && !clock.playing && !isSettled(clock.frames, clock);
@@ -154,35 +146,28 @@ function ThemeFrame({
   // Nothing about the clock goes into the src: a new frame must not reload the document.
   const src = `${BASE}/embed${formatGalleryQuery(
     { ...state, theme, compare: false, variants: {} },
-    { module: module.id, variant: variant.key, ...(variant.scene ? { sync: "1" } : {}) },
+    { module: module.id, variant: variant.key, ...(synced ? { sync: "1" } : {}) },
   )}`;
+  const iframe = (
+    <iframe
+      ref={frame}
+      className="g-embed-frame"
+      data-theme={theme}
+      title={S.section.compareFrame(text.theme(theme))}
+      src={src}
+      loading="lazy"
+      style={{ height, width: phone ? PHONE_WIDTH : undefined }}
+    />
+  );
   return (
     <figure className="g-framed-item">
       {captioned && (
-        <figcaption className="g-chrome">
+        <figcaption>
           <span className="g-framed-theme">{text.theme(theme)}</span>
           <Breadcrumb text={crumb} className="g-crumb-compact" />
         </figcaption>
       )}
-      {fitted === null ? (
-        <iframe
-          ref={frame}
-          title={S.section.compareFrame(text.theme(theme))}
-          src={src}
-          loading="lazy"
-          style={{ height, width: phone ? PHONE_WIDTH : undefined }}
-        />
-      ) : (
-        <Fit natural={fitted}>
-          <iframe
-            ref={frame}
-            title={S.section.compareFrame(text.theme(theme))}
-            src={src}
-            loading="lazy"
-            style={{ height }}
-          />
-        </Fit>
-      )}
+      {fitted === null ? iframe : <Fit natural={fitted}>{iframe}</Fit>}
     </figure>
   );
 }

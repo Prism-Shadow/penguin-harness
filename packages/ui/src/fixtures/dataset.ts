@@ -925,6 +925,10 @@ export function buildFixtures(lang: FixtureLang, prose: FixtureProse): Fixtures 
     }),
     fileTree: workspaceTree(prose.notesFileName),
     filePreview: { path: RAG_PATH, language: "typescript", content: RAG_TS_AFTER },
+    filePreviews: [
+      { path: RAG_PATH, language: "typescript", content: RAG_TS_AFTER },
+      { path: TEST_PATH, language: "typescript", content: TEST_TS },
+    ],
     notices: {
       byTone: Object.fromEntries(
         Object.entries(prose.notices.byTone).map(([tone, n]) => [tone, { tone, ...n }]),

@@ -1,18 +1,19 @@
 /*
- * The gallery chrome: the rail, module headers, cards, pills, the transport, breadcrumbs, drawers,
- * the fonts page and the screen toolbar. Deliberately UNTHEMED — every colour is a `--g-*`
- * variable and every length is px, never rem or em — so switching the theme, the accent or the
- * root size under test never moves the chrome; only the previews follow `<html style="font-size">`.
- * It follows only the mode (`.dark` on <html>).
+ * The gallery chrome: the top bar, the module list, the content column with its sections and
+ * toolbars, "on this page", the framed previews, the fonts page and the screen toolbar.
+ * Deliberately UNTHEMED — every colour is a `--g-*` variable and every length is px, never rem or
+ * em — so switching the theme, the accent or the root size under test never moves the chrome; only
+ * the previews follow `<html style="font-size">`. It follows only the mode (`.dark` on <html>).
  *
- * The layout is beautifului.dev's: a fixed left rail (brand, mode switch, a quiet list of
- * sections, a footer) beside a column of large cards on a softly hatched page, each section a
- * `Name — one sentence` header over its card, the composition centred with room around it, the
- * variant pills bottom-centre inside the card, dashed rules between sections.
+ * The layout is a docs site's: a quiet top bar; a left column with a search box and the modules
+ * grouped, the current one marked by a thin rule and accent text; a reading-width content column
+ * with an eyebrow, a large title, a one-line lead and H2 sections ruled underneath; a right column
+ * listing what is on the page. One accent, hairlines, whitespace, the system sans at 14–16 px.
+ * Previews sit in a hairline frame, nothing heavier.
  *
  * Unlayered on purpose: these rules outrank Tailwind's layers and theme.css's base rules (focus
  * outline, selection, body font) wherever a `.g-*` class matches, and match nothing inside a
- * preview except the pills and labels that carry a `.g-*` class themselves.
+ * preview except the labels that carry a `.g-*` class themselves.
  */
 
 :root {
@@ -20,41 +21,40 @@
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     "PingFang SC", "Microsoft YaHei", sans-serif;
   --g-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  --g-page: #f4f4f5;
-  --g-hatch: rgb(0 0 0 / 0.045);
-  --g-canvas: #fafafa;
+  --g-page: #ffffff;
   --g-surface: #ffffff;
-  --g-inset: #f0f0f2;
-  --g-hover: #ececef;
-  --g-active: #e4e4e8;
-  --g-ink: #18181b;
-  --g-ink-2: #52525b;
-  --g-ink-3: #8b8b93;
-  --g-line: #e4e4e7;
-  --g-line-strong: #d0d0d6;
+  --g-inset: #f6f8fa;
+  --g-hover: #f2f4f7;
+  --g-ink: #1f2328;
+  --g-ink-2: #59636e;
+  --g-ink-3: #8c959f;
+  --g-line: #e8ebef;
+  --g-line-strong: #d0d7de;
   --g-accent: #2563eb;
+  --g-accent-soft: rgb(37 99 235 / 0.08);
   --g-bad: #c62828;
-  --g-raise: 0 1px 2px rgb(0 0 0 / 0.07), 0 0 0 1px rgb(0 0 0 / 0.06);
-  --g-float: 0 12px 32px rgb(0 0 0 / 0.14);
-  /* The page frame: the rail's width and the main column's side padding. */
-  --g-rail: 272px;
-  --g-gutter: 32px;
+  --g-raise: 0 1px 2px rgb(0 0 0 / 0.06), 0 0 0 1px rgb(0 0 0 / 0.05);
+  --g-float: 0 12px 32px rgb(0 0 0 / 0.12);
+  /* The page frame: the bar's height, the columns' widths, the side gutter. */
+  --g-bar: 56px;
+  --g-nav: 236px;
+  --g-toc: 200px;
+  --g-column: 720px;
+  --g-gutter: 24px;
 }
 
 :root.dark {
-  --g-page: #0a0a0b;
-  --g-hatch: rgb(255 255 255 / 0.05);
-  --g-canvas: #131315;
-  --g-surface: #19191c;
-  --g-inset: #1e1e22;
-  --g-hover: #232327;
-  --g-active: #2c2c31;
-  --g-ink: #f2f2f3;
-  --g-ink-2: #a3a3ab;
-  --g-ink-3: #6e6e77;
-  --g-line: #27272b;
-  --g-line-strong: #3a3a41;
+  --g-page: #0d1117;
+  --g-surface: #0d1117;
+  --g-inset: #161b22;
+  --g-hover: #1c2129;
+  --g-ink: #e6edf3;
+  --g-ink-2: #9aa4b2;
+  --g-ink-3: #6e7681;
+  --g-line: #232a33;
+  --g-line-strong: #30363d;
   --g-accent: #6ea8fe;
+  --g-accent-soft: rgb(110 168 254 / 0.12);
   --g-bad: #f87171;
   --g-raise: 0 0 0 1px rgb(255 255 255 / 0.08);
   --g-float: 0 12px 32px rgb(0 0 0 / 0.5);
@@ -62,24 +62,25 @@
 
 /* ---- Base for chrome subtrees ------------------------------------------------------------ */
 
-.g-chrome,
-.g-app {
+.g-chrome {
   font-family: var(--g-font);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   letter-spacing: normal;
   text-transform: none;
   color: var(--g-ink);
   -webkit-font-smoothing: antialiased;
 }
-.g-chrome ::selection,
-.g-app ::selection {
+.g-chrome ::selection {
   background: color-mix(in srgb, var(--g-accent) 25%, transparent);
 }
 .g-chrome button,
 .g-chrome a {
   font: inherit;
   color: inherit;
+}
+.g-chrome a {
+  text-decoration: none;
 }
 .g-chrome button:focus-visible,
 .g-chrome a:focus-visible,
@@ -88,10 +89,9 @@
   outline: 2px solid var(--g-accent);
   outline-offset: 1px;
 }
-.g-chrome code,
-.g-app code {
+.g-chrome code {
   font-family: var(--g-mono);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .g-muted {
   color: var(--g-ink-3);
@@ -101,133 +101,124 @@
   flex-shrink: 0;
 }
 
-/* ---- Page frame: a hatched page, a solid frame ----------------------------------------- */
+/* ---- The site: bar over body -------------------------------------------------------------- */
 
-.g-app {
+.g-site {
   min-height: 100vh;
   overflow-x: clip;
-  background-color: var(--g-page);
-  background-image: repeating-linear-gradient(135deg, transparent 0 7px, var(--g-hatch) 7px 8px);
-}
-.g-frame {
-  display: grid;
-  grid-template-columns: var(--g-rail) minmax(0, 1fr);
-  max-width: 1096px;
-  margin: 0 auto;
-  min-height: 100vh;
-  background: var(--g-canvas);
-  border-inline: 1px solid var(--g-line);
-}
-/* Compare: a narrow module's three frames need the room; a wide module's stack at full width. */
-.g-frame[data-wide] {
-  max-width: 1560px;
+  background: var(--g-page);
 }
 
-/* ---- Rail --------------------------------------------------------------------------------- */
-
-.g-rail {
+/* The top bar: brand, page links, the controls. Wraps to a second row before it overflows. */
+.g-topbar {
   position: sticky;
   top: 0;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  padding: 22px 20px 18px;
-  border-right: 1px solid var(--g-line);
-  min-width: 0;
-}
-.g-rail-head {
+  z-index: 30;
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  min-height: var(--g-bar);
+  padding: 8px var(--g-gutter);
+  border-bottom: 1px solid var(--g-line);
+  background: var(--g-page);
 }
 .g-brand {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-width: 0;
-  margin-right: auto;
-  text-decoration: none;
+  gap: 8px;
+  flex-shrink: 0;
 }
 .g-brand img {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
 }
 .g-brand strong {
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.15px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.g-rail-menu {
+.g-links {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.g-link {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 6px;
+  color: var(--g-ink-2);
+  white-space: nowrap;
+}
+.g-link:hover {
+  color: var(--g-ink);
+  background: var(--g-hover);
+}
+.g-link[aria-current="page"] {
+  color: var(--g-page);
+  background: var(--g-ink);
+}
+.g-bar-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-left: auto;
+}
+.g-menu {
   display: none;
 }
-.g-rail-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  flex: 1;
-  min-height: 0;
-  margin-top: 16px;
+
+/* The body: the module list, the content column and "on this page", centred. */
+.g-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: center;
+  column-gap: 48px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 var(--g-gutter) 120px;
 }
-.g-tagline {
-  margin: 0 0 4px;
-  font-size: 15px;
-  line-height: 1.4;
-  font-weight: 500;
-  letter-spacing: -0.15px;
-  color: var(--g-ink);
-  text-wrap: balance;
+.g-site[data-nav] .g-body {
+  grid-template-columns: var(--g-nav) minmax(0, var(--g-column));
+  max-width: 1280px;
+}
+.g-site[data-nav][data-toc] .g-body {
+  grid-template-columns: var(--g-nav) minmax(0, var(--g-column)) var(--g-toc);
+}
+/* Compare frames need the room: the content column grows past the reading width. */
+.g-site[data-nav] .g-body[data-wide] {
+  grid-template-columns: var(--g-nav) minmax(0, 1fr);
+  max-width: 1600px;
+}
+.g-site[data-nav][data-toc] .g-body[data-wide] {
+  grid-template-columns: var(--g-nav) minmax(0, 1fr) var(--g-toc);
+}
+.g-main {
+  min-width: 0;
 }
 
-.g-mode {
-  display: inline-flex;
-  padding: 2px;
-  gap: 1px;
-  border-radius: 999px;
-  background: var(--g-inset);
-  border: 1px solid var(--g-line);
-}
-.g-mode button {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--g-ink-3);
-  cursor: pointer;
-}
-.g-mode button:hover {
-  color: var(--g-ink);
-}
-.g-mode button[aria-pressed="true"] {
-  background: var(--g-surface);
-  color: var(--g-ink);
-  box-shadow: var(--g-raise);
-}
+/* ---- Controls ----------------------------------------------------------------------------- */
 
 .g-controls {
   display: grid;
-  gap: 8px;
-  padding-top: 14px;
-  border-top: 1px dashed var(--g-line-strong);
+  gap: 10px;
 }
 .g-controls[data-compact] {
   display: flex;
-  gap: 10px;
-  padding-top: 0;
-  border-top: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 .g-control {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
 }
 .g-controls[data-compact] .g-control-label {
@@ -235,25 +226,26 @@
 }
 .g-control-label {
   color: var(--g-ink-2);
-  font-size: 12px;
+  font-size: 13px;
   flex-shrink: 0;
 }
 .g-seg {
   display: inline-flex;
   padding: 2px;
   gap: 1px;
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--g-inset);
-  border: 1px solid var(--g-line);
 }
 .g-seg button {
+  display: inline-flex;
+  align-items: center;
   height: 24px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
   color: var(--g-ink-2);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
@@ -263,7 +255,7 @@
   color: var(--g-ink);
 }
 .g-seg button[aria-pressed="true"] {
-  background: var(--g-surface);
+  background: var(--g-page);
   color: var(--g-ink);
   box-shadow: var(--g-raise);
 }
@@ -272,17 +264,70 @@
   align-items: center;
   gap: 4px;
 }
+.g-mode {
+  display: inline-flex;
+  padding: 2px;
+  gap: 1px;
+  border-radius: 7px;
+  background: var(--g-inset);
+}
+.g-mode button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--g-ink-3);
+  cursor: pointer;
+}
+.g-mode button:hover {
+  color: var(--g-ink);
+}
+.g-mode button[aria-pressed="true"] {
+  background: var(--g-page);
+  color: var(--g-ink);
+  box-shadow: var(--g-raise);
+}
+.g-toggles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.g-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--g-ink-2);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.g-toggle:hover {
+  color: var(--g-ink);
+  background: var(--g-hover);
+}
+.g-toggle[aria-pressed="true"] {
+  color: var(--g-accent);
+  background: var(--g-accent-soft);
+}
 
 /* The accent row: each swatch painted in the colour it applies; the pressed one ringed. */
 .g-swatches {
   display: inline-flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: center;
   gap: 5px;
 }
 .g-swatch {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -295,201 +340,252 @@
 }
 .g-swatch[aria-pressed="true"] {
   box-shadow:
-    0 0 0 2px var(--g-canvas),
+    0 0 0 2px var(--g-page),
     0 0 0 3.5px var(--g-ink);
 }
 
-.g-switches {
-  display: grid;
-  gap: 2px;
-}
-.g-switch-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 3px 0;
-  color: var(--g-ink-2);
-  font-size: 12px;
-  cursor: pointer;
-}
-.g-switch {
-  appearance: none;
-  position: relative;
-  width: 28px;
-  height: 16px;
-  margin: 0;
-  border-radius: 999px;
-  background: var(--g-line-strong);
-  cursor: pointer;
-  transition: background-color 150ms ease-out;
-}
-.g-switch::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  background: var(--g-surface);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
-}
-.g-switch:checked {
-  background: var(--g-ink);
-}
-.g-switch:checked::after {
-  left: 14px;
-}
-:root.dark .g-switch:checked::after {
-  background: var(--g-page);
-}
-
-.g-nav {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: grid;
-  align-content: start;
-  gap: 1px;
-  margin: 0 -8px;
-  padding: 14px 0 0;
-  border-top: 1px dashed var(--g-line-strong);
-  scrollbar-width: thin;
-  scrollbar-color: var(--g-line-strong) transparent;
-}
-.g-nav-eyebrow {
-  padding: 0 8px 6px;
-  font-size: 12px;
-  color: var(--g-ink-3);
-}
-.g-nav-link {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  color: var(--g-ink-2);
-  text-decoration: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.g-nav-link:hover {
-  background: var(--g-hover);
-  color: var(--g-ink);
-}
-.g-nav-link[data-active] {
-  background: var(--g-active);
-  color: var(--g-ink);
-  font-weight: 500;
-}
-.g-nav-fonts {
-  margin-top: 10px;
-}
-
-.g-rail-foot {
-  border-top: 1px dashed var(--g-line-strong);
-  padding-top: 12px;
-  font-size: 12px;
-  color: var(--g-ink-2);
-}
-.g-rail-foot p {
-  margin: 2px 0 6px;
-}
-.g-rail-foot code {
-  display: block;
-  font-size: 11px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: var(--g-inset);
-  color: var(--g-ink);
-  overflow-wrap: anywhere;
-}
-
-/* ---- Main column ------------------------------------------------------------------------- */
-
-.g-main {
-  min-width: 0;
-  padding: 0 var(--g-gutter) 160px;
-}
-.g-problems {
-  margin: 24px 0 0;
-  padding: 10px 12px;
-  border: 1px solid var(--g-line-strong);
-  border-radius: 8px;
-  color: var(--g-bad);
-}
-.g-problems ul {
-  margin: 4px 0 0;
-  padding-left: 18px;
-}
-
-/* A section: a dashed rule above (never the first), the head, the card, the drawers. */
-.g-section {
-  padding-top: 40px;
-  scroll-margin-top: 8px;
-}
-.g-section + .g-section {
-  margin-top: 48px;
-  border-top: 1px dashed var(--g-line-strong);
-}
-.g-section-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-}
-.g-section-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.15px;
-  flex-shrink: 0;
-}
-.g-section-desc {
-  margin: 0;
-  color: var(--g-ink-3);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.g-section-desc::before {
-  content: "— ";
-}
-.g-section-actions {
-  display: inline-flex;
-  gap: 2px;
-  margin-left: auto;
-  flex-shrink: 0;
-}
 .g-icon-button {
   display: inline-grid;
   place-items: center;
   width: 28px;
   height: 28px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
   color: var(--g-ink-3);
   cursor: pointer;
-  text-decoration: none;
 }
 .g-icon-button:hover {
   color: var(--g-ink);
+  background: var(--g-hover);
 }
-.g-icon-button[aria-pressed="true"] {
-  background: var(--g-active);
+
+/* ---- The module list: a search box, the groups, the current page ruled ------------------ */
+
+.g-sidenav {
+  position: sticky;
+  top: var(--g-bar);
+  align-self: start;
+  max-height: calc(100vh - var(--g-bar));
+  overflow-y: auto;
+  padding: 28px 24px 40px 0;
+  border-right: 1px solid var(--g-line);
+  scrollbar-width: thin;
+  scrollbar-color: var(--g-line-strong) transparent;
+}
+.g-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--g-line-strong);
+  border-radius: 8px;
+  background: var(--g-page);
+  color: var(--g-ink-3);
+}
+.g-search:focus-within {
+  border-color: var(--g-accent);
+}
+.g-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--g-ink);
+  outline: none;
+}
+.g-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.g-search kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--g-line);
+  border-radius: 4px;
+  font-family: var(--g-mono);
+  font-size: 11px;
+  color: var(--g-ink-3);
+  white-space: nowrap;
+}
+.g-nav-empty {
+  margin: 16px 0 0;
+  font-size: 13px;
+}
+.g-nav-group {
+  margin-top: 22px;
+}
+.g-nav-eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--g-ink-3);
+}
+.g-nav-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--g-line);
+}
+.g-nav-link {
+  display: block;
+  margin-left: -1px;
+  padding: 5px 12px;
+  border-left: 1px solid transparent;
+  color: var(--g-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.g-nav-link:hover {
   color: var(--g-ink);
 }
+.g-nav-link[aria-current="page"] {
+  padding-left: 11px;
+  border-left: 2px solid var(--g-accent);
+  color: var(--g-accent);
+  font-weight: 500;
+}
 
-/* ---- Card: the composition, its foot with the breadcrumb, pills and transport ------------- */
+/* ---- The content column ------------------------------------------------------------------- */
 
-.g-card {
-  margin-top: 14px;
+.g-doc,
+.g-home {
+  min-width: 0;
+  padding-top: 36px;
+}
+.g-doc-wide {
+  max-width: 960px;
+}
+.g-doc-head {
+  display: grid;
+  gap: 0;
+}
+.g-eyebrow {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--g-accent);
+}
+.g-h1 {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  text-wrap: balance;
+}
+.g-lead {
+  margin: 12px 0 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--g-ink-2);
+}
+.g-h2 {
+  margin: 48px 0 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--g-line);
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.g-section,
+.g-variant {
+  scroll-margin-top: calc(var(--g-bar) + 16px);
+}
+.g-section-lead,
+.g-variant-desc {
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--g-ink-2);
+}
+.g-section-meta {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--g-ink-3);
+}
+.g-problems {
+  margin: 28px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--g-line-strong);
+  border-radius: 8px;
+  color: var(--g-bad);
+  font-size: 13px;
+}
+.g-problems ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+/* The toolbar over a preview: the kind, the primary control, open, compare, link, the crumb. */
+.g-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  margin: 14px 0 8px;
+  font-size: 13px;
+  color: var(--g-ink-2);
+}
+.g-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px 0 0;
+  margin-right: 4px;
+  color: var(--g-ink-3);
+  white-space: nowrap;
+}
+.g-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--g-ink-2);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.g-tool:hover {
+  color: var(--g-ink);
+  background: var(--g-hover);
+}
+.g-tool[aria-pressed="true"] {
+  color: var(--g-accent);
+  background: var(--g-accent-soft);
+}
+.g-tool-primary {
+  color: var(--g-accent);
+  font-weight: 500;
+}
+.g-tool-primary:hover {
+  color: var(--g-accent);
+  background: var(--g-accent-soft);
+}
+.g-tool-primary[data-playing] {
+  color: var(--g-ink);
+  background: var(--g-inset);
+}
+.g-tool-icon {
+  width: 26px;
+  padding: 0;
+  justify-content: center;
+}
+.g-toolbar > .g-crumb {
+  margin-left: auto;
+}
+
+/* The preview in a hairline frame, on the theme's canvas. */
+.g-frame {
   border: 1px solid var(--g-line);
-  border-radius: 14px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--ui-canvas, var(--g-surface));
 }
@@ -498,8 +594,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-content: center;
-  min-height: 360px;
-  padding: 36px 28px;
+  min-height: 240px;
+  padding: 28px 24px;
   background: var(--ui-canvas, var(--g-surface));
   color: var(--ui-fg, var(--g-ink));
   /* The chrome face, as the app's body sets it: a reading surface inside opts into font-sans. */
@@ -507,150 +603,38 @@
   font-size: var(--ui-text-body-size, 16px);
   line-height: var(--ui-text-body-lh, 1.5);
 }
-.g-card-foot {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  padding: 12px 14px 12px;
-  border-top: 1px dashed var(--g-line);
-  background: var(--g-surface);
-}
-.g-card-foot > .g-pills {
-  grid-row: 1;
-  justify-self: center;
-}
-.g-card-foot > .g-transport {
-  grid-row: 2;
-  justify-self: center;
-}
-.g-card-foot > .g-crumb {
-  grid-row: 3;
-  justify-self: start;
-}
-/* A part card's foot has no transport: pills then the breadcrumb. */
-.g-part-foot > .g-crumb {
-  grid-row: 2;
-}
-
-/* The hero opens the page: full bleed to the column's edges, no card frame of its own. */
-.g-section[data-hero] {
-  padding-top: 24px;
-}
-.g-section[data-hero] .g-card {
-  margin-inline: calc(-1 * var(--g-gutter));
-  border-radius: 0;
-  border-inline: 0;
-}
-.g-section[data-hero] .g-preview {
+/* The app shell goes edge to edge: it is a window, not a component on a stage. */
+.g-preview-shell {
+  min-height: 0;
   padding: 0;
 }
 
-.g-pills {
-  display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 999px;
-  background: var(--g-inset);
-  border: 1px solid var(--g-line);
-}
-.g-pills-axes {
-  gap: 6px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.g-pill-group {
-  display: inline-flex;
-  padding: 2px;
-  gap: 1px;
-  border-radius: 999px;
-  background: var(--g-inset);
-  border: 1px solid var(--g-line);
-}
-.g-pill {
-  height: 26px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--g-ink-2);
-  font-size: 12.5px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.g-pill:hover {
-  color: var(--g-ink);
-}
-.g-pill[aria-pressed="true"] {
-  background: var(--g-ink);
-  color: var(--g-canvas);
-}
-.g-pill[data-scene] {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding-left: 10px;
-}
-
-/* The transport: play / pause / replay, previous, the frames, next, speed. */
-.g-transport {
-  display: inline-flex;
+/* The frame strip under an animated preview: previous, the frames, next, the speed. */
+.g-frames {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
   gap: 2px;
-  max-width: 100%;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--g-ink-3);
 }
-.g-transport > .g-seg {
-  margin-left: 6px;
-}
-/* The one filled control in the chrome: `.g-chrome button` resets colour to `inherit` with two
-   classes, so the inverted ink needs the chrome class of its own to win. */
-.g-chrome .g-play {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  margin-right: 4px;
-  padding: 0 12px 0 10px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--g-ink);
-  color: var(--g-canvas);
-  font-size: 12.5px;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.g-chrome .g-play:hover {
-  background: var(--g-ink-2);
-}
-.g-chrome .g-play[data-playing] {
-  background: var(--g-inset);
-  color: var(--g-ink);
-  box-shadow: inset 0 0 0 1px var(--g-line-strong);
+.g-frames > .g-seg {
+  margin-left: auto;
 }
 .g-scene-frames {
   display: inline-flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: 1px;
-  margin: 0 4px;
-  padding: 2px;
-  border-radius: 8px;
-  background: var(--g-inset);
-  border: 1px solid var(--g-line);
 }
 .g-scene-chip {
   position: relative;
   height: 24px;
-  padding: 0 9px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
-  color: var(--g-ink-2);
+  color: var(--g-ink-3);
   font-size: 12px;
   white-space: nowrap;
   cursor: pointer;
@@ -660,9 +644,8 @@
   color: var(--g-ink);
 }
 .g-scene-chip[aria-pressed="true"] {
-  background: var(--g-surface);
+  background: var(--g-inset);
   color: var(--g-ink);
-  box-shadow: var(--g-raise);
 }
 /* How far the current frame has run: one linear animation per frame, paused with the clock. */
 .g-scene-progress {
@@ -691,13 +674,16 @@
     display: none;
   }
 }
+
+/* The quotable breadcrumb. */
 .g-crumb {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
   max-width: 100%;
-  padding: 3px 6px;
+  height: 26px;
+  padding: 0 6px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -732,6 +718,49 @@
   color: var(--g-ink-3);
 }
 
+/* ---- "On this page" ----------------------------------------------------------------------- */
+
+.g-toc {
+  position: sticky;
+  top: var(--g-bar);
+  align-self: start;
+  max-height: calc(100vh - var(--g-bar));
+  overflow-y: auto;
+  padding: 36px 0 40px;
+  font-size: 13px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--g-line-strong) transparent;
+}
+.g-toc-eyebrow {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--g-ink-3);
+}
+.g-toc-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--g-line);
+}
+.g-toc-list a {
+  display: block;
+  margin-left: -1px;
+  padding: 4px 12px;
+  border-left: 1px solid transparent;
+  color: var(--g-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-toc-list a:hover {
+  color: var(--g-ink);
+}
+.g-toc-list a[data-active] {
+  padding-left: 11px;
+  border-left: 2px solid var(--g-accent);
+  color: var(--g-accent);
+}
+
 /* ---- Framed previews: compare mode and the phone view --------------------------------------- */
 
 .g-framed {
@@ -742,7 +771,7 @@
 .g-framed[data-compare][data-width="narrow"] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-/* Phone: 390 px frames, centred, side by side when comparing, on the chrome's canvas. */
+/* Phone: 390 px frames, centred, side by side when comparing, on the chrome's inset. */
 .g-framed[data-phone] {
   display: flex;
   flex-wrap: wrap;
@@ -762,18 +791,18 @@
   border: 1px solid var(--g-line-strong);
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: var(--g-raise);
 }
 .g-framed-item figcaption {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 5px 10px;
   border-bottom: 1px solid var(--g-line);
-  background: var(--g-canvas);
+  background: var(--g-page);
+  font-size: 13px;
 }
 .g-framed-theme {
-  font-weight: 600;
+  font-weight: 500;
   flex-shrink: 0;
 }
 .g-crumb-compact {
@@ -788,11 +817,11 @@
   background: transparent;
 }
 
-/* ---- Fitted previews: a composition laid out at the app's width, scaled to the card -------- */
+/* ---- Fitted previews: a composition laid out at the app's width, scaled to the column ------ */
 
 /* The box the page sees takes the scaled height (set inline); the composition inside keeps its
-   natural width, so its unscaled layout box overflows and is clipped here. Centred when the card
-   is wider than the composition, which is never scaled up. */
+   natural width, so its unscaled layout box overflows and is clipped here. Centred when the
+   column is wider than the composition, which is never scaled up. */
 .g-fit {
   min-width: 0;
   overflow: hidden;
@@ -802,59 +831,62 @@
   transform-origin: 0 0;
 }
 
-/* ---- Drawers ------------------------------------------------------------------------------- */
+/* ---- Parts, Tokens, Source ---------------------------------------------------------------- */
 
-.g-drawer {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-}
-.g-drawer-panel {
-  border: 1px solid var(--g-line);
-  border-radius: 10px;
-  background: var(--g-surface);
-  padding: 12px 14px;
-  min-width: 0;
-}
-.g-drawer-title {
-  margin-bottom: 8px;
-  font-family: var(--g-mono);
-  font-size: 12px;
-  color: var(--g-ink-3);
-}
 .g-parts {
   display: grid;
-  gap: 2px;
+  gap: 12px;
+  margin-top: 16px;
 }
 .g-part-line {
   margin: 0;
-  padding: 3px 0;
+  padding: 2px 0;
   color: var(--g-ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .g-part {
-  margin: 8px 0;
   border: 1px solid var(--g-line);
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
-  scroll-margin-top: 20px;
+  scroll-margin-top: calc(var(--g-bar) + 16px);
 }
 .g-part-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   padding: 8px 12px;
+  font-size: 13px;
 }
 .g-part-preview {
   min-height: 0;
   padding: 20px;
+  border-top: 1px solid var(--g-line);
+}
+.g-part-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--g-line);
+  background: var(--g-page);
+}
+.g-part-foot > .g-crumb {
+  margin-left: auto;
+}
+.g-axes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .g-token-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 0 16px;
+  margin-top: 12px;
 }
 .g-token {
   display: grid;
@@ -913,17 +945,83 @@
   color: var(--g-bad);
 }
 .g-code {
-  margin: 0;
-  max-height: 480px;
+  margin: 12px 0 0;
+  max-height: 560px;
+  padding: 12px 14px;
   overflow: auto;
+  border: 1px solid var(--g-line);
+  border-radius: 8px;
+  background: var(--g-inset);
   font-family: var(--g-mono);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.55;
   white-space: pre;
   color: var(--g-ink);
 }
 
-/* ---- The Screens module's thumbnails ------------------------------------------------------- */
+/* ---- Home: the index and the feedback note ------------------------------------------------ */
+
+.g-index-eyebrow {
+  margin: 28px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--g-ink-3);
+}
+.g-index {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.g-index a {
+  display: grid;
+  gap: 4px;
+  height: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--g-line);
+  border-radius: 8px;
+  color: var(--g-ink);
+}
+.g-index a:hover {
+  border-color: var(--g-line-strong);
+  background: var(--g-hover);
+}
+.g-index strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.g-index span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--g-ink-2);
+}
+.g-note {
+  margin-top: 48px;
+  padding: 14px 16px;
+  border: 1px solid var(--g-line);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--g-ink-2);
+}
+.g-note p {
+  margin: 2px 0 6px;
+}
+.g-note code {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--g-inset);
+  color: var(--g-ink);
+  overflow-wrap: anywhere;
+}
+
+/* ---- The Screens page's thumbnails -------------------------------------------------------- */
 
 .g-screen {
   display: grid;
@@ -958,11 +1056,10 @@
   flex-shrink: 0;
   height: 28px;
   padding: 0 10px;
-  border-radius: 7px;
+  border-radius: 6px;
   border: 1px solid var(--g-line-strong);
-  background: var(--g-surface);
+  background: var(--g-page);
   color: var(--g-ink);
-  text-decoration: none;
   font-weight: 500;
 }
 .g-button:hover {
@@ -978,7 +1075,7 @@
   box-sizing: border-box;
 }
 /* Framed at phone width the frame is the viewport, and the hero is full bleed wherever it shows:
-   either way the composition takes the embed edge to edge, as it does on the card. */
+   either way the composition takes the embed edge to edge, as it does on the page. */
 .g-embed[data-view="phone"],
 .g-embed[data-module="hero"] {
   padding: 0;
@@ -1013,6 +1110,9 @@ body:has(.g-embed) {
   margin: 80px auto;
   padding: 0 24px;
 }
+.g-screen-missing a {
+  color: var(--g-accent);
+}
 .g-screen-bar {
   flex-shrink: 0;
   display: flex;
@@ -1021,7 +1121,7 @@ body:has(.g-embed) {
   gap: 8px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--g-line);
-  background: var(--g-surface);
+  background: var(--g-page);
 }
 .g-screen-bar > .g-crumb {
   margin-left: auto;
@@ -1029,48 +1129,9 @@ body:has(.g-embed) {
 
 /* ---- /fonts ------------------------------------------------------------------------------ */
 
-.g-page {
-  max-width: 1120px;
-  margin: 0 auto;
-  min-height: 100vh;
-  padding: 24px 36px 120px;
-  background: var(--g-canvas);
-  border-inline: 1px solid var(--g-line);
-}
-.g-page-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.g-page-head h1 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-}
-.g-page-head-controls {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-left: auto;
-}
-.g-page-section {
-  margin-top: 36px;
-  padding-top: 20px;
-  border-top: 1px dashed var(--g-line-strong);
-}
-.g-page-section h2 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-.g-page-section > p {
-  margin: 4px 0 12px;
-}
 .g-font-theme h3 {
-  margin: 20px 0 8px;
-  font-size: 14px;
+  margin: 24px 0 8px;
+  font-size: 15px;
   font-weight: 600;
 }
 .g-font-role {
@@ -1084,7 +1145,7 @@ body:has(.g-embed) {
   display: grid;
   gap: 2px;
   align-content: start;
-  font-size: 12px;
+  font-size: 12.5px;
   word-break: break-word;
 }
 .g-font-role-meta [data-unset] {
@@ -1106,8 +1167,9 @@ body:has(.g-embed) {
 }
 .g-table {
   width: 100%;
+  margin-top: 12px;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 13px;
 }
 .g-table th {
   padding: 6px 8px;
@@ -1130,7 +1192,7 @@ body:has(.g-embed) {
 .g-licence summary {
   cursor: pointer;
   font-family: var(--g-mono);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .g-licence .g-code {
   margin-top: 8px;
@@ -1159,71 +1221,88 @@ body:has(.g-embed) {
   animation: none !important;
 }
 
-/* ---- Phone width: the rail is a top bar with a drawer, one column, nothing sideways -------- */
+/* ---- Phone width: one column, the columns in a drawer, nothing sideways ------------------- */
 
-@media (max-width: 760px) {
+/* The drawer only exists while open; at desktop widths it is never shown. */
+.g-drawer {
+  display: none;
+}
+
+@media (max-width: 900px) {
   :root {
-    --g-gutter: 12px;
+    --g-gutter: 16px;
   }
-  .g-frame {
-    grid-template-columns: minmax(0, 1fr);
-    border-inline: 0;
+  .g-topbar {
+    gap: 8px 12px;
+    flex-wrap: nowrap;
   }
-  .g-rail {
-    position: sticky;
-    top: 0;
-    z-index: 30;
-    height: auto;
-    padding: 10px 16px;
-    border-right: 0;
-    border-bottom: 1px solid var(--g-line);
-    background: var(--g-canvas);
+  .g-links,
+  .g-bar-controls {
+    display: none;
   }
-  .g-rail-menu {
+  .g-menu {
     display: inline-grid;
+    margin-left: auto;
   }
-  .g-rail-body {
-    display: none;
-  }
-  .g-rail[data-open] .g-rail-body {
-    display: flex;
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 100%;
-    margin: 0;
-    padding: 16px;
-    max-height: calc(100vh - 56px);
+  .g-drawer {
+    display: grid;
+    align-content: start;
+    gap: 24px;
+    position: fixed;
+    z-index: 29;
+    inset: var(--g-bar) 0 0 0;
     overflow-y: auto;
-    background: var(--g-canvas);
-    border-bottom: 1px solid var(--g-line);
-    box-shadow: var(--g-float);
+    padding: 16px var(--g-gutter) 40px;
+    background: var(--g-page);
   }
-  .g-rail[data-open] .g-nav {
-    flex: none;
-    overflow: visible;
+  .g-drawer-links {
+    display: grid;
+    gap: 2px;
   }
-  .g-main {
-    padding-bottom: 96px;
+  .g-drawer-links .g-link {
+    height: 32px;
   }
-  .g-section {
-    padding-top: 28px;
+  .g-drawer-controls {
+    display: grid;
+    gap: 10px;
   }
-  .g-section + .g-section {
-    margin-top: 32px;
+  .g-drawer .g-nav-group {
+    margin-top: 16px;
   }
-  .g-section-desc {
+  .g-body,
+  .g-site[data-nav] .g-body,
+  .g-site[data-nav][data-toc] .g-body,
+  .g-site[data-nav] .g-body[data-wide],
+  .g-site[data-nav][data-toc] .g-body[data-wide] {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+    padding-bottom: 80px;
+  }
+  .g-sidenav,
+  .g-toc {
     display: none;
   }
-  .g-card {
-    border-radius: 10px;
+  .g-doc,
+  .g-home {
+    padding-top: 24px;
+  }
+  .g-h1 {
+    font-size: 26px;
+  }
+  .g-h2 {
+    margin-top: 36px;
+    font-size: 19px;
   }
   .g-preview {
-    min-height: 240px;
-    padding: 20px 14px;
+    min-height: 160px;
+    padding: 16px 12px;
   }
-  .g-card-foot {
-    padding: 10px 10px 10px;
+  .g-preview-shell {
+    padding: 0;
+  }
+  .g-toolbar > .g-crumb {
+    margin-left: 0;
+    flex-basis: 100%;
   }
   .g-framed[data-compare][data-width="narrow"] {
     grid-template-columns: minmax(0, 1fr);
@@ -1231,9 +1310,7 @@ body:has(.g-embed) {
   .g-framed[data-phone] {
     padding: 16px 12px;
   }
-  .g-token-list {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  .g-token-list,
   .g-font-role {
     grid-template-columns: minmax(0, 1fr);
   }

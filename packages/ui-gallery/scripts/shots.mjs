@@ -2,9 +2,10 @@
 /**
  * Screenshots of the gallery's modules through `/embed`: one PNG per module × variant × theme ×
  * mode × language, written to `<out>/<theme>/<mode>/<lang>/<module>--<variant>.png` — the
- * variant settled, which for a variant with a scene is its last frame. With `--variants all` a
- * scene's other frames are shot too, paused on each, as `<module>--<variant>@<frame>.png`.
- * `--parts` adds every part that has a demo, as `<part-id>--<pick>.png` beside them.
+ * variant settled: an animated variant on its last frame, an interactive one on its first
+ * render, a still as it is. With `--variants all` a scene's other frames are shot too, paused on
+ * each, as `<module>--<variant>@<frame>.png`. `--parts` adds every part that has a demo, as
+ * `<part-id>--<pick>.png` beside them.
  *
  * Needs the gallery running (`pnpm dev:gallery`, port 7372) and Playwright's Chromium. Shots are
  * never committed.
@@ -27,11 +28,12 @@
  *   --variants  default | all                  (default: each module's first variant only; `all`
  *                                               also shoots every other frame of a scene)
  *   --parts     also shoot every part demo     (flag)
- *   --width     viewport width in px           (default 758: the main page's card, so a shot
- *                                               lays out exactly as the card does; 390 for phone.
- *                                               A module designed at the app's width — `viewport`
- *                                               in module.ts — is shot at that width, unscaled,
- *                                               where the card shows it scaled down)
+ *   --width     viewport width in px           (default 720: a module page's content column, so
+ *                                               a shot lays out exactly as the page's preview
+ *                                               does; 390 for phone. A module designed at the
+ *                                               app's width — `viewport` in module.ts — is shot
+ *                                               at that width, unscaled, where the page shows it
+ *                                               scaled down)
  *
  * Animations are frozen (`motion=reduced`) so two runs of the same tree compare pixel for pixel;
  * under it a scene's frame shows its end state (a stream's whole text), as a still should.
@@ -138,7 +140,7 @@ async function shoot() {
   const accent = args.accent ?? "neutral";
   const view = args.view ?? "desktop";
   const allVariants = args.variants === "all";
-  const width = Number(args.width ?? (view === "phone" ? 390 : 758));
+  const width = Number(args.width ?? (view === "phone" ? 390 : 720));
 
   if (view !== "desktop" && view !== "phone") {
     console.error(`--view must be desktop or phone, not ${view}`);

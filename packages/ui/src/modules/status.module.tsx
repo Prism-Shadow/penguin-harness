@@ -371,10 +371,10 @@ export const module = defineModule({
     "Run states, badges and counts on a task list; notices and toasts; progress, skeletons and empty states.",
   width: "narrow",
   variants: [
-    { key: "live", title: "Live", scene: RUN },
-    { key: "settled", title: "Settled" },
-    { key: "notices", title: "Notices" },
-    { key: "loading-empty", title: "Loading & empty" },
+    { key: "live", title: "Live", kind: "animated", scene: RUN },
+    { key: "settled", title: "Settled", kind: "static" },
+    { key: "notices", title: "Notices", kind: "static" },
+    { key: "loading-empty", title: "Loading & empty", kind: "static" },
   ],
   parts: [
     "icons-dot",

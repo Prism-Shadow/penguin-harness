@@ -2,7 +2,9 @@
  * Shell pieces shared by the screen mock-ups: the app shell, marks, the sidebar, the chat
  * header, the dock frame and a disclosure body. Static JSX on token utilities and the declared
  * style hooks only — no palette class, no `dark:` pair, no state — so the three themes differ
- * purely through their tokens.
+ * purely through their tokens. A piece that a reader can press takes an optional handler
+ * (`onClick`, `onCollapse`, `onOpenSession`); given one it renders the real button, and a caller
+ * that passes none gets the still.
  *
  * Each piece names the web app component it imitates. When that component moves into this
  * package (the wave is noted), the screen swaps the piece for the real thing.
@@ -170,6 +172,7 @@ export function IconButton({
   pressed = false,
   hovered = false,
   glyphSize,
+  onClick,
 }: {
   icon: GlyphName;
   label: string;
@@ -180,19 +183,29 @@ export function IconButton({
   hovered?: boolean;
   /** The glyph's own size where the app draws it larger or smaller than the box's default. */
   glyphSize?: number;
+  /** Makes it a real button. */
+  onClick?: () => void;
 }) {
   const box = size === "md" ? "h-8 w-8" : "h-6 w-6";
-  return (
-    <span
+  const className = `flex ${box} shrink-0 items-center justify-center rounded-control transition-colors duration-150 ${
+    pressed ? "bg-accent-muted text-fg" : hovered ? "text-fg" : "text-fg-subtle hover:text-fg"
+  }`;
+  const glyph = <Glyph name={icon} size={glyphSize ?? (size === "md" ? 15 : 14)} />;
+  return onClick === undefined ? (
+    <span title={label} aria-label={label} role="button" className={className}>
+      {glyph}
+    </span>
+  ) : (
+    <button
+      type="button"
       title={label}
       aria-label={label}
-      role="button"
-      className={`flex ${box} shrink-0 items-center justify-center rounded-control ${
-        pressed ? "bg-accent-muted text-fg" : hovered ? "text-fg" : "text-fg-subtle hover:text-fg"
-      }`}
+      aria-pressed={pressed || undefined}
+      onClick={onClick}
+      className={`${className} focus-visible:[outline:var(--ui-focus-ring)] focus-visible:[outline-offset:var(--ui-focus-ring-offset)]`}
     >
-      <Glyph name={icon} size={glyphSize ?? (size === "md" ? 15 : 14)} />
-    </span>
+      {glyph}
+    </button>
   );
 }
 
@@ -297,9 +310,9 @@ export function StatChip({
 
 /**
  * A group label above a list (W4: GroupHeader), with the group's own actions on the right. The
- * `.ui-eyebrow` hook decides a group label's case, weight and colour — Console uppercases it, the
- * others do not — so the markup carries only the caption rung as a floor for a theme with no
- * recipe yet. A `name` (a Workspace folder) is set as written instead, after its folder glyph,
+ * `.ui-eyebrow` hook decides a group label's case, weight and colour — Primer and Console
+ * uppercase it, as the app's sidebar does, and Frost does not — so the markup carries only the
+ * caption rung as a floor for a theme with no recipe yet. A `name` (a Workspace folder) is set as written instead, after its folder glyph,
  * with its count and the chevron that folds it.
  */
 export function GroupHeader({
@@ -373,25 +386,39 @@ function NavRow({
   label,
   active = false,
   strong = false,
+  onClick,
 }: {
   glyph: GlyphName;
   label: string;
   active?: boolean;
   /** New chat: the one pinned entry, set in the medium weight. */
   strong?: boolean;
+  onClick?: () => void;
 }) {
-  return (
-    <span
-      aria-current={active ? "page" : undefined}
-      className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm ${
-        active
-          ? "bg-accent-muted font-(--ui-weight-medium) text-fg"
-          : `text-fg-muted ${strong ? "font-(--ui-weight-medium)" : ""}`
-      }`}
-    >
+  const className = `flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm ${
+    active
+      ? "bg-accent-muted font-(--ui-weight-medium) text-fg"
+      : `text-fg-muted ${strong ? "font-(--ui-weight-medium)" : ""}`
+  }`;
+  const body = (
+    <>
       <Glyph name={glyph} size={16} decor="nav" className="text-fg-muted" />
       {label}
+    </>
+  );
+  return onClick === undefined ? (
+    <span aria-current={active ? "page" : undefined} className={className}>
+      {body}
     </span>
+  ) : (
+    <button
+      type="button"
+      aria-current={active ? "page" : undefined}
+      onClick={onClick}
+      className={`${className} w-full text-left transition-colors duration-150`}
+    >
+      {body}
+    </button>
   );
 }
 
@@ -429,12 +456,15 @@ function SessionRow({
   hovered,
   f,
   onOpen,
+  onHover,
 }: {
   item: SessionListItem;
   active: boolean;
   hovered: boolean;
   f: Fixtures;
   onOpen?: () => void;
+  /** The pointer came onto the row (true) or left it (false). */
+  onHover?: (inside: boolean) => void;
 }) {
   const agent = f.agents.find((a) => a.id === item.agentId);
   const body = (
@@ -456,6 +486,8 @@ function SessionRow({
   return (
     <li
       aria-current={active ? "page" : undefined}
+      onPointerEnter={onHover && (() => onHover(true))}
+      onPointerLeave={onHover && (() => onHover(false))}
       className={`flex items-center rounded-md pr-1 ${
         active ? "bg-accent-muted" : hovered ? NEUTRAL_FILL : ""
       }`}
@@ -499,6 +531,14 @@ export interface SidebarProps {
   groups?: readonly SessionGroup[];
   /** Rows become buttons that open their Session. */
   onOpenSession?: (id: string) => void;
+  /** The collapse button becomes a button that folds the sidebar to the rail. */
+  onCollapse?: () => void;
+  /** The page entries (and New chat, as `"new-chat"`) become buttons that go there. */
+  onNavigate?: (page: SidebarPage | "new-chat") => void;
+  /** A row caught by the pointer, or none: rows report it so a caller can draw their actions. */
+  onHoverSession?: (id: string | undefined) => void;
+  /** The user row at the foot becomes a button that opens the user's settings. */
+  onOpenSettings?: () => void;
 }
 
 /**
@@ -514,19 +554,33 @@ export function SidebarBody({
   hoveredSessionId,
   groups = f.sessionGroups,
   onOpenSession,
+  onCollapse,
+  onNavigate,
+  onHoverSession,
+  onOpenSettings,
 }: SidebarProps) {
   const c = f.copy.nav;
   return (
     <>
       <div className="flex shrink-0 items-center gap-1 px-2 pt-2">
-        <IconButton icon="collapseLeft" label={c.collapseSidebar} glyphSize={18} />
+        <IconButton
+          icon="collapseLeft"
+          label={c.collapseSidebar}
+          glyphSize={18}
+          onClick={onCollapse}
+        />
         <span className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-base font-(--ui-weight-strong) text-fg">
           <span className="min-w-0 flex-1 truncate">{f.project.name}</span>
           <Glyph name="chevronDown" size={14} className="text-fg-subtle" />
         </span>
       </div>
       <div className="shrink-0 px-2 pb-2 pt-2">
-        <NavRow glyph="newChat" label={c.newChat} strong />
+        <NavRow
+          glyph="newChat"
+          label={c.newChat}
+          strong
+          onClick={onNavigate && (() => onNavigate("new-chat"))}
+        />
       </div>
       <div className="min-h-0 flex-1 overflow-hidden px-2 pb-2">
         <nav className="space-y-px">
@@ -536,6 +590,7 @@ export function SidebarBody({
               glyph={item.glyph}
               label={c[item.key]}
               active={item.key === activePage}
+              onClick={onNavigate && (() => onNavigate(item.key))}
             />
           ))}
           <span
@@ -576,6 +631,9 @@ export function SidebarBody({
                   hovered={item.id === hoveredSessionId}
                   f={f}
                   onOpen={onOpenSession ? () => onOpenSession(item.id) : undefined}
+                  onHover={
+                    onHoverSession && ((inside) => onHoverSession(inside ? item.id : undefined))
+                  }
                 />
               ))}
             </ul>
@@ -583,14 +641,34 @@ export function SidebarBody({
         ))}
       </div>
       <div className="shrink-0 border-t border-line p-2">
-        <span className="flex items-center gap-2 rounded-md px-2 py-1.5">
-          <UserAvatar name={f.user.name} />
-          <span className="min-w-0 flex-1 truncate text-sm font-(--ui-weight-medium) text-fg">
-            {f.user.name}
+        {onOpenSettings === undefined ? (
+          <span className="flex items-center gap-2 rounded-md px-2 py-1.5">
+            <UserRow f={f} />
           </span>
-          {f.user.isAdmin && <span className="text-xs text-fg-subtle">{f.copy.auth.admin}</span>}
-        </span>
+        ) : (
+          <button
+            type="button"
+            title={c.userSettings}
+            onClick={onOpenSettings}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150"
+          >
+            <UserRow f={f} />
+          </button>
+        )}
       </div>
+    </>
+  );
+}
+
+/** The user row's avatar, name and role. */
+function UserRow({ f }: { f: Fixtures }) {
+  return (
+    <>
+      <UserAvatar name={f.user.name} />
+      <span className="min-w-0 flex-1 truncate text-sm font-(--ui-weight-medium) text-fg">
+        {f.user.name}
+      </span>
+      {f.user.isAdmin && <span className="text-xs text-fg-subtle">{f.copy.auth.admin}</span>}
     </>
   );
 }
@@ -617,22 +695,44 @@ export function RailBody({
   activePage,
   hovered,
   renderEntry = (node) => node,
+  onExpand,
+  onNavigate,
+  onHoverEntry,
+  onOpenSettings,
 }: {
   f: Fixtures;
   activePage?: SidebarPage;
   /** A page entry caught under the pointer. */
   hovered?: SidebarPage;
   renderEntry?: (node: ReactNode, page: SidebarPage) => ReactNode;
+  /** The expand button becomes a button that unfolds the sidebar. */
+  onExpand?: () => void;
+  /** The entries (and New chat, as `"new-chat"`) become buttons that go there. */
+  onNavigate?: (page: SidebarPage | "new-chat") => void;
+  /** A page entry caught by the pointer, or none, so a caller can hang its tooltip. */
+  onHoverEntry?: (page: SidebarPage | undefined) => void;
+  /** The avatar at the foot becomes a button that opens the user's settings. */
+  onOpenSettings?: () => void;
 }) {
   const c = f.copy.nav;
   return (
     <>
-      <IconButton icon="expandRight" label={c.expandSidebar} glyphSize={18} />
+      <IconButton icon="expandRight" label={c.expandSidebar} glyphSize={18} onClick={onExpand} />
       <span className="mt-1 flex flex-col items-center gap-1">
         <IconButton icon="history" label={c.lastConversation} glyphSize={18} />
-        <IconButton icon="newChat" label={c.newChat} glyphSize={18} />
+        <IconButton
+          icon="newChat"
+          label={c.newChat}
+          glyphSize={18}
+          onClick={onNavigate && (() => onNavigate("new-chat"))}
+        />
         {SIDEBAR_NAV.map((item) => (
-          <span key={item.key} className="relative">
+          <span
+            key={item.key}
+            className="relative"
+            onPointerEnter={onHoverEntry && (() => onHoverEntry(item.key))}
+            onPointerLeave={onHoverEntry && (() => onHoverEntry(undefined))}
+          >
             {renderEntry(
               <IconButton
                 icon={item.glyph}
@@ -640,6 +740,7 @@ export function RailBody({
                 glyphSize={18}
                 pressed={item.key === activePage}
                 hovered={item.key === hovered}
+                onClick={onNavigate && (() => onNavigate(item.key))}
               />,
               item.key,
             )}
@@ -647,9 +748,21 @@ export function RailBody({
         ))}
       </span>
       <span className="min-h-0 flex-1" />
-      <span title={c.userSettings} className="flex h-8 w-8 items-center justify-center">
-        <UserAvatar name={f.user.name} />
-      </span>
+      {onOpenSettings === undefined ? (
+        <span title={c.userSettings} className="flex h-8 w-8 items-center justify-center">
+          <UserAvatar name={f.user.name} />
+        </span>
+      ) : (
+        <button
+          type="button"
+          title={c.userSettings}
+          aria-label={c.userSettings}
+          onClick={onOpenSettings}
+          className="flex h-8 w-8 items-center justify-center rounded-control"
+        >
+          <UserAvatar name={f.user.name} />
+        </button>
+      )}
     </>
   );
 }
