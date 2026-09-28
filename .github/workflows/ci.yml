@@ -183,6 +183,36 @@ jobs:
           fi
           pnpm test:e2e
 
+  # The web package's browser suite (Playwright against a mock LLM, packages/web/e2e). Nothing
+  # else in CI drives a browser -- installer-e2e's `pnpm test:e2e` is core's live-LLM vitest.
+  # Not a gate yet: the suite is red at its baseline, so the job may fail without failing the
+  # run (continue-on-error) and `ci` below does not list it. What it adds is evidence: a red
+  # run uploads every failed test's screenshot and trace. This replays specs already written;
+  # exploring the UI is QA's work and does not happen here.
+  web-e2e:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      # run.sh starts the built server and serves the built web app; SKIP_BUILD=1 below
+      # relies on this build instead of its own.
+      - uses: ./.github/actions/setup
+        with:
+          build: "@prismshadow/penguin-server...,@prismshadow/penguin-web..."
+      - name: Install Chromium
+        run: pnpm --filter @prismshadow/penguin-web exec playwright install --with-deps chromium
+      - name: Browser e2e (Playwright)
+        run: SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e
+      - name: Upload Playwright results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ runner.os }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: packages/web/e2e/test-results/
+
   # macOS (arm64). This is the only place the terminal's pty suites run on darwin —
   # node-pty compiles against the runner's toolchain and its darwin-only spawn-helper
   # actually executes — and the terminal smoke script then re-runs node-pty under
@@ -384,6 +414,7 @@ jobs:
   # The aggregate gate: green only when every job above is. Mark THIS one required in
   # branch protection — it survives the shard list changing, which the individual job
   # names do not. `if: always()` so it still runs (and fails) when something upstream did.
+  # web-e2e is left out on purpose until its suite is green (see the note on that job).
   ci:
     if: always()
     needs:
