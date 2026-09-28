@@ -76,8 +76,41 @@ const MODELS_KEY = "coding_agent_models";
 /** The settings key holding other remembered session settings: { [agentId]: { [configId]: value } }. */
 const OPTIONS_KEY = "coding_agent_options";
 
-/** How long a probed discovery answer is reused before the next read re-runs the fs pass. */
+/**
+ * How long a probe's sign-in answer outranks the stored sign-in on a plain read. A version
+ * and the models outlive it: they change only with an upgrade, which a Rescan picks up.
+ */
 const DISCOVERY_CACHE_TTL_MS = 5 * 60_000;
+
+/** The settings key holding the last probed refresh (see `SavedProbes`). */
+const PROBES_KEY = "coding_agent_probes";
+
+/** One string per launch, for telling whether the probed launch is still the one found. */
+function launchKey(launch: { command: string; args: string[] } | null): string {
+  return launch === null ? "" : JSON.stringify([launch.command, ...launch.args]);
+}
+
+/**
+ * What the last probed refresh learned, saved so the cards keep it across restarts: per
+ * detected recipe the launch it probed, its version, its CLI's own sign-in answer, its
+ * models and why its probe failed; per saved definition its models and failure.
+ */
+interface SavedProbes {
+  at: number;
+  candidates: Record<
+    string,
+    {
+      /** The launch probed, so a changed one (an adapter installed since) is not judged by it. */
+      launch: string;
+      version?: string;
+      authStatus?: AgentDiscoveryCandidate["authStatus"];
+      models?: CodingAgentConfigOption[];
+      error?: string;
+    }
+  >;
+  agentModels: Record<string, CodingAgentConfigOption[]>;
+  agentErrors: Record<string, string>;
+}
 
 /** Agent credential/state homes live under the data root, keyed by definition id. */
 function agentHome(root: string, agentId: string): string {
@@ -168,11 +201,8 @@ export class CodingAgentService implements CodingAgents {
 
   private manager: CodingAgentManager | null = null;
   private readonly unbridges = new Map<string, () => void>();
-  private discoveryCache: {
-    at: number;
-    candidates: AgentDiscoveryCandidate[];
-    agentModels: Record<string, CodingAgentConfigOption[]>;
-  } | null = null;
+  /** The Rescan in flight, which a second Rescan joins rather than repeats. */
+  private refreshing: Promise<CodingAgentDiscoveryResponse> | null = null;
   /** User-set display names, keyed by session id; in-memory like the sessions themselves. */
   private readonly titles = new Map<string, string>();
 
@@ -205,48 +235,167 @@ export class CodingAgentService implements CodingAgents {
     refresh = false,
     probeTimeoutMs?: number,
   ): Promise<CodingAgentDiscoveryResponse> {
-    const cached = this.discoveryCache;
-    if (!refresh && cached !== null && Date.now() - cached.at < DISCOVERY_CACHE_TTL_MS) {
-      return { candidates: this.annotate(cached.candidates), agentModels: cached.agentModels };
-    }
+    if (!refresh) return await this.readDiscovery();
+    // Two Rescans at once would spawn every probe twice (npx installs included) and race
+    // to save; the second waits for the first instead.
+    this.refreshing ??= this.probeDiscovery(probeTimeoutMs).finally(() => {
+      this.refreshing = null;
+    });
+    return await this.refreshing;
+  }
+
+  /**
+   * A plain read. The fs pass is cheap and always fresh: an agent installed, removed or
+   * signed in since the last probe shows at once. What only a probe learns (a version, the
+   * models, why it would not start) is carried over from the saved probe for agents still
+   * detected at the same launch, and so is the CLI's own sign-in answer while it is recent;
+   * past that the stored sign-in speaks.
+   */
+  private async readDiscovery(): Promise<CodingAgentDiscoveryResponse> {
+    const fresh = await discoverKnownAgents({
+      env: process.env,
+      home: os.homedir(),
+      agentEnv: (id) => this.agentEnvFor(id),
+    });
+    const last = this.loadProbes();
+    if (last === null) return { candidates: this.annotate(fresh), agentModels: {} };
+    const recent = Date.now() - last.at < DISCOVERY_CACHE_TTL_MS;
+    // A recipe a definition now shadows runs the definition's command: the recipe's own
+    // models and failure say nothing about it.
+    const saved = new Set(this.loadDefinitions().map((d) => d.id));
+    const candidates = fresh.map((candidate): AgentDiscoveryCandidate & { probeError?: string } => {
+      const probed = last.candidates[candidate.recipeId];
+      if (!candidate.detected || probed === undefined) return candidate;
+      const sameLaunch =
+        !saved.has(candidate.recipeId) && probed.launch === launchKey(candidate.launch);
+      return {
+        ...candidate,
+        ...(probed.version !== undefined ? { version: probed.version } : {}),
+        ...(sameLaunch && probed.models !== undefined ? { models: probed.models } : {}),
+        ...(sameLaunch && probed.error !== undefined ? { probeError: probed.error } : {}),
+        ...(recent && probed.authStatus !== undefined
+          ? { authStatus: probed.authStatus, authSource: "cli" as const }
+          : {}),
+      };
+    });
+    return {
+      candidates: this.annotate(candidates),
+      agentModels: last.agentModels,
+      agentErrors: last.agentErrors,
+      probedAt: last.at,
+    };
+  }
+
+  /** A Rescan: live probes (versions, auth, models), which execute the found CLIs. */
+  private async probeDiscovery(
+    probeTimeoutMs: number | undefined,
+  ): Promise<CodingAgentDiscoveryResponse> {
     const candidates = await discoverKnownAgents({
       env: process.env,
       home: os.homedir(),
-      // Live probes (versions, auth) only on refresh: they execute the found CLIs.
-      probe: refresh,
+      probe: true,
+      agentEnv: (id) => this.agentEnvFor(id),
     });
-    let agentModels: Record<string, CodingAgentConfigOption[]> = {};
-    if (refresh) {
-      // The card's Model dropdown needs each runnable agent's advertised options: one
-      // throwaway session per agent, best-effort. A saved definition is authoritative
-      // for its id and is probed at its own command — its sessions run that command,
-      // not the recipe's suggestion. A recipe launch is probed only for a detected
-      // candidate with nothing saved over it: probing an npx fallback otherwise
-      // installs-and-runs an adapter for an agent that is not even installed.
-      const definitions = this.loadDefinitions();
-      const saved = new Set(definitions.map((d) => d.id));
-      await Promise.all([
-        ...definitions.map(async (definition) => {
-          const models = await this.probeOptions(definition, probeTimeoutMs);
-          if (models.length > 0) agentModels[definition.id] = models;
-        }),
-        ...candidates.map(async (candidate) => {
-          if (saved.has(candidate.recipeId)) return;
-          if (!candidate.detected || candidate.launch === null) return;
-          const models = await this.probeOptions(
-            {
-              id: candidate.recipeId,
-              command: candidate.launch.command,
-              args: candidate.launch.args,
-            },
-            probeTimeoutMs,
-          );
-          if (models.length > 0) candidate.models = models;
-        }),
-      ]);
-      this.discoveryCache = { at: Date.now(), candidates, agentModels };
+    const agentModels: Record<string, CodingAgentConfigOption[]> = {};
+    const agentErrors: Record<string, string> = {};
+    const probed: SavedProbes["candidates"] = {};
+    // The card's Model dropdown needs each runnable agent's advertised options: one
+    // throwaway session per agent, best-effort. A saved definition is authoritative
+    // for its id and is probed at its own command — its sessions run that command,
+    // not the recipe's suggestion. A recipe launch is probed only for a detected
+    // candidate with nothing saved over it: probing an npx fallback otherwise
+    // installs-and-runs an adapter for an agent that is not even installed.
+    const definitions = this.loadDefinitions();
+    const saved = new Set(definitions.map((d) => d.id));
+    await Promise.all([
+      ...definitions.map(async (definition) => {
+        const { models, error } = await this.probeOptions(definition, probeTimeoutMs);
+        if (models.length > 0) agentModels[definition.id] = models;
+        if (error !== undefined) agentErrors[definition.id] = error;
+      }),
+      ...candidates.map(async (candidate) => {
+        if (!candidate.detected) return;
+        // Only the CLI's own sign-in answer is worth keeping: the stored one is re-read
+        // on every visit, and a saved copy would hide a sign-in made since.
+        const record: SavedProbes["candidates"][string] = {
+          launch: launchKey(candidate.launch),
+          ...(candidate.version !== undefined ? { version: candidate.version } : {}),
+          ...(candidate.authSource === "cli" && candidate.authStatus !== undefined
+            ? { authStatus: candidate.authStatus }
+            : {}),
+        };
+        probed[candidate.recipeId] = record;
+        if (saved.has(candidate.recipeId) || candidate.launch === null) return;
+        const { models, error } = await this.probeOptions(
+          {
+            id: candidate.recipeId,
+            command: candidate.launch.command,
+            args: candidate.launch.args,
+          },
+          probeTimeoutMs,
+        );
+        if (models.length > 0) record.models = candidate.models = models;
+        if (error !== undefined) record.error = error;
+      }),
+    ]);
+    const at = Date.now();
+    this.saveProbes({ at, candidates: probed, agentModels, agentErrors });
+    const withErrors = candidates.map((candidate) =>
+      probed[candidate.recipeId]?.error !== undefined
+        ? { ...candidate, probeError: probed[candidate.recipeId]!.error }
+        : candidate,
+    );
+    return { candidates: this.annotate(withErrors), agentModels, agentErrors, probedAt: at };
+  }
+
+  /**
+   * The environment an agent id is spawned with: its saved definition's, or the bare
+   * sandboxed one for a recipe nothing is saved over. Sign-in checks read this one.
+   */
+  private agentEnvFor(agentId: string): Record<string, string> {
+    const definition = this.loadDefinitions().find((d) => d.id === agentId);
+    return this.envFor(definition ?? { id: agentId, command: "", args: [] });
+  }
+
+  private saveProbes(probes: SavedProbes): void {
+    this.settings.set(PROBES_KEY, JSON.stringify(probes));
+  }
+
+  /**
+   * Drop what the last probe learned about one agent id, when its definition is saved or
+   * removed: the old command's models and failure no longer describe what runs.
+   */
+  private forgetProbe(agentId: string): void {
+    const last = this.loadProbes();
+    if (last === null) return;
+    const recipe = last.candidates[agentId];
+    if (recipe !== undefined) {
+      delete recipe.models;
+      delete recipe.error;
     }
-    return { candidates: this.annotate(candidates), agentModels };
+    delete last.agentModels[agentId];
+    delete last.agentErrors[agentId];
+    this.saveProbes(last);
+  }
+
+  /** The last probed refresh, saved so a restart keeps the versions, models and failures. */
+  private loadProbes(): SavedProbes | null {
+    const raw = this.settings.get(PROBES_KEY);
+    if (raw === null) return null;
+    try {
+      const parsed = JSON.parse(raw) as Partial<SavedProbes> | null;
+      if (parsed === null || typeof parsed !== "object" || typeof parsed.at !== "number") {
+        return null;
+      }
+      return {
+        at: parsed.at,
+        candidates: parsed.candidates ?? {},
+        agentModels: parsed.agentModels ?? {},
+        agentErrors: parsed.agentErrors ?? {},
+      };
+    } catch {
+      return null;
+    }
   }
 
   saveAgent(input: unknown): CodingAgentServerInfo {
@@ -279,6 +428,7 @@ export class CodingAgentService implements CodingAgents {
     const remaining = definitions.filter((d) => d.id !== agentId);
     if (remaining.length === definitions.length) return false;
     this.persistDefinitions(remaining);
+    this.forgetProbe(agentId);
     return true;
   }
 
@@ -792,22 +942,25 @@ export class CodingAgentService implements CodingAgents {
   private async probeOptions(
     definition: AgentServerDefinition,
     probeTimeoutMs: number | undefined,
-  ): Promise<CodingAgentConfigOption[]> {
+  ): Promise<{ models: CodingAgentConfigOption[]; error?: string }> {
     try {
-      return await probeAgentOptions({
+      const models = await probeAgentOptions({
         command: definition.command,
         args: definition.args ?? [],
         env: this.envFor(definition),
         clientInfo: { name: "penguin", version: VERSION },
         ...(probeTimeoutMs !== undefined ? { timeoutMs: probeTimeoutMs } : {}),
       });
-    } catch {
-      return [];
+      return { models };
+    } catch (error) {
+      return { models: [], error: error instanceof Error ? error.message : String(error) };
     }
   }
 
   /** Merge the per-request facts (saved state, remembered model) into a discovery answer. */
-  private annotate(candidates: AgentDiscoveryCandidate[]): CodingAgentDiscoveryCandidate[] {
+  private annotate(
+    candidates: (AgentDiscoveryCandidate & { probeError?: string })[],
+  ): CodingAgentDiscoveryCandidate[] {
     const definitions = this.loadDefinitions();
     const models = this.loadRememberedModels();
     const options = this.loadRememberedOptions();
@@ -829,7 +982,11 @@ export class CodingAgentService implements CodingAgents {
   private async definitionForKnownAgent(
     agentId: string,
   ): Promise<AgentServerDefinition | undefined> {
-    const candidates = await discoverKnownAgents({ env: process.env, home: os.homedir() });
+    const candidates = await discoverKnownAgents({
+      env: process.env,
+      home: os.homedir(),
+      agentEnv: (id) => this.agentEnvFor(id),
+    });
     const candidate = candidates.find((c) => c.recipeId === agentId);
     if (candidate?.launch === undefined || candidate.launch === null) return undefined;
     return parseDefinition({
