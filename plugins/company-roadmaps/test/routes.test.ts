@@ -131,9 +131,9 @@ describe("the manifest", () => {
     const t = table();
     expect(t.plugin.modules).toEqual(["CompanyRoadmapsPlugin", "RoadmapRoomClaim"]);
     const claim = t.modules.RoadmapRoomClaim;
-    expect(
-      (claim?.contributes["OrganizationModule.channelClaims"]?.[0] as { id: string }).id,
-    ).toBe(CLAIM_ID);
+    expect((claim?.contributes["OrganizationModule.channelClaims"]?.[0] as { id: string }).id).toBe(
+      CLAIM_ID,
+    );
     // The claim node must not require what the organization module provides: that is a cycle.
     expect(JSON.stringify(claim)).not.toContain("CompanyModule");
     const manifest = t.modules.CompanyRoadmapsPlugin;

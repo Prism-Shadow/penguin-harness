@@ -2255,10 +2255,17 @@ describe("organization runtime", () => {
       expect(asked).toEqual([{ projectId: P, orgId: ORG, channelId: DEFAULT_CHANNEL_ID }]);
       expect(
         events.some(
-          (e) => e.type === "org_channel" && (e as { message?: { id: string } }).message?.id === m.id,
+          (e) =>
+            e.type === "org_channel" && (e as { message?: { id: string } }).message?.id === m.id,
         ),
       ).toBe(true);
-      const read = await service.channelMessages(P, ORG, { userId: "alice" }, DEFAULT_CHANNEL_ID, {});
+      const read = await service.channelMessages(
+        P,
+        ORG,
+        { userId: "alice" },
+        DEFAULT_CHANNEL_ID,
+        {},
+      );
       expect(read.messages.map((x) => x.id)).toContain(m.id);
       // Unclaimed again, the channel delivers as it always did.
       deps.channelClaimed = () => false;

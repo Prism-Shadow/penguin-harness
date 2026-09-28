@@ -675,8 +675,7 @@ export async function scanChannels(
         // A channel a plugin handles itself (OrgGatewaySlots.channelClaims) keeps its message
         // — recorded and published above — but wakes no desk. Asked once per channel per pass.
         claimed ??=
-          deps.channelClaimed?.({ projectId: org.projectId, orgId: org.orgId, channelId }) ===
-          true;
+          deps.channelClaimed?.({ projectId: org.projectId, orgId: org.orgId, channelId }) === true;
         if (claimed) continue;
         const senderAgent = principalAgentId(msg.sender);
         const targets = new Set<string>();

@@ -2,7 +2,9 @@
  * The plugin on the real server: installed through a Project's config, loaded by the real
  * loader, and its requirements — the organization gateway (CompanyModule) and the session
  * runtime (SessionRuntimeModule), which is what lets it clone a desk for a room and feed it —
- * resolved from the real module tree; its settings group declared on the Plugins page; its
+ * resolved from the real module tree, and its channel claim contributed to the organization
+ * module by a node of its own (the tree refuses a node that contributes there while requiring
+ * the gateway: a cycle); its settings group declared on the Plugins page; its
  * routes mounted behind the cookie gate, answering 404 while company mode is off and for an
  * organization that does not exist once it is on. Creating an organization needs a model to
  * run its CEO, so the lifecycle itself is exercised in service.test.ts over the fakes.
@@ -45,9 +47,9 @@ describe("the company-roadmaps plugin on a real server", () => {
     await harness?.stop();
   });
 
-  it("is loaded, its requirements of the organization gateway and the session runtime resolved", async () => {
+  it("is loaded, both nodes: the gateway and the session runtime resolved, and the claim taken by the organization module without a cycle", async () => {
     const [row] = await harness.installedPlugins();
-    expect(row).toMatchObject({ active: true, modules: ["CompanyRoadmapsPlugin"], replaces: [] });
+    expect(row).toMatchObject({ active: true, modules: ["CompanyRoadmapsPlugin", "RoadmapRoomClaim"], replaces: [] });
   });
 
   it("declares its settings group on the Plugins page", async () => {

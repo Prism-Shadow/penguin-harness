@@ -45,10 +45,7 @@ export function discussingRoomOf(root: string, channel: ChannelRef): number | nu
 }
 
 /** The claim a node binds: claims a discussing room and hands it to `handle`; anything else is not claimed. */
-export function roomClaim(
-  root: string,
-  handle: ClaimListener,
-): (channel: ChannelRef) => boolean {
+export function roomClaim(root: string, handle: ClaimListener): (channel: ChannelRef) => boolean {
   return (channel) => {
     const number = discussingRoomOf(root, channel);
     if (number === null) return false;
