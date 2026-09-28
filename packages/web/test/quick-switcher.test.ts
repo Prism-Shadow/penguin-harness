@@ -96,6 +96,16 @@ describe("entry builders", () => {
       { id: "activity:a1", section: "activities", title: "Counting ants", detail: "ants / 3", to: "/activities/a1", routeState: null, busy: null },
     ]);
   });
+
+  it("titles an activity entry with the display name its card shows", () => {
+    const [named, plain] = buildActivityEntries([
+      { id: "a1", title: "Counting ants", displayName: "Ant parade", productCode: "ants", refNum: 3 },
+      { id: "a 2", title: "Counting bees", displayName: null, productCode: "bees", refNum: 1 },
+    ]);
+    expect(named!.title).toBe("Ant parade");
+    expect(plain!.title).toBe("Counting bees");
+    expect(plain!.to).toBe("/activities/a%202");
+  });
 });
 
 describe("switcherMatchScore", () => {

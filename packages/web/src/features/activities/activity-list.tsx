@@ -207,7 +207,11 @@ function ProductGroup({
   const canonical = group.canonicalId ? summaries[group.canonicalId] : undefined;
   // A new ref copies the canonical ref's media plan, so it waits for one — the same gate as
   // the studio's New ref section (`hasPlan`).
-  const canAddRef = editable && !!canonical?.hasPlan;
+  const canAddRef = editable && !!canonical?.hasPlan && group.canonicalId !== null;
+  const newRefHref =
+    group.canonicalId !== null
+      ? `/activities/${encodeURIComponent(group.canonicalId)}?section=newRef`
+      : "";
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} className="space-y-3">
@@ -240,7 +244,7 @@ function ProductGroup({
             <li>
               {canAddRef ? (
                 <Link
-                  to={`/activities/${group.canonicalId}?section=newRef`}
+                  to={newRefHref}
                   className="flex h-full min-h-24 items-center justify-center rounded-lg border border-dashed border-gray-300 text-sm text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900"
                 >
                   + {home.newRef}
@@ -267,7 +271,7 @@ function ActivityCard({ item, summary }: { item: ActivityRecord; summary?: Activ
   const { locale } = useLocale();
   return (
     <Link
-      to={`/activities/${item.id}`}
+      to={`/activities/${encodeURIComponent(item.id)}`}
       className="flex h-full min-h-24 flex-col gap-1.5 rounded-lg border border-gray-200 p-3 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
     >
       <span className="flex min-w-0 items-center gap-1.5">

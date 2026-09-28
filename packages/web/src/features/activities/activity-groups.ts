@@ -22,6 +22,14 @@ export function groupByProduct(
   summaries: Readonly<Record<string, ActivitySummary>>,
   options: { sort: GroupSort; search: string; tag: string | null },
 ): ActivityGroup[] {
+  // The canonical ref is found across ALL of a product's refs, before search or tag
+  // filtering: the New-ref gate follows it even when the filter hides it.
+  const canonicalByCode = new Map<string, string>();
+  for (const entry of items) {
+    if (summaries[entry.id]?.canonical === true && !canonicalByCode.has(entry.productCode)) {
+      canonicalByCode.set(entry.productCode, entry.id);
+    }
+  }
   const visible = filterActivities(filterByTag(items, options.tag), options.search);
   const byCode = new Map<string, ActivityRecord[]>();
   for (const entry of visible) {
@@ -30,16 +38,16 @@ export function groupByProduct(
     byCode.set(entry.productCode, list);
   }
   const groups = [...byCode.entries()].map(([productCode, refs]): ActivityGroup => {
-    const canonical = refs.find((entry) => (summaries[entry.id]?.canonical) === true) ?? null;
+    const canonicalId = canonicalByCode.get(productCode) ?? null;
     const ordered = [...refs].sort((left, right) =>
-      left === canonical ? -1 : right === canonical ? 1 : left.refNum - right.refNum,
+      left.id === canonicalId ? -1 : right.id === canonicalId ? 1 : left.refNum - right.refNum,
     );
     return {
       productCode,
       // refs[0]! is safe: refs is an array only created when there is at least one item in visible with this productCode.
       activityType: refs[0]!.activityType,
       items: ordered,
-      canonicalId: canonical?.id ?? null,
+      canonicalId,
       attention: refs.filter((entry) => summaries[entry.id]?.status?.kind === "stale").length,
       latest: refs.reduce((max, entry) => (entry.updatedAt > max ? entry.updatedAt : max), ""),
     };

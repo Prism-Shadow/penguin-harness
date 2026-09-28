@@ -48,6 +48,16 @@ describe("activity preview helpers", () => {
     expect(filterActivities(items, "nothing")).toEqual([]);
   });
 
+  it("filters activities by the display name a card shows", () => {
+    const items = [
+      { productCode: "LOOM", refNum: 12, title: "Sight words", displayName: "Rhyme time" },
+      { productCode: "other", refNum: 3, title: "Penguin story", displayName: null },
+    ];
+    expect(filterActivities(items, "rhyme")).toEqual([items[0]]);
+    expect(filterActivities(items, "sight")).toEqual([items[0]]);
+    expect(filterActivities(items, "penguin")).toEqual([items[1]]);
+  });
+
   it("lists scene ids from a saved specification", () => {
     expect(sceneIds({ scenes: [{ id: "cover" }, { id: "story" }] })).toEqual(["cover", "story"]);
     expect(sceneIds({ stages: [{ id: "intro" }] })).toEqual(["intro"]);

@@ -48,14 +48,14 @@ export function previewUrl(
   return query ? `${base}&${query}` : base;
 }
 
-export function filterActivities<T extends { productCode: string; refNum: number; title: string }>(
-  items: readonly T[],
-  query: string,
-): T[] {
+export function filterActivities<
+  T extends { productCode: string; refNum: number; title: string; displayName?: string | null },
+>(items: readonly T[], query: string): T[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [...items];
+  // The display name is what a card shows (`displayName ?? title`), so it is searched too.
   return items.filter((item) =>
-    [item.title, item.productCode, String(item.refNum)].some((field) =>
+    [item.displayName ?? "", item.title, item.productCode, String(item.refNum)].some((field) =>
       field.toLowerCase().includes(needle),
     ),
   );

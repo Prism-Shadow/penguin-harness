@@ -49,6 +49,21 @@ describe("groupByProduct", () => {
     expect(groups[1]!.activityType).toBe("book");
   });
 
+  it("keeps the canonical ref on the group when search or tag hides it", () => {
+    // a3 is canonical; a search that shows only a5 must still gate New ref on a3.
+    const searched = groupByProduct(items, summaries, { ...all, search: "ants 5" });
+    expect(searched).toHaveLength(1);
+    expect(searched[0]!.items.map((entry) => entry.id)).toEqual(["a5"]);
+    expect(searched[0]!.canonicalId).toBe("a3");
+    const tagged = groupByProduct(
+      [item("a3", "ants", 3, "2026-09-20T00:00:00Z"), item("a5", "ants", 5, "2026-09-27T00:00:00Z", { tags: ["Reading"] })],
+      summaries,
+      { ...all, tag: "Reading" },
+    );
+    expect(tagged[0]!.items.map((entry) => entry.id)).toEqual(["a5"]);
+    expect(tagged[0]!.canonicalId).toBe("a3");
+  });
+
   it("sorts A-Z by product code", () => {
     const groups = groupByProduct(items, summaries, { ...all, sort: "code" });
     expect(groups.map((group) => group.productCode)).toEqual(["ants", "book"]);

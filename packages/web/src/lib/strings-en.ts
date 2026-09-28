@@ -425,7 +425,7 @@ export const en: Strings = {
       sortLabel: "Sort",
       sort: { recent: "Recent", code: "A–Z" },
       refs: (count: number) => (count === 1 ? "1 ref" : `${count} refs`),
-      attention: (count: number) => `${count} needs attention`,
+      attention: (count: number) => (count === 1 ? "1 needs attention" : `${count} need attention`),
       refLine: (refNum: number, when: string) => `ref ${refNum} · ${when}`,
       canonical: "Canonical ref",
       progress: (done: number, total: number) => `${done} of ${total} milestones`,
@@ -1991,10 +1991,10 @@ export const en: Strings = {
     },
   },
 
-  /** Quick Switcher (Ctrl/Cmd+K): the keyboard palette for jumping to pages, coding agents and their sessions. */
+  /** Quick Switcher (Ctrl/Cmd+K): the keyboard palette for jumping to pages, activities, coding agents and their sessions. */
   quickSwitcher: {
     title: "Quick switcher",
-    placeholder: "Search pages, agents, and sessions…",
+    placeholder: "Search pages, activities, agents, and sessions…",
     recentsSection: "Recent",
     pagesSection: "Pages",
     activitiesSection: "Activities",

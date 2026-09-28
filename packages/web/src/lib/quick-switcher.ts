@@ -79,12 +79,19 @@ export function buildAgentEntries(
 
 /** This project's activities, detail is the ref address (product code / ref number). */
 export function buildActivityEntries(
-  items: ReadonlyArray<{ id: string; title: string; productCode: string; refNum: number }>,
+  items: ReadonlyArray<{
+    id: string;
+    title: string;
+    displayName?: string | null;
+    productCode: string;
+    refNum: number;
+  }>,
 ): SwitcherEntry[] {
   return items.map((item) => ({
     id: `activity:${item.id}`,
     section: "activities",
-    title: item.title,
+    // The name the activity's card shows.
+    title: item.displayName ?? item.title,
     detail: `${item.productCode} / ${item.refNum}`,
     to: `/activities/${encodeURIComponent(item.id)}`,
     routeState: null,
