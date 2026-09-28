@@ -5,6 +5,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   buildAgentCards,
+  cardReadiness,
   currentModel,
   effortOptionOf,
 } from "../src/features/coding-agents/agent-cards";
@@ -136,5 +137,74 @@ describe("currentModel and effortOptionOf", () => {
   it("finds the reasoning effort only when the agent advertises one", () => {
     expect(effortOptionOf([model, effort])).toBe(effort);
     expect(effortOptionOf([model])).toBeUndefined();
+  });
+});
+
+describe("cardReadiness", () => {
+  const card = (c: Partial<CodingAgentDiscoveryResponse["candidates"][number]>) =>
+    buildAgentCards([], discovery([{ recipeId: "codex", ...c }]), "setup").installed[0]!;
+
+  it("is ready only when the agent can start and is signed in", () => {
+    expect(cardReadiness(card({ authStatus: "ok" }))).toBe("ready");
+  });
+
+  it("asks for sign-in before anything else it can say", () => {
+    expect(cardReadiness(card({ authStatus: "missing" }))).toBe("signIn");
+    expect(card({ authStatus: "missing", authHint: "Run codex login" }).authHint).toBe(
+      "Run codex login",
+    );
+  });
+
+  it("needs setup when the CLI is found but nothing can launch it", () => {
+    expect(cardReadiness(card({ launch: null, authStatus: "ok" }))).toBe("setup");
+  });
+
+  it("says it cannot tell when no sign-in check answered", () => {
+    expect(cardReadiness(card({ authStatus: "unknown" }))).toBe("unknown");
+    expect(cardReadiness(card({}))).toBe("unknown");
+  });
+
+  it("trusts a saved custom agent to start, with sign-in unknown", () => {
+    const { installed } = buildAgentCards(
+      [{ id: "mine", command: "mine", args: [] }],
+      discovery([]),
+      "setup",
+    );
+    expect(cardReadiness(installed[0]!)).toBe("unknown");
+  });
+});
+
+describe("probe failures and installs", () => {
+  it("marks an agent whose last probe failed as unable to start", () => {
+    const { installed } = buildAgentCards(
+      [],
+      discovery([{ recipeId: "gemini", authStatus: "ok", probeError: "no longer supported" }]),
+      "setup",
+    );
+    expect(installed[0]?.probeError).toBe("no longer supported");
+    expect(cardReadiness(installed[0]!)).toBe("failed");
+  });
+
+  it("reads a saved definition's failure from its own probe", () => {
+    const { installed } = buildAgentCards(
+      [{ id: "gemini", command: "gemini", args: [] }],
+      {
+        ...discovery([{ recipeId: "gemini", probeError: "recipe" }]),
+        agentErrors: { gemini: "own" },
+      },
+      "setup",
+    );
+    expect(installed[0]?.probeError).toBe("own");
+  });
+
+  it("carries the install command to an agent that is not installed", () => {
+    const { available } = buildAgentCards(
+      [],
+      discovery([
+        { recipeId: "kilo", detected: false, launch: null, installCommand: "npm i -g k" },
+      ]),
+      "setup",
+    );
+    expect(available[0]).toMatchObject({ installCommand: "npm i -g k", vendor: "Kilo Code CLI" });
   });
 });

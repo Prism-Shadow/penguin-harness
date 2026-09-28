@@ -30,6 +30,7 @@ const VENDOR_LOGOS: Record<string, string> = {
   claude: "anthropic",
   codex: "openai",
   gemini: "google",
+  kimi: "moonshot",
 };
 
 /**

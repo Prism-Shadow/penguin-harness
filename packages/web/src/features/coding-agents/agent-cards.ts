@@ -23,8 +23,14 @@ export interface AgentCardModel {
   startable: boolean;
   version?: string;
   authStatus?: "ok" | "missing" | "unknown";
+  /** How the agent signs in on the server machine; shown when it is not signed in. */
+  authHint?: string;
   setupHint?: string | null;
   homepageUrl?: string;
+  /** The one command that installs the agent, when there is one for every OS. */
+  installCommand?: string;
+  /** Why the last probe could not open a session with it; empty when not an admin. */
+  probeError?: string;
   /** Everything the agent advertised on its last probe; absent until a Rescan has run. */
   options?: CodingAgentConfigOption[];
   rememberedModel?: { configId: string; value: boolean | string; name?: string } | null;
@@ -40,6 +46,13 @@ export const AGENT_VENDORS: Record<string, string> = {
   opencode: "Open-source agent CLI",
   copilot: "GitHub coding CLI",
   cline: "Open-source agent CLI",
+  devin: "Cognition terminal CLI",
+  hermes: "Nous Research agent CLI",
+  kilo: "Kilo Code CLI",
+  kimi: "Moonshot Kimi CLI",
+  kiro: "Kiro agent CLI",
+  trae: "ByteDance coding CLI",
+  vibe: "Mistral open-source CLI",
 };
 
 export function buildAgentCards(
@@ -64,6 +77,9 @@ export function buildAgentCards(
     const vendor = AGENT_VENDORS[candidate.recipeId];
     // A saved definition's own probe wins: its sessions run the saved command.
     const options = discovery?.agentModels[candidate.recipeId] ?? candidate.models;
+    const probeError = definition
+      ? discovery?.agentErrors?.[candidate.recipeId]
+      : candidate.probeError;
     const card: AgentCardModel = {
       key: `recipe:${candidate.recipeId}`,
       agentId: candidate.recipeId,
@@ -74,8 +90,13 @@ export function buildAgentCards(
       startable: definition !== undefined || (candidate.detected && candidate.launch !== null),
       ...(candidate.version !== undefined ? { version: candidate.version } : {}),
       ...(candidate.authStatus !== undefined ? { authStatus: candidate.authStatus } : {}),
+      ...(candidate.authHint !== "" ? { authHint: candidate.authHint } : {}),
       setupHint: candidate.launch === null ? (candidate.setupHint ?? setupRequired) : null,
       homepageUrl: candidate.homepageUrl,
+      ...(candidate.installCommand !== undefined
+        ? { installCommand: candidate.installCommand }
+        : {}),
+      ...(probeError !== undefined ? { probeError } : {}),
       ...(options !== undefined ? { options } : {}),
       rememberedModel: definition?.rememberedModel ?? candidate.rememberedModel ?? null,
       ...((definition?.rememberedOptions ?? candidate.rememberedOptions)
@@ -87,6 +108,7 @@ export function buildAgentCards(
   for (const agent of saved) {
     if (seen.has(agent.id)) continue;
     const options = discovery?.agentModels[agent.id];
+    const probeError = discovery?.agentErrors?.[agent.id];
     installed.push({
       key: `def:${agent.id}`,
       agentId: agent.id,
@@ -95,11 +117,28 @@ export function buildAgentCards(
       saved: true,
       startable: true,
       ...(options !== undefined ? { options } : {}),
+      ...(probeError !== undefined ? { probeError } : {}),
       rememberedModel: agent.rememberedModel ?? null,
       ...(agent.rememberedOptions ? { rememberedOptions: agent.rememberedOptions } : {}),
     });
   }
   return { installed, available };
+}
+
+/**
+ * Whether an installed agent can run a prompt now, as one word for its card: `ready` when it
+ * can start and is signed in; `signIn` when its login is missing, which outranks everything
+ * because nothing else works until it is fixed; `setup` when it is found but nothing can
+ * launch it; `failed` when the last probe could not open a session with it; `unknown` when
+ * it can start but no sign-in check could tell.
+ */
+export type CardReadiness = "ready" | "signIn" | "setup" | "failed" | "unknown";
+
+export function cardReadiness(card: AgentCardModel): CardReadiness {
+  if (card.authStatus === "missing") return "signIn";
+  if (!card.startable) return "setup";
+  if (card.probeError !== undefined) return "failed";
+  return card.authStatus === "ok" ? "ready" : "unknown";
 }
 
 /** The option an agent renders as its Model: the `model` category, else the first select. */

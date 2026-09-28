@@ -45,7 +45,7 @@ describe("agent discovery", () => {
     expect(gemini).toMatchObject({
       detected: true,
       setupHint: null,
-      launch: { args: ["--experimental-acp"] },
+      launch: { args: ["--acp"] },
     });
     expect(gemini?.launch?.command.toLowerCase()).toBe(
       path.join(bin, WIN ? "gemini.cmd" : "gemini").toLowerCase(),
@@ -121,7 +121,7 @@ describe("agent discovery", () => {
     const gemini = candidates.find((c) => c.recipeId === "gemini");
     const codex = candidates.find((c) => c.recipeId === "codex");
     expect(gemini?.detected).toBe(true);
-    expect(gemini?.launch?.args).toEqual(["--experimental-acp"]);
+    expect(gemini?.launch?.args).toEqual(["--acp"]);
     // The direct adapter wins over the npx fallback even though npx is also present.
     expect(codex?.launch?.command).toContain("codex-acp");
     expect(codex?.launch?.args).toEqual([]);
@@ -140,6 +140,85 @@ describe("agent discovery", () => {
       path.join("node-versions", "v22.11.0", "installation"),
     );
     expect(claude?.launch?.args).toEqual(["-y", "@agentclientprotocol/claude-agent-acp"]);
+  });
+
+  // The stored sign-in is read on every call, without executing the agent.
+  describe("stored sign-in", () => {
+    async function write(rel: string, text: string): Promise<void> {
+      const file = path.join(home, rel);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, text);
+    }
+    // `agentEnv` is what the agent is spawned with; the server's own env never counts.
+    const statusOf = async (id: string, agentEnv: NodeJS.ProcessEnv = {}) =>
+      (await discoverAgents({ env: env(), home, agentEnv: () => agentEnv })).find(
+        (c) => c.recipeId === id,
+      )?.authStatus;
+
+    it("reads Gemini's login file, and says missing when there is none", async () => {
+      await install(bin, "gemini");
+      expect(await statusOf("gemini")).toBe("missing");
+      await write(".gemini/oauth_creds.json", "{}");
+      expect(await statusOf("gemini")).toBe("ok");
+    });
+
+    it("counts an API key the agent is spawned with as signed in", async () => {
+      await install(bin, "gemini");
+      expect(await statusOf("gemini", { GEMINI_API_KEY: "k" })).toBe("ok");
+      // An explicit off is not a sign-in.
+      expect(await statusOf("gemini", { GOOGLE_GENAI_USE_VERTEXAI: "false" })).toBe("missing");
+    });
+
+    // Agents run with a sandboxed environment, so a key only the server holds never
+    // reaches them and must not read as signed in.
+    it("ignores a key the server holds but the agent never gets", async () => {
+      await install(bin, "gemini");
+      const found = await discoverAgents({ env: { ...env(), GEMINI_API_KEY: "k" }, home });
+      expect(found.find((c) => c.recipeId === "gemini")?.authStatus).toBe("missing");
+    });
+
+    it("says unknown when the login was moved to the keychain", async () => {
+      await install(bin, "gemini");
+      expect(await statusOf("gemini", { GEMINI_FORCE_ENCRYPTED_FILE_STORAGE: "true" })).toBe(
+        "unknown",
+      );
+    });
+
+    it("marks a stored answer as stored, not the CLI's own", async () => {
+      await install(bin, "gemini");
+      const found = await discoverAgents({ env: env(), home });
+      expect(found.find((c) => c.recipeId === "gemini")?.authSource).toBe("stored");
+    });
+
+    it("looks inside the file when existing is not enough", async () => {
+      await install(bin, "cline");
+      await write(".cline/data/settings/providers.json", '{"providers":{"x":{"settings":{}}}}');
+      // Cline also takes keys from its environment, so an empty file is not signed out.
+      expect(await statusOf("cline")).toBe("unknown");
+      await write(
+        ".cline/data/settings/providers.json",
+        '{"providers":{"x":{"settings":{"apiKey":"k"}}}}',
+      );
+      expect(await statusOf("cline")).toBe("ok");
+    });
+
+    it("reads a config that opens with a comment line", async () => {
+      await install(bin, "copilot");
+      await write(".copilot/config.json", '// User settings\n{"loggedInUsers":[{"login":"a"}]}');
+      expect(await statusOf("copilot")).toBe("ok");
+    });
+
+    // Copilot may sign in through the GitHub CLI instead; that login is out of reach.
+    it("says unknown where the login may live somewhere unreadable", async () => {
+      await install(bin, "copilot");
+      await write(".copilot/config.json", '{"loggedInUsers":[]}');
+      expect(await statusOf("copilot")).toBe("unknown");
+    });
+
+    it("says nothing about an agent that is not installed", async () => {
+      await write(".gemini/oauth_creds.json", "{}");
+      expect(await statusOf("gemini")).toBeUndefined();
+    });
   });
 });
 

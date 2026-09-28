@@ -53,9 +53,12 @@ export async function probeAgentOptions(
     const response = await connection.newSession(scratch);
     return configOptionsFromAcp(response.configOptions);
   } catch (error) {
+    // The agent's own refusal is the useful part ("this client is no longer supported"), so
+    // it is kept rather than folded into a generic line.
+    const detail = error instanceof Error && error.message !== "" ? `: ${error.message}` : "";
     const message = timedOut
       ? `the agent did not report its session options within ${timeoutMs}ms`
-      : "the agent did not report its session options";
+      : `the agent did not report its session options${detail}`;
     throw error instanceof AcpAgentError && !timedOut
       ? error
       : new AcpAgentError(message, { cause: error });

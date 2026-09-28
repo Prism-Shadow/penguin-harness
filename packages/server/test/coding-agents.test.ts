@@ -151,6 +151,38 @@ describe("coding agents api", () => {
     expect(gemini?.models).toBeUndefined();
   }, 60_000);
 
+  // A plain read must keep what the last refresh learned (it is saved, so a restart keeps
+  // it too), including why an agent would not start, which only admins are shown.
+  it("keeps the last refresh's models and failures for later reads", async () => {
+    await admin.post("/api/coding-agents/agents", {
+      id: "broken",
+      command: process.execPath,
+      args: ["-e", "process.exit(1)"],
+    });
+    expect((await admin.post("/api/coding-agents/discover/refresh?timeoutMs=5000")).status).toBe(
+      200,
+    );
+    const later = (await (
+      await admin.get("/api/coding-agents/discover")
+    ).json()) as CodingAgentDiscoveryResponse;
+    expect(typeof later.probedAt).toBe("number");
+    expect((later.agentModels.fake ?? []).map((o) => o.id)).toEqual(["model", "plan"]);
+    expect(later.agentErrors?.broken).toMatch(/exited|handshake|session options/);
+    const seen = (await (
+      await member.get("/api/coding-agents/discover")
+    ).json()) as CodingAgentDiscoveryResponse;
+    // Members learn that it failed, not why.
+    expect(seen.agentErrors?.broken).toBe("");
+    expect(seen.candidates.every((c) => !c.probeError)).toBe(true);
+    // Removing the agent forgets its failure: a re-saved one is judged afresh.
+    expect((await admin.delete("/api/coding-agents/agents/broken")).status).toBe(204);
+    const after = (await (
+      await admin.get("/api/coding-agents/discover")
+    ).json()) as CodingAgentDiscoveryResponse;
+    expect(after.agentErrors?.broken).toBeUndefined();
+    expect((after.agentModels.fake ?? []).length).toBeGreaterThan(0);
+  }, 60_000);
+
   // The refresh must not run an agent's npx-fallback launch when the agent itself is
   // absent: probing it would install-and-execute a package nobody on this machine chose.
   it("does not execute an npx fallback launch for an agent the machine lacks", async () => {
