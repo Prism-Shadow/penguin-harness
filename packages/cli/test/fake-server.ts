@@ -1235,6 +1235,20 @@ export class FakeServer {
         proposal.status = status;
         return this.json(bump(status));
       }
+      case "withdraw": {
+        // The plugin's rule, so a refusal can be seen passing through: only while drafting.
+        if (proposal.status !== "drafting") {
+          return this.error(
+            409,
+            "proposal_status",
+            `Proposal #${number} is ${String(proposal.status)}: a proposal can be withdrawn only while drafting.`,
+          );
+        }
+        proposal.status = "withdrawn";
+        return this.json(
+          bump("withdrawn", isNonEmptyString(body?.reason) ? { text: body.reason } : {}),
+        );
+      }
       case "implement": {
         // No implementer named = the author builds its own proposal.
         const implementer = isNonEmptyString(body?.agentId)

@@ -561,6 +561,66 @@ describe("foldLedger", () => {
     expect(p.openBatches).toEqual([]);
   });
 
+  it("a withdrawn status line closes the proposal as withdrawn, with the reason as the event's text, and keeps everything that gathered around it", () => {
+    const state = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        {
+          kind: "revised",
+          number: 1,
+          revision: 1,
+          title: "T",
+          scope: [{ kind: "edit", file: "a.ts" }],
+          sections: [{ id: "s1", heading: "Change", paragraphs: [{ id: "p1", text: "x" }] }],
+          by: "agent:dev",
+        },
+        {
+          kind: "comment",
+          number: 1,
+          id: "c1",
+          paragraphId: "p1",
+          revision: 1,
+          text: "pending",
+          by: "user:boss",
+        },
+        {
+          kind: "material",
+          number: 1,
+          material: { kind: "pr", label: "PR", url: "https://example.com/pr/1" },
+          by: "agent:dev",
+        },
+        {
+          kind: "status",
+          number: 1,
+          status: "withdrawn",
+          by: "agent:dev",
+          reason: "folded into #24",
+        },
+        { kind: "created", number: 2, title: "U", author: "dev", delegatedBy: "boss", brief: "b" },
+        { kind: "status", number: 2, status: "withdrawn", by: "user:boss" },
+      ),
+    );
+    const p = state.proposals.get(1)!;
+    expect(p.status).toBe("withdrawn");
+    expect(p.revision).toBe(1);
+    expect(p.sections).toHaveLength(1);
+    expect(p.comments.map((c) => [c.id, c.batchId])).toEqual([["c1", null]]);
+    expect(p.materials.map((m) => m.label)).toEqual(["PR"]);
+    expect(p.events.at(-1)).toMatchObject({
+      kind: "withdrawn",
+      by: "agent:dev",
+      text: "folded into #24",
+    });
+    // Without a reason the event has no text; a rev-0 draft withdraws like any other.
+    const q = state.proposals.get(2)!;
+    expect(q.status).toBe("withdrawn");
+    expect(q.revision).toBe(0);
+    expect(q.events.at(-1)).toEqual(
+      expect.objectContaining({ kind: "withdrawn", by: "user:boss" }),
+    );
+    expect(q.events.at(-1)).not.toHaveProperty("text");
+  });
+
   it("skips a line about a proposal that does not exist, and keeps counting seq", () => {
     const state = foldLedger(
       lines(
@@ -592,6 +652,37 @@ describe("parseLedger", () => {
       JSON.stringify({ seq: 2, at, kind: "status", number: 1, status: "ready", by: "agent:a" }),
     ].join("\n");
     expect(parseLedger(text).map((l) => l.seq)).toEqual([1, 2]);
+  });
+});
+
+describe("parseLedger around a withdrawal", () => {
+  it("skips the unreadable lines on either side of a withdrawn line, and folds to what the clean file folds to", () => {
+    const created = JSON.stringify({
+      seq: 1,
+      at,
+      kind: "created",
+      number: 1,
+      title: "T",
+      author: "a",
+      delegatedBy: "u",
+      brief: "b",
+    });
+    const withdrawn = JSON.stringify({
+      seq: 2,
+      at,
+      kind: "status",
+      number: 1,
+      status: "withdrawn",
+      by: "agent:a",
+      reason: "not needed",
+    });
+    const dirty = [created, "not json", JSON.stringify({ kind: "status" }), withdrawn, "{"].join(
+      "\n",
+    );
+    const clean = [created, withdrawn].join("\n");
+    expect(parseLedger(dirty).map((l) => l.seq)).toEqual([1, 2]);
+    expect(foldLedger(parseLedger(dirty))).toEqual(foldLedger(parseLedger(clean)));
+    expect(foldLedger(parseLedger(dirty)).proposals.get(1)?.status).toBe("withdrawn");
   });
 });
 

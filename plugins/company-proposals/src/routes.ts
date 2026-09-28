@@ -13,6 +13,7 @@
  *   PUT    /:number                  publish a revision: { markdown }
  *   PUT    /:number/brief            rewrite the brief: { brief } (the author or a person; the revisions stay)
  *   POST   /:number/ready | approve | reject { reason } | merged
+ *   POST   /:number/withdraw         { reason? }  the author (or a person) takes back a drafting proposal
  *   POST   /:number/implement        { agentId?, message?, workspace? } → an implementation session (default: the author's own)
  *   POST   /:number/discussions      a person opens a discussion with the owner (implementer, else author) → its session
  *   POST   /:number/discussions/:sessionId/conclude { text }  the conclusion, to the owner's desk (a person, or that session)
@@ -244,6 +245,19 @@ export function proposalRoutes(service: ProposalService): Hono {
         param(c, "orgId"),
         numberParam(c),
         requireString(body, "reason", 4000),
+        actorOf(c, body),
+      ),
+    );
+  });
+
+  app.post("/:number/withdraw", async (c) => {
+    const body = await jsonBody(c).catch(() => ({}) as Record<string, unknown>);
+    return c.json(
+      await service.withdraw(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        numberParam(c),
+        optionalString(body, "reason", 4000),
         actorOf(c, body),
       ),
     );

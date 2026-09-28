@@ -1399,6 +1399,232 @@ describe("ProposalService", () => {
     });
   });
 
+  describe("withdraw", () => {
+    /** The refusal with its message, for the one place the words are the point. */
+    async function refusal(run: () => Promise<unknown>): Promise<ProposalError> {
+      try {
+        await run();
+      } catch (err) {
+        if (err instanceof ProposalError) return err;
+        throw err;
+      }
+      throw new Error("expected a refusal");
+    }
+
+    it("the author or a person withdraws; another employee, and an implementer that is not the author, may not", async () => {
+      // A rev-0 draft of the author's own: nothing published, nobody else to tell.
+      const own = (await service.create(PROJECT, ORG, { brief: "Not needed after all" }, author))
+        .number;
+      const desks = gateway.desks.length;
+      const mine = await service.withdraw(PROJECT, ORG, own, undefined, author);
+      expect(mine).toMatchObject({ number: own, status: "withdrawn", revision: 0 });
+      expect(mine.events.at(-1)).toEqual(
+        expect.objectContaining({ kind: "withdrawn", by: "agent:acme_dev" }),
+      );
+      expect(mine.events.at(-1)).not.toHaveProperty("text");
+      expect(gateway.desks).toHaveLength(desks);
+
+      const n = await delegated();
+      await service.publish(PROJECT, ORG, n, DOC, author);
+      await service.implement(PROJECT, ORG, n, { agentId: "acme_impl" }, author);
+      expect(await refused(() => service.withdraw(PROJECT, ORG, n, undefined, qa))).toEqual({
+        status: 403,
+        code: "not_author",
+      });
+      expect(await refused(() => service.withdraw(PROJECT, ORG, n, undefined, impl))).toEqual({
+        status: 403,
+        code: "not_author",
+      });
+      const byPerson = await service.withdraw(PROJECT, ORG, n, "  Folded into #24.  ", BOSS);
+      expect(byPerson.status).toBe("withdrawn");
+      expect(byPerson.events.at(-1)).toMatchObject({
+        kind: "withdrawn",
+        by: "user:boss",
+        text: "Folded into #24.",
+      });
+      expect(gateway.desks.slice(-2)).toEqual([
+        {
+          agentId: "acme_dev",
+          text: `[proposal #${n}] withdrawn by boss: Folded into #24. — stop work on it, and close its PR if one is open.`,
+        },
+        {
+          agentId: "acme_impl",
+          text: `[proposal #${n}] withdrawn by boss: Folded into #24. — stop work on it, and close its PR if one is open.`,
+        },
+      ]);
+    });
+
+    it("the author's own withdrawal tells the implementer only, and counts as unread for a person", async () => {
+      const n = await delegated();
+      await service.publish(PROJECT, ORG, n, DOC, author);
+      await service.implement(PROJECT, ORG, n, { agentId: "acme_impl" }, author);
+      const seen = await service.get(PROJECT, ORG, n, BOSS);
+      await service.read(PROJECT, ORG, n, seen.seq, BOSS);
+      const desks = gateway.desks.length;
+      // A blank reason is no reason.
+      await service.withdraw(PROJECT, ORG, n, "  ", author);
+      expect(gateway.desks.slice(desks)).toEqual([
+        {
+          agentId: "acme_impl",
+          text: `[proposal #${n}] withdrawn by acme_dev — stop work on it, and close its PR if one is open.`,
+        },
+      ]);
+      expect((await service.list(PROJECT, ORG, BOSS)).proposals[0]).toMatchObject({
+        number: n,
+        status: "withdrawn",
+        unread: 1,
+      });
+    });
+
+    it("only while drafting: ready, approved, merged, rejected and withdrawn are 409, and a ready one says to ask for a reject", async () => {
+      const ready = await delegated();
+      await service.publish(PROJECT, ORG, ready, DOC, author);
+      await service.ready(PROJECT, ORG, ready, author);
+      const err = await refusal(() => service.withdraw(PROJECT, ORG, ready, undefined, author));
+      expect({ status: err.status, code: err.code }).toEqual({
+        status: 409,
+        code: "proposal_status",
+      });
+      expect(err.message).toContain("is ready");
+      expect(err.message).toContain("only while drafting");
+      expect(err.message).toContain("reject");
+      // A person may not withdraw a ready one either: that is what reject is for.
+      expect(await refused(() => service.withdraw(PROJECT, ORG, ready, undefined, BOSS))).toEqual({
+        status: 409,
+        code: "proposal_status",
+      });
+
+      const approved = await delegated();
+      await service.publish(PROJECT, ORG, approved, DOC, author);
+      await service.implement(PROJECT, ORG, approved, { agentId: "acme_impl" }, author);
+      await service.approve(PROJECT, ORG, approved, BOSS);
+      expect(
+        await refused(() => service.withdraw(PROJECT, ORG, approved, undefined, author)),
+      ).toEqual({ status: 409, code: "proposal_status" });
+      await service.merged(PROJECT, ORG, approved, impl);
+      expect(
+        await refused(() => service.withdraw(PROJECT, ORG, approved, undefined, author)),
+      ).toEqual({ status: 409, code: "proposal_status" });
+
+      const rejected = await delegated();
+      await service.reject(PROJECT, ORG, rejected, "No.", BOSS);
+      expect(
+        await refused(() => service.withdraw(PROJECT, ORG, rejected, undefined, author)),
+      ).toEqual({ status: 409, code: "proposal_status" });
+
+      const twice = await delegated();
+      await service.withdraw(PROJECT, ORG, twice, undefined, author);
+      expect(await refused(() => service.withdraw(PROJECT, ORG, twice, undefined, author))).toEqual(
+        { status: 409, code: "proposal_status" },
+      );
+    });
+
+    it("a request for changes puts a ready proposal back to drafting, and then the author may withdraw it", async () => {
+      const n = await delegated();
+      await service.publish(PROJECT, ORG, n, DOC, author);
+      await service.ready(PROJECT, ORG, n, author);
+      const change = (await service.get(PROJECT, ORG, n, BOSS)).sections[0]!;
+      const start = sectionSource(change).indexOf("notifyTicket");
+      await service.comment(
+        PROJECT,
+        ORG,
+        n,
+        { sectionId: change.id, start, end: start + 12, quote: "notifyTicket", text: "why?" },
+        BOSS,
+      );
+      await service.requestChanges(PROJECT, ORG, n, BOSS);
+      expect((await service.withdraw(PROJECT, ORG, n, "Superseded.", author)).status).toBe(
+        "withdrawn",
+      );
+    });
+
+    it("a withdrawn proposal is closed: no publish (and no scope check), no implementation, discussion, reject, ready or approve — and it is still listed and readable", async () => {
+      const n = await delegated();
+      await service.publish(PROJECT, ORG, n, DOC, author);
+      const before = await service.get(PROJECT, ORG, n, BOSS);
+      // The detail shares the live arrays: keep what the events were, not a view of them.
+      const kindsBefore = before.events.map((e) => e.kind);
+      await service.withdraw(PROJECT, ORG, n, undefined, author);
+      // A scope naming a file that is not there would be a 400 scope_missing if the check ran.
+      const badScope = DOC.replace(
+        "packages/server/src/runtime/organization/reconcile.ts",
+        "no/such/file.ts",
+      );
+      expect(await refused(() => service.publish(PROJECT, ORG, n, badScope, author))).toEqual({
+        status: 409,
+        code: "proposal_closed",
+      });
+      const closed = { status: 409, code: "proposal_status" };
+      expect(
+        await refused(() => service.implement(PROJECT, ORG, n, { agentId: "acme_impl" }, author)),
+      ).toEqual(closed);
+      expect(await refused(() => service.discuss(PROJECT, ORG, n, BOSS))).toEqual(closed);
+      expect(await refused(() => service.reject(PROJECT, ORG, n, "Too late.", BOSS))).toEqual(
+        closed,
+      );
+      expect(await refused(() => service.ready(PROJECT, ORG, n, author))).toEqual(closed);
+      expect(await refused(() => service.approve(PROJECT, ORG, n, BOSS))).toEqual(closed);
+
+      const listed = (await service.list(PROJECT, ORG, BOSS)).proposals;
+      expect(listed.map((p) => [p.number, p.status])).toEqual([[n, "withdrawn"]]);
+      const after = await service.get(PROJECT, ORG, n, BOSS);
+      expect(after).toMatchObject({ status: "withdrawn", revision: 1 });
+      expect(after.sections).toEqual(before.sections);
+      expect(after.scope).toEqual(before.scope);
+      expect(after.pendingComments).toBe(before.pendingComments);
+      expect(after.events.map((e) => e.kind)).toEqual([...kindsBefore, "withdrawn"]);
+    });
+
+    it("POST /:number/withdraw: no body, {} and { reason } all withdraw; a reason too long is a 400; 403 and 409 carry their codes", async () => {
+      const app = new Hono();
+      app.use(async (c, next) => {
+        c.set("user" as never, { userId: "boss" } as never);
+        c.set("sessionVia" as never, "token" as never);
+        await next();
+      });
+      app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service));
+      const post = (n: number, body?: unknown) =>
+        app.request(`/p/${PROJECT}/o/${ORG}/proposals/${n}/withdraw`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        });
+      const a = await delegated();
+      const b = await delegated();
+      const c = await delegated();
+      const d = await delegated();
+
+      const bare = await post(a);
+      expect(bare.status).toBe(200);
+      expect(((await bare.json()) as { status: string }).status).toBe("withdrawn");
+      expect((await post(b, {})).status).toBe(200);
+      const withReason = await post(c, { reason: "Not needed.", agentId: "acme_dev" });
+      expect(withReason.status).toBe(200);
+      const detail = (await withReason.json()) as {
+        events: Array<{ kind: string; by: string; text?: string }>;
+      };
+      expect(detail.events.at(-1)).toMatchObject({
+        kind: "withdrawn",
+        by: "agent:acme_dev",
+        text: "Not needed.",
+      });
+
+      const tooLong = await post(d, { reason: "x".repeat(4001) });
+      expect(tooLong.status).toBe(400);
+      expect(((await tooLong.json()) as { error: { code: string } }).error.code).toBe(
+        "bad_request",
+      );
+      const other = await post(d, { agentId: "acme_qa" });
+      expect(other.status).toBe(403);
+      expect(((await other.json()) as { error: { code: string } }).error.code).toBe("not_author");
+      const again = await post(a);
+      expect(again.status).toBe(409);
+      expect(((await again.json()) as { error: { code: string } }).error.code).toBe(
+        "proposal_status",
+      );
+    });
+  });
+
   it("an approval covers one revision: a later publish puts the proposal back to ready, keeps the approved revision, tells the implementer, and the revisions can be read back", async () => {
     const n = await delegated();
     await service.publish(PROJECT, ORG, n, DOC, author);

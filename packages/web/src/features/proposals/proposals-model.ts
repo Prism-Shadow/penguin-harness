@@ -32,7 +32,8 @@ export function sortProposals<T extends { number: number; unread: number }>(
 /**
  * A status as a pill tone, by what it asks of the reader: `ready` waits on the person
  * (attention), `approved` is settled well, `merged` is done and recedes into the neutral
- * emphasis, `rejected` is the one closed badly, `drafting` is nobody's turn but the author's.
+ * emphasis, `rejected` is the one closed badly, `drafting` is nobody's turn but the author's,
+ * and `withdrawn` — the author took it back — is not a bad end, only one with nothing after it.
  */
 export const PROPOSAL_STATUS_TONE: Record<ProposalStatus, BadgeTone> = {
   drafting: "gray",
@@ -40,11 +41,12 @@ export const PROPOSAL_STATUS_TONE: Record<ProposalStatus, BadgeTone> = {
   approved: "green",
   merged: "brand",
   rejected: "red",
+  withdrawn: "gray",
 };
 
 /** A closed proposal takes no more comments, approvals or rejections. */
 export function isProposalClosed(status: ProposalStatus): boolean {
-  return status === "merged" || status === "rejected";
+  return status === "merged" || status === "rejected" || status === "withdrawn";
 }
 
 /** What the person may do from the action bar, given the status and their pending comments. */
@@ -207,6 +209,8 @@ export function eventLine(ev: ProposalEvent, names: ReadonlyMap<string, string>)
       return t.merged;
     case "rejected":
       return t.rejected;
+    case "withdrawn":
+      return t.withdrawn;
     case "notify_failed":
       return t.notify_failed;
     case "brief_edited":
@@ -226,6 +230,7 @@ export function eventDetail(ev: ProposalEvent): string | null {
   return ev.kind === "feedback" ||
     ev.kind === "runtime_feedback" ||
     ev.kind === "rejected" ||
+    ev.kind === "withdrawn" ||
     ev.kind === "resolved" ||
     ev.kind === "notify_failed" ||
     ev.kind === "brief_edited" ||
@@ -450,12 +455,13 @@ export interface ProposalQuery {
 /** The states `is:` accepts; `open` and `closed` are the two halves of the lifecycle. */
 const STATE_GROUPS: Record<string, readonly ProposalStatus[]> = {
   open: ["drafting", "ready", "approved"],
-  closed: ["merged", "rejected"],
+  closed: ["merged", "rejected", "withdrawn"],
   drafting: ["drafting"],
   ready: ["ready"],
   approved: ["approved"],
   merged: ["merged"],
   rejected: ["rejected"],
+  withdrawn: ["withdrawn"],
 };
 
 /** Splits on whitespace, keeping `"a phrase"` (and `key:"a phrase"`) as one word. */

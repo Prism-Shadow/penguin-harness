@@ -409,6 +409,58 @@ describe("eventLine", () => {
   });
 });
 
+describe("a withdrawn proposal", () => {
+  it("is closed: the action bar offers no approval, rejection, discussion or request for changes", () => {
+    expect(proposalActions("withdrawn", 2)).toEqual({
+      discuss: false,
+      requestChanges: false,
+      approve: false,
+      reject: false,
+      markMerged: false,
+    });
+  });
+
+  it("is out of the default queue, and under is:closed and is:withdrawn", () => {
+    const item = (number: number, status: ProposalItem["status"]): ProposalItem => ({
+      number,
+      title: `Proposal ${number}`,
+      status,
+      revision: 0,
+      author: "acme_dev",
+      implementer: null,
+      delegatedBy: "user:alice",
+      createdAt: "2026-09-21T00:00:00Z",
+      updatedAt: "2026-09-21T00:00:00Z",
+      unread: 0,
+      pendingComments: 0,
+      materials: [],
+    });
+    const items = [item(1, "drafting"), item(2, "withdrawn"), item(3, "rejected")];
+    const numbers = (q: string) => filterProposals(items, q).map((p) => p.number);
+    expect(numbers(DEFAULT_PROPOSAL_QUERY)).toEqual([1]);
+    expect(numbers("is:closed")).toEqual([2, 3]);
+    expect(numbers("is:withdrawn")).toEqual([2]);
+    expect(numbers("status:withdrawn")).toEqual([2]);
+  });
+
+  it("has its own event line in both languages, and its reason under it", () => {
+    const ev = (over: Partial<ProposalEvent>): ProposalEvent => ({
+      seq: 1,
+      at: "2026-09-28T00:00:00Z",
+      kind: "withdrawn",
+      by: "agent:acme_dev",
+      ...over,
+    });
+    const names = new Map<string, string>();
+    setActiveStrings(en);
+    expect(eventLine(ev({}), names)).toBe("withdrew the proposal");
+    setActiveStrings(zh);
+    expect(eventLine(ev({}), names)).toBe("撤回了提案");
+    expect(eventDetail(ev({ text: "Folded into #24." }))).toBe("Folded into #24.");
+    expect(eventDetail(ev({}))).toBeNull();
+  });
+});
+
 describe("the file panel's helpers", () => {
   it("marks every line the pattern matches, on its first capture group when there is one", () => {
     const content = [

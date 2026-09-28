@@ -30,7 +30,7 @@ If the message only names this skill without a concrete request, ask whether to 
      ```bash
      penguin org proposal feedback <n> --runtime -m "<what fails, where, how to reproduce; which test would have caught it>"
      ```
-   - **`rejected`** — its branch should not be on `dev`; tell the implementer to revert it: `penguin org proposal feedback <n> --runtime -m "rejected but still on dev — revert it"` reaches its desk.
+   - **`rejected`** or **`withdrawn`** — its branch should not be on `dev`; tell the implementer to revert it: `penguin org proposal feedback <n> --runtime -m "rejected but still on dev — revert it"` (or `"withdrawn but …"`) reaches its desk.
 6. **Write the batch note** in the handbook (`penguin org handbook write batches/<yyyy-mm-dd>.md -m "…"`): what was run, what passed, each finding and where it went. The next batch starts by reading it.
 
 ## What a finding says

@@ -1712,6 +1712,53 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     expect(out()).toBe(`${t.org.proposalStatusSet(5, "rejected")}\n`);
   });
 
+  it("withdraw takes back a drafting proposal, with or without a reason; a refusal is printed as the server says it", async () => {
+    server.addProposal("acme", { number: 8 });
+    server.addProposal("acme", { number: 9 });
+    expect(await cli(["org", "proposal", "withdraw", "8"])).toBe(0);
+    expect(lastRequest("POST", "/proposals/8/withdraw")?.body).toEqual({
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    expect(out()).toBe(`${t.org.proposalStatusSet(8, "withdrawn")}\n`);
+
+    stdout.length = 0;
+    expect(
+      await cli(["org", "proposal", "withdraw", "9", "--reason", "Folded into #24", "--json"]),
+    ).toBe(0);
+    expect(lastRequest("POST", "/proposals/9/withdraw")?.body).toEqual({
+      reason: "Folded into #24",
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
+    });
+    const detail = JSON.parse(out()) as {
+      status: string;
+      events: Array<{ kind: string; text?: string }>;
+    };
+    expect(detail.status).toBe("withdrawn");
+    expect(detail.events.at(-1)).toMatchObject({ kind: "withdrawn", text: "Folded into #24" });
+
+    // Already withdrawn: the server's 409, verbatim, and a non-zero exit.
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "withdraw", "8"])).toBe(1);
+    expect(err()).toContain(
+      "Proposal #8 is withdrawn: a proposal can be withdrawn only while drafting.",
+    );
+
+    stdout.length = 0;
+    expect(await cli(["org", "proposal", "ls", "--status", "withdrawn"])).toBe(0);
+    expect(out()).toContain("#8");
+    expect(out()).toContain("#9");
+    expect(await cli(["org", "proposal", "ls", "--status", "bogus"])).toBe(1);
+    expect(err()).toContain(t.org.proposalStatusInvalid("bogus"));
+  });
+
+  it("withdraw is listed among the proposal subcommands", async () => {
+    expect(await cli(["org", "proposal", "--help"])).toBe(0);
+    // The description may wrap at the help's width: only its first words are asserted.
+    expect(out()).toMatch(/withdraw \[options\] <number>\s+Withdraw a proposal/);
+  });
+
   it("conclude sends the discussion's conclusion from inside it, or from a person naming it", async () => {
     // The CLI runs inside the discussion: PENGUIN_SESSION_ID is the discussion's session.
     server.addProposal("acme", {

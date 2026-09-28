@@ -32,7 +32,7 @@
  *                    | material <n> add <kind>=<url> [--label <s>] | feedback <n> -m <text> [--runtime]
  *                    | conclude <n> -m <text> [--discussion <session_id>]
  *                    | comments <n> [--pending] | resolve <n> <comment_id> [-m <text>] | merged <n>
- *                    | approve <n> | reject <n> --reason <s> | groups
+ *                    | approve <n> | reject <n> --reason <s> | withdraw <n> [--reason <s>] | groups
  *                    (the company-proposals plugin's routes: without the plugin, every one is a 404)
  *
  * Every subcommand takes `--org-id` (default: PENGUIN_ORG_ID, the variable company mode
@@ -128,6 +128,7 @@ const PROPOSAL_STATUSES: readonly ProposalStatus[] = [
   "approved",
   "merged",
   "rejected",
+  "withdrawn",
 ];
 /** What `material add <kind>=<url>` accepts as the kind. */
 const MATERIAL_KINDS: readonly ProposalMaterialKind[] = [
@@ -2005,6 +2006,28 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (scope === null) return;
     const detail = await proposalRequest<ProposalDetail>(scope, t, "POST", `/${number}/reject`, {
       reason: String(opts.reason),
+      ...actorFields(),
+    });
+    if (detail === null) return;
+    if (opts.json === true) printJson(detail);
+    else printLine(t.org.proposalStatusSet(detail.number, detail.status));
+  });
+
+  // Not a statusCommand: that helper carries only the caller's identity, and the reason, while
+  // optional, is recorded when given.
+  scoped(
+    proposal
+      .command("withdraw <number>")
+      .description(t.org.proposalWithdrawDesc)
+      .option("--reason <text>", t.org.proposalWithdrawReason),
+    t,
+  ).action(async (raw: string, opts) => {
+    const number = parseProposalNumber(raw, t);
+    if (number === null) return;
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const detail = await proposalRequest<ProposalDetail>(scope, t, "POST", `/${number}/withdraw`, {
+      ...(opts.reason !== undefined ? { reason: String(opts.reason) } : {}),
       ...actorFields(),
     });
     if (detail === null) return;

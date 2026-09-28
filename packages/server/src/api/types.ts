@@ -5321,8 +5321,13 @@ export type CompanyServerEvent =
 // web build compiles against. Absent the plugin, none of these routes exist.
 // ---------------------------------------------------------------------------
 
-/** A proposal's lifecycle; a revision never changes it, a request for changes puts `ready` back to `drafting`. */
-export type ProposalStatus = "drafting" | "ready" | "approved" | "merged" | "rejected";
+/**
+ * A proposal's lifecycle; a revision never changes it, a request for changes puts `ready` back
+ * to `drafting`. `rejected` is a person's verdict; `withdrawn` is the author taking back a
+ * proposal that was never ready. Both are closed.
+ */
+export type ProposalStatus =
+  "drafting" | "ready" | "approved" | "merged" | "rejected" | "withdrawn";
 
 /** One pair of the scope: a file, and optionally a pattern (a regular expression, with capture groups) over the names it touches. */
 /** What a scope entry does to its file: edit or delete one that exists, create a new one, or rename `from` to `file`. */
@@ -5442,6 +5447,8 @@ export type ProposalEventKind =
   | "approved"
   | "merged"
   | "rejected"
+  /** The author (or a person) took back a drafting proposal (the text is the reason, when given). */
+  | "withdrawn"
   /** A channel message the plugin had to send did not go out (the text says to whom, and why). */
   | "notify_failed"
   /** The brief was rewritten (the text is the new brief); the revisions are untouched. */

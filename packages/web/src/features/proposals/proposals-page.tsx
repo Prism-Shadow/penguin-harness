@@ -96,6 +96,7 @@ import {
   DEFAULT_PROPOSAL_QUERY,
   filterProposals,
   hasToken,
+  isProposalClosed,
   withToken,
   withoutToken,
   findPassage,
@@ -1006,7 +1007,7 @@ function ProposalView({
     [detail.comments, detail.revision],
   );
   const events = useMemo(() => [...detail.events].reverse(), [detail.events]);
-  const closed = detail.status === "merged" || detail.status === "rejected";
+  const closed = isProposalClosed(detail.status);
   const scopeRows = useMemo(
     () =>
       changes === null ? unchangedEntries(detail.scope) : diffScope(changes.scope, detail.scope),

@@ -77,6 +77,7 @@ penguin org proposal create --brief "…" [--author <colleague>]  # a proposal o
 penguin org proposal brief <n> -m "…"                          # rewrite the brief when it no longer says what is proposed; the text stays
 penguin org proposal implement <n> [--agent <colleague>] -m "…"  # the implementation session — yours, or a colleague's; prints its id
 penguin org proposal ready <n>                                 # tell the person it can be read
+penguin org proposal withdraw <n> [--reason "…"]               # take back your own proposal while it is still drafting
 penguin org proposal comments <n> --pending                    # the text with each commented passage marked ⟦<id>⟧…⟦/<id>⟧, then the comments by id
 penguin org proposal resolve <n> <comment_id> -m "what changed"
 penguin org proposal material <n> add doc=<url> --label "RFC"
@@ -98,5 +99,6 @@ Every write is attributed to you from your environment; there is nothing to pass
 
 - **Never a file link in the body.** A path pulls the reader into the diff; the diff is the PR in the materials. If a paragraph cannot be written without a path, it is describing an implementation detail — leave it to the PR.
 - **The desk does not build.** The branch and the PR belong to the implementation session — yours or a colleague's; the desk owns the text. A one-line fix goes into that session, not into the desk.
+- **A proposal that should not exist is yours to withdraw.** While it is still `drafting` — never marked ready, or sent back by a batch of comments — and you find it is not needed (a duplicate, superseded, folded into another), run `withdraw <n>`, with `--reason` when the brief does not already say why. Do not rewrite the brief into a notice and wait, and do not ask a person to reject it: a reject is a person's verdict on the change, a withdrawal is you taking it back. Once it is ready, it is no longer yours alone — say so with `feedback <n> -m` and let the person reject it. A withdrawn proposal stays on the record and takes no more revisions.
 - **One proposal, one change.** A brief that asks for two things is two proposals; say so with `feedback <n> -m` and ask the person to delegate the second.
 - **The desk writes, a session builds.** Writing the proposal is desk work — reading code, thinking, one file. Anything that changes the workspace belongs to the implementation session.

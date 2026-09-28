@@ -118,6 +118,14 @@ const badRequest = (message: string): ProposalError =>
 const forbidden = (code: string, message: string): ProposalError =>
   new ProposalError(403, code, message);
 
+/**
+ * A closed proposal: merged, rejected by a person, or withdrawn by its author. It takes no
+ * more implementation sessions, discussions or rejections.
+ */
+function isClosed(status: ProposalStatus): boolean {
+  return status === "merged" || status === "rejected" || status === "withdrawn";
+}
+
 /** Who acted, as a message names them: the employee's Agent id, else the person's user id. */
 function whoOf(caller: Caller): string {
   return caller.agentId ?? caller.userId;
@@ -666,8 +674,8 @@ export class ProposalService {
     const delivery = this.delivery(ledger);
     const p = this.requireProposal(ledger, number);
     this.requireAuthorOrPerson(p, caller, "publish a revision");
-    if (p.status === "rejected") {
-      throw new ProposalError(409, "proposal_closed", `Proposal #${number} is rejected.`);
+    if (p.status === "rejected" || p.status === "withdrawn") {
+      throw new ProposalError(409, "proposal_closed", `Proposal #${number} is ${p.status}.`);
     }
     let doc;
     try {
@@ -871,7 +879,7 @@ export class ProposalService {
     const p = this.requireProposal(ledger, number);
     this.requirePerson(caller, "reject a proposal");
     if (reason.trim() === "") throw badRequest("reason must not be empty.");
-    if (p.status === "merged" || p.status === "rejected") {
+    if (isClosed(p.status)) {
       throw new ProposalError(409, "proposal_status", `Proposal #${number} is ${p.status}.`);
     }
     await this.setStatus(org, ledger, p, "rejected", caller, reason.trim());
@@ -882,6 +890,47 @@ export class ProposalService {
       caller,
       [p.author, ...(p.implementer !== null ? [p.implementer] : [])],
       `rejected by ${whoOf(caller)}: ${reason.trim()} — stop work on it, and close its PR if one is open.`,
+    );
+    return this.answer(
+      delivery,
+      this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
+    );
+  }
+
+  /**
+   * The author takes back a proposal that was never ready — or a person does it for them.
+   * Only a drafting proposal: once ready, a person may be reading it and comments may be on
+   * it, so taking it off the queue is a person's reject, not the author's withdrawal. The
+   * reason is optional (a reject's is not): it says why the author stopped, not why the
+   * change should not be made.
+   */
+  async withdraw(
+    projectId: string,
+    orgId: string,
+    number: number,
+    reason: string | undefined,
+    actor: OrgActor,
+  ): Promise<ProposalDetail> {
+    const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    const delivery = this.delivery(ledger);
+    const p = this.requireProposal(ledger, number);
+    this.requireAuthorOrPerson(p, caller, "withdraw a proposal");
+    if (p.status !== "drafting") {
+      throw new ProposalError(
+        409,
+        "proposal_status",
+        `Proposal #${number} is ${p.status}: a proposal can be withdrawn only while drafting — once it is ready a person may be reading it and comments may be on it; ask a person to reject it instead.`,
+      );
+    }
+    const why = reason?.trim() || undefined;
+    await this.setStatus(org, ledger, p, "withdrawn", caller, why);
+    await this.tell(
+      delivery,
+      org,
+      p,
+      caller,
+      [p.author, ...(p.implementer !== null ? [p.implementer] : [])],
+      `withdrawn by ${whoOf(caller)}${why !== undefined ? `: ${why}` : ""} — stop work on it, and close its PR if one is open.`,
     );
     return this.answer(
       delivery,
@@ -928,7 +977,7 @@ export class ProposalService {
     // Nobody is hired to build: the author builds its own proposal unless it names a colleague.
     const implementer = req.agentId ?? p.author;
     this.requireEmployee(org, implementer, "implementer");
-    if (p.status === "merged" || p.status === "rejected") {
+    if (isClosed(p.status)) {
       throw new ProposalError(409, "proposal_status", `Proposal #${number} is ${p.status}.`);
     }
     if (p.revision === 0) {
@@ -999,7 +1048,7 @@ export class ProposalService {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
     const p = this.requireProposal(ledger, number);
     this.requirePerson(caller, "open a discussion");
-    if (p.status === "merged" || p.status === "rejected") {
+    if (isClosed(p.status)) {
       throw new ProposalError(409, "proposal_status", `Proposal #${number} is ${p.status}.`);
     }
     // The session itself would open, but its conclusion could not reach a paused desk.

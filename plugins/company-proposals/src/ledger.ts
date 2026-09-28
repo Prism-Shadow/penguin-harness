@@ -263,6 +263,8 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       } else if (line.status === "merged") event("merged", line.by);
       else if (line.status === "rejected")
         event("rejected", line.by, line.reason !== undefined ? { text: line.reason } : {});
+      else if (line.status === "withdrawn")
+        event("withdrawn", line.by, line.reason !== undefined ? { text: line.reason } : {});
       return;
     case "implementation":
       p.implementer = line.implementer;

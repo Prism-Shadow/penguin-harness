@@ -4687,6 +4687,7 @@ Benchmark：
         approved: "已认可",
         merged: "已合并",
         rejected: "已拒绝",
+        withdrawn: "已撤回",
       } as Record<string, string>,
       revision: (n: number): string => `第 ${n} 修订`,
       /** The panel above the body while an older approval stands: what changed since it. */
@@ -4830,6 +4831,7 @@ Benchmark：
         approved: "认可并请求合并",
         merged: "报告已合并",
         rejected: "拒绝了提案",
+        withdrawn: "撤回了提案",
         brief_edited: "改写了简介",
         discussion_started: (who: string): string => `开了与 ${who} 的讨论`,
         discussion_concluded: "把讨论的结论送到了负责人的工位",

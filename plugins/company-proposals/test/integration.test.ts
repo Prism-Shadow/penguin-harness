@@ -94,9 +94,17 @@ describe("the company-proposals plugin on a real server", () => {
 
   it("answers 404 while company mode is off, and 404 for a missing organization once it is on", async () => {
     expect((await status(api.get(BASE))).status).toBe(404);
+    // The withdraw route is mounted with the others, and gated the same way.
+    expect((await status(api.post(`${BASE}/1/withdraw`, {}))).status).toBe(404);
     await api.put("/api/admin/settings", { companyMode: true });
     const missing = await status(api.get(BASE));
     expect(missing.status).toBe(404);
     expect((await status(api.post(`${BASE}`, { author: "x", brief: "y" }))).status).toBe(404);
+    const withdraw = await api.post(`${BASE}/1/withdraw`, { reason: "r" }).then(
+      () => null,
+      (e: HarnessApiError) => e,
+    );
+    expect(withdraw?.status).toBe(404);
+    expect(withdraw?.body).toMatchObject({ error: { code: "org_not_found" } });
   });
 });

@@ -509,6 +509,7 @@ export interface Messages {
     proposalApproveDesc: string;
     proposalMergedDesc: string;
     proposalRejectDesc: string;
+    proposalWithdrawDesc: string;
     proposalImplementDesc: string;
     proposalMaterialDesc: string;
     proposalMaterialAddDesc: string;
@@ -547,6 +548,7 @@ export interface Messages {
     proposalPending: string;
     proposalResolveText: string;
     proposalRejectReason: string;
+    proposalWithdrawReason: string;
     /** A 404 with no organization code under `…/proposals`: the plugin is not on this Project. */
     proposalsPluginMissing(): string;
     proposalNumberInvalid(value: string): string;
@@ -1395,6 +1397,8 @@ const en: Messages = {
     proposalApproveDesc: "Approve a proposal and request its merge (a person)",
     proposalMergedDesc: "Report the implementation merged (the implementer or a person)",
     proposalRejectDesc: "Reject a proposal with a reason (a person)",
+    proposalWithdrawDesc:
+      "Withdraw a proposal that is still drafting (the author or a person); it stays in the ledger",
     proposalImplementDesc:
       "Open an implementation session for an employee on the proposal; prints the session id",
     proposalMaterialDesc: "Related material: the PR, an issue, a branch, a document, a ticket",
@@ -1431,6 +1435,7 @@ const en: Messages = {
     proposalPending: "Only the batched, unresolved comments — what the author has to work through",
     proposalResolveText: "What was changed for it",
     proposalRejectReason: "Why the proposal is rejected",
+    proposalWithdrawReason: "Why it is withdrawn (optional)",
     proposalsPluginMissing: () =>
       "The organization has no proposals plugin: install company-proposals on this Project.",
     proposalNumberInvalid: (value) =>
@@ -2243,6 +2248,7 @@ const zh: Messages = {
     proposalApproveDesc: "认可提案并请求合并（人）",
     proposalMergedDesc: "报告实施已合并（实施者或人）",
     proposalRejectDesc: "拒绝提案并给出理由（人）",
+    proposalWithdrawDesc: "撤回仍在起草中的提案（作者或人）；条目仍留在账上",
     proposalImplementDesc: "开一个实施会话来做这份提案——作者自己的，或指定的同事的；打印会话 id",
     proposalMaterialDesc: "关联材料：PR、issue、分支、文档、工单",
     proposalMaterialAddDesc: "以 <kind>=<url> 挂上材料（pr、issue、branch、doc、ticket、url）",
@@ -2271,6 +2277,7 @@ const zh: Messages = {
     proposalPending: "只列已发出的、未解决的评论——作者要处理的那些",
     proposalResolveText: "为它改了什么",
     proposalRejectReason: "拒绝的理由",
+    proposalWithdrawReason: "撤回的理由（可选）",
     proposalsPluginMissing: () => "该组织没有提案插件：请在这个 Project 上安装 company-proposals。",
     proposalNumberInvalid: (value) => `提案编号「${value}」无效：应为正整数。`,
     proposalStatusInvalid: (value) =>
