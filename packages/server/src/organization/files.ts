@@ -824,10 +824,29 @@ function parseTicketHistory(value: unknown): ParseResult<OrgTicketHistoryEntry[]
   return { ok: true, value: out };
 }
 
-type TicketProse = Pick<
+export type TicketProse = Pick<
   TicketDoc,
   "goal" | "acceptanceCriteria" | "progress" | "result" | "extraSections"
 >;
+
+/**
+ * The prose half of a ticket supplied on its own — the `body` of `POST /:orgId/tickets`, whose
+ * frontmatter the server generates. A body with section headings goes through the parser
+ * {@link parseTicket} reads a stored file with, so its `## Acceptance criteria` lands in
+ * `acceptanceCriteria` instead of under a second heading inside `goal`, and a body that parser
+ * refuses is refused here. A body without a single `## ` heading is plain prose: all of it is
+ * the goal.
+ */
+export function parseTicketBody(raw: string): ParseResult<TicketProse> {
+  const body = raw.replace(/\r\n/g, "\n");
+  if (!/^## .+$/m.test(body)) {
+    return {
+      ok: true,
+      value: { goal: body.trim(), acceptanceCriteria: "", progress: [], result: "", extraSections: [] },
+    };
+  }
+  return ticketSections(body);
+}
 
 /** The prose half: the four fixed sections, plus any others kept as written. */
 function ticketSections(body: string): ParseResult<TicketProse> {
