@@ -10,6 +10,7 @@
  *
  * Pure: the service reads the refs, the stage writes the files.
  */
+import { contentRevision } from "./domain.js";
 import { moduleShortName } from "./deploy-git.js";
 import { DEPLOY_LAYOUT } from "./deploy-context.js";
 import { MEDIA_TOKEN } from "./deploy-settings.js";
@@ -123,6 +124,27 @@ export function mainModule(moduleFolder: string, version: string): string {
 /** The refs a deploy publishes: not archived, in ref order. */
 export function deployedRefs(refs: readonly ExportRef[]): ExportRef[] {
   return refs.filter((ref) => !ref.archived).sort((a, b) => a.refNum - b.refNum);
+}
+
+/**
+ * One revision for everything a QA deploy exports: each deployed ref's number, name and draft
+ * revision. A sibling's edit, a ref added or archived, all change it — not only the ref the
+ * deploy was started from.
+ */
+export function exportRevision(
+  refs: ReadonlyArray<{
+    refNum: number;
+    displayName: string | null;
+    archived?: boolean;
+    draft: { contentRevision: string };
+  }>,
+): string {
+  return contentRevision(
+    refs
+      .filter((ref) => !ref.archived)
+      .sort((a, b) => a.refNum - b.refNum)
+      .map((ref) => [ref.refNum, ref.displayName, ref.draft.contentRevision]),
+  );
 }
 
 /** The product's template: one source per deployed ref, the released module as main. */

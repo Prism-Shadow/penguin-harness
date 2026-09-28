@@ -24,7 +24,7 @@ import type { Settings } from "../mechanisms/settings.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import { writeSecretFile } from "../secret-file.js";
 import { sandboxMediaRoot, sandboxModuleRoot, withinRoot } from "./sandbox-paths.js";
-import { manifestAssetList, type ExportRef } from "./deploy-export.js";
+import { exportRevision, manifestAssetList, type ExportRef } from "./deploy-export.js";
 import type { ActivityDetail, ActivityProduct } from "./domain.js";
 import { findWafRoot } from "./waf-module.js";
 import { buildDeployContext } from "./deploy-context.js";
@@ -500,11 +500,11 @@ export class ActivityDeployService implements ActivityDeploys {
     stage: DeployStage,
     activityId: string,
     context: DeployContext,
-    currentRevision: string,
+    currentProductRevision: string,
   ): DeployBlocker | null {
     const { store, runner } = this.active();
     return prodStageBlocker(stage, context, store.stages(activityId), runner.current() !== null, {
-      currentRevision,
+      currentProductRevision,
       missingSettings: missingProdSettings(this.stored(), this.secrets()),
     });
   }
@@ -513,7 +513,7 @@ export class ActivityDeployService implements ActivityDeploys {
     projectId: string,
     activityId: string,
     context: DeployContext,
-    currentRevision: string,
+    currentProductRevision: string,
   ): DeployProductionState {
     const stored = this.active().store.stages(activityId);
     const stages = DEPLOY_PROD_STAGES.map((stage) => ({
@@ -521,7 +521,7 @@ export class ActivityDeployService implements ActivityDeploys {
       status: stored[stage]?.status ?? "pending",
       finishedAt: stored[stage]?.finishedAt ?? null,
       metadata: stored[stage]?.metadata ?? {},
-      blocker: this.prodBlocker(stage, activityId, context, currentRevision),
+      blocker: this.prodBlocker(stage, activityId, context, currentProductRevision),
     }));
     const run = this.active().store.lastProduction(projectId, activityId);
     const last: DeployProductionRecord | null = run?.metadata.prodDeployedAt
@@ -553,7 +553,12 @@ export class ActivityDeployService implements ActivityDeploys {
         metadata: stored[stage]?.metadata ?? {},
         blocker: stageBlocker(stage, context, statuses, running),
       })),
-      production: this.production(projectId, activityId, context, activity.draft.contentRevision),
+      production: this.production(
+        projectId,
+        activityId,
+        context,
+        await this.productRevision(projectId, activity),
+      ),
     };
   }
 
@@ -709,7 +714,7 @@ export class ActivityDeployService implements ActivityDeploys {
       first,
       activityId,
       context,
-      facts.activity.draft.contentRevision,
+      await this.productRevision(projectId, facts.activity),
     );
     if (blocker?.code === "run_active")
       throw new HttpError(409, "deploy_running", "A deploy is already running on this server.");
@@ -765,6 +770,32 @@ export class ActivityDeployService implements ActivityDeploys {
     });
   }
 
+  /** Every ref of the product `activity` belongs to, archived ones included. */
+  private async productRefs(
+    projectId: string,
+    activity: ActivityDetail,
+    product: ActivityProduct,
+  ): Promise<ActivityDetail[]> {
+    const siblings = (
+      await this.activities.listActivities(projectId, activity.collectionId)
+    ).filter(
+      (entry) =>
+        entry.productCode === activity.productCode &&
+        (entry.productId === null || entry.productId === product.productId),
+    );
+    const refs: ActivityDetail[] = [];
+    for (const entry of siblings) refs.push(await this.activities.getActivity(projectId, entry.id));
+    return refs;
+  }
+
+  /** What a QA deploy of the activity's product would export now, as `exportRevision` names it. */
+  private async productRevision(projectId: string, activity: ActivityDetail): Promise<string> {
+    const product = this.activities.productOf(activity);
+    return exportRevision(
+      product ? await this.productRefs(projectId, activity, product) : [activity],
+    );
+  }
+
   /**
    * The product's refs as a QA deploy exports them, read when the export runs. Each ref's
    * configuration is the author's edit, else the one the newest assembled module wrote for it,
@@ -796,19 +827,12 @@ export class ActivityDeployService implements ActivityDeploys {
         }
       return null;
     };
-    const siblings = (
-      await this.activities.listActivities(projectId, deploying.collectionId)
-    ).filter(
-      (entry) =>
-        entry.productCode === deploying.productCode &&
-        (entry.productId === null || entry.productId === product.productId),
-    );
+    const siblings = await this.productRefs(projectId, deploying, product);
     const refs: ExportRef[] = [];
     const draftMediaRoots: string[] = [];
     const code = deploying.productCode;
     const canonical = product.canonicalRefNum;
-    for (const entry of siblings) {
-      const ref: ActivityDetail = await this.activities.getActivity(projectId, entry.id);
+    for (const ref of siblings) {
       const own = `${code}-${ref.refNum}.json`;
       const shared =
         canonical != null && canonical !== ref.refNum ? [`${code}-${canonical}.json`] : [];
@@ -853,6 +877,7 @@ export class ActivityDeployService implements ActivityDeploys {
       layout: typeof spec?.runtime?.layout === "string" ? spec.runtime.layout : null,
       theme: typeof spec?.runtime?.theme === "string" ? spec.runtime.theme : null,
       contentRevision: deploying.draft.contentRevision,
+      productRevision: exportRevision(siblings),
       refs,
       draftMediaRoots,
     };

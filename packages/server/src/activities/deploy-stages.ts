@@ -171,6 +171,8 @@ export interface DeployActivitySnapshot {
   theme: string | null;
   /** The deploying ref's draft revision, recorded as what went to QA. */
   contentRevision: string;
+  /** Every exported ref's revision as one (`exportRevision`), which the PROD gate compares. */
+  productRevision: string;
   /** Every ref of the product; archived ones are left out of the export. */
   refs: ExportRef[];
   /** Each ref's draft media folder, where generated and uploaded media are found. */
@@ -705,6 +707,7 @@ const exportActivityData: DeployStageDefinition = {
     ctx.metadata.deployedRefNums = refs.map((ref) => ref.refNum);
     ctx.metadata.exportedFiles = files.map((file) => file.path);
     ctx.metadata.exportedRevision = snapshot.contentRevision;
+    ctx.metadata.exportedProductRevision = snapshot.productRevision;
     ctx.log(
       `Exported ${refs.length} ref${refs.length === 1 ? "" : "s"} for ${mainModule(ctx.module.folder, version)}.`,
     );
@@ -959,6 +962,10 @@ const awaitActivityDeploy: DeployStageDefinition = {
     const revision =
       ctx.metadata.exportedRevision ?? ctx.earlier.export_activity_data?.exportedRevision;
     if (revision) ctx.metadata.contentRevision = revision;
+    const productRevision =
+      ctx.metadata.exportedProductRevision ??
+      ctx.earlier.export_activity_data?.exportedProductRevision;
+    if (productRevision) ctx.metadata.productRevision = productRevision;
     ctx.log(`On QA: ${ctx.metadata.qaActivityUrl}`);
   },
 };
@@ -1155,13 +1162,13 @@ export interface GateStage {
 }
 
 /**
- * Whether QA has the activity as it is now, so PROD may get it: QA's deploy is done, finished
+ * Whether QA has the product as it is now, so PROD may get it: QA's deploy is done, finished
  * after the activity data was last published and its deploy last started, and recorded the
- * deploying ref's revision the draft still has.
+ * revision of every exported ref that the product still has — a sibling's edit counts too.
  */
 export function qaCurrent(
   stored: Partial<Record<DeployStage, GateStage>>,
-  currentRevision: string,
+  currentProductRevision: string,
 ): boolean {
   const qa = stored.await_activity_deploy;
   if (qa?.status !== "done" || !qa.finishedAt) return false;
@@ -1171,7 +1178,9 @@ export function qaCurrent(
     if (earlier?.status !== "done" || !earlier.finishedAt) return false;
     if (Date.parse(earlier.finishedAt) > finished) return false;
   }
-  return Boolean(qa.metadata.contentRevision) && qa.metadata.contentRevision === currentRevision;
+  return (
+    Boolean(qa.metadata.productRevision) && qa.metadata.productRevision === currentProductRevision
+  );
 }
 
 /**
@@ -1184,7 +1193,7 @@ export function prodStageBlocker(
   context: DeployContext,
   stored: Partial<Record<DeployStage, GateStage>>,
   runActive: boolean,
-  facts: { currentRevision: string; missingSettings: readonly string[] },
+  facts: { currentProductRevision: string; missingSettings: readonly string[] },
 ): DeployBlocker | null {
   const statuses: Partial<Record<DeployStage, DeployStageStatus>> = {};
   for (const [key, value] of Object.entries(stored))
@@ -1193,7 +1202,7 @@ export function prodStageBlocker(
   if (base) return base;
   const field = facts.missingSettings[0];
   if (field) return { code: "settings_missing", field };
-  if (stage === "trigger_production_deploy" && !qaCurrent(stored, facts.currentRevision))
+  if (stage === "trigger_production_deploy" && !qaCurrent(stored, facts.currentProductRevision))
     return { code: "qa_outdated" };
   return null;
 }

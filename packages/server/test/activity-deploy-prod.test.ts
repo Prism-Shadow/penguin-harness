@@ -314,6 +314,47 @@ describe("activity deploy to PROD", () => {
     });
   });
 
+  // QA exports every ref of the product, so a sibling's change leaves QA behind as well.
+  it("counts a sibling ref's change after QA as the product changing", async () => {
+    const { client, state, deployQa, base } = await setup("admin");
+    const sibling = (await (
+      await client.post(base, { productCode: "words", refNum: 2, title: "Words 2" })
+    ).json()) as ActivityDetail;
+    const applied = await client.post(`${base}/${sibling.id}/apply-generated-spec`, {
+      expectedRevision: sibling.draft.contentRevision,
+      spec: { ...activitySpec, title: "Words", moduleFolder: "waf-module-words" },
+    });
+    expect(applied.status).toBe(200);
+    const configure = async (value: unknown, expectedRevision: string) => {
+      const res = await client.put(`${base}/${sibling.id}/module-documents/configuration`, {
+        value,
+        expectedRevision,
+      });
+      expect(res.status).toBe(200);
+      return ((await res.json()) as { contentRevision: string }).contentRevision;
+    };
+    const greeting = { greeting: "{{MEDIA}}/loom/words/hello.mp3" };
+    const configured = await configure(
+      { words: { "en-US": greeting } },
+      ((await applied.json()) as { contentRevision: string }).contentRevision,
+    );
+    await deployQa();
+    expect((await state()).production.blocker).toBeNull();
+
+    await configure({ words: { "en-US": { ...greeting, v: 2 } } }, configured);
+    expect((await state()).production.blocker).toEqual({ code: "qa_outdated" });
+  });
+
+  it("counts a ref added after QA as the product changing", async () => {
+    const { client, state, deployQa, base } = await setup("admin");
+    await deployQa();
+    expect((await state()).production.blocker).toBeNull();
+    expect(
+      (await client.post(base, { productCode: "words", refNum: 2, title: "Words 2" })).status,
+    ).toBe(201);
+    expect((await state()).production.blocker).toEqual({ code: "qa_outdated" });
+  });
+
   it("refuses an owner who is not an admin", async () => {
     const { client, endpoint, deployQa } = await setup("member");
     await deployQa();

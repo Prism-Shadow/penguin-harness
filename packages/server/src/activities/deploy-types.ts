@@ -311,6 +311,8 @@ export interface DeployRunMetadata {
   exportedFiles?: string[];
   /** The draft revision of the deploying ref when its data was exported. */
   exportedRevision?: string;
+  /** Every exported ref's revision as one, when the data was exported. */
+  exportedProductRevision?: string;
   /** What verify_activity_data found. */
   preflight?: DeployPreflightReport;
   /** How many media files the exported data names. */
@@ -339,6 +341,8 @@ export interface DeployRunMetadata {
    * and PROD now has.
    */
   contentRevision?: string;
+  /** Every exported ref's revision as one, as it is now on QA; the PROD gate compares it. */
+  productRevision?: string;
   /** The framework version the activity was deployed to PROD with. */
   prodFrameworkVersion?: string;
   /** The newest Jenkins PROD activity deploy before the trigger; null when there was none. */

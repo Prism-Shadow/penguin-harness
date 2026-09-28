@@ -111,6 +111,7 @@ function snapshot(draftMediaRoots: string[]): DeployActivitySnapshot {
     layout: "mainOnly",
     theme: null,
     contentRevision: "rev-42",
+    productRevision: "product-rev-42",
     draftMediaRoots,
     refs: [
       {
@@ -253,6 +254,7 @@ describe("export_activity_data", () => {
       resolvedModuleVersion: "1.5.0",
       deployedRefNums: [1],
       exportedRevision: "rev-42",
+      exportedProductRevision: "product-rev-42",
       exportedFiles: [
         "data/configurations/loom/words-1.json",
         "data/templates/loom/words.json",
@@ -431,7 +433,10 @@ describe("trigger_activity_deploy and await_activity_deploy", () => {
   it("waits for the deploy build it started, then records when and what went to QA", async () => {
     const { ctx, jenkins, clock } = await setup({
       earlier: {
-        export_activity_data: { exportedRevision: "rev-41" },
+        export_activity_data: {
+          exportedRevision: "rev-41",
+          exportedProductRevision: "product-rev-41",
+        },
         trigger_activity_deploy: {
           preDeployNumber: 6,
           qaActivityUrl: "https://qa.example.org/play?productCode=words",
@@ -454,6 +459,7 @@ describe("trigger_activity_deploy and await_activity_deploy", () => {
       qaActivityUrl: "https://qa.example.org/play?productCode=words",
       qaDeployedAt: "2026-09-28T12:00:30.000Z",
       contentRevision: "rev-41",
+      productRevision: "product-rev-41",
     });
   });
 
