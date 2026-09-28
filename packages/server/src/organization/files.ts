@@ -842,7 +842,13 @@ export function parseTicketBody(raw: string): ParseResult<TicketProse> {
   if (!/^## .+$/m.test(body)) {
     return {
       ok: true,
-      value: { goal: body.trim(), acceptanceCriteria: "", progress: [], result: "", extraSections: [] },
+      value: {
+        goal: body.trim(),
+        acceptanceCriteria: "",
+        progress: [],
+        result: "",
+        extraSections: [],
+      },
     };
   }
   return ticketSections(body);
