@@ -49,7 +49,11 @@ describe("the company-roadmaps plugin on a real server", () => {
 
   it("is loaded, both nodes: the gateway and the session runtime resolved, and the claim taken by the organization module without a cycle", async () => {
     const [row] = await harness.installedPlugins();
-    expect(row).toMatchObject({ active: true, modules: ["CompanyRoadmapsPlugin", "RoadmapRoomClaim"], replaces: [] });
+    expect(row).toMatchObject({
+      active: true,
+      modules: ["CompanyRoadmapsPlugin", "RoadmapRoomClaim"],
+      replaces: [],
+    });
   });
 
   it("declares its settings group on the Plugins page", async () => {
