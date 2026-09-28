@@ -18,7 +18,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
   ApprovalMode,
@@ -138,7 +138,7 @@ import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope"
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
 import { PanelsToolbar } from "./panels-toolbar";
-import { toneDot, toneInk } from "../../lib/tone";
+import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
@@ -2169,6 +2169,22 @@ export function ChatPage() {
               )}
             </div>
           </Dropdown>
+        </div>
+      )}
+
+      {/* Banner: this conversation is an activity's generation run, not an ordinary chat
+          — it lives in the activity's studio (Sessions tab), and this is the one way back. */}
+      {selected?.activityId !== undefined && (
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs md:px-4 ${toneStrip.muted}`}
+        >
+          <span>{S.chat.partOfActivity}</span>
+          <Link
+            to={`/activities/${encodeURIComponent(selected.activityId)}`}
+            className="font-medium underline"
+          >
+            {S.chat.backToActivity}
+          </Link>
         </div>
       )}
 

@@ -3058,6 +3058,8 @@ export type Strings = {
     };
     sessionList: string;
     defaultSessionTitle: string;
+    partOfActivity: string;
+    backToActivity: string;
     agent: string;
     model: string;
     workspace: string;

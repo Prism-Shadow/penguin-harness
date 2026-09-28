@@ -4263,6 +4263,9 @@ Scenarios:
     },
     sessionList: "Sessions",
     defaultSessionTitle: "New chat",
+    /** Banner shown when the open conversation is an activity's generation run, not an ordinary chat. */
+    partOfActivity: "This session is an activity's generation run.",
+    backToActivity: "Back to the activity",
     agent: "Agent",
     model: "Model",
     workspace: "Workspace",

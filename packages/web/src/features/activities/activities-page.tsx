@@ -31,6 +31,8 @@ import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
+import { useSessions } from "../../state/sessions";
+import { settledActivityRuns } from "../../lib/activity-sessions";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
@@ -189,6 +191,17 @@ function ActivityWorkspace({
   useEffect(() => {
     void reload();
   }, [reload]);
+  // Live refresh: no server event exists for activity runs, so the home list rides the
+  // sessions store instead — an activity-run session going idle (or otherwise settling)
+  // is the signal that this list may be stale. Only while looking at the list itself
+  // (not a single activity's own workspace), and only on the running -> settled edge, so a
+  // page that never had a run in flight does not reload on every unrelated session tick.
+  const { sessions } = useSessions();
+  const seenRunStatus = useRef(new Map<string, string>());
+  useEffect(() => {
+    if (!activityId && settledActivityRuns(seenRunStatus.current, sessions)) void reload();
+    seenRunStatus.current = new Map(sessions.map((session) => [session.sessionId, session.status]));
+  }, [sessions, activityId, reload]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (dirty.current) event.preventDefault();
