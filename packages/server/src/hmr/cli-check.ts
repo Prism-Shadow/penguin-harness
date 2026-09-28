@@ -13,11 +13,14 @@
  * and a bundle that hangs is cut off.
  *
  * The push is read with the mechanism's own parser (`parseUpgradeTarget`), the CLI resolved
- * from the store when it is named by sha. A body that does not parse, a CLI this process
+ * from the store when it is named by sha. The parser writes what a push carries inline into
+ * the blobs its lease opens; this check hands it a lease over memory, so reading a push here
+ * stores nothing. A body that does not parse, a CLI this process
  * cannot read, and a server that knows no loader to run it with are left to the endpoint:
  * this check only refuses what it has seen fail.
  */
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
@@ -37,6 +40,38 @@ export function pushedCliLoader(cliEntry: string | null | undefined): string | n
   return fs.existsSync(loader) ? loader : null;
 }
 
+/** The lease `parseUpgradeTarget` reads a push under (packages/hmr keeps the name to itself). */
+type BlobLease = Parameters<typeof parseUpgradeTarget>[2];
+
+/**
+ * A lease over memory: what a push carries inline is kept under its sha256 for the length of
+ * the check instead of being written to the blob store, and a part named by `{ sha }` is
+ * taken as held — whether the store has it is the endpoint's to say. An inline push is
+ * therefore held here once; a push that names its parts by sha, the way the pushers send a
+ * large one, costs its small body.
+ */
+function scratchLease(inline: Map<string, Buffer>): BlobLease {
+  return {
+    open: async () => {
+      const chunks: Buffer[] = [];
+      return {
+        write: async (chunk) => {
+          chunks.push(Buffer.from(chunk));
+        },
+        close: async () => {
+          const bytes = Buffer.concat(chunks);
+          const sha = createHash("sha256").update(bytes).digest("hex");
+          inline.set(sha, bytes);
+          return sha;
+        },
+        abort: async () => {},
+      };
+    },
+    hold: () => true,
+    release: () => {},
+  };
+}
+
 /**
  * Why `request`'s CLI bundle cannot be started by `loader`, or null when it starts or this
  * check has nothing to say about it. `readBlob` resolves a CLI pushed as `{ sha }`; a control
@@ -48,14 +83,17 @@ export async function pushedCliProblem(
   loader: string | null,
 ): Promise<string | null> {
   if (loader === null) return null;
-  let source: string;
+  let source: Buffer;
   try {
-    const target = parseUpgradeTarget(
+    const inline = new Map<string, Buffer>();
+    const target = await parseUpgradeTarget(
       request.headers.get("content-type"),
       Buffer.from(await request.arrayBuffer()),
-      readBlob ?? (() => null),
+      scratchLease(inline),
     );
-    source = target.cli;
+    const cli = inline.get(target.cli.sha) ?? readBlob?.(target.cli.sha) ?? null;
+    if (cli === null) return null;
+    source = cli;
   } catch {
     return null;
   }
