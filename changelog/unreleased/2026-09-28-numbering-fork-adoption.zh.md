@@ -3,7 +3,7 @@
 - **Date:** 2026-09-28
 - **Type:** process
 - **Scope:** `server`
-- **PR:** [#PR](https://github.com/Prism-Shadow/penguin-harness/pull/PR)
+- **PR:** [#870](https://github.com/Prism-Shadow/penguin-harness/pull/870)
 
 [English](2026-09-28-numbering-fork-adoption.md)
 
