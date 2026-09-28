@@ -93,6 +93,33 @@ describe.skipIf(!available)("the migration trial, against the real checkout", ()
       expect(draft.status).toBe("valid");
     }
     expect(mapping.activities[0]!.languages).toEqual(["en-US", "es-MX"]);
+
+    // Media arrives bound as Loom had it: both languages, their recordings, their words.
+    const plan = (
+      drafts.get(mapping.activities[0]!.refNum) as {
+        mediaPlan?: {
+          manifest: {
+            assets: Record<
+              string,
+              { key: string; type: string; path?: string; wordTimings?: unknown[] }[]
+            >;
+          };
+        };
+      }
+    ).mediaPlan;
+    expect(Object.keys(plan?.manifest.assets ?? {}).sort()).toEqual(["en-US", "es-MX"]);
+    for (const language of ["en-US", "es-MX"]) {
+      const narration = plan!.manifest.assets[language]!.filter((asset) => asset.type === "audio");
+      expect(narration.length, language).toBeGreaterThan(0);
+      expect(
+        narration.filter((asset) => !asset.path?.startsWith("media/")).map((asset) => asset.key),
+        language,
+      ).toEqual([]);
+      expect(
+        narration.some((asset) => asset.wordTimings?.length),
+        language,
+      ).toBe(true);
+    }
   });
 
   it("carries all three supported languages", async () => {

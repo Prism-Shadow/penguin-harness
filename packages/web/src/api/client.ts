@@ -14,13 +14,22 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly retryAfterSeconds?: number;
+  /** Facts the server's refusal names, as data (a file path, say), when it sends any. */
+  readonly detail?: Record<string, string>;
 
-  constructor(status: number, code: string, message: string, retryAfterSeconds?: number) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    retryAfterSeconds?: number,
+    detail?: Record<string, string>,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.detail = detail;
   }
 }
 
@@ -96,10 +105,14 @@ export async function apiFetchWithMeta<T>(
   if (!response.ok) {
     let code = "http_error";
     let message: string = S.common.unknownError;
+    let detail: Record<string, string> | undefined;
     try {
-      const body = (await response.json()) as { error?: { code?: string; message?: string } };
+      const body = (await response.json()) as {
+        error?: { code?: string; message?: string; detail?: unknown };
+      };
       if (body.error?.code) code = body.error.code;
       if (body.error?.message) message = body.error.message;
+      detail = stringRecord(body.error?.detail);
     } catch {
       // Non-JSON error body: fall back to the default message.
     }
@@ -107,7 +120,7 @@ export async function apiFetchWithMeta<T>(
     const retryAfter = response.headers.get("retry-after");
     const retryAfterSeconds =
       retryAfter !== null && /^\d+$/.test(retryAfter) ? Number(retryAfter) : undefined;
-    throw new ApiError(response.status, code, message, retryAfterSeconds);
+    throw new ApiError(response.status, code, message, retryAfterSeconds, detail);
   }
 
   const headerDate = Date.parse(response.headers.get("date") ?? "");
@@ -117,4 +130,13 @@ export async function apiFetchWithMeta<T>(
   const text = await response.text();
   if (!text) return { data: undefined as T, serverNowMs };
   return { data: JSON.parse(text) as T, serverNowMs };
+}
+
+/** An error body's `detail` when it is an object of strings; anything else is dropped. */
+function stringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string",
+  );
+  return entries.length ? Object.fromEntries(entries) : undefined;
 }

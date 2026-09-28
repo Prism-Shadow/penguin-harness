@@ -249,6 +249,116 @@ describe("coding agents api", () => {
     ).toBe(false);
   });
 
+  describe("sign-in on the card", () => {
+    const WIN = process.platform === "win32";
+    let machine: string;
+    let restore: () => void;
+
+    // A machine whose only agent is a `claude` shim that answers `auth status` signed out:
+    // PATH, the home dir and the app-data dirs point into a temp folder.
+    beforeEach(async () => {
+      machine = await fs.mkdtemp(path.join(os.tmpdir(), "coding-agents-signin-"));
+      const bin = path.join(machine, "bin");
+      await fs.mkdir(bin, { recursive: true });
+      await fs.writeFile(
+        path.join(bin, WIN ? "claude.cmd" : "claude"),
+        WIN
+          ? '@echo {"loggedIn": false}\r\n@exit /b 1\r\n'
+          : "#!/bin/sh\necho '{\"loggedIn\": false}'\nexit 1\n",
+        { mode: 0o755 },
+      );
+      const homedir = vi.spyOn(os, "homedir").mockReturnValue(machine);
+      const keys = ["PATH", "APPDATA", "LOCALAPPDATA", "FNM_DIR", "NVM_DIR", "CLAUDE_CONFIG_DIR"];
+      const saved = keys.map((k) => [k, process.env[k]] as const);
+      const osDirs = (process.env.PATH ?? "")
+        .split(path.delimiter)
+        .filter((d) => (WIN ? /\\windows\\/i.test(d) : /^\/(usr|bin|sbin)/.test(d)));
+      process.env.PATH = [bin, ...osDirs].join(path.delimiter);
+      process.env.APPDATA = process.env.LOCALAPPDATA = path.join(machine, "appdata");
+      delete process.env.FNM_DIR;
+      delete process.env.NVM_DIR;
+      delete process.env.CLAUDE_CONFIG_DIR;
+      restore = () => {
+        homedir.mockRestore();
+        for (const [key, value] of saved) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      };
+    });
+
+    afterEach(async () => {
+      restore();
+      vi.restoreAllMocks();
+      await fs.rm(machine, { recursive: true, force: true });
+    });
+
+    async function claudeCard(client = admin) {
+      const body = (await (
+        await client.get("/api/coding-agents/discover")
+      ).json()) as CodingAgentDiscoveryResponse;
+      return body.candidates.find((c) => c.recipeId === "claude");
+    }
+
+    async function writeCredentials(at: Date): Promise<void> {
+      const file = path.join(machine, ".claude", ".credentials.json");
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, '{"claudeAiOauth":{"accessToken":"t"}}');
+      await fs.utimes(file, at, at);
+    }
+
+    it("says the agent needs sign-in once a real turn fails for want of one, until one succeeds", async () => {
+      await admin.post("/api/coding-agents/agents", {
+        id: "claude",
+        command: process.execPath,
+        args: [AGENT_MAIN],
+        env: { FAKE_SIGNIN_FAIL_ONCE: path.join(machine, "failed-once") },
+      });
+      expect((await claudeCard())?.authStatus).not.toBe("missing");
+      const failed = (await (
+        await admin.post("/api/coding-agents/agents/claude/test", {})
+      ).json()) as CodingAgentTestResult;
+      expect(failed).toMatchObject({ ok: false, failure: "failed" });
+      expect(await claudeCard()).toMatchObject({ authStatus: "missing", authSource: "session" });
+      // Members see the state too: it is not a reason, only that it needs signing in.
+      expect((await claudeCard(member))?.authStatus).toBe("missing");
+      const passed = (await (
+        await admin.post("/api/coding-agents/agents/claude/test", {})
+      ).json()) as CodingAgentTestResult;
+      expect(passed.ok).toBe(true);
+      expect((await claudeCard())?.authStatus).not.toBe("missing");
+    });
+
+    it("clears a failed sign-in once the credentials change after it", async () => {
+      await admin.post("/api/coding-agents/agents", {
+        id: "claude",
+        command: process.execPath,
+        args: [AGENT_MAIN],
+        env: { FAKE_SIGNIN_FAIL_ONCE: path.join(machine, "failed-once") },
+      });
+      await writeCredentials(new Date(Date.now() - 60_000));
+      await admin.post("/api/coding-agents/agents/claude/test", {});
+      expect((await claudeCard())?.authStatus).toBe("missing");
+      await writeCredentials(new Date(Date.now() + 60_000));
+      expect(await claudeCard()).toMatchObject({ authStatus: "ok", authSource: "stored" });
+    });
+
+    // The CLI's own "signed out" is stronger than a credentials file that merely exists, so
+    // it holds past the cache window — until the file changes, i.e. a sign-in since.
+    it("keeps the CLI's signed-out answer past the cache window, until the sign-in changes", async () => {
+      await writeCredentials(new Date(Date.now() - 60_000));
+      expect((await claudeCard())?.authStatus).toBe("ok");
+      const res = await admin.post("/api/coding-agents/discover/refresh?timeoutMs=1500");
+      expect(res.status).toBe(200);
+      expect(await claudeCard()).toMatchObject({ authStatus: "missing", authSource: "cli" });
+      const later = Date.now() + 10 * 60_000;
+      vi.spyOn(Date, "now").mockReturnValue(later);
+      expect(await claudeCard()).toMatchObject({ authStatus: "missing", authSource: "cli" });
+      await writeCredentials(new Date(later + 60_000));
+      expect(await claudeCard()).toMatchObject({ authStatus: "ok", authSource: "stored" });
+    }, 60_000);
+  });
+
   // The auto-add contract: starting a session for a known, detected-but-unsaved agent
   // persists the recipe-derived definition first — even when the session itself then
   // fails (this shim is not a real agent).
@@ -416,6 +526,18 @@ describe("coding agents api", () => {
         failure: "timeout",
       });
     }, 20_000);
+
+    it("shows the agent's own reason when it fails the turn, with its env values masked", async () => {
+      const result = await testAgent({
+        FAKE_TEST_REPLY: "error",
+        FAKE_API_KEY: "sk-test-0123456789",
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        failure: "failed",
+        message: "The agent stopped with an error: Failed to authenticate with key ***.",
+      });
+    });
 
     it("says the agent could not start when its command does not run", async () => {
       await admin.post("/api/coding-agents/agents", { id: "broken", command: "no-such-agent-cli" });

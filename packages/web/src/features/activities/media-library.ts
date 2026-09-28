@@ -63,3 +63,22 @@ export function boundUpload(
 export function isUploadPath(path: string | undefined): boolean {
   return !!path && path.startsWith("media/uploads/");
 }
+
+/**
+ * An activity endpoint (`/api/projects/<project>/activities/<activity>`) split into the
+ * project's activities endpoint and the activity id, so a picker handed one endpoint can
+ * also reach the project's media library and name its own activity.
+ */
+export function activityEndpointParts(endpoint: string): {
+  projectBase: string;
+  activityId: string;
+} {
+  const cut = endpoint.lastIndexOf("/");
+  let activityId = endpoint.slice(cut + 1);
+  try {
+    activityId = decodeURIComponent(activityId);
+  } catch {
+    // Not percent-encoded as expected: keep the segment as written.
+  }
+  return { projectBase: endpoint.slice(0, cut), activityId };
+}

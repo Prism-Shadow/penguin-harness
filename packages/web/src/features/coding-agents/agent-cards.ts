@@ -8,6 +8,7 @@
 import type {
   CodingAgentConfigOption,
   CodingAgentDiscoveryResponse,
+  CodingAgentEnvEntryInfo,
   CodingAgentServerInfo,
 } from "@prismshadow/penguin-server/api";
 
@@ -36,6 +37,10 @@ export interface AgentCardModel {
   rememberedModel?: { configId: string; value: boolean | string; name?: string } | null;
   /** Other remembered settings (a reasoning effort), by config option id. */
   rememberedOptions?: Record<string, boolean | string>;
+  /** Admins only: the agent's variables, masked. */
+  env?: CodingAgentEnvEntryInfo[];
+  /** Admins only: saved values apply once the running sessions end. */
+  envPending?: boolean;
 }
 
 /** One line on who makes each known agent, shown after its name. */
@@ -60,6 +65,7 @@ export function buildAgentCards(
   discovery: CodingAgentDiscoveryResponse | null,
   setupRequired: string,
 ): { installed: AgentCardModel[]; available: AgentCardModel[] } {
+  saved = saved.filter((a) => a.builtin === undefined);
   const installed: AgentCardModel[] = [];
   const available: AgentCardModel[] = [];
   const seen = new Set<string>();
@@ -102,6 +108,8 @@ export function buildAgentCards(
       ...((definition?.rememberedOptions ?? candidate.rememberedOptions)
         ? { rememberedOptions: definition?.rememberedOptions ?? candidate.rememberedOptions }
         : {}),
+      ...(definition?.env !== undefined ? { env: definition.env } : {}),
+      ...(definition?.envPending === true ? { envPending: true } : {}),
     };
     (usable ? installed : available).push(card);
   }
@@ -120,6 +128,8 @@ export function buildAgentCards(
       ...(probeError !== undefined ? { probeError } : {}),
       rememberedModel: agent.rememberedModel ?? null,
       ...(agent.rememberedOptions ? { rememberedOptions: agent.rememberedOptions } : {}),
+      ...(agent.env !== undefined ? { env: agent.env } : {}),
+      ...(agent.envPending === true ? { envPending: true } : {}),
     });
   }
   return { installed, available };

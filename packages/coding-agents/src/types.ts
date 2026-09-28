@@ -13,6 +13,11 @@ export interface AgentServerDefinition {
   args?: string[];
   /** Extra environment merged over the sandboxed base env. */
   env?: Record<string, string>;
+  /**
+   * Set on a definition Penguin manages itself (Models → Built-in), naming which built-in it
+   * is; such a definition is written only by that service, never through the Local CLI routes.
+   */
+  builtin?: string;
 }
 
 export type AgentToolKind =
@@ -147,9 +152,22 @@ export type AgentSessionEvent =
 
 /** Error shape thrown by the kernel; `message` is safe to show, never a raw upstream payload. */
 export class AcpAgentError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
+  /**
+   * The agent's own words for why it failed, with the values it was started with masked.
+   * Unlike `message` it is third-party text, so the host decides who may read it.
+   */
+  readonly reason: string | undefined;
+  /** The agent said it failed for want of a sign-in (an expired login, a missing key). */
+  readonly signInFailed: boolean;
+
+  constructor(
+    message: string,
+    options?: { cause?: unknown; reason?: string; signInFailed?: boolean },
+  ) {
     super(message, options);
     this.name = "AcpAgentError";
+    this.reason = options?.reason;
+    this.signInFailed = options?.signInFailed ?? false;
   }
 }
 
@@ -188,11 +206,16 @@ export function parseDefinition(input: unknown): AgentServerDefinition {
   if (title !== undefined && typeof title !== "string") {
     throw new AcpAgentError("title must be a string.");
   }
+  const builtin = raw.builtin;
+  if (builtin !== undefined && (typeof builtin !== "string" || !ID_PATTERN.test(builtin))) {
+    throw new AcpAgentError("builtin must be a short identifier.");
+  }
   return {
     id,
     command,
     args: args as string[],
     env: env as Record<string, string>,
     ...(typeof title === "string" && title !== "" ? { title } : {}),
+    ...(typeof builtin === "string" ? { builtin } : {}),
   };
 }

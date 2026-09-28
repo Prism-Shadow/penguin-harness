@@ -18,3 +18,31 @@ export function sandboxedAgentEnv(
   }
   return { ...env, ...extra };
 }
+
+const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const MAX_ENV_VALUE = 8192;
+
+/**
+ * Names an agent definition may not set: the ones the sandbox passes through from the host
+ * (overriding them breaks how the agent starts) and the ones Penguin sets itself.
+ */
+export function isReservedEnvKey(key: string): boolean {
+  return PASS_THROUGH.test(key) || /^NO_BROWSER$/i.test(key) || /^PENGUIN_/i.test(key);
+}
+
+/**
+ * Why an entry cannot be stored, or null when it can. An undefined value means "keep the
+ * stored one" and only the name is checked.
+ */
+export function validateAgentEnvEntry(key: string, value: string | undefined): string | null {
+  if (!ENV_KEY_PATTERN.test(key)) {
+    return `${key}: a name starts with a letter or underscore and uses only letters, digits and underscores.`;
+  }
+  if (isReservedEnvKey(key)) return `${key} is set by Penguin and cannot be changed here.`;
+  if (value === undefined) return null;
+  if (value === "") return `${key}: the value is empty.`;
+  if (/[\r\n]/.test(value)) return `${key}: the value cannot contain a line break.`;
+  if (value.length > MAX_ENV_VALUE)
+    return `${key}: the value is longer than ${MAX_ENV_VALUE} characters.`;
+  return null;
+}

@@ -2,9 +2,10 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import { codingAgentsRoutes } from "../http/routes/coding-agents.js";
+import type { BuiltinAgents } from "../mechanisms/builtin-agents.js";
 import type { CodingAgents } from "../mechanisms/coding-agents.js";
 
-/** The coding-agents route group: agent definitions and ACP session driving. */
+/** The coding-agents route group: agent definitions, built-in agents and ACP session driving. */
 @Component({
   contributes: {
     "HttpModule.routes": [
@@ -19,9 +20,13 @@ import type { CodingAgents } from "../mechanisms/coding-agents.js";
 })
 export class CodingAgentsRoutes {
   @Use() private readonly codingAgents!: CodingAgents;
+  @Use() private readonly builtinAgents!: BuiltinAgents;
   @Bind("codingAgents.routes") codingAgentsRoutes!: Hono<AppEnv>;
 
   setup() {
-    this.codingAgentsRoutes = codingAgentsRoutes({ codingAgents: this.codingAgents });
+    this.codingAgentsRoutes = codingAgentsRoutes({
+      codingAgents: this.codingAgents,
+      builtinAgents: this.builtinAgents,
+    });
   }
 }

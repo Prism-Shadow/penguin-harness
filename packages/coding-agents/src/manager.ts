@@ -12,6 +12,7 @@ import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
+import { RequestError } from "@agentclientprotocol/sdk";
 import {
   AcpConnection,
   configOptionsFromAcp,
@@ -37,6 +38,8 @@ import {
 
 const DEFAULT_PERMISSION_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_MAX_LOGGED_EVENTS = 4_000;
+/** How much of an agent's own error message is relayed. */
+const MAX_REASON = 500;
 /** After `session/cancel`, how long an agent gets to report the turn's end itself. */
 const CANCEL_GRACE_MS = 15_000;
 
@@ -63,6 +66,25 @@ export interface CodingAgentManagerOptions {
   ) => Promise<AcpConnection>;
   permissionTimeoutMs?: number;
   maxLoggedEvents?: number;
+  /**
+   * Told how every prompted turn ended, by definition: what a real turn learned (a
+   * sign-in that failed, or one that plainly works) outranks any guess from files.
+   */
+  onTurnEnd?: (definitionId: string, outcome: AgentTurnOutcome) => void;
+}
+
+export interface AgentTurnOutcome {
+  stopReason: AgentStopReason;
+  signInFailed: boolean;
+}
+
+/** ACP's own "authentication required" error code. */
+const AUTH_REQUIRED_CODE = -32000;
+
+/** Whether an agent's error says it failed for want of a sign-in. */
+function isSignInFailure(error: RequestError): boolean {
+  const data = error.data as { errorKind?: unknown } | null | undefined;
+  return error.code === AUTH_REQUIRED_CODE || data?.errorKind === "authentication_failed";
 }
 
 /**
@@ -117,6 +139,8 @@ export class CodingAgentManager {
   private readonly definitions = new Map<string, AgentServerDefinition>();
   private readonly connections = new Map<string, AcpConnection>();
   private readonly pendingConnections = new Map<string, Promise<AcpConnection>>();
+  /** The environment each live connection's process was started with, as compared JSON. */
+  private readonly spawnedEnv = new Map<string, string>();
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly liveListeners = new Map<string, Set<(event: AgentSessionEvent) => void>>();
   private readonly configSets = new Map<string, Promise<void>>();
@@ -131,6 +155,7 @@ export class CodingAgentManager {
   ) => Promise<AcpConnection>;
   private readonly permissionTimeoutMs: number;
   private readonly maxLoggedEvents: number;
+  private readonly onTurnEnd: CodingAgentManagerOptions["onTurnEnd"];
 
   constructor(options: CodingAgentManagerOptions) {
     this.clientInfo = options.clientInfo;
@@ -141,6 +166,7 @@ export class CodingAgentManager {
       ((definition, handlers) => this.spawnConnection(definition, handlers));
     this.permissionTimeoutMs = options.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
     this.maxLoggedEvents = options.maxLoggedEvents ?? DEFAULT_MAX_LOGGED_EVENTS;
+    this.onTurnEnd = options.onTurnEnd;
   }
 
   /** Replace the definition registry with the host's current list (storage lives host-side). */
@@ -159,6 +185,18 @@ export class CodingAgentManager {
 
   listSessions(): AgentSessionView[] {
     return [...this.sessions.values()].map((r) => this.viewOf(r));
+  }
+
+  /**
+   * Whether the agent's running process was started with a different environment than its
+   * definition now gives; false when it is not running. Its sessions keep the old values until
+   * the last one ends, since the process reads its environment only at start.
+   */
+  startedWithOtherEnv(definitionId: string): boolean {
+    const started = this.spawnedEnv.get(definitionId);
+    const definition = this.definitions.get(definitionId);
+    if (started === undefined || definition === undefined) return false;
+    return started !== JSON.stringify(this.envFor(definition));
   }
 
   sessionView(sessionId: string): AgentSessionView | undefined {
@@ -190,9 +228,15 @@ export class CodingAgentManager {
     try {
       response = await connection.newSession(workspaceDir);
     } catch (error) {
-      throw error instanceof AcpAgentError
-        ? error
-        : new AcpAgentError("the agent refused to open a session", { cause: error });
+      if (error instanceof AcpAgentError) throw error;
+      // Like the handshake, session/new carries no user content, so the agent's own reason
+      // (an account it no longer serves, a missing sign-in) is the only part that says what
+      // to do. It may still quote a value the agent was started with, so those are masked.
+      const detail =
+        error instanceof RequestError && error.message !== ""
+          ? `: ${this.maskGiven(definitionId, error.message)}`
+          : "";
+      throw new AcpAgentError(`the agent refused to open a session${detail}`, { cause: error });
     }
     const record = this.newRecord(
       response.sessionId,
@@ -326,13 +370,22 @@ export class CodingAgentManager {
     try {
       const { stopReason, usage } = await connection.prompt(sessionId, text);
       this.finishTurn(record, seq, stopReason, usage);
+      this.reportTurn(record.definitionId, { stopReason, signInFailed: false });
     } catch (error) {
       this.finishTurn(record, seq, "failed");
-      throw error instanceof AcpAgentError
-        ? error
-        : // The message stays generic — a third-party agent's error payload is not trusted
-          // to be secret-free — but the cause is preserved for diagnostics and tests.
-          new AcpAgentError("the agent connection failed during the turn", { cause: error });
+      const signInFailed = error instanceof RequestError && isSignInFailure(error);
+      this.reportTurn(record.definitionId, { stopReason: "failed", signInFailed });
+      if (error instanceof AcpAgentError) throw error;
+      // The message stays generic — a third-party agent's error payload is not trusted to
+      // be secret-free — but the agent's own reason (a sign-in that expired, a spent quota)
+      // is the only part that says what to do, so it rides along masked, as `reason`.
+      const reason =
+        error instanceof RequestError ? this.maskedReason(record.definitionId, error) : "";
+      throw new AcpAgentError("the agent connection failed during the turn", {
+        cause: error,
+        signInFailed,
+        ...(reason !== "" ? { reason } : {}),
+      });
     } finally {
       record.busy = false;
       signal?.removeEventListener("abort", onAbort);
@@ -415,6 +468,7 @@ export class CodingAgentManager {
     );
     if (!remaining) {
       this.connections.delete(record.definitionId);
+      this.spawnedEnv.delete(record.definitionId);
       connection.dispose();
     }
   }
@@ -426,6 +480,7 @@ export class CodingAgentManager {
     this.sessions.clear();
     this.liveListeners.clear();
     this.configSets.clear();
+    this.spawnedEnv.clear();
   }
 
   // --- internals ---------------------------------------------------------------------------
@@ -470,11 +525,14 @@ export class CodingAgentManager {
     try {
       return await this.connectionFor(definition);
     } catch (error) {
-      throw error instanceof AcpAgentError
-        ? error
-        : new AcpAgentError(`the agent command could not be started: ${definition.command}`, {
-            cause: error,
-          });
+      if (error instanceof AcpAgentError) {
+        // A handshake refusal carries the agent's own words, which may quote its keys.
+        const masked = this.maskGiven(definitionId, error.message);
+        throw masked === error.message ? error : new AcpAgentError(masked, { cause: error.cause });
+      }
+      throw new AcpAgentError(`the agent command could not be started: ${definition.command}`, {
+        cause: error,
+      });
     }
   }
 
@@ -523,6 +581,42 @@ export class CodingAgentManager {
     const record = this.sessions.get(sessionId);
     if (record === undefined) throw new AcpAgentError(`unknown session: ${sessionId}`);
     return record;
+  }
+
+  /** Tell the host how a turn ended; a listener that throws must not break the turn. */
+  private reportTurn(definitionId: string, outcome: AgentTurnOutcome): void {
+    try {
+      this.onTurnEnd?.(definitionId, outcome);
+    } catch {
+      // The outcome is advisory; the turn's own result stands.
+    }
+  }
+
+  /**
+   * An agent's error message, fit to relay: the JSON-RPC "Internal error: " prefix dropped,
+   * every value the agent was started with that the host's own environment lacks (its API
+   * keys, a proxy with credentials) masked, and the length capped. Values under 8
+   * characters are left alone — masking "1" would garble the text and hide nothing.
+   */
+  private maskedReason(definitionId: string, error: RequestError): string {
+    const text = this.maskGiven(
+      definitionId,
+      error.message.replace(/^Internal error:\s*/i, "").trim(),
+    );
+    return text.length > MAX_REASON ? `${text.slice(0, MAX_REASON)}…` : text;
+  }
+
+  /** `text` with every value the agent was started with that the host's environment lacks masked. */
+  private maskGiven(definitionId: string, text: string): string {
+    const definition = this.definitions.get(definitionId);
+    if (definition !== undefined) {
+      const given = Object.entries(this.envFor(definition))
+        .filter(([key, value]) => value.length >= 8 && process.env[key] !== value)
+        .map(([, value]) => value)
+        .sort((a, b) => b.length - a.length);
+      for (const value of given) text = text.split(value).join("***");
+    }
+    return text;
   }
 
   private viewOf(record: SessionRecord): AgentSessionView {
@@ -574,6 +668,7 @@ export class CodingAgentManager {
       .then(async (connection) => {
         await connection.initialize();
         this.connections.set(definition.id, connection);
+        this.spawnedEnv.set(definition.id, JSON.stringify(this.envFor(definition)));
         return connection;
       })
       .finally(() => {
@@ -590,6 +685,7 @@ export class CodingAgentManager {
   private onConnectionEvent(definitionId: string, event: AgentSessionEvent): void {
     if (event.type === "state" && event.state === "closed") {
       this.connections.delete(definitionId);
+      this.spawnedEnv.delete(definitionId);
       for (const record of this.sessions.values()) {
         if (record.definitionId !== definitionId) continue;
         for (const [requestId, waiter] of record.permissions) {

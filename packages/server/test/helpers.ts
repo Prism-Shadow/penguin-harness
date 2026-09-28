@@ -44,6 +44,7 @@ import type { OrgCacheRepo } from "../src/db/repos/organizations.js";
 import type { SessionManager, SessionLoader } from "../src/runtime/session-manager.js";
 import type { ErrorRecorder } from "../src/runtime/error-recorder.js";
 import type { MachinesService } from "../src/machines/service.js";
+import type { CodingAgents } from "../src/mechanisms/coding-agents.js";
 import { openDatabase } from "../src/db/database.js";
 import { TraceIndexRepo } from "../src/db/repos/trace-index.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
@@ -79,6 +80,22 @@ import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/servi
 import { OrganizationModule } from "../src/runtime/organization/service.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
 import type { Access } from "../src/mechanisms/projects.js";
+import { DefaultTestBrowserPorts, type TestBrowserPorts } from "../src/activities/test-browser.js";
+import {
+  DefaultVideoRenderPorts,
+  type VideoRenderPorts,
+} from "../src/activities/video-render-service.js";
+import {
+  DefaultQualityCheckPorts,
+  type QualityCheckPorts,
+} from "../src/activities/quality-check.js";
+import { DefaultSoundModelPorts, type SoundModelPorts } from "../src/activities/sound-models.js";
+import { DefaultEspeakPorts, type EspeakPorts } from "../src/activities/phonemes.js";
+import { DefaultDeployPorts, type DeployPorts } from "../src/activities/deploy-service.js";
+import {
+  DefaultMediaLibraryPorts,
+  type MediaLibraryPorts,
+} from "../src/activities/media-bundle.js";
 
 export async function makeTempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
@@ -170,6 +187,7 @@ export interface TestDeps {
   sessionSources: SessionSources;
   errors: ErrorRecorder;
   machines: MachinesService;
+  codingAgents: CodingAgents;
 }
 
 export function flattenForTests(boot: ServerBoot): TestDeps {
@@ -217,6 +235,7 @@ export function flattenForTests(boot: ServerBoot): TestDeps {
     sessionSources: api("SessionRuntimeModule", "SessionOrigins"),
     errors: api("ObservabilityModule", "Errors"),
     machines: api("MachinesModule", "machines"),
+    codingAgents: api("CodingAgentsModule", "CodingAgents"),
   };
 }
 
@@ -264,6 +283,20 @@ export interface TestAppOptions {
   wechatRetryDelayMs?: (failures: number) => number;
   /** Test double: machines service whose ssh effects are faked. */
   machines?: MachinesService;
+  /** Test double: the test browser's installer and lookup, so a test never downloads a browser. */
+  testBrowserPorts?: TestBrowserPorts;
+  /** Test double: the model hub's sound catalogue, which this build ships empty. */
+  soundModelPorts?: SoundModelPorts;
+  /** Test double: espeak-ng, so a test never starts a program. */
+  espeakPorts?: EspeakPorts;
+  /** Test double: git and Jenkins for deploys, so a test never reaches a remote. */
+  deployPorts?: DeployPorts;
+  /** Test double: the quality check's browser launcher and axe source, so no browser starts. */
+  qualityCheckPorts?: QualityCheckPorts;
+  /** Test double: the scene-video recorder's browser launcher, so no browser starts. */
+  videoRenderPorts?: VideoRenderPorts;
+  /** Test double: the media library's bundle limit, small enough to cross with a few files. */
+  mediaLibraryPorts?: MediaLibraryPorts;
   /** Test double: company mode's organization service, for the route suite (its semantics have their own suites). */
   orgService?: OrganizationService;
   /** Test double: the desktop reveal, so a test never opens a file manager. */
@@ -353,6 +386,13 @@ export function replacementsFor(o: TestAppOptions): Replacements {
       },
     ]);
   }
+  if (o.testBrowserPorts) out.push([DefaultTestBrowserPorts, o.testBrowserPorts]);
+  if (o.qualityCheckPorts) out.push([DefaultQualityCheckPorts, o.qualityCheckPorts]);
+  if (o.videoRenderPorts) out.push([DefaultVideoRenderPorts, o.videoRenderPorts]);
+  if (o.mediaLibraryPorts) out.push([DefaultMediaLibraryPorts, o.mediaLibraryPorts]);
+  if (o.soundModelPorts) out.push([DefaultSoundModelPorts, o.soundModelPorts]);
+  if (o.espeakPorts) out.push([DefaultEspeakPorts, o.espeakPorts]);
+  if (o.deployPorts) out.push([DefaultDeployPorts, o.deployPorts]);
   return out;
 }
 

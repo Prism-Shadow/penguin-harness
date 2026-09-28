@@ -7,6 +7,7 @@ import {
   agent,
   methods,
   PROTOCOL_VERSION,
+  RequestError,
   type AgentApp,
   type AgentConnection,
   type AgentRequestContext,
@@ -39,6 +40,10 @@ export class FakeCodingAgent {
   /** Token usage the next prompt responses report, as ACP's PromptResponse.usage. */
   promptUsage: PromptResponse["usage"] = null;
   protocolVersionOverride: number | null = null;
+  /** When set, `session/new` fails with this message, as an agent whose account is refused does. */
+  newSessionRefusal: string | null = null;
+  /** When set, `initialize` fails with this message, as an agent refusing the handshake does. */
+  initializeRefusal: string | null = null;
   readonly cancelNotifications: string[] = [];
   readonly answeredPermissions: RequestPermissionResponse[] = [];
   readonly setConfigRequests: { configId: string; value: boolean | string }[] = [];
@@ -62,13 +67,16 @@ export class FakeCodingAgent {
       .onConnect((conn) => {
         this.connection = conn;
       })
-      .onRequest(methods.agent.initialize, () => ({
-        protocolVersion: this.protocolVersionOverride ?? PROTOCOL_VERSION,
-        agentCapabilities: {
-          loadSession: reopen === "load",
-          ...(reopen === "resume" ? { sessionCapabilities: { resume: {} } } : {}),
-        },
-      }))
+      .onRequest(methods.agent.initialize, () => {
+        if (this.initializeRefusal !== null) throw new RequestError(-32000, this.initializeRefusal);
+        return {
+          protocolVersion: this.protocolVersionOverride ?? PROTOCOL_VERSION,
+          agentCapabilities: {
+            loadSession: reopen === "load",
+            ...(reopen === "resume" ? { sessionCapabilities: { resume: {} } } : {}),
+          },
+        };
+      })
       .onRequest(methods.agent.session.load, async (ctx) => {
         this.reopenRequests.push({
           method: "load",
@@ -90,11 +98,14 @@ export class FakeCodingAgent {
           ...(options.configOptions !== undefined ? { configOptions: options.configOptions } : {}),
         };
       })
-      .onRequest(methods.agent.session.new, () => ({
-        sessionId: `sess-${++this.sessionSeq}`,
-        ...(options.modes !== undefined ? { modes: options.modes } : {}),
-        ...(options.configOptions !== undefined ? { configOptions: options.configOptions } : {}),
-      }))
+      .onRequest(methods.agent.session.new, () => {
+        if (this.newSessionRefusal !== null) throw new RequestError(-32000, this.newSessionRefusal);
+        return {
+          sessionId: `sess-${++this.sessionSeq}`,
+          ...(options.modes !== undefined ? { modes: options.modes } : {}),
+          ...(options.configOptions !== undefined ? { configOptions: options.configOptions } : {}),
+        };
+      })
       .onRequest(methods.agent.session.setConfigOption, (ctx) => {
         this.setConfigRequests.push({ configId: ctx.params.configId, value: ctx.params.value });
         const applied = this.setConfigOptionHandler?.(ctx.params.configId, ctx.params.value);

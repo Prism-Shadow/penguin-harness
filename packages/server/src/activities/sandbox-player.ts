@@ -16,8 +16,11 @@ import { createHash } from "node:crypto";
 /**
  * The player's entry, bundled against the framework.
  *
- * Loom's `player.js`, less what only Loom's shell used (interactable highlighting and the
- * state relay to its inspector). What the page needs to know arrives as JSON in
+ * Loom's `player.js`, including its inspector bridge: the page reports the activity's
+ * state and its tap targets to the App that opened it, and outlines a tap target when the
+ * App asks. Loom found the App through `document.referrer`; this page is served with no
+ * referrer, so the App's origin arrives signed in the page's configuration instead, and a
+ * page with none reports nothing. What the page needs to know arrives as JSON in
  * `#penguin-sandbox`, not as query parameters, because the page is the server's to write.
  */
 export const PLAYER_SOURCE = String.raw`
@@ -63,6 +66,139 @@ document.body.addEventListener('keyup', (event) => {
         pubSub.publish('pauseController:togglePause');
     }
 });
+
+// The inspector bridge, as Loom's player has it. The framework announces every state it
+// enters and every change to what can be tapped; both go to the App that opened this page,
+// and to nobody else. The App may ask for one tap target to be outlined, and only the App.
+const ACTIVITY_STATE_EVENT = 'waf:activity-state-change';
+const ACTIVITY_INTERACTABLES_EVENT = 'waf:activity-interactables-change';
+const STATE_MESSAGE = 'penguin-sandbox:activity-state';
+const HIGHLIGHT_MESSAGE = 'penguin-sandbox:highlight-interactable';
+let latestActivityState = null;
+
+function currentInteractables() {
+    try {
+        const inspection = window.Activity && window.Activity.Inspection;
+        return (inspection && inspection.getCurrentState().interactables) || [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function relayActivityState(detail, interactables) {
+    if (!detail || !sandbox.parentOrigin || window.parent === window) return;
+    try {
+        window.parent.postMessage(
+            { type: STATE_MESSAGE, detail: detail, interactables: interactables || [] },
+            sandbox.parentOrigin
+        );
+    } catch (error) {
+        // A value the structured clone cannot carry is the inspector's loss, not the learner's.
+    }
+}
+
+document.addEventListener(
+    ACTIVITY_STATE_EVENT,
+    (event) => {
+        latestActivityState = event.detail;
+        relayActivityState(latestActivityState, currentInteractables());
+    },
+    true
+);
+document.addEventListener(
+    ACTIVITY_INTERACTABLES_EVENT,
+    (event) => relayActivityState(latestActivityState, event.detail),
+    true
+);
+
+// Picking: while the App has it switched on, a click chooses an element instead of playing
+// the activity. The page reports the nearest element with an id -- generated modules give
+// content elements their asset key as the id -- and the tap target it belongs to, if any.
+const PICK_MODE_MESSAGE = 'penguin-sandbox:pick-mode';
+const PICKED_MESSAGE = 'penguin-sandbox:picked';
+let picking = false;
+
+function pickFromClick(event) {
+    if (!picking) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const target = event.target instanceof Element ? event.target : null;
+    // Only the activity is pickable: the navbar and the player's own notices are not
+    // anything an author can open, so a click there keeps picking.
+    const activity = document.getElementById('activity');
+    if (!target || !activity || !activity.contains(target) || target === activity) return;
+    // Every id from the clicked element out to the activity, nearest first: modules name
+    // things differently (an asset key, a namespaced "module-x__rock-2-A"), so the App
+    // tries them all rather than the page guessing which one names an asset.
+    const ids = [];
+    for (let node = target; node && node !== activity && ids.length < 8; node = node.parentElement) {
+        if (node.id) ids.push(String(node.id).slice(0, 200));
+    }
+    const interactable = target.closest('[data-interactable-id]');
+    const interactableId = interactable && activity.contains(interactable)
+        ? String(interactable.getAttribute('data-interactable-id') || '').slice(0, 200) || null
+        : null;
+    if (!ids.length && !interactableId) return;
+    if (interactableId) highlightInteractable(interactableId);
+    try {
+        window.parent.postMessage(
+            { type: PICKED_MESSAGE, id: ids[0] || null, ids: ids, interactableId: interactableId },
+            sandbox.parentOrigin
+        );
+    } catch (error) {
+        // Nothing to report to; the click simply did nothing.
+    }
+}
+// Capture, and on every pointer event a tap is made of, so the activity never sees a pick.
+['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend'].forEach((type) =>
+    document.addEventListener(type, (event) => {
+        if (!picking) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }, true)
+);
+document.addEventListener('click', pickFromClick, true);
+
+window.addEventListener('message', (event) => {
+    const data = event.data;
+    if (!data || (data.type !== HIGHLIGHT_MESSAGE && data.type !== PICK_MODE_MESSAGE)) return;
+    if (!sandbox.parentOrigin || event.source !== window.parent || event.origin !== sandbox.parentOrigin) return;
+    if (data.type === PICK_MODE_MESSAGE) {
+        picking = data.on === true;
+        document.documentElement.style.cursor = picking ? 'crosshair' : '';
+        if (!picking) clearInteractableHighlight();
+        return;
+    }
+    if (typeof data.id === 'string' && data.id) highlightInteractable(data.id);
+    else clearInteractableHighlight();
+});
+
+function ensureHighlightStyle() {
+    if (document.getElementById('penguin-highlight-style')) return;
+    const style = document.createElement('style');
+    style.id = 'penguin-highlight-style';
+    style.textContent =
+        '.penguin-highlight { outline: 3px solid #1a73e8 !important; outline-offset: 3px !important; }';
+    (document.head || document.documentElement).appendChild(style);
+}
+
+function clearInteractableHighlight() {
+    const outlined = document.querySelectorAll('.penguin-highlight');
+    for (let i = 0; i < outlined.length; i++) outlined[i].classList.remove('penguin-highlight');
+}
+
+function highlightInteractable(id) {
+    ensureHighlightStyle();
+    clearInteractableHighlight();
+    let escaped = id;
+    try {
+        escaped = window.CSS && window.CSS.escape ? window.CSS.escape(id) : id.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+    } catch (error) {
+        return;
+    }
+    const targets = document.querySelectorAll('[data-interactable-id="' + escaped + '"]');
+    for (let i = 0; i < targets.length; i++) targets[i].classList.add('penguin-highlight');
+}
 
 pubSub.on(Activity.Events.Started, hideLoading);
 
@@ -272,6 +408,8 @@ export interface PlayerPageInput {
   startSceneId: string | null;
   /** When the page's link stops working, epoch milliseconds; null when it does not. */
   expiresAt: number | null;
+  /** The App origin the page reports its state to; null when it reports nothing. */
+  parentOrigin: string | null;
 }
 
 function escapeHtml(value: string): string {

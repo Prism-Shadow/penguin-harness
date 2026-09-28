@@ -5,8 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CodingAgentManager } from "../src/manager.js";
 import { AcpConnection } from "../src/connection.js";
 import { AcpAgentError, parseDefinition } from "../src/types.js";
+import { RequestError } from "@agentclientprotocol/sdk";
 import { FakeCodingAgent } from "./fake-agent.js";
-import type { AgentSessionEvent } from "../src/types.js";
+import type { AgentServerDefinition, AgentSessionEvent } from "../src/types.js";
 
 const CLIENT_INFO = { name: "penguin-test", version: "0.0.0" };
 
@@ -22,6 +23,8 @@ function harness(options: {
   permissionTimeoutMs?: number;
   reopen?: "resume" | "load" | "none";
   history?: string[];
+  envFor?: (definition: AgentServerDefinition) => Record<string, string>;
+  onTurnEnd?: ConstructorParameters<typeof CodingAgentManager>[0]["onTurnEnd"];
 }): Harness {
   const fake = new FakeCodingAgent({
     modes: options.modes,
@@ -32,8 +35,9 @@ function harness(options: {
   const events: AgentSessionEvent[] = [];
   const manager = new CodingAgentManager({
     clientInfo: CLIENT_INFO,
-    envFor: () => ({}),
+    envFor: options.envFor ?? (() => ({})),
     permissionTimeoutMs: options.permissionTimeoutMs,
+    ...(options.onTurnEnd !== undefined ? { onTurnEnd: options.onTurnEnd } : {}),
     createConnection: async (_definition, handlers) => {
       // Forward the kernel's events into the test's array as well as the manager's log.
       const wrapped: typeof handlers = {
@@ -72,6 +76,77 @@ describe("CodingAgentManager", () => {
     await expect(
       manager.createSession("fake", path.join(workspace, "missing")),
     ).rejects.toBeInstanceOf(AcpAgentError);
+  });
+
+  // The account-level reason ("this client is no longer supported", "not signed in") is
+  // the only useful part of a refusal; session/new carries no user content to leak.
+  it("relays the agent's own reason when it refuses to open a session", async () => {
+    const { manager, fake } = harness({});
+    fake.newSessionRefusal = "This client is no longer supported.";
+    await expect(manager.createSession("fake", workspace)).rejects.toThrow(
+      "the agent refused to open a session: This client is no longer supported.",
+    );
+  });
+
+  // A refusal may quote the key the agent was started with; it reaches an HTTP response.
+  it("masks the agent's credentials in a session refusal", async () => {
+    const { manager, fake } = harness({ envFor: () => ({ AGENT_KEY: "sk-secret-123456" }) });
+    fake.newSessionRefusal = "key sk-secret-123456 is not valid";
+    const error = await manager.createSession("fake", workspace).catch((e: unknown) => e);
+    expect((error as Error).message).toBe(
+      "the agent refused to open a session: key *** is not valid",
+    );
+  });
+
+  it("masks the agent's credentials in a handshake refusal", async () => {
+    const { manager, fake } = harness({ envFor: () => ({ AGENT_KEY: "sk-secret-123456" }) });
+    fake.initializeRefusal = "key sk-secret-123456 is not valid";
+    const error = await manager.createSession("fake", workspace).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AcpAgentError);
+    expect((error as Error).message).toBe(
+      "the agent refused the ACP handshake: key *** is not valid",
+    );
+  });
+
+  // A turn that fails for want of a sign-in says so in the agent's error; the host hears
+  // every turn's outcome, so an agent's card can stop claiming it is ready (and recover).
+  it("reports each turn's outcome, flagging a failed sign-in", async () => {
+    const outcomes: unknown[] = [];
+    const { manager, fake } = harness({
+      onTurnEnd: (definitionId, outcome) => outcomes.push([definitionId, outcome]),
+    });
+    const session = await manager.createSession("fake", workspace);
+    fake.promptHandler = async () => {
+      throw new RequestError(-32603, "Internal error: Failed to authenticate: expired", {
+        errorKind: "authentication_failed",
+      });
+    };
+    const error = await manager.prompt(session.sessionId, "hi").catch((e: unknown) => e);
+    expect(error).toMatchObject({ signInFailed: true, reason: "Failed to authenticate: expired" });
+    fake.promptHandler = null;
+    await manager.prompt(session.sessionId, "again");
+    expect(outcomes).toEqual([
+      ["fake", { stopReason: "failed", signInFailed: true }],
+      ["fake", { stopReason: "end_turn", signInFailed: false }],
+    ]);
+  });
+
+  it("reads ACP's auth-required error as a failed sign-in, and other errors as not", async () => {
+    const { manager, fake } = harness({});
+    const session = await manager.createSession("fake", workspace);
+    fake.promptHandler = async () => {
+      throw new RequestError(-32000, "Authentication required");
+    };
+    expect(await manager.prompt(session.sessionId, "hi").catch((e: unknown) => e)).toMatchObject({
+      signInFailed: true,
+    });
+    fake.promptHandler = async () => {
+      throw new RequestError(-32603, "Internal error: disk full");
+    };
+    expect(await manager.prompt(session.sessionId, "hi").catch((e: unknown) => e)).toMatchObject({
+      signInFailed: false,
+      reason: "disk full",
+    });
   });
 
   it("runs a turn: chunks land in the log, and the view rebuilds the transcript", async () => {
@@ -455,6 +530,20 @@ describe("CodingAgentManager", () => {
     expect(manager.listSessions()).toHaveLength(0);
     // The process is gone with the last session; a further turn cannot start.
     await expect(manager.prompt(sessionB.sessionId, "hi")).rejects.toBeInstanceOf(AcpAgentError);
+  });
+
+  // The process reads its environment once; a change saved while it runs applies next start.
+  it("reports when a running agent was started with other environment variables", async () => {
+    let env: Record<string, string> = { KEY: "one" };
+    const { manager } = harness({ envFor: () => env });
+    manager.setDefinitions([{ id: "fake", command: "fake" }]);
+    expect(manager.startedWithOtherEnv("fake")).toBe(false);
+    const view = await manager.createSession("fake", workspace);
+    expect(manager.startedWithOtherEnv("fake")).toBe(false);
+    env = { KEY: "two" };
+    expect(manager.startedWithOtherEnv("fake")).toBe(true);
+    await manager.disposeSession(view.sessionId);
+    expect(manager.startedWithOtherEnv("fake")).toBe(false);
   });
 
   it("announces a failed turn when the agent connection dies mid-turn", async () => {

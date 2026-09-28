@@ -44,6 +44,7 @@ describe("activity generation through Harness sessions", () => {
     const disposed = new Set<string>();
     let output = JSON.stringify(activitySpec);
     let fatal = false;
+    const prompts: string[] = [];
     const fakeSession = (row: SessionRow): RuntimeSession => ({
       sessionId: row.sessionId,
       dispose: () => {
@@ -56,6 +57,7 @@ describe("activity generation through Harness sessions", () => {
       skipReconnectWait: () => false,
       async *compact() {},
       async *run(_input, options) {
+        prompts.push(JSON.stringify(_input));
         yield requestBegin();
         await new Promise<void>((resolve) => {
           complete = resolve;
@@ -85,8 +87,11 @@ describe("activity generation through Harness sessions", () => {
             path.join(row.workspace!, "media-text.json"),
             output === "invalid"
               ? "invalid"
-              : JSON.stringify({
-                  ...target,
+              : // The four fields the prompt asks for, whatever else the input carries.
+                JSON.stringify({
+                  language: target.language,
+                  assetKey: target.assetKey,
+                  type: target.type,
                   text: target.type === "audio" ? "Hello there." : "A brighter blue penguin",
                 }),
           );
@@ -206,6 +211,7 @@ describe("activity generation through Harness sessions", () => {
     }
     return {
       t,
+      prompts,
       client,
       activity,
       draft,
@@ -451,7 +457,7 @@ describe("activity generation through Harness sessions", () => {
     const run = (await (await f.startAudio()).json()) as ActivityRun;
     expect(run.kind).toBe("audio");
     const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
-    expect(session.approvalMode).toBe("always-ask");
+    expect(session.approvalMode).toBe("allow-all");
     expect(
       await fs.readFile(path.join(session.workspace!, "generate-speech.mjs"), "utf8"),
     ).toContain("AutoLLMClient");
@@ -536,6 +542,42 @@ describe("activity generation through Harness sessions", () => {
     expect((await current()).draft.mediaPlan).toEqual(saved.mediaPlan);
   });
 
+  it("accepts a speech candidate that finished before a module build was pinned", async () => {
+    const f = await fixture("audio");
+    const run = (await (await f.startAudio()).json()) as ActivityRun;
+    expect((await f.finish(run)).status).toBe("succeeded");
+    const build = `run_${"b".repeat(32)}`;
+    const createdAt = "2026-09-27T10:00:00.000Z";
+    f.t.deps.db
+      .prepare(
+        "INSERT INTO activity_runs (run_id, project_id, activity_id, status, created_at, kind, record_json) VALUES (?, ?, ?, 'succeeded', ?, 'module', ?)",
+      )
+      .run(
+        build,
+        "generator-activities",
+        f.activity.id,
+        createdAt,
+        JSON.stringify({ runId: build, status: "succeeded", kind: "module", createdAt }),
+      );
+    // Play this build: only the preview changes, so the candidate is still for this draft.
+    const pinned = await f.client.post(`${f.endpoint}/module-builds/${build}/pin`, {
+      expectedRevision: run.inputRevision,
+    });
+    expect(pinned.status, await pinned.clone().text()).toBe(200);
+    const draft = (await pinned.json()) as ActivityDraft;
+    expect(draft.pinnedModuleRunId).toBe(build);
+    expect(draft.contentRevision).toBe(run.inputRevision);
+    const accepted = await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-audio`, {
+      expectedRevision: draft.contentRevision,
+    });
+    expect(accepted.status, await accepted.clone().text()).toBe(200);
+    const saved = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    expect(saved.draft.mediaPlan!.manifest.assets["en-US"]![0]!.generatedAudio?.runId).toBe(
+      run.runId,
+    );
+    expect(saved.draft.pinnedModuleRunId).toBe(build);
+  });
+
   it("retains a playable conflict candidate without applying it when a draft changes during speech", async () => {
     const f = await fixture("audio");
     const run = (await (await f.startAudio()).json()) as ActivityRun;
@@ -571,7 +613,7 @@ describe("activity generation through Harness sessions", () => {
       model: "gemini-3.1-flash-image",
     });
     const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
-    expect(session.approvalMode).toBe("always-ask");
+    expect(session.approvalMode).toBe("allow-all");
     expect(
       await fs.readFile(path.join(session.workspace!, "image-input.json"), "utf8"),
     ).not.toContain("fake-test-only");
@@ -694,7 +736,7 @@ describe("activity generation through Harness sessions", () => {
       text: "A blue penguin",
     });
     const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
-    expect(session.approvalMode).toBe("always-ask");
+    expect(session.approvalMode).toBe("allow-all");
     const input = JSON.parse(
       await fs.readFile(path.join(session.workspace!, "media-text-input.json"), "utf8"),
     );
@@ -1009,7 +1051,7 @@ describe("activity generation through Harness sessions", () => {
     const run = await f.startModule();
     expect(run.kind).toBe("module");
     const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
-    expect(session.approvalMode).toBe("always-ask");
+    expect(session.approvalMode).toBe("allow-all");
     expect(
       JSON.parse(await fs.readFile(path.join(session.workspace!, "module/definition.json"), "utf8"))
         .engine,
@@ -1120,11 +1162,130 @@ describe("activity generation through Harness sessions", () => {
     ).toMatchObject({ count: 0 });
   });
 
+  it("starts an assist conversation about what the author has open, and applies nothing", async () => {
+    const { client, endpoint, finish, prompts } = await fixture();
+    const current = (await (await client.get(endpoint)).json()) as ActivityDetail;
+    const bad = await client.post(`${endpoint}/assist`, {
+      agentId: "default_agent",
+      expectedRevision: current.draft.contentRevision,
+      message: "Why?",
+      focus: { section: "terminal" },
+    });
+    expect(bad.status).toBe(400);
+    const empty = await client.post(`${endpoint}/assist`, {
+      agentId: "default_agent",
+      expectedRevision: current.draft.contentRevision,
+      message: "",
+    });
+    expect(empty.status).toBe(400);
+    const response = await client.post(`${endpoint}/assist`, {
+      agentId: "default_agent",
+      expectedRevision: current.draft.contentRevision,
+      message: "Is the cat too hard to spot?",
+      focus: { section: "scenes", sceneId: "intro", assetKey: "cat", language: "en-US" },
+    });
+    expect(response.status, await response.clone().text()).toBe(202);
+    const run = (await response.json()) as ActivityRun;
+    expect(run.kind).toBe("assist");
+    expect(run.assist).toEqual({
+      focus: { section: "scenes", sceneId: "intro", assetKey: "cat", language: "en-US" },
+    });
+    await waitFor(() => prompts.length === 1);
+    const prompt = JSON.parse(prompts[0]!) as unknown;
+    const text = JSON.stringify(prompt);
+    // The author's words come first, then where they were looking.
+    expect(text.indexOf("Is the cat too hard to spot?")).toBeLessThan(
+      text.indexOf('the media asset \\"cat\\" in scene \\"intro\\"'),
+    );
+    expect(text).toContain('the media asset \\"cat\\" in scene \\"intro\\"');
+    // The reply is the result: the spec the fake session leaves behind is not collected.
+    const done = await finish(run);
+    expect(done.status).toBe("succeeded");
+    expect(done.candidate).toBeNull();
+    const after = (await (await client.get(endpoint)).json()) as ActivityDetail;
+    expect(after.draft.spec).toEqual(current.draft.spec);
+    // A failed reply fails the run, and says why.
+    const again = (await (
+      await client.post(`${endpoint}/assist`, {
+        agentId: "default_agent",
+        expectedRevision: after.draft.contentRevision,
+        message: "And now?",
+      })
+    ).json()) as ActivityRun;
+    expect(again.assist).toEqual({ focus: null });
+    await waitFor(() => prompts.length === 2);
+    expect(prompts[1]).toContain("the activity as a whole");
+    const failed = await finish(again, "", true);
+    expect(failed.status).toBe("failed");
+  });
+
+  it("reads an assist run's proposal fresh from its workspace, and only one it could apply", async () => {
+    const { client, endpoint, finish } = await fixture();
+    const current = (await (await client.get(endpoint)).json()) as ActivityDetail;
+    const run = (await (
+      await client.post(`${endpoint}/assist`, {
+        agentId: "default_agent",
+        expectedRevision: current.draft.contentRevision,
+        message: "Make the script shorter.",
+      })
+    ).json()) as ActivityRun;
+    await finish(run);
+    const read = async (runId = run.runId) => {
+      const response = await client.get(`${endpoint}/runs/${runId}/proposal`);
+      return { status: response.status, body: await response.json() };
+    };
+    expect((await read()).body).toEqual({ proposal: null, error: null });
+    const { session } = (await (await client.get(`/api/sessions/${run.sessionId}`)).json()) as {
+      session: { workspace: string };
+    };
+    const file = path.join(session.workspace, "proposal.json");
+    const proposal = {
+      summary: "Shorter.",
+      changes: [
+        { target: "description", text: "Teach three sight words" },
+        { target: "spec", spec: activitySpec },
+        { target: "media", language: "en-US", assetKey: "welcome", field: "script", text: "Hi!" },
+      ],
+    };
+    await fs.writeFile(file, JSON.stringify(proposal));
+    expect((await read()).body).toEqual({ proposal, error: null });
+    // A later reply replaces it, and the next read sees the replacement.
+    await fs.writeFile(
+      file,
+      JSON.stringify({ changes: [{ target: "spec", spec: { ...activitySpec, scenes: [] } }] }),
+    );
+    const invalid = (await read()).body as { proposal: null; error: string };
+    expect(invalid.proposal).toBeNull();
+    expect(invalid.error).toMatch(/specification is invalid/);
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        changes: [
+          { target: "description", text: "One" },
+          { target: "description", text: "Two" },
+        ],
+      }),
+    );
+    expect(((await read()).body as { error: string }).error).toMatch(/second time/);
+    // A link out of the workspace is not read through.
+    await fs.rm(file);
+    await fs.symlink(path.join(session.workspace, "input.json"), file);
+    expect(((await read()).body as { error: string }).error).toMatch(/regular file/);
+    // Only conversations have proposals.
+    const spec = await client.post(`${endpoint}/generate-spec`, {
+      agentId: "default_agent",
+      expectedRevision: current.draft.contentRevision,
+    });
+    const specRun = (await spec.json()) as ActivityRun;
+    expect((await read(specRun.runId)).status).toBe(404);
+    await finish(specRun);
+  });
+
   it("captures inputs in a separate workspace, then validates, applies and reopens the saved result", async () => {
     const f = await fixture();
     const run = await f.start();
     const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
-    expect(session.approvalMode).toBe("always-ask");
+    expect(session.approvalMode).toBe("allow-all");
     expect(session.workspace).toBe(path.join(f.t.root, "activity-runs", run.runId));
     const input = JSON.parse(
       await fs.readFile(path.join(session.workspace!, "input.json"), "utf8"),
@@ -1436,5 +1597,296 @@ describe("activity generation through Harness sessions", () => {
       await restarted.shutdown();
       dispose();
     }
+  });
+  it("runs the stages in order from one request, reports them, and refuses a second", async () => {
+    const { client, endpoint, finish } = await fixture();
+    const until = async (cond: () => Promise<boolean>, timeoutMs = 5000) => {
+      const start = Date.now();
+      while (!(await cond())) {
+        if (Date.now() - start > timeoutMs) throw new Error("until timed out");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    };
+    const unknown = await client.post(`${endpoint}/pipeline`, {
+      agentId: "default_agent",
+      stage: "deploy",
+    });
+    expect(unknown.status).toBe(400);
+    const badProvider = await client.post(`${endpoint}/pipeline`, {
+      agentId: "default_agent",
+      stage: "sounds",
+      soundProvider: "somewhere",
+    });
+    expect(badProvider.status).toBe(400);
+    expect(
+      await (await client.get(`${endpoint.replace(/[^/]+$/, "act_missing")}/pipeline`)).json(),
+    ).toEqual({ pipeline: null });
+    expect(await (await client.get(`${endpoint}/pipeline`)).json()).toEqual({ pipeline: null });
+
+    const response = await client.post(`${endpoint}/pipeline`, {
+      agentId: "default_agent",
+      stage: "spec",
+    });
+    expect(response.status, await response.clone().text()).toBe(202);
+    const started = (await response.json()) as { steps: { step: string; status: string }[] };
+    expect(started.steps).toEqual([expect.objectContaining({ step: "spec" })]);
+    const again = await client.post(`${endpoint}/pipeline`, { agentId: "default_agent" });
+    expect(again.status).toBe(409);
+    expect(await again.json()).toMatchObject({ error: { code: "pipeline_running" } });
+    // Deleting is refused while the sequence runs, even between two of its runs.
+    const deleting = await client.delete(endpoint);
+    expect(deleting.status).toBe(409);
+    expect(await deleting.json()).toMatchObject({ error: { code: "pipeline_running" } });
+
+    // The sequence starts the same spec run an author would, visible in the history.
+    let run: ActivityRun | undefined;
+    await until(async () => {
+      const { runs } = (await (await client.get(`${endpoint}/runs`)).json()) as {
+        runs: ActivityRun[];
+      };
+      run = runs.find(
+        (entry) => entry.kind === "spec" && entry.status === "running" && !!entry.sessionId,
+      );
+      return !!run;
+    });
+    // The run lands in the history a moment before the sequence hears back from starting it.
+    let live = { pipeline: { currentRunId: "", currentSessionId: "" } };
+    await until(async () => {
+      live = (await (await client.get(`${endpoint}/pipeline`)).json()) as typeof live;
+      return live.pipeline.currentRunId === run!.runId;
+    });
+    expect(live.pipeline).toMatchObject({
+      currentRunId: run!.runId,
+      currentSessionId: run!.sessionId,
+    });
+    expect((await finish(run!)).status).toBe("succeeded");
+    await until(async () => {
+      const { pipeline } = (await (await client.get(`${endpoint}/pipeline`)).json()) as {
+        pipeline: { status: string };
+      };
+      return pipeline.status === "succeeded";
+    }, 10_000);
+    const done = (await (await client.get(`${endpoint}/pipeline`)).json()) as {
+      pipeline: { steps: { status: string; runIds: string[] }[] };
+    };
+    expect(done.pipeline.steps).toEqual([
+      expect.objectContaining({ status: "succeeded", runIds: [run!.runId] }),
+    ]);
+    expect(await (await client.post(`${endpoint}/pipeline/stop`, {})).json()).toMatchObject({
+      pipeline: { status: "succeeded" },
+    });
+  });
+  it("reports what stands between the draft and an assembled module", async () => {
+    const { client, endpoint } = await fixture();
+    const response = await client.get(
+      `${endpoint}/readiness?wafRoot=${encodeURIComponent("Z:/no/such/checkout")}`,
+    );
+    expect(response.status).toBe(200);
+    const { checks } = (await response.json()) as { checks: { id: string; level: string }[] };
+    // A fresh draft has no saved specification, which assembly refuses.
+    expect(checks.find((check) => check.id === "spec")).toMatchObject({ level: "fail" });
+    expect(checks.find((check) => check.id === "canonical")).toMatchObject({ level: "ok" });
+    expect(checks.find((check) => check.id === "checkout")).toMatchObject({
+      level: "fail",
+      found: false,
+    });
+  });
+  it("applies a whole proposal as one draft change, or none of it, and sets one aside", async () => {
+    const { client, endpoint, finish } = await fixture();
+    const before = (await (await client.get(endpoint)).json()) as ActivityDetail;
+    const run = (await (
+      await client.post(`${endpoint}/assist`, {
+        agentId: "default_agent",
+        expectedRevision: before.draft.contentRevision,
+        message: "Rewrite it.",
+      })
+    ).json()) as ActivityRun;
+    await finish(run);
+    const { session } = (await (await client.get(`/api/sessions/${run.sessionId}`)).json()) as {
+      session: { workspace: string };
+    };
+    const file = path.join(session.workspace, "proposal.json");
+    const apply = (revision: string) =>
+      client.post(`${endpoint}/runs/${run.runId}/proposal/apply`, { expectedRevision: revision });
+
+    // One change that cannot land keeps the others out too.
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        changes: [
+          { target: "description", text: "Never applied" },
+          { target: "media", language: "en-US", assetKey: "nope", field: "script", text: "x" },
+        ],
+      }),
+    );
+    const refused = await apply(before.draft.contentRevision);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ error: { code: "media_stale" } });
+    const unchanged = (await (await client.get(endpoint)).json()) as ActivityDetail;
+    expect(unchanged.draft.description).toBe(before.draft.description);
+
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        summary: "A new script and its specification.",
+        changes: [
+          { target: "description", text: "Teach three sight words" },
+          { target: "spec", spec: activitySpec },
+        ],
+      }),
+    );
+    const applied = await apply(before.draft.contentRevision);
+    expect(applied.status, await applied.clone().text()).toBe(200);
+    const draft = (await applied.json()) as ActivityDetail["draft"];
+    expect(draft).toMatchObject({
+      description: "Teach three sight words",
+      spec: activitySpec,
+      status: "valid",
+    });
+    // Against the revision it was applied to, a second apply is a conflict, not a repeat.
+    expect((await apply(before.draft.contentRevision)).status).toBe(409);
+    // The draft as it was is kept first, once: the refused apply kept it, and the second
+    // apply found the draft still equal to that version.
+    const { versions } = (await (await client.get(`${endpoint}/versions`)).json()) as {
+      versions: { kind: string; reason: string | null }[];
+    };
+    expect(versions).toEqual([
+      expect.objectContaining({ kind: "auto", reason: "before_proposal" }),
+    ]);
+
+    // Discarding keeps the file with the run, and the studio stops offering it.
+    const discarded = await client.post(`${endpoint}/runs/${run.runId}/proposal/discard`, {});
+    expect(await discarded.json()).toEqual({ proposal: null, error: null });
+    expect(await (await client.get(`${endpoint}/runs/${run.runId}/proposal`)).json()).toEqual({
+      proposal: null,
+      error: null,
+    });
+    await expect(
+      fs.readFile(path.join(session.workspace, "proposal.discarded.json"), "utf8"),
+    ).resolves.toContain("Teach three sight words");
+    const missing = await apply(draft.contentRevision);
+    expect(missing.status).toBe(409);
+    expect(await missing.json()).toMatchObject({ error: { code: "proposal_missing" } });
+  });
+  it("names a ref and marks it stable, and refuses a stability that is not a yes or no", async () => {
+    const { client, endpoint } = await fixture();
+    const bad = await client.patch(`${endpoint}/identity`, { stable: "yes" });
+    expect(bad.status).toBe(400);
+    const named = await client.patch(`${endpoint}/identity`, {
+      displayName: "  Round two ",
+      stable: true,
+    });
+    expect(named.status, await named.clone().text()).toBe(200);
+    expect(await named.json()).toMatchObject({ displayName: "Round two", stable: true });
+    const cleared = await client.patch(`${endpoint}/identity`, { displayName: "" });
+    expect(await cleared.json()).toMatchObject({ displayName: null, stable: true });
+  });
+  it("adds a language with narration to translate, translates one, and records its source", async () => {
+    const f = await fixture("media-text");
+    const first = (await (await f.startMediaText("audio")).json()) as ActivityRun;
+    await f.finish(first);
+    let current = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    const add = (language: string) =>
+      f.client.post(`${f.endpoint}/languages`, {
+        language,
+        expectedRevision: current.draft.contentRevision,
+      });
+    for (const refused of ["en-US", "fr-FR", "es-MX"])
+      expect((await add(refused)).status, refused).toBe(422);
+    const added = await add("ro-RO");
+    expect(added.status, await added.clone().text()).toBe(200);
+    current = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    const romanian = current.draft.mediaPlan!.manifest.assets["ro-RO"]!;
+    // The narration comes without the English script or its recording.
+    expect(romanian).toHaveLength(1);
+    expect(romanian[0]).not.toHaveProperty("script");
+    expect(romanian[0]).not.toHaveProperty("path");
+
+    // A plain media-text run cannot translate an image, nor translate into the default.
+    const refusedTranslation = await f.client.post(`${f.endpoint}/generate-media-text`, {
+      agentId: "default_agent",
+      expectedRevision: current.draft.contentRevision,
+      language: "en-US",
+      assetKey: "voice",
+      translate: true,
+    });
+    expect(refusedTranslation.status).toBe(422);
+
+    const started = await f.client.post(`${f.endpoint}/generate-media-text`, {
+      agentId: "default_agent",
+      expectedRevision: current.draft.contentRevision,
+      language: "ro-RO",
+      assetKey: "voice",
+      translate: true,
+    });
+    expect(started.status, await started.clone().text()).toBe(202);
+    const run = (await started.json()) as ActivityRun;
+    expect(run.mediaText).toEqual({
+      language: "ro-RO",
+      assetKey: "voice",
+      type: "audio",
+      text: "",
+      translation: { from: "Penguin", languageName: "Romanian" },
+    });
+    await waitFor(() => f.prompts.some((prompt) => prompt.includes("into Romanian")));
+    const done = await f.finish(run);
+    expect(done.status, done.error ?? "").toBe("succeeded");
+    const accepted = await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-media-text`, {
+      expectedRevision: run.inputRevision,
+    });
+    expect(accepted.status, await accepted.clone().text()).toBe(200);
+    const after = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    expect(after.draft.mediaPlan!.manifest.assets["ro-RO"]![0]).toMatchObject({
+      script: "Hello there.",
+      translatedFrom: "Penguin",
+    });
+    // The rest of the plan is untouched.
+    expect(after.draft.mediaPlan!.manifest.assets["en-US"]).toEqual(
+      current.draft.mediaPlan!.manifest.assets["en-US"],
+    );
+  });
+  it("keeps a ref's implementation features, and hands them to its module assembly", async () => {
+    const f = await fixture(true);
+    const read = async () =>
+      (await (await f.client.get(`${f.endpoint}/implementation-features`)).json()) as {
+        features: { id: string }[];
+        selectedIds: string[];
+      };
+    const initial = await read();
+    expect(initial.selectedIds).toEqual([]);
+    expect(initial.features.map((feature) => feature.id)).toContain(
+      "r2phcs03l-speaker-audio-choices",
+    );
+    const unknown = await f.client.put(`${f.endpoint}/implementation-features`, {
+      selectedIds: ["no-such-feature"],
+    });
+    expect(unknown.status).toBe(422);
+    expect(
+      (await f.client.put(`${f.endpoint}/implementation-features`, { selectedIds: "x" })).status,
+    ).toBe(400);
+    const saved = await f.client.put(`${f.endpoint}/implementation-features`, {
+      selectedIds: ["vocabwordsreview-final-review-cards", "r2phcs03l-speaker-audio-choices"],
+    });
+    expect(saved.status, await saved.clone().text()).toBe(200);
+    // Kept in catalogue order, however they were sent.
+    expect((await read()).selectedIds).toEqual([
+      "r2phcs03l-speaker-audio-choices",
+      "vocabwordsreview-final-review-cards",
+    ]);
+
+    const run = await f.startModule();
+    const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
+    const handed = JSON.parse(
+      await fs.readFile(path.join(session.workspace!, "implementation-features.json"), "utf8"),
+    ) as { id: string }[];
+    expect(handed.map((feature) => feature.id)).toEqual([
+      "r2phcs03l-speaker-audio-choices",
+      "vocabwordsreview-final-review-cards",
+    ]);
+    await waitFor(() =>
+      f.prompts.some((prompt) =>
+        prompt.includes("Selected implementation features: Speaker audio choices"),
+      ),
+    );
   });
 });

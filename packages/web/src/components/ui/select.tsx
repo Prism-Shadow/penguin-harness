@@ -1,6 +1,6 @@
 /**
  * Dropdown select component: **custom-drawn** (not the native browser select),
- * keeping the same API — parses `<option>` children and follows the
+ * keeping the same API — parses `<option>` children (grouped by `<optgroup>` or not) and follows the
  * `value` / `onChange(e.target.value)` convention. The menu is rendered via
  * portal to body (fixed positioning from the shared usePortalPanel hook), so it
  * is never clipped by a Modal or scroll container; it closes on outside click,
@@ -13,6 +13,7 @@ import { errorClass, sizeClass, sizeTextClass } from "./input";
 import type { ControlSize } from "./input";
 import { Field, controlBase, menuRowClass } from "./field";
 import { CheckIcon, ChevronDown } from "./icons";
+import { rowDescClass } from "./option-menu";
 import { usePortalPanel } from "./use-portal-panel";
 
 export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> {
@@ -30,16 +31,30 @@ interface Opt {
   disabled?: boolean;
 }
 
-/** Parses the option list out of `<option>` children. */
-function parseOptions(children: ReactNode): Opt[] {
-  const out: Opt[] = [];
+/** A menu row: an option, or the heading of an `<optgroup>` the options under it belong to. */
+type Row = { kind: "option"; option: Opt } | { kind: "group"; label: ReactNode };
+
+/** Parses the menu out of `<option>` children, and `<optgroup>`s of them, in order. */
+function parseRows(children: ReactNode): Row[] {
+  const out: Row[] = [];
   Children.forEach(children, (child) => {
-    if (!isValidElement(child) || child.type !== "option") return;
+    if (!isValidElement(child)) return;
+    if (child.type === "optgroup") {
+      const p = child.props as { label?: ReactNode; children?: ReactNode };
+      const inner = parseRows(p.children);
+      // A group with no options says nothing, so it gets no heading either.
+      if (inner.length > 0) out.push({ kind: "group", label: p.label ?? "" }, ...inner);
+      return;
+    }
+    if (child.type !== "option") return;
     const p = child.props as { value?: string | number; children?: ReactNode; disabled?: boolean };
     out.push({
-      value: p.value !== undefined ? String(p.value) : "",
-      label: p.children ?? "",
-      ...(p.disabled ? { disabled: true } : {}),
+      kind: "option",
+      option: {
+        value: p.value !== undefined ? String(p.value) : "",
+        label: p.children ?? "",
+        ...(p.disabled ? { disabled: true } : {}),
+      },
     });
   });
   return out;
@@ -63,7 +78,8 @@ export function Select({
   // the selected option's text says what is chosen, not what is being chosen.
   "aria-label": ariaLabel,
 }: SelectProps) {
-  const options = parseOptions(children);
+  const rows = parseRows(children);
+  const options = rows.flatMap((row) => (row.kind === "option" ? [row.option] : []));
   const current = String(value ?? "");
   const selected = options.find((o) => o.value === current);
   const errorId = useId();
@@ -73,7 +89,7 @@ export function Select({
     open,
     onClose: () => setOpen(false),
     // Row height is roughly 36px (px-3 py-1.5 + text) — only used to decide up vs down.
-    estimatedHeight: options.length * 36 + 8,
+    estimatedHeight: rows.length * 36 + 8,
   });
 
   const pick = (v: string) => {
@@ -117,26 +133,42 @@ export function Select({
               bottom: position.bottomPx,
             }}
           >
-            {options.map((o, i) => (
-              <button
-                key={`${o.value}-${i}`}
-                type="button"
-                role="option"
-                aria-selected={o.value === current}
-                disabled={o.disabled}
-                onClick={() => pick(o.value)}
-                // Menu-row text takes the control's own tier, so the dropdown reads exactly
-                // like an Input of that tier.
-                className={`flex items-center ${menuRowClass} ${sizeTextClass[size]} disabled:opacity-50 ${
-                  o.value === current
-                    ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                    : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                }`}
-              >
-                <span className="min-w-0 flex-1 truncate">{o.label}</span>
-                {o.value === current && <CheckIcon className="text-gray-500 dark:text-gray-400" />}
-              </button>
-            ))}
+            {rows.map((row, i) => {
+              if (row.kind === "group")
+                return (
+                  <div
+                    key={`group-${i}`}
+                    role="presentation"
+                    // A group heading is secondary text, sized like a menu row's description.
+                    className={`px-3 pb-1 pt-2 ${rowDescClass[size]} font-medium text-gray-500 dark:text-gray-400`}
+                  >
+                    {row.label}
+                  </div>
+                );
+              const o = row.option;
+              return (
+                <button
+                  key={`${o.value}-${i}`}
+                  type="button"
+                  role="option"
+                  aria-selected={o.value === current}
+                  disabled={o.disabled}
+                  onClick={() => pick(o.value)}
+                  // Menu-row text takes the control's own tier, so the dropdown reads exactly
+                  // like an Input of that tier.
+                  className={`flex items-center ${menuRowClass} ${sizeTextClass[size]} disabled:opacity-50 ${
+                    o.value === current
+                      ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                      : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                  {o.value === current && (
+                    <CheckIcon className="text-gray-500 dark:text-gray-400" />
+                  )}
+                </button>
+              );
+            })}
           </div>,
           document.body,
         )}

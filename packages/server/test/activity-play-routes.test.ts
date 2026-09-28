@@ -121,6 +121,15 @@ describe("playing an imported activity", () => {
     expect(location.searchParams.get("language")).toBe("en-US");
   });
 
+  it("signs the App origin that asked into the link, for the page to report its state to", async () => {
+    const { location } = await setup();
+    const token = location.pathname.split("/")[3]!;
+    const body = JSON.parse(
+      Buffer.from(token.slice(0, token.indexOf(".")), "base64url").toString("utf8"),
+    ) as { parentOrigin?: string };
+    expect(body.parentOrigin).toBe("http://localhost");
+  });
+
   it("answers the framework's configuration request with the activity, under the link", async () => {
     const { base, onPreview } = await setup();
     const response = await onPreview(

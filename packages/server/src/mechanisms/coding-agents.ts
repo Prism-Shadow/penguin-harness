@@ -6,6 +6,7 @@
 import { Interface, type Opaque } from "@prismshadow/penguin-core/kernel";
 import type {
   AgentPermissionOutcome,
+  AgentServerDefinition,
   AgentSessionEvent,
   AgentSessionOptions,
 } from "@prismshadow/penguin-coding-agents";
@@ -20,7 +21,8 @@ import type {
 } from "../api/types.js";
 
 export abstract class CodingAgents extends Interface<{
-  listAgents(): CodingAgentServerInfo[];
+  /** `withEnv` adds each agent's masked variables; the route passes it for admins only. */
+  listAgents(opts?: { withEnv?: boolean }): CodingAgentServerInfo[];
   /**
    * Probe the server machine for known agents. Read-only and cached — any user, it is
    * what the card view is built from. `refresh` re-runs the live probes (versions,
@@ -30,6 +32,24 @@ export abstract class CodingAgents extends Interface<{
   /** Validate and persist a custom agent definition (admin-managed, server-global). */
   saveAgent(input: unknown): CodingAgentServerInfo;
   removeAgent(agentId: string): boolean;
+  /**
+   * Replace an agent's environment variables (Vault rules: an entry without a value keeps the
+   * stored one; a key not listed is removed). A detected agent's definition is saved first.
+   * Refused for a built-in definition, whose variables its own service owns.
+   */
+  setAgentEnv(
+    agentId: string,
+    entries: { key: string; value?: string }[],
+  ): Promise<CodingAgentServerInfo>;
+  /** For the built-in agents service only: write its definition, bypassing the Local CLI guard. */
+  saveBuiltinDefinition(definition: AgentServerDefinition): void;
+  /** For the built-in agents service only: drop its definition. */
+  removeBuiltinDefinition(agentId: string): boolean;
+  /**
+   * For the built-in agents service only: the built-in definitions with their real env, so it
+   * can read its own token. Never returned from a route.
+   */
+  listDefinitionsForBuiltin(): AgentServerDefinition[];
   /** Remember the model a card picked for this agent; auto-applied to its new sessions. */
   setAgentModel(
     agentId: string,

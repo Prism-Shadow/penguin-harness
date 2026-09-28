@@ -193,4 +193,10 @@ describe("whether a clip can highlight words", () => {
     expect(supportsHighlighting({})).toBe(false);
     expect(supportsHighlighting({ wordTimings: [] })).toBe(false);
   });
+
+  it("does not count bracketed audio tags as spoken words", () => {
+    expect(visibleWords("Find the syllable [pause] NAP [Pause] and hold it.[short pause]")).toEqual(
+      ["Find", "the", "syllable", "NAP", "and", "hold", "it"],
+    );
+  });
 });

@@ -4,8 +4,14 @@
  *   GET    /api/coding-agents/discover                                 (any user: cached; cheap tier)
  *   POST   /api/coding-agents/discover/refresh                         (admin: live probes — versions, auth, models)
  *   PUT    /api/coding-agents/agents/:agentId/model                    (admin: remember an agent's model)
+ *   PUT    /api/coding-agents/agents/:agentId/env                      (admin: replace an agent's environment variables)
  *   POST   /api/coding-agents/agents                                   (admin: save a custom definition)
  *   DELETE /api/coding-agents/agents/:agentId                          (admin)
+ *   GET    /api/coding-agents/builtin                                  (admin: built-in agents and their state)
+ *   POST   /api/coding-agents/builtin/copilot/setup                    (admin: { token? } -> 202; downloads in the background)
+ *   POST   /api/coding-agents/builtin/copilot/cancel                   (admin: stop a download, 204)
+ *   PUT    /api/coding-agents/builtin/copilot/token                    (admin: { token } -> replace the stored PAT)
+ *   DELETE /api/coding-agents/builtin/copilot                          (admin: runtime, token and definition, 204)
  *   GET    /api/coding-agents/sessions                                 (any user)
  *   POST   /api/coding-agents/sessions                                 (any user: { agentId, workspaceDir? })
  *   PATCH  /api/coding-agents/sessions/:sessionId                      ({ title } -> renamed session)
@@ -26,6 +32,7 @@
 import { Hono, type Context } from "hono";
 import { AcpAgentError } from "@prismshadow/penguin-coding-agents";
 import type { AppEnv } from "../../auth/middleware.js";
+import type { BuiltinAgents } from "../../mechanisms/builtin-agents.js";
 import type { CodingAgents } from "../../mechanisms/coding-agents.js";
 import { sseEndpoint } from "../sse.js";
 import { HttpError } from "../errors.js";
@@ -41,6 +48,7 @@ import {
 /** What this route group reaches — bound by its module (see services/agent-routes.ts). */
 export interface CodingAgentsRouteDeps {
   codingAgents: CodingAgents;
+  builtinAgents: BuiltinAgents;
 }
 
 function requireSessionId(c: Context<AppEnv>): string {
@@ -68,7 +76,9 @@ function rethrowKernelError(error: unknown, busyStatus = false): never {
 export function codingAgentsRoutes(deps: CodingAgentsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  app.get("/agents", (c) => c.json({ agents: deps.codingAgents.listAgents() }));
+  app.get("/agents", (c) =>
+    c.json({ agents: deps.codingAgents.listAgents({ withEnv: c.var.user.isAdmin }) }),
+  );
 
   // The cached discovery read backs the card view every authenticated user already gets
   // (GET /agents and POST /sessions are any-user routes): it executes nothing, answering
@@ -158,6 +168,30 @@ export function codingAgentsRoutes(deps: CodingAgentsRouteDeps): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
+  app.put("/agents/:agentId/env", async (c) => {
+    if (!c.var.user.isAdmin) {
+      throw new HttpError(403, "forbidden", "Admin access is required.");
+    }
+    const agentId = pathParam(c, "agentId");
+    const body = (await readJson(c)) as { entries?: unknown };
+    if (!Array.isArray(body.entries)) throw badRequest("entries must be an array.");
+    const entries = body.entries.map((raw: unknown) => {
+      const entry = raw as { key?: unknown; value?: unknown };
+      if (typeof entry?.key !== "string") throw badRequest("every entry needs a key.");
+      if (entry.value !== undefined && typeof entry.value !== "string") {
+        throw badRequest(`${entry.key}: value must be a string.`);
+      }
+      return entry.value === undefined
+        ? { key: entry.key }
+        : { key: entry.key, value: entry.value };
+    });
+    try {
+      return c.json({ agent: await deps.codingAgents.setAgentEnv(agentId, entries) });
+    } catch (error) {
+      rethrowKernelError(error);
+    }
+  });
+
   app.post("/agents", async (c) => {
     if (!c.var.user.isAdmin) {
       throw new HttpError(403, "forbidden", "Admin access is required.");
@@ -177,8 +211,86 @@ export function codingAgentsRoutes(deps: CodingAgentsRouteDeps): Hono<AppEnv> {
       throw new HttpError(403, "forbidden", "Admin access is required.");
     }
     const agentId = pathParam(c, "agentId");
-    if (!deps.codingAgents.removeAgent(agentId)) {
+    let removed: boolean;
+    try {
+      removed = deps.codingAgents.removeAgent(agentId);
+    } catch (error) {
+      rethrowKernelError(error);
+    }
+    if (!removed) {
       throw new HttpError(404, "not_found", "Agent definition does not exist.");
+    }
+    return c.body(null, 204);
+  });
+
+  // --- built-in agents (admin: they download and run a program on this server) ----------
+
+  const requireAdmin = (c: Context<AppEnv>): void => {
+    if (!c.var.user.isAdmin) throw new HttpError(403, "forbidden", "Admin access is required.");
+  };
+  const requireCopilot = (c: Context<AppEnv>): void => {
+    if (c.req.param("id") !== "copilot") {
+      throw new HttpError(404, "not_found", "No such built-in agent.");
+    }
+  };
+  /** A refused setup (no token yet, nothing installed) is the caller's error: 400. */
+  const builtinCall = <T>(work: () => T): T => {
+    try {
+      return work();
+    } catch (error) {
+      if (error instanceof Error && error.name === "RuntimeInstallError") {
+        throw badRequest(error.message);
+      }
+      throw error;
+    }
+  };
+
+  app.get("/builtin", (c) => {
+    requireAdmin(c);
+    return c.json({ agents: deps.builtinAgents.list() });
+  });
+
+  app.post("/builtin/:id/setup", async (c) => {
+    requireAdmin(c);
+    requireCopilot(c);
+    const body = (await readJson(c)) as { token?: unknown };
+    if (body.token !== undefined && typeof body.token !== "string") {
+      throw badRequest("token must be a string.");
+    }
+    if (typeof body.token === "string" && body.token.length > 8192) {
+      throw badRequest("token is too long.");
+    }
+    const token = body.token as string | undefined;
+    return c.json(
+      { agent: builtinCall(() => deps.builtinAgents.startSetup("copilot", token)) },
+      202,
+    );
+  });
+
+  app.post("/builtin/:id/cancel", (c) => {
+    requireAdmin(c);
+    requireCopilot(c);
+    deps.builtinAgents.cancel("copilot");
+    return c.body(null, 204);
+  });
+
+  app.put("/builtin/:id/token", async (c) => {
+    requireAdmin(c);
+    requireCopilot(c);
+    const token = requireString(await readJson(c), "token", { maxLen: 8192, label: "token" });
+    return c.json({ agent: builtinCall(() => deps.builtinAgents.replaceToken("copilot", token)) });
+  });
+
+  app.delete("/builtin/:id", async (c) => {
+    requireAdmin(c);
+    requireCopilot(c);
+    try {
+      await deps.builtinAgents.remove("copilot");
+    } catch (error) {
+      if (error instanceof Error && error.name === "RuntimeInstallError") {
+        throw badRequest(error.message);
+      }
+      throw error;
     }
     return c.body(null, 204);
   });

@@ -8,7 +8,7 @@ A spec generation, module assembly or media-text run on a coding agent is now an
 
 ## Runs
 
-- A coding-agent run's Session is filed under the Penguin agent the activity editor would use (or the Project's default Agent when an API client names none), so it appears in the sidebar, and **Open Session / approvals** opens it at `/chat/<id>` like any other run's.
+- A coding-agent run's Session is filed under the Penguin agent the activity editor would use (or the Project's default Agent when an API client names none), so it appears in the sidebar, and **Open Session** opens it at `/chat/<id>` like any other run's.
 - An agent that stops short still fails the run with its own reason (refused, ran out of output, lost its connection) rather than a missing-file message.
 - A module assembly still keeps the agent out of the WAF checkout: the protected folder now reaches the agent's session through Session creation, and a permission ask touching it is refused whatever the Session's approval mode.
 - `ActivityRun.agentId` is now the owning Penguin agent for coding-agent runs too, where it was empty.

@@ -13,6 +13,18 @@ export function parseResolution(value: unknown): ModuleViewport {
     : { width: 1024, height: 768 };
 }
 
+/**
+ * Screens an activity can be tried at besides its own: the classroom tablets and laptops
+ * it will meet, landscape and portrait. Only the preview changes; the spec keeps its own.
+ */
+export const PREVIEW_RESOLUTIONS: readonly string[] = [
+  "1024x768",
+  "1280x800",
+  "1366x768",
+  "1920x1080",
+  "768x1024",
+];
+
 /** Uniform scale fitting the viewport into the box, never upscaled past 1. */
 export function fitScale(viewport: ModuleViewport, box: { width: number; height: number }): number {
   if (viewport.width <= 0 || viewport.height <= 0 || box.width <= 0 || box.height <= 0) return 1;

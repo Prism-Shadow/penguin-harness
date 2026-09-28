@@ -23,9 +23,15 @@ export interface WordTiming {
  * Punctuation is not spoken, so it is not aligned. Splitting on whitespace and then
  * stripping non-word characters is what Loom does, and it means `"cat,"` and `"cat"` are
  * the same word for alignment purposes.
+ *
+ * Neither are bracketed audio tags: `[pause]`, `[short pause]`, `[very slowly]` direct the
+ * voice and are never said, so a provider's timings skip them. Loom's scripts carry them
+ * (its word-pronunciation lines are built with them), and counting one as a word would
+ * push every later timing onto the wrong word.
  */
 export function visibleWords(script: string): string[] {
   return script
+    .replace(/\[[^\]\n]*\]/g, " ")
     .split(/\s+/)
     .map((token) => token.replace(/[^\p{L}\p{N}'-]+/gu, ""))
     .filter(Boolean);

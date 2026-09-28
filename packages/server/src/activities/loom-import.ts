@@ -23,6 +23,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { normalizeFeatureSelection } from "./implementation-features.js";
 
 /** Loom's directory name for one ref. */
 export function refDirName(productCode: string, refNum: number): string {
@@ -72,6 +73,7 @@ export interface LoomRefPaths {
   manifest: string;
   description: string;
   stateMachine: string;
+  implementationFeatures: string;
 }
 
 export function loomRefPaths(
@@ -92,6 +94,7 @@ export function loomRefPaths(
     manifest: path.join(spec, "asset_manifest.json"),
     description: path.join(spec, "activity_description.txt"),
     stateMachine: path.join(spec, "state-machine.json"),
+    implementationFeatures: path.join(spec, "implementation_features.json"),
   };
 }
 
@@ -162,6 +165,8 @@ export interface ImportedRef extends ImportedRefMetadata {
   manifest: Record<string, unknown> | null;
   description: string;
   hasStateMachine: boolean;
+  /** Loom's implementation features this ref selected, known ones only. */
+  implementationFeatures: string[];
   /** Languages the manifest holds, which is how multi-language arrives from Loom. */
   languages: string[];
   /** What could not be read. An empty list means a complete ref. */
@@ -238,6 +243,14 @@ export async function readLoomRef(
     .stat(paths.stateMachine)
     .then((stat) => stat.isFile())
     .catch(() => false);
+  // Optional in Loom: most refs select no features, and then the file is never written.
+  const features: unknown = await fs
+    .readFile(paths.implementationFeatures, "utf8")
+    .then((text) => JSON.parse(text) as unknown)
+    .catch(() => null);
+  const implementationFeatures = normalizeFeatureSelection(
+    (features as { selectedIds?: unknown } | null)?.selectedIds,
+  );
   return {
     ...metadata,
     refNum,
@@ -246,6 +259,7 @@ export async function readLoomRef(
     manifest,
     description,
     hasStateMachine,
+    implementationFeatures,
     languages: manifestLanguages(manifest),
     problems,
   };

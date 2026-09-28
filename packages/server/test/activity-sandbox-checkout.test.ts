@@ -83,11 +83,12 @@ async function setup(options: { runs?: boolean; canonical?: boolean } = {}) {
     activities: {
       getActivity: async () => activity,
       isCanonicalRef: () => options.canonical ?? true,
+      effectiveModuleDocument: async () => null,
       productOf: () => ({ moduleFolder: FOLDER, canonicalRefNum: 1 }),
       draftWorkspace: () => path.join(penguin, "drafts"),
     },
     generation: {
-      list: async () =>
+      moduleBuilds: async () =>
         options.runs
           ? [{ runId: "run_1", kind: "module", status: "succeeded", createdAt: "2026-09-01" }]
           : [],

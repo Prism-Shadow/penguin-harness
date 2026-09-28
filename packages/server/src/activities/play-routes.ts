@@ -98,6 +98,7 @@ export class ActivityPlayRoutes {
           startSceneId: c.req.query("scene") ?? null,
         },
         target.expiresAt,
+        target.parentOrigin ?? null,
       );
       return new Response(page.html, {
         status: page.status,

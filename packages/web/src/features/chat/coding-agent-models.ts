@@ -31,6 +31,11 @@ const VENDOR_LOGOS: Record<string, string> = {
   codex: "openai",
   gemini: "google",
   kimi: "moonshot",
+  // "copilot" has no vendor mark of its own either, so it falls through to this same
+  // string (its discovery recipe's title) and ProviderLogo's letter tile; naming it
+  // explicitly here keeps the Local CLI and built-in Copilot rows the same tile instead
+  // of hashing two different colours for one vendor.
+  "copilot-builtin": "GitHub Copilot CLI",
 };
 
 /**

@@ -18,11 +18,17 @@
  * twice is an import nobody dares run once, and a half-finished import — a network drop, a
  * bad spec in ref seven — has to be resumable.
  */
-import type { ImportMapping, MappedActivity } from "./import-mapping.js";
+import type { CarriedBinding, ImportMapping, MappedActivity } from "./import-mapping.js";
 
 /** A product Penguin already holds under this code. */
 export interface ExistingProduct {
+  /** Its live refs. */
   refNums: number[];
+  /**
+   * Its deleted (archived) refs. A deleted ref keeps its number, so it cannot be created
+   * again, and it is not "already there" either: nobody can see it.
+   */
+  archivedRefNums: number[];
   canonicalRefNum: number | null;
 }
 
@@ -46,6 +52,13 @@ export interface ImportTarget {
   setDescription(activityId: string, description: string, revision: string): Promise<string>;
   setSpec(activityId: string, spec: Record<string, unknown>, revision: string): Promise<string>;
   setBookMode(productCode: string, mode: "decodable" | "readAlong"): Promise<void>;
+  setImplementationFeatures(activityId: string, selectedIds: string[]): Promise<void>;
+  /** Plan media from the saved specification and bind it as Loom had it. */
+  setMedia(
+    activityId: string,
+    media: Record<string, CarriedBinding[]>,
+    revision: string,
+  ): Promise<string>;
 }
 
 export interface ImportOutcome {
@@ -53,6 +66,8 @@ export interface ImportOutcome {
   created: number[];
   /** Refs that were already there, left untouched. */
   skipped: number[];
+  /** Refs deleted here earlier. Their numbers stay taken, so they were not recreated. */
+  archived: number[];
   /** Refs that could not be imported, and why. Named, never swallowed. */
   failed: { refNum: number; reason: string }[];
   /**
@@ -98,6 +113,7 @@ export async function applyImport(
   const outcome: ImportOutcome = {
     created: [],
     skipped: [],
+    archived: [],
     failed: [],
     partial: [],
     abandoned: false,
@@ -105,6 +121,7 @@ export async function applyImport(
   };
   const existing = await target.existingProduct(mapping.product.productCode);
   const present = new Set(existing?.refNums ?? []);
+  const deleted = new Set(existing?.archivedRefNums ?? []);
   // Joining a product Penguin already has means its canonical ref is already settled, and
   // creating the ref Loom called canonical will not move it. Reported rather than forced:
   // moving module ownership is an author's decision, not an importer's.
@@ -122,6 +139,10 @@ export async function applyImport(
     const isCanonical = ref.refNum === mapping.product.canonicalRefNum;
     if (present.has(ref.refNum)) {
       outcome.skipped.push(ref.refNum);
+      continue;
+    }
+    if (deleted.has(ref.refNum)) {
+      outcome.archived.push(ref.refNum);
       continue;
     }
     try {
@@ -176,7 +197,14 @@ async function importRef(
       revision = await target.setDescription(created.activityId, ref.description, revision);
     // A ref with no specification was already reported as a loss by the mapping; there is
     // nothing here to write, and inventing an empty one would make it look imported.
-    if (ref.spec) await target.setSpec(created.activityId, ref.spec, revision);
+    if (ref.spec) {
+      revision = await target.setSpec(created.activityId, ref.spec, revision);
+      // Media is planned from the specification, so it can only follow one.
+      if (Object.keys(ref.media).length)
+        revision = await target.setMedia(created.activityId, ref.media, revision);
+    }
+    if (ref.implementationFeatures.length)
+      await target.setImplementationFeatures(created.activityId, ref.implementationFeatures);
     return null;
   } catch (error) {
     return reason(error);
@@ -196,6 +224,10 @@ export function describeOutcome(outcome: ImportOutcome, productCode: string): st
   if (outcome.skipped.length)
     parts.push(
       `${outcome.skipped.length} ${outcome.skipped.length === 1 ? "ref was" : "refs were"} already there and left alone.`,
+    );
+  if (outcome.archived.length)
+    parts.push(
+      `${outcome.archived.length === 1 ? "Ref" : "Refs"} ${outcome.archived.join(", ")} ${outcome.archived.length === 1 ? "was" : "were"} deleted here earlier and ${outcome.archived.length === 1 ? "was" : "were"} not imported again; ${outcome.archived.length === 1 ? "its number stays" : "their numbers stay"} taken.`,
     );
   if (outcome.failed.length)
     parts.push(

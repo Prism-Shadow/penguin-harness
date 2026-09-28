@@ -74,9 +74,12 @@ function open024(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   dropReportedCost(db);
+  dropProductTags(db);
+  dropActivityVersions(db);
+  dropDeployRuns(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_versions; DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_product_tags; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
   );
   dropCompanyModeTables(db);
   db.exec("DROP TABLE messaging_bindings");
@@ -119,9 +122,12 @@ function open6(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   dropReportedCost(db);
+  dropProductTags(db);
+  dropActivityVersions(db);
+  dropDeployRuns(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_versions; DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_product_tags; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
   );
   db.exec(PRE_CHANNEL_CHAT_DDL);
   // SCHEMA_SQL declares the CURRENT shape; migration 8's queue came after 6.
@@ -135,10 +141,13 @@ function open7(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   dropReportedCost(db);
+  dropProductTags(db);
+  dropActivityVersions(db);
+  dropDeployRuns(db);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_versions; DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_product_tags; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
   );
   db.exec("PRAGMA user_version = 7");
   return db;
@@ -149,9 +158,12 @@ function open8(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   dropReportedCost(db);
+  dropProductTags(db);
+  dropActivityVersions(db);
+  dropDeployRuns(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_versions; DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_product_tags; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
   );
   db.exec("PRAGMA user_version = 8");
   return db;
@@ -162,9 +174,12 @@ function open029(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   dropReportedCost(db);
+  dropProductTags(db);
+  dropActivityVersions(db);
+  dropDeployRuns(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_versions; DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_product_tags; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
   );
   dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
@@ -186,9 +201,12 @@ function openPreProfile(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   dropReportedCost(db);
+  dropProductTags(db);
+  dropActivityVersions(db);
+  dropDeployRuns(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_versions; DROP TABLE IF EXISTS activity_media_text_runs; DROP TABLE IF EXISTS activity_image_runs; DROP TABLE IF EXISTS activity_audio_runs; DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_product_tags; DROP TABLE IF EXISTS activity_products; DROP TABLE IF EXISTS activity_collections;",
   );
   dropProfileColumns(db);
   // Version 4 predates company mode as well: its three migrations (6–8) come after the
@@ -227,6 +245,25 @@ function dropProfileColumns(db: DatabaseSync): void {
  */
 function dropReportedCost(db: DatabaseSync): void {
   db.exec("ALTER TABLE usage_records DROP COLUMN reported_cost_usd");
+}
+
+/**
+ * Migration 20's table, which every database stamped before it lacks: SCHEMA_SQL declares
+ * it, so a fixture for an older version takes it off again.
+ */
+function dropProductTags(db: DatabaseSync): void {
+  db.exec("DROP TABLE IF EXISTS activity_product_tags");
+}
+
+/** Migration 21's table, which every database stamped before it lacks. */
+function dropActivityVersions(db: DatabaseSync): void {
+  db.exec("DROP TABLE IF EXISTS activity_versions");
+}
+
+/** Migration 23's tables, which every database stamped before it lacks. */
+function dropDeployRuns(db: DatabaseSync): void {
+  db.exec("DROP TABLE IF EXISTS activity_deploy_stages");
+  db.exec("DROP TABLE IF EXISTS activity_deploy_runs");
 }
 
 /** Column names of `users`, for the two cases that are about columns rather than whole shapes. */
@@ -723,6 +760,9 @@ describe("activity candidate storage", () => {
     try {
       db.exec(SCHEMA_SQL);
       dropReportedCost(db);
+      dropProductTags(db);
+      dropActivityVersions(db);
+      dropDeployRuns(db);
       db.exec("DROP TABLE activity_run_candidates; PRAGMA user_version = 11");
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('u', 'h', 0, 'now'); INSERT INTO projects VALUES ('p', 'u', 'now'); INSERT INTO activities (id, collection_id, product_code, ref_num, title, activity_type, created_at, updated_at, archived) VALUES ('a', 'c', 'p', 0, 'Title', 'standard', 'now', 'now', 0)",
@@ -815,6 +855,9 @@ describe("migration 18 → current: usage-reported-cost", () => {
     const db = new sqlite.DatabaseSync(":memory:");
     db.exec(SCHEMA_SQL);
     dropReportedCost(db);
+    dropProductTags(db);
+    dropActivityVersions(db);
+    dropDeployRuns(db);
     db.exec("PRAGMA user_version = 18");
     return db;
   }
@@ -829,7 +872,13 @@ describe("migration 18 → current: usage-reported-cost", () => {
         "INSERT INTO usage_records (ts, date, project_id, agent_id, session_id, provider, model_id, cache_read, cache_write, output, total)" +
           " VALUES ('2026-09-23T00:00:00Z', '2026-09-23', 'p', 'a', 's', 'openai', 'gpt-5', 1, 2, 3, 6)",
       );
-      expect(migrate(db).applied).toEqual(["usage-reported-cost"]);
+      expect(migrate(db).applied).toEqual([
+        "usage-reported-cost",
+        "activity-product-tags",
+        "activity-versions",
+        "activity-versions-draft-status",
+        "activity-deploy-runs",
+      ]);
       expect(usageColumns(db)).toContain("reported_cost_usd");
       expect(db.prepare("SELECT total, reported_cost_usd FROM usage_records").all()).toEqual([
         { total: 6, reported_cost_usd: null },
@@ -854,6 +903,290 @@ describe("migration 18 → current: usage-reported-cost", () => {
       rollbackTo(db, 18);
       expect(shape(db)).toBe(before);
       expect(db.prepare("SELECT total FROM usage_records").all()).toEqual([{ total: 6 }]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("migration 19 → current: activity-product-tags", () => {
+  function open19(): DatabaseSync {
+    const db = new sqlite.DatabaseSync(":memory:");
+    db.exec(SCHEMA_SQL);
+    dropProductTags(db);
+    dropActivityVersions(db);
+    dropDeployRuns(db);
+    db.exec("PRAGMA user_version = 19");
+    return db;
+  }
+  const tables = (db: DatabaseSync) =>
+    (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]
+    ).map((t) => t.name);
+
+  it("adds the table, and the result is a fresh database", () => {
+    const db = open19();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      expect(tables(db)).not.toContain("activity_product_tags");
+      expect(migrate(db).applied).toEqual([
+        "activity-product-tags",
+        "activity-versions",
+        "activity-versions-draft-status",
+        "activity-deploy-runs",
+      ]);
+      expect(tables(db)).toContain("activity_product_tags");
+      fresh.exec(SCHEMA_SQL);
+      expect(tables(fresh)).toContain("activity_product_tags");
+      expect(shape(db)).toBe(shape(fresh));
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("is swap-safe, so a pushed platform may apply it", () => {
+    const db = open19();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "activity-product-tags",
+        "activity-versions",
+        "activity-versions-draft-status",
+        "activity-deploy-runs",
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down drops only the tags", () => {
+    const db = open19();
+    try {
+      const before = shape(db);
+      migrate(db);
+      db.exec(
+        "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('u', 'h', 0, 'now');" +
+          "INSERT INTO projects VALUES ('p', 'u', 'now');" +
+          "INSERT INTO activity_products VALUES ('prd', 'p', 'c', 'code', 'waf-module-code', 0, 'standard', NULL, 'now', 'now');" +
+          "INSERT INTO activity_product_tags VALUES ('prd', 'phonics', 0)",
+      );
+      rollbackTo(db, 19);
+      expect(shape(db)).toBe(before);
+      expect(db.prepare("SELECT product_code AS code FROM activity_products").all()).toEqual([
+        { code: "code" },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("migration 20 → current: activity-versions", () => {
+  function open20(): DatabaseSync {
+    const db = new sqlite.DatabaseSync(":memory:");
+    db.exec(SCHEMA_SQL);
+    dropActivityVersions(db);
+    dropDeployRuns(db);
+    db.exec("PRAGMA user_version = 20");
+    return db;
+  }
+  const tables = (db: DatabaseSync) =>
+    (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]
+    ).map((t) => t.name);
+
+  it("adds the table, and the result is a fresh database", () => {
+    const db = open20();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      expect(tables(db)).not.toContain("activity_versions");
+      expect(migrate(db).applied).toEqual([
+        "activity-versions",
+        "activity-versions-draft-status",
+        "activity-deploy-runs",
+      ]);
+      expect(tables(db)).toContain("activity_versions");
+      fresh.exec(SCHEMA_SQL);
+      expect(shape(db)).toBe(shape(fresh));
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("is swap-safe, so a pushed platform may apply it", () => {
+    const db = open20();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "activity-versions",
+        "activity-versions-draft-status",
+        "activity-deploy-runs",
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("refuses an unknown kind and a repeated number for one activity", () => {
+    const db = open20();
+    try {
+      migrate(db);
+      db.exec(
+        "INSERT INTO activities (id, collection_id, product_code, ref_num, title, activity_type, created_at, updated_at, archived) VALUES ('a', 'c', 'p', 0, 'Title', 'standard', 'now', 'now', 0)",
+      );
+      const insert = (seq: number, kind: string) =>
+        db
+          .prepare(
+            "INSERT INTO activity_versions (version_id, activity_id, seq, kind, content_hash, manifest_sha, media_bytes, created_at) VALUES (?, 'a', ?, ?, 'h', 'h', 0, 'now')",
+          )
+          .run(`v${seq}${kind}`, seq, kind);
+      insert(1, "manual");
+      expect(() => insert(1, "auto")).toThrow();
+      expect(() => insert(2, "nightly")).toThrow();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down drops only the versions", () => {
+    const db = open20();
+    try {
+      const before = shape(db);
+      migrate(db);
+      db.exec(
+        "INSERT INTO activities (id, collection_id, product_code, ref_num, title, activity_type, created_at, updated_at, archived) VALUES ('a', 'c', 'p', 0, 'Title', 'standard', 'now', 'now', 0);" +
+          "INSERT INTO activity_versions (version_id, activity_id, seq, kind, content_hash, manifest_sha, media_bytes, created_at) VALUES ('v', 'a', 1, 'manual', 'h', 'h', 0, 'now')",
+      );
+      rollbackTo(db, 20);
+      expect(shape(db)).toBe(before);
+      expect(db.prepare("SELECT id FROM activities").all()).toEqual([{ id: "a" }]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("migration 21 → current: activity-versions-draft-status", () => {
+  const versionColumns = (db: DatabaseSync) =>
+    (db.prepare("PRAGMA table_info(activity_versions)").all() as { name: string }[]).map(
+      (column) => column.name,
+    );
+  function open21(): DatabaseSync {
+    const db = new sqlite.DatabaseSync(":memory:");
+    db.exec(SCHEMA_SQL);
+    db.exec("ALTER TABLE activity_versions DROP COLUMN draft_status");
+    dropDeployRuns(db);
+    db.exec("PRAGMA user_version = 21");
+    return db;
+  }
+
+  it("adds the column, keeping the versions, and the result is a fresh database", () => {
+    const db = open21();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(
+        "INSERT INTO activities (id, collection_id, product_code, ref_num, title, activity_type, created_at, updated_at, archived) VALUES ('a', 'c', 'p', 0, 'Title', 'standard', 'now', 'now', 0);" +
+          "INSERT INTO activity_versions (version_id, activity_id, seq, kind, content_hash, manifest_sha, media_bytes, created_at) VALUES ('v', 'a', 1, 'manual', 'h', 'h', 0, 'now')",
+      );
+      expect(versionColumns(db)).not.toContain("draft_status");
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "activity-versions-draft-status",
+        "activity-deploy-runs",
+      ]);
+      expect(db.prepare("SELECT version_id, draft_status FROM activity_versions").all()).toEqual([
+        { version_id: "v", draft_status: null },
+      ]);
+      fresh.exec(SCHEMA_SQL);
+      expect(shape(db)).toBe(shape(fresh));
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("down drops only the column", () => {
+    const db = open21();
+    try {
+      const before = shape(db);
+      migrate(db);
+      rollbackTo(db, 21);
+      expect(shape(db)).toBe(before);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("migration 22 → current: activity-deploy-runs", () => {
+  function open22(): DatabaseSync {
+    const db = new sqlite.DatabaseSync(":memory:");
+    db.exec(SCHEMA_SQL);
+    dropDeployRuns(db);
+    db.exec("PRAGMA user_version = 22");
+    return db;
+  }
+  const tables = (db: DatabaseSync) =>
+    (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]
+    ).map((t) => t.name);
+  const seed = (db: DatabaseSync) =>
+    db.exec(
+      "INSERT INTO activities (id, collection_id, product_code, ref_num, title, activity_type, created_at, updated_at, archived) VALUES ('a', 'c', 'p', 0, 'Title', 'standard', 'now', 'now', 0);",
+    );
+
+  it("adds both tables, swap-safe, and the result is a fresh database", () => {
+    const db = open22();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      expect(tables(db)).not.toContain("activity_deploy_runs");
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["activity-deploy-runs"]);
+      expect(tables(db)).toContain("activity_deploy_runs");
+      expect(tables(db)).toContain("activity_deploy_stages");
+      fresh.exec(SCHEMA_SQL);
+      expect(shape(db)).toBe(shape(fresh));
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("refuses an unknown target and keeps one state per stage", () => {
+    const db = open22();
+    try {
+      migrate(db);
+      seed(db);
+      // The rows' own checks are what is under test, not the project they would belong to.
+      db.exec("PRAGMA foreign_keys = OFF");
+      const run = (id: string, target: string) =>
+        db
+          .prepare(
+            "INSERT INTO activity_deploy_runs (run_id, project_id, activity_id, target, status, record_json, started_at) VALUES (?, 'p', 'a', ?, 'running', '{}', 'now')",
+          )
+          .run(id, target);
+      run("r1", "qa");
+      expect(() => run("r2", "staging")).toThrow();
+      const stage = () =>
+        db
+          .prepare(
+            "INSERT INTO activity_deploy_stages (activity_id, stage, status, metadata_json) VALUES ('a', 'verify_module', 'done', '{}')",
+          )
+          .run();
+      stage();
+      expect(stage).toThrow();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down drops only the deploy tables", () => {
+    const db = open22();
+    try {
+      const before = shape(db);
+      migrate(db);
+      seed(db);
+      rollbackTo(db, 22);
+      expect(shape(db)).toBe(before);
+      expect(db.prepare("SELECT id FROM activities").all()).toEqual([{ id: "a" }]);
     } finally {
       db.close();
     }
@@ -1061,7 +1394,9 @@ describe("opening a database older than the newest columns", () => {
     }
   });
 
-  it("opens every version a migration has ever left behind", () => {
+  // One real database file per migration, opened through the whole chain: it grows with every
+  // migration and outgrows the shared per-test limit on a busy Windows machine.
+  it("opens every version a migration has ever left behind", { timeout: 180_000 }, () => {
     // The guard generalises: one index added to SCHEMA_SQL over a migration-added column
     // breaks exactly one of these, and only at the version before that migration.
     for (const version of MIGRATIONS.map((m) => m.version - 1)) {

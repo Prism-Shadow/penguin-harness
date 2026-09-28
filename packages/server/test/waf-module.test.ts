@@ -26,6 +26,7 @@ const activity: ActivityDetail = {
   createdAt: "",
   updatedAt: "",
   archived: false,
+  tags: [],
   draft: {
     draftId: "draft_one",
     activityId: "act_one",

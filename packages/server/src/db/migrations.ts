@@ -841,6 +841,129 @@ export const MIGRATIONS: readonly Migration[] = [
       db.exec("ALTER TABLE usage_records DROP COLUMN reported_cost_usd");
     },
   },
+  {
+    version: 20,
+    name: "activity-product-tags",
+    // Swap-safe: a new table no older reader or writer knows about, so either build runs
+    // against it unchanged.
+    swapSafe: true,
+    up(db) {
+      // Free-text labels an author gives a product ("grade 1", "phonics"); every ref of the
+      // product shares them. Position keeps the order the author typed them in.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS activity_product_tags (
+          product_id TEXT NOT NULL REFERENCES activity_products(product_id) ON DELETE CASCADE,
+          tag TEXT NOT NULL,
+          position INTEGER NOT NULL,
+          PRIMARY KEY (product_id, tag)
+        );
+      `);
+    },
+    down(db) {
+      // Loses only the tags; products and refs are untouched.
+      db.exec("DROP TABLE IF EXISTS activity_product_tags");
+    },
+  },
+  {
+    version: 21,
+    name: "activity-versions",
+    // Swap-safe: a new table no older reader or writer knows about, so either build runs
+    // against it unchanged.
+    swapSafe: true,
+    up(db) {
+      // An author's saved versions of an activity. The row says what and when; the content
+      // (the version manifest and the media bytes) lives in content-addressed blobs under the
+      // activity's own directory, so a file every version shares is stored once.
+      db.exec(`
+          CREATE TABLE IF NOT EXISTS activity_versions (
+          version_id TEXT PRIMARY KEY,
+          activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+          seq INTEGER NOT NULL,
+          label TEXT,
+          kind TEXT NOT NULL CHECK (kind IN ('manual', 'auto', 'restore', 'deploy')),
+          -- Why an automatic version was kept: 'before_restore' or 'before_proposal'.
+          reason TEXT,
+          -- SHA-256 of the canonical version manifest, which is also the manifest blob's name.
+          content_hash TEXT NOT NULL,
+          manifest_sha TEXT NOT NULL,
+          media_bytes INTEGER NOT NULL,
+          module_run_id TEXT,
+          source_version_id TEXT,
+          author_user_id TEXT,
+          deployed_qa_at TEXT,
+          deployed_prod_at TEXT,
+          created_at TEXT NOT NULL,
+          UNIQUE (activity_id, seq)
+          );
+          CREATE INDEX IF NOT EXISTS idx_activity_versions_activity ON activity_versions(activity_id, seq);
+      `);
+    },
+    down(db) {
+      // Loses the version history. The blobs stay on disk, where nothing reads them.
+      db.exec("DROP INDEX IF EXISTS idx_activity_versions_activity");
+      db.exec("DROP TABLE IF EXISTS activity_versions");
+    },
+  },
+  {
+    version: 22,
+    name: "activity-versions-draft-status",
+    // Swap-safe: the column is nullable, so an older writer's inserts leave it empty and an
+    // older reader never selects it.
+    swapSafe: true,
+    up(db) {
+      // The draft's status when the version was kept. It is not content, so it stays out of
+      // the version's hash, but a restore needs it: a script edited after its specification
+      // leaves the draft "draft", and that must survive a restore. NULL (older rows) means
+      // the status is worked out from the specification.
+      const columns = db.prepare("PRAGMA table_info(activity_versions)").all() as {
+        name: string;
+      }[];
+      if (!columns.some((column) => column.name === "draft_status"))
+        db.exec("ALTER TABLE activity_versions ADD COLUMN draft_status TEXT");
+    },
+    down(db) {
+      // Loses only the kept statuses; a restore then works them out from the specification.
+      db.exec("ALTER TABLE activity_versions DROP COLUMN draft_status");
+    },
+  },
+  {
+    version: 23,
+    name: "activity-deploy-runs",
+    // Swap-safe: two new tables no older reader or writer knows about, so either build runs
+    // against them unchanged.
+    swapSafe: true,
+    up(db) {
+      // An activity's deploy runs and the latest state of each deploy stage. A run's log is a
+      // file under PENGUIN_HOME, not a row.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS activity_deploy_runs (
+          run_id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+          activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+          target TEXT NOT NULL CHECK (target IN ('qa', 'prod')),
+          status TEXT NOT NULL,
+          record_json TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          finished_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_activity_deploy_runs_activity ON activity_deploy_runs(project_id, activity_id, started_at);
+        CREATE TABLE IF NOT EXISTS activity_deploy_stages (
+          activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+          stage TEXT NOT NULL,
+          status TEXT NOT NULL,
+          finished_at TEXT,
+          metadata_json TEXT NOT NULL,
+          PRIMARY KEY (activity_id, stage)
+        );
+      `);
+    },
+    down(db) {
+      // Loses the deploy history and stage states; the log files stay on disk, unread.
+      db.exec("DROP INDEX IF EXISTS idx_activity_deploy_runs_activity");
+      db.exec("DROP TABLE IF EXISTS activity_deploy_stages");
+      db.exec("DROP TABLE IF EXISTS activity_deploy_runs");
+    },
+  },
 ];
 
 /** The highest version this build knows how to reach. */

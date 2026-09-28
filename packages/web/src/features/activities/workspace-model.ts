@@ -7,7 +7,19 @@
 
 /** The parts of an activity the rail navigates between. */
 export type WorkspaceSection =
-  "description" | "specification" | "scenes" | "speech" | "library" | "module" | "history";
+  | "description"
+  | "specification"
+  | "features"
+  | "configuration"
+  | "assessment"
+  | "scenes"
+  | "stats"
+  | "speech"
+  | "library"
+  | "module"
+  | "history"
+  | "deploy"
+  | "newRef";
 
 export interface WorkspaceSectionEntry {
   key: WorkspaceSection;
@@ -22,6 +34,11 @@ export interface WorkspaceState {
   hasPlan: boolean;
   /** An assembled module exists, so a preview can be shown. */
   hasModule: boolean;
+  /**
+   * The saved specification says the activity asks an assessment, which can be generated
+   * before any module is assembled.
+   */
+  usesAssessment?: boolean;
 }
 
 /**
@@ -33,15 +50,39 @@ export function workspaceSections(state: WorkspaceState): WorkspaceSectionEntry[
   return [
     { key: "description", enabled: true },
     { key: "specification", enabled: true },
+    // A checklist for the module assembly; choosing features needs no module yet.
+    { key: "features", enabled: true },
+    // The module's own documents, read from whichever module the player would play.
+    { key: "configuration", enabled: state.hasModule },
+    { key: "assessment", enabled: state.hasModule || !!state.usesAssessment },
     // Always reachable: the action that builds the media plan lives inside this
     // section, so gating the section would hide its own entry point. The pane says
     // what is missing instead.
     { key: "scenes", enabled: true },
     { key: "speech", enabled: state.hasSpec && state.hasPlan },
+    { key: "stats", enabled: state.hasPlan },
     { key: "library", enabled: true },
-    { key: "module", enabled: state.hasModule },
+    // Reachable once there is a specification to assemble from: the Build stage that
+    // assembles the first module lives in this section, as planning media lives in Scenes.
+    { key: "module", enabled: state.hasModule || state.hasSpec },
     { key: "history", enabled: true },
+    // Whether a deploy could start: there is nothing to deploy until there is a module.
+    { key: "deploy", enabled: state.hasModule },
+    // Making a ref from this one, reached from the ref header rather than the tree: its
+    // table walks the media plan, so it waits for one.
+    { key: "newRef", enabled: state.hasPlan },
   ];
+}
+
+const SECTION_KEYS: readonly WorkspaceSection[] = workspaceSections({
+  hasSpec: true,
+  hasPlan: true,
+  hasModule: true,
+}).map((section) => section.key);
+
+/** A section named in the address (`?section=`), or null when it names none. */
+export function sectionFromParam(value: string | null): WorkspaceSection | null {
+  return SECTION_KEYS.find((key) => key === value) ?? null;
 }
 
 /** The section to open, honouring a choice only while it is still available. */
@@ -154,4 +195,48 @@ export function railWidthAfterKey(width: number, key: string, large = false): nu
   if (key === "Home") return RAIL_MIN_WIDTH;
   if (key === "End") return RAIL_MAX_WIDTH;
   return null;
+}
+
+/**
+ * The panels the icon rail on the right opens beside the work, in rail order. Loom keeps
+ * these behind a rail of its own so the main panel stays the only large thing on screen.
+ */
+export type StudioPanel = "run" | "player" | "conversation" | "sessions";
+export const STUDIO_PANELS: readonly StudioPanel[] = ["run", "player", "conversation", "sessions"];
+
+/** The icon rail's width and the width of the panel it opens, in pixels. */
+export const STUDIO_RAIL_WIDTH = 44;
+export const SIDE_PANEL_WIDTH = 400;
+
+/**
+ * Whether an open side panel can sit beside the tree and the editor. When it cannot, it
+ * covers the editor instead of squeezing it past the point where the editor still works:
+ * a panel over the work can be closed, a crushed editor cannot be read.
+ */
+export function sidePanelFitsBeside(available: number): boolean {
+  if (!Number.isFinite(available) || available <= 0) return true;
+  return available - STUDIO_RAIL_WIDTH - SIDE_PANEL_WIDTH >= WORKSPACE_TWO_PANE_WIDTH;
+}
+
+export const SIDE_PANEL_KEY = "penguin.activitySidePanel";
+
+/** The panel left open last time, or none; anything unrecognised opens nothing. */
+export function readSidePanel(storage?: Pick<Storage, "getItem">): StudioPanel | null {
+  try {
+    const raw = (storage ?? localStorage).getItem(SIDE_PANEL_KEY);
+    return STUDIO_PANELS.includes(raw as StudioPanel) ? (raw as StudioPanel) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeSidePanel(
+  panel: StudioPanel | null,
+  storage?: Pick<Storage, "setItem">,
+): void {
+  try {
+    (storage ?? localStorage).setItem(SIDE_PANEL_KEY, panel ?? "");
+  } catch {
+    // A remembered panel is a convenience, as the rail width is.
+  }
 }

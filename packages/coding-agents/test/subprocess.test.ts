@@ -165,6 +165,22 @@ describe("AcpConnection spawn routing", () => {
     expect(seen[0]?.options).not.toHaveProperty("windowsVerbatimArguments");
   });
 
+  // Started inside a project whose tree holds the adapter package (this repo's use-codex
+  // plugin), `npx -y <adapter>` counts it installed and runs a bin that was never linked.
+  it("starts the agent outside the server's own working directory", async () => {
+    const seen: { file: string; args: string[]; options: SpawnOptions }[] = [];
+    const connection = await AcpConnection.spawn(
+      process.execPath,
+      [],
+      {},
+      CLIENT_INFO,
+      HANDLERS,
+      recordingSpawn((entry) => seen.push(entry)),
+    );
+    connection.dispose();
+    expect(seen[0]?.options.cwd).toBe(os.tmpdir());
+  });
+
   // A shim under "C:\Program Files\..." must keep its own quotes once cmd strips the
   // outer pair; otherwise cmd's prefix guessing picks "C:\program".
   it.skipIf(process.platform !== "win32")(

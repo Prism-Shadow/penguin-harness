@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { AssetManifest } from "@prismshadow/penguin-server/api";
+import type { ActivityRunSummary, AssetManifest } from "@prismshadow/penguin-server/api";
 import {
   SPEECH_SCRIPT_MAX,
+  inSpeechFilter,
   neediestLanguage,
   pendingSpeechKeys,
   speechScriptUsable,
@@ -10,7 +11,13 @@ import {
 } from "../src/features/activities/bulk-speech";
 import {
   clipTime,
+  encodeWav,
   normalizePeaks,
+  remainingLength,
+  removeRange,
+  selectionBetween,
+  selectionFromDrag,
+  wavSampleRate,
   playedFraction,
   seekTime,
   waveformPeaks,
@@ -79,9 +86,57 @@ describe("speech readiness", () => {
 
   it("counts every narration exactly once", () => {
     const tally = speechTally(assets);
-    expect(tally).toEqual({ total: 6, ready: 2, pending: 2, blocked: 2 });
+    expect(tally).toEqual({ total: 6, ready: 2, pending: 2, failed: 0, generating: 0, blocked: 2 });
     expect(tally.ready + tally.pending + tally.blocked).toBe(tally.total);
-    expect(speechTally([])).toEqual({ total: 0, ready: 0, pending: 0, blocked: 0 });
+    expect(speechTally([])).toEqual({
+      total: 0,
+      ready: 0,
+      pending: 0,
+      failed: 0,
+      generating: 0,
+      blocked: 0,
+    });
+  });
+
+  it("reads each narration's latest speech run in the language shown", () => {
+    const run = (key: string, status: string, createdAt: string, language = "en-US") =>
+      ({
+        kind: "audio",
+        status,
+        createdAt,
+        error: status === "failed" ? "The voice timed out." : null,
+        audio: { language, assetKey: key },
+      }) as unknown as ActivityRunSummary;
+    const runs = [
+      run("needs_speech", "failed", "2026-09-23T10:00:00Z"),
+      run("needs_speech", "failed", "2026-09-23T09:00:00Z"),
+      run("also_needs", "failed", "2026-09-23T09:00:00Z"),
+      run("also_needs", "running", "2026-09-23T10:00:00Z"),
+      run("bound_upload", "failed", "2026-09-23T11:00:00Z"),
+      run("no_script", "failed", "2026-09-23T11:00:00Z", "es-MX"),
+    ];
+    const statuses = speechStatuses(assets, runs, "en-US");
+    expect(statuses.find((status) => status.key === "needs_speech")).toMatchObject({
+      state: "failed",
+      error: "The voice timed out.",
+    });
+    expect(statuses.find((status) => status.key === "also_needs")!.state).toBe("generating");
+    // A bound narration is bound, whatever an old run did.
+    expect(statuses.find((status) => status.key === "bound_upload")!.state).toBe("ready");
+    // Failed ones are tried again by the bulk run; one already generating is not doubled.
+    expect(pendingSpeechKeys(assets, runs, "en-US")).toEqual(["needs_speech"]);
+    expect(speechTally(assets, runs, "en-US")).toMatchObject({
+      failed: 1,
+      generating: 1,
+      pending: 1,
+    });
+    const failed = statuses.find((status) => status.key === "needs_speech")!;
+    expect(inSpeechFilter(failed, "failed")).toBe(true);
+    expect(inSpeechFilter(failed, "needs")).toBe(true);
+    expect(inSpeechFilter(failed, "ready")).toBe(false);
+    const noScript = statuses.find((status) => status.key === "no_script")!;
+    expect(inSpeechFilter(noScript, "blocked")).toBe(true);
+    expect(inSpeechFilter(noScript, "needs")).toBe(false);
   });
 
   it("judges a script by the endpoint's own limit", () => {
@@ -166,5 +221,85 @@ describe("waveform arithmetic", () => {
     expect(clipTime(600)).toBe("10:00");
     expect(clipTime(-1)).toBe("0:00");
     expect(clipTime(Number.NaN)).toBe("0:00");
+  });
+});
+
+describe("translation", () => {
+  const sources = new Map([
+    ["hello", "Hello"],
+    ["bye", "Bye"],
+    ["wave", "Wave"],
+    ["own", "Mine"],
+  ]);
+  const spanish: MediaAsset[] = [
+    asset({ key: "hello" }),
+    asset({ key: "bye", script: "Adiós", translatedFrom: "Goodbye" }),
+    asset({ key: "wave", script: "Hola", translatedFrom: "Wave" }),
+    asset({ key: "own", script: "Mío" }),
+  ];
+  const running = {
+    kind: "media-text",
+    status: "running",
+    createdAt: "2026-09-23T10:00:00Z",
+    mediaText: { language: "es-MX", assetKey: "wave", translation: { from: "Wave" } },
+  } as unknown as ActivityRunSummary;
+
+  it("marks what was never translated, what the default line has since changed, and what is being translated", () => {
+    const statuses = speechStatuses(spanish, [running], "es-MX", sources);
+    expect(statuses.map((status) => [status.key, status.translation])).toEqual([
+      ["hello", "missing"],
+      ["bye", "outdated"],
+      ["wave", "translating"],
+      // Written by someone, with no source recorded: it stands.
+      ["own", undefined],
+    ]);
+    expect(statuses.filter((status) => inSpeechFilter(status, "translate"))).toHaveLength(3);
+  });
+
+  it("marks nothing without the default language's scripts to compare against", () => {
+    expect(speechStatuses(spanish, [], "es-MX").some((status) => status.translation)).toBe(false);
+  });
+});
+
+describe("trimming a clip", () => {
+  it("reads a drag as a stretch of the clip, and a click as none", () => {
+    expect(selectionFromDrag(150, 50, 200, 4)).toEqual({ start: 1, end: 3 });
+    expect(selectionFromDrag(100, 101, 200, 4)).toBeNull();
+    expect(selectionFromDrag(0, 100, 0, 4)).toBeNull();
+  });
+
+  it("reads two marked moments as a selection either way round, and says what remains", () => {
+    expect(selectionBetween(2.5, 1)).toEqual({ start: 1, end: 2.5 });
+    expect(selectionBetween(1, 1.01)).toBeNull();
+    expect(remainingLength(4, { start: 1, end: 2.5 })).toBe(2.5);
+  });
+
+  it("takes the selected stretch out of every channel", () => {
+    const left = Float32Array.from([0, 1, 2, 3, 4, 5, 6, 7]);
+    const right = Float32Array.from([10, 11, 12, 13, 14, 15, 16, 17]);
+    const [a, b] = removeRange([left, right], 4, 0.5, 1.25);
+    expect([...a!]).toEqual([0, 1, 5, 6, 7]);
+    expect([...b!]).toEqual([10, 11, 15, 16, 17]);
+    expect([...removeRange([left], 4, 3, 9)[0]!]).toEqual([...left]);
+  });
+
+  it("reads a WAV's own sample rate, and nothing from other files", () => {
+    expect(wavSampleRate(encodeWav([new Float32Array(4)], 22050))).toBe(22050);
+    expect(wavSampleRate(new TextEncoder().encode("ID3 not a wav file at all, really"))).toBeNull();
+    expect(wavSampleRate(new Uint8Array(8))).toBeNull();
+  });
+
+  it("writes a 16-bit PCM WAV the upload and the runtime read", () => {
+    const wav = encodeWav([Float32Array.from([0, 1, -1, 2])], 8000);
+    const view = new DataView(wav.buffer);
+    const text = (at: number) => String.fromCharCode(...wav.subarray(at, at + 4));
+    expect([text(0), text(8), text(12), text(36)]).toEqual(["RIFF", "WAVE", "fmt ", "data"]);
+    expect(view.getUint32(4, true)).toBe(wav.length - 8);
+    expect(view.getUint16(20, true)).toBe(1);
+    expect(view.getUint32(24, true)).toBe(8000);
+    expect(view.getUint16(34, true)).toBe(16);
+    expect([0, 1, 2, 3].map((index) => view.getInt16(44 + index * 2, true))).toEqual([
+      0, 32767, -32768, 32767,
+    ]);
   });
 });

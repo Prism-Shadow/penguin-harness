@@ -22,9 +22,12 @@ export const BEHAVIOR_STAGE = "implement_behavior";
 export const IMAGES_STAGE = "generate_images";
 
 /**
- * Loom's pipeline, minus what is deliberately not ported: `validate_activity`, because
- * Penguin already validates the specification and the manifest, and `test_activity` with
- * its two quality gates, which were unfinished in Loom.
+ * The stages an activity is built through. Two steps are deliberately not stages:
+ * `validate_activity`, because Penguin already validates the specification and the
+ * manifest, and `test_activity`, whose quality checks and acceptance tests run against the
+ * played activity in the test browser as runs of their own (quality-check.ts and
+ * acceptance-service.ts, the Module section's Check quality and Run tests) rather than as
+ * stages of this list.
  */
 export const PIPELINE_STAGES: readonly ActivityStage[] = [
   {

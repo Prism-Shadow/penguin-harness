@@ -202,6 +202,33 @@ describe("agent discovery", () => {
       expect(await statusOf("cline")).toBe("ok");
     });
 
+    // Claude Code keeps MCP sign-ins in the same file and empties its own token when a
+    // refresh fails, so the file existing says nothing about the Claude login itself.
+    it("counts Claude's credentials file only when it holds a sign-in token", async () => {
+      await install(bin, "claude");
+      await write(
+        ".claude/.credentials.json",
+        '{"mcpOAuth":{"x":{"accessToken":"m"}},"claudeAiOauth":{"accessToken":"","expiresAt":0}}',
+      );
+      expect(await statusOf("claude")).toBe("unknown");
+      await write(".claude/.credentials.json", '{"claudeAiOauth":{"accessToken":"t"}}');
+      expect(await statusOf("claude")).toBe("ok");
+    });
+
+    // A sign-in made after a failure or a signed-out answer is only visible as a change.
+    it("says when the stored sign-in last changed", async () => {
+      await install(bin, "gemini");
+      const changedAt = async () =>
+        (await discoverAgents({ env: env(), home, agentEnv: () => ({}) })).find(
+          (c) => c.recipeId === "gemini",
+        )?.signInChangedAt;
+      expect(await changedAt()).toBeUndefined();
+      await write(".gemini/oauth_creds.json", "{}");
+      const at = new Date("2026-01-02T03:04:05Z");
+      await fs.utimes(path.join(home, ".gemini/oauth_creds.json"), at, at);
+      expect(await changedAt()).toBe(at.getTime());
+    });
+
     it("reads a config that opens with a comment line", async () => {
       await install(bin, "copilot");
       await write(".copilot/config.json", '// User settings\n{"loggedInUsers":[{"login":"a"}]}');

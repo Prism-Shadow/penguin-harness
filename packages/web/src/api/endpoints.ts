@@ -30,9 +30,12 @@ import type {
   BenchmarkCreateRequest,
   BenchmarkCreateResponse,
   BenchmarksResponse,
+  BuiltinAgentInfo,
+  BuiltinAgentsResponse,
   CaseMaterial,
   ChatDefaultsDto,
   CodingAgentDiscoveryResponse,
+  CodingAgentEnvRequest,
   CodingAgentModelRequest,
   CodingAgentSaveRequest,
   CodingAgentTestResult,
@@ -155,6 +158,11 @@ import type {
   ProxyProbeResponse,
   ProxyProbeTargetsResponse,
   ServerSettingsResponse,
+  TestBrowserStatusResponse,
+  DeployConnectionTestResponse,
+  DeploySettingsResponse,
+  DeploySettingsUpdate,
+  DeployTarget,
   ServerSettingsUpdateRequest,
   SessionCategory,
   SessionContextResponse,
@@ -282,6 +290,28 @@ export const adminGetProxyProbeTargets = () =>
  */
 export const adminProbeProxy = (provider: ProxyProbeProvider) =>
   apiFetch<ProxyProbeResponse>(`/api/admin/settings/proxy-probe/${provider}`, { method: "POST" });
+
+/** Whether the test browser (the Chromium quality checks and tests use) is installed (admin only). */
+export const adminGetTestBrowser = () =>
+  apiFetch<TestBrowserStatusResponse>("/api/admin/test-browser");
+
+/** Starts installing the test browser (admin only); 409 while an install is already running. */
+export const adminInstallTestBrowser = () =>
+  apiFetch<TestBrowserStatusResponse>("/api/admin/test-browser/install", { method: "POST" });
+
+/** The deploy settings (admin only); tokens come back only as whether one is set. */
+export const adminGetDeploySettings = () =>
+  apiFetch<DeploySettingsResponse>("/api/admin/activity-deploy/settings");
+
+/** Omitted fields keep their value; an empty token keeps the saved one, null clears it. */
+export const adminPutDeploySettings = (body: DeploySettingsUpdate) =>
+  apiFetch<DeploySettingsResponse>("/api/admin/activity-deploy/settings", { method: "PUT", body });
+
+/** One read-only GET to that Jenkins with the saved credentials. */
+export const adminTestDeployConnection = (target: DeployTarget) =>
+  apiFetch<DeployConnectionTestResponse>(`/api/admin/activity-deploy/settings/test/${target}`, {
+    method: "POST",
+  });
 
 // Project & members --------------------------------------------------------------
 
@@ -1827,6 +1857,32 @@ export const testCodingAgent = (agentId: string) =>
     method: "POST",
     body: {},
   });
+
+/** Replace an agent's environment variables; a name sent alone keeps its value. Admin-only. */
+export const setCodingAgentEnv = (agentId: string, body: CodingAgentEnvRequest) =>
+  apiFetch<{ agent: CodingAgentServerInfo }>(
+    `/api/coding-agents/agents/${encodeURIComponent(agentId)}/env`,
+    { method: "PUT", body },
+  );
+
+// --- Built-in agents (Models → Built-in) ------------------------------------------------
+
+export const listBuiltinAgents = () =>
+  apiFetch<BuiltinAgentsResponse>("/api/coding-agents/builtin");
+export const setupBuiltinCopilot = (token?: string) =>
+  apiFetch<{ agent: BuiltinAgentInfo }>("/api/coding-agents/builtin/copilot/setup", {
+    method: "POST",
+    body: token !== undefined ? { token } : {},
+  });
+export const cancelBuiltinCopilot = () =>
+  apiFetch<void>("/api/coding-agents/builtin/copilot/cancel", { method: "POST", body: {} });
+export const replaceBuiltinCopilotToken = (token: string) =>
+  apiFetch<{ agent: BuiltinAgentInfo }>("/api/coding-agents/builtin/copilot/token", {
+    method: "PUT",
+    body: { token },
+  });
+export const removeBuiltinCopilot = () =>
+  apiFetch<void>("/api/coding-agents/builtin/copilot", { method: "DELETE" });
 
 /** Remember one other session setting (a reasoning effort) for an agent; admin-only. */
 export const setCodingAgentOption = (

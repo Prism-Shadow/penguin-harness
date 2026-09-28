@@ -146,3 +146,63 @@ export function sceneSetChange(
     `got ${actual.length} [${actual.join(", ")}].`
   );
 }
+
+/** What one scene says about one media entry it lists, for comparing across scenes. */
+interface SceneMediaEntry {
+  key: string;
+  type: (typeof MEDIA_ELEMENTS)[number];
+  description: string;
+  script: string;
+}
+
+/** The lists a scene names its media in, and the element each one holds. */
+const SCENE_MEDIA_LISTS = [
+  ["media", "images", "image"],
+  ["media", "video", "video"],
+  ["media", "animations", "animation"],
+  ["audio", "tracks", "audio"],
+] as const;
+
+function sceneMediaEntries(scene: Record<string, unknown>): SceneMediaEntry[] {
+  const entries: SceneMediaEntry[] = [];
+  for (const [block, list, type] of SCENE_MEDIA_LISTS) {
+    const holder = scene[block];
+    if (!holder || typeof holder !== "object" || Array.isArray(holder)) continue;
+    const items = (holder as Record<string, unknown>)[list];
+    if (!Array.isArray(items)) continue;
+    for (const item of items) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const record = item as Record<string, unknown>;
+      // Compared exactly as the media plan compares them, so this warns whenever it refuses.
+      const key = String(record["key"]);
+      entries.push({
+        key,
+        type,
+        description: String(record["description"]),
+        script: type === "audio" && record["script"] !== undefined ? String(record["script"]) : "",
+      });
+    }
+  }
+  return entries;
+}
+
+/**
+ * Media keys the specification describes differently in different places: one scene naming
+ * `welcome` as a sound and another as a picture, or the same picture with two descriptions.
+ * A key names one asset, so every place that uses it has to ask for the same thing; the
+ * media plan refuses a specification that does not. Sorted, each key once.
+ */
+export function conflictingMediaKeys(spec: Record<string, unknown> | null): string[] {
+  const first = new Map<string, string>();
+  const conflicting = new Set<string>();
+  for (const scene of sceneList(spec)) {
+    if (!scene || typeof scene !== "object") continue;
+    for (const entry of sceneMediaEntries(scene)) {
+      const requirement = JSON.stringify([entry.type, entry.description, entry.script]);
+      const seen = first.get(entry.key);
+      if (seen === undefined) first.set(entry.key, requirement);
+      else if (seen !== requirement) conflicting.add(entry.key);
+    }
+  }
+  return [...conflicting].sort((a, b) => a.localeCompare(b));
+}

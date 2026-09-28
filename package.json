@@ -17,7 +17,7 @@
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @prismshadow/penguin-core test:e2e",
     "build": "pnpm -r build && pnpm link:cli",
-    "link:cli": "pnpm --dir packages/cli link --global || echo '[link:cli] pnpm global directory not configured; skipping the global penguin link (run pnpm setup once first)'",
+    "link:cli": "pnpm add --global ./packages/cli || echo \"[link:cli] Global CLI registration failed; see the error above. For PATH errors, run pnpm setup and restart your terminal.\"",
     "penguin": "node scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data-cli PORT=7369 -- tsx packages/cli/src/penguin.ts",
     "dev": "concurrently -n server,web -c cyan,magenta \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:server": "pnpm --filter @prismshadow/penguin-server dev",

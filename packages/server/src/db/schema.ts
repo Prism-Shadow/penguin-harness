@@ -304,6 +304,13 @@ updated_at TEXT NOT NULL,
 UNIQUE (collection_id, product_code)
 );
 CREATE INDEX IF NOT EXISTS idx_activity_products_collection ON activity_products(collection_id, product_code);
+-- Free-text labels shared by every ref of a product; position keeps the author's order.
+CREATE TABLE IF NOT EXISTS activity_product_tags (
+product_id TEXT NOT NULL REFERENCES activity_products(product_id) ON DELETE CASCADE,
+tag TEXT NOT NULL,
+position INTEGER NOT NULL,
+PRIMARY KEY (product_id, tag)
+);
 CREATE TABLE IF NOT EXISTS activities (
 id TEXT PRIMARY KEY,
 collection_id TEXT NOT NULL,
@@ -332,6 +339,54 @@ status TEXT NOT NULL CHECK (status IN ('draft', 'valid', 'invalid')),
 updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_activity_drafts_activity ON activity_drafts(activity_id, updated_at);
+-- Saved versions of an activity; their files are content-addressed blobs in the
+-- activity's versions/blobs directory, not rows.
+CREATE TABLE IF NOT EXISTS activity_versions (
+version_id TEXT PRIMARY KEY,
+activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+seq INTEGER NOT NULL,
+label TEXT,
+kind TEXT NOT NULL CHECK (kind IN ('manual', 'auto', 'restore', 'deploy')),
+-- Why an automatic version was kept: 'before_restore' or 'before_proposal'.
+reason TEXT,
+-- SHA-256 of the canonical version manifest, which is also the manifest blob's name.
+content_hash TEXT NOT NULL,
+manifest_sha TEXT NOT NULL,
+media_bytes INTEGER NOT NULL,
+module_run_id TEXT,
+source_version_id TEXT,
+author_user_id TEXT,
+deployed_qa_at TEXT,
+deployed_prod_at TEXT,
+created_at TEXT NOT NULL,
+-- The draft's status when the version was kept; NULL on rows from before it was recorded.
+draft_status TEXT,
+UNIQUE (activity_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_activity_versions_activity ON activity_versions(activity_id, seq);
+-- Deploys of an activity: one row per run, written on every transition.
+CREATE TABLE IF NOT EXISTS activity_deploy_runs (
+run_id TEXT PRIMARY KEY,
+project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+target TEXT NOT NULL CHECK (target IN ('qa', 'prod')),
+-- running, succeeded, failed, cancelled or interrupted.
+status TEXT NOT NULL,
+-- The run as the App sees it (DeployRun); its log is a file under activity-deploy/logs.
+record_json TEXT NOT NULL,
+started_at TEXT NOT NULL,
+finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_activity_deploy_runs_activity ON activity_deploy_runs(project_id, activity_id, started_at);
+-- Each deploy stage's latest state per activity, so the stage list survives a restart.
+CREATE TABLE IF NOT EXISTS activity_deploy_stages (
+activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+stage TEXT NOT NULL,
+status TEXT NOT NULL,
+finished_at TEXT,
+metadata_json TEXT NOT NULL,
+PRIMARY KEY (activity_id, stage)
+);
 CREATE TABLE IF NOT EXISTS activity_runs (
 run_id TEXT PRIMARY KEY,
 project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,

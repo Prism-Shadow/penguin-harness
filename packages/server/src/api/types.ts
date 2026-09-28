@@ -32,7 +32,11 @@ import type { HarnessInfo, VersionReport } from "@prismshadow/penguin-core";
 
 /** Unified error response body; `code` is a machine-readable error code, `message` is a Chinese user-facing message. */
 export interface ErrorBody {
-  error: { code: string; message: string };
+  /**
+   * `detail` carries the facts a refusal names (a file path, say) as data, so the App words
+   * them itself instead of reading them out of the English `message`.
+   */
+  error: { code: string; message: string; detail?: Record<string, string> };
 }
 
 /** Session approval mode (reuses the CLI enum). */
@@ -254,6 +258,12 @@ export interface ServerSettings {
    * reports it so clients hide the mode switch. Organizations on disk are untouched.
    */
   companyMode: boolean;
+  /**
+   * Scene videos experiment switch (default off). On, a video or animation asset in the
+   * activity studio offers Compose from storyboard; off, the studio shows nothing of it and
+   * the composition routes answer 403. Read per request, so it needs no restart.
+   */
+  activityVideoExperiment: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -266,6 +276,8 @@ export interface ServerSettingsUpdateRequest {
   proxyForAgent?: boolean;
   /** Company mode master switch; see `ServerSettings.companyMode`. */
   companyMode?: boolean;
+  /** Scene videos experiment switch; see `ServerSettings.activityVideoExperiment`. */
+  activityVideoExperiment?: boolean;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -4844,14 +4856,144 @@ export type {
   ActivityRun,
   ActivityRunSummary,
   ActivityRunStatus,
+  ModuleDocumentKind,
+  ModuleDocumentOverride,
 } from "../activities/domain.js";
 export type { SandboxStatus, SandboxBuildReport } from "../activities/sandbox-paths.js";
+export type { ModuleDocument, ModuleDocuments } from "../activities/module-documents.js";
+export type { MediaStat } from "../activities/media-stats.js";
+export type { ImplementationFeature } from "../activities/implementation-features.js";
+export type {
+  PipelineState,
+  PipelineStep,
+  PipelineSelection,
+  PipelineScope,
+  PipelineStepState,
+  PipelineStepStatus,
+  PipelineNote,
+} from "../activities/pipeline-types.js";
+export type { ReadinessCheck, ReadinessLevel } from "../activities/readiness-types.js";
+export type { VoiceOption } from "../activities/voice-catalogue.js";
+export type {
+  TestBrowserInstallError,
+  TestBrowserStatus,
+  TestBrowserStatusResponse,
+} from "../activities/test-browser-types.js";
+export type {
+  AcceptanceOverallStatus,
+  AcceptanceReport,
+  AcceptanceResult,
+  AcceptanceResultCode,
+  AcceptanceResultStatus,
+  AcceptanceRunRecord,
+  AcceptanceSkipReason,
+  AcceptanceStateResponse,
+} from "../activities/acceptance-types.js";
+export type {
+  QualityFinding,
+  QualityReport,
+  QualityResults,
+  QualitySettingsResponse,
+  QualitySeverity,
+  QualitySkipReason,
+  QualityStateResponse,
+  QualityStatus,
+  QualityWaiver,
+} from "../activities/quality-types.js";
+export type {
+  VersionDiff,
+  VersionFileDiff,
+  VersionFileName,
+  VersionKind,
+  VersionMediaDiff,
+  VersionReason,
+  VersionSaveResult,
+  VersionStatus,
+  VersionSummary,
+  DeployDrift,
+  DeployedVersion,
+} from "../activities/version-types.js";
+export type {
+  ModuleBuild,
+  ModuleBuildChange,
+  ModuleBuildDiff,
+  ModuleBuildFileDiff,
+  ModuleBuildList,
+  ModuleBuildText,
+} from "../activities/module-build-types.js";
+export type {
+  RefAssetAction,
+  RefAssetDecision,
+  RefNumberSuggestion,
+} from "../activities/ref-template-types.js";
+export type {
+  BookWordsRefresh,
+  BookWordsSetup,
+  BookWordsState,
+  EspeakStatus,
+  PhonemeSource,
+  PhonemeTiming,
+  PhonemesCandidate,
+  PhonemesSettingsResponse,
+  PhonemesTarget,
+  WholeWordTiming,
+} from "../activities/book-word-types.js";
+export type {
+  BranchState,
+  CloneState,
+  DeployConnectionTest,
+  DeployConnectionTestResponse,
+  DeployContext,
+  DeployContextResponse,
+  DeployProblem,
+  DeployProblemCode,
+  DeployProdSettingsView,
+  DeployQaSettingsView,
+  DeployRepo,
+  DeploySecretView,
+  DeploySettingsResponse,
+  DeploySettingsUpdate,
+  DeploySettingsView,
+  DeployTarget,
+  DeployBlocker,
+  DeployLogLine,
+  DeployLogPage,
+  DeployLogResponse,
+  DeployPreflightIssue,
+  DeployPreflightReport,
+  DeployRun,
+  DeployRunMetadata,
+  DeployRunResponse,
+  DeployRunStage,
+  DeployRunStatus,
+  DeployStage,
+  DeployStageError,
+  DeployStageSelection,
+  DeployStageState,
+  DeployStageStatus,
+  DeployStartRequest,
+  DeployStateResponse,
+  DeployProdStage,
+  DeployProductionRecord,
+  DeployProductionState,
+  DeployedEvent,
+} from "../activities/deploy-types.js";
 
 // ---------------------------------------------------------------------------
 // Coding agents (Agent Client Protocol)
 // ---------------------------------------------------------------------------
 
 /** One configured external coding agent (an ACP-speaking command), as the Web App sees it. */
+export interface CodingAgentEnvEntryInfo {
+  key: string;
+  valueMasked: string;
+}
+
+/** PUT /api/coding-agents/agents/:agentId/env: the whole set; an entry without value keeps the stored one. */
+export interface CodingAgentEnvRequest {
+  entries: { key: string; value?: string }[];
+}
+
 export interface CodingAgentServerInfo {
   id: string;
   title?: string;
@@ -4864,10 +5006,48 @@ export interface CodingAgentServerInfo {
    * option id; applied to its new sessions after the model.
    */
   rememberedOptions?: Record<string, boolean | string>;
+  /** Admins only: the agent's own environment variables, values masked. */
+  env?: CodingAgentEnvEntryInfo[];
+  /**
+   * Admins only: the running agent was started with other values than it now has; they apply
+   * once its running sessions end.
+   */
+  envPending?: boolean;
+  /** Set when Penguin manages this agent itself (Models → Built-in), naming which built-in. */
+  builtin?: string;
 }
 
 export interface CodingAgentsResponse {
   agents: CodingAgentServerInfo[];
+}
+
+/** Where a built-in agent (one Penguin downloads and runs itself) stands on this server. */
+export type BuiltinAgentStatus =
+  "not-installed" | "downloading" | "ready" | "update-available" | "failed" | "unsupported";
+
+export interface BuiltinAgentInfo {
+  id: "copilot";
+  agentId: "copilot-builtin";
+  title: string;
+  status: BuiltinAgentStatus;
+  installedVersion: string | null;
+  pinnedVersion: string;
+  /** Bytes, for the "about N MB" note; null when unknown. */
+  downloadSize: number | null;
+  progress: { received: number; total: number | null } | null;
+  tokenMasked: string | null;
+  /** A replaced token waits for this agent's running sessions to end before it applies. */
+  envPending: boolean;
+  /** Why the last attempt failed, or why the machine is unsupported. */
+  message: string | null;
+}
+
+export interface BuiltinAgentsResponse {
+  agents: BuiltinAgentInfo[];
+}
+
+export interface BuiltinSetupRequest {
+  token?: string;
 }
 
 /**
@@ -4892,13 +5072,17 @@ export interface CodingAgentDiscoveryCandidate {
   /** The CLI's own `--version` line; present once a probed refresh has run. */
   version?: string;
   /**
-   * Whether the agent is signed in: read from its stored credentials on every call, and
-   * from its own status command after a probed refresh. Absent for an agent not detected,
-   * or one that keeps its sign-in nowhere Penguin knows to look.
+   * Whether the agent is signed in: read from its stored credentials on every call, from
+   * its own status command after a probed refresh, and "missing" once a real turn failed
+   * for want of a sign-in. Absent for an agent not detected, or one that keeps its sign-in
+   * nowhere Penguin knows to look.
    */
   authStatus?: "ok" | "missing" | "unknown";
-  /** Where `authStatus` came from: the CLI's own status command, or its stored sign-in. */
-  authSource?: "cli" | "stored";
+  /**
+   * Where `authStatus` came from: the CLI's own status command, its stored sign-in, or a
+   * session whose turn failed for want of one.
+   */
+  authSource?: "cli" | "stored" | "session";
   /** The ACP config options the last probe session observed (model choices, toggles). */
   models?: CodingAgentConfigOption[];
   /** The one command that installs the agent, when there is one for every OS. */
@@ -5023,5 +5207,35 @@ export type CodingAgentEvent = import("@prismshadow/penguin-coding-agents").Agen
 export type CodingAgentConfigOption =
   import("@prismshadow/penguin-coding-agents").AgentSessionConfigOption;
 export type { AudioTarget, AudioResult } from "../activities/audio.js";
+export type {
+  SoundFormat,
+  SoundKind,
+  SoundModelChoice,
+  SoundProblem,
+  SoundProviderId,
+  SoundProviderStatus,
+  SoundRequest,
+  SoundSetup,
+} from "../activities/sound-types.js";
+export type {
+  CompositionCandidate,
+  CompositionFrame,
+  CompositionImage,
+  CompositionProblemCode,
+  CompositionTarget,
+  VideoSetup,
+} from "../activities/composition-types.js";
+export type { VideoProblemCode, VideoResult, VideoTarget } from "../activities/video-types.js";
+export type {
+  SpeechProblem,
+  SpeechProviderId,
+  SpeechProviderStatus,
+  SpeechSetup,
+} from "../activities/speech-types.js";
 export type { MediaAsset, AssetManifest } from "../activities/media.js";
 export type { UploadedMedia, UploadKind } from "../activities/upload.js";
+export type {
+  LibraryFile,
+  ProjectMediaListing,
+  BundleItem,
+} from "../activities/media-library-types.js";

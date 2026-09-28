@@ -105,7 +105,7 @@ describe("generated book reader adapter", () => {
     ]);
   });
 
-  it("caps events at the visible word count and falls back to word timings", async () => {
+  it("caps events at the visible word count and ignores the listed words' own timings", async () => {
     const { narrationEventsFromScene } = await adapter();
     const capped = storyWith({
       key: "n",
@@ -130,12 +130,9 @@ describe("generated book reader adapter", () => {
         { wholeWordTiming: { start: 0.4, end: 0.9 } },
       ],
     });
-    expect(narrationEventsFromScene(fromWords)).toEqual([
-      { id: "word-start:0", time: 100 },
-      { id: "word-start:1", time: 400 },
-      { id: "word-end:0", time: 400 },
-      { id: "word-end:1", time: 900 },
-    ]);
+    // A listed word's wholeWordTiming is a time in its own pronunciation clip, never in the
+    // narration's, so it highlights nothing.
+    expect(narrationEventsFromScene(fromWords)).toEqual([]);
   });
 
   it("orders cue keys with the narration as single fallback", async () => {

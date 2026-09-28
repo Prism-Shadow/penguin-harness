@@ -36,6 +36,7 @@ import { Select } from "../../components/ui/select";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError } from "../../components/ui/toast";
 import { AddAgentModal } from "./add-agent-modal";
+import { AgentEnvEditor } from "./agent-env-editor";
 import {
   buildAgentCards,
   cardReadiness,
@@ -399,6 +400,14 @@ function CliCard({
             <p className={`rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}>
               {S.models.cliSignInHint(card.authHint)}
             </p>
+          )}
+          {isAdmin && card.startable && (
+            <AgentEnvEditor
+              agentId={card.agentId}
+              entries={card.env ?? []}
+              pending={card.envPending === true}
+              onChanged={onChanged}
+            />
           )}
           {card.setupHint && <p className={`text-xs ${toneInk.attention}`}>{card.setupHint}</p>}
           {(testing || tested !== null) && (

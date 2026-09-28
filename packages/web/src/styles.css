@@ -869,3 +869,96 @@ html.dark .shiki span {
   overflow-x: auto;
   vertical-align: middle;
 }
+
+/* The Activity Script editor (script-editor.tsx). CodeMirror draws its own DOM, so its look is
+   set here against the app's tokens. Selectors go through `.cm-editor` because CodeMirror
+   injects its base theme at runtime, after this sheet, with the same specificity otherwise.
+   Diff green and red are the same categorical pair as the specification diff view: they name
+   what a line is, not a status, and every changed line also carries a gutter mark. */
+.script-editor .cm-editor {
+  height: 100%;
+  @apply bg-transparent text-xs text-gray-800 dark:text-gray-200;
+}
+.script-editor .cm-editor.cm-focused {
+  outline: none;
+}
+.script-editor .cm-editor .cm-scroller {
+  line-height: 1.65;
+  @apply font-mono;
+}
+.script-editor .cm-editor .cm-content {
+  padding: 0.75rem 0;
+  @apply caret-gray-800 dark:caret-gray-200;
+}
+.script-editor .cm-editor .cm-line {
+  padding: 0 1rem 0 0.25rem;
+}
+.script-editor .cm-editor .cm-gutters {
+  border: none;
+  @apply bg-transparent text-gray-400 dark:text-gray-600;
+}
+.script-editor .cm-editor .cm-foldGutter .cm-gutterElement {
+  padding: 0 0.25rem 0 0.5rem;
+  cursor: pointer;
+}
+.script-editor .cm-editor .cm-foldPlaceholder {
+  border: none;
+  padding: 0 0.375rem;
+  @apply rounded bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400;
+}
+.script-editor .cm-editor .cm-selectionBackground,
+.script-editor .cm-editor.cm-focused .cm-selectionBackground {
+  @apply bg-brand-100 dark:bg-brand-900;
+}
+.script-editor .cm-editor .cm-scene-heading {
+  font-weight: 600;
+  @apply text-gray-900 dark:text-gray-100;
+}
+.script-editor .cm-editor .cm-media-tag {
+  @apply text-brand-700 dark:text-brand-300;
+}
+.script-editor .cm-editor .cm-proposed-hint {
+  margin-left: 0.75rem;
+  font-weight: 400;
+  @apply font-sans;
+}
+.script-editor .cm-editor .cm-changedLine,
+.script-editor .cm-editor .cm-insertedLine {
+  @apply bg-emerald-50 dark:bg-emerald-950/40;
+}
+.script-editor .cm-editor .cm-changedText {
+  background: none;
+  @apply bg-emerald-100 dark:bg-emerald-900/50;
+}
+.script-editor .cm-editor .cm-deletedChunk,
+.script-editor .cm-editor .cm-deletedLine {
+  @apply bg-rose-50 text-rose-900 dark:bg-rose-950/40 dark:text-rose-200;
+}
+.script-editor .cm-editor .cm-deletedChunk del,
+.script-editor .cm-editor .cm-deletedText {
+  text-decoration: none;
+  background: none;
+  @apply bg-rose-100 dark:bg-rose-900/50;
+}
+.script-editor .cm-editor .cm-changeGutter {
+  width: 3px;
+  padding: 0;
+}
+.script-editor .cm-editor .cm-changedLineGutter {
+  @apply bg-emerald-500;
+}
+.script-editor .cm-editor .cm-deletedLineGutter {
+  @apply bg-rose-500;
+}
+.script-editor .cm-editor .cm-collapsedLines {
+  padding: 0.25rem 1rem;
+  background: none;
+  @apply font-sans text-gray-500 hover:text-gray-700 dark:hover:text-gray-300;
+}
+.script-editor .cm-editor .cm-chunkButtons {
+  right: 0.5rem;
+}
+.script-editor .cm-editor .cm-revert {
+  padding: 0 0.5rem;
+  @apply rounded border border-gray-300 bg-white font-sans text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800;
+}

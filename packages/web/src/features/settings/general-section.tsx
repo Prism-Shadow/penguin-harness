@@ -30,11 +30,14 @@ import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { PrefRow } from "./setting-row";
 import { TraceImportRow } from "./trace-import-row";
+import { VideoExperimentRow } from "./video-experiment-row";
+import { useAuth } from "../../state/auth";
 
 export function GeneralSection() {
   const { lang, setLang } = useLocale();
   const { currency, setCurrency } = useTheme();
   const { serverEnabled, personalEnabled, setPersonalEnabled } = useCompany();
+  const { user } = useAuth();
 
   useSyncExternalStore(subscribeNotificationsEnabled, notificationsEnabledVersion);
   const notificationsOn = readNotificationsEnabled();
@@ -105,6 +108,8 @@ export function GeneralSection() {
           />
         </PrefRow>
       )}
+      {/* Server-wide, so an admin's alone; the API refuses anyone else whatever is drawn. */}
+      {user?.isAdmin === true && <VideoExperimentRow />}
       <TraceImportRow />
     </div>
   );

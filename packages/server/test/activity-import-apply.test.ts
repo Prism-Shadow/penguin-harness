@@ -64,11 +64,51 @@ function fakeTarget(options: { existing?: ExistingProduct; refuse?: Map<number, 
     async setBookMode(productCode, mode) {
       calls.push({ name: "setBookMode", detail: { productCode, mode } });
     },
+    async setImplementationFeatures(activityId, selectedIds) {
+      calls.push({ name: "setImplementationFeatures", detail: { activityId, selectedIds } });
+    },
+    async setMedia(activityId, media, revision) {
+      calls.push({ name: "setMedia", detail: { activityId, media, revision } });
+      return `${revision}+m`;
+    },
   };
   return { target, calls, named: (name: string) => calls.filter((call) => call.name === name) };
 }
 
 describe("importing a product", () => {
+  it("binds media as Loom had it once the specification is in, and only then", async () => {
+    const { target, named } = fakeTarget();
+    const bound = {
+      ...ref(1),
+      manifest: {
+        assets: { "en-US": [{ key: "hi", type: "audio", path: "media/a/hi.mp3", script: "Hi" }] },
+      },
+    };
+    await applyImport(mapImport(product(), [bound, { ...bound, refNum: 2, spec: null }]), target);
+    const media = named("setMedia").map((call) => call.detail);
+    expect(media).toHaveLength(1);
+    expect(media[0]).toMatchObject({
+      activityId: "act1",
+      media: { "en-US": [{ key: "hi", path: "media/a/hi.mp3", script: "Hi" }] },
+    });
+    // It follows the specification's revision, not the draft's first one.
+    expect(String(media[0]!.revision)).toContain("+s");
+  });
+
+  it("carries a ref's implementation features, and asks nothing of refs without any", async () => {
+    const { target, named } = fakeTarget();
+    await applyImport(
+      mapImport(product(), [
+        { ...ref(1), implementationFeatures: ["r2phcs03l-speaker-audio-choices"] },
+        ref(2),
+      ]),
+      target,
+    );
+    expect(named("setImplementationFeatures").map((call) => call.detail)).toEqual([
+      { activityId: "act1", selectedIds: ["r2phcs03l-speaker-audio-choices"] },
+    ]);
+  });
+
   it("creates every ref and reports them", async () => {
     const { target } = fakeTarget();
     const outcome = await applyImport(mapImport(product(), [ref(1), ref(2)]), target);
@@ -94,9 +134,16 @@ describe("importing a product", () => {
   it("writes the description and then the specification, threading the revision", async () => {
     const { target, calls } = fakeTarget();
     await applyImport(mapImport(product(), [ref(1)]), target);
-    expect(calls.map((call) => call.name)).toEqual(["createRef", "setDescription", "setSpec"]);
+    // A ref Loom had a manifest for gets a media plan, planned from its specification.
+    expect(calls.map((call) => call.name)).toEqual([
+      "createRef",
+      "setDescription",
+      "setSpec",
+      "setMedia",
+    ]);
     expect(calls[1]!.detail.revision).toBe("rev1-0");
     expect(calls[2]!.detail.revision).toBe("rev1-0+d");
+    expect(calls[3]!.detail.revision).toBe("rev1-0+d+s");
   });
 
   it("sets a ref's name and stability, which creation does not accept", async () => {
@@ -148,7 +195,7 @@ describe("a book", () => {
 
   it("sets no reading mode when nothing was created", async () => {
     const { target, named } = fakeTarget({
-      existing: { refNums: [1], canonicalRefNum: 1 },
+      existing: { refNums: [1], archivedRefNums: [], canonicalRefNum: 1 },
     });
     await applyImport(
       mapImport(product({ activityType: "book", bookMode: "readAlong" }), [ref(1)]),
@@ -167,7 +214,7 @@ describe("a book", () => {
 describe("running an import again", () => {
   it("skips refs that are already there and creates the rest", async () => {
     const { target, named } = fakeTarget({
-      existing: { refNums: [1], canonicalRefNum: 1 },
+      existing: { refNums: [1], archivedRefNums: [], canonicalRefNum: 1 },
     });
     const outcome = await applyImport(mapImport(product(), [ref(1), ref(2)]), target);
     expect(outcome.skipped).toEqual([1]);
@@ -175,9 +222,27 @@ describe("running an import again", () => {
     expect(named("createRef").map((call) => call.detail.refNum)).toEqual([2]);
   });
 
+  it("reports deleted refs as deleted, and neither recreates them nor calls them present", async () => {
+    const { target, named } = fakeTarget({
+      existing: { refNums: [2], archivedRefNums: [1, 3], canonicalRefNum: 1 },
+    });
+    const outcome = await applyImport(
+      mapImport(product(), [ref(1), ref(2), ref(3), ref(4)]),
+      target,
+    );
+    expect(outcome.archived).toEqual([1, 3]);
+    expect(outcome.skipped).toEqual([2]);
+    expect(outcome.created).toEqual([4]);
+    expect(outcome.canonicalConflict).toBeNull();
+    expect(named("createRef").map((call) => call.detail.refNum)).toEqual([4]);
+    expect(describeOutcome(outcome, "words")).toContain(
+      "Refs 1, 3 were deleted here earlier and were not imported again",
+    );
+  });
+
   it("does nothing at all when everything is there", async () => {
     const { target, calls } = fakeTarget({
-      existing: { refNums: [1, 2], canonicalRefNum: 1 },
+      existing: { refNums: [1, 2], archivedRefNums: [], canonicalRefNum: 1 },
     });
     const outcome = await applyImport(mapImport(product(), [ref(1), ref(2)]), target);
     expect(outcome.created).toEqual([]);
@@ -205,7 +270,7 @@ describe("when something refuses", () => {
 
   it("does not abandon when the product already exists, since ownership is settled", async () => {
     const { target } = fakeTarget({
-      existing: { refNums: [9], canonicalRefNum: 9 },
+      existing: { refNums: [9], archivedRefNums: [], canonicalRefNum: 9 },
       refuse: new Map([[1, "spec_invalid"]]),
     });
     const outcome = await applyImport(mapImport(product(), [ref(1), ref(2)]), target);
@@ -233,14 +298,18 @@ describe("a ref that exists but could not be finished", () => {
 
 describe("module ownership that does not match", () => {
   it("reports a product whose canonical ref is already a different one", async () => {
-    const { target } = fakeTarget({ existing: { refNums: [9], canonicalRefNum: 9 } });
+    const { target } = fakeTarget({
+      existing: { refNums: [9], archivedRefNums: [], canonicalRefNum: 9 },
+    });
     const outcome = await applyImport(mapImport(product({ canonicalRefNum: 1 }), [ref(1)]), target);
     expect(outcome.canonicalConflict).toEqual({ loom: 1, penguin: 9 });
     expect(outcome.created).toEqual([1]);
   });
 
   it("says nothing when they agree", async () => {
-    const { target } = fakeTarget({ existing: { refNums: [1], canonicalRefNum: 1 } });
+    const { target } = fakeTarget({
+      existing: { refNums: [1], archivedRefNums: [], canonicalRefNum: 1 },
+    });
     const outcome = await applyImport(mapImport(product(), [ref(1), ref(2)]), target);
     expect(outcome.canonicalConflict).toBeNull();
   });
@@ -249,7 +318,7 @@ describe("module ownership that does not match", () => {
 describe("what an author is told", () => {
   it("counts what happened", async () => {
     const { target } = fakeTarget({
-      existing: { refNums: [1], canonicalRefNum: 1 },
+      existing: { refNums: [1], archivedRefNums: [], canonicalRefNum: 1 },
       refuse: new Map([[3, "spec_invalid"]]),
     });
     const outcome = await applyImport(mapImport(product(), [ref(1), ref(2), ref(3)]), target);
@@ -268,7 +337,9 @@ describe("what an author is told", () => {
   });
 
   it("says so when there was nothing left to do", async () => {
-    const { target } = fakeTarget({ existing: { refNums: [1], canonicalRefNum: 1 } });
+    const { target } = fakeTarget({
+      existing: { refNums: [1], archivedRefNums: [], canonicalRefNum: 1 },
+    });
     const outcome = await applyImport(mapImport(product(), [ref(1)]), target);
     expect(describeOutcome(outcome, "sight-words")).toContain("nothing left to import");
   });

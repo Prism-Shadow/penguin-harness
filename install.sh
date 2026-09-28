@@ -702,7 +702,7 @@ OLD_DIR="$INSTALL_DIR/.old.$$"
 rm -rf "$STAGING"
 rm -rf "$OLD_DIR"
 mkdir -p "$STAGING"
-for d in bin lib web node; do
+for d in bin lib web node browsers; do
   if [ -e "$TMP/penguin/$d" ]; then
     mv "$TMP/penguin/$d" "$STAGING/$d"
   fi
@@ -720,7 +720,7 @@ fi
 
 mkdir -p "$OLD_DIR"
 SWAP_ACTIVE=1
-for d in bin lib web node; do
+for d in bin lib web node browsers; do
   if [ -e "$INSTALL_DIR/$d" ]; then
     if relocate_dir "$INSTALL_DIR/$d" "$OLD_DIR/$d"; then
       MOVED_OLD="$MOVED_OLD $d"
@@ -729,7 +729,7 @@ for d in bin lib web node; do
     fi
   fi
 done
-for d in bin lib web node; do
+for d in bin lib web node browsers; do
   if [ -e "$STAGING/$d" ]; then
     if relocate_dir "$STAGING/$d" "$INSTALL_DIR/$d"; then
       MOVED_NEW="$MOVED_NEW $d"

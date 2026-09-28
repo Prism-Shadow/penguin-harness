@@ -28,6 +28,10 @@ export interface SceneAssetLeaf {
   generated: boolean;
   /** Referenced by more than one scene, so a rebinding reaches all of them. */
   shared: boolean;
+  /** A decodable book's word pronunciation, listed apart from the scene's own audio. */
+  bookWord: boolean;
+  /** A word pronunciation's word, which names it better than its key. */
+  word?: string;
 }
 
 export interface SceneAssetCategory {
@@ -71,8 +75,10 @@ function leaf(asset: MediaAsset, sceneId: string): SceneAssetLeaf {
     type: asset.type,
     occurrences: usages.length,
     bound: !!asset.path,
-    generated: !!asset.generatedAudio || !!asset.generatedImage,
+    generated: !!asset.generatedAudio || !!asset.generatedImage || !!asset.generatedVideo,
     shared: new Set(asset.usages.map((usage) => usage.sceneId)).size > 1,
+    bookWord: asset.role === "bookWord",
+    ...(asset.role === "bookWord" && asset.word ? { word: asset.word } : {}),
   };
 }
 
@@ -180,7 +186,8 @@ export function reuseCandidates(
         !!asset.path &&
         asset.path !== current.path &&
         !asset.generatedAudio &&
-        !asset.generatedImage,
+        !asset.generatedImage &&
+        !asset.generatedVideo,
     )
     .sort((left, right) => {
       const lead = Number(general.has(right.key)) - Number(general.has(left.key));

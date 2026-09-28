@@ -13,6 +13,7 @@ import {
   readRailCollapsed,
   readRailWidth,
   resolveSection,
+  sectionFromParam,
   workspaceSections,
   writeRailCollapsed,
   writeRailWidth,
@@ -35,11 +36,17 @@ describe("workspace sections", () => {
     expect(workspaceSections(full).map((section) => section.key)).toEqual([
       "description",
       "specification",
+      "features",
+      "configuration",
+      "assessment",
       "scenes",
       "speech",
+      "stats",
       "library",
       "module",
       "history",
+      "deploy",
+      "newRef",
     ]);
   });
 
@@ -55,6 +62,10 @@ describe("workspace sections", () => {
       module: false,
       library: true,
       history: true,
+      // There is nothing to deploy until there is a module.
+      deploy: false,
+      // Making a ref walks the media plan, so it waits for one.
+      newRef: false,
     });
   });
 
@@ -168,5 +179,13 @@ describe("remembered rail state", () => {
     expect(readRailCollapsed(hostile)).toBe(false);
     expect(() => writeRailWidth(300, hostile)).not.toThrow();
     expect(() => writeRailCollapsed(true, hostile)).not.toThrow();
+  });
+});
+
+describe("sectionFromParam", () => {
+  it("reads a section named in the address and ignores anything else", () => {
+    expect(sectionFromParam("speech")).toBe("speech");
+    expect(sectionFromParam("nope")).toBeNull();
+    expect(sectionFromParam(null)).toBeNull();
   });
 });

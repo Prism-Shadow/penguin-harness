@@ -20,7 +20,12 @@ async function writeRef(
   folder: string,
   productCode: string,
   refNum: number,
-  files: Partial<Record<"metadata" | "spec" | "manifest" | "description" | "stateMachine", string>>,
+  files: Partial<
+    Record<
+      "metadata" | "spec" | "manifest" | "description" | "stateMachine" | "implementationFeatures",
+      string
+    >
+  >,
 ) {
   const paths = loomRefPaths(modules, folder, productCode, refNum);
   await fs.mkdir(path.dirname(paths.metadata), { recursive: true });
@@ -180,6 +185,21 @@ describe("reading a product", () => {
     expect(first!.displayName).toBe("First pass");
     expect(first!.stable).toBe(false);
     expect(first!.problems).toEqual([]);
+  });
+
+  it("brings a ref's implementation features, keeping only ones it knows", async () => {
+    await writeRef("waf-module-sight-words", "sight-words", 2, {
+      implementationFeatures: JSON.stringify({
+        selectedIds: ["vocabwordsreview-final-review-cards", "retired-feature"],
+      }),
+    });
+    const found = await readLoomProduct(modules, "waf-module-sight-words", "sight-words");
+    expect(found.refs.map((ref) => ref.implementationFeatures)).toEqual([
+      [],
+      ["vocabwordsreview-final-review-cards"],
+    ]);
+    // An absent file is the usual case, not a problem.
+    expect(found.refs[0]!.problems).toEqual([]);
   });
 
   it("names what is missing instead of inventing it", async () => {

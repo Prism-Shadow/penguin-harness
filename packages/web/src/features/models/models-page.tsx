@@ -63,6 +63,7 @@ import type { Currency } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { Tabs } from "../../components/ui/tabs";
 import { LocalCliPanel } from "./local-cli-panel";
+import { BuiltinPanel } from "./builtin-panel";
 import { Input } from "../../components/ui/input";
 import { FieldError, FieldLabel } from "../../components/ui/field";
 import { PasswordInput } from "../../components/ui/password-input";
@@ -690,7 +691,9 @@ export function ModelsPage() {
   /** The notice's sync confirmation is open (it lists the refs the delta named). */
   const [syncConfirmOpen, setSyncConfirmOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const userId = useAuth().user?.userId ?? null;
+  const authUser = useAuth().user;
+  const userId = authUser?.userId ?? null;
+  const isAdmin = authUser?.isAdmin === true;
   /** Per-model speed results (in-memory, reset on every project switch; "pending" while that model's turn is running). */
   const [speedResults, setSpeedResults] = useState<Map<string, SpeedResult | "pending">>(new Map());
   /** Group whose speed-test confirmation dialog is open (provider id). */
@@ -715,21 +718,24 @@ export function ModelsPage() {
    * on either and a reload keeps the choice.
    */
   const [searchParams, setSearchParams] = useSearchParams();
-  const view: "local" | "api" = searchParams.get("view") === "local" ? "local" : "api";
+  const viewParam = searchParams.get("view");
+  const view: "local" | "builtin" | "api" =
+    viewParam === "local" ? "local" : viewParam === "builtin" && isAdmin ? "builtin" : "api";
   const viewSwitch = (
-    <div className="mb-4 max-w-md">
+    <div className="mb-4 max-w-lg">
       <Segmented
-        cols={2}
+        cols={isAdmin ? 3 : 2}
         options={[
           { value: "local", label: S.models.viewLocalCli },
+          ...(isAdmin ? [{ value: "builtin" as const, label: S.models.viewBuiltin }] : []),
           { value: "api", label: S.models.viewApiProviders },
         ]}
         value={view}
         onChange={(next) =>
           setSearchParams(
             (params) => {
-              if (next === "local") params.set("view", "local");
-              else params.delete("view");
+              if (next === "api") params.delete("view");
+              else params.set("view", next);
               return params;
             },
             { replace: true },
@@ -1122,6 +1128,18 @@ export function ModelsPage() {
           {viewSwitch}
           <h1 className="mb-2 text-xl font-semibold">{S.models.title}</h1>
           <LocalCliPanel />
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "builtin") {
+    return (
+      <div className="h-full overflow-y-auto p-4 md:p-6">
+        <div className="mx-auto max-w-5xl">
+          {viewSwitch}
+          <h1 className="mb-2 text-xl font-semibold">{S.models.title}</h1>
+          <BuiltinPanel />
         </div>
       </div>
     );

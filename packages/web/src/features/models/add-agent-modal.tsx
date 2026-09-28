@@ -1,8 +1,8 @@
 /**
  * Add a custom coding agent: any command that speaks the Agent Client Protocol over stdio,
- * with its arguments and extra environment. Known agents need no entry here — Models → Local
- * CLI finds them on the server machine — so this is for everything else. Admin-only, like the
- * route it posts to.
+ * with its arguments; its environment variables are added on its card afterwards. Known agents
+ * need no entry here — Models → Local CLI finds them on the server machine — so this is for
+ * everything else. Admin-only, like the route it posts to.
  */
 import { useState } from "react";
 import { saveCodingAgent } from "../../api/endpoints";
@@ -27,23 +27,15 @@ export function AddAgentModal({
   const [title, setTitle] = useState("");
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
-  const [env, setEnv] = useState("");
 
   const reset = () => {
     setId("");
     setTitle("");
     setCommand("");
     setArgs("");
-    setEnv("");
   };
 
   const save = () => {
-    const envRecord: Record<string, string> = {};
-    for (const line of env.split("\n")) {
-      const sep = line.indexOf("=");
-      if (sep <= 0) continue;
-      envRecord[line.slice(0, sep).trim()] = line.slice(sep + 1);
-    }
     saveCodingAgent({
       id: id.trim(),
       ...(title.trim() === "" ? {} : { title: title.trim() }),
@@ -52,7 +44,6 @@ export function AddAgentModal({
         .split("\n")
         .map((a) => a.trim())
         .filter((a) => a !== ""),
-      env: envRecord,
     })
       .then(() => {
         toastSuccess(S.codingAgents.save);
@@ -96,9 +87,6 @@ export function AddAgentModal({
         </Field>
         <Field label={S.codingAgents.argsLabel} hint={S.codingAgents.argsHint}>
           <Textarea size="sm" value={args} onChange={(e) => setArgs(e.target.value)} />
-        </Field>
-        <Field label={S.codingAgents.envLabel} hint={S.codingAgents.envHint}>
-          <Textarea size="sm" value={env} onChange={(e) => setEnv(e.target.value)} />
         </Field>
       </div>
     </Modal>

@@ -3,8 +3,15 @@
  * text chunk per prompt, then end_turn, plus a Model config option that can be set.
  * Run with node.
  */
+import { existsSync, writeFileSync } from "node:fs";
 import { Readable, Writable } from "node:stream";
-import { agent, methods, PROTOCOL_VERSION, ndJsonStream } from "@agentclientprotocol/sdk";
+import {
+  agent,
+  methods,
+  PROTOCOL_VERSION,
+  ndJsonStream,
+  RequestError,
+} from "@agentclientprotocol/sdk";
 
 /** @type {import("@agentclientprotocol/sdk").AgentConnection | undefined} */
 let connection;
@@ -60,6 +67,24 @@ const app = agent({ name: "fake-agent-test" })
         });
       }
       if (process.env.FAKE_TEST_REPLY === "hang") await new Promise(() => {});
+      // "error" fails the turn the way Claude Code does when its sign-in has lapsed, naming
+      // the agent's own key in the reason so the test can check it is masked.
+      // FAKE_SIGNIN_FAIL_ONCE names a marker file: the first turn anywhere fails its
+      // sign-in and leaves the marker, so every later turn succeeds.
+      const failOnce = process.env.FAKE_SIGNIN_FAIL_ONCE;
+      if (failOnce && !existsSync(failOnce)) {
+        writeFileSync(failOnce, "failed");
+        throw new RequestError(-32603, "Internal error: Failed to authenticate: expired", {
+          errorKind: "authentication_failed",
+        });
+      }
+      if (process.env.FAKE_TEST_REPLY === "error") {
+        throw new RequestError(
+          -32603,
+          `Internal error: Failed to authenticate with key ${process.env.FAKE_API_KEY}`,
+          { errorKind: "authentication_failed" },
+        );
+      }
       await connection.client.notify(methods.client.session.update, {
         sessionId: ctx.params.sessionId,
         update: {

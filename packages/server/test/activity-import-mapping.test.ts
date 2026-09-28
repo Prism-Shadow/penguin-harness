@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { activitySpec } from "./activity-fixtures.js";
 import {
+  carriedBindings,
   assemblyBlockers,
   describeImport,
   importIsFaithful,
@@ -54,6 +55,8 @@ describe("a clean import", () => {
         description: "Practice sight words.",
         spec: { ...activitySpec },
         languages: ["en-US"],
+        implementationFeatures: [],
+        media: { "en-US": [] },
       },
     ]);
   });
@@ -198,5 +201,132 @@ describe("what an author is told", () => {
     const message = describeImport(mapping);
     expect(message).toContain("1 thing was repaired");
     expect(message).toContain("1 thing could not be carried");
+  });
+});
+
+describe("Loom's media bindings", () => {
+  it("keeps each asset's path and narration script, per language carried", () => {
+    const { media, lost, badPaths } = carriedBindings(
+      {
+        assets: {
+          "en-US": [
+            { key: "hi", type: "audio", path: "media/a/hi.mp3", script: "Hi", voice: "Mia" },
+            { key: "cat", type: "image", path: "media/i/cat.png", script: "not for images" },
+            { key: "odd", type: "image", path: "C:/elsewhere/odd.png" },
+          ],
+          "fr-FR": [{ key: "hi", type: "audio", path: "media/a/fr.mp3" }],
+        },
+      },
+      ["en-US"],
+    );
+    expect(media).toEqual({
+      "en-US": [
+        { key: "hi", path: "media/a/hi.mp3", script: "Hi" },
+        { key: "cat", path: "media/i/cat.png" },
+        { key: "odd" },
+      ],
+    });
+    expect(lost).toEqual({ voices: 1 });
+    expect(badPaths).toBe(1);
+  });
+
+  it("reads Loom's older flat list as the default language", () => {
+    expect(
+      carriedBindings({ assets: [{ key: "hi", type: "audio", script: "Hi" }] }, ["en-US"]).media,
+    ).toEqual({ "en-US": [{ key: "hi", script: "Hi" }] });
+  });
+
+  it("names what it could not carry, so the import is not mistaken for faithful", () => {
+    const mapping = mapImport(product(), [
+      ref({
+        manifest: {
+          assets: {
+            "en-US": [
+              { key: "hi", type: "audio", path: "media/a/hi.mp3", voice: "Mia", wordTimings: [] },
+            ],
+          },
+        },
+      }),
+    ]);
+    expect(mapping.dropped).toContain(
+      "Ref 1: Loom's per-asset voices (1), word timings that did not match their script (1) were not carried; Penguin's media plan has no field for them.",
+    );
+  });
+});
+
+describe("word timings", () => {
+  it("carries timings that align with their script, and a clip's length", () => {
+    const { media, lost } = carriedBindings(
+      {
+        assets: {
+          "en-US": [
+            {
+              key: "hi",
+              type: "audio",
+              script: "Hello there.",
+              durationMs: 900,
+              wordTimings: [
+                { word: "Hello", startMs: 0, endMs: 400 },
+                { word: "there", startMs: 450, endMs: 800 },
+              ],
+            },
+            {
+              key: "off",
+              type: "audio",
+              script: "Something else",
+              wordTimings: [{ word: "Hello", startMs: 0, endMs: 400 }],
+            },
+          ],
+        },
+      },
+      ["en-US"],
+    );
+    expect(media["en-US"]![0]).toEqual({
+      key: "hi",
+      script: "Hello there.",
+      durationMs: 900,
+      wordTimings: [
+        { word: "Hello", startMs: 0, endMs: 400 },
+        { word: "there", startMs: 450, endMs: 800 },
+      ],
+    });
+    expect(media["en-US"]![1]).not.toHaveProperty("wordTimings");
+    expect(lost).toEqual({ "word timings that did not match their script": 1 });
+  });
+});
+
+describe("a sound's requested length", () => {
+  it("carries Loom's duration, from the tag or the entry, clamped to 1-60 seconds", () => {
+    const { media } = carriedBindings(
+      {
+        assets: {
+          "en-US": [
+            {
+              key: "door",
+              type: "audio",
+              kind: "sfx",
+              script: '<audio kind="sfx" duration="4s">a door creaks</audio>',
+            },
+            { key: "theme", type: "audio", kind: "music", script: "marimba", duration: 90 },
+            { key: "tick", type: "audio", kind: "sfx", script: "tick", duration: 0.25 },
+            { key: "bed", type: "audio", kind: "music", script: "rain" },
+            {
+              key: "hi",
+              type: "audio",
+              script: '<audio kind="speech" duration="3">Hello</audio>',
+            },
+          ],
+        },
+      },
+      ["en-US"],
+    );
+    const length = (key: string) =>
+      media["en-US"]!.find((binding) => binding.key === key)!.targetDurationMs;
+    expect(length("door")).toBe(4000);
+    expect(length("theme")).toBe(60000);
+    expect(length("tick")).toBe(1000);
+    expect(length("bed")).toBeUndefined();
+    // Narration asks for no length.
+    expect(length("hi")).toBeUndefined();
   });
 });
