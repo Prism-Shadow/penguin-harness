@@ -112,24 +112,36 @@ export class HttpModule {
     // gated on that user — assembled lazily, since most users never open a socket, and kept,
     // since the one who did opens it on every page load. Hono copies a group's routes into
     // each parent it is mounted on, so mounting the groups twice shares handlers, not state.
+    //
+    // Only the socket's surface writes a request line. An HTTP request reaches the cookie-gated
+    // one through the runtime's seam, and the runtime's app has already logged it — once, with
+    // the status the client actually got, which for a path declined here is the static tail's
+    // answer. Logging it here as well printed every HTTP request twice, a declined static file
+    // as a 404 followed by its 200. A socket call never passes the runtime's app, so this is
+    // its only line.
     const cookieGated = this.assemble(
       routes,
       authMiddleware(this.auth, this.config.trustProxy),
+      false,
       hosts,
     );
     const asUser = new Map<string, Hono<AppEnv>>();
     const enteredAs = (userId: string): Hono<AppEnv> => {
       let app = asUser.get(userId);
       if (app === undefined) {
-        app = this.assemble(routes, async (c, next) => {
-          const user = this.users.findById(userId);
-          if (user === null) throw new HttpError(401, "unauthorized", "Unknown user.");
-          c.set("user", user);
-          // The handshake does not say how the cookie behind it was minted, so the most
-          // demanding kind is assumed: what needs the old password keeps needing it.
-          c.set("sessionVia", "password");
-          await next();
-        });
+        app = this.assemble(
+          routes,
+          async (c, next) => {
+            const user = this.users.findById(userId);
+            if (user === null) throw new HttpError(401, "unauthorized", "Unknown user.");
+            c.set("user", user);
+            // The handshake does not say how the cookie behind it was minted, so the most
+            // demanding kind is assumed: what needs the old password keeps needing it.
+            c.set("sessionVia", "password");
+            await next();
+          },
+          true,
+        );
         asUser.set(userId, app);
       }
       return app;
@@ -153,6 +165,8 @@ export class HttpModule {
   private assemble(
     routes: { prefix: string; auth: "user" | "none"; order: number; app: Hono<AppEnv> }[],
     gate: MiddlewareHandler<AppEnv>,
+    /** Whether this surface writes the request line: only when nothing in front of it does. */
+    logRequests: boolean,
     /** Hosts answered by an app of their own. None on the socket's surface: a call frame names a path, never a Host. */
     hosts: BoundHost[] = [],
   ): Hono<AppEnv> {
@@ -169,13 +183,15 @@ export class HttpModule {
       return handleError(err, c);
     });
     app.notFound(() => declined());
-    app.use("*", async (c, next) => {
-      const start = performance.now();
-      await next();
-      this.log.line(
-        `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
-      );
-    });
+    if (logRequests) {
+      app.use("*", async (c, next) => {
+        const start = performance.now();
+        await next();
+        this.log.line(
+          `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
+        );
+      });
+    }
     if (hosts.length > 0) {
       app.use("*", async (c, next) => {
         const hostname = hostOnly(requestAuthority(c.req.url, c.req.header("host"))).toLowerCase();
