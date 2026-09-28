@@ -28,3 +28,17 @@ export function settledActivityRuns(
       !LIVE.has(session.status),
   );
 }
+
+/**
+ * The list can go stale while the user is inside an activity's own workspace: a run may
+ * settle there (its session leaves the "live" set) without the list-level effect ever
+ * seeing it, because that effect only fires while `!activityId`. Returning to the list is
+ * therefore itself a reason to reload — but only a genuine return from an activity, not the
+ * list's own first mount (`prevActivityId` starts undefined) and not while still inside one.
+ */
+export function shouldReloadList(
+  prevActivityId: string | undefined,
+  activityId: string | undefined,
+): boolean {
+  return prevActivityId !== undefined && activityId === undefined;
+}

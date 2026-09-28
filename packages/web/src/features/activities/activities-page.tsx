@@ -32,7 +32,7 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { settledActivityRuns } from "../../lib/activity-sessions";
+import { settledActivityRuns, shouldReloadList } from "../../lib/activity-sessions";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
@@ -202,6 +202,15 @@ function ActivityWorkspace({
     if (!activityId && settledActivityRuns(seenRunStatus.current, sessions)) void reload();
     seenRunStatus.current = new Map(sessions.map((session) => [session.sessionId, session.status]));
   }, [sessions, activityId, reload]);
+  // A run can settle while the user is still inside that activity's own workspace — the
+  // effect above never fires then, since it only watches while `!activityId`, so the run
+  // "settling" is missed there. Coming back to the list is itself a reason to check again:
+  // `prevActivityId` starts undefined, so the list's own first mount does not double-reload.
+  const prevActivityId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (shouldReloadList(prevActivityId.current, activityId)) void reload();
+    prevActivityId.current = activityId;
+  }, [activityId, reload]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (dirty.current) event.preventDefault();
