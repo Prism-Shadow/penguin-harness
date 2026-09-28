@@ -39,6 +39,17 @@
         }
       },
       {
+        "id": "web.activities-media",
+        "key": "activities-media",
+        "path": "/activities/media",
+        "nav": "none",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "ActivitiesPage"
+        }
+      },
+      {
         "id": "web.agent-settings",
         "key": "agent-settings",
         "path": "/agents/:agentId",

@@ -4488,8 +4488,12 @@ test("browses the project's media, switches to the table, and downloads two file
   });
   await page.goto(`${origin}/activities`);
   await page.getByRole("button", { name: "Media library", exact: true }).click();
-  await expect(page).toHaveURL(/\/activities\?view=media$/);
+  await expect(page).toHaveURL(/\/activities\/media$/);
   await expect(page.getByRole("heading", { name: /^Project media library/ })).toBeVisible();
+
+  // The old ?view=media URL still lands on the media library, redirected to its own route.
+  await page.goto(`${origin}/activities?view=media`);
+  await expect(page).toHaveURL(/\/activities\/media$/);
 
   // The grid shows every file; the type chips and the search narrow it.
   const list = page.getByRole("region", { name: "Files", exact: true });

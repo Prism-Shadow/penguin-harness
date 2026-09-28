@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
+import {
+  Link,
+  Navigate,
+  useBlocker,
+  useMatch,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router";
 import type {
   ActivityDetail,
   ActivityDraft,
@@ -150,6 +158,7 @@ function ActivityWorkspace({
   const { activityId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const media = useMatch("/activities/media") !== null;
   const [items, setItems] = useState<ActivityRecord[]>([]);
   const [summaries, setSummaries] = useState<Record<string, ActivitySummary>>({});
   const [error, setError] = useState("");
@@ -265,7 +274,8 @@ function ActivityWorkspace({
     [registerProjectChangeGuard, projectChangeGuard],
   );
   if (!activityId && searchParams.get("view") === "media")
-    return <ProjectMediaView projectId={projectId} available={available} />;
+    return <Navigate to="/activities/media" replace />;
+  if (media) return <ProjectMediaView projectId={projectId} available={available} />;
   if (activityId) {
     // The workspace fills this pane and scrolls inside itself, so nothing may wrap it
     // in a scroller or a max-width column.
@@ -313,7 +323,7 @@ function ActivityWorkspace({
         onRefresh={() => void reload()}
         onImport={() => setImportOpen(true)}
         onCreate={() => setCreateOpen(true)}
-        onMedia={() => navigate("/activities?view=media")}
+        onMedia={() => navigate("/activities/media")}
       />
       {importOpen && (
         <ImportDialog
