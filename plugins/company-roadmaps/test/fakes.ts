@@ -31,8 +31,13 @@ export class FakeGateway implements Pick<
   /** Where the organization's files are: a room is written there, the way the server writes one. */
   root = "";
   /** Every room opened, in order. */
-  rooms: Array<{ channelId: string; name: string; purpose: string; by: string; agentIds: string[] }> =
-    [];
+  rooms: Array<{
+    channelId: string;
+    name: string;
+    purpose: string;
+    by: string;
+    agentIds: string[];
+  }> = [];
   /** Set by a test to make opening a room fail (not a taken id). */
   refuseRooms: string | null = null;
   org: OrgView = {
@@ -91,7 +96,8 @@ export class FakeGateway implements Pick<
     by: string;
     agentIds: string[];
   }) {
-    if (this.refuseRooms !== null) throw Object.assign(new Error(this.refuseRooms), { status: 500 });
+    if (this.refuseRooms !== null)
+      throw Object.assign(new Error(this.refuseRooms), { status: 500 });
     const toml = path.join(orgDir(this.root), "channels", args.channelId, "channel.toml");
     const taken = await fs.access(toml).then(
       () => true,
@@ -107,7 +113,10 @@ export class FakeGateway implements Pick<
     await writeChannel(
       this.root,
       args.channelId,
-      [...(args.by.startsWith("user:") ? [args.by] : []), ...args.agentIds.map((a) => `agent:${a}`)],
+      [
+        ...(args.by.startsWith("user:") ? [args.by] : []),
+        ...args.agentIds.map((a) => `agent:${a}`),
+      ],
       { unlisted: true },
     );
     return { channelId: args.channelId };

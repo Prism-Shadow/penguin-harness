@@ -357,7 +357,11 @@ describe("establishing", () => {
       agentIds: ["acme_qa", "acme_dev"],
     });
     const derived = await service.get(P, O, child, BOSS);
-    expect(derived).toMatchObject({ status: "discussing", channelId: `roadmap_${child}`, moderator: "acme_qa" });
+    expect(derived).toMatchObject({
+      status: "discussing",
+      channelId: `roadmap_${child}`,
+      moderator: "acme_qa",
+    });
     expect(derived.openClones.map((c) => c.agentId)).toEqual(["acme_qa", "acme_dev"]);
     const told = w.gateway.desks.find((d) => d.agentId === "acme_qa")!.text;
     expect(told).toContain("Its room is open");
@@ -489,6 +493,8 @@ describe("the room a roadmap opens itself", () => {
     );
     expect(w.gateway.rooms).toEqual([
       {
+        projectId: P,
+        orgId: O,
         channelId: `roadmap_${roadmap.number}`,
         name: "Queue migration",
         purpose: `Roadmap #${roadmap.number} — Move the queue`,

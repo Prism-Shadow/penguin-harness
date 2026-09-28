@@ -475,7 +475,15 @@ export class RoadmapService {
       // from the roadmap, with the person who opened it and the employees in it.
       const channelId =
         given ??
-        (await this.openRoomFor(projectId, orgId, number, name, req.brief?.trim() ?? "", caller.principal, employees));
+        (await this.openRoomFor(
+          projectId,
+          orgId,
+          number,
+          name,
+          req.brief?.trim() ?? "",
+          caller.principal,
+          employees,
+        ));
       await ledger.append({
         kind: "opened",
         number,
@@ -506,7 +514,10 @@ export class RoadmapService {
     by: string,
     employees: readonly string[],
   ): Promise<string> {
-    const purpose = (brief === "" ? `Roadmap #${number}` : `Roadmap #${number} — ${brief}`).slice(0, 500);
+    const purpose = (brief === "" ? `Roadmap #${number}` : `Roadmap #${number} — ${brief}`).slice(
+      0,
+      500,
+    );
     for (let attempt = 1; attempt <= 5; attempt++) {
       const channelId = attempt === 1 ? `roadmap_${number}` : `roadmap_${number}_${attempt}`;
       try {
@@ -669,7 +680,9 @@ export class RoadmapService {
               item.employees,
             );
           } catch (err) {
-            hints.push(`The room of "${item.title}" was not opened: ${err instanceof Error ? err.message : String(err)}`);
+            hints.push(
+              `The room of "${item.title}" was not opened: ${err instanceof Error ? err.message : String(err)}`,
+            );
           }
           await ledger.append({
             kind: "opened",

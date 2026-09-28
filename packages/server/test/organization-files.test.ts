@@ -348,7 +348,9 @@ describe("channel files", () => {
     expect(parseChannelConfig("site", raw)).toEqual({ ok: true, value: room });
     // A listed channel writes no flag at all.
     expect(serializeChannelConfig(site)).not.toContain("unlisted =");
-    expect(parseChannelConfig("site", `${serializeChannelConfig(site)}\nunlisted = "yes"\n`)).toMatchObject({
+    expect(
+      parseChannelConfig("site", `${serializeChannelConfig(site)}\nunlisted = "yes"\n`),
+    ).toMatchObject({
       ok: false,
     });
     const all = [

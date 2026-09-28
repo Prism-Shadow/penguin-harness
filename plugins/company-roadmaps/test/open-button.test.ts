@@ -8,12 +8,7 @@
  */
 import vm from "node:vm";
 import { Window } from "happy-dom";
-import type {
-  Element,
-  HTMLButtonElement,
-  HTMLElement,
-  HTMLInputElement,
-} from "happy-dom";
+import type { Element, HTMLButtonElement, HTMLElement, HTMLInputElement } from "happy-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { PAGE_STRINGS, pageHtml } from "../src/index.js";
 
@@ -226,7 +221,9 @@ describe("the Open a roadmap button", () => {
 
   it("keeps the form and says why when the server refuses, and sends nothing until the form is complete", async () => {
     const p = await page(
-      organization({ refuse: { status: 409, message: "No free channel id for roadmap #1's room." } }),
+      organization({
+        refuse: { status: 409, message: "No free channel id for roadmap #1's room." },
+      }),
     );
     await p.click("button[data-open]");
     await p.name("Half done");

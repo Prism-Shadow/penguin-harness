@@ -242,7 +242,8 @@ export const PAGE_STRINGS = {
     broken: "页面启动失败：",
     open: "开一份路线图",
     formEmployees: "员工——先选的那位主持",
-    formRoomNote: "路线图会带着你选的员工自己开一间讨论室：它是一个不在频道列表里的频道，从这一页进去。",
+    formRoomNote:
+      "路线图会带着你选的员工自己开一间讨论室：它是一个不在频道列表里的频道，从这一页进去。",
     moderates: "主持",
     noMembers: "这个组织还没有员工。",
     incomplete: "请填上名称，并至少选一名员工。",

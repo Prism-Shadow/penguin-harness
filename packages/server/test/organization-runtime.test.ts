@@ -2334,12 +2334,12 @@ describe("organization runtime", () => {
       });
       expect(room).toEqual({ channelId: "roadmap_1" });
       // Not on the channel list — neither a person's nor its own employee's.
-      expect((await service.channels(P, ORG, alice)).channels.map((c) => c.channelId)).not.toContain(
-        "roadmap_1",
-      );
-      expect((await service.channels(P, ORG, asHr())).channels.map((c) => c.channelId)).not.toContain(
-        "roadmap_1",
-      );
+      expect(
+        (await service.channels(P, ORG, alice)).channels.map((c) => c.channelId),
+      ).not.toContain("roadmap_1");
+      expect(
+        (await service.channels(P, ORG, asHr())).channels.map((c) => c.channelId),
+      ).not.toContain("roadmap_1");
       // Reached by its id: the person who opened it and its employee are in it.
       const detail = await service.channel(P, ORG, "roadmap_1", alice);
       expect(detail.members.map((m) => m.principal)).toEqual(["user:alice", `agent:${HR}`]);
@@ -2356,9 +2356,9 @@ describe("organization runtime", () => {
       await service.addChannelMember(P, ORG, "roadmap_1", `agent:${CEO}`, alice);
       const stored = await store.readChannel(orgDir(), "roadmap_1");
       expect(stored?.parsed.ok && stored.parsed.value.unlisted).toBe(true);
-      expect((await service.channels(P, ORG, alice)).channels.map((c) => c.channelId)).not.toContain(
-        "roadmap_1",
-      );
+      expect(
+        (await service.channels(P, ORG, alice)).channels.map((c) => c.channelId),
+      ).not.toContain("roadmap_1");
     });
 
     it("refuses a room over a taken id, an id that is not a channel id, and an Agent that is not an employee", async () => {
@@ -2373,7 +2373,10 @@ describe("organization runtime", () => {
           agentIds,
         });
       await open("roadmap_2", [HR]);
-      await expect(open("roadmap_2", [HR])).rejects.toMatchObject({ status: 409, code: "channel_exists" });
+      await expect(open("roadmap_2", [HR])).rejects.toMatchObject({
+        status: 409,
+        code: "channel_exists",
+      });
       await expect(open("Bad Id", [HR])).rejects.toMatchObject({ status: 400 });
       await expect(open("roadmap_3", ["stranger"])).rejects.toMatchObject({
         status: 400,
