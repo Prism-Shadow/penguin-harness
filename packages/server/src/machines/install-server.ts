@@ -11,7 +11,7 @@
  * same pushed platform, web and CLI this server runs (hmr/host.ts's restore).
  *
  * The remote therefore needs its own route to the release sources (GitHub or the OSS
- *  mirror); the ssh channel carries only the installer script and the store.
+ *  mirror); the machine's one session carries only the installer script and the store.
  *
  * The remote is left with exactly what a local install plus a push leaves: the program
  * directory, the `~/.local/bin/penguin` symlink on POSIX, and the data root's hmr/ state.
@@ -27,7 +27,7 @@ import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, posixProbe, windowsProbe } from "./detect.js";
 import type { RemoteIdentity, RemotePlatform } from "./detect.js";
 import type { RemoteLayout } from "./layout.js";
-import { connectionTo, looksLikeAuthFailure, runBytes } from "./transport/index.js";
+import { connectionTo, runBytes } from "./transport/index.js";
 import type { MachineChannel } from "./transport/index.js";
 
 /** Which installer runs the far side; also the asset keys deploy.mjs pushes. */
@@ -145,8 +145,8 @@ function baseReleaseVersion(argv1: string | undefined): string | null {
 /**
  * Asks the machine what it is. POSIX first, over the session — the only round trip a POSIX
  * host ever costs. A cmd.exe host has no `sh` to hold a session on, so the session dies
- * unopened and the Windows form is asked on a connection of its own. Two round trips at
- * worst, once per connect.
+ * unopened and the Windows form is asked outside it (oneShot). Two round trips at worst,
+ * once per connect.
  */
 export async function detectRemote(
   target: RemoteTarget,
@@ -157,21 +157,16 @@ export async function detectRemote(
   const posix = await conn.exec(posixProbe(layout));
   const identity = parseProbeOutput(posix.stdout);
   if (identity) return { identity };
-  // The session's output is merged, so ssh's own words arrive as stdout.
+  // The session's output is merged, so the far side's own words arrive as stdout. What they
+  // mean — a key the machine would not take — is its kind's to say.
   const said = posix.stdout.trim();
-  if (posix.code !== 0 && looksLikeAuthFailure({ ...posix, stderr: said })) {
-    return {
-      error: `${said}\n\nConnections use BatchMode: set up key or agent authentication for that host first.`,
-    };
-  }
+  const refused = posix.code !== 0 ? conn.diagnose({ ...posix, stderr: said }) : null;
+  if (refused !== null) return { error: `${said}\n\n${refused}` };
   const windows = await conn.oneShot(windowsProbe(layout), { timeoutMs: 30_000 });
   const identityWin = parseProbeOutput(windows.stdout);
   if (identityWin) return { identity: identityWin };
-  if (windows.code !== 0 && looksLikeAuthFailure(windows)) {
-    return {
-      error: `${windows.stderr.trim()}\n\nConnections use BatchMode: set up key or agent authentication for that host first.`,
-    };
-  }
+  const refusedWin = windows.code !== 0 ? conn.diagnose(windows) : null;
+  if (refusedWin !== null) return { error: `${windows.stderr.trim()}\n\n${refusedWin}` };
   const words = said || windows.stderr.trim();
   return {
     error:
@@ -295,7 +290,11 @@ export async function installOnRemote(opts: {
         windowsTmp = { local, remote: `%USERPROFILE%\\${name}` };
         const copy = await conn.copyTo([local], ".");
         if (copy.code !== 0) {
-          return { kind: "failed", step: "copy", detail: copy.stderr.trim() || "scp failed" };
+          return {
+            kind: "failed",
+            step: "copy",
+            detail: copy.stderr.trim() || `the copy exited ${copy.code}`,
+          };
         }
         where = { platform: "win32", scriptPath: windowsTmp.remote };
       } else {

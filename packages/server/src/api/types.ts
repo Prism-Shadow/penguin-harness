@@ -4250,16 +4250,24 @@ export interface RestartResponse {
   reason?: "no_supervisor";
 }
 
-/** One `Host` entry of the server's `~/.ssh/config`, as the Machines page lists it. */
+/** One machine as the Machines page lists it: of a kind a plugin contributes (ssh, WSL, a container). */
 export interface MachineInfo {
-  /** `ssh:<alias>` — the id the install route is asked for. */
+  /** `<kind>:<name>` (`ssh:<alias>`, `wsl:<distro>`, `docker:<definition>`) — the id the install route is asked for. */
   id: string;
   /**
-   * The alias exactly as written in the config. The list is the config text and nothing
-   * else — no `ssh -G`, no processes, no network — so a config declaring hundreds of hosts
-   * costs one file read; an alias is resolved only when it is actually installed to.
+   * The machine's name within its kind — an ssh alias exactly as written in the config, a WSL
+   * distro, a container definition's name. Listing costs no process and no network (a kind's
+   * `discover` is cheap by contract); a name is resolved only when it is actually reached.
    */
   alias: string;
+  /** The kind it is of — the id's prefix, as the kind named itself; `local` for this server. */
+  kind: string;
+  /**
+   * Present when that kind is not loaded here (its plugin is not enabled, or failed to load):
+   * why, in words. The machine stays listed with its record, and nothing is started for it —
+   * install, connect and restart answer 409 — until the kind is back.
+   */
+  unavailable?: string;
   /**
    * The last install THIS server carried out there FOR THIS PROJECT, remembered in web.db so
    * it survives a restart, a hot push, and installing on some other machine. Null when this
@@ -4296,8 +4304,8 @@ export interface MachineInfo {
   /** The host this server itself runs on. Always present, always installed, never a target. */
   local: boolean;
   /**
-   * The connection this server holds to it — the one ssh session everything to the machine
-   * rides (machines/transport/ssh-session.ts): a fact about a process on THIS side, which
+   * The connection this server holds to it — the one session everything to the machine
+   * rides (machines/transport/shell-session.ts): a fact about a process on THIS side, which
    * outlives the far server. Present means `/server/<id>/api/…` has somewhere to go; whether
    * a server ANSWERS over there is `status`'s word, from the last probe — and the two must not
    * be read for each other: taking the connection for the machine's liveness is the mistake
@@ -4387,9 +4395,30 @@ export interface MachineJob {
       };
 }
 
+/**
+ * The form a person defines a machine of a kind with: its name, and the rest in the shape
+ * plugin settings use (PluginConfigField), so the page draws it knowing nothing of the kind.
+ */
+export interface MachineForm {
+  name: PluginConfigField;
+  fields: Record<string, PluginConfigField>;
+}
+
+/** A machine kind this server has loaded, as the Machines page draws its "+" and its gears. */
+export interface MachineKindInfo {
+  /** The address prefix, and the kind's name. */
+  kind: string;
+  title: string;
+  titleZh?: string;
+  /** How to define one by hand, or null: this kind is not defined by hand (WSL lists its distros itself). */
+  form: MachineForm | null;
+}
+
 /** GET /api/machines, and the 202 body of POST /api/machines/:machineId/install. */
 export interface MachinesResponse {
   machines: MachineInfo[];
+  /** The kinds loaded here, in the order their plugins contributed them. */
+  kinds: MachineKindInfo[];
   /**
    * The version an install would leave on the remote — the base release, plus a `+hmr.<sha>`
    * suffix when this server carries a pushed version to replicate. Null for a development
@@ -4417,39 +4446,37 @@ export const MACHINE_PHASES = [
 export type MachinePhase = (typeof MACHINE_PHASES)[number];
 
 /**
- * `POST /api/projects/:projectId/machines/ssh-hosts`: append a host block to this server's
- * `~/.ssh/config`. Answers the machines list (201), or 400 `ssh_host_invalid` naming the
- * field, or 409 `ssh_host_exists`.
+ * `POST /api/projects/:projectId/machines/kinds/:kind/definitions`: define a machine of that
+ * kind by hand (201 with the list); `PUT …/definitions/:name` rewrites one (the name stays).
+ * 400 `machine_definition_invalid` says `<field>: <why>`, 409 `machine_exists` a name taken.
  */
-export interface SshHostRequest {
-  /** The alias — what `ssh <alias>` will take, and the machine's name everywhere here. */
-  alias: string;
-  hostName: string;
-  user?: string;
-  port?: number;
-  identityFile?: string;
+export interface MachineDefinitionRequest {
+  name: string;
+  values: Record<string, unknown>;
 }
 
 /**
- * `GET /api/projects/:projectId/machines/ssh-hosts/:alias`: a host's block read back, and
- * whether this app wrote it. Only a block this app wrote may be rewritten
- * (`PUT …/ssh-hosts/:alias`, the same fields less the alias): a hand-written one may carry
- * options this app does not know, and rewriting it would drop them.
+ * `GET …/kinds/:kind/definitions/:name`: a definition read back, and whether it may be
+ * rewritten — a hand-written ssh block may carry options the form does not know.
  */
-export interface SshHostResponse extends SshHostRequest {
+export interface MachineDefinitionResponse {
+  name: string;
+  values: Record<string, unknown>;
   editable: boolean;
+  /** The server keeps this definition (a container's), so it can be forgotten from the page. */
+  forgettable: boolean;
 }
 
 /** `POST /api/projects/:projectId/machines/use`: bring these machines into use, as one queued batch. */
 export interface MachinesUseRequest {
-  /** Machine ids (`ssh:<alias>`). Every one is queued; refusals come back by id. */
+  /** Machine ids (`<kind>:<name>`). Every one is queued; refusals come back by id. */
   machines: string[];
   /** Install the program even where its version matches, and restart there — the answer to a job that asked for it. */
   replaceProgram?: boolean;
 }
 
 /** Why one machine of a batch was not queued; the rest were. */
-export type MachineUseRefusal = "unknown-machine" | "self" | "no-image";
+export type MachineUseRefusal = "unknown-machine" | "self" | "no-image" | "kind-unavailable";
 
 export interface MachinesUseResponse extends MachinesResponse {
   refused: { machineId: string; why: MachineUseRefusal }[];

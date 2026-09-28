@@ -1,7 +1,8 @@
 /**
- * The exact ssh/scp invocations a remote install runs, built as argv arrays (no shell on this
- * side) plus the small commands the far side executes. Pure, so every command this app would
- * run against someone's machine is unit-visible.
+ * The commands a remote install runs ON THE MACHINE, plus the small ones the far side
+ * executes. Pure, so every command this app would run against someone's machine is
+ * unit-visible. How a command gets there — which program carries it, with which arguments — is
+ * the machine's kind's (mechanisms/machines.ts); nothing here names ssh or any other client.
  *
  * Three things run through a remote SHELL — probe, run the release installer, unpack the
  * replicated hmr store — and each has a POSIX and a Windows form, because a default Windows
@@ -9,19 +10,12 @@
  * itself is the ordinary one (install.sh, install.ps1), downloading the pinned release from
  * the remote's own network.
  *
- * COUNT THE HANDSHAKES. A handshake to a distant or loaded host costs tens of seconds — so
- * everything rides the ONE connection ssh-session.ts holds per machine: commands, the
- * installer and the store on its stdin, every TCP connection through its SOCKS port. A POSIX
- * install is therefore the installer going in on that stdin, the same shape as the documented
- * `curl … | sh`, which is what lets the scratch directory, the scp and the cleanup
+ * COUNT THE ROUND TRIPS. A handshake to a distant or loaded host costs tens of seconds — so
+ * everything rides the ONE connection transport/shell-session.ts holds per machine: commands,
+ * the installer and the store on its stdin, every TCP connection dialled while it is up. A
+ * POSIX install is therefore the installer going in on that stdin, the same shape as the
+ * documented `curl … | sh`, which is what lets the scratch directory, the copy and the cleanup
  * disappear entirely.
- *
- * Two further rules encoded here:
- * - **BatchMode.** A GUI app has no terminal: an ssh that decides to ask for a password or a
- *   key passphrase would hang forever with nothing to type into. BatchMode turns that into an
- *   immediate, readable failure — v1 is key/agent auth, exactly as the design says.
- * - **The user override rides the command line, never the config.** `-o User=…` selects the
- *   account for this connection; `~/.ssh/config` is read-only to us.
  */
 import type { RemotePlatform } from "./detect.js";
 import type { RemoteLayout } from "./layout.js";
@@ -41,22 +35,9 @@ export function cmdQuote(value: string): string {
   return `"${value}"`;
 }
 
-export interface RemoteTarget {
-  /** Alias as written in ~/.ssh/config — what the user picked. */
-  alias: string;
-  /** Login account. Empty means "whatever ssh resolves", i.e. no -o User override. */
-  user: string;
-}
-
-function connectionOptions(target: RemoteTarget): string[] {
-  return [
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    "ConnectTimeout=10",
-    ...(target.user === "" ? [] : ["-o", `User=${target.user}`]),
-  ];
-}
+/** A machine as the host addresses it (transport/connection.ts). */
+export type { RemoteTarget } from "./transport/index.js";
+export type { ForwardDirection, ForwardSpec } from "../mechanisms/machines.js";
 
 /**
  * The CLI these commands run on a machine: the one PUSHED to it, not the one installed.
@@ -107,18 +88,13 @@ export function remotePenguin(platform: RemotePlatform, layout: RemoteLayout): s
   return `env PENGUIN_HOME="${layout.dataRoot.posix}" PENGUIN_PROFILE=${layout.profile} "${dir}/node/bin/node" "${dir}/lib/dist/penguin-hmr.js"`;
 }
 
-/** `ssh <options> <alias> <remote command>`. */
-export function sshArgs(target: RemoteTarget, remoteCommand: string): string[] {
-  return [...connectionOptions(target), target.alias, remoteCommand];
-}
-
 /**
- * `scp <options> <files…> <alias>:<dir>`. The remote path is NOT quoted: current OpenSSH
- * transfers over SFTP, where the path is taken literally and quotes would become part of the
- * name. Scratch directories are chosen without quotes or shell metacharacters for that reason.
+ * The Node the installed program carries on a POSIX machine, as a shell word (it names
+ * `$HOME`): what a kind without a TCP path of its own runs its one-line bridge with
+ * (mechanisms/machines.ts `MachineDial.node`). Laid out by install.sh, as remotePenguin says.
  */
-export function scpArgs(target: RemoteTarget, localFiles: string[], remoteDir: string): string[] {
-  return [...connectionOptions(target), ...localFiles, `${target.alias}:${remoteDir}`];
+export function remoteNode(layout: RemoteLayout): string {
+  return `"${layout.programDir.posix}/node/bin/node"`;
 }
 
 /**
@@ -171,8 +147,8 @@ export function runInstallScriptCommand(
 }
 
 /**
- * Unpacks the replicated hmr state (harness.json + store/), streamed to ssh's stdin as one
- * tar.gz, into the remote's HMR DIRECTORY. `tar` reads stdin with `-f -` on both sides;
+ * Unpacks the replicated hmr state (harness.json + store/), streamed to the session's stdin as
+ * one tar.gz, into the remote's HMR DIRECTORY. `tar` reads stdin with `-f -` on both sides;
  * Windows 10+ ships bsdtar.
  *
  * `<data root>/hmr`, not the data root itself: the members are named relative to the sending
@@ -204,8 +180,8 @@ export function startServerCommand(port: number, layout: RemoteLayout): string {
   const root = layout.dataRoot.posix;
   // --host is PINNED, not defaulted: the CLI falls back to the HOST environment variable when
   // it is omitted, so a login shell carrying HOST=0.0.0.0 would put that machine's server on
-  // every interface. This side only ever reaches it as a channel inside the ssh session, at
-  // loopback on the far end, so binding wider is exposure with nothing asking for it.
+  // every interface. This side only ever reaches it through the one session, at loopback
+  // on the far end, so binding wider is exposure with nothing asking for it.
   return `mkdir -p "${root}" && nohup ${remotePenguin("linux", layout)} server --host 127.0.0.1 --port ${port} >> "${root}/server.log" 2>&1 < /dev/null & echo $!`;
 }
 
@@ -225,103 +201,6 @@ export function isAliveCommand(pid: number): string {
 /** The last lines of that log, for a start that did not answer. */
 export function serverLogTail(layout: RemoteLayout): string {
   return `tail -n 20 "${layout.dataRoot.posix}/server.log" 2>/dev/null`;
-}
-
-// --- tunnelling to that server ---------------------------------------------------------------
-
-/**
- * `ssh -T -D 127.0.0.1:<port> <alias> sh` — the ONE connection to a machine (transport/
- * ssh-session.ts). `-T` because it is a command channel, not a terminal; `sh` rather than a
- * login shell, so a profile's banner cannot land in the first command's output; `-D` so the
- * session doubles as a SOCKS server on a loopback port of ours, through which every TCP
- * connection to the machine is a channel inside this same session. ExitOnForwardFailure turns
- * "local port taken" into an exit instead of a session that silently cannot dial, and the
- * keepalives surface a dead link within a minute.
- */
-export function sessionArgs(
-  target: RemoteTarget,
-  socksPort: number,
-  /** The control socket this session is master of (POSIX; Win32 OpenSSH has no multiplexing). */
-  controlPath: string | null = null,
-  /**
-   * Forwards carried from the start — the way a session without a control socket carries
-   * them (Win32 OpenSSH): the set changes, the session is reopened with the new set.
-   */
-  forwards: readonly ForwardSpec[] = [],
-): string[] {
-  if (!Number.isInteger(socksPort) || socksPort < 1 || socksPort > 65535) {
-    throw new Error(`bad port ${socksPort}`);
-  }
-  return [
-    ...connectionOptions(target),
-    "-T",
-    // With forwards in the start args, a port that will not bind must NOT end the session —
-    // it is reported (ssh says so on stderr) and the session goes on carrying the rest. The
-    // SOCKS port is chosen free moments before the spawn, which is what the exit guarded.
-    "-o",
-    `ExitOnForwardFailure=${forwards.length === 0 ? "yes" : "no"}`,
-    "-o",
-    "ServerAliveInterval=15",
-    "-o",
-    "ServerAliveCountMax=4",
-    // The master of a control socket, so a port forward can be added to or taken off THIS
-    // session later (`-O forward` / `-O cancel`, forwardControlArgs) instead of a second
-    // connection or a restart of this one. ControlPersist stays off: the session lives as
-    // long as this process holds it, and dies with it.
-    ...(controlPath === null ? [] : ["-M", "-S", controlPath]),
-    ...forwards.flatMap((spec) => forwardFlag(spec)),
-    "-D",
-    `127.0.0.1:${socksPort}`,
-    target.alias,
-    "sh",
-  ];
-}
-
-/** Which way a port forward carries bytes: `in` brings a machine's port here, `out` sends one of ours there. */
-export type ForwardDirection = "in" | "out";
-
-export interface ForwardSpec {
-  direction: ForwardDirection;
-  /** The port on this server's loopback. */
-  localPort: number;
-  /** The port on the machine's loopback. */
-  remotePort: number;
-}
-
-/**
- * The forward as ssh spells it: `-L` listens HERE and delivers to the machine's port, `-R`
- * listens on the MACHINE and delivers to ours. Both ends are the loopback by name — a
- * forward is never an open door on either network.
- */
-export function forwardFlag(spec: ForwardSpec): [flag: "-L" | "-R", value: string] {
-  for (const port of [spec.localPort, spec.remotePort]) {
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
-  }
-  return spec.direction === "in"
-    ? ["-L", `127.0.0.1:${spec.localPort}:127.0.0.1:${spec.remotePort}`]
-    : ["-R", `127.0.0.1:${spec.remotePort}:127.0.0.1:${spec.localPort}`];
-}
-
-/**
- * `ssh -S <control> -O forward|cancel -L|-R <spec> <alias>`: asks the master holding the
- * session to add or drop one forward. Answered by the master over the socket — no new
- * connection, and a forward that cannot bind fails THIS command, not the session.
- */
-export function forwardControlArgs(
-  target: RemoteTarget,
-  controlPath: string,
-  op: "forward" | "cancel",
-  spec: ForwardSpec,
-): string[] {
-  return [
-    ...connectionOptions(target),
-    "-S",
-    controlPath,
-    "-O",
-    op,
-    ...forwardFlag(spec),
-    target.alias,
-  ];
 }
 
 /** Marker separating the resolved path from the entries in a directory listing. */

@@ -72,6 +72,8 @@ function dropPortForwards(db: DatabaseSync): void {
   );
   // And the Browser's own table, which every database older than that is older than too.
   db.exec("DROP TABLE IF EXISTS browser_sites;");
+  // And the machine definitions, newer still.
+  db.exec("DROP TABLE IF EXISTS machine_definitions;");
 }
 
 /**
@@ -925,6 +927,61 @@ describe("the first form of port_forwards → current: port-forwards-direction",
       rollbackTo(db, 15);
       expect(columns(db)).not.toContain("direction");
       expect(db.prepare("SELECT id FROM port_forwards").all()).toEqual([{ id: "f1" }]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("migration 18 → current: machine-definitions", () => {
+  /** A database at 18: today's declaration less the table, a machines row as an ssh machine has it. */
+  function open18(): DatabaseSync {
+    const db = new sqlite.DatabaseSync(":memory:");
+    db.exec(SCHEMA_SQL);
+    db.exec("DROP TABLE IF EXISTS machine_definitions;");
+    db.exec("PRAGMA user_version = 18");
+    db.exec(
+      "INSERT INTO machines (address, machine_id, version, installed_at, session_pid, remote_port, platform)" +
+        " VALUES ('ssh:nas', 'tXIvjrl0pgKa5_dD', '0.2.13', '2026-09-01T00:00:00.000Z', 4242, 7364, 'linux')",
+    );
+    return db;
+  }
+  const columns = (db: DatabaseSync) =>
+    (db.prepare("PRAGMA table_info(machine_definitions)").all() as { name: string }[]).map(
+      (c) => c.name,
+    );
+  const machines = (db: DatabaseSync) => db.prepare("SELECT * FROM machines").all();
+
+  it("creates the definitions table on the swap path, leaving every machines row as it was", () => {
+    const db = open18();
+    try {
+      const before = machines(db);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(namesAfter(18));
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
+      expect(columns(db)).toEqual(["address", "kind", "name", "spec", "created_at"]);
+      expect(machines(db)).toEqual(before);
+      expect(MIGRATIONS.find((m) => m.name === "machine-definitions")?.swapSafe).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("is repeatable: a table already there is left alone, rows and all", () => {
+    const db = open18();
+    try {
+      db.exec(
+        "CREATE TABLE machine_definitions (address TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, spec TEXT NOT NULL, created_at TEXT NOT NULL)",
+      );
+      db.exec(
+        "INSERT INTO machine_definitions VALUES ('docker:cuda', 'docker', 'cuda', '{}', '2026-09-27T00:00:00.000Z')",
+      );
+      migrate(db);
+      expect(db.prepare("SELECT address FROM machine_definitions").all()).toEqual([
+        { address: "docker:cuda" },
+      ]);
+      rollbackTo(db, 18);
+      expect(columns(db)).toEqual([]);
+      expect(machines(db)).toHaveLength(1);
     } finally {
       db.close();
     }

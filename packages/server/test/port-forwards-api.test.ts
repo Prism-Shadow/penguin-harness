@@ -12,6 +12,8 @@ import type { PortForwardInfo, PortForwardsResponse } from "../src/api/types.js"
 import { openDatabase } from "../src/db/database.js";
 import { MachinesRepo } from "../src/db/repos/machines.js";
 import { MachinesService } from "../src/machines/service.js";
+import type { MachineKindEntry } from "../src/machines/service.js";
+import type { Machine } from "../src/mechanisms/machines.js";
 import { apiClient, createTestApp, loginAdmin, makeTempRoot, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -27,6 +29,21 @@ async function freePort(): Promise<number> {
   return port;
 }
 
+/** The machines' kind, as the ssh plugin would contribute it: discovering `build-box`, reaching nothing. */
+const SSH: MachineKindEntry[] = [
+  {
+    kind: "ssh",
+    title: "SSH",
+    impl: {
+      discover: () => ["build-box"],
+      form: () => null,
+      define: async () => ({ ok: false, field: null, message: "not here" }),
+      read: () => null,
+      connect: () => ({}) as Machine,
+    },
+  },
+];
+
 describe("port forwarding API", () => {
   let t: TestApp;
   let admin: ReturnType<typeof apiClient>;
@@ -39,12 +56,19 @@ describe("port forwarding API", () => {
     const repo = new MachinesRepo(store);
     repo.patch("ssh:build-box", { machineId: MACHINE, version: "9.9.9" });
     t = await createTestApp({
-      machines: new MachinesService(machinesRoot, LOCAL_ID, repo, {
-        listAliases: () => ["build-box"],
-        session: () => null,
-        setForwards: async () => {},
-        forwardFacts: () => new Map(),
-      }),
+      machines: new MachinesService(
+        machinesRoot,
+        LOCAL_ID,
+        repo,
+        {
+          session: () => null,
+          setForwards: async () => true,
+          forwardFacts: () => new Map(),
+        },
+        undefined,
+        undefined,
+        SSH,
+      ),
     });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
   });
@@ -162,14 +186,21 @@ describe("Machines.dialPort", () => {
 
   it("does not dial a machine that is not held — a saved forward reopens no ssh", async () => {
     let dials = 0;
-    const machines = new MachinesService(machinesRoot, LOCAL_ID, new MachinesRepo(store), {
-      listAliases: () => ["build-box"],
-      session: () => null,
-      dial: async () => {
-        dials++;
-        return new net.Socket();
+    const machines = new MachinesService(
+      machinesRoot,
+      LOCAL_ID,
+      new MachinesRepo(store),
+      {
+        session: () => null,
+        dial: async () => {
+          dials++;
+          return new net.Socket();
+        },
       },
-    });
+      undefined,
+      undefined,
+      SSH,
+    );
     expect(await machines.dialPort(MACHINE, 3000)).toEqual({
       ok: false,
       detail: "machine not connected",
@@ -185,15 +216,22 @@ describe("Machines.dialPort", () => {
     const asked: Array<[string, number]> = [];
     const socket = new net.Socket();
     let fail = false;
-    const machines = new MachinesService(machinesRoot, LOCAL_ID, new MachinesRepo(store), {
-      listAliases: () => ["build-box"],
-      session: (address) => (address === "ssh:build-box" ? { pid: 1, socksPort: 1 } : null),
-      dial: async (target, remotePort) => {
-        asked.push([target.alias, remotePort]);
-        if (fail) throw new Error("connection refused");
-        return socket;
+    const machines = new MachinesService(
+      machinesRoot,
+      LOCAL_ID,
+      new MachinesRepo(store),
+      {
+        session: (address) => (address === "ssh:build-box" ? { pid: 1 } : null),
+        dial: async (target, remotePort) => {
+          asked.push([target.name, remotePort]);
+          if (fail) throw new Error("connection refused");
+          return socket;
+        },
       },
-    });
+      undefined,
+      undefined,
+      SSH,
+    );
     expect(await machines.dialPort(MACHINE, 3000)).toEqual({ ok: true, socket });
     expect(asked).toEqual([["build-box", 3000]]);
     fail = true;

@@ -1,0 +1,32 @@
+{
+  "name": "@prismshadow/penguin-plugin-machine-ssh",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The ssh machine kind for PenguinHarness: machines named by the server account's ~/.ssh/config, one ssh session each, with SOCKS dialling and port forwards. Resident: loaded on every server.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "license": "Apache-2.0",
+  "files": [
+    "dist",
+    "README.md",
+    "ifaces.json"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && vitest run --passWithNoTests",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "tsup": "^8.3.0",
+    "vitest": "^3.2.6"
+  }
+}

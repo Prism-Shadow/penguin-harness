@@ -112,7 +112,7 @@ async function probeIn(
   const result = await exec(target, readServerStateCommand(platform, layout));
   if (result.code !== 0) {
     // stdout as the fallback, not just stderr: over the shared shell the two streams are
-    // merged and stderr arrives empty (ssh-session.ts), so reading only stderr threw away
+    // merged and stderr arrives empty (shell-session.ts), so reading only stderr threw away
     // the far side's own words — which here are the whole diagnostic, the command being one
     // the machine either ran or could not find.
     const detail = result.stderr.trim() || result.stdout.trim();

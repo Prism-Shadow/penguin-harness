@@ -1,7 +1,10 @@
 /**
- * The one connection per machine, against a stub `ssh` on PATH that becomes a real `sh` when
- * asked for one: the framing, the heredoc input, progress relayed as it arrives, one session
- * however many ask, and what a session that dies says.
+ * The one connection per machine — the host's half, which knows no kind. Driven by a TEST kind
+ * whose shell is a stub on PATH (`machine-shell`, which becomes a real `sh`): the framing, the
+ * heredoc input, progress relayed as it arrives, one session however many ask, the lifetimes,
+ * delivery across a swap, and what a session that dies says. The assertions are the ones the
+ * ssh-bound version of this file made; ssh's own half (its argv, its forwards) is tested in
+ * plugins/machine-ssh.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -10,13 +13,39 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   attachSessionRegistry,
   closeAllConnections,
-  useControlSockets,
   closeConnectionTo,
   connectionTo,
-  forwardKey,
   sessionOf,
 } from "../src/machines/transport/index.js";
+import type { RemoteTarget } from "../src/machines/transport/index.js";
+import type { Machine } from "../src/mechanisms/machines.js";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
+
+/** The test kind: its shell is `machine-shell <name>`, found on PATH; it has nothing else. */
+function testMachine(name: string, calls: { ups: number } = { ups: 0 }): Machine {
+  return {
+    launch: async () => ({ program: "machine-shell", args: [name] }),
+    up: async () => {
+      calls.ups += 1;
+    },
+    ready: async () => ({ ok: true }),
+    dial: async () => {
+      throw new Error("no dial in this kind");
+    },
+    oneShot: async () => ({ code: 0, stdout: "", stderr: "", timedOut: false }),
+    copyTo: async () => ({ code: 0, stdout: "", stderr: "", timedOut: false }),
+    diagnose: () => null,
+    forwards: () => null,
+  };
+}
+
+const target = (name: string, machine: Machine = testMachine(name)): RemoteTarget => ({
+  address: `test:${name}`,
+  kind: "test",
+  name,
+  machine,
+  node: "node",
+});
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
@@ -27,28 +56,23 @@ posixOnly("the session", () => {
   beforeEach(() => {
     stubBin = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-session-"));
     logFile = path.join(stubBin, "calls.log");
-    // Every invocation is logged; an alias containing "refused" dies the way a wrong key
-    // does; anything else asked for `sh` becomes one — commands run locally, harmlessly.
+    // Every invocation is logged; a machine named "refused" dies the way a refused login
+    // does; any other becomes a real `sh` — commands run locally, harmlessly.
     fs.writeFileSync(
-      path.join(stubBin, "ssh"),
+      path.join(stubBin, "machine-shell"),
       `#!/bin/sh
 echo "$*" >> ${JSON.stringify(logFile)}
 case "$*" in *refused*) echo "deploy@refused: Permission denied (publickey)." >&2; exit 255 ;; esac
-# The master answering a control request: port 65001 will not bind, every other one does.
-case "$*" in *" -O "*:65001:*) echo "Port forwarding failed: bind: Address already in use" >&2; exit 255 ;; *" -O "*) exit 0 ;; esac
-# A session started WITH forwards (the Windows path): ssh warns about the one it could not bind and goes on.
-case "$*" in *" -R 127.0.0.1:65001:"*) echo "Warning: remote port forwarding failed for listen port 65001" >&2 ;; esac
-for a in "$@"; do last=$a; done
-[ "$last" = sh ] && exec /bin/sh
-exit 1
+exec /bin/sh
 `,
     );
-    fs.chmodSync(path.join(stubBin, "ssh"), 0o755);
+    fs.chmodSync(path.join(stubBin, "machine-shell"), 0o755);
     originalPath = process.env.PATH;
     process.env.PATH = `${stubBin}:${process.env.PATH ?? ""}`;
   });
   afterEach(() => {
-    for (const address of ["ssh:nas", "ssh:build-box", "ssh:refused"]) closeConnectionTo(address);
+    for (const address of ["test:nas", "test:build-box", "test:refused"])
+      closeConnectionTo(address);
     process.env.PATH = originalPath;
     fs.rmSync(stubBin, { recursive: true, force: true });
   });
@@ -56,7 +80,7 @@ exit 1
     fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n") : [];
 
   it("runs commands with their exit code, and an `exit` cannot end the session", async () => {
-    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const conn = connectionTo(target("nas"));
     // The command's own trailing newline is kept, as execFile would keep it.
     expect(await conn.exec("echo hi")).toMatchObject({ code: 0, stdout: "hi\n" });
     expect((await conn.exec("exit 3")).code).toBe(3);
@@ -65,7 +89,7 @@ exit 1
   });
 
   it("hands a command its stdin as a heredoc, bytes intact, and relays lines as they arrive", async () => {
-    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const conn = connectionTo(target("nas"));
     const input = Buffer.from("héllo\nEOF\nworld\n", "utf8");
     const lines: string[] = [];
     const result = await conn.stream("cat", { input, onLine: (line) => lines.push(line) });
@@ -78,33 +102,33 @@ exit 1
   });
 
   it("is one session however many ask: commands queue, and two opens spawn once", async () => {
-    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const conn = connectionTo(target("nas"));
     const [a, b] = await Promise.all([conn.open(), conn.open()]);
     expect(a.ok && b.ok && a.session.pid === b.session.pid).toBe(true);
     expect(spawns()).toHaveLength(1);
-    expect(sessionOf("ssh:nas")?.pid).toBe(a.ok ? a.session.pid : -1);
+    expect(sessionOf("test:nas")?.pid).toBe(a.ok ? a.session.pid : -1);
 
     let started = Date.now();
     await Promise.all([conn.exec("sleep 0.2"), conn.exec("sleep 0.2")]);
     expect(Date.now() - started).toBeGreaterThanOrEqual(380);
     // A different machine is a different session: those run side by side.
-    const other = connectionTo({ alias: "build-box", user: "deploy" });
+    const other = connectionTo(target("build-box"));
     started = Date.now();
     await Promise.all([conn.exec("sleep 0.2"), other.exec("sleep 0.2")]);
     expect(Date.now() - started).toBeLessThan(380);
     expect(spawns()).toHaveLength(2);
   });
 
-  it("a session that dies says why, in ssh's own words, and is not kept", async () => {
-    const conn = connectionTo({ alias: "refused", user: "deploy" });
+  it("a session that dies says why, in its own words, and is not kept", async () => {
+    const conn = connectionTo(target("refused"));
     const opened = await conn.open();
     expect(opened.ok).toBe(false);
     if (!opened.ok) expect(opened.detail).toContain("Permission denied");
-    expect(sessionOf("ssh:refused")).toBeNull();
+    expect(sessionOf("test:refused")).toBeNull();
   });
 
   it("answers a command that outlasts its timeout with the timeout, and hands the next one a live session", async () => {
-    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const conn = connectionTo(target("nas"));
     // The timeout is this command's own answer. Dropping the session also answers whatever is
     // pending — with the connection's last words — so the two race for the one resolution a
     // promise has, and the precise diagnosis has to win.
@@ -119,22 +143,22 @@ exit 1
   });
 
   it("a held session that dies comes back on its own; a closed one stays closed", async () => {
-    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const conn = connectionTo(target("nas"));
     const held = await conn.hold();
     expect(held.ok).toBe(true);
     expect(conn.held()).toBe(true);
-    const first = sessionOf("ssh:nas")!.pid;
+    const first = sessionOf("test:nas")!.pid;
 
-    // The link drops — the ssh child is gone, as after keepalives give up on a dead link.
+    // The link drops — the child is gone, as after keepalives give up on a dead link.
     process.kill(first);
     await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(sessionOf("ssh:nas")).toBeNull();
+    expect(sessionOf("test:nas")).toBeNull();
     // Held, so the transport brings it back: the shortest wait is a second.
     const deadline = Date.now() + 5_000;
-    while (sessionOf("ssh:nas") === null && Date.now() < deadline) {
+    while (sessionOf("test:nas") === null && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    const second = sessionOf("ssh:nas");
+    const second = sessionOf("test:nas");
     expect(second).not.toBeNull();
     expect(second!.pid).not.toBe(first);
     // And it is a working session, still held. The spawn count is read only after a command
@@ -145,15 +169,15 @@ exit 1
     expect(conn.held()).toBe(true);
 
     // An explicit close lets go for good: nothing reopens it.
-    closeConnectionTo("ssh:nas");
+    closeConnectionTo("test:nas");
     expect(conn.held()).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 1_500));
-    expect(sessionOf("ssh:nas")).toBeNull();
+    expect(sessionOf("test:nas")).toBeNull();
     expect(spawns()).toHaveLength(2);
   });
 
   it("a command that times out on a held session drops the corpse but keeps the hold", async () => {
-    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const conn = connectionTo(target("nas"));
     await conn.hold();
     const timedOut = await conn.stream("sleep 5", { input: Buffer.alloc(0), timeoutMs: 150 });
     expect(timedOut).toMatchObject({ code: 255, stdout: "the machine did not answer in time" });
@@ -164,42 +188,12 @@ exit 1
   });
 
   it("closing lets go of the session; the next ask opens a new one", async () => {
-    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const conn = connectionTo(target("nas"));
     await conn.exec("true");
-    closeConnectionTo("ssh:nas");
-    expect(sessionOf("ssh:nas")).toBeNull();
+    closeConnectionTo("test:nas");
+    expect(sessionOf("test:nas")).toBeNull();
     await conn.exec("true");
     expect(spawns()).toHaveLength(2);
-  });
-
-  it("masters a control socket, and asks it for each wanted forward once the session is up", async () => {
-    const conn = connectionTo({ alias: "nas", user: "deploy" });
-    const good = { direction: "in" as const, localPort: 3000, remotePort: 3001 };
-    const bad = { direction: "out" as const, localPort: 5432, remotePort: 65001 };
-    // Wanted before the session exists: recorded, nothing asked yet.
-    await conn.setForwards([good]);
-    expect(spawns()).toHaveLength(0);
-    await conn.hold();
-    expect(spawns()[0]).toMatch(/ -M -S \S+penguin-ssh-\S+\.sock /);
-    await new Promise((r) => setTimeout(r, 200));
-    expect(spawns().filter((line) => line.includes("-O forward"))).toEqual([
-      expect.stringContaining("-O forward -L 127.0.0.1:3000:127.0.0.1:3001 nas"),
-    ]);
-    expect(conn.forwardFacts().get(forwardKey(good))).toEqual({ ok: true });
-
-    // Added live: asked at once; ssh's refusal is the fact, in its words.
-    await conn.setForwards([good, bad]);
-    expect(spawns().filter((line) => line.includes("-O forward"))).toHaveLength(2);
-    expect(conn.forwardFacts().get(forwardKey(bad))).toEqual({
-      ok: false,
-      detail: "Port forwarding failed: bind: Address already in use",
-    });
-    // Dropped live: cancelled, and its fact goes with it.
-    await conn.setForwards([bad]);
-    expect(spawns().filter((line) => line.includes("-O cancel"))).toEqual([
-      expect.stringContaining("-O cancel -L 127.0.0.1:3000:127.0.0.1:3001 nas"),
-    ]);
-    expect(conn.forwardFacts().has(forwardKey(good))).toBe(false);
   });
 
   it("a held session is delivered through the registry and claimed back, a transient one is not", async () => {
@@ -219,23 +213,23 @@ exit 1
     } as Resources;
     attachSessionRegistry(registry);
     try {
-      const held = await connectionTo({ alias: "nas", user: "deploy" }).hold();
-      const transient = await connectionTo({ alias: "build-box", user: "deploy" }).open();
+      const held = await connectionTo(target("nas")).hold();
+      const transient = await connectionTo(target("build-box")).open();
       expect(held.ok && transient.ok).toBe(true);
-      expect(store.has("machineSession.v2:ssh:nas")).toBe(true);
-      expect(store.has("machineSession.v2:ssh:build-box")).toBe(false);
+      expect(store.has("machineSession.v3:test:nas")).toBe(true);
+      expect(store.has("machineSession.v3:test:build-box")).toBe(false);
 
       // The generation goes: its transient session ends, its held one stays up.
       closeAllConnections();
-      expect(sessionOf("ssh:nas")).toBeNull(); // this generation's map is empty…
+      expect(sessionOf("test:nas")).toBeNull(); // this generation's map is empty…
       // …and the next generation's first ask claims the same child back, no spawn.
-      const again = await connectionTo({ alias: "nas", user: "deploy" }).hold();
+      const again = await connectionTo(target("nas")).hold();
       expect(again.ok && held.ok && again.session.pid === held.session.pid).toBe(true);
-      expect(spawns().filter((line) => line.endsWith(" nas sh"))).toHaveLength(1);
-      expect(spawns().filter((line) => line.endsWith(" build-box sh"))).toHaveLength(1);
+      expect(spawns().filter((line) => line === "nas")).toHaveLength(1);
+      expect(spawns().filter((line) => line === "build-box")).toHaveLength(1);
       // A disconnect closes it for good, registry entry included.
-      closeConnectionTo("ssh:nas");
-      expect(store.has("machineSession.v2:ssh:nas")).toBe(false);
+      closeConnectionTo("test:nas");
+      expect(store.has("machineSession.v3:test:nas")).toBe(false);
     } finally {
       attachSessionRegistry(null);
     }
@@ -258,56 +252,51 @@ exit 1
     } as Resources;
     attachSessionRegistry(registry);
     try {
-      const held = await connectionTo({ alias: "nas", user: "deploy" }).hold();
+      const held = await connectionTo(target("nas")).hold();
       expect(held.ok).toBe(true);
       closeAllConnections(); // the generation leaves; its held session stays in the registry
       // The next generation was told the contract differs: it opens a session of its own…
       attachSessionRegistry(registry, false);
-      const again = await connectionTo({ alias: "nas", user: "deploy" }).hold();
+      const again = await connectionTo(target("nas")).hold();
       expect(again.ok && held.ok && again.session.pid !== held.session.pid).toBe(true);
-      expect(spawns().filter((line) => line.endsWith(" nas sh"))).toHaveLength(2);
+      expect(spawns().filter((line) => line === "nas")).toHaveLength(2);
       // …and the platform's disposal of the doomed group ends the old one.
-      store.get("machineSession.v2:ssh:nas")?.dispose?.();
+      store.get("machineSession.v3:test:nas")?.dispose?.();
     } finally {
-      closeConnectionTo("ssh:nas");
+      closeConnectionTo("test:nas");
       attachSessionRegistry(null);
     }
   });
 
-  it("without a control socket carries the forwards in its arguments, reopening on a change, and reads ssh's warnings", async () => {
-    useControlSockets(false);
-    try {
-      const conn = connectionTo({ alias: "nas", user: "deploy" });
-      const good = { direction: "in" as const, localPort: 3000, remotePort: 3001 };
-      const bad = { direction: "out" as const, localPort: 5432, remotePort: 65001 };
-      await conn.setForwards([good]);
-      const held = await conn.hold();
-      expect(held.ok).toBe(true);
-      const first = spawns();
-      expect(first).toHaveLength(1);
-      expect(first[0]).toContain("-o ExitOnForwardFailure=no");
-      expect(first[0]).toContain("-L 127.0.0.1:3000:127.0.0.1:3001 -D");
-      expect(first[0]).not.toContain(" -M ");
-      expect(conn.forwardFacts().get(forwardKey(good))).toEqual({ ok: true });
+  it("spawns once for one address however many callers ask at the same moment; the second waits for the first", async () => {
+    // Four handles, as four callers would each make one: the session is the address's, not
+    // the handle's, so they share one child and their commands take turns on it.
+    const conns = [1, 2, 3, 4].map(() => connectionTo(target("nas")));
+    const started = Date.now();
+    const results = await Promise.all(conns.map((conn) => conn.exec("sleep 0.15; echo done")));
+    expect(results.every((r) => r.code === 0 && r.stdout === "done\n")).toBe(true);
+    // Queued, not side by side: four 150 ms commands on one shell take at least 600 ms.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(580);
+    expect(spawns()).toEqual(["nas"]);
+  });
 
-      // A changed set: the live session is reopened with the new arguments, at once.
-      await conn.setForwards([good, bad]);
-      const second = spawns();
-      expect(second).toHaveLength(2);
-      expect(second[1]).toContain("-R 127.0.0.1:65001:127.0.0.1:5432");
-      const again = conn.session();
-      expect(again !== null && held.ok && again.pid !== held.session.pid).toBe(true);
-      await new Promise((r) => setTimeout(r, 200));
-      expect(conn.forwardFacts().get(forwardKey(good))).toEqual({ ok: true });
-      expect(conn.forwardFacts().get(forwardKey(bad))).toEqual({
-        ok: false,
-        detail: "Warning: remote port forwarding failed for listen port 65001",
-      });
-      // The same set again is no reopen.
-      await conn.setForwards([bad, good]);
-      expect(spawns()).toHaveLength(2);
-    } finally {
-      useControlSockets(true);
-    }
+  it("launches what the kind says, tells it once per child that the child is up, and binds a claiming generation's handle", async () => {
+    const calls = { ups: 0 };
+    const conn = connectionTo(target("nas", testMachine("nas", calls)));
+    await conn.exec("true");
+    await conn.exec("true");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.ups).toBe(1);
+    // The kind's memo is the session's, not the handle's: a new handle sees what an old one left.
+    conn.shell().memo().set("k", 1);
+    const later = { ups: 0 };
+    const again = connectionTo(target("nas", testMachine("nas", later)));
+    expect(again.shell().memo().get("k")).toBe(1);
+    // A reopen is a new child — and the handle bound now is the one told.
+    await again.shell().reopen();
+    await again.exec("true");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(later.ups).toBe(1);
+    expect(spawns()).toEqual(["nas", "nas"]);
   });
 });

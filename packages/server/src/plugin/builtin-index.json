@@ -68,5 +68,35 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["discord", "chat-bot", "messaging"],
     "categories": ["chat-bot"]
+  },
+  {
+    "name": "@prismshadow/penguin-plugin-machine-ssh",
+    "version": "0.1.0",
+    "description": "The ssh machine kind for PenguinHarness: machines named by the server account's ~/.ssh/config, one ssh session each, with SOCKS dialling and port forwards. Resident: loaded on every server.",
+    "authors": ["Prism Shadow"],
+    "license": "Apache-2.0",
+    "repository": "https://github.com/Prism-Shadow/penguin-harness",
+    "keywords": ["ssh", "machines", "remote"],
+    "categories": ["machine"]
+  },
+  {
+    "name": "@prismshadow/penguin-plugin-machine-wsl",
+    "version": "0.1.0",
+    "description": "The WSL machine kind for PenguinHarness on Windows: each installed WSL distro is a machine, reached through wsl.exe.",
+    "authors": ["Prism Shadow"],
+    "license": "Apache-2.0",
+    "repository": "https://github.com/Prism-Shadow/penguin-harness",
+    "keywords": ["windows", "wsl", "machines"],
+    "categories": ["machine"]
+  },
+  {
+    "name": "@prismshadow/penguin-plugin-machine-docker",
+    "version": "0.1.0",
+    "description": "The container machine kind for PenguinHarness: an existing container, or one created from an image, reached through docker exec (or podman, nerdctl).",
+    "authors": ["Prism Shadow"],
+    "license": "Apache-2.0",
+    "repository": "https://github.com/Prism-Shadow/penguin-harness",
+    "keywords": ["docker", "podman", "containers", "machines"],
+    "categories": ["machine"]
   }
 ]

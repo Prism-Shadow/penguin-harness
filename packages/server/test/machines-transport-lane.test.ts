@@ -1,40 +1,21 @@
 /**
- * One thing at a time per machine, by structure: two commands to the same machine run one
- * after the other, two to different machines together. Measured against a stub `ssh` on
- * PATH that only sleeps.
+ * One thing at a time per machine, by structure: two pieces of work for the same machine run
+ * one after the other, two for different machines together.
  */
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { run } from "../src/machines/transport/exec.js";
+import { describe, expect, it } from "vitest";
 import { inLane } from "../src/machines/transport/lane.js";
 
-const posixOnly = process.platform === "win32" ? describe.skip : describe;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-posixOnly("the per-machine lane", () => {
-  let stubBin: string;
-  let originalPath: string | undefined;
-  beforeEach(() => {
-    stubBin = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-lane-"));
-    fs.writeFileSync(path.join(stubBin, "ssh"), "#!/bin/sh\nsleep 0.2\n");
-    fs.chmodSync(path.join(stubBin, "ssh"), 0o755);
-    originalPath = process.env.PATH;
-    process.env.PATH = `${stubBin}:${process.env.PATH ?? ""}`;
-  });
-  afterEach(() => {
-    process.env.PATH = originalPath;
-    fs.rmSync(stubBin, { recursive: true, force: true });
-  });
-
-  it("serialises commands to one machine and lets different machines proceed together", async () => {
-    const ssh = (address: string) => inLane(address, () => run("ssh", ["host", "true"]));
+describe("the per-machine lane", () => {
+  it("serialises work for one machine and lets different machines proceed together", async () => {
+    const work = (address: string) => inLane(address, () => sleep(200));
     let started = Date.now();
-    await Promise.all([ssh("ssh:nas"), ssh("ssh:nas")]);
+    await Promise.all([work("ssh:nas"), work("ssh:nas")]);
     expect(Date.now() - started).toBeGreaterThanOrEqual(380);
 
     started = Date.now();
-    await Promise.all([ssh("ssh:nas"), ssh("ssh:build-box")]);
+    await Promise.all([work("ssh:nas"), work("ssh:build-box")]);
     expect(Date.now() - started).toBeLessThan(380);
   });
 

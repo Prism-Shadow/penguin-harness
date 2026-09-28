@@ -83,8 +83,7 @@ import type {
   PortForwardCreateRequest,
   PortForwardInfo,
   PortForwardsResponse,
-  SshHostRequest,
-  SshHostResponse,
+  MachineDefinitionResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   ModelTestRequest,
@@ -1669,7 +1668,7 @@ export const probeMachines = (projectId: string) =>
  */
 /**
  * Brings machines into use — install or update if needed, start, connect, sync — as one
- * queued batch (202). `refused` names the ones that could be turned down without any ssh.
+ * queued batch (202). `refused` names the ones that could be turned down without reaching them.
  * `replaceProgram` answers a job that came back asking for it.
  */
 export const useMachines = (projectId: string, machineIds: string[], replaceProgram = false) =>
@@ -1680,29 +1679,44 @@ export const useMachines = (projectId: string, machineIds: string[], replaceProg
       : { machines: machineIds },
   });
 
-/** Appends a host block to this server's ~/.ssh/config; answers the machines list, which now names it (201). */
-export const addSshHost = (projectId: string, host: SshHostRequest) =>
-  apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts`, {
+const definitionsPath = (projectId: string, kind: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/machines/kinds/${encodeURIComponent(kind)}/definitions`;
+
+/** Defines a machine of a kind by hand (an ssh Host block, a container); answers the list, which now names it (201). */
+export const defineMachine = (
+  projectId: string,
+  kind: string,
+  name: string,
+  values: Record<string, unknown>,
+) =>
+  apiFetch<MachinesResponse>(definitionsPath(projectId, kind), {
     method: "POST",
-    body: host,
+    body: { name, values },
   });
 
-/** A host's ssh block read back, and whether this app wrote it (only then may it be rewritten). */
-export const getSshHost = (projectId: string, alias: string) =>
-  apiFetch<SshHostResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts/${encodeURIComponent(alias)}`,
+/** A definition read back, and whether it may be rewritten (a hand-written ssh block may not). */
+export const getMachineDefinition = (projectId: string, kind: string, name: string) =>
+  apiFetch<MachineDefinitionResponse>(
+    `${definitionsPath(projectId, kind)}/${encodeURIComponent(name)}`,
   );
 
-/** Rewrites a block this app wrote; answers the machines list. */
-export const updateSshHost = (
+/** Rewrites a definition; the name stays. Answers the machines list. */
+export const updateMachineDefinition = (
   projectId: string,
-  alias: string,
-  host: Omit<SshHostRequest, "alias">,
+  kind: string,
+  name: string,
+  values: Record<string, unknown>,
 ) =>
-  apiFetch<MachinesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts/${encodeURIComponent(alias)}`,
-    { method: "PUT", body: host },
-  );
+  apiFetch<MachinesResponse>(`${definitionsPath(projectId, kind)}/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    body: { values },
+  });
+
+/** Forgets a definition the server keeps (a container's); nothing over there is removed. */
+export const forgetMachineDefinition = (projectId: string, kind: string, name: string) =>
+  apiFetch<MachinesResponse>(`${definitionsPath(projectId, kind)}/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
 
 /** Lets machines go: connections dropped, Project membership released; the install stays. */
 export const stopUsingMachines = (projectId: string, machineIds: string[]) =>

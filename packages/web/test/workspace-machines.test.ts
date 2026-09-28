@@ -14,6 +14,7 @@ import {
 
 const machine = (over: Partial<MachineInfo> & { alias: string }): MachineInfo => ({
   id: `ssh:${over.alias}`,
+  kind: "ssh",
   machineId: null,
   installed: null,
   local: false,
@@ -26,6 +27,7 @@ const machine = (over: Partial<MachineInfo> & { alias: string }): MachineInfo =>
 
 const state = (machines: MachineInfo[]): MachinesResponse => ({
   machines,
+  kinds: [],
   imageVersion: "9.9.9",
   job: null,
   jobs: [],

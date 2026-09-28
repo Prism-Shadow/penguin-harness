@@ -1,9 +1,9 @@
 /**
  * The pure half of the machines capability (platform code — see packages/hmr/README.md):
- * reading ~/.ssh/config for its aliases, reading what the identity probe answered, choosing
- * the Node runtime to send, the container the image travels in, finding the running
- * server's own pushable image, and the exact ssh/scp commands all of that turns into.
- * No network, no ssh binary.
+ * reading what the identity probe answered, choosing the Node runtime to send, the container
+ * the image travels in, finding the running server's own pushable image, and the exact
+ * commands all of that turns into on the machine. No network, no machine. How ssh carries
+ * them — its argv, its config — is plugins/machine-ssh's, and tested there.
  */
 import fs from "node:fs";
 import zlib from "node:zlib";
@@ -12,7 +12,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyUpgradeAnswer, readPushedBuild, refusalDetail } from "../src/machines/upgrade.js";
-import { machineIdentity, parseHostAliases } from "../src/machines/ssh-config.js";
 import {
   parseProbe,
   probeServerState,
@@ -28,72 +27,22 @@ import {
   runInstallScriptCommand,
   startServerCommand,
   unpackStoreCommand,
-  scpArgs,
   shQuote,
-  sshArgs,
-  forwardControlArgs,
-  forwardFlag,
-  sessionArgs,
 } from "../src/machines/commands.js";
 import { resolvePushPlan } from "../src/machines/install-server.js";
+import type { RemoteTarget } from "../src/machines/commands.js";
 
 const RELEASE = remoteLayoutFor("release");
+
+/** A machine as the host addresses it; these commands only ever pass it on to `exec`. */
+const fakeTarget = (name: string): RemoteTarget => ({
+  address: `ssh:${name}`,
+  kind: "ssh",
+  name,
+  machine: {} as RemoteTarget["machine"],
+  node: "node",
+});
 const DEV = remoteLayoutFor("dev");
-
-describe("parseHostAliases", () => {
-  const noIncludes = () => [];
-
-  it("lists declared aliases in file order, expanding multi-alias blocks", () => {
-    const aliases = parseHostAliases(
-      ["Host build-box", "  HostName 10.0.0.4", "", "Host gpu-1 gpu-1.lan", "  User root"].join(
-        "\n",
-      ),
-      noIncludes,
-    );
-    expect(aliases).toEqual(["build-box", "gpu-1", "gpu-1.lan"]);
-  });
-
-  it("skips pattern entries — they configure other hosts rather than naming one", () => {
-    const aliases = parseHostAliases(
-      ["Host *", "  ServerAliveInterval 30", "Host !prod *.lan", "Host real"].join("\n"),
-      noIncludes,
-    );
-    expect(aliases).toEqual(["real"]);
-  });
-
-  it("ignores comments and blank lines, and is case-insensitive like ssh", () => {
-    expect(parseHostAliases("# Host commented\n\nhost lower\nHOST upper", noIncludes)).toEqual([
-      "lower",
-      "upper",
-    ]);
-  });
-
-  it("follows Include through the supplied reader and de-duplicates the result", () => {
-    const files: Record<string, string> = {
-      "work/*": "Host build-box\nHost shared",
-      personal: "Host shared\nHost nas",
-    };
-    const aliases = parseHostAliases(
-      ["Include work/*", "Host laptop", "Include personal"].join("\n"),
-      (pattern) => (files[pattern] === undefined ? [] : [files[pattern]]),
-    );
-    expect(aliases).toEqual(["build-box", "shared", "laptop", "nas"]);
-  });
-
-  it("survives an include cycle instead of spinning", () => {
-    const aliases = parseHostAliases("Include self\nHost top", () => ["Include self\nHost deep"]);
-    expect(aliases).toContain("top");
-    expect(aliases).toContain("deep");
-  });
-});
-
-describe("machineIdentity", () => {
-  it("is <user>@<alias>: the Linux account is part of the machine, the alias is the name", () => {
-    expect(machineIdentity("build-box", "deploy")).toBe("deploy@build-box");
-    expect(machineIdentity("build-box", "root")).toBe("root@build-box");
-    expect(machineIdentity("build-box", "")).toBe("build-box");
-  });
-});
 
 describe("identity probe", () => {
   it("asks in each shell's own dialect — sh cannot read the Windows one and vice versa", () => {
@@ -166,74 +115,7 @@ describe("identity probe", () => {
   });
 });
 
-describe("ssh / scp invocations", () => {
-  const target = { alias: "build-box", user: "deploy" };
-
-  it("never lets ssh prompt: a GUI has no terminal to type a password into", () => {
-    const args = sshArgs(target, "uname -a");
-    expect(args).toContain("BatchMode=yes");
-    expect(args).toContain("ConnectTimeout=10");
-    expect(scpArgs(target, ["/tmp/a"], "/tmp/dir")).toContain("BatchMode=yes");
-  });
-
-  it("selects the account on the command line, never by writing the ssh config", () => {
-    expect(sshArgs(target, "true")).toContain("User=deploy");
-    expect(sshArgs({ alias: "build-box", user: "" }, "true").join(" ")).not.toContain("User=");
-  });
-
-  it("holds ONE session per machine: no tty, a SOCKS listener on loopback, keepalives, sh", () => {
-    const args = sessionArgs(target, 49152).join(" ");
-    expect(args).toContain("-T");
-    expect(args).toContain("-D 127.0.0.1:49152");
-    expect(args).toContain("ExitOnForwardFailure=yes");
-    expect(args).toContain("ServerAliveInterval=15");
-    expect(args).toContain("BatchMode=yes");
-    expect(args).toContain("User=deploy");
-    expect(args.endsWith("build-box sh")).toBe(true);
-    // Nothing is forwarded by name: any port on the machine is a channel through -D.
-    expect(args).not.toContain("-L ");
-  });
-
-  it("refuses a SOCKS port that is not one", () => {
-    expect(() => sessionArgs(target, 0)).toThrow(/bad port/);
-    expect(() => sessionArgs(target, 70000)).toThrow(/bad port/);
-    // With a control socket the session is its master, so forwards can be added to it live.
-    const mastered = sessionArgs(target, 49152, "/tmp/penguin-x.sock").join(" ");
-    expect(mastered).toContain("-M -S /tmp/penguin-x.sock");
-    expect(sessionArgs(target, 49152).join(" ")).not.toContain("-M");
-    // Forwards in the start arguments (no control socket): spelled before -D, and a port
-    // that will not bind no longer ends the session — it is reported instead.
-    const carried = sessionArgs(target, 49152, null, [
-      { direction: "in", localPort: 3000, remotePort: 3001 },
-      { direction: "out", localPort: 5432, remotePort: 5433 },
-    ]).join(" ");
-    expect(carried).toContain("ExitOnForwardFailure=no");
-    expect(carried).toContain(
-      "-L 127.0.0.1:3000:127.0.0.1:3001 -R 127.0.0.1:5433:127.0.0.1:5432 -D",
-    );
-    expect(sessionArgs(target, 49152).join(" ")).toContain("ExitOnForwardFailure=yes");
-  });
-
-  it("spells a forward as ssh wants it, and asks the master for it over the control socket", () => {
-    const target = { alias: "nas", user: "" };
-    expect(forwardFlag({ direction: "in", localPort: 3000, remotePort: 3001 })).toEqual([
-      "-L",
-      "127.0.0.1:3000:127.0.0.1:3001",
-    ]);
-    expect(forwardFlag({ direction: "out", localPort: 5432, remotePort: 5433 })).toEqual([
-      "-R",
-      "127.0.0.1:5433:127.0.0.1:5432",
-    ]);
-    expect(() => forwardFlag({ direction: "in", localPort: 0, remotePort: 1 })).toThrow(/bad port/);
-    const args = forwardControlArgs(target, "/tmp/p.sock", "forward", {
-      direction: "in",
-      localPort: 3000,
-      remotePort: 3001,
-    }).join(" ");
-    expect(args).toContain("-S /tmp/p.sock -O forward -L 127.0.0.1:3000:127.0.0.1:3001 nas");
-    expect(args).not.toContain(" sh");
-  });
-
+describe("the commands a machine runs", () => {
   it("a 200 is not yet a yes: blocked is a refusal, and a swap not written down is not durable", () => {
     // /api/hmr/upgrade answers 200 for `blocked` so clients keep one parsing path; the body
     // names what would have been discarded. And `persisted: false` is the machine saying the
@@ -279,11 +161,6 @@ describe("ssh / scp invocations", () => {
   it("falls back to whatever it did say, rather than inventing a reason", () => {
     expect(refusalDetail(502, "<html>Bad Gateway</html>")).toBe("<html>Bad Gateway</html>");
     expect(refusalDetail(403, "   ")).toContain("403");
-  });
-
-  it("leaves the scp destination unquoted — modern scp transfers over SFTP, taking it literally", () => {
-    const args = scpArgs(target, ["/local/image.pack"], "/tmp/penguin-abc123");
-    expect(args.at(-1)).toBe("build-box:/tmp/penguin-abc123");
   });
 
   it("quotes per shell: single quotes for sh, double for cmd.exe", () => {
@@ -457,7 +334,7 @@ describe("shipping the installers", () => {
 });
 
 describe("asking `penguin server status` in the machine's own dialect", () => {
-  const target = { alias: "nas", user: "deploy" };
+  const target = fakeTarget("nas");
   const answered = {
     code: 0,
     stdout: `${JSON.stringify({ running: true, port: 7364, pid: 42, machineId: "LNrJdHAZJ91G58i0" })}\n`,
@@ -604,7 +481,7 @@ describe("startServerCommand", () => {
 });
 
 describe("startRemoteServer", () => {
-  const target = { alias: "nas", user: "" };
+  const target = fakeTarget("nas");
   const said = (stdout: string) => ({ code: 0, stdout, stderr: "", timedOut: false });
   const status = (o: Record<string, unknown>) => said(`${JSON.stringify(o)}\n`);
   /** Runs a start with the wait's sleeps collapsed; the probe interval is not under test. */

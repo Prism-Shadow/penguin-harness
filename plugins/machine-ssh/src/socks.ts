@@ -1,7 +1,7 @@
 /**
  * A SOCKS5 CONNECT, the way this server reaches any TCP port on a machine.
  *
- * The one ssh session per machine is opened with `-D <local port>` (ssh-session.ts): ssh
+ * The one ssh session per machine is opened with `-D <local port>` (index.ts): ssh
  * listens on that loopback port as a SOCKS server, and every connection accepted there
  * becomes a `direct-tcpip` channel inside the session — the SSH protocol's own
  * multiplexing, over the one TCP connection already up. Reaching the machine's API, its

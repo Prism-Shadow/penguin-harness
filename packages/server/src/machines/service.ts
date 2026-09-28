@@ -1,15 +1,21 @@
 /**
- * The machines service: this server's own `~/.ssh/config` as a list of targets, and putting
- * this build on one of them, reaching it, and keeping it configured.
+ * The machines service: the machines this server can reach — each of a KIND a plugin
+ * contributes (ssh, WSL, a container; mechanisms/machines.ts) — and putting this build on
+ * one of them, reaching it, and keeping it configured.
  *
  * ONE JOB at a time — an install or a connect — started by POST and polled by the Web App
  * for its progress lines. The job lives in this App's memory; what it achieved is in web.db
- * (MachinesRepo): which machines carry this program, the session held to each, and which
- * Project uses which. Every word to a machine leaves through its MachineConnection
- * (transport/connection.ts) — ONE ssh session per machine, carrying commands on its stdin
- * and every TCP connection as a channel through its SOCKS port — and every request to a
- * machine's API is made as its admin, with a session this server mints over the ssh access
- * that installed it.
+ * (MachinesRepo): which machines carry this program, the session held to each, which
+ * Project uses which, and the definitions of machines a kind leaves to the host to keep.
+ * Every word to a machine leaves through its MachineConnection (transport/connection.ts) —
+ * ONE session per machine, the shell its kind launches, carrying commands on its stdin and
+ * every TCP connection its kind dials — and every request to a machine's API is made as its
+ * admin, with a session this server mints over the access that installed it.
+ *
+ * A KIND IS A PLUGIN, and a plugin can be missing. A machine on record whose kind is not
+ * loaded stays listed — its address, its record, marked unavailable — and nothing is started
+ * for it: an install or a connect is refused, and the standing re-hold passes it by without
+ * counting a failure, until the kind is back.
  *
  * The JOB is not persisted. It lives in this App's memory and dies with it (see the park
  * list in ../hmr/platform.ts — it is on the SUSPENDED side): a hot push during an install
@@ -17,7 +23,7 @@
  * step is idempotent — the far side's installer stages, smoke-tests and swaps, and an
  * unchanged version is a no-op.
  *
- * A machine BELONGS TO A PROJECT. The host is shared — one program, one ssh config entry —
+ * A machine BELONGS TO A PROJECT. The host is shared — one program, one definition —
  * but which Projects use it is this server's own bookkeeping, because a Project's machines
  * are where that Project's work runs. A host installed for another Project is reported as
  * `elsewhere` rather than hidden: adopting it costs a row, while re-installing costs a
@@ -35,6 +41,7 @@ import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type {
   MachineInfo,
   MachineJob,
+  MachineKindInfo,
   MachinePhase,
   MachineServerStatus,
   MachineUseRefusal,
@@ -45,15 +52,14 @@ import http from "node:http";
 import type net from "node:net";
 import {
   SESSION_GROUP,
+  addressOf,
   attachSessionRegistry,
-  appendHostBlock,
   closeAllConnections,
   closeConnectionTo,
   connectionTo,
-  listHostAliases,
-  readSshConfig,
+  forwardKey,
+  kindOfAddress,
   sessionOf,
-  writeSshConfig,
 } from "./transport/index.js";
 import type {
   ExecResult,
@@ -61,16 +67,9 @@ import type {
   MachineConnection,
   ShellSession,
 } from "./transport/index.js";
-import {
-  findHostBlock,
-  machineIdentity,
-  renderHostBlock,
-  replaceHostBlock,
-  validateHostEntry,
-} from "./ssh-config.js";
-import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
-import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
+import { DIR_LIST_MARK, listDirsCommand, remoteNode } from "./commands.js";
 import type { ForwardSpec, RemoteTarget } from "./commands.js";
+import type { MachineKind } from "../mechanisms/machines.js";
 import { installOnRemote, resolvePushPlan } from "./install-server.js";
 import { probeServerState } from "./server-state.js";
 import { upgradeRemote } from "./upgrade.js";
@@ -84,7 +83,7 @@ import { startRemoteServer, stopRemoteServer } from "./server-control.js";
 import type { MachineRow } from "../db/repos/machines.js";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
 import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
 import { HttpError } from "../http/errors.js";
@@ -105,24 +104,43 @@ const KEEP_HELD_MS = 60_000;
 const REHOLD_BACKOFF_MIN_MS = 60_000;
 const REHOLD_BACKOFF_MAX_MS = 15 * 60_000;
 
-/** Why an install was refused before any ssh ran. */
-type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
-/** Why a connect was refused before any ssh ran. */
-type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported";
+/** Why an install was refused before anything reached the machine. */
+type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self" | "kind-unavailable";
+/** Why a connect was refused before anything reached the machine. */
+type ConnectRefusal =
+  "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported" | "kind-unavailable";
+
+/** A kind as a contribution delivered it: the manifest's half, and the plugin's code. */
+export interface MachineKindEntry {
+  kind: string;
+  title: string;
+  titleZh?: string;
+  impl: MachineKind;
+}
+
+/** A kind's name is the address prefix: lower-case, and nothing an address could not carry. */
+const KIND_NAME = /^[a-z][a-z0-9-]{0,31}$/;
+/** A machine's name within its kind: one token, printable, of a sane length. */
+const MACHINE_NAME = /^[^\s/\\:]{1,128}$/;
+
+/** Why a definition was refused, as the routes answer it. */
+export type DefinitionRefusal =
+  | { why: "unknown-kind" }
+  | { why: "no-form" }
+  | { why: "exists" }
+  | { why: "not-found" }
+  | { why: "foreign" }
+  | { why: "kind-stored" }
+  | { why: "invalid"; field: string | null; message: string };
 
 /**
  * What this service does to the world, injectable as a set. Production passes none of them;
- * tests fake the reaching-out, because the real ones read the developer's own ~/.ssh/config
- * and spawn ssh against whatever it names. The push path itself is covered where it belongs
- * — machines-push.test.ts drives the real installOnRemote against a fake ssh binary — so
- * what is faked here is only the reaching-out, never the logic under test.
+ * tests fake the reaching-out, because the real ones start a machine's program against
+ * whatever its kind names. The push path itself is covered where it belongs —
+ * machines-push.test.ts drives the real installOnRemote against a scripted channel — so what
+ * is faked here is only the reaching-out, never the logic under test.
  */
 export interface MachinesEffects {
-  listAliases: typeof listHostAliases;
-  /** The writes to the ssh config: appending a host block a person composed in the page, and rewriting one this app wrote. */
-  appendHost: typeof appendHostBlock;
-  readConfig: typeof readSshConfig;
-  writeConfig: typeof writeSshConfig;
   resolvePlan: typeof resolvePushPlan;
   install: typeof installOnRemote;
   probe: typeof probeServerState;
@@ -131,15 +149,20 @@ export interface MachinesEffects {
   startServer: (target: RemoteTarget, port: number) => ReturnType<typeof startRemoteServer>;
   /** Brings the one connection to a machine up and HOLDS it (transport/connection.ts). */
   hold: (target: RemoteTarget) => ReturnType<MachineConnection["hold"]>;
+  /** Gets the target ready to hold a shell (a container started) — for what a person asked only. */
+  ready: (target: RemoteTarget) => ReturnType<MachineConnection["ready"]>;
   /** The connection held to a machine, while it is up. */
   session: (address: string) => ShellSession | null;
   /** An http.Agent that dials that machine's server through its session. */
   agent: (target: RemoteTarget, remotePort: number) => http.Agent;
   /** One TCP connection to `127.0.0.1:<remotePort>` on that machine, as a channel of its session. */
   dial: (target: RemoteTarget, remotePort: number) => Promise<net.Socket>;
-  /** Port forwards on the session: the wanted set, and ssh's answers. */
-  setForwards: (target: RemoteTarget, specs: readonly ForwardSpec[]) => Promise<void>;
-  forwardFacts: (target: RemoteTarget) => ReadonlyMap<string, ForwardFact>;
+  /**
+   * Port forwards on the session, by the machine's kind — the wanted set, and the kind's
+   * answers. False / null when that kind has none (mechanisms/machines.ts MachineForwards).
+   */
+  setForwards: (target: RemoteTarget, specs: readonly ForwardSpec[]) => Promise<boolean>;
+  forwardFacts: (target: RemoteTarget) => ReadonlyMap<string, ForwardFact> | null;
   stopServer: (target: RemoteTarget) => ReturnType<typeof stopRemoteServer>;
   mintToken: (
     target: RemoteTarget,
@@ -171,6 +194,10 @@ export class MachinesService {
    * and five was meant as a bound, not as a unit of multiplication.
    */
   readonly #probing = new Map<string, Promise<void>>();
+  /** The kinds this App was given, by name, in contribution order. */
+  readonly #kinds = new Map<string, MachineKindEntry>();
+  /** The forwards last wanted per address — what a kind without forwards is answered about. */
+  readonly #wantedForwards = new Map<string, readonly ForwardSpec[]>();
   /**
    * Machines with a heavy operation in flight — an install, or the automatic sweep. Two
    * transfers racing for one host is how a 30-second command times out with nothing to say.
@@ -219,26 +246,49 @@ export class MachinesService {
     effects: Partial<MachinesEffects> = {},
     assets: () => string | null = () => null,
     layout: RemoteLayout = currentRemoteLayout(),
+    /** The machine kinds the plugins contributed (MachinesModule.kinds). */
+    kinds: readonly MachineKindEntry[] = [],
   ) {
     this.#assets = assets;
     this.#machineId = machineId;
     this.#layout = layout;
+    for (const entry of kinds) {
+      // The name is the address prefix, so one that could not be one — or a second kind by a
+      // name already taken — is not a kind here. Said once, in the log, not per request.
+      if (!KIND_NAME.test(entry.kind)) {
+        console.warn(`[machines] ignored the machine kind '${entry.kind}': not a kind name`);
+      } else if (this.#kinds.has(entry.kind)) {
+        console.warn(`[machines] ignored a second machine kind '${entry.kind}'`);
+      } else {
+        this.#kinds.set(entry.kind, entry);
+      }
+    }
     this.#effects = {
-      listAliases: listHostAliases,
-      appendHost: appendHostBlock,
-      readConfig: readSshConfig,
-      writeConfig: writeSshConfig,
       resolvePlan: resolvePushPlan,
       install: installOnRemote,
       probe: probeServerState,
       runOn: (target, command) => connectionTo(target).exec(command),
       startServer: (target, port) => startRemoteServer(target, port, layout, this.#effects.runOn),
       hold: (target) => connectionTo(target).hold(),
+      ready: (target) => connectionTo(target).ready(),
       session: (address) => sessionOf(address),
       agent: (target, remotePort) => connectionTo(target).agent(remotePort),
       dial: (target, remotePort) => connectionTo(target).dial(remotePort),
-      setForwards: (target, specs) => connectionTo(target).setForwards(specs),
-      forwardFacts: (target) => connectionTo(target).forwardFacts(),
+      setForwards: async (target, specs) => {
+        const connection = connectionTo(target);
+        const forwards = connection.forwards();
+        if (forwards === null) return false;
+        await forwards.set(connection.shell(), specs);
+        return true;
+      },
+      forwardFacts: (target) => {
+        const connection = connectionTo(target);
+        const forwards = connection.forwards();
+        if (forwards === null) return null;
+        return new Map(
+          forwards.facts(connection.shell()).map(({ spec, fact }) => [forwardKey(spec), fact]),
+        );
+      },
       stopServer: (target) => stopRemoteServer(target, layout, this.#effects.runOn),
       mintToken: (target, runOn) => mintTokenOnRemote(target, layout, runOn),
       upgrade: upgradeRemote,
@@ -251,13 +301,34 @@ export class MachinesService {
   // --- what is known -----------------------------------------------------------------------
 
   /**
-   * A machine's ssh target is its alias and nothing else. What the alias means — user, host,
-   * port, key, jump host — is ssh's to resolve, from its own config, every time it is handed
-   * the alias; asking ssh for that answer first (`ssh -G`) only to hand it back was a process
-   * per probe that could go stale against a file a person edits, for no fact we used.
+   * A machine as its kind reaches it, by address — or null when its kind is not loaded, and
+   * nothing may be started for it. What the name means (an ssh alias's user, host, key) is the
+   * kind's to resolve every time it is asked; the host keeps only what the kind left it to
+   * keep (a container's definition).
    */
-  #targetOf(alias: string): RemoteTarget {
-    return { alias, user: "" };
+  #targetOf(address: string): RemoteTarget | null {
+    const parsed = kindOfAddress(address);
+    if (parsed === null) return null;
+    const entry = this.#kinds.get(parsed.kind);
+    if (entry === undefined) return null;
+    const spec = this.repo.definition(address)?.spec ?? null;
+    return {
+      address,
+      kind: parsed.kind,
+      name: parsed.name,
+      machine: entry.impl.connect(parsed.name, spec),
+      node: remoteNode(this.#layout),
+    };
+  }
+
+  /** The kinds this server was given, as the page draws them. */
+  kinds(): MachineKindInfo[] {
+    return [...this.#kinds.values()].map((entry) => ({
+      kind: entry.kind,
+      title: entry.title,
+      ...(entry.titleZh === undefined ? {} : { titleZh: entry.titleZh }),
+      form: entry.impl.form(),
+    }));
   }
 
   /**
@@ -324,7 +395,7 @@ export class MachinesService {
    * (remote-token.ts) and reused until near its TTL. Or why there is none.
    */
   async #sessionOn(target: RemoteTarget): Promise<{ cookie: string } | { detail: string }> {
-    const address = `ssh:${target.alias}`;
+    const address = target.address;
     const held = this.#sessions.get(address);
     if (held !== undefined && Date.now() - held.at < SESSION_REUSE_MS) return held;
     const minted = await this.#effects.mintToken(target, this.#effects.runOn);
@@ -349,6 +420,7 @@ export class MachinesService {
         at: lock?.startedAt ?? this.#effects.now().toISOString(),
       },
       local: true,
+      kind: "local",
       connection: null,
       api: null,
       root: this.dataRoot,
@@ -360,28 +432,73 @@ export class MachinesService {
     };
   }
 
-  /** This machine, then the ssh config's host aliases with what is known about each. */
+  /**
+   * This machine, then every machine of every kind — what the kind discovers, then what the
+   * host keeps a definition of — then the machines on record whose kind is not loaded, which
+   * stay listed (marked) rather than vanish.
+   */
   #allMachines(): MachineInfo[] {
-    const remotes = this.#effects.listAliases().map((alias): MachineInfo => {
-      const id = `ssh:${alias}`;
-      const row = this.repo.get(id);
-      const session = this.#liveSession(id);
-      return {
-        id,
-        alias,
-        machineId: row?.machineId ?? null,
-        installed:
-          row?.version == null ? null : { version: row.version, at: row.installedAt ?? "" },
-        local: false,
-        connection: session === null ? null : { pid: session.pid },
-        api: this.#apiSeen.get(id) ?? null,
-        // The layout's own spelling, in the shell that machine speaks. Unknown platform
-        // reads as POSIX: it is the majority, and an install corrects the record.
-        root: row?.platform === "win32" ? this.#layout.dataRoot.win : this.#layout.dataRoot.posix,
-        status: this.#statuses.get(id) ?? null,
-      };
-    });
+    const seen = new Set<string>();
+    const remotes: MachineInfo[] = [];
+    for (const entry of this.#kinds.values()) {
+      let discovered: string[];
+      try {
+        discovered = entry.impl.discover();
+      } catch (err) {
+        // A kind that cannot list is a kind with nothing to offer this read; the rest are fine.
+        console.warn(
+          `[machines] the ${entry.kind} kind could not list its machines: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        discovered = [];
+      }
+      const defined = this.repo.definitions(entry.kind).map((row) => row.name);
+      for (const name of [...discovered, ...defined]) {
+        if (!MACHINE_NAME.test(name)) continue;
+        const id = addressOf(entry.kind, name);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        remotes.push(this.#remote(id, entry.kind, name, null));
+      }
+    }
+    const orphans: { address: string; kind: string; name: string }[] = [];
+    for (const row of this.repo.all()) {
+      if (seen.has(row.address)) continue;
+      const parsed = kindOfAddress(row.address);
+      if (parsed === null || this.#kinds.has(parsed.kind)) continue;
+      orphans.push({ address: row.address, ...parsed });
+    }
+    orphans.sort((a, b) => a.address.localeCompare(b.address));
+    for (const orphan of orphans) {
+      remotes.push(
+        this.#remote(
+          orphan.address,
+          orphan.kind,
+          orphan.name,
+          `No machine kind '${orphan.kind}' is loaded here — its plugin is not enabled, or it failed to load.`,
+        ),
+      );
+    }
     return [this.#localMachine(), ...remotes];
+  }
+
+  #remote(id: string, kind: string, name: string, unavailable: string | null): MachineInfo {
+    const row = this.repo.get(id);
+    const session = this.#liveSession(id);
+    return {
+      id,
+      alias: name,
+      machineId: row?.machineId ?? null,
+      installed: row?.version == null ? null : { version: row.version, at: row.installedAt ?? "" },
+      local: false,
+      kind,
+      ...(unavailable === null ? {} : { unavailable }),
+      connection: session === null ? null : { pid: session.pid },
+      api: this.#apiSeen.get(id) ?? null,
+      // The layout's own spelling, in the shell that machine speaks. Unknown platform
+      // reads as POSIX: it is the majority, and an install corrects the record.
+      root: row?.platform === "win32" ? this.#layout.dataRoot.win : this.#layout.dataRoot.posix,
+      status: this.#statuses.get(id) ?? null,
+    };
   }
 
   /**
@@ -471,7 +588,8 @@ export class MachinesService {
     if (row === null || row.remotePort === null || this.#liveSession(row.address) === null) {
       return null;
     }
-    const target = this.#targetOf(row.address.slice("ssh:".length));
+    const target = this.#targetOf(row.address);
+    if (target === null) return null;
     const session = await this.#sessionOn(target);
     if (!("cookie" in session)) return null;
     return {
@@ -487,10 +605,11 @@ export class MachinesService {
   }
 
   /**
-   * The port forwards wanted on a machine's session — ssh's own `-L` / `-R`, added to and
-   * taken off the live session (transport/ssh-session.ts). The set is remembered by the
-   * session, so a machine that reconnects gets them back without anyone asking again; a
-   * machine not on record is refused.
+   * The port forwards wanted on a machine's session. How they ride it is the machine's KIND's
+   * (ssh: its `-L` / `-R`, added to and taken off the live session — plugins/machine-ssh); the
+   * kind remembers the set with the session, so a machine that reconnects gets them back
+   * without anyone asking again. A kind with no forwards is handed nothing, and says so
+   * through forwardFacts. A machine not on record is refused.
    */
   async setForwards(
     machineId: string,
@@ -498,28 +617,44 @@ export class MachinesService {
   ): Promise<{ ok: true } | { ok: false; detail: "unknown machine" }> {
     const row = this.#rowFor(machineId);
     if (row === null) return { ok: false, detail: "unknown machine" };
-    await this.#effects.setForwards(this.#targetOf(row.address.slice("ssh:".length)), specs);
+    this.#wantedForwards.set(row.address, [...specs]);
+    const target = this.#targetOf(row.address);
+    if (target !== null) await this.#effects.setForwards(target, specs);
     return { ok: true };
   }
 
-  /** ssh's last word on each forward of a machine (by forwardKey), and whether its session is up. */
+  /**
+   * The kind's last word on each forward of a machine (by forwardKey), and whether its session
+   * is up. A kind without forwards — or one that is not loaded — has every wanted forward
+   * refused in words, never left looking pending.
+   */
   forwardFacts(machineId: string): {
     connected: boolean;
     facts: ReadonlyMap<string, ForwardFact>;
   } {
     const row = this.#rowFor(machineId);
     if (row === null) return { connected: false, facts: new Map() };
-    const target = this.#targetOf(row.address.slice("ssh:".length));
+    const connected = this.#liveSession(row.address) !== null;
+    const target = this.#targetOf(row.address);
+    const facts = target === null ? null : this.#effects.forwardFacts(target);
+    if (facts !== null) return { connected, facts };
+    const kind = kindOfAddress(row.address)?.kind ?? row.address;
+    const title = this.#kinds.get(kind)?.title ?? kind;
+    const detail =
+      target === null
+        ? `no machine kind '${kind}' is loaded here, so nothing carries this forward`
+        : `${title} machines have no port forwarding`;
+    const wanted = this.#wantedForwards.get(row.address) ?? [];
     return {
-      connected: this.#liveSession(row.address) !== null,
-      facts: this.#effects.forwardFacts(target),
+      connected,
+      facts: new Map(wanted.map((spec) => [forwardKey(spec), { ok: false, detail }] as const)),
     };
   }
 
   /**
    * One TCP connection to a port on a machine's loopback, through the HELD connection — what
    * a port forward pipes a local client into. `not-connected` rather than a dial when the
-   * machine is not held: a saved forward must not reopen ssh to a machine someone stopped
+   * machine is not held: a saved forward must not reopen a machine someone stopped
    * using, for the same reason a read must not (listDirs).
    */
   async dialPort(
@@ -531,7 +666,8 @@ export class MachinesService {
     if (this.#liveSession(row.address) === null) {
       return { ok: false, detail: "machine not connected" };
     }
-    const target = this.#targetOf(row.address.slice("ssh:".length));
+    const target = this.#targetOf(row.address);
+    if (target === null) return { ok: false, detail: "machine kind not loaded" };
     try {
       return { ok: true, socket: await this.#effects.dial(target, remotePort) };
     } catch (err) {
@@ -542,7 +678,7 @@ export class MachinesService {
   /**
    * The subdirectories of `dir` on a machine, over the HELD connection — so picking a
    * workspace on it costs one command and no round trip to its API. Null when the machine is
-   * not connected: a read must not open ssh on its own, or a disconnected machine would be
+   * not connected: a read must not open a session on its own, or a disconnected machine would be
    * reconnected by whoever browsed it.
    */
   async listDirs(
@@ -555,7 +691,8 @@ export class MachinesService {
   } | null> {
     const row = this.#rowFor(machineId);
     if (row === null || this.#liveSession(row.address) === null) return null;
-    const target = this.#targetOf(row.address.slice("ssh:".length));
+    const target = this.#targetOf(row.address);
+    if (target === null) return null;
     const result = await this.#effects.runOn(target, listDirsCommand(dir));
     if (result.code !== 0) return null;
     const [head, rest] = result.stdout.split(DIR_LIST_MARK);
@@ -575,8 +712,9 @@ export class MachinesService {
 
   /**
    * Probes the machines this server has installed on, refreshing their statuses. Only those:
-   * the ssh config can declare hundreds of hosts, and a host nothing was installed on has no
-   * server to ask about. Failures are states, not errors (server-state.ts).
+   * a kind can discover hundreds of targets, and one nothing was installed on has no server to
+   * ask about — nor one whose kind is not loaded, which nothing may reach. Failures are
+   * states, not errors (server-state.ts).
    */
   async probeInstalled(projectId: string): Promise<void> {
     const inFlight = this.#probing.get(projectId);
@@ -590,7 +728,8 @@ export class MachinesService {
     const queue = this.list(projectId).filter((m) => !m.local && m.installed !== null);
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
-        await this.#refreshStatus(machine.id, this.#targetOf(machine.alias));
+        const target = this.#targetOf(machine.id);
+        if (target !== null) await this.#refreshStatus(machine.id, target);
       }
     });
     await Promise.all(workers);
@@ -798,6 +937,7 @@ export class MachinesService {
     if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
       return { ok: false, why: "self" };
     }
+    if (machine.unavailable !== undefined) return { ok: false, why: "kind-unavailable" };
     const plan = this.#effects.resolvePlan(this.dataRoot);
     if (plan === null) return { ok: false, why: "no-image" };
 
@@ -816,8 +956,19 @@ export class MachinesService {
     say: Say,
   ): Promise<MachineJob["result"]> {
     const address = machine.id;
-    const target = this.#targetOf(machine.alias);
-    say(`Installing ${plan.version} on ${machineIdentity(target.alias, target.user)}…`, "check");
+    const target = this.#targetOf(address);
+    if (target === null) {
+      return {
+        ok: false,
+        step: "check",
+        message: machine.unavailable ?? "machine kind not loaded",
+      };
+    }
+    say(`Installing ${plan.version} on ${target.name}…`, "check");
+    // A person asked for this: the target may be brought to where it can hold a shell (a
+    // container started). The automatic sweeps never do this.
+    const ready = await this.#effects.ready(target);
+    if (!ready.ok) return { ok: false, step: "connect", message: ready.detail };
     // Only the machine can say whether this alias is this host under another name.
     // Unreachable is not a refusal — a host with nothing installed yet answers exactly
     // that — this server's own id is.
@@ -922,57 +1073,113 @@ export class MachinesService {
   }
 
   /**
-   * Adds a host to this server's ssh config, so it can be enabled like any other. The block
-   * is validated before anything is written, and an alias the config already declares is
-   * refused rather than shadowed: ssh takes the first block that matches, so a second one
-   * would be silently ignored and the person would wonder why their edit did nothing.
+   * Defines a machine of a kind by hand — the page's "+" — so it can be enabled like any other.
+   * The kind checks the definition and either writes it itself (ssh appends its Host block) or
+   * leaves it to the host (a container's definition, kept in machine_definitions). A name the
+   * kind already has is refused rather than shadowed.
    */
-  addSshHost(
-    entry: SshHostEntry,
-  ):
-    | { ok: true }
-    | { ok: false; why: "invalid"; problem: SshHostProblem }
-    | { ok: false; why: "exists" } {
-    const problem = validateHostEntry(entry);
-    if (problem !== null) return { ok: false, why: "invalid", problem };
-    if (this.#effects.listAliases().includes(entry.alias.trim()))
-      return { ok: false, why: "exists" };
-    this.#effects.appendHost(renderHostBlock(entry, this.#effects.now()));
+  async defineMachine(
+    kind: string,
+    name: string,
+    values: Record<string, unknown>,
+  ): Promise<{ ok: true } | ({ ok: false } & DefinitionRefusal)> {
+    const entry = this.#kinds.get(kind);
+    if (entry === undefined) return { ok: false, why: "unknown-kind" };
+    if (entry.impl.form() === null) return { ok: false, why: "no-form" };
+    const trimmed = name.trim();
+    if (!MACHINE_NAME.test(trimmed)) {
+      return {
+        ok: false,
+        why: "invalid",
+        field: "name",
+        message: "must be one word, with no space, slash or colon",
+      };
+    }
+    const address = addressOf(kind, trimmed);
+    if (this.#allMachines().some((m) => m.id === address)) return { ok: false, why: "exists" };
+    const defined = await entry.impl.define(trimmed, values, false);
+    if (!defined.ok) {
+      return { ok: false, why: "invalid", field: defined.field, message: defined.message };
+    }
+    if (defined.spec !== null) {
+      this.repo.putDefinition({
+        address,
+        kind,
+        name: trimmed,
+        spec: defined.spec,
+        createdAt: this.#effects.now().toISOString(),
+      });
+    }
     return { ok: true };
   }
 
   /**
-   * A host's block as the page can show it back: what it says, and whether this app wrote
-   * it — only then may the page rewrite it. A hand-written block may carry options this app
-   * does not know (a jump host, a key agent setting), and rewriting it would drop them.
+   * A definition read back for the form that configures it, and whether it may be rewritten —
+   * a hand-written ssh block may carry options the form does not know, and rewriting it would
+   * drop them. Null when the kind has no such definition.
    */
-  sshHost(alias: string): { entry: SshHostEntry; editable: boolean } | null {
-    const text = this.#effects.readConfig();
-    if (text === null) return null;
-    const found = findHostBlock(text, alias);
-    return found === null ? null : { entry: found.entry, editable: found.ours };
+  machineDefinition(
+    kind: string,
+    name: string,
+  ): { values: Record<string, unknown>; editable: boolean; forgettable: boolean } | null {
+    const entry = this.#kinds.get(kind);
+    if (entry === undefined) return null;
+    const stored = this.repo.definition(addressOf(kind, name));
+    const read = entry.impl.read(name, stored?.spec ?? null);
+    // Forgettable only where the host keeps it: a kind's own file is the person's to edit.
+    return read === null ? null : { ...read, forgettable: stored !== null };
   }
 
-  /** Rewrites, in place, a block this app wrote; the alias stays, everything else is the new entry. */
-  updateSshHost(
-    alias: string,
-    entry: Omit<SshHostEntry, "alias">,
-  ):
-    | { ok: true }
-    | { ok: false; why: "invalid"; problem: SshHostProblem }
-    | { ok: false; why: "not-found" }
-    | { ok: false; why: "foreign" } {
-    const next: SshHostEntry = { ...entry, alias };
-    const problem = validateHostEntry(next);
-    if (problem !== null) return { ok: false, why: "invalid", problem };
-    const text = this.#effects.readConfig();
-    if (text === null) return { ok: false, why: "not-found" };
-    const found = findHostBlock(text, alias);
-    if (found === null) return { ok: false, why: "not-found" };
-    if (!found.ours) return { ok: false, why: "foreign" };
-    this.#effects.writeConfig(
-      replaceHostBlock(text, found, renderHostBlock(next, this.#effects.now())),
-    );
+  /** Rewrites a definition the kind says may be rewritten; the name stays. */
+  async updateMachineDefinition(
+    kind: string,
+    name: string,
+    values: Record<string, unknown>,
+  ): Promise<{ ok: true } | ({ ok: false } & DefinitionRefusal)> {
+    const entry = this.#kinds.get(kind);
+    if (entry === undefined) return { ok: false, why: "unknown-kind" };
+    const address = addressOf(kind, name);
+    const stored = this.repo.definition(address);
+    const current = entry.impl.read(name, stored?.spec ?? null);
+    if (current === null) return { ok: false, why: "not-found" };
+    if (!current.editable) return { ok: false, why: "foreign" };
+    const defined = await entry.impl.define(name, values, true);
+    if (!defined.ok) {
+      return { ok: false, why: "invalid", field: defined.field, message: defined.message };
+    }
+    if (defined.spec !== null) {
+      this.repo.putDefinition({
+        address,
+        kind,
+        name,
+        spec: defined.spec,
+        createdAt: stored?.createdAt ?? this.#effects.now().toISOString(),
+      });
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Forgets a machine the HOST keeps the definition of: the definition and the machine's record
+   * go, its connection is dropped. What is over there is left alone — a container is never
+   * removed from here. A kind that keeps its own definitions (ssh) is refused: its file is the
+   * person's to edit.
+   */
+  forgetMachineDefinition(
+    kind: string,
+    name: string,
+  ): { ok: true } | ({ ok: false } & DefinitionRefusal) {
+    if (!this.#kinds.has(kind)) return { ok: false, why: "unknown-kind" };
+    const address = addressOf(kind, name);
+    if (this.repo.definition(address) === null) {
+      return {
+        ok: false,
+        why: this.#allMachines().some((m) => m.id === address) ? "kind-stored" : "not-found",
+      };
+    }
+    this.disconnect(address);
+    this.repo.deleteDefinition(address);
+    this.repo.deleteMachine(address);
     return { ok: true };
   }
 
@@ -980,7 +1187,7 @@ export class MachinesService {
    * Brings machines into use, as one queued batch: for each, install (or bring the build
    * forward) if the record says it is not on this server's build, then connect and hand it
    * the Model config — the whole of what a person means by "use this machine", as one job
-   * per machine, one after another. Refusals decidable without ssh are answered by id, so
+   * per machine, one after another. Refusals decidable without the machine are answered by id, so
    * the page can say them; everything else is queued and reported through `jobs`.
    */
   startUse(
@@ -998,6 +1205,10 @@ export class MachinesService {
       }
       if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
         refused.push({ machineId: address, why: "self" });
+        continue;
+      }
+      if (machine.unavailable !== undefined) {
+        refused.push({ machineId: address, why: "kind-unavailable" });
         continue;
       }
       if (plan === null) {
@@ -1022,7 +1233,7 @@ export class MachinesService {
     // Read at run time, not at queue time: a batch's later rows see what the earlier ones did.
     const machine = this.#allMachines().find((entry) => entry.id === address);
     if (machine === undefined) {
-      return { ok: false, step: "use", message: "that host is no longer in the ssh config." };
+      return { ok: false, step: "use", message: "that machine is no longer listed by its kind." };
     }
     const needsInstall =
       replaceProgram || machine.installed === null || machine.installed.version !== plan.version;
@@ -1067,10 +1278,11 @@ export class MachinesService {
     if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
       return { ok: false, why: "self" };
     }
+    if (machine.unavailable !== undefined) return { ok: false, why: "kind-unavailable" };
     if (machine.installed === null) return { ok: false, why: "not-installed" };
     // A Windows remote has no `sh` to hold a session on (transport/connection.ts), so there
-    // is no connection to hold, no SOCKS port to dial its API through, and no shell to browse
-    // it with. Said here, in one sentence, rather than discovered as a POSIX command failing
+    // is no connection to hold, nothing to dial its API through, and no shell to browse it
+    // with. Said here, in one sentence, rather than discovered as a POSIX command failing
     // under cmd.exe in the job's log.
     if (this.repo.get(address)?.platform === "win32") return { ok: false, why: "unsupported" };
     this.#startJob("connect", machine, { offerReplaceProgram: true }, (say) =>
@@ -1079,11 +1291,27 @@ export class MachinesService {
     return { ok: true };
   }
 
-  async #connect(machine: MachineInfo, say: Say): Promise<MachineJob["result"]> {
+  async #connect(
+    machine: MachineInfo,
+    say: Say,
+    /** The standing re-hold: it never readies a target (never starts a container) on its own. */
+    automatic = false,
+  ): Promise<MachineJob["result"]> {
     const address = machine.id;
-    const target = this.#targetOf(machine.alias);
+    const target = this.#targetOf(address);
+    if (target === null) {
+      return {
+        ok: false,
+        step: "connect",
+        message: machine.unavailable ?? "machine kind not loaded",
+      };
+    }
+    if (!automatic) {
+      const ready = await this.#effects.ready(target);
+      if (!ready.ok) return { ok: false, step: "connect", message: ready.detail };
+    }
 
-    // Asked even when the connection is already up: it is an ssh process on THIS side,
+    // Asked even when the connection is already up: it is a process on THIS side,
     // and it outlives the far server. Taking it as the answer reported "connected" over a
     // dead server — and every caller that then found the machine silent asked for another
     // connect, which said "already connected" again, forever. Reconnecting (to retry a sync
@@ -1371,7 +1599,7 @@ export class MachinesService {
     say(`Stopping its server on port ${port}…`, "restart");
     const stopped = await this.#effects.stopServer(target);
     if (!stopped.ok) return { ok: false, detail: `it would not stop — ${stopped.detail}` };
-    // Its sessions died with it. The connection did not: it is an ssh session to the HOST,
+    // Its sessions died with it. The connection did not: it is a session to the HOST,
     // and the server coming back on the same port is reachable through it as before.
     this.#sessions.delete(address);
     say(`Starting it again on port ${port}…`);
@@ -1395,9 +1623,11 @@ export class MachinesService {
     const machine = this.#allMachines().find((entry) => entry.id === address);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
     if (machine.local) return { ok: false, why: "self" };
+    if (machine.unavailable !== undefined) return { ok: false, why: "kind-unavailable" };
     if (machine.installed === null) return { ok: false, why: "not-installed" };
+    const target = this.#targetOf(address);
+    if (target === null) return { ok: false, why: "kind-unavailable" };
     this.#startJob("restart", machine, { offerReplaceProgram: false }, async (say) => {
-      const target = this.#targetOf(machine.alias);
       const done = await this.#restartServer(address, target, say);
       if (!done.ok) return { ok: false, step: "restart", message: done.detail };
       say(`Restarted on port ${done.port}.`);
@@ -1454,7 +1684,9 @@ export class MachinesService {
     const queue = [...addresses];
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       for (let address = queue.shift(); address !== undefined; address = queue.shift()) {
-        const target = this.#targetOf(address.slice("ssh:".length));
+        // A machine whose kind is not loaded is passed by: nothing may reach it until it is.
+        const target = this.#targetOf(address);
+        if (target === null) continue;
         try {
           await this.#withMachine(address, () => work(address, target));
         } catch {
@@ -1499,6 +1731,8 @@ export class MachinesService {
         !m.local &&
         m.installed !== null &&
         m.connection === null &&
+        // Not loaded: skipped, and not counted — a missing plugin is no failure of the machine's.
+        m.unavailable === undefined &&
         this.repo.get(m.id)?.sessionPid != null &&
         this.repo.get(m.id)?.platform !== "win32" &&
         (this.#reholdNotBefore.get(m.id) ?? 0) <= now,
@@ -1507,7 +1741,7 @@ export class MachinesService {
       unconnected.map((m) => m.id),
       async (address) => {
         const machine = unconnected.find((m) => m.id === address)!;
-        const result = await this.#connect(machine, () => {});
+        const result = await this.#connect(machine, () => {}, true);
         if (result !== null && result.ok) {
           this.#reholdNotBefore.delete(address);
           this.#reholdFailures.delete(address);
@@ -1544,10 +1778,10 @@ export class MachinesService {
         const port =
           this.#liveSession(address) === null ? null : (this.repo.get(address)?.remotePort ?? null);
         if (port === null) return;
+        const target = this.#targetOf(address);
+        if (target === null) return;
         try {
-          await this.#syncCoalesced(address, this.#targetOf(machine.alias), port, () => [
-            projectId,
-          ]);
+          await this.#syncCoalesced(address, target, port, () => [projectId]);
         } catch {
           // Best effort: the connect log is where a sync's own words go; this one has none.
         }
@@ -1574,11 +1808,24 @@ export abstract class Machines extends Interface<
     | "jobs"
     | "startUse"
     | "stopUsing"
-    | "addSshHost"
-    | "sshHost"
-    | "updateSshHost"
+    | "kinds"
+    | "defineMachine"
+    | "machineDefinition"
+    | "updateMachineDefinition"
+    | "forgetMachineDefinition"
   >
 >() {}
+
+/**
+ * What MachinesModule takes from plugins: machine KINDS. The data half is the manifest's — the
+ * kind's name, which is the address prefix of every machine of it, and its title — so the list
+ * can name a kind without running it; the code half is the kind itself (mechanisms/machines.ts).
+ * A slot rather than a `@Use()`: kinds are an open set, and two providers of one interface would
+ * be ambiguous to the kernel.
+ */
+export interface MachinesSlots {
+  kinds: Slot<{ kind: string; title: string; titleZh?: string }, MachineKind>;
+}
 
 @Module({
   contributes: {
@@ -1610,7 +1857,7 @@ export class MachinesModule {
   @Provide() machines!: Machines;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
   @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
-  setup({ effect }: ClassCtx) {
+  setup({ effect, contributions }: ClassCtx) {
     // This machine's own id is minted on the first boot of this data root and stable ever
     // after — every stored reference to this machine, here and on the machines it reaches,
     // points at it. A test that supplies its own service mints none.
@@ -1619,8 +1866,20 @@ export class MachinesModule {
     // needs it before start() re-holds anything, or a delivered session would be opened
     // again beside itself.
     attachSessionRegistry(this.hmr.resources, this.resourceGroups.adoptable(SESSION_GROUP));
-    const machines = new MachinesService(this.paths.root, repo.ownId(), repo, {}, () =>
-      this.hmr.assetsDir(),
+    const kinds = (contributions.kinds ?? []).map((c): MachineKindEntry => ({
+      kind: c.data.kind as string,
+      title: c.data.title as string,
+      ...(typeof c.data.titleZh === "string" ? { titleZh: c.data.titleZh } : {}),
+      impl: c.code as MachineKind,
+    }));
+    const machines = new MachinesService(
+      this.paths.root,
+      repo.ownId(),
+      repo,
+      {},
+      () => this.hmr.assetsDir(),
+      currentRemoteLayout(),
+      kinds,
     );
     this.machines = machines;
     this.routes = machinesRoutes({ machines, access: this.access });
@@ -1635,7 +1894,7 @@ export class MachinesModule {
 /**
  * `/server/<machineId>/api/…` — a connected machine's API, forwarded over the connection held
  * to it and addressed by the machine's OWN id. Admins only: the request is made over there as
- * that machine's admin, with a session this server minted over the ssh access that installed
+ * that machine's admin, with a session this server minted over the access that installed
  * it, so this server's admin session is the one credential involved.
  */
 export function machinesServerProxyRoutes(machines: MachinesService): Hono<AppEnv> {

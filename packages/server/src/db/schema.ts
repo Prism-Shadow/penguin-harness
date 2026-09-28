@@ -172,17 +172,24 @@ CREATE TABLE IF NOT EXISTS machine (           -- this server's OWN identity, mi
   machine_id TEXT NOT NULL                    -- 16 base64url characters; what every stored reference to this machine points at
 );
 CREATE TABLE IF NOT EXISTS machines (          -- one row per machine this server installed on or reached (machines/service.ts)
-  address      TEXT PRIMARY KEY,               -- 'ssh:<alias>'
+  address      TEXT PRIMARY KEY,               -- '<kind>:<name>' ('ssh:<alias>', 'docker:<definition>')
   machine_id   TEXT,                           -- that machine's own id, once heard
   version      TEXT,                           -- what this server last installed there; NULL = never
   installed_at TEXT,
-  session_pid  INTEGER,                        -- the ssh session this server holds to it; what a successor App closes after a hot swap
+  session_pid  INTEGER,                        -- the session this server holds to it (the child its kind launched); a record of intent, never a handle
   remote_port  INTEGER,                        -- its server's port over there, as of the last connect
   platform     TEXT                            -- linux | darwin | win32, as the install found it: the shell dialect the status probe speaks to it in
 );
 CREATE TABLE IF NOT EXISTS machine_project (   -- which machines a Project uses; no row = none yet. Follows the Project out, like project_members
   project_id TEXT PRIMARY KEY REFERENCES projects(project_id) ON DELETE CASCADE,
-  addresses  TEXT NOT NULL                     -- JSON array of 'ssh:<alias>'
+  addresses  TEXT NOT NULL                     -- JSON array of '<kind>:<name>'
+);
+CREATE TABLE IF NOT EXISTS machine_definitions ( -- machines a person defined whose kind leaves the definition to the host (a container); ssh keeps its own in ~/.ssh/config
+  address    TEXT PRIMARY KEY,                 -- '<kind>:<name>', the machines row it defines
+  kind       TEXT NOT NULL,                    -- the kind's name (the address prefix)
+  name       TEXT NOT NULL,                    -- the name within the kind
+  spec       TEXT NOT NULL,                    -- JSON: what the kind's define() answered; the kind's to read
+  created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS port_forwards (     -- a port forward on a machine's ssh session, per Workspace (port-forwards/service.ts)
   id          TEXT PRIMARY KEY,

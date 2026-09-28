@@ -9,8 +9,8 @@
  * here is the bookkeeping between the record and the session that carries it.
  *
  * THE SESSION CARRIES IT. Every forward of a machine is handed to that machine's session as
- * its wanted set (Machines.setForwards). How the session carries the set is the transport's
- * business (transport/ssh-session.ts): added to the live ssh over its control socket where
+ * its wanted set (Machines.setForwards). How the session carries the set is the
+ * machine kind's business (ssh: plugins/machine-ssh): added to the live ssh over its control socket where
  * there is one, in the session's start arguments — reopening it on a change — where there is
  * not (a Windows hub). Either way the set is re-applied whenever the session reconnects, and
  * ssh's answer per forward — a port that would not bind, in ssh's own words — is kept as its

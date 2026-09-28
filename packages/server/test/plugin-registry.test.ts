@@ -82,10 +82,22 @@ describe("builtinPluginRegistry", () => {
       "@prismshadow/penguin-plugin-languages",
       "@prismshadow/penguin-plugin-claude-code",
       "@prismshadow/penguin-plugin-discord-bot",
+      "@prismshadow/penguin-plugin-machine-ssh",
+      "@prismshadow/penguin-plugin-machine-wsl",
+      "@prismshadow/penguin-plugin-machine-docker",
+    ]);
+    // The four sandbox backends, and the three machine kinds under their own category.
+    expect(entries.filter((e) => e.categories?.[0] === "sandbox")).toHaveLength(4);
+    expect(entries.filter((e) => e.categories?.[0] === "machine").map((e) => e.name)).toEqual([
+      "@prismshadow/penguin-plugin-machine-ssh",
+      "@prismshadow/penguin-plugin-machine-wsl",
+      "@prismshadow/penguin-plugin-machine-docker",
     ]);
     for (const entry of entries) {
       expect(entry.categories).toHaveLength(1);
-      expect(["sandbox", "languages", "surface", "chat-bot"]).toContain(entry.categories![0]);
+      expect(["sandbox", "languages", "surface", "chat-bot", "machine"]).toContain(
+        entry.categories![0],
+      );
       expect(["Apache-2.0", "MIT"]).toContain(entry.license);
     }
   });
@@ -172,7 +184,7 @@ describe("GET /api/plugins/registry", () => {
     const res = await apiClient(t.app, admin.cookie).get("/api/plugins/registry");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins).toHaveLength(7);
+    expect(body.plugins).toHaveLength(10);
     expect(body.plugins.every((p) => p.name.startsWith("@prismshadow/penguin-plugin-"))).toBe(true);
   });
 });

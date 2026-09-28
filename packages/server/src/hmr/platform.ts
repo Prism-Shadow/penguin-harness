@@ -218,7 +218,7 @@ interface ParkedInterfaces extends Interfaces {
   family: string;
   terminal: MembersOf<TerminalSession>;
   /**
-   * Versioned in its NAME (transport/ssh-session.ts SESSION_GROUP): a delivered object runs old
+   * Versioned in its NAME (transport/shell-session.ts SESSION_GROUP): a delivered object runs old
    * code. Judged by STRUCTURE too, at create(): the closed shape of MachineSession registered
    * beside the sessions (SESSION_SHAPE_ID) must equal this build's, or the group is doomed.
    */
@@ -299,13 +299,26 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "kill",
     "dispose",
   ],
-  // A held ssh session to a machine, as the successor's transport claims it back
-  // (machines/transport/ssh-session.ts): commands, the SOCKS port, and the forwards it
-  // carries. Every member the adopter calls, for the same reason as `terminal` — and the
-  // group's NAME carries a version, because a member that exists on an old object still runs
-  // the old object's code: a behavior change bumps the name, so the old group is disposed
-  // here (its sessions closed) and the machines are re-held fresh.
-  [SESSION_GROUP]: ["hold", "held", "run", "session", "close", "setForwards", "forwardFacts"],
+  // A held session to a machine, as the successor's transport claims it back
+  // (machines/transport/shell-session.ts): commands, the child its kind launched, what the kind
+  // carries on it and keeps in its memo. Every member the adopter — or a kind handed the
+  // session — calls, for the same reason as `terminal`; and the group's NAME carries a
+  // version, because a member that exists on an old object still runs the old object's code:
+  // a behavior change bumps the name, so the old group is disposed here (its sessions closed)
+  // and the machines are re-held fresh. v3: forwards left for the ssh kind (bind, carry, said,
+  // reopen, memo in; setForwards, forwardFacts out).
+  [SESSION_GROUP]: [
+    "hold",
+    "held",
+    "run",
+    "session",
+    "close",
+    "bind",
+    "carry",
+    "said",
+    "reopen",
+    "memo",
+  ],
   agentState: ["state", "shape", "stopped"],
 };
 
@@ -489,9 +502,10 @@ async function createInner(
   //
   // DELIVERED (survives the swap; the successor adopts it at load):
   //   - pty sessions        registry `terminal:*` + the terminal module's parked ids
-  //   - machine sessions    registry `machineSession.v2:*` — the held `ssh -T -D` child, its
-  //                         SOCKS channels and its port forwards; the successor's transport
-  //                         claims each by address (transient sessions are closed instead)
+  //   - machine sessions    registry `machineSession.v3:*` — the held child each machine's
+  //                         kind launched (ssh: `ssh -T -D`, its SOCKS channels and forwards),
+  //                         and the kind's memo; the successor's transport claims each by
+  //                         address (transient sessions are closed instead)
   //   - runtime singletons  db / auth-state / channels / config / proxy / desktop —
   //                         runtime-owned, re-claimed by every App
   //   - the Agent state     registry `agentState:state` (PRFC-0015): running Tasks, pending

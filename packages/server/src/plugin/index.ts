@@ -50,3 +50,21 @@ export type {
 export type { Http, HttpSlots } from "../http/app.js";
 export type { WebShell, WebShellSlots } from "../http/routes/contributions.js";
 export type { SessionSurfaces, SessionSurfacesSlots } from "../runtime/session-surfaces.js";
+export type { Machines, MachinesSlots } from "../machines/service.js";
+export type {
+  ExecResult,
+  ForwardDirection,
+  ForwardFact,
+  ForwardSpec,
+  Machine,
+  MachineDefinition,
+  MachineDial,
+  MachineForm,
+  MachineForwards,
+  MachineKind,
+  MachineSession,
+  ShellLaunch,
+  ShellResult,
+  ShellRunOptions,
+  ShellSession,
+} from "../mechanisms/machines.js";

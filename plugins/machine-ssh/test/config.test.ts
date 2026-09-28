@@ -1,16 +1,23 @@
 /**
- * The host block the Machines page appends to `~/.ssh/config`: what is refused before any
+ * `~/.ssh/config` as the ssh kind reads and writes it — moved here from the main tree with the
+ * kind, cases and all. The host block the Machines page appends: what is refused before any
  * write, and the exact lines that are written. Strictness is the point — the block joins a
  * file a person edits by hand, so a glob in the alias or a `#` in a value would quietly
  * change what ssh reads.
  */
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   findHostBlock,
   renderHostBlock,
   replaceHostBlock,
   validateHostEntry,
-} from "../src/machines/ssh-config.js";
+  parseHostAliases,
+  useSshDir,
+} from "../src/config.js";
+import { SshKind } from "../src/index.js";
 
 const AT = new Date("2026-09-05T12:00:00.000Z");
 
@@ -169,5 +176,79 @@ describe("replaceHostBlock", () => {
       hostName: "10.0.0.10",
       port: 22,
     });
+  });
+});
+
+describe("parseHostAliases", () => {
+  const noIncludes = () => [];
+
+  it("lists declared aliases in file order, expanding multi-alias blocks", () => {
+    const aliases = parseHostAliases(
+      ["Host build-box", "  HostName 10.0.0.4", "", "Host gpu-1 gpu-1.lan", "  User root"].join(
+        "\n",
+      ),
+      noIncludes,
+    );
+    expect(aliases).toEqual(["build-box", "gpu-1", "gpu-1.lan"]);
+  });
+
+  it("skips pattern entries — they configure other hosts rather than naming one", () => {
+    const aliases = parseHostAliases(
+      ["Host *", "  ServerAliveInterval 30", "Host !prod *.lan", "Host real"].join("\n"),
+      noIncludes,
+    );
+    expect(aliases).toEqual(["real"]);
+  });
+
+  it("ignores comments and blank lines, and is case-insensitive like ssh", () => {
+    expect(parseHostAliases("# Host commented\n\nhost lower\nHOST upper", noIncludes)).toEqual([
+      "lower",
+      "upper",
+    ]);
+  });
+
+  it("follows Include through the supplied reader and de-duplicates the result", () => {
+    const files: Record<string, string> = {
+      "work/*": "Host build-box\nHost shared",
+      personal: "Host shared\nHost nas",
+    };
+    const aliases = parseHostAliases(
+      ["Include work/*", "Host laptop", "Include personal"].join("\n"),
+      (pattern) => (files[pattern] === undefined ? [] : [files[pattern]]),
+    );
+    expect(aliases).toEqual(["build-box", "shared", "laptop", "nas"]);
+  });
+
+  it("survives an include cycle instead of spinning", () => {
+    const aliases = parseHostAliases("Include self\nHost top", () => ["Include self\nHost deep"]);
+    expect(aliases).toContain("top");
+    expect(aliases).toContain("deep");
+  });
+});
+
+describe("the kind's discover", () => {
+  let dir: string;
+  const originalPath = process.env.PATH;
+  afterEach(() => {
+    process.env.PATH = originalPath;
+    useSshDir(null);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("is exactly the config scan, Includes followed — and starts no process", () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-ssh-dir-"));
+    fs.mkdirSync(path.join(dir, "config.d"));
+    fs.writeFileSync(path.join(dir, "config"), "Include config.d/*\nHost build-box\nHost *\n");
+    fs.writeFileSync(path.join(dir, "config.d", "lab"), "Host nas gpu-1\n");
+    useSshDir(dir);
+    // No PATH: a discover that tried to start ssh (or anything) could not.
+    process.env.PATH = "";
+    expect(new SshKind().discover()).toEqual(["nas", "gpu-1", "build-box"]);
+  });
+
+  it("a missing config is no machines, not an error", () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-ssh-dir-"));
+    useSshDir(path.join(dir, "absent"));
+    expect(new SshKind().discover()).toEqual([]);
   });
 });

@@ -7,7 +7,8 @@
  *
  * Two implementations, one contract:
  *   - the builtin registry serves the index embedded in this package
- *     (builtin-index.json — the four sandbox backends the workspace ships);
+ *     (builtin-index.json — the plugins the workspace ships: sandbox backends, machine
+ *     kinds, and the rest);
  *   - the HTTP registry fetches an `index.json` URL and runs it through the same
  *     validator, so a remote index is trusted no further than the embedded one.
  *

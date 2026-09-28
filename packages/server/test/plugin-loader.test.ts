@@ -19,10 +19,14 @@ import {
   readPluginClosure,
   readProjectPluginList,
   listProjectIds,
+  RESIDENT_PLUGINS,
 } from "../src/plugin/loader.js";
 import { writeClassPackage } from "./plugin-fixtures.js";
 
 let root: string;
+
+/** No resident plugins: what the cases below load is exactly what their Projects list. */
+const NONE: readonly string[] = [];
 
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "penguin-plugins-"));
@@ -68,7 +72,10 @@ function lower(source: string): string {
 describe("plugin list", () => {
   it("no Project means no plugins — the default deployment shape, not an error", async () => {
     expect(await readPluginClosure(root)).toEqual([]);
-    expect(await loadPlugins(root)).toEqual({ loaded: [], failed: new Map() });
+    expect(await loadPlugins(root, undefined, undefined, null, NONE)).toEqual({
+      loaded: [],
+      failed: new Map(),
+    });
   });
 
   it("reads the configured specifiers in order", async () => {
@@ -200,7 +207,7 @@ describe("plugin loading", () => {
        export default { modules: [Thing] };`,
     );
     await writeConfig({ plugins: [file] });
-    const result = await loadPlugins(root);
+    const result = await loadPlugins(root, undefined, undefined, null, NONE);
     expect(result.failed.size).toBe(0);
     expect(result.loaded).toHaveLength(1);
     const entry = result.loaded[0]!;
@@ -228,7 +235,7 @@ describe("plugin loading", () => {
        export default { modules: [Thing] };`,
     );
     await writeConfig({ plugins: ["@nope/definitely-not-installed", good] });
-    const result = await loadPlugins(root);
+    const result = await loadPlugins(root, undefined, undefined, null, NONE);
     // The good one still loads: failure is per entry.
     expect(result.loaded.map((entry) => entry.specifier)).toEqual([good]);
     expect(result.failed.get("@nope/definitely-not-installed")).toBeTruthy();
@@ -241,7 +248,7 @@ describe("plugin loading", () => {
       "export default { modules: { Thing: { create() {} } } };",
     );
     await writeConfig({ plugins: [file] });
-    const result = await loadPlugins(root);
+    const result = await loadPlugins(root, undefined, undefined, null, NONE);
     expect(result.loaded).toEqual([]);
     expect(result.failed.get(file)).toMatch(/not a Plugin/);
   });
@@ -256,7 +263,7 @@ describe("plugin loading", () => {
        export default { modules: [Thing, Ghost] };`,
     );
     await writeConfig({ plugins: [file] });
-    const result = await loadPlugins(root);
+    const result = await loadPlugins(root, undefined, undefined, null, NONE);
     expect(result.failed.get(file)).toMatch(/Ghost: not in the generated manifest table/);
   });
 
@@ -281,7 +288,7 @@ describe("plugin loading", () => {
        export default { modules: [Thing], replaces: [MemoryService] };`,
     );
     await writeConfig({ plugins: [file] });
-    const result = await loadPlugins(root);
+    const result = await loadPlugins(root, undefined, undefined, null, NONE);
     expect(result.failed.size).toBe(0);
     const entry = result.loaded[0]!;
     expect(entry.modules.map((m) => m.manifest.name)).toEqual(["Thing"]);
@@ -291,7 +298,7 @@ describe("plugin loading", () => {
   it("a package without a table ships no modules — a plugin is a plugin by being listed", async () => {
     const file = await writePackage("@acme/skills-only", null, "export default { modules: [] };");
     await writeConfig({ plugins: [file] });
-    const result = await loadPlugins(root);
+    const result = await loadPlugins(root, undefined, undefined, null, NONE);
     expect(result.failed.size).toBe(0);
     expect(result.loaded[0]!.modules).toEqual([]);
   });
@@ -304,7 +311,7 @@ describe("plugin loading", () => {
        export default { modules: [Thing] };`,
     );
     await writeConfig({ plugins: [file] });
-    const result = await loadPlugins(root);
+    const result = await loadPlugins(root, undefined, undefined, null, NONE);
     expect(result.failed.get(file)).toMatch(/ifaces\.json is missing — build the package/);
   });
 
@@ -315,7 +322,7 @@ describe("plugin loading", () => {
       "export default { modules: [] };",
     );
     await writeConfig({ plugins: [file] });
-    const result = await loadPlugins(root);
+    const result = await loadPlugins(root, undefined, undefined, null, NONE);
     expect(result.failed.get(file)).toMatch(/ifaces\.json#modules\.Thing/);
   });
 });
@@ -392,12 +399,12 @@ describe("builtin plugins", () => {
     );
     // Shipped, and nothing lists it: available is not installed.
     await writeConfig({ plugins: [] });
-    expect((await loadPlugins(root)).loaded).toEqual([]);
+    expect((await loadPlugins(root, undefined, undefined, null, NONE)).loaded).toEqual([]);
 
     // Listed: it loads, resolved from the assets the push carried — no npm, nothing under
     // <root>/plugins.
     await writeConfig({ plugins: ["@acme/penguin-plugin-one"] });
-    const result = await loadPlugins(root);
+    const result = await loadPlugins(root, undefined, undefined, null, NONE);
     expect([...result.failed.entries()]).toEqual([]);
     expect(result.loaded.map((p) => p.specifier)).toEqual(["@acme/penguin-plugin-one"]);
     expect(result.loaded[0]!.modules.map((m) => m.manifest.name)).toEqual(["One"]);
@@ -421,7 +428,7 @@ describe("builtin plugins", () => {
       exports: { ".": { types: "./dist/index.d.ts", import: "./dist/index.js" } },
     });
     await writeConfig({ plugins: ["@acme/exported"] });
-    const result = await loadPlugins(root, assets);
+    const result = await loadPlugins(root, assets, undefined, null, NONE);
     expect([...result.failed.entries()]).toEqual([]);
     expect(result.loaded[0]!.file).toBe(path.join(dir, "dist", "index.js"));
   });
@@ -434,5 +441,91 @@ describe("builtin plugins", () => {
       JSON.stringify({ assets: { dir: "store/assets/x" } }),
     );
     expect(await committedAssetsDir(root)).toBe(path.join(root, "hmr", "store/assets/x"));
+  });
+});
+
+describe("resident plugins", () => {
+  /** A shipped plugin package under the committed assets' prefix, the way a push carries the builtin ones. */
+  async function shipped(name: string, module: string): Promise<void> {
+    const assetsRel = path.join("store", "assets", "abc");
+    const prefix = path.join(root, "hmr", assetsRel, "plugins");
+    await mkdir(prefix, { recursive: true });
+    await writeFile(
+      path.join(prefix, "package.json"),
+      JSON.stringify({ name: "prefix", private: true, dependencies: { [name]: "0.1.0" } }),
+    );
+    await writeClassPackage(path.join(prefix, "node_modules", ...name.split("/")), {
+      name,
+      module,
+    });
+    await writeFile(
+      path.join(root, "hmr", "harness.json"),
+      JSON.stringify({ assets: { dir: assetsRel.split(path.sep).join("/") } }),
+    );
+  }
+
+  it("the ssh machine kind is the one resident plugin", () => {
+    expect(RESIDENT_PLUGINS).toEqual(["@prismshadow/penguin-plugin-machine-ssh"]);
+  });
+
+  it("loads with no Project listing it, first, and stays out of every Project's list", async () => {
+    await shipped("@prismshadow/penguin-plugin-machine-ssh", "MachineSsh");
+    await shipped("@acme/penguin-plugin-listed", "Listed");
+    await writeConfig({ plugins: ["@acme/penguin-plugin-listed"] }, "p1");
+    await writeConfig({ plugins: [] }, "p2");
+    const result = await loadPlugins(root);
+    expect([...result.failed.entries()]).toEqual([]);
+    expect(result.loaded.map((p) => p.specifier)).toEqual([
+      "@prismshadow/penguin-plugin-machine-ssh",
+      "@acme/penguin-plugin-listed",
+    ]);
+    // Not in any Project's list — which is what plugins-sync hands a machine, strictly aligned —
+    // so the sync neither sends it to a machine nor takes it away there.
+    expect(await readProjectPluginList(root, "p1")).toEqual(["@acme/penguin-plugin-listed"]);
+    expect(await readProjectPluginList(root, "p2")).toEqual([]);
+    expect(await readPluginClosure(root)).toEqual(["@acme/penguin-plugin-listed"]);
+  });
+
+  it("is loaded once when a Project lists it as well", async () => {
+    await shipped("@prismshadow/penguin-plugin-machine-ssh", "MachineSsh");
+    await writeConfig({ plugins: ["@prismshadow/penguin-plugin-machine-ssh"] });
+    const result = await loadPlugins(root);
+    expect(result.loaded.map((p) => p.specifier)).toEqual([
+      "@prismshadow/penguin-plugin-machine-ssh",
+    ]);
+  });
+
+  it("one the build does not ship is simply absent — not a failure, and not found beside the program", async () => {
+    await shipped("@acme/penguin-plugin-listed", "Listed");
+    await writeConfig({ plugins: ["@acme/penguin-plugin-listed"] });
+    // This checkout's own node_modules may well hold the real package; shipped is what counts.
+    const result = await loadPlugins(root);
+    expect(result.failed.has("@prismshadow/penguin-plugin-machine-ssh")).toBe(false);
+    expect(result.loaded.map((p) => p.specifier)).toEqual(["@acme/penguin-plugin-listed"]);
+  });
+
+  it("one that is shipped and will not load is reported and skipped like any plugin; the rest load", async () => {
+    await shipped("@prismshadow/penguin-plugin-machine-ssh", "MachineSsh");
+    await shipped("@acme/penguin-plugin-listed", "Listed");
+    // Shipped without its table: a build that broke it.
+    const table = path.join(
+      root,
+      "hmr",
+      "store",
+      "assets",
+      "abc",
+      "plugins",
+      "node_modules",
+      "@prismshadow",
+      "penguin-plugin-machine-ssh",
+      "ifaces.json",
+    );
+    await rm(table);
+    await writeConfig({ plugins: ["@acme/penguin-plugin-listed"] });
+    const result = await loadPlugins(root);
+    expect(result.failed.get("@prismshadow/penguin-plugin-machine-ssh")).toMatch(
+      /ifaces\.json|build/,
+    );
+    expect(result.loaded.map((p) => p.specifier)).toEqual(["@acme/penguin-plugin-listed"]);
   });
 });

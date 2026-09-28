@@ -42,6 +42,9 @@ const entry = (specifier: string, name: string, file?: string): LoadedPlugin => 
   replaces: [],
 });
 
+/** No resident plugins: the host loads exactly what the Projects list, which is what is under test. */
+const NONE: readonly string[] = [];
+
 describe("loadPluginHost", () => {
   it("keeps what the closure still asks for, by identity, and drops the rest", async () => {
     const root = await rootAsking(["@acme/kept"]);
@@ -56,7 +59,7 @@ describe("loadPluginHost", () => {
       inherited.use(entry("@acme/dropped", "Dropped"));
       resources.register(PLUGINS_RESOURCE_ID, inherited);
 
-      const host = await loadPluginHost(resources, root);
+      const host = await loadPluginHost(resources, root, undefined, null, NONE);
 
       // A plugin the closure no longer names is simply not in the new host.
       expect([...host.entries().keys()]).toEqual([]);
@@ -79,20 +82,20 @@ describe("loadPluginHost", () => {
       await writeClassPackage(dir, { name: "@acme/real", module: "AcmeReal" });
 
       const resources = new HotResources();
-      const first = await loadPluginHost(resources, root);
+      const first = await loadPluginHost(resources, root, undefined, null, NONE);
       const held = first.entries().get("@acme/real");
       expect(held?.file).toBe(path.join(dir, "index.js"));
 
       // Same file behind the name: the same object, not a second import.
       resources.register(PLUGINS_RESOURCE_ID, first);
-      const again = await loadPluginHost(resources, root);
+      const again = await loadPluginHost(resources, root, undefined, null, NONE);
       expect(again.entries().get("@acme/real")).toBe(held);
 
       // A different file behind it — what a push produces — is imported again.
       const moved = new PluginHost();
       moved.use({ ...held!, file: path.join(root, "old-assets", "index.js") });
       resources.register(PLUGINS_RESOURCE_ID, moved);
-      const afterPush = await loadPluginHost(resources, root);
+      const afterPush = await loadPluginHost(resources, root, undefined, null, NONE);
       expect(afterPush.entries().get("@acme/real")).not.toBe(held);
       expect(afterPush.entries().get("@acme/real")?.file).toBe(path.join(dir, "index.js"));
     } finally {
@@ -123,11 +126,11 @@ describe("loadPluginHost", () => {
       );
 
       // What harness.json names, when nobody says otherwise.
-      const committedHost = await loadPluginHost(new HotResources(), root);
+      const committedHost = await loadPluginHost(new HotResources(), root, undefined, null, NONE);
       expect(committedHost.modules().map((m) => m.manifest.name)).toEqual(["Old"]);
 
       // What the booting version carries, when the host says which assets those are.
-      const bootingHost = await loadPluginHost(new HotResources(), root, booting);
+      const bootingHost = await loadPluginHost(new HotResources(), root, booting, null, NONE);
       expect(bootingHost.modules().map((m) => m.manifest.name)).toEqual(["New"]);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -138,7 +141,7 @@ describe("loadPluginHost", () => {
     const root = await rootAsking(["@acme/not-installed"]);
     try {
       const resources = new HotResources();
-      const host = await loadPluginHost(resources, root);
+      const host = await loadPluginHost(resources, root, undefined, null, NONE);
       expect([...host.entries().keys()]).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });

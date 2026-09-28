@@ -1,39 +1,43 @@
 /**
  * One mouth per machine, and behind it ONE CONNECTION: every word this server speaks to a
  * machine leaves through the MachineConnection for that machine's address, and everything
- * it carries rides the single `ssh -T -D` session ssh-session.ts holds — a probe as a
- * command on its stdin, an installer or a tarball as a heredoc on the same stdin, the
- * machine's API as a channel dialled through the session's SOCKS port (socks.ts). There is
- * no forward process, no one-shot ssh per step, no scp: nothing opens a second connection
- * to a machine, however many callers ask and however often, because there is nothing that
- * could.
+ * it carries rides the single shell shell-session.ts holds — a probe as a command on its
+ * stdin, an installer or a tarball as a heredoc on the same stdin, the machine's API as a TCP
+ * connection its kind dials while that shell is up. Nothing opens a second connection to a
+ * machine, however many callers ask and however often, because there is nothing that could.
  *
- * The guarantee is AUTHORITY first — nothing outside machines/transport/ may open ssh, and
- * machines-transport-boundary.test.ts pins that — and then STRUCTURE: the connection is one,
+ * ONE KIND AMONG OTHERS. What reaches the machine is its kind's (mechanisms/machines.ts, a
+ * plugin: ssh, WSL, a container): the process the shell is, how a TCP connection gets in, what
+ * a failure means. What this file keeps is the part every kind shares: the address, the queue
+ * per machine (lane.ts), and the one session. A kind never queues for itself and never
+ * judges liveness for itself.
+ *
+ * The guarantee is AUTHORITY first — nothing outside machines/transport/ opens a connection to
+ * a machine, and nothing in packages/server/src starts a machine's program by name at all;
+ * machines-transport-boundary.test.ts pins both — and then STRUCTURE: the connection is one,
  * and a second ask queues behind the first. The incident behind this seam (#561) grew where
  * it was absent — four call sites each opened their own channel, each judged the machine's
  * liveness from its own channel's state, and the judgements disagreed.
  *
- * THE ONE EXCEPTION is a Windows remote: sshd there hands commands to cmd.exe, and there is no
- * `sh` to hold a session on. `oneShot` and `copyTo` exist for that host alone — an install
- * runs the PowerShell installer on its own connection — and a Windows machine cannot be
- * connected (no session, no SOCKS, no API) until it has a shell to hold. Serialised per
- * machine all the same (lane.ts).
+ * THE ONE EXCEPTION is a machine with no `sh` to hold — a Windows sshd hands commands to
+ * cmd.exe. `oneShot` and `copyTo` exist for that host alone, and a machine like that cannot be
+ * connected (no session, no dial, no API) until it has a shell to hold. Serialised per
+ * machine all the same (lane.ts), and so is `ready`.
  *
- * The handle is stateless on purpose: per-machine state stays in ssh-session.ts, keyed by
+ * The handle is stateless on purpose: per-machine state stays in shell-session.ts, keyed by
  * address, so holding a MachineConnection costs nothing and dropping one leaks nothing. The
- * address is always `ssh:<alias>` — the one spelling every registry in machines/ uses.
+ * address is `<kind>:<name>` — spelled here (addressOf) and read here (kindOfAddress), and
+ * nowhere else.
  *
  * LIFETIME. A session a passing command opened is transient and idles out; one a connect
  * asked to HOLD is kept — reopened by the transport itself when it drops, until a disconnect
  * closes it. A held session outlives a platform generation: it is delivered through the
- * resource registry and claimed back by the next (ssh-session.ts); a generation on its way
+ * resource registry and claimed back by the next (shell-session.ts); a generation on its way
  * out closes only its transient sessions (closeAllConnections). No session is ever closed by
  * a pid remembered from before.
  */
 import http from "node:http";
 import type net from "node:net";
-import { run, runWithInput } from "./exec.js";
 import {
   closeAllShells,
   closeShell,
@@ -43,13 +47,35 @@ import {
   runOnShell,
   sessionOf,
   shellOf,
-} from "./ssh-session.js";
-import type { ForwardFact, ShellSession } from "./ssh-session.js";
-import { dialThroughSocks } from "./socks.js";
+} from "./shell-session.js";
+import type { HeldSession, ShellSession } from "./shell-session.js";
 import { inLane } from "./lane.js";
-import { scpArgs, sshArgs } from "../commands.js";
-import type { ExecResult } from "./exec.js";
-import type { ForwardSpec, RemoteTarget } from "../commands.js";
+import type { ExecResult, Machine, MachineForwards } from "../../mechanisms/machines.js";
+
+/**
+ * A machine as the host addresses it: its kind, its name within the kind, the address both
+ * make, and the kind's handle for it. Built by the service from the kinds it was given.
+ */
+export interface RemoteTarget {
+  address: string;
+  kind: string;
+  name: string;
+  machine: Machine;
+  /** The installed program's Node over there, as a POSIX shell word (commands.ts remoteNode). */
+  node: string;
+}
+
+/** The address a machine of `kind` named `name` is known by — the key of every registry in machines/. */
+export function addressOf(kind: string, name: string): string {
+  return `${kind}:${name}`;
+}
+
+/** The kind and the name an address was made of, or null when it is not one. */
+export function kindOfAddress(address: string): { kind: string; name: string } | null {
+  const at = address.indexOf(":");
+  if (at <= 0 || at === address.length - 1) return null;
+  return { kind: address.slice(0, at), name: address.slice(at + 1) };
+}
 
 /**
  * The verbs a caller speaks to a machine with — what install-server.ts is written against,
@@ -63,6 +89,8 @@ export interface MachineChannel {
   ): Promise<ExecResult>;
   oneShot(command: string, opts?: { timeoutMs?: number; input?: Buffer }): Promise<ExecResult>;
   copyTo(localFiles: string[], remoteDir: string): Promise<ExecResult>;
+  /** The kind's reading of a failure, in words a person can act on, or null. */
+  diagnose(result: ExecResult): string | null;
 }
 
 /** Enough for an installer to download a release, or a store to cross a slow link. */
@@ -72,12 +100,16 @@ export class MachineConnection implements MachineChannel {
   readonly address: string;
 
   constructor(readonly target: RemoteTarget) {
-    this.address = `ssh:${target.alias}`;
+    this.address = target.address;
   }
 
-  /** A command over the session — queued, output merged (ssh-session.ts), in ExecResult shape. */
+  get #machine(): Machine {
+    return this.target.machine;
+  }
+
+  /** A command over the session — queued, output merged (shell-session.ts), in ExecResult shape. */
   async exec(command: string): Promise<ExecResult> {
-    const result = await runOnShell(this.address, this.target, command);
+    const result = await runOnShell(this.address, this.#machine, command);
     return { code: result.code, stdout: result.output, stderr: "", timedOut: false };
   }
 
@@ -89,7 +121,7 @@ export class MachineConnection implements MachineChannel {
     command: string,
     opts: { input: Buffer; onLine?: (line: string) => void; timeoutMs?: number },
   ): Promise<ExecResult> {
-    const result = await runOnShell(this.address, this.target, command, {
+    const result = await runOnShell(this.address, this.#machine, command, {
       input: opts.input,
       ...(opts.onLine === undefined ? {} : { onLine: opts.onLine }),
       timeoutMs: opts.timeoutMs ?? BULK_TIMEOUT_MS,
@@ -99,12 +131,12 @@ export class MachineConnection implements MachineChannel {
 
   /** Brings the session up, or says why it cannot be. Transient: it idles out unused. */
   open(): Promise<{ ok: true; session: ShellSession } | { ok: false; detail: string }> {
-    return openShell(this.address, this.target);
+    return openShell(this.address, this.#machine);
   }
 
   /** Brings the session up and KEEPS it — see the module doc — or says why it cannot be. */
   hold(): Promise<{ ok: true; session: ShellSession } | { ok: false; detail: string }> {
-    return holdShell(this.address, this.target);
+    return holdShell(this.address, this.#machine);
   }
 
   /** Whether the session to this machine is a held one. */
@@ -117,21 +149,29 @@ export class MachineConnection implements MachineChannel {
     return sessionOf(this.address);
   }
 
-  /** The forwards wanted on this machine's session — applied now if it is up, and every time it comes up. */
-  setForwards(specs: readonly ForwardSpec[]): Promise<void> {
-    return shellOf(this.address, this.target).setForwards(specs);
+  /** The session as the kind is handed it (mechanisms/machines.ts). */
+  shell(): HeldSession {
+    return shellOf(this.address, this.#machine);
   }
 
-  /** ssh's last word on each wanted forward, by forwardKey; empty until the session has been asked. */
-  forwardFacts(): ReadonlyMap<string, ForwardFact> {
-    return shellOf(this.address, this.target).forwardFacts();
+  /**
+   * Gets the target ready to hold a shell (a container started). Only for what a person asked
+   * for — the automatic re-hold never calls it. Serialised per machine.
+   */
+  ready(): Promise<{ ok: true } | { ok: false; detail: string }> {
+    return inLane(this.address, () => this.#machine.ready());
   }
 
-  /** A TCP connection to `127.0.0.1:<remotePort>` as seen from the machine — a channel in the session. */
+  /** This machine's kind's port forwards, or null when the kind has none. */
+  forwards(): MachineForwards | null {
+    return this.#machine.forwards();
+  }
+
+  /** A TCP connection to `127.0.0.1:<remotePort>` as seen from the machine, dialled by its kind over the session. */
   async dial(remotePort: number): Promise<net.Socket> {
     const opened = await this.open();
     if (!opened.ok) throw new Error(opened.detail);
-    return dialThroughSocks(opened.session.socksPort, "127.0.0.1", remotePort);
+    return this.#machine.dial(remotePort, { session: this.shell(), node: this.target.node });
   }
 
   /** An http.Agent whose every socket is a dial through the session — for node:http callers. */
@@ -151,24 +191,20 @@ export class MachineConnection implements MachineChannel {
   }
 
   /**
-   * WINDOWS REMOTES ONLY (see the module doc): a command on its own ssh connection, with an
-   * optional stdin payload. Serialised per machine.
+   * A MACHINE WITHOUT A SHELL TO HOLD (see the module doc): a command outside the session, with
+   * an optional stdin payload. Serialised per machine here — the kind never queues.
    */
   oneShot(command: string, opts: { timeoutMs?: number; input?: Buffer } = {}): Promise<ExecResult> {
-    const args = sshArgs(this.target, command);
-    return inLane(this.address, () =>
-      opts.input !== undefined
-        ? runWithInput("ssh", args, {
-            input: opts.input,
-            ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),
-          })
-        : run("ssh", args, opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),
-    );
+    return inLane(this.address, () => this.#machine.oneShot(command, opts));
   }
 
-  /** WINDOWS REMOTES ONLY: local files copied into a remote directory over scp. Serialised per machine. */
+  /** Local files copied into a directory on the machine, by its kind. Serialised per machine. */
   copyTo(localFiles: string[], remoteDir: string): Promise<ExecResult> {
-    return inLane(this.address, () => run("scp", scpArgs(this.target, localFiles, remoteDir)));
+    return inLane(this.address, () => this.#machine.copyTo(localFiles, remoteDir));
+  }
+
+  diagnose(result: ExecResult): string | null {
+    return this.#machine.diagnose(result);
   }
 }
 
@@ -179,9 +215,9 @@ export function connectionTo(target: RemoteTarget): MachineConnection {
 
 /**
  * Lets go of the connection to a machine, held or not. By address rather than on the handle:
- * a disconnect can outlive the resolvability of its target (an alias removed from the ssh
- * config still has a session to close). Only this generation's own registry is consulted —
- * there is deliberately no way to close a session by a pid remembered from before.
+ * a disconnect can outlive the resolvability of its target (a kind whose plugin is gone still
+ * has a session to close). Only this generation's own registry is consulted — there is
+ * deliberately no way to close a session by a pid remembered from before.
  */
 export function closeConnectionTo(address: string): void {
   closeShell(address);

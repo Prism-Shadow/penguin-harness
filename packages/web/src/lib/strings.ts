@@ -56,47 +56,39 @@ export const zh = {
     imageVersion: (version: string) => `本服务端版本：${version}`,
     noImage:
       "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像；源码检出则在第一次热推后获得。",
-    empty: "~/.ssh/config 中没有可添加的主机。",
-    /** The picker: an ssh config can declare hundreds of hosts, so the panel is a fuzzy search over aliases. */
-    search: "搜索主机…",
-    noMatch: "没有匹配的主机。",
+    empty: "没有可添加的机器。",
+    /** The picker: a kind can offer hundreds of machines, so the panel is a fuzzy search over names. */
+    search: "搜索机器…",
+    noMatch: "没有匹配的机器。",
     /** The tag on this server's own row. */
     localTitle: "本服务端",
     noneInUse: "还没有在用的机器。",
     sshHint:
-      "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <别名>` 能直接进）。请配置 ssh 的人把它写进 ~/.ssh/config。",
+      "能加的机器来自已加载的机器种类：ssh 主机是本服务端账户用密钥就能 ssh 上去的主机（写在 ~/.ssh/config 里）；WSL 与容器由插件页启用对应插件后出现。",
     now: "刚刚",
     /** The chevron row at the foot of the picker's list: the matches it has not shown yet. */
-    allHosts: (count: number) => `ssh 配置中另有 ${count} 台`,
+    allHosts: (count: number) => `另有 ${count} 台`,
     expand: "展开",
     fewer: "收起",
-    /** The form that appends a host block to this server's ~/.ssh/config. */
-    host: {
-      addTitle: "新建 ssh 主机",
-      /** The one-word verbs on the buttons; the titles above say what they do in full. */
+    /** Defining a machine by hand, for a kind that takes it (an ssh Host block, a container); the form is the kind's own. */
+    definition: {
+      /** The one-word verbs on the buttons; the titles say what they do in full. */
       newVerb: "新建",
       configureVerb: "配置",
-      add: "写入 ssh 配置",
-      alias: "别名（Host）",
-      aliasHint: "一个词，之后 `ssh <别名>` 和这里都用它称呼这台机器。",
-      hostName: "地址（HostName）",
-      hostNameHint: "IP 或域名。",
-      user: "用户（User）",
-      userHint: "留空则用本服务端账户的用户名。",
-      port: "端口（Port）",
-      portHint: "留空为 22。",
-      identityFile: "密钥文件（IdentityFile）",
-      identityFileHint: "留空则用 ssh 的默认密钥。",
-      oneWord: "必须是一个词：不能有空格或 #。",
-      portRange: "1 到 65535 之间的整数。",
-      exists: "ssh 配置里已有这个别名。",
-      added: (alias: string) => `已写入 ${alias}。现在可以从「添加机器…」里启用它。`,
-      /** Configuring a host this app wrote: the same form, the alias fixed. */
-      configure: "配置 ssh 主机",
-      editTitle: "配置 ssh 主机",
-      saved: (alias: string) => `已更新 ${alias} 的 ssh 配置。`,
+      newTitle: "新建机器",
+      addTitle: (kind: string) => `新建机器：${kind}`,
+      editTitle: (kind: string) => `配置机器：${kind}`,
+      configure: "配置这台机器的定义",
+      kind: "种类",
+      add: "保存",
+      forgetVerb: "移除",
+      forgetWhy: "只从本服务端移除这份定义与机器记录；那边的东西（比如容器）不会被删除。",
+      added: (name: string) => `已新建 ${name}。现在可以从「添加机器…」里启用它。`,
+      saved: (name: string) => `已更新 ${name}。`,
+      forgotten: (name: string) => `已移除 ${name}。`,
       foreign:
-        "这一段不是由 PenguinHarness 写入的，可能带有这里不认识的选项；请直接编辑 ~/.ssh/config。",
+        "这份定义不是由 PenguinHarness 写入的，可能带有这里不认识的选项；请到它所在的地方编辑（ssh 主机即 ~/.ssh/config）。",
+      noKinds: "已加载的机器种类都不接受手工新建。",
     },
     /** The verbs. */
     add: "添加机器…",
@@ -143,7 +135,10 @@ export const zh = {
       "无论那台机器上现在是什么，都把这个构建的程序装上去并重启它的服务——正在用它的人会被打断。",
     /** Refusals answered by machine id when a batch is queued. */
     refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
-    refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
+    refusedUnknown: (alias: string) => `${alias} 已不在本服务端的机器列表里。`,
+    refusedKind: (alias: string) => `${alias} 的机器种类没有加载：先在插件页启用它。`,
+    /** A card whose kind is not loaded here: listed, with its record, and nothing can be done to it. */
+    kindUnavailable: "种类不可用",
     /** The detail pane. */
     details: "详情",
     detailInstalled: "已安装",

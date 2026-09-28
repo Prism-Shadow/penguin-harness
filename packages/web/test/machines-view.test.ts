@@ -25,6 +25,7 @@ const INSTALLED = { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" };
 const fresh = (alias: string): MachineInfo => ({
   id: `ssh:${alias}`,
   alias,
+  kind: "ssh",
   machineId: null,
   installed: null,
   local: false,
@@ -38,6 +39,7 @@ const carrying = (alias: string): MachineInfo => ({ ...fresh(alias), installed: 
 const here = (): MachineInfo => ({
   id: "local",
   alias: "workstation",
+  kind: "local",
   machineId: "LNrJdHAZJ91G58i0",
   installed: INSTALLED,
   local: true,
@@ -53,6 +55,7 @@ function response(
 ): MachinesResponse {
   return {
     machines: opts.machines ?? [fresh("build-box"), fresh("nas")],
+    kinds: [],
     imageVersion: opts.imageVersion === undefined ? "9.9.9" : opts.imageVersion,
     job: jobs.find((job) => job.running) ?? jobs.at(-1) ?? null,
     jobs,

@@ -4,7 +4,7 @@
  *
  * A platform-layer feature end to end — the forwards ride the machine session that already
  * exists — so a hot push delivers it, and a swap keeps every forward up: the session that
- * carries them is delivered to the successor (machines/transport/ssh-session.ts), and the
+ * carries them is delivered to the successor (machines/transport/shell-session.ts), and the
  * successor's setup only hands it the same wanted set again.
  */
 import type { DatabaseSync } from "node:sqlite";

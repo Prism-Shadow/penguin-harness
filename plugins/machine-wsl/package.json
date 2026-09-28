@@ -1,0 +1,32 @@
+{
+  "name": "@prismshadow/penguin-plugin-machine-wsl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The WSL machine kind for PenguinHarness on Windows: each installed WSL distro is a machine, reached through wsl.exe.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "license": "Apache-2.0",
+  "files": [
+    "dist",
+    "README.md",
+    "ifaces.json"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && vitest run --passWithNoTests",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "tsup": "^8.3.0",
+    "vitest": "^3.2.6"
+  }
+}
