@@ -188,23 +188,36 @@ function ActivityWorkspace({
   // Read through a ref so `reload` keeps one identity across opening and leaving an activity.
   const openActivityId = useRef(activityId);
   openActivityId.current = activityId;
+  // Reloads can overlap (a live-status reload while the first load is in flight) and finish
+  // out of order. Each request takes a number, and a response applies only when it is newer
+  // than the last one applied, so an older response never overwrites fresher records or status.
+  const requested = useRef(0);
+  const appliedItems = useRef(0);
+  const appliedSummaries = useRef(0);
   const reload = useCallback(async () => {
     if (!accessible.current) return;
     // Inside an activity (a studio save, say) only the records are needed: the summaries
     // fan out over every activity, and the return-to-list reload fetches them fresh.
     const withSummaries = openActivityId.current === undefined;
+    const request = ++requested.current;
     try {
       const result = await apiFetch<{
         activities: ActivityRecord[];
         summaries?: Record<string, ActivitySummary>;
       }>(withSummaries ? `${basePath(projectId)}?summary=1` : basePath(projectId));
       if (mounted.current) {
-        setItems(result.activities);
-        if (withSummaries) setSummaries(result.summaries ?? {});
-        setError("");
+        if (request > appliedItems.current) {
+          appliedItems.current = request;
+          setItems(result.activities);
+          setError("");
+        }
+        if (withSummaries && request > appliedSummaries.current) {
+          appliedSummaries.current = request;
+          setSummaries(result.summaries ?? {});
+        }
       }
     } catch (e) {
-      if (mounted.current) setError(apiErrorText(e));
+      if (mounted.current && request === requested.current) setError(apiErrorText(e));
     } finally {
       if (mounted.current) setLoading(false);
     }
