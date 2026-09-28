@@ -1769,6 +1769,9 @@ test("the studio header wraps its controls instead of overlapping them", async (
   const headerControls = () => [
     page.locator('nav[aria-label="Breadcrumb"] h2'),
     page.getByRole("button", { name: "Ref settings", exact: true }),
+    page.getByRole("button", { name: "Change number", exact: true }),
+    // The draft/unsaved status text: the aria-live paragraph right after the breadcrumb.
+    page.locator('nav[aria-label="Breadcrumb"] + p[aria-live]'),
     page.getByRole("button", { name: "Reload draft", exact: true }),
     page.getByRole("button", { name: "Layout", exact: true }),
   ];
