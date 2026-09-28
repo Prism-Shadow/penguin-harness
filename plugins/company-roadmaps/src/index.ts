@@ -86,7 +86,6 @@ export {
   PAGE_TIMEOUT_MS,
   pageHtml,
   pageRoutes,
-  roadmapRecipe,
 } from "./page.js";
 export { claimListeners, discussingRoomOf, roomClaim } from "./claim.js";
 export type { ChannelRef, ClaimListener } from "./claim.js";

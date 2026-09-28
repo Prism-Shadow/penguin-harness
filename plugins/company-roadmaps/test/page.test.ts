@@ -24,7 +24,6 @@ import {
   PAGE_TIMEOUT_MS,
   pageHtml,
   pageRoutes,
-  roadmapRecipe,
 } from "../src/index.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -330,31 +329,19 @@ describe("the page is never blank", () => {
   });
 });
 
-describe("the page says how a roadmap is opened", () => {
-  const RECIPE = [
-    "penguin org channel create room_queue",
-    "penguin org channel invite room_queue agent:<employee>",
-    'curl -X POST "http://localhost:7364/api/projects/proj/organizations/acme/roadmaps"',
-  ];
-
-  it("fills the README's three commands with the organization at hand", () => {
-    const recipe = roadmapRecipe("proj", "acme", "http://localhost:7364");
-    for (const line of RECIPE) expect(recipe).toContain(line);
-    expect(recipe).toContain("--org-id acme --project-id proj");
-    expect(recipe).toContain('"channelId": "room_queue"');
-  });
-
-  it("on the empty list and on a list, as text a person can copy", async () => {
-    for (const body of [{ roadmaps: [] }, { roadmaps: [ROADMAP] }]) {
-      const out = await render("/org/proj/acme/roadmaps", () => ({ ok: true, body }));
-      const text = readable(out.html);
-      expect(text).toContain(PAGE_STRINGS.en.howTitle);
-      for (const line of RECIPE) expect(text).toContain(line);
+describe("the page opens a roadmap, and never sends anyone to a terminal", () => {
+  it("offers the button above the list, empty or not — and no command, token or 'only reads' anywhere", async () => {
+    for (const lang of ["en", "zh"] as const) {
+      for (const body of [{ roadmaps: [] }, { roadmaps: [ROADMAP] }]) {
+        const out = await render("/org/proj/acme/roadmaps", () => ({ ok: true, body }), { lang });
+        expect(out.html).toContain(`<button type="button" data-open>${PAGE_STRINGS[lang].open}</button>`);
+      }
     }
-    const empty = await render("/org/proj/acme/roadmaps", () => ({
-      ok: true,
-      body: { roadmaps: [] },
-    }));
+    const empty = await render("/org/proj/acme/roadmaps", () => ({ ok: true, body: { roadmaps: [] } }));
     expect(readable(empty.html)).toContain(PAGE_STRINGS.en.empty);
+    const source = pageHtml();
+    for (const gone of ["curl", "PENGUIN_API_TOKEN", "only reads", "本页只读", "penguin org channel create"]) {
+      expect(source).not.toContain(gone);
+    }
   });
 });
