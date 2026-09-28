@@ -2439,6 +2439,8 @@ export class SessionsModule {
       // wrong organization.
       orgIdOfSession: (sessionId) => orgCache.ownerOfSession(sessionId)?.orgId,
       orgIdsOfProject: (projectId) => orgCache.orgIdsOfProject(projectId),
+      activityIdOfSession: (sessionId) => sessionsRepo.activityIdOfSession(sessionId),
+      activityIdsOfProject: (projectId) => sessionsRepo.activityIdsOfProject(projectId),
       pathPrepend: env.pathPrepend,
       confineSpawn: env.confineSpawn,
     });

@@ -280,4 +280,30 @@ export class SessionsRepo implements SessionIndex {
   deleteById(sessionId: string): void {
     this.db.prepare("DELETE FROM sessions WHERE session_id = ?").run(sessionId);
   }
+
+  /**
+   * Every activity-run session of a Project, session id -> activity id, in one query, so a
+   * session list can stamp `activityId` without a lookup per row. An activity run keeps its
+   * session id inside its record; runs without a session (deterministic stages) have null.
+   */
+  activityIdsOfProject(projectId: string): Map<string, string> {
+    const rows = this.db
+      .prepare(
+        `SELECT json_extract(record_json, '$.sessionId') AS session_id, activity_id
+           FROM activity_runs
+          WHERE project_id = ? AND json_extract(record_json, '$.sessionId') IS NOT NULL`,
+      )
+      .all(projectId) as Array<{ session_id: string; activity_id: string }>;
+    return new Map(rows.map((row) => [row.session_id, row.activity_id]));
+  }
+
+  activityIdOfSession(sessionId: string): string | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT activity_id FROM activity_runs
+          WHERE json_extract(record_json, '$.sessionId') = ? LIMIT 1`,
+      )
+      .get(sessionId) as { activity_id: string } | undefined;
+    return row?.activity_id;
+  }
 }
