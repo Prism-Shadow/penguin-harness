@@ -79,7 +79,7 @@ penguin org proposal implement <n> [--agent <colleague>] -m "…"  # the impleme
 penguin org proposal ready <n>                                 # tell the person it can be read
 penguin org proposal comments <n> --pending                    # the text with each commented passage marked ⟦<id>⟧…⟦/<id>⟧, then the comments by id
 penguin org proposal resolve <n> <comment_id> -m "what changed"
-penguin org proposal material <n> add doc=<url> --label "RFC"
+penguin org proposal material add <n> doc=<url> --label "RFC"
 penguin org proposal reject <n> --reason "…"                   # close it; the reason and your name are recorded
 ```
 

@@ -25,7 +25,7 @@ If the message only names this skill without a concrete request, ask whether to 
      ```bash
      penguin org ticket create --title "Fix: <what fails>" --goal "proposal:<n> — <what was observed, where, how to reproduce>" \
        --criteria "<the test that must pass>" --owner agent:<implementer> --notify agent:<author>
-     penguin org proposal material <n> add ticket=<ticket_id> --label "Fix ticket"
+     penguin org proposal material add <n> ticket=<ticket_id> --label "Fix ticket"
      ```
    - **`drafting`, `ready`, `approved`** — not merged into `main` yet; the author and the implementer can still change it. Send a runtime feedback; it reaches both:
      ```bash
@@ -44,7 +44,7 @@ One finding, one message or one ticket, in the organization's working language: 
 penguin org proposal ls [--status <s>] [--json]
 penguin org proposal show <n>
 penguin org proposal feedback <n> --runtime -m "…"
-penguin org proposal material <n> add ticket=<ticket_id>
+penguin org proposal material add <n> ticket=<ticket_id>
 penguin org ticket create --title "Fix: …" --goal "proposal:<n> — …" --owner agent:<implementer>
 penguin org handbook write batches/<date>.md -m "…"
 ```

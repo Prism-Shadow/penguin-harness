@@ -22,7 +22,7 @@ The organization's shared workspace holds the repository; the handbook names the
 git fetch origin && git checkout -b proposal/<n>-<slug> origin/dev
 # … build it …
 gh pr create --base dev --title "<proposal title>" --body "Implements proposal:<n>. …"
-penguin org proposal material <n> add pr=<pr url> --label "PR <number>"
+penguin org proposal material add <n> pr=<pr url> --label "PR <number>"
 ```
 
 - **Stay inside the scope.** The proposal's `scope` lists the files and names the change is meant to touch, each with its kind — `edit`, `new`, `delete`, or `rename` (from `from` to `file`) — and every path is relative to the proposal's `root`, the repository's directory in the shared workspace. Touching another file is a finding, not a decision: report it (`feedback`) and let the author widen the scope before you rely on it. A one-line edit the change cannot do without is fine to make and report in the same breath.
@@ -52,8 +52,8 @@ The plugin puts it on the author's desk as a `[proposal #<n>] feedback from …`
 
 ```bash
 penguin org proposal show <n>
-penguin org proposal material <n> add pr=<url> [--label <s>]
-penguin org proposal material <n> add branch=<url>
+penguin org proposal material add <n> pr=<url> [--label <s>]
+penguin org proposal material add <n> branch=<url>
 penguin org proposal feedback <n> -m "<finding>"
 penguin org proposal merged <n>
 ```

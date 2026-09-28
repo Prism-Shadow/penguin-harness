@@ -9,7 +9,7 @@
  * content, at a name two plugins both ship, or at a description the loader reads as empty.
  * Content no check reads rots silently.
  *
- * Four rules, each one a failure the loader makes silent rather than loud:
+ * Five rules, each one a failure the loader — or the CLI a skill drives — makes silent rather than loud:
  *
  * 1. frontmatter — `skills/<name>/SKILL.md` exists and its first `---` block parses the way the
  *    loader parses it (`parseSkillFrontmatter` in `packages/core/src/plugins/index.ts`): a `name`
@@ -25,6 +25,17 @@
  * 4. manifest — every `plugin.json` parses and carries a `YYYY.MM.DD.N` `version`, the
  *    `PLUGIN_VERSION_PATTERN` the loader refuses to load without. The loader throws on it too,
  *    but only once something loads the library and only after a build; this reads the file.
+ * 5. commands — every `penguin …` invocation a `SKILL.md` names inside a fenced block or an
+ *    inline code span resolves to a command the CLI of *this checkout* registers
+ *    (`packages/cli/src/commands/*.ts`, read statically by `scripts/lib/plugin-skill-commands.mjs`,
+ *    which the company plugin's own suite reads its registration from too). A skill is an
+ *    instruction to run those commands; one the CLI does not register fails only when someone
+ *    follows it. The registration is always this checkout's, never the pointed-at root's, so a
+ *    copy of `plugins/` is measured against the CLI beside the guard; a registration the reader
+ *    cannot trace is a violation, not an empty surface. Not measured: an invocation in prose,
+ *    a flag the command does not declare (`penguin org channel --nope` resolves to `org
+ *    channel`), a command that exists only at another revision, and a skill naming no `penguin`
+ *    command at all — the coverage line lists those skills so they stay visible.
  *
  * Usage: node scripts/check-plugin-skills.mjs [root]
  * `root` holds `plugins/` — a copy, when the guard is pointed at a fixture; this checkout
@@ -33,11 +44,19 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  extractInvocations,
+  measureSkills,
+  readCliCommands,
+  resolveInvocation,
+} from "./lib/plugin-skill-commands.mjs";
 
 /** This checkout; `argv[2]` overrides it so the guard can be run against a copy. */
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = path.resolve(process.argv[2] ?? REPO_ROOT);
 const PLUGINS = path.join(ROOT, "plugins");
+/** Rule 5's surface: the CLI beside this guard, whatever `root` points at. */
+const CLI_COMMANDS = path.join(REPO_ROOT, "packages/cli/src/commands");
 
 /** `PLUGIN_VERSION_PATTERN` of `packages/core/src/plugins/index.ts`. */
 const VERSION_PATTERN = /^\d{4}\.\d{2}\.\d{2}\.\d+$/;
@@ -46,7 +65,7 @@ const VERSION_PATTERN = /^\d{4}\.\d{2}\.\d{2}\.\d+$/;
 const NOT_CONTENT = new Set(["SKILL.md", "icon.svg"]);
 
 /** The rule ids a violation line carries; the coverage line names them all. */
-const RULES = ["frontmatter", "unique-name", "links", "manifest"];
+const RULES = ["frontmatter", "unique-name", "links", "manifest", "commands"];
 
 const violations = [];
 const report = (rule, file, message) => violations.push({ rule, file, message });
@@ -167,6 +186,9 @@ for (const pluginDir of pluginDirs) {
 }
 skills.sort((a, b) => (posix(a.dir) < posix(b.dir) ? -1 : 1));
 
+/** Every SKILL.md read, as `{ dirName, file, content }`, for rule 5. */
+const skillContents = [];
+
 /** Skill name → the SKILL.md that claimed it first, for rule 2. */
 const firstOwner = new Map();
 let referenceFiles = 0;
@@ -182,7 +204,9 @@ for (const skill of skills) {
     report("frontmatter", posix(skillFile), "skill directory holds no SKILL.md");
     continue;
   }
-  const header = frontmatter(readFileSync(skillFile, "utf8"));
+  const skillContent = readFileSync(skillFile, "utf8");
+  skillContents.push({ dirName: skill.name, file: skillFile, content: skillContent });
+  const header = frontmatter(skillContent);
   if (header === null) {
     report("frontmatter", posix(skillFile), "no `---` frontmatter block at the start of the file");
   } else {
@@ -263,6 +287,60 @@ for (const skill of skills) {
   }
 }
 
+// Rule 5: every command a skill names is one this checkout's CLI registers.
+const cliDir = path.relative(REPO_ROOT, CLI_COMMANDS).split(path.sep).join("/");
+let commands = null;
+try {
+  commands = readCliCommands(CLI_COMMANDS, { root: REPO_ROOT });
+} catch (err) {
+  const untraced = err instanceof Error && Array.isArray(err.untraced) ? err.untraced : null;
+  if (untraced === null) {
+    report(
+      "commands",
+      cliDir,
+      `the CLI registration cannot be read: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } else {
+    for (const entry of untraced) {
+      report("commands", cliDir, `a registration this guard cannot trace: ${entry}`);
+    }
+  }
+}
+let commandsCovered;
+if (commands === null) {
+  commandsCovered = `${skillContents.length} skills not measured — the CLI registration was not read`;
+} else {
+  const { invocations, mismatches } = measureSkills(skillContents, commands);
+  /** file → lines already named, so a repeated invocation names each of its lines once. */
+  const named = new Map();
+  for (const item of mismatches) {
+    const { content } = skillContents.find((skill) => skill.file === item.file);
+    const used = named.get(item.file) ?? new Set();
+    named.set(item.file, used);
+    const at = content
+      .split("\n")
+      .findIndex((line, index) => !used.has(index) && line.includes(`penguin ${item.text}`));
+    if (at >= 0) used.add(at);
+    const where = at >= 0 ? `line ${at + 1}: ` : "";
+    report("commands", posix(item.file), `${where}\`penguin ${item.text}\` — ${item.mismatch}`);
+  }
+  const resolved = new Set();
+  for (const invocation of invocations) {
+    const result = resolveInvocation(invocation.tokens, commands);
+    if (result.path !== undefined) resolved.add(result.path);
+  }
+  const silent = skillContents
+    .filter((skill) => extractInvocations(skill.content).length === 0)
+    .map((skill) => posix(path.dirname(skill.file)));
+  commandsCovered =
+    `${skillContents.length} skills, ${invocations.length} penguin invocations, ` +
+    `${resolved.size} distinct commands, ${commands.size} CLI registrations read from ` +
+    `${cliDir}; ` +
+    `${silent.length} skill(s) naming no penguin command` +
+    (silent.length > 0 ? `: ${silent.join(", ")}` : "");
+}
+const commandsLine = `plugin skills: commands — ${commandsCovered}`;
+
 const covered = [
   `${pluginDirs.length} plugin directories`,
   `${manifests.length} plugin.json manifests`,
@@ -273,9 +351,11 @@ const rules = `rules checked: ${RULES.join(", ")}`;
 
 if (violations.length === 0) {
   console.log(`plugin skills: ok — ${covered}; ${rules}`);
+  console.log(commandsLine);
   process.exit(0);
 }
 console.error(`plugin skills: ${violations.length} violation(s) — ${covered}; ${rules}`);
+console.error(commandsLine);
 for (const violation of violations) {
   console.error(`  [${violation.rule}] ${violation.file}: ${violation.message}`);
 }
