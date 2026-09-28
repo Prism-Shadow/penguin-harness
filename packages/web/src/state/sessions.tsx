@@ -92,6 +92,12 @@ import { useProject } from "./project";
 /** A reload this server answered nothing to is tried again after this, doubling up to the ceiling. */
 const RELOAD_RETRY_MIN_MS = 2_000;
 const RELOAD_RETRY_MAX_MS = 30_000;
+/**
+ * A machine that answered none of a reload's questions rests this long, doubling up to the
+ * ceiling (the reload retry's shape); then ONE question probes it (see `resting`).
+ */
+export const MACHINE_REST_MIN_MS = 2_000;
+export const MACHINE_REST_MAX_MS = 30_000;
 
 interface SessionsContextValue {
   /** Loaded list (paged per Agent and category; each Agent's entries newest first). */
@@ -383,8 +389,52 @@ export function createSessionsStore() {
   let gen = 0;
   /** Consecutive reloads this server answered nothing to (the retry backs off on it). */
   let retries = 0;
+  /**
+   * Machines that answered none of a reload's questions. A reload asks a machine about EVERY
+   * Agent at once, so asking a silent one again on each reload multiplies one outage by the
+   * Agent count, reload after reload — two dozen calls per wave held on a machine whose relay
+   * is down. A resting machine contributes its cached rows (as an offline one does); when its
+   * rest is over the next reload asks it ONE question, and only an answer to that brings the
+   * full round back. A silent machine therefore holds at most one call at a time.
+   */
+  const resting = new Map<
+    string,
+    { until: number; failures: number; probing: boolean; wake: ReturnType<typeof setTimeout> }
+  >();
 
   return createStore<SessionsStoreState>((set, get) => {
+    /**
+     * A machine's showing in a finished reload (see `resting`): an answer ends its rest and
+     * asks for the full round at once, while silence starts a rest, or doubles it when it was
+     * the probe that went unanswered, with a reload booked for when the rest ends.
+     */
+    const noteMachineAnswer = (machineId: string, answered: boolean, wasProbe: boolean) => {
+      const rest = resting.get(machineId);
+      if (answered) {
+        if (rest === undefined) return;
+        clearTimeout(rest.wake);
+        resting.delete(machineId);
+        void get().reload();
+        return;
+      }
+      // A round sent before the rest began, landing during it (even while a probe is out):
+      // the silence is already counted, and only the probe's own answer decides what's next.
+      if (rest !== undefined && !wasProbe) return;
+      if (rest !== undefined) clearTimeout(rest.wake);
+      const failures = (rest?.failures ?? 0) + 1;
+      const delay = Math.min(MACHINE_REST_MAX_MS, MACHINE_REST_MIN_MS * 2 ** (failures - 1));
+      console.warn(
+        `[sessions] machine ${machineId} answered none of a reload's questions; ` +
+          `its cached rows are shown and one question probes it in ${delay} ms`,
+      );
+      resting.set(machineId, {
+        until: Date.now() + delay,
+        failures,
+        probing: false,
+        wake: setTimeout(() => void get().reload(), delay),
+      });
+    };
+
     /**
      * Keeps an Agent's category totals — overall and per Workspace — in step with a local
      * list mutation of `session` (no-op while its counts are unknown). An organization's row
@@ -455,17 +505,36 @@ export function createSessionsStore() {
         if (get().sessions.length === 0) set({ loading: true });
         let applied = false;
         // This server first, then every machine of the Project this server holds a
-        // connection to. Order matters only as a tie-break for equal timestamps.
-        const sources: (string | null)[] = [null, ...machineIds];
+        // connection to — less the resting ones, but for the one whose rest is over, which
+        // is probed. Order matters only as a tie-break for equal timestamps.
+        const now = Date.now();
+        const rested = new Set<string>();
+        const probed = new Set<string>();
+        for (const machineId of machineIds) {
+          const rest = resting.get(machineId);
+          if (rest === undefined) continue;
+          rested.add(machineId);
+          if (!rest.probing && rest.until <= now) {
+            rest.probing = true;
+            probed.add(machineId);
+          }
+        }
+        const sources: (string | null)[] = [
+          null,
+          ...machineIds.filter((m) => !rested.has(m) || probed.has(m)),
+        ];
         // One job per (Agent, source), asking each server about the Agents IT can answer for:
         // this server about the Project's, a machine about those plus its own. A machine-only
-        // Agent's Sessions are listed by nobody otherwise.
+        // Agent's Sessions are listed by nobody otherwise. A probe is one Agent's question.
         const jobs = sources.flatMap((source) => {
           const ids =
             source === null
               ? agentIds
               : [...new Set([...agentIds, ...(agentIdsByMachine[source] ?? [])])];
-          return ids.map((agentId) => ({ agentId, source }));
+          return (source !== null && probed.has(source) ? ids.slice(0, 1) : ids).map((agentId) => ({
+            agentId,
+            source,
+          }));
         });
         try {
           const results = await Promise.all(
@@ -529,6 +598,19 @@ export function createSessionsStore() {
               }
             }),
           );
+          // Whether each machine answered is a fact about the machine, whichever reload is
+          // current by now — recorded before a newer one discards this one's rows.
+          const unansweredMachines = new Set(
+            results.flatMap((r) => (r.source !== null && !r.answered ? [r.source] : [])),
+          );
+          for (const source of sources) {
+            if (source === null) continue;
+            noteMachineAnswer(
+              source,
+              results.some((r) => r.source === source && r.answered),
+              probed.has(source),
+            );
+          }
           if (g !== gen) return;
           // Agents this server did not answer about. Per Agent, not per server: a damaged
           // index or a 500 on ONE Agent is a different event from this server being
@@ -565,9 +647,8 @@ export function createSessionsStore() {
           retries = 0;
           // Machines that did not answer are treated exactly like machines that were never
           // asked: their rows come from the cache below, and their cache is left alone.
-          const silent = new Set(
-            results.flatMap((r) => (r.source !== null && !r.answered ? [r.source] : [])),
-          );
+          // So are resting ones, and a probed one: one Agent's answer is not the machine's list.
+          const silent = new Set([...unansweredMachines, ...rested]);
           const nextSessions: SessionInfo[] = [];
           const seen = new Set<string>();
           // What each machine answered, kept so it can be shown after the next restart while

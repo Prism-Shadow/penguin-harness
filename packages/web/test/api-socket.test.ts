@@ -4,7 +4,7 @@
  * when no socket is to be had.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiSocket } from "../src/api/socket";
+import { ApiSocket, SocketTimeoutError } from "../src/api/socket";
 import type { StreamHandlers } from "../src/api/sse";
 
 /** A WebSocket the test drives by hand. */
@@ -397,6 +397,26 @@ describe("deadlines", () => {
     expect(line).toContain("open (last frame");
     // A late answer for the given-up id is ignored, not crashed on.
     last().receive({ id: 1, status: 200, headers: {}, body: {} });
+    warn.mockRestore();
+  });
+
+  it("says whether the socket carried frames while a given-up call waited", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await openViaReady();
+    const live = socket.call("GET", "/server/m1/api/projects/p/agents/a/sessions");
+    last().receive({ heartbeat: true }); // traffic after the call went out
+    vi.advanceTimersByTime(20_000);
+    const liveErr = await live.catch((e: unknown) => e);
+    expect(liveErr).toBeInstanceOf(SocketTimeoutError);
+    expect((liveErr as SocketTimeoutError).socketLive).toBe(true);
+    // Nothing at all after the call went out: the socket itself went quiet. (A beat just
+    // before it keeps the watchdog from closing the socket first.)
+    last().receive({ heartbeat: true });
+    const quiet = socket.call("GET", "/server/m1/api/projects/p/agents/b/sessions");
+    vi.advanceTimersByTime(20_000);
+    const quietErr = await quiet.catch((e: unknown) => e);
+    expect(quietErr).toBeInstanceOf(SocketTimeoutError);
+    expect((quietErr as SocketTimeoutError).socketLive).toBe(false);
     warn.mockRestore();
   });
 

@@ -52,12 +52,24 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 /**
  * A one-shot call the server has not answered after this is given up on — with a warning
  * saying so, because a socket that keeps its heartbeat while answering nothing is otherwise
- * invisible: no error, no closed connection, nothing in the network log. The caller then
- * makes the call over HTTP (api/client.ts).
+ * invisible: no error, no closed connection, nothing in the network log. The caller decides
+ * whether to make the call over HTTP (api/client.ts), from `SocketTimeoutError.socketLive`.
  */
 export const ANSWER_TIMEOUT_MS = 20_000;
 /** A stream the server has not opened after this is issued again, with the same warning. */
 const STREAM_OPEN_TIMEOUT_MS = 20_000;
+
+/**
+ * A one-shot call given up on (ANSWER_TIMEOUT_MS). `socketLive` says whether the server sent
+ * any frame on this socket while the call waited: then the socket was carrying traffic and
+ * it is the endpoint behind it that is silent — asking again over HTTP reaches the same
+ * route, and for a machine the same held forward (api/client.ts decides with it).
+ */
+export class SocketTimeoutError extends Error {
+  constructor(readonly socketLive: boolean) {
+    super("socket_timeout");
+  }
+}
 
 export interface SocketCallResult {
   status: number;
@@ -139,6 +151,8 @@ export class ApiSocket {
   #handshakeDeadline: ReturnType<typeof setTimeout> | null = null;
   /** When the server's last frame arrived on the open socket (performance.now()). */
   #lastFrameAt = 0;
+  /** Frames received on the current socket, heartbeats included (a call's timeout compares it). */
+  #framesSeen = 0;
 
   /**
    * `urlFor` spells the socket's address for a user; `whoAmI` finds out who is signed in
@@ -263,15 +277,19 @@ export class ApiSocket {
     }
     const id = this.#next++;
     const frame: Record<string, unknown> = { id, call: { method, path, ...opts } };
+    const framesAtSend = this.#framesSeen;
     return new Promise<SocketCallResult>((resolve, reject) => {
       const deadline = setTimeout(() => {
         if (this.#calls.get(id)?.reject !== reject) return;
         this.#calls.delete(id);
+        const live = this.#state === "open" && this.#framesSeen > framesAtSend;
         console.warn(
           `[api-socket] ${method} ${path}: no answer in ${ANSWER_TIMEOUT_MS} ms over a socket that is ${this.#describeLiveness()}; ` +
-            `the call is made over HTTP instead`,
+            (live
+              ? "the socket carried frames meanwhile, so it is the endpoint that is silent"
+              : "the socket itself went quiet"),
         );
-        reject(new Error("socket_timeout"));
+        reject(new SocketTimeoutError(live));
       }, ANSWER_TIMEOUT_MS);
       this.#calls.set(id, { method, path, resolve, reject, deadline });
       this.#ws!.send(JSON.stringify(frame));
@@ -374,6 +392,7 @@ export class ApiSocket {
     ws.onmessage = (e: MessageEvent<string>) => {
       if (this.#ws !== ws) return;
       this.#lastFrameAt = performance.now();
+      this.#framesSeen += 1;
       this.#armWatchdog();
       this.#frame(e.data);
     };
