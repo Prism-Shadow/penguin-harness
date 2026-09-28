@@ -67,42 +67,47 @@ export function SelectionMenuRows({
   onDone,
 }: {
   selection: CapturedSelection;
-  /** Stages the excerpt in this conversation's composer. */
-  onAddExcerpt: (reference: ComposerReference) => void;
+  /**
+   * Stages the excerpt in this conversation's composer. Omitted where the stream has no
+   * composer to stage it in (a read-only transcript, say): the "Add to chat" row is then
+   * left out and only Copy shows.
+   */
+  onAddExcerpt?: (reference: ComposerReference) => void;
   /** Runs after either row has acted: closes the panel and puts the highlight back. */
   onDone: (selection: CapturedSelection) => void;
 }) {
   return (
     <>
-      {SELECTION_MENU_ITEMS.map((item) =>
-        item === "copy" ? (
-          <button
-            key={item}
-            type="button"
-            className={overflowMenuRowClass}
-            onClick={() => {
-              writeClipboard(selection.text);
-              toastSuccess(S.common.copied);
-              onDone(selection);
-            }}
-          >
-            {overflowMenuGlyph(STAT_ICONS.copy)}
-            {S.common.copy}
-          </button>
-        ) : (
-          <button
-            key={item}
-            type="button"
-            className={overflowMenuRowClass}
-            onClick={() => {
-              onAddExcerpt(excerptReference(selection.text));
-              onDone(selection);
-            }}
-          >
-            {overflowMenuGlyph(ADD_TO_CHAT_ICON)}
-            {S.files.addToChat}
-          </button>
-        ),
+      {SELECTION_MENU_ITEMS.filter((item) => item !== "addToConversation" || onAddExcerpt).map(
+        (item) =>
+          item === "copy" ? (
+            <button
+              key={item}
+              type="button"
+              className={overflowMenuRowClass}
+              onClick={() => {
+                writeClipboard(selection.text);
+                toastSuccess(S.common.copied);
+                onDone(selection);
+              }}
+            >
+              {overflowMenuGlyph(STAT_ICONS.copy)}
+              {S.common.copy}
+            </button>
+          ) : (
+            <button
+              key={item}
+              type="button"
+              className={overflowMenuRowClass}
+              onClick={() => {
+                onAddExcerpt?.(excerptReference(selection.text));
+                onDone(selection);
+              }}
+            >
+              {overflowMenuGlyph(ADD_TO_CHAT_ICON)}
+              {S.files.addToChat}
+            </button>
+          ),
       )}
     </>
   );
@@ -142,7 +147,7 @@ export interface StreamSelectionMenu {
 }
 
 export function useStreamSelectionMenu(
-  onAddExcerpt: (reference: ComposerReference) => void,
+  onAddExcerpt?: (reference: ComposerReference) => void,
 ): StreamSelectionMenu {
   // The row hook's anchor state and dismissal, with the stream as its "row": its owner is what a
   // scroll must move for the panel to close, and that is the stream's own scroll.

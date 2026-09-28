@@ -135,6 +135,8 @@ export type Strings = {
       sessionsEmpty: string;
       showTranscript: string;
       hideTranscript: string;
+      /** Accessible name for a run's Show/Hide toggle: distinguishes same-kind runs for assistive tech. */
+      transcriptToggle: (action: string, run: string, time: string) => string;
       openFullPage: string;
     };
     /** Loom's refs: the product's refs in the header, and one ref's name and stability. */

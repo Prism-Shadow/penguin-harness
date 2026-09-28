@@ -150,6 +150,8 @@ export const en: Strings = {
       sessionsEmpty: "No agent has worked on this activity yet.",
       showTranscript: "Show",
       hideTranscript: "Hide",
+      transcriptToggle: (action: string, run: string, time: string) =>
+        `${action}: ${run}, ${time}`,
       openFullPage: "Open full page",
     },
     studioRefs: {

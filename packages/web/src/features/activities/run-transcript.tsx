@@ -13,13 +13,7 @@ export function RunTranscript({ sessionId, running }: { sessionId: string; runni
   );
   return (
     <div className="max-h-[28rem] min-h-40 overflow-y-auto border-t border-gray-200 dark:border-gray-800">
-      <MessageStream
-        items={items}
-        version={stream.version}
-        ctx={ctx}
-        older={older}
-        onAddExcerpt={() => {}}
-      />
+      <MessageStream items={items} version={stream.version} ctx={ctx} older={older} />
       {(error ?? stream.error) && (
         <p role="alert" className={`px-4 py-2 text-xs ${toneInk.danger}`}>
           {error ?? stream.error}

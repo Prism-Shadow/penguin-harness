@@ -3375,10 +3375,14 @@ test("a run's session transcript opens in place in the Sessions panel", async ({
   });
   await page.getByRole("button", { name: "Sessions", exact: true }).click();
   const panel = page.getByRole("complementary", { name: "Sessions", exact: true });
-  await panel.getByRole("button", { name: "Show" }).first().click();
+  // The accessible name carries which run this toggle is for, so two same-kind runs are
+  // distinguishable to assistive tech even though the visible label is always "Show"/"Hide".
+  const toggle = panel.getByRole("button", { name: /^Show: Specification,/ });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
   await expect(panel.getByRole("link", { name: /Open full page/ })).toBeVisible();
   await expect(page).toHaveURL(/\/activities\//);
-  await panel.getByRole("button", { name: "Hide" }).first().click();
+  await panel.getByRole("button", { name: /^Hide: Specification,/ }).click();
   await expect(panel.getByRole("link", { name: /Open full page/ })).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });

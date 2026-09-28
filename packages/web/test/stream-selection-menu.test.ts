@@ -89,6 +89,17 @@ describe("SelectionMenuRows", () => {
     expect(html).toContain("Copy</button>");
     expect(html).toContain("Add to conversation</button>");
   });
+
+  it("leaves Add to conversation out when the stream has no composer to stage it in", () => {
+    const html = renderToStaticMarkup(
+      createElement(SelectionMenuRows, {
+        selection: SELECTION,
+        onDone: () => {},
+      }),
+    );
+    expect(html).toContain(`${S.common.copy}</button>`);
+    expect(html).not.toContain(`${S.files.addToChat}</button>`);
+  });
 });
 
 describe("Add to conversation", () => {
