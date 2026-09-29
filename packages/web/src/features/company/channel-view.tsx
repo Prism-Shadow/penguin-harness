@@ -492,6 +492,8 @@ export function ChannelView() {
             {S.company.channels.replyTo}
           </RefChip>
         )}
+        {/* The room the time needs, at the row's end (styles.css, .channel-time-gap). */}
+        <span aria-hidden className="channel-time-gap" />
       </span>
     );
   };
@@ -627,26 +629,29 @@ export function ChannelView() {
                 /* A message that names the reader is marked by its mention chip alone: a
                    tinted bubble reads as a state of the whole message, and in a channel where
                    most messages name someone it turns the stream into a highlight. */
-                className={`channel-bubble max-w-[75%] px-3 py-1.5 text-sm leading-relaxed ${bubbleCorners(shape)} ${own ? BUBBLE_SURFACE.own : BUBBLE_SURFACE.other}`}
+                /* A phone's column is the avatar gutter short of the screen already; three
+                   quarters of what is left wrapped Chinese at seven characters a line. The
+                   words are a size up on a phone (what Telegram and iMessage do), a size a
+                   wider screen has no need of. */
+                className={`channel-bubble relative max-w-[88%] px-3 py-1.5 text-[15px] leading-relaxed sm:max-w-[75%] sm:text-sm ${bubbleCorners(shape)} ${own ? BUBBLE_SURFACE.own : BUBBLE_SURFACE.other}`}
               >
-                {/* The time is a column of its own at the bubble's end, bottom-aligned: on a
-                    one-line message it lands beside the words, on a longer one it settles
-                    into the bottom-right corner, and it never overlaps the body. */}
-                <div className={`flex items-end ${ICON_GAP.menu}`}>
-                  <div className="min-w-0 flex-1">
-                    <div className="md-body md-compact">
-                      <ChannelMessageBody text={m.text} />
-                    </div>
-                    {renderRefs(m)}
+                {/* The time sits in the bubble's bottom-right corner, and the words keep room
+                    for it on their last line (styles.css, .channel-bubble — WhatsApp's way):
+                    beside the words when they end short of it, tucked under the last line's
+                    end otherwise, never a column beside the body or a line of its own. */}
+                <div className="min-w-0">
+                  <div className="md-body md-compact">
+                    <ChannelMessageBody text={m.text} />
                   </div>
-                  <span
-                    title={at}
-                    className="shrink-0 text-[11px] tabular-nums text-gray-600 dark:text-gray-400"
-                  >
-                    <span className="sr-only">{S.company.channels.sentAt(at)}</span>
-                    <span aria-hidden>{clockTime(m.time)}</span>
-                  </span>
+                  {renderRefs(m)}
                 </div>
+                <span
+                  title={at}
+                  className="absolute bottom-1.5 right-3 text-[11px] tabular-nums text-gray-600 dark:text-gray-400"
+                >
+                  <span className="sr-only">{S.company.channels.sentAt(at)}</span>
+                  <span aria-hidden>{clockTime(m.time)}</span>
+                </span>
               </div>
             );
           })}
