@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** [#892](https://github.com/Prism-Shadow/penguin-harness/pull/892)
 
 [English](2026-09-29-theme-switching.md)
 

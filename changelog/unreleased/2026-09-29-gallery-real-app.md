@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** process
 - **Scope:** `ui-gallery`, `ui`, `web`
+- **PR:** [#892](https://github.com/Prism-Shadow/penguin-harness/pull/892)
 
 [中文版](2026-09-29-gallery-real-app.zh.md)
 
