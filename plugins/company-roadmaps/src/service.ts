@@ -36,6 +36,7 @@ import {
   type ApprovalRole,
   type DraftItem,
   type LedgerEntry,
+  type ProposalItem,
   type Roadmap,
   type RoadmapStatus,
 } from "./ledger.js";
@@ -145,8 +146,22 @@ export interface DraftRequest {
   items?: unknown;
 }
 
+/** An existing proposal taken into a roadmap: its number, and what the item says of it. */
+export interface AdoptRequest {
+  proposal?: unknown;
+  title?: unknown;
+  /** The employee who carries it (the proposal's implementer, else its author). */
+  owner?: unknown;
+  /** Defaults to the title. */
+  brief?: unknown;
+}
+
 const ITEM_KEY = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const MAX_ITEMS = 50;
+
+function isProposalNumber(raw: unknown): raw is number {
+  return typeof raw === "number" && Number.isInteger(raw) && raw >= 1;
+}
 
 /** The headings of a Markdown body, normalized the way a cite is compared. */
 export function headingsOf(body: string): Set<string> {
@@ -199,13 +214,24 @@ export function parseItems(raw: unknown, org: Pick<OrgView, "employees">): Draft
     if (seen.has(key)) throw badRequest(`items[${i}].key repeats "${key}".`);
     const title = text(o.title, `items[${i}].title`, 200);
     const brief = text(o.brief, `items[${i}].brief`, 4000);
-    const cites = stringList(o.cites, `items[${i}].cites`);
-    if (cites.length === 0)
+    // An adopted proposal (`proposal`) may predate the body, so it needs no cite.
+    const cites =
+      o.cites === undefined && o.proposal !== undefined
+        ? []
+        : stringList(o.cites, `items[${i}].cites`);
+    if (cites.length === 0 && o.proposal === undefined)
       throw badRequest(`items[${i}].cites must name at least one body section.`);
     if (o.kind === "proposal") {
       const owner = typeof o.owner === "string" ? o.owner : "";
       if (!employees.has(owner)) throw badRequest(`items[${i}].owner is not an employee: ${owner}`);
       const item: DraftItem = { key, kind: "proposal", title, brief, owner, cites };
+      if (o.proposal !== undefined) {
+        if (!isProposalNumber(o.proposal))
+          throw badRequest(`items[${i}].proposal must be a proposal number.`);
+        if (out.some((x) => x.kind === "proposal" && x.proposal === o.proposal))
+          throw badRequest(`items[${i}].proposal repeats proposal #${o.proposal}.`);
+        item.proposal = o.proposal;
+      }
       if (o.stackedOn === null) item.stackedOn = null;
       else if (o.stackedOn !== undefined) {
         if (typeof o.stackedOn !== "string" || seen.get(o.stackedOn) !== "proposal") {
@@ -660,7 +686,29 @@ export class RoadmapService {
       const briefed: Array<DraftItem & { kind: "proposal" }> = [];
       for (const item of r.items) {
         const prior = r.delegations[item.key];
-        if (item.kind === "proposal") {
+        if (item.kind === "proposal" && item.proposal !== undefined) {
+          // An adopted proposal exists already: nothing is created, nothing needs approving and
+          // nobody is told to create it — it is delegated to its owner and linked at once.
+          if (prior?.stage === "delegated" && prior.proposal === item.proposal) continue;
+          await ledger.append({
+            kind: "delegated",
+            number,
+            key: item.key,
+            owner: item.owner,
+            brief: item.brief,
+            base: bases.get(item.key) ?? null,
+            child: null,
+            delivered: false,
+            by: caller.principal,
+          });
+          await ledger.append({
+            kind: "linked",
+            number,
+            key: item.key,
+            proposal: item.proposal,
+            by: caller.principal,
+          });
+        } else if (item.kind === "proposal") {
           if (prior !== undefined && prior.owner === item.owner && prior.brief === item.brief)
             continue;
           // A brief, waiting for its two approvals: nothing is created, nobody is told to create.
@@ -897,9 +945,7 @@ export class RoadmapService {
       if (caller.agentId !== null && caller.agentId !== d.owner) {
         throw new RoadmapError(403, "not_owner", `Only ${d.owner} (or a person) links ${key}.`);
       }
-      if (typeof proposal !== "number" || !Number.isInteger(proposal) || proposal < 1) {
-        throw badRequest("proposal must be a proposal number.");
-      }
+      if (!isProposalNumber(proposal)) throw badRequest("proposal must be a proposal number.");
       await ledger.append({ kind: "linked", number, key, proposal, by: caller.principal });
       const hints: string[] = [];
       for (const [depKey, base] of basesOf(r.items)) {
@@ -919,6 +965,82 @@ export class RoadmapService {
         );
       }
       return { roadmap: this.view(this.require(ledger, number)), hints };
+    });
+  }
+
+  /**
+   * Takes an existing proposal into the roadmap as a proposal item (a person or the moderator).
+   * While the room discusses, it joins the draft's items; on an established roadmap it is
+   * delegated to its owner and linked at once, as an establishment does with an adopted item.
+   * Nothing is created and nothing waits for approvals: the proposal has its own page for that.
+   */
+  async adopt(
+    projectId: string,
+    orgId: string,
+    number: number,
+    req: AdoptRequest,
+    actor: OrgActor,
+  ): Promise<WriteResult> {
+    return this.withLock(projectId, orgId, async () => {
+      const { org, caller, ledger } = await this.open(projectId, orgId, actor);
+      const r = this.require(ledger, number);
+      const discussing = r.status === "discussing" && !r.archived;
+      if (!discussing && r.status !== "established") {
+        throw new RoadmapError(
+          409,
+          "not_adoptable",
+          `Roadmap #${number} is ${r.status}${r.archived ? ", archived" : ""}: a proposal is taken in while its room discusses it or once it is established.`,
+        );
+      }
+      this.requireModeratorOrPerson(r, caller);
+      if (!isProposalNumber(req.proposal)) throw badRequest("proposal must be a proposal number.");
+      const proposal = req.proposal;
+      const title = text(req.title, "title", 200);
+      const brief = req.brief === undefined ? title : text(req.brief, "brief", 4000);
+      const owner = typeof req.owner === "string" ? req.owner : "";
+      if (!org.employees.some((e) => e.agentId === owner))
+        throw badRequest(`owner is not an employee: ${owner}`);
+      const inIt =
+        r.items.some((i) => i.kind === "proposal" && i.proposal === proposal) ||
+        Object.values(r.delegations).some((d) => d.proposal === proposal);
+      if (inIt) {
+        throw new RoadmapError(
+          409,
+          "already_adopted",
+          `Proposal #${proposal} is in roadmap #${number} already.`,
+        );
+      }
+      if (r.items.length >= MAX_ITEMS) throw badRequest(`At most ${MAX_ITEMS} items.`);
+      const keys = new Set(r.items.map((i) => i.key));
+      let key = `proposal-${proposal}`;
+      for (let n = 2; keys.has(key); n++) key = `proposal-${proposal}-${n}`;
+      // Stacked on nothing: the proposal already stands on whatever it was written against.
+      const item: ProposalItem = {
+        key,
+        kind: "proposal",
+        title,
+        brief,
+        owner,
+        cites: [],
+        stackedOn: null,
+        proposal,
+      };
+      await ledger.append({ kind: "adopted", number, item, by: caller.principal });
+      if (r.status === "established") {
+        await ledger.append({
+          kind: "delegated",
+          number,
+          key,
+          owner,
+          brief,
+          base: null,
+          child: null,
+          delivered: false,
+          by: caller.principal,
+        });
+        await ledger.append({ kind: "linked", number, key, proposal, by: caller.principal });
+      }
+      return { roadmap: this.view(this.require(ledger, number)), hints: [] };
     });
   }
 

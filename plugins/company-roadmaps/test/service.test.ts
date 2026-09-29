@@ -542,6 +542,126 @@ describe("establishing", () => {
   });
 });
 
+describe("an existing proposal taken in", () => {
+  const OLD = { proposal: 107, title: "Old one", owner: "acme_web" };
+
+  it("joins the draft as a proposal item while the room discusses — nothing created, nobody told", async () => {
+    const n = await openA();
+    const { roadmap } = await service.adopt(P, O, n, OLD, BOSS);
+    expect(roadmap.items).toEqual([
+      {
+        key: "proposal-107",
+        kind: "proposal",
+        title: "Old one",
+        brief: "Old one",
+        owner: "acme_web",
+        cites: [],
+        stackedOn: null,
+        proposal: 107,
+      },
+    ]);
+    expect(roadmap.delegations).toEqual({});
+    expect(roadmap.events.at(-1)).toMatchObject({
+      kind: "adopted",
+      note: "proposal-107 ← proposal #107",
+    });
+    expect(w.gateway.desks).toEqual([]);
+    expect(w.runner.inputs).toEqual([]);
+    // The moderator keeps it in the items it writes, and it needs no cite.
+    const kept = await service.draft(
+      P,
+      O,
+      n,
+      { body: BODY, items: [...roadmap.items, ITEMS[0]] },
+      asAgent("acme_dev"),
+    );
+    expect(kept.roadmap.items.map((i) => i.key)).toEqual(["proposal-107", "ledger"]);
+    expect(kept.roadmap.items[0]).toMatchObject({ proposal: 107, cites: [] });
+  });
+
+  it("is delegated and linked at the establishment with no brief and no approvals, while a written item still waits for them", async () => {
+    const n = await openA();
+    await service.adopt(P, O, n, OLD, BOSS);
+    const items = [...(await service.get(P, O, n, BOSS)).items, ITEMS[0]];
+    await service.draft(P, O, n, { body: BODY, items }, BOSS);
+    const { roadmap } = await service.establish(P, O, n, BOSS);
+    expect(roadmap.delegations["proposal-107"]).toMatchObject({
+      stage: "delegated",
+      owner: "acme_web",
+      proposal: 107,
+      approvals: {},
+    });
+    expect(roadmap.delegations.ledger).toMatchObject({ stage: "brief" });
+    // The owner already has its proposal: no desk line for it (nor for the brief).
+    expect(w.gateway.desks).toEqual([]);
+    // The moderator is asked to approve the written item only.
+    const asked = w.runner.to("room-1").join("\n");
+    expect(asked).toContain("ledger");
+    expect(asked).not.toContain("proposal-107");
+    // Approving it is not a thing: it has no brief to approve.
+    expect(await refusal(service.approve(P, O, n, "proposal-107", BOSS))).toEqual({
+      status: 409,
+      code: "already_approved",
+    });
+    // Established again after a reopening, it is left as it stands.
+    await service.reopen(P, O, n, "One more look.", BOSS);
+    const again = await service.establish(P, O, n, BOSS);
+    expect(
+      again.roadmap.events.filter((e) => e.kind === "linked" && e.note?.includes("#107")),
+    ).toHaveLength(1);
+  });
+
+  it("is delegated and linked at once on an established roadmap", async () => {
+    const n = await openA();
+    await service.draft(P, O, n, { body: BODY, items: [ITEMS[0]] }, BOSS);
+    await service.establish(P, O, n, BOSS);
+    w.gateway.desks = [];
+    const { roadmap } = await service.adopt(
+      P,
+      O,
+      n,
+      { ...OLD, brief: "Keeps the history." },
+      asAgent("acme_dev"),
+    );
+    expect(roadmap.items.map((i) => i.key)).toEqual(["ledger", "proposal-107"]);
+    expect(roadmap.delegations["proposal-107"]).toMatchObject({
+      stage: "delegated",
+      brief: "Keeps the history.",
+      proposal: 107,
+    });
+    expect(w.gateway.desks).toEqual([]);
+  });
+
+  it("is a person's or the moderator's act, once per proposal, on a roadmap being discussed or established", async () => {
+    const n = await openA();
+    expect(await refusal(service.adopt(P, O, n, OLD, asAgent("acme_web")))).toEqual({
+      status: 403,
+      code: "not_moderator",
+    });
+    expect((await refusal(service.adopt(P, O, n, { ...OLD, proposal: 0 }, BOSS))).status).toBe(400);
+    expect((await refusal(service.adopt(P, O, n, { ...OLD, title: "" }, BOSS))).status).toBe(400);
+    expect((await refusal(service.adopt(P, O, n, { ...OLD, owner: "nobody" }, BOSS))).status).toBe(
+      400,
+    );
+    await service.adopt(P, O, n, OLD, BOSS);
+    expect(await refusal(service.adopt(P, O, n, OLD, BOSS))).toEqual({
+      status: 409,
+      code: "already_adopted",
+    });
+    // The same proposal twice in written items is refused as well.
+    const twice = [
+      { ...ITEMS[0], proposal: 61 },
+      { ...ITEMS[1], proposal: 61 },
+    ];
+    expect((await refusal(service.draft(P, O, n, { items: twice }, BOSS))).status).toBe(400);
+    await service.setArchived(P, O, n, true, BOSS);
+    expect(await refusal(service.adopt(P, O, n, { ...OLD, proposal: 108 }, BOSS))).toEqual({
+      status: 409,
+      code: "not_adoptable",
+    });
+  });
+});
+
 describe("the approvals", () => {
   async function established(): Promise<number> {
     const n = await openA();

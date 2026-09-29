@@ -44,7 +44,7 @@ function quote(msg: RoomMessage): string {
 
 function itemLine(item: DraftItem): string {
   return item.kind === "proposal"
-    ? `- [${item.key}] proposal "${item.title}" — owner ${item.owner}: ${item.brief}`
+    ? `- [${item.key}] proposal ${item.proposal !== undefined ? `#${item.proposal} (existing) ` : ""}"${item.title}" — owner ${item.owner}: ${item.brief}`
     : `- [${item.key}] roadmap "${item.title}" — employees ${item.employees.join(", ")}: ${item.brief}`;
 }
 
@@ -93,6 +93,8 @@ export function cloneBrief(args: {
         '  write draft.json: {"sessionId": "$PENGUIN_SESSION_ID", "agentId": "$PENGUIN_AGENT_ID", "record": "...", "body": "...", "items": [{"key": "a", "kind": "proposal", "title": "...", "brief": "...", "owner": "<agent id>", "cites": ["<body section heading>"]}, {"key": "b", "kind": "roadmap", "title": "...", "brief": "...", "employees": ["<agent id>"], "cites": ["..."]}]}',
         "  (substitute the two variables' values; any of record/body/items may be left out; a proposal item is stacked on the previous one unless it says `stackedOn`)",
         `  ${curlFileOf("PUT", routeOf(orgId, r.number, "/draft"), "draft.json")}`,
+        'A proposal that exists already is taken in as it is, not written again: it is a proposal item with its number (`"proposal": <n>`, no cites needed) — keep such an item in the items you write. To take one in:',
+        `  ${curlOf("POST", routeOf(orgId, r.number, "/adopt"), ['\\"proposal\\":<n>', '\\"title\\":\\"<its title>\\"', '\\"owner\\":\\"<agent id>\\"'])}`,
         "Nothing is created while the room discusses. When the room agrees, establish it — the roadmap is archived and every roadmap item derives its own roadmap at once, but a proposal item stays a brief: nothing is created for it, and its owner is not told, until a person and you (the moderator) have both approved it:",
         `  ${curlOf("POST", routeOf(orgId, r.number, "/establish"))}`,
       ].join("\n"),
