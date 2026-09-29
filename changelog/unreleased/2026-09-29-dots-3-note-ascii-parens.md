@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [Myriad-Dreamin/penguin-harness#90](https://github.com/Myriad-Dreamin/penguin-harness/pull/90)
 
 [中文版](2026-09-29-dots-3-note-ascii-parens.zh.md)
 
