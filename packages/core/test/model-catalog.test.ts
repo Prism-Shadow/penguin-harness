@@ -434,6 +434,16 @@ describe("model-catalog", () => {
     }
   });
 
+  it("no display name carries CJK punctuation: a catalog name shows untranslated in every UI language", () => {
+    // A seller's Chinese listing may typeset its tags with full-width marks (（Free）); copied
+    // as-is they sit in the English UI as wide glyphs with no space before them. The words stay
+    // the seller's, the punctuation is ASCII.
+    const CJK_PUNCTUATION = /[　-〿！-／：-＠［-｀｛-･]/;
+    for (const m of MODEL_CATALOG) {
+      expect(m.displayName, `${m.provider}/${m.modelId}`).not.toMatch(CJK_PUNCTUATION);
+    }
+  });
+
   it("custom: the group pins nothing, and its one preset carries its own endpoint and protocol", () => {
     // The custom group holds user-defined models, so the group itself implies no endpoint and
     // no protocol (see the MODEL_PROVIDERS test above). A preset filed there is complete on its
