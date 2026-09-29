@@ -69,7 +69,35 @@ export function renderStatus(status: BuiltinBrowserStatus, t: Messages): string 
   return lines([
     line(label.status, t.browser.available()),
     tabList(status.tabs, status.activeTabId, t),
+    ...loadLines(status, t),
   ]);
+}
+
+/** A size in KB as the status shows it: `640 MB`, or `2.1 GB` from about a gigabyte up. */
+export function formatKB(kb: number): string {
+  const gb = kb / (1024 * 1024);
+  return gb >= 0.95 ? `${gb.toFixed(1)} GB` : `${Math.max(1, Math.round(kb / 1024))} MB`;
+}
+
+/**
+ * `memory:` (the pages' memory, the tab count, the computer's own when the server reports it),
+ * then a `warning:` while the server warns about the load. Nothing before the first measurement,
+ * or with no tab open.
+ */
+function loadLines(status: BuiltinBrowserStatus, t: Messages): string[] {
+  const { metrics } = status;
+  if (metrics === undefined || status.tabs.length === 0) return [];
+  const { label, line } = t.browser;
+  const system =
+    metrics.system !== undefined
+      ? { free: formatKB(metrics.system.freeKB), total: formatKB(metrics.system.totalKB) }
+      : undefined;
+  return [
+    line(label.memory, t.browser.memoryLine(formatKB(metrics.totalKB), status.tabs.length, system)),
+    ...(metrics.warnings.length > 0
+      ? [line(label.warning, t.browser.loadWarning(metrics.warnings))]
+      : []),
+  ];
 }
 
 /** The `tabs` table: id (the active one starred), title, URL. */

@@ -112,6 +112,53 @@ describe("status and tabs", () => {
     expect(out()).toBe("status: available\ntabs: *12 Your Orders | 15 Google\n");
   });
 
+  it("status prints the browser's memory, and the server's load warning with what to do", async () => {
+    const GB = 1024 * 1024;
+    routes["GET /status"] = () => ({
+      body: {
+        available: true,
+        tabs: [ORDERS, GOOGLE],
+        activeTabId: 12,
+        metrics: {
+          at: 1,
+          tabs: [
+            { tabId: 12, memoryKB: 1.4 * GB, cpuPercent: 2 },
+            { tabId: 15, memoryKB: 0.7 * GB, cpuPercent: 0 },
+          ],
+          totalKB: 2.1 * GB,
+          system: { freeKB: 3.2 * GB, totalKB: 16 * GB },
+          warnings: ["memory"],
+          heavyTabIds: [12, 15],
+        },
+      },
+    });
+    expect(await cli(["browser", "status"])).toBe(0);
+    expect(out()).toBe(
+      "status: available\ntabs: *12 Your Orders | 15 Google\n" +
+        "memory: 2.1 GB across 2 tabs · this computer: 3.2 GB free of 16.0 GB\n" +
+        "warning: The browser holds a lot of memory. Close the tabs you no longer need (penguin browser close <tab-id>).\n",
+    );
+  });
+
+  it("status shows the memory without the computer's share where the server leaves it out (macOS)", async () => {
+    routes["GET /status"] = () => ({
+      body: {
+        available: true,
+        tabs: [ORDERS],
+        activeTabId: 12,
+        metrics: {
+          at: 1,
+          tabs: [{ tabId: 12, memoryKB: 300 * 1024, cpuPercent: 0 }],
+          totalKB: 300 * 1024,
+          warnings: [],
+          heavyTabIds: [],
+        },
+      },
+    });
+    expect(await cli(["browser", "status"])).toBe(0);
+    expect(out()).toBe("status: available\ntabs: *12 Your Orders\nmemory: 300 MB across 1 tab\n");
+  });
+
   it("status exits 1 when the browser is unavailable, saying what is needed", async () => {
     routes["GET /status"] = () => ({
       body: { available: false, reason: "no_window", tabs: [], activeTabId: null },
@@ -678,6 +725,16 @@ describe("errors", () => {
 });
 
 describe("output in Chinese", () => {
+  it("words the load in the zh dictionary", () => {
+    const zh = getMessages("zh");
+    expect(zh.browser.memoryLine("2.1 GB", 7, { free: "3.2 GB", total: "16.0 GB" })).toBe(
+      "2.1 GB（7 个标签页） · 本机可用 3.2 GB，共 16.0 GB",
+    );
+    expect(zh.browser.loadWarning(["memory", "many_tabs"])).toBe(
+      "浏览器占用的内存较多，打开的标签页过多。请关闭不再需要的标签页（penguin browser close <tab-id>）。",
+    );
+  });
+
   it("labels the exec lines in the zh dictionary", () => {
     const zh = getMessages("zh");
     expect(

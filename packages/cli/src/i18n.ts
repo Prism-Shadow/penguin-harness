@@ -588,6 +588,7 @@ export interface Messages {
       warning: string;
       screenshot: string;
       dialog: string;
+      memory: string;
     };
     /** `label: value`, in the language's punctuation. */
     line(label: string, value: string): string;
@@ -599,6 +600,13 @@ export interface Messages {
     unavailable(reason: string): string;
     /** Why the browser cannot be driven, and what to do: it lives in the desktop app, which must be open. */
     unavailableHint(reason: string | undefined): string;
+    /**
+     * The value of `memory:`: what the browser's pages hold together and how many tabs, then this
+     * computer's free and total memory when the server reports them.
+     */
+    memoryLine(total: string, tabs: number, system?: { free: string; total: string }): string;
+    /** The `warning:` a load warning adds (the server's codes): what is wrong, and how an agent eases it. */
+    loadWarning(warnings: readonly string[]): string;
     closed(tab: string): string;
     closedActive(): string;
     /** The value of `page:` when the page navigated or reloaded during the call. */
@@ -1507,6 +1515,7 @@ const en: Messages = {
       warning: "warning",
       screenshot: "screenshot",
       dialog: "dialog",
+      memory: "memory",
     },
     line: (label, value) => `${label}: ${value}`,
     tabHead: (id, title, url, loading) =>
@@ -1522,6 +1531,18 @@ const en: Messages = {
       if (reason === "no_window") return `${base}: it has no open window, so open it.`;
       if (reason === "not_desktop") return `${base}: this server is not running inside it.`;
       return `${base}.`;
+    },
+    memoryLine: (total, tabs, system) =>
+      `${total} across ${tabs} ${tabs === 1 ? "tab" : "tabs"}` +
+      (system !== undefined ? ` · this computer: ${system.free} free of ${system.total}` : ""),
+    loadWarning: (warnings) => {
+      const said = [
+        warnings.includes("memory") ? "the browser holds a lot of memory" : "",
+        warnings.includes("low_system_memory") ? "this computer is low on memory" : "",
+        warnings.includes("many_tabs") ? "many tabs are open" : "",
+      ].filter(Boolean);
+      const text = said.join(", and ") || "the browser is heavy";
+      return `${text.charAt(0).toUpperCase()}${text.slice(1)}. Close the tabs you no longer need (penguin browser close <tab-id>).`;
     },
     closed: (tab) => `Closed tab ${tab}.`,
     closedActive: () => "Closed the active tab.",
@@ -2390,6 +2411,7 @@ const zh: Messages = {
       warning: "警告",
       screenshot: "截图",
       dialog: "对话框",
+      memory: "内存",
     },
     line: (label, value) => `${label}：${value}`,
     tabHead: (id, title, url, loading) =>
@@ -2403,6 +2425,17 @@ const zh: Messages = {
       if (reason === "no_window") return `${base}：应用当前没有打开的窗口，请打开它。`;
       if (reason === "not_desktop") return `${base}：当前服务器不是在桌面应用中运行的。`;
       return `${base}。`;
+    },
+    memoryLine: (total, tabs, system) =>
+      `${total}（${tabs} 个标签页）` +
+      (system !== undefined ? ` · 本机可用 ${system.free}，共 ${system.total}` : ""),
+    loadWarning: (warnings) => {
+      const said = [
+        warnings.includes("memory") ? "浏览器占用的内存较多" : "",
+        warnings.includes("low_system_memory") ? "本机可用内存不足" : "",
+        warnings.includes("many_tabs") ? "打开的标签页过多" : "",
+      ].filter(Boolean);
+      return `${said.join("，") || "浏览器负载较高"}。请关闭不再需要的标签页（penguin browser close <tab-id>）。`;
     },
     closed: (tab) => `已关闭标签页 ${tab}。`,
     closedActive: () => "已关闭当前标签页。",
