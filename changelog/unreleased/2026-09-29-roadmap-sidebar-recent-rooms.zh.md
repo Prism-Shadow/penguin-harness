@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [Myriad-Dreamin/penguin-harness#58](https://github.com/Myriad-Dreamin/penguin-harness/pull/58)
 
 [English](2026-09-29-roadmap-sidebar-recent-rooms.md)
 
