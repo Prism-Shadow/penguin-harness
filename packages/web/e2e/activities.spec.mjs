@@ -6881,9 +6881,12 @@ test("shows what a deploy still needs", async ({ page }) => {
   const problems = page.getByRole("region", { name: "What is missing" });
   await expect(problems.getByText("QA Jenkins address is empty.", { exact: true })).toBeVisible();
   await expect(
-    problems.getByText("The Media clone is not on this server yet. Prepare clones makes it.", {
-      exact: true,
-    }),
+    problems.getByText(
+      "The Media clone is not on this server yet. Prepare clones makes the module's; an admin prepares the others in Settings, under WAF workspace.",
+      {
+        exact: true,
+      },
+    ),
   ).toBeVisible();
   await expect(
     page.getByText("An admin fills in the deploy settings under System settings, Deploy.", {
@@ -6959,7 +6962,7 @@ test("an admin opens the deploy settings from what a deploy still needs", async 
       frameworkVersion: "",
     },
     jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
-    repos: { activityDataRemote: "", mediaRemote: "" },
+    repos: { mediaPublicBase: "{{MEDIA}}/" },
     git: { userName: "", userEmail: "" },
     timeouts: { buildMinutes: 30, deployMinutes: 30 },
   };
@@ -7066,7 +7069,7 @@ test("an admin fills in the deploy settings and tests the QA connection", async 
       frameworkVersion: "",
     },
     jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
-    repos: { activityDataRemote: "git@github.com:org/data.git", mediaRemote: "" },
+    repos: { mediaPublicBase: "{{MEDIA}}/" },
     git: { userName: "", userEmail: "" },
     timeouts: { buildMinutes: 30, deployMinutes: 30 },
   };

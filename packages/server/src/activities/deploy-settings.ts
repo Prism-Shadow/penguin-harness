@@ -1,6 +1,6 @@
 /**
  * The deploy settings: where Penguin deploys activities to (Jenkins for QA and PROD, its job
- * names, the activity-data and media remotes, the framework versions, the git identity).
+ * names, where deployed media is served from, the framework versions, the git identity).
  *
  * Server-wide and admin-only: one Jenkins serves the organisation. Everything but the two
  * Jenkins tokens is stored in `server_settings` under one key; the tokens live in a 0600 file
@@ -17,10 +17,6 @@ export const DEPLOY_SETTINGS_KEY = "activityDeploy";
 
 /** Where the tokens are kept, relative to PENGUIN_HOME. */
 export const DEPLOY_SECRETS_FILE = "secrets/activity-deploy.json";
-
-/** The activity-data repository Loom deploys to, so a fresh server starts where Loom was. */
-export const DEFAULT_ACTIVITY_DATA_REMOTE =
-  "git@github.com:waterfordresearchinstitute/waf-activity-data.git";
 
 /**
  * Where a deployed activity finds its media unless an admin says otherwise: the framework's
@@ -82,8 +78,6 @@ export function defaultDeploySettings(): DeploySettings {
     },
     jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
     repos: {
-      activityDataRemote: DEFAULT_ACTIVITY_DATA_REMOTE,
-      mediaRemote: "",
       mediaPublicBase: DEFAULT_MEDIA_PUBLIC_BASE,
     },
     git: { userName: "", userEmail: "" },
@@ -396,12 +390,6 @@ export function normalizeDeploySettings(
     ) ?? next.jobs.activityDeploy;
 
   const repos = groupOf(body, "repos");
-  next.repos.activityDataRemote =
-    set(repos, "activityDataRemote", (v) => normalizeRemote(v, "repos.activityDataRemote")) ??
-    next.repos.activityDataRemote;
-  next.repos.mediaRemote =
-    set(repos, "mediaRemote", (v) => normalizeRemote(v, "repos.mediaRemote")) ??
-    next.repos.mediaRemote;
   next.repos.mediaPublicBase =
     set(repos, "mediaPublicBase", (v) => normalizeMediaBase(v, "repos.mediaPublicBase")) ??
     next.repos.mediaPublicBase;
@@ -459,8 +447,6 @@ export function missingSettings(settings: DeploySettings, secrets: DeploySecrets
     ["qa.activityBaseUrl", settings.qa.activityBaseUrl],
     ["jobs.moduleBuild", settings.jobs.moduleBuild],
     ["jobs.activityDeploy", settings.jobs.activityDeploy],
-    ["repos.activityDataRemote", settings.repos.activityDataRemote],
-    ["repos.mediaRemote", settings.repos.mediaRemote],
     ["git.userName", settings.git.userName],
     ["git.userEmail", settings.git.userEmail],
   ];
@@ -469,7 +455,7 @@ export function missingSettings(settings: DeploySettings, secrets: DeploySecrets
 
 /**
  * The settings a deploy to PROD cannot start without, by dotted path, in the order the
- * settings page lists them. The jobs, repositories and identity are QA's, checked by
+ * settings page lists them. The jobs and identity are QA's, checked by
  * `missingSettings` before QA could have run.
  */
 export function missingProdSettings(settings: DeploySettings, secrets: DeploySecrets): string[] {

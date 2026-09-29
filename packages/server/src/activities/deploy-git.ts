@@ -148,43 +148,23 @@ export function activityDataBranchName(productCode: string): string {
   return `loom/${productCode}-activity-data`;
 }
 
-/** The part of the media repository an activity's media lives in. */
+/**
+ * The folder of the media repository an activity's media lives in. The repository is the
+ * checkout's `media/` folder, so a manifest's `media/loom/<pc>/...` is `loom/<pc>/...` in it.
+ */
 export function mediaSparsePath(productCode: string): string {
-  return `media/loom/${productCode}`;
+  return `loom/${productCode}`;
+}
+
+/** A manifest's `media/...` path as a path inside the media repository; null for any other. */
+export function mediaRepoPath(reference: string): string | null {
+  return reference.startsWith("media/") && reference.length > "media/".length
+    ? reference.slice("media/".length)
+    : null;
 }
 
 /** The branch every deploy starts from. */
 export const BASE_BRANCH = "main";
-
-/** `repository` from a package.json (a string or `{ url }`); null when it names none. */
-export function repositoryUrlOf(packageJson: unknown): string | null {
-  if (!packageJson || typeof packageJson !== "object") return null;
-  const repository = (packageJson as { repository?: unknown }).repository;
-  const raw =
-    typeof repository === "string"
-      ? repository
-      : repository && typeof repository === "object"
-        ? (repository as { url?: unknown }).url
-        : null;
-  return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
-}
-
-const GITHUB_SHORTHAND = /^(?:github:)?([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/;
-
-/**
- * The remote a module is cloned from, given its package.json `repository`: GitHub addresses
- * become the SSH form (the host's keys authenticate), anything else is used as written, less
- * npm's `git+` prefix.
- */
-export function cloneUrlFor(repositoryUrl: string): string {
-  const raw = repositoryUrl.trim().replace(/^git\+/, "");
-  const shorthand = GITHUB_SHORTHAND.exec(raw);
-  if (shorthand && !raw.includes(":/") && !raw.includes("@"))
-    return `git@github.com:${shorthand[1]}/${shorthand[2]}.git`;
-  const key = remoteKey(raw);
-  if (key?.startsWith("github.com/")) return `git@${key.replace("/", ":")}.git`;
-  return raw;
-}
 
 /**
  * A remote reduced to `host/owner/repo`, lower-cased and without `.git`, so the SSH and
@@ -283,15 +263,21 @@ export async function remoteBranchExists(
   return result.stdout.trim() !== "";
 }
 
-/** Whether a media clone's sparse checkout includes `sparse`; null when git could not say. */
+/**
+ * Whether a media clone's checkout includes `sparse`: a sparse folder that is it or holds it,
+ * or a clone that is not sparse at all (an existing checkout). Null when git could not say.
+ */
 export async function sparsePathPresent(
   git: DeployGit,
   dir: string,
   sparse: string,
 ): Promise<boolean | null> {
   const list = await git.run(["sparse-checkout", "list"], dir);
-  if (list.code !== 0) return null;
-  return list.stdout.split(/\r?\n/).some((line) => line.trim() === sparse);
+  if (list.code !== 0) return /not sparse/i.test(list.stderr) ? true : null;
+  return list.stdout.split(/\r?\n/).some((line) => {
+    const folder = line.trim().replace(/\/+$/, "");
+    return folder !== "" && (sparse === folder || sparse.startsWith(`${folder}/`));
+  });
 }
 
 /** Where a branch is, locally and (when asked) on the remote. */
@@ -310,23 +296,17 @@ export async function branchState(
   return { local, remote };
 }
 
-/** Where the deploy clones live under PENGUIN_HOME. */
+/** The clones a deploy works in: the WAF workspace's, laid out as a WAF checkout is. */
 export interface DeployClonePaths {
   module: string;
   activityData: string;
   media: string;
 }
 
-/** The directory every deploy clone sits under. */
-export function deployReposRoot(home: string): string {
-  return path.join(home, "activity-deploy", "repos");
-}
-
-export function deployClonePaths(home: string, moduleFolder: string): DeployClonePaths {
-  const root = deployReposRoot(home);
+export function deployClonePaths(wafRoot: string, moduleFolder: string): DeployClonePaths {
   return {
-    module: path.join(root, "modules", moduleFolder),
-    activityData: path.join(root, "activity-data"),
-    media: path.join(root, "media"),
+    module: path.join(wafRoot, "modules", moduleFolder),
+    activityData: path.join(wafRoot, "waf-activity-data"),
+    media: path.join(wafRoot, "media"),
   };
 }

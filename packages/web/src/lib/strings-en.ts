@@ -541,9 +541,6 @@ export const en: Strings = {
       checkRemote: "Check remote",
       checkingRemote: "Asking the remote…",
       remoteChecked: "Checked against the remote.",
-      cloneFailed: (repo, output) =>
-        output ? `The ${repo} clone failed. git said: ${output}` : `The ${repo} clone failed.`,
-      cloneTimedOut: (repo) => `The ${repo} clone took longer than its time limit and was stopped.`,
       fields: {
         "qa.jenkinsUrl": "QA Jenkins address",
         "qa.username": "QA Jenkins user",
@@ -560,8 +557,6 @@ export const en: Strings = {
         "prod.frameworkVersion": "PROD framework version",
         "jobs.moduleBuild": "Module build job",
         "jobs.activityDeploy": "Activity deploy job",
-        "repos.activityDataRemote": "Activity data repository",
-        "repos.mediaRemote": "Media repository",
         "repos.mediaPublicBase": "Media address",
         "git.userName": "Git user name",
         "git.userEmail": "Git email",
@@ -615,12 +610,12 @@ export const en: Strings = {
       },
       problems: {
         settings_missing: (field) => `${field} is empty.`,
-        module_remote_missing:
-          "The module's package.json names no repository, so there is nowhere to clone it from.",
+        workspace_not_ready:
+          "The WAF workspace is not prepared. An admin can prepare it in Settings, under WAF workspace.",
         module_remote_invalid:
-          "The module's package.json names a repository that cannot be cloned from. Only an ssh remote, git@host:owner/repo or an https address without a password can.",
+          "The WAF workspace's module remote cannot be cloned from. Only an ssh remote, git@host:owner/repo or an https address without a password can.",
         clone_missing: (repo) =>
-          `The ${repo} clone is not on this server yet. Prepare clones makes it.`,
+          `The ${repo} clone is not on this server yet. Prepare clones makes the module's; an admin prepares the others in Settings, under WAF workspace.`,
         clone_unknown: (repo, what) =>
           what === "status"
             ? `git could not say whether the ${repo} clone is clean.`
@@ -2219,9 +2214,6 @@ export const en: Strings = {
       moduleBuildJob: "Module build job",
       activityDeployJob: "Activity deploy job",
       jobHint: "Leave empty for the default",
-      activityDataRemote: "Activity data repository",
-      mediaRemote: "Media repository",
-      remoteHint: "git@github.com:owner/repo.git or https://…",
       mediaPublicBase: "Media address",
       mediaPublicBaseHint:
         "Where a deployed activity finds its media. Keep {{MEDIA}}/ unless the activity data deploy changes: it fills that in. Otherwise /media/ or https://…",
@@ -6424,14 +6416,10 @@ Scenarios:
       deploy_not_canonical:
         "Only the canonical ref deploys: every ref of this product shares its module.",
       deploy_settings_missing: "An admin has to fill in the deploy settings first.",
-      deploy_module_remote_missing: "The module's package.json names no repository.",
-      deploy_module_remote_invalid:
-        "The module's package.json names a repository that cannot be cloned from.",
-      deploy_clone_path:
-        "A clone would have been made outside the deploy directory or inside the WAF checkout, so nothing was cloned.",
-      deploy_clone_failed: "A clone failed.",
-      deploy_clone_path_taken:
-        "Something that is not the expected clone is already where the clone goes. It was left as it is.",
+      waf_workspace_not_ready:
+        "The WAF workspace is not prepared. An admin can prepare it in Settings, under WAF workspace.",
+      module_not_a_clone:
+        "The module's folder in the WAF workspace exists but is not a git repository. It was left as it is.",
       git_unavailable: "git could not be run on this server.",
       activity_invalid:
         "The activity details are invalid. Check the product code, reference number, and title.",

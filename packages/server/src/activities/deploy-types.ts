@@ -45,7 +45,8 @@ export interface DeploySettingsView {
    * `mediaPublicBase` followed by its path under `media/` (default `/media/`; `{{MEDIA}}/`
    * leaves the framework's token in place).
    */
-  repos: { activityDataRemote: string; mediaRemote: string; mediaPublicBase: string };
+  /** The activity-data and media remotes are the WAF workspace's settings. */
+  repos: { mediaPublicBase: string };
   /** Who the deploy's commits are made as. */
   git: { userName: string; userEmail: string };
   /** How long a Jenkins build or deploy is waited for, in minutes; defaults 30 and 30. */
@@ -111,11 +112,11 @@ export type DeployRepo = "module" | "activityData" | "media";
 export type DeployProblem =
   /** A setting the deploy needs is empty; `field` is its dotted path, e.g. "qa.jenkinsUrl". */
   | { code: "settings_missing"; field: string }
-  /** The module's package.json names no repository, so there is nowhere to clone it from. */
-  | { code: "module_remote_missing" }
+  /** The WAF workspace the clones live in is not prepared; an admin prepares it in Settings. */
+  | { code: "workspace_not_ready" }
   /**
-   * The module's package.json names a repository a clone may not be made from (only ssh,
-   * git@host:owner/repo or https remotes without a password are).
+   * The workspace's module remote, for this module, is one a clone may not be made from (only
+   * ssh, git@host:owner/repo or https remotes without a password are).
    */
   | { code: "module_remote_invalid" }
   /** The clone is not there yet; Prepare clones makes it. */

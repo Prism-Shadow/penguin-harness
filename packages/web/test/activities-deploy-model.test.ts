@@ -55,7 +55,7 @@ function context(overrides: Partial<DeployContext> = {}): DeployContext {
 const EVERY_PROBLEM: DeployProblem[] = [
   { code: "settings_missing", field: "qa.jenkinsUrl" },
   { code: "settings_missing", field: "some.newField" },
-  { code: "module_remote_missing" },
+  { code: "workspace_not_ready" },
   { code: "clone_missing", repo: "module" },
   { code: "clone_dirty", repo: "activityData" },
   { code: "clone_ahead", repo: "media", count: 2 },
@@ -242,11 +242,7 @@ const VIEW: DeploySettingsView = {
     frameworkVersion: "",
   },
   jobs: { moduleBuild: "Build WAF Modules", activityDeploy: "WAF Activity Deploy" },
-  repos: {
-    activityDataRemote: "git@github.com:org/data.git",
-    mediaRemote: "",
-    mediaPublicBase: "/media/",
-  },
+  repos: { mediaPublicBase: "/media/" },
   git: { userName: "", userEmail: "" },
   timeouts: { buildMinutes: 30, deployMinutes: 30 },
 };
@@ -262,11 +258,11 @@ describe("deploy settings form", () => {
   it("sends only the changed fields, minutes as numbers", () => {
     const values = {
       ...formFromView(VIEW),
-      "repos.mediaRemote": " git@github.com:org/media.git ",
+      "repos.mediaPublicBase": " https://cdn.example.org/media/ ",
       "timeouts.deployMinutes": "45",
     };
     expect(deployUpdate(values, VIEW, emptyTokenDrafts())).toEqual({
-      repos: { mediaRemote: "git@github.com:org/media.git" },
+      repos: { mediaPublicBase: "https://cdn.example.org/media/" },
       timeouts: { deployMinutes: 45 },
     });
   });

@@ -38,8 +38,8 @@
  *   await_production_deploy     follow that deploy as await_activity_deploy follows QA's, and
  *                               record when PROD got it
  *
- * Everything runs in the deploy clones under PENGUIN_HOME; the WAF checkout is never
- * touched. git, Jenkins, the programs and the clock are ports, so a test runs every stage with
+ * Everything runs in the WAF workspace's clones, which a deploy starts on only when they are
+ * clean. git, Jenkins, the programs and the clock are ports, so a test runs every stage with
  * fakes and nothing reaches a remote.
  */
 import fs from "node:fs/promises";
@@ -416,7 +416,7 @@ async function jenkinsCall<T>(call: () => Promise<T>): Promise<T> {
 const verifyModule: DeployStageDefinition = {
   id: "verify_module",
   async run(ctx) {
-    // The clone is this server's own. What an earlier release left in it (the files it copied
+    // The clone was clean when the deploy started. What an earlier release left in it (the files it copied
     // in, a deploy branch checked out, a stage that failed or was stopped half way) is dropped,
     // so a release can always start again from main as origin has it.
     await git(ctx, ["fetch", "origin"], { timeoutMs: PUSH_TIMEOUT_MS });

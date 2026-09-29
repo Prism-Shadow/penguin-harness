@@ -55,7 +55,7 @@ function fakeGit(options: { tracked?: string[]; remoteBranch?: boolean; staged?:
         if (joined === "rev-parse HEAD") return ok("feedface\n");
         if (joined === "diff --cached --quiet")
           return options.staged === false ? ok() : { code: 1, stdout: "", stderr: "" };
-        if (joined === "sparse-checkout list") return ok("media/loom/words\n");
+        if (joined === "sparse-checkout list") return ok("loom/words\n");
         if (args[0] === "ls-tree") {
           const reference = args[args.length - 1]!;
           return ok((options.tracked ?? []).includes(reference) ? `${reference}\n` : "");
@@ -309,7 +309,7 @@ describe("verify_activity_data and verify_media_assets", () => {
     await fs.writeFile(path.join(draft, "loom", "words", "hello.mp3"), "hello");
     await run("export_activity_data", ctx);
     await run("verify_media_assets", ctx);
-    expect(await fs.readFile(path.join(media, "media/loom/words/hello.mp3"), "utf8")).toBe("hello");
+    expect(await fs.readFile(path.join(media, "loom/words/hello.mp3"), "utf8")).toBe("hello");
     const commands = git.calls
       .filter((call) => call.cwd === media)
       .map((call) => call.args.join(" "));
@@ -317,14 +317,14 @@ describe("verify_activity_data and verify_media_assets", () => {
       expect.arrayContaining([
         "checkout -f main",
         "reset --hard origin/main",
-        "add -- media/loom/words/hello.mp3",
+        "add -- loom/words/hello.mp3",
         "-c user.name=Deploy Bot -c user.email=deploy@example.org commit -m Publish media for words",
         "push origin main",
       ]),
     );
     expect(ctx.metadata).toMatchObject({
       mediaChecked: 1,
-      mediaCopied: ["media/loom/words/hello.mp3"],
+      mediaCopied: ["loom/words/hello.mp3"],
       mediaCopiedCount: 1,
       mediaCommit: "feedface",
     });
@@ -351,12 +351,14 @@ describe("verify_activity_data and verify_media_assets", () => {
     const adds = git.calls.filter((call) => call.cwd === media && call.args[0] === "add");
     expect(adds.length).toBeGreaterThan(1);
     for (const add of adds) expect(add.args.join(" ").length).toBeLessThan(10_000);
-    expect(adds.flatMap((add) => add.args.slice(2)).sort()).toEqual([...paths].sort());
+    expect(adds.flatMap((add) => add.args.slice(2)).sort()).toEqual(
+      paths.map((file) => file.slice("media/".length)).sort(),
+    );
     expect(ctx.metadata.mediaCopiedCount).toBe(count);
   });
 
   it("pushes nothing when the repository already has every file", async () => {
-    const { ctx, git, media } = await setup({}, { tracked: ["media/loom/words/hello.mp3"] });
+    const { ctx, git, media } = await setup({}, { tracked: ["loom/words/hello.mp3"] });
     await run("export_activity_data", ctx);
     await run("verify_media_assets", ctx);
     const commands = git.calls

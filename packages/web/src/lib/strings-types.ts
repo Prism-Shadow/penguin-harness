@@ -494,10 +494,6 @@ export type Strings = {
       checkRemote: string;
       checkingRemote: string;
       remoteChecked: string;
-      /** A clone failed: the repository and the end of git's own output ("" when none). */
-      cloneFailed: (repo: string, output: string) => string;
-      /** A clone ran past its time limit. */
-      cloneTimedOut: (repo: string) => string;
       /** The long name of each setting, by its dotted path. */
       fields: Record<string, string>;
       repos: { module: string; activityData: string; media: string };
@@ -545,7 +541,7 @@ export type Strings = {
       };
       problems: {
         settings_missing: (field: string) => string;
-        module_remote_missing: string;
+        workspace_not_ready: string;
         module_remote_invalid: string;
         clone_missing: (repo: string) => string;
         clone_unknown: (repo: string, what: "status" | "upstream" | "branch" | "sparse") => string;
@@ -1850,9 +1846,6 @@ export type Strings = {
       moduleBuildJob: string;
       activityDeployJob: string;
       jobHint: string;
-      activityDataRemote: string;
-      mediaRemote: string;
-      remoteHint: string;
       mediaPublicBase: string;
       mediaPublicBaseHint: string;
       gitUserName: string;
@@ -4405,11 +4398,8 @@ export type Strings = {
       deploy_no_module: string;
       deploy_not_canonical: string;
       deploy_settings_missing: string;
-      deploy_module_remote_missing: string;
-      deploy_module_remote_invalid: string;
-      deploy_clone_path_taken: string;
-      deploy_clone_path: string;
-      deploy_clone_failed: string;
+      waf_workspace_not_ready: string;
+      module_not_a_clone: string;
       git_unavailable: string;
       activity_invalid: string;
       activity_exists: string;

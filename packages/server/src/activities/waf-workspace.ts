@@ -22,9 +22,9 @@ import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../http/errors.js";
 import type { Config } from "../hmr/capabilities.js";
 import type { Settings } from "../mechanisms/settings.js";
-import { spawnGit, type DeployGit } from "./deploy-git.js";
+import { sameRemote, spawnGit, type DeployGit } from "./deploy-git.js";
 import { spawnDeployProcess, type DeployProcess } from "./deploy-process.js";
-import { normalizeRemote } from "./deploy-settings.js";
+import { DEPLOY_SETTINGS_KEY, normalizeRemote } from "./deploy-settings.js";
 import { findWafRoot } from "./waf-module.js";
 import type {
   WafRepoId,
@@ -207,6 +207,8 @@ export abstract class WafWorkspace extends Interface<{
   ensureModule(moduleFolder: string): Promise<string>;
   /** Adds media folders to the sparse checkout and fetches their LFS objects. */
   ensureMedia(folders: readonly string[]): Promise<void>;
+  /** The remote a product's module repository is cloned from and pushed to. */
+  moduleRemote(moduleFolder: string): string;
   settings(): WafWorkspaceSettings;
   saveSettings(input: unknown): WafWorkspaceSettings;
 }>() {}
@@ -224,7 +226,25 @@ export class WafWorkspaceService implements WafWorkspace {
   private queues = new Map<string, Promise<unknown>>();
 
   settings(): WafWorkspaceSettings {
-    return readWafWorkspaceSettings(this.serverSettings.get(WAF_WORKSPACE_SETTINGS_KEY));
+    const raw = this.serverSettings.get(WAF_WORKSPACE_SETTINGS_KEY);
+    const settings = readWafWorkspaceSettings(raw);
+    // Until the workspace is saved once, a server that set the two remotes in its deploy
+    // settings (where they used to be) keeps them.
+    if (raw === null) {
+      const deploy = asGroup(safeJson(this.serverSettings.get(DEPLOY_SETTINGS_KEY))).repos;
+      const { activityDataRemote, mediaRemote } = asGroup(deploy);
+      if (typeof activityDataRemote === "string" && activityDataRemote)
+        settings.repos.activityData.remote = activityDataRemote;
+      if (typeof mediaRemote === "string" && mediaRemote) settings.repos.media.remote = mediaRemote;
+    }
+    return settings;
+  }
+
+  moduleRemote(moduleFolder: string): string {
+    return this.settings().moduleRemote.replaceAll(
+      MODULE_PLACEHOLDER,
+      checkModuleFolder(moduleFolder),
+    );
   }
 
   saveSettings(input: unknown): WafWorkspaceSettings {
@@ -261,9 +281,11 @@ export class WafWorkspaceService implements WafWorkspace {
     const prior = this.queues.get(key) ?? Promise.resolve();
     const next = prior.catch(() => {}).then(work);
     this.queues.set(key, next);
-    void next.finally(() => {
+    // The caller sees a failure; this bookkeeping must not become an unhandled one.
+    const done = () => {
       if (this.queues.get(key) === next) this.queues.delete(key);
-    });
+    };
+    void next.then(done, done);
     return next;
   }
 
@@ -310,7 +332,8 @@ export class WafWorkspaceService implements WafWorkspace {
       path: dir,
       present,
       remote: origin,
-      remoteMatches: !managed || origin === this.settings().repos[id].remote,
+      remoteMatches:
+        !managed || (origin !== null && sameRemote(origin, this.settings().repos[id].remote)),
       branch: branch.code === 0 ? branch.stdout.trim() || null : null,
       dirty: status.code === 0 ? status.stdout.trim() !== "" : null,
       installed,
@@ -445,7 +468,7 @@ export class WafWorkspaceService implements WafWorkspace {
           "module_not_a_clone",
           `modules/${folder} exists but is not a git repository.`,
         );
-      const remote = this.settings().moduleRemote.replaceAll(MODULE_PLACEHOLDER, folder);
+      const remote = this.moduleRemote(folder);
       const probe = await this.git().run(["ls-remote", "--heads", "--", remote], root);
       if (probe.code === 0) {
         const cloned = await this.git().run(["clone", "--", remote, dir], root, {
@@ -498,6 +521,14 @@ export class WafWorkspaceService implements WafWorkspace {
         "",
       ]);
     });
+  }
+}
+
+function safeJson(raw: string | null): unknown {
+  try {
+    return raw === null ? null : JSON.parse(raw);
+  } catch {
+    return null;
   }
 }
 

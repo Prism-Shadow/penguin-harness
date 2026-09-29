@@ -13,6 +13,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { mediaRepoPath } from "./deploy-git.js";
 import { withinRoot } from "./sandbox-paths.js";
 
 export interface MediaGitResult {
@@ -90,10 +91,13 @@ export async function syncMedia(
   ports: MediaSyncPorts,
 ): Promise<MediaSyncResult> {
   const result: MediaSyncResult = { copied: [], missing: [], present: 0 };
-  let sparse: string[] | null = null;
+  /** The clone's sparse folders; null until asked, "all" when it is not sparse at all. */
+  let sparse: string[] | "all" | null = null;
   for (const reference of input.references) {
-    const target = withinRoot(input.dir, reference);
-    if (!target || !reference.startsWith("media/")) {
+    // The data names `media/...`; the clone is the media repository, which that folder is.
+    const inRepo = mediaRepoPath(reference);
+    const target = inRepo ? withinRoot(input.dir, inRepo) : null;
+    if (!inRepo || !target) {
       result.missing.push(reference);
       continue;
     }
@@ -104,10 +108,12 @@ export async function syncMedia(
           allowFailure: true,
           quiet: true,
         });
-        sparse = listed.code === 0 ? listed.stdout.split(/\r?\n/).filter(Boolean) : [];
+        // A clone that is not sparse (an existing checkout) has every folder already, and git
+        // refuses to add to a sparse set it does not have.
+        sparse = listed.code === 0 ? listed.stdout.split(/\r?\n/).filter(Boolean) : "all";
       }
-      const folder = path.posix.dirname(reference);
-      if (!sparseCovers(sparse, reference)) {
+      const folder = path.posix.dirname(inRepo);
+      if (sparse !== "all" && !sparseCovers(sparse, inRepo)) {
         await ports.git(["sparse-checkout", "add", folder]);
         sparse.push(folder);
       }
@@ -117,10 +123,10 @@ export async function syncMedia(
       }
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.copyFile(source, target);
-      result.copied.push(reference);
+      result.copied.push(inRepo);
       continue;
     }
-    const listed = await ports.git(["ls-tree", "--name-only", "HEAD", "--", reference], {
+    const listed = await ports.git(["ls-tree", "--name-only", "HEAD", "--", inRepo], {
       allowFailure: true,
       quiet: true,
     });

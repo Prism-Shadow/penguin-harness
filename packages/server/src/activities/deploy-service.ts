@@ -5,10 +5,11 @@
  * to confirm, and a QA deploy of the activity as it is now; each QA or PROD deploy that
  * finishes is told to `ActivityDeployEvents`.
  *
- * Nothing here changes anything outside PENGUIN_HOME. The one action that makes clones
- * (Prepare clones) clones into `PENGUIN_HOME/activity-deploy/repos/` and never into the WAF
- * checkout, which is only ever read. The connection test is one read-only GET to Jenkins,
- * made only when an admin presses it.
+ * A deploy works in the WAF workspace's clones (`WafWorkspace`): its module, activity-data
+ * and media repositories. Prepare clones asks the workspace for the product's module and media
+ * folder; the shared repositories are there once an admin prepared the workspace. A deploy
+ * starts only on clean clones, so what it resets or switches is nobody's unsaved work. The
+ * connection test is one read-only GET to Jenkins, made only when an admin presses it.
  *
  * Every git call and every Jenkins request goes through `DeployPorts`, which a test replaces,
  * so no test reaches a network or a real remote.
@@ -29,13 +30,8 @@ import type { ActivityDetail, ActivityProduct } from "./domain.js";
 import type { WafWorkspace } from "./waf-workspace.js";
 import { buildDeployContext } from "./deploy-context.js";
 import {
-  cloneUrlFor,
   deployClonePaths,
-  deployReposRoot,
-  gitAvailable,
   mediaSparsePath,
-  repositoryUrlOf,
-  sameRemote,
   spawnGit,
   type DeployGit,
   type DeployGitOptions,
@@ -44,7 +40,6 @@ import {
 import {
   DEPLOY_SECRETS_FILE,
   DEPLOY_SETTINGS_KEY,
-  isAllowedRemote,
   mergeSecrets,
   missingProdSettings,
   normalizeDeploySettings,
@@ -64,7 +59,6 @@ import {
   type DeployLogResponse,
   type DeployProductionRecord,
   type DeployProductionState,
-  type DeployRepo,
   type DeployRun,
   type DeploySettingsView,
   type DeployStage,
@@ -93,9 +87,6 @@ import {
   type DeployStageDone,
 } from "./deploy-run.js";
 import { ActivityDeployEvents } from "./deploy-events.js";
-
-/** How long a clone may take: a large module or activity-data history on a slow link. */
-export const CLONE_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** How long the connection test waits for Jenkins. */
 export const CONNECTION_TEST_TIMEOUT_MS = 10_000;
@@ -243,6 +234,18 @@ export class ActivityDeployService implements ActivityDeploys {
     return { store: this.store, runner: this.runner };
   }
 
+  /** The WAF workspace's root, where every clone a deploy works in is. */
+  private async requireWafRoot(): Promise<string> {
+    const root = await this.wafWorkspace.root();
+    if (!root)
+      throw new HttpError(
+        409,
+        "waf_workspace_not_ready",
+        "The WAF workspace is not prepared. An admin can prepare it in Settings.",
+      );
+    return root;
+  }
+
   private git(): DeployGit {
     const run = this.ports.runGit;
     return run ? { run } : spawnGit;
@@ -309,54 +312,17 @@ export class ActivityDeployService implements ActivityDeploys {
     }
   }
 
-  /** The module's package.json `repository`: the checkout's, else the newest assembled module's. */
-  private async moduleRepository(
-    projectId: string,
-    activityId: string,
-    moduleFolder: string,
-  ): Promise<string | null> {
-    const candidates: string[] = [];
-    const wafRoot = await this.wafWorkspace.root();
-    if (wafRoot) {
-      const root = withinRoot(path.join(wafRoot, "modules"), moduleFolder);
-      if (root) candidates.push(path.join(root, "package.json"));
-    }
-    const run = await this.generation
-      .latestRun(projectId, activityId, "module", "succeeded")
-      .catch(() => null);
-    if (run)
-      candidates.push(
-        path.join(
-          sandboxModuleRoot(path.join(this.config.root, "activity-runs", run.runId)),
-          "package.json",
-        ),
-      );
-    for (const file of candidates) {
-      try {
-        const url = repositoryUrlOf(JSON.parse(await fsp.readFile(file, "utf8")));
-        if (url) return url;
-      } catch {
-        /* Not there, or not JSON: try the next. */
-      }
-    }
-    return null;
-  }
-
   /** The facts about an activity a deploy depends on. */
   private async facts(projectId: string, activityId: string) {
     const activity = await this.activities.getActivity(projectId, activityId);
     const product = this.activities.productOf(activity);
     const runtime = (activity.draft.spec as { runtime?: { layout?: unknown } } | null)?.runtime;
     const layout = typeof runtime?.layout === "string" ? runtime.layout : null;
-    const moduleRepository = product
-      ? await this.moduleRepository(projectId, activityId, product.moduleFolder)
-      : null;
     return {
       activity,
       product,
       canonical: this.activities.isCanonicalRef(activity),
       layout,
-      moduleRepository,
     };
   }
 
@@ -366,16 +332,22 @@ export class ActivityDeployService implements ActivityDeploys {
     options: { checkRemote?: boolean } = {},
   ): Promise<DeployContext> {
     const facts = await this.facts(projectId, activityId);
+    const workspace = this.wafWorkspace.settings();
     return buildDeployContext(
       {
         home: this.config.root,
+        wafRoot: await this.wafWorkspace.root(),
+        remotes: {
+          module: facts.product ? this.wafWorkspace.moduleRemote(facts.product.moduleFolder) : null,
+          activityData: workspace.repos.activityData.remote,
+          media: workspace.repos.media.remote,
+        },
         productCode: facts.activity.productCode,
         moduleFolder: facts.product?.moduleFolder ?? null,
         canonical: facts.canonical,
         layout: facts.layout,
         settings: this.stored(),
         secrets: this.secrets(),
-        moduleRepository: facts.moduleRepository,
         checkRemote: options.checkRemote === true,
       },
       { git: this.git(), exists: exists },
@@ -396,93 +368,11 @@ export class ActivityDeployService implements ActivityDeploys {
           "deploy_not_canonical",
           "Only the product's canonical ref deploys its module.",
         );
-      const settings = this.stored();
-      for (const field of ["activityDataRemote", "mediaRemote"] as const)
-        if (!settings.repos[field])
-          throw new HttpError(
-            409,
-            "deploy_settings_missing",
-            `Save repos.${field} before preparing the clones.`,
-            undefined,
-            { field: `repos.${field}` },
-          );
-      if (!facts.moduleRepository)
-        throw new HttpError(
-          409,
-          "deploy_module_remote_missing",
-          "The module's package.json names no repository.",
-        );
-      const moduleRemote = cloneUrlFor(facts.moduleRepository);
-      if (!isAllowedRemote(moduleRemote))
-        throw new HttpError(
-          409,
-          "deploy_module_remote_invalid",
-          "The module's package.json names a repository that cannot be cloned from.",
-        );
-      const git = this.git();
-      const home = this.config.root;
-      if (!(await gitAvailable(git, home)))
-        throw new HttpError(503, "git_unavailable", "git could not be run on this server.");
-
-      const paths = deployClonePaths(home, facts.product.moduleFolder);
-      const root = deployReposRoot(home);
-      const wafRoot = await this.wafWorkspace.root();
-      const sparse = mediaSparsePath(facts.activity.productCode);
-      const plan: Array<{ repo: DeployRepo; dir: string; remote: string; args: string[] }> = [
-        {
-          repo: "module",
-          dir: paths.module,
-          remote: moduleRemote,
-          args: [],
-        },
-        {
-          repo: "activityData",
-          dir: paths.activityData,
-          remote: settings.repos.activityDataRemote,
-          args: [],
-        },
-        {
-          repo: "media",
-          dir: paths.media,
-          remote: settings.repos.mediaRemote,
-          args: ["--filter=blob:none", "--sparse"],
-        },
-      ];
-      for (const entry of plan) {
-        // Every clone sits under the deploy root and never inside the WAF checkout.
-        const relative = path.relative(root, entry.dir);
-        if (!relative || relative.startsWith("..") || path.isAbsolute(relative))
-          throw new HttpError(500, "deploy_clone_path", "A clone path left the deploy directory.");
-        if (wafRoot && isInside(wafRoot, entry.dir))
-          throw new HttpError(
-            409,
-            "deploy_clone_path",
-            "The deploy directory is inside the WAF checkout, which is never written.",
-          );
-      }
-      for (const entry of plan) {
-        if (await exists(entry.dir)) {
-          await this.checkExisting(git, entry);
-          if (entry.repo === "media") await this.ensureSparsePath(git, entry.dir, sparse);
-          continue;
-        }
-        await fsp.mkdir(path.dirname(entry.dir), { recursive: true });
-        const cloned = await git.run(
-          ["clone", ...entry.args, "--", entry.remote, entry.dir],
-          path.dirname(entry.dir),
-          { timeoutMs: CLONE_TIMEOUT_MS },
-        );
-        if (cloned.code !== 0) {
-          await fsp.rm(entry.dir, { recursive: true, force: true }).catch(() => {});
-          throw cloneFailed(entry.repo, cloned);
-        }
-        if (entry.repo === "media") {
-          const set = await git.run(["sparse-checkout", "set", sparse], entry.dir, {
-            timeoutMs: CLONE_TIMEOUT_MS,
-          });
-          if (set.code !== 0) throw cloneFailed(entry.repo, set);
-        }
-      }
+      // The clones are the WAF workspace's: its shared repositories come from preparing it
+      // (an admin's action); this adds the product's module and its media folder.
+      await this.requireWafRoot();
+      await this.wafWorkspace.ensureModule(facts.product.moduleFolder);
+      await this.wafWorkspace.ensureMedia([mediaSparsePath(facts.activity.productCode)]);
       return await this.context(projectId, activityId);
     } finally {
       this.preparing = false;
@@ -645,7 +535,7 @@ export class ActivityDeployService implements ActivityDeploys {
     const settings = this.stored();
     const secrets = this.secrets();
     const run = this.ports.runProcess;
-    const paths = deployClonePaths(home, folder);
+    const paths = deployClonePaths(await this.requireWafRoot(), folder);
     const activity = facts.activity;
     // The runner checks again: another start may have begun while this one read the clones.
     return runner.start({
@@ -756,7 +646,7 @@ export class ActivityDeployService implements ActivityDeploys {
         productCode: facts.activity.productCode,
         module: {
           folder: product.moduleFolder,
-          dir: deployClonePaths(home, product.moduleFolder).module,
+          dir: deployClonePaths(await this.requireWafRoot(), product.moduleFolder).module,
           source: null,
         },
         prod: {
@@ -905,49 +795,6 @@ export class ActivityDeployService implements ActivityDeploys {
     await this.activities.getActivity(projectId, activityId);
     return this.active().runner.stop(projectId, activityId);
   }
-
-  /** A path that already exists must be the expected clone; anything else is left alone. */
-  private async checkExisting(
-    git: DeployGit,
-    entry: { repo: DeployRepo; dir: string; remote: string },
-  ): Promise<void> {
-    const origin = (await exists(path.join(entry.dir, ".git")))
-      ? await git.run(["remote", "get-url", "origin"], entry.dir)
-      : null;
-    if (!origin || origin.code !== 0 || !sameRemote(origin.stdout, entry.remote))
-      throw new HttpError(
-        409,
-        "deploy_clone_path_taken",
-        `The ${entry.repo} clone's directory exists and is not a clone of its remote; it was left as it is.`,
-        undefined,
-        { repo: entry.repo },
-      );
-  }
-
-  /** Adds this activity's media to the media clone's sparse paths when it is not there yet. */
-  private async ensureSparsePath(git: DeployGit, dir: string, sparse: string): Promise<void> {
-    const list = await git.run(["sparse-checkout", "list"], dir);
-    if (list.code === 0 && list.stdout.split(/\r?\n/).some((line) => line.trim() === sparse))
-      return;
-    const added = await git.run(["sparse-checkout", "add", sparse], dir, {
-      timeoutMs: CLONE_TIMEOUT_MS,
-    });
-    if (added.code !== 0) throw cloneFailed("media", added);
-  }
-}
-
-/**
- * A failed clone. The App words it from `detail`: the repository, why (`timed_out` or
- * `git_failed`), and the end of git's own output, which is git's text, not the server's.
- */
-function cloneFailed(repo: DeployRepo, result: DeployGitResult): HttpError {
-  const timedOut = result.error === "timed_out";
-  const output = timedOut ? "" : result.stderr.trim().split(/\r?\n/).slice(-3).join(" ");
-  return new HttpError(502, "deploy_clone_failed", `The ${repo} clone failed.`, undefined, {
-    repo,
-    reason: timedOut ? "timed_out" : "git_failed",
-    output,
-  });
 }
 
 /** A blocker as the refusal's detail: its code and the facts it names. */
@@ -1014,9 +861,4 @@ async function exists(file: string): Promise<boolean> {
     () => true,
     () => false,
   );
-}
-
-function isInside(root: string, target: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }

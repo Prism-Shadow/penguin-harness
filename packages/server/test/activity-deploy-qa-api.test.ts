@@ -4,7 +4,8 @@
  * set, the QA address recorded, and a media file found nowhere failing the media stage by name.
  *
  * git, npm, Jenkins and the clock are fakes behind the deploy ports: nothing here reaches a
- * network, a real remote or a real program, and the WAF checkout is never written.
+ * network, a real remote or a real program. The clones are the WAF checkout's: its
+ * activity-data and media repositories are there already, and Prepare clones adds the module.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -19,6 +20,8 @@ import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.j
 
 const PROJECT = "shipper-work";
 const QA_TOKEN = "qa-secret-token";
+const DATA_REMOTE = "git@github.com:org/data.git";
+const MEDIA_REMOTE = "git@github.com:org/media.git";
 
 /** A git whose clones are `.git` folders on disk; `tracked` is what the media repository holds. */
 function fakeGit(tracked: Set<string>) {
@@ -30,6 +33,8 @@ function fakeGit(tracked: Set<string>) {
   const runGit = async (args: string[], cwd: string): Promise<DeployGitResult> => {
     calls.push({ args, cwd });
     if (args[0] === "--version") return ok("git version 2.45.0");
+    // The workspace asks whether a module's repository exists before cloning it.
+    if (args[0] === "ls-remote" && args[2] === "--") return ok("abc\trefs/heads/main\n");
     if (args[0] === "clone") {
       const [remote, dir] = args.slice(args.indexOf("--") + 1);
       await fs.mkdir(path.join(dir!, ".git"), { recursive: true });
@@ -127,15 +132,16 @@ describe("activity deploy to QA", () => {
     cleanups.push(() => fs.rm(root, { recursive: true, force: true }));
     await fs.mkdir(path.join(root, "framework", "src"), { recursive: true });
     await fs.writeFile(path.join(root, "framework", "package.json"), "{}");
-    await fs.mkdir(path.join(root, "media"), { recursive: true });
-    await fs.mkdir(path.join(root, "modules", "waf-module-words"), { recursive: true });
-    await fs.writeFile(
-      path.join(root, "modules", "waf-module-words", "package.json"),
-      JSON.stringify({
-        name: "waf-module-words",
-        repository: "git+https://github.com/org/waf-module-words.git",
-      }),
-    );
+    await fs.mkdir(path.join(root, "modules"), { recursive: true });
+    // The checkout's shared clones; its media's sparse set has this product's folder.
+    for (const [folder, remote] of [
+      ["waf-activity-data", DATA_REMOTE],
+      ["media", MEDIA_REMOTE],
+    ] as const) {
+      await fs.mkdir(path.join(root, folder, ".git"), { recursive: true });
+      await fs.writeFile(path.join(root, folder, ".git", "origin"), remote);
+    }
+    await fs.writeFile(path.join(root, "media", ".git", "sparse"), "loom/words");
     vi.stubEnv("WAF_ROOT_DIR", root);
 
     const git = fakeGit(new Set(tracked));
@@ -148,6 +154,7 @@ describe("activity deploy to QA", () => {
         now: () => Date.UTC(2026, 8, 28, 9, 0, 0),
         sleep: async () => {},
       },
+      wafWorkspacePorts: { runGit: git.runGit },
     });
     cleanups.push(async () => {
       await t.cleanup();
@@ -187,11 +194,15 @@ describe("activity deploy to QA", () => {
             frameworkVersion: "4.2.1",
             activityBaseUrl: "https://qa.example.org/play",
           },
-          repos: {
-            activityDataRemote: "git@github.com:org/data.git",
-            mediaRemote: "git@github.com:org/media.git",
-          },
           git: { userName: "Deploy", userEmail: "deploy@example.org" },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await admin.put("/api/admin/waf-workspace/settings", {
+          repos: { activityData: { remote: DATA_REMOTE }, media: { remote: MEDIA_REMOTE } },
+          moduleRemote: "git@github.com:org/{module}.git",
         })
       ).status,
     ).toBe(200);
@@ -202,14 +213,11 @@ describe("activity deploy to QA", () => {
       expect(res.status).toBe(200);
       return (await res.json()) as DeployStateResponse;
     };
-    const repos = path.join(t.root, "activity-deploy", "repos");
-    return { t, root, git, jenkins, client, endpoint, state, repos };
+    return { t, root, git, jenkins, client, endpoint, state };
   }
 
   it("deploys to QA from a fresh state: ten stages, the edited data, the deploy job and the QA address", async () => {
-    const { root, git, jenkins, client, endpoint, state, repos } = await setup([
-      "media/loom/words/hello.mp3",
-    ]);
+    const { root, git, jenkins, client, endpoint, state } = await setup(["loom/words/hello.mp3"]);
     const res = await client.post(`${endpoint}/deploy`, { stage: "qa" });
     expect(res.status).toBe(202);
     const { run } = (await res.json()) as DeployRunResponse;
@@ -230,7 +238,7 @@ describe("activity deploy to QA", () => {
     });
     expect(found.run!.metadata.contentRevision).toBeTruthy();
 
-    const data = path.join(repos, "activity-data");
+    const data = path.join(root, "waf-activity-data");
     const configuration = JSON.parse(
       await fs.readFile(path.join(data, "data/configurations/loom/words-1.json"), "utf8"),
     );
@@ -269,11 +277,13 @@ describe("activity deploy to QA", () => {
       .filter((call) => call.args[0] === "push")
       .map((call) => call.args.join(" "));
     expect(pushes).toContain("push -u origin loom/words-activity-data");
-    // Every git call ran under PENGUIN_HOME; the checkout was never a working directory.
-    for (const call of git.calls) expect(call.cwd.startsWith(root)).toBe(false);
-    expect(await fs.readdir(path.join(root, "modules", "waf-module-words"))).toEqual([
-      "package.json",
+    // The module was cloned where the checkout keeps modules, and its stages ran there.
+    const module = path.join(root, "modules", "waf-module-words");
+    expect(git.calls.find((call) => call.args[0] === "clone")?.args.slice(-2)).toEqual([
+      "git@github.com:org/waf-module-words.git",
+      module,
     ]);
+    expect(git.calls.some((call) => call.cwd === module && call.args[0] === "push")).toBe(true);
   });
 
   it("fails the media stage naming a file found nowhere, and runs nothing after it", async () => {
