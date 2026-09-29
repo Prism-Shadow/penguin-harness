@@ -544,6 +544,13 @@ function oneAnswer(
 }
 
 /**
+ * What the list is OF — the Project and its Agent set, the Provider's context key. A reload
+ * for another one does not queue behind a round started for this one (see `reload`).
+ */
+const contextOf = (state: Pick<SessionsStoreState, "projectId" | "agentIds">): string =>
+  `${state.projectId ?? ""}\u0000${state.agentIds.join(",")}`;
+
+/**
  * Builds one Provider's store. Exported as a test seam: vitest runs this package in Node with
  * no DOM, so the list's own behaviour is exercised against the store directly rather than
  * through a React tree.
@@ -570,8 +577,6 @@ export function createSessionsStore() {
   /** Listing changes gathered for the next flush, by Session id: the last word on an id wins. */
   const pendingListing = new Map<string, ListingChange>();
   let listingTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Reloads started and not yet settled: a flush that invalidates one asks again. */
-  let reloadsInFlight = 0;
   /** Consecutive reloads this server answered nothing to (the retry backs off on it). */
   let retries = 0;
   /**
@@ -741,7 +746,7 @@ export function createSessionsStore() {
       // dropped, and asked again so the list still lands.
       if (rows !== get().sessions) {
         gen += 1;
-        if (reloadsInFlight > 0) fetchUnheld = true;
+        if (inflight !== null) fetchUnheld = true;
       }
       set({
         sessions: rows,
@@ -750,6 +755,371 @@ export function createSessionsStore() {
           : {}),
       });
       if (fetchUnheld) void get().reload();
+    };
+
+    /**
+     * One round of `reload()`: every source asked about every Agent, the answers merged and
+     * applied. Only ever started through `reload()`'s queue (`startRound`).
+     */
+    const round = async (): Promise<void> => {
+      const { projectId, agentIds, machineIds, offlineMachineIds, agentIdsByMachine } = get();
+      // No context to fetch against yet. `loading` is deliberately left alone rather than
+      // cleared: nothing was loaded, so reporting "done" here would be a lie — and one the
+      // empty state renders. The Provider's reset step raised it and a later reload,
+      // once an Agent set exists, is what clears it.
+      if (!projectId || agentIds.length === 0) return;
+      const g = ++gen;
+      const adoptMark = adoptSeq;
+      // Only when there is nothing on screen. Rows already listed stay true while this
+      // refetches — a machine appearing or dropping out changes which servers are asked,
+      // not whether what is already shown is still so — and the chat page reads this flag
+      // to decide whether to draw a skeleton over the open conversation.
+      if (get().sessions.length === 0) set({ loading: true });
+      let applied = false;
+      // This server first, then every machine of the Project this server holds a
+      // connection to — less the resting ones, but for the one whose rest is over, which
+      // is probed. Order matters only as a tie-break for equal timestamps.
+      const now = Date.now();
+      const rested = new Set<string>();
+      const probed = new Set<string>();
+      for (const machineId of machineIds) {
+        const rest = resting.get(machineId);
+        if (rest === undefined) continue;
+        rested.add(machineId);
+        if (!rest.probing && rest.until <= now) {
+          rest.probing = true;
+          probed.add(machineId);
+        }
+      }
+      const sources: (string | null)[] = [
+        null,
+        ...machineIds.filter((m) => !rested.has(m) || probed.has(m)),
+      ];
+      // One job per (Agent, source), asking each server about the Agents IT can answer for:
+      // this server about the Project's, a machine about those plus its own. A machine-only
+      // Agent's Sessions are listed by nobody otherwise. A probe is one Agent's question.
+      const jobs = sources.flatMap((source) => {
+        const ids =
+          source === null
+            ? agentIds
+            : [...new Set([...agentIds, ...(agentIdsByMachine[source] ?? [])])];
+        return (source !== null && probed.has(source) ? ids.slice(0, 1) : ids).map((agentId) => ({
+          agentId,
+          source,
+        }));
+      });
+      // One request per SOURCE, carrying every (Agent, stream) first page that source owes
+      // us. These were one GET each — with several Agents and machines that is dozens fired
+      // at once, serialised by the browser's six-connections-per-host limit, and the
+      // conversation pane's own message read queued behind all of them.
+      const bySource = new Map<string | null, WantedPage[]>();
+      for (const { agentId, source } of jobs) {
+        // The Agent's whole-stream first page (with per-category totals) always; plus the
+        // first page of every other stream already on screen — each Workspace group paging
+        // its own — because a reload triggered by a server event must refresh them, not
+        // blank them.
+        const list = bySource.get(source) ?? [];
+        list.push({ agentId, scope: "" });
+        for (const key of get().pageState.keys()) {
+          const parsed = parsePageKey(key);
+          if (parsed === null || parsed.agentId !== agentId || parsed.source !== source) continue;
+          if (parsed.scope !== "") list.push({ agentId, scope: parsed.scope });
+        }
+        bySource.set(source, list);
+      }
+      try {
+        const results = (
+          await Promise.all(
+            [...bySource].map(async ([source, wanted]) => {
+              let answered: PageAnswer[];
+              try {
+                const res = await api.batchSessions(
+                  projectId,
+                  wanted.map((w) => ({
+                    agentId: w.agentId,
+                    limit: SIDEBAR_PAGE_SIZE + 1,
+                    order: "activity",
+                    category: "active",
+                    excludeOrg: true,
+                    ...(w.scope === "" ? { withCounts: true } : { workspaceGroup: w.scope }),
+                  })),
+                  source,
+                );
+                answered = wanted.map((w, i) => oneAnswer(w, source, res.results[i]));
+              } catch (err) {
+                // The whole SOURCE failed to answer — this server mid-swap, a connection
+                // held to a server that is not serving, the network. Nothing is applied
+                // for it below, which is the point: an empty result standing in for a
+                // failure replaces rows that are perfectly alive (see oneAnswer).
+                answered = wanted.map((w) => ({
+                  agentId: w.agentId,
+                  source,
+                  pages: [],
+                  answered: false,
+                  reason: err instanceof Error ? err.message : String(err),
+                }));
+              }
+              return answered;
+            }),
+          )
+        ).flat();
+        // Whether each machine answered is a fact about the machine, whichever reload is
+        // current by now — recorded before a newer one discards this one's rows.
+        const unansweredMachines = new Set(
+          results.flatMap((r) => (r.source !== null && !r.answered ? [r.source] : [])),
+        );
+        for (const source of sources) {
+          if (source === null) continue;
+          noteMachineAnswer(
+            source,
+            results.some((r) => r.source === source && r.answered),
+            probed.has(source),
+          );
+        }
+        if (g !== gen) return;
+        // Agents this server did not answer about. Per Agent, not per server: a damaged
+        // index or a 500 on ONE Agent is a different event from this server being
+        // unreadable, and reading the first as the second is what leaves the page on a
+        // skeleton — nothing is applied, so `loading` is never cleared, and on a quiet
+        // server nothing asks again.
+        const unanswered = new Set(
+          results.flatMap((r) => (r.source === null && !r.answered ? [r.agentId] : [])),
+        );
+        // This server did not answer about ANY of them. It holds the Sessions every other
+        // source is merged AROUND, so there is no list to build — and building one anyway
+        // would replace everything on screen with a handful of remote rows, or with nothing
+        // at all. A reload is a refresh, and a refresh that cannot read anything changes
+        // nothing: the rows stand, `loading` is left as it was, and the next one tries
+        // again. This is the ordinary state during a hot swap and for the moment after a
+        // reconnect.
+        if (unanswered.size === agentIds.length && agentIds.length > 0) {
+          // Said out loud, and asked again on a timer: a page that opened during a swap or
+          // a hiccup used to sit on the skeleton until some event happened to fire.
+          const reasons = results
+            .filter((r) => r.source === null && !r.answered)
+            .map((r) => `${r.agentId}: ${r.reason ?? "no answer"}`);
+          const delay = Math.min(RELOAD_RETRY_MAX_MS, RELOAD_RETRY_MIN_MS * 2 ** retries);
+          retries += 1;
+          console.warn(
+            `[sessions] this server answered for none of the Agents (${reasons.join("; ")}); ` +
+              `the list on screen is kept and asked again in ${delay} ms`,
+          );
+          setTimeout(() => {
+            if (g === gen) void get().reload();
+          }, delay);
+          return;
+        }
+        retries = 0;
+        // Machines that did not answer are treated exactly like machines that were never
+        // asked: their rows come from the cache below, and their cache is left alone.
+        // So are resting ones, and a probed one: one Agent's answer is not the machine's list.
+        const silent = new Set([...unansweredMachines, ...rested]);
+        const nextSessions: SessionInfo[] = [];
+        const seen = new Set<string>();
+        // What each machine answered, kept so it can be shown after the next restart while
+        // the server re-holds its connection to that machine (lib/machine-cache.ts).
+        const rowsByMachine = new Map<string, SessionInfo[]>();
+        const nextPageState = new Map<string, PagePosition>();
+        const nextCounts = new Map<string, SessionCategoryCounts>();
+        const nextWorkspaceCounts = new Map<
+          string,
+          Readonly<Record<string, SessionCategoryCounts>>
+        >();
+        // Counts are SUMMED across sources, not overwritten: a group's count that counted
+        // one machine would contradict the rows underneath it (mergeCounts).
+        const countParts = new Map<string, SessionCategoryCounts[]>();
+        // Each answer with the machine that gave it: a path means a directory only
+        // together with the filesystem it was read from.
+        const workspaceParts = new Map<
+          string,
+          Array<{
+            source: string | null;
+            counts: Readonly<Record<string, SessionCategoryCounts>>;
+          }>
+        >();
+        // Newest-Session stamps per group, keyed the way the counts are (a path on a
+        // machine); the newest answer for a group wins. Two of them: every Session's (the
+        // Workspace picker's "recently used") and the active ones' (the groups' order).
+        const nextWorkspaceLatest = new Map<string, Readonly<Record<string, string>>>();
+        const nextWorkspaceLatestActive = new Map<string, Readonly<Record<string, string>>>();
+        const foldStamps = (
+          into: Map<string, Readonly<Record<string, string>>>,
+          agentId: string,
+          source: string | null,
+          stamps: Readonly<Record<string, string>>,
+        ) => {
+          const latest: Record<string, string> = { ...(into.get(agentId) ?? {}) };
+          for (const [path, stamp] of Object.entries(stamps)) {
+            const groupKey = workspaceGroupKey(path, source);
+            const held = latest[groupKey];
+            if (held === undefined || held < stamp) latest[groupKey] = stamp;
+          }
+          into.set(agentId, latest);
+        };
+        for (const r of results) {
+          for (const p of r.pages) {
+            const last = p.items.at(-1);
+            nextPageState.set(pageKey(r.agentId, p.scope, r.source), {
+              hasMore: p.hasMore,
+              cursor: last === undefined ? null : activityKeyOf(last),
+            });
+            if (p.counts)
+              countParts.set(r.agentId, [...(countParts.get(r.agentId) ?? []), p.counts]);
+            if (p.workspaceCounts) {
+              workspaceParts.set(r.agentId, [
+                ...(workspaceParts.get(r.agentId) ?? []),
+                { source: r.source, counts: p.workspaceCounts },
+              ]);
+            }
+            if (p.workspaceLatest) {
+              foldStamps(nextWorkspaceLatest, r.agentId, r.source, p.workspaceLatest);
+            }
+            if (p.workspaceLatestActive) {
+              foldStamps(nextWorkspaceLatestActive, r.agentId, r.source, p.workspaceLatestActive);
+            }
+            for (const s of p.items) {
+              if (seen.has(s.sessionId)) continue;
+              seen.add(s.sessionId);
+              nextSessions.push(s);
+              if (r.source !== null)
+                rowsByMachine.set(r.source, [...(rowsByMachine.get(r.source) ?? []), s]);
+              // Where this row lives, so the two dozen Session-scoped calls about it reach
+              // the machine that holds it. Rebuilt by the very list that displays them,
+              // which is why the map is in memory and this is the only place it is filled.
+              rememberSessionMachine(s.sessionId, r.source);
+            }
+          }
+        }
+        for (const [agentId, parts] of countParts) {
+          const merged = mergeCounts(parts);
+          if (merged) nextCounts.set(agentId, merged);
+        }
+        for (const [agentId, parts] of workspaceParts) {
+          // Per GROUP, which is a path on a machine. Each machine answers about its own
+          // filesystem, so two machines' counts for paths that are equal as strings belong
+          // to two different directories: summing them would put both totals under both
+          // folders, each one contradicting the rows beneath it.
+          const byGroup = new Map<string, SessionCategoryCounts[]>();
+          for (const { source, counts: byPath } of parts) {
+            for (const [path, counts] of Object.entries(byPath)) {
+              const groupKey = workspaceGroupKey(path, source);
+              byGroup.set(groupKey, [...(byGroup.get(groupKey) ?? []), counts]);
+            }
+          }
+          const out: Record<string, SessionCategoryCounts> = {};
+          for (const [groupKey, list] of byGroup) {
+            const merged = mergeCounts(list);
+            if (merged) out[groupKey] = merged;
+          }
+          nextWorkspaceCounts.set(agentId, out);
+        }
+        // Only a machine that ANSWERED replaces what it is remembered as holding — including
+        // with nothing, which is how a Session deleted over there stops coming back from
+        // the cache. A machine that went quiet during the fetch keeps its cache: erasing it
+        // would leave the fallback with nothing to fall back to.
+        for (const machineId of machineIds) {
+          if (silent.has(machineId)) continue;
+          rememberMachineSessions(projectId, machineId, rowsByMachine.get(machineId) ?? []);
+        }
+        // And every machine this list could not read contributes what it last held — the
+        // ones with no connection held, and the ones that went quiet during the fetch.
+        // `seen` still guards, so a live answer always wins over a remembered one. Their
+        // owner entries are recorded the same way, so opening such a Session addresses the
+        // machine that has it rather than this server — which would answer 404 about
+        // someone else's.
+        //
+        // Totals are NOT topped up from here: counts come from the servers that answered,
+        // so an out-of-reach machine's rows show without being counted. Better than the
+        // alternative — a count is a claim about what a server holds now, and the cache
+        // cannot make that claim.
+        for (const machineId of new Set([...offlineMachineIds, ...silent])) {
+          for (const s of cachedMachineSessions(projectId, machineId)) {
+            if (seen.has(s.sessionId)) continue;
+            seen.add(s.sessionId);
+            nextSessions.push(s);
+            rememberSessionMachine(s.sessionId, machineId);
+          }
+        }
+        // An Agent this server could not answer about keeps everything it already had: its
+        // rows here, the page positions they were loaded at, and its badge counts. The list
+        // is rebuilt wholesale, so without this one Agent's failed call erases it — and an
+        // erased Agent is indistinguishable, on screen, from one that has no conversations.
+        // Its counts are kept as last read rather than remerged from the machines that did
+        // answer: a total missing this server's share would contradict the rows beneath it.
+        if (unanswered.size > 0) {
+          const held = get();
+          for (const s of held.sessions) {
+            if (!unanswered.has(s.agentId) || machineForSession(s.sessionId) !== null) continue;
+            if (seen.has(s.sessionId)) continue;
+            seen.add(s.sessionId);
+            nextSessions.push(s);
+          }
+          for (const [key, position] of held.pageState) {
+            const parsed = parsePageKey(key);
+            if (parsed === null || parsed.source !== null) continue;
+            if (!unanswered.has(parsed.agentId) || nextPageState.has(key)) continue;
+            nextPageState.set(key, position);
+          }
+          for (const agentId of unanswered) {
+            const counts = held.countsByAgent.get(agentId);
+            if (counts) nextCounts.set(agentId, counts);
+            const workspaceCounts = held.workspaceCountsByAgent.get(agentId);
+            if (workspaceCounts) nextWorkspaceCounts.set(agentId, workspaceCounts);
+            const latest = held.workspaceLatestByAgent.get(agentId);
+            if (latest) nextWorkspaceLatest.set(agentId, latest);
+            const latestActive = held.workspaceLatestActiveByAgent.get(agentId);
+            if (latestActive) nextWorkspaceLatestActive.set(agentId, latestActive);
+          }
+        }
+        // A Session adopted from a live event after this reload started may have run after
+        // its page was read, and no page will serve it again: it is carried over. Older
+        // adoptions are the pages' to decide — those were read with the Session already
+        // there, and one that missed them sits below its stream's cursor.
+        for (const s of get().sessions) {
+          if ((adoptedAt.get(s.sessionId) ?? 0) <= adoptMark || seen.has(s.sessionId)) continue;
+          seen.add(s.sessionId);
+          nextSessions.push(s);
+        }
+        for (const [sessionId, at] of adoptedAt) if (at <= adoptMark) adoptedAt.delete(sessionId);
+        // Most recently active first across every source: each answered sorted, and
+        // concatenating sorted lists does not give a sorted list.
+        nextSessions.sort(mostRecentFirst);
+        // No fetch returns a row of no sidebar list — an organization's (`excludeOrg`), an
+        // archived one, a subagent — so one held here entered through add() or replace()
+        // for the page showing it (an open desk, an archived stub, a child opened from the
+        // Agent panel) and no reload can bring it back: carry it over, or that page's writes
+        // stop reaching it.
+        const held = get().sessions.filter(
+          (s) => !seen.has(s.sessionId) && (isOrgSession(s) || sessionCategory(s) !== "active"),
+        );
+        set({
+          sessions: [...nextSessions, ...held],
+          pageState: nextPageState,
+          countsByAgent: nextCounts,
+          workspaceCountsByAgent: nextWorkspaceCounts,
+          workspaceLatestByAgent: nextWorkspaceLatest,
+          workspaceLatestActiveByAgent: nextWorkspaceLatestActive,
+        });
+        applied = true;
+      } finally {
+        // Only a reload that produced a list may report one. Abandoning above leaves the
+        // flag exactly as it was — false with rows on screen, which is still true of them;
+        // true with none, because none were fetched and saying otherwise is what paints an
+        // empty state over a list that was merely unreadable this round.
+        if (g === gen && applied) set({ loading: false });
+      }
+    };
+
+    /** The round in flight, and the list it was started for (`contextOf`). */
+    let inflight: { promise: Promise<void>; context: string } | null = null;
+    /** The one round queued behind it, shared by every trigger that arrived meanwhile. */
+    let queued: Promise<void> | null = null;
+    const startRound = (): Promise<void> => {
+      const promise: Promise<void> = round().finally(() => {
+        if (inflight?.promise === promise) inflight = null;
+      });
+      inflight = { promise, context: contextOf(get()) };
+      return promise;
     };
 
     return {
@@ -769,355 +1139,33 @@ export function createSessionsStore() {
       liveStatuses: new Map(),
       loading: true,
 
-      reload: async () => {
-        const { projectId, agentIds, machineIds, offlineMachineIds, agentIdsByMachine } = get();
-        // No context to fetch against yet. `loading` is deliberately left alone rather than
-        // cleared: nothing was loaded, so reporting "done" here would be a lie — and one the
-        // empty state renders. The Provider's reset step raised it and a later reload,
-        // once an Agent set exists, is what clears it.
-        if (!projectId || agentIds.length === 0) return;
-        const g = ++gen;
-        const adoptMark = adoptSeq;
-        // Only when there is nothing on screen. Rows already listed stay true while this
-        // refetches — a machine appearing or dropping out changes which servers are asked,
-        // not whether what is already shown is still so — and the chat page reads this flag
-        // to decide whether to draw a skeleton over the open conversation.
-        if (get().sessions.length === 0) set({ loading: true });
-        let applied = false;
-        reloadsInFlight += 1;
-        // This server first, then every machine of the Project this server holds a
-        // connection to — less the resting ones, but for the one whose rest is over, which
-        // is probed. Order matters only as a tie-break for equal timestamps.
-        const now = Date.now();
-        const rested = new Set<string>();
-        const probed = new Set<string>();
-        for (const machineId of machineIds) {
-          const rest = resting.get(machineId);
-          if (rest === undefined) continue;
-          rested.add(machineId);
-          if (!rest.probing && rest.until <= now) {
-            rest.probing = true;
-            probed.add(machineId);
-          }
+      reload: () => {
+        // One round in flight and at most one queued behind it: every trigger that arrives
+        // while a round is out joins the queued one, which starts when the round in flight
+        // ends and reads the list as it stands by then. A round asks every source about every
+        // Agent, so a trigger per round used to multiply — a busy organization or a stream of
+        // new Sessions put a fresh Agents × sources wave on the wire while the last one was
+        // still waiting on a slow machine, and the waves piled up in the browser.
+        //
+        // A list that is now OF something else (another Project, another Agent set) does not
+        // wait: the round in flight fetches for a list no longer on screen, and a fresh one
+        // starts at once — its own generation drops the old round's answers.
+        if (inflight === null) return startRound();
+        if (inflight.context !== contextOf(get())) {
+          queued = null;
+          return startRound();
         }
-        const sources: (string | null)[] = [
-          null,
-          ...machineIds.filter((m) => !rested.has(m) || probed.has(m)),
-        ];
-        // One job per (Agent, source), asking each server about the Agents IT can answer for:
-        // this server about the Project's, a machine about those plus its own. A machine-only
-        // Agent's Sessions are listed by nobody otherwise. A probe is one Agent's question.
-        const jobs = sources.flatMap((source) => {
-          const ids =
-            source === null
-              ? agentIds
-              : [...new Set([...agentIds, ...(agentIdsByMachine[source] ?? [])])];
-          return (source !== null && probed.has(source) ? ids.slice(0, 1) : ids).map((agentId) => ({
-            agentId,
-            source,
-          }));
-        });
-        // One request per SOURCE, carrying every (Agent, stream) first page that source owes
-        // us. These were one GET each — with several Agents and machines that is dozens fired
-        // at once, serialised by the browser's six-connections-per-host limit, and the
-        // conversation pane's own message read queued behind all of them.
-        const bySource = new Map<string | null, WantedPage[]>();
-        for (const { agentId, source } of jobs) {
-          // The Agent's whole-stream first page (with per-category totals) always; plus the
-          // first page of every other stream already on screen — each Workspace group paging
-          // its own — because a reload triggered by a server event must refresh them, not
-          // blank them.
-          const list = bySource.get(source) ?? [];
-          list.push({ agentId, scope: "" });
-          for (const key of get().pageState.keys()) {
-            const parsed = parsePageKey(key);
-            if (parsed === null || parsed.agentId !== agentId || parsed.source !== source) continue;
-            if (parsed.scope !== "") list.push({ agentId, scope: parsed.scope });
-          }
-          bySource.set(source, list);
-        }
-        try {
-          const results = (
-            await Promise.all(
-              [...bySource].map(async ([source, wanted]) => {
-                let answered: PageAnswer[];
-                try {
-                  const res = await api.batchSessions(
-                    projectId,
-                    wanted.map((w) => ({
-                      agentId: w.agentId,
-                      limit: SIDEBAR_PAGE_SIZE + 1,
-                      order: "activity",
-                      category: "active",
-                      excludeOrg: true,
-                      ...(w.scope === "" ? { withCounts: true } : { workspaceGroup: w.scope }),
-                    })),
-                    source,
-                  );
-                  answered = wanted.map((w, i) => oneAnswer(w, source, res.results[i]));
-                } catch (err) {
-                  // The whole SOURCE failed to answer — this server mid-swap, a connection
-                  // held to a server that is not serving, the network. Nothing is applied
-                  // for it below, which is the point: an empty result standing in for a
-                  // failure replaces rows that are perfectly alive (see oneAnswer).
-                  answered = wanted.map((w) => ({
-                    agentId: w.agentId,
-                    source,
-                    pages: [],
-                    answered: false,
-                    reason: err instanceof Error ? err.message : String(err),
-                  }));
-                }
-                return answered;
-              }),
-            )
-          ).flat();
-          // Whether each machine answered is a fact about the machine, whichever reload is
-          // current by now — recorded before a newer one discards this one's rows.
-          const unansweredMachines = new Set(
-            results.flatMap((r) => (r.source !== null && !r.answered ? [r.source] : [])),
-          );
-          for (const source of sources) {
-            if (source === null) continue;
-            noteMachineAnswer(
-              source,
-              results.some((r) => r.source === source && r.answered),
-              probed.has(source),
-            );
-          }
-          if (g !== gen) return;
-          // Agents this server did not answer about. Per Agent, not per server: a damaged
-          // index or a 500 on ONE Agent is a different event from this server being
-          // unreadable, and reading the first as the second is what leaves the page on a
-          // skeleton — nothing is applied, so `loading` is never cleared, and on a quiet
-          // server nothing asks again.
-          const unanswered = new Set(
-            results.flatMap((r) => (r.source === null && !r.answered ? [r.agentId] : [])),
-          );
-          // This server did not answer about ANY of them. It holds the Sessions every other
-          // source is merged AROUND, so there is no list to build — and building one anyway
-          // would replace everything on screen with a handful of remote rows, or with nothing
-          // at all. A reload is a refresh, and a refresh that cannot read anything changes
-          // nothing: the rows stand, `loading` is left as it was, and the next one tries
-          // again. This is the ordinary state during a hot swap and for the moment after a
-          // reconnect.
-          if (unanswered.size === agentIds.length && agentIds.length > 0) {
-            // Said out loud, and asked again on a timer: a page that opened during a swap or
-            // a hiccup used to sit on the skeleton until some event happened to fire.
-            const reasons = results
-              .filter((r) => r.source === null && !r.answered)
-              .map((r) => `${r.agentId}: ${r.reason ?? "no answer"}`);
-            const delay = Math.min(RELOAD_RETRY_MAX_MS, RELOAD_RETRY_MIN_MS * 2 ** retries);
-            retries += 1;
-            console.warn(
-              `[sessions] this server answered for none of the Agents (${reasons.join("; ")}); ` +
-                `the list on screen is kept and asked again in ${delay} ms`,
-            );
-            setTimeout(() => {
-              if (g === gen) void get().reload();
-            }, delay);
-            return;
-          }
-          retries = 0;
-          // Machines that did not answer are treated exactly like machines that were never
-          // asked: their rows come from the cache below, and their cache is left alone.
-          // So are resting ones, and a probed one: one Agent's answer is not the machine's list.
-          const silent = new Set([...unansweredMachines, ...rested]);
-          const nextSessions: SessionInfo[] = [];
-          const seen = new Set<string>();
-          // What each machine answered, kept so it can be shown after the next restart while
-          // the server re-holds its connection to that machine (lib/machine-cache.ts).
-          const rowsByMachine = new Map<string, SessionInfo[]>();
-          const nextPageState = new Map<string, PagePosition>();
-          const nextCounts = new Map<string, SessionCategoryCounts>();
-          const nextWorkspaceCounts = new Map<
-            string,
-            Readonly<Record<string, SessionCategoryCounts>>
-          >();
-          // Counts are SUMMED across sources, not overwritten: a group's count that counted
-          // one machine would contradict the rows underneath it (mergeCounts).
-          const countParts = new Map<string, SessionCategoryCounts[]>();
-          // Each answer with the machine that gave it: a path means a directory only
-          // together with the filesystem it was read from.
-          const workspaceParts = new Map<
-            string,
-            Array<{
-              source: string | null;
-              counts: Readonly<Record<string, SessionCategoryCounts>>;
-            }>
-          >();
-          // Newest-Session stamps per group, keyed the way the counts are (a path on a
-          // machine); the newest answer for a group wins. Two of them: every Session's (the
-          // Workspace picker's "recently used") and the active ones' (the groups' order).
-          const nextWorkspaceLatest = new Map<string, Readonly<Record<string, string>>>();
-          const nextWorkspaceLatestActive = new Map<string, Readonly<Record<string, string>>>();
-          const foldStamps = (
-            into: Map<string, Readonly<Record<string, string>>>,
-            agentId: string,
-            source: string | null,
-            stamps: Readonly<Record<string, string>>,
-          ) => {
-            const latest: Record<string, string> = { ...(into.get(agentId) ?? {}) };
-            for (const [path, stamp] of Object.entries(stamps)) {
-              const groupKey = workspaceGroupKey(path, source);
-              const held = latest[groupKey];
-              if (held === undefined || held < stamp) latest[groupKey] = stamp;
-            }
-            into.set(agentId, latest);
-          };
-          for (const r of results) {
-            for (const p of r.pages) {
-              const last = p.items.at(-1);
-              nextPageState.set(pageKey(r.agentId, p.scope, r.source), {
-                hasMore: p.hasMore,
-                cursor: last === undefined ? null : activityKeyOf(last),
-              });
-              if (p.counts)
-                countParts.set(r.agentId, [...(countParts.get(r.agentId) ?? []), p.counts]);
-              if (p.workspaceCounts) {
-                workspaceParts.set(r.agentId, [
-                  ...(workspaceParts.get(r.agentId) ?? []),
-                  { source: r.source, counts: p.workspaceCounts },
-                ]);
-              }
-              if (p.workspaceLatest) {
-                foldStamps(nextWorkspaceLatest, r.agentId, r.source, p.workspaceLatest);
-              }
-              if (p.workspaceLatestActive) {
-                foldStamps(nextWorkspaceLatestActive, r.agentId, r.source, p.workspaceLatestActive);
-              }
-              for (const s of p.items) {
-                if (seen.has(s.sessionId)) continue;
-                seen.add(s.sessionId);
-                nextSessions.push(s);
-                if (r.source !== null)
-                  rowsByMachine.set(r.source, [...(rowsByMachine.get(r.source) ?? []), s]);
-                // Where this row lives, so the two dozen Session-scoped calls about it reach
-                // the machine that holds it. Rebuilt by the very list that displays them,
-                // which is why the map is in memory and this is the only place it is filled.
-                rememberSessionMachine(s.sessionId, r.source);
-              }
-            }
-          }
-          for (const [agentId, parts] of countParts) {
-            const merged = mergeCounts(parts);
-            if (merged) nextCounts.set(agentId, merged);
-          }
-          for (const [agentId, parts] of workspaceParts) {
-            // Per GROUP, which is a path on a machine. Each machine answers about its own
-            // filesystem, so two machines' counts for paths that are equal as strings belong
-            // to two different directories: summing them would put both totals under both
-            // folders, each one contradicting the rows beneath it.
-            const byGroup = new Map<string, SessionCategoryCounts[]>();
-            for (const { source, counts: byPath } of parts) {
-              for (const [path, counts] of Object.entries(byPath)) {
-                const groupKey = workspaceGroupKey(path, source);
-                byGroup.set(groupKey, [...(byGroup.get(groupKey) ?? []), counts]);
-              }
-            }
-            const out: Record<string, SessionCategoryCounts> = {};
-            for (const [groupKey, list] of byGroup) {
-              const merged = mergeCounts(list);
-              if (merged) out[groupKey] = merged;
-            }
-            nextWorkspaceCounts.set(agentId, out);
-          }
-          // Only a machine that ANSWERED replaces what it is remembered as holding — including
-          // with nothing, which is how a Session deleted over there stops coming back from
-          // the cache. A machine that went quiet during the fetch keeps its cache: erasing it
-          // would leave the fallback with nothing to fall back to.
-          for (const machineId of machineIds) {
-            if (silent.has(machineId)) continue;
-            rememberMachineSessions(projectId, machineId, rowsByMachine.get(machineId) ?? []);
-          }
-          // And every machine this list could not read contributes what it last held — the
-          // ones with no connection held, and the ones that went quiet during the fetch.
-          // `seen` still guards, so a live answer always wins over a remembered one. Their
-          // owner entries are recorded the same way, so opening such a Session addresses the
-          // machine that has it rather than this server — which would answer 404 about
-          // someone else's.
-          //
-          // Totals are NOT topped up from here: counts come from the servers that answered,
-          // so an out-of-reach machine's rows show without being counted. Better than the
-          // alternative — a count is a claim about what a server holds now, and the cache
-          // cannot make that claim.
-          for (const machineId of new Set([...offlineMachineIds, ...silent])) {
-            for (const s of cachedMachineSessions(projectId, machineId)) {
-              if (seen.has(s.sessionId)) continue;
-              seen.add(s.sessionId);
-              nextSessions.push(s);
-              rememberSessionMachine(s.sessionId, machineId);
-            }
-          }
-          // An Agent this server could not answer about keeps everything it already had: its
-          // rows here, the page positions they were loaded at, and its badge counts. The list
-          // is rebuilt wholesale, so without this one Agent's failed call erases it — and an
-          // erased Agent is indistinguishable, on screen, from one that has no conversations.
-          // Its counts are kept as last read rather than remerged from the machines that did
-          // answer: a total missing this server's share would contradict the rows beneath it.
-          if (unanswered.size > 0) {
-            const held = get();
-            for (const s of held.sessions) {
-              if (!unanswered.has(s.agentId) || machineForSession(s.sessionId) !== null) continue;
-              if (seen.has(s.sessionId)) continue;
-              seen.add(s.sessionId);
-              nextSessions.push(s);
-            }
-            for (const [key, position] of held.pageState) {
-              const parsed = parsePageKey(key);
-              if (parsed === null || parsed.source !== null) continue;
-              if (!unanswered.has(parsed.agentId) || nextPageState.has(key)) continue;
-              nextPageState.set(key, position);
-            }
-            for (const agentId of unanswered) {
-              const counts = held.countsByAgent.get(agentId);
-              if (counts) nextCounts.set(agentId, counts);
-              const workspaceCounts = held.workspaceCountsByAgent.get(agentId);
-              if (workspaceCounts) nextWorkspaceCounts.set(agentId, workspaceCounts);
-              const latest = held.workspaceLatestByAgent.get(agentId);
-              if (latest) nextWorkspaceLatest.set(agentId, latest);
-              const latestActive = held.workspaceLatestActiveByAgent.get(agentId);
-              if (latestActive) nextWorkspaceLatestActive.set(agentId, latestActive);
-            }
-          }
-          // A Session adopted from a live event after this reload started may have run after
-          // its page was read, and no page will serve it again: it is carried over. Older
-          // adoptions are the pages' to decide — those were read with the Session already
-          // there, and one that missed them sits below its stream's cursor.
-          for (const s of get().sessions) {
-            if ((adoptedAt.get(s.sessionId) ?? 0) <= adoptMark || seen.has(s.sessionId)) continue;
-            seen.add(s.sessionId);
-            nextSessions.push(s);
-          }
-          for (const [sessionId, at] of adoptedAt) if (at <= adoptMark) adoptedAt.delete(sessionId);
-          // Most recently active first across every source: each answered sorted, and
-          // concatenating sorted lists does not give a sorted list.
-          nextSessions.sort(mostRecentFirst);
-          // No fetch returns a row of no sidebar list — an organization's (`excludeOrg`), an
-          // archived one, a subagent — so one held here entered through add() or replace()
-          // for the page showing it (an open desk, an archived stub, a child opened from the
-          // Agent panel) and no reload can bring it back: carry it over, or that page's writes
-          // stop reaching it.
-          const held = get().sessions.filter(
-            (s) => !seen.has(s.sessionId) && (isOrgSession(s) || sessionCategory(s) !== "active"),
-          );
-          set({
-            sessions: [...nextSessions, ...held],
-            pageState: nextPageState,
-            countsByAgent: nextCounts,
-            workspaceCountsByAgent: nextWorkspaceCounts,
-            workspaceLatestByAgent: nextWorkspaceLatest,
-            workspaceLatestActiveByAgent: nextWorkspaceLatestActive,
+        if (queued !== null) return queued;
+        const after = inflight.promise;
+        const next: Promise<void> = after
+          .catch(() => undefined)
+          .then(() => {
+            if (queued !== next) return inflight?.promise; // overtaken by a context change
+            queued = null;
+            return inflight === null ? startRound() : get().reload();
           });
-          applied = true;
-        } finally {
-          reloadsInFlight -= 1;
-          // Only a reload that produced a list may report one. Abandoning above leaves the
-          // flag exactly as it was — false with rows on screen, which is still true of them;
-          // true with none, because none were fetched and saying otherwise is what paints an
-          // empty state over a list that was merely unreadable this round.
-          if (g === gen && applied) set({ loading: false });
-        }
+        queued = next;
+        return next;
       },
 
       /**
