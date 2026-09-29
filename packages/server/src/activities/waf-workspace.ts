@@ -559,18 +559,10 @@ export class WafWorkspaceService implements WafWorkspace {
       const listed = await this.gitOk(dir, ["sparse-checkout", "list"]);
       const have = new Set(listed.stdout.split(/\r?\n/).map((line) => line.trim()));
       const missing = wanted.filter((folder) => !have.has(folder));
-      if (missing.length)
-        await this.gitOk(dir, ["sparse-checkout", "add", "--", ...missing], {
-          GIT_LFS_SKIP_SMUDGE: "1",
-        });
-      await this.gitOk(dir, [
-        "lfs",
-        "pull",
-        "--include",
-        wanted.map((folder) => `${folder}/**`).join(","),
-        "--exclude",
-        "",
-      ]);
+      // Adding a folder checks out only its files, and the LFS filter smudges them as it goes.
+      // Never `git lfs pull`: it lists the whole tree with sizes, which in a partial clone
+      // fetches every blob of the repository one at a time, and takes hours.
+      if (missing.length) await this.gitOk(dir, ["sparse-checkout", "add", "--", ...missing]);
     });
   }
 }

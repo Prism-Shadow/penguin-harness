@@ -213,7 +213,7 @@ describe("WAF workspace", () => {
     expect(status.lastError).toMatch(/someone\/else/);
   });
 
-  it("adds a product's media folder once and fetches only its LFS objects", async () => {
+  it("adds a product's media folder once, smudging its LFS files without a pull", async () => {
     const s = await setup();
     await prepared(s);
     await s.workspace.ensureMedia(["loom/words"]);
@@ -222,9 +222,10 @@ describe("WAF workspace", () => {
       call.args.join(" ").startsWith("sparse-checkout add"),
     );
     expect(adds).toHaveLength(1);
-    expect(adds[0]!.env).toEqual({ GIT_LFS_SKIP_SMUDGE: "1" });
-    const pull = s.git.calls.find((call) => call.args[0] === "lfs" && call.args[1] === "pull")!;
-    expect(pull.args).toEqual(["lfs", "pull", "--include", "loom/words/**", "--exclude", ""]);
+    expect(adds[0]!.env?.GIT_LFS_SKIP_SMUDGE).toBeUndefined();
+    expect(s.git.calls.some((call) => call.args[0] === "lfs" && call.args[1] === "pull")).toBe(
+      false,
+    );
     await expect(s.workspace.ensureMedia(["../escape"])).rejects.toThrow(/media folder/);
   });
 
