@@ -39,7 +39,10 @@ export function clapGraph(weights) {
     g.op("Gather", [g.weight(`${p}.word_embeddings.weight`), "input_ids"]),
     g.op("Gather", [g.weight(`${p}.position_embeddings.weight`), "position_ids"]),
   );
-  x = g.add(x, g.weight(`${p}.token_type_embeddings.weight`));
+  x = g.add(
+    x,
+    g.op("Gather", [g.weight(`${p}.token_type_embeddings.weight`), g.constant([0], [], 7)]),
+  );
   x = g.layerNorm(x, `${p}.LayerNorm`, 1e-12);
   for (let i = 0; i < 12; i++) {
     const prefix = `text_model.encoder.layer.${i}`;
