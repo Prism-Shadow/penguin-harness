@@ -94,7 +94,12 @@ describe("the sidebar's ROADMAPS section", () => {
     );
     const { shown, more } = sidebarRoadmaps([
       ...all,
-      roadmap({ number: 20, status: "established", createdAt: "2026-09-28T23:00:00.000Z" }),
+      roadmap({
+        number: 20,
+        status: "awaiting_room",
+        channelId: null,
+        createdAt: "2026-09-28T23:00:00.000Z",
+      }),
     ]);
     expect(shown.map((r) => r.number)).toEqual([8, 7, 6, 5, 4]);
     expect(more.map((r) => r.number)).toEqual([3, 2, 1]);
