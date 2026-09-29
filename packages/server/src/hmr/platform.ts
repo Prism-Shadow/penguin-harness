@@ -85,6 +85,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import { pluginsPrefix } from "../plugin/install.js";
+import { storeSources, syncPluginStore } from "../plugin/store.js";
 import { pushedLibraryDir } from "./asset-archives.js";
 import { UnsatisfiedPluginsError, bootWithoutUnsatisfied } from "../plugin/unsatisfied.js";
 import type { PluginSelection } from "../plugin/unsatisfied.js";
@@ -432,6 +433,12 @@ async function createInner(
   // And it lists what an admin installed on this server: the packages of Skills, hooks or MCP
   // servers in the data root's plugin prefix, beside the ones the build ships.
   if (caps !== null) useInstalledPluginPrefix(pluginsPrefix(caps.config.root));
+
+  // What the push carried and what the installation ships go into the plugin store, each
+  // checked by hash and copied when missing. In the background: nothing loads from the store.
+  if (caps !== null) {
+    void syncPluginStore(caps.config.root, storeSources(caps.hmr.assetsDir()));
+  }
 
   // Plugins are modules (see ../plugin/), and WHICH ones this App runs is configuration it
   // reads for ITSELF: the closure over the root's Projects, loaded here rather than handed

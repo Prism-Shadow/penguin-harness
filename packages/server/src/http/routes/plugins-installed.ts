@@ -92,6 +92,7 @@ import {
 } from "../../plugin/install.js";
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
+import { PluginStoreError } from "../../plugin/store.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Machines } from "../../machines/service.js";
@@ -258,6 +259,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     } catch (err) {
       if (err instanceof PluginInstallError) {
         throw new HttpError(400, "plugin_install_failed", `npm: ${err.message}`);
+      }
+      if (err instanceof PluginStoreError) {
+        throw new HttpError(400, "plugin_store_failed", err.message);
       }
       throw err;
     }

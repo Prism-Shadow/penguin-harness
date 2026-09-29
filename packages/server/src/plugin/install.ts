@@ -26,6 +26,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
 import type { PluginPackages } from "../mechanisms/plugins.js";
+import { parsePluginSource } from "./source.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -302,7 +303,7 @@ export async function readInstalledVersion(prefix: string, name: string): Promis
  * reason is the first `npm error` line that is not that pointer, not a bare code, and not the
  * empty continuation lines npm pads the block with.
  */
-function npmReason(stderr: string | undefined, err: Error): string {
+export function npmReason(stderr: string | undefined, err: Error): string {
   const lines = (stderr ?? "")
     .split("\n")
     .map((l) => l.replace(/^npm (error|ERR!)\s*/, "").trim())
@@ -312,7 +313,7 @@ function npmReason(stderr: string | undefined, err: Error): string {
 }
 
 /** Windows resolves `npm` through npm.cmd; everywhere else the plain name is on PATH. */
-function npmCommand(): string {
+export function npmCommand(): string {
   return process.platform === "win32" ? "npm.cmd" : "npm";
 }
 
@@ -323,7 +324,13 @@ function npmCommand(): string {
 @Component()
 export class NpmPluginPackages implements PluginPackages {
   /** By name or by link (see installPluginSource). */
-  install(root: string, source: string): Promise<InstalledPackage> {
+  async install(root: string, source: string): Promise<InstalledPackage> {
+    if (parsePluginSource(source).kind === "name") {
+      // Keep the store fetch behind the package-install mechanism, so route tests replace
+      // the entire npm boundary. Links and archives keep their existing install path.
+      const { fetchIntoStore } = await import("./store.js");
+      await fetchIntoStore(root, source);
+    }
     return installPluginSource(root, source);
   }
 
