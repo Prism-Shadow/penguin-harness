@@ -55,11 +55,35 @@ export const ALL_HANDS_ICON = ICONS.users;
 export const channelGlyph = (channelId: string): string =>
   isAllHands(channelId) ? ALL_HANDS_ICON : CHANNEL_ICON;
 
+/** A channel's counters as its row shows them (a roadmap's room row shows the same two). */
+export interface RowCounts {
+  unread: number;
+  mentionsMe: number;
+}
+
 /** What a row's badges add to its name for a reader who cannot see them. */
-function badgeNote(channel: OrgChannelItem): string | null {
-  if (channel.mentionsMe > 0) return S.company.channels.badgeMentions(channel.mentionsMe);
-  if (channel.unread > 0) return S.company.channels.badgeUnread(channel.unread);
+export function badgeNote(counts: RowCounts): string | null {
+  if (counts.mentionsMe > 0) return S.company.channels.badgeMentions(counts.mentionsMe);
+  if (counts.unread > 0) return S.company.channels.badgeUnread(counts.unread);
   return null;
+}
+
+/** A row's trailing badges: the "@me" chip when a message names the reader, then the unread count. */
+export function RowBadges({ unread, mentionsMe }: RowCounts) {
+  return (
+    <>
+      {mentionsMe > 0 && (
+        <Badge tone="attention" size="sm">
+          {S.company.channels.mentionChip}
+        </Badge>
+      )}
+      {unread > 0 && (
+        <span className="shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-400">
+          {unread}
+        </span>
+      )}
+    </>
+  );
 }
 
 /**
@@ -153,16 +177,7 @@ function ChannelRow({
           <Icon d={channelGlyph(channel.channelId)} size={ICON_SIZE.rowLead} />
         </span>
         <Truncated text={label} className="min-w-0 flex-1" />
-        {channel.mentionsMe > 0 && (
-          <Badge tone="attention" size="sm">
-            {S.company.channels.mentionChip}
-          </Badge>
-        )}
-        {channel.unread > 0 && (
-          <span className="shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-400">
-            {channel.unread}
-          </span>
-        )}
+        <RowBadges unread={channel.unread} mentionsMe={channel.mentionsMe} />
       </NavLink>
       {join !== undefined && (
         /* Overlaid rather than laid out: reserving a slot would shorten the row's own fill

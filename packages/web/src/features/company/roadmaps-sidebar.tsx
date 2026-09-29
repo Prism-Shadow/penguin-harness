@@ -9,10 +9,12 @@
  * already up.
  *
  * Drawn only while the company-roadmaps plugin contributes its page. The list is read when the
- * organization changes and again on every navigation; how recently a roadmap moved counts its
- * room's last message, read with the list and moved by every message event for the room, so a
- * reply there lifts the roadmap at once. A failed read says so in one line rather than hiding
- * the section.
+ * organization changes and again on every navigation. Each room is read with it — its last
+ * message and the unread and "@me" counts a channel row carries — and every message event for
+ * the room moves both, so a reply there lifts the roadmap at once and a message from someone
+ * else lights its badge. Reading the room (the channel page's `markChannelRead`) clears the
+ * badge by the store's own rule. A failed read says so in one line rather than hiding the
+ * section.
  */
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
@@ -31,36 +33,55 @@ import { Icon } from "../../components/ui/group-list";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { Truncated } from "../../components/ui/truncated";
 import { useOrgPages } from "./use-org-pages";
-import { useCompanyEvents } from "../../state/company";
+import { useAuth } from "../../state/auth";
+import { useCompany, useCompanyEvents } from "../../state/company";
+import { badgeNote, RowBadges, type RowCounts } from "./channel-sidebar";
 import { orgChannelPath, orgContributedPagePath } from "./company-nav";
-import { isListedRoadmap, roadmapsPageSrc, sidebarRoadmaps } from "./roadmaps";
+import {
+  isListedRoadmap,
+  roadmapsPageSrc,
+  roomAfterMessage,
+  roomCounts,
+  roomFromRead,
+  sidebarRoadmaps,
+  type RoomState,
+} from "./roadmaps";
 
 /**
- * One roadmap's row: its room read the way the channel list above reads a channel — the glyph
- * and the name, nothing trailing. The number is not shown; the room's own column heads with it.
- * No `title` either: the name is the row's text, and `Truncated` discloses it when it is cut.
+ * One roadmap's row: its room read the way the channel list above reads a channel — the glyph,
+ * the name, and the same trailing badges (the "@me" chip, the unread count) with the name in
+ * bold while something is unread. The number is not shown; the room's own column heads with
+ * it. No `title` either: the name is the row's text, and `Truncated` discloses it when it is
+ * cut; the badges reach a screen reader through the link's accessible name, as on a channel.
  */
 export function RoadmapRow({
   projectId,
   orgId,
   roadmap,
+  counts = { unread: 0, mentionsMe: 0 },
   onNavigate,
 }: {
   projectId: string;
   orgId: string;
   roadmap: OrgRoadmapItem & { channelId: string };
+  counts?: RowCounts;
   onNavigate?: () => void;
 }) {
+  const note = badgeNote(counts);
+  const unread = counts.unread > 0;
   return (
     <li className="rounded-md transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/70">
       <NavLink
         to={orgChannelPath(projectId, orgId, roadmap.channelId)}
         onClick={() => onNavigate?.()}
+        {...(note !== null ? { "aria-label": `${roadmap.name} · ${note}` } : {})}
         className={({ isActive }) =>
           `flex min-w-0 items-center ${ICON_GAP.row} rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
             isActive
               ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-              : "text-gray-600 dark:text-gray-400"
+              : unread
+                ? "font-medium text-gray-900 dark:text-gray-100"
+                : "text-gray-600 dark:text-gray-400"
           }`
         }
       >
@@ -68,6 +89,7 @@ export function RoadmapRow({
           <Icon d={NAV_ICONS.orgRoadmaps} size={ICON_SIZE.rowLead} />
         </span>
         <Truncated text={roadmap.name} className="min-w-0 flex-1" />
+        <RowBadges unread={counts.unread} mentionsMe={counts.mentionsMe} />
       </NavLink>
     </li>
   );
@@ -89,18 +111,15 @@ export function RoadmapsSidebar({
   const [roadmaps, setRoadmaps] = useState<OrgRoadmapItem[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  /** A room's last message time, by channel id: read with the list, then moved by message events. */
-  const [roomAt, setRoomAt] = useState<Record<string, string>>({});
-  /** Keeps the later of what is known and `at` for a room. */
-  const bumpRoom = (channelId: string, at: string) =>
-    setRoomAt((prev) =>
-      prev[channelId] !== undefined && prev[channelId] >= at ? prev : { ...prev, [channelId]: at },
-    );
+  const { user } = useAuth();
+  const { channelReadAt } = useCompany();
+  /** Each room's last message and counters, by channel id: read with the list, then moved by message events. */
+  const [rooms, setRooms] = useState<Record<string, RoomState>>({});
 
   useEffect(() => {
     setRoadmaps(null);
     setMoreOpen(false);
-    setRoomAt({});
+    setRooms({});
   }, [projectId, orgId]);
 
   useEffect(() => {
@@ -112,14 +131,20 @@ export function RoadmapsSidebar({
         if (!live) return;
         setRoadmaps(res.roadmaps);
         setFailed(false);
-        // Rooms are unlisted channels, so the channel listing does not carry their last message;
-        // each room is read on its own. A room that cannot be read keeps its ledger order.
+        // Rooms are unlisted channels, so the channel listing carries neither their last message
+        // nor their counters; each room is read on its own. A room that cannot be read keeps
+        // its ledger order and shows no badge.
         for (const r of res.roadmaps) {
           if (!isListedRoadmap(r)) continue;
+          const startedAt = Date.now();
           api
             .getOrgChannel(projectId, orgId, r.channelId)
             .then((ch) => {
-              if (live && ch.lastMessageAt !== null) bumpRoom(r.channelId, ch.lastMessageAt);
+              if (!live) return;
+              setRooms((prev) => ({
+                ...prev,
+                [r.channelId]: roomFromRead(prev[r.channelId], ch, startedAt),
+              }));
             })
             .catch(() => {});
         }
@@ -132,15 +157,29 @@ export function RoadmapsSidebar({
     };
   }, [enabled, projectId, orgId, pathname]);
 
-  // A reply in a room moves its roadmap up at once, without waiting for the next navigation.
+  // A message in a room moves its roadmap up at once and counts toward its badge, as a message
+  // in a listed channel does for the channel's row — without waiting for the next navigation.
   useCompanyEvents((ev) => {
-    if (ev.type === "org_channel" && ev.projectId === projectId && ev.orgId === orgId) {
-      bumpRoom(ev.channelId, ev.message.time);
-    }
+    if (ev.type !== "org_channel" || ev.projectId !== projectId || ev.orgId !== orgId) return;
+    const now = Date.now();
+    setRooms((prev) => ({
+      ...prev,
+      [ev.channelId]: roomAfterMessage(
+        prev[ev.channelId],
+        ev.message,
+        `user:${user?.userId ?? ""}`,
+        channelReadAt.get(ev.channelId),
+        now,
+      ),
+    }));
   });
 
   if (!enabled) return null;
-  const { shown, more } = sidebarRoadmaps(roadmaps ?? [], roomAt);
+  const activity: Record<string, string> = {};
+  for (const [id, room] of Object.entries(rooms)) {
+    if (room.lastMessageAt !== null) activity[id] = room.lastMessageAt;
+  }
+  const { shown, more } = sidebarRoadmaps(roadmaps ?? [], activity);
   const pagePath = orgContributedPagePath(projectId, orgId, "roadmaps");
   const row = (r: OrgRoadmapItem & { channelId: string }) => (
     <RoadmapRow
@@ -148,6 +187,7 @@ export function RoadmapsSidebar({
       projectId={projectId}
       orgId={orgId}
       roadmap={r}
+      counts={roomCounts(rooms[r.channelId], channelReadAt.get(r.channelId))}
       {...(onNavigate ? { onNavigate } : {})}
     />
   );

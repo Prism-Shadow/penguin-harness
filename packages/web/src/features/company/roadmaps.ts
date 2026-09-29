@@ -5,7 +5,8 @@
  * row for):
  *
  * - the sidebar's ROADMAPS section, below the channel list and apart from it: the most recently
- *   active roadmaps with a room, five at rest, the rest folded under "More (n)";
+ *   active roadmaps with a room, five at rest, the rest folded under "More (n)", each row
+ *   carrying its room's unread count and "@me" chip as a channel row does;
  * - a roadmap's room is its channel, shown by the app's own channel page, and that page puts the
  *   roadmap's detail (the plugin's page, in its detail view) in a column beside the stream.
  */
@@ -46,6 +47,98 @@ export function lastActivity(r: OrgRoadmapItem, roomAt?: string | null): string 
   for (const e of r.events ?? []) if (e.at > latest) latest = e.at;
   if (roomAt != null && roomAt > latest) latest = roomAt;
   return latest;
+}
+
+/**
+ * What the sidebar knows of a roadmap's room, the way it knows a listed channel: the last
+ * message, and the unread count and "@me" count a channel row carries. Rooms are unlisted, so
+ * the channel listing and the store's counters never hold them; the sidebar reads each room on
+ * its own and moves the counts with the message events.
+ *
+ * `countedAt` is when the counts were taken (the read's start, or the event's arrival). The
+ * store's rule for channel rows carries over: a channel marked read at or after that moment
+ * shows no badge — the server's read cursor may lag the reader, and a badge that comes back
+ * after the room was read looks like a bug.
+ */
+export interface RoomState {
+  lastMessageAt: string | null;
+  unread: number;
+  mentionsMe: number;
+  isMember: boolean;
+  countedAt: number;
+}
+
+/**
+ * A room after its detail read, started at `startedAt`, answered: the later last message of the
+ * two wins; the read's counts win unless a message event counted after the read went out, in
+ * which case the event's counts are the newer ones and stay.
+ */
+export function roomFromRead(
+  prev: RoomState | undefined,
+  read: { lastMessageAt: string | null; unread: number; mentionsMe: number; isMember: boolean },
+  startedAt: number,
+): RoomState {
+  const lastMessageAt =
+    prev?.lastMessageAt != null &&
+    (read.lastMessageAt === null || prev.lastMessageAt > read.lastMessageAt)
+      ? prev.lastMessageAt
+      : read.lastMessageAt;
+  if (prev !== undefined && prev.countedAt > startedAt && prev.isMember) {
+    return { ...prev, lastMessageAt, isMember: read.isMember };
+  }
+  return {
+    lastMessageAt,
+    unread: read.unread,
+    mentionsMe: read.mentionsMe,
+    isMember: read.isMember,
+    countedAt: startedAt,
+  };
+}
+
+/** The counts a room's row shows now: zero when the room was marked read since they were taken. */
+export function roomCounts(
+  room: RoomState | undefined,
+  readAt: number | undefined,
+): { unread: number; mentionsMe: number } {
+  if (room === undefined || (readAt ?? 0) >= room.countedAt) return { unread: 0, mentionsMe: 0 };
+  return { unread: room.unread, mentionsMe: room.mentionsMe };
+}
+
+/**
+ * A room after a new message: its last message moves, and — as the store counts a channel —
+ * a message from someone else in a room the reader belongs to adds one unread, and one "@me"
+ * when it names the reader. A room not read yet takes the message's time (so it still rises)
+ * but no counts: its read brings them, and a guess before it could only be wrong.
+ */
+export function roomAfterMessage(
+  room: RoomState | undefined,
+  message: { time: string; sender: string; mentions: readonly string[] },
+  me: string,
+  readAt: number | undefined,
+  now: number,
+): RoomState {
+  if (room === undefined) {
+    return {
+      lastMessageAt: message.time,
+      unread: 0,
+      mentionsMe: 0,
+      isMember: false,
+      countedAt: now,
+    };
+  }
+  const lastMessageAt =
+    room.lastMessageAt !== null && room.lastMessageAt >= message.time
+      ? room.lastMessageAt
+      : message.time;
+  if (!room.isMember || message.sender === me) return { ...room, lastMessageAt };
+  const base = roomCounts(room, readAt);
+  return {
+    ...room,
+    lastMessageAt,
+    unread: base.unread + 1,
+    mentionsMe: base.mentionsMe + (message.mentions.includes(me) ? 1 : 0),
+    countedAt: now,
+  };
 }
 
 /**

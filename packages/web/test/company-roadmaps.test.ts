@@ -9,6 +9,9 @@ import type { OrgRoadmapItem } from "../src/api/endpoints";
 import {
   ROADMAPS_SHOWN,
   isListedRoadmap,
+  roomAfterMessage,
+  roomCounts,
+  roomFromRead,
   lastActivity,
   roadmapDetailSrc,
   roadmapsPageSrc,
@@ -109,6 +112,84 @@ describe("the sidebar's ROADMAPS section", () => {
     expect(shown.map((r) => r.number)).toEqual([8, 7, 6, 5, 4]);
     expect(more.map((r) => r.number)).toEqual([3, 2, 1]);
     expect(sidebarRoadmaps(all.slice(0, 3)).more).toEqual([]);
+  });
+
+  it("gives a room the unread and @me counts a channel row has, cleared by reading it", () => {
+    const me = "user:u1";
+    // The room's read at t=100 finds 2 unread, 1 naming the reader.
+    const read = roomFromRead(
+      undefined,
+      { lastMessageAt: "2026-09-29T09:40:00.000Z", unread: 2, mentionsMe: 1, isMember: true },
+      100,
+    );
+    expect(roomCounts(read, undefined)).toEqual({ unread: 2, mentionsMe: 1 });
+    // Marked read at or after the read went out: no badge, even before the server's cursor moves.
+    expect(roomCounts(read, 100)).toEqual({ unread: 0, mentionsMe: 0 });
+    expect(roomCounts(read, 99)).toEqual({ unread: 2, mentionsMe: 1 });
+
+    // Someone else posts: one more unread; naming the reader adds an @me.
+    const msg = (sender: string, mentions: string[] = []) => ({
+      time: "2026-09-29T09:41:38.000Z",
+      sender,
+      mentions,
+    });
+    const one = roomAfterMessage(read, msg("agent:penguin_ceo"), me, undefined, 200);
+    expect(roomCounts(one, undefined)).toEqual({ unread: 3, mentionsMe: 1 });
+    expect(one.lastMessageAt).toBe("2026-09-29T09:41:38.000Z");
+    const two = roomAfterMessage(one, msg("agent:penguin_ceo", [me]), me, undefined, 300);
+    expect(roomCounts(two, undefined)).toEqual({ unread: 4, mentionsMe: 2 });
+
+    // Read at 250, then a message at 300: the badge counts from zero again, not from 3.
+    const afterRead = roomAfterMessage(one, msg("agent:penguin_ceo"), me, 250, 300);
+    expect(roomCounts(afterRead, 250)).toEqual({ unread: 1, mentionsMe: 0 });
+
+    // The reader's own message, and a room the reader is not in, count nothing — but still move it.
+    const own = roomAfterMessage(read, msg(me), me, undefined, 400);
+    expect(roomCounts(own, undefined)).toEqual({ unread: 2, mentionsMe: 1 });
+    const outside = roomFromRead(
+      undefined,
+      { lastMessageAt: null, unread: 0, mentionsMe: 0, isMember: false },
+      100,
+    );
+    const heard = roomAfterMessage(outside, msg("agent:penguin_ceo", [me]), me, undefined, 500);
+    expect(roomCounts(heard, undefined)).toEqual({ unread: 0, mentionsMe: 0 });
+    expect(heard.lastMessageAt).toBe("2026-09-29T09:41:38.000Z");
+
+    // A room not read yet rises on a message but is not guessed at.
+    const unknown = roomAfterMessage(undefined, msg("agent:penguin_ceo"), me, undefined, 600);
+    expect(unknown.lastMessageAt).toBe("2026-09-29T09:41:38.000Z");
+    expect(roomCounts(unknown, undefined)).toEqual({ unread: 0, mentionsMe: 0 });
+  });
+
+  it("keeps an event's newer counts over a read that went out before it", () => {
+    const me = "user:u1";
+    const read = roomFromRead(
+      undefined,
+      { lastMessageAt: null, unread: 0, mentionsMe: 0, isMember: true },
+      100,
+    );
+    const bumped = roomAfterMessage(
+      read,
+      { time: "2026-09-29T10:00:00.000Z", sender: "agent:a", mentions: [] },
+      me,
+      undefined,
+      300,
+    );
+    // A second read started at 200 answers after the event: its counts are older, the event's stay.
+    const again = roomFromRead(
+      bumped,
+      { lastMessageAt: "2026-09-29T09:00:00.000Z", unread: 0, mentionsMe: 0, isMember: true },
+      200,
+    );
+    expect(roomCounts(again, undefined)).toEqual({ unread: 1, mentionsMe: 0 });
+    expect(again.lastMessageAt).toBe("2026-09-29T10:00:00.000Z");
+    // A read started after the event is the newer one and wins.
+    const later = roomFromRead(
+      bumped,
+      { lastMessageAt: "2026-09-29T10:00:00.000Z", unread: 5, mentionsMe: 0, isMember: true },
+      400,
+    );
+    expect(roomCounts(later, undefined)).toEqual({ unread: 5, mentionsMe: 0 });
   });
 
   it("says itself in both languages", () => {
