@@ -1,0 +1,538 @@
+/**
+ * The WAF workspace: the checkouts authoring, the sandbox and deploys work in — the framework,
+ * the navbar module, the media repository, the activity-data repository, and one repository
+ * per product module — laid out as a WAF checkout is, so everything that reads one reads this.
+ *
+ * Penguin makes and keeps these itself under `<PENGUIN_HOME>/waf`, so nobody has to clone
+ * and maintain a WAF checkout by hand. An admin may instead name an existing checkout (or the
+ * server may be started with WAF_ROOT_DIR); then Penguin only reads its state and never
+ * clones, installs or fetches into it.
+ *
+ * Media is large and in Git LFS, so its clone is partial and sparse: it starts with no
+ * folders and gains a product's folder when that product needs it, fetching only that
+ * folder's LFS objects (the approach of the media-workspaces prototype).
+ *
+ * git authenticates with the host's own SSH keys; Penguin stores no git credential. Every git
+ * and npm call goes through `WafWorkspacePorts`, which a test replaces.
+ */
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import { HttpError } from "../http/errors.js";
+import type { Config } from "../hmr/capabilities.js";
+import type { Settings } from "../mechanisms/settings.js";
+import { spawnGit, type DeployGit } from "./deploy-git.js";
+import { spawnDeployProcess, type DeployProcess } from "./deploy-process.js";
+import { normalizeRemote } from "./deploy-settings.js";
+import { findWafRoot } from "./waf-module.js";
+
+/** The `server_settings` key the workspace settings are stored under. */
+export const WAF_WORKSPACE_SETTINGS_KEY = "wafWorkspace";
+
+/** The directory under PENGUIN_HOME a managed workspace lives in. */
+export const WAF_WORKSPACE_DIR = "waf";
+
+/** How long one clone or install may take: a large history or dependency tree on a slow link. */
+export const WAF_LONG_TIMEOUT_MS = 20 * 60 * 1000;
+
+/** How many lines of the latest preparation's log are kept. */
+export const WAF_LOG_LINES = 200;
+
+/** The shared repositories every activity needs; product modules are cloned on demand. */
+export type WafRepoId = "framework" | "navbar" | "media" | "activityData";
+export const WAF_REPO_IDS: readonly WafRepoId[] = ["framework", "navbar", "media", "activityData"];
+
+/** Where each shared repository sits in the workspace, as a WAF checkout places it. */
+export const WAF_REPO_PATHS: Record<WafRepoId, string> = {
+  framework: "framework",
+  navbar: "modules/navbar",
+  media: "media",
+  activityData: "waf-activity-data",
+};
+
+/** The repositories whose dependencies are installed: the player and navbar build with them. */
+const INSTALLED: ReadonlySet<WafRepoId> = new Set(["framework", "navbar"]);
+
+/** The placeholder a module remote template names the module folder with. */
+export const MODULE_PLACEHOLDER = "{module}";
+
+export interface WafRepoSetting {
+  remote: string;
+  branch: string;
+}
+
+export interface WafWorkspaceSettings {
+  /** An existing checkout Penguin reads instead of managing its own; empty when managed. */
+  externalRoot: string;
+  repos: Record<WafRepoId, WafRepoSetting>;
+  /** The remote of a product's module; `{module}` is replaced by its folder. */
+  moduleRemote: string;
+}
+
+export function defaultWafWorkspaceSettings(): WafWorkspaceSettings {
+  const github = (name: string) => `git@github.com:waterfordresearchinstitute/${name}.git`;
+  return {
+    externalRoot: "",
+    repos: {
+      // v2 is the framework line modules build against; the repository's default is not.
+      framework: { remote: github("waf-framework"), branch: "v2" },
+      navbar: { remote: github("waf-module-navbar"), branch: "main" },
+      media: { remote: github("waf-media"), branch: "main" },
+      activityData: { remote: github("waf-activity-data"), branch: "main" },
+    },
+    moduleRemote: github(MODULE_PLACEHOLDER),
+  };
+}
+
+type Group = Record<string, unknown>;
+const asGroup = (value: unknown): Group =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Group) : {};
+
+/** The stored settings, read tolerantly: a missing or mistyped field takes its default. */
+export function readWafWorkspaceSettings(raw: string | null): WafWorkspaceSettings {
+  const out = defaultWafWorkspaceSettings();
+  let stored: Group = {};
+  try {
+    stored = raw === null ? {} : asGroup(JSON.parse(raw));
+  } catch {
+    stored = {};
+  }
+  if (typeof stored.externalRoot === "string") out.externalRoot = stored.externalRoot;
+  if (typeof stored.moduleRemote === "string") out.moduleRemote = stored.moduleRemote;
+  const repos = asGroup(stored.repos);
+  for (const id of WAF_REPO_IDS) {
+    const repo = asGroup(repos[id]);
+    if (typeof repo.remote === "string") out.repos[id].remote = repo.remote;
+    if (typeof repo.branch === "string") out.repos[id].branch = repo.branch;
+  }
+  return out;
+}
+
+const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
+
+function invalid(field: string, message: string): HttpError {
+  return new HttpError(400, "waf_workspace_invalid", `${field} ${message}`, undefined, {
+    field,
+  });
+}
+
+/**
+ * An update merged over the stored settings; a field left out keeps its value. Rejects the
+ * whole update when any field is wrong, so nothing half-applies.
+ */
+export function normalizeWafWorkspaceSettings(
+  current: WafWorkspaceSettings,
+  input: unknown,
+): WafWorkspaceSettings {
+  const body = asGroup(input);
+  const out: WafWorkspaceSettings = structuredClone(current);
+  if (body.externalRoot !== undefined) {
+    if (typeof body.externalRoot !== "string") throw invalid("externalRoot", "must be text.");
+    const root = body.externalRoot.trim();
+    if (root && !path.isAbsolute(root)) throw invalid("externalRoot", "must be an absolute path.");
+    out.externalRoot = root;
+  }
+  if (body.moduleRemote !== undefined) {
+    if (typeof body.moduleRemote !== "string") throw invalid("moduleRemote", "must be text.");
+    const template = body.moduleRemote.trim();
+    if (!template.includes(MODULE_PLACEHOLDER))
+      throw invalid("moduleRemote", `must name the module folder as ${MODULE_PLACEHOLDER}.`);
+    normalizeRemote(template.replaceAll(MODULE_PLACEHOLDER, "waf-module-x"), "moduleRemote");
+    out.moduleRemote = template;
+  }
+  const repos = asGroup(body.repos);
+  for (const id of WAF_REPO_IDS) {
+    const repo = asGroup(repos[id]);
+    if (repo.remote !== undefined) {
+      const remote = normalizeRemote(repo.remote, `repos.${id}.remote`);
+      if (!remote) throw invalid(`repos.${id}.remote`, "is required.");
+      out.repos[id].remote = remote;
+    }
+    if (repo.branch !== undefined) {
+      const branch = typeof repo.branch === "string" ? repo.branch.trim() : "";
+      if (!BRANCH.test(branch) || branch.includes(".."))
+        throw invalid(`repos.${id}.branch`, "must be a branch name.");
+      out.repos[id].branch = branch;
+    }
+  }
+  return out;
+}
+
+/** A module folder a repository may be made for: one path segment, as WAF names them. */
+export function checkModuleFolder(folder: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(folder) || folder.includes(".."))
+    throw new HttpError(400, "module_folder_invalid", "Not a module folder name.");
+  return folder;
+}
+
+/** A media folder a sparse checkout may add: relative, forward slashes, no traversal. */
+export function checkMediaFolder(folder: string): string {
+  const parts = folder.split("/");
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9 _./()-]{0,299}$/.test(folder) ||
+    parts.some((part) => !part || part === "." || part === ".." || part.toLowerCase() === ".git")
+  )
+    throw new HttpError(400, "media_folder_invalid", `Not a media folder: ${folder}`);
+  return folder;
+}
+
+/** Whether a failed `ls-remote` means the repository does not exist, not that it was unreachable. */
+export function repositoryMissing(stderr: string): boolean {
+  return /repository not found|does not appear to be a git repository|not found/i.test(stderr);
+}
+
+export interface WafRepoStatus {
+  id: WafRepoId;
+  path: string;
+  present: boolean;
+  /** Origin's address; null when there is no clone or it has no origin. */
+  remote: string | null;
+  /** Whether origin is the configured remote; always true for an existing checkout. */
+  remoteMatches: boolean;
+  branch: string | null;
+  /** Whether the working tree has changes; null when git could not say. */
+  dirty: boolean | null;
+  /** Whether its dependencies are installed; null for a repository that needs none. */
+  installed: boolean | null;
+}
+
+export interface WafWorkspaceStatus {
+  /** False when an admin (or WAF_ROOT_DIR) named an existing checkout. */
+  managed: boolean;
+  root: string;
+  /** Whether authoring, the sandbox and deploys can use the workspace now. */
+  ready: boolean;
+  repos: WafRepoStatus[];
+  preparing: boolean;
+  /** Why the latest preparation failed; null when it did not. */
+  lastError: string | null;
+  log: string[];
+}
+
+/** The parts of the workspace that touch the outside world; a test replaces them. */
+export abstract class WafWorkspacePorts extends Interface<{
+  runGit?: DeployGit["run"];
+  runProcess?: DeployProcess["run"];
+}>() {}
+
+@Component()
+export class DefaultWafWorkspacePorts implements WafWorkspacePorts {}
+
+export abstract class WafWorkspace extends Interface<{
+  /** The checkout's root when it can be used, else null. Replaces looking for one on disk. */
+  root(): Promise<string | null>;
+  status(): Promise<WafWorkspaceStatus>;
+  /**
+   * Clones whichever shared repositories are missing and installs their dependencies, in the
+   * background; one preparation at a time. A no-op for an existing checkout.
+   */
+  prepare(): Promise<WafWorkspaceStatus>;
+  /**
+   * A product module's directory, cloned on first use. A module whose repository does not
+   * exist yet starts as an empty repository with origin set, as Loom started one.
+   */
+  ensureModule(moduleFolder: string): Promise<string>;
+  /** Adds media folders to the sparse checkout and fetches their LFS objects. */
+  ensureMedia(folders: readonly string[]): Promise<void>;
+  settings(): WafWorkspaceSettings;
+  saveSettings(input: unknown): WafWorkspaceSettings;
+}>() {}
+
+@Component()
+export class WafWorkspaceService implements WafWorkspace {
+  @Use() private readonly config!: Config;
+  @Use() private readonly serverSettings!: Settings;
+  @Use() private readonly ports!: WafWorkspacePorts;
+
+  private preparing: Promise<void> | null = null;
+  private lastError: string | null = null;
+  private log: string[] = [];
+  /** Git calls on one repository run one after another. */
+  private queues = new Map<string, Promise<unknown>>();
+
+  settings(): WafWorkspaceSettings {
+    return readWafWorkspaceSettings(this.serverSettings.get(WAF_WORKSPACE_SETTINGS_KEY));
+  }
+
+  saveSettings(input: unknown): WafWorkspaceSettings {
+    const next = normalizeWafWorkspaceSettings(this.settings(), input);
+    this.serverSettings.set(WAF_WORKSPACE_SETTINGS_KEY, JSON.stringify(next));
+    return next;
+  }
+
+  /** The external checkout when one is named, else null. */
+  private external(): string | null {
+    return this.settings().externalRoot || process.env.WAF_ROOT_DIR || null;
+  }
+
+  private managedRoot(): string {
+    return path.join(this.config.root, WAF_WORKSPACE_DIR);
+  }
+
+  private git(): DeployGit {
+    const run = this.ports.runGit;
+    return run ? { run } : spawnGit;
+  }
+
+  private process(): DeployProcess {
+    const run = this.ports.runProcess;
+    return run ? { run } : spawnDeployProcess;
+  }
+
+  private note(line: string) {
+    this.log.push(line);
+    if (this.log.length > WAF_LOG_LINES) this.log.splice(0, this.log.length - WAF_LOG_LINES);
+  }
+
+  private serial<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const prior = this.queues.get(key) ?? Promise.resolve();
+    const next = prior.catch(() => {}).then(work);
+    this.queues.set(key, next);
+    void next.finally(() => {
+      if (this.queues.get(key) === next) this.queues.delete(key);
+    });
+    return next;
+  }
+
+  async root(): Promise<string | null> {
+    const external = this.external();
+    if (external) return findWafRoot(external, external);
+    // Called on every request that needs the checkout, so only the disk is looked at; a
+    // clone of the wrong remote is caught by status() and prepare(), never made by Penguin.
+    const root = this.managedRoot();
+    const has = (relative: string) => fs.existsSync(path.join(root, relative));
+    const ready =
+      has("framework/.git") &&
+      has("framework/node_modules") &&
+      has("modules/navbar/.git") &&
+      has("modules/navbar/node_modules") &&
+      has("media/.git");
+    return ready ? root : null;
+  }
+
+  private async repoStatus(root: string, id: WafRepoId, managed: boolean): Promise<WafRepoStatus> {
+    const dir = path.join(root, WAF_REPO_PATHS[id]);
+    const present = fs.existsSync(path.join(dir, ".git"));
+    const installed = INSTALLED.has(id) ? fs.existsSync(path.join(dir, "node_modules")) : null;
+    if (!present)
+      return {
+        id,
+        path: dir,
+        present,
+        remote: null,
+        remoteMatches: !managed,
+        branch: null,
+        dirty: null,
+        installed,
+      };
+    const git = this.git();
+    const [remote, branch, status] = await Promise.all([
+      git.run(["remote", "get-url", "origin"], dir),
+      git.run(["branch", "--show-current"], dir),
+      git.run(["status", "--porcelain"], dir),
+    ]);
+    const origin = remote.code === 0 ? remote.stdout.trim() : null;
+    return {
+      id,
+      path: dir,
+      present,
+      remote: origin,
+      remoteMatches: !managed || origin === this.settings().repos[id].remote,
+      branch: branch.code === 0 ? branch.stdout.trim() || null : null,
+      dirty: status.code === 0 ? status.stdout.trim() !== "" : null,
+      installed,
+    };
+  }
+
+  async status(): Promise<WafWorkspaceStatus> {
+    const external = this.external();
+    const root = external ?? this.managedRoot();
+    const repos = await Promise.all(WAF_REPO_IDS.map((id) => this.repoStatus(root, id, !external)));
+    const usable = (id: WafRepoId) => {
+      const repo = repos.find((entry) => entry.id === id)!;
+      return repo.present && repo.remoteMatches && repo.installed !== false;
+    };
+    const ready = external
+      ? (await findWafRoot(external, external)) !== null
+      : usable("framework") && usable("navbar") && usable("media");
+    return {
+      managed: !external,
+      root,
+      ready,
+      repos,
+      preparing: this.preparing !== null,
+      lastError: this.lastError,
+      log: [...this.log],
+    };
+  }
+
+  async prepare(): Promise<WafWorkspaceStatus> {
+    if (this.external()) return this.status();
+    if (!this.preparing) {
+      this.lastError = null;
+      this.log = [];
+      this.preparing = this.prepareAll()
+        .catch((error: Error) => {
+          this.lastError = error.message;
+          this.note(`Failed: ${error.message}`);
+        })
+        .finally(() => {
+          this.preparing = null;
+        });
+    }
+    return this.status();
+  }
+
+  private async prepareAll(): Promise<void> {
+    const root = this.managedRoot();
+    await fsp.mkdir(path.join(root, "modules"), { recursive: true });
+    for (const id of WAF_REPO_IDS) {
+      const status = await this.repoStatus(root, id, true);
+      if (status.present && !status.remoteMatches)
+        throw new Error(
+          `${WAF_REPO_PATHS[id]} is a clone of ${status.remote ?? "an unknown remote"}, not ${this.settings().repos[id].remote}. Move it aside to let Penguin clone it again.`,
+        );
+      if (!status.present) await this.serial(id, () => this.cloneShared(root, id));
+      if (INSTALLED.has(id) && !fs.existsSync(path.join(status.path, "node_modules")))
+        await this.install(status.path);
+    }
+    this.note("The workspace is ready.");
+  }
+
+  private async cloneShared(root: string, id: WafRepoId): Promise<void> {
+    const { remote, branch } = this.settings().repos[id];
+    const dir = path.join(root, WAF_REPO_PATHS[id]);
+    if (fs.existsSync(dir) && (await fsp.readdir(dir)).length > 0)
+      throw new Error(`${WAF_REPO_PATHS[id]} exists but is not a clone. Move it aside first.`);
+    await fsp.mkdir(path.dirname(dir), { recursive: true });
+    this.note(`Cloning ${remote} (${branch}) into ${WAF_REPO_PATHS[id]}…`);
+    // Media is partial and sparse, with LFS objects left for ensureMedia to fetch per folder.
+    const media = id === "media";
+    const args = [
+      "clone",
+      "--branch",
+      branch,
+      "--single-branch",
+      ...(media ? ["--filter=blob:none", "--sparse"] : []),
+      "--",
+      remote,
+      dir,
+    ];
+    const cloned = await this.git().run(args, path.dirname(dir), {
+      timeoutMs: WAF_LONG_TIMEOUT_MS,
+      ...(media ? { env: { GIT_LFS_SKIP_SMUDGE: "1" } } : {}),
+    });
+    if (cloned.code !== 0)
+      throw new Error(`Cloning ${remote} failed: ${gitError(cloned.stderr, cloned.error)}`);
+    if (media) await this.gitOk(dir, ["lfs", "install", "--local"]);
+  }
+
+  private async install(dir: string): Promise<void> {
+    this.note(`Installing dependencies in ${path.relative(this.managedRoot(), dir)}…`);
+    const result = await this.process().run("npm", ["install", "--ignore-scripts"], {
+      cwd: dir,
+      timeoutMs: WAF_LONG_TIMEOUT_MS,
+    });
+    if (result.code !== 0)
+      throw new Error(
+        `npm install failed in ${path.basename(dir)}: ${result.error ?? result.tail.slice(-2000)}`,
+      );
+  }
+
+  private async gitOk(cwd: string, args: string[], env?: Record<string, string>) {
+    const result = await this.git().run(args, cwd, {
+      timeoutMs: WAF_LONG_TIMEOUT_MS,
+      ...(env ? { env } : {}),
+    });
+    if (result.code !== 0)
+      throw new Error(`git ${args[0]} failed: ${gitError(result.stderr, result.error)}`);
+    return result;
+  }
+
+  private async requireRoot(): Promise<string> {
+    const root = await this.root();
+    if (!root)
+      throw new HttpError(
+        409,
+        "waf_workspace_not_ready",
+        "The WAF workspace is not prepared. An admin can prepare it in Settings.",
+      );
+    return root;
+  }
+
+  async ensureModule(moduleFolder: string): Promise<string> {
+    const folder = checkModuleFolder(moduleFolder);
+    const root = await this.requireRoot();
+    const dir = path.join(root, "modules", folder);
+    return this.serial(`module:${folder}`, async () => {
+      if (fs.existsSync(path.join(dir, ".git"))) return dir;
+      if (fs.existsSync(dir) && (await fsp.readdir(dir)).length > 0)
+        throw new HttpError(
+          409,
+          "module_not_a_clone",
+          `modules/${folder} exists but is not a git repository.`,
+        );
+      const remote = this.settings().moduleRemote.replaceAll(MODULE_PLACEHOLDER, folder);
+      const probe = await this.git().run(["ls-remote", "--heads", "--", remote], root);
+      if (probe.code === 0) {
+        const cloned = await this.git().run(["clone", "--", remote, dir], root, {
+          timeoutMs: WAF_LONG_TIMEOUT_MS,
+        });
+        if (cloned.code !== 0)
+          throw new HttpError(
+            502,
+            "module_clone_failed",
+            `Cloning ${remote} failed: ${gitError(cloned.stderr, cloned.error)}`,
+          );
+        return dir;
+      }
+      if (!repositoryMissing(probe.stderr))
+        throw new HttpError(
+          502,
+          "module_remote_unreachable",
+          `Could not reach ${remote}: ${gitError(probe.stderr, probe.error)}`,
+        );
+      // A new module: its repository is made by whoever owns the organisation; the first
+      // deploy pushes main to it.
+      await fsp.mkdir(dir, { recursive: true });
+      await this.gitOk(dir, ["init", "--initial-branch=main"]);
+      await this.gitOk(dir, ["remote", "add", "origin", remote]);
+      return dir;
+    });
+  }
+
+  async ensureMedia(folders: readonly string[]): Promise<void> {
+    const wanted = [...new Set(folders.map(checkMediaFolder))];
+    if (!wanted.length) return;
+    const root = await this.requireRoot();
+    // An existing checkout belongs to whoever made it; its media is theirs to fetch.
+    if (this.external()) return;
+    const dir = path.join(root, WAF_REPO_PATHS.media);
+    await this.serial("media", async () => {
+      const listed = await this.gitOk(dir, ["sparse-checkout", "list"]);
+      const have = new Set(listed.stdout.split(/\r?\n/).map((line) => line.trim()));
+      const missing = wanted.filter((folder) => !have.has(folder));
+      if (missing.length)
+        await this.gitOk(dir, ["sparse-checkout", "add", "--", ...missing], {
+          GIT_LFS_SKIP_SMUDGE: "1",
+        });
+      await this.gitOk(dir, [
+        "lfs",
+        "pull",
+        "--include",
+        wanted.map((folder) => `${folder}/**`).join(","),
+        "--exclude",
+        "",
+      ]);
+    });
+  }
+}
+
+/** git's own words for why it failed, or why it never ran. */
+function gitError(stderr: string, error?: string): string {
+  if (error === "not_found") return "git is not installed on the server.";
+  if (error === "timed_out") return "it took too long.";
+  const text = stderr.trim();
+  return text ? text.slice(-2000) : (error ?? "unknown error");
+}

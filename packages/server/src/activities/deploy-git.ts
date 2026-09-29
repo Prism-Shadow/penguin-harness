@@ -36,6 +36,8 @@ export interface DeployGitOptions {
   timeoutMs?: number;
   /** Stops git, and everything it started, as soon as it aborts. */
   signal?: AbortSignal;
+  /** Added to the environment git runs in (never replaces the no-prompt settings). */
+  env?: Record<string, string>;
 }
 
 /** Every git call a deploy makes. */
@@ -70,7 +72,7 @@ export const spawnGit: DeployGit = {
       try {
         child = spawn("git", args, {
           cwd,
-          env: gitEnv(),
+          env: { ...process.env, ...opts.env, ...gitEnv({}) },
           stdio: ["ignore", "pipe", "pipe"],
           shell: false,
           windowsHide: true,

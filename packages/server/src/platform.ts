@@ -139,6 +139,12 @@ import {
   DefaultDeployPorts,
 } from "./activities/deploy-service.js";
 import { DeployAdminRoutes } from "./activities/deploy-routes.js";
+import {
+  DefaultWafWorkspacePorts,
+  WafWorkspace,
+  WafWorkspaceService,
+} from "./activities/waf-workspace.js";
+import { WafWorkspaceAdminRoutes } from "./activities/waf-workspace-routes.js";
 import { ActivityDeployEventHub, ActivityDeployEvents } from "./activities/deploy-events.js";
 import { ActivityPhonemesService, DefaultEspeakPorts } from "./activities/phonemes.js";
 import { PhonemesAdminRoutes } from "./activities/phonemes-routes.js";
@@ -435,6 +441,9 @@ export class CodingAgentsModule {}
     ActivityDeployEventHub,
     ActivityDeployService,
     DeployAdminRoutes,
+    DefaultWafWorkspacePorts,
+    WafWorkspaceService,
+    WafWorkspaceAdminRoutes,
   ],
   exports: [
     ActivityAuthoring,
@@ -445,6 +454,7 @@ export class CodingAgentsModule {}
     ActivityQuality,
     ActivityDeploys,
     ActivityDeployEvents,
+    WafWorkspace,
   ],
 })
 export class ActivitiesModule {}

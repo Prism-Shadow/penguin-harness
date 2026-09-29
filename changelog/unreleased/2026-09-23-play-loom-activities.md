@@ -10,9 +10,8 @@ runtime, the way Loom's dev sandbox played them.
 
 ## Import
 
-**Import from Loom** on the activities page lists what the checkout offers, reading only,
-and imports one product at a time through the existing import routes. Each import shows
-the server's own account of what was created, repaired or left behind.
+The **Import from Loom** dialog this added was removed again on 2026-09-29 (see
+`2026-09-29-remove-loom-import.md`); activities now live in their modules instead.
 
 ## Where a module and its media come from
 

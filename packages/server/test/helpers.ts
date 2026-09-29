@@ -93,6 +93,10 @@ import { DefaultSoundModelPorts, type SoundModelPorts } from "../src/activities/
 import { DefaultEspeakPorts, type EspeakPorts } from "../src/activities/phonemes.js";
 import { DefaultDeployPorts, type DeployPorts } from "../src/activities/deploy-service.js";
 import {
+  DefaultWafWorkspacePorts,
+  type WafWorkspacePorts,
+} from "../src/activities/waf-workspace.js";
+import {
   DefaultMediaLibraryPorts,
   type MediaLibraryPorts,
 } from "../src/activities/media-bundle.js";
@@ -291,6 +295,8 @@ export interface TestAppOptions {
   espeakPorts?: EspeakPorts;
   /** Test double: git and Jenkins for deploys, so a test never reaches a remote. */
   deployPorts?: DeployPorts;
+  /** Test double: git and npm for the WAF workspace, so a test never clones or installs. */
+  wafWorkspacePorts?: WafWorkspacePorts;
   /** Test double: the quality check's browser launcher and axe source, so no browser starts. */
   qualityCheckPorts?: QualityCheckPorts;
   /** Test double: the scene-video recorder's browser launcher, so no browser starts. */
@@ -393,6 +399,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   if (o.soundModelPorts) out.push([DefaultSoundModelPorts, o.soundModelPorts]);
   if (o.espeakPorts) out.push([DefaultEspeakPorts, o.espeakPorts]);
   if (o.deployPorts) out.push([DefaultDeployPorts, o.deployPorts]);
+  if (o.wafWorkspacePorts) out.push([DefaultWafWorkspacePorts, o.wafWorkspacePorts]);
   return out;
 }
 
