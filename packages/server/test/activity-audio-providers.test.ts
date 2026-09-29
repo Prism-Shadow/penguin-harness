@@ -22,13 +22,8 @@ describe("what this build carries", () => {
 
   it("keeps the providers it left behind as data, with a reason each", () => {
     // So "why is music generation unavailable" has an answer that is not a diff.
-    expect(LEFT_BEHIND.map((entry) => entry.id)).toEqual([
-      "kokoro",
-      "musicgen",
-      "audiogen",
-      "audioldm",
-    ]);
-    for (const entry of LEFT_BEHIND) expect(entry.why, entry.id).toContain("local Python model");
+    expect(LEFT_BEHIND.map((entry) => entry.id)).toEqual(["audiogen", "audioldm"]);
+    for (const entry of LEFT_BEHIND) expect(entry.why, entry.id).toContain("native");
   });
 });
 
@@ -55,9 +50,9 @@ describe("choosing a provider", () => {
   });
 
   it("names a left-behind provider and what to use instead", () => {
-    const choice = providerFor("music", { ...eleven, chosen: { music: "musicgen" } });
+    const choice = providerFor("effect", { ...eleven, chosen: { effect: "audiogen" } });
     expect("problem" in choice && choice.problem).toContain("does not carry");
-    expect("problem" in choice && choice.problem).toContain("local Python model");
+    expect("problem" in choice && choice.problem).toContain("native");
     expect("problem" in choice && choice.problem).toContain("elevenlabs");
   });
 
@@ -79,6 +74,18 @@ describe("choosing a provider", () => {
 });
 
 describe("what a deployment can do", () => {
+  it("reports local speech and music without credentials, but not effects or alignment", () => {
+    expect(
+      audioCapability({ credentials: [], local: { kokoro: true, musicgen: true } }).available,
+    ).toEqual(["speech", "music"]);
+    expect(
+      providerFor("speech", {
+        credentials: [],
+        local: { kokoro: true },
+        chosen: { speech: "gemini" },
+      }),
+    ).toHaveProperty("problem");
+  });
   it("reports everything available when one provider covers it all", () => {
     expect(audioCapability(eleven)).toEqual({
       available: ["speech", "music", "effect", "alignment"],

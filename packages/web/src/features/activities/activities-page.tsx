@@ -899,6 +899,7 @@ function ActivityEditor({
               ),
               voiceOptions,
               speechQueue!.voice,
+              speechQueue!.language,
             ),
           },
         });
@@ -1995,6 +1996,7 @@ function ActivityEditor({
                           editedManifest.assets[language]?.find((asset) => asset.key === key),
                           voiceOptions,
                           bulkVoice,
+                          language,
                         ),
                       })
                     }

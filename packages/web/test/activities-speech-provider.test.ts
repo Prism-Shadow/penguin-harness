@@ -40,6 +40,18 @@ function narration(extra: Partial<MediaAsset> = {}): MediaAsset {
 }
 
 describe("speech provider model", () => {
+  it("chooses only Kokoro voices for the narration's language", () => {
+    const voices: VoiceOption[] = [
+      { ...gemini("af_heart"), providerId: "kokoro", languages: ["en-US"] },
+      { ...gemini("bf_emma"), providerId: "kokoro", languages: ["en-GB"] },
+    ];
+    const asset = narration({ speechProvider: "kokoro", voice: "af_heart" });
+    expect(speechChoice(asset, voices, "af_heart", "en-GB")).toEqual({
+      provider: "kokoro",
+      voice: "bf_emma",
+    });
+    expect(speechChoice(asset, voices, "af_heart", "fr-FR").voice).toBe("");
+  });
   it("reads Gemini for a narration naming no provider", () => {
     expect(providerOf(narration())).toBe("gemini");
     expect(providerOf(narration({ speechProvider: "elevenlabs" }))).toBe("elevenlabs");

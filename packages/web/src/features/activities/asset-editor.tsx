@@ -186,8 +186,10 @@ export function AssetEditor({
   const asset = group.find((entry) => entry.key === selection?.key);
   // A narration speaks with its own provider and saved voice; one naming none uses the
   // page's default voice, or the provider's first.
-  const { provider, voice } = speechChoice(asset, voices, defaultVoice);
-  const providerVoices = voicesFor(voices, provider, group);
+  const { provider, voice } = speechChoice(asset, voices, defaultVoice, language);
+  const providerVoices = voicesFor(voices, provider, group).filter(
+    (voice) => provider !== "kokoro" || voice.languages.includes(language),
+  );
   const providerState = providerStatus(speechProviders, provider);
   // An ElevenLabs voice id the author is typing, used once it is well formed.
   const [typedVoice, setTypedVoice] = useState("");
@@ -742,6 +744,9 @@ export function AssetEditor({
                     <Select
                       size="sm"
                       label={S.activities.speechProvider.label}
+                      hint={
+                        provider === "kokoro" ? S.activities.speechProvider.localInfo : undefined
+                      }
                       value={provider}
                       disabled={disabled}
                       onChange={(event) =>
@@ -760,7 +765,7 @@ export function AssetEditor({
                             disabled={!!status && !status.available && id !== provider}
                           >
                             {status && !status.available
-                              ? `${name} (${S.activities.speechProvider.keyMissing(status.credential)})`
+                              ? `${name} (${status.problem === "runtime_missing" ? S.activities.speechProvider.runtimeMissing : S.activities.speechProvider.keyMissing(status.credential)})`
                               : name}
                           </option>
                         );
@@ -768,7 +773,11 @@ export function AssetEditor({
                     </Select>
                     {providerState && !providerState.available && (
                       <p className={`text-xs ${toneInk.attention}`}>
-                        {S.activities.sound.problems.credential_missing(providerState.credential)}
+                        {providerState.problem === "runtime_missing"
+                          ? S.activities.speechProvider.runtimeMissing
+                          : S.activities.sound.problems.credential_missing(
+                              providerState.credential,
+                            )}
                       </p>
                     )}
                     <VoicePicker

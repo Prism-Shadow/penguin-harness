@@ -189,7 +189,11 @@ export function SpeechCoverage({
   // The provider the narrations share picks the voices offered; with several, every voice.
   const provider = sharedProvider(assets);
   const bulkVoices =
-    provider && provider !== "mixed" ? voicesFor(voices, provider, assets) : voices;
+    provider && provider !== "mixed"
+      ? voicesFor(voices, provider, assets).filter(
+          (voice) => provider !== "kokoro" || voice.languages.includes(language),
+        )
+      : voices;
   const sounds = (
     <SoundCoverage
       assets={assets}
@@ -269,7 +273,7 @@ export function SpeechCoverage({
                         disabled={!!status && !status.available && id !== provider}
                       >
                         {status && !status.available
-                          ? `${name} (${S.activities.speechProvider.keyMissing(status.credential)})`
+                          ? `${name} (${status.problem === "runtime_missing" ? S.activities.speechProvider.runtimeMissing : S.activities.speechProvider.keyMissing(status.credential)})`
                           : name}
                       </option>
                     );

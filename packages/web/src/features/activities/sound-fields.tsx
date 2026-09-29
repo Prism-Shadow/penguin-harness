@@ -81,7 +81,7 @@ export function SoundFields({
             size="sm"
             type="number"
             min={1}
-            max={60}
+            max={provider?.id === "musicgen" ? 30 : 60}
             step={0.5}
             label={words.length}
             hint={words.lengthHint}
@@ -105,6 +105,7 @@ export function SoundFields({
             <Select
               size="sm"
               label={words.provider}
+              hint={provider.id === "musicgen" ? words.localInfo : undefined}
               value={provider.id}
               disabled={locked}
               onChange={(event) => setChoice(event.target.value)}
@@ -140,7 +141,12 @@ export function SoundFields({
       {editable && (
         <Button
           size="sm"
-          disabled={!canGenerate || generating || !canGenerateSound(prompt, provider, length.ok)}
+          disabled={
+            !canGenerate ||
+            generating ||
+            !canGenerateSound(prompt, provider, length.ok) ||
+            (provider?.id === "musicgen" && (asset.targetDurationMs ?? 10000) > 30000)
+          }
           onClick={() =>
             provider &&
             onGenerate(provider.id, provider.models.length && model ? model.id : undefined)

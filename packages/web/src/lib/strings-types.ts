@@ -1329,6 +1329,9 @@ export type Strings = {
       label: string;
       gemini: string;
       elevenlabs: string;
+      kokoro: string;
+      localInfo: string;
+      runtimeMissing: string;
       /** An option the chosen agent cannot use, naming the Vault key it lacks. */
       keyMissing: (key: string) => string;
       /** The accepted clip's word timings, as the highlighting preview shows them. */
@@ -1367,8 +1370,10 @@ export type Strings = {
       generate: string;
       regenerate: string;
       generating: string;
-      providers: Record<"elevenlabs" | "agenthub", string>;
+      providers: Record<"elevenlabs" | "agenthub" | "musicgen", string>;
+      localInfo: string;
       problems: {
+        runtime_missing: string;
         credential_missing: (key: string) => string;
         kind_unsupported: string;
         provider_unknown: string;

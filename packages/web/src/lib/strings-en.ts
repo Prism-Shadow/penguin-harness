@@ -150,8 +150,7 @@ export const en: Strings = {
       sessionsEmpty: "No agent has worked on this activity yet.",
       showTranscript: "Show",
       hideTranscript: "Hide",
-      transcriptToggle: (action: string, run: string, time: string) =>
-        `${action}: ${run}, ${time}`,
+      transcriptToggle: (action: string, run: string, time: string) => `${action}: ${run}, ${time}`,
       openFullPage: "Open full page",
     },
     studioRefs: {
@@ -430,8 +429,7 @@ export const en: Strings = {
       canonical: "Canonical ref",
       progress: (done: number, total: number) => `${done} of ${total} milestones`,
       newRef: "New ref",
-      newRefUnavailable:
-        "Plan the canonical ref's media first; a new ref copies its media plan.",
+      newRefUnavailable: "Plan the canonical ref's media first; a new ref copies its media plan.",
       status: {
         running: (what: string) => `${what} running`,
         stale: "Media plan out of date",
@@ -1560,6 +1558,10 @@ export const en: Strings = {
       label: "Provider",
       gemini: "Gemini",
       elevenlabs: "ElevenLabs",
+      kokoro: "Kokoro (local)",
+      localInfo:
+        "Runs on the server. The first generation downloads model weights. English voices only; word timings are not provided.",
+      runtimeMissing: "Local runtime not installed on the server",
       keyMissing: (key: string) => `needs ${key}`,
       timings: "Word timings",
       timingsAbout:
@@ -1601,8 +1603,11 @@ export const en: Strings = {
       generate: "Generate",
       regenerate: "Generate again",
       generating: "Generating…",
-      providers: { elevenlabs: "ElevenLabs", agenthub: "Model" },
+      providers: { elevenlabs: "ElevenLabs", agenthub: "Model", musicgen: "MusicGen (local)" },
+      localInfo:
+        "Runs on the server. The first generation downloads model weights. MusicGen supports clips up to 30 seconds.",
       problems: {
+        runtime_missing: "Install the local audio dependencies on the server to use this provider.",
         credential_missing: (key: string) => `Add ${key} to the selected agent's Vault.`,
         kind_unsupported: "This provider does not make this kind of sound.",
         provider_unknown: "This provider is not available in this version.",

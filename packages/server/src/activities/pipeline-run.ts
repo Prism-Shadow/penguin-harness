@@ -30,6 +30,7 @@
  * rolled back, and nothing after it runs.
  */
 import { isBookWord } from "./book-words.js";
+import { KOKORO_VOICES } from "./local-audio-models.js";
 import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../http/errors.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
@@ -200,7 +201,17 @@ export function voiceFor(
   provider: SpeechProviderId,
   saved: string | undefined,
   chosen: string | undefined,
+  language = "en-US",
 ): string {
+  if (provider === "kokoro") {
+    const voices = KOKORO_VOICES.filter((voice) => voice.languages.includes(language));
+    return (
+      voices.find((voice) => voice.id === saved)?.id ??
+      voices.find((voice) => voice.id === chosen)?.id ??
+      voices[0]?.id ??
+      ""
+    );
+  }
   if (provider === "elevenlabs")
     return isVoiceOf("elevenlabs", saved)
       ? saved!
@@ -469,6 +480,7 @@ export class PipelineRunner {
           narration?.speechProvider ?? "gemini",
           narration?.voice,
           input.voice,
+          target.language,
         );
         step.detail = target.assetKey;
         const before = await current();
@@ -711,7 +723,13 @@ export class PipelineRunner {
         activityId,
         input.agentId,
         before.draft.contentRevision,
-        { audio: { ...target, voice: voiceFor(provider, word?.voice, input.voice), provider } },
+        {
+          audio: {
+            ...target,
+            voice: voiceFor(provider, word?.voice, input.voice, target.language),
+            provider,
+          },
+        },
       );
       await this.follow(state, step, run);
       const after = await current();

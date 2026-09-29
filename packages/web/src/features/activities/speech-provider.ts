@@ -12,7 +12,7 @@ import type {
 import { S } from "../../lib/strings";
 import { isNarration } from "./voice-catalogue";
 
-export const SPEECH_PROVIDERS: readonly SpeechProviderId[] = ["gemini", "elevenlabs"];
+export const SPEECH_PROVIDERS: readonly SpeechProviderId[] = ["gemini", "elevenlabs", "kokoro"];
 
 /** The id the server gives the Vault's default ElevenLabs voice. */
 export const ELEVENLABS_DEFAULT_VOICE = "elevenlabs-default";
@@ -92,9 +92,12 @@ export function speechChoice(
   asset: MediaAsset | undefined,
   options: readonly VoiceOption[],
   fallback: string,
+  language?: string,
 ): { provider: SpeechProviderId; voice: string } {
   const provider = providerOf(asset);
-  const voices = voicesFor(options, provider, asset ? [asset] : []);
+  const voices = voicesFor(options, provider, asset ? [asset] : []).filter(
+    (option) => provider !== "kokoro" || !language || option.languages.includes(language),
+  );
   const has = (id: string | undefined) => !!id && voices.some((option) => option.id === id);
   const voice = has(asset?.voice)
     ? asset!.voice!
