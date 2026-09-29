@@ -87,6 +87,13 @@ const DROP_REQUEST_HEADERS = new Set([
 ]);
 const DROP_RESPONSE_HEADERS = new Set(["set-cookie", "location", "connection", "keep-alive"]);
 
+/** What a forward the caller gave up on answers; nobody reads it, but a Response is owed. */
+const cancelledResponse = (): Response =>
+  Response.json(
+    { error: { code: "cancelled", message: "The caller cancelled the request." } },
+    { status: 499 },
+  );
+
 /**
  * Forwards one request to the machine's server and streams the answer back — both
  * directions are pipes, so SSE and long downloads flow as they arrive. The socket is the
@@ -101,6 +108,8 @@ function proxyThroughSession(
   report?: ProxyReport,
 ): Promise<Response> {
   const { agent, port, cookie } = target;
+  // Given up on before it left: nothing to dial for.
+  if (request.signal.aborted) return Promise.resolve(cancelledResponse());
   return new Promise((resolve) => {
     const url = new URL(request.url);
     const headers: Record<string, string> = {};
@@ -140,7 +149,22 @@ function proxyThroughSession(
         );
       },
     );
+    // The caller gave up (an API socket call cancelled at its answer timeout aborts its
+    // Request, socket/serve.ts): drop the forward rather than hold it open until the machine
+    // answers someone who is gone. That is the caller's doing, not the machine's, so it is
+    // not reported as an unreachable machine.
+    let cancelled = false;
+    const cancel = () => {
+      cancelled = true;
+      upstream.destroy();
+    };
+    request.signal.addEventListener("abort", cancel, { once: true });
+    upstream.on("close", () => request.signal.removeEventListener("abort", cancel));
     upstream.on("error", (err) => {
+      if (cancelled) {
+        resolve(cancelledResponse());
+        return;
+      }
       report?.(path.machineId, { ok: false, detail: err.message });
       resolve(
         Response.json(

@@ -52,8 +52,9 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 /**
  * A one-shot call the server has not answered after this is given up on — with a warning
  * saying so, because a socket that keeps its heartbeat while answering nothing is otherwise
- * invisible: no error, no closed connection, nothing in the network log. The caller decides
- * whether to make the call over HTTP (api/client.ts), from `SocketTimeoutError.socketLive`.
+ * invisible: no error, no closed connection, nothing in the network log — and with a cancel
+ * frame, so the server stops working it. The caller decides whether to make the call over
+ * HTTP (api/client.ts), from `SocketTimeoutError.socketLive`.
  */
 export const ANSWER_TIMEOUT_MS = 20_000;
 /** A stream the server has not opened after this is issued again, with the same warning. */
@@ -298,6 +299,13 @@ export class ApiSocket {
               ? "the socket carried frames meanwhile, so it is the endpoint that is silent"
               : "the socket itself went quiet"),
         );
+        // Tell the server too: it keeps working a call nobody waits for any more, and for a
+        // machine that is a forward held open on the very route that is not answering. The
+        // cancel aborts the call's Request there (socket/serve.ts), which the machine proxy
+        // answers by dropping its forward.
+        if (this.#state === "open" && this.#ws !== null) {
+          this.#ws.send(JSON.stringify({ id, cancel: true }));
+        }
         reject(new SocketTimeoutError(live));
       }, ANSWER_TIMEOUT_MS);
       this.#calls.set(id, { method, path, resolve, reject, deadline });
