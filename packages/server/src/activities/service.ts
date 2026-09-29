@@ -920,9 +920,10 @@ export class ActivityService implements ActivityAuthoring {
       )
       .get(activityId) as { draft_id: string } | undefined;
     if (!draftRow) throw new Error("Activity draft index is missing.");
-    const read = await readRefDraft(await this.draftFilesDir(activity));
-    if (!read) throw new Error("Activity draft is missing from its module.");
-    const stored = read;
+    const filesDir = await this.draftFilesDir(activity);
+    const stored =
+      (await readRefDraft(filesDir)) ??
+      (await this.moveLegacyDraft(projectId, activity, draftRow.draft_id, filesDir));
     let file = stored;
     if (
       file.draftId !== draftRow.draft_id ||
@@ -1689,6 +1690,53 @@ export class ActivityService implements ActivityAuthoring {
       return draft;
     });
   }
+  /**
+   * A draft saved before activities were stored in their modules, written into the ref's
+   * module files the first time it is read. The old `draft.json` is left where it was, as a
+   * copy. Files already at the ref's address in the module (Loom's, or anything else) are
+   * never overwritten: the read is refused, naming both places.
+   */
+  private async moveLegacyDraft(
+    projectId: string,
+    activity: ActivityRecord,
+    draftId: string,
+    filesDir: string,
+  ): Promise<ActivityDraft> {
+    return this.locks.run(`legacy:${activity.id}`, async () => {
+      const again = await readRefDraft(filesDir);
+      if (again) return again;
+      const workspace = this.draftWorkspace(projectId, activity.collectionId, activity.id, draftId);
+      const text = await fs.readFile(path.join(workspace, "draft.json"), "utf8").catch(() => null);
+      if (text === null) throw new Error("Activity draft is missing from its module.");
+      const refFolder = path.dirname(filesDir);
+      if (await exists(refFolder))
+        throw new HttpError(
+          409,
+          "ref_files_conflict",
+          `The module already has files for ${activity.productCode}-${activity.refNum} at ${refFolder}; this ref's earlier draft was left in ${workspace}.`,
+        );
+      const product = this.productOf(activity);
+      await this.claimModuleFolder(
+        projectId,
+        this.moduleFolderOf(activity),
+        activity.productCode,
+        activity.refNum,
+      );
+      const legacy = JSON.parse(text) as ActivityDraft;
+      await this.writeDraft(activity, legacy);
+      const features = await fs
+        .readFile(path.join(workspace, "implementation-features.json"), "utf8")
+        .then(
+          (value) => JSON.parse(value) as { selectedIds?: unknown },
+          () => null,
+        );
+      if (features)
+        await writeFeatureFile(filesDir, normalizeFeatureSelection(features.selectedIds));
+      if (product) await this.syncProductFiles(product.productId);
+      return legacy;
+    });
+  }
+
   /**
    * The ref's draft into its module's files, with its identity beside it. The folder is the
    * ref's address, so `activity` must carry the number the files are to be under.
