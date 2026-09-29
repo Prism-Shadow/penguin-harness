@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#87](https://github.com/Myriad-Dreamin/penguin-harness/pull/87)
 
 [English](2026-09-29-sessions-reload-coalesce.md)
 
