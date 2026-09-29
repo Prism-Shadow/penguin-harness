@@ -33,6 +33,10 @@
  * it is read-only. Only the messages are essential: the chart and the Project's member list feed
  * names and the invite picker, so a hiccup there degrades names to ids rather than blocking
  * the page.
+ *
+ * A channel that is a roadmap's room (the company-roadmaps plugin) is this same page with the
+ * roadmap in a column on the right (roadmap-panel.tsx): side by side on a wide window, swapped in
+ * by a "Roadmap" bar under the header on a narrow one.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
@@ -69,6 +73,7 @@ import { orgKey } from "./company-nav";
 import { ChannelComposer } from "./channel-composer";
 import { useChannelDraft } from "./channel-draft";
 import { ChannelHeader } from "./channel-header";
+import { RoadmapBar, RoadmapColumn, useChannelRoadmap } from "./roadmap-panel";
 import { ChannelMessageBody, ChannelReaderProvider, MentionChip } from "./channel-markdown";
 import { noticeText } from "./channel-notices";
 import { JoinChannelConfirm } from "./channel-dialogs";
@@ -129,6 +134,10 @@ export function ChannelView() {
   /** Messages that arrived while the view was scrolled up; shown on the pill. */
   const [pendingNew, setPendingNew] = useState(0);
   const [showJump, setShowJump] = useState(false);
+  /** A roadmap's room: the roadmap stands in a column beside the stream (roadmap-panel.tsx). */
+  const roadmap = useChannelRoadmap(projectId, orgId, channelId);
+  /** On a narrow window the roadmap column takes the stream's place while this is set. */
+  const [roadmapOpen, setRoadmapOpen] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
   const follow = useMemo(createStreamFollow, []);
@@ -161,6 +170,7 @@ export function ChannelView() {
     setDetailError(null);
     setPendingNew(0);
     setConfirmJoin(false);
+    setRoadmapOpen(false);
     markedRef.current = null;
     firstDayRef.current = null;
     listedMemberRef.current = null;
@@ -605,138 +615,155 @@ export function ChannelView() {
 
   return (
     <ChannelReaderProvider reader={reader}>
-      <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
-        <ChannelHeader
-          projectId={projectId}
-          orgId={orgId}
-          me={myPrincipal}
-          detail={detail}
-          employees={employees}
-          projectMembers={members}
-          onChanged={() => {
-            void loadDetail();
-            void company.reloadChannels();
-          }}
-        />
-        {detailError !== null && detail === null && (
-          <NoticeStrip
-            banner
-            tone="danger"
-            as="p"
-            role="alert"
-            className="border-b px-4 py-1.5 text-xs"
-          >
-            {S.company.channels.channelLoadFailed} · {detailError}
-          </NoticeStrip>
-        )}
-        <div className="flex min-h-0 flex-1 flex-col px-3 pb-3 md:px-4 md:pb-4">
-          <div className="relative mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
-            <div
-              ref={listRef}
-              role="log"
-              aria-label={S.company.channels.streamLabel(label)}
-              onScroll={onScroll}
-              onWheel={(e) => follow.wheel(e.deltaY)}
-              onTouchStart={(e) => follow.touchStart(e.touches[0]?.clientY ?? 0)}
-              onTouchMove={(e) => follow.touchMove(e.touches[0]?.clientY ?? 0)}
-              onTouchEnd={() => follow.touchEnd()}
-              className="min-h-0 flex-1 overflow-y-auto pr-1"
+      <div className="flex h-full min-h-0 bg-white dark:bg-gray-950">
+        <div
+          className={`${roadmap !== null && roadmapOpen ? "hidden lg:flex" : "flex"} h-full min-h-0 min-w-0 flex-1 flex-col`}
+        >
+          <ChannelHeader
+            projectId={projectId}
+            orgId={orgId}
+            me={myPrincipal}
+            detail={detail}
+            employees={employees}
+            projectMembers={members}
+            onChanged={() => {
+              void loadDetail();
+              void company.reloadChannels();
+            }}
+          />
+          {detailError !== null && detail === null && (
+            <NoticeStrip
+              banner
+              tone="danger"
+              as="p"
+              role="alert"
+              className="border-b px-4 py-1.5 text-xs"
             >
-              <div>
-                {days === null && error !== null ? (
-                  <EmptyState
-                    title={error}
-                    action={<Button onClick={() => void load()}>{S.common.retry}</Button>}
-                  />
-                ) : days === null ? (
-                  <StreamSkeleton />
-                ) : (
-                  <>
-                    {earlier !== null ? (
-                      <div className="flex justify-center py-2">
-                        <Button
-                          size="sm"
-                          disabled={loadingEarlier}
-                          onClick={() => void loadEarlier()}
-                        >
-                          {loadingEarlier ? S.common.loading : S.company.channels.earlierDays}
-                        </Button>
-                      </div>
-                    ) : (
-                      messageCount(days) > 0 && (
-                        <p className="py-2 text-center text-xs text-fg-subtle">
-                          {S.company.channels.noEarlier}
-                        </p>
-                      )
-                    )}
-                    {messageCount(days) === 0 ? (
-                      <EmptyState
-                        title={S.company.channels.empty}
-                        description={S.company.channels.emptyHint}
-                      />
-                    ) : (
-                      stream.map(renderItem)
-                    )}
-                  </>
-                )}
+              {S.company.channels.channelLoadFailed} · {detailError}
+            </NoticeStrip>
+          )}
+          {roadmap !== null && (
+            <RoadmapBar number={roadmap.number} onOpen={() => setRoadmapOpen(true)} />
+          )}
+          <div className="flex min-h-0 flex-1 flex-col px-3 pb-3 md:px-4 md:pb-4">
+            <div className="relative mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+              <div
+                ref={listRef}
+                role="log"
+                aria-label={S.company.channels.streamLabel(label)}
+                onScroll={onScroll}
+                onWheel={(e) => follow.wheel(e.deltaY)}
+                onTouchStart={(e) => follow.touchStart(e.touches[0]?.clientY ?? 0)}
+                onTouchMove={(e) => follow.touchMove(e.touches[0]?.clientY ?? 0)}
+                onTouchEnd={() => follow.touchEnd()}
+                className="min-h-0 flex-1 overflow-y-auto pr-1"
+              >
+                <div>
+                  {days === null && error !== null ? (
+                    <EmptyState
+                      title={error}
+                      action={<Button onClick={() => void load()}>{S.common.retry}</Button>}
+                    />
+                  ) : days === null ? (
+                    <StreamSkeleton />
+                  ) : (
+                    <>
+                      {earlier !== null ? (
+                        <div className="flex justify-center py-2">
+                          <Button
+                            size="sm"
+                            disabled={loadingEarlier}
+                            onClick={() => void loadEarlier()}
+                          >
+                            {loadingEarlier ? S.common.loading : S.company.channels.earlierDays}
+                          </Button>
+                        </div>
+                      ) : (
+                        messageCount(days) > 0 && (
+                          <p className="py-2 text-center text-xs text-fg-subtle">
+                            {S.company.channels.noEarlier}
+                          </p>
+                        )
+                      )}
+                      {messageCount(days) === 0 ? (
+                        <EmptyState
+                          title={S.company.channels.empty}
+                          description={S.company.channels.emptyHint}
+                        />
+                      ) : (
+                        stream.map(renderItem)
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-            {showJump && (
-              <button
-                type="button"
-                aria-label={S.chat.jumpToLatest}
-                onClick={jumpToLatest}
-                className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
-              >
-                {pendingNew > 0 ? S.company.channels.newMessages(pendingNew) : S.chat.jumpToLatest}
-                <GlyphIcon d={ICONS.arrowDown} size={ICON_SIZE.inlineGlyph} />
-              </button>
-            )}
-          </div>
-          <div className="mx-auto w-full max-w-5xl">
-            {canPost ? (
-              <ChannelComposer
-                // Remounted per draft: the box starts from the text this channel was left with.
-                key={draft.key ?? channelId}
-                candidates={candidates}
-                names={names}
-                initialText={draft.initial}
-                onTextChange={draft.onTextChange}
-                onSend={send}
-              />
-            ) : detail !== null && detail.archived ? (
-              <NoticeStrip
-                tone="neutral"
-                as="p"
-                className="mt-3 rounded-md border px-3 py-2 text-xs"
-                role="status"
-              >
-                {S.company.channels.archivedNotice}
-              </NoticeStrip>
-            ) : detail !== null ? (
-              <NoticeStrip
-                tone="attention"
-                className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs"
-              >
-                <span>{S.company.channels.notMemberNotice}</span>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={joining}
-                  onClick={() => setConfirmJoin(true)}
+              {showJump && (
+                <button
+                  type="button"
+                  aria-label={S.chat.jumpToLatest}
+                  onClick={jumpToLatest}
+                  className={`anim-pop absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-300 bg-white py-1 pl-2.5 pr-2 text-xs text-gray-600 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
                 >
-                  {joining ? S.company.channels.joining : S.company.channels.join}
-                </Button>
-              </NoticeStrip>
-            ) : null}
+                  {pendingNew > 0
+                    ? S.company.channels.newMessages(pendingNew)
+                    : S.chat.jumpToLatest}
+                  <GlyphIcon d={ICONS.arrowDown} size={ICON_SIZE.inlineGlyph} />
+                </button>
+              )}
+            </div>
+            <div className="mx-auto w-full max-w-5xl">
+              {canPost ? (
+                <ChannelComposer
+                  // Remounted per draft: the box starts from the text this channel was left with.
+                  key={draft.key ?? channelId}
+                  candidates={candidates}
+                  names={names}
+                  initialText={draft.initial}
+                  onTextChange={draft.onTextChange}
+                  onSend={send}
+                />
+              ) : detail !== null && detail.archived ? (
+                <NoticeStrip
+                  tone="neutral"
+                  as="p"
+                  className="mt-3 rounded-md border px-3 py-2 text-xs"
+                  role="status"
+                >
+                  {S.company.channels.archivedNotice}
+                </NoticeStrip>
+              ) : detail !== null ? (
+                <NoticeStrip
+                  tone="attention"
+                  className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs"
+                >
+                  <span>{S.company.channels.notMemberNotice}</span>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={joining}
+                    onClick={() => setConfirmJoin(true)}
+                  >
+                    {joining ? S.company.channels.joining : S.company.channels.join}
+                  </Button>
+                </NoticeStrip>
+              ) : null}
+            </div>
+            <JoinChannelConfirm
+              open={confirmJoin}
+              busy={joining}
+              onClose={() => setConfirmJoin(false)}
+              onConfirm={() => void join()}
+            />
           </div>
         </div>
-        <JoinChannelConfirm
-          open={confirmJoin}
-          busy={joining}
-          onClose={() => setConfirmJoin(false)}
-          onConfirm={() => void join()}
-        />
+        {roadmap !== null && (
+          <RoadmapColumn
+            number={roadmap.number}
+            src={roadmap.src}
+            open={roadmapOpen}
+            onClose={() => setRoadmapOpen(false)}
+          />
+        )}
       </div>
     </ChannelReaderProvider>
   );

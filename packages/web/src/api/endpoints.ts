@@ -2297,6 +2297,36 @@ export const deleteOrganization = (projectId: string, orgId: string) =>
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
 
+/**
+ * An organization's roadmaps, from the company-roadmaps plugin's own route (present only while
+ * that plugin is, which is when the roadmaps page is contributed). The shape is the plugin's;
+ * only the fields the sidebar and the channel page read are typed (features/company/roadmaps.ts).
+ */
+export const listOrgRoadmaps = (
+  projectId: string,
+  orgId: string,
+  filter: { channel?: string; status?: string } = {},
+) => {
+  const q = new URLSearchParams();
+  if (filter.channel !== undefined) q.set("channel", filter.channel);
+  if (filter.status !== undefined) q.set("status", filter.status);
+  const qs = q.toString();
+  return apiFetch<{ roadmaps: OrgRoadmapItem[] }>(
+    `${orgBase(projectId, orgId)}/roadmaps${qs === "" ? "" : `?${qs}`}`,
+  );
+};
+
+/** What the web app reads of one roadmap (the plugin answers more). */
+export interface OrgRoadmapItem {
+  number: number;
+  name: string;
+  status: string;
+  archived: boolean;
+  channelId: string | null;
+  createdAt: string;
+  events?: ReadonlyArray<{ at: string }>;
+}
+
 export const hireOrgEmployee = (projectId: string, orgId: string, body: OrgHireRequest) =>
   apiFetch<OrgEmployeeItem>(`${orgBase(projectId, orgId)}/employees`, { method: "POST", body });
 

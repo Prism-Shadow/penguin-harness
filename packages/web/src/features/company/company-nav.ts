@@ -69,15 +69,14 @@ export function orgPagePath(projectId: string, orgId: string, page: CompanyNavKe
  * first segment under `/org/:projectId/:orgId/`, where the row leads; the page's own params
  * (`proposals/:number?`) come after it.
  *
- * The entries' order is the rows' order: the roadmaps a discussion settles into come before the
- * proposals they delegate. Contribution order cannot say it — it is the Project's `[plugins]`
- * order, the order the plugins happen to be listed and loaded in — so the build does, as it
- * does the label and the glyph.
+ * The entries' order is the rows' order. Contribution order cannot say it — it is the Project's
+ * `[plugins]` order, the order the plugins happen to be listed and loaded in — so the build does,
+ * as it does the label and the glyph. The roadmaps page (key `roadmaps`) has no row here: its
+ * roadmaps are the sidebar's own ROADMAPS section, below the channels (features/company/roadmaps.ts).
  */
 export const ORG_PAGE_RENDERERS = {
-  roadmaps: { label: "roadmaps", segment: "roadmaps", kind: "iframe" },
   OrgProposalsPage: { label: "proposals", segment: "proposals", kind: "builtin" },
-} as const;
+} as const satisfies Record<string, { label: string; segment: string; kind: "builtin" | "iframe" }>;
 export type OrgPageRenderer = keyof typeof ORG_PAGE_RENDERERS;
 
 /** Whether a contributed page's renderer is one the company layout knows a row for. */

@@ -45,8 +45,6 @@ export const en: Strings = {
       handbook: "Handbook",
       /** The proposals page a plugin contributes (ORG_PAGE_RENDERERS); the row exists only while the plugin does. */
       proposals: "Proposals",
-      /** The roadmaps page a plugin contributes and serves itself (an iframe row of ORG_PAGE_RENDERERS); the row exists only while the plugin does. */
-      roadmaps: "Roadmaps",
     },
   },
 
@@ -5897,6 +5895,17 @@ Scenarios:
       pausedAt: (at: string): string => `reached 100% at ${at}`,
       /** A refetch failed while the last good data is still on screen. */
       refreshFailed: "Refresh failed; showing the last loaded data",
+    },
+    roadmaps: {
+      listTitle: "Roadmaps",
+      showMore: (n: number) => `Show ${n} more`,
+      showFewer: "Show fewer",
+      all: "All roadmaps",
+      open: "Open a roadmap",
+      none: "No roadmap under discussion yet.",
+      loadFailed: "Could not load the roadmaps",
+      panelTitle: (n: number) => `Roadmap #${n}`,
+      hidePanel: "Back to the room",
     },
     channels: {
       listTitle: "Channels",
