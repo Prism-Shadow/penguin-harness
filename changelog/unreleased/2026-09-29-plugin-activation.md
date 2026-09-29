@@ -21,6 +21,7 @@ A process now loads server plugins from one place: the generation `<data root>/p
 - The generation is resolved from the closure, the union of every Project's table for this machine. For each name the loader takes the store entries whose version satisfies every Project's requirement. Among those it prefers what the running build carries (its push set or the installation's prefix) over a registry fetch, then the highest version. So a push that brings new content under an unchanged name and version takes over at the next activation.
 - When the App fails to boot on a new generation, `current` is pointed back at the previous one. The failed generation stays on disk.
 - A listed name that no store entry satisfies is reported on the Plugins page with the reason.
+- A linked plugin runs from its store entry. When its own package cannot resolve `@prismshadow/penguin-core`, which a plugin bundle may keep external (discord-bot does), the import resolves from the running program instead, through a `module.registerHooks` resolve hook. Before, only a plugin loaded from beside the installation found the program's copy; one carried by a hot push did not.
 
 ## Installing and removing
 

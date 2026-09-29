@@ -27,14 +27,20 @@
  * interleave. A boot that fails after activating flips the pointer back to the generation
  * before it. What is in `<root>/plugins/` besides generations (the npm prefix older builds
  * installed into) is neither read nor removed.
+ *
+ * A linked plugin runs from its store entry, so the host SDK it keeps external is lent to it
+ * from the running program (`lendHostPackages`).
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import nodeModule from "node:module";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parse as parseToml } from "smol-toml";
 import {
   PACKAGE_DIR,
+  pluginStoreDir,
   readStore,
   shippedEntries,
   STORED_FILE,
@@ -331,6 +337,58 @@ export async function activatePlugins(
   const current = await writeGeneration(root, chosen);
   if (current !== previous) await pointCurrent(root, current);
   return { previous, current, missing };
+}
+
+/**
+ * The packages the HOST lends a plugin rather than the plugin shipping them: the SDK a plugin's
+ * bundle keeps external (discord-bot imports `@prismshadow/penguin-core` at run time).
+ */
+export const HOST_PACKAGES = /^@prismshadow\/penguin-core(\/|$)/;
+
+const storeRoots = new Set<string>();
+let hostHookInstalled = false;
+
+/**
+ * Lets a plugin loaded from `root`'s store resolve a host package the way the running program
+ * does. A plugin imported through a generation's link runs from its store entry, and Node
+ * resolves its imports from there — under the data root, where no `node_modules` holds the
+ * host's SDK; from the installation's prefix it used to find the program's copy by walking up.
+ * Only a HOST_PACKAGES import the plugin's own package cannot resolve is retried, from the
+ * program's entry (`process.argv[1]`); anything the package carries itself wins. One hook per
+ * process (`module.registerHooks`); a runtime without it logs once and resolves as Node does.
+ */
+export function lendHostPackages(root: string): void {
+  storeRoots.add(pathToFileURL(path.join(pluginStoreDir(root), path.sep)).href);
+  if (hostHookInstalled) return;
+  hostHookInstalled = true;
+  const register = (nodeModule as { registerHooks?: typeof nodeModule.registerHooks })
+    .registerHooks;
+  if (typeof register !== "function") {
+    console.warn(
+      "[plugins] this Node has no module.registerHooks: a stored plugin that keeps the host SDK external will not resolve it",
+    );
+    return;
+  }
+  register({
+    resolve(specifier, context, nextResolve) {
+      try {
+        return nextResolve(specifier, context);
+      } catch (err) {
+        const parent = context.parentURL;
+        const entry = process.argv[1];
+        if (
+          (err as { code?: string }).code !== "ERR_MODULE_NOT_FOUND" ||
+          !HOST_PACKAGES.test(specifier) ||
+          parent === undefined ||
+          typeof entry !== "string" ||
+          ![...storeRoots].some((r) => parent.startsWith(r))
+        ) {
+          throw err;
+        }
+        return nextResolve(specifier, { ...context, parentURL: pathToFileURL(entry).href });
+      }
+    },
+  });
 }
 
 /**

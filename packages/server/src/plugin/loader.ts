@@ -44,6 +44,7 @@ import {
   activatePlugins,
   currentGenerationDir,
   generationSource,
+  lendHostPackages,
   type Activation,
   type PluginAsk,
 } from "./activation.js";
@@ -574,6 +575,8 @@ export async function loadPlugins(
     );
   }
   const bases = pluginBases(root);
+  // A stored plugin runs from its store entry; the host SDK it keeps external is lent to it.
+  lendHostPackages(root);
   const loaded: LoadedPlugin[] = [];
   for (const specifier of asks.keys()) {
     // Reused only when the SAME FILE is behind the name. A push brings new content to a new
