@@ -71,9 +71,13 @@ wait_for_server "$MOCK_PID" "$MOCK_URL/" 0
 echo "== start server =="
 # PENGUIN_SEED_ADMIN_PASSWORD pins the otherwise-random seeded admin password to the
 # constant the specs use (ADMIN_PASSWORD in auth.mjs).
+# PENGUIN_PLUGIN_INDEX=off keeps the published plugin index unread (builtin entries only), so
+# the suite stays off the network: a fresh server has no cached index, its Plugins listing
+# would wait on GitHub (up to three 15 s attempts) and a spec's wait for it times out first.
 PENGUIN_HOME="$DATA" PORT=$SRV_PORT HOST=127.0.0.1 PENGUIN_WEB_DB="$DATA/web.db" \
   PENGUIN_WEB_DIST="$ROOT/packages/web/dist" \
   PENGUIN_SEED_ADMIN_PASSWORD=penguin-2026 \
+  PENGUIN_PLUGIN_INDEX=off \
   node "$ROOT/packages/server/dist/index.js" >"$LOGS/server.log" 2>&1 &
 SRV_PID=$!
 
