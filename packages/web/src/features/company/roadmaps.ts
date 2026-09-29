@@ -201,11 +201,11 @@ export function roomAfterMessage(
 }
 
 /**
- * Listed in the sidebar: a roadmap with a room to go to that is not shelved — under discussion
- * or established alike, since an established roadmap's room is still where it is talked about.
+ * Listed in the sidebar: a roadmap with a room to go to — under discussion or established alike,
+ * since an established roadmap's room is still where it is talked about.
  */
 export function isListedRoadmap(r: OrgRoadmapItem): r is OrgRoadmapItem & { channelId: string } {
-  return !r.archived && r.channelId !== null;
+  return r.channelId !== null;
 }
 
 /**

@@ -8,7 +8,7 @@
  *   GET    /:number                  one roadmap: record, body, items, delegations, room sessions, events
  *   PATCH  /:number                  { name } rename (a person or the moderator)
  *   PUT    /:number/draft            { record?, body?, items? } (a person or the moderator; while discussing)
- *   POST   /:number/establish        archive it; roadmap items derive their roadmaps, proposal items stay
+ *   POST   /:number/establish        end the discussion; roadmap items derive their roadmaps, proposal items stay
  *                                    briefs (a person or the moderator)
  *   POST   /:number/items/:key/approve  one of a proposal item's two approvals: a person's, or the
  *                                    moderator's; with both, its owner is told (nothing is created)
@@ -18,7 +18,6 @@
  *                                    proposal item (a person or the moderator; discussing or established)
  *   POST   /:number/reopen           { reason } an owner, an employee of the room, or a person
  *   POST   /:number/room             { channelId } bind the room of a derived roadmap
- *   POST   /:number/archive | /unarchive
  *
  * Every route answers 404 while company mode is off. A write from inside a Session carries
  * `sessionId` / `agentId`, honoured only behind the local API token — the rule the
@@ -199,18 +198,6 @@ export function roadmapRoutes(service: RoadmapService): Hono {
     const [p, o] = orgOf(c);
     const body = await jsonBody(c);
     return c.json(await service.bindRoom(p, o, numberParam(c), body.channelId, actorOf(c, body)));
-  });
-
-  app.post("/:number/archive", async (c) => {
-    const [p, o] = orgOf(c);
-    const body = await jsonBody(c);
-    return c.json(await service.setArchived(p, o, numberParam(c), true, actorOf(c, body)));
-  });
-
-  app.post("/:number/unarchive", async (c) => {
-    const [p, o] = orgOf(c);
-    const body = await jsonBody(c);
-    return c.json(await service.setArchived(p, o, numberParam(c), false, actorOf(c, body)));
   });
 
   return app;

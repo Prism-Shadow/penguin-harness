@@ -19,8 +19,8 @@ export function ledgerPath(root: string, projectId: string, orgId: string): stri
 
 /**
  * `awaiting_room`: derived at an establishment, no room bound yet; `discussing`: its room is
- * relayed; `established`: the discussion is over and its items delegated. Archival is a flag
- * beside the status — set by the establishment, or by hand to shelve a discussion.
+ * relayed; `established`: the discussion is over and its items delegated. A reopening takes an
+ * established roadmap back to discussing; there is no other state.
  */
 export type RoadmapStatus = "awaiting_room" | "discussing" | "established";
 
@@ -113,7 +113,6 @@ export interface Roadmap {
   parent: number | null;
   parentItem: string | null;
   status: RoadmapStatus;
-  archived: boolean;
   record: string;
   body: string;
   items: DraftItem[];
@@ -181,8 +180,6 @@ export type LedgerEntry =
   | { kind: "adopted"; number: number; item: ProposalItem; by: string }
   | { kind: "reopened"; number: number; reason: string; by: string }
   | { kind: "renamed"; number: number; name: string; by: string }
-  | { kind: "archived"; number: number; by: string }
-  | { kind: "unarchived"; number: number; by: string }
   | { kind: "clone"; number: number; agentId: string; sessionId: string; by: string }
   | {
       kind: "clone_closed";
@@ -214,8 +211,6 @@ const KINDS = new Set<LedgerEntry["kind"]>([
   "adopted",
   "reopened",
   "renamed",
-  "archived",
-  "unarchived",
   "clone",
   "clone_closed",
   "notify_failed",
@@ -301,7 +296,6 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       parent: line.parent,
       parentItem: line.parentItem ?? null,
       status: line.channelId === null ? "awaiting_room" : "discussing",
-      archived: false,
       record: "",
       body: "",
       items: [],
@@ -334,7 +328,6 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       break;
     case "established":
       r.status = "established";
-      r.archived = true;
       break;
     case "delegated": {
       const prior = r.delegations[line.key];
@@ -391,16 +384,9 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
       break;
     case "reopened":
       r.status = "discussing";
-      r.archived = false;
       break;
     case "renamed":
       r.name = line.name;
-      break;
-    case "archived":
-      r.archived = true;
-      break;
-    case "unarchived":
-      r.archived = false;
       break;
     case "clone":
       r.clones.push({ agentId: line.agentId, sessionId: line.sessionId, openedAt: line.at });

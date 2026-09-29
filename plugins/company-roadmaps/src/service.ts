@@ -9,7 +9,7 @@
  * one: the room reaches the clones, never the desks, and an organization that runs on another
  * machine is relayed there, not from its mirror here. The moderator
  * keeps the draft (a record, a body written as a paper, items that are only briefs); nothing
- * is created while the room discusses. Establishing archives the roadmap and delegates every
+ * is created while the room discusses. Establishing ends the discussion and delegates every
  * item at once: a proposal item is a line on its owner's desk (the owner creates it with
  * company-proposals and links its number back), stacked on the previous proposal item unless
  * it says otherwise; a roadmap item becomes a derived roadmap waiting for its room. An owner
@@ -373,10 +373,9 @@ export class RoadmapService {
     };
   }
 
-  private requireStatus(r: Roadmap, status: RoadmapStatus, archived?: boolean): void {
-    if (r.status !== status || (archived !== undefined && r.archived !== archived)) {
-      const now = `${r.status}${r.archived ? ", archived" : ""}`;
-      throw new RoadmapError(409, `not_${status}`, `Roadmap #${r.number} is ${now}.`);
+  private requireStatus(r: Roadmap, status: RoadmapStatus): void {
+    if (r.status !== status) {
+      throw new RoadmapError(409, `not_${status}`, `Roadmap #${r.number} is ${r.status}.`);
     }
   }
 
@@ -613,7 +612,7 @@ export class RoadmapService {
     return this.withLock(projectId, orgId, async () => {
       const { org, caller, ledger } = await this.open(projectId, orgId, actor);
       const r = this.require(ledger, number);
-      this.requireStatus(r, "discussing", false);
+      this.requireStatus(r, "discussing");
       this.requireModeratorOrPerson(r, caller);
       const entry: LedgerEntry & { kind: "draft" } = {
         kind: "draft",
@@ -642,7 +641,7 @@ export class RoadmapService {
   }
 
   /**
-   * The room agrees: the roadmap is archived. A roadmap item derives its roadmap at once. A
+   * The room agrees: the roadmap is established. A roadmap item derives its roadmap at once. A
    * proposal item is established as a brief and nothing more: no proposal is created and its
    * owner is not told until a person and the moderator have both approved that brief
    * ({@link approve}); the moderator's room session is asked for its approvals. An item already
@@ -660,7 +659,7 @@ export class RoadmapService {
     const result = await this.withLock(projectId, orgId, async () => {
       const { caller, ledger } = await this.open(projectId, orgId, actor);
       const r = this.require(ledger, number);
-      this.requireStatus(r, "discussing", false);
+      this.requireStatus(r, "discussing");
       this.requireModeratorOrPerson(r, caller);
       if (r.body.trim() === "")
         throw new RoadmapError(
@@ -1165,41 +1164,6 @@ export class RoadmapService {
     });
   }
 
-  /** Shelve a roadmap (the relay stops), or take it off the shelf; an established one is reopened instead. */
-  async setArchived(
-    projectId: string,
-    orgId: string,
-    number: number,
-    archived: boolean,
-    actor: OrgActor,
-  ): Promise<WriteResult> {
-    return this.withLock(projectId, orgId, async () => {
-      const { caller, ledger } = await this.open(projectId, orgId, actor);
-      const r = this.require(ledger, number);
-      this.requireModeratorOrPerson(r, caller);
-      if (r.archived === archived) {
-        throw new RoadmapError(
-          409,
-          archived ? "already_archived" : "not_archived",
-          `Roadmap #${number} is ${archived ? "already" : "not"} archived.`,
-        );
-      }
-      if (!archived && r.status === "established") {
-        throw new RoadmapError(
-          409,
-          "established",
-          `Roadmap #${number} is established: reopen it instead.`,
-        );
-      }
-      await ledger.append({
-        kind: archived ? "archived" : "unarchived",
-        number,
-        by: caller.principal,
-      });
-      return { roadmap: this.view(this.require(ledger, number)), hints: [] };
-    });
-  }
-
   // -------------------------------------------------------------------------
   // The relay
   // -------------------------------------------------------------------------
@@ -1265,8 +1229,8 @@ export class RoadmapService {
   /**
    * Syncs the room sessions with the room's members — one opened for every employee in the
    * room without one, the one of an employee who left (or whose session is gone) closed — then
-   * relays every message after the cursor. Only a roadmap that is discussing, not archived, in
-   * an organization that is not paused, over a room that is there and not archived.
+   * relays every message after the cursor. Only a roadmap that is discussing, in an
+   * organization that is not paused, over a room (channel) that is there and not archived.
    */
   private async relayUnlocked(projectId: string, orgId: string, number: number): Promise<string[]> {
     const hints: string[] = [];
@@ -1274,8 +1238,7 @@ export class RoadmapService {
     const ledger = this.ledger(projectId, orgId);
     await ledger.load();
     const r = ledger.get(number);
-    if (r === undefined || r.status !== "discussing" || r.archived || r.channelId === null)
-      return hints;
+    if (r === undefined || r.status !== "discussing" || r.channelId === null) return hints;
     const org = await this.deps.gateway.organization(projectId, orgId);
     if (org === null) return hints;
     // An organization that runs on another machine is relayed THERE. What this server holds of
@@ -1440,7 +1403,7 @@ export class RoadmapService {
           const ledger = this.ledger(projectId, orgId);
           await ledger.load();
           for (const r of ledger.roadmaps()) {
-            if (r.status !== "discussing" || r.archived) continue;
+            if (r.status !== "discussing") continue;
             await this.relayRoadmap(projectId, orgId, r.number);
           }
         }

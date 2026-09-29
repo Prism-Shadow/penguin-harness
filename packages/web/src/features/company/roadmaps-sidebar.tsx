@@ -3,7 +3,7 @@
  * channels", since a roadmap's room is a channel the channel list leaves out), the most recently
  * active roadmaps with a room — under discussion or established, five at rest, the rest folded
  * under "> More (n)" the way the channel list folds "> Archived (n)" — and "All roadmaps" at the
- * end, which opens the plugin's own page (every roadmap, shelved ones too). A row opens the
+ * end, which opens the plugin's own page (every roadmap, those still waiting for a room too). A row opens the
  * roadmap's room: the app's channel page, which shows the roadmap beside the stream
  * (roadmap-panel.tsx). The header's "+" opens the plugin's page with its "Open a roadmap" dialog
  * already up.

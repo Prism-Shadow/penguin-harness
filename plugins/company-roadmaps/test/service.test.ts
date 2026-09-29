@@ -2,8 +2,8 @@
  * The service over the gateway, session-runtime and session-index fakes and a real directory:
  * a person opens a roadmap over a room; every employee in it gets a room session (its desk
  * cloned for the room) and the room's messages reach those sessions — never a desk; the
- * moderator drafts; establishing archives it and delegates every item (stacked proposals to
- * their owners' desks, a derived roadmap waiting for its room); an owner links its proposal
+ * moderator drafts; establishing ends the discussion (proposal items stay briefs until a person
+ * and the moderator approve them, a roadmap item derives its roadmap); an owner links its proposal
  * and the one stacked on it learns the number; an owner reopens it. Nothing here starts a
  * server or a Session.
  */
@@ -115,6 +115,9 @@ describe("opening a roadmap", () => {
         "do not poll the channel's files, sleep in a loop or wait in a command for an answer",
       );
     }
+    // Establishing ends the discussion; the moderator is not told the roadmap is archived.
+    expect(dev?.body).toContain("When the room agrees, establish it — every roadmap item derives");
+    expect(dev?.body).not.toMatch(/archiv/i);
     const r = await service.get(P, O, n, BOSS);
     expect(r).toMatchObject({ status: "discussing", moderator: "acme_dev" });
     expect(r.openClones).toEqual([
@@ -471,11 +474,12 @@ describe("establishing", () => {
     });
   });
 
-  it("archives the roadmap and leaves each proposal item a brief: nothing created, no owner told, the moderator asked for its approvals", async () => {
+  it("establishes the roadmap — nothing archived — and leaves each proposal item a brief: nothing created, no owner told, the moderator asked for its approvals", async () => {
     const n = await drafted();
     const { roadmap, hints } = await service.establish(P, O, n, asAgent("acme_dev"));
     expect(hints).toEqual([]);
-    expect(roadmap).toMatchObject({ status: "established", archived: true });
+    expect(roadmap.status).toBe("established");
+    expect(roadmap).not.toHaveProperty("archived");
     // No proposal owner hears of its item yet — only the derived roadmap's moderator is told.
     expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_qa"]);
     for (const d of w.gateway.desks) {
@@ -831,7 +835,7 @@ describe("the approvals", () => {
       "The ledger needs a migration first.",
       asAgent("acme_web"),
     );
-    expect(roadmap).toMatchObject({ status: "discussing", archived: false });
+    expect(roadmap.status).toBe("discussing");
     for (const s of ["room-1", "room-2"]) {
       expect(w.runner.to(s).at(-1)).toContain(
         "reopened by agent:acme_web: The ledger needs a migration first.",
@@ -912,24 +916,20 @@ describe("the room a roadmap opens itself", () => {
   });
 });
 
-describe("names and the shelf", () => {
-  it("renames; shelves a discussion (the relay stops) and takes it back; an established one is reopened instead", async () => {
+describe("names, and no shelf", () => {
+  it("renames; a roadmap has no archive of its own — archiving its room's channel is what stops the relay", async () => {
     const n = await openA();
     expect((await service.rename(P, O, n, "Queue, again", BOSS)).roadmap.name).toBe("Queue, again");
-    await service.setArchived(P, O, n, true, asAgent("acme_dev"));
-    await post(w.root, "room_a", "user:boss", "shelved");
+    expect("setArchived" in service).toBe(false);
+    await writeChannel(w.root, "room_a", ["user:boss", "agent:acme_dev", "agent:acme_web"], {
+      archived: true,
+    });
+    await post(w.root, "room_a", "user:boss", "said in an archived channel");
     await service.relayOnce();
     expect(w.runner.inputs).toEqual([]);
-    expect(await refusal(service.draft(P, O, n, { record: "x" }, BOSS))).toMatchObject({
-      status: 409,
-    });
-    await service.setArchived(P, O, n, false, BOSS);
-    await service.draft(P, O, n, { body: BODY, items: [ITEMS[0]] }, BOSS);
-    await service.establish(P, O, n, BOSS);
-    expect(await refusal(service.setArchived(P, O, n, false, BOSS))).toEqual({
-      status: 409,
-      code: "established",
-    });
+    const r = await service.get(P, O, n, BOSS);
+    expect(r.status).toBe("discussing");
+    expect(r).not.toHaveProperty("archived");
   });
 
   it("lists a room's roadmaps", async () => {

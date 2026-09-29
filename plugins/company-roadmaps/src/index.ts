@@ -11,8 +11,8 @@
  * The discussion happens in an organization channel, borrowed as it is (room.ts reads it and
  * never writes it); every employee in the room gets its desk cloned for the room — a session of
  * its own opened through the organization gateway — and the room's messages reach those
- * sessions through the session runtime (service.ts's relay). Establishing a roadmap archives it
- * and delegates each proposal to its owner, who creates it with company-proposals.
+ * sessions through the session runtime (service.ts's relay). Establishing a roadmap ends the
+ * discussion and delegates each proposal to its owner, who creates it with company-proposals.
  */
 import type { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/plugin";

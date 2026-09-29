@@ -22,7 +22,6 @@ import { en } from "../src/lib/strings-en";
 const roadmap = (over: Partial<OrgRoadmapItem> & { number: number }): OrgRoadmapItem => ({
   name: `Roadmap ${over.number}`,
   status: "discussing",
-  archived: false,
   channelId: `roadmap_${over.number}`,
   createdAt: `2026-09-28T10:0${over.number % 10}:00.000Z`,
   ...over,
@@ -45,13 +44,9 @@ describe("the roadmaps page, as the app finds it", () => {
 });
 
 describe("the sidebar's ROADMAPS section", () => {
-  it("lists every roadmap with a room that is not shelved — established ones too", () => {
+  it("lists every roadmap with a room — established ones too", () => {
     expect(isListedRoadmap(roadmap({ number: 1 }))).toBe(true);
     expect(isListedRoadmap(roadmap({ number: 2, status: "established" }))).toBe(true);
-    expect(isListedRoadmap(roadmap({ number: 3, archived: true }))).toBe(false);
-    expect(isListedRoadmap(roadmap({ number: 4, status: "established", archived: true }))).toBe(
-      false,
-    );
     expect(isListedRoadmap(roadmap({ number: 5, status: "awaiting_room", channelId: null }))).toBe(
       false,
     );
@@ -99,7 +94,7 @@ describe("the sidebar's ROADMAPS section", () => {
     );
     const { shown, more } = sidebarRoadmaps([
       ...all,
-      roadmap({ number: 20, archived: true, createdAt: "2026-09-28T23:00:00.000Z" }),
+      roadmap({ number: 20, status: "established", createdAt: "2026-09-28T23:00:00.000Z" }),
     ]);
     expect(shown.map((r) => r.number)).toEqual([8, 7, 6, 5, 4]);
     expect(more.map((r) => r.number)).toEqual([3, 2, 1]);

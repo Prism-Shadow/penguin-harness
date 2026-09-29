@@ -242,7 +242,6 @@ export const PAGE_STRINGS = {
     none: "(empty)",
     owner: "owner",
     employees: "employees",
-    archived: "archived",
     awaiting_room: "waiting for its room",
     discussing: "discussing",
     established: "established",
@@ -309,7 +308,6 @@ export const PAGE_STRINGS = {
     none: "（空）",
     owner: "负责人",
     employees: "相关员工",
-    archived: "已归档",
     awaiting_room: "等待讨论室",
     discussing: "讨论中",
     established: "已确立",
@@ -444,11 +442,10 @@ try {
   }, false);
   const go = (path) => { if (!enter(path)) read(() => { window.top.location.href = path; }, null); };
   // A status as a pill, in the app's tones: under discussion is live work, waiting for a room is
-  // unfinished, established is done well, a shelved discussion recedes.
+  // unfinished, established is done well.
   const pill = (r) => {
-    const shelved = r.archived && r.status !== "established";
-    const tone = shelved ? "gray" : r.status === "awaiting_room" ? "warn" : r.status === "established" ? "ok" : "ok";
-    return '<span class="pill ' + tone + '">' + esc(T[r.status] || r.status) + (shelved ? " · " + esc(T.archived) : "") + "</span>";
+    const tone = r.status === "awaiting_room" ? "warn" : "ok";
+    return '<span class="pill ' + tone + '">' + esc(T[r.status] || r.status) + "</span>";
   };
   const moderatorOf = (r) => r.moderator || (r.employees && r.employees[0]) || "";
   // A proposal item that is still a brief shows its two approvals — a person's and the

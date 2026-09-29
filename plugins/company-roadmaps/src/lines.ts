@@ -96,7 +96,7 @@ export function cloneBrief(args: {
         `  ${curlFileOf("PUT", routeOf(orgId, r.number, "/draft"), "draft.json")}`,
         'A proposal that exists already is taken in as it is, not written again: it is a proposal item with its number (`"proposal": <n>`, no cites needed) — keep such an item in the items you write. To take one in:',
         `  ${curlOf("POST", routeOf(orgId, r.number, "/adopt"), ['\\"proposal\\":<n>', '\\"title\\":\\"<its title>\\"', '\\"owner\\":\\"<agent id>\\"'])}`,
-        "Nothing is created while the room discusses. When the room agrees, establish it — the roadmap is archived and every roadmap item derives its own roadmap at once, but a proposal item stays a brief: nothing is created for it, and its owner is not told, until a person and you (the moderator) have both approved it:",
+        "Nothing is created while the room discusses. When the room agrees, establish it — every roadmap item derives its own roadmap at once, but a proposal item stays a brief: nothing is created for it, and its owner is not told, until a person and you (the moderator) have both approved it:",
         `  ${curlOf("POST", routeOf(orgId, r.number, "/establish"))}`,
       ].join("\n"),
     );

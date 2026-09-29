@@ -29,7 +29,6 @@ const roadmap = {
   number: 3,
   name: "Roadmap three",
   status: "discussing",
-  archived: false,
   channelId: "roadmap_3",
   createdAt: "2026-09-29T03:00:00.000Z",
 };

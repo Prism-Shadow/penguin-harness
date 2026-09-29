@@ -194,7 +194,6 @@ function organization(
         number,
         name: b.name,
         status: "discussing",
-        archived: false,
         channelId: `roadmap_${number}`,
         employees: b.employees,
         moderator: b.employees[0],
@@ -360,7 +359,6 @@ const SEEDED = {
   number: 1,
   name: "Queue migration",
   status: "discussing",
-  archived: false,
   channelId: "roadmap_1",
   employees: ["acme_dev", "acme_web"],
   moderator: "acme_dev",
@@ -421,7 +419,6 @@ describe("a roadmap and its room", () => {
     const established = {
       ...SEEDED,
       status: "established",
-      archived: true,
       items: [
         {
           key: "a",
