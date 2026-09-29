@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `web`, `server`
+- **PR:** [#86](https://github.com/Myriad-Dreamin/penguin-harness/pull/86)
 
 [中文版](2026-09-29-org-events-skip-list-reload.zh.md)
 
