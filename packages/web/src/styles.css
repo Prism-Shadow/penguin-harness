@@ -234,6 +234,12 @@
   animation: fade-in 120ms ease-out both;
 }
 
+/* The boot status (components/ui/boot-pending.tsx): held invisible for the first 400ms, so a
+   fast load never flashes it; `both` keeps it at opacity 0 during the delay. */
+.anim-boot-pending {
+  animation: fade-in 200ms ease-out 400ms both;
+}
+
 /* The dock launcher's fan (features/dock/dock-launcher.tsx): entries spring out of the ball
    onto their places on the arc with a slight overshoot, and fold back into it without one.
    Every entry's box sits ON the ball's centre; `--fan-x` / `--fan-y` are its own offset from
