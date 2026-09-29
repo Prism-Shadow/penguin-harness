@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `web`, `server`
+- **PR:** [#88](https://github.com/Myriad-Dreamin/penguin-harness/pull/88)
 
 [English](2026-09-29-socket-timeout-cancels.md)
 
