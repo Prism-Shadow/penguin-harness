@@ -164,6 +164,47 @@ describe("products in the modules, opened in place", () => {
     expect(await again.json()).toMatchObject({ error: { code: "product_open" } });
   });
 
+  it("puts back a ref that failed to open, and opens it when the product is opened again", async () => {
+    const { t, client } = await setup();
+    const { api, base } = await client("retrier", "retrier-work");
+    // A second ref, whose opening fails: its bookkeeping cannot be written.
+    const refs = path.join(t.root, "waf-checkout", "modules", FOLDER, "generated", CODE, "refs");
+    await fs.cp(path.join(refs, `${CODE}-1`), path.join(refs, `${CODE}-2`), { recursive: true });
+    const second = path.join(refs, `${CODE}-2`, "spec");
+    await write(path.join(second, "asset_manifest.json"), {
+      ...JSON.parse(await fs.readFile(path.join(second, "asset_manifest.json"), "utf8")),
+      refNum: 2,
+    });
+    await write(path.join(second, "activity_metadata.json"), { id: CODE, refNum: 2 });
+    await fs.mkdir(path.join(second, "penguin.json"));
+    const claim = () =>
+      api.post(`${base}/module-products/claim`, { moduleFolder: FOLDER, productCode: CODE });
+    const listed = async () =>
+      ((await (await api.get(`${base}/module-products`)).json()) as ModuleProductsResponse)
+        .products;
+
+    const first = await claim();
+    expect(first.status, await first.clone().text()).toBe(200);
+    const partly = (await first.json()) as ClaimModuleProductResponse;
+    expect(partly.activityIds).toHaveLength(1);
+    expect(partly.problems.join("\n")).toContain("Ref 2 was not opened");
+    // Put back as Loom left it, and offered again with the ref still to open.
+    await fs.access(path.join(second, "activity_spec.json"));
+    expect(await listed()).toEqual([expect.objectContaining({ productCode: CODE, refNums: [2] })]);
+
+    await fs.rm(path.join(second, "penguin.json"), { recursive: true, force: true });
+    const retried = await claim();
+    expect(retried.status, await retried.clone().text()).toBe(200);
+    const rest = (await retried.json()) as ClaimModuleProductResponse;
+    expect(rest.activityIds).toHaveLength(1);
+    expect(rest.activityIds[0]).not.toBe(partly.activityIds[0]);
+    expect((await api.get(`${base}/${rest.activityIds[0]}`)).status).toBe(200);
+    expect(await listed()).toEqual([]);
+    const again = await claim();
+    expect(again.status).toBe(409);
+    expect(await again.json()).toMatchObject({ error: { code: "product_open" } });
+  });
+
   it("keeps another project's product from being listed or claimed", async () => {
     const { client } = await setup();
     const first = await client("first", "first-work");

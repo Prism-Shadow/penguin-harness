@@ -156,9 +156,18 @@ describe("POST /:activityId/ref-number", () => {
   });
 
   it("reads the ref under its new number while its files still name the old one", async () => {
-    const { t, client, base, create, read, renumber } = await setup();
+    const { t, client, base, create, read, renumber, authoring } = await setup();
     const one = await create("words", 12);
-    const draft = await withMedia(client, `${base}/${one.id}`, one.draft.contentRevision);
+    const planned = await withMedia(client, `${base}/${one.id}`, one.draft.contentRevision);
+    // An accepted image, so the stale files also bind media at the old number.
+    const runId = `run_${"d".repeat(32)}`;
+    const draft = await authoring().applyImage(
+      "renumberer-work",
+      one.id,
+      { language: "en-US", assetKey: "cat", prompt: "A cat", model: "m" },
+      await authoring().storeImage("renumberer-work", one.id, runId, imagePng(2, 2)),
+      planned.contentRevision,
+    );
     const names = ["asset_manifest.json", "penguin.json"];
     const before = await Promise.all(
       names.map((name) => fs.readFile(path.join(refFilesDir(t.root, "words", 12), name), "utf8")),
@@ -174,6 +183,9 @@ describe("POST /:activityId/ref-number", () => {
     const fetched = await read(one.id);
     expect(fetched.refNum).toBe(13);
     expect(fetched.draft.mediaPlan!.manifest.refNum).toBe(13);
+    expect(fetched.draft.mediaPlan!.manifest.assets["en-US"]![0]!.path).toBe(
+      "media/loom/words/words-13/images/english/cat.png",
+    );
     expect(fetched.draft.contentRevision).toBe(changed.draft.contentRevision);
     expect(fetched.draft.status).toBe(draft.status);
   });

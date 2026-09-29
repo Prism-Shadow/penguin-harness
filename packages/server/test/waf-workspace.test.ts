@@ -228,7 +228,9 @@ describe("WAF workspace", () => {
     expect(await s.workspace.root()).toBeNull();
     expect((await prepared(s)).ready).toBe(true);
 
-    const { settings } = (await (await s.admin.get("/api/admin/waf-workspace/settings")).json()) as {
+    const { settings } = (await (
+      await s.admin.get("/api/admin/waf-workspace/settings")
+    ).json()) as {
       settings: { repos: Record<string, { remote: string; branch: string }> };
     };
     const framework = { ...settings.repos.framework!, branch: "v3" };

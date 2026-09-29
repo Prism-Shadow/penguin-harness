@@ -112,7 +112,10 @@ describe("deploy media", () => {
     await put(clone, `${audio}.json`, '{"text":"hello"}');
     await put(clone, `${image}.png`, "cat");
     await put(clone, `${image}.json`, '{"text":"a cat, redrawn"}');
-    const git = fakeGit([`${image}.png`, `${image}.json`], [`${audio}.mp3`, `${audio}.json`, `${image}.json`]);
+    const git = fakeGit(
+      [`${image}.png`, `${image}.json`],
+      [`${audio}.mp3`, `${audio}.json`, `${image}.json`],
+    );
     const result = await syncMedia(
       { dir: clone, references: [`media/${audio}.mp3`, `media/${image}.png`] },
       { git: git.git, log: () => {} },
