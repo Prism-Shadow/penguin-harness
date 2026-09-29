@@ -16,14 +16,20 @@
  */
 import net from "node:net";
 
-/** How long the SOCKS handshake itself may take; the request behind it sets its own after. */
-const HANDSHAKE_TIMEOUT_MS = 20_000;
+/**
+ * How long the SOCKS handshake itself may take; the request behind it sets its own after.
+ * Opening a channel is one round trip over a session already up, so this is generous — and
+ * it stays under the proxy's answer deadline (proxy.ts), so a stalled session is answered in
+ * this layer's own words before anything above it gives up.
+ */
+export const SOCKS_HANDSHAKE_TIMEOUT_MS = 8_000;
 
 /** Dials `host:port` as seen from the machine, through the session's SOCKS port. */
 export function dialThroughSocks(
   socksPort: number,
   host: string,
   port: number,
+  timeoutMs: number = SOCKS_HANDSHAKE_TIMEOUT_MS,
 ): Promise<net.Socket> {
   const parts = host.split(".").map((p) => Number.parseInt(p, 10));
   if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) {
@@ -37,7 +43,7 @@ export function dialThroughSocks(
     // A handshake that stalls — a session half-dead, a far side that never answers the
     // channel open — must fail rather than hang the request that wanted it; the request's own
     // timeout only starts once it has a socket.
-    socket.setTimeout(HANDSHAKE_TIMEOUT_MS, () => fail("the session's SOCKS handshake timed out"));
+    socket.setTimeout(timeoutMs, () => fail("the session's SOCKS handshake timed out"));
     let buffer = Buffer.alloc(0);
     let stage: "greet" | "connect" = "greet";
     let settled = false;
@@ -45,6 +51,7 @@ export function dialThroughSocks(
       if (settled) return;
       settled = true;
       socket.removeListener("data", onData);
+      socket.removeListener("close", onClose);
       socket.destroy();
       reject(new Error(message));
     };
@@ -82,8 +89,17 @@ export function dialThroughSocks(
       }
     };
     const onError = (err: Error) => fail(`the session's SOCKS port did not answer: ${err.message}`);
+    // Closed before the reply: OpenSSH's -D answers a CONNECT it could not open (nothing
+    // listening on that port over there, or the session going down) by closing the connection,
+    // with no failure reply at all. The timeout above dies with the socket, so without this the
+    // dial would never settle — and neither would the request waiting on it.
+    const onClose = () =>
+      fail(
+        `the session closed the channel to ${host}:${port} before answering — nothing is listening there, or the session is going down`,
+      );
     socket.once("connect", () => socket.write(Buffer.from([5, 1, 0]))); // no authentication
     socket.on("data", onData);
     socket.once("error", onError);
+    socket.once("close", onClose);
   });
 }

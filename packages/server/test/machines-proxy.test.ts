@@ -4,6 +4,7 @@
  * MACHINE'S own id rather than the ssh alias.
  */
 import http from "node:http";
+import net from "node:net";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -12,6 +13,7 @@ import {
   parseProxyPath,
   rewriteLocation,
 } from "../src/machines/proxy.js";
+import { dialThroughSocks } from "../src/machines/transport/socks.js";
 
 /** A machine, by the id it minted. */
 const A = "QS7J4YVgSovi-Z2c";
@@ -132,6 +134,105 @@ describe("the report", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]![1]).toMatchObject({ ok: false });
     expect((seen[0]![1] as { detail: string }).detail).not.toBe("");
+  });
+
+  it("answers 504 for a read the machine accepts and never answers, and says so", async () => {
+    // A machine that took the connection and is not serving: without a deadline this
+    // request — and every retry of it — would wait for good.
+    let aborted = false;
+    upstream = http.createServer((req) => {
+      req.on("close", () => (aborted = true));
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream!.listen(0, "127.0.0.1", () => resolve((upstream!.address() as AddressInfo).port)),
+    );
+    const seen: [string, { ok: boolean; detail?: string }][] = [];
+    const proxy = machinesProxy(
+      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 }),
+      (machineId, outcome) => seen.push([machineId, outcome]),
+      undefined,
+      {},
+      { answerTimeoutMs: 100 },
+    );
+    const response = await proxy(request(A));
+    expect(response?.status).toBe(504);
+    const body = (await response!.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("machine_not_answering");
+    expect(body.error.message).toContain("no answer to GET /api/me in 100 ms");
+    expect(seen).toEqual([[A, { ok: false, detail: "no answer to GET /api/me in 100 ms" }]]);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(aborted).toBe(true); // the forward was let go, not left holding a channel
+    upstream!.closeAllConnections();
+  });
+
+  it("does not cut a write that the machine answers late", async () => {
+    // A write may rightly take long, and cutting it would have the browser repeat its effect.
+    upstream = http.createServer((_req, res) => {
+      setTimeout(() => {
+        res.statusCode = 200;
+        res.end('{"done":true}');
+      }, 250);
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream!.listen(0, "127.0.0.1", () => resolve((upstream!.address() as AddressInfo).port)),
+    );
+    const proxy = machinesProxy(
+      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 }),
+      undefined,
+      undefined,
+      {},
+      { answerTimeoutMs: 100 },
+    );
+    const response = await proxy(
+      new Request(`http://app.local${SERVER_PROXY_PREFIX}${A}/api/me`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+    );
+    expect(response?.status).toBe(200);
+    expect(await response!.json()).toEqual({ done: true });
+  });
+
+  it("answers a read at once, in the transport's words, when the session closes the channel", async () => {
+    // OpenSSH's -D answers a CONNECT to a port with nothing listening by closing the
+    // connection. The read must hear that now, not wait for any deadline.
+    const socks = net.createServer((client) => {
+      let greeted = false;
+      client.on("data", (chunk: Buffer) => {
+        if (!greeted) {
+          greeted = true;
+          client.write(Buffer.from([5, 0]));
+          if (chunk.length <= 3) return;
+        }
+        client.end();
+      });
+    });
+    await new Promise<void>((resolve) => socks.listen(0, "127.0.0.1", resolve));
+    const socksPort = (socks.address() as AddressInfo).port;
+    const agent = new http.Agent();
+    (agent as unknown as { createConnection: unknown }).createConnection = (
+      _options: unknown,
+      callback: (err: Error | null, socket?: net.Socket) => void,
+    ) => {
+      dialThroughSocks(socksPort, "127.0.0.1", 7364).then(
+        (socket) => callback(null, socket),
+        (err: Error) => callback(err),
+      );
+    };
+    const proxy = machinesProxy(async () => ({
+      agent,
+      port: 7364,
+      cookie: "penguin_session=x",
+      session: 1,
+    }));
+    const started = Date.now();
+    const response = await proxy(request(A)).finally(() => socks.close());
+    expect(response?.status).toBe(502);
+    const body = (await response!.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("server_unreachable");
+    expect(body.error.message).toContain("closed the channel to 127.0.0.1:7364");
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 
   it("reports nothing when there is no forward to try — an unasked machine is unmeasured", async () => {

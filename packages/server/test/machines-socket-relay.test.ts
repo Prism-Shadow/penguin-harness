@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { MachineSocketRelay } from "../src/machines/socket-relay.js";
+import { dialThroughSocks } from "../src/machines/transport/socks.js";
 
 /** A machine's socket endpoint the test scripts: `answer` decides what a call frame gets. */
 async function machine(answer: (ws: WebSocket, frame: { id: number }) => void) {
@@ -184,5 +185,56 @@ describe("the machine socket relay", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(m.connections[0]!.readyState).toBe(m.connections[0]!.CLOSED);
     expect(m.connections[1]!.readyState).toBe(m.connections[1]!.OPEN);
+  });
+
+  it("hears at once, in the transport's words, when the session closes the channel it dialled", async () => {
+    // The dial goes through a SOCKS server that does what OpenSSH's -D does for a port with
+    // nothing listening over there: close the connection with no reply. That must fail the
+    // dial now — before, it never settled, and every later stream to the machine waited
+    // behind it.
+    let connects = 0;
+    const socks = net.createServer((client) => {
+      let greeted = false;
+      client.on("data", (chunk: Buffer) => {
+        if (!greeted) {
+          greeted = true;
+          client.write(Buffer.from([5, 0]));
+          if (chunk.length <= 3) return;
+        }
+        connects += 1;
+        client.end();
+      });
+    });
+    await new Promise<void>((resolve) => socks.listen(0, "127.0.0.1", resolve));
+    stop = () => new Promise<void>((resolve) => socks.close(() => resolve()));
+    const socksPort = (socks.address() as net.AddressInfo).port;
+    const agent = new http.Agent();
+    (agent as unknown as { createConnection: unknown }).createConnection = (
+      _options: unknown,
+      callback: (err: Error | null, socket?: net.Socket) => void,
+    ) => {
+      dialThroughSocks(socksPort, "127.0.0.1", 7364).then(
+        (socket) => callback(null, socket),
+        (err: Error) => callback(err),
+      );
+    };
+    const lines: string[] = [];
+    const relay = new MachineSocketRelay((l) => lines.push(l));
+    const target = { agent, port: 7364, cookie: "penguin_session=x", session: 1 };
+
+    const started = Date.now();
+    const first = await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
+    expect(first.status).toBe(502); // answered with the transport's reason, never forwarded
+    expect(await errorCode(first)).toBe("machine_socket_unavailable");
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(
+      lines.some(
+        (l) =>
+          l.includes("socket to m1 failed") && l.includes("closed the channel to 127.0.0.1:7364"),
+      ),
+    ).toBe(true);
+    // Not remembered as a refusal: the next stream dials again.
+    await relay.stream("m1", target, { path: "/api/events", lastEventId: null });
+    expect(connects).toBe(2);
   });
 });

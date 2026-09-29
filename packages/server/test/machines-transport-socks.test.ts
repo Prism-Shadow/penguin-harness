@@ -10,7 +10,8 @@
 import http from "node:http";
 import net from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { dialThroughSocks } from "../src/machines/transport/socks.js";
+import { FORWARD_ANSWER_TIMEOUT_MS } from "../src/machines/proxy.js";
+import { SOCKS_HANDSHAKE_TIMEOUT_MS, dialThroughSocks } from "../src/machines/transport/socks.js";
 
 /**
  * Just enough SOCKS5 to answer a CONNECT: greet, connect, pipe. A refused port is answered with
@@ -65,6 +66,45 @@ function socksServer(
         port: (server.address() as net.AddressInfo).port,
         close: () => server.close(),
         requests,
+      }),
+    ),
+  );
+}
+
+/**
+ * A SOCKS server that greets and then does `onConnect` with the CONNECT instead of opening
+ * it — to play the two answers a real one gives that are not a reply code.
+ */
+function scriptedSocks(
+  onConnect: (client: net.Socket) => void,
+): Promise<{ port: number; close: () => void }> {
+  const clients: net.Socket[] = [];
+  const server = net.createServer((client) => {
+    clients.push(client);
+    let buffer = Buffer.alloc(0);
+    let greeted = false;
+    client.on("data", (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      if (!greeted) {
+        if (buffer.length < 2 || buffer.length < 2 + buffer[1]!) return;
+        buffer = buffer.subarray(2 + buffer[1]!);
+        greeted = true;
+        client.write(Buffer.from([5, 0]));
+      }
+      if (greeted && buffer.length >= 10) {
+        buffer = Buffer.alloc(0);
+        onConnect(client);
+      }
+    });
+  });
+  return new Promise((resolve) =>
+    server.listen(0, "127.0.0.1", () =>
+      resolve({
+        port: (server.address() as net.AddressInfo).port,
+        close: () => {
+          for (const c of clients) c.destroy();
+          server.close();
+        },
       }),
     ),
   );
@@ -138,5 +178,34 @@ describe("dialThroughSocks", () => {
       }),
     );
     await expect(dialThroughSocks(free, "127.0.0.1", 7364)).rejects.toThrow(/did not answer/);
+  });
+
+  it("fails at once, naming the closed channel, when the SOCKS server closes without a reply", async () => {
+    // What OpenSSH's -D does when the far side has nothing listening on the port (or the
+    // session is going down): no failure reply, the connection just closes. The handshake
+    // deadline dies with the socket, so this must be read as the failure it is.
+    const socks = await scriptedSocks((client) => client.end());
+    cleanups.push(socks.close);
+    const started = Date.now();
+    await expect(dialThroughSocks(socks.port, "127.0.0.1", 7364)).rejects.toThrow(
+      /closed the channel to 127\.0\.0\.1:7364 before answering/,
+    );
+    expect(Date.now() - started).toBeLessThan(SOCKS_HANDSHAKE_TIMEOUT_MS / 4);
+  });
+
+  it("gives up in its own words on a CONNECT that is never answered", async () => {
+    // A session whose link has stalled: the channel open never comes back, nothing closes.
+    const socks = await scriptedSocks(() => undefined);
+    cleanups.push(socks.close);
+    await expect(dialThroughSocks(socks.port, "127.0.0.1", 7364, 100)).rejects.toThrow(
+      /SOCKS handshake timed out/,
+    );
+  });
+
+  it("keeps its deadline under the proxy's, and both under the browser's 20 s", () => {
+    // The order is the point: a stalled session is reported by this layer before the proxy
+    // gives up on the read, and the proxy answers before the browser stops listening.
+    expect(SOCKS_HANDSHAKE_TIMEOUT_MS).toBeLessThan(FORWARD_ANSWER_TIMEOUT_MS);
+    expect(FORWARD_ANSWER_TIMEOUT_MS).toBeLessThan(20_000);
   });
 });
