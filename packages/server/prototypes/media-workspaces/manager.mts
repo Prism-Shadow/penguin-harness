@@ -28,18 +28,42 @@ interface Registry {
 
 export type Progress = (message: string) => void;
 
+/**
+ * Variables that point git at some other repository, index or object store (a hook's
+ * `GIT_DIR`, say). Inherited, they would make every command act on the wrong repository.
+ */
+const REPOSITORY_LOCATING = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_NAMESPACE",
+  "GIT_PREFIX",
+  "GIT_CEILING_DIRECTORIES",
+  "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+];
+
+/**
+ * The environment git runs in: never prompts, never downloads LFS data on checkout, and
+ * acts only on the repository it is run in. Authentication is the operator's: an SSH
+ * command or wrapper, askpass, proxy or `GIT_CONFIG_*` setting is kept, and SSH batch mode
+ * is only added when no SSH command was chosen.
+ */
+export function gitEnvironment(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env = { ...base };
+  for (const key of REPOSITORY_LOCATING) delete env[key];
+  env.GIT_TERMINAL_PROMPT = "0";
+  env.GIT_LFS_SKIP_SMUDGE = "1";
+  if (!env.GIT_SSH_COMMAND && !env.GIT_SSH) env.GIT_SSH_COMMAND = "ssh -o BatchMode=yes";
+  return env;
+}
+
 /** Commands never invoke a shell, and automatic Git checkout never downloads LFS data. */
 export async function git(cwd: string, args: string[], progress: Progress = () => {}) {
   progress(`git ${args.join(" ")}`);
-  const env = { ...process.env };
-  for (const key of Object.keys(env)) {
-    if (key.startsWith("GIT_") || key.startsWith("LFS_")) delete env[key];
-  }
-  Object.assign(env, {
-    GIT_TERMINAL_PROMPT: "0",
-    GIT_LFS_SKIP_SMUDGE: "1",
-    GIT_SSH_COMMAND: "ssh -o BatchMode=yes",
-  });
+  const env = gitEnvironment();
   return await new Promise<string>((resolve, reject) => {
     const child = spawn("git", args, { cwd, env, windowsHide: true, shell: false });
     let stdout = "";
@@ -63,6 +87,15 @@ function identifier(value: string, label: string) {
     throw new Error(`${label}: use 1–48 lowercase letters, numbers or hyphens.`);
   }
   return value;
+}
+
+/** Paths per `git lfs checkout`, so a large folder stays under the command-line limit. */
+const CHECKOUT_BATCH = 200;
+
+/** Whether `candidate` is `root` itself or lies beneath it (both already resolved). */
+function isWithin(root: string, candidate: string) {
+  const relative = path.relative(root, candidate);
+  return relative.split(path.sep)[0] !== ".." && !path.isAbsolute(relative);
 }
 
 function folder(value: string) {
@@ -202,7 +235,14 @@ export class MediaWorkspacesPrototype {
       ["lfs", "fetch", "--include", patterns.join(","), "--exclude", "", "origin", "HEAD"],
       this.progress,
     );
-    await git(attachment.path, ["lfs", "checkout", ...patterns], this.progress);
+    // Only files still holding pointer text are checked out. `git lfs checkout` by pattern
+    // would also recreate every tracked file the agent deleted, undoing its work; files it
+    // edited are never pointers, so they are not touched either.
+    const waiting = await this.remainingPointers(attachment);
+    for (let start = 0; start < waiting.length; start += CHECKOUT_BATCH) {
+      const batch = waiting.slice(start, start + CHECKOUT_BATCH);
+      await git(attachment.path, ["lfs", "checkout", "--", ...batch], this.progress);
+    }
     const pointers = await this.remainingPointers(attachment);
     if (pointers.length) {
       throw new Error(`Assets still contain LFS pointers: ${pointers.slice(0, 10).join(", ")}`);
@@ -211,11 +251,15 @@ export class MediaWorkspacesPrototype {
 
   private async remainingPointers(attachment: Attachment) {
     const tracked = await git(attachment.path, ["ls-files", "-z", "--", ...attachment.folders]);
+    const inside = await fs.realpath(attachment.path);
     const pointers: string[] = [];
     for (const relative of tracked.split("\0").filter(Boolean)) {
       const file = path.join(attachment.path, relative);
-      const stat = await fs.lstat(file).catch(() => null);
-      // A symlink must not make hydration verification read outside the attachment.
+      // A symlink anywhere on the way, not only the file itself, must not make hydration
+      // verification read outside the attachment: resolve the whole path, then check it.
+      const real = await fs.realpath(file).catch(() => null);
+      if (!real || !isWithin(inside, real)) continue;
+      const stat = await fs.lstat(real).catch(() => null);
       if (!stat?.isFile()) continue;
       const handle = await fs.open(file, "r");
       try {
@@ -253,20 +297,16 @@ export class MediaWorkspacesPrototype {
         `origin/${registry.baseBranch}^{commit}`,
       ]);
       await this.checkFolders(this.repository, folders, baseCommit);
-      const branch = `codex/media/${sessionId}/${name}`;
-      const worktree = path.join(this.root, "sessions", sessionId, name);
-      await fs.mkdir(path.dirname(worktree), { recursive: true });
-      await git(
-        this.repository,
-        ["worktree", "add", "--no-checkout", "-b", branch, worktree, baseCommit],
-        this.progress,
-      );
+      // Recorded before anything exists on disk: if the process stops at any point after
+      // this, the attachment is in the registry and `ensure` finishes it, instead of a
+      // branch and worktree that neither `create` (branch exists) nor `ensure` (no record)
+      // could recover.
       const attachment: Attachment = {
         sessionId,
         name,
-        branch,
+        branch: `codex/media/${sessionId}/${name}`,
         baseCommit,
-        path: worktree,
+        path: path.join(this.root, "sessions", sessionId, name),
         folders,
         checkoutInitialized: false,
         state: "preparing",
@@ -278,11 +318,50 @@ export class MediaWorkspacesPrototype {
     });
   }
 
+  /**
+   * Adds the attachment's worktree when it is not there yet: on its first preparation, or
+   * after a stop that left only the record, or only the branch. An existing branch is
+   * checked out as it is, so commits made on it are kept.
+   */
+  private async ensureWorktree(attachment: Attachment) {
+    if (await fs.stat(path.join(attachment.path, ".git")).catch(() => null)) return;
+    // Forget a worktree git still lists but whose folder is gone, so it can be added again.
+    await git(this.repository, ["worktree", "prune"], this.progress);
+    await fs.mkdir(path.dirname(attachment.path), { recursive: true });
+    const branchExists = await git(this.repository, [
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `refs/heads/${attachment.branch}`,
+    ]).then(
+      () => true,
+      () => false,
+    );
+    await git(
+      this.repository,
+      branchExists
+        ? ["worktree", "add", "--no-checkout", attachment.path, attachment.branch]
+        : [
+            "worktree",
+            "add",
+            "--no-checkout",
+            "-b",
+            attachment.branch,
+            attachment.path,
+            attachment.baseCommit,
+          ],
+      this.progress,
+    );
+    // A new worktree has an empty index again, whatever an earlier one had reached.
+    attachment.checkoutInitialized = false;
+  }
+
   private async prepare(registry: Registry, attachment: Attachment) {
     attachment.state = "preparing";
     delete attachment.error;
     await this.save(registry);
     try {
+      await this.ensureWorktree(attachment);
       await git(
         attachment.path,
         ["sparse-checkout", "set", "--cone", "--", ...attachment.folders],
@@ -312,7 +391,14 @@ export class MediaWorkspacesPrototype {
     return this.exclusive(async () => {
       const registry = await this.read();
       const attachment = this.find(registry, sessionId, name);
-      await this.checkFolders(attachment.path, folders);
+      // Checked in the managed repository, not the worktree, which may be what is missing.
+      const onBranch = await git(this.repository, [
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        `refs/heads/${attachment.branch}`,
+      ]).catch(() => attachment.baseCommit);
+      await this.checkFolders(this.repository, folders, onBranch);
       // Expand only. Shrinking could remove work the agent still needs.
       attachment.folders = [...new Set([...attachment.folders, ...folders])];
       await this.prepare(registry, attachment);

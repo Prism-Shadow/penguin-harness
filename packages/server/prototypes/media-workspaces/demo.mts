@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { MediaWorkspacesPrototype, git } from "./manager.mts";
+import { MediaWorkspacesPrototype, git, gitEnvironment } from "./manager.mts";
 
 const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-media-PROTOTYPE-"));
 const source = path.join(scratch, "source");
@@ -89,6 +89,11 @@ assert.equal(await exists(path.join(alternative.path, "images")), false);
 assert.deepEqual(await fs.readFile(path.join(first.path, "images/icons/sample.bin")), image);
 check("Expanding one workspace preserves its edits and leaves the alternative untouched.");
 
+await fs.rm(path.join(alternative.path, "audio/welcome/sample.bin"));
+await manager.ensure("session-a", "alternative", []);
+assert.equal(await exists(path.join(alternative.path, "audio/welcome/sample.bin")), false);
+check("Retrying a workspace keeps the assets its agent deleted deleted.");
+
 await assert.rejects(manager.create("../escape", "main", ["audio"]));
 await assert.rejects(manager.ensure("session-a", "main", ["../videos"]));
 await assert.rejects(manager.ensure("session-a", "main", ["audio, videos"]));
@@ -132,6 +137,53 @@ assert.deepEqual(await fs.readFile(path.join(first.path, "audio/welcome/sample.b
 const reopened = new MediaWorkspacesPrototype(root);
 assert.equal((await reopened.status()).length, 5);
 check("Refresh affects future sessions only; attachments survive reopening the manager.");
+
+// A stop right after the attachment was recorded: the record exists, nothing on disk does.
+const registryPath = path.join(root, "PROTOTYPE-registry.json");
+const registry = JSON.parse(await fs.readFile(registryPath, "utf8"));
+registry.attachments.push({
+  ...registry.attachments.find((item: { sessionId: string }) => item.sessionId === "session-b"),
+  sessionId: "session-e",
+  branch: "codex/media/session-e/main",
+  path: path.join(root, "sessions", "session-e", "main"),
+  checkoutInitialized: false,
+  state: "preparing",
+});
+await fs.writeFile(registryPath, JSON.stringify(registry, null, 2));
+await manager.ensure("session-e", "main", []);
+const stranded = path.join(root, "sessions", "session-e", "main", "images/icons/sample.bin");
+assert.deepEqual(await fs.readFile(stranded), image);
+// A stop that left the branch but lost the worktree's folder.
+await fs.rm(second.path, { recursive: true, force: true });
+await manager.ensure("session-b", "main", []);
+assert.deepEqual(await fs.readFile(path.join(second.path, "images/icons/sample.bin")), image);
+assert.equal(await git(second.path, ["branch", "--show-current"]), second.branch);
+check("An attachment interrupted before or after its worktree was added is finished by ensure.");
+
+const kept = gitEnvironment({
+  GIT_DIR: "/somewhere/else.git",
+  GIT_SSH_COMMAND: "ssh -i /keys/deploy",
+  GIT_CONFIG_COUNT: "1",
+});
+assert.equal(kept.GIT_DIR, undefined);
+assert.equal(kept.GIT_SSH_COMMAND, "ssh -i /keys/deploy");
+assert.equal(kept.GIT_CONFIG_COUNT, "1");
+assert.equal(gitEnvironment({}).GIT_SSH_COMMAND, "ssh -o BatchMode=yes");
+check("Git keeps the operator's authentication and drops only repository-locating variables.");
+
+// A folder inside the attachment replaced by a link to one outside it.
+const outside = path.join(scratch, "outside");
+await fs.mkdir(outside);
+await fs.writeFile(
+  path.join(outside, "sample.bin"),
+  "version https://git-lfs.github.com/spec/v1\noid sha256:0\nsize 1\n",
+);
+await fs.rm(path.join(second.path, "images/icons"), { recursive: true });
+await fs.symlink(outside, path.join(second.path, "images/icons"), "junction");
+const [linked] = await manager.status("session-b", "main");
+assert.ok("remainingPointers" in linked);
+assert.deepEqual(linked.remainingPointers, []);
+check("Pointer checks do not follow a linked folder out of the attachment.");
 
 console.log(
   JSON.stringify({ prototypeRoot: root, source, attachments: await reopened.status() }, null, 2),
