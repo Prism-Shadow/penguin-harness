@@ -758,8 +758,9 @@ export function ChannelView() {
         </div>
         {roadmap !== null && (
           <RoadmapColumn
+            projectId={projectId}
+            orgId={orgId}
             number={roadmap.number}
-            src={roadmap.src}
             open={roadmapOpen}
             onClose={() => setRoadmapOpen(false)}
           />
