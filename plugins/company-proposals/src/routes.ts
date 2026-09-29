@@ -12,7 +12,7 @@
  *   GET    /:number/file?path=       one file under the proposal's base, read-only (the page's file panel)
  *   PUT    /:number                  publish a revision: { markdown }
  *   PUT    /:number/brief            rewrite the brief: { brief } (the author or a person; the revisions stay)
- *   POST   /:number/ready | approve | reject { reason } | merged
+ *   POST   /:number/ready | approve | reject { reason } | merged   (reject: a person or any employee)
  *   POST   /:number/implement        { agentId?, message?, workspace? } → an implementation session (default: the author's own)
  *   POST   /:number/discussions      a person opens a discussion with the owner (implementer, else author) → its session
  *   POST   /:number/discussions/:sessionId/conclude { text }  the conclusion, to the owner's desk (a person, or that session)

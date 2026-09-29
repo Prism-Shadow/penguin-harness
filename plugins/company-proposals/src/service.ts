@@ -4,11 +4,11 @@
  * desk, `[proposal #<n>] ` + what happened + the command to run, in nobody's name. No
  * channel, no trigger kind of its own.
  *
- * Who may do what follows the roles: the person delegates, comments, requests changes,
- * approves and rejects; the author publishes, marks ready, asks for an implementer and
- * resolves comments; the implementer reports merged; anybody in the organization gives
- * feedback. A person may also do what the author or the implementer may, so a stuck
- * proposal never waits on an employee that is not answering.
+ * Who may do what follows the roles: the person delegates, comments, requests changes and
+ * approves; the author publishes, marks ready, asks for an implementer and resolves
+ * comments; the implementer reports merged; anybody in the organization — a person or an
+ * employee — gives feedback and rejects. A person may also do what the author or the
+ * implementer may, so a stuck proposal never waits on an employee that is not answering.
  *
  * Reads are per person: a read position (the last `seq` seen) per proposal, kept in the
  * server's settings store, and the counts the queue shows derive from it. An employee has
@@ -859,6 +859,12 @@ export class ProposalService {
     );
   }
 
+  /**
+   * Anybody in the organization closes a proposal that is not closed yet, with a reason: a
+   * person, or an employee — the author dropping its own, or whoever a person told to take it
+   * off the queue. The status line records who (`by`), so an employee's rejection reads apart
+   * from a person's; the author and any implementer are told, never the one who rejected.
+   */
   async reject(
     projectId: string,
     orgId: string,
@@ -869,7 +875,6 @@ export class ProposalService {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
     const delivery = this.delivery(ledger);
     const p = this.requireProposal(ledger, number);
-    this.requirePerson(caller, "reject a proposal");
     if (reason.trim() === "") throw badRequest("reason must not be empty.");
     if (p.status === "merged" || p.status === "rejected") {
       throw new ProposalError(409, "proposal_status", `Proposal #${number} is ${p.status}.`);

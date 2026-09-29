@@ -1752,10 +1752,14 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     }
     stdout.length = 0;
     expect(await cli(["org", "proposal", "reject", "5", "--reason", "Out of scope"])).toBe(0);
-    expect(lastRequest("POST", "/proposals/5/reject")?.body).toMatchObject({
+    // An employee rejects as itself: the desk's identity rides with the reason.
+    expect(lastRequest("POST", "/proposals/5/reject")?.body).toEqual({
       reason: "Out of scope",
+      sessionId: DESK_SESSION,
+      agentId: "dev1",
     });
     expect(out()).toBe(`${t.org.proposalStatusSet(5, "rejected")}\n`);
+    expect(t.org.proposalRejectDesc).not.toContain("(a person)");
   });
 
   it("conclude sends the discussion's conclusion from inside it, or from a person naming it", async () => {

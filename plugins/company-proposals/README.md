@@ -43,6 +43,7 @@ penguin org proposal conclude <n> -m <text>             # inside a discussion: i
 penguin org proposal comments <n> [--pending]
 penguin org proposal resolve <n> <commentId> [-m …]
 penguin org proposal merged <n>
+penguin org proposal reject <n> --reason <text>         # any employee, as a person may: the reason and who are recorded
 ```
 
 The document a revision sends:
@@ -76,7 +77,7 @@ The ledger is one append-only file per organization, `<root>/<project>/organizat
 
 ## API
 
-`/api/projects/:projectId/organizations/:orgId/proposals` — `GET /`, `POST /` (`{ author, brief, title? }`), `GET|PUT /:number` (`{ markdown }`), `PUT /:number/brief` (`{ brief }`, the author or a person), `POST /:number/ready|approve|reject|merged|implement|materials|feedback|comments|comments/request|comments/:id/resolve|read`, `POST /:number/discussions` (a person; answers the session) and `POST /:number/discussions/:sessionId/conclude` (`{ text }`, a person or that session). Every route answers 404 while company mode is off.
+`/api/projects/:projectId/organizations/:orgId/proposals` — `GET /`, `POST /` (`{ author, brief, title? }`), `GET|PUT /:number` (`{ markdown }`), `PUT /:number/brief` (`{ brief }`, the author or a person), `POST /:number/ready|approve|reject|merged|implement|materials|feedback|comments|comments/request|comments/:id/resolve|read` (`reject` takes `{ reason }` from a person or any employee), `POST /:number/discussions` (a person; answers the session) and `POST /:number/discussions/:sessionId/conclude` (`{ text }`, a person or that session). Every route answers 404 while company mode is off.
 
 ## Development
 
