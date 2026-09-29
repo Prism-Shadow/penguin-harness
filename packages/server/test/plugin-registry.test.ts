@@ -344,24 +344,28 @@ describe("the registry routes", () => {
     const url = `/api/plugins/registry/readme?name=${encodeURIComponent(name)}`;
     expect((await t.app.request(url)).status).toBe(401);
 
-    // The package as npm installs it into the data root's own prefix — the first base the
-    // lookup tries, ahead of the installation's (which, in a checkout, is the workspace).
+    // The package as the build ships it, in the installation's prefix (the one `process.argv[1]`
+    // points into) — read for its readme, though nothing is activated from it.
     const admin = await loginAdmin(t.app);
     const pkg = packages.get(name)!;
-    const dest = path.join(t.root, "plugins", "node_modules", ...name.split("/"));
-    await mkdir(dest, { recursive: true });
-    await writeFile(
-      path.join(t.root, "plugins", "package.json"),
-      '{"name":"prefix","private":true}',
-    );
-    for (const file of ["package.json", "README.md"]) {
-      await cp(path.join(PLUGINS_DIR, pkg.dir, file), path.join(dest, file));
+    const programEntry = process.argv[1];
+    process.argv[1] = path.join(t.root, "install", "bin", "server.js");
+    try {
+      const prefix = path.join(t.root, "install", "plugins");
+      const dest = path.join(prefix, "node_modules", ...name.split("/"));
+      await mkdir(dest, { recursive: true });
+      await writeFile(path.join(prefix, "package.json"), '{"name":"prefix","private":true}');
+      for (const file of ["package.json", "README.md"]) {
+        await cp(path.join(PLUGINS_DIR, pkg.dir, file), path.join(dest, file));
+      }
+      const res = await apiClient(t.app, admin.cookie).get(url);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { name: string; readme: string | null };
+      expect(body.name).toBe(name);
+      expect(body.readme).toContain("Bubblewrap");
+    } finally {
+      if (programEntry !== undefined) process.argv[1] = programEntry;
     }
-    const res = await apiClient(t.app, admin.cookie).get(url);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { name: string; readme: string | null };
-    expect(body.name).toBe(name);
-    expect(body.readme).toContain("Bubblewrap");
   });
 
   it("refuses a name the deployment does not list, so it cannot probe for what exists", async () => {

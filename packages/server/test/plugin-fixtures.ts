@@ -26,6 +26,8 @@ export interface ClassPackage {
   name: string;
   /** The one module class the package exports (a `@Module()` with nothing to require or provide). */
   module: string;
+  /** package.json `version`; default `1.0.0` (the plugin store keys an entry by name and version). */
+  version?: string;
   /** package.json `main`; default `./index.js`. */
   main?: string;
   /** package.json `exports`, when the package declares them. */
@@ -43,6 +45,7 @@ export async function writeClassPackage(dir: string, pkg: ClassPackage): Promise
     path.join(dir, "package.json"),
     JSON.stringify({
       name: pkg.name,
+      version: pkg.version ?? "1.0.0",
       type: "module",
       main,
       ...(pkg.exports !== undefined ? { exports: pkg.exports } : {}),

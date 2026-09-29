@@ -80,7 +80,12 @@ import {
   SOURCE_WAIT_MS,
 } from "../../plugin/registry.js";
 import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
-import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
+import {
+  PACKAGE_NAME,
+  pluginBases,
+  shippedBases,
+  resolvePluginPackage,
+} from "../../plugin/loader.js";
 import type { PluginBase } from "../../plugin/loader.js";
 import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
 import {
@@ -487,8 +492,9 @@ export class PluginRegistryRoutes {
     const parked = (context as { index?: IndexSnapshot } | null)?.index;
     this.routes = pluginRegistryRoutes({
       indexUrl: this.config.pluginIndexUrl,
-      // Read per request: a push moves the shipped prefix to a new assets directory.
-      bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
+      // Read per request: a push moves the shipped prefix to a new assets directory, and an
+      // activation moves the current generation. The generation first: it is what runs.
+      bases: () => [...pluginBases(this.config.root), ...shippedBases(this.hmr.assetsDir())],
       prefix: () => pluginsPrefix(this.config.root),
       seed: parked ?? null,
       onCache: (cache) => {

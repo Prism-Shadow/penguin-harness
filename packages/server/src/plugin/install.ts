@@ -5,7 +5,7 @@
  * where it can exist is not free: the installation directory belongs to the installer (the
  * desktop app's is inside the application bundle, and read-only in the places that matter), so
  * the harness owns one of its own — `<root>/plugins/`, an ordinary npm prefix. `npm install`
- * writes the package there, and the loader resolves from there before the installation.
+ * writes library content there; server modules are copied into the store and load from an activated generation.
  *
  * npm is the whole implementation on purpose: a plugin is an npm package, its dependencies are
  * npm's problem, and a registry, a proxy or a private scope is then configured the way every
@@ -26,7 +26,6 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { Component } from "@prismshadow/penguin-core/kernel";
 import type { PluginPackages } from "../mechanisms/plugins.js";
-import { parsePluginSource } from "./source.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -325,18 +324,27 @@ export function npmCommand(): string {
 export class NpmPluginPackages implements PluginPackages {
   /** By name or by link (see installPluginSource). */
   async install(root: string, source: string): Promise<InstalledPackage> {
-    if (parsePluginSource(source).kind === "name") {
-      // Keep the store fetch behind the package-install mechanism, so route tests replace
-      // the entire npm boundary. Links and archives keep their existing install path.
-      const { fetchIntoStore } = await import("./store.js");
-      await fetchIntoStore(root, source);
-    }
-    return installPluginSource(root, source);
+    const installed = await installPluginSource(root, source);
+    await this.store(root, installed.name);
+    return installed;
   }
 
   /** An uploaded package's files (see installPluginFiles). */
-  installFiles(root: string, files: Record<string, Uint8Array>): Promise<InstalledPackage> {
-    return installPluginFiles(root, new Map(Object.entries(files)));
+  async installFiles(root: string, files: Record<string, Uint8Array>): Promise<InstalledPackage> {
+    const installed = await installPluginFiles(root, new Map(Object.entries(files)));
+    await this.store(root, installed.name);
+    return installed;
+  }
+
+  /** Library content stays in its prefix; server modules load only from an activated store entry. */
+  private async store(root: string, name: string): Promise<void> {
+    const { storePackage, rebuildStoreIndex } = await import("./store.js");
+    const prefix = pluginsPrefix(root);
+    const lock = await fs
+      .readFile(path.join(prefix, "package-lock.json"), "utf8")
+      .catch(() => undefined);
+    await storePackage(root, installedPackageDir(prefix, name), prefix, "registry", { lock });
+    await rebuildStoreIndex(root);
   }
 
   remove(root: string, name: string): Promise<void> {

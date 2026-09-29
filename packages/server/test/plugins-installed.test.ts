@@ -25,9 +25,9 @@ describe("installed plugins", () => {
 
   /**
    * Ships a package the way the build does: under the installation's `plugins/` prefix,
-   * named in that prefix's manifest. The installation is what `process.argv[1]` points
-   * into (plugin/loader.ts pluginBases), so the test app's program entry is pointed at a
-   * directory of the temp root for the file's duration.
+   * named in that prefix's manifest — a source of the plugin store. The installation is what
+   * `process.argv[1]` points into (plugin/store.ts storeSources), so the test app's program
+   * entry is pointed at a directory of the temp root for the file's duration.
    */
   const ship = async (pkg: ClassPackage) => {
     const prefix = path.join(t.root, "install", "plugins");
@@ -260,49 +260,51 @@ describe("installed plugins", () => {
   });
 
   it("says a plugin this build cannot fully run is disabled, or runs without part of itself — not waiting for a restart", async () => {
-    // Loaded, as a push leaves installed plugins loaded, but built against what this build
-    // does not have: one contributes to a slot nothing declares, the other stands in for a
-    // node under an interface no table carries.
-    const partial: ModuleDef = {
-      manifest: parseManifest({
-        name: "ext-partial",
-        requires: {},
-        provides: {},
-        contributes: { "nowhere.slot": [{ id: "ext-partial.x" }] },
-        children: [],
-      }),
-      create: () => ({ api: {} }),
+    // Two packages built against what this build does not have: one contributes to a slot
+    // nothing declares, the other requires an interface no table carries. What a package asks
+    // of the build is its generated table's to say, so that is where it is written.
+    const declare = async (name: string, module: string, extra: Record<string, unknown>) => {
+      const file = path.join(
+        t.root,
+        "install",
+        "plugins",
+        "node_modules",
+        ...name.split("/"),
+        "ifaces.json",
+      );
+      const table = JSON.parse(await fs.readFile(file, "utf8")) as {
+        modules: Record<string, Record<string, unknown>>;
+      };
+      Object.assign(table.modules[module]!, extra);
+      await fs.writeFile(file, JSON.stringify(table));
     };
-    const unmet: ModuleDef = {
-      manifest: parseManifest({
-        name: "ServerSettingsRepo",
-        requires: {},
-        provides: { Settings: "@prismshadow/penguin-server#Nope" },
-        contributes: {},
-        children: [],
-      }),
-      create: () => ({ api: { Settings: {} } }),
-    };
-    const host = new PluginHost();
-    host.use({ specifier: "@acme/partial", modules: [partial], replaces: [] });
-    host.use({ specifier: "@acme/unmet", modules: [], replaces: [unmet] });
-    await t.cleanup();
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    t = await createTestApp({ plugins: host });
-    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     await ship({ name: "@acme/partial", module: "Partial" });
-    await ship({ name: "@acme/unmet", module: "Unmet" });
-    await fs.writeFile(
-      listFile(),
-      'models = []\n[plugins]\n"@acme/partial" = "*"\n"@acme/unmet" = "*"\n',
-    );
+    await declare("@acme/partial", "Partial", {
+      contributes: { "Nowhere.slot": [{ id: "Partial.x" }] },
+    });
+    await ship({
+      name: "@acme/unmet",
+      module: "Unmet",
+      index: lower(`import { Module, Use } from ${JSON.stringify(decorators)};
+                    abstract class Gone {}
+                    @Module() export class Unmet { @Use() gone!: Gone; }
+                    export default { modules: [Unmet] };`),
+    });
+    await declare("@acme/unmet", "Unmet", {
+      requires: { gone: { iface: "@acme/unmet#Gone", from: "NoSuchModule" } },
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const saved = await admin.put("/api/projects/default_project/plugins/installed", {
+      plugins: ["@acme/partial", "@acme/unmet"],
+    });
+    expect(saved.status).toBe(200);
 
     const res = await view();
     const row = (specifier: string) => res.plugins.find((p) => p.specifier === specifier)!;
     expect(row("@acme/partial")).toMatchObject({ active: true, unsatisfied: { disabled: false } });
-    expect(row("@acme/partial").unsatisfied!.reason).toMatch(/nowhere\.slot/);
+    expect(row("@acme/partial").unsatisfied!.reason).toMatch(/Nowhere\.slot/);
     expect(row("@acme/unmet")).toMatchObject({ active: false, unsatisfied: { disabled: true } });
-    expect(row("@acme/unmet").unsatisfied!.reason).toMatch(/Nope/);
+    expect(row("@acme/unmet").unsatisfied!.reason).toMatch(/@acme\/unmet#Gone/);
     expect(row("@acme/unmet").error).toBeUndefined();
     // A restart boots the same build, so it is not what this is waiting for.
     expect(res.restartPending).toBe(false);
@@ -317,7 +319,7 @@ describe("installed plugins", () => {
       ["unsatisfied:@acme/unmet", "unexpected"],
     ]);
     expect(recorded.find((e) => e.code.endsWith("unmet"))!.message).toMatch(
-      /^Disabled on this build: .*Nope/,
+      /^Disabled on this build: .*@acme\/unmet#Gone/,
     );
     warn.mockRestore();
   });
@@ -374,6 +376,8 @@ describe("installed plugins", () => {
         })
       ).status,
     ).toBe(200);
+    const current = () => fs.readFile(path.join(t.root, "plugins", "current"), "utf8");
+    const before = await current();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const res = await admin.post("/api/projects/default_project/plugins/installed", {
@@ -384,6 +388,12 @@ describe("installed plugins", () => {
       // Undone: the list is as it was, and what runs is what ran.
       expect(body.plugins.map((p) => [p.specifier, p.active])).toEqual([["@acme/fine", true]]);
       expect(await fs.readFile(listFile(), "utf8")).not.toContain("bad-boot");
+      // The pointer is back on the generation that ran, and the one that failed stays on disk.
+      expect(await current()).toBe(before);
+      const gens = (await fs.readdir(path.join(t.root, "plugins"))).filter((d) =>
+        /^[0-9a-f]{16}$/.test(d),
+      );
+      expect(gens.length).toBeGreaterThanOrEqual(2);
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/deliberately fails to boot/));
     } finally {
       warn.mockRestore();

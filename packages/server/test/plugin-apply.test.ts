@@ -14,6 +14,7 @@ import path from "node:path";
 import { HotResources } from "@prismshadow/penguin-hmr";
 import { PLUGINS_RESOURCE_ID, PluginHost, pluginHostFrom } from "../src/plugin/host.js";
 import { writeClassPackage } from "./plugin-fixtures.js";
+import type { ClassPackage } from "./plugin-fixtures.js";
 import { loadPluginHost } from "../src/plugin/loader.js";
 import type { LoadedPlugin } from "../src/plugin/host.js";
 
@@ -27,6 +28,16 @@ async function rootAsking(specifiers: string[]): Promise<string> {
     "utf8",
   );
   return root;
+}
+
+/** A package in an assets directory's `plugins/` prefix, named in its manifest — what a push ships. */
+async function writeShipped(assets: string, pkg: ClassPackage): Promise<void> {
+  const prefix = path.join(assets, "plugins");
+  await writeClassPackage(path.join(prefix, "node_modules", ...pkg.name.split("/")), pkg);
+  await writeFile(
+    path.join(prefix, "package.json"),
+    JSON.stringify({ name: "prefix", private: true, dependencies: { [pkg.name]: "1.0.0" } }),
+  );
 }
 
 /** An entry as an earlier App would have left it: one module, already imported. */
@@ -75,26 +86,29 @@ describe("loadPluginHost", () => {
     // claude-code plugin shipped to a machine and the old one kept spawning.
     const root = await rootAsking(["@acme/real"]);
     try {
-      const dir = path.join(root, "plugins", "node_modules", "@acme", "real");
-      await writeClassPackage(dir, { name: "@acme/real", module: "AcmeReal" });
+      // Shipped by a push; loaded from the store entry the current generation links to.
+      const assets = path.join(root, "hmr", "store", "assets", "a");
+      await writeShipped(assets, { name: "@acme/real", module: "AcmeReal" });
 
       const resources = new HotResources();
-      const first = await loadPluginHost(resources, root);
+      const first = await loadPluginHost(resources, root, assets);
       const held = first.entries().get("@acme/real");
-      expect(held?.file).toBe(path.join(dir, "index.js"));
+      expect(held?.file).toMatch(
+        /plugin-store[\\/]@acme[\\/]real[\\/]1\.0\.0[\\/][0-9a-f]{16}[\\/]package[\\/]index\.js$/,
+      );
 
       // Same file behind the name: the same object, not a second import.
       resources.register(PLUGINS_RESOURCE_ID, first);
-      const again = await loadPluginHost(resources, root);
+      const again = await loadPluginHost(resources, root, assets);
       expect(again.entries().get("@acme/real")).toBe(held);
 
       // A different file behind it — what a push produces — is imported again.
       const moved = new PluginHost();
       moved.use({ ...held!, file: path.join(root, "old-assets", "index.js") });
       resources.register(PLUGINS_RESOURCE_ID, moved);
-      const afterPush = await loadPluginHost(resources, root);
+      const afterPush = await loadPluginHost(resources, root, assets);
       expect(afterPush.entries().get("@acme/real")).not.toBe(held);
-      expect(afterPush.entries().get("@acme/real")?.file).toBe(path.join(dir, "index.js"));
+      expect(afterPush.entries().get("@acme/real")?.file).toBe(held!.file);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -108,10 +122,9 @@ describe("loadPluginHost", () => {
     // the previous build's copy kept running until the next push.
     const root = await rootAsking(["@acme/shipped"]);
     try {
-      const build = async (dir: string, marker: string) => {
-        const pkg = path.join(dir, "plugins", "node_modules", "@acme", "shipped");
-        await writeClassPackage(pkg, { name: "@acme/shipped", module: marker });
-      };
+      // One name and version, two contents: the build being booted wins its activation.
+      const build = (dir: string, marker: string) =>
+        writeShipped(dir, { name: "@acme/shipped", module: marker });
       const committed = path.join(root, "hmr", "store", "assets", "old");
       const booting = path.join(root, "hmr", "store", "assets", "new");
       await build(committed, "Old");

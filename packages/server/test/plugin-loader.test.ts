@@ -13,12 +13,12 @@ import {
   IFACES_FILE,
   PLUGINS_FILE,
   committedAssetsDir,
-  discoverBuiltinPlugins,
   loadPlugins,
   pluginBases,
   readPluginClosure,
   readProjectPluginList,
   listProjectIds,
+  shippedPlugins,
 } from "../src/plugin/loader.js";
 import { writeClassPackage } from "./plugin-fixtures.js";
 
@@ -68,7 +68,7 @@ function lower(source: string): string {
 describe("plugin list", () => {
   it("no Project means no plugins — the default deployment shape, not an error", async () => {
     expect(await readPluginClosure(root)).toEqual([]);
-    expect(await loadPlugins(root)).toEqual({ loaded: [], failed: new Map() });
+    expect(await loadPlugins(root)).toMatchObject({ loaded: [], failed: new Map() });
   });
 
   it("reads the configured specifiers in order", async () => {
@@ -334,7 +334,7 @@ describe("builtin plugins", () => {
     await writeFile(manifestFile, JSON.stringify(manifest), "utf8");
     await writeFile(
       path.join(dir, "package.json"),
-      JSON.stringify({ name, main: "./index.js", type: "module" }),
+      JSON.stringify({ name, version: "0.0.0", main: "./index.js", type: "module" }),
       "utf8",
     );
     await writeFile(
@@ -364,18 +364,28 @@ describe("builtin plugins", () => {
     );
   }
 
-  it("lists what the build ships, scoped and unscoped, and not what the root's own prefix holds", async () => {
+  it("lists what the build ships, scoped and unscoped, and looks nothing up before an activation", async () => {
     const assets = path.join(root, "hmr", "store", "assets", "abc");
     await writeBuiltin(path.join(assets, "plugins"), "@acme/penguin-plugin-one", "One");
     await writeBuiltin(path.join(assets, "plugins"), "plain-plugin", "Plain");
-    // The operator's own prefix is not builtin: what it holds loads only when listed.
+    // What an older build's npm left in the root's prefix is neither shipped nor looked up.
     await writeBuiltin(path.join(root, "plugins"), "@acme/installed", "Installed");
-    const bases = pluginBases(root, assets);
-    expect(bases[0]).toMatchObject({ builtin: false });
-    expect(bases[1]).toMatchObject({ builtin: true });
-    expect(await discoverBuiltinPlugins(bases)).toEqual([
-      "@acme/penguin-plugin-one",
-      "plain-plugin",
+    expect(await shippedPlugins(assets)).toEqual(["@acme/penguin-plugin-one", "plain-plugin"]);
+    expect(pluginBases(root)).toEqual([]);
+  });
+
+  it("looks a name up in the current generation alone", async () => {
+    const assets = path.join(root, "hmr", "store", "assets", "abc");
+    await writeBuiltin(path.join(assets, "plugins"), "@acme/penguin-plugin-one", "One");
+    await writeBuiltin(path.join(root, "plugins"), "@acme/installed", "Installed");
+    await writeConfig({ plugins: ["@acme/penguin-plugin-one", "@acme/installed"] });
+    const result = await loadPlugins(root, assets);
+    expect(result.loaded.map((p) => p.specifier)).toEqual(["@acme/penguin-plugin-one"]);
+    // The old prefix's package is not in the store, so no generation holds it.
+    expect(result.failed.get("@acme/installed")).toMatch(/not in the plugin store/);
+    const gen = await readFile(path.join(root, "plugins", "current"), "utf8");
+    expect(pluginBases(root)).toEqual([
+      { file: path.join(root, "plugins", gen.trim(), "package.json"), builtin: false, root },
     ]);
   });
 
@@ -394,13 +404,14 @@ describe("builtin plugins", () => {
     await writeConfig({ plugins: [] });
     expect((await loadPlugins(root)).loaded).toEqual([]);
 
-    // Listed: it loads, resolved from the assets the push carried — no npm, nothing under
-    // <root>/plugins.
+    // Listed: it loads, from the store entry the assets the push carried were put in, through
+    // the generation activated for it — no npm.
     await writeConfig({ plugins: ["@acme/penguin-plugin-one"] });
     const result = await loadPlugins(root);
     expect([...result.failed.entries()]).toEqual([]);
     expect(result.loaded.map((p) => p.specifier)).toEqual(["@acme/penguin-plugin-one"]);
     expect(result.loaded[0]!.modules.map((m) => m.manifest.name)).toEqual(["One"]);
+    expect(result.loaded[0]!.file).toContain(path.join(root, "plugin-store"));
   });
 
   it("resolves a package through its exports' import condition, as npm shipped it", async () => {
@@ -412,7 +423,7 @@ describe("builtin plugins", () => {
     await mkdir(path.join(assets, "plugins"), { recursive: true });
     await writeFile(
       path.join(assets, "plugins", "package.json"),
-      '{"name":"prefix","private":true}',
+      '{"name":"prefix","private":true,"dependencies":{"@acme/exported":"1.0.0"}}',
     );
     await writeClassPackage(dir, {
       name: "@acme/exported",
@@ -423,7 +434,7 @@ describe("builtin plugins", () => {
     await writeConfig({ plugins: ["@acme/exported"] });
     const result = await loadPlugins(root, assets);
     expect([...result.failed.entries()]).toEqual([]);
-    expect(result.loaded[0]!.file).toBe(path.join(dir, "dist", "index.js"));
+    expect(result.loaded[0]!.file).toMatch(/[\\/]package[\\/]dist[\\/]index\.js$/);
   });
 
   it("reads a committed assets dir from harness.json, or null without one", async () => {

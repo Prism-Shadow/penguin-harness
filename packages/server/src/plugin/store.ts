@@ -31,8 +31,9 @@
  *   - registry  a package fetched by npm into `.staging/<pid>/`, packed, hashed, compared with
  *               the integrity its index entry names, stored, and the staging directory removed.
  *
- * The store is not a lookup location. Nothing resolves or imports a module from it; which
- * plugins a process loads, and from where, is unchanged by it. Its own `index.json` is rebuilt
+ * The store is not a lookup location. Nothing resolves a module from it by name: the process
+ * loads from the current generation under `<root>/plugins/`, whose `node_modules/<name>` links
+ * to an entry's `package/` (plugin/activation.ts). Its own `index.json` is rebuilt
  * from the tree after every write, in the index repository's shape — the machine's local
  * source for the plugin catalogue.
  */
@@ -585,14 +586,20 @@ export function storeSources(
   return out;
 }
 
-/** Prefixes this process already imported: a push's assets never change, nor does the installation. */
-const imported = new Set<string>();
+/**
+ * Prefixes this process already imported, with the entries each yielded: a push's assets never
+ * change, nor does the installation.
+ */
+const imported = new Map<string, StoredEntry[]>();
 let chain: Promise<unknown> = Promise.resolve();
+
+const importKey = (root: string, dir: string) => `${root}\0${path.resolve(dir)}`;
 
 /**
  * Brings the store up to date with the prefixes of this boot (`storeSources`), each once per
  * process, then rebuilds its index. Serialized within the process, best effort: a failure is
- * logged and never fails the boot — the store is not where anything loads from.
+ * logged and never fails the boot — a package that did not reach the store is reported by the
+ * activation that cannot find it (plugin/activation.ts).
  */
 export function syncPluginStore(
   root: string,
@@ -602,10 +609,10 @@ export function syncPluginStore(
   const run = async () => {
     let wrote = false;
     for (const { dir, source } of sources) {
-      const key = `${root}\0${path.resolve(dir)}`;
+      const key = importKey(root, dir);
       if (imported.has(key) || !fs.existsSync(path.join(dir, "package.json"))) continue;
       const { stored, failed } = await importPrefix(root, dir, source);
-      imported.add(key);
+      imported.set(key, stored);
       wrote ||= stored.length > 0;
       for (const [name, why] of failed) log(`[plugin-store] ${source} ${name}: ${why}`);
     }
@@ -616,4 +623,27 @@ export function syncPluginStore(
   });
   chain = next;
   return next;
+}
+
+/**
+ * The entries this boot's sources put in the store — what the running build carries — once
+ * `syncPluginStore` has imported them.
+ */
+export async function shippedEntries(
+  root: string,
+  sources: ReadonlyArray<{ dir: string; source: StoreSource }>,
+): Promise<StoredEntry[]> {
+  await syncPluginStore(root, sources);
+  return sources.flatMap(({ dir }) => imported.get(importKey(root, dir)) ?? []);
+}
+
+/** The names the prefixes of `sources` ship: each prefix's own package.json `dependencies`. */
+export async function shippedNames(
+  sources: ReadonlyArray<{ dir: string; source: StoreSource }>,
+): Promise<string[]> {
+  const out = new Set<string>();
+  for (const { dir } of sources) {
+    for (const name of names((await readPackageJson(dir))?.dependencies)) out.add(name);
+  }
+  return [...out].sort();
 }
