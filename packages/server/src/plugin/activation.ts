@@ -41,7 +41,14 @@ import fsp from "node:fs/promises";
 import nodeModule from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { PACKAGE_DIR, pluginStoreDir, readStore, storeEntryDir, syncPluginStore } from "./store.js";
+import {
+  PACKAGE_DIR,
+  pluginStoreDir,
+  programEntry,
+  readStore,
+  storeEntryDir,
+  syncPluginStore,
+} from "./store.js";
 import type { StoreIndexEntry } from "./store.js";
 import { compareVersions, satisfies } from "../api/plugin-pick.js";
 
@@ -298,7 +305,9 @@ interface HostLending {
  * resolves its imports from there — under the data root, where no `node_modules` holds the
  * host's SDK; from the installation's prefix it used to find the program's copy by walking up.
  * Only a HOST_PACKAGES import the plugin's own package cannot resolve is retried, from the
- * program's entry (`process.argv[1]`); anything the package carries itself wins. A runtime
+ * program's entry (`process.argv[1]`, its links resolved: from the Docker image's
+ * `/usr/local/bin/penguin` no `node_modules` holds the SDK); anything the package carries
+ * itself wins. A runtime
  * without `module.registerHooks` logs once and resolves as Node does.
  */
 export function lendHostPackages(root: string): void {
@@ -313,7 +322,7 @@ export function lendHostPackages(root: string): void {
   slot.roots.add(pathToFileURL(path.join(pluginStoreDir(root), path.sep)).href);
   slot.retry = (specifier, context, next, err) => {
     const parent = context.parentURL;
-    const entry = process.argv[1];
+    const entry = programEntry();
     if (
       (err as { code?: string }).code !== "ERR_MODULE_NOT_FOUND" ||
       !HOST_PACKAGES.test(specifier) ||

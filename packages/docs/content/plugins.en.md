@@ -105,7 +105,7 @@ Neither directory grows without bound. After every activation that moves `curren
 
 **A server plugin installs in a Project.** On the **Plugins** page, a server plugin's row shows its package, description, version and status; selecting **Install** under **Available** adds the package to the Project's `[plugins]` table and applies it.
 
-Only admins see **Install** and **Remove**, and only packages that ship with PenguinHarness can be added, so nothing is downloaded from anywhere. The change reaches the server by re-assembly rather than a restart, and the row's status afterwards reads **running**, **restart to load** when the change could not be applied without one, or **failed to load** with the reason. Removing a plugin drops it from the Project's list; nothing is deleted from disk.
+Only admins see **Install** and **Remove**. A package that ships with PenguinHarness is added without a download. Any other package is first fetched from the npm registry into this machine's plugin store by the npm next to the server's Node runtime, or by the one on `PATH` if there is none. If npm fails, the row shows npm's first error line and the list stays as it was. The change reaches the server by re-assembly rather than a restart, and the row's status afterwards reads **running**, **restart to load** when the change could not be applied without one, or **failed to load** with the reason. Removing a plugin drops it from the Project's list; nothing is deleted from disk.
 
 ## Configuring a plugin
 

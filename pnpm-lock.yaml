@@ -187,6 +187,19 @@ importers:
       vitest:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@30.1.2(@noble/hashes@1.8.0))(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+    optionalDependencies:
+      '@penguinharness/sandbox-bwrap':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-bwrap
+      '@penguinharness/sandbox-dsh':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-dsh
+      '@penguinharness/sandbox-seatbelt':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-seatbelt
+      '@penguinharness/sandbox-wsl':
+        specifier: workspace:*
+        version: link:../../plugins/sandbox-wsl
 
   packages/core:
     dependencies:
@@ -1952,6 +1965,18 @@ packages:
 
   '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit':
     resolution: {directory: plugins/opro-rsi-toolkit, type: directory}
+
+  '@penguinharness/sandbox-bwrap@file:plugins/sandbox-bwrap':
+    resolution: {directory: plugins/sandbox-bwrap, type: directory}
+
+  '@penguinharness/sandbox-dsh@file:plugins/sandbox-dsh':
+    resolution: {directory: plugins/sandbox-dsh, type: directory}
+
+  '@penguinharness/sandbox-seatbelt@file:plugins/sandbox-seatbelt':
+    resolution: {directory: plugins/sandbox-seatbelt, type: directory}
+
+  '@penguinharness/sandbox-wsl@file:plugins/sandbox-wsl':
+    resolution: {directory: plugins/sandbox-wsl, type: directory}
 
   '@penguinharness/skill-porting@file:plugins/skill-porting':
     resolution: {directory: plugins/skill-porting, type: directory}
@@ -6548,6 +6573,30 @@ snapshots:
 
   '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit': {}
 
+  '@penguinharness/sandbox-bwrap@file:plugins/sandbox-bwrap':
+    optional: true
+
+  '@penguinharness/sandbox-dsh@file:plugins/sandbox-dsh(a77b0235b4002fc966143f607da29a56)':
+    dependencies:
+      '@deepseek-ai/cordis': 4.0.1
+      '@deepseek-ai/dsh-sandbox-local': 0.1.0-rc.7(aee23af2fa86328531d8fa647b06b497)
+      '@deepseek-ai/node-addon-landlock-run': 0.1.1
+      koffi: 3.1.6
+    transitivePeerDependencies:
+      - '@deepseek-ai/cordis-plugin-include'
+      - '@deepseek-ai/cordis-plugin-loader'
+      - '@deepseek-ai/dsh-invariants'
+      - '@deepseek-ai/dsh-llm'
+      - '@deepseek-ai/dsh-sandbox'
+      - '@deepseek-ai/dsh-session'
+    optional: true
+
+  '@penguinharness/sandbox-seatbelt@file:plugins/sandbox-seatbelt':
+    optional: true
+
+  '@penguinharness/sandbox-wsl@file:plugins/sandbox-wsl':
+    optional: true
+
   '@penguinharness/skill-porting@file:plugins/skill-porting': {}
 
   '@penguinharness/software-development@file:plugins/software-development': {}
@@ -6628,7 +6677,18 @@ snapshots:
       fflate: 0.8.3
       smol-toml: 1.6.1
       yaml: 2.9.0
+    optionalDependencies:
+      '@penguinharness/sandbox-bwrap': file:plugins/sandbox-bwrap
+      '@penguinharness/sandbox-dsh': file:plugins/sandbox-dsh(a77b0235b4002fc966143f607da29a56)
+      '@penguinharness/sandbox-seatbelt': file:plugins/sandbox-seatbelt
+      '@penguinharness/sandbox-wsl': file:plugins/sandbox-wsl
     transitivePeerDependencies:
+      - '@deepseek-ai/cordis-plugin-include'
+      - '@deepseek-ai/cordis-plugin-loader'
+      - '@deepseek-ai/dsh-invariants'
+      - '@deepseek-ai/dsh-llm'
+      - '@deepseek-ai/dsh-sandbox'
+      - '@deepseek-ai/dsh-session'
       - '@modelcontextprotocol/sdk'
       - bufferutil
       - debug

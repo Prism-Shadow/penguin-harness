@@ -24,8 +24,12 @@
  * TWO WAYS IN, both through `storePackage`:
  *
  *   - shipped   the plugins the running build carries (a hot push's `plugins/` prefix, else
- *               the installation's), each listed with its integrity in the prefix's `index.json`
- *               the build wrote; an entry already stored is not copied again (`syncPluginStore`);
+ *               the installation's — `lib/plugins` of the CLI package and the Docker image,
+ *               `plugins/` of the desktop app), each listed with its integrity in the prefix's
+ *               `index.json` the build wrote; an entry already stored is not copied again
+ *               (`syncPluginStore`). An npm global install carries no prefix: there, the
+ *               plugins the program's own package declares as optional dependencies and npm
+ *               installed with it are what it ships (`programPackages`);
  *   - registry  a package fetched by npm into `.staging/`, packed, hashed, compared with the
  *               integrity its index entry names, and stored (`fetchIntoStore`).
  *
@@ -43,8 +47,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
-import { PACKAGE_NAME } from "./loader.js";
-import { npmCommand, npmReason, PluginInstallError } from "./install.js";
+import { IFACES_FILE, PACKAGE_NAME } from "./loader.js";
+import { npmInvocation, npmReason, PluginInstallError } from "./install.js";
 import {
   entryDir,
   entryKey,
@@ -184,20 +188,24 @@ const FETCH_TIMEOUT_MS = 180_000;
  */
 const npmInstall: RegistryInstall = async (specifier, cwd) => {
   try {
-    await execFileAsync(
-      npmCommand(),
-      [
-        "install",
-        "--install-strategy=nested",
-        "--omit=dev",
-        "--no-audit",
-        "--no-fund",
-        "--",
-        specifier,
-      ],
-      { cwd, timeout: FETCH_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, env: process.env },
-    );
+    const npm = npmInvocation([
+      "install",
+      "--install-strategy=nested",
+      "--omit=dev",
+      "--no-audit",
+      "--no-fund",
+      "--",
+      specifier,
+    ]);
+    await execFileAsync(npm.command, npm.args, {
+      cwd,
+      timeout: FETCH_TIMEOUT_MS,
+      maxBuffer: 8 * 1024 * 1024,
+      env: npm.env,
+      shell: npm.shell,
+    });
   } catch (err) {
+    if (err instanceof PluginInstallError) throw err;
     throw new PluginInstallError(npmReason((err as { stderr?: string }).stderr, err as Error));
   }
 };
@@ -288,15 +296,83 @@ export async function readStore(root: string): Promise<StoreIndexEntry[]> {
   return sortIndex(out);
 }
 
-/** The prefixes a build may carry, the running one first: the push's, then the installation's. */
+/**
+ * The program's entry file with its links resolved: the Docker image starts the CLI through
+ * `/usr/local/bin/penguin`, a link to `/opt/penguin/lib/dist/penguin.js`, and npm's global
+ * `bin/penguin` links into the package the same way — the installation is where the target
+ * sits, not where the link does. Unresolvable (gone, or not a file): the path as given.
+ */
+export function programEntry(entry: string | undefined = process.argv[1]): string | undefined {
+  if (typeof entry !== "string" || entry.length === 0) return undefined;
+  try {
+    return fs.realpathSync(entry);
+  } catch {
+    return entry;
+  }
+}
+
+/**
+ * The prefixes a build may carry, the running one first: the push's, then the installation's —
+ * one directory above the directory of the program's real entry file.
+ */
 export function storeSources(
   assetsDir: string | null,
   entry: string | undefined = process.argv[1],
 ): string[] {
   const out: string[] = [];
   if (assetsDir !== null) out.push(path.join(unpackedAssetsDir(assetsDir), "plugins"));
-  if (typeof entry === "string" && entry.length > 0) {
-    out.push(path.join(path.dirname(entry), "..", "plugins"));
+  const program = programEntry(entry);
+  if (program !== undefined) out.push(path.join(path.dirname(program), "..", "plugins"));
+  return out;
+}
+
+/**
+ * The plugins the program's own package ships as dependencies, by name, located the way Node
+ * resolves them from it — `node_modules` upward: what an npm global install brings, which can
+ * carry no nested prefix. They are its `optionalDependencies` (penguin-cli declares the sandbox
+ * backends there), and only those npm actually installed that are server plugins (their
+ * generated `ifaces.json` beside the manifest): an optional package npm skipped — not
+ * published yet, or refused for this platform — is not shipped, nor is another program's
+ * optional native binary (a test runner's). A package reached through
+ * a workspace link (a dev checkout's `pnpm install`) is a source tree, not something the
+ * program installed, and is left alone.
+ */
+export function programPackages(entry: string | undefined = process.argv[1]): Map<string, string> {
+  const out = new Map<string, string>();
+  const program = programEntry(entry);
+  if (program === undefined) return out;
+  let pkgRoot: string | null = null;
+  for (let dir = path.dirname(program); ; dir = path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, "package.json"))) {
+      pkgRoot = dir;
+      break;
+    }
+    if (path.dirname(dir) === dir) return out;
+  }
+  let manifest: { optionalDependencies?: unknown };
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(pkgRoot, "package.json"), "utf8"));
+  } catch {
+    return out;
+  }
+  const optional = manifest.optionalDependencies;
+  const names = optional !== null && typeof optional === "object" ? Object.keys(optional) : [];
+  for (const name of names) {
+    for (let dir = pkgRoot; ; dir = path.dirname(dir)) {
+      const candidate = path.join(dir, "node_modules", ...name.split("/"));
+      if (fs.existsSync(path.join(candidate, "package.json"))) {
+        let real: string;
+        try {
+          real = fs.realpathSync(candidate);
+        } catch {
+          break;
+        }
+        const installed = real.split(path.sep).includes("node_modules");
+        if (installed && fs.existsSync(path.join(real, IFACES_FILE))) out.set(name, real);
+        break;
+      }
+      if (path.dirname(dir) === dir) break;
+    }
   }
   return out;
 }
@@ -349,9 +425,11 @@ const storedAs = new Map<string, StoredEntry>();
 
 /**
  * Stores every plugin the running build carries that is not stored yet, and answers the
- * integrities its `index.json` lists together with what each was stored as. On the store's
- * queue, best effort: a failure is logged and never fails the boot — a package that did not
- * reach the store is reported by the activation that cannot find it (plugin/activation.ts).
+ * integrities its `index.json` lists together with what each was stored as. With no prefix
+ * (an npm global install), what it carries is `programPackages`, stored — and so hashed —
+ * once per process. On the store's queue, best effort: a failure is logged and never fails
+ * the boot — a package that did not reach the store is reported by the activation that cannot
+ * find it (plugin/activation.ts).
  */
 export async function syncPluginStore(
   root: string,
@@ -361,7 +439,26 @@ export async function syncPluginStore(
   const shipped = new Set<string>();
   await onStoreQueue(async () => {
     const index = await readShippedIndex(assetsDir);
-    for (const row of index?.entries ?? []) {
+    if (index === null) {
+      for (const [name, pkgDir] of programPackages()) {
+        const memo = `${root}\0${pkgDir}`;
+        const known = storedAs.get(memo);
+        if (known !== undefined && isStored(known.dir)) {
+          shipped.add(known.integrity);
+          continue;
+        }
+        try {
+          // Its hoisted dependencies are looked up as far as Node would look: to the root.
+          const entry = await storePackage(root, pkgDir, path.parse(pkgDir).root);
+          storedAs.set(memo, entry);
+          shipped.add(entry.integrity);
+        } catch (err) {
+          log(`[plugin-store] ${name}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return;
+    }
+    for (const row of index.entries) {
       const { name, version, integrity } = row as Partial<Record<string, unknown>>;
       if (typeof name !== "string" || typeof version !== "string") continue;
       if (typeof integrity !== "string" || entryKey(integrity) === null) continue;
@@ -388,10 +485,11 @@ export async function syncPluginStore(
   return shipped;
 }
 
-/** The names the running build ships. */
+/** The names the running build ships: its index's, or with no prefix the program's own. */
 export async function shippedNames(assetsDir: string | null): Promise<string[]> {
   const index = await readShippedIndex(assetsDir).catch(() => null);
-  const names = (index?.entries ?? []).flatMap((row) => {
+  if (index === null) return [...programPackages().keys()].sort();
+  const names = index.entries.flatMap((row) => {
     const name = (row as { name?: unknown }).name;
     return typeof name === "string" ? [name] : [];
   });
