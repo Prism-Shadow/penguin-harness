@@ -4,11 +4,12 @@
  *
  * The provider owns the document root: it applies the theme under test to <html> through the
  * package's own `applyThemeAttributes` (the same contract the app's boot script and theme provider
- * follow) — theme, mode, the accent choice and the root font size, which is what makes the size
- * tiers real: every rem in a composition, a framed embed or `/embed` follows
- * `<html style="font-size">`, while the chrome, sized in px, does not — sets `lang` so CJK text
- * shapes as Chinese, and marks reduced motion and the phone view. The gallery chrome never reads
- * those attributes' theme — only `.dark`, to pick its own light or dark palette.
+ * follow) — theme, mode, the accent choice, the text size and the font pairing, which is what makes
+ * the size real: every rem in a Foundations board follows `<html style="font-size">`, while the
+ * chrome, sized in px, does not — sets `lang` so CJK text shapes as Chinese, and marks the phone
+ * view. The framed app gets the same preferences through its own URL (src/app/frame.ts), so the
+ * page's root and every frame carry one theme. The gallery chrome never reads those attributes'
+ * theme — only `.dark`, to pick its own light or dark palette.
  */
 import {
   createContext,
@@ -108,13 +109,10 @@ function useProbe(): Probed | null {
 export function GalleryProvider({
   children,
   canonicalizeUrl = false,
-  extraParams = [],
 }: {
   children: ReactNode;
-  /** Write the full canonical query into the URL on load (the main page); other routes keep theirs. */
+  /** Write the full canonical query into the URL on load, so a copied address pins the view. */
   canonicalizeUrl?: boolean;
-  /** Route-specific query params the canonical rewrite must keep (`demo`, `variant`, …). */
-  extraParams?: readonly string[];
 }) {
   const search = useSearch();
   const [remembered] = useState(readRemembered);
@@ -124,28 +122,15 @@ export function GalleryProvider({
   const accent = resolveAccent(state.theme, state.accent);
   const probed = useProbe();
 
-  const extras = useCallback(() => {
-    const params = new URLSearchParams(window.location.search);
-    const kept: Record<string, string> = {};
-    for (const key of extraParams) {
-      const value = params.get(key);
-      if (value !== null) kept[key] = value;
-    }
-    return kept;
-  }, [extraParams]);
-
-  const update = useCallback<GalleryContextValue["update"]>(
-    (patch) => {
-      const current = parseGalleryState(window.location.search, readRemembered());
-      const next = typeof patch === "function" ? patch(current) : { ...current, ...patch };
-      remember(next);
-      replaceSearch(formatGalleryQuery(next, extras()));
-    },
-    [extras],
-  );
+  const update = useCallback<GalleryContextValue["update"]>((patch) => {
+    const current = parseGalleryState(window.location.search, readRemembered());
+    const next = typeof patch === "function" ? patch(current) : { ...current, ...patch };
+    remember(next);
+    replaceSearch(formatGalleryQuery(next));
+  }, []);
 
   useEffect(() => {
-    if (canonicalizeUrl) replaceSearch(formatGalleryQuery(state, extras()));
+    if (canonicalizeUrl) replaceSearch(formatGalleryQuery(state));
     // Only the first render's state is canonicalized; later changes go through update().
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canonicalizeUrl]);
@@ -158,12 +143,13 @@ export function GalleryProvider({
       themeId: state.theme,
       dark: mode === "dark",
       accent: asAccentChoice(state.accent),
-      fontScale: state.tier,
+      textSize: state.size,
+      fontLatin: state.latin,
+      fontCjk: state.cjk,
     });
     root.lang = state.lang === "zh" ? "zh-CN" : "en";
-    root.dataset.motion = state.motion;
     root.dataset.view = state.view;
-  }, [state.theme, mode, state.tier, state.accent, state.lang, state.motion, state.view]);
+  }, [state.theme, mode, state.size, state.latin, state.cjk, state.accent, state.lang, state.view]);
 
   const value = useMemo<GalleryContextValue>(
     () => ({

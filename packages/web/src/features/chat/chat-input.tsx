@@ -2287,7 +2287,7 @@ export function ChatInput({
           (help text/button text visibility uses @md/@lg container breakpoints) — because the
           card's width changes with the viewport and the Files panel squeezing it, viewport
           breakpoints wouldn't judge it accurately. */}
-      <div className="@container rounded-lg border border-gray-300 bg-white px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-400">
+      <div className="ui-glass @container rounded-lg border border-gray-300 bg-white px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-400">
         {/* Chip row above the text body: the staged switch target (an /agent handoff or a
             /model fork — never both), the selected skills, and whatever the Files panel has
             contributed, all sharing the same chip look. Remove buttons recolor the x on hover
@@ -2532,7 +2532,7 @@ export function ChatInput({
           // text-base, not the sm rung the form controls take: this is a full-height typing
           // surface for prose the user composes and re-reads, not a field in a form, and the
           // toolbar under it is already text-xs so the two do not compete.
-          className="block max-h-44 min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 text-base leading-6 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:placeholder:text-gray-500"
+          className="block max-h-44 min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 font-sans text-base leading-6 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:placeholder:text-gray-500"
         />
 
         {/* Bottom toolbar row — one line, two groups: the settings controls sit left, the

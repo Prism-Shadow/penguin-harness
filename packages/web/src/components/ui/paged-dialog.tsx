@@ -93,7 +93,11 @@ export function PagedDialog<K extends string>({
                   onClick={() => onSelect(item.key)}
                 >
                   {item.icon !== undefined && (
-                    <span aria-hidden className="shrink-0 text-gray-400 dark:text-gray-500">
+                    <span
+                      aria-hidden
+                      className="ui-icon-decor shrink-0 text-gray-400 dark:text-gray-500"
+                      data-role="nav"
+                    >
                       {item.icon}
                     </span>
                   )}

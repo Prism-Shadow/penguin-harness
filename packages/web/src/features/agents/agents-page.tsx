@@ -483,7 +483,7 @@ export function AgentsPage() {
             header has the same shape. */}
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
+            <h1 className="ui-display text-xl font-semibold">{S.agent.listTitle}</h1>
             {/* Search plus the create pair, in the Models page header's shape: on a narrow
                 screen flex-wrap drops the pair onto its own line and the box shrinks with it,
                 fixed width from sm up. Both controls take the form rung — CreateButtons defaults
@@ -579,7 +579,7 @@ export function AgentsPage() {
                       </span>
                       {machineName !== null && (
                         <span
-                          className="shrink-0 font-mono text-[11px] normal-case text-gray-400 dark:text-gray-500"
+                          className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
                           title={elsewhereTitle}
                         >
                           {S.chat.machineTag(machineName)}

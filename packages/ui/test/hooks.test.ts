@@ -6,11 +6,12 @@
  * five of them (a gradient wash, a column grid, a dot matrix, corner ticks, radius that eases on
  * hover, mono button labels) were decoration with no job. `src/hooks.ts` exports the six that
  * remained, the seventh added with the theme identities — `ui-shell`, the app window, the one
- * place a theme may lay a colour field (user decision, 2026-09-19) — and the three structure hooks
+ * place a theme may lay a colour field (user decision, 2026-09-19) — the three structure hooks
  * that let the themes differ in organisation rather than in colour alone: `ui-icon-decor` (an icon
  * a theme may recolour or drop), `ui-tree` (rows that nest, which Console joins with connector
- * rules) and `ui-field` (a labelled control row, which Console sets as a table row). This suite
- * holds the source to it:
+ * rules) and `ui-field` (a labelled control row, which Console sets as a table row) — and the
+ * eleventh, `ui-activity` (a step of the agent's work: Frost makes the running row glow, Console
+ * renders a transcript; user decision, 2026-09-29). This suite holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -25,8 +26,10 @@
  * - the markup the recipes select on: `.ui-live` names its signal in `data-live`, `.ui-display`
  *   sits on an h1, `.ui-frame`'s slots are `head`, `body`, `foot` or `pane`, `.ui-shell`'s are
  *   `nav`, `main` or `dock`, `.ui-field`'s are `label`, `control` or `hint`, a tree row's
- *   `data-depth` is a digit 0–8 and its `data-last` is `"true"`, and a decorative icon's
- *   `data-role` is one of the four the recipes tint apart.
+ *   `data-depth` is a digit 0–8 and its `data-last` is `"true"`, a decorative icon's
+ *   `data-role` is one of the four the recipes tint apart, and `.ui-activity` names its kind
+ *   (`thinking` / `tool`), its state (`running` / `done` / `error`) and its slots (`label`,
+ *   `detail`, `progress`).
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -48,60 +51,54 @@ const APPENDIX_A = [
   "ui-icon-decor",
   "ui-tree",
   "ui-field",
+  "ui-activity",
 ];
 
 /**
- * Appendix B: the components that may apply each hook. "Login brand" is the login screen's
- * composition; the page-level hero states are `PageFrame` and `EmptyState`. The shell's one host
- * in the package is `AppShell` (screens/parts.tsx), the app-window frame the modules' mock window
- * and the chat, traces and settings screens all render through (the login screen has no
- * navigation column); the web app's `AppLayout` takes it when the app adopts the shell.
+ * Appendix B: the components that may apply each hook — the web app's own components, which the
+ * gallery frames as they are (the package itself renders none). A component is listed only while
+ * it exists: the last test below fails on a host no scanned file declares.
  *
- * The structure hooks' hosts: a decorative icon lives in the rows and headers whose label already
- * says what the icon says — a navigation row (`NavRow`, the screens' `Sidebar`, the settings
- * dialog's page rail `PagedDialog` / `SettingsDialog`), a group or section header, a menu row, a
- * tab (`Tabs`, the dock's `DockTabs` / `DockFrame`), a composer trigger (`ToolbarTrigger`, and the
- * hero's `ComposerCard` which draws its own), a page header and an empty state's illustration
- * (`EmptyState`, the hero's `HeroStart`, the empty-states module's `FirstSession`). The two icon
- * renderers are listed because they write the class for a `decor` call site; the call site is
- * held to this list too. A session row is not a host: its avatar and its pin and schedule marks
- * carry information. A tree is a file tree (`TreePane`, `FileTree`), a work group's tool rows
- * (`WorkGroup`), a plan's sub-steps (`PlanList`) or the subagent call graph (`SubagentsPanel`,
- * `CallGraph`); a field is a form field (`Field`, `FormField`) or a settings row (`PrefRow`,
- * `SettingRow`).
+ * Glass is for the layers that float over the page (the composer card, dialogs, menus, popovers,
+ * tooltips); the eyebrow and display rungs for the sidebar's list label and the page titles; live
+ * marks for the spinner and the machines page's working marks; frames for the transcript's cards;
+ * the shell for the app layout; a decorative icon for the rows and headers whose label already
+ * says what the icon says (sidebar rows and group headers, the settings rail, a menu row's glyph,
+ * a tab, an empty state) — a session row is not a host, its avatar and marks carry information;
+ * a tree for a file tree and a work group's steps; a field for a settings row; activity for the
+ * transcript's work in progress (the work group's header, a tool call, the thinking row).
  */
 const HOSTS: Readonly<Record<string, readonly string[]>> = {
-  "ui-glass": ["FloatingPanel", "Modal", "ComposerCard", "PageHeader", "Tooltip"],
-  "ui-eyebrow": ["Text", "GroupHeader", "MenuLabel", "PagedDialog", "Table"],
-  "ui-display": ["Heading", "PageFrame", "LoginScreen", "EmptyState"],
-  "ui-live": ["Dot", "Spinner", "StreamingCaret", "ActivityIcon"],
-  "ui-frame": ["ToolCallCard", "WorkGroup", "CodeBlock", "LogView", "DiffViewer", "DockFrame"],
+  "ui-glass": ["ChatInput", "Modal", "Dropdown", "Select", "OptionMenu", "InfoPopover", "Tooltip"],
+  "ui-eyebrow": ["Sidebar", "GroupHeader", "PagedDialog"],
+  "ui-display": [
+    "Heading",
+    "EmptyState",
+    "AgentsPage",
+    "ModelsPage",
+    "PluginsPage",
+    "UsagePage",
+    "BenchmarkPage",
+    "MachinesPage",
+    "DraftView",
+  ],
+  "ui-live": ["Spinner", "Stepper", "MachineCard"],
+  "ui-frame": ["ToolCallCard", "WorkGroup", "CodeBlock"],
   "ui-underline-nav": ["Tabs"],
-  "ui-shell": ["AppShell", "AppLayout"],
+  "ui-shell": ["AppLayout"],
   "ui-icon-decor": [
     "GlyphIcon",
-    "Glyph",
-    "NavRow",
     "Sidebar",
     "PagedDialog",
     "SettingsDialog",
+    "MenuItemGlyph",
     "GroupHeader",
-    "SectionHeader",
-    "MenuItem",
     "Tabs",
-    "DockTabs",
-    "DockFrame",
-    "ToolbarTrigger",
-    "ComposerCard",
-    "PageHeader",
     "EmptyState",
-    "ExampleCard",
-    "ChangesCard",
-    "HeroStart",
-    "FirstSession",
   ],
-  "ui-tree": ["TreePane", "FileTree", "WorkGroup", "PlanList", "SubagentsPanel", "CallGraph"],
-  "ui-field": ["Field", "FormField", "PrefRow", "SettingRow"],
+  "ui-tree": ["FileTree", "WorkGroup"],
+  "ui-field": ["Field", "PrefRow", "SettingRow"],
+  "ui-activity": ["WorkGroup", "ToolCallCard", "DisclosureRow"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -112,8 +109,11 @@ const SHELL_SLOTS = new Set(["nav", "main", "dock"]);
 const FIELD_SLOTS = new Set(["label", "control", "hint"]);
 const LIVE_SIGNALS = new Set(["dot", "caret", "spinner"]);
 const ICON_ROLES = new Set(["nav", "group", "menu", "empty"]);
+const ACTIVITY_KINDS = new Set(["thinking", "tool"]);
+const ACTIVITY_STATES = new Set(["running", "done", "error"]);
+const ACTIVITY_SLOTS = new Set(["label", "detail", "progress"]);
 /** The icon renderers: a `decor` prop on one of these is the decorative-icon hook applied. */
-const ICON_RENDERERS = new Set(["GlyphIcon", "Glyph"]);
+const ICON_RENDERERS = new Set(["GlyphIcon"]);
 /** A tree row's depth: the eight levels the recipes spell out, and the roots. */
 const TREE_DEPTH = /^[0-8]$/;
 
@@ -165,7 +165,7 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the ten of Appendix A, each with its hosts", () => {
+  it("are the eleven of Appendix A, each with its hosts", () => {
     expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
     expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
   });
@@ -193,13 +193,12 @@ describe("style hooks", () => {
   }
 
   // Hooks are applied in markup; a .ts module that names one (a catalog entry) is data, not a host.
-  const markup = filesOf("ui").filter((f) => f.name.endsWith(".tsx"));
-  if (markup.length === 0) {
-    const pending = "PENDING: no .tsx under packages/ui/src yet (screens #763, modules #764, W1)";
-    it.skip(`are applied by their hosts only — ${pending}`, () => {});
-    it.skip(`carry the markup their recipes select on — ${pending}`, () => {});
-    return;
-  }
+  // The web app is where the hosts live now, so its markup is checked alongside the package's.
+  const markup = [...filesOf("ui"), ...filesOf("web")].filter((f) => f.name.endsWith(".tsx"));
+
+  it("find markup to check", () => {
+    expect(markup.length).toBeGreaterThan(0);
+  });
 
   it("are applied by their hosts only (Appendix B)", () => {
     const misplaced = markup.flatMap((file) => {
@@ -269,6 +268,28 @@ describe("style hooks", () => {
         if (names.has("ui-icon-decor") && typeof role === "string" && !ICON_ROLES.has(role)) {
           problems.push(`${at} .ui-icon-decor data-role="${role}" is not nav|group|menu|empty`);
         }
+        // An activity row names its kind and its state as literals the recipes select on; a
+        // slot is a literal too, and only the three the recipes style (the slots are found
+        // anywhere inside the row, so every literal `data-slot` under it is checked by name).
+        if (names.has("ui-activity")) {
+          const kind = element.attributes.get("data-kind");
+          if (kind !== null && (typeof kind !== "string" || !ACTIVITY_KINDS.has(kind))) {
+            problems.push(
+              `${at} .ui-activity needs data-kind="thinking|tool", has ${String(kind)}`,
+            );
+          }
+          const state = element.attributes.get("data-state");
+          if (state !== null && (typeof state !== "string" || !ACTIVITY_STATES.has(state))) {
+            problems.push(
+              `${at} .ui-activity needs data-state="running|done|error", has ${String(state)}`,
+            );
+          }
+          for (const { slot } of childSlots(element)) {
+            if (!ACTIVITY_SLOTS.has(slot)) {
+              problems.push(`${at} .ui-activity slot "${slot}" is not label, detail or progress`);
+            }
+          }
+        }
         // Tree rows are written by the host, wherever it renders them: every literal depth and
         // last mark in the package must be what the recipes select on.
         const depth = element.attributes.get("data-depth");
@@ -290,6 +311,16 @@ describe("style hooks", () => {
       }),
     );
     expect(broken).toEqual([]);
+  });
+
+  it("name only hosts that exist", () => {
+    const declared = new Set(
+      markup.flatMap((file) => analyzeFile(file).components.map((c) => c.name)),
+    );
+    const missing = Object.entries(HOSTS).flatMap(([hook, hosts]) =>
+      hosts.filter((host) => !declared.has(host)).map((host) => `${hook}: ${host}`),
+    );
+    expect(missing, "A host no scanned file declares is a stale entry: remove it.").toEqual([]);
   });
 });
 

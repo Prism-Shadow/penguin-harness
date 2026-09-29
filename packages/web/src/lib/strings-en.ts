@@ -281,7 +281,11 @@ export const en: Strings = {
       `inline image enters the conversation and the Trace, where its size is paid again on ` +
       `every history page and resume.`,
     theme: "Theme",
-    themeInfo: "Light or dark look of the app.",
+    themeInfo:
+      "The app's overall style: layout, lines, type and motion change with it; content and every other setting stay as they are.",
+    themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
+    colorMode: "Mode",
+    colorModeInfo: "Light or dark look of the app.",
     themeLight: "Light",
     themeDark: "Dark",
     followSystem: "System",
@@ -292,11 +296,17 @@ export const en: Strings = {
     langEn: "English",
     fontSize: "Font size",
     fontSizeInfo: "Overall interface font size.",
-    fontSmall: "S",
-    fontMedium: "M",
-    fontLarge: "L",
+    textSizeNames: { xs: "XS", s: "S", m: "M", l: "L", xl: "XL" },
+    fonts: "Fonts",
+    fontsInfo:
+      "The face for Latin text and the face for CJK text, each following the theme by default. Code and other monospaced text always keep the theme's monospaced face.",
+    fontLatin: "Latin",
+    fontCjk: "CJK",
+    fontFollowTheme: "Theme's own",
+    fontSystem: "System font",
     accent: "Accent",
-    accentInfo: "Interface accent color.",
+    accentInfo:
+      "Interface accent color. Each theme offers its own set; after a theme change, a color the new theme does not offer shows as the theme's own until you return.",
     launcher: "Shortcuts launcher",
     launcherInfo:
       "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
@@ -325,12 +335,22 @@ export const en: Strings = {
     companyModeServerInfo:
       "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger. Beta: it may be unstable; please report what you hit.",
     accentNames: {
-      neutral: "Neutral",
+      neutral: "Theme's own",
       blue: "Blue",
       green: "Green",
       violet: "Violet",
       rose: "Rose",
       amber: "Amber",
+      ocean: "Ocean",
+      clay: "Clay",
+      plum: "Plum",
+      honey: "Honey",
+      slate: "Slate",
+      phosphor: "Phosphor",
+      cyan: "Cyan",
+      magenta: "Magenta",
+      gold: "Gold",
+      cobalt: "Cobalt",
     } as Record<string, string>,
   },
 

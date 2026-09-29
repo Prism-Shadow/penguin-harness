@@ -1,6 +1,6 @@
 /**
  * `/fonts` — what the package's `fonts/` ships: each theme's families (resolved from its tokens)
- * set in an en and a zh paragraph at the three root sizes, the `@font-face` rules the page's styles
+ * set in an en and a zh paragraph at the five text sizes, the `@font-face` rules the page's styles
  * declare — one row per family, weight and style, with the number of `unicode-range` slices behind
  * it and their load status (MiSans alone declares ~200 slice faces) — and the licence texts under
  * `fonts/LICENSES/`. A docs page like the others: the top bar's controls pick the mode.
@@ -9,7 +9,7 @@ import { THEME_IDS } from "@prismshadow/penguin-ui";
 import { useEffect, useState } from "react";
 import { Site } from "../chrome/site";
 import { SPECIMENS } from "../foundations/specimens";
-import { TIER_PX } from "../lib/themes";
+import { TEXT_SIZE_PX_NUMBER, TEXT_SIZES } from "../lib/themes";
 import { useText } from "../preview";
 import { FONT_LICENSES, licencePath } from "../sources";
 import { useGallery } from "../state";
@@ -121,13 +121,16 @@ export function FontsPage() {
                           </span>
                         </div>
                         <div className="g-font-samples">
-                          {(Object.keys(TIER_PX) as (keyof typeof TIER_PX)[]).map((tier) => (
+                          {TEXT_SIZES.map((size) => (
                             <div
-                              key={tier}
+                              key={size}
                               className="g-font-sample"
-                              style={{ fontFamily: family || undefined, fontSize: TIER_PX[tier] }}
+                              style={{
+                                fontFamily: family || undefined,
+                                fontSize: TEXT_SIZE_PX_NUMBER[size],
+                              }}
                             >
-                              <span className="g-font-size">{TIER_PX[tier]}px</span>
+                              <span className="g-font-size">{TEXT_SIZE_PX_NUMBER[size]}px</span>
                               {(["en", "zh"] as const).map((lang) => (
                                 <p key={lang} lang={lang === "zh" ? "zh-CN" : "en"}>
                                   {role === "--ui-font-mono"

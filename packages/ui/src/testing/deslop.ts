@@ -49,7 +49,7 @@ export const DESLOP_RULES = {
   11: "one spinner",
   12: "spacing on the rhythm steps",
   13: "text sizes are rungs",
-  14: "uppercase only through the eyebrow and display hooks",
+  14: "uppercase only through the eyebrow, display and activity hooks",
   15: "numbers that align or update use tabular figures",
   16: "mono is for data, not labels",
   17: "one bordered surface per region",
@@ -1129,12 +1129,16 @@ const cssAnimationCheck =
         : [],
     );
 
-/** Rule 14: `text-transform: uppercase` outside `.ui-eyebrow` / `.ui-display` rules. */
+/**
+ * Rule 14: `text-transform: uppercase` outside `.ui-eyebrow` / `.ui-display` rules — and the
+ * `.ui-activity` label, the transcript's mono capitals (user decision, 2026-09-29): a step's
+ * label is a group-label rung in Console, and the hook is the one door to it.
+ */
 const cssUppercaseCheck: Check = (analysis) =>
   declarations(analysis).flatMap(({ rule, decl }) =>
     decl.name === "text-transform" &&
     decl.value === "uppercase" &&
-    !/\.ui-(?:eyebrow|display)\b/.test(fullSelector(rule))
+    !/\.ui-(?:eyebrow|display|activity)\b/.test(fullSelector(rule))
       ? [{ line: decl.line, found: `${rule.selector} { text-transform: uppercase }` }]
       : [],
   );
@@ -1151,17 +1155,22 @@ const cssHookMonoCheck: Check = (analysis) =>
 
 /**
  * Gradients painted by a hook recipe — the atmosphere tell — and backdrop filters off `.ui-glass`.
- * The one recipe that may paint a gradient is `.ui-shell`'s: the colour field behind the app
- * window, which holds the floating sheet and the glass layers against it and so has a job
- * (user decision, 2026-09-19); a wash on any other hook is still the tell. A gradient in app CSS
- * that is not a hook (the context bar's hatch, which carries meaning) is review.
+ * Two recipes may paint a gradient, each with a job: `.ui-shell`'s colour field behind the app
+ * window, which holds the floating sheet and the glass layers against it (user decision,
+ * 2026-09-19), and the RUNNING state of `.ui-activity`, whose highlight sweeping across a label
+ * is the signal that a step is in progress (user decision, 2026-09-29) — never the resting
+ * states, so a finished transcript carries no wash. A gradient on any other hook is still the
+ * tell. A gradient in app CSS that is not a hook (the context bar's hatch, which carries
+ * meaning) is review.
  */
+const GRADIENT_RECIPES = /\.ui-shell\b|\.ui-activity\[data-state="running"\]/;
+
 const cssDecorationCheck: Check = (analysis) =>
   declarations(analysis).flatMap(({ rule, decl }) => {
     const selector = fullSelector(rule);
     if (
       /\.ui-[a-z]/.test(selector) &&
-      !/\.ui-shell\b/.test(selector) &&
+      !GRADIENT_RECIPES.test(selector) &&
       /^background(?:-image)?$/.test(decl.name) &&
       /gradient\(/.test(decl.value)
     ) {

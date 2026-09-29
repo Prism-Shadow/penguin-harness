@@ -15,9 +15,11 @@
  *
  * Attributes on <html>: `class="dark"` (mode), `data-theme` (absent = github), `data-accent`
  * (absent = the theme's own accent; an id the active theme does not list paints nothing, which
- * is the same), `data-motion="reduced"` (the gallery's switch; the app answers the media query
- * instead). The pre-paint script in boot.ts sets the first three before the first frame; the
- * app's theme provider keeps them in sync afterwards.
+ * is the same), `data-font-latin` / `data-font-cjk` (absent = the theme's own faces; the `ui-font`
+ * layer at the end resolves a chosen face), `data-motion="reduced"` (the gallery's switch; the
+ * app answers the media query instead). The pre-paint script in boot.ts sets all but the last
+ * before the first frame, and the root font-size with them; the app's theme provider keeps them
+ * in sync afterwards.
  */
 
 /* Dark mode is the `dark` class on <html>, not the media query: the user can pin either mode. */
@@ -31,8 +33,10 @@
    them override a utility's declaration. The one thing in ui-theme that does override utilities
    is a theme's style-hook recipes (hooks.ts), and they sit there for exactly that: `.ui-live`
    re-times its host's `animate-spin`, `.ui-glass` replaces its host's opaque fill, `.ui-shell`
-   re-paints its host's columns, `.ui-field` re-lays its host's row. */
-@layer ui-theme, ui-accent;
+   re-paints its host's columns, `.ui-field` re-lays its host's row. The user's font pairing
+   lives in ui-font, last: a chosen face must beat every theme rule, the dark one included,
+   whatever its specificity, and a layer after the theme's does that without a selector race. */
+@layer ui-theme, ui-accent, ui-font;
 
 /*
  * The bridge. `inline` makes each utility reference `var(--ui-*)` directly instead of the
@@ -70,6 +74,7 @@
 
   /* Text */
   --color-fg: var(--ui-fg);
+  --color-fg-emphasis: var(--ui-fg-emphasis);
   --color-fg-muted: var(--ui-fg-muted);
   --color-fg-subtle: var(--ui-fg-subtle);
   --color-link: var(--ui-fg-link);
@@ -88,6 +93,12 @@
   --color-accent-fg: var(--ui-accent-fg);
   --color-accent-muted: var(--ui-accent-muted);
   --color-accent-line: var(--ui-accent-line);
+
+  /* The switch: bg-switch-track (off), bg-switch-knob (the knob on it), bg-switch-knob-on (the
+     knob on the accent). */
+  --color-switch-track: var(--ui-switch-track);
+  --color-switch-knob: var(--ui-switch-knob);
+  --color-switch-knob-on: var(--ui-switch-knob-on);
 
   /* Semantic tones: text-tone-danger-fg, bg-tone-success-bg, border-tone-attention-line, … */
   --color-tone-success-fg: var(--ui-tone-success-fg);
@@ -343,12 +354,25 @@
 :root[data-motion="reduced"] [data-layout-motion] {
   transition: none;
 }
+/* The `ui-activity` recipes animate the running row (Frost's halo), a slot inside it (Frost's
+   label highlight) and a slot's pseudo-elements (Console's block bar), so all three are named:
+   each holds its declared, unanimated state instead — a still halo, plain ink, one fill. */
+:root[data-motion="reduced"] :is(.ui-activity, .ui-activity *),
+:root[data-motion="reduced"] :is(.ui-activity, .ui-activity *)::before,
+:root[data-motion="reduced"] :is(.ui-activity, .ui-activity *)::after {
+  animation: none;
+}
 @media (prefers-reduced-motion: reduce) {
   :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
     animation: none;
   }
   [data-layout-motion] {
     transition: none;
+  }
+  :is(.ui-activity, .ui-activity *),
+  :is(.ui-activity, .ui-activity *)::before,
+  :is(.ui-activity, .ui-activity *)::after {
+    animation: none;
   }
 }
 
@@ -359,8 +383,41 @@
    `calc(var(--ui-tree-inset) + var(--ui-tree-indent) * depth)`, and a theme's recipe draws its
    rules on the columns that formula gives. `--_depth` is private to the recipes (not a token). It
    sits in ui-theme so a theme's own `.ui-tree` rules, which come later in the layer, may read or
-   override it; Primer, with no tree recipe, is untouched by it. */
+   override it; Primer, with no tree recipe, is untouched by it.
+
+   Two recipes are the same in every theme and so live here once, reading tokens: the eyebrow is
+   the h6 rung (a theme says what the rung is — Primer's small tracked capitals, Frost's
+   sentence case, Console's tracked mono capitals — and may add its ink in its own rule), and
+   the display title takes the emphasis ink, the near-white a dark theme keeps for its headings
+   over a calmer body ink. A theme file's own `.ui-eyebrow` / `.ui-display` rules come later in
+   the layer and add to these. */
 @layer ui-theme {
+  .ui-eyebrow {
+    font-family: var(--ui-h6-font);
+    font-size: var(--ui-h6-size);
+    line-height: var(--ui-h6-lh);
+    font-weight: var(--ui-h6-weight);
+    letter-spacing: var(--ui-h6-tracking);
+    text-transform: var(--ui-h6-transform);
+  }
+  .ui-display {
+    color: var(--ui-fg-emphasis);
+  }
+
+  /* Where a tree's levels start. A tree with roots (a file tree) indents from the tree inset;
+     a tree with no depth-0 rows hangs off its container's own head (a work group's steps under
+     its header), so its first level is the head's level: a recipe that indents by
+     `--_lead + indent × (depth − base)` sets that level flush with the head and only indents
+     deeper ones. Console reads `--_depth` alone, because its elbows hang the first level off
+     the head on purpose. Both are private to the recipes (not tokens). */
+  .ui-tree {
+    --_base: 0;
+    --_lead: var(--ui-tree-inset);
+  }
+  .ui-tree:not(:has([data-depth="0"])) {
+    --_base: 1;
+    --_lead: 0px;
+  }
   .ui-tree [data-depth] {
     --_depth: 8;
   }
@@ -387,5 +444,40 @@
   }
   .ui-tree [data-depth="7"] {
     --_depth: 7;
+  }
+}
+
+/* The user's font pairing (boot.ts, `FONT_LATIN_OPTIONS` / `FONT_CJK_OPTIONS`): a chosen Latin
+   face replaces the reading sans — `--ui-font-ui` follows it in Primer and Frost, and Console's
+   chrome stays in its mono face, which no pairing touches — and a chosen CJK face replaces
+   `--ui-font-cjk`, which every theme's sans stack reads for Han (the mono stacks that read it
+   follow too: Han inside code takes the chosen face, the Latin code face stays). No attribute is
+   the theme's own choice, declared in its theme file. Only faces the app bundles are listed, so
+   a choice never names a family the page cannot load; the Latin stacks keep the CJK face ahead
+   of the generic fallbacks, and a Latin face first, so ASCII always renders in the chosen face.
+   The system CJK stack names the platform faces the themes already fall back on. */
+@layer ui-font {
+  :root[data-font-latin="system"] {
+    --ui-font-sans:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, var(--ui-font-cjk), sans-serif;
+  }
+  :root[data-font-latin="mona-sans"] {
+    --ui-font-sans: "Mona Sans Variable", var(--ui-font-cjk), ui-sans-serif, system-ui, sans-serif;
+  }
+  :root[data-font-latin="ibm-plex-sans"] {
+    --ui-font-sans:
+      "IBM Plex Sans Variable", var(--ui-font-cjk), ui-sans-serif, system-ui, sans-serif;
+  }
+  :root[data-font-latin="misans"] {
+    --ui-font-sans: "MiSans", var(--ui-font-cjk), ui-sans-serif, system-ui, sans-serif;
+  }
+  :root[data-font-cjk="system"] {
+    --ui-font-cjk: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC";
+  }
+  :root[data-font-cjk="noto-sans-sc"] {
+    --ui-font-cjk: "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei";
+  }
+  :root[data-font-cjk="misans"] {
+    --ui-font-cjk: "MiSans", "PingFang SC", "Microsoft YaHei";
   }
 }

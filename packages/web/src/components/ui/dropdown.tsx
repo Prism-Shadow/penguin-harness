@@ -305,7 +305,7 @@ export function Dropdown({
   // Portaled panels sit at z-[60], above a Modal's z-50 overlay (a body portal appended
   // after the overlay would otherwise paint UNDER it and be unclickable); in-flow panels
   // keep the z-40 menu tier — they stack within their host's own context.
-  const panelClass = `anim-pop ${portal ? "z-[60]" : "z-40"} overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900 ${
+  const panelClass = `ui-glass anim-pop ${portal ? "z-[60]" : "z-40"} overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900 ${
     portal ? "" : "max-h-[70vh]"
   } ${menuClass ?? "left-0 top-full mt-1 w-64 max-w-[calc(100vw-2rem)] origin-top-left"}`;
 

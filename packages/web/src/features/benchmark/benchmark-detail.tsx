@@ -307,9 +307,7 @@ function CasesSection({
                 <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">
                   {item.title}
                 </span>
-                <span className="block truncate font-mono text-[11px] text-gray-400">
-                  {item.id}
-                </span>
+                <span className="block truncate font-mono text-xs text-gray-400">{item.id}</span>
               </span>
               {/* Styled as the quiet gray action the Workspace download link is, not as a
                   link: the row itself is the button, so an accent-colored label here read as

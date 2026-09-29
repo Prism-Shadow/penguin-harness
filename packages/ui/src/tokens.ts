@@ -26,7 +26,15 @@
  * Two faces, not one: `--ui-font-ui` is the chrome's face (navigation, controls, labels, headings,
  * badges, tables — `body` reads it), `--ui-font-sans` the reading face (message text, prose, the
  * composer's input, which opt in with `font-sans`). Primer and Frost point both at one family;
- * Console sets the chrome in a monospaced face and keeps reading text in a sans.
+ * Console sets the chrome in a monospaced face and keeps reading text in a sans. Every sans
+ * stack reads `--ui-font-cjk` for Han, so the user's font pairing (boot.ts, `data-font-latin` /
+ * `data-font-cjk`, resolved in `theme.css`'s `ui-font` layer) replaces the sans and the CJK face
+ * under any theme and leaves the mono face alone.
+ *
+ * Dark mode is calmer than a white-on-black inversion: `--ui-fg` is the body ink at roughly
+ * 70% white (about 9:1, never under 7:1), `--ui-fg-emphasis` the near-white kept for headings
+ * and emphasis (the two are one value in light), and the muted and subtle inks step down from
+ * the body ink (muted never under 4.5:1). Surfaces sit a step off pure black.
  *
  * Motion is three languages behind one set of names: the presence tokens (`--ui-dur-enter`,
  * `--ui-enter-shift`, `--ui-enter-scale`, `--ui-enter-blur`, …) drive the theme-independent
@@ -61,8 +69,12 @@ export interface AccentPresetSpec {
 /**
  * The user's accent presets, per theme (user decision, 2026-09-19). Each theme declares its own
  * list and values in its own file, in `@layer ui-accent`, on `:root[data-accent="<id>"]` scoped to
- * that theme; a preset overrides the six accent tokens and nothing else. `neutral` is the absence
- * of a preset — no `data-accent` attribute — and resolves to the active theme's accent.
+ * that theme. A preset sets `--ui-accent` — and `--ui-accent-fg` where its label's ink differs
+ * from the theme's — and nothing outside the accent group: Frost and Console derive the hover
+ * and active fills and the muted and line washes from `--ui-accent` in their base rules, so a
+ * preset is one value per mode and carries no second copy of the family. Primer's five keep all
+ * six values literal, byte for byte what the Web App has always rendered. `neutral` is the
+ * absence of a preset — no `data-accent` attribute — and resolves to the active theme's accent.
  *
  * A stored choice outlives the theme that listed it: the root carries `data-accent` for any known
  * id, a theme's preset rules match only their own theme, so a preset the active theme does not
@@ -148,7 +160,16 @@ export const TOKEN_GROUPS = [
   {
     id: "color-text",
     title: "Colour — text",
-    names: ["--ui-fg", "--ui-fg-muted", "--ui-fg-subtle", "--ui-fg-link", "--ui-fg-link-hover"],
+    // `fg` is the body ink; `fg-emphasis` the strong ink of headings and emphasis (the same
+    // value in light, near-white in dark where the body ink is calmer).
+    names: [
+      "--ui-fg",
+      "--ui-fg-emphasis",
+      "--ui-fg-muted",
+      "--ui-fg-subtle",
+      "--ui-fg-link",
+      "--ui-fg-link-hover",
+    ],
   },
   {
     id: "color-lines",
@@ -298,6 +319,15 @@ export const TOKEN_GROUPS = [
       "--ui-field-label-w",
       "--ui-field-gap",
     ],
+  },
+  {
+    id: "controls",
+    title: "Controls — the switch",
+    // The switch's off track and the knob on it, and the knob on the on track (the accent). A
+    // knob keeps 3:1 against its track in every theme, mode and preset — `knob-on` follows the
+    // accent's label ink, which already flips to a dark ink on a light fill — so the knob never
+    // vanishes on a near-white dark accent.
+    names: ["--ui-switch-track", "--ui-switch-knob", "--ui-switch-knob-on"],
   },
   {
     id: "type-families",

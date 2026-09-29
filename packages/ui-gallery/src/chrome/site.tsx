@@ -1,15 +1,15 @@
 /**
  * The site frame every page renders inside: the top bar, then the body — an optional left column
- * with the module list, the content column, and an optional right column ("on this page").
+ * with the surface list, the content column, and an optional right column ("on this page").
  *
  * At phone width the columns collapse: the left and right columns disappear, the content column
  * fills, and the menu button in the bar opens a drawer under it holding the page links, the view
- * controls and the module list, closed again by a link, the button or Escape.
+ * controls and the surface list, closed again by a link, the button or Escape.
  */
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useGallery } from "../state";
-import { ModuleNav } from "./sidenav";
+import { SurfaceNav } from "./sidenav";
 import { ModeSwitch, PageLinks, TopBar, ViewControls, ViewToggles } from "./topbar";
 import type { SitePage } from "./topbar";
 
@@ -22,13 +22,13 @@ export function Site({
   children,
 }: {
   page: SitePage;
-  /** The module page this is, for the module list's current mark. */
+  /** The surface or module page this is, for the list's current mark. */
   activeId?: string | null;
-  /** Show the module list in the left column (module pages). */
+  /** Show the surface list in the left column. */
   nav?: boolean;
-  /** The right column's content (module pages). */
+  /** The right column's content. */
   toc?: ReactNode;
-  /** Let the content column grow past the reading width: compare frames need the room. */
+  /** Let the content column grow past the reading width: frames need the room. */
   wide?: boolean;
   children: ReactNode;
 }) {
@@ -62,13 +62,13 @@ export function Site({
               <ModeSwitch />
             </div>
           </div>
-          <ModuleNav activeId={activeId} onNavigate={close} />
+          <SurfaceNav activeId={activeId} onNavigate={close} />
         </div>
       )}
       <div className="g-body" data-wide={wide || undefined}>
         {nav && (
           <aside className="g-sidenav">
-            <ModuleNav activeId={activeId} />
+            <SurfaceNav activeId={activeId} />
           </aside>
         )}
         <main className="g-main">{children}</main>

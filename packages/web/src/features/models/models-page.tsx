@@ -1122,7 +1122,7 @@ export function ModelsPage() {
       <div className="mx-auto max-w-5xl">
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+            <h1 className="ui-display flex items-center gap-1.5 text-xl font-semibold">
               {S.models.title}
               {!isOwner && (
                 <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>

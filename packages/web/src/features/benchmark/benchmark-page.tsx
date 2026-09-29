@@ -490,7 +490,7 @@ export function BenchmarkPage() {
             stays one gap — the Agents and Models headers have the same shape. */}
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="text-xl font-semibold">{S.benchmark.title}</h1>
+            <h1 className="ui-display text-xl font-semibold">{S.benchmark.title}</h1>
             {/* Search plus the two create entry points. Below sm the search box takes a line of
                 its own and the pair of buttons wraps under it: three controls sharing a phone's
                 width would leave the box too narrow to read what was typed into it. */}

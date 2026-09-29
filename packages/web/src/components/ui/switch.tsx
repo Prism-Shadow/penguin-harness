@@ -8,13 +8,15 @@
  * Geometry (all integer pixels): a 16px knob in the 36x20px track, inset 2px on every side
  * in both states (travel 2px -> 18px), and at either end concentric with the track's
  * end-cap circle (center 10px in from the edge), so the gap along the arcs matches the
- * straight runs. The track draws a 1px inset hairline; the knob's hairline is a *border* —
+ * straight runs. The knob is painted from the theme's two knob tokens, one per track: the on
+ * track is the accent, and an accent can be near-white (a dark theme's neutral accent, a lifted
+ * preset), where a white knob would vanish — the theme picks a knob that stays apart from each
+ * track at every accent. The track draws a 1px inset hairline; the knob's hairline is a *border* —
  * inside its own 16px — not an outer ring: an outer ring would fill the gap on the near arc
  * and stack on the track hairline as one heavier line, reading as unequal spacing. Net
  * clearance between knob edge and outline is thus a uniform 1px all around. No offset
  * shadow (it reads as vertical asymmetry at this size); the hairlines keep the edges
- * defined on any surface (the dark neutral accent is near-white, where the white knob would
- * otherwise vanish); dark-mode aware; disabled dims and blocks. The focus ring is
+ * defined on any surface; dark-mode aware; disabled dims and blocks. The focus ring is
  * accent-tinted and `focus-visible`-only, so keyboard focus shows it but a mouse click
  * doesn't leave a lingering halo. Sized for compact (sm) form rows, matching the dialogs'
  * controls.
@@ -50,8 +52,10 @@ export function Switch({ checked, onChange, disabled, className, ...rest }: Swit
     >
       <span
         aria-hidden
-        className={`inline-block size-4 rounded-full border border-black/10 bg-white transition-transform duration-200 ease-out ${
-          checked ? "translate-x-[18px]" : "translate-x-0.5"
+        className={`inline-block size-4 rounded-full border border-black/10 transition-transform duration-200 ease-out ${
+          checked
+            ? "translate-x-[18px] bg-(--ui-switch-knob-on)"
+            : "translate-x-0.5 bg-(--ui-switch-knob)"
         }`}
       />
     </button>

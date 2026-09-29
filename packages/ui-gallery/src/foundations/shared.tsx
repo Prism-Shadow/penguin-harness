@@ -6,7 +6,6 @@
  */
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { FIXTURES } from "../../../ui/src/fixtures";
 import { useGallery } from "../state";
 import { SPECIMENS } from "./specimens";
 
@@ -137,17 +136,17 @@ export function ReplayButton({ onClick, label }: { onClick: () => void; label?: 
  * row; Primer leaves the specimen's own classes alone.
  */
 export function ShellSpecimen() {
-  const { state } = useGallery();
-  const nav = FIXTURES[state.lang].copy.nav;
+  const { S, state } = useGallery();
+  const [newChat, agents, models] = S.foundations.motionSpecimens.sidebarRows;
   const specimen = SPECIMENS[state.lang];
   return (
     <div className="ui-shell gf-shell">
       <div data-slot="nav" className="gf-shell-nav">
         <span className="gf-shell-row" aria-current="page">
-          {nav.newChat}
+          {newChat}
         </span>
-        <span className="gf-shell-row">{nav.agents}</span>
-        <span className="gf-shell-row">{nav.models}</span>
+        <span className="gf-shell-row">{agents}</span>
+        <span className="gf-shell-row">{models}</span>
       </div>
       <div data-slot="main" className="gf-shell-main">
         <strong className="gf-shell-title">{specimen.heading}</strong>

@@ -1,7 +1,7 @@
 /**
  * English gallery chrome copy, constrained by `GalleryStrings` to the shape of the Chinese
- * dictionary in strings.ts. Module and catalog titles and descriptions come from the module files
- * and catalog.ts themselves.
+ * dictionary in strings.ts. The Foundations module's titles come from the module file and
+ * catalog.ts themselves; the surfaces are named here, as in the Chinese dictionary.
  */
 import type { GalleryStrings } from "./strings";
 
@@ -11,45 +11,154 @@ export const en: GalleryStrings = {
   },
   site: {
     home: "Home",
-    components: "Components",
-    screens: "Screens",
+    surfaces: "Surfaces",
+    foundations: "Foundations",
     fonts: "Fonts",
     pages: "Pages",
-    search: "Search modules",
+    search: "Search surfaces",
     searchShortcut: "Ctrl K",
-    noMatches: "No module matches.",
-    modules: "Modules",
+    noMatches: "No surface matches.",
+    nav: "Surfaces",
     onThisPage: "On this page",
     settings: "View settings",
     menu: "Open the menu",
     closeMenu: "Close the menu",
-    notFound: (id) => `There is no module named “${id}”.`,
-    allModules: "All modules",
+    notFound: (id) => `There is no page named “${id}”.`,
+    allSurfaces: "All surfaces",
     feedbackTitle: "Feedback",
     feedbackBody:
-      "Quote the breadcrumb at the end of a preview's toolbar, or copy the section's address with the link button.",
-    feedbackExample: "Frost › Conversation › Approval · dark",
+      "Quote the breadcrumb at the end of a frame's toolbar, or copy the page's address with the link button.",
+    feedbackExample: "Frost › Chat · dark",
   },
-  groups: {
-    foundations: "Foundations",
-    conversation: "Conversation & composer",
-    navigation: "Navigation & layout",
-    actions: "Actions & feedback",
-    forms: "Forms & overlays",
-    data: "Data",
-    content: "Content",
-    flows: "Product flows",
-    screens: "Screens",
+  surfaceGroups: {
+    conversation: "Conversation",
+    workbench: "Workbench",
+    resources: "Resources",
+    measure: "Measure",
+    system: "System",
+  },
+  surfaces: {
+    chat: {
+      title: "Chat",
+      description:
+        "A finished Task: thinking, three tool calls, a diff, and a Markdown answer with a table and code.",
+      how: "Sidebar › any row of the session list.",
+    },
+    "chat-running": {
+      title: "Chat · tool running",
+      description:
+        "A Task mid-run: a command is executing, and the tool row shows the running state and its timer.",
+      how: "Sidebar › a session row with the running mark.",
+    },
+    "chat-thinking": {
+      title: "Chat · thinking",
+      description:
+        "A Task mid-run: the model is thinking; the thinking row shows the running state and the text keeps growing.",
+      how: "Sidebar › a session row with the running mark.",
+    },
+    "chat-approval": {
+      title: "Chat · awaiting approval",
+      description:
+        "A Task waiting on a human: a command needs approval; allow or deny it and the Task carries on and ends.",
+      how: "Sidebar › a session row with the approval mark.",
+    },
+    "chat-new": {
+      title: "New chat",
+      description:
+        "The draft page: pick the Agent, Workspace, approval mode and model, then type and send the first message.",
+      how: "Sidebar › New chat.",
+    },
+    agents: {
+      title: "Agents",
+      description:
+        "The Agent list: each Agent's activity curve and its session, tool, Skill and schedule counts.",
+      how: "Sidebar › Agents.",
+    },
+    "agent-settings": {
+      title: "Agent settings",
+      description:
+        "One Agent's settings page: overview, prompt, memory, runtime, tools, Skills, hooks, Vault and schedule tabs.",
+      how: "Agents › any Agent.",
+    },
+    schedules: {
+      title: "Schedules",
+      description:
+        "The Agent settings' schedule tab: periods, next fire time, the bound Session and model.",
+      how: "Agents › Agent settings › the Schedules tab.",
+    },
+    plugins: {
+      title: "Plugins",
+      description:
+        "The plugin library by category, with search and filters; installed Skills and hooks per Agent.",
+      how: "Sidebar › Plugins.",
+    },
+    "plugin-detail": {
+      title: "Plugin detail",
+      description:
+        "One plugin's page: its description, the Skills it brings, its file browser and the install action.",
+      how: "Plugins › any plugin.",
+    },
+    models: {
+      title: "Models",
+      description:
+        "The model table by provider: the default model, credentials, prices, context windows and usage.",
+      how: "Sidebar › Models.",
+    },
+    machines: {
+      title: "Machines",
+      description:
+        "This machine and remote ones: install state, connections, probe results, and adding an ssh host.",
+      how: "Sidebar › Machines (admins only).",
+    },
+    usage: {
+      title: "Cost center",
+      description:
+        "Thirty days of usage: Tokens, cost, requests and success rate, grouped by date, Agent, model or Session, with the error panel.",
+      how: "Sidebar › Cost center.",
+    },
+    benchmark: {
+      title: "Evaluation center",
+      description:
+        "The Benchmark list: published and draft status, case counts, and the score trend across evaluations.",
+      how: "Sidebar › Evaluation center.",
+    },
+    "benchmark-detail": {
+      title: "Benchmark detail",
+      description:
+        "One Benchmark: the score curve, each evaluation's case scores, and the cases' statement and rubric files.",
+      how: "Evaluation center › any Benchmark.",
+    },
+    settings: {
+      title: "Settings",
+      description:
+        "The settings dialog: profile, general, appearance (theme, mode, accent, text size, fonts), account, and the server settings.",
+      how: "The account menu at the bottom of the sidebar › Settings.",
+    },
+    "settings-appearance": {
+      title: "Appearance settings",
+      description:
+        "The settings dialog on its Appearance page: theme, mode, accent, the five text sizes and the font pairing — where theme switching lives.",
+      how: "The account menu at the bottom of the sidebar › Settings › Appearance.",
+    },
+    login: {
+      title: "Login",
+      description:
+        "The sign-in page: the login card over the decorative canvas. Any password signs the demo account in.",
+      how: "Any address while signed out.",
+    },
   },
   home: {
-    eyebrow: "Component gallery",
+    eyebrow: "Surface gallery",
     title: "Penguin UI",
-    lead: "Every module of the shared UI package, as a real interface in three themes, two modes, three root sizes and two languages.",
-    shell: "The app shell",
-    shellLead:
-      "A real-proportion app window built from the modules' own compositions: switch the sidebar's pages, open a session, collapse the sidebar, type into the composer and send — laid out by each theme in its own way.",
-    index: "Component index",
-    indexLead: "One page per module: a section per variant, then its parts, tokens and source.",
+    lead: "The real Web App, running in three themes, two modes, five text sizes, the font pairings and two languages — on an in-browser demo API, fully clickable.",
+    app: "The app",
+    appLead:
+      "This is the app itself: the sidebar, every center, the chat and the settings all open. The theme and size controls drive the app in the frame; sending a message streams a scripted reply.",
+    index: "Surface index",
+    indexLead: "One page per surface: the app opened on it, comparable across the three themes.",
+    foundations: "Foundations and fonts",
+    foundationsLead:
+      "The boards of the token vocabulary, and the bundled faces, specimens and licences.",
   },
   rail: {
     theme: "Theme",
@@ -58,14 +167,25 @@ export const en: GalleryStrings = {
     accent: "Accent",
     accentTheme: "Theme's own",
     size: "Size",
+    sizeNames: { xs: "XS", s: "S", m: "M", l: "L", xl: "XL" },
+    sizeTitle: (name, px) => `${name} · ${px}px root`,
+    fontLatin: "Latin font",
+    fontCjk: "CJK font",
+    fontTheme: "Theme default",
+    fontSystem: "System",
     language: "Language",
     viewport: "Viewport",
     viewports: { desktop: "Desktop", phone: "Phone" },
     langNames: { en: "EN", zh: "中文" },
     modes: { light: "Light", dark: "Dark", system: "System" },
-    sizeTitle: (px) => `${px}px root`,
     compare: "Compare themes",
-    reducedMotion: "Reduced motion",
+  },
+  readout: {
+    label: "Fonts in use",
+    latin: "Latin",
+    cjk: "CJK",
+    mono: "Mono",
+    pending: "Reading…",
   },
   crumb: {
     modes: { light: "light", dark: "dark" },
@@ -75,17 +195,15 @@ export const en: GalleryStrings = {
     resolving: "Resolving tokens…",
     problems: "Module and demo problems",
   },
-  variant: {
-    kinds: { animated: "Animation", interactive: "Interactive", static: "Still" },
-    kindHints: {
-      animated: "Press play to watch the scene; at rest it shows the settled state.",
-      interactive: "Click and type in it; Reset returns it to its first state.",
-      static: "A still.",
-    },
-    reset: "Reset",
+  frame: {
     open: "Open standalone",
+    reload: "Reload",
     compare: "Compare themes",
     compareOn: "Leave compare",
+    frameOf: (theme) => `The app in ${theme}`,
+    how: "Where it is in the app",
+    route: "Route",
+    signedOut: "signed out",
   },
   section: {
     copyLink: "Copy link",
@@ -96,34 +214,12 @@ export const en: GalleryStrings = {
     source: "Source",
     variants: "Variants",
     tokensIn: (where, count) => `${count} tokens read, resolved in ${where}`,
-    noTokens: "This composition reads no tokens.",
+    noTokens: "This board reads no tokens.",
     unset: "unset",
     loadingCode: "Loading source…",
-    compareFrame: (theme) => `${theme} preview`,
     partsOf: (count) => `${count} ${count === 1 ? "part" : "parts"}`,
     noParts: "This module lists no parts.",
     replaces: (what) => `replaces ${what}`,
-  },
-  transport: {
-    label: "Playback",
-    play: "Play",
-    pause: "Pause",
-    replay: "Replay",
-    previous: "Previous frame",
-    next: "Next frame",
-    frames: "Frames",
-    rate: "Speed",
-  },
-  embed: {
-    unknownModule: (id) => `There is no module named “${id}”.`,
-    noDemo: (id) => `“${id}” has no demo yet.`,
-    nothing: "Name what to render with ?module=<module> or ?demo=<part>.",
-  },
-  screens: {
-    open: "Open full screen",
-    back: "Back to the Screens page",
-    notFound: (name) => `There is no screen named “${name}”.`,
-    descriptions: {},
   },
   foundations: {
     surfaces: "Surfaces",
@@ -185,8 +281,8 @@ export const en: GalleryStrings = {
       appearance: "Appearance",
       theme: "Theme",
       themeOptions: ["Light", "Dark", "System"],
-      fontSize: "Font size",
-      sizeOptions: ["S", "M", "L"],
+      fontSize: "Text size",
+      sizeOptions: ["XS", "S", "M", "L", "XL"],
       general: "General",
       language: "Language",
       languageOptions: ["中文", "English"],
@@ -239,6 +335,7 @@ export const en: GalleryStrings = {
       "ui-tree":
         "a list whose rows nest: a file tree, a work group's tool rows, the subagent graph",
       "ui-field": "a labelled control row: a form field or a settings row",
+      "ui-activity": "a thinking or tool row at work: running, done or in error",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -265,7 +362,8 @@ export const en: GalleryStrings = {
   fonts: {
     title: "Fonts & licences",
     specimens: "Specimens",
-    specimensHint: "Each theme's families, one en and one zh paragraph at 16 / 18 / 20 px.",
+    specimensHint:
+      "Each theme's families, one en and one zh paragraph at the five text sizes (14 / 15 / 16 / 18 / 20 px).",
     declared: "Declared faces",
     declaredHint:
       "The @font-face rules in the page's stylesheets, merged by family, weight and style; a browser downloads a slice only when text uses it.",

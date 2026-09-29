@@ -19,9 +19,6 @@
       "default": "./src/fonts/index.css"
     },
     "./boot": "./src/boot.ts",
-    "./fixtures": "./src/fixtures/index.ts",
-    "./hero": "./src/hero/index.ts",
-    "./screens": "./src/screens/index.ts",
     "./testing": "./src/testing/index.ts"
   },
   "scripts": {

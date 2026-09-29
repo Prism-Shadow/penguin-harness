@@ -109,7 +109,7 @@ export function Select({
           <div
             ref={panelRef}
             role="listbox"
-            className="anim-pop fixed z-[60] max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className="ui-glass anim-pop fixed z-[60] max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
             style={{
               left: position.left,
               width: position.triggerWidth,

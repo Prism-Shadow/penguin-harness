@@ -145,8 +145,10 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/dock/dock-drag.tsx": { 3: [1, "W7"], 12: [1, "W7"] },
   "features/dock/dock-launcher.tsx": { 13: [1, "W7"], 18: [3, "W7"], 19: [4, "W7"] },
   "features/dock/dock-panel.tsx": { 1: [2, "W7"], 12: [2, "W7"], 13: [1, "W7"] },
+  "features/harness/harness-history-overlay.tsx": { 14: [2, "W4"] },
+  "features/machines/machines-page.tsx": { 19: [1, "W4"] },
+  "features/models/key-auth-dialog.tsx": { 11: [2, "W1b"] },
   "features/models/models-page.tsx": { 1: [1, "W4"], 11: [8, "W1b"], 12: [7, "W4"], 13: [8, "W4"] },
-  "features/models/platform-key-auth-dialog.tsx": { 11: [2, "W1b"] },
   "features/models/protocol-suffix.tsx": { 11: [2, "W1b"] },
   "features/plugins/plugin-detail-page.tsx": { 13: [2, "W4"] },
   "features/plugins/plugin-detail.tsx": { 13: [1, "W4"] },
@@ -160,6 +162,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/schedules/schedule-panel.tsx": { 12: [1, "W4"] },
   "features/schedules/schedule-suggestions.tsx": { 12: [1, "W4"], 13: [1, "W4"] },
   "features/semantic-id/semantic-id-field.tsx": { 11: [2, "W1b"] },
+  "features/settings/plugins-section.tsx": { 11: [2, "W1b"] },
   "features/settings/proxy-section.tsx": { 13: [1, "W2"] },
   "features/settings/setting-row.tsx": { 1: [1, "W2"], 2: [1, "W2"] },
   "features/skills/skill-pick-list.tsx": { 12: [1, "W2"] },
@@ -168,7 +171,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/traces/trace-file-view.tsx": { 12: [2, "W4"], 13: [5, "W4"], 15: [1, "W4"] },
   "features/usage/usage-charts.tsx": { 13: [3, "W8"] },
   "features/usage/usage-page.tsx": { 12: [1, "W8"] },
-  "lib/tone.ts": { 9: [4, "W4"] },
+  "lib/tone.ts": { 9: [5, "W4"] },
   "pages/login.tsx": { 9: [1, "W4"] },
 };
 

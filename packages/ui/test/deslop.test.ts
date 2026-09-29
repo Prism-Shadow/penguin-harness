@@ -457,7 +457,9 @@ describe("the rule checks, on known shapes", () => {
     expect(
       found(
         "t.css",
-        ".a .ui-eyebrow { text-transform: uppercase; }\n.b { text-transform: uppercase; }",
+        ".a .ui-eyebrow { text-transform: uppercase; }\n.b { text-transform: uppercase; }\n" +
+          // The transcript's mono capitals: a step's label is a group-label rung in Console.
+          '.ui-activity [data-slot="label"] { text-transform: uppercase; }',
       ),
     ).toEqual(["14:.b { text-transform: uppercase }"]);
   });
@@ -508,7 +510,16 @@ describe("the rule checks, on known shapes", () => {
         ".ui-wash { background-image: radial-gradient(red, blue); }\n.hatch { background-image: repeating-linear-gradient(red, blue); }",
       ),
     ).toEqual(["18:.ui-wash { background-image: …gradient() }"]);
-    // The shell's colour field is the one gradient a recipe may paint; a blur on it is still off.
+    // The shell's colour field and the running activity row's highlight are the two gradients a
+    // recipe may paint (each has a job); a blur on the shell is still off, and so is a gradient
+    // on a resting activity row.
+    expect(
+      found(
+        "t.css",
+        ':root .ui-activity[data-state="running"] [data-slot="label"] { background-image: linear-gradient(red, blue); }\n' +
+          ':root .ui-activity[data-state="done"] { background: linear-gradient(red, blue); }',
+      ),
+    ).toEqual(['18::root .ui-activity[data-state="done"] { background: …gradient() }']);
     expect(
       found(
         "t.css",

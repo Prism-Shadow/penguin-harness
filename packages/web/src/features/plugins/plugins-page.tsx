@@ -602,7 +602,7 @@ export function PluginsPage() {
     <div className="h-full overflow-y-auto p-4 [scrollbar-gutter:stable] md:p-6">
       <div className="mx-auto max-w-5xl">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+          <h1 className="ui-display flex items-center gap-1.5 text-xl font-semibold">
             {S.plugins.pageTitle}
             <InfoPopover label={S.plugins.pageTitle}>{S.plugins.pageDesc}</InfoPopover>
           </h1>

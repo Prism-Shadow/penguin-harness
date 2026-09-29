@@ -1,9 +1,10 @@
 /**
- * The top bar every page shares (unthemed): the brand, the page links — Home, Components,
- * Screens, Fonts, the current one marked — and the view controls: theme (by its display name),
- * accent (the active theme's own presets, each painted in its colour, after 随主题), root size (the
- * three real pixel sizes), language, viewport, the compare and reduced-motion toggles and the mode
- * switch. Every control writes the URL.
+ * The top bar every page shares (unthemed): the brand, the page links — Home, Surfaces,
+ * Foundations, Fonts, the current one marked — the view controls: theme (by its display name),
+ * accent (the active theme's own presets, each painted in its colour, after 随主题), text size
+ * (the five steps by name), the Latin and CJK font pairings, language, viewport, the compare
+ * toggle and the mode switch — and, under them, the fonts the framed app is set in. Every
+ * control writes the URL, and the frames reload with it.
  *
  * At phone width the links and controls leave the bar for the drawer (chrome/site.tsx), and a menu
  * button opens it.
@@ -12,19 +13,20 @@ import { THEME_IDS } from "@prismshadow/penguin-ui";
 import { accentPresetsOf, accentSwatch, THEME_ACCENT } from "../lib/accents";
 import { BASE } from "../lib/location";
 import { homeHref, moduleHref, routeHref } from "../lib/routes";
-import { TIER_PX } from "../lib/themes";
-import { LANGS, MODE_PREFS, TIERS, VIEWS } from "../lib/url-state";
+import { CJK_FONTS, fontLabel, LATIN_FONTS, TEXT_SIZE_PX_NUMBER, TEXT_SIZES } from "../lib/themes";
+import { LANGS, MODE_PREFS, VIEWS } from "../lib/url-state";
 import type { ModePref } from "../lib/url-state";
 import { useText } from "../preview";
 import { useGallery } from "../state";
-import { Segmented, Swatches, Toggle } from "./controls";
+import { Segmented, Select, Swatches, Toggle } from "./controls";
+import { FontReadoutLine } from "./font-readout";
 import { ChromeIcon } from "./icons";
 
 const MODE_ICONS = { light: "sun", dark: "moon", system: "monitor" } as const;
 const VIEW_ICONS = { desktop: "monitor", phone: "phone" } as const;
 
 /** The page a link row marks as current. */
-export type SitePage = "home" | "components" | "screens" | "fonts";
+export type SitePage = "home" | "surfaces" | "foundations" | "fonts";
 
 export function ModeSwitch() {
   const { S, state, update } = useGallery();
@@ -75,11 +77,12 @@ function AccentControl() {
 
 /**
  * The view controls. In the bar (`compact`) they sit in one row without their labels; in the
- * phone drawer and the screen toolbar each has its label.
+ * phone drawer each has its label.
  */
 export function ViewControls({ compact = false }: { compact?: boolean }) {
   const { S, state, update } = useGallery();
   const text = useText();
+  const fontWords = { theme: S.rail.fontTheme, system: S.rail.fontSystem };
   return (
     <div className="g-controls" data-compact={compact || undefined}>
       <div className="g-control">
@@ -99,13 +102,31 @@ export function ViewControls({ compact = false }: { compact?: boolean }) {
         <span className="g-control-label">{S.rail.size}</span>
         <Segmented
           label={S.rail.size}
-          value={state.tier}
-          options={TIERS.map((tier) => ({
-            value: tier,
-            label: `${TIER_PX[tier]}px`,
-            title: S.rail.sizeTitle(TIER_PX[tier]),
+          value={state.size}
+          options={TEXT_SIZES.map((size) => ({
+            value: size,
+            label: S.rail.sizeNames[size],
+            title: S.rail.sizeTitle(S.rail.sizeNames[size], TEXT_SIZE_PX_NUMBER[size]),
           }))}
-          onChange={(tier) => update({ tier })}
+          onChange={(size) => update({ size })}
+        />
+      </div>
+      <div className="g-control">
+        <span className="g-control-label">{S.rail.fontLatin}</span>
+        <Select
+          label={S.rail.fontLatin}
+          value={state.latin}
+          options={LATIN_FONTS.map((id) => ({ value: id, label: fontLabel(id, fontWords) }))}
+          onChange={(latin) => update({ latin })}
+        />
+      </div>
+      <div className="g-control">
+        <span className="g-control-label">{S.rail.fontCjk}</span>
+        <Select
+          label={S.rail.fontCjk}
+          value={state.cjk}
+          options={CJK_FONTS.map((id) => ({ value: id, label: fontLabel(id, fontWords) }))}
+          onChange={(cjk) => update({ cjk })}
         />
       </div>
       <div className="g-control">
@@ -139,7 +160,7 @@ export function ViewControls({ compact = false }: { compact?: boolean }) {
   );
 }
 
-/** The compare and reduced-motion switches. */
+/** The compare switch. */
 export function ViewToggles() {
   const { S, state, update } = useGallery();
   return (
@@ -150,12 +171,6 @@ export function ViewToggles() {
         pressed={state.compare === true}
         onChange={(compare) => update({ compare })}
       />
-      <Toggle
-        icon="motion"
-        label={S.rail.reducedMotion}
-        pressed={state.motion === "reduced"}
-        onChange={(on) => update({ motion: on ? "reduced" : "full" })}
-      />
     </div>
   );
 }
@@ -165,8 +180,12 @@ export function PageLinks({ current, onNavigate }: { current: SitePage; onNaviga
   const { S, state } = useGallery();
   const links: { page: SitePage; label: string; href: string }[] = [
     { page: "home", label: S.site.home, href: homeHref(BASE, state) },
-    { page: "components", label: S.site.components, href: homeHref(BASE, state, "components") },
-    { page: "screens", label: S.site.screens, href: moduleHref(BASE, state, "screens") },
+    { page: "surfaces", label: S.site.surfaces, href: homeHref(BASE, state, "surfaces") },
+    {
+      page: "foundations",
+      label: S.site.foundations,
+      href: moduleHref(BASE, state, "foundations"),
+    },
     { page: "fonts", label: S.site.fonts, href: routeHref(BASE, state, "/fonts") },
   ];
   return (
@@ -210,6 +229,9 @@ export function TopBar({
         <ViewControls compact />
         <ViewToggles />
         <ModeSwitch />
+      </div>
+      <div className="g-bar-readout">
+        <FontReadoutLine />
       </div>
       <button
         type="button"

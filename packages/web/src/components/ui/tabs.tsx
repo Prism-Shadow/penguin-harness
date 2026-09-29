@@ -28,7 +28,9 @@ export function Tabs<K extends string>({
     <div
       role="tablist"
       // overflow-y-hidden: only allow horizontal scroll on narrow screens, otherwise some browsers reserve a vertical scrollbar gutter for overflow-x-auto.
-      className="flex max-w-full gap-1 overflow-x-auto overflow-y-hidden border-b border-gray-200 dark:border-gray-800"
+      // ui-underline-nav: the selected-tab marker is the theme's to draw (the recipes select the
+      // tabs by role and aria-selected); in the default theme it is the border below.
+      className="ui-underline-nav flex max-w-full gap-1 overflow-x-auto overflow-y-hidden border-b border-gray-200 dark:border-gray-800"
     >
       {items.map((item) => {
         const badge = item.badge ?? null;

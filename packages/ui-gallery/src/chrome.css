@@ -1,15 +1,15 @@
 /*
- * The gallery chrome: the top bar, the module list, the content column with its sections and
- * toolbars, "on this page", the framed previews, the fonts page and the screen toolbar.
+ * The gallery chrome: the top bar, the surface list, the content column with its sections and
+ * toolbars, "on this page", the framed app and the fonts page.
  * Deliberately UNTHEMED — every colour is a `--g-*` variable and every length is px, never rem or
  * em — so switching the theme, the accent or the root size under test never moves the chrome; only
  * the previews follow `<html style="font-size">`. It follows only the mode (`.dark` on <html>).
  *
- * The layout is a docs site's: a quiet top bar; a left column with a search box and the modules
+ * The layout is a docs site's: a quiet top bar; a left column with a search box and the surfaces
  * grouped, the current one marked by a thin rule and accent text; a reading-width content column
  * with an eyebrow, a large title, a one-line lead and H2 sections ruled underneath; a right column
  * listing what is on the page. One accent, hairlines, whitespace, the system sans at 14–16 px.
- * Previews sit in a hairline frame, nothing heavier.
+ * The framed app sits in a hairline frame, nothing heavier.
  *
  * Unlayered on purpose: these rules outrank Tailwind's layers and theme.css's base rules (focus
  * outline, selection, body font) wherever a `.g-*` class matches, and match nothing inside a
@@ -344,6 +344,66 @@
     0 0 0 3.5px var(--g-ink);
 }
 
+/* A native select on the chrome's look: the font pairings. */
+.g-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 8px;
+  border-radius: 7px;
+  background: var(--g-inset);
+  color: var(--g-ink-2);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.g-select-label {
+  color: var(--g-ink-3);
+}
+.g-select select {
+  height: 24px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--g-page);
+  color: var(--g-ink);
+  font: inherit;
+  font-weight: 500;
+  box-shadow: var(--g-raise);
+  cursor: pointer;
+}
+.g-controls[data-compact] .g-select-label {
+  display: none;
+}
+
+/* The fonts in use, under the bar's controls: the role labels muted, the families in ink. */
+.g-bar-readout {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.g-readout {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  max-width: 100%;
+  font-size: 12.5px;
+  color: var(--g-ink-3);
+}
+.g-readout-label::after {
+  content: ":";
+}
+.g-readout-value {
+  color: var(--g-ink-2);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-readout-line {
+  font-variant-numeric: tabular-nums;
+}
+
 .g-icon-button {
   display: inline-grid;
   place-items: center;
@@ -360,7 +420,7 @@
   background: var(--g-hover);
 }
 
-/* ---- The module list: a search box, the groups, the current page ruled ------------------ */
+/* ---- The surface list: a search box, the groups, the current page ruled ----------------- */
 
 .g-sidenav {
   position: sticky;
@@ -529,16 +589,6 @@
   font-size: 13px;
   color: var(--g-ink-2);
 }
-.g-kind {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 8px 0 0;
-  margin-right: 4px;
-  color: var(--g-ink-3);
-  white-space: nowrap;
-}
 .g-tool {
   display: inline-flex;
   align-items: center;
@@ -569,10 +619,6 @@
   color: var(--g-accent);
   background: var(--g-accent-soft);
 }
-.g-tool-primary[data-playing] {
-  color: var(--g-ink);
-  background: var(--g-inset);
-}
 .g-tool-icon {
   width: 26px;
   padding: 0;
@@ -602,77 +648,6 @@
   font-family: var(--ui-font-ui, var(--g-font));
   font-size: var(--ui-text-body-size, 16px);
   line-height: var(--ui-text-body-lh, 1.5);
-}
-/* The app shell goes edge to edge: it is a window, not a component on a stage. */
-.g-preview-shell {
-  min-height: 0;
-  padding: 0;
-}
-
-/* The frame strip under an animated preview: previous, the frames, next, the speed. */
-.g-frames {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--g-ink-3);
-}
-.g-frames > .g-seg {
-  margin-left: auto;
-}
-.g-scene-frames {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 1px;
-}
-.g-scene-chip {
-  position: relative;
-  height: 24px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--g-ink-3);
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-  overflow: hidden;
-}
-.g-scene-chip:hover {
-  color: var(--g-ink);
-}
-.g-scene-chip[aria-pressed="true"] {
-  background: var(--g-inset);
-  color: var(--g-ink);
-}
-/* How far the current frame has run: one linear animation per frame, paused with the clock. */
-.g-scene-progress {
-  position: absolute;
-  left: 6px;
-  right: 6px;
-  bottom: 2px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--g-accent);
-  transform-origin: left center;
-  animation-name: g-scene-progress;
-  animation-timing-function: linear;
-  animation-fill-mode: both;
-}
-@keyframes g-scene-progress {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .g-scene-progress {
-    display: none;
-  }
 }
 
 /* The quotable breadcrumb. */
@@ -761,15 +736,13 @@
   color: var(--g-accent);
 }
 
-/* ---- Framed previews: compare mode and the phone view --------------------------------------- */
+/* ---- The framed app: compare mode and the phone view ---------------------------------------- */
 
+/* The frames stack at full width: three apps at a third of the column are unreadable. */
 .g-framed {
   display: grid;
   gap: 1px;
   background: var(--g-line);
-}
-.g-framed[data-compare][data-width="narrow"] {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 /* Phone: 390 px frames, centred, side by side when comparing, on the chrome's inset. */
 .g-framed[data-phone] {
@@ -817,11 +790,25 @@
   background: transparent;
 }
 
-/* ---- Fitted previews: a composition laid out at the app's width, scaled to the column ------ */
+/* The app's document: its own root, sized to the app's window and scaled by the fit below. */
+.g-app {
+  min-width: 0;
+}
+.g-app-frame {
+  display: block;
+  border: 0;
+  background: transparent;
+}
+.g-app[data-phone] {
+  display: flex;
+  justify-content: center;
+}
 
-/* The box the page sees takes the scaled height (set inline); the composition inside keeps its
-   natural width, so its unscaled layout box overflows and is clipped here. Centred when the
-   column is wider than the composition, which is never scaled up. */
+/* ---- Fitted frames: the app laid out at its window width, scaled to the column -------------- */
+
+/* The box the page sees takes the scaled height (set inline); the frame inside keeps its natural
+   width, so its unscaled layout box overflows and is clipped here. Centred when the column is
+   wider than the frame, which is never scaled up. */
 .g-fit {
   min-width: 0;
   overflow: hidden;
@@ -1021,112 +1008,6 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- The Screens page's thumbnails -------------------------------------------------------- */
-
-.g-screen {
-  display: grid;
-  gap: 12px;
-}
-.g-screen-thumb {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1440 / 900;
-  overflow: hidden;
-  border-radius: 8px;
-  border: 1px solid var(--g-line);
-}
-.g-screen-thumb iframe {
-  position: absolute;
-  top: 0;
-  left: 0;
-  border: 0;
-  transform-origin: 0 0;
-  pointer-events: none;
-}
-.g-screen-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.g-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 6px;
-  border: 1px solid var(--g-line-strong);
-  background: var(--g-page);
-  color: var(--g-ink);
-  font-weight: 500;
-}
-.g-button:hover {
-  background: var(--g-hover);
-}
-
-/* ---- /embed ------------------------------------------------------------------------------ */
-
-.g-embed {
-  display: flow-root;
-  min-height: 0;
-  padding: 24px;
-  box-sizing: border-box;
-}
-/* Framed at phone width the frame is the viewport, and the hero is full bleed wherever it shows:
-   either way the composition takes the embed edge to edge, as it does on the page. */
-.g-embed[data-view="phone"],
-.g-embed[data-module="hero"] {
-  padding: 0;
-}
-body:has(.g-embed) {
-  margin: 0;
-}
-/* A composition designed at the app's width: the root grows past a narrower viewport to hold it at
-   that width, unscaled, so a screenshot of the root is the whole composition at full size. */
-.g-embed[data-natural-width] {
-  width: max-content;
-  min-width: 100%;
-}
-
-/* ---- /screens/<name> ---------------------------------------------------------------------- */
-
-/* The page is one viewport tall: the toolbar strip on top, the composite in the rest. The strip
-   takes its own room rather than floating, so it never covers the composite's controls (the
-   composer and its send button sit at the bottom edge, the stats at the top right). */
-.g-screen-page {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-.g-screen-root {
-  flex: 1 1 0;
-  min-height: 0;
-  overflow: auto;
-}
-.g-screen-missing {
-  max-width: 560px;
-  margin: 80px auto;
-  padding: 0 24px;
-}
-.g-screen-missing a {
-  color: var(--g-accent);
-}
-.g-screen-bar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--g-line);
-  background: var(--g-page);
-}
-.g-screen-bar > .g-crumb {
-  margin-left: auto;
-}
-
 /* ---- /fonts ------------------------------------------------------------------------------ */
 
 .g-font-theme h3 {
@@ -1199,28 +1080,6 @@ body:has(.g-embed) {
   white-space: pre-wrap;
 }
 
-/* ---- Reduced motion: previews hold their first frame ------------------------------------ */
-
-:root[data-motion="reduced"] .g-preview *,
-:root[data-motion="reduced"] .g-screen-root * {
-  animation-play-state: paused !important;
-  animation-delay: 0s !important;
-  transition: none !important;
-}
-/*
- * Except the motion hooks a scene's frames carry: a paused entrance would hold its first,
- * invisible keyframe, a paused exit would never end (leaving the layer mounted), and a paused resize
- * would hold the old size. With no animation at all, each simply is in its new state.
- */
-:root[data-motion="reduced"]
-  .g-preview
-  :is([data-presence], [data-backdrop], [data-reveal], [data-layout-motion]),
-:root[data-motion="reduced"]
-  .g-screen-root
-  :is([data-presence], [data-backdrop], [data-reveal], [data-layout-motion]) {
-  animation: none !important;
-}
-
 /* ---- Phone width: one column, the columns in a drawer, nothing sideways ------------------- */
 
 /* The drawer only exists while open; at desktop widths it is never shown. */
@@ -1237,7 +1096,8 @@ body:has(.g-embed) {
     flex-wrap: nowrap;
   }
   .g-links,
-  .g-bar-controls {
+  .g-bar-controls,
+  .g-bar-readout {
     display: none;
   }
   .g-menu {
@@ -1297,15 +1157,9 @@ body:has(.g-embed) {
     min-height: 160px;
     padding: 16px 12px;
   }
-  .g-preview-shell {
-    padding: 0;
-  }
   .g-toolbar > .g-crumb {
     margin-left: 0;
     flex-basis: 100%;
-  }
-  .g-framed[data-compare][data-width="narrow"] {
-    grid-template-columns: minmax(0, 1fr);
   }
   .g-framed[data-phone] {
     padding: 16px 12px;

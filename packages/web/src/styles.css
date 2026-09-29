@@ -21,14 +21,11 @@
 @import "@prismshadow/penguin-ui/themes/geek.css";
 @import "@prismshadow/penguin-ui/fonts.css";
 
-/* Tailwind scans the Vite root only: the package's components carry class strings too. What the
-   gallery alone renders — demos, the module compositions, the screen mock-ups, the fixture data —
-   and the test helpers are excluded, so their class names never enter the app's sheet. */
+/* Tailwind scans the Vite root only: the package's components carry class strings too. The demos
+   the gallery alone renders and the test helpers are excluded, so their class names never enter
+   the app's sheet. */
 @source "../../ui/src";
 @source not "../../ui/src/**/*.demo.tsx";
-@source not "../../ui/src/modules";
-@source not "../../ui/src/screens";
-@source not "../../ui/src/fixtures";
 @source not "../../ui/src/testing";
 
 /* Brand color scale (Google blue family): generates utility classes like bg-brand-600 / text-brand-300. */

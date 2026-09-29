@@ -1,13 +1,18 @@
 /**
  * Primer (`github`) — the default theme. Reference: github.com and primer.style.
  *
- * W0 status: every value is the app's CURRENT computed value, so adopting the token layer moves
- * no pixel — system font stacks, stock Tailwind gray in light, the app's four pure-black dark
- * overrides (gray-950/900/800/700), emerald / amber / red status tones, the 6px control radius,
- * Tailwind's stock shadow recipes and the 3px gray focus ring. Values the app had no equivalent
- * for (the `done` and `info` tones, diff surfaces, glass, the type and density roles) are
- * proposals in the same palette, consumed by nothing yet. The Primer unification — Mona Sans +
- * Noto, one border grey, Primer's tone hues, the dark elevation ring — lands as W1a.
+ * W0 status: every LIGHT value is the app's CURRENT computed value, so adopting the token layer
+ * moves no pixel there — system font stacks, stock Tailwind gray, emerald / amber / red status
+ * tones, the 6px control radius, Tailwind's stock shadow recipes and the 3px gray focus ring.
+ * Values the app had no equivalent for (the `done` and `info` tones, diff surfaces, glass, the
+ * type and density roles) are proposals in the same palette, consumed by nothing yet. The Primer
+ * unification — Mona Sans + Noto, one border grey, Primer's tone hues — lands as W1a.
+ *
+ * Dark is no longer the app's white-on-pure-black inversion (user decision, 2026-09-29): the
+ * canvas lifts to #121212, the body ink comes down to about 9:1 and the near-white is kept for
+ * headings and emphasis, the way claude.dev and opencode.ai set their dark pages. The dark rule
+ * re-points the whole gray bridge to that ramp, so the app's `dark:text-gray-*` classes calm
+ * with the tokens.
  *
  * Shape every theme file follows: one `@layer ui-theme` block with a base rule and a dark rule,
  * then one `@layer ui-accent` block with the theme's own accent presets. The base rule declares
@@ -57,6 +62,7 @@
 
     /* ---- Colour — text ---- */
     --ui-fg: var(--color-gray-900);
+    --ui-fg-emphasis: var(--ui-fg);
     --ui-fg-muted: var(--color-gray-500);
     --ui-fg-subtle: var(--color-gray-400);
     --ui-fg-link: #0b57d0; /* brand-700 */
@@ -179,17 +185,26 @@
     --ui-field-label-w: auto;
     --ui-field-gap: 0.375rem;
 
+    /* ---- Controls: the switch the app has always drawn — the gray-200 track when off, a white
+       knob, and the accent's own label ink for the knob on the accent (white on the dark fills).
+       The white knob on the gray-200 track is under 3:1 and kept on purpose: it is today's look,
+       and the knob's own hairline draws its edge; the contrast suite records it as the one
+       exception, for the Primer polish wave to lift. ---- */
+    --ui-switch-track: var(--color-gray-200);
+    --ui-switch-knob: #ffffff;
+    --ui-switch-knob-on: var(--ui-accent-fg);
+
     /* ---- Typography — families: the system stacks the app ships today; chrome and reading text
-       share the one face ---- */
+       share the one face. The sans stack reads the CJK face where the app's stack names the two
+       system CJK faces, so the computed list is the same and a chosen CJK face reaches it. ---- */
     --ui-font-sans:
-      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei",
-      sans-serif;
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, var(--ui-font-cjk), sans-serif;
     --ui-font-ui: var(--ui-font-sans);
     --ui-font-mono:
       ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
       monospace;
     --ui-font-display: var(--ui-font-sans);
-    --ui-font-cjk: "PingFang SC", "Microsoft YaHei", sans-serif;
+    --ui-font-cjk: "PingFang SC", "Microsoft YaHei";
 
     /* ---- Typography — scale and roles: Tailwind's stock text-sm / text-xs rungs, which is what
        the app's classes render today (theme.css bridges `text-sm` and `text-xs` to these). The two
@@ -334,31 +349,44 @@
      resolves against this rule's values (`--ui-glass-bg: var(--ui-overlay)` is the dark overlay). */
   :root.dark,
   :root[data-theme="github"].dark {
-    /* ---- Gray bridge: the app's pure-black dark (no indigo tint) on the four darkest steps;
-       600…50 stay stock and are inherited from the light block. ---- */
-    --color-gray-950: #000000;
-    --color-gray-900: #0d0d0d;
-    --color-gray-800: #1f1f1f;
-    --color-gray-700: #303030;
+    /* ---- Gray bridge: one neutral ramp (no indigo tint) for a calm dark. The four dark steps
+       lift off pure black — the canvas is 950 at #121212 — and the ink steps come down from
+       white: 50 is the near-white kept for headings, 100 the body ink at about 9:1 on the
+       canvas, 300 a secondary ink, 400 the muted ink at about 5:1, 500 the subtle ink for
+       placeholders and meta text. The app's message prose is `dark:text-gray-100` and its meta
+       text `dark:text-gray-400`, so re-pointing the whole ramp is what calms the app. ---- */
+    --color-gray-950: #121212;
+    --color-gray-900: #1a1a1a;
+    --color-gray-800: #262626;
+    --color-gray-700: #333333;
+    --color-gray-600: #4a4a4a;
+    --color-gray-500: #767676;
+    --color-gray-400: #8c8c8c;
+    --color-gray-300: #9e9e9e;
+    --color-gray-200: #adadad;
+    --color-gray-100: #b8b8b8;
+    --color-gray-50: #f0f0f0;
     /* Stays literal white in dark: the app's `dark:border-white/10`, `dark:bg-white/10`,
        `dark:hover:bg-white` and `ring-white` read it as light INK, and its few unpaired `bg-white`
        have always rendered white here. A theme that re-points it at a dark surface must first
        move those call sites to tokens. */
     --color-white: #ffffff;
 
-    /* ---- Colour — surfaces ---- */
+    /* ---- Colour — surfaces: the canvas a step off black, cards a step above it, the inset a
+       step below ---- */
     --ui-canvas: var(--color-gray-950);
     --ui-surface: var(--color-gray-900);
-    --ui-surface-muted: #161616; /* proposal: between the card surface and its line */
-    --ui-inset: var(--color-gray-950);
+    --ui-surface-muted: #202020;
+    --ui-inset: #0e0e0e;
     --ui-overlay: var(--color-gray-900);
 
-    /* ---- Colour — text ---- */
+    /* ---- Colour — text: body about 9:1, headings near-white, muted about 5:1 ---- */
     --ui-fg: var(--color-gray-100);
+    --ui-fg-emphasis: var(--color-gray-50);
     --ui-fg-muted: var(--color-gray-400);
     --ui-fg-subtle: var(--color-gray-500);
     --ui-fg-link: #8ab4f8; /* brand-300 */
-    --ui-fg-link-hover: #8ab4f8;
+    --ui-fg-link-hover: var(--ui-fg-link);
 
     /* ---- Colour — lines ---- */
     --ui-line: var(--color-gray-800);
@@ -414,6 +442,10 @@
     --ui-diff-del-word: color-mix(in oklab, oklch(63.7% 0.237 25.331) 35%, transparent);
     --ui-diff-hunk-bg: color-mix(in oklab, oklch(68.5% 0.169 237.323) 15%, transparent);
 
+    /* ---- Controls: the app's dark off track, and the body ink as the knob on it ---- */
+    --ui-switch-track: var(--color-gray-700);
+    --ui-switch-knob: var(--ui-fg);
+
     /* ---- Selection and scrollbar ---- */
     --ui-selection-bg: rgb(255 255 255 / 0.18);
     --ui-scrollbar-thumb: rgb(232 234 237 / 0.2);
@@ -421,34 +453,27 @@
   }
 
   /*
-   * Style hooks (hooks.ts): all but the eyebrow are no-ops in Primer. The app's look is what the
+   * Style hooks (hooks.ts): every one is a no-op in Primer. The app's look is what the
    * components' own classes render — an opaque overlay, a semibold h1, a linear pulse, a bordered
    * card with a muted head, the accent bar under a tab, the sidebar's muted fill beside the
    * canvas, monochrome icons, a bordered tree box with the host's own indent, a form's label
-   * above its control and a settings row's label beside it — so no recipe is written for those,
-   * and none may be until a Primer polish wave changes that look on purpose.
-   *
-   * The eyebrow is the exception because the app's group labels are not what the markup's
-   * caption rung draws: they are small capitals tracked wide, which only a recipe can say. It
-   * reads the h6 rung, as the other themes' do, and leaves the ink to the markup — the app sets
-   * the Sessions label a step fainter than a group's.
+   * above its control and a settings row's label beside it, a plain row for a step of the
+   * agent's work — so no recipe is written for those, and none may be until a Primer polish wave
+   * changes that look on purpose. The two rules every theme shares (the eyebrow on the h6 rung,
+   * the display title in the emphasis ink) live in theme.css and are what the app's group labels
+   * and page titles already draw: 11px semibold tracked capitals, and the body ink in light.
    */
-  :root:not([data-theme]) .ui-eyebrow,
-  :root[data-theme="github"] .ui-eyebrow {
-    font-size: var(--ui-h6-size);
-    line-height: var(--ui-h6-lh);
-    font-weight: var(--ui-h6-weight);
-    letter-spacing: var(--ui-h6-tracking);
-    text-transform: var(--ui-h6-transform);
-  }
 }
 
 /*
  * The user's accent presets (tokens.ts, `ACCENT_PRESETS.github`): the five ids and values the app
- * has always had, the same in both modes. A preset sets the six accent tokens and nothing else.
- * The selectors match only Primer's root — a bare <html> or `data-theme="github"` — so a stored
- * preset another theme lists paints nothing here, and these paint nothing under another theme.
- * The layer puts them after the theme's dark rule, which they would otherwise only tie with.
+ * has always had, literal — a preset sets the six accent tokens itself, nothing derives — and
+ * the same in both modes, with one lift: rose-700 was a 3:1 mark only on the pure-black dark,
+ * and on the lifted dark surfaces it is 2.98:1, so dark takes rose-600 (its white label still
+ * clears 4.5:1) with the 700 / 800 steps as hover and active. The selectors match only Primer's
+ * root — a bare <html> or `data-theme="github"` — so a stored preset another theme lists paints
+ * nothing here, and these paint nothing under another theme. The layer puts them after the
+ * theme's dark rule, which they would otherwise only tie with.
  */
 @layer ui-accent {
   :root:not([data-theme])[data-accent="blue"],
@@ -486,6 +511,14 @@
     --ui-accent-fg: #ffffff;
     --ui-accent-muted: rgb(190 18 60 / 0.12);
     --ui-accent-line: rgb(190 18 60 / 0.5);
+  }
+  :root:not([data-theme])[data-accent="rose"].dark,
+  :root[data-theme="github"][data-accent="rose"].dark {
+    --ui-accent: #e11d48; /* rose-600: a 3:1 mark on the lifted dark surfaces */
+    --ui-accent-hover: #be123c;
+    --ui-accent-active: #9f1239;
+    --ui-accent-muted: rgb(225 29 72 / 0.12);
+    --ui-accent-line: rgb(225 29 72 / 0.5);
   }
   :root:not([data-theme])[data-accent="amber"],
   :root[data-theme="github"][data-accent="amber"] {

@@ -140,7 +140,7 @@ function Detail({ name, table }: { name: string; table: Table }) {
         req.length === 0 ? (
           <span className="text-gray-400">—</span>
         ) : (
-          <ul className="flex flex-col gap-0.5 font-mono">
+          <ul className="flex flex-col gap-px font-mono">
             {req.map(([f, r]) => (
               <li key={f} title={r.iface}>
                 {f}: {short(r.iface)}
@@ -155,7 +155,7 @@ function Detail({ name, table }: { name: string; table: Table }) {
         prov.length === 0 ? (
           <span className="text-gray-400">—</span>
         ) : (
-          <ul className="flex flex-col gap-0.5 font-mono">
+          <ul className="flex flex-col gap-px font-mono">
             {prov.map(([a, k]) => (
               <li key={a} title={k}>
                 {a}
@@ -171,7 +171,7 @@ function Detail({ name, table }: { name: string; table: Table }) {
       {contrib.length > 0
         ? row(
             t.contributes,
-            <ul className="flex flex-col gap-0.5 font-mono">
+            <ul className="flex flex-col gap-px font-mono">
               {contrib.map(([slot, items]) => (
                 <li key={slot}>
                   {slot} × {items.length}

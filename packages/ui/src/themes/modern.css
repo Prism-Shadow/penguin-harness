@@ -2,16 +2,21 @@
  * Frost (`modern`) — soft, roomy, floating. A warm colour field behind the app window, the
  * navigation column transparent on it, the main column a rounded sheet floating over it; pill
  * controls, generous radii on boxes, regular-weight titles set large with negative tracking,
- * frosted glass on the layers that float over content, and motion that springs and de-blurs.
- * References: sierra.ai (the colour field, the type, the pills) and Figma's UI3 (the floating
- * sheet, the roomy density).
+ * frosted glass on the layers that float over content, motion that springs and de-blurs, and
+ * work in progress that glows. References: sierra.ai (the colour field, the type, the pills),
+ * Figma's UI3 (the floating sheet, the roomy density) and dimagent.cn (the luminous working
+ * states).
  *
  * Status of each group:
  * - The light palette is measured on sierra.ai (its Tailwind theme and computed styles). The
  *   field behind the window is Sierra's colour field held to an app: one warm sand tone with two
  *   soft radial washes (sage from the top-left, sand from the bottom-right) at an alpha that keeps
  *   muted navigation text at 4.5:1 where the washes are strongest; never blue-grey, never loud.
- *   Sierra ships no dark mode: the whole dark section is a proposal on the same warm-neutral hue.
+ *   Sierra ships no dark mode: the dark section is a proposal on the same warm-neutral hue, set
+ *   calm (2026-09-29) — the body ink about 9:1 on the canvas, the near-white kept for headings,
+ *   the muted ink about 4.7:1 on the muted surface — the way claude.dev sets its dark page.
+ * - The accent family derives from `--ui-accent`: hover and active are the accent shaded, the
+ *   wash and the line are the accent at an alpha, so a preset sets the one value per mode.
  * - Semantic tones use Sierra's hues, tuned until every tone reads at 4.5:1 as text on its own
  *   tint and 3:1 as a mark on every surface (proposal). Chart and code colours are proposals.
  * - Fonts: MiSans (Xiaomi) in place of Sierra's commercial GT America, Latin and Chinese in one
@@ -57,6 +62,7 @@
     /* Colour — text. Muted ink is a step darker than Sierra's #696764 so navigation labels clear
        4.5:1 on the field's washes, where they sit with no fill under them. */
     --ui-fg: #302e2d;
+    --ui-fg-emphasis: var(--ui-fg);
     --ui-fg-muted: #5c5a57;
     --ui-fg-subtle: #8a8783;
     --ui-fg-link: #345eb2;
@@ -68,13 +74,16 @@
     --ui-line-emphasis: #c1bcb7;
     --ui-divider: #ebe8e4;
 
-    /* Colour — accent: Sierra's forest green */
+    /* Colour — accent: Sierra's forest green. The rest of the family derives from it: hover and
+       active are the accent shaded toward black (the label is white, so a darker fill only gains
+       contrast), the wash and the line are the accent at an alpha. A preset therefore sets
+       `--ui-accent` alone; its label ink is the theme's for the mode. */
     --ui-accent: #006838;
-    --ui-accent-hover: #05351d;
-    --ui-accent-active: #03281a;
+    --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #000000);
+    --ui-accent-active: color-mix(in srgb, var(--ui-accent) 74%, #000000);
     --ui-accent-fg: #ffffff;
-    --ui-accent-muted: #e4eee6;
-    --ui-accent-line: rgb(0 104 56 / 0.35);
+    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 14%, transparent);
+    --ui-accent-line: color-mix(in srgb, var(--ui-accent) 35%, transparent);
 
     /* Colour — semantic tones */
     --ui-tone-success-fg: #007a3a;
@@ -181,6 +190,12 @@
     --ui-tree-guide: var(--ui-line);
     --ui-field-label-w: auto;
     --ui-field-gap: 0.5rem;
+
+    /* Controls: the switch's off track is the line, its knob the muted ink (5:1 on the track);
+       on the accent the knob takes the accent's label ink. */
+    --ui-switch-track: var(--color-gray-200);
+    --ui-switch-knob: var(--ui-fg-muted);
+    --ui-switch-knob-on: var(--ui-accent-fg);
 
     /* Typography — families. MiSans sets Latin and Chinese alike; the system CJK faces stay ahead
        of the generic fallbacks for the rare ideograph MiSans's slices do not carry. Chrome and
@@ -320,18 +335,20 @@
     --ui-scrollbar-visibility: hover;
   }
 
-  /* Dark: a proposal (sierra.ai has no dark mode) on the same warm hue, never blue-grey. */
+  /* Dark: a proposal (sierra.ai has no dark mode) on the same warm hue, never blue-grey, and
+     calm: the body ink is a warm 70% white, the near-white is kept for headings. */
   :root[data-theme="modern"].dark {
     /* Tailwind bridge: 950 canvas, 900 surface, 800 hover / panel line, 700 control line, then
-       the ink ramp up to 50. white stays literal: `dark:*-white/N` hairlines read it as ink. */
+       the ink ramp — 500 subtle, 400 muted, 100 body, 50 the near-white for headings. white
+       stays literal: `dark:*-white/N` hairlines read it as ink. */
     --color-white: #ffffff;
-    --color-gray-50: #f9f8f6;
-    --color-gray-100: #f3f1ee;
-    --color-gray-200: #e0dcd6;
-    --color-gray-300: #c7c2bb;
-    --color-gray-400: #a7a29c;
-    --color-gray-500: #7f7a74;
-    --color-gray-600: #5a5652;
+    --color-gray-50: #f3f1ee;
+    --color-gray-100: #bbb6af;
+    --color-gray-200: #aca79f;
+    --color-gray-300: #9b968f;
+    --color-gray-400: #8f8a83;
+    --color-gray-500: #746f69;
+    --color-gray-600: #57534e;
     --color-gray-700: #3a3734;
     --color-gray-800: #2b2926;
     --color-gray-900: #1e1d1b;
@@ -345,10 +362,11 @@
     --ui-overlay: #23221f;
     --ui-overlay-backdrop: rgb(0 0 0 / 0.5);
 
-    /* Colour — text */
-    --ui-fg: #f3f1ee;
-    --ui-fg-muted: #a7a29c;
-    --ui-fg-subtle: #7f7a74;
+    /* Colour — text: body about 9:1 on the canvas, muted about 4.7:1 on the muted surface */
+    --ui-fg: var(--color-gray-100);
+    --ui-fg-emphasis: var(--color-gray-50);
+    --ui-fg-muted: var(--color-gray-400);
+    --ui-fg-subtle: var(--color-gray-500);
     --ui-fg-link: #8bbff5;
     --ui-fg-link-hover: #b8d7f9;
 
@@ -358,13 +376,15 @@
     --ui-line-emphasis: rgb(255 255 255 / 0.22);
     --ui-divider: rgb(255 255 255 / 0.06);
 
-    /* Colour — accent. White on the lifted green is under 4.5:1, so the ink is the canvas. */
+    /* Colour — accent. The green lifts and takes the canvas as ink (white on it is under
+       4.5:1), so hover now shades toward white and active toward black — away from the ink,
+       as in light — and the wash and the line strengthen a step on the dark page. */
     --ui-accent: #4aa45c;
-    --ui-accent-hover: #5fb573;
-    --ui-accent-active: #3d8f4e;
+    --ui-accent-hover: color-mix(in srgb, var(--ui-accent) 86%, #ffffff);
+    --ui-accent-active: color-mix(in srgb, var(--ui-accent) 90%, #000000);
     --ui-accent-fg: #0f0e0d;
-    --ui-accent-muted: rgb(74 164 92 / 0.16);
-    --ui-accent-line: rgb(74 164 92 / 0.45);
+    --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 18%, transparent);
+    --ui-accent-line: color-mix(in srgb, var(--ui-accent) 45%, transparent);
 
     /* Colour — semantic tones */
     --ui-tone-success-fg: #7ed185;
@@ -383,10 +403,10 @@
     --ui-tone-done-bg: rgb(166 115 222 / 0.16);
     --ui-tone-done-line: rgb(166 115 222 / 0.4);
     --ui-tone-done-emphasis: #7f52b5;
-    --ui-tone-neutral-fg: #a7a29c;
+    --ui-tone-neutral-fg: var(--color-gray-300);
     --ui-tone-neutral-bg: rgb(255 255 255 / 0.06);
     --ui-tone-neutral-line: rgb(255 255 255 / 0.12);
-    --ui-tone-neutral-emphasis: #5a5652;
+    --ui-tone-neutral-emphasis: #57534e;
     --ui-tone-info-fg: #8bbff5;
     --ui-tone-info-bg: rgb(139 191 245 / 0.14);
     --ui-tone-info-line: rgb(139 191 245 / 0.35);
@@ -403,12 +423,12 @@
     --ui-chart-cache-write: #7fb0ee;
     --ui-chart-output: #4a7fd0;
     --ui-chart-grid: rgb(255 255 255 / 0.06);
-    --ui-chart-axis: #7f7a74;
+    --ui-chart-axis: var(--color-gray-500);
 
     /* Colour — code */
     --ui-code-bg: #121110;
     --ui-code-line: rgb(255 255 255 / 0.08);
-    --ui-code-gutter: #7f7a74;
+    --ui-code-gutter: var(--color-gray-500);
     --ui-code-selection: rgb(139 191 245 / 0.22);
     --ui-diff-add-bg: rgb(126 209 133 / 0.1);
     --ui-diff-add-word: rgb(126 209 133 / 0.28);
@@ -432,6 +452,10 @@
     --ui-shell-wash-2: rgb(212 120 74 / 0.1);
     --ui-shell-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 16px 40px -16px rgb(0 0 0 / 0.6);
 
+    /* Controls: the dark off track, and the body ink as the knob on it */
+    --ui-switch-track: var(--color-gray-700);
+    --ui-switch-knob: var(--ui-fg);
+
     /* Focus, selection and scrollbar */
     --ui-focus-ring: 3px solid color-mix(in srgb, var(--ui-accent) 40%, transparent);
     --ui-focus-ring-input: 0 0 0 3px color-mix(in srgb, var(--ui-accent) 28%, transparent);
@@ -447,8 +471,8 @@
    * `animate-spin`, `.ui-glass` replace a panel's opaque fill and `.ui-shell` re-paint the
    * window's columns.
    *
-   * Frost gives all ten a recipe: glass, eyebrow, display, live, frame, underline-nav, shell,
-   * icon-decor, tree, field.
+   * Frost gives all eleven a recipe: glass, eyebrow (its ink; the rung is theme.css's), display,
+   * live, frame, underline-nav, shell, icon-decor, tree, field, activity.
    */
 
   /* Frosted transient layer: menus, popovers, tooltips, the modal card, the floating composer and
@@ -475,13 +499,8 @@
     }
   }
 
-  /* Group label on the h6 rung, in sentence case: it names the group below it. */
+  /* Group label, in sentence case on the h6 rung (theme.css), in the muted ink. */
   :root[data-theme="modern"] .ui-eyebrow {
-    font-size: var(--ui-h6-size);
-    line-height: var(--ui-h6-lh);
-    font-weight: var(--ui-h6-weight);
-    letter-spacing: var(--ui-h6-tracking);
-    text-transform: var(--ui-h6-transform);
     color: var(--ui-fg-muted);
   }
 
@@ -498,13 +517,14 @@
     animation-duration: 1.2s;
   }
 
-  /* Tool cards and code blocks: rounded on the box scale, the header inside the box with no fill
-     or rule of its own. */
+  /* Tool cards, code blocks and the work group: rounded on the box scale, the header inside the
+     box with no fill or rule of its own — it takes the box's fill rather than none, because a
+     work group's header sticks while its rows scroll under it and must stay opaque. */
   :root[data-theme="modern"] .ui-frame {
     border-radius: var(--ui-radius-md);
   }
   :root[data-theme="modern"] .ui-frame > [data-slot="head"] {
-    background-color: transparent;
+    background-color: inherit;
     border-bottom-color: transparent;
   }
 
@@ -573,19 +593,26 @@
     color: var(--ui-fg-muted);
   }
 
-  /* Nested rows sit against a soft guide inside the host's own card: each row past the roots
-     indents on the tree tokens and draws a hairline down its parent's column — half an indent
-     before its own content — and a branch continues its parent's guide alongside the rows it
-     holds, so every ancestor's guide runs the whole way down. No elbows and no box of its own. */
+  /* Nested rows sit against a soft guide inside the host's own card: each row past its tree's
+     first level indents on the tree tokens and draws a hairline down its parent's column — half
+     an indent before its own content — and a branch continues its parent's guide alongside the
+     rows it holds, so every ancestor's guide runs the whole way down. No elbows and no box of
+     its own. The first level is the tree's base (theme.css): a file tree's roots sit at the
+     inset, and a work group's steps, which hang off the header, sit flush with it — their
+     icons in the header's icon column, no gutter and no guide, the card alone holding them. */
   :root[data-theme="modern"] .ui-tree [data-depth]:not([data-branch]) {
     position: relative;
-    padding-inline-start: calc(var(--ui-tree-inset) + var(--ui-tree-indent) * var(--_depth));
+    padding-inline-start: calc(
+      var(--_lead) + var(--ui-tree-indent) * (var(--_depth) - var(--_base))
+    );
   }
   :root[data-theme="modern"] .ui-tree [data-depth]:not([data-branch], [data-depth="0"])::before {
     content: "";
     position: absolute;
     inset-block: 0;
-    inset-inline-start: calc(var(--ui-tree-inset) + var(--ui-tree-indent) * (var(--_depth) - 0.5));
+    inset-inline-start: calc(
+      var(--_lead) + var(--ui-tree-indent) * (var(--_depth) - var(--_base) - 0.5)
+    );
     border-inline-start: var(--ui-border-w) solid var(--ui-tree-guide);
     pointer-events: none;
   }
@@ -598,9 +625,18 @@
     content: "";
     position: absolute;
     inset-block: 0;
-    inset-inline-start: calc(var(--ui-tree-inset) + var(--ui-tree-indent) * (var(--_depth) - 1.5));
+    inset-inline-start: calc(
+      var(--_lead) + var(--ui-tree-indent) * (var(--_depth) - var(--_base) - 1.5)
+    );
     border-inline-start: var(--ui-border-w) solid var(--ui-tree-guide);
     pointer-events: none;
+  }
+  /* In a tree that starts a level in, its first level has no parent column to draw on. */
+  :root[data-theme="modern"] .ui-tree:not(:has([data-depth="0"])) [data-depth="1"]::before,
+  :root[data-theme="modern"]
+    .ui-tree:not(:has([data-depth="0"]))
+    [data-branch][data-depth="2"]::before {
+    content: none;
   }
 
   /* A labelled control row stacks: the label above, the control stretched across the row, a
@@ -618,6 +654,65 @@
     min-width: 0;
   }
 
+  /* Work in progress glows, the way dimagent lights its working states: a running row is a
+     luminous surface — a faint tint of the accent under it, a ring and an inner wash of the
+     accent's hue drawn INSIDE the row (a work group clips its rows, so a glow cast outward
+     would be cut off), and a soft halo around it where there is room — and a highlight in the
+     same hue sweeps across its label. The glow breathes between two strengths, both plainly
+     visible: a still of any moment reads as glowing, and the declared state, which reduced
+     motion holds, sits between them. Calm, never a flash. At rest (done, error) the row is the
+     host's plain row, so a finished transcript adds nothing. The highlight is a gradient
+     clipped to the label's glyphs and slid across them; parked at either end it shows only the
+     ink, which is what the still state shows. The slots are found anywhere inside the row (a
+     card nests them in its own button); a work group's header shares the recipe with its rows. */
+  :root[data-theme="modern"] .ui-activity[data-state="running"] {
+    border-color: color-mix(in srgb, var(--ui-accent) 45%, var(--ui-line));
+    background-color: color-mix(in srgb, var(--ui-accent) 8%, var(--ui-surface));
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--ui-accent) 40%, transparent),
+      inset 0 0 28px color-mix(in srgb, var(--ui-accent) 24%, transparent),
+      0 0 20px -4px color-mix(in srgb, var(--ui-accent) 40%, transparent);
+    animation: ui-frost-halo 2.8s var(--ui-ease-in-out) infinite alternate;
+  }
+  @keyframes ui-frost-halo {
+    from {
+      box-shadow:
+        inset 0 0 0 1px color-mix(in srgb, var(--ui-accent) 30%, transparent),
+        inset 0 0 22px color-mix(in srgb, var(--ui-accent) 16%, transparent),
+        0 0 16px -6px color-mix(in srgb, var(--ui-accent) 28%, transparent);
+    }
+    to {
+      box-shadow:
+        inset 0 0 0 1px color-mix(in srgb, var(--ui-accent) 52%, transparent),
+        inset 0 0 34px color-mix(in srgb, var(--ui-accent) 34%, transparent),
+        0 0 26px -2px color-mix(in srgb, var(--ui-accent) 55%, transparent);
+    }
+  }
+  :root[data-theme="modern"] .ui-activity[data-state="running"] [data-slot="label"] {
+    color: var(--ui-fg);
+    background-image: linear-gradient(
+      90deg,
+      currentColor 0 38%,
+      var(--ui-accent) 50%,
+      currentColor 62% 100%
+    );
+    background-size: 300% 100%;
+    background-position: 100% 0;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: ui-frost-shimmer 2.8s var(--ui-ease-in-out) infinite;
+  }
+  @keyframes ui-frost-shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: 0% 0;
+    }
+  }
+
   /* MiSans ships Regular (400) and Medium (500) only. A heavier request renders in Medium rather
      than as a synthesized bold, which smears Han strokes; Frost's own weights stop at 500. */
   :root[data-theme="modern"] {
@@ -632,90 +727,41 @@
 
 /*
  * The user's accent presets (tokens.ts, `ACCENT_PRESETS.modern`): five warm, muted hues beside
- * Frost's own forest green, each deep enough in light for a white label and lifted in dark with
- * the canvas as ink, the way the theme's own accent flips. A preset sets the six accent tokens and
- * nothing else; the selectors match only Frost's root, so a preset another theme lists paints
- * nothing here. The dark rules declare what dark changes, which for a lifted hue is all six.
+ * Frost's own forest green, each deep enough in light for the theme's white label and lifted in
+ * dark for its dark ink, the way the theme's own accent flips. A preset sets `--ui-accent` and
+ * nothing else — hover, active, wash and line derive from it in the theme's rules above, and
+ * the label ink is the theme's for the mode — so each preset is one value per mode. The
+ * selectors match only Frost's root, so a preset another theme lists paints nothing here.
  */
 @layer ui-accent {
   :root[data-theme="modern"][data-accent="ocean"] {
     --ui-accent: #3b6ea8;
-    --ui-accent-hover: #2f5a8a;
-    --ui-accent-active: #264a72;
-    --ui-accent-fg: #ffffff;
-    --ui-accent-muted: rgb(59 110 168 / 0.14);
-    --ui-accent-line: rgb(59 110 168 / 0.35);
   }
   :root[data-theme="modern"][data-accent="ocean"].dark {
     --ui-accent: #7fa9df;
-    --ui-accent-hover: #96bbe8;
-    --ui-accent-active: #6a97cf;
-    --ui-accent-fg: #0f0e0d;
-    --ui-accent-muted: rgb(127 169 223 / 0.18);
-    --ui-accent-line: rgb(127 169 223 / 0.45);
   }
   :root[data-theme="modern"][data-accent="clay"] {
     --ui-accent: #b8552f;
-    --ui-accent-hover: #9d4726;
-    --ui-accent-active: #843b1f;
-    --ui-accent-fg: #ffffff;
-    --ui-accent-muted: rgb(184 85 47 / 0.14);
-    --ui-accent-line: rgb(184 85 47 / 0.35);
   }
   :root[data-theme="modern"][data-accent="clay"].dark {
     --ui-accent: #e08a66;
-    --ui-accent-hover: #e89d80;
-    --ui-accent-active: #d27a55;
-    --ui-accent-fg: #0f0e0d;
-    --ui-accent-muted: rgb(224 138 102 / 0.18);
-    --ui-accent-line: rgb(224 138 102 / 0.45);
   }
   :root[data-theme="modern"][data-accent="plum"] {
     --ui-accent: #7a4d8f;
-    --ui-accent-hover: #663f78;
-    --ui-accent-active: #543365;
-    --ui-accent-fg: #ffffff;
-    --ui-accent-muted: rgb(122 77 143 / 0.14);
-    --ui-accent-line: rgb(122 77 143 / 0.35);
   }
   :root[data-theme="modern"][data-accent="plum"].dark {
     --ui-accent: #b78fd0;
-    --ui-accent-hover: #c6a4db;
-    --ui-accent-active: #a97fc4;
-    --ui-accent-fg: #0f0e0d;
-    --ui-accent-muted: rgb(183 143 208 / 0.18);
-    --ui-accent-line: rgb(183 143 208 / 0.45);
   }
   :root[data-theme="modern"][data-accent="honey"] {
     --ui-accent: #96660f;
-    --ui-accent-hover: #7d550c;
-    --ui-accent-active: #67460a;
-    --ui-accent-fg: #ffffff;
-    --ui-accent-muted: rgb(150 102 15 / 0.14);
-    --ui-accent-line: rgb(150 102 15 / 0.35);
   }
   :root[data-theme="modern"][data-accent="honey"].dark {
     --ui-accent: #d9ab4a;
-    --ui-accent-hover: #e2ba66;
-    --ui-accent-active: #cc9d3a;
-    --ui-accent-fg: #0f0e0d;
-    --ui-accent-muted: rgb(217 171 74 / 0.18);
-    --ui-accent-line: rgb(217 171 74 / 0.45);
   }
   :root[data-theme="modern"][data-accent="slate"] {
     --ui-accent: #5c6470;
-    --ui-accent-hover: #4c535d;
-    --ui-accent-active: #3f454e;
-    --ui-accent-fg: #ffffff;
-    --ui-accent-muted: rgb(92 100 112 / 0.14);
-    --ui-accent-line: rgb(92 100 112 / 0.35);
   }
   :root[data-theme="modern"][data-accent="slate"].dark {
     --ui-accent: #9ea6b3;
-    --ui-accent-hover: #b0b7c2;
-    --ui-accent-active: #8f97a4;
-    --ui-accent-fg: #0f0e0d;
-    --ui-accent-muted: rgb(158 166 179 / 0.18);
-    --ui-accent-line: rgb(158 166 179 / 0.45);
   }
 }

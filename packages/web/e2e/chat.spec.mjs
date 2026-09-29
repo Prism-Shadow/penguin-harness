@@ -347,10 +347,11 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.accent))
     .toBe("blue");
+  // 大 is the old default (18px); the new default, 中, is 16px.
   await page.getByRole("button", { name: "大", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => document.documentElement.style.fontSize))
-    .toBe("20px");
+    .toBe("18px");
   await page.keyboard.press("Escape");
 
   // --- session rename (manual title wins over the auto-generated one) ---

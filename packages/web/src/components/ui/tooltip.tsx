@@ -223,7 +223,7 @@ export function Tooltip({
               right: position.right,
               maxWidth: `min(${contentMaxWidth[content]}, ${position.room}px)`,
             }}
-            className={`anim-fade pointer-events-none z-[60] w-max rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${contentClass[content]} ${placement === "right" ? "-translate-y-1/2" : ""}`}
+            className={`ui-glass anim-fade pointer-events-none z-[60] w-max rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${contentClass[content]} ${placement === "right" ? "-translate-y-1/2" : ""}`}
           >
             {label}
           </div>,

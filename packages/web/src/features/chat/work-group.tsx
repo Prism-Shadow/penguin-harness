@@ -23,6 +23,7 @@ import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { Chevron } from "../../components/ui/chevron";
 import {
+  ActivityProgress,
   DISCLOSURE_CARD_CLASS,
   DISCLOSURE_HEADER_ROW_CLASS,
   DISCLOSURE_HEADER_STICKY_CLASS,
@@ -95,6 +96,9 @@ export function WorkGroup({
   // A pending approval must stay actionable: expand the group body regardless of collapsed state (the approval row lives inside it).
   const shown = open || pending;
   const { steps, durationMs, startMs } = summarizeWork(items);
+  // The header is a work step of its own for the activity hook: a group of thinking only is
+  // thinking, anything with a tool call in it is tool work.
+  const activityKind = items.some((it) => it.kind === "tool_call") ? "tool" : "thinking";
 
   return (
     // overflow-clip (not overflow-hidden): the header below is position:sticky, and an
@@ -103,7 +107,9 @@ export function WorkGroup({
     // the exact same clipping (rounded corners included) without creating a scroll
     // container, and a sticky element never leaves its containing block, so the stuck
     // header itself is never clipped.
-    <div ref={rootRef} className={DISCLOSURE_CARD_CLASS}>
+    // ui-frame: the group is a framed box with a head (the header) and a body (the tree), so a
+    // theme that draws its transcript without boxes can take this one away.
+    <div ref={rootRef} className={`ui-frame ${DISCLOSURE_CARD_CLASS}`}>
       {/* Group header: a distinct title bar (solid background), on a separate layer from the
           step rows below it. Sticky against the message list's scrollport so a long expanded
           group can be collapsed from anywhere inside it — without this, finding the start of
@@ -136,11 +142,15 @@ export function WorkGroup({
             requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
           }
         }}
-        className={`${DISCLOSURE_HEADER_STICKY_CLASS} ${DISCLOSURE_HEADER_ROW_CLASS}`}
+        className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} ${DISCLOSURE_HEADER_ROW_CLASS}`}
+        data-slot="head"
+        data-kind={activityKind}
+        data-state={active ? "running" : "done"}
       >
         <StatusIcon state={active ? "running" : "done"} />
         {/* The title doubles as status: "Running" while in progress, "Done" when finished. */}
         <span
+          data-slot="label"
           className={`${DISCLOSURE_HEADER_TITLE_CLASS} ${active ? toneInk.busy : "text-gray-500 dark:text-gray-400"}`}
         >
           {active ? S.chat.workRunning : S.chat.workDone}
@@ -149,7 +159,10 @@ export function WorkGroup({
             dropped entirely (title on the header carries nothing extra — the header must stay
             a single uncut line on phones). */}
         {steps > 0 && (
-          <span className="hidden shrink-0 font-mono text-xs text-gray-400 sm:inline">
+          <span
+            data-slot="detail"
+            className="hidden shrink-0 font-mono text-xs text-gray-400 sm:inline"
+          >
             {S.chat.workGroupSteps(steps)}
           </span>
         )}
@@ -165,12 +178,12 @@ export function WorkGroup({
             snap backwards the moment the group settles. */}
         {itemsRunning
           ? startMs !== undefined && (
-              <span className="shrink-0 font-mono text-xs text-gray-400">
+              <span data-slot="detail" className="shrink-0 font-mono text-xs text-gray-400">
                 <LiveDuration sinceMs={startMs} />
               </span>
             )
           : durationMs > 0 && (
-              <span className="shrink-0 font-mono text-xs text-gray-400">
+              <span data-slot="detail" className="shrink-0 font-mono text-xs text-gray-400">
                 {humanizeDuration(durationMs)}
               </span>
             )}
@@ -193,13 +206,26 @@ export function WorkGroup({
             />
           </>
         )}
+        <ActivityProgress running={itemsRunning} />
         <span className="min-w-0 flex-1" />
         <Chevron open={shown} className="text-gray-400" />
       </button>
+      {/* ui-tree: the steps hang off the header one level down, so a theme may join them to
+          it with connector rules instead of the box. Each step is wrapped rather than marked
+          on its own root, because the thinking and tool rows also render outside a group. */}
       {shown && (
-        <div className="anim-fade divide-y divide-gray-100 border-t border-gray-200 dark:divide-gray-800/60 dark:border-gray-800">
-          {items.map((item) => (
-            <MessageItem key={item.id} item={item} ctx={ctx} />
+        <div
+          data-slot="body"
+          className="ui-tree anim-fade divide-y divide-gray-100 border-t border-gray-200 dark:divide-gray-800/60 dark:border-gray-800"
+        >
+          {items.map((item, index) => (
+            <div
+              key={item.id}
+              data-depth="1"
+              {...(index === items.length - 1 ? { "data-last": "true" } : {})}
+            >
+              <MessageItem item={item} ctx={ctx} />
+            </div>
           ))}
         </div>
       )}

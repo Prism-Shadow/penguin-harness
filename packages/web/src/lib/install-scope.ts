@@ -103,9 +103,27 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.textSize",
+    scope: "browser",
+    why: "Root text size (five steps) — a readability preference of this display.",
+  },
+  {
+    kind: "exact",
     key: "penguin.fontScale",
     scope: "browser",
-    why: "Root font size — a readability preference of this display.",
+    why: "The three-step text size of earlier releases; read once, migrated to penguin.textSize and removed.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.fontLatin",
+    scope: "browser",
+    why: "Latin font face chosen over the theme's own; pure appearance.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.fontCjk",
+    scope: "browser",
+    why: "CJK font face chosen over the theme's own; pure appearance.",
   },
   {
     kind: "exact",

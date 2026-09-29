@@ -243,7 +243,7 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
         aria-label={t.title}
         tabIndex={-1}
         onKeyDown={onPanelKeyDown}
-        className="anim-pop absolute inset-3 flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+        className="anim-pop absolute inset-3 flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900"
       >
         <header className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-3 dark:border-gray-800">
           <div>

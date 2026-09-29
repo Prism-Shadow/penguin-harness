@@ -69,7 +69,10 @@ function populated(): ReturnType<typeof memStorage> {
 
     "penguin.theme": "dark",
     "penguin.themeId": "geek",
+    "penguin.textSize": "l",
     "penguin.fontScale": "lg",
+    "penguin.fontLatin": "mona-sans",
+    "penguin.fontCjk": "noto-sans-sc",
     "penguin.accent": "violet",
     "penguin.currency": "CNY",
     "penguin.terminal.theme": "dark",
@@ -97,7 +100,10 @@ function snap(map: Map<string, string>): [string, string][] {
 const PREFERENCE_KEYS = [
   "penguin.theme",
   "penguin.themeId",
+  "penguin.textSize",
   "penguin.fontScale",
+  "penguin.fontLatin",
+  "penguin.fontCjk",
   "penguin.accent",
   "penguin.currency",
   "penguin.terminal.theme",

@@ -10,7 +10,9 @@
  * main stylesheet and every session downloads them (about 94 KB gzipped, most of it MiSans's and
  * Noto's `unicode-range` lists). That cost was accepted on 2026-09-18 over loading each theme's
  * font sheet on demand. A consumer's build must not inline the font files (`assetsInlineLimit`),
- * or small slices would ride in that stylesheet as data URIs.
+ * or small slices would ride in that stylesheet as data URIs. The unconditional declarations are
+ * also what lets the user's font pairing (boot.ts, theme.css's `ui-font` layer) name any of these
+ * families under any theme: a chosen face is downloaded the moment a stack names it.
  *
  * | theme           | sans (reading)                     | ui (chrome)            | mono                          | CJK                          |
  * | --------------- | ---------------------------------- | ---------------------- | ----------------------------- | ---------------------------- |

@@ -16,11 +16,10 @@ import type { Module } from "../../../ui/src/module";
 import { formatBreadcrumb } from "../lib/breadcrumb";
 import { composite, contrastRatio, toHex } from "../lib/color";
 import { contrastFloor, contrastTargets } from "../lib/contrast";
-import { formatVariantKey, parseVariantKey, pickLabels } from "../lib/demos";
+import { formatVariantKey, parseVariantKey } from "../lib/demos";
 import { paintColor } from "../lib/token-probe";
 import type { TokenValues } from "../lib/token-probe";
 import { sortTokens, tokensReadBy } from "../lib/tokens-read";
-import { withVariant } from "../lib/url-state";
 import { DemoView, useText } from "../preview";
 import { DEMOS, loadSource, repoPath } from "../registry";
 import { useGallery } from "../state";
@@ -41,26 +40,22 @@ function PartCard({
   section: ComponentSection;
   demo: Demo;
 }) {
-  const { state, update } = useGallery();
+  const { state } = useGallery();
   const text = useText();
-  const key = state.variants[section.id];
+  // A part's pick is the card's own state: it is not part of the page's address.
+  const [key, setKey] = useState<string | undefined>(undefined);
   const pick = parseVariantKey(demo.axes, demo.matrix, key);
   const { title, description } = text.part(section);
+  const pickWords =
+    Object.keys(demo.axes ?? {}).length > 0 ? formatVariantKey(demo.axes, pick) : "";
   const crumb = formatBreadcrumb({
     theme: text.theme(state.theme),
-    module: text.module(module).title,
-    part: title,
-    variant: Object.keys(demo.axes ?? {}).length > 0 ? pickLabels(demo.axes, pick) : undefined,
-    tier: state.tier,
+    page: text.module(module).title,
+    section: pickWords ? `${title} › ${pickWords.replaceAll(".", " · ")}` : title,
+    size: state.size,
     ...text.qualifiers(),
   });
-  const onPick = (next: string) => {
-    const fallback = formatVariantKey(
-      demo.axes,
-      parseVariantKey(demo.axes, demo.matrix, undefined),
-    );
-    update((s) => withVariant(s, section.id, next === fallback ? null : next));
-  };
+  const onPick = (next: string) => setKey(next);
   return (
     <div id={section.id} className="g-part">
       <div className="g-part-head">

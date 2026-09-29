@@ -3,7 +3,7 @@
   "version": "0.2.13",
   "private": true,
   "type": "module",
-  "description": "PenguinHarness component gallery (local dev tool, Vite + React): the shared UI package as nineteen module compositions in every theme, mode, size and language, with part demos, screen composites and an address for every view.",
+  "description": "PenguinHarness UI gallery (local dev tool, Vite + React): the real Web App framed against an in-browser demo API, one page per surface in every theme, mode, text size, font pairing and language, plus the Foundations boards and the bundled fonts.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

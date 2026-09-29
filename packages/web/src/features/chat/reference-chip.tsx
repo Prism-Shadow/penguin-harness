@@ -79,7 +79,7 @@ export function ReferenceChip({
         // far too long to announce as the name of a remove button.
         aria-label={`${S.files.removeReference} ${reference.kind === "excerpt" ? name : title}`}
         onClick={onRemove}
-        className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+        className="shrink-0 rounded p-px text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
       >
         ×
       </button>

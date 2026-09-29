@@ -16,6 +16,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { FONT_CJK_OPTIONS, FONT_LATIN_OPTIONS } from "../src/boot";
 import {
   ACCENT_PRESETS,
   DEFAULT_THEME_ID,
@@ -179,7 +180,22 @@ describe("the accent presets, per theme (2026-09-19)", () => {
     },
   };
 
-  it("keeps Primer's five ids and values byte for byte, the same in both modes", () => {
+  /**
+   * The one dark lift Primer carries (2026-09-29): rose-700 was a 3:1 mark only on the old
+   * pure-black dark; on the lifted surfaces dark takes rose-600, with the 700 / 800 steps as
+   * hover and active and the same white label. Light stays byte for byte.
+   */
+  const PRIMER_DARK_LIFTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+    rose: {
+      "--ui-accent": "#e11d48",
+      "--ui-accent-hover": "#be123c",
+      "--ui-accent-active": "#9f1239",
+      "--ui-accent-muted": "rgb(225 29 72 / 0.12)",
+      "--ui-accent-line": "rgb(225 29 72 / 0.5)",
+    },
+  };
+
+  it("keeps Primer's five ids and light values byte for byte, and lifts only rose in dark", () => {
     const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     expect([...THEME_ACCENT_PRESETS.github]).toEqual(Object.keys(PRIMER_TODAY));
@@ -187,7 +203,7 @@ describe("the accent presets, per theme (2026-09-19)", () => {
       const rules = primer.analysis.accents.get(id);
       expect(rules, id).toBeDefined();
       expect(Object.fromEntries(rules!.light), id).toEqual(values);
-      expect([...rules!.dark], `${id} has no dark lift`).toEqual([]);
+      expect(Object.fromEntries(rules!.dark), `${id} in dark`).toEqual(PRIMER_DARK_LIFTS[id] ?? {});
     }
   });
 
@@ -201,7 +217,31 @@ describe("the accent presets, per theme (2026-09-19)", () => {
     const sheet = read("theme.css");
     const presets = parseCssRules(sheet).filter((rule) => /data-accent=/.test(rule.selector));
     expect(presets.map((rule) => `${rule.line}: ${rule.selector}`)).toEqual([]);
-    expect(stripCssComments(sheet)).toMatch(/@layer ui-theme, ui-accent;/);
+    expect(stripCssComments(sheet)).toMatch(/@layer ui-theme, ui-accent, ui-font;/);
+  });
+
+  it("is one value per mode in Frost and Console: the family derives from --ui-accent", () => {
+    // The owner asked for less redundancy in the switching code (2026-09-29): a preset no longer
+    // restates hover, active, wash and line — the theme derives them — and keeps the theme's
+    // label ink for the mode. Primer's presets stay literal (the check above pins them).
+    for (const theme of THEMES) {
+      if (theme.status !== "filled" || theme.id === DEFAULT_THEME_ID) continue;
+      for (const [id, rules] of theme.analysis.accents) {
+        expect([...rules.light.keys()], `${theme.id} ${id} light`).toEqual(["--ui-accent"]);
+        expect([...rules.dark.keys()], `${theme.id} ${id} dark`).toEqual(["--ui-accent"]);
+      }
+      for (const mode of THEME_MODES) {
+        const values = theme.analysis.modes[mode];
+        for (const name of [
+          "--ui-accent-hover",
+          "--ui-accent-active",
+          "--ui-accent-muted",
+          "--ui-accent-line",
+        ]) {
+          expect(values.get(name), `${theme.id} ${mode} ${name}`).toMatch(/var\(--ui-accent\)/);
+        }
+      }
+    }
   });
 });
 
@@ -264,7 +304,8 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
       expect(TOKEN_NAMES).toContain(name);
     }
     expect(TOKEN_GROUPS.find((group) => group.id === "shell")?.names.length).toBe(9);
-    expect(TOKEN_NAMES.length).toBe(215);
+    // 215, plus the integration round's four (the emphasis ink and the switch's three).
+    expect(TOKEN_NAMES.length).toBe(219);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {
@@ -345,6 +386,116 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
       /:root\[data-motion="reduced"\]\s*:is\(\[data-presence\],\s*\[data-backdrop\],\s*\[data-reveal\],\s*\.ui-live\)\s*\{\s*animation:\s*none;/,
     );
     expect(sheet).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
+  });
+});
+
+describe("the integration revision of the contract (2026-09-29)", () => {
+  // The calm dark needs a second ink for headings; the switch needs its track and knobs named
+  // so a knob can be held to 3:1 against its track; the user's font pairing needs every sans
+  // stack to read the CJK face, and a layer of its own so a chosen face beats the theme's rules.
+  it("adds the emphasis ink and the switch group", () => {
+    expect(TOKEN_GROUPS.find((group) => group.id === "color-text")?.names).toContain(
+      "--ui-fg-emphasis",
+    );
+    expect(TOKEN_GROUPS.find((group) => group.id === "controls")?.names).toEqual([
+      "--ui-switch-track",
+      "--ui-switch-knob",
+      "--ui-switch-knob-on",
+    ]);
+    for (const theme of THEMES) {
+      if (theme.status !== "filled") continue;
+      const light = theme.analysis.modes.light;
+      // In light the emphasis ink is the body ink; the on-knob follows the accent's label.
+      expect(light.get("--ui-fg-emphasis"), theme.id).toBe("var(--ui-fg)");
+      expect(light.get("--ui-switch-knob-on"), theme.id).toBe("var(--ui-accent-fg)");
+    }
+  });
+
+  it("keeps Primer's light ink, faces and switch as today's, and moves only its dark", () => {
+    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
+    if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
+    const light = primer.analysis.modes.light;
+    expect(light.get("--ui-fg")).toBe("var(--color-gray-900)");
+    expect(light.get("--ui-switch-track")).toBe("var(--color-gray-200)");
+    expect(light.get("--ui-switch-knob")).toBe("#ffffff");
+    // The sans stack reads the CJK face where it named the two system faces: the same list.
+    expect(light.get("--ui-font-sans")).toContain("var(--ui-font-cjk)");
+    expect(light.get("--ui-font-cjk")).toBe('"PingFang SC", "Microsoft YaHei"');
+    // Dark lifts off pure black and calms the body ink: the ramp, not the app's #000.
+    const dark = primer.analysis.modes.dark;
+    expect(dark.get("--color-gray-950")).not.toBe("#000000");
+    expect(dark.get("--color-gray-100")).not.toBe(light.get("--color-gray-100"));
+  });
+
+  it("resolves the font pairing in theme.css's ui-font layer, for every face the lists offer", () => {
+    // Every chosen face has a rule; a Latin choice sets the reading sans (and keeps the CJK face
+    // in its stack), a CJK choice sets the CJK face; no pairing rule touches the mono or the
+    // chrome face directly — Console's mono chrome is its identity, not a reading preference.
+    const rules = parseCssRules(read("theme.css")).filter((rule) =>
+      /data-font-(?:latin|cjk)=/.test(rule.selector),
+    );
+    const byAttribute = (attr: string, id: string) =>
+      rules.find((rule) => rule.selector === `:root[data-font-${attr}="${id}"]`);
+    for (const option of FONT_LATIN_OPTIONS) {
+      if (option.id === "theme") continue;
+      const rule = byAttribute("latin", option.id);
+      expect(rule, `data-font-latin="${option.id}"`).toBeDefined();
+      expect(rule!.declarations.map((d) => d.name)).toEqual(["--ui-font-sans"]);
+      expect(rule!.declarations[0]!.value).toContain("var(--ui-font-cjk)");
+    }
+    for (const option of FONT_CJK_OPTIONS) {
+      if (option.id === "theme") continue;
+      const rule = byAttribute("cjk", option.id);
+      expect(rule, `data-font-cjk="${option.id}"`).toBeDefined();
+      expect(rule!.declarations.map((d) => d.name)).toEqual(["--ui-font-cjk"]);
+    }
+    for (const rule of rules) {
+      expect(rule.atRules, rule.selector).toEqual(["@layer ui-font"]);
+      expect(rule.declarations.map((d) => d.name)).not.toContain("--ui-font-mono");
+      expect(rule.declarations.map((d) => d.name)).not.toContain("--ui-font-ui");
+    }
+    // A chosen face reaches every theme: each sans stack reads the CJK face, and the chrome
+    // face is the sans (Primer, Frost) or the mono (Console), never a third stack.
+    for (const theme of THEMES) {
+      if (theme.status !== "filled") continue;
+      for (const mode of THEME_MODES) {
+        const values = new Map([...theme.analysis.modes.light, ...theme.analysis.modes[mode]]);
+        expect(values.get("--ui-font-sans"), `${theme.id} ${mode}`).toContain("var(--ui-font-cjk)");
+        expect(["var(--ui-font-sans)", "var(--ui-font-mono)"], `${theme.id} ${mode}`).toContain(
+          values.get("--ui-font-ui"),
+        );
+      }
+    }
+  });
+
+  it("shares the eyebrow rung and the display ink in theme.css, once for every theme", () => {
+    // The three eyebrow recipes were one recipe reading the h6 rung; a theme adds only its ink.
+    const rules = parseCssRules(read("theme.css"));
+    const eyebrow = rules.find((rule) => rule.selector === ".ui-eyebrow");
+    expect(eyebrow?.atRules).toEqual(["@layer ui-theme"]);
+    expect(eyebrow?.declarations.map((d) => `${d.name}: ${d.value}`)).toEqual([
+      "font-family: var(--ui-h6-font)",
+      "font-size: var(--ui-h6-size)",
+      "line-height: var(--ui-h6-lh)",
+      "font-weight: var(--ui-h6-weight)",
+      "letter-spacing: var(--ui-h6-tracking)",
+      "text-transform: var(--ui-h6-transform)",
+    ]);
+    const display = rules.find((rule) => rule.selector === ".ui-display");
+    expect(display?.declarations.map((d) => `${d.name}: ${d.value}`)).toEqual([
+      "color: var(--ui-fg-emphasis)",
+    ]);
+    for (const id of THEME_IDS) {
+      const own = parseCssRules(read(`themes/${id}.css`)).filter((rule) =>
+        /\.ui-eyebrow\b/.test(rule.selector),
+      );
+      for (const rule of own) {
+        expect(
+          rule.declarations.map((d) => d.name),
+          `${id}: ${rule.selector}`,
+        ).toEqual(["color"]);
+      }
+    }
   });
 });
 

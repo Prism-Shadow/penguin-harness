@@ -93,7 +93,7 @@ export function useWorkflowTabs(
 const FRAME_REVEAL_TIMEOUT_MS = 4000;
 
 const TAB_BASE =
-  "relative h-9 shrink-0 border-b-2 px-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400";
+  "relative h-9 shrink-0 border-b-2 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400";
 const TAB_ACTIVE = "border-[var(--accent-bg)] font-medium text-gray-900 dark:text-gray-100";
 const TAB_IDLE =
   "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
@@ -183,7 +183,7 @@ export function WorkflowFrame({
   /** The workflow and its versions are gone; the caller drops the tab (the list refetch confirms). */
   onRemoved: () => void;
 }) {
-  const { dark, accent, fontScale } = useTheme();
+  const { dark, themeId, accent, textSize, fontLatin, fontCjk } = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [busy, setBusy] = useState<"reload" | "rollback" | "remove" | null>(null);
   // Removal is armed by a first click and sent by the second; the arm drops when the tab changes.
@@ -236,8 +236,8 @@ export function WorkflowFrame({
     }
   };
 
-  // The page is a separate document: the app's dark class, accent and root font size stop at
-  // the frame, so they are copied in (lib/workflow-theme.ts) on load and on every appearance
+  // The page is a separate document: the app's dark class, theme, accent, fonts and root font
+  // size stop at the frame, so they are copied in (lib/workflow-theme.ts) on load and on every appearance
   // change. Past the commit, because the provider that stamps them on the app's own document
   // is an ancestor and its effect runs after this one's.
   const applyTheme = useCallback(() => {
@@ -246,7 +246,7 @@ export function WorkflowFrame({
   useEffect(() => {
     const id = requestAnimationFrame(applyTheme);
     return () => cancelAnimationFrame(id);
-  }, [applyTheme, dark, accent, fontScale, tab.uiRev]);
+  }, [applyTheme, dark, themeId, accent, textSize, fontLatin, fontCjk, tab.uiRev]);
 
   // A page is its own document: until it has loaded and been themed it paints the browser's
   // white canvas, and then its own unstyled markup — a white flash in a dark app, on every

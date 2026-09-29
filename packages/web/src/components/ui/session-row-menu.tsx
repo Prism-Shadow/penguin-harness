@@ -54,12 +54,24 @@ export const overflowMenuRowClass =
 export const overflowMenuDangerClass =
   "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40";
 
-/** The overflow menus' muted leading glyph (a danger row inlines its own so the red inherits). */
-export const overflowMenuGlyph = (d: string) => (
-  <span className="shrink-0 text-gray-400 dark:text-gray-500">
-    <Icon d={d} size={13} />
-  </span>
-);
+/**
+ * A menu row's leading glyph. It names the row's subject beside a label that is never dropped,
+ * so it is decorative (`ui-icon-decor`, role `menu`): a theme may recolour it or leave it out.
+ * Muted, except on a danger row, where it inherits the row's red.
+ */
+export function MenuItemGlyph({ d, danger = false }: { d: string; danger?: boolean }) {
+  return (
+    <span
+      className={`ui-icon-decor shrink-0 ${danger ? "" : "text-gray-400 dark:text-gray-500"}`}
+      data-role="menu"
+    >
+      <Icon d={d} size={13} />
+    </span>
+  );
+}
+
+/** The overflow menus' muted leading glyph, for call sites that build their rows inline. */
+export const overflowMenuGlyph = (d: string) => <MenuItemGlyph d={d} />;
 
 /** One thing a Session row can do to its Session. */
 export type SessionRowAction = "pin" | "rename" | "copy" | "messaging" | "archive" | "delete";
@@ -162,14 +174,7 @@ export function SessionRowMenuRows({
             className={item.danger ? overflowMenuDangerClass : overflowMenuRowClass}
             onClick={() => onRun(action)}
           >
-            {item.danger ? (
-              /* The glyph inherits the row's red. */
-              <span className="shrink-0">
-                <Icon d={item.icon} size={13} />
-              </span>
-            ) : (
-              overflowMenuGlyph(item.icon)
-            )}
+            <MenuItemGlyph d={item.icon} danger={item.danger} />
             {item.label}
           </button>
         );

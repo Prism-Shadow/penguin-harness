@@ -1,7 +1,8 @@
 /**
- * Chrome controls, styled by chrome.css only: a segmented control, a toggle, and a swatch row for
- * the accent — each swatch painted in the colour it would apply, so the row previews the theme's
- * palette before anything is chosen.
+ * Chrome controls, styled by chrome.css only: a segmented control, a toggle, a select for the
+ * longer option lists (the font pairings), and a swatch row for the accent — each swatch painted
+ * in the colour it would apply, so the row previews the theme's palette before anything is
+ * chosen.
  */
 import type { CSSProperties, ReactNode } from "react";
 import { ChromeIcon } from "./icons";
@@ -41,7 +42,37 @@ export function Segmented<T extends string>({
   );
 }
 
-/** A pressed-or-not switch drawn as a quiet text button: compare, reduced motion. */
+/** A native select on the chrome's look: the font pairings, whose lists are too long for segments. */
+export function Select<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <label className="g-select" title={label}>
+      <span className="g-select-label">{label}</span>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value as T)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** A pressed-or-not switch drawn as a quiet text button: compare. */
 export function Toggle({
   icon,
   label,

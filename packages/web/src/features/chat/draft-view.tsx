@@ -874,7 +874,7 @@ export function DraftView({
             padding, so a small margin is enough to sit visually close to the title. */}
         <div className="mb-10 text-center">
           <PenguinLogo className="mx-auto mb-1 h-36 w-36 rounded-3xl" />
-          <h1 className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+          <h1 className="ui-display text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
             {S.appName}
           </h1>
           <p className="mt-2 text-base text-gray-400 dark:text-gray-500">{S.chat.draftSubtitle}</p>

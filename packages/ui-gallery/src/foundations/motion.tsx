@@ -234,7 +234,10 @@ export function MotionBoard() {
   const { S, state } = useGallery();
   const t = S.foundations;
   const [run, setRun] = useState(0);
-  const reduced = state.motion === "reduced" ? t.reducedNote : undefined;
+  // The board follows the OS preference, as the framed app does: there is no gallery switch.
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ? t.reducedNote
+    : undefined;
   return (
     <div className="gf-board">
       <BoardGroup

@@ -77,7 +77,7 @@ const CHEVRON_PATH = "M6 9l6 6 6-6";
 const SELECT_ALL_PATH = "M4 5h16v14H4zM8 12l3 3 5-6";
 const SELECT_NONE_PATH = "M4 5h16v14H4z";
 
-const MONO = "font-mono text-[13px] tabular-nums";
+const MONO = "font-mono text-xs tabular-nums";
 
 /** The reason a card gives under its name, when it has one: the far side's own words. */
 function reasonText(reading: MachineReading): string | null {
@@ -325,7 +325,7 @@ export function MachinesPage() {
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-3xl">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">{S.machines.pageTitle}</h1>
+          <h1 className="ui-display text-xl font-semibold">{S.machines.pageTitle}</h1>
           <div className="flex items-center gap-2">
             {behind.length > 0 && (
               <Button
@@ -381,7 +381,7 @@ export function MachinesPage() {
                       <button
                         type="button"
                         onClick={() => toggleAdding(machine.id)}
-                        className={`flex w-full min-w-0 items-center gap-2.5 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                        className={`flex w-full min-w-0 items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
                           on
                             ? "bg-gray-100 shadow-[inset_3px_0_0_var(--accent-bg)] dark:bg-gray-800/60"
                             : ""
@@ -431,7 +431,7 @@ export function MachinesPage() {
                     label={showAll ? S.machines.fewer : S.machines.expand}
                     title={showAll ? S.machines.fewer : S.machines.allHosts(hiddenCount)}
                     d={CHEVRON_PATH}
-                    glyphClass={`transition-transform ${showAll ? "rotate-180" : ""}`}
+                    glyphClass={showAll ? "rotate-180" : ""}
                     ariaExpanded={showAll}
                     onClick={() => setShowAll((open) => !open)}
                   />
@@ -669,10 +669,7 @@ function ExpandButton({
       }}
       className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
     >
-      <ChevronDown
-        size={ICON_SIZE.chevron}
-        className={`transition-transform ${open ? "rotate-180" : ""}`}
-      />
+      <ChevronDown size={ICON_SIZE.chevron} className={open ? "rotate-180" : ""} />
     </button>
   );
 }
@@ -681,15 +678,17 @@ function ExpandButton({
 function Stepper({ step, caption }: { step: number; caption: string }) {
   return (
     <div className="mt-1.5 w-44 max-w-full">
-      <div className="flex gap-0.5" aria-hidden="true">
+      <div className="flex gap-px" aria-hidden="true">
         {MACHINE_PHASES.map((phase, index) => (
           <span
             key={phase}
+            // The segment being worked on pulses as a live signal, so a theme can re-time it.
+            data-live={index === step ? "dot" : undefined}
             className={`h-[3px] flex-1 rounded-sm ${
               index < step
                 ? toneDot.busy
                 : index === step
-                  ? `${toneDot.busy} animate-pulse`
+                  ? `${toneDot.busy} ui-live animate-pulse`
                   : "bg-gray-200 dark:bg-gray-700"
             }`}
           />
@@ -723,7 +722,7 @@ function LocalCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className={`${MONO} truncate font-medium`}>{machine.alias}</span>
-            <span className="shrink-0 rounded border border-gray-200 px-1.5 py-px text-[11px] text-gray-500 dark:border-gray-700">
+            <span className="shrink-0 rounded border border-gray-200 px-1.5 py-px text-xs text-gray-500 dark:border-gray-700">
               {S.machines.localTitle}
             </span>
           </div>
@@ -808,7 +807,8 @@ function MachineCard({
           <Verb label={S.machines.use} d={PLUG_PATH} disabled={busy} onClick={() => onUse(false)} />
         )}
         <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "animate-pulse" : ""}`}
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]} ${moving ? "ui-live animate-pulse" : ""}`}
+          data-live={moving ? "dot" : undefined}
           aria-hidden="true"
         />
         <ExpandButton alias={machine.alias} open={open} controls={id} onClick={onToggleOpen} />
@@ -901,7 +901,7 @@ function Output({ job }: { job: MachineJob | null }) {
   return (
     <div className="mt-3">
       <div className="mb-1 text-xs text-gray-500">{S.machines.output}</div>
-      <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-gray-500 dark:bg-gray-900">
+      <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-xs leading-relaxed whitespace-pre-wrap text-gray-500 dark:bg-gray-900">
         {job.log.slice(0, -1).join("\n")}
         {job.log.length > 1 ? "\n" : ""}
         <span className="text-gray-900 dark:text-gray-100">{job.log.at(-1)}</span>

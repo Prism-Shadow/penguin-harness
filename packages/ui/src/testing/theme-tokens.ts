@@ -22,8 +22,13 @@
  *   default theme   light `:root:not([data-theme])[data-accent="x"], :root[data-theme="github"][data-accent="x"]`
  *   any other       light `:root[data-theme="<id>"][data-accent="x"]`   dark `…[data-accent="x"].dark`
  *
- * A preset's light rule sets the six accent tokens and nothing else; its dark rule declares only
- * what dark changes. In a mode a preset overlays the theme's values for that mode.
+ * A preset's light rule sets `--ui-accent` and nothing outside the accent group; its dark rule
+ * declares only what dark changes. In a mode a preset overlays the theme's values for that mode.
+ * The accent tokens a preset leaves alone must follow it anyway: the theme derives them from
+ * `--ui-accent` (a `var(--ui-accent)` in their value), or — for the label ink alone — the
+ * theme's own ink for the mode, whose pairing with every preset the contrast suite measures.
+ * Primer's presets set all six literally (the app's pixels are pinned), which satisfies this
+ * trivially.
  */
 import { DEFAULT_THEME_ID, THEME_MODES, TOKEN_GROUPS, TOKEN_NAMES } from "../tokens";
 import type { ThemeId, ThemeModeName } from "../tokens";
@@ -186,11 +191,16 @@ export function analyzeThemeFile(css: string, themeId: ThemeId): ThemeFileAnalys
   };
 }
 
+/** A value that follows `--ui-accent`: it reads the token (with or without a fallback). */
+const DERIVED_FROM_ACCENT = /var\(\s*--ui-accent\s*[,)]/;
+
 /**
  * Problems with a theme's accent presets against the list tokens.ts declares for it: the ids
- * and their order, a light rule that sets exactly the six accent names, a dark rule that sets
- * only accent names and only what dark changes, values that resolve, and the swatch tokens.ts
- * carries for each preset equal to the `--ui-accent` its light rule sets.
+ * and their order, a light rule that sets `--ui-accent` and only accent names, a dark rule that
+ * sets only accent names and only what dark changes, values that resolve, every accent token a
+ * preset leaves alone derived from `--ui-accent` by the theme (the label ink excepted — the
+ * contrast suite measures it against every preset), and the swatch tokens.ts carries for each
+ * preset equal to the `--ui-accent` its light rule sets.
  */
 export function accentProblems(
   analysis: ThemeFileAnalysis,
@@ -207,8 +217,25 @@ export function accentProblems(
   for (const { id, swatch } of expected) {
     const rules = analysis.accents.get(id);
     if (rules === undefined) continue;
-    const missing = ACCENT_TOKEN_NAMES.filter((name) => !rules.light.has(name));
-    if (missing.length > 0) problems.push(`${id}: the light rule leaves out ${missing.join(", ")}`);
+    if (!rules.light.has("--ui-accent")) {
+      problems.push(`${id}: the light rule does not set --ui-accent`);
+    }
+    for (const mode of THEME_MODES) {
+      // A token the preset does not set in this mode takes the theme's value for the mode, which
+      // must be a derivation of `--ui-accent` — otherwise the theme's own hover, wash or line
+      // would show under the preset's accent.
+      const themeValues = modeDeclarations(analysis, mode);
+      for (const name of ACCENT_TOKEN_NAMES) {
+        if (name === "--ui-accent" || name === "--ui-accent-fg") continue;
+        if (rules.light.has(name) || (mode === "dark" && rules.dark.has(name))) continue;
+        const value = themeValues.get(name);
+        if (value === undefined || !DERIVED_FROM_ACCENT.test(value)) {
+          problems.push(
+            `${id}: ${name} (${mode}) is neither set by the preset nor derived from --ui-accent by the theme (${value ?? "undeclared"})`,
+          );
+        }
+      }
+    }
     for (const [mode, values] of [
       ["light", rules.light],
       ["dark", rules.dark],

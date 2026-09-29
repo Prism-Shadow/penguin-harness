@@ -494,7 +494,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     return (
       <div className="space-y-1.5">
         <div>
-          <p className={nested ? "text-[13px] font-semibold" : "text-sm font-semibold"}>
+          <p className={nested ? "text-xs font-semibold" : "text-sm font-semibold"}>
             {localized(entry.configuration.title, entry.configuration.titleZh) ?? entry.name}
           </p>
           <p className="font-mono text-xs text-gray-500 dark:text-gray-400">{entry.name}</p>

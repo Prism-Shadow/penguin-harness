@@ -26,6 +26,8 @@
  * | `ui-icon-decor`    | an icon that says nothing its label does not already say | on the icon itself (or the element holding only it); optional `data-role="nav" \| "group" \| "menu" \| "empty"` |
  * | `ui-tree`          | a container whose rows nest                              | rows carry `data-depth="0"…"8"`, the last row of a level `data-last="true"`; a row's children may follow it in a `data-branch` element carrying the children's `data-depth` |
  * | `ui-field`         | a labelled control row                                   | children carry `data-slot="label" \| "control"` and optionally `"hint"` |
+ * | `ui-activity`      | a step of the agent's work in the transcript: a thinking | `data-kind="thinking" \| "tool"`, `data-state="running" \| "done" \| "error"`; descendants may carry `data-slot="label" \| "detail" \| "progress"` (the progress slot exists only while running, hidden by the host — a recipe that draws it sets `display` itself) |
+ * |                    | row, a tool-call row, a work group's header              |                                                       |
  *
  * `ui-shell` is the one place a theme may paint a field of colour: Frost lays a soft warm field
  * behind the window, leaves the navigation column transparent on it and floats the main column as
@@ -63,6 +65,18 @@
  *   across, roomily; Console sets a tabular row with a fixed label column
  *   (`--ui-field-label-w`) and the control left-aligned in the next, so a settings page reads
  *   like a table. The hint (or error) may be its own slot or sit inside the label slot.
+ *
+ * `ui-activity` (2026-09-29) is how a theme renders work in progress without the component
+ * knowing which theme runs. The host writes what it knows — the kind of step, its state, and
+ * which descendant is the label, the detail (a path, an argument preview, a duration) and the
+ * progress slot — and stays a plain row under Primer. Frost makes the running row glow: a soft
+ * halo and a tinted border in the accent's hue, breathing, and a highlight that sweeps across the
+ * label; at rest nothing is added. Console renders a transcript: the label in the chrome face at
+ * the small rung, uppercase and tracked, muted once done and full ink while running, the detail
+ * muted, no box around the row, and a hatched block bar in the progress slot while the step
+ * runs; a step in a work group hangs off the `└` its `ui-tree` row draws. Both recipes go still
+ * under reduced motion (the halo holds, the bar holds one fill) and read as finished at rest.
+ * The host's own status icon stays: the recipes add to it, never replace it.
  */
 export const HOOKS = [
   "ui-glass",
@@ -75,6 +89,7 @@ export const HOOKS = [
   "ui-icon-decor",
   "ui-tree",
   "ui-field",
+  "ui-activity",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

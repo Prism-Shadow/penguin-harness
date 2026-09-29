@@ -419,7 +419,9 @@ export function AppLayout() {
     });
 
   return (
-    <div className="flex h-full">
+    // ui-shell: the app window. A theme may paint a field behind it, float the main column as a
+    // sheet or rule the columns apart; the navigation column is `nav`, the page column `main`.
+    <div className="ui-shell flex h-full">
       {/* Desktop: single-column sidebar (collapsible to a narrow rail).
           Collapsing animates the WIDTH, which is the one animation here that transform cannot
           carry: the sidebar is in flow, so the main content reflows beside it rather than
@@ -433,6 +435,7 @@ export function AppLayout() {
           rail sits at its final 48px from the first frame while the box closes around it, and
           the pinned sidebar is uncovered left to right instead of reflowing on every frame. */}
       <aside
+        data-slot="nav"
         className={`hidden shrink-0 overflow-hidden border-r border-gray-200 bg-gray-50 transition-[width] duration-200 ease-out md:block dark:border-gray-800 dark:bg-gray-900 ${
           collapsed ? "w-12" : "w-64 lg:w-72"
         }`}
@@ -446,7 +449,7 @@ export function AppLayout() {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
         {/* Mobile: top thin bar (hamburger + brand) */}
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-2 md:hidden dark:border-gray-800 dark:bg-gray-950">
           {/* The outermost menu on a phone: it carries a dot for EITHER trail, so its wording

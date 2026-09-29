@@ -1822,7 +1822,7 @@ export function Sidebar({
                 onClick={() => setProjectOpen(!projectOpen)}
                 className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-base font-semibold transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
               >
-                <span className="min-w-0 flex-1 truncate text-left">
+                <span className="min-w-0 flex-1 truncate font-sans text-left">
                   {currentProject ? projectDisplayName(currentProject) : S.common.loading}
                 </span>
                 <span className="text-gray-400">
@@ -1843,7 +1843,7 @@ export function Sidebar({
                   p.projectId === currentProject?.projectId ? "font-semibold" : ""
                 }`}
               >
-                <span className="truncate">{projectDisplayName(p)}</span>
+                <span className="truncate font-sans">{projectDisplayName(p)}</span>
                 <Badge tone="gray">{p.role}</Badge>
               </button>
             ))}
@@ -1900,7 +1900,7 @@ export function Sidebar({
                 : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
             }`}
           >
-            <span className="text-gray-500 dark:text-gray-400">
+            <span className="ui-icon-decor text-gray-500 dark:text-gray-400" data-role="nav">
               <Icon d={NEW_CHAT_ICON} />
             </span>
             {S.chat.newSessionMenu}
@@ -1959,7 +1959,10 @@ export function Sidebar({
                         aria-disabled="true"
                         className="relative flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-gray-400 dark:text-gray-600"
                       >
-                        <span className="text-gray-300 dark:text-gray-700">
+                        <span
+                          className="ui-icon-decor text-gray-300 dark:text-gray-700"
+                          data-role="nav"
+                        >
                           <Icon d={item.icon} />
                         </span>
                         {item.label}
@@ -1989,7 +1992,10 @@ export function Sidebar({
                         }`
                       }
                     >
-                      <span className="text-gray-500 dark:text-gray-400">
+                      <span
+                        className="ui-icon-decor text-gray-500 dark:text-gray-400"
+                        data-role="nav"
+                      >
                         <Icon d={item.icon} />
                       </span>
                       {item.label}
@@ -2065,7 +2071,7 @@ export function Sidebar({
               }`}
             >
               <span
-                className={`min-w-0 overflow-hidden whitespace-nowrap px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 transition-opacity duration-200 dark:text-gray-500 ${
+                className={`ui-eyebrow min-w-0 overflow-hidden whitespace-nowrap px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 transition-opacity duration-200 dark:text-gray-500 ${
                   searchOpen ? "opacity-0" : "opacity-100"
                 }`}
               >
@@ -2258,7 +2264,10 @@ export function Sidebar({
                   open={searching || !collapsedGroups.has(DRAFTS_GROUP_KEY)}
                   onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
                   icon={
-                    <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                    <span
+                      className="ui-icon-decor shrink-0 text-gray-400 dark:text-gray-500"
+                      data-role="group"
+                    >
                       <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.groupHeaderGlyph} />
                     </span>
                   }
@@ -2428,7 +2437,10 @@ export function Sidebar({
                       onToggle={() => toggleGroup(group.key, foldedOnly !== undefined)}
                       icon={
                         /* Folder opens and closes with the group */
-                        <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                        <span
+                          className="ui-icon-decor shrink-0 text-gray-400 dark:text-gray-500"
+                          data-role="group"
+                        >
                           <Icon
                             d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
                             size={ICON_SIZE.groupHeaderGlyph}
@@ -2520,7 +2532,10 @@ export function Sidebar({
                         open={!collapsed}
                         onToggle={() => toggleGroup(group.key)}
                         icon={
-                          <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                          <span
+                            className="ui-icon-decor shrink-0 text-gray-400 dark:text-gray-500"
+                            data-role="group"
+                          >
                             <Icon d={GROUP_MODE_ICONS.time} size={ICON_SIZE.groupHeaderGlyph} />
                           </span>
                         }
@@ -2611,7 +2626,7 @@ export function Sidebar({
                     it, and the trigger's tooltip/label above say what it is. */}
                 {badges.software !== null && <UpdateDot />}
               </UserAvatar>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+              <span className="min-w-0 flex-1 truncate font-sans text-sm font-medium">
                 {user?.displayName ?? user?.userId}
               </span>
               {user?.isAdmin && (
@@ -2808,7 +2823,7 @@ function DraftRow({
           <Truncated
             scrollReveal
             text={title}
-            className={`min-w-0 flex-1 text-sm ${
+            className={`min-w-0 flex-1 font-sans text-sm ${
               active
                 ? "font-medium text-gray-900 dark:text-gray-100"
                 : "text-gray-700 dark:text-gray-300"
@@ -3069,7 +3084,7 @@ function SessionRow({
           <Truncated
             scrollReveal
             text={s.title ?? S.chat.defaultSessionTitle}
-            className={`min-w-0 flex-1 text-sm ${
+            className={`min-w-0 flex-1 font-sans text-sm ${
               active
                 ? "font-medium text-gray-900 dark:text-gray-100"
                 : s.archived
