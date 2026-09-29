@@ -464,16 +464,19 @@ const verifyModule: DeployStageDefinition = {
 async function onMainCarryingWork(ctx: DeployStageContext, cwd: string): Promise<void> {
   const status = await git(ctx, ["status", "--porcelain"], { quiet: true, cwd });
   const work = status.stdout.trim() !== "";
-  // git cannot stash in a repository with no commit yet: a new product's module, made
-  // locally, before its first deploy. Its work then stays where it is.
-  const stashed =
-    work &&
-    (
-      await git(ctx, ["stash", "push", "--include-untracked", "-m", "penguin-harness deploy"], {
-        cwd,
-        allowFailure: true,
-      })
-    ).code === 0;
+  const stash = ["stash", "push", "--include-untracked", "-m", "penguin-harness deploy"];
+  const stashed = work && (await git(ctx, stash, { cwd, allowFailure: true })).code === 0;
+  if (work && !stashed) {
+    // git cannot stash in a repository with no commit yet: a new product's module, made
+    // locally, before its first deploy, whose work then stays where it is. A stash that
+    // failed for any other reason (a conflict, say) stops the deploy with git's own words.
+    const born = await git(ctx, ["rev-parse", "--verify", "--quiet", "HEAD"], {
+      allowFailure: true,
+      quiet: true,
+      cwd,
+    });
+    if (born.code === 0) await git(ctx, stash, { cwd });
+  }
   const local = await git(ctx, ["rev-parse", "--verify", "--quiet", `refs/heads/${BASE_BRANCH}`], {
     allowFailure: true,
     quiet: true,
@@ -489,7 +492,14 @@ async function onMainCarryingWork(ctx: DeployStageContext, cwd: string): Promise
     // Main starts as origin has it, the work left as changes to it; with no main on origin
     // either, main is born when the work is committed.
     await git(ctx, ["symbolic-ref", "HEAD", `refs/heads/${BASE_BRANCH}`], { cwd });
-    if (remote.code === 0) await git(ctx, ["reset", "--mixed", `origin/${BASE_BRANCH}`], { cwd });
+    if (remote.code === 0) {
+      await git(ctx, ["reset", "--mixed", `origin/${BASE_BRANCH}`], { cwd });
+      // Origin's files the new module never had would read as deleted and be committed
+      // away: they are checked out, and only the module's own work is a change.
+      const deleted = await git(ctx, ["ls-files", "--deleted", "-z"], { quiet: true, cwd });
+      const missing = deleted.stdout.split("\0").filter(Boolean);
+      if (missing.length) await git(ctx, ["checkout", "--", ...missing], { cwd });
+    }
     return;
   }
   if (local.code === 0) await git(ctx, ["checkout", BASE_BRANCH], { cwd });

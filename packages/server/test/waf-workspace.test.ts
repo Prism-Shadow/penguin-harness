@@ -61,10 +61,11 @@ function fakeGit(existing: ReadonlySet<string> = new Set()) {
     if (joined === "branch --show-current") return ok(`${(await read(cwd, "branch")) ?? "main"}\n`);
     if (args[0] === "remote" && args[1] === "set-branches") return ok();
     if (args[0] === "fetch") return ok();
-    if (args[0] === "checkout" && args[1] === "-B") {
-      await fs.writeFile(path.join(cwd, ".git", "branch"), args[2]!);
+    if (args[0] === "switch") {
+      await fs.writeFile(path.join(cwd, ".git", "branch"), args[1]!);
       return ok();
     }
+    if (args[0] === "merge" && args[1] === "--ff-only") return ok();
     if (joined === "status --porcelain") return ok("");
     if (joined === "lfs install --local") return ok();
     if (args[0] === "lfs" && args[1] === "pull") return ok();
@@ -248,6 +249,15 @@ describe("WAF workspace", () => {
     const after = await prepared(s);
     expect(after.ready).toBe(true);
     expect(after.repos.find((repo) => repo.id === "framework")!.branch).toBe("v3");
+    // Switched without resetting: a branch the clone had keeps its own commits.
+    const frameworkDir = path.join(s.t.root, "waf", "framework");
+    const switching = s.git.calls
+      .filter(
+        (call) =>
+          call.cwd === frameworkDir && ["switch", "merge", "checkout"].includes(call.args[0]!),
+      )
+      .map((call) => call.args.join(" "));
+    expect(switching).toEqual(["switch v3", "merge --ff-only origin/v3"]);
     expect(s.installs.length).toBe(installs + 1);
   });
 

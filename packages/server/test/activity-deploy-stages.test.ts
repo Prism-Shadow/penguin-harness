@@ -50,6 +50,10 @@ function fakeGit(
     /** Whether main exists locally, and as origin/main. */
     localMain?: boolean;
     originMain?: boolean;
+    /** A repository with no commit yet: HEAD names a branch that does not exist. */
+    unborn?: boolean;
+    /** What `ls-files --deleted` lists: origin's files a new module never had. */
+    deleted?: string[];
   } = {},
 ) {
   const calls: string[][] = [];
@@ -73,6 +77,9 @@ function fakeGit(
           return ok(state.remoteMain === false ? "" : "abc\trefs/heads/main\n");
         if (joined === "diff --cached --quiet")
           return state.staged === false ? ok() : { code: 1, stdout: "", stderr: "" };
+        if (joined === "rev-parse --verify --quiet HEAD" && state.unborn)
+          return { code: 1, stdout: "", stderr: "" };
+        if (joined === "ls-files --deleted -z") return ok((state.deleted ?? []).join("\0"));
         if (joined === "rev-parse HEAD") return ok("0123abcd\n");
         if (joined === "status --porcelain") return ok(state.dirty ? "?? src/new.js\n" : "");
         if (joined === "rev-parse --verify --quiet refs/heads/main" && state.localMain === false)
@@ -296,6 +303,7 @@ describe("verify_module", () => {
       dirty: true,
       localMain: false,
       originMain: false,
+      unborn: true,
       fail: "stash push",
       failWith: "You do not have the initial commit yet",
     });
@@ -308,6 +316,42 @@ describe("verify_module", () => {
     expect(lines).toContain("No commit yet: the new module's work stays in place.");
     expect(await fs.readFile(path.join(dir, "authored.js"), "utf8")).toBe(
       "export const kept = true;",
+    );
+  });
+
+  it("keeps origin's files when a new module's first deploy finds main there", async () => {
+    const dir = await moduleClone();
+    const git = fakeGit({
+      dirty: true,
+      localMain: false,
+      unborn: true,
+      deleted: ["README.md", "docs/setup.md"],
+      fail: "stash push",
+      failWith: "You do not have the initial commit yet",
+    });
+    const { ctx } = context({ dir, git: git.git });
+    await run("verify_module", ctx);
+    const at = (line: string) => git.calls.findIndex((call) => call.join(" ") === line);
+    expect(at("reset --mixed origin/main")).toBeGreaterThan(-1);
+    // Checked out before anything is staged, so the first commit never deletes them.
+    expect(at("checkout -- README.md docs/setup.md")).toBeGreaterThan(
+      at("reset --mixed origin/main"),
+    );
+    expect(at("add --all")).toBeGreaterThan(at("checkout -- README.md docs/setup.md"));
+  });
+
+  it("stops on a stash that fails in a module that has commits", async () => {
+    const dir = await moduleClone();
+    const git = fakeGit({ dirty: true, fail: "stash push", failWith: "needs merge" });
+    const { ctx } = context({ dir, git: git.git });
+    const failure = await run("verify_module", ctx).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(DeployStageFailure);
+    expect((failure as DeployStageFailure).error.code).toBe("command_failed");
+    expect(git.calls.some((call) => ["symbolic-ref", "reset", "add"].includes(call[0]!))).toBe(
+      false,
     );
   });
 

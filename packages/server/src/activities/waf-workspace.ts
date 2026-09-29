@@ -438,7 +438,10 @@ export class WafWorkspaceService implements WafWorkspace {
     // A single-branch clone fetches only its first branch until told of another.
     await this.gitOk(status.path, ["remote", "set-branches", "--add", "origin", branch]);
     await this.gitOk(status.path, ["fetch", "origin", branch]);
-    await this.gitOk(status.path, ["checkout", "-B", branch, `origin/${branch}`]);
+    // A branch the clone already has keeps its commits, fast-forwarded to origin's; one it
+    // has not is made from origin's. A local branch that has diverged fails, naming it.
+    await this.gitOk(status.path, ["switch", branch]);
+    await this.gitOk(status.path, ["merge", "--ff-only", `origin/${branch}`]);
     return true;
   }
 
