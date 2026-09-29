@@ -218,7 +218,7 @@ jobs:
           cp -r packages/web/dist out/penguin/web
           install -D -m 755 scripts/launchers/penguin out/penguin/bin/penguin
           node scripts/build-plugins.mjs --out out/penguin/lib/plugins
-          test -f out/penguin/lib/plugins/node_modules/@prismshadow/penguin-plugin-sandbox-bwrap/package.json
+          test -f out/penguin/lib/plugins/node_modules/@penguinharness/sandbox-bwrap/package.json
 
       # Program payloads: linux runtimes use .tar.xz, darwin .tar.gz (nodejs.org naming);
       # node/ is only lightly trimmed (drop share/doc and share/man, keep the rest). Payloads
@@ -651,10 +651,10 @@ jobs:
           # The @penguinharness/* plugin packages go first: core declares them as workspace:*
           # deps, rewritten to their versions at publish time, so they must exist first.
           for dir in plugins/*/; do
-            # Read the name and the private flag out of the manifest rather than building a name
-            # from the directory: plugins/sandbox-* are @prismshadow/penguin-plugin-sandbox-* and
-            # private, so a derived name queries a package that does not exist and filters to
-            # nothing. Publishing is driven by what each package says it is.
+            # Read the name and the private flag out of the manifest rather than assuming them:
+            # a name is not always @penguinharness/<dir>, and not every plugin is published (the
+            # sandbox backends are private); a private package queried on npm filters to nothing.
+            # Publishing is driven by what each package says it is.
             name="$(node -p "require('./$dir/package.json').name")"
             private="$(node -p "require('./$dir/package.json').private === true")"
             if [ "$private" = "true" ]; then

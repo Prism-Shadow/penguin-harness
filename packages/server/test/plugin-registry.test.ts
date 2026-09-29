@@ -179,6 +179,20 @@ describe("plugin readmes", () => {
   it("a remote registry offers none", async () => {
     expect(await httpPluginRegistry("https://example.invalid/index.json").readme("x")).toBeNull();
   });
+
+  /**
+   * The sandbox backends follow the rule the Agent plugins do: `plugins/<dir>` is the npm
+   * package `@penguinharness/<dir>`. The release publishes by that name and a Project's
+   * `[plugins]` table names it, so a package that drifts from its directory is one nobody can
+   * find by either.
+   */
+  it("names every sandbox backend @penguinharness/<its directory>", () => {
+    const sandboxes = [...packages].filter(([, { dir }]) => dir.startsWith("sandbox-"));
+    expect(sandboxes).toHaveLength(4);
+    for (const [name, { dir }] of sandboxes) {
+      expect(name, `plugins/${dir}`).toBe(`@penguinharness/${dir}`);
+    }
+  });
 });
 
 describe("the builtin catalogue and the packages it lists", () => {
@@ -236,7 +250,7 @@ describe("the registry routes", () => {
   });
 
   it("requires auth, then serves a listed entry's readme from the package on this machine", async () => {
-    const name = "@prismshadow/penguin-plugin-sandbox-bwrap";
+    const name = "@penguinharness/sandbox-bwrap";
     const url = `/api/plugins/registry/readme?name=${encodeURIComponent(name)}`;
     expect((await t.app.request(url)).status).toBe(401);
 

@@ -1,5 +1,5 @@
 /**
- * @prismshadow/penguin-plugin-sandbox-bwrap — a bubblewrap sandbox backend.
+ * @penguinharness/sandbox-bwrap — a bubblewrap sandbox backend.
  *
  * A PLUGIN PACKAGE, not part of the platform: a Project asks for it on the Plugins page
  * and the harness resolves it from the installation (see the server's plugin/loader.ts).

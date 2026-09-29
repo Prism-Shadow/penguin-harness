@@ -19,10 +19,10 @@
  * The backends shipped in this repo:
  *
  *   plugin                            platform   fs-write  network  mask-paths
- *   penguin-plugin-sandbox-bwrap      Linux      yes       yes      yes
- *   penguin-plugin-sandbox-seatbelt   macOS      yes       yes      yes
- *   penguin-plugin-sandbox-wsl        Windows    yes       yes      yes
- *   penguin-plugin-sandbox-dsh        all three  yes       —        —
+ *   @penguinharness/sandbox-bwrap     Linux      yes       yes      yes
+ *   @penguinharness/sandbox-seatbelt  macOS      yes       yes      yes
+ *   @penguinharness/sandbox-wsl       Windows    yes       yes      yes
+ *   @penguinharness/sandbox-dsh       all three  yes       —        —
  *
  * The DSH adaptor is the portable floor covering file effects only (its own chain picks
  * bwrap/Landlock, Seatbelt or the Windows ACL runner per host); the three native

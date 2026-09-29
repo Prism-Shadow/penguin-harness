@@ -75,9 +75,9 @@ if (!process.argv.includes("--registry")) process.exit(0);
 
 // Everything the release publishes: the non-private packages above, plus every plugin — the
 // release loops `plugins/*/` and publishes each as `@penguinharness/<dir>`.
-// Read each plugin's own name and private flag rather than deriving a name from its directory:
-// `plugins/sandbox-*` are `@prismshadow/penguin-plugin-sandbox-*` and private, so a name built
-// from the directory names a package that does not exist and never will.
+// Read each plugin's own name and private flag rather than assuming them from its directory:
+// a name is not always `@penguinharness/<dir>`, and the sandbox backends are private, so a list
+// built from the directories alone names packages the release never publishes.
 const pluginNames = [];
 for (const entry of readdirSync(path.join(root, "plugins"), { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;

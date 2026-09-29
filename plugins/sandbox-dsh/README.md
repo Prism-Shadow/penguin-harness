@@ -40,7 +40,7 @@ run it: the App re-assembles itself, no restart. Written by hand, it is a row of
 
 ```toml
 [plugins]
-"@prismshadow/penguin-plugin-sandbox-dsh" = "*"
+"@penguinharness/sandbox-dsh" = "*"
 ```
 
 Installing is an operator-side action: the harness resolves the package from the installation,
