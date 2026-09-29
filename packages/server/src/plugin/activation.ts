@@ -345,8 +345,22 @@ export async function activatePlugins(
  */
 export const HOST_PACKAGES = /^@prismshadow\/penguin-core(\/|$)/;
 
-const storeRoots = new Set<string>();
-let hostHookInstalled = false;
+type Resolve = Parameters<NonNullable<Parameters<typeof nodeModule.registerHooks>[0]["resolve"]>>;
+type Resolved = ReturnType<Resolve[2]>;
+
+/**
+ * The process-wide half: installed once, by whichever copy of this file runs first (the
+ * runtime's own bundle, or a pushed platform's), and holding nothing but a slot. What it does
+ * on a failed resolution is the `retry` the LATEST caller put there — so the policy travels by
+ * push like the rest of this file, while Node's hook chain gets exactly one entry.
+ */
+const HOST_LENDING = Symbol.for("penguin.plugins.hostLending");
+interface HostLending {
+  installed: boolean;
+  /** `file:` URLs of plugin stores, each ending in a separator. */
+  roots: Set<string>;
+  retry: (specifier: string, context: Resolve[1], next: Resolve[2], err: unknown) => Resolved;
+}
 
 /**
  * Lets a plugin loaded from `root`'s store resolve a host package the way the running program
@@ -354,13 +368,35 @@ let hostHookInstalled = false;
  * resolves its imports from there — under the data root, where no `node_modules` holds the
  * host's SDK; from the installation's prefix it used to find the program's copy by walking up.
  * Only a HOST_PACKAGES import the plugin's own package cannot resolve is retried, from the
- * program's entry (`process.argv[1]`); anything the package carries itself wins. One hook per
- * process (`module.registerHooks`); a runtime without it logs once and resolves as Node does.
+ * program's entry (`process.argv[1]`); anything the package carries itself wins. A runtime
+ * without `module.registerHooks` logs once and resolves as Node does.
  */
 export function lendHostPackages(root: string): void {
-  storeRoots.add(pathToFileURL(path.join(pluginStoreDir(root), path.sep)).href);
-  if (hostHookInstalled) return;
-  hostHookInstalled = true;
+  const g = globalThis as { [HOST_LENDING]?: HostLending };
+  const slot = (g[HOST_LENDING] ??= {
+    installed: false,
+    roots: new Set(),
+    retry: (_s, _c, _n, err) => {
+      throw err;
+    },
+  });
+  slot.roots.add(pathToFileURL(path.join(pluginStoreDir(root), path.sep)).href);
+  slot.retry = (specifier, context, next, err) => {
+    const parent = context.parentURL;
+    const entry = process.argv[1];
+    if (
+      (err as { code?: string }).code !== "ERR_MODULE_NOT_FOUND" ||
+      !HOST_PACKAGES.test(specifier) ||
+      parent === undefined ||
+      typeof entry !== "string" ||
+      ![...slot.roots].some((r) => parent.startsWith(r))
+    ) {
+      throw err;
+    }
+    return next(specifier, { ...context, parentURL: pathToFileURL(entry).href });
+  };
+  if (slot.installed) return;
+  slot.installed = true;
   const register = (nodeModule as { registerHooks?: typeof nodeModule.registerHooks })
     .registerHooks;
   if (typeof register !== "function") {
@@ -374,18 +410,7 @@ export function lendHostPackages(root: string): void {
       try {
         return nextResolve(specifier, context);
       } catch (err) {
-        const parent = context.parentURL;
-        const entry = process.argv[1];
-        if (
-          (err as { code?: string }).code !== "ERR_MODULE_NOT_FOUND" ||
-          !HOST_PACKAGES.test(specifier) ||
-          parent === undefined ||
-          typeof entry !== "string" ||
-          ![...storeRoots].some((r) => parent.startsWith(r))
-        ) {
-          throw err;
-        }
-        return nextResolve(specifier, { ...context, parentURL: pathToFileURL(entry).href });
+        return slot.retry(specifier, context, nextResolve, err);
       }
     },
   });
