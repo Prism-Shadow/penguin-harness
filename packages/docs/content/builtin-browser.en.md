@@ -8,6 +8,7 @@ The **Browser** panel is a web browser built into the desktop app's dock. You br
 - To get started, see [Open the Browser panel](#open-the-browser-panel).
 - To let an agent use your accounts, see [Sign in](#sign-in) and [Import from your browser](#import-from-your-browser).
 - To automate it yourself or understand what an agent does, see [Drive it from the command line](#drive-it-from-the-command-line).
+- If the browser gets heavy or a page crashes, see [Performance](#performance).
 
 ## Before you begin
 
@@ -115,6 +116,21 @@ EOF
 
 Every command and its output format are in the [CLI Reference](/cli#penguin-browser).
 
+## Performance
+
+Every tab is a whole web page with memory of its own: a busy shopping or news site takes 100 to 300 MB, and some take more than 1 GB. The app watches how much the browser uses and tells you before it gets too much.
+
+- **A warning before trouble.** When the tabs together use more than 1.5 GB of memory, when this computer has less than 10% of its memory free (not measured on macOS), or when more than 12 tabs are open, an amber warning icon appears in the browser's toolbar. Its tooltip says how much memory the browser uses and in how many tabs. A notice pops up once when the warning starts, and the tabs using the most memory carry a small warning mark in the tab strip. Close the tabs you no longer need. `penguin browser status` prints the same figures on a `memory:` line, and a `warning:` line while the warning lasts.
+- **Background tabs run slower.** A tab no agent is using may have its timers slowed to about once a second while it is out of sight, as a browser does with background tabs. A tab an agent works in runs at full speed, during each action and for 30 seconds after it, and so does a new tab while it loads.
+- **A crashed page stays a tab.** When a page's process ends (it crashed, or the system took its memory back), its tab shows **This page crashed** with a **Reload** button instead of an empty area, and the rest of the app carries on. An agent that uses that tab gets `tab_crashed` at once. If the app's own window fails, it reloads, waiting longer between tries if it keeps failing; the browser's tabs close with it.
+- **A log for bug reports.** The desktop app records what its processes do in `desktop.log`, including every process that ends unexpectedly and why. The file stops at 5 MB and starts again, keeping the previous one as `desktop.log.1`. Attach both when you report a crash:
+
+| System | Log file |
+| --- | --- |
+| macOS | `~/Library/Application Support/PenguinHarness/logs/desktop.log` |
+| Windows | `%APPDATA%\PenguinHarness\logs\desktop.log` |
+| Linux | `~/.config/PenguinHarness/logs/desktop.log` |
+
 ## How it works
 
 - Each tab is a Chromium page hosted by the desktop app, in its own persistent profile. Pages see an ordinary Chrome browser.
@@ -128,7 +144,8 @@ Every command and its output format are in the [CLI Reference](/cli#penguin-brow
 | Limit | Value |
 | --- | --- |
 | Where it works | The desktop app only |
-| Tabs | 30 at most; a new tab beyond them is refused (`too_many_tabs`) |
+| Tabs | 20 at most; a new tab beyond them is refused (`too_many_tabs`) |
+| Load warning | Over 1.5 GB of memory in the tabs, under 10% of this computer's memory free, or over 12 tabs |
 | `scan` body | 35,000 characters by default (`--max-chars`); a third of that with `--text` |
 | `exec` return value shown | 8,000 characters; `--save` writes all of it to a file |
 | `exec` script time | 15 seconds by default (`--timeout`) |

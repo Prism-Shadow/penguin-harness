@@ -19,6 +19,8 @@ penguin browser status
 
 `status: available` is followed by the open tabs. `status: unavailable (…)` (exit code 1) means the desktop app is not what runs this conversation, or it has no window open: tell the user that the built-in browser needs the PenguinHarness desktop app, open, and stop there — never answer from guessed page content.
 
+A `warning:` line under `memory:` means the browser is using too much memory or holds too many tabs. Close the tabs you opened and no longer need (`penguin browser close <tab-id>`) before opening more, and reuse a tab (`open` without `--new-tab`) where you can.
+
 ## The loop
 
 1. **Go**: `penguin browser open <url>` navigates the active tab (and opens one when there is none); `--new-tab` opens another. It waits for the load and prints `tab <id> · <title> · <url>`.
@@ -63,6 +65,7 @@ EOF
 - File uploads, cross-origin iframes and closed shadow roots: see [reference/page-recipes.md](reference/page-recipes.md) (`DataTransfer`, and raw DevTools Protocol commands through `penguin browser cdp`).
 - When layout matters or text is drawn in a canvas or an image, `penguin browser screenshot -o shot.png` (`--full-page` for the whole page), then look at the file.
 - Verify figures on the detail page rather than a summary or a list: a list's total can differ from the order's.
+- `error: tab_crashed` means the tab's page crashed (often from running out of memory). Retrying in that tab will not work: close it (`penguin browser close <tab-id>`) and open the page again with `penguin browser open <url> --new-tab`.
 
 ## Sign-in walls
 

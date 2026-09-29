@@ -456,6 +456,15 @@ penguin browser history [<query>] [-n <count>]
 
 `status` prints `status: available` and the tab list, or `status: unavailable (<reason>)` followed by a note, and then exits 1. The reason is `not_desktop` (the server is not the desktop app's), `shell_unsupported` (the desktop app is too old for the browser) or `no_window` (the app has no window open).
 
+Once the desktop app has measured the tabs (it does every 10 seconds), `status` adds a `memory:` line: the memory the tabs use together and how many tabs there are, then this computer's free and total memory (not on macOS). While the browser is too heavy (over 1.5 GB in its tabs, under 10% of the computer's memory free, or over 12 tabs) a `warning:` line follows, saying what is too much and to close the tabs no longer needed:
+
+```text
+status: available
+tabs: *12 Your Orders | 15 Google
+memory: 2.1 GB across 2 tabs · this computer: 3.2 GB free of 16.0 GB
+warning: The browser holds a lot of memory. Close the tabs you no longer need (penguin browser close <tab-id>).
+```
+
 ### scan
 
 ```text
@@ -515,7 +524,7 @@ The result names the source, then prints `cookies: <n> imported, <n> skipped, <n
 
 ### Errors
 
-An error is one line on stderr, `error: <code>: <message>`, and the command exits 1. The server's codes are `browser_unavailable`, `no_tab` (no tab is open), `no_such_tab`, `script_error`, `timeout`, `invalid_url`, `source_not_found` and `import_failed`; the CLI adds `invalid_argument` for a command typed wrong, `io_error` for a file it cannot read or write, and `request_failed` when the server cannot be reached. For `browser_unavailable` the message explains that the built-in browser needs the PenguinHarness desktop app, and that the app must be open.
+An error is one line on stderr, `error: <code>: <message>`, and the command exits 1. The server's codes are `browser_unavailable`, `no_tab` (no tab is open), `no_such_tab`, `tab_crashed` (the tab's page crashed: close it and open the page in a new tab), `too_many_tabs` (the browser holds 20 tabs), `script_error`, `timeout`, `invalid_url`, `source_not_found` and `import_failed`; the CLI adds `invalid_argument` for a command typed wrong, `io_error` for a file it cannot read or write, and `request_failed` when the server cannot be reached. For `browser_unavailable` the message explains that the built-in browser needs the PenguinHarness desktop app, and that the app must be open.
 
 ## Approval modes (--approve)
 

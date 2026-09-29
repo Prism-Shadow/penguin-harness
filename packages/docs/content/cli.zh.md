@@ -456,6 +456,15 @@ penguin browser history [<query>] [-n <count>]
 
 `status` 打印 `status: available` 和标签页列表；不可用时打印 `status: unavailable (<reason>)` 和一行说明，并以退出码 1 结束。原因有三种：`not_desktop`（服务器不属于桌面应用）、`shell_unsupported`（桌面应用版本过旧，无法承载浏览器）和 `no_window`（应用没有打开的窗口）。
 
+桌面应用测量过标签页之后（每 10 秒一次），`status` 会多一行 `memory:`：各标签页合计使用的内存和标签页数量，以及这台电脑的可用内存和总内存（macOS 上没有这一项）。浏览器负载过高时（标签页合计超过 1.5 GB、电脑可用内存不足 10%，或超过 12 个标签页），后面还有一行 `warning:`，说明哪一项过高，并提示关闭不再需要的标签页：
+
+```text
+status: available
+tabs: *12 Your Orders | 15 Google
+memory: 2.1 GB across 2 tabs · this computer: 3.2 GB free of 16.0 GB
+warning: The browser holds a lot of memory. Close the tabs you no longer need (penguin browser close <tab-id>).
+```
+
 ### scan
 
 ```text
@@ -515,7 +524,7 @@ note: No visible change on the page.
 
 ### 错误
 
-出错时在 stderr 打印一行 `error: <code>: <message>`，命令以退出码 1 结束。服务器的错误码有 `browser_unavailable`、`no_tab`（没有打开的标签页）、`no_such_tab`、`script_error`、`timeout`、`invalid_url`、`source_not_found` 和 `import_failed`；CLI 自己还有三种：命令写错时的 `invalid_argument`、文件读写失败时的 `io_error`，以及连不上服务器时的 `request_failed`。对于 `browser_unavailable`，错误信息会说明内置浏览器需要 PenguinHarness 桌面应用，并且应用必须处于打开状态。
+出错时在 stderr 打印一行 `error: <code>: <message>`，命令以退出码 1 结束。服务器的错误码有 `browser_unavailable`、`no_tab`（没有打开的标签页）、`no_such_tab`、`tab_crashed`（该标签页的页面已崩溃：关闭它，在新标签页中重新打开页面）、`too_many_tabs`（浏览器已有 20 个标签页）、`script_error`、`timeout`、`invalid_url`、`source_not_found` 和 `import_failed`；CLI 自己还有三种：命令写错时的 `invalid_argument`、文件读写失败时的 `io_error`，以及连不上服务器时的 `request_failed`。对于 `browser_unavailable`，错误信息会说明内置浏览器需要 PenguinHarness 桌面应用，并且应用必须处于打开状态。
 
 ## 审批模式（--approve）
 
