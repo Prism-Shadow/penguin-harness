@@ -3,7 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** feature
 - **Scope:** `server`
-- **PR:** [Myriad-Dreamin/penguin-harness#PR_NUMBER](https://github.com/Myriad-Dreamin/penguin-harness/pull/PR_NUMBER)
+- **PR:** [Myriad-Dreamin/penguin-harness#92](https://github.com/Myriad-Dreamin/penguin-harness/pull/92)
 
 [中文版](2026-09-29-plugin-store.zh.md)
 
