@@ -469,7 +469,7 @@ describe("the ticket dialog the whole shell shares", () => {
 });
 
 describe("applyUserEvent forwarding", () => {
-  it("publishes a company event to every subscriber and refreshes the list on a work run of the current Project", () => {
+  it("publishes a company event to every subscriber and never refreshes the user's own list for it", () => {
     const sessions = createSessionsStore();
     const reload = vi.fn(() => Promise.resolve());
     sessions.setState({ projectId: "p1", reload });
@@ -488,8 +488,9 @@ describe("applyUserEvent forwarding", () => {
       applyUserEvent(sessions, { ...run, projectId: "p2" }, () => undefined);
       applyUserEvent(sessions, posted(), () => undefined);
       expect(seen.map((e) => e.type)).toEqual(["org_run", "org_run", "org_channel"]);
-      // Only the run of the current Project refreshes; a channel message changes no session row.
-      expect(reload).toHaveBeenCalledTimes(1);
+      // A work run opens a desk or ticket Session, which the list never fetches (`excludeOrg`),
+      // even in the current Project; a channel message changes no session row either.
+      expect(reload).not.toHaveBeenCalled();
     } finally {
       stop();
     }

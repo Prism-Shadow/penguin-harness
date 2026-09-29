@@ -3407,6 +3407,8 @@ export type ServerEvent =
    * a schedule, an agent spawning a child — so the list learns about rows it did not make;
    * and on the parent Session's channel for a subagent, which no list shows. `source` is what
    * the new Session's meta records, and it tells a client which list, if any, the row joins.
+   * `client` is `"org"` when the organization runtime opened it (a desk or ticket session),
+   * as it is on the row: a list of the user's own rows (`excludeOrg`) has nothing to fetch.
    */
   | {
       type: "session_created";
@@ -3414,6 +3416,7 @@ export type ServerEvent =
       agentId: string;
       sessionId: string;
       source: SessionSource;
+      client?: "org";
     }
   /**
    * The user's listing decision on one Session changed (PATCH `archived`, the archive page's

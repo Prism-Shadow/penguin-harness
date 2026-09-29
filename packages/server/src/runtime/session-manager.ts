@@ -2509,6 +2509,7 @@ export class SessionManager {
       agentId,
       sessionId: childSid,
       source,
+      ...(parentClient === "org" ? { client: "org" as const } : {}),
     });
     const child: ChildSession = {
       sessionId: childSid,

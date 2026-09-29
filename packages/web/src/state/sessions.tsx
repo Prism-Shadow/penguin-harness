@@ -1539,7 +1539,13 @@ export function applyUserEvent(
   // list as this server's are when the id differs. Reloading on all of them meant every
   // Session and every subagent started in any other Project on any connected machine refetched
   // the whole list, Agents × sources.
+  //
+  // An organization's desk or ticket Session (`client: "org"`) is not one of this list's rows:
+  // every fetch asks for the user's own (`excludeOrg`), so the reload would come back with
+  // nothing new — Agents × sources calls, once per desk run, for a busy organization. A server
+  // that predates the field says nothing, and its events still reload as before.
   if (ev.type === "session_created") {
+    if (ev.client === "org") return;
     if (ev.source === "user" && ev.projectId === store.getState().projectId) {
       void store.getState().reload();
     }
@@ -1631,13 +1637,10 @@ export function applyUserEvent(
     return;
   }
   // Company-mode notifications fan out to the company store and any mounted organization page
-  // (state/company.tsx); a work run additionally opened a desk or ticket Session this list has
-  // not seen, so it refreshes like a schedule firing does.
+  // (state/company.tsx). None of them is this list's affair: a work run opens a desk or ticket
+  // Session, which the list never fetches (`excludeOrg`), so `org_run` reloads nothing here.
   if (isCompanyEvent(ev) || isPluginEvent(ev)) {
     publishCompanyEvent(ev);
-    if (ev.type === "org_run" && ev.projectId === store.getState().projectId) {
-      void store.getState().reload();
-    }
     return;
   }
   // A workflow of some Agent was (re)loaded: the chat page's tab strip owns that list and

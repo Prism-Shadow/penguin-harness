@@ -897,6 +897,7 @@ export class SessionService {
       agentId: args.agentId,
       sessionId: row.sessionId,
       source,
+      ...(row.client === "org" ? { client: "org" as const } : {}),
     });
     return this.toInfo(row, false);
   }

@@ -88,6 +88,22 @@ describe("session_created on the user channel", () => {
     expect(created(boxes.stranger)).toHaveLength(0);
   });
 
+  it("says client: 'org' for a Session an organization opened, so a list of own rows can skip it", async () => {
+    const desk = await t.deps.sessionService.createSession({
+      projectId,
+      agentId: "default_agent",
+      client: "org",
+    });
+    const got = created(boxes.owner);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({ sessionId: desk.sessionId, client: "org" });
+    // Every other creator is left unmarked, as the first case shows for the list's own.
+    const own = await t.deps.sessionService.createSession({ projectId, agentId: "default_agent" });
+    expect(created(boxes.owner).find((e) => e.sessionId === own.sessionId)).not.toHaveProperty(
+      "client",
+    );
+  });
+
   it("is published after the row is in place, so a reader who reloads on it finds the row", async () => {
     let seenAtPublish: boolean | null = null;
     t.deps.channels.get(userChannelKey("owner")).subscribe((evt) => {

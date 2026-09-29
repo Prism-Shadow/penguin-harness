@@ -1326,7 +1326,7 @@ export type ServerEvent =
   | { type: "web_updated"; rev: string }
   | { type: "machines_changed" }
   | { type: "machine_event"; machineId: string; event: ServerEvent }
-  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
+  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource; client?: "org" }
   | { type: "session_archived"; sessionId: string; projectId: string; agentId: string; archived: boolean }
   | { type: "session_deleted"; sessionId: string; projectId: string }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
@@ -1375,7 +1375,7 @@ export type ServerEvent =
 - `credentials_updated` 在 `PUT /models` 或签发 API key 的流程完成之后发送。缓存的运行时已失效，客户端应清除因认证失败而禁用的输入框状态。
 - `heartbeat` 由端点自己的 SSE 写入方每 20 秒写出一次——出现在 `/api/events` 上和机器的聚合流上（**每台机器一条事件流**）。读取方以它为尺衡量自己的静默：套接字的 ping 和 SSE 注释行对流的使用者都是不可见的，若没有它，一条套接字仍健康、流却停住的连接会永远看起来像活着。
 - `web_updated` 以 `rev` 携带新的 web 修订号，发送到每个用户通道。
-- `session_created` 在每次创建时发送到 Project 所有者和成员的用户通道；子 Agent Session 还会同时发送到父 Session 的通道。`source` 是新 Session 的 `session_meta` 所记录的来源。通过 `PATCH /api/sessions/:id` 设置的标题以同样方式作为 `session_title` 宣告。
+- `session_created` 在每次创建时发送到 Project 所有者和成员的用户通道；子 Agent Session 还会同时发送到父 Session 的通道。`source` 是新 Session 的 `session_meta` 所记录的来源。组织开出的 Session（工位会话、工单会话及其子 Session）带 `client: "org"`，其余不带，以 `excludeOrg=1` 查询的列表据此可以跳过重新拉取。通过 `PATCH /api/sessions/:id` 设置的标题以同样方式作为 `session_title` 宣告。
 - `session_archived` 在 Session 被归档或取消归档时发送：来自 `PATCH /api/sessions/:id` 设置 `archived`，或已归档对话页的批量取消归档，每个 Session 一个事件。`archived` 是新的状态，列表据此移除已归档的行，或按 id 取回取消归档的行。它发送到 Project 所有者和成员的用户通道。
 - `session_deleted` 对每个被删除的 Session 发送：来自 `DELETE /api/sessions/:id`、随它一并删除的子 Agent Session，以及已归档对话页的批量删除，每个 Session 一个事件，各客户端据此移除这一行。受众与 `session_archived` 相同。
 - `schedule_fired` 的 `sessionId` 是接收 Prompt 的 Session，在新建 Session 模式下是一个新 Session。排队的触发会在 Session 空闲后发送。

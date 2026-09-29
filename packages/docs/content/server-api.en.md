@@ -1326,7 +1326,7 @@ export type ServerEvent =
   | { type: "web_updated"; rev: string }
   | { type: "machines_changed" }
   | { type: "machine_event"; machineId: string; event: ServerEvent }
-  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
+  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource; client?: "org" }
   | { type: "session_archived"; sessionId: string; projectId: string; agentId: string; archived: boolean }
   | { type: "session_deleted"; sessionId: string; projectId: string }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
@@ -1375,7 +1375,7 @@ export type ServerEvent =
 - `credentials_updated` follows `PUT /models` or a completed key-minting flow. Cached runtimes were invalidated, so the client clears any composer state disabled by an auth failure.
 - `heartbeat` is written by the endpoint's own SSE writer every 20 seconds — on `/api/events` and on a machine's aggregate stream (**One event stream per machine**). It is what a reader times its own silence by: the socket's ping and the SSE comment line are invisible to a stream consumer, so a stream that stops while the socket stays healthy would otherwise look alive forever.
 - `web_updated` carries the new web revision as `rev` and is sent to every user channel.
-- `session_created` is sent for every creation to the user channels of the Project's owner and members, and for a subagent also on the parent Session's channel. `source` is what the new Session's `session_meta` records. A title set through `PATCH /api/sessions/:id` is announced as `session_title` the same way.
+- `session_created` is sent for every creation to the user channels of the Project's owner and members, and for a subagent also on the parent Session's channel. `source` is what the new Session's `session_meta` records. `client` is `"org"` for a Session an organization opened (a desk or ticket Session, or a child of one) and absent otherwise, so a list that asks with `excludeOrg=1` can skip the refetch. A title set through `PATCH /api/sessions/:id` is announced as `session_title` the same way.
 - `session_archived` is sent when a Session is archived or unarchived: by `PATCH /api/sessions/:id` with `archived`, or by the archive page's batch unarchive, one event per Session. `archived` is the new state, so a list drops an archived row and fetches an unarchived one by id. It goes to the user channels of the Project's owner and members.
 - `session_deleted` is sent for every deleted Session: by `DELETE /api/sessions/:id`, for the subagent Sessions deleted with it, and by the archive page's batch delete, one event per Session, so every client drops the row. Its audience is the same as for `session_archived`.
 - `schedule_fired` names in `sessionId` the Session that received the prompt, which in new-Session mode is a new Session. A queued firing is sent once the Session is idle.
