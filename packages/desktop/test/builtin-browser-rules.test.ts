@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   BUILTIN_BROWSER_PARTITION,
   GUEST_MENU_LABELS,
+  MAX_DATA_FAVICON_CHARS,
+  MAX_FAVICON_URL_CHARS,
   clearDataPlan,
   guestContextMenu,
   hardenGuestPreferences,
@@ -12,6 +14,9 @@ import {
   parseBrowserCommand,
   pickFavicon,
   plainChromeUserAgent,
+  privateMemoryKB,
+  procStatusPrivateKB,
+  tabLoads,
 } from "../src/builtin-browser-rules.js";
 import type { GuestMenuInput } from "../src/builtin-browser-rules.js";
 
@@ -115,6 +120,15 @@ describe("navigation and popups", () => {
     const huge = `data:image/png;base64,${"A".repeat(20_000)}`;
     expect(pickFavicon([huge, "https://a.test/i.png"])).toBe("https://a.test/i.png");
     expect(pickFavicon([huge])).toBeUndefined();
+  });
+
+  it("takes a data: icon up to 4 KB and an address up to 2 KB", () => {
+    const data = (n: number) => `data:image/png;base64,${"A".repeat(n)}`;
+    expect(pickFavicon([data(3_000)])).toBe(data(3_000));
+    expect(pickFavicon([data(5_000)])).toBeUndefined();
+    expect(MAX_DATA_FAVICON_CHARS).toBe(4 * 1024);
+    const long = `https://a.test/${"p".repeat(MAX_FAVICON_URL_CHARS)}.ico`;
+    expect(pickFavicon([long, "https://a.test/f.ico"])).toBe("https://a.test/f.ico");
   });
 });
 
@@ -241,6 +255,14 @@ describe("parseBrowserCommand", () => {
       id: "c1",
       command: { op: "clear-data", storages: ["cache"] },
     });
+    expect(parseBrowserCommand(frame({ op: "throttle", tabIds: [3, 7] }))).toEqual({
+      id: "c1",
+      command: { op: "throttle", tabIds: [3, 7] },
+    });
+    expect(parseBrowserCommand(frame({ op: "throttle", tabIds: [] }))).toEqual({
+      id: "c1",
+      command: { op: "throttle", tabIds: [] },
+    });
   });
 
   it("answers what it cannot run with an error rather than silence", () => {
@@ -268,6 +290,18 @@ describe("parseBrowserCommand", () => {
       id: "c1",
       error: "bad_command",
     });
+    for (const tabIds of [
+      undefined,
+      "3",
+      [3.5],
+      ["3"],
+      Array.from({ length: 1001 }, (_, i) => i),
+    ]) {
+      expect(parseBrowserCommand(frame({ op: "throttle", tabIds }))).toEqual({
+        id: "c1",
+        error: "bad_command",
+      });
+    }
   });
 });
 
@@ -361,5 +395,53 @@ describe("guestContextMenu", () => {
     for (const locale of ["en", "zh"] as const) {
       for (const label of Object.values(GUEST_MENU_LABELS[locale])) expect(label).not.toBe("");
     }
+  });
+});
+
+describe("load", () => {
+  it("adds up each tab's processes, and counts a shared one once in the total", () => {
+    const processes = [
+      { pid: 10, memoryKB: 300_000, cpuPercent: 12.34 },
+      { pid: 11, memoryKB: 50_000, cpuPercent: 1 },
+      { pid: 20, memoryKB: 200_000, cpuPercent: 0 },
+      // A cross-site frame's process both tabs use (an ad network's, say).
+      { pid: 30, memoryKB: 40_000, cpuPercent: 2 },
+      { pid: 99, memoryKB: 999_999, cpuPercent: 50 },
+    ];
+    expect(
+      tabLoads(processes, [
+        { tabId: 1, pids: [10, 11, 30, 10] },
+        { tabId: 2, pids: [20, 30] },
+        // A tab whose renderer the measurement no longer lists.
+        { tabId: 3, pids: [40] },
+      ]),
+    ).toEqual({
+      tabs: [
+        { tabId: 1, memoryKB: 390_000, cpuPercent: 15.3 },
+        { tabId: 2, memoryKB: 240_000, cpuPercent: 2 },
+        { tabId: 3, memoryKB: 0, cpuPercent: 0 },
+      ],
+      totalKB: 590_000,
+    });
+    expect(tabLoads(processes, [])).toEqual({ tabs: [], totalKB: 0 });
+  });
+
+  it("reads Linux's private memory: anonymous pages plus swap", () => {
+    const status =
+      "Name:\telectron\nVmRSS:\t  812004 kB\nRssAnon:\t  301248 kB\nRssFile:\t  98000 kB\nVmSwap:\t    2048 kB\n";
+    expect(procStatusPrivateKB(status)).toBe(303_296);
+    expect(procStatusPrivateKB("RssAnon:\t 100 kB\n")).toBe(100);
+    expect(procStatusPrivateKB("VmRSS:\t 100 kB\n")).toBeNull();
+  });
+
+  it("measures a process by what it holds alone: private memory, not its working set", () => {
+    const memory = { workingSetSize: 812_004, privateBytes: 250_000 };
+    const status = "RssAnon:\t  301248 kB\nVmSwap:\t 0 kB\n";
+    expect(privateMemoryKB("linux", memory, status)).toBe(301_248);
+    // Gone before it could be read: its working set is all there is.
+    expect(privateMemoryKB("linux", memory, null)).toBe(812_004);
+    expect(privateMemoryKB("win32", memory, null)).toBe(250_000);
+    expect(privateMemoryKB("win32", { workingSetSize: 812_004 }, null)).toBe(812_004);
+    expect(privateMemoryKB("darwin", memory, null)).toBe(812_004);
   });
 });

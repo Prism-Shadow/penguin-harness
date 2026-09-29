@@ -4,9 +4,10 @@
  *
  * Everything here is mechanism: which guests may attach and with what preferences, which
  * navigations a guest may make, the user agent sites see, how a relayed frame is read, which
- * permission prompts a page gets, and the guests' right-click menu. What the browser does with
- * its pages — the page scripts, the tab registry, import — is the server platform's
- * (packages/server/src/builtin-browser), delivered by push.
+ * permission prompts a page gets, the guests' right-click menu, and how a tab's load is added up
+ * from its processes. What the browser does with its pages — the page scripts, the tab registry,
+ * import, what load is too much — is the server platform's (packages/server/src/builtin-browser),
+ * delivered by push.
  */
 import type {
   DesktopBrowserCommand,
@@ -81,11 +82,21 @@ export function mayNavigate(url: string): boolean {
 }
 
 /**
- * The favicon a tab reports: the page's first one that is small enough to ride every tab event
- * (a `data:` icon can be arbitrarily large). None rather than a truncated one.
+ * The longest `data:` favicon a tab carries. Every tab event carries the icon and the server
+ * sends the whole tab list to the window on each change, so a page that inlines a large icon
+ * (or keeps swapping one in) would put it on the wire again and again. A 32-pixel PNG fits.
  */
+export const MAX_DATA_FAVICON_CHARS = 4 * 1024;
+/** The longest favicon address a tab carries; anything longer is not an address worth sending. */
+export const MAX_FAVICON_URL_CHARS = 2 * 1024;
+
+/** The favicon a tab reports: the page's first one small enough to ride every tab event. None rather than a cut one. */
 export function pickFavicon(favicons: readonly string[]): string | undefined {
-  return favicons.find((url) => url.length > 0 && url.length <= 16 * 1024);
+  return favicons.find(
+    (url) =>
+      url.length > 0 &&
+      url.length <= (/^data:/i.test(url) ? MAX_DATA_FAVICON_CHARS : MAX_FAVICON_URL_CHARS),
+  );
 }
 
 /** A popup, or a link opened in a new tab, becomes a tab only for a web page. */
@@ -178,6 +189,9 @@ export type ParsedBrowserCommand =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** The most tab ids one command may list: far above any browser's tab count, far below harm. */
+const MAX_TABS_LISTED = 1000;
+
 /** The CDP events a tab relays: `Domain.event` names, at most a handful. */
 function isEventList(value: unknown): value is string[] {
   return (
@@ -247,9 +261,101 @@ export function parseBrowserCommand(data: unknown): ParsedBrowserCommand | null 
         },
       };
     }
+    case "throttle": {
+      const { tabIds } = command;
+      if (
+        !Array.isArray(tabIds) ||
+        tabIds.length > MAX_TABS_LISTED ||
+        !tabIds.every((tabId) => typeof tabId === "number" && Number.isSafeInteger(tabId))
+      ) {
+        return { id, error: "bad_command" };
+      }
+      return { id, command: { op: "throttle", tabIds } };
+    }
     default:
       return { id, error: "unknown_op" };
   }
+}
+
+// --- load ------------------------------------------------------------------------
+
+/** How often the shell measures its guests while it has any. */
+export const METRICS_INTERVAL_MS = 10_000;
+
+/** One process's load, as the shell measures it. */
+export interface ProcessLoad {
+  pid: number;
+  /** What the process holds on its own (see `privateMemoryKB`). */
+  memoryKB: number;
+  /** Since the previous measurement, in percent of one core. */
+  cpuPercent: number;
+}
+
+/** A tab and the processes behind its page: its own renderer and its cross-site frames'. */
+export interface TabProcesses {
+  tabId: number;
+  pids: readonly number[];
+}
+
+/**
+ * Each tab's load, the processes behind it added up — a process two tabs share counts in both,
+ * since closing either would not free it — and the pages' total, where each process counts once.
+ * A process the measurement no longer lists (it just exited) counts as nothing.
+ */
+export function tabLoads(
+  processes: readonly ProcessLoad[],
+  tabs: readonly TabProcesses[],
+): { tabs: { tabId: number; memoryKB: number; cpuPercent: number }[]; totalKB: number } {
+  const byPid = new Map(processes.map((p) => [p.pid, p]));
+  const counted = new Set<number>();
+  let totalKB = 0;
+  const loads = tabs.map(({ tabId, pids }) => {
+    let memoryKB = 0;
+    let cpuPercent = 0;
+    for (const pid of new Set(pids)) {
+      const load = byPid.get(pid);
+      if (load === undefined) continue;
+      memoryKB += load.memoryKB;
+      cpuPercent += load.cpuPercent;
+      if (!counted.has(pid)) {
+        counted.add(pid);
+        totalKB += load.memoryKB;
+      }
+    }
+    return { tabId, memoryKB: Math.round(memoryKB), cpuPercent: Math.round(cpuPercent * 10) / 10 };
+  });
+  return { tabs: loads, totalKB: Math.round(totalKB) };
+}
+
+/** A process's private memory from Linux's `/proc/<pid>/status`: resident anonymous pages plus swap, in KB. */
+export function procStatusPrivateKB(status: string): number | null {
+  const field = (name: string): number | null => {
+    const match = new RegExp(`^${name}:\\s+(\\d+)\\s+kB`, "m").exec(status);
+    return match === null ? null : Number(match[1]);
+  };
+  const anon = field("RssAnon");
+  return anon === null ? null : anon + (field("VmSwap") ?? 0);
+}
+
+/**
+ * The memory a process holds on its own, in KB: what the system gets back when it exits. Not its
+ * working set, which counts the pages every Chromium process shares (libraries, shared memory) in
+ * each of them — twenty tabs' working sets added up to 8 GB where the kernel charged the app
+ * 3.3 GB. Linux reads the private anonymous memory and swap from `/proc/<pid>/status` (Chrome's
+ * own "memory footprint" there), Windows takes the private bytes, and macOS, which offers
+ * neither here, the working set.
+ */
+export function privateMemoryKB(
+  platform: string,
+  memory: { workingSetSize: number; privateBytes?: number },
+  procStatus: string | null,
+): number {
+  if (platform === "linux" && procStatus !== null) {
+    const kb = procStatusPrivateKB(procStatus);
+    if (kb !== null) return kb;
+  }
+  if (platform === "win32" && typeof memory.privateBytes === "number") return memory.privateBytes;
+  return memory.workingSetSize;
 }
 
 // --- the guests' context menu ------------------------------------------------

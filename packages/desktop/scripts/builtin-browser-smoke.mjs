@@ -12,9 +12,10 @@
  * (another partition, a file: start page) and a cross-origin iframe that tries to create a
  * guest of its own. It then drives the relay the way the server does — hello, tabs, cdp, the
  * page's canvas and icon, a dialog relayed as a CDP event and answered, a popup, DevTools opened
- * and closed around a command, cookies set and cleared — checks that a window the page opens
- * with `webviewTag=yes` cannot attach a guest, and prints `BUILTIN-BROWSER-SMOKE {json}`,
- * exiting non-zero when a check failed.
+ * and closed around a command, cookies set and cleared, the guest's measured load, throttling
+ * switched on and off, and the guest's renderer killed and the page reloaded — checks that a
+ * window the page opens with `webviewTag=yes` cannot attach a guest, and prints
+ * `BUILTIN-BROWSER-SMOKE {json}`, exiting non-zero when a check failed.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -71,7 +72,7 @@ const checks = [];
 const check = (name, ok, detail) =>
   checks.push({ name, ok: Boolean(ok), ...(detail !== undefined ? { detail } : {}) });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const deadline = setTimeout(() => finish("the smoke test timed out"), 90_000);
+const deadline = setTimeout(() => finish("the smoke test timed out"), 120_000);
 
 function finish(error) {
   clearTimeout(deadline);
@@ -332,6 +333,75 @@ async function run() {
     { windowsBefore, windowsAfter: BrowserWindow.getAllWindows().length },
   );
 
+  // The load: every 10 s while there are guests, each tab's memory and CPU; the guest's own
+  // renderer at least, so its memory is more than nothing.
+  for (let i = 0; i < 130 && !events.some((e) => e.kind === "metrics"); i++) await sleep(100);
+  const measured = events.filter((e) => e.kind === "metrics").at(-1);
+  const guestLoad = measured?.tabs.find((t) => t.tabId === tabId);
+  check(
+    "the shell measures its guests' load",
+    guestLoad !== undefined &&
+      guestLoad.memoryKB > 1024 &&
+      measured.totalKB >= guestLoad.memoryKB &&
+      Number.isFinite(guestLoad.cpuPercent),
+    measured,
+  );
+
+  // Throttling is the server's to switch: listed tabs may be throttled while hidden, others not.
+  const guestContents = webContents.fromId(tabId);
+  // A guest whose setting does not change is left alone: Electron shows a hidden page again on
+  // every call, which would undo its throttling.
+  const calls = [];
+  const setBackgroundThrottling = guestContents.setBackgroundThrottling.bind(guestContents);
+  guestContents.setBackgroundThrottling = (allowed) => {
+    calls.push(allowed);
+    setBackgroundThrottling(allowed);
+  };
+  const throttleOn = await send({ op: "throttle", tabIds: [tabId] });
+  const onState = guestContents.getBackgroundThrottling();
+  const throttleAgain = await send({ op: "throttle", tabIds: [tabId, 999_999] });
+  const throttleOff = await send({ op: "throttle", tabIds: [] });
+  const offState = guestContents.getBackgroundThrottling();
+  guestContents.setBackgroundThrottling = setBackgroundThrottling;
+  check(
+    "throttle switches a guest's background throttling, and only on a change",
+    throttleOn.ok &&
+      onState === true &&
+      throttleAgain.ok &&
+      throttleOff.ok &&
+      offState === false &&
+      JSON.stringify(calls) === JSON.stringify([true, false]),
+    { throttleOn, onState, throttleOff, offState, calls },
+  );
+
+  // Out of sight, as the Web App parks a tab: throttling takes hold at once (Electron alone would
+  // wait for the page's next change of visibility) and lets go at once.
+  await evaluate(tabId, "window.__ticks = 0; setInterval(() => { window.__ticks += 1; }, 10); 1");
+  const park = (left) =>
+    win.webContents.executeJavaScript(
+      `(() => { const g = document.getElementById("good"); g.style.position = "fixed"; g.style.left = "${left}"; return true; })()`,
+    );
+  const ticksPerSecond = async () => {
+    const before = await evaluate(tabId, "window.__ticks");
+    await sleep(2_000);
+    return ((await evaluate(tabId, "window.__ticks")) - before) / 2;
+  };
+  await park("-20000px");
+  await sleep(500);
+  const parkedFree = await ticksPerSecond();
+  await send({ op: "throttle", tabIds: [tabId] });
+  await sleep(500);
+  const parkedThrottled = await ticksPerSecond();
+  await send({ op: "throttle", tabIds: [] });
+  await sleep(500);
+  const released = await ticksPerSecond();
+  await park("0px");
+  check(
+    "a parked guest's throttling takes hold at once, and lets go",
+    parkedFree > 30 && parkedThrottled <= 3 && released > 30,
+    { parkedFree, parkedThrottled, released },
+  );
+
   const missing = await send({
     op: "cdp",
     tabId: 999_999,
@@ -518,6 +588,52 @@ async function run() {
     { child, guestsFromChild: fromChild.length, logs: logs.filter((l) => l.includes("refused")) },
   );
   for (const opened of BrowserWindow.getAllWindows()) if (!windowsNow.has(opened)) opened.close();
+
+  // The guest's renderer killed, as the system does when it runs out of memory: the tab stays,
+  // reported crashed with why; CDP is refused at once rather than left waiting; a reload brings
+  // the page back.
+  const crashedAt = events.length;
+  process.kill(guest.getOSProcessId(), "SIGKILL");
+  for (let i = 0; i < 50 && !events.slice(crashedAt).some((e) => e.kind === "tab-crashed"); i++)
+    await sleep(100);
+  await sleep(300);
+  const crash = events.slice(crashedAt).find((e) => e.kind === "tab-crashed");
+  const crashedTab = events
+    .slice(crashedAt)
+    .filter((e) => e.kind === "tab" && e.tab.id === tabId)
+    .at(-1)?.tab;
+  const refused = await send({
+    op: "cdp",
+    tabId,
+    method: "Runtime.evaluate",
+    params: { expression: "1" },
+  });
+  const listed = (await send({ op: "tabs" })).result?.tabs?.find((t) => t.id === tabId);
+  check(
+    "a killed guest renderer is a crashed tab: reported, listed, and refused",
+    crash?.tabId === tabId &&
+      typeof crash.reason === "string" &&
+      crashedTab?.crashed === crash.reason &&
+      listed?.crashed === crash.reason &&
+      !refused.ok &&
+      refused.error === "tab_crashed",
+    { crash, crashedTab, listed, refused },
+  );
+  guest.reload();
+  for (let i = 0; i < 80 && guest.isCrashed(); i++) await sleep(100);
+  await sleep(1_000);
+  let revived = null;
+  try {
+    revived = await evaluate(tabId, "document.title");
+  } catch (err) {
+    revived = String(err);
+  }
+  const recovered = events.filter((e) => e.kind === "tab" && e.tab.id === tabId).at(-1)?.tab;
+  check(
+    "a reload brings a crashed tab back",
+    revived === "Guest 2" && recovered !== undefined && recovered.crashed === undefined,
+    { revived, recovered },
+  );
 
   // Closing the guest (the page removes its element) reports the tab closed.
   await win.webContents.executeJavaScript('document.getElementById("good").remove()');
