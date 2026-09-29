@@ -72,6 +72,7 @@ export function cloneBrief(args: {
     `Topic: ${r.brief || r.name}`,
     `In the room: ${args.members.join(", ")}. Moderator: ${moderator}${moderating ? " (you)" : ""}.`,
     `Speak with \`penguin org channel send --org-id ${orgId} --channel ${channel} -m "<text>"\`. Every member reads every message here, so a mention is not needed; while the room discusses, a mention reaches this room and wakes no one's desk.`,
+    "Do not wait for the room. Every room message comes to this session as input — while you work too — so do not poll the channel's files, sleep in a loop or wait in a command for an answer: say what you have to say, finish what you are doing, and end your turn; the next message starts your next one.",
     `Read the roadmap: \`curl -sS "${routeOf(orgId, r.number)}" -H "authorization: Bearer $PENGUIN_API_TOKEN"\`.`,
   ];
   // A room a person opened starts with that person: the moderator speaks first, to them, and

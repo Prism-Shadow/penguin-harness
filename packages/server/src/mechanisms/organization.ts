@@ -50,6 +50,12 @@ export interface OrgView {
   employees: OrgEmployeeView[];
   /** The Project's people: its owner, then its members. */
   userIds: string[];
+  /**
+   * The machine the organization runs on when that is not this server, else null. Such an
+   * organization is only a mirror here: its sessions are that machine's, and the next copy
+   * from it overwrites whatever this server writes into the files.
+   */
+  machineId: string | null;
 }
 
 /**

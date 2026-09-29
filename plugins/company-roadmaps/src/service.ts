@@ -5,7 +5,9 @@
  * or more employees, the first of whom moderates. For every employee in the room the relay
  * opens a room session — the employee's desk cloned for this discussion — through the
  * organization gateway, and puts every later room message into those sessions through the
- * session runtime's `startTask`: the room reaches the clones, never the desks. The moderator
+ * session runtime — steered into the Task a session is running, else started as its next
+ * one: the room reaches the clones, never the desks, and an organization that runs on another
+ * machine is relayed there, not from its mirror here. The moderator
  * keeps the draft (a record, a body written as a paper, items that are only briefs); nothing
  * is created while the room discusses. Establishing archives the roadmap and delegates every
  * item at once: a proposal item is a line on its owner's desk (the owner creates it with
@@ -90,8 +92,11 @@ export interface ServiceDeps {
     | "openEmployeeSession"
     | "openRoom"
   >;
-  /** The session runtime's input: a later room message into an existing room session. */
-  runner: Pick<MessagingTaskRunner, "startTask">;
+  /**
+   * The session runtime's input: a later room message into an existing room session — into
+   * the Task it is running when it runs one, else as its next Task.
+   */
+  runner: Pick<MessagingTaskRunner, "statusOf" | "steer" | "startTask">;
   /** Whether a room session still exists. */
   sessions: Pick<SessionIndex, "findById">;
   /** The data root (Paths.root). */
@@ -742,15 +747,9 @@ export class RoadmapService {
           );
         } else {
           try {
-            await this.deps.runner.startTask(
+            await this.tell(
               clone.sessionId,
-              [
-                userText(
-                  approvalRequestLine({ orgId, roadmap: established, items: briefed }),
-                  "server",
-                ),
-              ],
-              { queueIfBusy: true },
+              approvalRequestLine({ orgId, roadmap: established, items: briefed }),
             );
           } catch (err) {
             hints.push(
@@ -955,9 +954,7 @@ export class RoadmapService {
       const room = relay[String(number)] ?? { cursor: null, depths: {} };
       for (const clone of reopened.clones.filter((c) => c.closedAt === undefined)) {
         try {
-          await this.deps.runner.startTask(clone.sessionId, [userText(line, "server")], {
-            queueIfBusy: true,
-          });
+          await this.tell(clone.sessionId, line);
           room.depths[clone.agentId] = 0;
         } catch (err) {
           out.push(
@@ -1095,6 +1092,25 @@ export class RoadmapService {
   }
 
   /**
+   * One line into a room session. A session that is running a Task takes it into that Task,
+   * between its steps: a queued line would wait for the Task to end, and a room session that
+   * works one long Task (waiting on the room in a loop of its own) then hears nothing. One that
+   * is not running — or whose Task ends before the line lands — gets it as its next Task.
+   */
+  private async tell(sessionId: string, text: string): Promise<void> {
+    const input = [userText(text, "server")];
+    if (this.deps.runner.statusOf(sessionId) === "running") {
+      try {
+        this.deps.runner.steer(sessionId, input, { text, images: [], files: [] });
+        return;
+      } catch {
+        // Not running any more: the line starts its next Task instead.
+      }
+    }
+    await this.deps.runner.startTask(sessionId, input, { queueIfBusy: true });
+  }
+
+  /**
    * Syncs the room sessions with the room's members — one opened for every employee in the
    * room without one, the one of an employee who left (or whose session is gone) closed — then
    * relays every message after the cursor. Only a roadmap that is discussing, not archived, in
@@ -1110,6 +1126,10 @@ export class RoadmapService {
       return hints;
     const org = await this.deps.gateway.organization(projectId, orgId);
     if (org === null) return hints;
+    // An organization that runs on another machine is relayed THERE. What this server holds of
+    // it is a mirror: its room sessions are that machine's, so here they would read as gone —
+    // closed, and a second set opened on this server, speaking in the same room.
+    if (org.machineId !== null) return hints;
     const orgDir = orgDirOf(this.deps.root, projectId, orgId);
     const room = await readRoom(orgDir, r.channelId);
     if (room === null || room.archived) return hints;
@@ -1196,13 +1216,7 @@ export class RoadmapService {
         for (const agentId of plan.to) {
           const clone = open.find((c) => c.agentId === agentId)!;
           try {
-            await this.deps.runner.startTask(
-              clone.sessionId,
-              [userText(relayLine(current, msg), "server")],
-              {
-                queueIfBusy: true,
-              },
-            );
+            await this.tell(clone.sessionId, relayLine(current, msg));
           } catch (err) {
             // Closed now, reopened on the next pass (with the room so far as its context).
             const error = err instanceof Error ? err.message : String(err);

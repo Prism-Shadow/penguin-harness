@@ -109,6 +109,12 @@ describe("opening a roadmap", () => {
     expect(dev?.body).toContain("/draft");
     expect(web?.body).toContain("Moderator: acme_dev.");
     expect(web?.body).not.toContain("/establish");
+    // Every room session is told the room comes to it — so it does not wait for the room.
+    for (const s of [dev, web]) {
+      expect(s?.body).toContain(
+        "do not poll the channel's files, sleep in a loop or wait in a command for an answer",
+      );
+    }
     const r = await service.get(P, O, n, BOSS);
     expect(r).toMatchObject({ status: "discussing", moderator: "acme_dev" });
     expect(r.openClones).toEqual([
@@ -214,6 +220,57 @@ describe("the room", () => {
     expect(w.runner.to("room-1")).toHaveLength(1);
     expect(w.runner.to("room-2")).toHaveLength(2);
     expect(w.gateway.desks).toEqual([]);
+  });
+
+  it("reaches a room session busy with a long Task at once — steered into it, not queued behind it", async () => {
+    await openA();
+    // The moderator's session never ended the Task it opened with (it waits on the room in a
+    // loop of its own): a message queued behind that Task would not reach it.
+    w.runner.running.add("room-1");
+    await post(w.root, "room_a", "user:boss", "@acme_dev here is the scope");
+    await service.relayOnce();
+    expect(w.runner.inputs.filter((i) => i.sessionId === "room-1")).toEqual([
+      expect.objectContaining({ how: "steered" }),
+    ]);
+    expect(w.runner.to("room-1")[0]).toContain("here is the scope");
+    // The idle one starts a Task on it, as before.
+    expect(w.runner.inputs.filter((i) => i.sessionId === "room-2")).toEqual([
+      expect.objectContaining({ how: "started" }),
+    ]);
+  });
+
+  it("starts the line as the next Task when the running one ends before it lands", async () => {
+    const n = await openA();
+    w.runner.running.add("room-1");
+    w.runner.finishing.add("room-1");
+    await post(w.root, "room_a", "user:boss", "still there?");
+    await service.relayOnce();
+    expect(w.runner.inputs.filter((i) => i.sessionId === "room-1")).toEqual([
+      expect.objectContaining({ how: "started" }),
+    ]);
+    // Taken, so the session stays open.
+    expect((await service.get(P, O, n, BOSS)).openClones.map((c) => c.sessionId)).toEqual([
+      "room-1",
+      "room-2",
+    ]);
+  });
+
+  it("is relayed where the organization runs: from a mirror of it nothing is closed, opened or sent", async () => {
+    const n = await openA();
+    // This server now holds only a mirror (the organization runs on another machine): the room
+    // sessions are that machine's, so none of them is found here.
+    w.gateway.org = { ...w.gateway.org, machineId: "machine-b" };
+    w.sessions.deleted.add("room-1");
+    w.sessions.deleted.add("room-2");
+    await post(w.root, "room_a", "user:boss", "said over there");
+    await service.relayOnce();
+    // …nor after a restart here (a push), which loads the copied ledger afresh.
+    await w.service().relayOnce();
+    const r = await w.service().get(P, O, n, BOSS);
+    expect(r.clones.every((c) => c.closedAt === undefined)).toBe(true);
+    expect(r.openClones.map((c) => c.sessionId)).toEqual(["room-1", "room-2"]);
+    expect(w.gateway.opened).toHaveLength(2);
+    expect(w.runner.inputs).toEqual([]);
   });
 
   it("stops two room sessions answering each other at the configured depth", async () => {

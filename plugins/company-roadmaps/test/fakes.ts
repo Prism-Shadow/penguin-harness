@@ -54,6 +54,7 @@ export class FakeGateway implements Pick<
       { agentId: "acme_qa", name: "QA", title: "Tester", reportsTo: "acme_ceo" },
     ],
     userIds: ["boss"],
+    machineId: null,
   };
   /** Every line put on a desk, in order. */
   desks: Array<{ agentId: string; text: string }> = [];
@@ -123,21 +124,48 @@ export class FakeGateway implements Pick<
   }
 }
 
-/** The session runtime's input: every later input a session was sent. */
+/**
+ * The session runtime's input: every later input a session was sent, and how — steered into
+ * the Task it was running, or started (queued behind that Task when it runs one).
+ */
 export class FakeRunner {
-  inputs: Array<{ sessionId: string; text: string }> = [];
+  inputs: Array<{ sessionId: string; text: string; how: "steered" | "started" }> = [];
   /** Sessions that refuse an input. */
   refuse = new Set<string>();
+  /** Sessions running a Task. */
+  running = new Set<string>();
+  /** Running sessions whose Task ends before a steer lands (the manager's 409 `not_running`). */
+  finishing = new Set<string>();
+  statusOf(sessionId: string): string {
+    return this.running.has(sessionId) ? "running" : "idle";
+  }
+  steer(sessionId: string, input: Array<{ payload: unknown }>, _recall: unknown): void {
+    if (this.refuse.has(sessionId)) throw new Error(`session ${sessionId} is gone`);
+    if (!this.running.has(sessionId) || this.finishing.has(sessionId)) {
+      throw Object.assign(new Error("This Session has no Task in progress"), {
+        status: 409,
+        code: "not_running",
+      });
+    }
+    this.record(sessionId, input, "steered");
+  }
   async startTask(
     sessionId: string,
     input: Array<{ payload: unknown }>,
     _opts: { queueIfBusy: boolean },
   ): Promise<{ sessionId: string; queued: boolean }> {
     if (this.refuse.has(sessionId)) throw new Error(`session ${sessionId} is gone`);
+    this.record(sessionId, input, "started");
+    return { sessionId, queued: this.running.has(sessionId) };
+  }
+  private record(
+    sessionId: string,
+    input: Array<{ payload: unknown }>,
+    how: "steered" | "started",
+  ): void {
     for (const m of input) {
-      this.inputs.push({ sessionId, text: (m.payload as { text: string }).text });
+      this.inputs.push({ sessionId, text: (m.payload as { text: string }).text, how });
     }
-    return { sessionId, queued: false };
   }
   to(sessionId: string): string[] {
     return this.inputs.filter((i) => i.sessionId === sessionId).map((i) => i.text);
