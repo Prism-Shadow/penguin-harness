@@ -90,7 +90,7 @@ describe("project media library API", () => {
     const one = await create("words", 1);
     const two = await create("letters", 3);
     const gone = await create("count", 1);
-    const elsewhere = await create("words", 1, "librarian-two");
+    const elsewhere = await create("sounds", 1, "librarian-two");
     const cat = await upload(one, "cat.png", png(1));
     const bell = await upload(two, "bell.wav", wav);
     await upload(gone, "gone.png", png(2));
@@ -163,7 +163,7 @@ describe("project media library API", () => {
       404,
     );
     // An activity of another project is not found from this one.
-    const elsewhere = await create("words", 1, "librarian-two");
+    const elsewhere = await create("sounds", 1, "librarian-two");
     const theirs = await upload(elsewhere, "theirs.png", png(4), "librarian-two");
     expect((await post([{ activityId: elsewhere.id, path: theirs.path }])).status).toBe(404);
   });
@@ -256,7 +256,7 @@ describe("project media library API", () => {
         })
       ).status,
     ).toBe(404);
-    const elsewhere = await create("words", 1, "librarian-two");
+    const elsewhere = await create("sounds", 1, "librarian-two");
     const theirs = await upload(elsewhere, "theirs.png", png(4), "librarian-two");
     expect(
       (

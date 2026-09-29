@@ -85,6 +85,7 @@ describe("WAF workspace", () => {
     const git = fakeGit(existing);
     const installs: string[] = [];
     const t = await createTestApp({
+      wafCheckout: false,
       wafWorkspacePorts: {
         runGit: git.runGit,
         runProcess: async (_command, _args, options) => {

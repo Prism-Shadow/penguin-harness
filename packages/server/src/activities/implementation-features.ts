@@ -79,8 +79,6 @@ export const IMPLEMENTATION_FEATURES: readonly ImplementationFeature[] = [
   },
 ];
 
-/** Where a ref's selection is kept, in its draft's workspace. */
-export const IMPLEMENTATION_FEATURES_FILE = "implementation-features.json";
 /** What an assembly run is handed, in its own workspace. */
 export const RUN_FEATURES_FILE = "implementation-features.json";
 

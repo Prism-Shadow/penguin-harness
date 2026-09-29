@@ -517,12 +517,18 @@ export abstract class ActivityAuthoring extends Interface<{
     spec: unknown,
     expectedRevision?: string,
   ): Promise<ActivityDraft>;
+  /** Where the draft's uploads and generated media are kept, under PENGUIN_HOME. */
   draftWorkspace(
     projectId: string,
     collectionId: string,
     activityId: string,
     draftId: string,
   ): string;
+  /**
+   * Where the draft itself is: `generated/<pc>/refs/<pc>-<ref>/spec` in the ref's module in
+   * the WAF workspace (409 `waf_workspace_not_ready` when there is none).
+   */
+  draftFilesDir(activity: ActivityRecord): Promise<string>;
   /**
    * Run `operation` while no other change to this activity's draft or files can start, as the
    * project's activity work. A nested `exclusive` and a draft change that takes an expected

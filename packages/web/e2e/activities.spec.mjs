@@ -4633,7 +4633,7 @@ test("renumbers a ref from the header, and refuses while it is stable", async ({
   await create(page);
   const state = { refNum: 12, stable: true };
   const posts = [];
-  let refuseCheckout = true;
+  let refuseOnce = true;
   const ref = { productCode: "words", collectionId: "col_test", archived: false };
   await page.route("**/*", async (route) => {
     const request = route.request();
@@ -4654,9 +4654,9 @@ test("renumbers a ref from the header, and refuses while it is stable", async ({
       posts.push(body);
       // The server refuses a stable ref and a taken number as the dialog does.
       if (state.stable) return json({ error: { code: "ref_stable", message: "Stable." } }, 409);
-      if (refuseCheckout) {
-        refuseCheckout = false;
-        return json({ error: { code: "checkout_ref", message: "Checkout." } }, 409);
+      if (refuseOnce) {
+        refuseOnce = false;
+        return json({ error: { code: "activity_exists", message: "Taken." } }, 409);
       }
       state.refNum = body.refNum;
       return json({ ...current, refNum: state.refNum, stable: state.stable });
@@ -4689,7 +4689,7 @@ test("renumbers a ref from the header, and refuses while it is stable", async ({
   // A refusal from the server is worded in the dialog, which stays open.
   await number.fill("14");
   await dialog.getByRole("button", { name: "Renumber", exact: true }).click();
-  await expect(dialog.getByText(/read-only WAF checkout/)).toBeVisible();
+  await expect(dialog.getByText(/files in its module already use that number/)).toBeVisible();
   expect(posts).toHaveLength(1);
 
   await dialog.getByRole("button", { name: "Renumber", exact: true }).click();

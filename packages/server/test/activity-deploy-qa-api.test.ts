@@ -5,7 +5,8 @@
  *
  * git, npm, Jenkins and the clock are fakes behind the deploy ports: nothing here reaches a
  * network, a real remote or a real program. The clones are the WAF checkout's: its
- * activity-data and media repositories are there already, and Prepare clones adds the module.
+ * activity-data, media and module repositories are there already (its owner cloned the module,
+ * and Penguin writes the product's files into it).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -22,6 +23,7 @@ const PROJECT = "shipper-work";
 const QA_TOKEN = "qa-secret-token";
 const DATA_REMOTE = "git@github.com:org/data.git";
 const MEDIA_REMOTE = "git@github.com:org/media.git";
+const MODULE_REMOTE = "git@github.com:org/waf-module-words.git";
 
 /** A git whose clones are `.git` folders on disk; `tracked` is what the media repository holds. */
 function fakeGit(tracked: Set<string>) {
@@ -137,10 +139,15 @@ describe("activity deploy to QA", () => {
     for (const [folder, remote] of [
       ["waf-activity-data", DATA_REMOTE],
       ["media", MEDIA_REMOTE],
+      ["modules/waf-module-words", MODULE_REMOTE],
     ] as const) {
       await fs.mkdir(path.join(root, folder, ".git"), { recursive: true });
       await fs.writeFile(path.join(root, folder, ".git", "origin"), remote);
     }
+    await fs.writeFile(
+      path.join(root, "modules", "waf-module-words", "package.json"),
+      JSON.stringify({ name: "waf-module-words", version: "1.0.0" }),
+    );
     await fs.writeFile(path.join(root, "media", ".git", "sparse"), "loom/words");
     vi.stubEnv("WAF_ROOT_DIR", root);
 
@@ -277,12 +284,9 @@ describe("activity deploy to QA", () => {
       .filter((call) => call.args[0] === "push")
       .map((call) => call.args.join(" "));
     expect(pushes).toContain("push -u origin loom/words-activity-data");
-    // The module was cloned where the checkout keeps modules, and its stages ran there.
+    // The module's stages ran in the checkout's clone of it, which nothing cloned again.
     const module = path.join(root, "modules", "waf-module-words");
-    expect(git.calls.find((call) => call.args[0] === "clone")?.args.slice(-2)).toEqual([
-      "git@github.com:org/waf-module-words.git",
-      module,
-    ]);
+    expect(git.calls.some((call) => call.args[0] === "clone")).toBe(false);
     expect(git.calls.some((call) => call.cwd === module && call.args[0] === "push")).toBe(true);
   });
 

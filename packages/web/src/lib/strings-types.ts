@@ -160,7 +160,6 @@ export type Strings = {
       renumbered: (from: number, to: number) => string;
       reassemble: string;
       renumberErrors: {
-        checkout_ref: string;
         draft_conflict: string;
         run_active: string;
         pipeline_running: string;
@@ -4399,6 +4398,7 @@ export type Strings = {
       deploy_not_canonical: string;
       deploy_settings_missing: string;
       waf_workspace_not_ready: string;
+      product_taken: string;
       module_not_a_clone: string;
       git_unavailable: string;
       activity_invalid: string;

@@ -4,7 +4,7 @@
  *
  * git, npm, Jenkins and the clock are fakes behind the deploy ports: nothing here reaches a
  * network, a real remote or a real program. The clones are the WAF checkout's: its
- * activity-data and media repositories are there already, and Prepare clones adds the module.
+ * activity-data, media and module repositories are there already.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -155,14 +155,21 @@ describe("activity deploy release routes", () => {
     await fs.mkdir(path.join(root, "framework", "src"), { recursive: true });
     await fs.writeFile(path.join(root, "framework", "package.json"), "{}");
     await fs.mkdir(path.join(root, "modules"), { recursive: true });
-    // The checkout's shared clones; its media's sparse set has this product's folder.
+    // The checkout's clones, the product's module among them (its owner cloned it, and
+    // Penguin writes the product's files into it); its media's sparse set has this
+    // product's folder.
     for (const [folder, remote] of [
       ["waf-activity-data", DATA_REMOTE],
       ["media", MEDIA_REMOTE],
+      ["modules/waf-module-words", "git@github.com:org/waf-module-words.git"],
     ] as const) {
       await fs.mkdir(path.join(root, folder, ".git"), { recursive: true });
       await fs.writeFile(path.join(root, folder, ".git", "origin"), remote);
     }
+    await fs.writeFile(
+      path.join(root, "modules", "waf-module-words", "package.json"),
+      JSON.stringify({ name: "waf-module-words", version: "1.0.0" }),
+    );
     await fs.writeFile(path.join(root, "media", ".git", "sparse"), "loom/words");
     vi.stubEnv("WAF_ROOT_DIR", root);
 

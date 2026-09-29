@@ -209,6 +209,12 @@ export abstract class WafWorkspace extends Interface<{
   ensureMedia(folders: readonly string[]): Promise<void>;
   /** The remote a product's module repository is cloned from and pushed to. */
   moduleRemote(moduleFolder: string): string;
+  /**
+   * A product module's directory to author in. In the managed workspace it is the module's
+   * clone (see ensureModule); in an existing checkout it is made when missing and nothing is
+   * cloned, since that checkout's repositories are its owner's.
+   */
+  authoringModule(moduleFolder: string): Promise<string>;
   settings(): WafWorkspaceSettings;
   saveSettings(input: unknown): WafWorkspaceSettings;
 }>() {}
@@ -253,9 +259,9 @@ export class WafWorkspaceService implements WafWorkspace {
     return next;
   }
 
-  /** The external checkout when one is named, else null. */
+  /** The external checkout when one is named, else null: WAF_ROOT_DIR, then the setting. */
   private external(): string | null {
-    return this.settings().externalRoot || process.env.WAF_ROOT_DIR || null;
+    return process.env.WAF_ROOT_DIR || this.settings().externalRoot || null;
   }
 
   private managedRoot(): string {
@@ -493,6 +499,22 @@ export class WafWorkspaceService implements WafWorkspace {
       await fsp.mkdir(dir, { recursive: true });
       await this.gitOk(dir, ["init", "--initial-branch=main"]);
       await this.gitOk(dir, ["remote", "add", "origin", remote]);
+      return dir;
+    });
+  }
+
+  async authoringModule(moduleFolder: string): Promise<string> {
+    const folder = checkModuleFolder(moduleFolder);
+    if (!this.external()) return this.ensureModule(folder);
+    const dir = path.join(await this.requireRoot(), "modules", folder);
+    return this.serial(`module:${folder}`, async () => {
+      // A module the checkout already has is its owner's, repository and all.
+      if (fs.existsSync(dir)) return dir;
+      // A new one starts as Loom started one: an empty repository on main with origin set,
+      // so a deploy can later push it. Nothing is fetched from the remote.
+      await fsp.mkdir(dir, { recursive: true });
+      await this.gitOk(dir, ["init", "--initial-branch=main"]);
+      await this.gitOk(dir, ["remote", "add", "origin", this.moduleRemote(folder)]);
       return dir;
     });
   }

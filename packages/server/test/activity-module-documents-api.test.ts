@@ -10,7 +10,7 @@ import type { ActivityDetail, ActivityDraft } from "../src/activities/domain.js"
 import type { ModuleDocuments } from "../src/activities/module-documents.js";
 import { ActivitySandboxService } from "../src/activities/sandbox-service.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../src/mechanisms/activities.js";
-import { activitySpec } from "./activity-fixtures.js";
+import { activitySpec, refFilesDir } from "./activity-fixtures.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 
 // A product code no WAF checkout on the machine has, so the module source is Penguin's own.
@@ -98,13 +98,8 @@ describe("module document edits", () => {
       editable: true,
     });
 
-    // The edit lives in the draft, which is Penguin's, not in any checkout.
-    const draftFile = path.join(
-      t.deps.tree
-        .api<ActivityAuthoring>("ActivitiesModule", "ActivityAuthoring")
-        .draftWorkspace("editor-work", one.collectionId, one.id, one.draft.draftId),
-      "draft.json",
-    );
+    // The edit lives in the draft: Penguin's bookkeeping in the ref's folder of the module.
+    const draftFile = path.join(refFilesDir(t.root, PRODUCT, 1), "penguin.json");
     expect(
       JSON.parse(await fs.readFile(draftFile, "utf8")).moduleDocuments.configuration.value,
     ).toEqual(configuration);

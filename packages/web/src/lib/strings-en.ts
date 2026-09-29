@@ -176,13 +176,12 @@ export const en: Strings = {
       renumbered: (from: number, to: number) => `Ref ${from} is now ref ${to}.`,
       reassemble: "Assemble the module again so the preview plays under the new number.",
       renumberErrors: {
-        checkout_ref:
-          "This ref's module lives in the read-only WAF checkout under its current number, so it cannot be renumbered here.",
         draft_conflict:
           "The draft changed since it was loaded. Reload the activity, then try again.",
         run_active: "A run is working on this ref. Stop it before renumbering.",
         pipeline_running: "This activity is running its stages. Stop them before renumbering.",
-        activity_exists: "Another ref of this product, or a deleted one, already uses that number.",
+        activity_exists:
+          "Another ref of this product, a deleted one, or files in its module already use that number.",
       },
     },
     tags: {
@@ -2306,7 +2305,7 @@ export const en: Strings = {
       existing: "Existing checkout",
       externalRoot: "Checkout folder",
       externalRootHint:
-        "Leave empty to let Penguin manage its own. The folder must hold framework, modules and media.",
+        "Leave empty to let Penguin manage its own. The folder must hold framework, modules and media. WAF_ROOT_DIR on the server takes precedence.",
       invalid: "This value is not valid.",
     },
     accentNames: {
@@ -6418,6 +6417,8 @@ Scenarios:
       deploy_settings_missing: "An admin has to fill in the deploy settings first.",
       waf_workspace_not_ready:
         "The WAF workspace is not prepared. An admin can prepare it in Settings, under WAF workspace.",
+      product_taken:
+        "Another project owns this product. A product's refs all belong to one project, because they share one module.",
       module_not_a_clone:
         "The module's folder in the WAF workspace exists but is not a git repository. It was left as it is.",
       git_unavailable: "git could not be run on this server.",

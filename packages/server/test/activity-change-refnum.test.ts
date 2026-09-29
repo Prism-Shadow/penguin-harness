@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { projectDir } from "@prismshadow/penguin-core";
 import type { ActivityDetail, ActivityDraft } from "../src/activities/domain.js";
 import type { ActivityAuthoring } from "../src/mechanisms/activities.js";
-import { activitySpec } from "./activity-fixtures.js";
+import { activitySpec, refFilesDir } from "./activity-fixtures.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 
 describe("POST /:activityId/ref-number", () => {
@@ -127,26 +127,21 @@ describe("POST /:activityId/ref-number", () => {
     await create("words", 12);
   });
 
-  it("reads the ref under its new number while draft.json still names the old one", async () => {
+  it("reads the ref under its new number while its files still name the old one", async () => {
     const { t, client, base, create, read, renumber } = await setup();
     const one = await create("words", 12);
     const draft = await withMedia(client, `${base}/${one.id}`, one.draft.contentRevision);
-    const file = path.join(
-      projectDir(t.root, "renumberer-work"),
-      "activities",
-      one.collectionId,
-      "activities",
-      one.id,
-      "drafts",
-      one.draft.draftId,
-      "draft.json",
+    const names = ["asset_manifest.json", "penguin.json"];
+    const before = await Promise.all(
+      names.map((name) => fs.readFile(path.join(refFilesDir(t.root, "words", 12), name), "utf8")),
     );
-    const before = await fs.readFile(file, "utf8");
     const response = await renumber(one.id, 13, draft.contentRevision);
     expect(response.status, await response.clone().text()).toBe(200);
     const changed = (await response.json()) as ActivityDetail;
-    // The state between the index commit and the draft write, or after a crash there.
-    await fs.writeFile(file, before, "utf8");
+    // The folder moved, and nothing was rewritten yet: the state between the index commit
+    // and the draft write, or after a crash there.
+    for (const [index, name] of names.entries())
+      await fs.writeFile(path.join(refFilesDir(t.root, "words", 13), name), before[index]!, "utf8");
 
     const fetched = await read(one.id);
     expect(fetched.refNum).toBe(13);
@@ -230,17 +225,9 @@ describe("POST /:activityId/ref-number", () => {
     const { t, client, base, create, read, renumber, numbers } = await setup();
     const one = await create("words", 3);
     const draft = await withMedia(client, `${base}/${one.id}`, one.draft.contentRevision);
-    const workspace = path.join(
-      projectDir(t.root, "renumberer-work"),
-      "activities",
-      one.collectionId,
-      "activities",
-      one.id,
-      "drafts",
-      one.draft.draftId,
-    );
+    const files = refFilesDir(t.root, "words", 3);
     // A directory where the description file goes makes the draft write fail part way.
-    const description = path.join(workspace, "description.md");
+    const description = path.join(files, "activity_description.txt");
     const text = await fs.readFile(description, "utf8");
     await fs.rm(description);
     await fs.mkdir(description);
@@ -260,32 +247,44 @@ describe("POST /:activityId/ref-number", () => {
     expect(fetched.draft.mediaPlan!.manifest.refNum).toBe(3);
     expect(fetched.draft.contentRevision).toBe(draft.contentRevision);
     const exported = JSON.parse(
-      await fs.readFile(path.join(workspace, "asset-manifest.json"), "utf8"),
+      await fs.readFile(path.join(files, "asset_manifest.json"), "utf8"),
     ) as { refNum: number };
     expect(exported.refNum).toBe(3);
   });
 
-  it("refuses a ref whose module lives in the WAF checkout", async () => {
-    const { create, renumber, numbers } = await setup();
+  it("moves the ref's folder, configuration and assessment in its module with the number", async () => {
+    const { t, create, renumber, numbers } = await setup();
     const one = await create("words", 1);
-    const waf = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-renumber-waf-"));
-    const previous = process.env.WAF_ROOT_DIR;
-    cleanups.push(async () => {
-      if (previous === undefined) delete process.env.WAF_ROOT_DIR;
-      else process.env.WAF_ROOT_DIR = previous;
-      await fs.rm(waf, { recursive: true, force: true });
-    });
-    await fs.mkdir(path.join(waf, "framework", "src"), { recursive: true });
-    await fs.writeFile(path.join(waf, "framework", "package.json"), "{}");
-    await fs.mkdir(path.join(waf, "media"), { recursive: true });
-    await fs.mkdir(path.join(waf, "modules", "waf-module-words"), { recursive: true });
-    await fs.writeFile(path.join(waf, "modules", "waf-module-words", "definition.json"), "{}");
-    process.env.WAF_ROOT_DIR = waf;
+    const module = path.join(t.root, "waf-checkout", "modules", "waf-module-words");
+    await fs.mkdir(path.join(module, "configurations"), { recursive: true });
+    await fs.mkdir(path.join(module, "assessments"), { recursive: true });
+    await fs.writeFile(path.join(module, "configurations", "words-1.json"), "{}");
+    await fs.writeFile(path.join(module, "assessments", "words-1.json"), '{"items":[]}');
 
-    const refused = await renumber(one.id, 2, one.draft.contentRevision);
+    const moved = await renumber(one.id, 2, one.draft.contentRevision);
+    expect(moved.status, await moved.clone().text()).toBe(200);
+    expect(numbers(one.id).refNum).toBe(2);
+    await fs.access(path.join(refFilesDir(t.root, "words", 2), "penguin.json"));
+    await expect(fs.access(refFilesDir(t.root, "words", 1))).rejects.toThrow();
+    expect(await fs.readFile(path.join(module, "assessments", "words-2.json"), "utf8")).toBe(
+      '{"items":[]}',
+    );
+    await fs.access(path.join(module, "configurations", "words-2.json"));
+    await expect(fs.access(path.join(module, "configurations", "words-1.json"))).rejects.toThrow();
+  });
+
+  it("refuses a number whose files are already in the module, and moves nothing", async () => {
+    const { t, create, renumber, numbers } = await setup();
+    const one = await create("words", 1);
+    const module = path.join(t.root, "waf-checkout", "modules", "waf-module-words");
+    await fs.mkdir(path.join(module, "assessments"), { recursive: true });
+    await fs.writeFile(path.join(module, "assessments", "words-7.json"), "{}");
+
+    const refused = await renumber(one.id, 7, one.draft.contentRevision);
     expect(refused.status).toBe(409);
-    expect(await refused.json()).toMatchObject({ error: { code: "checkout_ref" } });
+    expect(await refused.json()).toMatchObject({ error: { code: "activity_exists" } });
     expect(numbers(one.id).refNum).toBe(1);
+    await fs.access(path.join(refFilesDir(t.root, "words", 1), "penguin.json"));
   });
 
   it("is for owners only", async () => {

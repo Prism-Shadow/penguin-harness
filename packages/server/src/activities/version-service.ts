@@ -16,6 +16,7 @@
  * changed since. After each new version, automatic versions beyond the newest 20 are removed
  * (version-retention.ts), with every blob no remaining version references.
  */
+import { REF_FEATURES_FILE } from "./ref-files.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Component, Interface, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -26,10 +27,7 @@ import { ActivityDeployEvents } from "./deploy-events.js";
 import type { DeployedEvent } from "./deploy-types.js";
 import { draftRevision, newId, type ActivityDetail, type ActivityDraft } from "./domain.js";
 import { playingBuild } from "./module-builds.js";
-import {
-  IMPLEMENTATION_FEATURES_FILE,
-  normalizeFeatureSelection,
-} from "./implementation-features.js";
+import { normalizeFeatureSelection } from "./implementation-features.js";
 import { validateManifest } from "./media.js";
 import { withinRoot } from "./sandbox-paths.js";
 import { versionDiff } from "./version-diff.js";
@@ -342,7 +340,10 @@ export class ActivityVersionService implements ActivityVersions {
         // The version being restored stays, however old: it is read from next.
         { lenient: true, protect: row.versionId },
       );
-      const featuresFile = path.join(workspace, IMPLEMENTATION_FEATURES_FILE);
+      const featuresFile = path.join(
+        await this.authoring.draftFilesDir(activity),
+        REF_FEATURES_FILE,
+      );
       const features = await fs.readFile(featuresFile).catch(() => null);
       let draft: ActivityDraft;
       try {
@@ -411,7 +412,11 @@ export class ActivityVersionService implements ActivityVersions {
       await writeBlob(activityDir, bytes);
       files.push({ path: owned.path, sha256: digest, bytes: bytes.length });
     }
-    const manifest = versionManifest(activity.draft, await this.readFeatures(workspace), files);
+    const manifest = versionManifest(
+      activity.draft,
+      await this.readFeatures(await this.authoring.draftFilesDir(activity)),
+      files,
+    );
     const hash = manifestHash(manifest);
     const latest = latestVersion(this.db, activityId);
     if (latest && latest.contentHash === hash)
@@ -554,7 +559,11 @@ export class ActivityVersionService implements ActivityVersions {
       });
       if (file) files.push(file);
     }
-    return versionManifest(activity.draft, await this.readFeatures(workspace), files);
+    return versionManifest(
+      activity.draft,
+      await this.readFeatures(await this.authoring.draftFilesDir(activity)),
+      files,
+    );
   }
 
   private dirs(projectId: string, activity: ActivityDetail) {
@@ -597,10 +606,8 @@ export class ActivityVersionService implements ActivityVersions {
    * The selection as stored, or null when nothing is selected. A missing file, an unreadable
    * one and an empty selection all mean the same thing, so they hash the same.
    */
-  private async readFeatures(workspace: string): Promise<string[] | null> {
-    const text = await fs
-      .readFile(path.join(workspace, IMPLEMENTATION_FEATURES_FILE), "utf8")
-      .catch(() => null);
+  private async readFeatures(specDir: string): Promise<string[] | null> {
+    const text = await fs.readFile(path.join(specDir, REF_FEATURES_FILE), "utf8").catch(() => null);
     if (text === null) return null;
     try {
       const selected = normalizeFeatureSelection(

@@ -71,7 +71,9 @@ async function checkout(options: { usesAssessment?: boolean } = {}): Promise<str
 describe("playing an imported activity", () => {
   const cleanups: (() => Promise<void>)[] = [];
   afterEach(async () => {
-    for (const cleanup of cleanups.splice(0)) await cleanup();
+    // Last in, first out: a second setup restores the WAF_ROOT_DIR the first one set, and the
+    // first one's cleanup then restores what was there before either.
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   });
 
   async function setup(options: Parameters<typeof checkout>[0] = {}) {

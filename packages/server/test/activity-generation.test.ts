@@ -943,13 +943,10 @@ describe("activity generation through Harness sessions", () => {
         expectedRevision: saved.contentRevision,
       })
     ).json()) as ActivityDraft;
-    const root = path.join(f.t.root, "book-waf-checkout");
-    for (const name of ["framework/src", "modules", "media"])
-      await fs.mkdir(path.join(root, name), { recursive: true });
-    await fs.writeFile(path.join(root, "framework/package.json"), "{}");
+    // The checkout createTestApp made, where the draft's files already are.
+    const root = path.join(f.t.root, "waf-checkout");
     const beforeRuns = f.t.deps.db.prepare("SELECT * FROM activity_runs").all();
     const beforeSessions = f.t.deps.db.prepare("SELECT session_id FROM sessions").all();
-    vi.stubEnv("WAF_ROOT_DIR", root);
     for (const mode of [undefined, "invalid"] as const) {
       const response = await f.client.post(`${f.endpoint}/assemble-module`, {
         agentId: "default_agent",
@@ -1512,7 +1509,7 @@ describe("activity generation through Harness sessions", () => {
     const release = deferred();
     const rename = fs.rename.bind(fs);
     vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
-      if (String(to).endsWith("draft.json")) {
+      if (String(to).endsWith("penguin.json")) {
         entered.resolve();
         await release.promise;
       }
@@ -1679,7 +1676,6 @@ describe("activity generation through Harness sessions", () => {
   });
   it("reports what stands between the draft and an assembled module", async () => {
     const { client, endpoint } = await fixture();
-    vi.stubEnv("WAF_ROOT_DIR", "Z:/no/such/checkout");
     const response = await client.get(`${endpoint}/readiness`);
     expect(response.status).toBe(200);
     const { checks } = (await response.json()) as { checks: { id: string; level: string }[] };
@@ -1687,9 +1683,14 @@ describe("activity generation through Harness sessions", () => {
     expect(checks.find((check) => check.id === "spec")).toMatchObject({ level: "fail" });
     expect(checks.find((check) => check.id === "canonical")).toMatchObject({ level: "ok" });
     expect(checks.find((check) => check.id === "checkout")).toMatchObject({
-      level: "fail",
-      found: false,
+      level: "ok",
+      found: true,
     });
+    // The draft lives in the checkout: without one there is no draft to judge.
+    vi.stubEnv("WAF_ROOT_DIR", "Z:/no/such/checkout");
+    const missing = await client.get(`${endpoint}/readiness`);
+    expect(missing.status).toBe(409);
+    expect(await missing.json()).toMatchObject({ error: { code: "waf_workspace_not_ready" } });
   });
   it("applies a whole proposal as one draft change, or none of it, and sets one aside", async () => {
     const { client, endpoint, finish } = await fixture();

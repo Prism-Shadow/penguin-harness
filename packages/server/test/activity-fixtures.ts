@@ -69,6 +69,11 @@ export async function createCheckoutActivity(
       "utf8",
     ),
   ) as Record<string, unknown>;
+  // Penguin writes its own files for the product here; opening Loom's refs in place is later.
+  await fs.rm(path.join(root, "modules", `waf-module-${productCode}`, "generated", productCode), {
+    recursive: true,
+    force: true,
+  });
   const base = `/api/projects/${projectId}/activities`;
   const created = await client.post(base, { productCode, refNum: 1, title: String(spec.title) });
   if (created.status !== 201) throw new Error(`create: ${created.status} ${await created.text()}`);
@@ -79,4 +84,27 @@ export async function createCheckoutActivity(
   });
   if (applied.status !== 200) throw new Error(`spec: ${applied.status} ${await applied.text()}`);
   return activity.id;
+}
+
+/**
+ * Where a ref's draft files are in the WAF checkout createTestApp gives every test:
+ * `modules/<module>/generated/<pc>/refs/<pc>-<ref>/spec`.
+ */
+export function refFilesDir(
+  root: string,
+  productCode: string,
+  refNum: number,
+  moduleFolder = `waf-module-${productCode}`,
+): string {
+  return path.join(
+    root,
+    "waf-checkout",
+    "modules",
+    moduleFolder,
+    "generated",
+    productCode,
+    "refs",
+    `${productCode}-${refNum}`,
+    "spec",
+  );
 }
