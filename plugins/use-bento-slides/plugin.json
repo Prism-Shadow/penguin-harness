@@ -3,5 +3,10 @@
   "short_description": "Author Bento slide decks.",
   "short_description_zh": "制作 Bento 幻灯片。",
   "version": "2026.07.22.1",
-  "category": "office-productivity"
+  "category": "office-productivity",
+  "quick_start": {
+    "prompt": "Make a three-slide Bento deck in this Workspace introducing PenguinHarness: a title slide, what it does, and how to get started.",
+    "prompt_zh": "在当前工作区做一份三页的 Bento 幻灯片介绍 PenguinHarness：标题页、它能做什么、如何上手。",
+    "skills": ["bento-slides"]
+  }
 }

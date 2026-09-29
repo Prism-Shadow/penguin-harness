@@ -6,6 +6,10 @@
   "version": "2026.09.10.1",
   "category": "office-productivity",
   "preinstall": false,
+  "quick_start": {
+    "prompt": "Explain what the continual-learning hook will do after a task longer than 30 turns, then list your installed skills with one line each, marking the ones such a task could update.",
+    "prompt_zh": "说明持续学习钩子在超过 30 轮的任务结束后会做什么，再逐行列出你已安装的技能，标出这类任务可能会更新的那些。"
+  },
   "hooks": {
     "stop": [
       {

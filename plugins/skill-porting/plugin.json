@@ -3,5 +3,10 @@
   "short_description": "Port external skills into this agent.",
   "short_description_zh": "把外部生态的 Skill 移植进本 Agent。",
   "version": "2026.08.04.1",
-  "category": "ai-app-development"
+  "category": "ai-app-development",
+  "quick_start": {
+    "prompt": "Show me the skills available in the Claude Code plugin marketplace and recommend two that would suit this agent. Do not install anything yet.",
+    "prompt_zh": "列出 Claude Code 插件市场里可移植的技能，推荐两个适合这个 Agent 的。先不要安装任何东西。",
+    "skills": ["skill-porting"]
+  }
 }

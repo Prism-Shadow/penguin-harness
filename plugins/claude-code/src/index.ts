@@ -622,6 +622,15 @@ export class ClaudeCodeSurface implements SessionSurface {
  */
 @Component({
   contributes: {
+    "WebModule.quickStarts": [
+      {
+        id: "claude-code.quick-start",
+        prompt:
+          "Look around this Workspace and summarize what the project is and how to build and test it.",
+        promptZh: "浏览当前工作区，概括这个项目是什么，以及如何构建和测试它。",
+        surface: "claude-code",
+      },
+    ],
     "SessionSurfacesModule.surfaces": [
       {
         id: "claude-code.surface",
