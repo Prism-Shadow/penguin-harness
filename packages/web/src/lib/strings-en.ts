@@ -2077,7 +2077,7 @@ export const en: Strings = {
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
     /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
-    openSettings: "Plugin settings",
+    openSettings: "Settings",
     pageDesc:
       "Every plugin in one list. The library's plugins ship with this build (skills and/or a hook package — quick-start a chat, or install to agents); the module plugins this Project asks for run in the server, and the rest of the registry can be installed for it.",
     /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
