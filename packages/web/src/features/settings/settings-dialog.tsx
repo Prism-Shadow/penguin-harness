@@ -69,8 +69,8 @@ export function SettingsDialog({
   /** On the Plugins page: the card an opening scrolls to (e.g. `sandbox`). */
   pluginFocus?: string;
 }) {
-  // uploadLimits feeds the Upload limits page's "?" (sectionInfo below); the rest pick pages.
-  const { user, desktopMode, sessionVia, uploadLimits } = useAuth();
+  // uploadPolicy feeds the Uploads page's "?" (sectionInfo below); the rest pick pages.
+  const { user, desktopMode, sessionVia, uploadPolicy } = useAuth();
   const sections = visibleSettingsSections({
     isAdmin: user?.isAdmin === true,
     desktopMode,
@@ -109,7 +109,7 @@ export function SettingsDialog({
   // Pages whose rows explain themselves one by one carry none.
   const sectionInfo: Partial<Record<SettingsSectionKey, string>> = {
     proxy: S.settings.proxyInfo,
-    uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
+    uploads: S.settings.uploadsInfo(uploadPolicy.attachmentMaxCount),
     company: S.settings.companyModeServerInfo,
     plugins: S.settings.pluginsInfo,
   };

@@ -6,6 +6,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { constants } from "node:buffer";
 import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import { HttpError } from "./errors.js";
@@ -103,12 +104,28 @@ export function optionalPagingQuery(c: Context): { offset: number; limit: number
   return { offset, limit };
 }
 
-/** Read the JSON request body (parse failure / non-object -> 400). */
+/**
+ * Read the JSON request body (parse failure / non-object -> 400).
+ *
+ * A body too large to become a string is separated out of the parse failure, because the two are
+ * nothing alike from the caller's side. Nothing caps the size of a request: the ceiling belongs to
+ * the platform, not to a policy — the body is decoded into ONE string before `JSON.parse` sees it,
+ * and V8 caps a string near 512MB (`buffer.constants.MAX_STRING_LENGTH`). Hitting that raises
+ * `ERR_STRING_TOO_LONG`, which collapsed into "must be valid JSON" would send someone hunting a
+ * syntax error in a body that has none.
+ */
 export async function readJson(c: Context): Promise<Record<string, unknown>> {
   let body: unknown;
   try {
     body = await c.req.json();
-  } catch {
+  } catch (err) {
+    if ((err as { code?: string }).code === "ERR_STRING_TOO_LONG") {
+      throw new HttpError(
+        413,
+        "payload_too_large",
+        `Request body exceeds ${Math.floor(constants.MAX_STRING_LENGTH / (1024 * 1024))}MB, the largest this API can decode.`,
+      );
+    }
     throw badRequest("Request body must be valid JSON.");
   }
   if (body === null || typeof body !== "object" || Array.isArray(body)) {
