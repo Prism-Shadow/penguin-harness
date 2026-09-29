@@ -165,6 +165,13 @@ export function CloseButton({
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
 /**
+ * Triangle alert (lucide): a warning worth acting on — the confirm dialog's danger badge, and the
+ * built-in browser's load warning with the tabs it points at.
+ */
+export const WARNING_ICON =
+  "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3zM12 9v4m0 4h.01";
+
+/**
  * Opening quotation marks: a passage carried in from somewhere else. The composer's chip for a
  * Workspace selection wears it, where a paperclip would have claimed the file was attached — the
  * file is not; a few of its lines are quoted.

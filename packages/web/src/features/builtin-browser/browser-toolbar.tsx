@@ -1,11 +1,13 @@
 /**
  * The built-in browser's toolbar: back, forward, reload (stop while the page loads), Home
  * while a homepage is set, the address bar, the mark of an agent at work while one drives the
- * browser, and the overflow menu — import from a system browser, clear browsing data, set the
- * homepage, open the page in the system browser, developer tools.
+ * browser, the load warning while the server gives one, and the overflow menu — import from a
+ * system browser, clear browsing data, set the homepage, open the page in the system browser,
+ * developer tools.
  *
  * Icon buttons are flat: no fill at rest or on hover, the glyph darkens instead, and each is
- * named by a tooltip below it. The agent mark is an icon with its tooltip, never a text badge.
+ * named by a tooltip below it. The agent mark and the load warning are icons with their tooltip,
+ * never a text badge.
  */
 import { useState } from "react";
 import type { ReactNode, Ref } from "react";
@@ -25,6 +27,7 @@ import {
   EXTERNAL_LINK_ICON,
   HOME_ICON,
   REFRESH_ICON,
+  WARNING_ICON,
 } from "../../components/ui/icons";
 import {
   ELLIPSIS_ICON,
@@ -73,6 +76,8 @@ export interface BrowserToolbarProps {
   tab: BuiltinBrowserTab | null;
   /** An agent at work in the browser, if one is. */
   activity: BrowserActivity | null;
+  /** The load warning, worded (load.ts), while the server gives one. */
+  loadWarning: string | null;
   /** Whether this window hosts the tab's page (DevTools opens on the element). */
   hostsPage: boolean;
   addressRef: Ref<HTMLInputElement>;
@@ -156,6 +161,18 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
             className={`flex h-7 w-7 shrink-0 items-center justify-center ${toneInk.busy}`}
           >
             <GlyphIcon d={AGENT_GROUP_ICON} size={ICON_SIZE.iconButton} />
+          </span>
+        </Tooltip>
+      )}
+      {props.loadWarning !== null && (
+        <Tooltip label={props.loadWarning} placement="bottom">
+          <span
+            role="img"
+            aria-label={props.loadWarning}
+            data-testid="builtin-browser-load-warning"
+            className={`flex h-7 w-7 shrink-0 items-center justify-center ${toneInk.attention}`}
+          >
+            <GlyphIcon d={WARNING_ICON} size={ICON_SIZE.iconButton} />
           </span>
         </Tooltip>
       )}

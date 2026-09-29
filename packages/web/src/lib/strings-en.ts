@@ -273,6 +273,20 @@ export const en: Strings = {
     homepageUseCurrent: "Use current page",
     homepageClear: "Clear",
     homepageFailed: (reason: string): string => `Could not save the homepage: ${reason}`,
+    crashedTitle: "This page crashed",
+    crashedOutOfMemory: "It ran out of memory. Close tabs you no longer need, then reload it.",
+    crashedBody: "Reload it to try again.",
+    crashedTab: "The page crashed",
+    load: {
+      memory: (size: string, tabs: number): string =>
+        `The browser is using ${size} across ${tabs} ${tabs === 1 ? "tab" : "tabs"}.`,
+      lowSystemMemory: (percent: number): string =>
+        `This computer is low on memory (${percent}% free).`,
+      manyTabs: (tabs: number): string => `${tabs} tabs are open.`,
+      advice: "Close tabs you no longer need.",
+      join: (sentences: string[]): string => sentences.join(" "),
+      heavyTab: (size: string): string => `Uses ${size} of memory`,
+    },
   },
 
   tracePanel: {

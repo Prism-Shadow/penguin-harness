@@ -1,11 +1,15 @@
 /**
  * The built-in browser's state in a window (features/builtin-browser/browser-state.ts): the
- * server's tab registry, the pages this window hosts, the agent's activity and the homepage —
- * driven by the user channel's four events and the window's own actions (claim, close,
- * activate, settings read or saved).
+ * server's tab registry, the pages this window hosts, the agent's activity, the homepage and the
+ * browser's load — driven by the user channel's five events and the window's own actions
+ * (claim, close, activate, settings read or saved).
  */
 import { describe, expect, it } from "vitest";
-import type { BuiltinBrowserServerEvent, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
+import type {
+  BuiltinBrowserMetrics,
+  BuiltinBrowserServerEvent,
+  BuiltinBrowserTab,
+} from "@prismshadow/penguin-server/api";
 import {
   INITIAL_BROWSER_STATE,
   activeTab,
@@ -308,5 +312,43 @@ describe("settings", () => {
     });
     const after = run(set, open("r1"), { type: "resync" }, { type: "supported", supported: false });
     expect(after.homepage).toBe("https://example.com/start");
+  });
+});
+
+describe("load", () => {
+  const heavy: BuiltinBrowserMetrics = {
+    at: 1,
+    tabs: [
+      { tabId: 1, memoryKB: 1_400_000, cpuPercent: 3 },
+      { tabId: 2, memoryKB: 300_000, cpuPercent: 0 },
+    ],
+    totalKB: 1_700_000,
+    warnings: ["memory"],
+    heavyTabIds: [1, 2],
+  };
+
+  it("has no measurement until the first one, then follows each", () => {
+    expect(READY.metrics).toBeNull();
+    const warned = run(READY, event({ type: "builtin_browser_metrics", metrics: heavy }));
+    expect(warned.metrics).toEqual(heavy);
+    const calm = { ...heavy, at: 2, totalKB: 500_000, warnings: [], heavyTabIds: [] };
+    expect(run(warned, event({ type: "builtin_browser_metrics", metrics: calm })).metrics).toEqual(
+      calm,
+    );
+  });
+
+  it("takes the status's measurement, and keeps the last one when a status has none", () => {
+    const status = { available: true, tabs: [tab(1), tab(2)], activeTabId: 1 };
+    const read = run(READY, { type: "status", status: { ...status, metrics: heavy } });
+    expect(read.metrics).toEqual(heavy);
+    expect(run(read, { type: "status", status }).metrics).toEqual(heavy);
+  });
+
+  it("shows a crashed tab as the server reports it", () => {
+    const state = run(
+      READY,
+      event({ type: "builtin_browser_tabs", tabs: [tab(4, { crashed: "oom" })], activeTabId: 4 }),
+    );
+    expect(activeTab(state)?.crashed).toBe("oom");
   });
 });

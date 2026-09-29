@@ -6,8 +6,9 @@
  *
  * No tab open: the slot shows how to start — a new tab, or importing sign-ins from a system
  * browser. A new tab opens the homepage when one is set; a blank one shows the slot's own
- * empty surface, themed, with the address bar waiting, rather than a white page. Where the
- * browser cannot run (outside the desktop app, an older shell) the panel says so instead.
+ * empty surface, themed, with the address bar waiting, rather than a white page. A tab whose
+ * page crashed shows that in the slot, with Reload, instead of the dead page's blank area. Where
+ * the browser cannot run (outside the desktop app, an older shell) the panel says so instead.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
@@ -29,6 +30,7 @@ import { BrowserToolbar } from "./browser-toolbar";
 import { ClearDataDialog } from "./clear-data-dialog";
 import { HomepageDialog } from "./homepage-dialog";
 import { ImportDialog } from "./import-dialog";
+import { heavyTabMemory, loadWarningText } from "./load";
 import { registerSlot, setSlotVisible } from "./slot-registry";
 import { webviewForTab, type WebviewElement } from "./webview-registry";
 
@@ -129,6 +131,7 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
       : null;
   const { homepage } = state;
   const goHome = homepage !== null ? () => navigate(homepage) : null;
+  const reload = () => drive(tabId, (view) => view.reload());
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -137,6 +140,7 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
           tabs={state.tabs}
           activeTabId={state.activeTabId}
           busy={(id) => tabBusy(state, id)}
+          heavyMemory={(id) => heavyTabMemory(state.metrics, id)}
           onSelect={activateBrowserTab}
           onClose={closeBrowserTab}
           onNew={newTab}
@@ -145,11 +149,12 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
       <BrowserToolbar
         tab={tab}
         activity={currentActivity(state)}
+        loadWarning={loadWarningText(state.metrics, state.tabs.length)}
         hostsPage={guestForTab(state, tabId) !== null}
         addressRef={addressRef}
         onBack={() => drive(tabId, (view) => view.goBack())}
         onForward={() => drive(tabId, (view) => view.goForward())}
-        onReload={() => drive(tabId, (view) => view.reload())}
+        onReload={reload}
         onStop={() => drive(tabId, (view) => view.stop())}
         onHome={goHome}
         onNavigate={navigate}
@@ -177,6 +182,22 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
                   </Button>
                 </div>
               }
+            />
+          </div>
+        )}
+        {tab?.crashed !== undefined && (
+          <div
+            data-testid="builtin-browser-crashed"
+            className="flex h-full items-center justify-center overflow-y-auto p-4"
+          >
+            <EmptyState
+              title={S.builtinBrowser.crashedTitle}
+              description={
+                tab.crashed === "oom"
+                  ? S.builtinBrowser.crashedOutOfMemory
+                  : S.builtinBrowser.crashedBody
+              }
+              action={<Button onClick={reload}>{S.builtinBrowser.reload}</Button>}
             />
           </div>
         )}

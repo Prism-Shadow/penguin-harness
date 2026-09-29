@@ -18,6 +18,10 @@ const EVENTS: BuiltinBrowserServerEvent[] = [
   { type: "builtin_browser_open", requestId: "r", url: "https://example.com/", activate: true },
   { type: "builtin_browser_close", tabId: 1 },
   { type: "builtin_browser_activity", tabId: 1, busy: true, action: "scan" },
+  {
+    type: "builtin_browser_metrics",
+    metrics: { at: 1, tabs: [], totalKB: 0, warnings: [], heavyTabIds: [] },
+  },
 ];
 
 function listStore() {
@@ -28,7 +32,7 @@ function listStore() {
 }
 
 describe("built-in browser events on the user channel", () => {
-  it("recognises exactly the four browser events", () => {
+  it("recognises exactly the five browser events", () => {
     for (const ev of EVENTS) expect(isBuiltinBrowserEvent(ev)).toBe(true);
     const other: ServerEvent = { type: "resync_required" };
     expect(isBuiltinBrowserEvent(other)).toBe(false);

@@ -10,11 +10,13 @@
  *   by a close. The order is the DOM order of the elements and must never change: moving a
  *   webview in the DOM reloads its page, so guests are only ever appended or removed.
  *
- * Activity (`builtin_browser_activity`) marks the tabs an agent is working in right now, and
- * the homepage is the server's setting as this window last read or saved it.
+ * Activity (`builtin_browser_activity`) marks the tabs an agent is working in right now, the
+ * homepage is the server's setting as this window last read or saved it, and the metrics are the
+ * browser's load with the server's verdict on it (`builtin_browser_metrics`, about every 10 s).
  */
 import type {
   BuiltinBrowserAction,
+  BuiltinBrowserMetrics,
   BuiltinBrowserServerEvent,
   BuiltinBrowserSettings,
   BuiltinBrowserStatus,
@@ -60,6 +62,8 @@ export interface BrowserState {
   closing: readonly number[];
   /** The page a new tab and the Home button open; null for none (new tabs are blank). */
   homepage: string | null;
+  /** The browser's load as last measured, with the server's warnings; null before the first measurement. */
+  metrics: BuiltinBrowserMetrics | null;
 }
 
 export type BrowserAction =
@@ -91,6 +95,7 @@ export const INITIAL_BROWSER_STATE: BrowserState = {
   activity: {},
   closing: [],
   homepage: null,
+  metrics: null,
 };
 
 /** The key a guest is known by, from the request that created it. */
@@ -141,6 +146,8 @@ function applyEvent(state: BrowserState, event: BuiltinBrowserServerEvent): Brow
     }
     case "builtin_browser_close":
       return closeTab(state, event.tabId);
+    case "builtin_browser_metrics":
+      return { ...state, metrics: event.metrics };
     case "builtin_browser_activity": {
       if (!event.busy) return { ...state, activity: withoutActivity(state.activity, event.tabId) };
       const mark: BrowserActivity =
@@ -179,7 +186,12 @@ export function reduceBrowser(state: BrowserState, action: BrowserAction): Brows
     case "status": {
       const { status } = action;
       const next = applyTabs(state, status.tabs, status.activeTabId);
-      return { ...next, available: status.available, reason: status.reason ?? null };
+      return {
+        ...next,
+        available: status.available,
+        reason: status.reason ?? null,
+        metrics: status.metrics ?? next.metrics,
+      };
     }
     case "unreachable":
       return { ...state, available: false, reason: null };

@@ -2158,6 +2158,13 @@ export const activateBuiltinBrowserTab = (tabId: number) =>
     method: "POST",
     server: null,
   });
+/** The tab this window shows on screen, or none: the server leaves that one unthrottled. */
+export const setBuiltinBrowserOnScreen = (tabId: number | null) =>
+  apiFetch<void>(builtinBrowserPath("/tabs/on-screen"), {
+    method: "POST",
+    body: { tabId },
+    server: null,
+  });
 export const closeBuiltinBrowserTab = (tabId: number) =>
   apiFetch<void>(builtinBrowserPath(`/tabs/${tabId}`), { method: "DELETE", server: null });
 /** The system browsers' profiles on this computer that can be imported from. */

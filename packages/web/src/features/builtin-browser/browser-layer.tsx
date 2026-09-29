@@ -18,6 +18,9 @@
  * window to claim wins, and a 409 removes this copy); `builtin_browser_close` removes one. An
  * agent opening a page or starting to act for the conversation on screen brings the browser's
  * dock tab up — once per conversation, so hiding it again is respected.
+ *
+ * And it says once when the browser gets too heavy: each load warning the server starts giving
+ * raises one toast, wherever the user is in the app; the toolbar's mark carries it after that.
  */
 import {
   memo,
@@ -29,6 +32,8 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { CSSProperties } from "react";
+import type { BuiltinBrowserLoadWarning } from "@prismshadow/penguin-server/api";
+import { toastAttention } from "../../components/ui/toast";
 import { toneInk } from "../../lib/tone";
 import { currentDockScope, isTabShown, openPanel } from "../dock/dock-state";
 import { isBlankUrl } from "./address";
@@ -52,6 +57,8 @@ import {
   type Rect,
   type Size,
 } from "./geometry";
+import { loadWarningText, newWarnings } from "./load";
+import { forgetOnScreenReport, reportOnScreenTab } from "./on-screen-report";
 import { hasVisibleSlot, slotsVersion, subscribeSlots, visibleSlot } from "./slot-registry";
 import {
   BROWSER_PARTITION,
@@ -121,9 +128,11 @@ function writeRect(style: CSSStyleDeclaration, rect: Rect): void {
 }
 
 /**
- * Lays every hosted page out for this frame: the active tab over the visible slot, unless
- * its page is blank (the panel's own surface shows then), and everything else parked. The
- * ring, when mounted, frames the visible slot.
+ * Lays every hosted page out for this frame: the active tab over the visible slot, unless its
+ * page is blank or crashed (the panel's own surface shows then: the blank state, or the crash
+ * with its Reload), and everything else parked. The ring, when mounted, frames the visible slot.
+ * The server hears which tab is on screen, none while the window is hidden: that tab runs at full
+ * speed, and the parked ones may be throttled.
  */
 function placePages(ring: HTMLDivElement | null): void {
   const state = browserState();
@@ -138,7 +147,14 @@ function placePages(ring: HTMLDivElement | null): void {
           DEFAULT_PARK_SIZE,
         );
   const showPage =
-    onScreen !== null && onScreen.shown && tab !== null && !(isBlankUrl(tab.url) && !tab.loading);
+    onScreen !== null &&
+    onScreen.shown &&
+    tab !== null &&
+    tab.crashed === undefined &&
+    !(isBlankUrl(tab.url) && !tab.loading);
+  reportOnScreenTab(
+    showPage && tab !== null && document.visibilityState !== "hidden" ? tab.id : null,
+  );
   for (const guest of state.guests) {
     const host = hosts.get(guest.key);
     if (host === undefined || host.frame === null || host.view === null) continue;
@@ -270,6 +286,7 @@ function LayerHost() {
       }
     });
     const offResync = subscribeBuiltinBrowserResync(() => {
+      forgetOnScreenReport();
       dispatchBrowser({ type: "resync" });
       void refreshBrowserStatus();
       void refreshBrowserSettings();
@@ -302,6 +319,28 @@ function LayerHost() {
 
   // After every render: a new page gets its boxes, and a switched tab moves at once.
   useLayoutEffect(() => placePages(ringRef.current));
+
+  // One toast for each load warning as the server starts giving it; while it stands, the
+  // toolbar's mark says it, and a warning that clears and comes back is a new crossing.
+  const warnings = state.metrics?.warnings;
+  const warned = useRef<readonly BuiltinBrowserLoadWarning[]>([]);
+  useEffect(() => {
+    const next = warnings ?? [];
+    const fresh = newWarnings(warned.current, next);
+    warned.current = next;
+    if (fresh.length === 0) return;
+    const now = browserState();
+    const text = loadWarningText(now.metrics, now.tabs.length);
+    if (text !== null) toastAttention(text);
+  }, [warnings]);
+
+  // A window hidden or shown again (minimized, closed to the tray) changes what is on screen, and
+  // a hidden window lays out no frames to notice it by.
+  useEffect(() => {
+    const changed = () => placePages(ringRef.current);
+    document.addEventListener("visibilitychange", changed);
+    return () => document.removeEventListener("visibilitychange", changed);
+  }, []);
 
   // While a browser panel is on screen, follow its slot every frame.
   useEffect(() => {

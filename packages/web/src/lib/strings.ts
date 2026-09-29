@@ -326,6 +326,28 @@ export const zh = {
     /** Empties the field; saving it then removes the homepage. */
     homepageClear: "清除",
     homepageFailed: (reason: string): string => `无法保存主页：${reason}`,
+    /** A tab whose page crashed: the panel's notice in its place, with Reload as the action. */
+    crashedTitle: "此页面已崩溃",
+    /** The notice's body when the page ran out of memory (the system took its memory back). */
+    crashedOutOfMemory: "它耗尽了内存。请先关闭不再需要的标签页，再重新加载。",
+    crashedBody: "重新加载即可再试一次。",
+    /** A crashed tab's tooltip line in the strip, after its title, and its mark's accessible name. */
+    crashedTab: "页面已崩溃",
+    /**
+     * The browser's load, when the server warns about it: the toolbar's mark (its tooltip and
+     * accessible name) and the one toast per warning. Sentences joined in the order given here.
+     */
+    load: {
+      memory: (size: string, tabs: number): string =>
+        `浏览器正在使用 ${size} 内存（${tabs} 个标签页）。`,
+      lowSystemMemory: (percent: number): string => `这台电脑的可用内存不足（剩余 ${percent}%）。`,
+      manyTabs: (tabs: number): string => `已打开 ${tabs} 个标签页。`,
+      advice: "请关闭不再需要的标签页。",
+      /** The sentences above, as one warning. */
+      join: (sentences: string[]): string => sentences.join(""),
+      /** A heavy tab's tooltip line in the strip, after its title, and its mark's accessible name. */
+      heavyTab: (size: string): string => `占用 ${size} 内存`,
+    },
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */

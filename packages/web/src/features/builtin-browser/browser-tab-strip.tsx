@@ -6,21 +6,34 @@
  * It is shaped like a browser's rather than like the dock's pills right above it, so the two
  * strips never read as one: it sits on the sidebar's surface, and the active tab takes the
  * toolbar's surface and joins it. Tabs shrink to a minimum before the strip scrolls. A page
- * still loading shows a spinner where its icon goes, and a page an agent is working in
- * carries the busy dot, named in its tooltip.
+ * still loading shows a spinner where its icon goes, and a crashed one the warning glyph; a
+ * page an agent is working in carries the busy dot, and one of the heaviest while the browser
+ * warns about memory a small warning mark — each named in the tab's tooltip.
  */
 import { useState } from "react";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
-import { CloseIcon, GLOBE_ICON, PlusIcon } from "../../components/ui/icons";
+import { CloseIcon, GLOBE_ICON, PlusIcon, WARNING_ICON } from "../../components/ui/icons";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { toneDot } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { faviconSrc, isBlankUrl, tabLabel } from "./address";
+import { formatMemory } from "./load";
 
 function TabIcon({ tab }: { tab: BuiltinBrowserTab }) {
   // A favicon that fails to load falls back to the globe, and stays there for that address.
   const [failed, setFailed] = useState<string | null>(null);
+  if (tab.crashed !== undefined) {
+    return (
+      <span
+        role="img"
+        aria-label={S.builtinBrowser.crashedTab}
+        className={`shrink-0 ${toneInk.danger}`}
+      >
+        <GlyphIcon d={WARNING_ICON} size={ICON_SIZE.inlineGlyph} />
+      </span>
+    );
+  }
   if (tab.loading) {
     return (
       <span
@@ -55,6 +68,7 @@ export function BrowserTabStrip({
   tabs,
   activeTabId,
   busy,
+  heavyMemory,
   onSelect,
   onClose,
   onNew,
@@ -63,6 +77,8 @@ export function BrowserTabStrip({
   activeTabId: number | null;
   /** Whether an agent is working in a tab right now. */
   busy: (tabId: number) => boolean;
+  /** The memory (KB) of a tab the load warning points at, else null. */
+  heavyMemory: (tabId: number) => number | null;
   onSelect: (tabId: number) => void;
   onClose: (tabId: number) => void;
   onNew: () => void;
@@ -78,11 +94,16 @@ export function BrowserTabStrip({
           const active = tab.id === activeTabId;
           const label = tabLabel(tab, S.builtinBrowser.untitled);
           const working = busy(tab.id);
-          // The tooltip carries what a truncated tab cannot: the whole title, the address, and
-          // the agent at work in it.
+          const heavyKB = heavyMemory(tab.id);
+          const heavy =
+            heavyKB === null ? null : S.builtinBrowser.load.heavyTab(formatMemory(heavyKB));
+          // The tooltip carries what a truncated tab cannot: the whole title, the address, the
+          // agent at work in it, a crash, and the memory it holds when the browser warns about it.
           const lines = [label];
           if (!isBlankUrl(tab.url) && tab.url !== label) lines.push(tab.url);
+          if (tab.crashed !== undefined) lines.push(S.builtinBrowser.crashedTab);
           if (working) lines.push(S.builtinBrowser.agentBusyTab);
+          if (heavy !== null) lines.push(heavy);
           const title = lines.join("\n");
           return (
             <div
@@ -115,6 +136,16 @@ export function BrowserTabStrip({
                     aria-hidden
                     className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.busy}`}
                   />
+                )}
+                {heavy !== null && (
+                  <span
+                    role="img"
+                    aria-label={heavy}
+                    data-testid="builtin-browser-heavy-tab"
+                    className={`shrink-0 ${toneInk.attention}`}
+                  >
+                    <GlyphIcon d={WARNING_ICON} size={ICON_SIZE.inlineGlyph} />
+                  </span>
                 )}
               </button>
               <button
