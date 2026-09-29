@@ -90,7 +90,7 @@ const DUE_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2";
  */
 const COLUMN_BAR: Record<OrgTicketStatus, string> = {
   proposed: "bg-gray-300 dark:bg-gray-600",
-  in_progress: "bg-[var(--accent-bg)]",
+  in_progress: "bg-accent",
   review: toneDot.attention,
   done: toneDot.success,
   rejected: toneDot.danger,
@@ -413,7 +413,7 @@ export function TicketsPage() {
                   {...columnDrop(col.status)}
                   className={`${columnClass} ${
                     dropOver === col.status
-                      ? "border-[var(--accent-bg)] ring-1 ring-[var(--accent-bg)]"
+                      ? "border-accent ring-1 ring-accent"
                       : highlightColumn === col.status && isTicketStatus(highlightColumn)
                         ? "border-gray-400 dark:border-gray-600"
                         : ""
@@ -434,7 +434,7 @@ export function TicketsPage() {
                       <div
                         className={`flex min-h-20 flex-1 items-center justify-center rounded-md border border-dashed px-2 text-center text-[11px] ${
                           dropOver === col.status
-                            ? "border-[var(--accent-bg)] text-gray-600 dark:text-gray-300"
+                            ? "border-accent text-gray-600 dark:text-gray-300"
                             : "border-gray-300 text-gray-400 dark:border-gray-700 dark:text-gray-500"
                         }`}
                       >

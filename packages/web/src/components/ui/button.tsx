@@ -9,7 +9,7 @@ type Size = "sm" | "md" | "icon";
 const variantClass: Record<Variant, string> = {
   // primary uses the theme accent variable (defaults to neutral gray/white, switching with light/dark; becomes that color once an accent is selected).
   primary:
-    "bg-[var(--accent-bg)] text-[var(--accent-fg)] border border-[var(--accent-bg)] " +
+    "bg-accent text-accent-fg border border-accent " +
     "transition-opacity hover:opacity-90 disabled:opacity-50",
   secondary:
     "bg-white text-gray-800 border border-gray-300 hover:bg-gray-50 " +

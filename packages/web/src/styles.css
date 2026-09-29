@@ -4,13 +4,32 @@
  * no glassmorphism/gradients; the login page background is a circuit-trace animation (.login-trace, see
  * login-circuit.tsx). Dark theme is toggled via the html.dark class.
  *
+ * Theming comes from the shared UI package (@prismshadow/penguin-ui): `theme.css` declares the
+ * `dark` variant, the cascade layers, the token → utility bridge and the base rules that read
+ * tokens (body colours and fonts, focus ring, selection, scrollbars); each `themes/*.css` holds
+ * one theme's values, including the gray bridge the palette classes below resolve through. This
+ * file keeps what is the app's own: the brand scale, layout invariants, animations and the
+ * unlayered content rules.
+ *
  * Stacking-context convention (to avoid contexts masking each other): chrome (top bar/navigation) does not
  * create a stacking context; dropdown/user menus use z-40; modal and drawer overlays use z-50.
  */
 @import "tailwindcss";
+@import "@prismshadow/penguin-ui/theme.css";
+@import "@prismshadow/penguin-ui/themes/github.css";
+@import "@prismshadow/penguin-ui/themes/modern.css";
+@import "@prismshadow/penguin-ui/themes/geek.css";
+@import "@prismshadow/penguin-ui/fonts.css";
 
-/* Dark theme toggled via the html.dark class (Tailwind 4 custom variant). */
-@custom-variant dark (&:where(.dark, .dark *));
+/* Tailwind scans the Vite root only: the package's components carry class strings too. What the
+   gallery alone renders — demos, the module compositions, the screen mock-ups, the fixture data —
+   and the test helpers are excluded, so their class names never enter the app's sheet. */
+@source "../../ui/src";
+@source not "../../ui/src/**/*.demo.tsx";
+@source not "../../ui/src/modules";
+@source not "../../ui/src/screens";
+@source not "../../ui/src/fixtures";
+@source not "../../ui/src/testing";
 
 /* Brand color scale (Google blue family): generates utility classes like bg-brand-600 / text-brand-300. */
 @theme {
@@ -30,51 +49,10 @@
 
 @layer base {
   :root {
-    color-scheme: light;
     /* The body font stack, named because KaTeX borrows it: math has to fall back to the same CJK
-       faces as the prose around it (see .katex .cjk_fallback below), and two copies would drift. */
-    --font-app-sans:
-      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei",
-      sans-serif;
-    /* Theme color (accent): used for primary buttons, focus rings, etc. Defaults to gray/white (neutral,
-       switches with light/dark); selecting a specific color via data-accent overrides it (consistent across
-       light/dark, white text). */
-    --accent-bg: #111827; /* neutral light = gray-900 */
-    --accent-fg: #ffffff;
-  }
-  .dark {
-    color-scheme: dark;
-    /* Dark mode uses a pure-black base tone (no indigo tint): overrides the neutral gray scale with
-       true-neutral values — gray-950 pure black as the body background, gray-900/800/700 as near-black
-       surfaces and borders. */
-    --color-gray-950: #000000;
-    --color-gray-900: #0d0d0d;
-    --color-gray-800: #1f1f1f;
-    --color-gray-700: #303030;
-    /* neutral accent dark = gray-100 (light background, dark text button). */
-    --accent-bg: #f3f4f6;
-    --accent-fg: #111827;
-  }
-  /* Theme color presets (consistent across light/dark, white text): selecting data-accent overrides the neutral default. */
-  :root[data-accent="blue"] {
-    --accent-bg: #2563eb;
-    --accent-fg: #ffffff;
-  }
-  :root[data-accent="green"] {
-    --accent-bg: #15803d; /* green-700: contrast with white text >= AA */
-    --accent-fg: #ffffff;
-  }
-  :root[data-accent="violet"] {
-    --accent-bg: #7c3aed;
-    --accent-fg: #ffffff;
-  }
-  :root[data-accent="rose"] {
-    --accent-bg: #be123c; /* rose-700: contrast with white text >= AA */
-    --accent-fg: #ffffff;
-  }
-  :root[data-accent="amber"] {
-    --accent-bg: #b45309; /* amber-700: contrast with white text >= AA */
-    --accent-fg: #ffffff;
+       faces as the prose around it (see .katex .cjk_fallback below). An alias of the theme's
+       token, so the two cannot drift. */
+    --font-app-sans: var(--ui-font-sans);
   }
   html,
   body,
@@ -104,43 +82,12 @@
   .overflow-y-scroll {
     position: relative;
   }
-  body {
-    @apply bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
-    font-family: var(--font-app-sans);
-  }
-  code,
-  pre,
-  kbd {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  }
-  /* Keyboard accessibility: soft brand-colored outer ring (input controls use their own focus ring, not stacked). */
-  button:focus-visible,
-  a:focus-visible,
-  [role="tab"]:focus-visible,
-  summary:focus-visible {
-    outline: 3px solid rgb(107 114 128 / 0.4);
-    outline-offset: 2px;
-  }
   /* Consistent pointer cursor for clickable buttons: Tailwind 4 preflight reverted button to the browser's
      default arrow cursor (v3 used pointer); disabled state keeps the default. Explicit cursor-* utility
      classes (e.g. cursor-zoom-in) take precedence. */
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
-  }
-  ::selection {
-    background: rgb(0 0 0 / 0.1);
-  }
-  .dark ::selection {
-    background: rgb(255 255 255 / 0.18);
-  }
-  /* Thin scrollbar. */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: rgb(60 64 67 / 0.28) transparent;
-  }
-  .dark * {
-    scrollbar-color: rgb(232 234 237 / 0.2) transparent;
   }
   /* Hide the native scrollbar (replaced with custom controls, e.g. zoom/pan sliders in trace viewing). */
   .no-scrollbar {

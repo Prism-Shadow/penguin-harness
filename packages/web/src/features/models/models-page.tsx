@@ -1226,7 +1226,7 @@ export function ModelsPage() {
                   {drag.dropEdge !== null && (
                     <div
                       aria-hidden
-                      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-[var(--accent-bg)] ${
+                      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent ${
                         drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
                       }`}
                     />

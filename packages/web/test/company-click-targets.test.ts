@@ -22,11 +22,10 @@
  * of the row it covers), and a click handler passed down as a prop. Those are on the reviewer.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { expectEveryRootScanned, scanSources, sourceFile } from "./helpers/roots";
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
+const SCAN = scanSources();
 
 /**
  * The company modules swept for the rule, relative to `src`. Every page whose surfaces have been
@@ -108,10 +107,10 @@ function literalChunks(node: ts.Node, out: string[] = []): string[] {
 function findWholeAreaTargets(): string[] {
   const found: string[] = [];
   for (const rel of MODULES) {
-    const path = `${SRC}/${rel}`;
+    const file = sourceFile(SCAN, `packages/web/src/${rel}`);
     const source = ts.createSourceFile(
-      path,
-      readFileSync(path, "utf8"),
+      file.path,
+      file.text,
       ts.ScriptTarget.Latest,
       /* setParentNodes */ true,
       ts.ScriptKind.TSX,
@@ -152,6 +151,12 @@ function findWholeAreaTargets(): string[] {
 }
 
 describe("company pages", () => {
+  it("scans every source root, and finds every swept module", () => {
+    expectEveryRootScanned(SCAN);
+    // A swept page that was renamed or moved must fail here rather than drop out of the sweep.
+    for (const rel of MODULES) sourceFile(SCAN, `packages/web/src/${rel}`);
+  });
+
   it("navigate through named controls, never through a whole card, row or panel", () => {
     expect(findWholeAreaTargets()).toEqual([]);
   });

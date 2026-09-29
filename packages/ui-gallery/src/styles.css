@@ -1,0 +1,18 @@
+/**
+ * Gallery styles. The package's theme foundation comes first, exactly as the Web App imports it,
+ * so previews render what the app would; then the gallery's own sheets: chrome.css (the unthemed
+ * rail, headers, pills and drawers) and foundations.css (the themed Foundations pages).
+ *
+ * Tailwind scans the gallery (its Vite root) and the whole package source — demos included, which
+ * is the difference from the app's entry, where `*.demo.tsx` is excluded.
+ */
+@import "tailwindcss";
+@import "@prismshadow/penguin-ui/theme.css";
+@import "@prismshadow/penguin-ui/themes/github.css";
+@import "@prismshadow/penguin-ui/themes/modern.css";
+@import "@prismshadow/penguin-ui/themes/geek.css";
+@import "@prismshadow/penguin-ui/fonts.css";
+@import "./chrome.css";
+@import "./foundations/foundations.css";
+
+@source "../../ui/src";

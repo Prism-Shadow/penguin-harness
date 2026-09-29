@@ -17,31 +17,28 @@
  * vitest runs node-only here, so the thing that decays is a call site, not a component's output.
  */
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../src/lib/bulk-update";
 import type { Todo } from "../src/lib/todo-badges";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
+/** Web and the shared UI package: the notice's call sites are counted wherever they live. */
+const SCAN = scanSources();
+const TODO_NOTICE = "packages/web/src/components/ui/todo-notice.tsx";
 
-function tsxFiles(dir = SRC, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) tsxFiles(path, out);
-    else if (name.endsWith(".tsx")) out.push(path);
-  }
-  return out;
-}
-
-/** Every `<TodoNotice …>` in the app, as "relative/path" plus its attributes by name. */
+/** Every `<TodoNotice …>` in the scanned roots, as its file's repo-relative id plus its attributes by name. */
 function noticeSites(): { file: string; attrs: Map<string, string>; source: string }[] {
   const sites: { file: string; attrs: Map<string, string>; source: string }[] = [];
-  for (const path of tsxFiles()) {
-    const rel = path.slice(SRC.length + 1).replaceAll(sep, "/");
-    const source = readFileSync(path, "utf8");
-    const sf = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  for (const file of SCAN.files.filter((f) => f.name.endsWith(".tsx"))) {
+    const rel = file.id;
+    const source = file.text;
+    const sf = ts.createSourceFile(
+      file.path,
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
     const visit = (node: ts.Node): void => {
       const opening = ts.isJsxSelfClosingElement(node)
         ? node
@@ -60,19 +57,24 @@ function noticeSites(): { file: string; attrs: Map<string, string>; source: stri
     };
     visit(sf);
   }
-  // The component's own definition is not a call site.
-  return sites.filter((s) => s.file !== "components/ui/todo-notice.tsx");
+  // The component's own definition is not a call site, wherever it lives.
+  return sites.filter((s) => !s.file.endsWith("/todo-notice.tsx"));
 }
 
 describe("the notice block is the one shape on every page that has one", () => {
   const sites = noticeSites();
 
+  it("is looked for in every source root, and defined in one place", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, TODO_NOTICE);
+  });
+
   it("is placed on all four dismissible trails and nowhere else", () => {
     expect(sites.map((s) => s.file).sort()).toEqual([
-      "features/agents/agents-page.tsx",
-      "features/models/models-page.tsx",
-      "features/plugins/plugins-page.tsx",
-      "features/usage/usage-page.tsx",
+      "packages/web/src/features/agents/agents-page.tsx",
+      "packages/web/src/features/models/models-page.tsx",
+      "packages/web/src/features/plugins/plugins-page.tsx",
+      "packages/web/src/features/usage/usage-page.tsx",
     ]);
   });
 
@@ -87,9 +89,9 @@ describe("the notice block is the one shape on every page that has one", () => {
   it("only the cost center omits the bulk action — nothing there can be updated", () => {
     const withAction = sites.filter((s) => s.attrs.has("onAction")).map((s) => s.file);
     expect(withAction.sort()).toEqual([
-      "features/agents/agents-page.tsx",
-      "features/models/models-page.tsx",
-      "features/plugins/plugins-page.tsx",
+      "packages/web/src/features/agents/agents-page.tsx",
+      "packages/web/src/features/models/models-page.tsx",
+      "packages/web/src/features/plugins/plugins-page.tsx",
     ]);
   });
 });

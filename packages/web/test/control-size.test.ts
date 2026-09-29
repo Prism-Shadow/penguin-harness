@@ -15,12 +15,12 @@
  * element owns the attribute, and a regex over the file cannot tell those apart.
  */
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
+import type { SourceFile } from "./helpers/roots";
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
+/** Web and the shared UI package: a control that moves keeps its call sites under this check. */
+const SCAN = scanSources();
 
 /** The controls that carry a `size` tier. A `className` on one of these may not set a font size. */
 const CONTROLS = new Set([
@@ -39,14 +39,16 @@ const CONTROLS = new Set([
  */
 const FONT_SIZE_CLASS = /\btext-(?:xs|sm|base|lg|xl|\d?xl|\[[^\]]+])(?![\w-])/;
 
-function tsxFiles(dir = SRC, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) tsxFiles(path, out);
-    else if (name.endsWith(".tsx")) out.push(path);
-  }
-  return out;
-}
+const tsxFiles = (): SourceFile[] => SCAN.files.filter((file) => file.name.endsWith(".tsx"));
+
+const parse = (file: SourceFile) =>
+  ts.createSourceFile(
+    file.path,
+    file.text,
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ true,
+    ts.ScriptKind.TSX,
+  );
 
 const jsxTag = (node: ts.Node): string | null => {
   if (ts.isJsxSelfClosingElement(node)) return node.tagName.getText();
@@ -86,14 +88,8 @@ function literalChunks(node: ts.Node, out: string[] = []): string[] {
  */
 function findLooseFooterButtons(): string[] {
   const loose: string[] = [];
-  for (const path of tsxFiles()) {
-    const source = ts.createSourceFile(
-      path,
-      readFileSync(path, "utf8"),
-      ts.ScriptTarget.Latest,
-      /* setParentNodes */ true,
-      ts.ScriptKind.TSX,
-    );
+  for (const file of tsxFiles()) {
+    const source = parse(file);
     const visit = (node: ts.Node): void => {
       if (ts.isJsxAttribute(node) && node.name.getText() === "footer" && node.initializer) {
         const walk = (inner: ts.Node): void => {
@@ -111,7 +107,7 @@ function findLooseFooterButtons(): string[] {
                 : "<none>";
             if (rung !== '"sm"') {
               const line = source.getLineAndCharacterOfPosition(inner.getStart(source)).line + 1;
-              loose.push(`${path.slice(SRC.length + 1).replaceAll(sep, "/")}:${line} ${rung}`);
+              loose.push(`${file.id}:${line} ${rung}`);
             }
           }
           ts.forEachChild(inner, walk);
@@ -151,16 +147,9 @@ const DIALOG_BODY_MODULES = new Set([
  */
 function findLooseDialogBodyButtons(): string[] {
   const loose: string[] = [];
-  for (const path of tsxFiles()) {
-    const rel = path.slice(SRC.length + 1).replaceAll(sep, "/");
-    if (!DIALOG_BODY_MODULES.has(rel)) continue;
-    const source = ts.createSourceFile(
-      path,
-      readFileSync(path, "utf8"),
-      ts.ScriptTarget.Latest,
-      /* setParentNodes */ true,
-      ts.ScriptKind.TSX,
-    );
+  for (const file of tsxFiles()) {
+    if (file.root !== "web" || !DIALOG_BODY_MODULES.has(file.rel)) continue;
+    const source = parse(file);
     const visit = (node: ts.Node): void => {
       if (jsxTag(node) === "Button") {
         const attrs = (node as ts.JsxSelfClosingElement | ts.JsxOpeningElement).attributes
@@ -174,7 +163,7 @@ function findLooseDialogBodyButtons(): string[] {
             : "<none>";
         if (rung !== '"sm"' && rung !== '"icon"') {
           const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-          loose.push(`${rel}:${line} ${rung}`);
+          loose.push(`${file.rel}:${line} ${rung}`);
         }
       }
       ts.forEachChild(node, visit);
@@ -187,14 +176,8 @@ function findLooseDialogBodyButtons(): string[] {
 /** Control call sites whose own `className` spells a font size, as "relative/path:line — class". */
 function findSpelledSizes(): string[] {
   const strays: string[] = [];
-  for (const path of tsxFiles()) {
-    const source = ts.createSourceFile(
-      path,
-      readFileSync(path, "utf8"),
-      ts.ScriptTarget.Latest,
-      /* setParentNodes */ true,
-      ts.ScriptKind.TSX,
-    );
+  for (const file of tsxFiles()) {
+    const source = parse(file);
     const visit = (node: ts.Node): void => {
       const tag = jsxTag(node);
       if (tag !== null && CONTROLS.has(tag)) {
@@ -207,9 +190,7 @@ function findSpelledSizes(): string[] {
             const hit = FONT_SIZE_CLASS.exec(chunk);
             if (hit === null) continue;
             const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-            strays.push(
-              `${path.slice(SRC.length + 1).replaceAll(sep, "/")}:${line} <${tag}> ${hit[0]}`,
-            );
+            strays.push(`${file.id}:${line} <${tag}> ${hit[0]}`);
           }
         }
       }
@@ -221,6 +202,15 @@ function findSpelledSizes(): string[] {
 }
 
 describe("control font size", () => {
+  it("scans every source root, and finds the control family and its dialog bodies", () => {
+    expectEveryRootScanned(SCAN);
+    for (const name of ["input.tsx", "select.tsx", "option-menu.tsx", "form-picker.tsx"]) {
+      expectSingleHome(SCAN, `packages/web/src/components/ui/${name}`);
+    }
+    // A listed module that was renamed or moved would silently drop out of the dialog-body rule.
+    for (const rel of DIALOG_BODY_MODULES) sourceFile(SCAN, `packages/web/src/${rel}`);
+  });
+
   it("is never spelled on a call site's className", () => {
     expect(
       findSpelledSizes(),
@@ -306,14 +296,7 @@ describe("control font size", () => {
     // there is no rung below text-xs to step down to.
     // String literals only: a comment naming the shape it forbids must not trip its own guard.
     const spelled = (name: string): string[] => {
-      const path = join(SRC, "components/ui", name);
-      const source = ts.createSourceFile(
-        path,
-        readFileSync(path, "utf8"),
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TSX,
-      );
+      const source = parse(sourceFile(SCAN, `packages/web/src/components/ui/${name}`));
       const found = new Set<string>();
       for (const chunk of literalChunks(source)) {
         for (const hit of chunk.matchAll(new RegExp(FONT_SIZE_CLASS, "g"))) found.add(hit[0]);

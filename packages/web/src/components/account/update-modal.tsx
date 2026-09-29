@@ -278,7 +278,7 @@ function ProgressBar({ percent }: { percent: number | null }) {
       className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800"
     >
       <div
-        className={`h-full rounded-full bg-[var(--accent-bg)] ${
+        className={`h-full rounded-full bg-accent ${
           percent === null ? "w-1/3 animate-pulse" : "transition-[width] duration-300"
         }`}
         style={percent === null ? undefined : { width: `${percent}%` }}

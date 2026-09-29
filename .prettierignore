@@ -11,6 +11,10 @@ packages/desktop/stage/
 packages/desktop/out/
 packages/desktop/skills/
 
+# Frost's MiSans slices and their @font-face sheet, written by scripts/build-misans.py (a
+# formatter pass would read as drift against the script's own output)
+packages/ui/src/fonts/misans/
+
 # docs-only area (mostly Chinese; not machine-formatted)
 specs/
 *.md

@@ -131,6 +131,14 @@ export function UserMenu({
               {S.auth.logout}
             </button>
           )}
+          {/* The font credit. The app ships Xiaomi's MiSans (the Frost theme's typeface), and its
+              licence requires software that uses it to say so. A quiet line under a rule, not a
+              row: nothing here is actionable, and it is present for every account and backend.
+              It is text to be read, so it takes the menu's secondary ink (the account id's), not
+              the placeholder ink. */}
+          <p className="mt-1 border-t border-gray-100 px-3.5 pt-2 pb-1 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
+            {S.settings.fontCredit}
+          </p>
         </div>
       </Dropdown>
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />

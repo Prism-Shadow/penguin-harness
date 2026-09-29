@@ -1,0 +1,1317 @@
+/*
+ * The gallery chrome: the top bar, the module list, the content column with its sections and
+ * toolbars, "on this page", the framed previews, the fonts page and the screen toolbar.
+ * Deliberately UNTHEMED — every colour is a `--g-*` variable and every length is px, never rem or
+ * em — so switching the theme, the accent or the root size under test never moves the chrome; only
+ * the previews follow `<html style="font-size">`. It follows only the mode (`.dark` on <html>).
+ *
+ * The layout is a docs site's: a quiet top bar; a left column with a search box and the modules
+ * grouped, the current one marked by a thin rule and accent text; a reading-width content column
+ * with an eyebrow, a large title, a one-line lead and H2 sections ruled underneath; a right column
+ * listing what is on the page. One accent, hairlines, whitespace, the system sans at 14–16 px.
+ * Previews sit in a hairline frame, nothing heavier.
+ *
+ * Unlayered on purpose: these rules outrank Tailwind's layers and theme.css's base rules (focus
+ * outline, selection, body font) wherever a `.g-*` class matches, and match nothing inside a
+ * preview except the labels that carry a `.g-*` class themselves.
+ */
+
+:root {
+  --g-font:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+  --g-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --g-page: #ffffff;
+  --g-surface: #ffffff;
+  --g-inset: #f6f8fa;
+  --g-hover: #f2f4f7;
+  --g-ink: #1f2328;
+  --g-ink-2: #59636e;
+  --g-ink-3: #8c959f;
+  --g-line: #e8ebef;
+  --g-line-strong: #d0d7de;
+  --g-accent: #2563eb;
+  --g-accent-soft: rgb(37 99 235 / 0.08);
+  --g-bad: #c62828;
+  --g-raise: 0 1px 2px rgb(0 0 0 / 0.06), 0 0 0 1px rgb(0 0 0 / 0.05);
+  --g-float: 0 12px 32px rgb(0 0 0 / 0.12);
+  /* The page frame: the bar's height, the columns' widths, the side gutter. */
+  --g-bar: 56px;
+  --g-nav: 236px;
+  --g-toc: 200px;
+  --g-column: 720px;
+  --g-gutter: 24px;
+}
+
+:root.dark {
+  --g-page: #0d1117;
+  --g-surface: #0d1117;
+  --g-inset: #161b22;
+  --g-hover: #1c2129;
+  --g-ink: #e6edf3;
+  --g-ink-2: #9aa4b2;
+  --g-ink-3: #6e7681;
+  --g-line: #232a33;
+  --g-line-strong: #30363d;
+  --g-accent: #6ea8fe;
+  --g-accent-soft: rgb(110 168 254 / 0.12);
+  --g-bad: #f87171;
+  --g-raise: 0 0 0 1px rgb(255 255 255 / 0.08);
+  --g-float: 0 12px 32px rgb(0 0 0 / 0.5);
+}
+
+/* ---- Base for chrome subtrees ------------------------------------------------------------ */
+
+.g-chrome {
+  font-family: var(--g-font);
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--g-ink);
+  -webkit-font-smoothing: antialiased;
+}
+.g-chrome ::selection {
+  background: color-mix(in srgb, var(--g-accent) 25%, transparent);
+}
+.g-chrome button,
+.g-chrome a {
+  font: inherit;
+  color: inherit;
+}
+.g-chrome a {
+  text-decoration: none;
+}
+.g-chrome button:focus-visible,
+.g-chrome a:focus-visible,
+.g-chrome input:focus-visible,
+.g-chrome summary:focus-visible {
+  outline: 2px solid var(--g-accent);
+  outline-offset: 1px;
+}
+.g-chrome code {
+  font-family: var(--g-mono);
+  font-size: 12.5px;
+}
+.g-muted {
+  color: var(--g-ink-3);
+}
+.g-icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* ---- The site: bar over body -------------------------------------------------------------- */
+
+.g-site {
+  min-height: 100vh;
+  overflow-x: clip;
+  background: var(--g-page);
+}
+
+/* The top bar: brand, page links, the controls. Wraps to a second row before it overflows. */
+.g-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  min-height: var(--g-bar);
+  padding: 8px var(--g-gutter);
+  border-bottom: 1px solid var(--g-line);
+  background: var(--g-page);
+}
+.g-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.g-brand img {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+.g-brand strong {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.15px;
+  white-space: nowrap;
+}
+.g-links {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.g-link {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 6px;
+  color: var(--g-ink-2);
+  white-space: nowrap;
+}
+.g-link:hover {
+  color: var(--g-ink);
+  background: var(--g-hover);
+}
+.g-link[aria-current="page"] {
+  color: var(--g-page);
+  background: var(--g-ink);
+}
+.g-bar-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-left: auto;
+}
+.g-menu {
+  display: none;
+}
+
+/* The body: the module list, the content column and "on this page", centred. */
+.g-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: center;
+  column-gap: 48px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 var(--g-gutter) 120px;
+}
+.g-site[data-nav] .g-body {
+  grid-template-columns: var(--g-nav) minmax(0, var(--g-column));
+  max-width: 1280px;
+}
+.g-site[data-nav][data-toc] .g-body {
+  grid-template-columns: var(--g-nav) minmax(0, var(--g-column)) var(--g-toc);
+}
+/* Compare frames need the room: the content column grows past the reading width. */
+.g-site[data-nav] .g-body[data-wide] {
+  grid-template-columns: var(--g-nav) minmax(0, 1fr);
+  max-width: 1600px;
+}
+.g-site[data-nav][data-toc] .g-body[data-wide] {
+  grid-template-columns: var(--g-nav) minmax(0, 1fr) var(--g-toc);
+}
+.g-main {
+  min-width: 0;
+}
+
+/* ---- Controls ----------------------------------------------------------------------------- */
+
+.g-controls {
+  display: grid;
+  gap: 10px;
+}
+.g-controls[data-compact] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.g-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.g-controls[data-compact] .g-control-label {
+  display: none;
+}
+.g-control-label {
+  color: var(--g-ink-2);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.g-seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 1px;
+  border-radius: 7px;
+  background: var(--g-inset);
+}
+.g-seg button {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--g-ink-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.g-seg button:hover {
+  color: var(--g-ink);
+}
+.g-seg button[aria-pressed="true"] {
+  background: var(--g-page);
+  color: var(--g-ink);
+  box-shadow: var(--g-raise);
+}
+.g-seg-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.g-mode {
+  display: inline-flex;
+  padding: 2px;
+  gap: 1px;
+  border-radius: 7px;
+  background: var(--g-inset);
+}
+.g-mode button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--g-ink-3);
+  cursor: pointer;
+}
+.g-mode button:hover {
+  color: var(--g-ink);
+}
+.g-mode button[aria-pressed="true"] {
+  background: var(--g-page);
+  color: var(--g-ink);
+  box-shadow: var(--g-raise);
+}
+.g-toggles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.g-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--g-ink-2);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.g-toggle:hover {
+  color: var(--g-ink);
+  background: var(--g-hover);
+}
+.g-toggle[aria-pressed="true"] {
+  color: var(--g-accent);
+  background: var(--g-accent-soft);
+}
+
+/* The accent row: each swatch painted in the colour it applies; the pressed one ringed. */
+.g-swatches {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.g-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--g-swatch);
+  box-shadow: inset 0 0 0 1px rgb(127 127 127 / 0.35);
+  cursor: pointer;
+}
+.g-swatch[data-empty] {
+  background: var(--g-inset);
+}
+.g-swatch[aria-pressed="true"] {
+  box-shadow:
+    0 0 0 2px var(--g-page),
+    0 0 0 3.5px var(--g-ink);
+}
+
+.g-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--g-ink-3);
+  cursor: pointer;
+}
+.g-icon-button:hover {
+  color: var(--g-ink);
+  background: var(--g-hover);
+}
+
+/* ---- The module list: a search box, the groups, the current page ruled ------------------ */
+
+.g-sidenav {
+  position: sticky;
+  top: var(--g-bar);
+  align-self: start;
+  max-height: calc(100vh - var(--g-bar));
+  overflow-y: auto;
+  padding: 28px 24px 40px 0;
+  border-right: 1px solid var(--g-line);
+  scrollbar-width: thin;
+  scrollbar-color: var(--g-line-strong) transparent;
+}
+.g-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--g-line-strong);
+  border-radius: 8px;
+  background: var(--g-page);
+  color: var(--g-ink-3);
+}
+.g-search:focus-within {
+  border-color: var(--g-accent);
+}
+.g-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--g-ink);
+  outline: none;
+}
+.g-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.g-search kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--g-line);
+  border-radius: 4px;
+  font-family: var(--g-mono);
+  font-size: 11px;
+  color: var(--g-ink-3);
+  white-space: nowrap;
+}
+.g-nav-empty {
+  margin: 16px 0 0;
+  font-size: 13px;
+}
+.g-nav-group {
+  margin-top: 22px;
+}
+.g-nav-eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--g-ink-3);
+}
+.g-nav-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--g-line);
+}
+.g-nav-link {
+  display: block;
+  margin-left: -1px;
+  padding: 5px 12px;
+  border-left: 1px solid transparent;
+  color: var(--g-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.g-nav-link:hover {
+  color: var(--g-ink);
+}
+.g-nav-link[aria-current="page"] {
+  padding-left: 11px;
+  border-left: 2px solid var(--g-accent);
+  color: var(--g-accent);
+  font-weight: 500;
+}
+
+/* ---- The content column ------------------------------------------------------------------- */
+
+.g-doc,
+.g-home {
+  min-width: 0;
+  padding-top: 36px;
+}
+.g-doc-wide {
+  max-width: 960px;
+}
+.g-doc-head {
+  display: grid;
+  gap: 0;
+}
+.g-eyebrow {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--g-accent);
+}
+.g-h1 {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  text-wrap: balance;
+}
+.g-lead {
+  margin: 12px 0 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--g-ink-2);
+}
+.g-h2 {
+  margin: 48px 0 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--g-line);
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.g-section,
+.g-variant {
+  scroll-margin-top: calc(var(--g-bar) + 16px);
+}
+.g-section-lead,
+.g-variant-desc {
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--g-ink-2);
+}
+.g-section-meta {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--g-ink-3);
+}
+.g-problems {
+  margin: 28px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--g-line-strong);
+  border-radius: 8px;
+  color: var(--g-bad);
+  font-size: 13px;
+}
+.g-problems ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+/* The toolbar over a preview: the kind, the primary control, open, compare, link, the crumb. */
+.g-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  margin: 14px 0 8px;
+  font-size: 13px;
+  color: var(--g-ink-2);
+}
+.g-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px 0 0;
+  margin-right: 4px;
+  color: var(--g-ink-3);
+  white-space: nowrap;
+}
+.g-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--g-ink-2);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.g-tool:hover {
+  color: var(--g-ink);
+  background: var(--g-hover);
+}
+.g-tool[aria-pressed="true"] {
+  color: var(--g-accent);
+  background: var(--g-accent-soft);
+}
+.g-tool-primary {
+  color: var(--g-accent);
+  font-weight: 500;
+}
+.g-tool-primary:hover {
+  color: var(--g-accent);
+  background: var(--g-accent-soft);
+}
+.g-tool-primary[data-playing] {
+  color: var(--g-ink);
+  background: var(--g-inset);
+}
+.g-tool-icon {
+  width: 26px;
+  padding: 0;
+  justify-content: center;
+}
+.g-toolbar > .g-crumb {
+  margin-left: auto;
+}
+
+/* The preview in a hairline frame, on the theme's canvas. */
+.g-frame {
+  border: 1px solid var(--g-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ui-canvas, var(--g-surface));
+}
+/* The composition on the theme's canvas, vertically centred with room around it. */
+.g-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  min-height: 240px;
+  padding: 28px 24px;
+  background: var(--ui-canvas, var(--g-surface));
+  color: var(--ui-fg, var(--g-ink));
+  /* The chrome face, as the app's body sets it: a reading surface inside opts into font-sans. */
+  font-family: var(--ui-font-ui, var(--g-font));
+  font-size: var(--ui-text-body-size, 16px);
+  line-height: var(--ui-text-body-lh, 1.5);
+}
+/* The app shell goes edge to edge: it is a window, not a component on a stage. */
+.g-preview-shell {
+  min-height: 0;
+  padding: 0;
+}
+
+/* The frame strip under an animated preview: previous, the frames, next, the speed. */
+.g-frames {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--g-ink-3);
+}
+.g-frames > .g-seg {
+  margin-left: auto;
+}
+.g-scene-frames {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 1px;
+}
+.g-scene-chip {
+  position: relative;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--g-ink-3);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  overflow: hidden;
+}
+.g-scene-chip:hover {
+  color: var(--g-ink);
+}
+.g-scene-chip[aria-pressed="true"] {
+  background: var(--g-inset);
+  color: var(--g-ink);
+}
+/* How far the current frame has run: one linear animation per frame, paused with the clock. */
+.g-scene-progress {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--g-accent);
+  transform-origin: left center;
+  animation-name: g-scene-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes g-scene-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .g-scene-progress {
+    display: none;
+  }
+}
+
+/* The quotable breadcrumb. */
+.g-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--g-ink-3);
+  font-family: var(--g-mono);
+  font-size: 11.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.g-crumb > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-crumb:hover {
+  color: var(--g-ink);
+}
+
+.g-matrix {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+.g-matrix-cell {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.g-matrix-label {
+  font-family: var(--g-mono);
+  font-size: 11px;
+  color: var(--g-ink-3);
+}
+
+/* ---- "On this page" ----------------------------------------------------------------------- */
+
+.g-toc {
+  position: sticky;
+  top: var(--g-bar);
+  align-self: start;
+  max-height: calc(100vh - var(--g-bar));
+  overflow-y: auto;
+  padding: 36px 0 40px;
+  font-size: 13px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--g-line-strong) transparent;
+}
+.g-toc-eyebrow {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--g-ink-3);
+}
+.g-toc-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--g-line);
+}
+.g-toc-list a {
+  display: block;
+  margin-left: -1px;
+  padding: 4px 12px;
+  border-left: 1px solid transparent;
+  color: var(--g-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-toc-list a:hover {
+  color: var(--g-ink);
+}
+.g-toc-list a[data-active] {
+  padding-left: 11px;
+  border-left: 2px solid var(--g-accent);
+  color: var(--g-accent);
+}
+
+/* ---- Framed previews: compare mode and the phone view --------------------------------------- */
+
+.g-framed {
+  display: grid;
+  gap: 1px;
+  background: var(--g-line);
+}
+.g-framed[data-compare][data-width="narrow"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+/* Phone: 390 px frames, centred, side by side when comparing, on the chrome's inset. */
+.g-framed[data-phone] {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 28px 20px;
+  background: var(--g-inset);
+}
+.g-framed-item {
+  margin: 0;
+  min-width: 0;
+  background: var(--g-surface);
+}
+.g-framed[data-phone] .g-framed-item {
+  width: min(390px, 100%);
+  border: 1px solid var(--g-line-strong);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.g-framed-item figcaption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--g-line);
+  background: var(--g-page);
+  font-size: 13px;
+}
+.g-framed-theme {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.g-crumb-compact {
+  margin-left: auto;
+  font-size: 11px;
+}
+.g-framed-item iframe {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+}
+
+/* ---- Fitted previews: a composition laid out at the app's width, scaled to the column ------ */
+
+/* The box the page sees takes the scaled height (set inline); the composition inside keeps its
+   natural width, so its unscaled layout box overflows and is clipped here. Centred when the
+   column is wider than the composition, which is never scaled up. */
+.g-fit {
+  min-width: 0;
+  overflow: hidden;
+}
+.g-fit-inner {
+  margin-inline: auto;
+  transform-origin: 0 0;
+}
+
+/* ---- Parts, Tokens, Source ---------------------------------------------------------------- */
+
+.g-parts {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.g-part-line {
+  margin: 0;
+  padding: 2px 0;
+  color: var(--g-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-part {
+  border: 1px solid var(--g-line);
+  border-radius: 8px;
+  overflow: hidden;
+  scroll-margin-top: calc(var(--g-bar) + 16px);
+}
+.g-part-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.g-part-preview {
+  min-height: 0;
+  padding: 20px;
+  border-top: 1px solid var(--g-line);
+}
+.g-part-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--g-line);
+  background: var(--g-page);
+}
+.g-part-foot > .g-crumb {
+  margin-left: auto;
+}
+.g-axes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.g-token-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 0 16px;
+  margin-top: 12px;
+}
+.g-token {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 8px;
+  padding: 3px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+.g-token:hover {
+  background: var(--g-hover);
+}
+.g-token-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgb(127 127 127 / 0.35);
+}
+.g-token-swatch[data-empty] {
+  box-shadow: none;
+}
+.g-token-name {
+  font-family: var(--g-mono);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-token-value {
+  font-family: var(--g-mono);
+  font-size: 11.5px;
+  color: var(--g-ink-3);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-token-value[data-unset] {
+  color: var(--g-bad);
+}
+.g-ratios {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-family: var(--g-mono);
+  font-size: 11px;
+  color: var(--g-ink-3);
+}
+.g-ratio[data-pass="false"] {
+  color: var(--g-bad);
+}
+.g-code {
+  margin: 12px 0 0;
+  max-height: 560px;
+  padding: 12px 14px;
+  overflow: auto;
+  border: 1px solid var(--g-line);
+  border-radius: 8px;
+  background: var(--g-inset);
+  font-family: var(--g-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  color: var(--g-ink);
+}
+
+/* ---- Home: the index and the feedback note ------------------------------------------------ */
+
+.g-index-eyebrow {
+  margin: 28px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--g-ink-3);
+}
+.g-index {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.g-index a {
+  display: grid;
+  gap: 4px;
+  height: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--g-line);
+  border-radius: 8px;
+  color: var(--g-ink);
+}
+.g-index a:hover {
+  border-color: var(--g-line-strong);
+  background: var(--g-hover);
+}
+.g-index strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.g-index span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--g-ink-2);
+}
+.g-note {
+  margin-top: 48px;
+  padding: 14px 16px;
+  border: 1px solid var(--g-line);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--g-ink-2);
+}
+.g-note p {
+  margin: 2px 0 6px;
+}
+.g-note code {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--g-inset);
+  color: var(--g-ink);
+  overflow-wrap: anywhere;
+}
+
+/* ---- The Screens page's thumbnails -------------------------------------------------------- */
+
+.g-screen {
+  display: grid;
+  gap: 12px;
+}
+.g-screen-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1440 / 900;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--g-line);
+}
+.g-screen-thumb iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.g-screen-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.g-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--g-line-strong);
+  background: var(--g-page);
+  color: var(--g-ink);
+  font-weight: 500;
+}
+.g-button:hover {
+  background: var(--g-hover);
+}
+
+/* ---- /embed ------------------------------------------------------------------------------ */
+
+.g-embed {
+  display: flow-root;
+  min-height: 0;
+  padding: 24px;
+  box-sizing: border-box;
+}
+/* Framed at phone width the frame is the viewport, and the hero is full bleed wherever it shows:
+   either way the composition takes the embed edge to edge, as it does on the page. */
+.g-embed[data-view="phone"],
+.g-embed[data-module="hero"] {
+  padding: 0;
+}
+body:has(.g-embed) {
+  margin: 0;
+}
+/* A composition designed at the app's width: the root grows past a narrower viewport to hold it at
+   that width, unscaled, so a screenshot of the root is the whole composition at full size. */
+.g-embed[data-natural-width] {
+  width: max-content;
+  min-width: 100%;
+}
+
+/* ---- /screens/<name> ---------------------------------------------------------------------- */
+
+/* The page is one viewport tall: the toolbar strip on top, the composite in the rest. The strip
+   takes its own room rather than floating, so it never covers the composite's controls (the
+   composer and its send button sit at the bottom edge, the stats at the top right). */
+.g-screen-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.g-screen-root {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+.g-screen-missing {
+  max-width: 560px;
+  margin: 80px auto;
+  padding: 0 24px;
+}
+.g-screen-missing a {
+  color: var(--g-accent);
+}
+.g-screen-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--g-line);
+  background: var(--g-page);
+}
+.g-screen-bar > .g-crumb {
+  margin-left: auto;
+}
+
+/* ---- /fonts ------------------------------------------------------------------------------ */
+
+.g-font-theme h3 {
+  margin: 24px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.g-font-role {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--g-line);
+}
+.g-font-role-meta {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  font-size: 12.5px;
+  word-break: break-word;
+}
+.g-font-role-meta [data-unset] {
+  color: var(--g-bad);
+}
+.g-font-samples {
+  display: grid;
+  gap: 10px;
+}
+.g-font-sample p {
+  margin: 0;
+  line-height: 1.6;
+}
+.g-font-size {
+  display: block;
+  font-family: var(--g-mono);
+  font-size: 11px;
+  color: var(--g-ink-3);
+}
+.g-table {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.g-table th {
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 500;
+  color: var(--g-ink-3);
+}
+.g-table td {
+  padding: 6px 8px;
+  border-top: 1px solid var(--g-line);
+  vertical-align: top;
+}
+.g-num-cell {
+  font-variant-numeric: tabular-nums;
+}
+.g-licence {
+  border-top: 1px solid var(--g-line);
+  padding: 6px 0;
+}
+.g-licence summary {
+  cursor: pointer;
+  font-family: var(--g-mono);
+  font-size: 12.5px;
+}
+.g-licence .g-code {
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+
+/* ---- Reduced motion: previews hold their first frame ------------------------------------ */
+
+:root[data-motion="reduced"] .g-preview *,
+:root[data-motion="reduced"] .g-screen-root * {
+  animation-play-state: paused !important;
+  animation-delay: 0s !important;
+  transition: none !important;
+}
+/*
+ * Except the motion hooks a scene's frames carry: a paused entrance would hold its first,
+ * invisible keyframe, a paused exit would never end (leaving the layer mounted), and a paused resize
+ * would hold the old size. With no animation at all, each simply is in its new state.
+ */
+:root[data-motion="reduced"]
+  .g-preview
+  :is([data-presence], [data-backdrop], [data-reveal], [data-layout-motion]),
+:root[data-motion="reduced"]
+  .g-screen-root
+  :is([data-presence], [data-backdrop], [data-reveal], [data-layout-motion]) {
+  animation: none !important;
+}
+
+/* ---- Phone width: one column, the columns in a drawer, nothing sideways ------------------- */
+
+/* The drawer only exists while open; at desktop widths it is never shown. */
+.g-drawer {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  :root {
+    --g-gutter: 16px;
+  }
+  .g-topbar {
+    gap: 8px 12px;
+    flex-wrap: nowrap;
+  }
+  .g-links,
+  .g-bar-controls {
+    display: none;
+  }
+  .g-menu {
+    display: inline-grid;
+    margin-left: auto;
+  }
+  .g-drawer {
+    display: grid;
+    align-content: start;
+    gap: 24px;
+    position: fixed;
+    z-index: 29;
+    inset: var(--g-bar) 0 0 0;
+    overflow-y: auto;
+    padding: 16px var(--g-gutter) 40px;
+    background: var(--g-page);
+  }
+  .g-drawer-links {
+    display: grid;
+    gap: 2px;
+  }
+  .g-drawer-links .g-link {
+    height: 32px;
+  }
+  .g-drawer-controls {
+    display: grid;
+    gap: 10px;
+  }
+  .g-drawer .g-nav-group {
+    margin-top: 16px;
+  }
+  .g-body,
+  .g-site[data-nav] .g-body,
+  .g-site[data-nav][data-toc] .g-body,
+  .g-site[data-nav] .g-body[data-wide],
+  .g-site[data-nav][data-toc] .g-body[data-wide] {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+    padding-bottom: 80px;
+  }
+  .g-sidenav,
+  .g-toc {
+    display: none;
+  }
+  .g-doc,
+  .g-home {
+    padding-top: 24px;
+  }
+  .g-h1 {
+    font-size: 26px;
+  }
+  .g-h2 {
+    margin-top: 36px;
+    font-size: 19px;
+  }
+  .g-preview {
+    min-height: 160px;
+    padding: 16px 12px;
+  }
+  .g-preview-shell {
+    padding: 0;
+  }
+  .g-toolbar > .g-crumb {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+  .g-framed[data-compare][data-width="narrow"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .g-framed[data-phone] {
+    padding: 16px 12px;
+  }
+  .g-token-list,
+  .g-font-role {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

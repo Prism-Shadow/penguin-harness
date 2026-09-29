@@ -1,7 +1,7 @@
 /**
  * The terminal's chrome palette, resolved in JS rather than through Tailwind's `dark:`.
  *
- * That variant is anchored on the root class (`&:where(.dark, .dark *)` in styles.css), so
+ * That variant is anchored on the root class (`&:where(.dark, .dark *)` in @prismshadow/penguin-ui's theme.css), so
  * a subtree can opt IN to dark but never out of it — and the terminal's appearance is its
  * own setting (see TerminalThemeMode), which means a light terminal inside a dark app has
  * to be expressible. Hence whole class strings picked by a resolved boolean.
