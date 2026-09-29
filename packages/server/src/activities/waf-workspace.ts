@@ -186,6 +186,11 @@ export function repositoryMissing(stderr: string): boolean {
 export abstract class WafWorkspacePorts extends Interface<{
   runGit?: DeployGit["run"];
   runProcess?: DeployProcess["run"];
+  /**
+   * Whether the server prepares a managed workspace that is not ready when it starts; true
+   * unless PENGUIN_WAF_AUTO_PREPARE is "0". Tests turn it off, so nothing clones at boot.
+   */
+  autoPrepare?: boolean;
 }>() {}
 
 @Component()
@@ -194,6 +199,12 @@ export class DefaultWafWorkspacePorts implements WafWorkspacePorts {}
 export abstract class WafWorkspace extends Interface<{
   /** The checkout's root when it can be used, else null. Replaces looking for one on disk. */
   root(): Promise<string | null>;
+  /**
+   * The checkout's root, or the refusal that says why there is none: 503
+   * `waf_workspace_preparing` while it is being prepared, else 409 `waf_workspace_not_ready`
+   * (naming why the last preparation failed, when it did).
+   */
+  requireRoot(): Promise<string>;
   status(): Promise<WafWorkspaceStatus>;
   /**
    * Clones whichever shared repositories are missing and installs their dependencies, in the
@@ -451,15 +462,33 @@ export class WafWorkspaceService implements WafWorkspace {
     return result;
   }
 
-  private async requireRoot(): Promise<string> {
+  async requireRoot(): Promise<string> {
     const root = await this.root();
-    if (!root)
+    if (root) return root;
+    if (this.preparing)
       throw new HttpError(
-        409,
-        "waf_workspace_not_ready",
-        "The WAF workspace is not prepared. An admin can prepare it in Settings.",
+        503,
+        "waf_workspace_preparing",
+        "The WAF workspace is being prepared. Cloning and installing can take several minutes.",
       );
-    return root;
+    throw new HttpError(
+      409,
+      "waf_workspace_not_ready",
+      this.lastError
+        ? `The WAF workspace is not prepared: ${this.lastError} An admin can try again in Settings.`
+        : "The WAF workspace is not prepared. An admin can prepare it in Settings.",
+    );
+  }
+
+  /** A managed workspace that is not ready is prepared in the background as the server starts. */
+  setup() {
+    const enabled = this.ports.autoPrepare ?? process.env.PENGUIN_WAF_AUTO_PREPARE !== "0";
+    if (!enabled || this.external()) return;
+    void this.root()
+      .then((root) => (root ? undefined : this.prepare()))
+      .catch(() => {
+        /* status() reports what went wrong; startup goes on regardless. */
+      });
   }
 
   async ensureModule(moduleFolder: string): Promise<string> {

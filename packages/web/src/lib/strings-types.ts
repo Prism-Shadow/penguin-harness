@@ -4408,7 +4408,6 @@ export type Strings = {
       deploy_no_module: string;
       deploy_not_canonical: string;
       deploy_settings_missing: string;
-      waf_workspace_not_ready: string;
       product_taken: string;
       module_not_a_clone: string;
       git_unavailable: string;
@@ -4430,7 +4429,6 @@ export type Strings = {
       audio_changed: string;
       media_missing: string;
       module_spec_invalid: string;
-      waf_checkout_missing: string;
       run_not_found: string;
       project_deleting: string;
       invalid_credentials: string;

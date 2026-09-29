@@ -626,13 +626,7 @@ export class ActivityGenerationService implements ActivityGeneration {
                 `This activity shares its module with ref ${product?.canonicalRefNum}, which owns the module code. Assemble from that ref instead.`,
               );
             }
-            wafRoot = await this.wafWorkspace.root();
-            if (!wafRoot)
-              throw new HttpError(
-                400,
-                "waf_checkout_missing",
-                "The WAF workspace is not prepared. An admin can prepare it in Settings.",
-              );
+            wafRoot = await this.wafWorkspace.requireRoot();
           }
           if (codingAgentId && (audio || image || sound))
             // Each calls its provider through a helper that reads the key from a Penguin

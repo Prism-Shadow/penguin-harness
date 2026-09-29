@@ -410,7 +410,8 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   if (o.soundModelPorts) out.push([DefaultSoundModelPorts, o.soundModelPorts]);
   if (o.espeakPorts) out.push([DefaultEspeakPorts, o.espeakPorts]);
   if (o.deployPorts) out.push([DefaultDeployPorts, o.deployPorts]);
-  if (o.wafWorkspacePorts) out.push([DefaultWafWorkspacePorts, o.wafWorkspacePorts]);
+  // Nothing clones at boot in a test: a test that wants preparing asks for it.
+  out.push([DefaultWafWorkspacePorts, { autoPrepare: false, ...o.wafWorkspacePorts }]);
   if (o.audioEncodePorts) out.push([DefaultAudioEncodePorts, o.audioEncodePorts]);
   return out;
 }

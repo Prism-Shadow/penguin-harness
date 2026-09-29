@@ -2282,7 +2282,7 @@ export const en: Strings = {
     wafWorkspace: {
       title: "WAF workspace",
       about:
-        "The checkouts activities are authored, played and deployed from: the framework, the navigation bar, media and activity data, plus one repository per product's module. Penguin clones them into its own data folder and installs what the framework and navigation bar build with. Media is cloned partially, and a product's media is fetched only when it is needed. git uses this server's own SSH keys. To use a checkout you already have instead, enter its folder below; Penguin then only reads it.",
+        "The checkouts activities are authored, played and deployed from: the framework, the navigation bar, media and activity data, plus one repository per product's module. Penguin clones them into its own data folder and installs what the framework and navigation bar build with, by itself when the server starts and they are not there yet; Prepare does it again, for instance after a failure. Media is cloned partially, and a product's media is fetched only when it is needed. git uses this server's own SSH keys. To use a checkout you already have instead, enter its folder below; Penguin then only reads it.",
       ready: "Ready",
       notReady: "Not prepared. Prepare clones what is missing.",
       preparing: "Preparing the workspace. Cloning and installing can take several minutes.",
@@ -6426,8 +6426,6 @@ Scenarios:
       deploy_not_canonical:
         "Only the canonical ref deploys: every ref of this product shares its module.",
       deploy_settings_missing: "An admin has to fill in the deploy settings first.",
-      waf_workspace_not_ready:
-        "The WAF workspace is not prepared. An admin can prepare it in Settings, under WAF workspace.",
       product_taken:
         "Another project owns this product. A product's refs all belong to one project, because they share one module.",
       module_not_a_clone:
@@ -6460,8 +6458,6 @@ Scenarios:
       media_missing:
         "Referenced media is missing or linked in the WAF workspace. Check the saved paths before retrying assembly.",
       module_spec_invalid: "Module scenes need unique safe IDs other than activity.",
-      waf_checkout_missing:
-        "The WAF workspace is not prepared. An admin can prepare it in Settings, under WAF workspace.",
       run_not_found: "This generation attempt no longer exists, or you do not have access.",
       project_deleting:
         "This Project is being deleted. Activity changes and generation are unavailable.",

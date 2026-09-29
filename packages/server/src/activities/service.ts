@@ -1863,14 +1863,7 @@ export class ActivityService implements ActivityAuthoring {
 
   /** The WAF workspace's root; every ref's files are in its modules. */
   private async requireWafRoot(): Promise<string> {
-    const root = await this.wafWorkspace.root();
-    if (!root)
-      throw new HttpError(
-        409,
-        "waf_workspace_not_ready",
-        "The WAF workspace is not prepared. An admin can prepare it in Settings.",
-      );
-    return root;
+    return this.wafWorkspace.requireRoot();
   }
 
   private moduleFolderOf(activity: ActivityRecord): string {

@@ -236,14 +236,7 @@ export class ActivityDeployService implements ActivityDeploys {
 
   /** The WAF workspace's root, where every clone a deploy works in is. */
   private async requireWafRoot(): Promise<string> {
-    const root = await this.wafWorkspace.root();
-    if (!root)
-      throw new HttpError(
-        409,
-        "waf_workspace_not_ready",
-        "The WAF workspace is not prepared. An admin can prepare it in Settings.",
-      );
-    return root;
+    return this.wafWorkspace.requireRoot();
   }
 
   private git(): DeployGit {

@@ -157,14 +157,7 @@ export class ActivityVersionService implements ActivityVersions {
 
   /** The WAF root a version's media paths are relative to. */
   private async wafRoot(): Promise<string> {
-    const root = await this.wafWorkspace.root();
-    if (!root)
-      throw new HttpError(
-        409,
-        "waf_workspace_not_ready",
-        "The WAF workspace is not prepared. An admin can prepare it in Settings.",
-      );
-    return root;
+    return this.wafWorkspace.requireRoot();
   }
   /** Digests of files already read, by path, size and modification time. */
   private readonly digests = new Map<string, string>();

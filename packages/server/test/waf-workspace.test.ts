@@ -80,13 +80,14 @@ describe("WAF workspace", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  async function setup(existing?: ReadonlySet<string>) {
+  async function setup(existing?: ReadonlySet<string>, options: { autoPrepare?: boolean } = {}) {
     vi.stubEnv("WAF_ROOT_DIR", "");
     const git = fakeGit(existing);
     const installs: string[] = [];
     const t = await createTestApp({
       wafCheckout: false,
       wafWorkspacePorts: {
+        ...(options.autoPrepare ? { autoPrepare: true } : {}),
         runGit: git.runGit,
         runProcess: async (_command, _args, options) => {
           installs.push(options.cwd);
@@ -132,6 +133,36 @@ describe("WAF workspace", () => {
       moduleRemote: "git@github.com:org/fixed.git",
     });
     expect(bad.status).toBe(400);
+  });
+
+  it("prepares itself in the background when the server starts and it is not ready", async () => {
+    const s = await setup(undefined, { autoPrepare: true });
+    let status: WafWorkspaceStatus;
+    for (;;) {
+      status = (
+        (await (await s.admin.get("/api/admin/waf-workspace")).json()) as {
+          status: WafWorkspaceStatus;
+        }
+      ).status;
+      if (!status.preparing && status.ready) break;
+      if (!status.preparing && status.lastError) throw new Error(status.lastError);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(s.git.calls.filter((call) => call.args[0] === "clone")).toHaveLength(4);
+    expect(await s.workspace.root()).toBe(status.root);
+  });
+
+  it("says it is not prepared, and why the last try failed, when there is no root", async () => {
+    const s = await setup();
+    await expect(s.workspace.requireRoot()).rejects.toMatchObject({
+      status: 409,
+      code: "waf_workspace_not_ready",
+    });
+    const dir = path.join(s.t.root, "waf", "framework", ".git");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "origin"), "git@github.com:someone/else.git");
+    await prepared(s);
+    await expect(s.workspace.requireRoot()).rejects.toThrow(/someone\/else/);
   });
 
   it("is not ready, and has no root, until it is prepared", async () => {
