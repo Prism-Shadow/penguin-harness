@@ -255,7 +255,17 @@ jobs:
   # shards. The runner ships Git-Bash on PATH, so core's exec_command tests exercise
   # the shell resolver's bash pick; genuinely POSIX-only tests skip themselves via
   # process.platform guards rather than CI filters, so a local Windows dev sees the same
-  # behaviour. Every package's tests still run exactly once across the shards. Line
+  # behaviour. What those guards leave unmeasured on Windows is listed here, and is not
+  # guaranteed there:
+  #   - server test/machines-transport-session.test.ts: its stub `ssh` is a shell script,
+  #     which execFile cannot run without a shell, so the session is measured on POSIX
+  #     only; spawning the real Windows OpenSSH client is not measured.
+  #   - server test/terminal-stream.test.ts: real ptys only. Headless ConPTY loses its
+  #     console ("AttachConsole failed") and node-pty leaks IPC rejections; the pure
+  #     terminal suites in terminal.test.ts run here.
+  #   - plugins/sandbox-dsh test/live.test.ts: what its live suite runs on Windows, and what
+  #     it leaves unmeasured there, is stated at the TODO(win32) in that file.
+  # Every package's tests still run exactly once across the shards. Line
   # endings come from .gitattributes (LF working tree), keeping build
   # outputs and fixtures byte-identical. No format:check, no typecheck, no e2e — see the
   # macOS note above.

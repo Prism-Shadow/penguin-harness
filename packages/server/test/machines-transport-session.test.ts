@@ -19,6 +19,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeConnectionTo, connectionTo, sessionOf } from "../src/machines/transport/index.js";
 
+// The stub `ssh` below is a shell script, which execFile cannot run on Windows; what stays
+// unmeasured on Windows is listed in ci.yml's test-windows note.
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
 posixOnly("the session", () => {
