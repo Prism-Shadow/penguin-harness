@@ -1562,6 +1562,7 @@ export const en: Strings = {
       localInfo:
         "Runs on the server. The first generation downloads model weights. English voices only; word timings are not provided.",
       runtimeMissing: "Local runtime not installed on the server",
+      languageUnsupported: "Unavailable for this language",
       keyMissing: (key: string) => `needs ${key}`,
       timings: "Word timings",
       timingsAbout:

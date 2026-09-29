@@ -14,6 +14,17 @@ import { isNarration } from "./voice-catalogue";
 
 export const SPEECH_PROVIDERS: readonly SpeechProviderId[] = ["gemini", "elevenlabs", "kokoro"];
 
+export function supportsSpeechLanguage(
+  options: readonly VoiceOption[],
+  provider: SpeechProviderId,
+  language: string,
+): boolean {
+  return (
+    provider !== "kokoro" ||
+    voicesFor(options, provider).some((voice) => voice.languages.includes(language))
+  );
+}
+
 /** The id the server gives the Vault's default ElevenLabs voice. */
 export const ELEVENLABS_DEFAULT_VOICE = "elevenlabs-default";
 
@@ -123,11 +134,13 @@ export function applyProvider(
   assets: MediaAsset[],
   provider: SpeechProviderId,
   options: readonly VoiceOption[],
+  language: string,
 ): number {
+  if (!supportsSpeechLanguage(options, provider, language)) return 0;
   let count = 0;
   for (const asset of assets)
     if (isNarration(asset)) {
-      setProvider(asset, provider, options);
+      setProvider(asset, provider, options, language);
       count++;
     }
   return count;
@@ -138,14 +151,19 @@ export function setProvider(
   asset: MediaAsset,
   provider: SpeechProviderId,
   options: readonly VoiceOption[],
+  language: string,
 ): void {
+  if (!supportsSpeechLanguage(options, provider, language)) return;
   asset.speechProvider = provider;
   const voice = asset.voice;
   const keeps =
     !!voice &&
     (provider === "elevenlabs"
       ? isElevenLabsVoiceId(voice) || voicesFor(options, provider).some((o) => o.id === voice)
-      : voicesFor(options, provider).some((option) => option.id === voice));
+      : voicesFor(options, provider).some(
+          (option) =>
+            option.id === voice && (provider !== "kokoro" || option.languages.includes(language)),
+        ));
   if (!keeps) delete asset.voice;
 }
 

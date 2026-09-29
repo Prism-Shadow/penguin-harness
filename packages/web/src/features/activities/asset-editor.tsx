@@ -34,6 +34,7 @@ import {
   SPEECH_PROVIDERS,
   isElevenLabsVoiceId,
   providerStatus,
+  supportsSpeechLanguage,
   setProvider,
   speechChoice,
   voicesFor,
@@ -751,22 +752,32 @@ export function AssetEditor({
                       disabled={disabled}
                       onChange={(event) =>
                         edit((entry) =>
-                          setProvider(entry, event.target.value as SpeechProviderId, voices),
+                          setProvider(
+                            entry,
+                            event.target.value as SpeechProviderId,
+                            voices,
+                            language,
+                          ),
                         )
                       }
                     >
                       {SPEECH_PROVIDERS.map((id) => {
+                        const supported = supportsSpeechLanguage(voices, id, language);
                         const status = providerStatus(speechProviders, id);
                         const name = S.activities.speechProvider[id];
                         return (
                           <option
                             key={id}
                             value={id}
-                            disabled={!!status && !status.available && id !== provider}
+                            disabled={
+                              !supported || (!!status && !status.available && id !== provider)
+                            }
                           >
-                            {status && !status.available
-                              ? `${name} (${status.problem === "runtime_missing" ? S.activities.speechProvider.runtimeMissing : S.activities.speechProvider.keyMissing(status.credential)})`
-                              : name}
+                            {!supported
+                              ? `${name} (${S.activities.speechProvider.languageUnsupported})`
+                              : status && !status.available
+                                ? `${name} (${status.problem === "runtime_missing" ? S.activities.speechProvider.runtimeMissing : S.activities.speechProvider.keyMissing(status.credential)})`
+                                : name}
                           </option>
                         );
                       })}

@@ -1332,6 +1332,7 @@ export type Strings = {
       kokoro: string;
       localInfo: string;
       runtimeMissing: string;
+      languageUnsupported: string;
       /** An option the chosen agent cannot use, naming the Vault key it lacks. */
       keyMissing: (key: string) => string;
       /** The accepted clip's word timings, as the highlighting preview shows them. */

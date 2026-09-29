@@ -192,11 +192,37 @@ export function imageTargets(manifest: AssetManifest): { language: string; asset
   );
 }
 
-/**
- * The voice a narration or word is spoken in: its own saved voice when its provider speaks with
- * it, else the sequence's choice when that provider does, else the provider's default (the
- * Vault's ElevenLabs voice, or Gemini's first).
- */
+/** Reject unsupported saved providers before the sequence spends work on any targets. */
+export function validateSpeechLanguages(
+  manifest: AssetManifest | undefined,
+  input: PipelineInput,
+): void {
+  if (!manifest || input.codingAgentId || !input.agentId) return;
+  const steps = stepsFor(input.selection);
+  const targets = [
+    ...(steps.includes("speech") ? speechTargets(manifest) : []),
+    ...(steps.includes("speech") && steps.includes("translations")
+      ? translationTargets(manifest)
+      : []),
+    ...(steps.includes("words") ? unrecordedWithSounds(manifest) : []),
+  ];
+  for (const target of inScope(targets, input.scope)) {
+    const asset = manifest.assets[target.language]?.find((item) => item.key === target.assetKey);
+    if (
+      asset?.speechProvider === "kokoro" &&
+      !asset.path &&
+      !KOKORO_VOICES.some((voice) => voice.languages.includes(target.language))
+    ) {
+      throw new HttpError(
+        422,
+        "audio_invalid",
+        `Kokoro does not support ${target.language} (${target.assetKey}). Choose another speech provider before starting the pipeline.`,
+      );
+    }
+  }
+}
+
+/** Use the saved voice, the sequence's choice, or the provider's default for this language. */
 export function voiceFor(
   provider: SpeechProviderId,
   saved: string | undefined,
@@ -462,6 +488,8 @@ export class PipelineRunner {
       const activity = await current();
       const manifest = activity.draft.mediaPlan?.manifest;
       if (!manifest) throw new Error("Plan media before generating it.");
+      if (step.step === "speech")
+        validateSpeechLanguages(manifest, { ...input, selection: "speech" });
       const targets = inScope(
         step.step === "speech" ? speechTargets(manifest) : imageTargets(manifest),
         input.scope,
@@ -689,6 +717,7 @@ export class PipelineRunner {
       return;
     }
     if (!manifest) throw new Error("Plan media before recording the book's words.");
+    validateSpeechLanguages(manifest, { ...input, selection: "words" });
     const waiting = inScope(unrecordedWithSounds(manifest), input.scope);
     if (!waiting.length) {
       step.status = "skipped";
@@ -803,7 +832,8 @@ export class ActivityPipelineService implements ActivityPipelines {
 
   async start(projectId: string, activityId: string, input: PipelineInput) {
     // An unknown activity is refused here rather than as the first step's failure.
-    await this.activities.getActivity(projectId, activityId);
+    const activity = await this.activities.getActivity(projectId, activityId);
+    validateSpeechLanguages(activity.draft.mediaPlan?.manifest, input);
     return this.active().start(projectId, activityId, input).state;
   }
 

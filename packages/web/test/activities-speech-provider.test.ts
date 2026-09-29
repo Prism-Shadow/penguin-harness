@@ -6,6 +6,8 @@ import {
   isElevenLabsVoiceId,
   providerOf,
   sharedProvider,
+  setProvider,
+  supportsSpeechLanguage,
   speechChoice,
   voicesFor,
   wordCatalogue,
@@ -40,6 +42,27 @@ function narration(extra: Partial<MediaAsset> = {}): MediaAsset {
 }
 
 describe("speech provider model", () => {
+  it.each(["es-MX", "ro-RO"])(
+    "prevents individual and bulk Kokoro selection for %s",
+    (language) => {
+      const voices: VoiceOption[] = [
+        ...OPTIONS,
+        { ...gemini("af_heart"), providerId: "kokoro", languages: ["en-US"] },
+      ];
+      const asset = narration({ voice: "Kore" });
+      expect(supportsSpeechLanguage(voices, "kokoro", language)).toBe(false);
+      expect(supportsSpeechLanguage(voices, "gemini", language)).toBe(true);
+      expect(supportsSpeechLanguage(voices, "kokoro", "en-US")).toBe(true);
+      setProvider(asset, "kokoro", voices, language);
+      expect(asset.speechProvider).toBeUndefined();
+      expect(asset.voice).toBe("Kore");
+      expect(applyProvider([asset], "kokoro", voices, language)).toBe(0);
+      expect(asset.speechProvider).toBeUndefined();
+      expect(applyProvider([asset], "kokoro", voices, "en-US")).toBe(1);
+      expect(asset.speechProvider).toBe("kokoro");
+      expect(asset.voice).toBeUndefined();
+    },
+  );
   it("chooses only Kokoro voices for the narration's language", () => {
     const voices: VoiceOption[] = [
       { ...gemini("af_heart"), providerId: "kokoro", languages: ["en-US"] },
@@ -99,7 +122,7 @@ describe("speech provider model", () => {
       { ...narration({ key: "c" }), kind: "music" as const },
     ];
     expect(sharedProvider(assets)).toBe("mixed");
-    expect(applyProvider(assets, "elevenlabs", OPTIONS)).toBe(2);
+    expect(applyProvider(assets, "elevenlabs", OPTIONS, "en-US")).toBe(2);
     expect(assets[0]).toMatchObject({ speechProvider: "elevenlabs" });
     expect(assets[0]!.voice).toBeUndefined();
     expect(assets[1]).toMatchObject({ speechProvider: "elevenlabs", voice: TYPED });

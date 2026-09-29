@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { Worker } from "node:worker_threads";
+import workerThreads from "node:worker_threads";
 import {
   Component,
   Interface,
@@ -38,6 +38,43 @@ export abstract class LocalAudio extends Interface<{
   ): Promise<Opaque<"Uint8Array", Uint8Array>>;
 }>() {}
 
+/** Probe the dependency paths used by the worker without loading models on the HTTP thread. */
+export function localAudioModuleUrl(
+  provider: LocalAudioProvider,
+  anchors: readonly string[],
+): string | null {
+  for (const anchor of anchors) {
+    try {
+      const entry = createRequire(anchor).resolve(LOCAL_AUDIO_MODELS[provider].package);
+      const require = createRequire(entry);
+      const transformers =
+        provider === "kokoro" ? require.resolve("@huggingface/transformers") : entry;
+      if (provider === "kokoro") require.resolve("phonemizer");
+      const runtime = createRequire(transformers);
+      runtime.resolve("onnxruntime-node");
+      runtime.resolve("onnxruntime-web");
+      runtime.resolve("sharp");
+      return pathToFileURL(entry).href;
+    } catch {
+      // An incomplete optional install must not hide a complete fallback runtime.
+    }
+  }
+  return null;
+}
+
+function waitForAudioTurn(previous: Promise<void>, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new Error("Local audio generation cancelled."));
+    if (signal.aborted) return abort();
+    signal.addEventListener("abort", abort, { once: true });
+    void previous.then(() => {
+      signal.removeEventListener("abort", abort);
+      if (signal.aborted) abort();
+      else resolve();
+    });
+  });
+}
+
 /** Heavy inference is isolated from HTTP and can be stopped even while native code runs. */
 export function runLocalAudioWorker(
   data: Record<string, unknown>,
@@ -50,7 +87,7 @@ export function runLocalAudioWorker(
     }
     const cacheRoot = typeof data.cacheDir === "string" ? path.resolve(data.cacheDir) : null;
     const downloadDir = cacheRoot ? path.join(cacheRoot, ".downloads", randomUUID()) : undefined;
-    const worker = new Worker(LOCAL_AUDIO_WORKER, {
+    const worker = new workerThreads.Worker(LOCAL_AUDIO_WORKER, {
       eval: true,
       workerData: { ...data, downloadDir },
     });
@@ -93,7 +130,7 @@ export function runLocalAudioWorker(
 export class LocalAudioService implements LocalAudio {
   @Use() private readonly config!: Config;
   @Use() private readonly hmr!: Hmr;
-  private busy = false;
+  private tail: Promise<void> = Promise.resolve();
   private readonly stopped = new AbortController();
 
   setup({ effect }: ClassCtx) {
@@ -103,18 +140,10 @@ export class LocalAudioService implements LocalAudio {
   private moduleUrl(provider: LocalAudioProvider): string | null {
     // Hot-loaded code lives outside node_modules. A runtime installed in the data
     // directory remains reachable across hot updates and packaged desktop installs.
-    for (const anchor of [
+    return localAudioModuleUrl(provider, [
       path.join(this.config.root, "local-audio", "package.json"),
       import.meta.url,
-    ]) {
-      try {
-        return pathToFileURL(createRequire(anchor).resolve(LOCAL_AUDIO_MODELS[provider].package))
-          .href;
-      } catch {
-        /* Optional on deployments without a native audio runtime. */
-      }
-    }
-    return null;
+    ]);
   }
   availability(): LocalAudioAvailability {
     return {
@@ -125,12 +154,6 @@ export class LocalAudioService implements LocalAudio {
     };
   }
   async generate(request: LocalAudioRequest, signal: AbortSignal): Promise<Uint8Array> {
-    if (this.busy)
-      throw new HttpError(
-        409,
-        "local_audio_busy",
-        "Another local audio model is running. Try again when it finishes.",
-      );
     const definition = LOCAL_AUDIO_MODELS[request.provider];
     const moduleUrl = this.moduleUrl(request.provider);
     if (!moduleUrl)
@@ -164,8 +187,17 @@ export class LocalAudioService implements LocalAudio {
         "local_audio_invalid",
         `This local model supports clips from 1 to ${maxSeconds} seconds.`,
       );
-    this.busy = true;
+    const abort = AbortSignal.any([signal, this.stopped.signal]);
+    const previous = this.tail;
+    let release!: () => void;
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // A cancelled waiter releases its own turn, but cannot let later jobs overtake
+    // the worker ahead of it. Only one model may occupy memory at a time.
+    this.tail = previous.then(() => turn);
     try {
+      await waitForAudioTurn(previous, abort);
       return await runLocalAudioWorker(
         {
           ...request,
@@ -182,10 +214,10 @@ export class LocalAudioService implements LocalAudio {
               }
             : {}),
         },
-        AbortSignal.any([signal, this.stopped.signal]),
+        abort,
       );
     } finally {
-      this.busy = false;
+      release();
     }
   }
 }
