@@ -5914,7 +5914,6 @@ Scenarios:
         discussing: "discussing",
         established: "established",
       } as Record<string, string>,
-      archived: "archived",
       moderator: "moderator",
       proposals: "Proposals",
       roadmapItems: "Derived roadmaps",

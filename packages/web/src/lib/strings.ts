@@ -6088,7 +6088,6 @@ Benchmark：
         discussing: "讨论中",
         established: "已确立",
       } as Record<string, string>,
-      archived: "已归档",
       moderator: "主持",
       proposals: "提案",
       roadmapItems: "子路线图",
