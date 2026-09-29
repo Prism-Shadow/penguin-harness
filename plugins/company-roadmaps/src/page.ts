@@ -610,7 +610,7 @@ try {
   let shown = "";
   let shownRoadmap = null;
   // An existing proposal is taken in while the room discusses the roadmap, or once it stands.
-  const adoptable = (r) => (r.status === "discussing" && !r.archived) || r.status === "established";
+  const adoptable = (r) => r.status === "discussing" || r.status === "established";
   // The dialog that takes an existing proposal in: company-proposals' own list of this
   // organization's proposals, less the ones this roadmap has already, one to pick.
   let adopting = false;

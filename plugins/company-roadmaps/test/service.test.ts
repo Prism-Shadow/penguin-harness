@@ -694,11 +694,6 @@ describe("an existing proposal taken in", () => {
       { ...ITEMS[1], proposal: 61 },
     ];
     expect((await refusal(service.draft(P, O, n, { items: twice }, BOSS))).status).toBe(400);
-    await service.setArchived(P, O, n, true, BOSS);
-    expect(await refusal(service.adopt(P, O, n, { ...OLD, proposal: 108 }, BOSS))).toEqual({
-      status: 409,
-      code: "not_adoptable",
-    });
   });
 });
 

@@ -1008,12 +1008,11 @@ export class RoadmapService {
     return this.withLock(projectId, orgId, async () => {
       const { org, caller, ledger } = await this.open(projectId, orgId, actor);
       const r = this.require(ledger, number);
-      const discussing = r.status === "discussing" && !r.archived;
-      if (!discussing && r.status !== "established") {
+      if (r.status !== "discussing" && r.status !== "established") {
         throw new RoadmapError(
           409,
           "not_adoptable",
-          `Roadmap #${number} is ${r.status}${r.archived ? ", archived" : ""}: a proposal is taken in while its room discusses it or once it is established.`,
+          `Roadmap #${number} is ${r.status}: a proposal is taken in while its room discusses it or once it is established.`,
         );
       }
       this.requireModeratorOrPerson(r, caller);

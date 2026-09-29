@@ -481,7 +481,6 @@ describe("a roadmap and its room", () => {
     const established = {
       ...SEEDED,
       status: "established",
-      archived: true,
       delegations: { a: { key: "a", owner: "acme_dev", stage: "delegated", proposal: 61 } },
     };
     const PROPOSALS = [

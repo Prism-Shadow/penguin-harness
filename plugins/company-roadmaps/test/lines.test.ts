@@ -16,7 +16,6 @@ const roadmap: Roadmap = {
   parent: null,
   parentItem: null,
   status: "discussing",
-  archived: false,
   record: "",
   body: "",
   items: [],
