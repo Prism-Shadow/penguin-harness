@@ -8,6 +8,7 @@
 import { validateBookSpec } from "./book.js";
 import { validateActivitySpec, type ActivityDetail, type ActivityDraft } from "./domain.js";
 import { validateManifest, type MediaAsset } from "./media.js";
+import { readdressMedia, refMediaFolder } from "./ref-media.js";
 import { isUploadReference } from "./upload.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
@@ -173,6 +174,13 @@ export function refDraftFromTemplate(
       asset.voice = decision.voice;
     }
   }
+  // The template's media folder is copied to the new ref's (see createRefFromTemplate), so
+  // every binding into it, including an upload a decision binds, moves with it.
+  readdressMedia(
+    manifest.assets,
+    refMediaFolder(template.productCode, template.refNum),
+    refMediaFolder(template.productCode, refNum),
+  );
   let validated;
   try {
     validated = validateManifest(manifest, { productCode: template.productCode, refNum });

@@ -21,7 +21,7 @@ import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import { activitySpec } from "./activity-fixtures.js";
-import { soundMp3, speechWave } from "./audio-fixtures.js";
+import { fakeMp3Encoding, mp3OfWave, soundMp3, speechWave } from "./audio-fixtures.js";
 
 const PROJECT = "speaker-activities";
 const VOICE_ID = "AbCdEfGhIj0123456789";
@@ -139,7 +139,7 @@ describe("speech through the provider seam", () => {
         yield requestEnd("completed");
       },
     });
-    const t = await createTestApp();
+    const t = await createTestApp(fakeMp3Encoding);
     const adopt = t.deps.manager.adopt.bind(t.deps.manager);
     vi.spyOn(t.deps.manager, "adopt").mockImplementation((row) => adopt(row, fakeSession(row)));
     cleanups.push(t.cleanup);
@@ -354,7 +354,7 @@ describe("speech through the provider seam", () => {
     expect((await f.hello()).path).toBeUndefined();
     await f.accept(run);
     const bound = await f.hello();
-    expect(bound.path).toBe(`media/generated/${run.runId}.mp3`);
+    expect(bound.path).toBe("media/loom/p/p-1/audios/english/hello.mp3");
     expect(bound.generatedAudio).toMatchObject({ runId: run.runId, format: "mp3" });
     expect(bound.wordTimings).toEqual(timings);
     // 40 frames of 1152 samples at 44.1 kHz.
@@ -378,7 +378,7 @@ describe("speech through the provider seam", () => {
     expect(strayed.error).toContain("speech.wav");
   });
 
-  it("keeps Gemini speech as before: a WAV, no provider on the run, and no timings even from a stray file", async () => {
+  it("keeps Gemini speech as MP3 made from its WAV, no provider on the run, and no timings even from a stray file", async () => {
     const f = await fixture();
     await f.setVault(["GEMINI_API_KEY"]);
     const run = await f.started("Kore");
@@ -398,8 +398,12 @@ describe("speech through the provider seam", () => {
     expect(summary.status, summary.error ?? "").toBe("succeeded");
     await f.accept(run);
     const bound = await f.hello();
-    expect(bound.path).toBe(`media/generated/${run.runId}.wav`);
-    expect(bound.generatedAudio?.format).toBeUndefined();
+    // The media repository keeps audio as MP3, so Gemini's WAV is converted.
+    expect(bound.path).toBe("media/loom/p/p-1/audios/english/hello.mp3");
+    expect(bound.generatedAudio).toMatchObject({ runId: run.runId, format: "mp3" });
+    const played = await f.client.get(`${f.endpoint}/runs/${run.runId}/audio`);
+    expect(played.headers.get("content-type")).toBe("audio/mpeg");
+    expect(Buffer.from(await played.arrayBuffer())).toEqual(mp3OfWave(speechWave(4800)));
     expect(bound.wordTimings).toBeUndefined();
     expect(bound.durationMs).toBeUndefined();
   });

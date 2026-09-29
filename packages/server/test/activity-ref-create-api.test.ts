@@ -1,7 +1,8 @@
 /**
  * Making a ref from its product's template: only the canonical ref, marked stable, is one;
- * the new ref gets the template's draft under its own number and copies of its generated
- * media, uploads and features; and a refused or failed create leaves no row and no files.
+ * the new ref gets the template's draft under its own number, a copy of the template's media
+ * folder (its accepted media and uploads, not its candidates) with every binding addressed to
+ * it, and its features; and a refused or failed create leaves no row and no files.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -9,14 +10,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { projectDir } from "@prismshadow/penguin-core";
 import type { ActivityDetail, ActivityDraft } from "../src/activities/domain.js";
 import type { ActivityAuthoring } from "../src/mechanisms/activities.js";
-import { activitySpec } from "./activity-fixtures.js";
-import { speechWave } from "./audio-fixtures.js";
+import { activitySpec, refFilesDir, refMediaDir } from "./activity-fixtures.js";
+import { fakeMp3Encoding, mp3OfWave, speechWave } from "./audio-fixtures.js";
 import { imagePng } from "./image-fixtures.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 
 const PROJECT = "refmaker-work";
 const AUDIO_RUN = `run_${"a".repeat(32)}`;
 const IMAGE_RUN = `run_${"c".repeat(32)}`;
+/** A binding into the template's media folder, as the ref numbered `refNum` holds it. */
+const at = (reference: string, refNum: number) =>
+  reference.replace("media/loom/words/words-12/", `media/loom/words/words-${refNum}/`);
 
 describe("POST /:activityId/refs", () => {
   const cleanups: (() => Promise<void>)[] = [];
@@ -26,7 +30,7 @@ describe("POST /:activityId/refs", () => {
   });
 
   async function setup() {
-    const t = await createTestApp();
+    const t = await createTestApp(fakeMp3Encoding);
     cleanups.push(t.cleanup);
     const owner = await provisionUser(t.app, "refmaker");
     const client = apiClient(t.app, owner.cookie);
@@ -127,6 +131,17 @@ describe("POST /:activityId/refs", () => {
       client.post(`${base}/${id}/refs`, body);
     const refsDir = (collectionId: string) =>
       path.join(projectDir(t.root, PROJECT), "activities", collectionId, "activities");
+    /** Nothing of the ref numbered `refNum` is left: no row, no draft files, no media folder. */
+    const gone = async (refNum: number) => {
+      const row = t.deps.db
+        .prepare("SELECT id FROM activities WHERE product_code = 'words' AND ref_num = ?")
+        .get(refNum);
+      expect(row).toBeUndefined();
+      await expect(fs.stat(path.dirname(refFilesDir(t.root, "words", refNum)))).rejects.toThrow();
+      await expect(fs.stat(refMediaDir(t.root, "words", refNum))).rejects.toThrow();
+      const dirs = await fs.readdir(refsDir(template.collectionId)).catch((): string[] => []);
+      expect(dirs.every((id) => id === template.id)).toBe(true);
+    };
     return {
       t,
       client,
@@ -140,7 +155,7 @@ describe("POST /:activityId/refs", () => {
       featureId,
       markStable,
       makeRef,
-      refsDir,
+      gone,
     };
   }
 
@@ -173,8 +188,12 @@ describe("POST /:activityId/refs", () => {
     expect(base).toBeTruthy();
   });
 
-  it("keeps every asset: the same draft under the new number, with its files copied", async () => {
-    const { client, base, template, read, makeRef, dogPath, featureId } = await setup();
+  it("keeps every asset: the same draft under the new number, with its media folder copied", async () => {
+    const { t, client, base, template, read, makeRef, dogPath, featureId } = await setup();
+    // A take the template never accepted stays behind.
+    const candidates = path.join(refMediaDir(t.root, "words", 12), "candidates");
+    await fs.mkdir(candidates, { recursive: true });
+    await fs.writeFile(path.join(candidates, `run_${"f".repeat(32)}.png`), imagePng(1, 1));
     const response = await makeRef(template.id, {
       refNum: 20,
       displayName: "Winter",
@@ -191,15 +210,24 @@ describe("POST /:activityId/refs", () => {
     expect(made.draft.status).toBe("valid");
     expect(made.draft.description).toBe(template.draft.description);
     expect(made.draft.spec).toEqual(template.draft.spec);
-    expect(made.draft.mediaPlan!.manifest).toEqual({
-      ...template.draft.mediaPlan!.manifest,
-      refNum: 20,
-    });
+    // Every binding into the template's media folder is addressed to the new ref's.
+    const expected = structuredClone(template.draft.mediaPlan!.manifest);
+    for (const asset of Object.values(expected.assets).flat())
+      if (asset.path) asset.path = at(asset.path, 20);
+    expect(made.draft.mediaPlan!.manifest).toEqual({ ...expected, refNum: 20 });
+    const hello = made.draft.mediaPlan!.manifest.assets["en-US"]!.find((a) => a.key === "hello")!;
+    expect(hello.path).toBe("media/loom/words/words-20/audios/english/hello.mp3");
+    // The media folder was copied, without the template's candidates.
+    const media = refMediaDir(t.root, "words", 20);
+    expect(await fs.readFile(path.join(media, "images", "english", "cat.png"))).toEqual(
+      imagePng(2, 2),
+    );
+    await expect(fs.stat(path.join(media, "candidates"))).rejects.toThrow();
     const endpoint = `${base}/${made.id}`;
     // Generated audio plays from the new ref though its run belongs to the template.
     const clip = await client.get(`${endpoint}/runs/${AUDIO_RUN}/audio`);
     expect(clip.status, await clip.clone().text()).toBe(200);
-    expect(Buffer.from(await clip.arrayBuffer())).toEqual(speechWave());
+    expect(Buffer.from(await clip.arrayBuffer())).toEqual(mp3OfWave(speechWave()));
     const picture = await client.get(
       `${endpoint}/media-image?${new URLSearchParams({
         language: "en-US",
@@ -209,7 +237,7 @@ describe("POST /:activityId/refs", () => {
     );
     expect(picture.status, await picture.clone().text()).toBe(200);
     const uploaded = await client.get(
-      `${endpoint}/media-upload?${new URLSearchParams({ path: dogPath })}`,
+      `${endpoint}/media-upload?${new URLSearchParams({ path: at(dogPath, 20) })}`,
     );
     expect(uploaded.status).toBe(200);
     const features = (await (await client.get(`${endpoint}/implementation-features`)).json()) as {
@@ -223,7 +251,7 @@ describe("POST /:activityId/refs", () => {
   });
 
   it("clears and binds what the decisions say", async () => {
-    const { template, makeRef, sparePath } = await setup();
+    const { t, template, makeRef, sparePath } = await setup();
     const response = await makeRef(template.id, {
       refNum: 21,
       decisions: [
@@ -240,7 +268,10 @@ describe("POST /:activityId/refs", () => {
     expect(hello.path).toBeUndefined();
     expect(hello.generatedAudio).toBeUndefined();
     const cat = assets.find((asset) => asset.key === "cat")!;
-    expect(cat.path).toBe(sparePath);
+    // The template's upload, as the new ref's copy of it.
+    expect(sparePath.startsWith("media/loom/words/words-12/uploads/")).toBe(true);
+    expect(cat.path).toBe(at(sparePath, 21));
+    expect(await fs.readFile(path.join(t.root, "waf-checkout", cat.path!))).toEqual(imagePng(3, 3));
     expect(cat.generatedImage).toBeUndefined();
     const dog = assets.find((asset) => asset.key === "dog")!;
     expect(dog).toMatchObject({ description: "A wolf" });
@@ -256,6 +287,22 @@ describe("POST /:activityId/refs", () => {
       "activity_exists",
     );
     expect(count()).toBe(before);
+  });
+
+  it("refuses a number whose media folder is already in the media repository", async () => {
+    const { t, template, makeRef, count } = await setup();
+    const before = count();
+    const stray = refMediaDir(t.root, "words", 25);
+    await fs.mkdir(stray, { recursive: true });
+    await fs.writeFile(path.join(stray, "kept.txt"), "someone's");
+    const response = await makeRef(template.id, { refNum: 25, decisions: [] });
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
+      "activity_exists",
+    );
+    expect(count()).toBe(before);
+    // What was there is left alone.
+    expect(await fs.readFile(path.join(stray, "kept.txt"), "utf8")).toBe("someone's");
   });
 
   it("refuses a plan naming what the template lacks, before any ref exists", async () => {
@@ -275,27 +322,32 @@ describe("POST /:activityId/refs", () => {
   });
 
   it("removes the new ref again when binding an upload the template lacks", async () => {
-    const { template, makeRef, count, refsDir } = await setup();
+    const { template, makeRef, count, gone } = await setup();
     const before = count();
     const response = await makeRef(template.id, {
       refNum: 23,
       decisions: [
-        { language: "en-US", assetKey: "cat", action: "bind", path: "media/uploads/none-1.png" },
+        {
+          language: "en-US",
+          assetKey: "cat",
+          action: "bind",
+          path: "media/loom/words/words-12/uploads/none-1.png",
+        },
       ],
     });
     expect(response.status).toBe(422);
     expect(count()).toBe(before);
-    expect(await fs.readdir(refsDir(template.collectionId))).toEqual([template.id]);
+    await gone(23);
   });
 
   it("leaves no row and no directory when copying fails", async () => {
-    const { template, makeRef, count, refsDir } = await setup();
+    const { template, makeRef, count, gone } = await setup();
     const before = count();
     vi.spyOn(fs, "cp").mockRejectedValueOnce(new Error("disk full"));
     const response = await makeRef(template.id, { refNum: 24, decisions: [] });
     expect(response.status).toBe(500);
     expect(count()).toBe(before);
-    expect(await fs.readdir(refsDir(template.collectionId))).toEqual([template.id]);
+    await gone(24);
     // The number is free again.
     const retry = await makeRef(template.id, { refNum: 24, decisions: [] });
     expect(retry.status, await retry.clone().text()).toBe(201);

@@ -52,7 +52,8 @@ function fakeGit(tracked: Set<string>) {
     const joined = args.join(" ");
     if (joined === "remote get-url origin") return ok(`${origin}\n`);
     if (joined === "rev-parse --abbrev-ref HEAD") return ok("main\n");
-    if (joined === "status --porcelain") return ok("");
+    // The clones are clean: nothing authored waits in them, and no file differs from HEAD.
+    if (args[0] === "status" && args[1] === "--porcelain") return ok("");
     if (joined === "rev-list --count @{u}..HEAD") return ok("0\n");
     if (joined === "rev-parse HEAD") return ok("c0ffee\n");
     if (args[0] === "rev-parse" && args[1] === "--verify")
@@ -74,7 +75,11 @@ function fakeGit(tracked: Set<string>) {
     }
     if (args[0] === "tag") return ok(tagReads++ === 0 ? "1.4.0\n" : "1.4.0\n1.5.0\n");
     if (joined === "diff --cached --quiet") return { code: 1, stdout: "", stderr: "" };
-    if (["fetch", "checkout", "reset", "clean", "add", "push", "-c"].includes(args[0]!))
+    if (
+      ["fetch", "checkout", "merge", "stash", "reset", "clean", "add", "push", "-c"].includes(
+        args[0]!,
+      )
+    )
       return ok();
     return { code: 1, stdout: "", stderr: `unexpected: ${joined}` };
   };

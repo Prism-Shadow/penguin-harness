@@ -2,18 +2,18 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { imageMime } from "./image.js";
+import type { UploadHome } from "./ref-media.js";
 import { HttpError } from "../http/errors.js";
 
 /**
- * Media an author supplies by hand, as opposed to media an agent generated. It lives
- * in the activity's own draft workspace under PENGUIN_HOME, never in the shared WAF
- * checkout, which this server only ever reads. A stored file is addressed by the same
- * `media/...` reference a manifest binding uses, so binding an upload is the same act
- * as binding a checkout file.
+ * Media an author supplies by hand, as opposed to media an agent generated. It lives in the
+ * media repository beside the ref's other media, in `media/loom/<pc>/<pc>-<ref>/uploads/`
+ * (see ref-media.ts). A stored file is addressed by the same `media/...` reference a
+ * manifest binding uses, so binding an upload is the same act as binding any other file.
  */
 
-/** The manifest prefix that means "this file is in the workspace, not the checkout". */
-export const UPLOAD_PREFIX = "media/uploads/";
+/** A ref's uploads folder, as a manifest names it: `media/loom/<pc>/<pc>-<ref>/uploads/`. */
+const UPLOAD_REFERENCE = /^media\/loom\/[^/]+\/[^/]+\/uploads\/[^/]+$/;
 
 export const UPLOAD_MAX_BYTES = 32 * 1024 * 1024;
 
@@ -23,7 +23,7 @@ export const UPLOAD_LIST_LIMIT = 2000;
 export type UploadKind = "image" | "audio" | "video";
 
 export interface UploadedMedia {
-  /** The manifest reference, e.g. `media/uploads/cat-1f3a9c2b.png`. */
+  /** The manifest reference, e.g. `media/loom/words/words-1/uploads/cat-1f3a9c2b.png`. */
   path: string;
   name: string;
   kind: UploadKind;
@@ -153,40 +153,46 @@ export function uploadStem(name: string, kind: UploadKind): string {
  * readable, and `storeUpload` compares the whole digest before reusing an existing
  * file, falling back to the full digest on the collision the prefix cannot rule out.
  */
-export function uploadReference(name: string, bytes: Buffer, format: Format, length = 16): string {
+export function uploadReference(
+  home: UploadHome,
+  name: string,
+  bytes: Buffer,
+  format: Format,
+  length = 16,
+): string {
   const digest = createHash("sha256").update(bytes).digest("hex");
-  return `${UPLOAD_PREFIX}${uploadStem(name, format.kind)}-${digest.slice(0, length)}.${format.extension}`;
+  return `${home.prefix}${uploadStem(name, format.kind)}-${digest.slice(0, length)}.${format.extension}`;
 }
 
-/** Whether a manifest binding points into the workspace rather than the checkout. */
+/** Whether a manifest binding names an uploaded file, of whichever ref. */
 export function isUploadReference(reference: string | undefined): boolean {
-  return !!reference && reference.startsWith(UPLOAD_PREFIX);
+  return !!reference && UPLOAD_REFERENCE.test(reference);
 }
 
 /**
- * Resolve an upload reference to a file inside one workspace. The reference is checked
+ * Resolve an upload reference to a file in one ref's uploads. The reference is checked
  * against the same shape a manifest path must satisfy before it is joined, so a stored
- * binding cannot walk out of the uploads directory.
+ * binding cannot walk out of the uploads directory, nor name another ref's.
  */
-export function uploadFile(workspace: string, reference: string): string {
-  const rest = reference.slice(UPLOAD_PREFIX.length);
+export function uploadFile(home: UploadHome, reference: string): string {
+  const rest = reference.slice(home.prefix.length);
   if (
-    !isUploadReference(reference) ||
+    !reference.startsWith(home.prefix) ||
     !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(rest) ||
     rest.includes("..")
   )
     throw new HttpError(400, "media_path_invalid", "The uploaded media reference is invalid.");
-  return path.join(workspace, "media", "uploads", rest);
+  return path.join(home.dir, rest);
 }
 
 /**
- * Write the bytes into the workspace, or reuse the file already holding exactly these
+ * Write the bytes into the ref's uploads, or reuse the file already holding exactly these
  * bytes. An existing name is never taken as proof on its own: the whole digest is
  * compared, and a name that turns out to hold different bytes is widened to the full
  * digest rather than silently binding the wrong content.
  */
 export async function storeUpload(
-  workspace: string,
+  home: UploadHome,
   name: string,
   bytes: Buffer,
 ): Promise<UploadedMedia> {
@@ -195,10 +201,10 @@ export async function storeUpload(
     throw new HttpError(413, "media_too_large", "An uploaded file may be at most 32 MiB.");
   const format = sniffUpload(bytes);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  await fs.mkdir(path.join(workspace, "media", "uploads"), { recursive: true });
+  await fs.mkdir(home.dir, { recursive: true });
   for (const length of [16, sha256.length]) {
-    const reference = uploadReference(name, bytes, format, length);
-    const file = uploadFile(workspace, reference);
+    const reference = uploadReference(home, name, bytes, format, length);
+    const file = uploadFile(home, reference);
     try {
       await fs.writeFile(file, bytes, { flag: "wx" });
     } catch (error) {
@@ -225,15 +231,15 @@ export async function storeUpload(
 }
 
 /**
- * Everything uploaded into one workspace, newest first.
+ * Everything uploaded to one ref, newest first.
  *
  * Deliberately metadata only: a directory entry plus its stat. Reading and hashing
  * every file would make one listing do gigabytes of work on a populated activity, and
  * any member could ask for it repeatedly. The kind comes from the extension this module
  * assigned when it stored the file, and the bytes are sniffed when one is served.
  */
-export async function listUploads(workspace: string): Promise<UploadedMedia[]> {
-  const dir = path.join(workspace, "media", "uploads");
+export async function listUploads(home: UploadHome): Promise<UploadedMedia[]> {
+  const dir = home.dir;
   const names = await fs.readdir(dir).catch(() => [] as string[]);
   const entries: UploadedMedia[] = [];
   for (const name of names.slice(0, UPLOAD_LIST_LIMIT)) {
@@ -242,7 +248,7 @@ export async function listUploads(workspace: string): Promise<UploadedMedia[]> {
     const stat = await fs.lstat(path.join(dir, name)).catch(() => null);
     if (!stat || stat.isSymbolicLink() || !stat.isFile()) continue;
     entries.push({
-      path: `${UPLOAD_PREFIX}${name}`,
+      path: `${home.prefix}${name}`,
       name,
       kind: format.kind,
       mimeType: format.mimeType,
@@ -255,13 +261,17 @@ export async function listUploads(workspace: string): Promise<UploadedMedia[]> {
 
 /** Read one uploaded file back, for a preview or for assembly. */
 export async function readUpload(
-  workspace: string,
+  home: UploadHome,
   reference: string,
 ): Promise<{ bytes: Buffer; mimeType: string }> {
-  const file = uploadFile(workspace, reference);
+  const file = uploadFile(home, reference);
   const stat = await fs.lstat(file).catch(() => null);
   if (!stat || stat.isSymbolicLink() || !stat.isFile())
-    throw new HttpError(404, "media_missing", "This uploaded file is no longer in the workspace.");
+    throw new HttpError(
+      404,
+      "media_missing",
+      "This uploaded file is no longer in the media repository.",
+    );
   if (stat.size > UPLOAD_MAX_BYTES)
     throw new HttpError(413, "media_too_large", "The uploaded file exceeds the 32 MiB limit.");
   const bytes = await fs.readFile(file);

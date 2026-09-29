@@ -133,15 +133,19 @@ export async function buildDeployContext(
       continue;
     }
     if (!gitOk) continue;
-    if (state.clean === false) problems.push({ code: "clone_dirty", repo: entry.repo });
+    // The module and media clones are where activities are authored: work in them is what a
+    // deploy commits, so only the activity-data clone, which is the deploy's own, must be
+    // clean and pushed.
+    const ownOnly = entry.repo === "activityData";
+    if (ownOnly && state.clean === false) problems.push({ code: "clone_dirty", repo: entry.repo });
     if (state.remoteUrlMatches === false)
       problems.push({ code: "clone_remote_mismatch", repo: entry.repo });
-    if (state.ahead !== null && state.ahead > 0)
+    if (ownOnly && state.ahead !== null && state.ahead > 0)
       problems.push({ code: "clone_ahead", repo: entry.repo, count: state.ahead });
     // What git could not say is not ready: a deploy must not start on a guess.
     if (state.clean === null)
       problems.push({ code: "clone_unknown", repo: entry.repo, what: "status" });
-    if (state.ahead === null)
+    if (ownOnly && state.ahead === null)
       problems.push({ code: "clone_unknown", repo: entry.repo, what: "upstream" });
     // The checked-out branch is only shown: the deploy checks out main itself, and a clean
     // clone with nothing unpushed can switch safely.

@@ -31,7 +31,7 @@ const QA_TOKEN = "qa-secret-token";
 function fakeGit() {
   const calls: Array<{ args: string[]; cwd: string }> = [];
   /** Whether the module clone has uncommitted changes, as a failed verify leaves it. */
-  const clone = { dirty: false };
+  const clone = { dirty: false, stashed: false };
   let tagReads = 0;
   const ok = (stdout = ""): DeployGitResult => ({ code: 0, stdout, stderr: "" });
   const read = (dir: string, name: string) =>
@@ -56,8 +56,15 @@ function fakeGit() {
     const joined = args.join(" ");
     if (joined === "remote get-url origin") return ok(`${origin}\n`);
     if (joined === "rev-parse --abbrev-ref HEAD") return ok("main\n");
-    if (joined === "status --porcelain")
+    if (args[0] === "status" && args[1] === "--porcelain")
       return ok(clone.dirty && cwd.includes("modules") ? " M src/index.js\n" : "");
+    // The work in the module clone is set aside, put back, and committed on main.
+    if (cwd.includes("modules")) {
+      if (joined.startsWith("stash push")) clone.stashed = clone.dirty;
+      if (joined.startsWith("stash push")) clone.dirty = false;
+      if (joined === "stash pop") clone.dirty = clone.stashed;
+      if (args[0] === "-c" && args.includes("commit")) clone.dirty = false;
+    }
     if (joined === "rev-list --count @{u}..HEAD") return ok("0\n");
     if (joined === "rev-parse HEAD") return ok("c0ffee\n");
     if (args[0] === "rev-parse" && args[1] === "--verify")
@@ -73,8 +80,11 @@ function fakeGit() {
     }
     if (args[0] === "tag") return ok(tagReads++ === 0 ? "1.4.0\n" : "1.4.0\n1.5.0\n");
     if (joined === "diff --cached --quiet") return { code: 1, stdout: "", stderr: "" };
-    if (joined === "clean -fd -e node_modules") clone.dirty = false;
-    if (["fetch", "checkout", "reset", "clean", "add", "push", "-c"].includes(args[0]!))
+    if (
+      ["fetch", "checkout", "merge", "stash", "reset", "clean", "add", "push", "-c"].includes(
+        args[0]!,
+      )
+    )
       return ok();
     return { code: 1, stdout: "", stderr: `unexpected: ${joined}` };
   };
@@ -371,14 +381,15 @@ describe("activity deploy release routes", () => {
     await vi.waitFor(async () => expect((await state()).run?.status).toBe("succeeded"));
   });
 
-  it("starts again after a failed verify left the clone dirty, and prepares once per verify", async () => {
+  it("starts again after a failed verify left work in the clone, commits it, and prepares once per verify", async () => {
     const { client, endpoint, state, git, npm } = await setup({ failLint: true });
     expect((await client.post(`${endpoint}/deploy`, { stage: "release" })).status).toBe(202);
     await vi.waitFor(async () => expect((await state()).run?.status).toBe("failed"));
-    // The copied files are still in the clone: readiness says so, and nothing is blocked by it.
+    // The copied files are still in the clone: the module clone holds authored work, so
+    // readiness does not count that against it, and nothing is blocked by it.
     git.clone.dirty = true;
     const failed = await state();
-    expect(failed.context.problems).toContainEqual({ code: "clone_dirty", repo: "module" });
+    expect(failed.context.problems).not.toContainEqual({ code: "clone_dirty", repo: "module" });
     expect(failed.stages[0]).toMatchObject({
       stage: "verify_module",
       status: "failed",
@@ -396,8 +407,15 @@ describe("activity deploy release routes", () => {
     const moduleCalls = git.calls
       .filter((call) => call.cwd.includes("modules"))
       .map((call) => call.args.join(" "));
-    expect(moduleCalls).toContain("checkout -f main");
-    expect(moduleCalls).toContain("clean -fd -e node_modules");
+    // The work was carried onto main and committed there, never reset or cleaned away.
+    expect(moduleCalls).toContain("stash push --include-untracked -m penguin-harness deploy");
+    expect(moduleCalls).toContain("checkout main");
+    expect(moduleCalls).toContain("stash pop");
+    expect(moduleCalls).toContain("add --all");
+    expect(moduleCalls).toContainEqual(
+      expect.stringMatching(/commit -m Penguin Harness: words as authored$/),
+    );
+    expect(moduleCalls.some((call) => /^(reset|clean|checkout -f)\b/.test(call))).toBe(false);
 
     // Prepare works on what verify leaves; run on its own again it would drop that content.
     const again = await client.post(`${endpoint}/deploy`, { stage: "prepare_deploy" });

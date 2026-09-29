@@ -259,7 +259,7 @@ describe("sound generation through Harness sessions", () => {
     });
     expect(accepted.status, await accepted.clone().text()).toBe(200);
     const bound = await door();
-    expect(bound.path).toBe(`media/generated/${run.runId}.mp3`);
+    expect(bound.path).toBe("media/loom/p/p-1/audios/english/door.mp3");
     expect(bound.generatedAudio).toMatchObject({ runId: run.runId, format: "mp3" });
     // Playback and the requested length stay; the take's own length is not recorded.
     expect(bound).toMatchObject({ kind: "sfx", channel: "sfx", loop: false, volume: 1 });
@@ -277,9 +277,7 @@ describe("sound generation through Harness sessions", () => {
       assembly,
       (await f.current()).draft.contentRevision,
     );
-    expect(await fs.readFile(path.join(assembly, `media/generated/${run.runId}.mp3`))).toEqual(
-      fixtureBytes,
-    );
+    expect(await fs.readFile(path.join(assembly, bound.path!))).toEqual(fixtureBytes);
   });
 
   it("refuses to accept after the prompt was edited, and fails a run whose output is not MP3", async () => {

@@ -16,8 +16,8 @@ import type { Reassembly } from "../src/hmr/capabilities.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
-import { activitySpec } from "./activity-fixtures.js";
-import { speechWave } from "./audio-fixtures.js";
+import { activitySpec, refMediaDir } from "./activity-fixtures.js";
+import { fakeMp3Encoding, mp3OfWave, speechWave } from "./audio-fixtures.js";
 import { imagePng } from "./image-fixtures.js";
 import { prepareModule, verifyMediaArtifacts } from "../src/activities/waf-module.js";
 
@@ -136,7 +136,7 @@ describe("activity generation through Harness sessions", () => {
         yield requestEnd(fatal ? "fatal" : "completed");
       },
     });
-    const t = await createTestApp();
+    const t = await createTestApp(fakeMp3Encoding);
     // Newly created sessions are adopted directly (the loader is only for resumes).
     // Substitute execution at that seam while retaining real creation and indexing.
     const adopt = t.deps.manager.adopt.bind(t.deps.manager);
@@ -370,13 +370,17 @@ describe("activity generation through Harness sessions", () => {
           manifest.assets["en-US"]![0]!.generatedAudio = {
             runId: stored.runId,
             sha256: stored.sha256,
+            format: "mp3",
           };
-          manifest.assets["en-US"]![0]!.path = `media/generated/${stored.runId}.wav`;
+          manifest.assets["en-US"]![0]!.path = "media/loom/p/p-1/audios/english/voice.mp3";
         }
         manifest.assets["es-MX"] = [
           {
             ...manifest.assets["en-US"]![0]!,
-            ...(type === "image" ? { description: "Un pingüino azul" } : { script: "Di hola" }),
+            ...(type === "image"
+              ? { description: "Un pingüino azul" }
+              : // The same take, at the Spanish asset's own path.
+                { script: "Di hola", path: "media/loom/p/p-1/audios/spanish/voice.mp3" }),
           },
         ];
         const bound = await client.put(`${endpoint}/media`, {
@@ -452,7 +456,7 @@ describe("activity generation through Harness sessions", () => {
     };
   }
 
-  it("keeps speech as a candidate until acceptance, preserves accepted audio on regeneration, and stages it for WAF", async () => {
+  it("keeps speech as an MP3 candidate until acceptance, preserves accepted audio on regeneration, and stages it for WAF", async () => {
     const f = await fixture("audio");
     expect((await f.startAudio(false)).status).toBe(400);
     const run = (await (await f.startAudio()).json()) as ActivityRun;
@@ -470,8 +474,13 @@ describe("activity generation through Harness sessions", () => {
     const current = async () => (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
     expect((await current()).draft.mediaPlan!.manifest.assets["en-US"]![0]!.path).toBeUndefined();
     const playback = await f.client.get(`${f.endpoint}/runs/${run.runId}/audio`);
-    expect(playback.headers.get("content-type")).toBe("audio/wav");
-    expect(Buffer.from(await playback.arrayBuffer())).toEqual(speechWave());
+    // Gemini's WAV is kept as MP3, as the media repository keeps audio.
+    const speech = mp3OfWave(speechWave());
+    expect(playback.headers.get("content-type")).toBe("audio/mpeg");
+    expect(Buffer.from(await playback.arrayBuffer())).toEqual(speech);
+    const media = refMediaDir(f.t.root, "p", 1);
+    const candidate = path.join(media, "candidates", `${run.runId}.mp3`);
+    expect(await fs.readFile(candidate)).toEqual(speech);
     const outsider = await provisionUser(f.t.app, "audio_outsider");
     expect(
       (await apiClient(f.t.app, outsider.cookie).get(`${f.endpoint}/runs/${run.runId}/audio`))
@@ -482,7 +491,22 @@ describe("activity generation through Harness sessions", () => {
     });
     expect(accepted.status, await accepted.clone().text()).toBe(200);
     const saved = (await current()).draft;
-    expect(saved.mediaPlan!.manifest.assets["en-US"]![0]!.generatedAudio?.runId).toBe(run.runId);
+    const voice = saved.mediaPlan!.manifest.assets["en-US"]![0]!;
+    expect(voice.generatedAudio).toMatchObject({ runId: run.runId, format: "mp3" });
+    // Accepted: at the asset's own path in the ref's media folder, with Loom's sidecar beside it.
+    expect(voice.path).toBe(`media/loom/p/p-1/audios/english/${voice.key}.mp3`);
+    const acceptedFile = path.join(media, "audios", "english", `${voice.key}.mp3`);
+    expect(await fs.readFile(acceptedFile)).toEqual(speech);
+    expect(
+      JSON.parse(await fs.readFile(acceptedFile.replace(/\.mp3$/, ".json"), "utf8")),
+    ).toMatchObject({ fileName: `${voice.key}.mp3`, text: voice.script });
+    await expect(fs.stat(candidate)).rejects.toThrow();
+    // Played back from where it was accepted.
+    expect(
+      Buffer.from(
+        await (await f.client.get(`${f.endpoint}/runs/${run.runId}/audio`)).arrayBuffer(),
+      ),
+    ).toEqual(speech);
     const second = (await (await f.startAudio()).json()) as ActivityRun;
     const secondSession = f.t.deps.sessionsRepo.findById(second.sessionId!)!;
     const speechInput = JSON.parse(
@@ -505,9 +529,7 @@ describe("activity generation through Harness sessions", () => {
       workspace,
       saved.contentRevision,
     );
-    expect(await fs.readFile(path.join(workspace, `media/generated/${run.runId}.wav`))).toEqual(
-      speechWave(),
-    );
+    expect(await fs.readFile(path.join(workspace, voice.path!))).toEqual(speech);
     const waf = path.join(f.t.root, "audio-waf");
     for (const name of ["framework/src", "modules", "media"])
       await fs.mkdir(path.join(waf, name), { recursive: true });
@@ -518,13 +540,13 @@ describe("activity generation through Harness sessions", () => {
       "utf8",
     );
     expect(exported).not.toContain("generatedAudio");
-    expect(exported).toContain(run.runId);
-    const previewAudio = path.join(workspace, "preview/media/generated", `${run.runId}.wav`);
+    expect(exported).toContain(voice.path!);
+    const previewAudio = path.join(workspace, "preview", voice.path!);
     await fs.mkdir(path.dirname(previewAudio), { recursive: true });
-    await fs.writeFile(previewAudio, speechWave());
+    await fs.writeFile(previewAudio, speech);
     const read = (file: string) => fs.readFile(file, "utf8");
     await verifyMediaArtifacts(workspace, await current(), read);
-    await fs.writeFile(previewAudio, speechWave(96));
+    await fs.writeFile(previewAudio, mp3OfWave(speechWave(96)));
     await expect(verifyMediaArtifacts(workspace, await current(), read)).rejects.toThrow(
       "accepted speech audio",
     );
@@ -625,7 +647,7 @@ describe("activity generation through Harness sessions", () => {
     const candidateResult = JSON.parse(result.candidate!) as { runId: string; sha256: string };
     const forgedManifest = structuredClone(beforeAccept.draft.mediaPlan!.manifest);
     const forgedAsset = forgedManifest.assets["en-US"]![0]!;
-    forgedAsset.path = `media/generated/${run.runId}.png`;
+    forgedAsset.path = "media/loom/p/p-1/images/english/cover.png";
     forgedAsset.generatedImage = candidateResult;
     const forged = await f.client.put(`${f.endpoint}/media`, {
       expectedRevision: beforeAccept.draft.contentRevision,
@@ -647,11 +669,22 @@ describe("activity generation through Harness sessions", () => {
     expect(accepted.status, await accepted.clone().text()).toBe(200);
     const saved = (await current()).draft;
     const savedAsset = saved.mediaPlan!.manifest.assets["en-US"]![0]!;
-    expect(savedAsset.path).toBe(`media/generated/${run.runId}.png`);
+    expect(savedAsset.path).toBe("media/loom/p/p-1/images/english/cover.png");
     expect(savedAsset.generatedImage).toEqual({
       runId: run.runId,
       sha256: expect.any(String),
     });
+    // The take is at the asset's path in the ref's media folder, with Loom's sidecar, and the
+    // candidate is gone.
+    const images = path.join(refMediaDir(f.t.root, "p", 1), "images", "english");
+    expect(await fs.readFile(path.join(images, "cover.png"))).toEqual(imagePng());
+    expect(JSON.parse(await fs.readFile(path.join(images, "cover.json"), "utf8"))).toMatchObject({
+      fileName: "cover.png",
+      text: "A blue penguin",
+    });
+    await expect(
+      fs.stat(path.join(refMediaDir(f.t.root, "p", 1), "candidates", `${run.runId}.png`)),
+    ).rejects.toThrow();
     const retainedManifest = structuredClone(saved.mediaPlan!.manifest);
     retainedManifest.assets["en-US"]![0]!.description = "A blue penguin, editorial update";
     const retainedResponse = await f.client.put(`${f.endpoint}/media`, {
@@ -688,15 +721,13 @@ describe("activity generation through Harness sessions", () => {
       workspace,
       retained.contentRevision,
     );
-    expect(await fs.readFile(path.join(workspace, `media/generated/${run.runId}.png`))).toEqual(
-      imagePng(),
-    );
+    expect(await fs.readFile(path.join(workspace, savedAsset.path!))).toEqual(imagePng());
     const waf = path.join(f.t.root, "image-waf");
     for (const name of ["framework/src", "modules", "media"])
       await fs.mkdir(path.join(waf, name), { recursive: true });
     await fs.writeFile(path.join(waf, "framework/package.json"), "{}");
     await prepareModule(workspace, await current(), waf);
-    const previewImage = path.join(workspace, "preview/media/generated", `${run.runId}.png`);
+    const previewImage = path.join(workspace, "preview", savedAsset.path!);
     await fs.mkdir(path.dirname(previewImage), { recursive: true });
     await fs.writeFile(previewImage, imagePng());
     const read = (file: string) => fs.readFile(file, "utf8");
@@ -828,8 +859,9 @@ describe("activity generation through Harness sessions", () => {
         f.activity.id,
         afterAsset.generatedAudio!.runId,
         afterAsset.generatedAudio!.sha256,
+        afterAsset.generatedAudio!.format,
       ),
-    ).toEqual(speechWave());
+    ).toEqual(mp3OfWave(speechWave()));
     expect(afterAsset.usages).toEqual(beforeAsset.usages);
     expect(after.draft.spec).toEqual(beforeSpec);
   });

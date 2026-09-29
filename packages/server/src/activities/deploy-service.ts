@@ -24,7 +24,7 @@ import type { Config, Db } from "../hmr/capabilities.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import { writeSecretFile } from "../secret-file.js";
-import { sandboxMediaRoot, sandboxModuleRoot, withinRoot } from "./sandbox-paths.js";
+import { sandboxModuleRoot, withinRoot } from "./sandbox-paths.js";
 import { exportRevision, manifestAssetList, type ExportRef } from "./deploy-export.js";
 import type { ActivityDetail, ActivityProduct } from "./domain.js";
 import type { WafWorkspace } from "./waf-workspace.js";
@@ -720,7 +720,6 @@ export class ActivityDeployService implements ActivityDeploys {
     };
     const siblings = await this.productRefs(projectId, deploying, product);
     const refs: ExportRef[] = [];
-    const draftMediaRoots: string[] = [];
     const code = deploying.productCode;
     const canonical = product.canonicalRefNum;
     for (const ref of siblings) {
@@ -748,16 +747,6 @@ export class ActivityDeployService implements ActivityDeploys {
         assets: manifestAssetList(ref.draft.mediaPlan?.manifest),
         archived: ref.archived,
       });
-      draftMediaRoots.push(
-        sandboxMediaRoot({
-          draftWorkspace: this.activities.draftWorkspace(
-            projectId,
-            ref.collectionId,
-            ref.id,
-            ref.draft.draftId,
-          ),
-        }),
-      );
     }
     const spec = (deploying.draft.spec ?? null) as {
       title?: unknown;
@@ -770,7 +759,6 @@ export class ActivityDeployService implements ActivityDeploys {
       contentRevision: deploying.draft.contentRevision,
       productRevision: exportRevision(siblings),
       refs,
-      draftMediaRoots,
     };
   }
 

@@ -13,19 +13,23 @@ import {
   uploadReference,
   uploadStem,
 } from "../src/activities/upload.js";
+import { uploadHome, type UploadHome } from "../src/activities/ref-media.js";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-async function workspace(): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-upload-test-"));
+/** A ref's uploads folder in a fresh WAF root: `media/loom/words/words-1/uploads/`. */
+async function workspace(): Promise<UploadHome> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-upload-test-"));
   cleanups.push(async () => {
-    await fs.rm(dir, { recursive: true, force: true, maxRetries: 10 });
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10 });
   });
-  return dir;
+  return uploadHome(root, "words", 1);
 }
+
+const home = uploadHome(path.join(os.tmpdir(), "waf"), "words", 1);
 
 const png = Buffer.concat([
   Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -74,42 +78,50 @@ describe("upload naming", () => {
 
   it("puts the content hash in the name so the same file lands on one path", () => {
     const format = sniffUpload(png);
-    const first = uploadReference("cat.png", png, format);
-    expect(first).toMatch(/^media\/uploads\/cat-[a-f0-9]{16}\.png$/);
-    expect(uploadReference("cat.png", png, format)).toBe(first);
+    const first = uploadReference(home, "cat.png", png, format);
+    expect(first).toMatch(/^media\/loom\/words\/words-1\/uploads\/cat-[a-f0-9]{16}\.png$/);
+    expect(uploadReference(home, "cat.png", png, format)).toBe(first);
     const other = Buffer.concat([png, Buffer.from([1])]);
-    expect(uploadReference("cat.png", other, sniffUpload(other))).not.toBe(first);
+    expect(uploadReference(home, "cat.png", other, sniffUpload(other))).not.toBe(first);
     // The full digest is what a prefix collision falls back to.
-    expect(uploadReference("cat.png", png, format, 64)).toMatch(
-      /^media\/uploads\/cat-[a-f0-9]{64}\.png$/,
+    expect(uploadReference(home, "cat.png", png, format, 64)).toMatch(
+      /^media\/loom\/words\/words-1\/uploads\/cat-[a-f0-9]{64}\.png$/,
     );
   });
 
-  it("recognises which bindings live in the workspace", () => {
-    expect(isUploadReference("media/uploads/cat-1234abcd.png")).toBe(true);
+  it("recognises which bindings are uploads, of whichever ref", () => {
+    expect(isUploadReference("media/loom/words/words-1/uploads/cat-1234abcd.png")).toBe(true);
+    expect(isUploadReference("media/loom/words/words-7/uploads/cat-1234abcd.png")).toBe(true);
+    expect(isUploadReference("media/loom/words/words-1/uploads/nested/cat.png")).toBe(false);
+    expect(isUploadReference("media/uploads/cat-1234abcd.png")).toBe(false);
     expect(isUploadReference("media/images/cat.png")).toBe(false);
-    expect(isUploadReference("media/generated/run_x.png")).toBe(false);
+    expect(isUploadReference("media/loom/words/words-1/images/english/cat.png")).toBe(false);
     expect(isUploadReference(undefined)).toBe(false);
   });
 
   it("refuses to resolve a reference that would leave the uploads directory", async () => {
     const dir = await workspace();
-    expect(() => uploadFile(dir, "media/uploads/../../escape.png")).toThrow(/invalid/);
-    expect(() => uploadFile(dir, "media/uploads/nested/file.png")).toThrow(/invalid/);
+    const uploads = "media/loom/words/words-1/uploads/";
+    expect(() => uploadFile(dir, `${uploads}../../escape.png`)).toThrow(/invalid/);
+    expect(() => uploadFile(dir, `${uploads}nested/file.png`)).toThrow(/invalid/);
     expect(() => uploadFile(dir, "media/images/cat.png")).toThrow(/invalid/);
-    expect(uploadFile(dir, "media/uploads/cat-1234abcd.png")).toBe(
-      path.join(dir, "media", "uploads", "cat-1234abcd.png"),
+    // Another ref's upload is not this ref's to read.
+    expect(() => uploadFile(dir, "media/loom/words/words-2/uploads/cat-1234abcd.png")).toThrow(
+      /invalid/,
+    );
+    expect(uploadFile(dir, `${uploads}cat-1234abcd.png`)).toBe(
+      path.join(dir.dir, "cat-1234abcd.png"),
     );
   });
 });
 
 describe("upload storage", () => {
-  it("writes inside the activity workspace and reads back the same bytes", async () => {
+  it("writes into the ref's uploads folder and reads back the same bytes", async () => {
     const dir = await workspace();
     const stored = await storeUpload(dir, "Cat.png", png);
     expect(stored).toMatchObject({ kind: "image", mimeType: "image/png", byteLength: png.length });
-    expect(stored.path.startsWith("media/uploads/")).toBe(true);
-    const file = path.join(dir, "media", "uploads", stored.name);
+    expect(stored.path.startsWith("media/loom/words/words-1/uploads/")).toBe(true);
+    const file = path.join(dir.dir, stored.name);
     expect(await fs.readFile(file)).toEqual(png);
     const read = await readUpload(dir, stored.path);
     expect(read.bytes).toEqual(png);
@@ -129,12 +141,12 @@ describe("upload storage", () => {
     const first = await storeUpload(dir, "cat.png", png);
     // Stand in for a digest-prefix collision: different bytes already under that name.
     const other = Buffer.concat([png, Buffer.from([7, 7, 7])]);
-    await fs.writeFile(path.join(dir, "media", "uploads", first.name), other);
+    await fs.writeFile(path.join(dir.dir, first.name), other);
     const second = await storeUpload(dir, "cat.png", png);
     expect(second.path).not.toBe(first.path);
     expect(await readUpload(dir, second.path)).toMatchObject({ bytes: png });
     // The colliding name still holds the bytes that were actually written there.
-    expect(await fs.readFile(path.join(dir, "media", "uploads", first.name))).toEqual(other);
+    expect(await fs.readFile(path.join(dir.dir, first.name))).toEqual(other);
   });
 
   it("refuses an empty file and an unsupported format", async () => {
@@ -149,7 +161,7 @@ describe("upload storage", () => {
     const dir = await workspace();
     await storeUpload(dir, "cat.png", png);
     await storeUpload(dir, "bell.wav", wav);
-    await fs.writeFile(path.join(dir, "media", "uploads", "notes.txt"), "hello", "utf8");
+    await fs.writeFile(path.join(dir.dir, "notes.txt"), "hello", "utf8");
     const listed = await listUploads(dir);
     expect(listed.map((entry) => entry.kind).sort()).toEqual(["audio", "image"]);
     expect(listed.some((entry) => entry.name === "notes.txt")).toBe(false);
@@ -187,8 +199,8 @@ describe("upload storage", () => {
   it("reports a binding whose file is gone instead of serving nothing", async () => {
     const dir = await workspace();
     const stored = await storeUpload(dir, "cat.png", png);
-    await fs.rm(path.join(dir, "media", "uploads", stored.name));
-    await expect(readUpload(dir, stored.path)).rejects.toThrow(/no longer in the workspace/);
+    await fs.rm(path.join(dir.dir, stored.name));
+    await expect(readUpload(dir, stored.path)).rejects.toThrow(/no longer in the media repository/);
   });
 
   it("returns an empty list when nothing was ever uploaded", async () => {

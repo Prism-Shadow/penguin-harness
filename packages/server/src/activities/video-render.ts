@@ -27,11 +27,6 @@ export const RENDER_MAX_MS = 65_000;
 /** The largest recording kept. */
 export const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
 
-/** Where a recording is kept in the draft workspace, and the path an accepted one is bound to. */
-export const VIDEO_DIR = "videos";
-export function generatedVideoPath(runId: string): string {
-  return `media/generated/${runId}.webm`;
-}
 
 /** Waits for the bridge's promise and answers the length the page says it plays for. */
 const READY_SCRIPT =

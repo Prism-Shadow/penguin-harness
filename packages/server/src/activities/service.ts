@@ -17,8 +17,26 @@ import type { Config, Db } from "../hmr/capabilities.js";
 import type { ActivityAuthoring } from "../mechanisms/activities.js";
 import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import { HttpError } from "../http/errors.js";
-import { generatedAudioPath, planMedia, validateManifest, validateMediaCoverage } from "./media.js";
-import { VIDEO_DIR, generatedVideoPath, inspectWebm, readVideoFile } from "./video-render.js";
+import {
+  generatedAudioExtension,
+  generatedMediaPath,
+  planMedia,
+  validateManifest,
+  validateMediaCoverage,
+} from "./media.js";
+import { inspectWebm, readVideoFile } from "./video-render.js";
+import {
+  candidateReference,
+  copyRefMedia,
+  mediaFile,
+  readdressMedia,
+  refMediaFolder,
+  uploadHome,
+  wavToMp3,
+  writeSidecar,
+  type AudioEncodePorts,
+  type UploadHome,
+} from "./ref-media.js";
 import type { VideoResult, VideoTarget } from "./video-types.js";
 import { mediaTextField, type MediaTextTarget } from "./media-text.js";
 import { AUDIO_MAX_BYTES, type AudioResult, type AudioTarget } from "./audio.js";
@@ -149,6 +167,7 @@ export class ActivityService implements ActivityAuthoring {
   @Use() private readonly mediaLibrary!: MediaLibraryPorts;
   @Use() private readonly phonemes!: ActivityPhonemes;
   @Use() private readonly wafWorkspace!: WafWorkspace;
+  @Use() private readonly audioEncode!: AudioEncodePorts;
   private readonly locks = new ActivityLocks();
   /** The activities whose lock the running work already holds, through `exclusive`. */
   private readonly held = new AsyncLocalStorage<ReadonlySet<string>>();
@@ -178,9 +197,7 @@ export class ActivityService implements ActivityAuthoring {
     const bound = activity.draft.mediaPlan?.manifest.assets[input.language]?.find(
       (asset) => asset.key === input.assetKey,
     )?.path;
-    // An upload lives in this activity's workspace; only checkout media needs a WAF root.
-    if (isUploadReference(bound))
-      return readUpload(this.activityWorkspace(projectId, activity), bound!);
+    if (isUploadReference(bound)) return readUpload(await this.uploads(activity), bound!);
     return readBoundImage(activity, input, await this.wafWorkspace.root());
   }
 
@@ -254,12 +271,12 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<UploadedMedia> {
     return this.projectWork.run(projectId, async () => {
       const activity = await this.getActivity(projectId, activityId);
-      return storeUpload(this.activityWorkspace(projectId, activity), name, bytes);
+      return storeUpload(await this.uploads(activity), name, bytes);
     });
   }
   async listMedia(projectId: string, activityId: string): Promise<UploadedMedia[]> {
     const activity = await this.getActivity(projectId, activityId);
-    return listUploads(this.activityWorkspace(projectId, activity));
+    return listUploads(await this.uploads(activity));
   }
   async uploadContent(
     projectId: string,
@@ -267,7 +284,7 @@ export class ActivityService implements ActivityAuthoring {
     reference: string,
   ): Promise<{ bytes: Buffer; mimeType: string }> {
     const activity = await this.getActivity(projectId, activityId);
-    return readUpload(this.activityWorkspace(projectId, activity), reference);
+    return readUpload(await this.uploads(activity), reference);
   }
   /**
    * Every file uploaded to a live activity of this project, newest first. Only metadata is
@@ -276,11 +293,11 @@ export class ActivityService implements ActivityAuthoring {
    */
   async projectMedia(projectId: string): Promise<ProjectMediaListing> {
     const files: LibraryFile[] = [];
+    const root = await this.requireWafRoot();
     for (const activity of await this.listActivities(projectId)) {
-      const draftId = this.latestDraftId(activity.id);
-      if (!draftId) continue;
-      const workspace = this.draftWorkspace(projectId, activity.collectionId, activity.id, draftId);
-      for (const upload of await listUploads(workspace))
+      for (const upload of await listUploads(
+        uploadHome(root, activity.productCode, activity.refNum),
+      ))
         files.push({
           ...upload,
           activityId: activity.id,
@@ -319,22 +336,19 @@ export class ActivityService implements ActivityAuthoring {
     const unique = [
       ...new Map(items.map((item) => [`${item.activityId}\n${item.path}`, item])).values(),
     ];
-    const workspaces = new Map<string, string>();
-    const files: { file: string; workspace: string; path: string }[] = [];
+    const homes = new Map<string, UploadHome>();
+    const files: { file: string; home: UploadHome; path: string }[] = [];
     let total = 0;
     for (const item of unique) {
-      let workspace = workspaces.get(item.activityId);
-      if (!workspace) {
-        workspace = this.activityWorkspace(
-          projectId,
-          await this.getActivity(projectId, item.activityId),
-        );
-        workspaces.set(item.activityId, workspace);
+      let home = homes.get(item.activityId);
+      if (!home) {
+        home = await this.uploads(await this.getActivity(projectId, item.activityId));
+        homes.set(item.activityId, home);
       }
       // A path that is not an upload of this activity is simply not one of its files.
       let file: string | null = null;
       try {
-        file = uploadFile(workspace, item.path);
+        file = uploadFile(home, item.path);
       } catch {
         file = null;
       }
@@ -352,12 +366,12 @@ export class ActivityService implements ActivityAuthoring {
           "bundle_too_large",
           "The chosen files are more than 200 MiB together.",
         );
-      files.push({ file, workspace, path: item.path });
+      files.push({ file, home, path: item.path });
     }
     const names = bundleEntryNames(files.map((entry) => path.basename(entry.file)));
     const entries: Record<string, Uint8Array> = {};
     for (const [index, entry] of files.entries()) {
-      const { bytes } = await readUpload(entry.workspace, entry.path);
+      const { bytes } = await readUpload(entry.home, entry.path);
       entries[names[index]!] = bytes;
     }
     // Images, sound and video are compressed already; storing them is as small and faster.
@@ -382,7 +396,7 @@ export class ActivityService implements ActivityAuthoring {
     const activity = await this.getActivity(projectId, activityId);
     if (activity.draft.contentRevision !== expectedRevision)
       throw new HttpError(409, "draft_conflict", "Media changed before assembly.");
-    const source = this.activityWorkspace(projectId, activity);
+    const source = await this.uploads(activity);
     const copied = new Set<string>();
     for (const asset of Object.values(activity.draft.mediaPlan?.manifest.assets ?? {}).flat()) {
       if (!isUploadReference(asset.path) || copied.has(asset.path!)) continue;
@@ -394,19 +408,6 @@ export class ActivityService implements ActivityAuthoring {
     }
   }
 
-  private imagePath(
-    projectId: string,
-    activity: ActivityRecord & { draft: ActivityDraft },
-    runId: string,
-  ) {
-    if (!/^run_[a-f0-9]{32}$/.test(runId))
-      throw new HttpError(404, "run_not_found", "Image candidate not found.");
-    return path.join(
-      this.draftWorkspace(projectId, activity.collectionId, activity.id, activity.draft.draftId),
-      "images",
-      `${runId}.png`,
-    );
-  }
   async storeImage(
     projectId: string,
     activityId: string,
@@ -416,9 +417,7 @@ export class ActivityService implements ActivityAuthoring {
     return this.projectWork.run(projectId, async () => {
       const activity = await this.getActivity(projectId, activityId);
       const result = inspectPng(bytes, runId);
-      const file = this.imagePath(projectId, activity, runId);
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, bytes, { flag: "wx" });
+      await this.storeCandidate(activity, runId, "png", bytes);
       return result;
     });
   }
@@ -430,7 +429,7 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<Uint8Array> {
     const activity = await this.getActivity(projectId, activityId);
     const bytes = await readArtifactBytes(
-      this.imagePath(projectId, activity, runId),
+      await this.generatedFile(activity, "generatedImage", runId, "png"),
       GENERATED_IMAGE_MAX_BYTES,
     );
     if (inspectPng(bytes, runId).sha256 !== sha256)
@@ -445,7 +444,7 @@ export class ActivityService implements ActivityAuthoring {
     expectedRevision: string,
   ): Promise<ActivityDraft> {
     await this.readImage(projectId, activityId, result.runId, result.sha256);
-    return this.change(projectId, activityId, expectedRevision, (draft) => {
+    return this.change(projectId, activityId, expectedRevision, async (draft, activity) => {
       const plan = draft.mediaPlan;
       if (!plan || plan.specRevision !== contentRevision(draft.spec) || draft.status !== "valid")
         throw new HttpError(
@@ -463,8 +462,12 @@ export class ActivityService implements ActivityAuthoring {
           "image_changed",
           "The image description changed. Generate a new candidate.",
         );
-      asset.path = `media/generated/${result.runId}.png`;
+      asset.path = generatedMediaPath(activity, target.language, asset, "png");
       asset.generatedImage = { runId: result.runId, sha256: result.sha256 };
+      await this.acceptCandidate(activity, result.runId, "png", asset.path, {
+        text: asset.description,
+        model: "Penguin Harness",
+      });
       return { ...draft, mediaPlan: { ...plan, manifest } };
     });
   }
@@ -541,16 +544,6 @@ export class ActivityService implements ActivityAuthoring {
     }
   }
 
-  /** Where a run's recording is kept in the draft workspace: `videos/<runId>.webm`. */
-  private videoPath(
-    projectId: string,
-    activity: ActivityRecord & { draft: ActivityDraft },
-    runId: string,
-  ) {
-    if (!/^run_[a-f0-9]{32}$/.test(runId))
-      throw new HttpError(404, "run_not_found", "Video candidate not found.");
-    return path.join(this.activityWorkspace(projectId, activity), VIDEO_DIR, `${runId}.webm`);
-  }
   async storeVideo(
     projectId: string,
     activityId: string,
@@ -565,16 +558,16 @@ export class ActivityService implements ActivityAuthoring {
       } catch (error) {
         throw new HttpError(422, "video_invalid", (error as Error).message);
       }
-      const file = this.videoPath(projectId, activity, runId);
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, bytes, { flag: "wx" });
+      await this.storeCandidate(activity, runId, "webm", bytes);
       return { runId, ...inspected };
     });
   }
   async discardVideo(projectId: string, activityId: string, runId: string): Promise<void> {
     await this.projectWork.run(projectId, async () => {
       const activity = await this.getActivity(projectId, activityId);
-      await fs.rm(this.videoPath(projectId, activity, runId), { force: true });
+      const root = await this.requireWafRoot();
+      const reference = candidateReference(activity.productCode, activity.refNum, runId, "webm");
+      await fs.rm(mediaFile(root, reference)!, { force: true });
     });
   }
   async readVideo(
@@ -588,7 +581,9 @@ export class ActivityService implements ActivityAuthoring {
       new HttpError(409, "video_changed", "The stored video changed. Record it again.");
     let bytes: Buffer;
     try {
-      bytes = await readVideoFile(this.videoPath(projectId, activity, runId));
+      bytes = await readVideoFile(
+        await this.generatedFile(activity, "generatedVideo", runId, "webm"),
+      );
     } catch (error) {
       if (error instanceof HttpError) throw error;
       if ((error as NodeJS.ErrnoException).code === "ENOENT")
@@ -611,7 +606,7 @@ export class ActivityService implements ActivityAuthoring {
     expectedRevision: string,
   ): Promise<ActivityDraft> {
     await this.readVideo(projectId, activityId, result.runId, result.sha256);
-    return this.change(projectId, activityId, expectedRevision, (draft) => {
+    return this.change(projectId, activityId, expectedRevision, async (draft, activity) => {
       const plan = draft.mediaPlan;
       if (!plan || plan.specRevision !== contentRevision(draft.spec) || draft.status !== "valid")
         throw new HttpError(
@@ -629,8 +624,9 @@ export class ActivityService implements ActivityAuthoring {
           "video_asset_changed",
           "The video or animation this was recorded for is no longer in the media plan.",
         );
-      asset.path = generatedVideoPath(result.runId);
+      asset.path = generatedMediaPath(activity, target.language, asset, "webm");
       asset.generatedVideo = { runId: result.runId, sha256: result.sha256 };
+      await this.acceptCandidate(activity, result.runId, "webm", asset.path, null);
       // Measured from the file this replaces.
       delete asset.durationMs;
       return { ...draft, mediaPlan: { ...plan, manifest } };
@@ -661,15 +657,15 @@ export class ActivityService implements ActivityAuthoring {
     }
   }
   /**
-   * The draft file behind a bound recording's media path (`media/generated/<runId>.webm`), for
-   * the player to serve, or null when the path is not a recording this draft binds.
+   * The file behind a bound recording's media path, for the player to serve, or null when the
+   * path is not a recording this draft binds.
    */
   async boundVideoFile(projectId: string, activityId: string, mediaPath: string) {
     const activity = await this.getActivity(projectId, activityId);
     const bound = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
       .flat()
       .find((asset) => asset.generatedVideo && asset.path === mediaPath)?.generatedVideo;
-    return bound ? this.videoPath(projectId, activity, bound.runId) : null;
+    return bound ? mediaFile(await this.requireWafRoot(), mediaPath) : null;
   }
 
   private collectionDir(projectId: string, collectionId: string): string {
@@ -1433,11 +1429,11 @@ export class ActivityService implements ActivityAuthoring {
         }
         // An upload is bytes this server holds, so what it actually is can be checked
         // rather than assumed. A path alone says nothing about the media it names.
-        const workspace = this.activityWorkspace(projectId, { ...activity, draft });
+        const home = await this.uploads(activity);
         for (const assets of Object.values(parsed.assets))
           for (const asset of assets) {
             if (!isUploadReference(asset.path)) continue;
-            const { mimeType } = await readUpload(workspace, asset.path!);
+            const { mimeType } = await readUpload(home, asset.path!);
             const kind = mimeType.slice(0, mimeType.indexOf("/"));
             const wanted =
               asset.type === "image" ? "image" : asset.type === "audio" ? "audio" : "video";
@@ -1461,26 +1457,12 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<AudioResult> {
     return this.projectWork.run(projectId, async () => {
       const activity = await this.getActivity(projectId, activityId);
-      const result = inspectGeneratedAudio(bytes, runId, format);
-      const file = this.audioPath(projectId, activity, runId, format);
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, bytes, { flag: "wx" });
-      return result;
+      // The media repository keeps audio as MP3, as Loom kept it; a WAV take is converted.
+      const mp3 = format === "mp3" ? bytes : await (this.audioEncode.wavToMp3 ?? wavToMp3)(bytes);
+      const result = inspectGeneratedAudio(mp3, runId, "mp3");
+      await this.storeCandidate(activity, runId, "mp3", mp3);
+      return { ...result, format: "mp3" };
     });
-  }
-  private audioPath(
-    projectId: string,
-    activity: ActivityRecord & { draft: ActivityDraft },
-    runId: string,
-    format: GeneratedAudioFormat | undefined,
-  ): string {
-    if (!/^run_[a-f0-9]{32}$/.test(runId))
-      throw new HttpError(404, "run_not_found", "Audio candidate not found.");
-    return path.join(
-      this.draftWorkspace(projectId, activity.collectionId, activity.id, activity.draft.draftId),
-      "audio",
-      `${runId}.${format ?? "wav"}`,
-    );
   }
   async readAudio(
     projectId: string,
@@ -1491,7 +1473,12 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<Uint8Array> {
     const activity = await this.getActivity(projectId, activityId);
     const bytes = await readArtifactBytes(
-      this.audioPath(projectId, activity, runId, format),
+      await this.generatedFile(
+        activity,
+        "generatedAudio",
+        runId,
+        generatedAudioExtension({ format }),
+      ),
       AUDIO_MAX_BYTES,
     );
     if (inspectGeneratedAudio(bytes, runId, format).sha256 !== sha256)
@@ -1507,7 +1494,7 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<ActivityDraft> {
     // Verify immutable bytes before the same compare-and-publish lock used by all draft edits.
     await this.readAudio(projectId, activityId, result.runId, result.sha256, result.format);
-    return this.change(projectId, activityId, expectedRevision, (draft) => {
+    return this.change(projectId, activityId, expectedRevision, async (draft, activity) => {
       const plan = draft.mediaPlan;
       if (!plan || plan.specRevision !== contentRevision(draft.spec) || draft.status !== "valid")
         throw new HttpError(409, "media_stale", "Rebuild the media plan before accepting speech.");
@@ -1535,7 +1522,12 @@ export class ActivityService implements ActivityAuthoring {
         sha256: result.sha256,
         ...(result.format === "mp3" ? { format: "mp3" as const } : {}),
       };
-      asset.path = generatedAudioPath(generated);
+      asset.path = generatedMediaPath(
+        activity,
+        target.language,
+        asset,
+        generatedAudioExtension(generated),
+      );
       asset.generatedAudio = generated;
       // The timings and length described the recording this replaces; playback stays.
       delete asset.wordTimings;
@@ -1550,6 +1542,19 @@ export class ActivityService implements ActivityAuthoring {
       delete asset.phonemeTimings;
       delete asset.wholeWordTiming;
       if (isBookWord(asset)) Object.assign(asset, recordingTimingFields(asset));
+      await this.acceptCandidate(
+        activity,
+        result.runId,
+        generatedAudioExtension(generated),
+        asset.path,
+        {
+          text: asset.script ?? "",
+          model: "Penguin Harness",
+          ...(asset.voice ? { voice: asset.voice } : {}),
+          ...(asset.wordTimings ? { wordTimings: asset.wordTimings } : {}),
+          ...(asset.durationMs !== undefined ? { durationMs: asset.durationMs } : {}),
+        },
+      );
       return { ...draft, mediaPlan: { ...plan, manifest } };
     });
   }
@@ -1624,6 +1629,13 @@ export class ActivityService implements ActivityAuthoring {
       }
       if (content.mediaPlan) {
         const plan = structuredClone(content.mediaPlan);
+        // Saved under another number, its media is where that number named it; the restore
+        // writes it back under this ref's folder (see ActivityVersionService.restore).
+        readdressMedia(
+          plan.manifest.assets,
+          refMediaFolder(activity.productCode, plan.manifest.refNum),
+          refMediaFolder(activity.productCode, activity.refNum),
+        );
         plan.manifest.refNum = activity.refNum;
         try {
           validateManifest(plan.manifest, activity);
@@ -1756,16 +1768,20 @@ export class ActivityService implements ActivityAuthoring {
   }
 
   /**
-   * The files in a ref's module its number names, from where they are for `from` to where
-   * they go for `to`: the ref's folder, and the module's configuration and assessment.
+   * The files its number names, from where they are for `from` to where they go for `to`:
+   * the ref's folder in its module, the module's configuration and assessment, and the ref's
+   * media folder in the media repository.
    */
   private async refNumberFiles(
     from: ActivityRecord,
     to: ActivityRecord,
   ): Promise<{ from: string; to: string }[]> {
-    const module = path.join(await this.requireWafRoot(), "modules", this.moduleFolderOf(from));
+    const root = await this.requireWafRoot();
+    const module = path.join(root, "modules", this.moduleFolderOf(from));
     const named = (ref: ActivityRecord, folder: string) =>
       path.join(module, folder, `${ref.productCode}-${ref.refNum}.json`);
+    const media = (ref: ActivityRecord) =>
+      mediaFile(root, refMediaFolder(ref.productCode, ref.refNum))!;
     return [
       {
         from: path.dirname(await this.draftFilesDir(from)),
@@ -1773,7 +1789,73 @@ export class ActivityService implements ActivityAuthoring {
       },
       { from: named(from, "configurations"), to: named(to, "configurations") },
       { from: named(from, "assessments"), to: named(to, "assessments") },
+      { from: media(from), to: media(to) },
     ];
+  }
+
+  /** The ref's uploads, in its media folder in the media repository. */
+  private async uploads(activity: ActivityRecord): Promise<UploadHome> {
+    return uploadHome(await this.requireWafRoot(), activity.productCode, activity.refNum);
+  }
+
+  /** Writes a generation's take into the ref's candidates, in the media repository. */
+  private async storeCandidate(
+    activity: ActivityRecord,
+    runId: string,
+    extension: string,
+    bytes: Uint8Array,
+  ): Promise<void> {
+    const reference = candidateReference(activity.productCode, activity.refNum, runId, extension);
+    const file = mediaFile(await this.requireWafRoot(), reference)!;
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, bytes, { flag: "wx" });
+  }
+
+  /**
+   * A generated take of this ref: its candidate while it waits, and once accepted, the file
+   * the manifest binds to that run. A path that is neither is returned as the candidate's, so
+   * the reader reports it missing.
+   */
+  private async generatedFile(
+    activity: ActivityDetail,
+    field: "generatedImage" | "generatedAudio" | "generatedVideo",
+    runId: string,
+    extension: string,
+  ): Promise<string> {
+    const root = await this.requireWafRoot();
+    const reference = candidateReference(activity.productCode, activity.refNum, runId, extension);
+    const candidate = mediaFile(root, reference)!;
+    if (await exists(candidate)) return candidate;
+    const bound = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
+      .flat()
+      .find((asset) => asset[field]?.runId === runId && asset.path);
+    return (bound && mediaFile(root, bound.path!)) || candidate;
+  }
+
+  /**
+   * An accepted take, copied from its candidate to the path the asset is bound to (replacing
+   * the file there), with Loom's sidecar beside it. The candidate goes once the copy is there.
+   */
+  private async acceptCandidate(
+    activity: ActivityRecord,
+    runId: string,
+    extension: string,
+    reference: string,
+    sidecar: Parameters<typeof writeSidecar>[1] | null,
+  ): Promise<void> {
+    const root = await this.requireWafRoot();
+    const candidate = mediaFile(
+      root,
+      candidateReference(activity.productCode, activity.refNum, runId, extension),
+    )!;
+    const target = mediaFile(root, reference);
+    if (!target) throw new HttpError(400, "media_path_invalid", "The media path is invalid.");
+    // Accepted already (the same take accepted twice): the file is where it belongs.
+    if (!(await exists(candidate))) return;
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.copyFile(candidate, target);
+    if (sidecar) await writeSidecar(target, sidecar);
+    await fs.rm(candidate, { force: true });
   }
 
   /** The WAF workspace's root; every ref's files are in its modules. */
@@ -1818,6 +1900,8 @@ export class ActivityService implements ActivityAuthoring {
   ): Promise<void> {
     const root = await this.requireWafRoot();
     await this.wafWorkspace.authoringModule(moduleFolder);
+    // The product's media folder, checked out of the partial media clone with its LFS files.
+    await this.wafWorkspace.ensureMedia([`loom/${productCode}`]);
     const dir = productDir(root, moduleFolder, productCode);
     const owner = await readProductOwner(dir);
     if (owner && owner.projectId !== projectId)
@@ -1832,6 +1916,13 @@ export class ActivityService implements ActivityAuthoring {
         409,
         "activity_exists",
         `Ref ${refNum} of ${productCode} already has files in its module.`,
+      );
+    // Media already at the ref's address (Loom's, say) is someone else's, not this ref's.
+    if (await exists(mediaFile(root, refMediaFolder(productCode, refNum))!))
+      throw new HttpError(
+        409,
+        "activity_exists",
+        `Ref ${refNum} of ${productCode} already has media in the media repository.`,
       );
   }
 
@@ -2100,6 +2191,12 @@ export class ActivityService implements ActivityAuthoring {
           if (previous.mediaPlan) {
             const manifest = structuredClone(previous.mediaPlan.manifest);
             manifest.refNum = next;
+            // The ref's media folder is named by its number and moves with it (below).
+            readdressMedia(
+              manifest.assets,
+              refMediaFolder(current.productCode, current.refNum),
+              refMediaFolder(current.productCode, next),
+            );
             try {
               validateManifest(manifest, { productCode: current.productCode, refNum: next });
             } catch (error) {
@@ -2252,6 +2349,14 @@ export class ActivityService implements ActivityAuthoring {
             `Ref ${template.refNum} is not marked stable. Mark it stable before making refs from it.`,
           );
         const planned = refDraftFromTemplate(template, refNum, input.decisions);
+        // The template's media folder is copied to the new ref's (refDraftFromTemplate has
+        // re-addressed the plan to it), and so is an upload a decision binds.
+        const fromFolder = refMediaFolder(template.productCode, template.refNum);
+        const toFolder = refMediaFolder(template.productCode, refNum);
+        const moved = (reference: string) =>
+          reference.startsWith(`${fromFolder}/`)
+            ? `${toFolder}${reference.slice(fromFolder.length)}`
+            : reference;
         const created = await this.createActivity(projectId, {
           collectionId: template.collectionId,
           productCode: template.productCode,
@@ -2260,8 +2365,8 @@ export class ActivityService implements ActivityAuthoring {
           activityType: template.activityType,
         });
         try {
-          const target = this.activityWorkspace(projectId, created);
-          await this.copyTemplateFiles(this.activityWorkspace(projectId, template), target);
+          const target = await this.uploads(created);
+          await copyRefMedia(await this.requireWafRoot(), fromFolder, toFolder);
           const features = path.join(await this.draftFilesDir(template), REF_FEATURES_FILE);
           if (await exists(features))
             await fs.copyFile(
@@ -2274,7 +2379,7 @@ export class ActivityService implements ActivityAuthoring {
             const asset = planned.mediaPlan?.manifest.assets[decision.language]?.find(
               (entry) => entry.key === decision.assetKey,
             );
-            const mimeType = await readUpload(target, decision.path!).then(
+            const mimeType = await readUpload(target, moved(decision.path!)).then(
               (file) => file.mimeType,
               () => null,
             );
@@ -2308,22 +2413,6 @@ export class ActivityService implements ActivityAuthoring {
     );
   }
 
-  /** Copy a template's own files into a new ref's workspace, never following a link. */
-  private async copyTemplateFiles(source: string, target: string): Promise<void> {
-    await fs.mkdir(target, { recursive: true });
-    for (const name of ["audio", "images", VIDEO_DIR, "media"]) {
-      const from = path.join(source, name);
-      const stat = await fs.lstat(from).catch(() => null);
-      if (!stat || stat.isSymbolicLink()) continue;
-      await fs.cp(from, path.join(target, name), {
-        recursive: true,
-        errorOnExist: true,
-        force: false,
-        filter: async (entry) => !(await fs.lstat(entry)).isSymbolicLink(),
-      });
-    }
-  }
-
   /** Remove a ref made moments ago whose making failed: its rows, then its files. */
   private async discardCreatedRef(projectId: string, activity: ActivityRecord): Promise<void> {
     this.db.exec("BEGIN");
@@ -2340,6 +2429,11 @@ export class ActivityService implements ActivityAuthoring {
       { recursive: true, force: true },
     );
     await fs.rm(path.dirname(await this.draftFilesDir(activity)), { recursive: true, force: true });
+    const media = mediaFile(
+      await this.requireWafRoot(),
+      refMediaFolder(activity.productCode, activity.refNum),
+    );
+    if (media) await fs.rm(media, { recursive: true, force: true });
   }
 
   /**

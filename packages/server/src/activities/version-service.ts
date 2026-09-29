@@ -40,6 +40,8 @@ import {
   type VersionManifest,
   type VersionMedia,
 } from "./version-manifest.js";
+import { readdressMedia, refMediaFolder } from "./ref-media.js";
+import type { WafWorkspace } from "./waf-workspace.js";
 import { prunableVersions } from "./version-retention.js";
 import {
   blobFile,
@@ -151,6 +153,19 @@ export class ActivityVersionService implements ActivityVersions {
   @Use() private readonly generation!: ActivityGeneration;
   @Use() private readonly deployEvents!: ActivityDeployEvents;
   @Use() private readonly db!: Db;
+  @Use() private readonly wafWorkspace!: WafWorkspace;
+
+  /** The WAF root a version's media paths are relative to. */
+  private async wafRoot(): Promise<string> {
+    const root = await this.wafWorkspace.root();
+    if (!root)
+      throw new HttpError(
+        409,
+        "waf_workspace_not_ready",
+        "The WAF workspace is not prepared. An admin can prepare it in Settings.",
+      );
+    return root;
+  }
   /** Digests of files already read, by path, size and modification time. */
   private readonly digests = new Map<string, string>();
 
@@ -282,7 +297,7 @@ export class ActivityVersionService implements ActivityVersions {
     against: string,
   ): Promise<VersionDiff> {
     const activity = await this.authoring.getActivity(projectId, activityId);
-    const { activityDir } = this.dirs(projectId, activity);
+    const { activityDir } = await this.dirs(projectId, activity);
     const before = await this.readManifest(activityDir, this.requireVersion(activityId, versionId));
     const after =
       against === "current"
@@ -307,23 +322,31 @@ export class ActivityVersionService implements ActivityVersions {
           "Draft changed. Reload it before restoring a version.",
         );
       const row = this.requireVersion(activityId, versionId);
-      const { workspace, activityDir } = this.dirs(projectId, activity);
+      const { workspace, activityDir } = await this.dirs(projectId, activity);
       // Every file and the media plan are checked before anything changes.
       const target = await this.readManifest(activityDir, row).catch(() => {
         throw incomplete(null);
       });
+      // A version saved under another ref number names that number's media folder; its files
+      // go back under this ref's, where the restored manifest binds them.
+      const from = target.draft.mediaPlan
+        ? refMediaFolder(activity.productCode, target.draft.mediaPlan.manifest.refNum)
+        : null;
+      const to = refMediaFolder(activity.productCode, activity.refNum);
+      const here = (relative: string) =>
+        from && relative.startsWith(`${from}/`) ? `${to}${relative.slice(from.length)}` : relative;
       for (const file of target.media) {
-        if (!withinRoot(workspace, file.path)) throw incomplete(file.path);
+        if (!withinRoot(workspace, here(file.path))) throw incomplete(file.path);
         await readBlob(activityDir, file.sha256).catch(() => {
           throw incomplete(file.path);
         });
       }
       if (target.draft.mediaPlan) {
         try {
-          validateManifest(
-            { ...target.draft.mediaPlan.manifest, refNum: activity.refNum },
-            activity,
-          );
+          // Checked as replaceDraft will write it: under this ref's number and media folder.
+          const manifest = structuredClone(target.draft.mediaPlan.manifest);
+          readdressMedia(manifest.assets, from!, to);
+          validateManifest({ ...manifest, refNum: activity.refNum }, activity);
         } catch (error) {
           throw new HttpError(422, "media_invalid", (error as Error).message);
         }
@@ -349,7 +372,11 @@ export class ActivityVersionService implements ActivityVersions {
       try {
         // Files the draft has and the version lacks stay: run history may name them.
         for (const file of target.media)
-          await this.writeOwned(workspace, file.path, await readBlob(activityDir, file.sha256));
+          await this.writeOwned(
+            workspace,
+            here(file.path),
+            await readBlob(activityDir, file.sha256),
+          );
         await writeAtomic(
           featuresFile,
           JSON.stringify({ selectedIds: target.implementationFeatures ?? [] }, null, 2) + "\n",
@@ -393,7 +420,7 @@ export class ActivityVersionService implements ActivityVersions {
   ): Promise<VersionSaveResult> {
     const label = input.label ?? null;
     const activityId = activity.id;
-    const { workspace, activityDir } = this.dirs(projectId, activity);
+    const { workspace, activityDir } = await this.dirs(projectId, activity);
     const files: VersionMedia[] = [];
     // One file at a time: each is read, checked, and stored before the next is opened.
     for (const owned of ownedMediaPaths(activity.draft.mediaPlan?.manifest).owned) {
@@ -502,7 +529,7 @@ export class ActivityVersionService implements ActivityVersions {
     activity: ActivityDetail,
     revision: string,
   ): Promise<VersionRow | null> {
-    const { activityDir } = this.dirs(projectId, activity);
+    const { activityDir } = await this.dirs(projectId, activity);
     for (const row of listVersions(this.db, activity.id)) {
       const manifest = await this.readManifest(activityDir, row).catch(() => null);
       if (manifest && draftRevision(manifest.draft) === revision) return row;
@@ -550,7 +577,7 @@ export class ActivityVersionService implements ActivityVersions {
     projectId: string,
     activity: ActivityDetail,
   ): Promise<VersionManifest> {
-    const { workspace } = this.dirs(projectId, activity);
+    const { workspace } = await this.dirs(projectId, activity);
     const files: VersionMedia[] = [];
     for (const owned of ownedMediaPaths(activity.draft.mediaPlan?.manifest).owned) {
       const file = await this.digestOwned(workspace, owned.path).catch((error: unknown) => {
@@ -566,15 +593,22 @@ export class ActivityVersionService implements ActivityVersions {
     );
   }
 
-  private dirs(projectId: string, activity: ActivityDetail) {
-    const workspace = this.authoring.draftWorkspace(
+  /**
+   * Where a version's parts are: `workspace` is the WAF root, which a version's media paths
+   * (`media/loom/...`) are relative to, and `activityDir` is under PENGUIN_HOME, where the
+   * activity's version blobs are kept (<collection>/activities/<id>, beside its drafts).
+   */
+  private async dirs(projectId: string, activity: ActivityDetail) {
+    const draftWorkspace = this.authoring.draftWorkspace(
       projectId,
       activity.collectionId,
       activity.id,
       activity.draft.draftId,
     );
-    // The workspace is <collection>/activities/<id>/drafts/<draftId>; versions sit beside drafts.
-    return { workspace, activityDir: path.resolve(workspace, "..", "..") };
+    return {
+      workspace: await this.wafRoot(),
+      activityDir: path.resolve(draftWorkspace, "..", ".."),
+    };
   }
 
   private async ownedFile(workspace: string, relative: string) {

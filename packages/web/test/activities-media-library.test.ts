@@ -11,7 +11,7 @@ import {
 
 function entry(over: Partial<UploadedMedia> & Pick<UploadedMedia, "name" | "kind">): UploadedMedia {
   return {
-    path: `media/uploads/${over.name}`,
+    path: `media/loom/words/words-1/uploads/${over.name}`,
     mimeType: "image/png",
     byteLength: 1024,
     sha256: "a".repeat(64),
@@ -69,14 +69,16 @@ describe("library matching", () => {
 });
 
 describe("binding provenance", () => {
-  it("recognises a binding served from the activity workspace", () => {
-    expect(isUploadPath("media/uploads/cat-1111aaaa.png")).toBe(true);
+  it("recognises an uploaded file by its path in the media repository", () => {
+    expect(isUploadPath("media/loom/words/words-1/uploads/cat-1111aaaa.png")).toBe(true);
     expect(isUploadPath("media/images/cat.png")).toBe(false);
     expect(isUploadPath(undefined)).toBe(false);
   });
 
   it("finds the upload a binding points at", () => {
-    expect(boundUpload(media, "media/uploads/cat-1111aaaa.png")?.kind).toBe("image");
+    expect(boundUpload(media, "media/loom/words/words-1/uploads/cat-1111aaaa.png")?.kind).toBe(
+      "image",
+    );
     expect(boundUpload(media, "media/images/cat.png")).toBeUndefined();
     expect(boundUpload(media, undefined)).toBeUndefined();
   });

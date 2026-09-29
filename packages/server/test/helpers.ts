@@ -92,6 +92,7 @@ import {
 import { DefaultSoundModelPorts, type SoundModelPorts } from "../src/activities/sound-models.js";
 import { DefaultEspeakPorts, type EspeakPorts } from "../src/activities/phonemes.js";
 import { DefaultDeployPorts, type DeployPorts } from "../src/activities/deploy-service.js";
+import { DefaultAudioEncodePorts, type AudioEncodePorts } from "../src/activities/ref-media.js";
 import {
   DefaultWafWorkspacePorts,
   type WafWorkspacePorts,
@@ -100,7 +101,6 @@ import {
   DefaultMediaLibraryPorts,
   type MediaLibraryPorts,
 } from "../src/activities/media-bundle.js";
-
 
 // A developer's own WAF checkout must never be written by a test; a test names its own.
 delete process.env.WAF_ROOT_DIR;
@@ -301,6 +301,8 @@ export interface TestAppOptions {
   deployPorts?: DeployPorts;
   /** Test double: git and npm for the WAF workspace, so a test never clones or installs. */
   wafWorkspacePorts?: WafWorkspacePorts;
+  /** Test double: WAV to MP3 conversion, so a test never runs ffmpeg. */
+  audioEncodePorts?: AudioEncodePorts;
   /**
    * False leaves the WAF workspace unset. By default the server reads an empty WAF checkout
    * under the test's root (activities are stored in its modules); WAF_ROOT_DIR overrides it.
@@ -409,6 +411,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   if (o.espeakPorts) out.push([DefaultEspeakPorts, o.espeakPorts]);
   if (o.deployPorts) out.push([DefaultDeployPorts, o.deployPorts]);
   if (o.wafWorkspacePorts) out.push([DefaultWafWorkspacePorts, o.wafWorkspacePorts]);
+  if (o.audioEncodePorts) out.push([DefaultAudioEncodePorts, o.audioEncodePorts]);
   return out;
 }
 

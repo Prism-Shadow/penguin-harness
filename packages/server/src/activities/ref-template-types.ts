@@ -20,7 +20,7 @@ export interface RefAssetDecision {
   description?: string;
   /** The voice a cleared narration is generated in next. */
   voice?: string;
-  /** The `media/uploads/...` reference to bind, for `bind`. */
+  /** The uploaded file's `media/loom/<pc>/<pc>-<ref>/uploads/...` reference to bind, for `bind`. */
   path?: string;
 }
 

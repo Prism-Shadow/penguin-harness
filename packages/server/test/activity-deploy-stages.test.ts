@@ -43,6 +43,11 @@ function fakeGit(
     remoteMain?: boolean;
     staged?: boolean;
     fail?: string;
+    /** The working tree has authored work in it. */
+    dirty?: boolean;
+    /** Whether main exists locally, and as origin/main. */
+    localMain?: boolean;
+    originMain?: boolean;
   } = {},
 ) {
   const calls: string[][] = [];
@@ -67,6 +72,14 @@ function fakeGit(
         if (joined === "diff --cached --quiet")
           return state.staged === false ? ok() : { code: 1, stdout: "", stderr: "" };
         if (joined === "rev-parse HEAD") return ok("0123abcd\n");
+        if (joined === "status --porcelain") return ok(state.dirty ? "?? src/new.js\n" : "");
+        if (joined === "rev-parse --verify --quiet refs/heads/main" && state.localMain === false)
+          return { code: 1, stdout: "", stderr: "" };
+        if (
+          joined === "rev-parse --verify --quiet refs/remotes/origin/main" &&
+          state.originMain === false
+        )
+          return { code: 1, stdout: "", stderr: "" };
         return ok();
       },
     },
@@ -214,15 +227,64 @@ describe("verify_module", () => {
       "npm run buildRelease",
     ]);
     expect(npm.calls.every((call) => call.cwd === dir)).toBe(true);
-    // Whatever an earlier release left in the clone is dropped before anything is copied in.
+    // Main is brought up to origin, never reset, and the copied module is committed on it.
     expect(git.calls).toEqual([
       ["fetch", "origin"],
-      ["checkout", "-f", "main"],
+      ["status", "--porcelain"],
+      ["rev-parse", "--verify", "--quiet", "refs/heads/main"],
       ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"],
-      ["reset", "--hard", "origin/main"],
-      ["clean", "-fd", "-e", "node_modules"],
+      ["checkout", "main"],
+      ["merge", "--ff-only", "origin/main"],
+      ["add", "--all"],
+      ["diff", "--cached", "--quiet"],
+      [
+        "-c",
+        "user.name=Deploy Bot",
+        "-c",
+        "user.email=deploy@example.org",
+        "commit",
+        "-m",
+        "Penguin Harness: words as authored",
+      ],
+      ["rev-parse", "HEAD"],
     ]);
+    expect(git.calls.some((call) => ["reset", "clean"].includes(call[0]!))).toBe(false);
+    expect(lines).toContain("Committed the authored module on main: 0123abcd.");
     expect(lines).toContain("$ npm run lint");
+  });
+
+  it("carries authored work in the clone onto main and commits it, rather than dropping it", async () => {
+    const dir = await moduleClone();
+    await fs.writeFile(path.join(dir, "authored.js"), "export const kept = true;");
+    const git = fakeGit({ dirty: true, localMain: false });
+    const { ctx } = context({ dir, git: git.git });
+    await run("verify_module", ctx);
+    // The work is set aside, main is made from origin's, and the work is put back on it.
+    expect(git.calls.slice(0, 8)).toEqual([
+      ["fetch", "origin"],
+      ["status", "--porcelain"],
+      ["stash", "push", "--include-untracked", "-m", "penguin-harness deploy"],
+      ["rev-parse", "--verify", "--quiet", "refs/heads/main"],
+      ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"],
+      ["checkout", "-b", "main", "origin/main"],
+      ["merge", "--ff-only", "origin/main"],
+      ["stash", "pop"],
+    ]);
+    expect(git.calls[8]).toEqual(["add", "--all"]);
+    expect(await fs.readFile(path.join(dir, "authored.js"), "utf8")).toBe(
+      "export const kept = true;",
+    );
+  });
+
+  it("starts main where a new module's clone is when neither it nor origin has one", async () => {
+    const dir = await moduleClone();
+    const git = fakeGit({ localMain: false, originMain: false, staged: false });
+    const { ctx, lines } = context({ dir, git: git.git });
+    await run("verify_module", ctx);
+    expect(git.calls).toContainEqual(["checkout", "-B", "main"]);
+    expect(git.calls.some((call) => call[0] === "merge")).toBe(false);
+    expect(git.calls.some((call) => call.includes("commit"))).toBe(false);
+    expect(lines).toContain("Main already had everything authored.");
   });
 
   it("fails on a failing lint with the end of its output, and runs nothing after it", async () => {

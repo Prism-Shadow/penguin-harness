@@ -1,6 +1,6 @@
 /**
  * The QA deploy's six stages, each run against fakes: git and Jenkins answer from memory, the
- * clock waits no time, and the activity-data and media clones and the draft are temp dirs.
+ * clock waits no time, and the activity-data and media clones are temp dirs.
  * No test here runs git or makes a request, and nothing is written outside the temp dirs.
  */
 import fs from "node:fs/promises";
@@ -35,8 +35,18 @@ async function tempDir(prefix: string) {
   return dir;
 }
 
-/** A git that answers the QA stages' commands; `tracked` is what the media repository holds. */
-function fakeGit(options: { tracked?: string[]; remoteBranch?: boolean; staged?: boolean } = {}) {
+/**
+ * A git that answers the QA stages' commands; `tracked` is what the media repository holds,
+ * and `authored` what is new or changed in its working tree.
+ */
+function fakeGit(
+  options: {
+    tracked?: string[];
+    authored?: string[];
+    remoteBranch?: boolean;
+    staged?: boolean;
+  } = {},
+) {
   const calls: Array<{ args: string[]; cwd: string }> = [];
   const ok = (stdout = ""): DeployGitResult => ({ code: 0, stdout, stderr: "" });
   return {
@@ -55,7 +65,12 @@ function fakeGit(options: { tracked?: string[]; remoteBranch?: boolean; staged?:
         if (joined === "rev-parse HEAD") return ok("feedface\n");
         if (joined === "diff --cached --quiet")
           return options.staged === false ? ok() : { code: 1, stdout: "", stderr: "" };
-        if (joined === "sparse-checkout list") return ok("loom/words\n");
+        if (args[0] === "status" && args[1] === "--porcelain") {
+          const authored = options.authored ?? [];
+          const only = args[2] === "--" ? args[3]! : null;
+          const listed = only === null ? authored : authored.filter((file) => file === only);
+          return ok(listed.map((file) => `?? ${file}\n`).join(""));
+        }
         if (args[0] === "ls-tree") {
           const reference = args[args.length - 1]!;
           return ok((options.tracked ?? []).includes(reference) ? `${reference}\n` : "");
@@ -105,14 +120,13 @@ function fakeClock() {
   };
 }
 
-function snapshot(draftMediaRoots: string[]): DeployActivitySnapshot {
+function snapshot(): DeployActivitySnapshot {
   return {
     title: "Words",
     layout: "mainOnly",
     theme: null,
     contentRevision: "rev-42",
     productRevision: "product-rev-42",
-    draftMediaRoots,
     refs: [
       {
         refNum: 1,
@@ -132,7 +146,6 @@ async function setup(
 ) {
   const activityData = await tempDir("penguin-qa-data-");
   const media = await tempDir("penguin-qa-media-");
-  const draft = await tempDir("penguin-qa-draft-");
   const git = fakeGit(gitOptions);
   const jenkins = fakeJenkins();
   const clock = fakeClock();
@@ -163,11 +176,11 @@ async function setup(
         frameworkVersion: "4.2.1",
         activityBaseUrl: "https://qa.example.org/play",
       },
-      snapshot: async () => snapshot([draft]),
+      snapshot: async () => snapshot(),
     },
     ...overrides,
   };
-  return { ctx, git, jenkins, clock, lines, activityData, media, draft };
+  return { ctx, git, jenkins, clock, lines, activityData, media };
 }
 
 const run = (stage: DeployStage, ctx: DeployStageContext) =>
@@ -303,25 +316,33 @@ describe("verify_activity_data and verify_media_assets", () => {
     expect(ctx.metadata.preflight?.errors[0]).toMatchObject({ code: "layout_module_mismatch" });
   });
 
-  it("copies a file only the draft holds into the media clone, commits and pushes main", async () => {
-    const { ctx, git, media, draft } = await setup();
-    await fs.mkdir(path.join(draft, "loom", "words"), { recursive: true });
-    await fs.writeFile(path.join(draft, "loom", "words", "hello.mp3"), "hello");
+  it("publishes authored media in the media clone: carries it onto main, commits and pushes", async () => {
+    const { ctx, git, media } = await setup({}, { authored: ["loom/words/hello.mp3"] });
+    await fs.mkdir(path.join(media, "loom", "words"), { recursive: true });
+    await fs.writeFile(path.join(media, "loom", "words", "hello.mp3"), "hello");
     await run("export_activity_data", ctx);
     await run("verify_media_assets", ctx);
     expect(await fs.readFile(path.join(media, "loom/words/hello.mp3"), "utf8")).toBe("hello");
     const commands = git.calls
       .filter((call) => call.cwd === media)
       .map((call) => call.args.join(" "));
-    expect(commands).toEqual(
-      expect.arrayContaining([
-        "checkout -f main",
-        "reset --hard origin/main",
-        "add -- loom/words/hello.mp3",
-        "-c user.name=Deploy Bot -c user.email=deploy@example.org commit -m Publish media for words",
-        "push origin main",
-      ]),
-    );
+    // The authored file is set aside while main comes up to origin, never reset or cleaned away.
+    expect(commands).toEqual([
+      "fetch origin",
+      "status --porcelain",
+      "stash push --include-untracked -m penguin-harness deploy",
+      "rev-parse --verify --quiet refs/heads/main",
+      "rev-parse --verify --quiet refs/remotes/origin/main",
+      "checkout -b main origin/main",
+      "merge --ff-only origin/main",
+      "stash pop",
+      "status --porcelain -- loom/words/hello.mp3",
+      "add --sparse -- loom/words/hello.mp3",
+      "diff --cached --quiet",
+      "-c user.name=Deploy Bot -c user.email=deploy@example.org commit -m Publish media for words",
+      "rev-parse HEAD",
+      "push origin main",
+    ]);
     expect(ctx.metadata).toMatchObject({
       mediaChecked: 1,
       mediaCopied: ["loom/words/hello.mp3"],
@@ -337,12 +358,15 @@ describe("verify_activity_data and verify_media_assets", () => {
       (_, i) =>
         `media/loom/words/audios/english/scene-${i}-an-audio-file-with-a-long-name-${i}.mp3`,
     );
-    const { ctx, git, media, draft } = await setup();
-    const many = snapshot([draft]);
+    const { ctx, git, media } = await setup(
+      {},
+      { authored: paths.map((file) => file.slice("media/".length)) },
+    );
+    const many = snapshot();
     many.refs[0]!.assets = paths.map((file, i) => ({ key: `clip${i}`, type: "audio", path: file }));
     ctx.qa!.snapshot = async () => many;
     for (const file of paths) {
-      const target = path.join(draft, file.slice("media/".length));
+      const target = path.join(media, file.slice("media/".length));
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, "clip");
     }
@@ -351,7 +375,8 @@ describe("verify_activity_data and verify_media_assets", () => {
     const adds = git.calls.filter((call) => call.cwd === media && call.args[0] === "add");
     expect(adds.length).toBeGreaterThan(1);
     for (const add of adds) expect(add.args.join(" ").length).toBeLessThan(10_000);
-    expect(adds.flatMap((add) => add.args.slice(2)).sort()).toEqual(
+    for (const add of adds) expect(add.args.slice(0, 3)).toEqual(["add", "--sparse", "--"]);
+    expect(adds.flatMap((add) => add.args.slice(3)).sort()).toEqual(
       paths.map((file) => file.slice("media/".length)).sort(),
     );
     expect(ctx.metadata.mediaCopiedCount).toBe(count);

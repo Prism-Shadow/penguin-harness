@@ -9,12 +9,7 @@ import { versionDiff } from "../src/activities/version-diff.js";
 import type { VersionManifest } from "../src/activities/version-manifest.js";
 import type { VersionDiff } from "../src/activities/version-types.js";
 import { apiClient, provisionUser } from "./helpers.js";
-import {
-  AUDIO_RUN,
-  regenerateNarration,
-  versionsApp,
-  withMedia,
-} from "./activity-version-fixtures.js";
+import { HELLO, regenerateNarration, versionsApp, withMedia } from "./activity-version-fixtures.js";
 
 const PROJECT = "versions-diff";
 const RUN_2 = `run_${"b".repeat(32)}`;
@@ -48,7 +43,7 @@ describe("comparing activity versions", () => {
     expect(await same.json()).toEqual({ files: [], media: [] });
   });
 
-  it("shows a regenerated narration as that narration's file changing", async () => {
+  it("shows a regenerated narration as that narration's file changing, at its one path", async () => {
     const s = await versionsApp(PROJECT, cleanups);
     const { wave } = await withMedia(s);
     const v1 = await s.saved();
@@ -58,7 +53,7 @@ describe("comparing activity versions", () => {
     ).json()) as VersionDiff;
     expect(diff.media).toEqual([
       {
-        path: `audio/${RUN_2}.wav`,
+        path: HELLO,
         change: "changed",
         beforeBytes: wave.length,
         afterBytes: again.length,
@@ -75,12 +70,12 @@ describe("comparing activity versions", () => {
     const s = await versionsApp(PROJECT, cleanups);
     const { wave } = await withMedia(s);
     const v1 = await s.saved();
-    await fs.rm(path.join(s.workspace, "audio", `${AUDIO_RUN}.wav`));
+    await fs.rm(path.join(s.workspace, HELLO));
     const response = await s.client.get(`${s.endpoint}/versions/${v1.versionId}/diff`);
     expect(response.status, await response.clone().text()).toBe(200);
     expect(((await response.json()) as VersionDiff).media).toEqual([
       {
-        path: `audio/${AUDIO_RUN}.wav`,
+        path: HELLO,
         change: "removed",
         beforeBytes: wave.length,
         afterBytes: null,

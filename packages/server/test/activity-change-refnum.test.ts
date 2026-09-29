@@ -10,7 +10,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { projectDir } from "@prismshadow/penguin-core";
 import type { ActivityDetail, ActivityDraft } from "../src/activities/domain.js";
 import type { ActivityAuthoring } from "../src/mechanisms/activities.js";
-import { activitySpec, refFilesDir } from "./activity-fixtures.js";
+import { activitySpec, refFilesDir, refMediaDir } from "./activity-fixtures.js";
+import { imagePng } from "./image-fixtures.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 
 describe("POST /:activityId/ref-number", () => {
@@ -80,11 +81,23 @@ describe("POST /:activityId/ref-number", () => {
   }
 
   it("renumbers a ref, keeps its uploads, runs and draft, and frees the old number", async () => {
-    const { t, client, base, create, read, renumber } = await setup();
+    const { t, client, base, create, read, renumber, authoring } = await setup();
     const one = await create("words", 12);
     const endpoint = `${base}/${one.id}`;
-    const draft = await withMedia(client, endpoint, one.draft.contentRevision);
-    expect(draft.mediaPlan!.manifest.refNum).toBe(12);
+    const planned = await withMedia(client, endpoint, one.draft.contentRevision);
+    expect(planned.mediaPlan!.manifest.refNum).toBe(12);
+    // An accepted image, in the ref's media folder.
+    const runId = `run_${"c".repeat(32)}`;
+    const draft = await authoring().applyImage(
+      "renumberer-work",
+      one.id,
+      { language: "en-US", assetKey: "cat", prompt: "A cat", model: "m" },
+      await authoring().storeImage("renumberer-work", one.id, runId, imagePng(2, 2)),
+      planned.contentRevision,
+    );
+    expect(draft.mediaPlan!.manifest.assets["en-US"]![0]!.path).toBe(
+      "media/loom/words/words-12/images/english/cat.png",
+    );
     const uploaded = await client.post(`${endpoint}/media-uploads`, {
       name: "bell.wav",
       dataBase64: Buffer.concat([
@@ -115,9 +128,24 @@ describe("POST /:activityId/ref-number", () => {
     expect(fetched.draft.contentRevision).toBe(changed.draft.contentRevision);
     expect(fetched.draft.spec).toEqual(draft.spec);
     const media = (await (await client.get(`${endpoint}/media-uploads`)).json()) as {
-      media: unknown[];
+      media: { path: string }[];
     };
     expect(media.media).toHaveLength(1);
+    expect(media.media[0]!.path.startsWith("media/loom/words/words-13/uploads/")).toBe(true);
+    // The media folder moved to the new number, and the manifest binds its files there.
+    const cat = fetched.draft.mediaPlan!.manifest.assets["en-US"]![0]!;
+    expect(cat.path).toBe("media/loom/words/words-13/images/english/cat.png");
+    expect(cat.generatedImage?.runId).toBe(runId);
+    expect(
+      await fs.readFile(
+        path.join(refMediaDir(t.root, "words", 13), "images", "english", "cat.png"),
+      ),
+    ).toEqual(imagePng(2, 2));
+    await expect(fs.stat(refMediaDir(t.root, "words", 12))).rejects.toThrow();
+    // The take is read from where it moved.
+    expect(
+      await authoring().readImage("renumberer-work", one.id, runId, cat.generatedImage!.sha256),
+    ).toEqual(imagePng(2, 2));
     const runs = (await (await client.get(`${endpoint}/runs`)).json()) as {
       runs: { runId: string }[];
     };

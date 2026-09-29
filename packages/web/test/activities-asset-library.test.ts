@@ -19,14 +19,14 @@ const assets: MediaAsset[] = [
     key: "cat",
     type: "image",
     description: "A cat",
-    path: "media/uploads/cat-1.png",
+    path: "media/loom/words/words-1/uploads/cat-1.png",
     usages: [usage("intro"), usage("intro")],
   },
   {
     key: "dog",
     type: "image",
     description: "A dog",
-    path: "media/uploads/cat-1.png",
+    path: "media/loom/words/words-1/uploads/cat-1.png",
     usages: [usage("end")],
   },
   { key: "hello", type: "audio", description: "Greeting", usages: [usage("intro")] },
@@ -65,7 +65,10 @@ describe("the asset library", () => {
 
   it("names the assets each upload is bound to", () => {
     const files = uploadEntries(
-      [upload("media/uploads/cat-1.png", "image"), upload("media/uploads/spare.wav", "audio")],
+      [
+        upload("media/loom/words/words-1/uploads/cat-1.png", "image"),
+        upload("media/loom/words/words-1/uploads/spare.wav", "audio"),
+      ],
       assets,
     );
     expect(files.map((entry) => entry.usedBy)).toEqual([["cat", "dog"], []]);

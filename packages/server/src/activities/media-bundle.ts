@@ -3,7 +3,6 @@
  * much one downloaded bundle may hold, and what each file is called inside the zip.
  */
 import { Component, Interface } from "@prismshadow/penguin-core/kernel";
-import { UPLOAD_PREFIX } from "./upload.js";
 
 /** The most files one project listing reports, newest first. */
 export const PROJECT_MEDIA_LIMIT = 5000;
@@ -51,8 +50,6 @@ export function bundleEntryNames(names: readonly string[]): string[] {
  * server added, so the copy lands on the same `stem-<digest>.ext` path as the original.
  */
 export function copiedUploadName(reference: string): string {
-  const name = reference.startsWith(UPLOAD_PREFIX)
-    ? reference.slice(UPLOAD_PREFIX.length)
-    : reference;
+  const name = reference.slice(reference.lastIndexOf("/") + 1);
   return name.replace(/-(?:[a-f0-9]{64}|[a-f0-9]{16})(?=\.[A-Za-z0-9]+$)/, "");
 }

@@ -108,3 +108,11 @@ export function refFilesDir(
     "spec",
   );
 }
+
+/**
+ * Where a ref's media are in the WAF checkout createTestApp gives every test, in Loom's layout:
+ * `media/loom/<pc>/<pc>-<ref>` (uploads/, candidates/, images/<language>/, audios/<language>/…).
+ */
+export function refMediaDir(root: string, productCode: string, refNum: number): string {
+  return path.join(root, "waf-checkout", "media", "loom", productCode, `${productCode}-${refNum}`);
+}

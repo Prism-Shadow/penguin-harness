@@ -1,14 +1,16 @@
 /**
- * Publishing a QA deploy's media: files only the draft holds are copied into the media clone
- * (its sparse set widened first), files the repository has are left, and files found nowhere
- * are named. The clone is the media repository, so the data's `media/loom/...` is `loom/...`
- * in it. git is a fake that answers from memory; the draft and the clone are temp dirs.
+ * Publishing a QA deploy's media: authored media is written straight into the media clone, so
+ * a file the data names that is new or changed in the clone's working tree is to publish, one
+ * the repository already has as it is is present, one outside the working tree but in the
+ * repository's trees is present, and one found nowhere is named. The clone is the media
+ * repository, so the data's `media/loom/...` is `loom/...` in it. git is a fake that answers
+ * from memory; the clone is a temp dir.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { draftSource, sparseCovers, syncMedia } from "../src/activities/deploy-media.js";
+import { syncMedia } from "../src/activities/deploy-media.js";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -27,113 +29,122 @@ async function put(root: string, relative: string, content: string) {
   await fs.writeFile(file, content);
 }
 
-/** git over a media repository whose tree holds `tracked`, with a cone-mode sparse set. */
-function fakeGit(tracked: string[], sparse: string[] = ["loom/words"]) {
+/**
+ * git over a media repository whose HEAD tree holds `tracked`, and whose working tree has
+ * `dirty` new or changed. A path outside the repository is refused, as git refuses it.
+ */
+function fakeGit(tracked: string[], dirty: string[] = [], failing: string[] = []) {
   const calls: string[][] = [];
   return {
     calls,
-    sparse,
     async git(args: string[]) {
       calls.push(args);
-      if (args[0] === "sparse-checkout" && args[1] === "list")
-        return { code: 0, stdout: sparse.join("\n") };
-      if (args[0] === "sparse-checkout" && args[1] === "add") {
-        sparse.push(...args.slice(2));
-        return { code: 0, stdout: "" };
+      const reference = args[args.length - 1]!;
+      if (reference.startsWith("..")) return { code: 128, stdout: "" };
+      if (args[0] === "status") {
+        if (failing.includes(reference)) return { code: 128, stdout: "" };
+        return { code: 0, stdout: dirty.includes(reference) ? `?? ${reference}\n` : "" };
       }
-      if (args[0] === "ls-tree") {
-        const reference = args[args.length - 1]!;
+      if (args[0] === "ls-tree")
         return { code: 0, stdout: tracked.includes(reference) ? `${reference}\n` : "" };
-      }
       return { code: 1, stdout: "" };
     },
   };
 }
 
 describe("deploy media", () => {
-  it("copies what only the draft holds, leaves what the repository has, and names what is nowhere", async () => {
+  it("publishes what is new or changed in the clone, keeps what the repository has, and names what is nowhere", async () => {
     const clone = await tempDir("penguin-deploy-media-clone-");
-    const draft = await tempDir("penguin-deploy-media-draft-");
-    const other = await tempDir("penguin-deploy-media-draft2-");
-    await put(draft, "loom/words/new.mp3", "new sound");
-    await put(draft, "loom/words/same.mp3", "same");
-    await put(clone, "loom/words/same.mp3", "same");
-    await put(draft, "loom/words/changed.mp3", "fixed");
-    await put(clone, "loom/words/changed.mp3", "old");
-    await put(other, "shared/pic.png", "picture");
-    const git = fakeGit(["common/click.mp3"]);
+    // Untracked (a new take), modified (a take accepted again), and committed as it is.
+    await put(clone, "loom/words/words-1/audios/english/new.mp3", "new sound");
+    await put(clone, "loom/words/words-1/images/english/changed.png", "fixed");
+    await put(clone, "loom/words/words-1/images/english/same.png", "same");
+    const git = fakeGit(
+      ["loom/words/words-1/images/english/same.png", "common/click.mp3"],
+      [
+        "loom/words/words-1/audios/english/new.mp3",
+        "loom/words/words-1/images/english/changed.png",
+      ],
+    );
     const lines: string[] = [];
     const result = await syncMedia(
       {
         dir: clone,
         references: [
-          "media/loom/words/new.mp3",
-          "media/loom/words/same.mp3",
-          "media/loom/words/changed.mp3",
-          "media/shared/pic.png",
+          "media/loom/words/words-1/audios/english/new.mp3",
+          "media/loom/words/words-1/images/english/changed.png",
+          "media/loom/words/words-1/images/english/same.png",
+          // Outside the partial clone's folders, but in the repository's tree.
           "media/common/click.mp3",
-          "media/loom/words/gone.mp3",
+          "media/loom/words/words-1/audios/english/gone.mp3",
         ],
-        draftRoots: [draft, other],
       },
       { git: git.git, log: (text) => lines.push(text) },
     );
     expect(result).toEqual({
-      copied: ["loom/words/new.mp3", "loom/words/changed.mp3", "shared/pic.png"],
-      missing: ["media/loom/words/gone.mp3"],
+      copied: [
+        "loom/words/words-1/audios/english/new.mp3",
+        "loom/words/words-1/images/english/changed.png",
+      ],
+      missing: ["media/loom/words/words-1/audios/english/gone.mp3"],
       present: 2,
     });
-    expect(await fs.readFile(path.join(clone, "loom/words/new.mp3"), "utf8")).toBe("new sound");
-    expect(await fs.readFile(path.join(clone, "loom/words/changed.mp3"), "utf8")).toBe("fixed");
-    expect(await fs.readFile(path.join(clone, "shared/pic.png"), "utf8")).toBe("picture");
-    // Only the folder outside the sparse set was added, once.
-    expect(git.calls.filter((call) => call[1] === "add")).toEqual([
-      ["sparse-checkout", "add", "shared"],
+    // A file in the working tree is asked about its status; one outside it, about HEAD's tree.
+    expect(git.calls).toEqual([
+      ["status", "--porcelain", "--", "loom/words/words-1/audios/english/new.mp3"],
+      ["status", "--porcelain", "--", "loom/words/words-1/images/english/changed.png"],
+      ["status", "--porcelain", "--", "loom/words/words-1/images/english/same.png"],
+      ["ls-tree", "--name-only", "HEAD", "--", "common/click.mp3"],
+      ["ls-tree", "--name-only", "HEAD", "--", "loom/words/words-1/audios/english/gone.mp3"],
     ]);
-    expect(lines.at(-1)).toBe("Media: 2 already in the repository, 3 copied, 1 missing.");
-    // The draft is only read.
-    expect(await fs.readFile(path.join(draft, "loom/words/new.mp3"), "utf8")).toBe("new sound");
+    expect(lines.at(-1)).toBe("Media: 2 already in the repository, 2 to publish, 1 missing.");
+    // Nothing in the clone is written or moved.
+    expect(
+      await fs.readFile(path.join(clone, "loom/words/words-1/audios/english/new.mp3"), "utf8"),
+    ).toBe("new sound");
   });
 
-  it("adds no sparse folder to a media checkout that is not sparse", async () => {
+  it("publishes a file whose status git could not report, rather than leaving it out", async () => {
     const clone = await tempDir("penguin-deploy-media-clone-");
-    const draft = await tempDir("penguin-deploy-media-draft-");
-    await put(draft, "shared/pic.png", "picture");
-    const calls: string[][] = [];
+    await put(clone, "loom/words/words-1/uploads/cat-1.png", "cat");
+    const git = fakeGit([], [], ["loom/words/words-1/uploads/cat-1.png"]);
     const result = await syncMedia(
-      { dir: clone, references: ["media/shared/pic.png"], draftRoots: [draft] },
-      {
-        git: async (args) => {
-          calls.push(args);
-          // git's answer for a checkout with no sparse set.
-          return args[1] === "list" ? { code: 128, stdout: "" } : { code: 1, stdout: "" };
-        },
-        log: () => {},
-      },
-    );
-    expect(result.copied).toEqual(["shared/pic.png"]);
-    expect(calls).toEqual([["sparse-checkout", "list"]]);
-  });
-
-  it("finds a draft's file only inside its media folder, and reads the sparse set as folders", async () => {
-    const draft = await tempDir("penguin-deploy-media-draft-");
-    await put(draft, "a.mp3", "a");
-    expect(await draftSource("media/a.mp3", [draft])).toBe(path.join(draft, "a.mp3"));
-    expect(await draftSource("media/../a.mp3", [draft])).toBeNull();
-    expect(await draftSource("other/a.mp3", [draft])).toBeNull();
-    expect(sparseCovers(["loom/words"], "loom/words/a.mp3")).toBe(true);
-    expect(sparseCovers(["/loom/words/"], "loom/words/x/a.mp3")).toBe(true);
-    expect(sparseCovers(["loom/words"], "loom/wordsmith/a.mp3")).toBe(false);
-  });
-
-  it("refuses a reference that would leave the clone", async () => {
-    const clone = await tempDir("penguin-deploy-media-clone-");
-    const git = fakeGit([]);
-    const result = await syncMedia(
-      { dir: clone, references: ["media/../../outside.mp3"], draftRoots: [] },
+      { dir: clone, references: ["media/loom/words/words-1/uploads/cat-1.png"] },
       { git: git.git, log: () => {} },
     );
-    expect(result.missing).toEqual(["media/../../outside.mp3"]);
-    expect(git.calls).toEqual([]);
+    expect(result).toEqual({
+      copied: ["loom/words/words-1/uploads/cat-1.png"],
+      missing: [],
+      present: 0,
+    });
+  });
+
+  it("counts a folder, not a file, in the working tree as not there", async () => {
+    const clone = await tempDir("penguin-deploy-media-clone-");
+    await fs.mkdir(path.join(clone, "loom", "words", "words-1", "images"), { recursive: true });
+    const git = fakeGit([]);
+    const result = await syncMedia(
+      { dir: clone, references: ["media/loom/words/words-1/images"] },
+      { git: git.git, log: () => {} },
+    );
+    expect(result.missing).toEqual(["media/loom/words/words-1/images"]);
+  });
+
+  it("names a reference outside the media folder or the clone as missing", async () => {
+    const clone = await tempDir("penguin-deploy-media-clone-");
+    await put(path.dirname(clone), "outside.mp3", "outside");
+    dirs.push(path.join(path.dirname(clone), "outside.mp3"));
+    const git = fakeGit([]);
+    const result = await syncMedia(
+      { dir: clone, references: ["media/../../outside.mp3", "other/a.mp3", "media/"] },
+      { git: git.git, log: () => {} },
+    );
+    expect(result).toEqual({
+      copied: [],
+      missing: ["media/../../outside.mp3", "other/a.mp3", "media/"],
+      present: 0,
+    });
+    // No status is asked of a file outside the clone.
+    expect(git.calls.some((call) => call[0] === "status")).toBe(false);
   });
 });

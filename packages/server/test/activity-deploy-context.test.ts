@@ -304,19 +304,27 @@ describe("deploy context", () => {
     expect(context.media.clone.present).toBe(false);
   });
 
-  it("names a dirty clone, one ahead of its upstream, one on the wrong remote, and missing main", async () => {
+  it("names a dirty activity-data clone, one on the wrong remote, and missing main", async () => {
     const repos: Record<string, FakeRepo> = {
-      [PATHS.module]: { origin: "git@github.com:someone/else.git" },
+      [PATHS.module]: { origin: "git@github.com:someone/else.git", dirty: true },
       [PATHS.activityData]: { origin: DATA_REMOTE, dirty: true, branches: [] },
-      [PATHS.media]: { origin: MEDIA_REMOTE, ahead: 2 },
+      [PATHS.media]: { origin: MEDIA_REMOTE, ahead: 2, dirty: true },
     };
     const context = await buildDeployContext(input(), { git: fakeGit(repos), exists: disk(repos) });
     expect(context.problems).toEqual([
       { code: "clone_remote_mismatch", repo: "module" },
       { code: "clone_dirty", repo: "activityData" },
       { code: "branch_missing", repo: "activityData", branch: "main", where: "local" },
-      { code: "clone_ahead", repo: "media", count: 2 },
     ]);
+  });
+
+  it("names the activity-data clone ahead of its upstream, but not the authored clones", async () => {
+    const repos = healthyRepos();
+    repos[PATHS.activityData]!.ahead = 1;
+    repos[PATHS.module]!.ahead = 3;
+    repos[PATHS.media]!.ahead = 2;
+    const context = await buildDeployContext(input(), { git: fakeGit(repos), exists: disk(repos) });
+    expect(context.problems).toEqual([{ code: "clone_ahead", repo: "activityData", count: 1 }]);
   });
 
   it("asks the remote about main and the deploy branches only when asked to", async () => {

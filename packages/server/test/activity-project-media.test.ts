@@ -3,6 +3,7 @@
  * chosen few that any member may download, and a copy of one activity's upload into
  * another.
  */
+import path from "node:path";
 import { unzipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ActivityDetail } from "../src/activities/domain.js";
@@ -39,9 +40,10 @@ describe("bundle naming", () => {
   });
 
   it("drops the digest this server added, so a copy lands on the same path", () => {
-    expect(copiedUploadName("media/uploads/cat-1f3a9c2b1f3a9c2b.png")).toBe("cat.png");
-    expect(copiedUploadName(`media/uploads/cat-${"a".repeat(64)}.png`)).toBe("cat.png");
-    expect(copiedUploadName("media/uploads/my-cat.png")).toBe("my-cat.png");
+    const uploads = "media/loom/words/words-1/uploads";
+    expect(copiedUploadName(`${uploads}/cat-1f3a9c2b1f3a9c2b.png`)).toBe("cat.png");
+    expect(copiedUploadName(`${uploads}/cat-${"a".repeat(64)}.png`)).toBe("cat.png");
+    expect(copiedUploadName(`${uploads}/my-cat.png`)).toBe("my-cat.png");
   });
 });
 
@@ -122,9 +124,11 @@ describe("project media library API", () => {
     const two = await create("words", 2);
     const cat = await upload(one, "cat.png", png(1));
     const bell = await upload(one, "bell.wav", wav);
-    // The same bytes under the same name in another activity: the same stored name.
+    // The same bytes under the same name in another activity: the same stored name, in that
+    // ref's own uploads.
     const sameCat = await upload(two, "cat.png", png(1));
-    expect(sameCat.path).toBe(cat.path);
+    expect(cat.path.startsWith("media/loom/words/words-1/uploads/")).toBe(true);
+    expect(sameCat.path).toBe(cat.path.replace("/words-1/", "/words-2/"));
 
     const bundle = await client.post(`${base()}/media-library/bundle`, {
       items: [
@@ -140,8 +144,8 @@ describe("project media library API", () => {
     );
     expect(bundle.headers.get("x-content-type-options")).toBe("nosniff");
     const entries = unzipSync(new Uint8Array(await bundle.arrayBuffer()));
-    const catName = cat.path.slice("media/uploads/".length);
-    const bellName = bell.path.slice("media/uploads/".length);
+    const catName = path.posix.basename(cat.path);
+    const bellName = path.posix.basename(bell.path);
     expect(Object.keys(entries).sort()).toEqual(
       [catName, bellName, catName.replace(/\.png$/, "-2.png")].sort(),
     );
@@ -156,12 +160,13 @@ describe("project media library API", () => {
     expect((await post([{ activityId: one.id }])).status).toBe(400);
     // Outside the uploads directory, or not there at all.
     expect((await post([{ activityId: one.id, path: "media/images/cat.png" }])).status).toBe(404);
-    expect((await post([{ activityId: one.id, path: "media/uploads/../draft.json" }])).status).toBe(
+    const uploads = "media/loom/words/words-1/uploads";
+    expect((await post([{ activityId: one.id, path: `${uploads}/../draft.json` }])).status).toBe(
       404,
     );
-    expect((await post([{ activityId: one.id, path: "media/uploads/missing.png" }])).status).toBe(
-      404,
-    );
+    expect((await post([{ activityId: one.id, path: `${uploads}/missing.png` }])).status).toBe(404);
+    // Another ref's upload is not this activity's to hand out.
+    expect((await post([{ activityId: one.id, path: sameCat.path }])).status).toBe(404);
     // An activity of another project is not found from this one.
     const elsewhere = await create("sounds", 1, "librarian-two");
     const theirs = await upload(elsewhere, "theirs.png", png(4), "librarian-two");
@@ -230,11 +235,13 @@ describe("project media library API", () => {
     });
     expect(copied.status, await copied.clone().text()).toBe(201);
     const stored = (await copied.json()) as UploadedMedia;
-    expect(stored).toMatchObject({ path: cat.path, kind: "image", sha256: cat.sha256 });
+    // The same name, in this ref's own uploads.
+    const copy = cat.path.replace("/words-1/", "/words-2/");
+    expect(stored).toMatchObject({ path: copy, kind: "image", sha256: cat.sha256 });
     const listed = (await (await client.get(`${base()}/${two.id}/media-uploads`)).json()) as {
       media: UploadedMedia[];
     };
-    expect(listed.media.map((file) => file.path)).toEqual([cat.path]);
+    expect(listed.media.map((file) => file.path)).toEqual([copy]);
     const bytes = await client.get(
       `${base()}/${two.id}/media-upload?path=${encodeURIComponent(stored.path)}`,
     );
@@ -252,7 +259,7 @@ describe("project media library API", () => {
       (
         await client.post(`${base()}/${two.id}/media-uploads/copy`, {
           fromActivityId: one.id,
-          path: "media/uploads/missing.png",
+          path: "media/loom/words/words-1/uploads/missing.png",
         })
       ).status,
     ).toBe(404);

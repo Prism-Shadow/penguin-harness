@@ -394,15 +394,13 @@ describe("scene video recording", () => {
     const asset = draft.mediaPlan!.manifest.assets["en-US"]!.find(
       (entry) => entry.key === "intro-video",
     )!;
-    expect(asset.path).toBe(`media/generated/${summary.runId}.webm`);
+    expect(asset.path).toBe("media/loom/p/p-1/videos/english/intro-video.webm");
     expect(asset.generatedVideo).toEqual({
       runId: summary.runId,
       sha256: inspectWebm(webm()).sha256,
     });
     // The player finds the bound recording where the media plan says it is.
-    const played = await f.client.get(
-      `${f.endpoint}/sandbox/media/generated/${summary.runId}.webm`,
-    );
+    const played = await f.client.get(`${f.endpoint}/sandbox/${asset.path}`);
     expect(played.status).toBe(200);
     expect(played.headers.get("content-type")).toBe("video/webm");
     expect(Buffer.from(await played.arrayBuffer())).toEqual(webm());
@@ -507,6 +505,7 @@ describe("WebM recordings", () => {
 
   it("allows a generated video only on a video or animation asset at its own path", () => {
     const runId = `run_${"a".repeat(32)}`;
+    const video = "media/loom/p/p-1/videos/english/intro-video";
     const address = { productCode: "p", refNum: 1 };
     const manifest = (asset: Record<string, unknown>) => ({
       ...address,
@@ -523,31 +522,33 @@ describe("WebM recordings", () => {
       },
     });
     const generatedVideo = { runId, sha256: "b".repeat(64) };
-    const valid = validateManifest(
-      manifest({ path: `media/generated/${runId}.webm`, generatedVideo }),
-      address,
-    );
+    const valid = validateManifest(manifest({ path: `${video}.webm`, generatedVideo }), address);
     expect(valid.assets["en-US"]![0]!.generatedVideo).toEqual(generatedVideo);
     // The runtime never sees Penguin's provenance.
     expect(wafManifest(valid).assets["en-US"]![0]).not.toHaveProperty("generatedVideo");
     // A version keeps the recording's bytes.
     expect(ownedMediaPaths(valid).owned).toEqual([
-      { path: `videos/${runId}.webm`, expectedSha256: generatedVideo.sha256 },
+      { path: `${video}.webm`, expectedSha256: generatedVideo.sha256 },
     ]);
     expect(() =>
       validateManifest(
-        manifest({ type: "animation", path: `media/generated/${runId}.webm`, generatedVideo }),
+        manifest({
+          type: "animation",
+          path: "media/loom/p/p-1/animations/english/intro-video.webm",
+          generatedVideo,
+        }),
         address,
       ),
     ).not.toThrow();
-    expect(() =>
-      validateManifest(manifest({ path: `media/generated/${runId}.mp4`, generatedVideo }), address),
-    ).toThrow("Invalid generated video binding.");
-    expect(() =>
-      validateManifest(
-        manifest({ type: "image", path: `media/generated/${runId}.webm`, generatedVideo }),
-        address,
-      ),
-    ).toThrow("Invalid generated video binding.");
+    for (const wrong of [
+      // Another extension, where a take used to be bound, and an animation's folder for a video.
+      { path: `${video}.mp4` },
+      { path: `media/generated/${runId}.webm` },
+      { path: "media/loom/p/p-1/animations/english/intro-video.webm" },
+      { type: "image", path: `${video}.webm` },
+    ])
+      expect(() => validateManifest(manifest({ ...wrong, generatedVideo }), address)).toThrow(
+        "Invalid generated video binding.",
+      );
   });
 });

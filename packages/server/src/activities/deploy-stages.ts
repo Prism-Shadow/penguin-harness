@@ -2,9 +2,9 @@
  * The stages of a module release, each a step over injected ports, and which of them may run
  * now.
  *
- *   verify_module         put the module clone back to main as origin has it (whatever an
- *                         earlier release left there is dropped), copy the newest assembled
- *                         module over its working tree, and run `npm ci`, `npm run buildDebug`,
+ *   verify_module         put the module clone on main as origin has it, carrying the authored
+ *                         work in its working tree, copy the newest assembled module over it,
+ *                         commit all of it on main, and run `npm ci`, `npm run buildDebug`,
  *                         `npm run lint` and `npm run buildRelease` in it
  *   prepare_deploy        make the deploy branch from main, carrying that content; write the
  *                         package name and version; compile `res/style.scss` when there is one;
@@ -21,9 +21,9 @@
  *                            deployed ref's configuration and assessment, the template and the
  *                            deploy list into it (`deploy-export.ts`)
  *   verify_activity_data     check what was written (`deploy-preflight.ts`); errors fail it
- *   verify_media_assets      put the media clone back to main as origin has it, copy each media
- *                            file the data names that only the draft holds into it, fail naming
- *                            any found nowhere, then commit and push main (`deploy-media.ts`)
+ *   verify_media_assets      bring the media clone's main up to origin around the authored media,
+ *                            fail naming any file the data names that is nowhere, then commit the
+ *                            new or changed ones and push main (`deploy-media.ts`)
  *   publish_activity_data    commit what export wrote and push the branch
  *   trigger_activity_deploy  note the newest activity deploy build, and start the activity
  *                            deploy job for the branch and this product's template
@@ -38,8 +38,9 @@
  *   await_production_deploy     follow that deploy as await_activity_deploy follows QA's, and
  *                               record when PROD got it
  *
- * Everything runs in the WAF workspace's clones, which a deploy starts on only when they are
- * clean. git, Jenkins, the programs and the clock are ports, so a test runs every stage with
+ * Everything runs in the WAF workspace's clones. The module and media clones hold authored
+ * work, which the stages commit rather than discard; the activity-data clone is the deploy's
+ * own and must be clean. git, Jenkins, the programs and the clock are ports, so a test runs every stage with
  * fakes and nothing reaches a remote.
  */
 import fs from "node:fs/promises";
@@ -175,8 +176,6 @@ export interface DeployActivitySnapshot {
   productRevision: string;
   /** Every ref of the product; archived ones are left out of the export. */
   refs: ExportRef[];
-  /** Each ref's draft media folder, where generated and uploaded media are found. */
-  draftMediaRoots: string[];
 }
 
 /** What the QA stages work on besides the module. */
@@ -416,26 +415,62 @@ async function jenkinsCall<T>(call: () => Promise<T>): Promise<T> {
 const verifyModule: DeployStageDefinition = {
   id: "verify_module",
   async run(ctx) {
-    // The clone was clean when the deploy started. What an earlier release left in it (the files it copied
-    // in, a deploy branch checked out, a stage that failed or was stopped half way) is dropped,
-    // so a release can always start again from main as origin has it.
+    // The module is where activities are authored, so what is in its working tree is work:
+    // it is carried onto main as origin has it (never reset away), the newest assembled
+    // module is copied over it, and all of it is committed on main before the checks run.
     await git(ctx, ["fetch", "origin"], { timeoutMs: PUSH_TIMEOUT_MS });
-    await git(ctx, ["checkout", "-f", BASE_BRANCH]);
-    const tracked = await git(
-      ctx,
-      ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${BASE_BRANCH}`],
-      { allowFailure: true, quiet: true },
-    );
-    if (tracked.code === 0) await git(ctx, ["reset", "--hard", `origin/${BASE_BRANCH}`]);
-    await git(ctx, ["clean", "-fd", "-e", "node_modules"]);
+    await onMainCarryingWork(ctx, ctx.module.dir);
     if (ctx.module.source) {
       const copied = await syncModule(ctx.module.source, ctx.module.dir);
       ctx.log(`Copied ${copied} files from the newest assembled module.`);
     } else ctx.log("No assembled module: verifying the module as its repository holds it.");
+    await git(ctx, ["add", "--all"]);
+    const authored = await commitStaged(
+      ctx,
+      ctx.module.dir,
+      `Penguin Harness: ${ctx.productCode} as authored`,
+    );
+    ctx.log(
+      authored
+        ? `Committed the authored module on main: ${authored}.`
+        : "Main already had everything authored.",
+    );
     ctx.metadata.moduleContentHash = ctx.module.contentHash ?? null;
     for (const args of MODULE_VERIFY_COMMANDS) await program(ctx, "npm", args);
   },
 };
+
+/**
+ * Puts a clone on main as origin has it without losing what is in its working tree: the
+ * work is set aside, main is checked out and fast-forwarded to origin (a main that has
+ * diverged from origin fails the stage, naming git's reason), and the work is put back. A
+ * clone with no main yet (a new module) starts it where it is.
+ */
+async function onMainCarryingWork(ctx: DeployStageContext, cwd: string): Promise<void> {
+  const status = await git(ctx, ["status", "--porcelain"], { quiet: true, cwd });
+  const work = status.stdout.trim() !== "";
+  if (work)
+    await git(ctx, ["stash", "push", "--include-untracked", "-m", "penguin-harness deploy"], {
+      cwd,
+    });
+  const local = await git(ctx, ["rev-parse", "--verify", "--quiet", `refs/heads/${BASE_BRANCH}`], {
+    allowFailure: true,
+    quiet: true,
+    cwd,
+  });
+  const remote = await git(
+    ctx,
+    ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${BASE_BRANCH}`],
+    { allowFailure: true, quiet: true, cwd },
+  );
+  if (local.code === 0) await git(ctx, ["checkout", BASE_BRANCH], { cwd });
+  else if (remote.code === 0)
+    await git(ctx, ["checkout", "-b", BASE_BRANCH, `origin/${BASE_BRANCH}`], { cwd });
+  else await git(ctx, ["checkout", "-B", BASE_BRANCH], { cwd });
+  if (remote.code === 0) await git(ctx, ["merge", "--ff-only", `origin/${BASE_BRANCH}`], { cwd });
+  // A conflict here keeps the work in the stash, and git's output says so.
+  if (work) await git(ctx, ["stash", "pop"], { cwd });
+}
 
 /** Writes the package name, and the version when one is given, into package.json and its lock. */
 async function syncPackage(ctx: DeployStageContext): Promise<string | undefined> {
@@ -741,19 +776,12 @@ const verifyMediaAssets: DeployStageDefinition = {
       throw new DeployStageFailure({ code: "preflight_failed", errors: report.errors.length });
     ctx.metadata.mediaChecked = report.media.length;
     const cwd = qa.media.dir;
-    // The media clone is this server's own: what a failed publish left in it is dropped.
+    // Authored media (accepted takes, uploads, candidates) is in the clone's working tree:
+    // main is brought up to origin around it, and only what the data names is published.
     await git(ctx, ["fetch", "origin"], { timeoutMs: PUSH_TIMEOUT_MS, cwd });
-    await git(ctx, ["checkout", "-f", BASE_BRANCH], { cwd });
-    const tracked = await git(
-      ctx,
-      ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${BASE_BRANCH}`],
-      { allowFailure: true, quiet: true, cwd },
-    );
-    if (tracked.code === 0) await git(ctx, ["reset", "--hard", `origin/${BASE_BRANCH}`], { cwd });
-    await git(ctx, ["clean", "-fd"], { cwd });
-    const snapshot = await qa.snapshot();
+    await onMainCarryingWork(ctx, cwd);
     const result = await syncMedia(
-      { dir: cwd, references: report.media, draftRoots: snapshot.draftMediaRoots },
+      { dir: cwd, references: report.media },
       {
         git: (args, options = {}) => git(ctx, args, { ...options, cwd }),
         log: ctx.log,
@@ -772,7 +800,8 @@ const verifyMediaAssets: DeployStageDefinition = {
       ctx.log("The media repository already has every file: nothing to publish.");
       return;
     }
-    await gitAdd(ctx, [], result.copied, cwd);
+    // --sparse: an authored file may sit in a folder the partial clone has not checked out.
+    await gitAdd(ctx, ["--sparse"], result.copied, cwd);
     const commit = await commitStaged(ctx, cwd, `Publish media for ${ctx.productCode}`);
     if (!commit) return;
     ctx.metadata.mediaCommit = commit;
@@ -1097,11 +1126,11 @@ export function qaStages(releaseIsCurrent: boolean): DeployStage[] {
 }
 
 /**
- * Readiness problems every stage tolerates in the clones: they are this server's own, and each
- * stage that works in one first puts it back as origin has it. A release leaves the module
- * clone with changes and on a branch whose upstream is not there yet; an export or a media
- * copy that failed half way leaves the activity-data or media clone with changes or commits
- * not yet pushed.
+ * Readiness problems every stage tolerates in the clones. The module and media clones hold
+ * authored work, which the stages carry and commit; the activity-data clone is this server's
+ * own, and export puts it back as origin has it. A release leaves the module clone on a
+ * branch whose upstream is not there yet; an export that failed half way leaves the
+ * activity-data clone with changes or commits not yet pushed.
  */
 function tolerated(problem: DeployProblem): boolean {
   if (!("repo" in problem)) return false;

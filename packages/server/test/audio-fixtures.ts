@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export function speechWave(samples = 48): Buffer {
   const bytes = Buffer.alloc(44 + samples * 2);
   bytes.write("RIFF");
@@ -25,3 +27,32 @@ export function soundMp3(frames = 20, id3 = true): Buffer {
   const tag = Buffer.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0]);
   return Buffer.concat([...(id3 ? [tag] : []), ...Array.from({ length: frames }, () => frame)]);
 }
+
+/**
+ * WAV to MP3 as a test's AudioEncodePorts does it, without ffmpeg: a valid MP3 (see
+ * soundMp3) whose ID3 tag carries the WAV's digest, so different speech gives different MP3s
+ * and the same speech the same one.
+ */
+export function mp3OfWave(wav: Uint8Array, frames = 5): Buffer {
+  const digest = createHash("sha256").update(wav).digest();
+  const tag = Buffer.concat([
+    Buffer.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, digest.length]),
+    digest,
+  ]);
+  return Buffer.concat([tag, soundMp3(frames, false)]);
+}
+
+/**
+ * Options for createTestApp that convert speech with mp3OfWave instead of ffmpeg, refusing
+ * bytes that are not a WAV as ffmpeg would.
+ */
+export const fakeMp3Encoding = {
+  audioEncodePorts: {
+    wavToMp3: async (wav: Uint8Array) => {
+      const bytes = Buffer.from(wav);
+      if (bytes.toString("latin1", 0, 4) !== "RIFF" || bytes.toString("latin1", 8, 12) !== "WAVE")
+        throw new Error("Converting the speech to MP3 failed: not a WAV file.");
+      return mp3OfWave(bytes);
+    },
+  },
+};
