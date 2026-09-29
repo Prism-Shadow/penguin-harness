@@ -27,10 +27,38 @@ import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 
 const BASE = process.env.BASE_URL;
+const MOCK = process.env.MOCK_URL;
 const U = "pluginsuser";
 const P = "password123";
 /** The blank Agent the install flow targets: default_agent preinstalls most of the library. */
 const TARGET = "plugin_target";
+
+/**
+ * A Project without model credentials pops the onboarding dialog ("尚未配置模型 credential",
+ * a fixed inset-0 overlay) shortly after the page loads, and it swallows every click on the
+ * sidebar — whether a click lands before it is a race. Configure the mock model first, like
+ * the other app-shell specs do.
+ */
+async function configureProjectModel(request) {
+  const projectId = (await (await request.get(`${BASE}/api/projects`)).json()).projects[0]
+    .projectId;
+  const put = await request.put(`${BASE}/api/projects/${projectId}/models`, {
+    data: {
+      defaultModel: { provider: "custom", modelId: "claude-4-8" },
+      models: [
+        {
+          provider: "custom",
+          modelId: "claude-4-8",
+          apiKey: "sk-mock",
+          baseUrl: MOCK,
+          contextWindow: 200000,
+        },
+      ],
+    },
+  });
+  expect(put.ok(), "put models").toBeTruthy();
+  return projectId;
+}
 
 /** An Agent's installed skill names, sorted — the server's answer, not the page's. */
 async function agentSkills(request, projectId, agentId) {
@@ -107,8 +135,7 @@ test("plugins: the Plugins page renders the library and index the server serves,
   recordApiCalls(page, (call) => apiCalls.push(call));
 
   await provisionAndLogin(page.request, U, P);
-  const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
-  const projectId = projects.projects[0].projectId;
+  const projectId = await configureProjectModel(page.request);
 
   // The payloads the page is built from, read here first so every assertion below is tied to
   // them: nothing in this test is a hardcoded plugin name or count.
@@ -129,7 +156,9 @@ test("plugins: the Plugins page renders the library and index the server serves,
   expect(await agentSkills(page.request, projectId, TARGET), "the target starts empty").toEqual([]);
 
   // —— The page, reached through its own navigation entry ——
-  await page.goto(`${BASE}/chat`);
+  // Straight to /chat/new: /chat redirects there on its own, and a redirect still in flight
+  // would override the navigation the click below starts.
+  await page.goto(`${BASE}/chat/new`);
   await page.getByRole("link", { name: "插件市场" }).click();
   await expect(page).toHaveURL(/\/plugins$/);
   await expect(page.getByRole("heading", { level: 1, name: "插件" })).toBeVisible();
@@ -217,6 +246,7 @@ test("plugins: a registry entry's detail page renders the index entry and the re
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
+  await configureProjectModel(page.request);
   const index = (await (await page.request.get(`${BASE}/api/plugins/registry`)).json()).plugins;
   expect(index.length, "the builtin registry this build embeds").toBeGreaterThan(0);
   const entry = index[0];
