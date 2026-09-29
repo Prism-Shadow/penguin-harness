@@ -288,7 +288,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | `skills.prompt` | Built-in template | The `{{SKILLS}}` block; carries `{{SKILL_METADATA}}` |
 | `schedules.enabled` | `true` | Whether the scheduled-tasks section enters the context |
 | `schedules.prompt` | Built-in template | The `{{SCHEDULES}}` block, which teaches file-based task management; carries `{{SCHEDULE_LIST}}` |
-| `hooks.enabled` | `true` | Whether a new Session runs the installed hook packages at the loop's hook points |
+| `hooks.enabled` | `true` | Whether the installed hook packages run at the loop's hook points |
 | `tools.builtin` | The full default toolset when omitted | Tool entries; once written, replaces the default list wholesale |
 | `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`) |
 

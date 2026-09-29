@@ -101,14 +101,14 @@ describe("loadLibraryPlugins", () => {
     expect(Object.keys(files).some((rel) => rel.startsWith("reference/"))).toBe(true);
   });
 
-  it("a hook plugin carries a manifest naming its stop scripts and the hooks/ files to install", () => {
+  it("a hook plugin carries a manifest naming its scripts and the hooks/ files to install; goal's start runs only when the host starts a goal", () => {
     const goal = libraryPlugin("goal");
     expect(goal?.hooks?.manifest).toMatchObject({
       name: "goal",
       version: goal!.version,
       stop: [{ command: "stop.mjs", timeout: 60 }],
       pre_tool_use: [],
-      user_prompt: [{ command: "start.mjs", timeout: 60 }],
+      user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
     });
     expect(goal!.hooks!.manifest.description_zh).toBeDefined();
     expect(Object.keys(goal!.hooks!.files).sort()).toEqual(["lib.mjs", "start.mjs", "stop.mjs"]);

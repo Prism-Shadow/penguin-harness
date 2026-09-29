@@ -8,15 +8,17 @@
  * stdin:  `{ "hook": "stop", "session_id": "…", "trace_path": "/abs/…_001.jsonl" }` for a
  *         stop hook (`trace_path` absent for a Trace-less Session); a pre_tool_use hook
  *         additionally gets `tool_name`, `tool_call_id` and `arguments` (the raw argument
- *         JSON string); a user_prompt hook gets `scratchpad_dir`, `prompt` and the host's
- *         flow extras instead of `trace_path`.
+ *         JSON string); a user_prompt hook additionally gets `scratchpad_dir` and `prompt`,
+ *         plus the host's flow extras when the host started it by name.
  * stdout: empty = no opinion; otherwise the point's result as JSON — a StopHookResult
- *         (`decision` continue/stop, `input`, `reason`, `output`, `subagent`) or a
- *         PreToolUseHookResult (`decision` allow/deny, `reason`, `output`).
+ *         (`decision` continue/stop, `input`, `reason`, `output`, `subagent`), a
+ *         PreToolUseHookResult (`decision` allow/deny, `reason`, `output`) or a
+ *         UserPromptHookResult (`context`).
  * exit:   non-zero = failure (stderr's tail becomes the reason).
  *
- * Hooks run in core and nowhere else — hosts trigger them through Session APIs (the goal
- * start goes through `Session.runUserPromptHook`), never by spawning scripts themselves.
+ * Hooks run in core and nowhere else — the Session consults them at their points, and a
+ * host reaches a flow of its own through a Session API (the goal start goes through
+ * `Session.runUserPromptHook`), never by spawning scripts itself.
  * `runHookScript` is the generic runner behind the adapters (`scriptStopHook` /
  * `scriptPreToolUseHook` / `scriptUserPromptHook`), each turning one installed command into
  * the point's in-process interface.
@@ -27,6 +29,7 @@ import { prependPathEnv } from "../environment/tools/command/path-prepend.js";
 import type { StopHook, StopHookInput, StopHookResult } from "./stop-hook.js";
 import type { PreToolUseHook, PreToolUseHookInput, PreToolUseHookResult } from "./tool-hook.js";
 import type { UserPromptHook, UserPromptHookInput, UserPromptHookResult } from "./prompt-hook.js";
+import type { UserPromptTrigger } from "../plugins/index.js";
 
 /** Seconds a script may run before it is killed, when its manifest names none. */
 export const DEFAULT_HOOK_TIMEOUT_S = 60;
@@ -202,23 +205,26 @@ function scriptRunner(
     });
 }
 
-/** One installed user-prompt command as a UserPromptHook. */
+/** One installed user-prompt command as a UserPromptHook; `trigger` is the command's resolved one (see plugins' userPromptTrigger). */
 export function scriptUserPromptHook(
   name: string,
   dir: string,
   command: string,
   timeoutS?: number,
   pathPrepend?: () => string[],
+  trigger?: UserPromptTrigger,
 ): UserPromptHook {
   const run = scriptRunner(dir, command, timeoutS, pathPrepend);
   return {
     name,
+    ...(trigger !== undefined ? { trigger } : {}),
     async run(input: UserPromptHookInput): Promise<UserPromptHookResult | undefined> {
       return parseUserPromptResult(
         await run(
           {
             hook: "user_prompt",
             session_id: input.sessionId,
+            trace_path: input.tracePath,
             scratchpad_dir: input.scratchpadDir,
             prompt: input.prompt,
             ...input.extras,

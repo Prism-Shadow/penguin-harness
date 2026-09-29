@@ -77,6 +77,7 @@ interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;     // per-tool approval; denies everything when omitted
   preToolUse?: PreToolUseFn; // pre-tool-use hook consult; the Session wires it from installed hook packages
+  userPrompt?: UserPromptFn; // user-prompt hook consult; the Session wires it from installed hook packages
 }
 
 interface RunCutoff {       // how a run was cut off early

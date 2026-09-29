@@ -1911,8 +1911,8 @@ export const zh = {
     importPromptTail: (projectId: string, agentId: string): string =>
       [
         "先完整阅读来源，逐个审查脚本有没有恶意行为（外传数据、改动来源之外的文件、执行来路不明的命令等），确认安全后再继续。",
-        '然后产出一个 PenguinHarness 钩子包：一份 hooks.json（name、description、description_zh、version（格式 YYYY.MM.DD.N），以及各钩子点的命令列表 stop / pre_tool_use / user_prompt，每项为 { "command": "<脚本相对路径>", "timeout": <秒> }）加上纯 Node 的 .mjs 脚本（只用内置模块）。',
-        '脚本契约：stdin 收到一份 JSON——stop 点为 { "hook": "stop", "session_id", "trace_path" }（trace_path 是 Session 正在写入的 Trace 文件，无 Trace 时缺省），pre_tool_use 点另有 tool_name、tool_call_id、arguments（原始参数 JSON 串），user_prompt 点则是 scratchpad_dir 与 prompt；stdout 为空即无意见，否则一份 JSON 回答——stop 点 { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }，pre_tool_use 点 { "decision": "allow" | "deny", "reason", "output" }，user_prompt 点 { "context" }；退出码非零、stdout 不是 JSON 或超时都按失败记录、不采纳。',
+        '然后产出一个 PenguinHarness 钩子包：一份 hooks.json（name、description、description_zh、version（格式 YYYY.MM.DD.N），以及各钩子点的命令列表 stop / pre_tool_use / user_prompt，每项为 { "command": "<脚本相对路径>", "timeout": <秒> }）加上纯 Node 的 .mjs 脚本（只用内置模块）。用不到的钩子点可以省略或写成 []；user_prompt 的条目可以另加 "trigger": "prompt"（缺省：用户每次提交 Prompt 时运行）或 "host"（只在宿主按包名启动该包的流程时运行）。',
+        '脚本契约：stdin 收到一份 JSON——stop 点为 { "hook": "stop", "session_id", "trace_path" }（trace_path 是 Session 正在写入的 Trace 文件，无 Trace 时缺省），pre_tool_use 点另有 tool_name、tool_call_id、arguments（原始参数 JSON 串），user_prompt 点带 trace_path、scratchpad_dir 与 prompt（用户的消息文本）；stdout 为空即无意见，否则一份 JSON 回答——stop 点 { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }，pre_tool_use 点 { "decision": "allow" | "deny", "reason", "output" }，user_prompt 点 { "context" }，它在每条 Prompt 中紧随用户消息发出；退出码非零、stdout 不是 JSON 或超时都按失败记录、不采纳。',
         `把它安装到 Project「${projectId}」中 Agent「${agentId}」的 agent_state/hooks/<name>/ 目录（目录名即包名，须匹配 ^[A-Za-z0-9_-]+$），最后向我说明它做什么、在哪个钩子点触发。`,
       ].join("\n"),
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
@@ -1923,7 +1923,7 @@ export const zh = {
     injection: {
       enable: "启用钩子",
       enableHint:
-        "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置。",
+        "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置，直到其上下文被压缩。",
       savedToast: "已保存，自下一轮对话起生效",
     },
   },

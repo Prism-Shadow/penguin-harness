@@ -288,7 +288,7 @@ enabled = false
 | `skills.prompt` | 内置模板 | `{{SKILLS}}` 块；包含 `{{SKILL_METADATA}}` |
 | `schedules.enabled` | `true` | 定时任务小节是否进入上下文 |
 | `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 块，讲解基于文件的任务管理；包含 `{{SCHEDULE_LIST}}` |
-| `hooks.enabled` | `true` | 新 Session 是否在循环的钩子点运行已安装的钩子包 |
+| `hooks.enabled` | `true` | 是否在循环的钩子点运行已安装的钩子包 |
 | `tools.builtin` | 省略时为完整默认工具集 | 工具条目；一旦写入，就整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`） |
 

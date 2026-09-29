@@ -70,6 +70,7 @@ See `packages/core/src/trace/writer.ts` for the implementation.
 An illustrative Trace head follows, one OmniMessage envelope per line. Note the order:
 
 - The user's input is written before the `request_begin` it is sent with.
+- What the [user-prompt hooks](/agent-loop#user-prompt-hooks) answer follows the user's input directly: a harness-stamped user text per context, or a `hook` event for a hook that failed.
 - On the first run, the toolset follows the input as a `tool_list_ready` event, after an `mcp_connect_begin` / `mcp_connect_end` pair when MCP servers are configured. `session_meta` does not carry the tool definitions.
 
 ```jsonl

@@ -17,6 +17,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
+  type HookCommand,
   type HookManifest,
   type LibraryPlugin,
   type SkillMetadata,
@@ -662,13 +663,58 @@ export async function installPlugin(
   }
 }
 
-/** The manifest of the hook package directory `dir`, or null when there is no parseable `hooks.json` (then it is not a hook package). */
+/**
+ * One hook point's command list as a manifest on disk spells it, read tolerantly: anything
+ * but an array is no commands, and an entry is kept only when it names a script inside the
+ * package directory `dir`. A `timeout` that is not a positive number and a `trigger` that is
+ * not one of the two known values are dropped rather than failing the entry.
+ */
+function readHookCommands(dir: string, value: unknown): HookCommand[] {
+  if (!Array.isArray(value)) return [];
+  const commands: HookCommand[] = [];
+  for (const entry of value as unknown[]) {
+    if (entry === null || typeof entry !== "object") continue;
+    const { command, timeout, trigger } = entry as Record<string, unknown>;
+    if (typeof command !== "string" || command === "") continue;
+    const relative = path.relative(dir, path.resolve(dir, command));
+    if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+    commands.push({
+      command,
+      ...(typeof timeout === "number" && timeout > 0 ? { timeout } : {}),
+      ...(trigger === "prompt" || trigger === "host" ? { trigger } : {}),
+    });
+  }
+  return commands;
+}
+
+/**
+ * The manifest of the hook package directory `dir`, or null when `hooks.json` is missing or
+ * is not a JSON object (then it is not a hook package). Read tolerantly, because a package
+ * is not only what an installer writes: an Agent or a person may have written the directory
+ * by hand. A hook point the manifest does not list has no commands, display fields that are
+ * not strings read as absent, and unknown keys are left behind — every reader downstream
+ * finds the three lists as arrays.
+ */
 async function readHookManifest(dir: string): Promise<HookManifest | null> {
+  let raw: unknown;
   try {
-    return JSON.parse(await fs.readFile(path.join(dir, "hooks.json"), "utf8")) as HookManifest;
+    raw = JSON.parse(await fs.readFile(path.join(dir, "hooks.json"), "utf8"));
   } catch {
     return null;
   }
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const manifest = raw as Record<string, unknown>;
+  return {
+    name: typeof manifest.name === "string" ? manifest.name : "",
+    description: typeof manifest.description === "string" ? manifest.description : "",
+    ...(typeof manifest.description_zh === "string"
+      ? { description_zh: manifest.description_zh }
+      : {}),
+    version: typeof manifest.version === "string" ? manifest.version : "",
+    stop: readHookCommands(dir, manifest.stop),
+    pre_tool_use: readHookCommands(dir, manifest.pre_tool_use),
+    user_prompt: readHookCommands(dir, manifest.user_prompt),
+  };
 }
 
 /** Serializes a manifest the way every writer of `hooks.json` does (pretty-printed, trailing newline). */
@@ -729,10 +775,11 @@ export interface InstalledHook extends HookManifest {
 
 /**
  * Lists the hook packages installed on the target Agent: scans `hooks/<name>/hooks.json` and
- * reads the optional icon.svg beside it. The manifest is the installer's own output
- * (installHook writes a HookManifest), so it is read back as one; a directory without a
- * hooks.json is not a hook package, and the directory name is the identity (a manifest
- * naming something else is corrected). Sorted by name; [] when hooks/ doesn't exist.
+ * reads the optional icon.svg beside it. A package is whatever directory carries a manifest —
+ * an installer's output or one written by hand — so the manifest is read tolerantly (see
+ * readHookManifest); a directory without a readable hooks.json is not a hook package, and
+ * the directory name is the identity (a manifest naming something else is corrected).
+ * Sorted by name; [] when hooks/ doesn't exist.
  */
 export async function listInstalledHooks(
   root: string,

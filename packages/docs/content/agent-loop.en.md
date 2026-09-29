@@ -14,6 +14,7 @@ The diagram traces one `run` call from entry to return.
 ```text
 session.run(newMessages, { approve, signal })
   │  carry-over from a previous interrupt? → prepend to this run's input
+  │  the user's own Prompt? → user_prompt hooks; each context follows it
   ▼
 ┌── turn loop (≤ max_turns; default -1 = no cap) ───────────────┐
 │                                                               │
@@ -68,10 +69,11 @@ interface RunOptions {
   signal?: AbortSignal;       // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;        // per-tool approval; denies everything when omitted (conservative default)
   preToolUse?: PreToolUseFn;  // pre-tool-use hook consult, called before approve for each complete tool_call
+  userPrompt?: UserPromptFn;  // user-prompt hook consult, called once with the Prompt before the first request
 }
 ```
 
-The Session fills in `preToolUse` itself from the agent's installed hook packages (see [Pre-tool-use hooks](#pre-tool-use-hooks)).
+The Session fills in `preToolUse` and `userPrompt` itself from the agent's installed hook packages (see [Pre-tool-use hooks](#pre-tool-use-hooks) and [User-prompt hooks](#user-prompt-hooks)).
 
 The generator's return value says how the run ended: `null` when it ran to completion, otherwise a `RunCutoff`:
 
@@ -127,9 +129,9 @@ A **hook** is a function the Session runs at a fixed point of the loop. Three po
 | --- | --- | --- |
 | `stop` | The moment a Task ends: the model's final reply with no tool call, or a cutoff — user abort, LLM failure, or the `max_turns` cap | [Stop hooks](#stop-hooks) |
 | `pre_tool_use` | Before each tool call's approval | [Pre-tool-use hooks](#pre-tool-use-hooks) |
-| `user_prompt` | When a prompt is submitted | [User-prompt hooks](#user-prompt-hooks) |
+| `user_prompt` | Every time the user submits a prompt, before the Task's first request | [User-prompt hooks](#user-prompt-hooks) |
 
-The hooks a Session consults are the hook packages installed in the agent's `agent_state/hooks/` directory. A [plugin](/skills#hook-packages) ships such packages, and the Session reads them fresh per Session, like Skills. SDK embedders can also register in-process functions through `SessionConfig.hooks.stop` / `.preToolUse` / `.userPrompt`.
+The hooks a Session consults are the hook packages installed in the agent's `agent_state/hooks/` directory, whether a [plugin](/skills#hook-packages) shipped them or someone wrote them there by hand, the agent included. Like Skills, they are read from disk, together with the `hooks.enabled` switch, each time a model context opens: when the Session is created, after each compaction, and on resume. The new context's hooks replace the old ones whole, so a package written during a conversation is consulted from the next context on. SDK embedders can also register in-process functions through `SessionConfig.hooks.stop` / `.preToolUse` / `.userPrompt`.
 
 An installed hook is a plain Node script, run as a subprocess the way Claude Code runs its command hooks. The script is told only where to look; it derives everything else from the Trace: Token usage, turn counts, how the Task ended, and its own state file. A non-zero exit is a failure, and the tail of stderr becomes the reason. A timeout kills the script; the timeout comes from the manifest's `timeout` field and defaults to 60 s.
 
@@ -187,16 +189,24 @@ No built-in plugin ships one. The point exists for custom guards: a project-spec
 
 ### User-prompt hooks
 
-The third point, `user_prompt`, expands a submitted prompt. These hooks run in core and nowhere else. The host triggers the point through `Session.runUserPromptHook(name, prompt, extras)` when it accepts a user prompt for the flow that the package owns. The Session supplies its own id and scratchpad directory.
+The third point, `user_prompt`, runs **every time the user submits a prompt**, that is, for a `run` whose input carries text of the user's own: a user text whose `sender` is absent or `"user"`. Input someone else wrote does not fire it: a `server` input such as a scheduled task or a company-mode trigger, a subagent's `parent_agent` input, a stop hook's continuation, a background-task report, or mid-run steering. The engine consults the hooks once, after the Prompt is written to the Trace and before the Task's first request. Packages run in name order, and each package's commands in manifest order.
 
 ```text
-stdin   { "hook": "user_prompt", "session_id", "scratchpad_dir", "prompt", …host extras (goal: "budget") }
-stdout  { "context": "<text appended after the user's message>" }
+stdin   { "hook": "user_prompt", "session_id", "trace_path", "scratchpad_dir", "prompt" }
+stdout  nothing = nothing to add; otherwise
+        { "context": "<text sent right behind the user's message>" }
+exit    non-zero = failure (stderr's tail becomes the reason); a timeout (default 60 s) kills it
 ```
 
-The answer's `context` is sent right behind the user's own message as a harness-stamped message, which hosts render as a compact collapsed card. The call returns `null` when the package is not installed or names no `user_prompt` command. It records no `hook` event; the expansion message is the record.
+`prompt` is the user's text with its leading marker blocks, such as `[use_skills]`, stripped; several texts are joined with newlines. `trace_path` is absent for a Session without a Trace.
 
-[Goal mode](/goal-mode) is the one shipped use. The goal plugin's `start.mjs` is its `user_prompt` command. The Server asks the Session to run it for `goal: { budget }`; the command writes `GOAL.json` and answers with round 1's protocol message.
+Each non-empty `context` becomes a user text stamped [`sender: "harness"`](/omni-message#modelmsg-complete-payloads), right behind the user's own message and in hook order. It is yielded onto the stream, written to the Trace right behind the Prompt, and sent with the Prompt in the Task's first request; hosts render it as a compact collapsed card. That message is the record: a hook that succeeds leaves no `hook` event. A hook that fails — it exits non-zero, prints something that is not JSON, times out, or throws — is recorded at the same position as a `hook` event with `hook: "user_prompt"` and the error as its `reason`, and treated as having nothing to add. It never takes the run down.
+
+The scripts run on the hot path of every prompt. Keep them fast, set a tight `timeout` in the manifest, and keep the context short: the model reads it with every prompt.
+
+**Host-triggered commands.** A `user_prompt` command can carry `"trigger": "host"` in `hooks.json`; the default is `"prompt"`. Such a command stays out of the consult above and runs only when a host starts the package's own flow by name, through `Session.runUserPromptHook(name, prompt, extras)`. The Session supplies its own id, Trace path and scratchpad directory, and the host's `extras` join the stdin fields. The call returns the hook's answer, `{}` for an empty one, or `null` when the package is not installed or has no host-triggered command. The host then sends the `context` itself, stamped `sender: "harness"` right behind the user's message, as ordinary Task input; this path records no `hook` event either. An in-process `UserPromptHook` takes the same optional `trigger` field.
+
+[Goal mode](/goal-mode) is the one shipped `host` use: the goal plugin's `start.mjs` is marked `"trigger": "host"`. The Server runs it through `runUserPromptHook` for `goal: { budget }`, with `budget` added to its stdin; the script writes `GOAL.json` and answers with round 1's protocol message. The prompt that starts a goal is still a prompt the user submitted, so other packages' `user_prompt` hooks run on it as usual, and their contexts follow the goal's protocol message.
 
 ## Mid-run steering
 
@@ -365,6 +375,7 @@ The new context is **assembled from the Agent State as it is at that moment**, e
 - `AGENTS.md`;
 - the vault;
 - the installed Skills' metadata;
+- the installed hook packages, with the `hooks.enabled` switch;
 - the Memory indexes;
 - the schedule roster;
 - the Environment's date.

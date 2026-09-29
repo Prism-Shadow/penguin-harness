@@ -37,6 +37,7 @@ import {
   tracesDir,
   type AgentState,
   type CompactionConfig,
+  type InstalledHook,
   type ModelRef,
   type ModelEntry,
   type ProjectConfig,
@@ -59,7 +60,8 @@ import {
 import { Session } from "./session.js";
 import { scriptPreToolUseHook, scriptStopHook, scriptUserPromptHook } from "./hooks/script-hook.js";
 import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
-import type { SessionConfig } from "./session.js";
+import { predatesEveryPromptHooks, userPromptTrigger } from "./plugins/index.js";
+import type { SessionConfig, SessionOpenedContext } from "./session.js";
 import {
   createTempWorkspace,
   formatSessionId,
@@ -83,11 +85,7 @@ import type {
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
-import type {
-  CompactionSettings,
-  OpenContextOptions,
-  OpenedContext,
-} from "./engine/context-engine.js";
+import type { CompactionSettings, OpenContextOptions } from "./engine/context-engine.js";
 import type {
   ApproveFn,
   CommandPolicyConfig,
@@ -289,9 +287,9 @@ interface SessionRuntime {
    * Opens the context that follows a completed compaction (see ContextEngineDeps.openNextContext):
    * the whole configuration assembled anew from the Agent State, the Environment re-equipped
    * with it, then the same opening procedure as `bootstrap` — and the session_meta recording
-   * the context alongside its engine settings.
+   * the context alongside its engine settings, with the hooks the context runs with.
    */
-  openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext>;
+  openNextContext: (opts: OpenContextOptions) => Promise<SessionOpenedContext>;
   /** The running context's command policy — follows the rotation (see SessionConfig.commandPolicy). */
   commandPolicy: () => CommandPolicyConfig | undefined;
 
@@ -318,6 +316,14 @@ interface AssembledContext {
   /** `system_config.max_turns`; the engine treats absent as unlimited (-1). */
   maxTurns: number | undefined;
   compaction: CompactionSettings;
+  /**
+   * The hook packages this context consults: the ones installed in `agent_state/hooks/`
+   * when it opened. Empty with `hooks.enabled: false` — the one switch over all of them,
+   * the packages stay installed — and for a child Session, which carries no hooks: a
+   * subagent's work belongs to its parent's Trace, and a child could not spawn a subagent
+   * anyway.
+   */
+  hookPackages: InstalledHook[];
   /** The session_meta describing this context: the prompt it runs with, and the Session-fixed facts. */
   meta: SessionMetaPayload;
 }
@@ -430,8 +436,9 @@ export class Agent {
    * Assembles what a model context runs with, from the Agent State as it is on disk **now**:
    * `system_config.yaml` in full — the prompt template with its section prompts and toggles,
    * the builtin tool entries and MCP Servers, the compaction settings, `max_turns`, the
-   * model defaults — plus `AGENTS.md`, the vault, the installed Skills' metadata, the Memory
-   * indexes, the schedule roster and the Environment values (the date included). Every
+   * model defaults — plus `AGENTS.md`, the vault, the installed Skills' metadata, the
+   * installed hook packages, the Memory indexes, the schedule roster and the Environment
+   * values (the date included). Every
    * context opener goes through here — createSession, the context a completed compaction
    * opens (buildRuntime's openNextContext) and a resume that finds its context closed — so an
    * edit made during one context, by the user or by the model working on its own
@@ -461,6 +468,13 @@ export class Agent {
     // the one on disk at its open.
     const projectConfig = await loadProjectConfig(root, projectId);
     const commandPolicy = projectConfig.command_policy;
+    // Hook packages are not part of the request prefix, and are read on the same schedule
+    // all the same: a package the model wrote during one context is consulted from the next.
+    const child = spec.subagentDepth > 0 || spec.source === "subagent";
+    const hookPackages =
+      child || state.systemConfig.hooks?.enabled === false
+        ? []
+        : await listInstalledHooks(root, projectId, agentId);
     let systemPrompt = opts.systemPrompt;
     if (systemPrompt === undefined) {
       const installedSkills = await listInstalledSkills(root, projectId, agentId);
@@ -566,6 +580,7 @@ export class Agent {
       // Max turns is an Agent runtime parameter (system_config), not a Session option.
       maxTurns: state.systemConfig.max_turns,
       compaction,
+      hookPackages,
       meta,
     };
   }
@@ -651,17 +666,12 @@ export class Agent {
     const context = await this.assembleContext(spec);
     const rt = this.buildRuntime(spec, context);
 
-    const hooks = await this.sessionHooks(
-      rt.subagentRunner,
-      spec.subagentDepth > 0 || opts.source === "subagent",
-    );
-
     const trace = new Writer({
       tracesDir: tracesDir(this.state.root, this.state.projectId, this.state.agentId),
       sessionId,
     });
 
-    return this.newSession(spec, context, rt, trace, { ...(hooks ? { hooks } : {}) });
+    return this.newSession(spec, context, rt, trace);
   }
 
   /**
@@ -784,8 +794,6 @@ export class Agent {
       return r;
     };
 
-    const hooks = await this.sessionHooks(rt.subagentRunner, meta.source === "subagent");
-
     // Continue writing to the original Trace file (the Trace only records real messages; synthesized paired placeholders are re-emitted in memory alongside carry-over).
     const trace = new Writer({
       tracesDir: dir,
@@ -815,7 +823,6 @@ export class Agent {
 
     return this.newSession(spec, context, rt, trace, {
       bootstrap,
-      ...(hooks ? { hooks } : {}),
       // session_meta is already in the original Trace file, so it isn't rewritten; on the first write after a compaction-triggered rotation, the file is split first.
       metaAlreadyWritten: true,
       initialEngineState: {
@@ -898,6 +905,8 @@ export class Agent {
       environment: rt.environment,
       trace,
       openNextContext: rt.openNextContext,
+      // The first context's hooks; each context `openNextContext` opens brings its own.
+      hooks: this.sessionHooks(rt.subagentRunner, context.hookPackages),
 
       createBareLLM: rt.createBareLLM,
       compaction: context.compaction,
@@ -1297,7 +1306,7 @@ export class Agent {
     // records live and writes them at the head of the rotated Trace file. An Agent State
     // that cannot be assembled (a config that no longer parses) throws: the run fails with
     // that error and the engine keeps the old context.
-    const openNextContext = async ({ emit }: OpenContextOptions): Promise<OpenedContext> => {
+    const openNextContext = async ({ emit }: OpenContextOptions): Promise<SessionOpenedContext> => {
       const next = await this.assembleContext(spec);
       current = next;
       environment.reconfigure({ toolConfig: next.toolConfig, vault: next.vault });
@@ -1307,6 +1316,7 @@ export class Agent {
         sessionMeta: sessionMeta(next.meta),
         maxTurns: next.maxTurns ?? -1,
         compaction: next.compaction,
+        hooks: this.sessionHooks(subagentRunner, next.hookPackages),
       };
     };
 
@@ -1364,29 +1374,17 @@ export class Agent {
   }
 
   /**
-   * The hooks of a top-level Session: every hook package installed in the Agent's
-   * `agent_state/hooks/` (read fresh per Session, like skills), each command run as a script
-   * (hooks/script-hook.ts), plus the spawner that honors a hook's `subagent` answer —
-   * a detached child Session of this Agent (or the one it names) whose stream is dropped (its
-   * own Trace is the record) and which inherits the run's approval callback. Child Sessions —
-   * spawned or revived subagents — carry no hooks: a subagent's work belongs to its parent's
-   * Trace, and a child could not spawn a subagent anyway.
+   * The hooks a model context runs with, built from the hook packages it was assembled with
+   * (see AssembledContext.hookPackages): each command run as a script (hooks/script-hook.ts),
+   * plus the spawner that honors a stop hook's `subagent` answer — a detached child Session
+   * of this Agent (or the one it names) whose stream is dropped (its own Trace is the
+   * record) and which inherits the run's approval callback.
    *
-   * `hooks.enabled: false` in the Agent's config switches all of them off at once: the
-   * packages stay installed, and this is the one place a Session's hooks are assembled.
+   * Always a whole set, empty lists included: the Session replaces its hooks with it when
+   * the context opens, which is how uninstalling the last package reaches a conversation
+   * that is running. This is the one place a Session's hooks are assembled.
    */
-  private async sessionHooks(
-    runner: SubagentRunner,
-    child: boolean,
-  ): Promise<SessionHooks | undefined> {
-    if (child) return undefined;
-    const { root, projectId, agentId } = this.state;
-    // Read from disk rather than from this Agent object's load-time snapshot: a long-lived
-    // Agent would otherwise keep building Sessions on a config edited since it was loaded
-    // (the same reason assembleContext re-loads the state).
-    const { systemConfig } = await loadAgentState({ root, projectId, agentId });
-    if (systemConfig.hooks?.enabled === false) return undefined;
-    const installed = await listInstalledHooks(root, projectId, agentId);
+  private sessionHooks(runner: SubagentRunner, installed: readonly InstalledHook[]): SessionHooks {
     // Hook scripts get the same PATH front as commands do (see
     // CreateAgentOptions.pathPrepend). Only the environment half applies: a hook is run as
     // `node <script>` directly, with no shell and so no login profile to re-prepend
@@ -1402,16 +1400,23 @@ export class Agent {
         scriptPreToolUseHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
       ),
     );
-    const userPrompt = installed.flatMap((hook) =>
-      hook.user_prompt.map((cmd) =>
-        scriptUserPromptHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
-      ),
-    );
-    if (stop.length === 0 && preToolUse.length === 0 && userPrompt.length === 0) return undefined;
+    const userPrompt = installed.flatMap((hook) => {
+      remindToUpdate(hook);
+      return hook.user_prompt.map((cmd) =>
+        scriptUserPromptHook(
+          hook.name,
+          hook.dir,
+          cmd.command,
+          cmd.timeout,
+          pathPrepend,
+          userPromptTrigger(hook.version, cmd),
+        ),
+      );
+    });
     return {
-      ...(stop.length > 0 ? { stop } : {}),
-      ...(preToolUse.length > 0 ? { preToolUse } : {}),
-      ...(userPrompt.length > 0 ? { userPrompt } : {}),
+      stop,
+      preToolUse,
+      userPrompt,
       spawnSubagent: async (request: HookSubagentRequest, approve?: ApproveFn) => {
         const handle = await runner.spawn({
           ...(request.agentId !== undefined ? { agentId: request.agentId } : {}),
@@ -1426,6 +1431,26 @@ export class Agent {
       },
     };
   }
+}
+
+/** Package directories already named by {@link remindToUpdate} in this process. */
+const remindedPackages = new Set<string>();
+
+/**
+ * COMPAT (remove at 0.3.0 release preparation, together with the rule it reports — see
+ * plugins' userPromptTrigger): says once per process, per package directory, that an
+ * installed package predates `user_prompt` commands running on every Prompt and is being
+ * read the old way. The user-facing reminder is the plugin library's update notice; this
+ * line is for whoever reads the host's log.
+ */
+function remindToUpdate(hook: InstalledHook): void {
+  if (!predatesEveryPromptHooks(hook.version)) return;
+  if (!hook.user_prompt.some((cmd) => cmd.trigger === undefined)) return;
+  if (remindedPackages.has(hook.dir)) return;
+  remindedPackages.add(hook.dir);
+  process.stderr.write(
+    `[hooks] ${hook.name} ${hook.version} (${hook.dir}) predates user_prompt hooks running on every prompt: its user_prompt commands run only when the host starts them by name. Update the package from the plugin library; this compatibility reading ends with 0.3.0.\n`,
+  );
 }
 
 /** Drives a hook-spawned child to completion in the background, dropping its stream (its own Trace is the record), and releases it. */

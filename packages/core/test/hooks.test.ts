@@ -277,7 +277,7 @@ describe("Session user-prompt hook", () => {
     await rmEventually(dir);
   });
 
-  it("runs the named package's hook with the Session's own id and scratchpad, null when absent", async () => {
+  it("runs the named package's host-triggered hook with the Session's own id and scratchpad, null when absent", async () => {
     const script = path.join(dir, "expand.mjs");
     await fs.writeFile(
       script,
@@ -314,7 +314,9 @@ describe("Session user-prompt hook", () => {
       },
       imagesDir: scratchpad,
       modelHasVision: true,
-      hooks: { userPrompt: [scriptUserPromptHook("goal", dir, "expand.mjs")] },
+      hooks: {
+        userPrompt: [scriptUserPromptHook("goal", dir, "expand.mjs", undefined, undefined, "host")],
+      },
     });
     const result = await session.runUserPromptHook("goal", "ship it", { budget: 500 });
     expect(result?.context).toBe(`user_prompt/session-1/ship it/500 @ ${scratchpad}`);
