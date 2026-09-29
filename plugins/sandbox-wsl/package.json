@@ -1,5 +1,5 @@
 {
-  "name": "@prismshadow/penguin-plugin-sandbox-wsl",
+  "name": "@penguinharness/sandbox-wsl",
   "version": "0.2.2",
   "private": true,
   "type": "module",

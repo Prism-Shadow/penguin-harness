@@ -1,5 +1,5 @@
 {
-  "name": "@prismshadow/penguin-plugin-sandbox-seatbelt",
+  "name": "@penguinharness/sandbox-seatbelt",
   "version": "0.2.2",
   "private": true,
   "type": "module",

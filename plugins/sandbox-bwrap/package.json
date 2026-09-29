@@ -1,5 +1,5 @@
 {
-  "name": "@prismshadow/penguin-plugin-sandbox-bwrap",
+  "name": "@penguinharness/sandbox-bwrap",
   "version": "0.2.2",
   "private": true,
   "type": "module",
