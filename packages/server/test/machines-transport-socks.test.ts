@@ -180,7 +180,7 @@ describe("dialThroughSocks", () => {
     await expect(dialThroughSocks(free, "127.0.0.1", 7364)).rejects.toThrow(/did not answer/);
   });
 
-  it("fails at once, naming the closed channel, when the SOCKS server closes without a reply", async () => {
+  it("fails at once, naming it, when the SOCKS server closes the channel without a reply", async () => {
     // What OpenSSH's -D does when the far side has nothing listening on the port (or the
     // session is going down): no failure reply, the connection just closes. The handshake
     // deadline dies with the socket, so this must be read as the failure it is.
@@ -193,7 +193,7 @@ describe("dialThroughSocks", () => {
     expect(Date.now() - started).toBeLessThan(SOCKS_HANDSHAKE_TIMEOUT_MS / 4);
   });
 
-  it("gives up in its own words on a CONNECT that is never answered", async () => {
+  it("gives up in its own words when a stalled session never answers the CONNECT", async () => {
     // A session whose link has stalled: the channel open never comes back, nothing closes.
     const socks = await scriptedSocks(() => undefined);
     cleanups.push(socks.close);

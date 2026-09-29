@@ -136,7 +136,7 @@ describe("the report", () => {
     expect((seen[0]![1] as { detail: string }).detail).not.toBe("");
   });
 
-  it("answers 504 for a read the machine accepts and never answers, and says so", async () => {
+  it("answers 504 when the machine never answers a read, and says so", async () => {
     // A machine that took the connection and is not serving: without a deadline this
     // request — and every retry of it — would wait for good.
     let aborted = false;

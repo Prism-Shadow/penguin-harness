@@ -187,7 +187,7 @@ describe("the machine socket relay", () => {
     expect(m.connections[1]!.readyState).toBe(m.connections[1]!.OPEN);
   });
 
-  it("hears at once, in the transport's words, when the session closes the channel it dialled", async () => {
+  it("hears at once, in the transport's words, over a closed channel", async () => {
     // The dial goes through a SOCKS server that does what OpenSSH's -D does for a port with
     // nothing listening over there: close the connection with no reply. That must fail the
     // dial now — before, it never settled, and every later stream to the machine waited
