@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [Myriad-Dreamin/penguin-harness#105](https://github.com/Myriad-Dreamin/penguin-harness/pull/105)
 
 [English](2026-09-29-boot-pending-status.md)
 
