@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
+  groupActivityRuns,
+  groupActivityRunsByProduct,
+  isActivityRunWorkspace,
+  withoutActivityRunWorkspaces,
   latestOwnConversation,
   sessionHref,
   settledActivityRuns,
@@ -61,5 +65,61 @@ describe("activity sessions", () => {
     expect(shouldPollSummaries(undefined, {})).toBe(false);
     // Inside an activity the list is not shown: no poll, running or not.
     expect(shouldPollSummaries("a", { b: running } as never)).toBe(false);
+  });
+
+  it("groups loaded activity runs under their activity, most recent first", () => {
+    const run = (sessionId: string, activityId: string | undefined, lastActiveAt: string, extra = {}) =>
+      ({ sessionId, lastActiveAt, archived: false, ...(activityId ? { activityId } : {}), ...extra }) as unknown as SessionInfo;
+    const groups = groupActivityRuns(
+      [
+        run("chat", undefined, "2026-09-29T10:00:00Z"),
+        run("a1", "act-a", "2026-09-29T08:00:00Z"),
+        run("b1", "act-b", "2026-09-29T09:00:00Z"),
+        run("a2", "act-a", "2026-09-29T07:00:00Z"),
+        run("a3", "act-a", "2026-09-29T11:00:00Z", { archived: true }),
+        run("o1", "act-b", "2026-09-29T12:00:00Z", { orgId: "org" }),
+      ],
+      new Map([["act-a", "Letter hunt"]]),
+    );
+    expect(groups.map((g) => [g.activityId, g.name, g.sessions.map((x) => x.sessionId)])).toEqual([
+      ["act-b", null, ["b1"]],
+      ["act-a", "Letter hunt", ["a1", "a2"]],
+    ]);
+  });
+
+  it("recognises a run's own workspace, on either path separator", () => {
+    expect(isActivityRunWorkspace("C:\\Users\\me\\.penguin\\dev-data\\activity-runs\\run_ae24c2f2")).toBe(true);
+    expect(isActivityRunWorkspace("/home/me/.penguin/activity-runs/run_1/")).toBe(true);
+    expect(isActivityRunWorkspace("/home/me/code/activity-runs")).toBe(false);
+    expect(isActivityRunWorkspace("/home/me/activity-runs/run_1/src")).toBe(false);
+  });
+  it("drops run workspaces from the per-workspace tallies", () => {
+    const tallies = new Map([["agent", { "/w/app": 3, "/h/activity-runs/run_1": 1 }]]);
+    expect(withoutActivityRunWorkspaces(tallies)).toEqual(new Map([["agent", { "/w/app": 3 }]]));
+  });
+
+  it("groups activity runs by product code, unidentified activities last", () => {
+    const run = (sessionId: string, activityId: string, lastActiveAt: string) =>
+      ({ sessionId, activityId, lastActiveAt, archived: false }) as unknown as SessionInfo;
+    const products = groupActivityRunsByProduct(
+      [
+        run("x1", "act-x", "2026-09-29T12:00:00Z"),
+        run("a1", "act-a", "2026-09-29T08:00:00Z"),
+        run("b1", "act-b", "2026-09-29T11:00:00Z"),
+        run("c1", "act-c", "2026-09-29T10:00:00Z"),
+      ],
+      new Map([
+        ["act-a", { name: "Letter hunt", productCode: "ABC" }],
+        ["act-b", { name: "Rhymes", productCode: "XYZ" }],
+        ["act-c", { name: "Sounds", productCode: "ABC" }],
+      ]),
+    );
+    expect(
+      products.map((p) => [p.productCode, p.activities.map((g) => [g.activityId, g.name])]),
+    ).toEqual([
+      ["XYZ", [["act-b", "Rhymes"]]],
+      ["ABC", [["act-c", "Sounds"], ["act-a", "Letter hunt"]]],
+      [null, [["act-x", null]]],
+    ]);
   });
 });

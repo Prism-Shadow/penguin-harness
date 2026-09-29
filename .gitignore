@@ -50,3 +50,4 @@ dist-ifaces/
 
 # Brainstorming companion mockups
 .superpowers/
+/.idea/
