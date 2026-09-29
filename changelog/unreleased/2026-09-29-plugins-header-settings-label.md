@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [Myriad-Dreamin/penguin-harness#61](https://github.com/Myriad-Dreamin/penguin-harness/pull/61)
 
 [中文版](2026-09-29-plugins-header-settings-label.zh.md)
 
