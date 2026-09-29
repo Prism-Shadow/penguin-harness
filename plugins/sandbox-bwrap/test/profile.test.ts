@@ -232,6 +232,12 @@ describe("bwrap on another platform", () => {
       loadPenguinBwrapProvider({ platform: "linux", probe: () => true }),
     ).resolves.toBeDefined();
   });
+
+  it("names the switch of each distribution that gates user namespaces, Ubuntu's included", async () => {
+    const rejection = loadPenguinBwrapProvider({ platform: "linux", probe: () => false });
+    await expect(rejection).rejects.toThrow(/kernel\.unprivileged_userns_clone/);
+    await expect(rejection).rejects.toThrow(/kernel\.apparmor_restrict_unprivileged_userns/);
+  });
 });
 
 describe("the bwrap it runs", () => {
