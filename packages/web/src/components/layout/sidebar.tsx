@@ -38,7 +38,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
-import { NavLink, useLocation, useMatch, useNavigate } from "react-router";
+import { Link, NavLink, useLocation, useMatch, useNavigate } from "react-router";
 import type {
   SessionCategory,
   SessionCategoryCounts,
@@ -80,7 +80,13 @@ import {
   workspaceLabel,
 } from "../../lib/session-grouping";
 import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
-import { withoutActivityRuns } from "../../lib/activity-sessions";
+import {
+  groupActivityRunsByProduct,
+  searchActivityRuns,
+  withoutActivityRuns,
+  withoutActivityRunWorkspaces,
+} from "../../lib/activity-sessions";
+import { useActivityLabels } from "../../state/use-activity-labels";
 import {
   initialNavGroupCollapsed,
   navKeysFor,
@@ -445,6 +451,23 @@ export function Sidebar({
   }, [allByAgent]);
 
   const currentProjectId = currentProject?.projectId ?? null;
+  /**
+   * Activity runs leave the groups above (they belong to their activity) but stay findable:
+   * one Project-wide "Activity runs" folder below the groups holds the loaded ones, by
+   * product code and then under each activity's name. One folder rather than one per group,
+   * because every run has a Workspace of its own — per group, workspace mode would grow a
+   * group per run.
+   */
+  const activityRunIds = useMemo(
+    () => [...new Set(allSessions.flatMap((s) => (s.activityId === undefined ? [] : [s.activityId])))],
+    [allSessions],
+  );
+  const activityLabels = useActivityLabels(currentProjectId, activityRunIds);
+  const activityRuns = useMemo(
+    () => groupActivityRunsByProduct(allSessions, activityLabels),
+    [allSessions, activityLabels],
+  );
+  const [activityRunsOpen, setActivityRunsOpen] = useState(false);
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
   // The Project's scheduled tasks, shared with the dock's schedules panel through one store, so
@@ -612,13 +635,14 @@ export function Sidebar({
 
   /** Workspace-mode per-group exact server totals (folded from the per-Agent per-Workspace counts). */
   const workspaceGroupCounts = useMemo(
-    () => aggregateWorkspaceCounts(workspaceCountsByAgent),
+    // Activity runs' own Workspaces form no group: their runs live in the Activity runs folder.
+    () => aggregateWorkspaceCounts(withoutActivityRunWorkspaces(workspaceCountsByAgent)),
     [workspaceCountsByAgent],
   );
 
   /** Workspace-mode per-group newest-Session stamps (folded the same way): a group's recency before any of its rows are loaded. */
   const workspaceGroupLatest = useMemo(
-    () => aggregateWorkspaceLatest(workspaceLatestByAgent),
+    () => aggregateWorkspaceLatest(withoutActivityRunWorkspaces(workspaceLatestByAgent)),
     [workspaceLatestByAgent],
   );
 
@@ -967,6 +991,7 @@ export function Sidebar({
   /** Whether the active search hits anything anywhere (drafts included) — drives the quiet no-match line. */
   const hasSearchMatches =
     shownDrafts.length > 0 ||
+    (searching && searchActivityRuns(activityRuns, searchQuery).length > 0) ||
     (groupMode === "agent"
       ? orderedAgents.some((a) => filterRows(byAgent.get(a.agentId) ?? []).length > 0)
       : groupMode === "time"
@@ -1540,6 +1565,61 @@ export function Sidebar({
       >
         {renderRows(shown, withAgentHint)}
       </FolderSection>
+    );
+  };
+
+  /**
+   * The Project-wide "Activity runs" folder (see activityRuns): collapsed by default, each
+   * activity's name a link back to it, its runs as ordinary rows that open the transcript.
+   * It holds only what the loaded pages carried — the activity's own Sessions panel is the
+   * complete list — so it pages nothing; searching forces it open on its matches, like the
+   * other folders.
+   */
+  const renderActivityRuns = () => {
+    // A query naming a product code or an activity keeps that heading's runs, not only
+    // the runs whose own titles match.
+    const products = searchActivityRuns(activityRuns, searching ? searchQuery : "");
+    const total = products.reduce(
+      (sum, product) =>
+        sum + product.activities.reduce((n, group) => n + group.sessions.length, 0),
+      0,
+    );
+    if (total === 0) return null;
+    return (
+      <div className="pt-2.5">
+        <FolderSection
+          label={S.chat.activityRunsFolder(total)}
+          open={searching || activityRunsOpen}
+          onToggle={() => {
+            if (!searching) setActivityRunsOpen((open) => !open);
+          }}
+        >
+          {products.map((product) => (
+            <div key={product.productCode ?? " unknown"} className="mt-1.5">
+              <p className="truncate px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                {product.productCode ?? S.chat.unknownProduct}
+              </p>
+              {product.activities.map((group) => {
+                const name = group.name ?? S.chat.unnamedActivity;
+                return (
+                  <div key={group.activityId} className="mt-0.5">
+                    <Link
+                      to={`/activities/${encodeURIComponent(group.activityId)}`}
+                      onClick={() => onNavigate?.()}
+                      title={S.chat.openActivity(name)}
+                      className="block truncate px-2.5 py-0.5 text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                    >
+                      {name}
+                    </Link>
+                    {/* Project-wide in every mode, so each row names its Agent. */}
+                    {renderRows(group.sessions, true)}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </FolderSection>
+      </div>
     );
   };
 
@@ -2510,6 +2590,8 @@ export function Sidebar({
                 <div className="pt-2.5">{timeFolders}</div>
               </>
             )}
+
+            {renderActivityRuns()}
 
             {/* Quiet no-match line: the search is live and nothing — drafts included — hit. */}
             {searching && !hasSearchMatches && (

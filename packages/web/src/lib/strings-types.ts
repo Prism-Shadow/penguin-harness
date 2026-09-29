@@ -3303,6 +3303,10 @@ export type Strings = {
       benchmark: (n: number) => string;
       archived: (n: number) => string;
     };
+    activityRunsFolder: (n: number) => string;
+    unnamedActivity: string;
+    unknownProduct: string;
+    openActivity: (name: string) => string;
     folderOnlyGroup: (n: number, path?: string) => string;
     skillsBanner: (names: string[]) => string;
     attachedFilesBanner: (names: string[]) => string;

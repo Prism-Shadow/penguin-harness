@@ -4676,6 +4676,13 @@ Scenarios:
       benchmark: (n: number) => `Evaluations (${n})`,
       archived: (n: number) => `Archived (${n})`,
     },
+    /** The sidebar's one folder of activity runs, below the groups; the count is the loaded runs. */
+    activityRunsFolder: (n: number) => `Activity runs (${n})`,
+    /** An activity-run heading whose activity the list has not named (yet, or any more). */
+    unnamedActivity: "Activity",
+    /** The product heading over runs whose activity the list has not identified. */
+    unknownProduct: "Other",
+    openActivity: (name: string) => `Open ${name}`,
     /** Tooltip of a folder-only group's header (nothing active of its own): what its folders hold, plus the Workspace path where the header has one. */
     folderOnlyGroup: (n: number, path?: string) =>
       `Folded tasks only: ${n} conversation${n === 1 ? "" : "s"}${path ? ` (${path})` : ""}`,

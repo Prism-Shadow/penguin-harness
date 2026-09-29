@@ -3,10 +3,136 @@
  * its studio, not in the global session list, and opening one goes back to the activity.
  */
 import type { ActivitySummary, SessionInfo } from "@prismshadow/penguin-server/api";
-import { latestConversation, withoutOrgSessions } from "./session-grouping";
+import { latestConversation, matchesSessionQuery, withoutOrgSessions } from "./session-grouping";
 
 export function withoutActivityRuns(sessions: readonly SessionInfo[]): SessionInfo[] {
   return sessions.filter((session) => session.activityId === undefined);
+}
+
+/** A run's own Workspace, which the server always makes at `<home>/activity-runs/<runId>`. */
+export function isActivityRunWorkspace(workspace: string): boolean {
+  return /[\\/]activity-runs[\\/]run_[^\\/]+[\\/]?$/.test(workspace.trim());
+}
+
+/**
+ * Per-Agent per-Workspace server tallies (counts or newest stamps) without the runs' own
+ * Workspaces. The server counts activity runs like any conversation, and every run has a
+ * Workspace of its own, so without this workspace mode grows one empty group per run.
+ */
+export function withoutActivityRunWorkspaces<V>(
+  byAgent: ReadonlyMap<string, Readonly<Record<string, V>>>,
+): Map<string, Record<string, V>> {
+  const out = new Map<string, Record<string, V>>();
+  for (const [agentId, byWorkspace] of byAgent) {
+    out.set(
+      agentId,
+      Object.fromEntries(
+        Object.entries(byWorkspace).filter(([workspace]) => !isActivityRunWorkspace(workspace)),
+      ),
+    );
+  }
+  return out;
+}
+
+/** What the activity list says about one activity: its card name and its product. */
+export interface ActivityLabel {
+  name: string;
+  productCode: string;
+}
+
+export interface ActivityRunGroup {
+  activityId: string;
+  /** The activity's card name; null while the activity list has not named it. */
+  name: string | null;
+  /** Its run sessions, most recently active first. */
+  sessions: SessionInfo[];
+}
+
+export interface ProductRunGroup {
+  /** The product code; null for activities the activity list has not named. */
+  productCode: string | null;
+  /** Its activities, the one with the most recent run first. */
+  activities: ActivityRunGroup[];
+}
+
+/**
+ * The sidebar's "Activity runs" folder: the loaded activity-run sessions under their
+ * product code, then under the activity they belong to — at both levels the group with the
+ * most recent run first. Archived runs stay in the Archived folder, and an organization's
+ * sessions never reach this list.
+ */
+export function groupActivityRunsByProduct(
+  sessions: readonly SessionInfo[],
+  labels: ReadonlyMap<string, ActivityLabel>,
+): ProductRunGroup[] {
+  const names = new Map([...labels].map(([id, label]) => [id, label.name]));
+  const byProduct = new Map<string | null, ActivityRunGroup[]>();
+  for (const group of groupActivityRuns(sessions, names)) {
+    const productCode = labels.get(group.activityId)?.productCode ?? null;
+    const activities = byProduct.get(productCode);
+    if (activities) activities.push(group);
+    else byProduct.set(productCode, [group]);
+  }
+  // groupActivityRuns already orders activities newest first, so each product's first
+  // activity carries its newest run and the products come out in that order too. Runs of
+  // activities the list has not identified go last, under a generic heading.
+  const products = [...byProduct].map(([productCode, activities]) => ({ productCode, activities }));
+  return [
+    ...products.filter((p) => p.productCode !== null),
+    ...products.filter((p) => p.productCode === null),
+  ];
+}
+
+/**
+ * The sidebar search over the Activity runs folder. The folder shows a product code and an
+ * activity name above the runs, so a query matching either keeps all of that heading's runs;
+ * otherwise a run stays when its own title matches. Headings left with no runs drop out, and
+ * a blank query keeps everything.
+ */
+export function searchActivityRuns(
+  products: readonly ProductRunGroup[],
+  query: string,
+): ProductRunGroup[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return [...products];
+  const hit = (text: string | null) => text !== null && text.toLowerCase().includes(q);
+  return products
+    .map((product) => ({
+      productCode: product.productCode,
+      activities: hit(product.productCode)
+        ? product.activities
+        : product.activities
+            .map((group) => ({
+              ...group,
+              sessions: hit(group.name)
+                ? group.sessions
+                : group.sessions.filter((session) => matchesSessionQuery(session, q)),
+            }))
+            .filter((group) => group.sessions.length > 0),
+    }))
+    .filter((product) => product.activities.length > 0);
+}
+
+/** The loaded activity-run sessions under the activity they belong to, most recent run first. */
+export function groupActivityRuns(
+  sessions: readonly SessionInfo[],
+  names: ReadonlyMap<string, string>,
+): ActivityRunGroup[] {
+  const byActivity = new Map<string, SessionInfo[]>();
+  for (const session of withoutOrgSessions(sessions)) {
+    if (session.activityId === undefined || session.archived) continue;
+    const rows = byActivity.get(session.activityId);
+    if (rows) rows.push(session);
+    else byActivity.set(session.activityId, [session]);
+  }
+  const newestFirst = (a: SessionInfo, b: SessionInfo) =>
+    a.lastActiveAt < b.lastActiveAt ? 1 : a.lastActiveAt > b.lastActiveAt ? -1 : 0;
+  const groups = [...byActivity].map(([activityId, rows]) => ({
+    activityId,
+    name: names.get(activityId) ?? null,
+    sessions: rows.sort(newestFirst),
+  }));
+  return groups.sort((a, b) => newestFirst(a.sessions[0]!, b.sessions[0]!));
 }
 
 /**
