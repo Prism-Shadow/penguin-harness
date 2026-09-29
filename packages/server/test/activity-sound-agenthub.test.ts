@@ -261,7 +261,13 @@ describe("sound generation through a model hub model", () => {
     const setup = (await (
       await f.client.get(`/api/projects/${PROJECT}/activities/sound-setup?agentId=default_agent`)
     ).json()) as SoundSetup;
-    expect(setup.providers.map((entry) => entry.id)).toEqual(["elevenlabs", "agenthub"]);
+    expect(setup.providers.map((entry) => entry.id)).toEqual([
+      "elevenlabs",
+      "agenthub",
+      "musicgen",
+      "audiogen",
+      "audioldm",
+    ]);
     expect(setup.providers[1]).toMatchObject({
       available: false,
       problem: "no_model",

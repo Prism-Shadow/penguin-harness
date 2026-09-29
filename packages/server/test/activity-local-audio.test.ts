@@ -139,7 +139,8 @@ describe("local audio candidates", () => {
       );
       f.complete();
       const ready = await f.settled(run, "succeeded");
-      expect(ready.candidate).toContain("audio/wav");
+      // The media repository keeps audio as MP3: the local WAV take is converted.
+      expect(JSON.parse(ready.candidate!)).toMatchObject({ format: "mp3", mimeType: "audio/mpeg" });
       expect((await f.current()).draft.contentRevision).toBe(before.draft.contentRevision);
       const accepted = await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-audio`, {
         expectedRevision: before.draft.contentRevision,
