@@ -159,7 +159,7 @@ async function fixture(page) {
       if (request.method() === "POST") {
         const input = request.postDataJSON();
         const stored = {
-          path: `media/uploads/${input.name
+          path: `media/loom/words/words-1/uploads/${input.name
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/-[^-]*$/, "")}-1234abcd.png`,
@@ -1003,7 +1003,7 @@ test("chooses a narration's voice from the picker and applies one voice to every
   expect(f.errors).toEqual([]);
 });
 
-test("uploads media into the activity workspace and binds it from the library", async ({
+test("uploads media into the ref's uploads and binds it from the library", async ({
   page,
 }) => {
   const f = await fixture(page);
@@ -1026,7 +1026,7 @@ test("uploads media into the activity workspace and binds it from the library", 
   await page
     .locator('input[type="file"]')
     .setInputFiles({ name: "cat.png", mimeType: "image/png", buffer: PIXEL });
-  await expect(binding).toHaveValue(/^media\/uploads\/cat-[a-f0-9]{8}\.png$/);
+  await expect(binding).toHaveValue(/^media\/loom\/words\/words-1\/uploads\/cat-[a-f0-9]{8}\.png$/);
   await expect(page.getByText("Stored with this activity.")).toBeVisible();
 
   // Another upload does not replace the bound file at once: it is shown beside it first.
@@ -1045,7 +1045,7 @@ test("uploads media into the activity workspace and binds it from the library", 
   await upload("dog.png");
   await comparison.getByRole("button", { name: "Use new", exact: true }).click();
   await expect(comparison).toHaveCount(0);
-  await expect(binding).toHaveValue(/^media\/uploads\/dog-[a-f0-9]{8}\.png$/);
+  await expect(binding).toHaveValue(/^media\/loom\/words\/words-1\/uploads\/dog-[a-f0-9]{8}\.png$/);
 
   // Clearing and rebinding from the library reaches the same file.
   await page.getByRole("button", { name: "Clear media path", exact: true }).click();
@@ -1058,7 +1058,7 @@ test("uploads media into the activity workspace and binds it from the library", 
   await page.getByRole("button", { name: /^cat\.png/ }).click();
   await expect(page.getByRole("button", { name: "Preview image", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Use this file", exact: true }).click();
-  await expect(binding).toHaveValue(/^media\/uploads\/cat-[a-f0-9]{8}\.png$/);
+  await expect(binding).toHaveValue(/^media\/loom\/words\/words-1\/uploads\/cat-[a-f0-9]{8}\.png$/);
   await expect(page.getByText("Stored with this activity.")).toBeVisible();
 
   await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
@@ -3470,7 +3470,7 @@ test("trims a stretch out of a narration and binds the shorter clip", async ({ p
                 type: "audio",
                 description: "Greeting",
                 script: "Hello",
-                path: "media/uploads/hello-00000000.wav",
+                path: "media/loom/words/words-1/uploads/hello-00000000.wav",
                 usages: [
                   { sceneId: "intro", sourceKey: "hello", occurrence: 1, sceneOccurrenceCount: 1 },
                 ],
@@ -3489,7 +3489,7 @@ test("trims a stretch out of a narration and binds the shorter clip", async ({ p
     if (p === `${base}/act_test/media-uploads` && request.method() === "POST") {
       const input = request.postDataJSON();
       const record = {
-        path: "media/uploads/hello-trimmed-1234abcd.wav",
+        path: "media/loom/words/words-1/uploads/hello-trimmed-1234abcd.wav",
         name: input.name,
         kind: "audio",
         mimeType: "audio/wav",
@@ -3543,7 +3543,7 @@ test("trims a stretch out of a narration and binds the shorter clip", async ({ p
   expect(stored[0].byteLength).toBeGreaterThan(44 + 7000 * 2);
   expect(stored[0].byteLength).toBeLessThan(44 + 9000 * 2);
   await expect(page.getByRole("textbox", { name: /^Media path/ })).toHaveValue(
-    "media/uploads/hello-trimmed-1234abcd.wav",
+    "media/loom/words/words-1/uploads/hello-trimmed-1234abcd.wav",
   );
   expect(f.errors).toEqual([]);
 });
@@ -3552,7 +3552,7 @@ test("shows a narration's file details", async ({ page }) => {
   const f = await fixture(page);
   const clip = toneWav(2);
   const path = "media/audio/hello.wav";
-  const uploadPath = "media/uploads/clip-1234abcd.wav";
+  const uploadPath = "media/loom/words/words-1/uploads/clip-1234abcd.wav";
   // Stubbed before the activity opens, so its first upload listing holds the clip.
   let statsReads = 0;
   await page.route("**/*", (route) => {
@@ -3978,7 +3978,7 @@ test("a narration shows every language's script, and opens another language from
           productCode: "words",
           refNum: 12,
           assets: {
-            "en-US": [narration("hello", "Hello", { path: "media/uploads/hello-1234abcd.wav" })],
+            "en-US": [narration("hello", "Hello", { path: "media/loom/words/words-1/uploads/hello-1234abcd.wav" })],
             "es-MX": [narration("hello")],
           },
         },
@@ -4000,7 +4000,7 @@ test("a narration shows every language's script, and opens another language from
   // The bound recording can be downloaded as the player would fetch it.
   await expect(page.getByRole("link", { name: "Download current", exact: true })).toHaveAttribute(
     "href",
-    `${base}/act_test/sandbox/media/uploads/hello-1234abcd.wav`,
+    `${base}/act_test/sandbox/media/loom/words/words-1/uploads/hello-1234abcd.wav`,
   );
   await languages.getByRole("button", { name: "Open", exact: true }).click();
   // Spanish has no recording yet, so there is nothing to download.
@@ -4430,7 +4430,7 @@ test("the home page groups refs under their product code", async ({ page }) => {
 /** Files uploaded across the project, as `GET /media-library` reports them. */
 function libraryFile(name, activityId, productCode, refNum, activityTitle, overrides = {}) {
   return {
-    path: `media/uploads/${name}`,
+    path: `media/loom/words/words-1/uploads/${name}`,
     name,
     kind: "image",
     mimeType: "image/png",
@@ -4527,7 +4527,7 @@ test("browses the project's media, switches to the table, and downloads two file
   // One file downloads as itself.
   await expect(page.getByRole("link", { name: "Download (1)", exact: true })).toHaveAttribute(
     "href",
-    `${base}/act_words/media-upload?path=media%2Fuploads%2Fcat-1111222233334444.png`,
+    `${base}/act_words/media-upload?path=media%2Floom%2Fwords%2Fwords-1%2Fuploads%2Fcat-1111222233334444.png`,
   );
   await list.getByRole("checkbox", { name: "Select bell-5555666677778888.wav" }).check();
   const saved = page.waitForEvent("download");
@@ -4536,8 +4536,8 @@ test("browses the project's media, switches to the table, and downloads two file
   expect(bundles).toEqual([
     {
       items: [
-        { activityId: "act_letters", path: "media/uploads/bell-5555666677778888.wav" },
-        { activityId: "act_words", path: "media/uploads/cat-1111222233334444.png" },
+        { activityId: "act_letters", path: "media/loom/words/words-1/uploads/bell-5555666677778888.wav" },
+        { activityId: "act_words", path: "media/loom/words/words-1/uploads/cat-1111222233334444.png" },
       ],
     },
   ]);
@@ -4576,7 +4576,7 @@ test("picks a file uploaded to another activity", async ({ page }) => {
         status: 201,
         contentType: "application/json",
         body: JSON.stringify({
-          path: "media/uploads/sun-9999aaaabbbbcccc.png",
+          path: "media/loom/words/words-1/uploads/sun-9999aaaabbbbcccc.png",
           name: "sun-9999aaaabbbbcccc.png",
           kind: "image",
           mimeType: "image/png",
@@ -4611,10 +4611,10 @@ test("picks a file uploaded to another activity", async ({ page }) => {
   await expect(page.getByRole("button", { name: /^bell-/ })).toHaveCount(0);
   await sun.click();
   await page.getByRole("button", { name: "Use this file", exact: true }).click();
-  await expect(binding).toHaveValue("media/uploads/sun-9999aaaabbbbcccc.png");
+  await expect(binding).toHaveValue("media/loom/words/words-1/uploads/sun-9999aaaabbbbcccc.png");
   await expect(page.getByText("Stored with this activity.")).toBeVisible();
   expect(copies).toEqual([
-    { fromActivityId: "act_letters", path: "media/uploads/sun-9999aaaabbbbcccc.png" },
+    { fromActivityId: "act_letters", path: "media/loom/words/words-1/uploads/sun-9999aaaabbbbcccc.png" },
   ]);
   expect(f.errors).toEqual([]);
 });
@@ -5590,7 +5590,7 @@ test("writes a prompt for a sound effect, generates it, and keeps the new clip",
                 channel: "sfx",
                 loop: false,
                 volume: 1,
-                path: "media/uploads/door-00000000.mp3",
+                path: "media/loom/words/words-1/uploads/door-00000000.mp3",
                 usages: [usage],
               },
             ],
@@ -5925,7 +5925,7 @@ test("generates the missing sounds from Audios", async ({ page }) => {
                 description: "Correct answer",
                 script: "bright chime",
                 kind: "sfx",
-                path: "media/uploads/chime-00000000.mp3",
+                path: "media/loom/words/words-1/uploads/chime-00000000.mp3",
                 usages: usage("chime"),
               },
               {
@@ -7959,7 +7959,7 @@ test("composes a scene from its storyboard when the experiment is on", async ({ 
                 key: "sky",
                 type: "image",
                 description: "A blue sky",
-                path: "media/uploads/sky-00000000.png",
+                path: "media/loom/words/words-1/uploads/sky-00000000.png",
                 usages: [usage("sky")],
               },
             ],
@@ -8205,14 +8205,14 @@ test("records a composed scene and keeps it as the scene's video", async ({ page
                 key: "intro-video",
                 type: "video",
                 description: "The sky slowly brightens",
-                path: "media/uploads/intro-00000000.webm",
+                path: "media/loom/words/words-1/uploads/intro-00000000.webm",
                 usages: [usage("intro-video")],
               },
               {
                 key: "sky",
                 type: "image",
                 description: "A blue sky",
-                path: "media/uploads/sky-00000000.png",
+                path: "media/loom/words/words-1/uploads/sky-00000000.png",
                 usages: [usage("sky")],
               },
             ],
@@ -8382,7 +8382,7 @@ test("records a composed scene and keeps it as the scene's video", async ({ page
     comparison.getByRole("figure", { name: "Current", exact: true }).locator("video"),
   ).toHaveAttribute(
     "src",
-    `${base}/act_test/media-upload?path=media%2Fuploads%2Fintro-00000000.webm`,
+    `${base}/act_test/media-upload?path=media%2Floom%2Fwords%2Fwords-1%2Fuploads%2Fintro-00000000.webm`,
   );
   await expect(
     comparison.getByRole("figure", { name: "New", exact: true }).locator("video"),
