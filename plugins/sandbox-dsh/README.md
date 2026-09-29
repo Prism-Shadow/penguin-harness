@@ -20,6 +20,26 @@ exactly `fs-write`. The sandbox service therefore never routes a `network` or
 `mask-paths` policy here, and the adaptor never has to silently drop a dimension it
 cannot honor — for those, use the bubblewrap, Seatbelt or WSL backend for your platform.
 
+## Windows: run command sessions under PowerShell
+
+The ACL restricted-token runner does not start bash, and bash is the harness's default
+session shell on Windows (Git for Windows, or the MinGit the Windows package bundles). A bare
+`bash` reaches System32's WSL launcher; an MSYS `bash.exe` or `sh.exe` aborts under the
+restricted token. So with this backend confining commands on Windows, set the session shell
+in the harness's environment and restart it:
+
+| Shell | Under the ACL runner | Setting |
+| --- | --- | --- |
+| PowerShell 7 (`pwsh`) | runs confined | `PENGUIN_SHELL=pwsh` |
+| Windows PowerShell 5.1 | runs confined | `PENGUIN_SHELL=powershell` — for hosts without PowerShell 7; it ships with Windows |
+| bash / sh (Git for Windows, MinGit) | does not start | — |
+
+Measured on GitHub's `windows-latest` (Windows Server 2025, pwsh 7.6.6, Windows PowerShell
+5.1.26100): a write inside the Workspace lands and a write outside it is denied. Until the
+shell is set, a confined command is refused before it spawns, with an error naming these
+settings. `cmd` also starts under the runner; it is not measured beyond that. Nothing here
+changes on Linux or macOS, where bash runs confined as usual.
+
 ## Requirements
 
 - The DSH dependencies (`@deepseek-ai/cordis`, `@deepseek-ai/dsh-sandbox`,

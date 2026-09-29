@@ -21,6 +21,7 @@
  * them fails THIS load — reported fail-closed by the service — instead of failing the
  * whole platform bundle's import.
  */
+import path from "node:path";
 import { Bind, Component } from "@prismshadow/penguin-core/plugin";
 import type {
   ConfinedArgv,
@@ -28,6 +29,42 @@ import type {
   SandboxProvider,
   SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
+
+/**
+ * Session shells the Windows ACL restricted-token runner cannot start, by basename — and
+ * they are the harness's Windows default (Git for Windows' bash, or the `sh.exe` of the
+ * MinGit the Windows package bundles). Measured on windows-latest (fork CI run 36607002547):
+ * a bare `bash` reaches System32's WSL launcher before PATH ("Error code:
+ * Bash/Service/CreateInstance/E_ACCESSDENIED"), and an MSYS bash or sh named by path aborts
+ * under the write-restricted token ("fatal error - couldn't create signal pipe, Win32 error
+ * 5" / "CreateFileMapping …, Win32 error 5"). In the same run both PowerShells ran confined,
+ * writing inside the Workspace and denied outside it: pwsh 7.6.6 and Windows PowerShell 5.1.
+ */
+const ACL_RUNNER_UNSTARTABLE_SHELLS = new Set(["bash", "sh"]);
+
+/**
+ * Refuse, before the runner is involved, a spawn whose program the ACL runner cannot start.
+ * Without this every confined command still fails closed, but with the runner's error — which
+ * names WSL or an MSYS internal, not the shell setting that fixes it.
+ */
+export function assertAclRunnerCanStart(
+  argv: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): void {
+  const program = argv[0];
+  if (platform !== "win32" || program === undefined) return;
+  const name = path.win32
+    .basename(program)
+    .replace(/\.exe$/i, "")
+    .toLowerCase();
+  if (!ACL_RUNNER_UNSTARTABLE_SHELLS.has(name)) return;
+  throw new Error(
+    `sandbox-dsh cannot confine "${program}" on Windows: its ACL runner does not start bash ` +
+      "(Git for Windows or the bundled MinGit). Set PENGUIN_SHELL=pwsh (PowerShell 7) — or " +
+      "PENGUIN_SHELL=powershell (Windows PowerShell 5.1) where PowerShell 7 is not installed — " +
+      "in the harness's environment and restart it; refusing to run the command unconfined.",
+  );
+}
 
 /** Mount the stock DSH chain on a bare cordis Context — exactly how DSH's own tests mount it. */
 export async function loadDshAdaptor(): Promise<SandboxProvider | null> {
@@ -46,6 +83,7 @@ export async function loadDshAdaptor(): Promise<SandboxProvider | null> {
         // full-access policy (which only ever arrives with a network/mask dimension it lacks).
         throw new Error("dsh-local does not implement full filesystem access with confinement");
       }
+      assertAclRunnerCanStart(argv);
       const confined = dsh.confine(argv, {
         mode: policy.mode,
         workspaceRoot: policy.workspaceRoot,
