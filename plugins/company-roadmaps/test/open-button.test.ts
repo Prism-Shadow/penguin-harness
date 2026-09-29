@@ -3,10 +3,11 @@
  * script, a stand-in for the server's answers, and a person's clicks. The button unfolds a
  * form — a name and the organization's employees, no room to choose: the roadmap opens its own
  * — that sends the plugin's own `POST …/roadmaps` with the employees in the order picked (the
- * first moderates), and the page goes straight to the new roadmap: its room beside its detail.
- * Picking changes the form where it stands (nothing in the dialog is drawn again), a refusal
- * keeps the form and says why, and the room column reads and sends through the channel's own
- * routes.
+ * first moderates), and the page goes straight to the new roadmap's room — the app's own channel
+ * page, through the app's history. Picking changes the form where it stands (nothing in the
+ * dialog is drawn again), and a refusal keeps the form and says why. A roadmap on the list opens
+ * its room the same way; in the channel page's column (view=detail) the page shows the roadmap
+ * alone — no chat of its own — and follows its draft.
  */
 import vm from "node:vm";
 import { Window } from "happy-dom";
@@ -52,15 +53,18 @@ async function page(
     roadmaps: Array<Record<string, unknown>>,
   ) => { status: number; body: unknown },
   seed: Array<Record<string, unknown>> = [],
+  where: { parent?: string; search?: string; own?: string } = {},
 ) {
-  const window = new Window({ url: "http://localhost:7364/api/company-roadmaps/page" });
+  const window = new Window({
+    url: `http://localhost:7364/api/company-roadmaps/page${where.own ?? ""}`,
+  });
   windows.push(window);
   const document = window.document;
   const html = pageHtml();
   document.body.innerHTML = /<body>([\s\S]*)<script>/.exec(html)![1]!;
   const calls: Call[] = [];
   const roadmaps: Array<Record<string, unknown>> = [...seed];
-  // The room's poll: kept, and run when the test says a period has passed.
+  // The detail's poll: kept, and run when the test says a period has passed.
   const ticks: Array<() => void> = [];
   const heard: Array<{ type: string; f: () => void }> = [];
   // What the app's window was asked to do: history entries pushed, events raised.
@@ -70,7 +74,10 @@ async function page(
     document,
     window: {
       parent: {
-        location: { pathname: "/org/proj/acme/roadmaps" },
+        location: {
+          pathname: where.parent ?? "/org/proj/acme/roadmaps",
+          search: where.search ?? "",
+        },
         document,
         history: { pushState: (_s: unknown, _t: string, url: string) => pushed.push(url) },
         dispatchEvent: (ev: { type: string }) => popped.push(ev.type),
@@ -127,16 +134,6 @@ async function page(
       box.checked = checked;
       await fire(box, "change");
     },
-    say: async (text: string, how: "button" | "enter" = "button") => {
-      const box = $<HTMLElement & { value: string }>('textarea[name="say"]');
-      box.value = text;
-      if (how === "enter") {
-        box.dispatchEvent(
-          new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
-        );
-        await settle();
-      } else await fire($("form[data-compose]"), "submit");
-    },
     tick: async () => {
       for (const f of ticks) f();
       await settle();
@@ -167,21 +164,13 @@ async function page(
   };
 }
 
-interface Said {
-  id: string;
-  time: string;
-  sender: string;
-  text: string;
-}
-
 /**
  * The organization's server as the page sees it: the Project's organization list, the roadmaps,
- * its chart, the open (which opens the room) and the rooms' messages (`said`, by channel).
+ * its chart, and the open (which opens the room; `hints` are what the server adds to its answer).
  */
 function organization(
-  opts: { refuse?: { status: number; message: string }; said?: Record<string, Said[]> } = {},
+  opts: { refuse?: { status: number; message: string }; hints?: string[] } = {},
 ) {
-  const said = opts.said ?? {};
   return (call: Call, roadmaps: Array<Record<string, unknown>>) => {
     if (call.method === "GET" && call.url === "/api/projects/proj/organizations")
       return { status: 200, body: { organizations: [{ orgId: "acme" }] } };
@@ -191,21 +180,6 @@ function organization(
     if (call.method === "GET" && one !== null) {
       const r = roadmaps.find((x) => x.number === Number(one[1]));
       return r ? { status: 200, body: r } : { status: 404, body: {} };
-    }
-    const room = /\/channels\/([a-z0-9_]+)\/messages$/.exec(call.url);
-    if (room !== null) {
-      const list = (said[room[1]!] ??= []);
-      if (call.method === "GET")
-        return { status: 200, body: { date: "2026-09-28", days: ["2026-09-28"], messages: list } };
-      const text = (call.body as { text: string }).text;
-      const msg = {
-        id: `m${list.length + 1}`,
-        time: "2026-09-28T10:00:00Z",
-        sender: "user:admin",
-        text,
-      };
-      list.push(msg);
-      return { status: 201, body: msg };
     }
     if (call.method === "GET" && call.url === `${ORG}/chart`) return { status: 200, body: CHART };
     if (call.method === "POST" && call.url === `${ORG}/roadmaps`) {
@@ -230,14 +204,14 @@ function organization(
         delegations: {},
       };
       roadmaps.push(roadmap);
-      return { status: 201, body: { roadmap, hints: [] } };
+      return { status: 201, body: { roadmap, hints: opts.hints ?? [] } };
     }
     return { status: 404, body: {} };
   };
 }
 
 describe("the Open a roadmap button", () => {
-  it("opens a roadmap: button → form (a name, the employees) → POST → straight into its room and detail", async () => {
+  it("opens a roadmap: button → form (a name, the employees) → POST → straight into its room, the app's channel page", async () => {
     const p = await page(organization());
     expect(p.text()).toContain(T.empty);
     await p.click("button[data-open]");
@@ -263,15 +237,31 @@ describe("the Open a roadmap button", () => {
         contentType: "application/json",
       },
     ]);
-    // Not the list: the new roadmap itself, its room read at once.
-    expect(p.calls.slice(-2).map((c) => `${c.method} ${c.url}`)).toEqual([
-      `GET ${ORG}/roadmaps/1`,
-      `GET ${ORG}/channels/roadmap_1/messages`,
-    ]);
+    // Not the list, and no chat of this page's own: the app goes to the room's channel page.
+    expect(p.pushed).toEqual(["/org/proj/acme/channels/roadmap_1"]);
+    expect(p.popped).toEqual(["popstate"]);
+    expect(p.calls.at(-1)).toMatchObject({ method: "POST" });
+  });
+
+  it("stays on the new roadmap and says so first when the server had something to add", async () => {
+    const p = await page(organization({ hints: ["No room session for acme_dev: offline"] }));
+    await p.click("button[data-open]");
+    await p.pick("acme_dev");
+    await p.name("Queue migration");
+    await p.submit();
+    expect(p.pushed).toEqual([]);
     expect(p.hash()).toBe("#1");
-    expect(p.$("[data-overlay]")).toBeNull();
     expect(p.text()).toContain(T.opened.replace("{n}", "1"));
-    expect(p.$("h1")?.textContent).toContain("Queue migration");
+    expect(p.text()).toContain("No room session for acme_dev: offline");
+    expect(p.$<HTMLElement>("a[data-room]").getAttribute("href")).toBe(
+      "/org/proj/acme/channels/roadmap_1",
+    );
+  });
+
+  it("is up on arrival when the sidebar's + opened the page (?open=1)", async () => {
+    const p = await page(organization(), [], { search: "?open=1" });
+    expect(p.$("[data-overlay]")).not.toBeNull();
+    expect(p.$('input[name="employee"][value="acme_dev"]')).not.toBeNull();
   });
 
   it("changes the form where it stands when an employee is picked — nothing in the dialog is drawn again", async () => {
@@ -380,78 +370,50 @@ const SEEDED = {
   delegations: {},
 };
 
-describe("a roadmap's room beside its detail", () => {
-  it("opens a roadmap from anywhere on its row, from the keyboard, and from Enter the room", async () => {
+describe("a roadmap and its room", () => {
+  it("opens the room from anywhere on its row, from the keyboard, and from Enter the room — the app's channel page", async () => {
     const p = await page(organization(), [SEEDED]);
+    const room = "/org/proj/acme/channels/roadmap_1";
     await p.click("li.row .num");
-    expect(p.hash()).toBe("#1");
-    p.clearHash();
     await p.press("Enter", "li.row");
-    expect(p.hash()).toBe("#1");
-    p.clearHash();
     const enter = p.$<HTMLElement>("a.room");
     expect(enter.textContent).toBe(T.enterRoom);
-    expect(enter.getAttribute("href")).toBe("#1");
+    expect(enter.getAttribute("href")).toBe(room);
     await p.click("a.room");
-    expect(p.hash()).toBe("#1");
+    expect(p.pushed).toEqual([room, room, room]);
+    expect(p.hash()).toBe("");
+  });
+
+  it("shows the detail itself only for a roadmap still waiting for its room", async () => {
+    const waiting = { ...SEEDED, number: 2, status: "awaiting_room", channelId: null };
+    const p = await page(organization(), [SEEDED, waiting]);
+    await p.click('li.row[data-n="2"] .num');
+    expect(p.hash()).toBe("#2");
+    await p.follow();
+    expect(p.text()).toContain(T.noRoom);
     expect(p.pushed).toEqual([]);
+    // Opened by its own URL, a roadmap with a room goes to the room.
+    const q = await page(organization(), [SEEDED], { parent: "/org/proj/acme/roadmaps/1" });
+    expect(q.pushed).toEqual(["/org/proj/acme/channels/roadmap_1"]);
   });
 
-  it("shows the room on the left and the record, body and items on the right", async () => {
-    const said = {
-      roadmap_1: [
-        {
-          id: "m1",
-          time: "2026-09-28T09:00:00Z",
-          sender: "system",
-          text: "admin opened the channel",
-        },
-        {
-          id: "m2",
-          time: "2026-09-28T09:01:00Z",
-          sender: "agent:acme_dev",
-          text: "@user:admin what do you want from this?",
-        },
-      ],
-    };
-    const p = await page(organization({ said }), [SEEDED]);
-    await p.click("li.row .num");
-    await p.follow();
-    const split = p.$<HTMLElement>(".split");
-    expect([...split.children].map((c) => c.className)).toEqual(["room-col", "detail"]);
-    const room = p.$<HTMLElement>(".room-col");
-    expect(room.textContent).toContain("acme_dev");
-    expect(room.textContent).toContain("what do you want from this?");
-    expect(room.textContent).toContain(T.system);
-    expect(p.$<HTMLElement>(".detail").textContent).toContain("We agreed on the ledger.");
-    // The channel's own page is one link away, inside the app.
-    await p.click("a[data-room]");
-    expect(p.pushed).toEqual(["/org/proj/acme/channels/roadmap_1"]);
-    expect(p.popped).toEqual(["popstate"]);
-  });
-
-  it("sends into the room with the channel's own route — the button or Enter — and reads it again", async () => {
-    const said: Record<string, Said[]> = {};
-    const p = await page(organization({ said }), [SEEDED]);
-    await p.click("li.row .num");
-    await p.follow();
-    expect(p.text()).toContain(T.quiet);
-    await p.say("The ledger first.");
-    await p.say("Then the page.", "enter");
-    expect(p.calls.filter((c) => c.method === "POST").map((c) => [c.url, c.body])).toEqual([
-      [`${ORG}/channels/roadmap_1/messages`, { text: "The ledger first." }],
-      [`${ORG}/channels/roadmap_1/messages`, { text: "Then the page." }],
-    ]);
-    expect(p.$<HTMLElement>(".stream").textContent).toContain("Then the page.");
-    expect(p.$<HTMLElement & { value: string }>('textarea[name="say"]').value).toBe("");
-    // What others say arrives at the next period, without a reload.
-    said.roadmap_1!.push({
-      id: "m9",
-      time: "2026-09-28T10:05:00Z",
-      sender: "agent:acme_web",
-      text: "Agreed.",
+  it("in the channel page's column shows the roadmap alone — record, body, items, no chat — and follows its draft", async () => {
+    const p = await page(organization(), [SEEDED], {
+      parent: "/org/proj/acme/channels/roadmap_1",
+      own: "?view=detail&n=1",
     });
+    expect(p.$("h1")?.textContent).toContain("Queue migration");
+    expect(p.text()).toContain("We agreed on the ledger.");
+    expect(p.text()).toContain("## Why");
+    expect(p.$("textarea")).toBeNull();
+    expect(p.$("a[data-room]")).toBeNull();
+    expect(p.$("button[data-open]")).toBeNull();
+    // The moderator writes; the next period shows it without a reload.
+    p.roadmaps[0] = { ...SEEDED, record: "We agreed on the ledger, then the page." };
     await p.tick();
-    expect(p.$<HTMLElement>(".stream").textContent).toContain("Agreed.");
+    expect(p.text()).toContain("We agreed on the ledger, then the page.");
+    // Every roadmap is one link away, inside the app.
+    await p.click("a[data-list]");
+    expect(p.pushed).toEqual(["/org/proj/acme/roadmaps"]);
   });
 });

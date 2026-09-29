@@ -1,8 +1,9 @@
 /**
- * The roadmaps page: the entry the organization's sidebar shows after the handbook. The web
- * app draws the row and mounts this page in an iframe at `/org/:projectId/:orgId/roadmaps`;
- * the page itself is served here, whole, from the plugin — one HTML document with its style
- * and script inline, read-only over the routes the plugin already has.
+ * The roadmaps page: every roadmap of an organization, and the dialog that opens one. The web
+ * app mounts it in an iframe at `/org/:projectId/:orgId/roadmaps` (reached from the sidebar's
+ * ROADMAPS section: its "All roadmaps" and its "+") and, in its detail view, beside a roadmap's
+ * room on the channel page; the page itself is served here, whole, from the plugin — one HTML
+ * document with its style and script inline, over the routes the plugin already has.
  *
  * The iframe's `src` is fixed (a contribution is data: it cannot carry the organization), so
  * the page reads the organization off its parent's URL — same origin, so it may — and asks
@@ -21,14 +22,15 @@
  * A person opens a roadmap here: the "Open a roadmap" button above the list unfolds a form —
  * a name and one or more of the organization's employees (read from its chart; the first one
  * picked moderates) — which sends the plugin's own `POST …/roadmaps`; the roadmap opens its own
- * room, and the page goes straight to it. Picking an employee changes the form where it stands:
+ * room, and the page goes straight to that room. The sidebar's "+" opens this page with
+ * `?open=1`, and the dialog is up on arrival. Picking an employee changes the form where it stands:
  * the dialog is drawn once, and nothing in it is drawn again while it is used.
  *
- * One roadmap is shown as its room beside its detail: on the left the room — its messages, read
- * from the channel's own `GET …/channels/<id>/messages` and read again every few seconds, and a
- * box that sends with the channel's own `POST …/messages` — and on the right the record, the
- * body and the items. Under a narrow window the two stack, the room first. The channel's own
- * page is one link away, for what the room column does not do (members, archiving).
+ * A roadmap's room is the app's own channel page. Opening a roadmap goes there (the page's
+ * rows, its "Enter the room" and the dialog's Open alike), and that page shows this one beside
+ * the stream in its detail view (`?view=detail&n=<n>`, the organization read off the channel
+ * page's URL): the record, the body and the items, read again every few seconds. On its own,
+ * `roadmaps/<n>` shows the detail only for a roadmap still waiting for its room.
  *
  * An organization that runs on another machine is asked THERE, as the app asks it: the page
  * reads the Project's organization list once, and when the organization names a machine every
@@ -178,22 +180,10 @@ input[name="name"], select { width: 100%; font: inherit; font-size: 0.75rem; pad
 .picks label { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.625rem; font-size: 0.75rem; cursor: pointer; }
 .picks label:hover { background: var(--rm-hover); }
 .picks input { accent-color: var(--rm-accent); margin: 0; }
-.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
-@media (max-width: 900px) { .split { grid-template-columns: minmax(0, 1fr); } }
-.split > section { margin-top: 0; }
-.room-col { display: flex; flex-direction: column; height: calc(100vh - 9rem); min-height: 22rem; border: 1px solid var(--rm-line); border-radius: 0.375rem; }
-.room-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--rm-line); }
-.room-head h2 { margin: 0; }
-.stream { flex: 1; min-height: 0; overflow-y: auto; padding: 0.5rem 0.75rem; }
-.msg { margin: 0 0 0.625rem; }
-.msg .who { font-size: 0.6875rem; color: var(--rm-muted); }
-.msg .who strong { color: var(--rm-fg); font-weight: 600; }
-.msg .text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8125rem; }
-.msg.system .text { color: var(--rm-muted); font-size: 0.75rem; }
-.compose { display: flex; gap: 0.5rem; align-items: flex-end; padding: 0.5rem 0.75rem; border-top: 1px solid var(--rm-line); }
-.compose textarea { flex: 1; min-width: 0; resize: none; font: inherit; font-size: 0.8125rem; padding: 0.3125rem 0.625rem; border-radius: 0.375rem; border: 1px solid var(--rm-line); background: var(--rm-bg); color: var(--rm-fg); }
-.room-col .strip { margin: 0.5rem 0.75rem; }
-.detail section:first-child { margin-top: 0; }
+/* In the channel page's column (view=detail): tighter, and as wide as the column. */
+body.panel { padding: 0.75rem 1rem; }
+body.panel main { max-width: none; }
+body.panel .head h1 { font-size: 1rem; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 `;
 
@@ -247,14 +237,7 @@ export const PAGE_STRINGS = {
     discussing: "discussing",
     established: "established",
     proposal: "proposal",
-    channelPage: "Channel page",
-    say: "Say something in the room…",
-    send: "Send",
-    sendFailed: "Could not send",
-    roomFailed: "Could not read the room",
-    quiet: "Nothing said in the room yet.",
     noRoom: "This roadmap has no room yet.",
-    system: "system",
     onMachine:
       "This organization runs on machine {m}; its roadmaps are asked there, so the plugin has to be installed on that machine too.",
   },
@@ -304,14 +287,7 @@ export const PAGE_STRINGS = {
     discussing: "讨论中",
     established: "已确立",
     proposal: "提案",
-    channelPage: "频道页",
-    say: "在讨论室里说点什么……",
-    send: "发送",
-    sendFailed: "发送失败",
-    roomFailed: "读取讨论室失败",
-    quiet: "讨论室里还没有人说话。",
     noRoom: "这份路线图还没有讨论室。",
-    system: "系统",
     onMachine: "这个组织运行在机器 {m} 上；它的路线图要去那里问，所以那台机器上也得装这个插件。",
   },
 } as const;
@@ -357,7 +333,22 @@ try {
     new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ["class", "style"] });
   }, null);
   const where = read(() => window.parent.location.pathname, location.pathname);
-  const m = /\\/org\\/([^/]+)\\/([^/]+)\\/roadmaps(?:\\/(\\d+))?/.exec(where);
+  // The organization, off the parent's URL: the roadmaps page (/org/<p>/<o>/roadmaps[/<n>]), or,
+  // in the channel page's column (view=detail&n=<n>), a channel page (/org/<p>/<o>/channels/<id>).
+  const m = /\\/org\\/([^/]+)\\/([^/]+)\\/(?:roadmaps(?:\\/(\\d+))?|channels\\/)/.exec(where);
+  // One parameter of a query string (the page's own, or its parent's), or null.
+  const param = (search, key) => {
+    for (const pair of String(search || "").replace(/^[?]/, "").split("&")) {
+      const at = pair.indexOf("=");
+      if ((at < 0 ? pair : pair.slice(0, at)) === key) return at < 0 ? "" : read(() => decodeURIComponent(pair.slice(at + 1)), "");
+    }
+    return null;
+  };
+  const panelN = param(location.search, "view") === "detail" ? param(location.search, "n") : null;
+  const panel = panelN !== null && /^[0-9]+$/.test(panelN);
+  if (panel) read(() => { document.body.className = "panel"; }, null);
+  // Which list row has a room, by roadmap number (read with the list).
+  const rooms = {};
   // One request; an answer that has not come by TIMEOUT_MS is a failure of its own.
   async function request(method, url, body) {
     let timer;
@@ -395,11 +386,13 @@ try {
     }
   }
   const openButton = '<button type="button" class="primary" data-open>' + esc(T.open) + "</button>";
-  // A roadmap's room is a channel of the app that the channel list leaves out. It is shown here,
-  // beside the roadmap; the channel's own page (members, archiving) is followed inside the app
-  // (a history entry the app's router reads) and, where that cannot be done, as an ordinary link.
+  // A roadmap's room is a channel of the app that the channel list leaves out, and the app's
+  // own channel page is where it is read and spoken in: that page shows this page's detail view
+  // (view=detail) in a column beside the stream. Going there is a history entry the app's router
+  // reads, or, where that cannot be done, an ordinary link of the whole window.
   const roomPath = (channelId) => "/org/" + m[1] + "/" + m[2] + "/channels/" + encodeURIComponent(channelId);
-  const roomLink = (r, cls) => r.channelId ? '<a class="' + cls + '" href="#' + r.number + '" data-n="' + r.number + '">' + esc(T.enterRoom) + "</a>" : "";
+  const listPath = () => "/org/" + m[1] + "/" + m[2] + "/roadmaps";
+  const roomLink = (r, cls) => r.channelId ? '<a class="' + cls + '" href="' + esc(roomPath(r.channelId)) + '" target="_top" data-room="' + esc(r.channelId) + '">' + esc(T.enterRoom) + "</a>" : "";
   const enter = (path) => read(() => {
     const parent = window.parent;
     if (!parent || parent === window || !parent.history) return false;
@@ -407,6 +400,7 @@ try {
     parent.dispatchEvent(new parent.PopStateEvent("popstate"));
     return true;
   }, false);
+  const go = (path) => { if (!enter(path)) read(() => { window.top.location.href = path; }, null); };
   // A status as a pill, in the app's tones: under discussion is live work, waiting for a room is
   // unfinished, established is done well, a shelved discussion recedes.
   const pill = (r) => {
@@ -491,7 +485,9 @@ try {
       drawForm("", '[name="name"]');
     } catch (e) { if (form !== null) { form.members = []; drawForm(failure(e, T.openFailed)); } }
   }
-  // The roadmap is opened, and the page goes straight to it: its room beside its detail.
+  // The roadmap is opened, and the page goes straight to it: its room (the app's channel page)
+  // with the roadmap beside it. When the server had something to say (a room session that
+  // could not open), the page stays on the roadmap and says it first.
   async function submit() {
     const name = form.name.trim();
     if (!ready()) { formNote('<div class="strip warn"><p>' + esc(T.incomplete) + "</p></div>"); return; }
@@ -503,6 +499,8 @@ try {
       form = null;
       const hints = (made.hints || []).map((h) => "<p>" + esc(h) + "</p>").join("");
       const n = String(made.roadmap.number);
+      // Straight into it: its room, on the app's channel page, with the roadmap beside it.
+      if (made.roadmap.channelId && !hints) { go(roomPath(made.roadmap.channelId)); return; }
       current = n;
       location.hash = n;
       await one(n, '<div class="strip ok"><p>' + esc(T.opened.replace("{n}", n)) + "</p></div>" + (hints ? '<div class="strip warn">' + hints + "</div>" : ""));
@@ -510,6 +508,7 @@ try {
   }
   async function list(note) {
     const { roadmaps } = await get("");
+    for (const r of roadmaps) rooms[r.number] = r.channelId || "";
     if (roadmaps.length === 0) {
       draw((note || "") + '<div class="empty"><p class="title">' + esc(T.empty) + '</p><p class="hint">' + esc(T.emptyHint) + "</p>" + openButton + "</div>");
       return;
@@ -525,97 +524,75 @@ try {
         (r.items.length === 0 ? "" : '<ul class="items">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul>") + "</div></li>";
     }).join("") + "</ul>", openButton);
   }
-  // The room column: what was said, oldest first, and a box to say more. Read again every
-  // ROOM_POLL_MS while the roadmap is shown; redrawn only when something new came.
-  let room = null;
-  const who = (sender) => sender === "system" ? T.system : sender.replace(/^(agent|user):/, "");
-  const clock = (iso) => { const d = new Date(iso); return isNaN(d.getTime()) ? "" : String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
-  const message = (x) => '<div class="msg' + (x.sender === "system" ? " system" : "") + '" data-id="' + esc(x.id) + '"><div class="who"><strong>' + esc(who(x.sender)) + "</strong> " + esc(clock(x.time)) + '</div><div class="text">' + esc(x.text) + "</div></div>";
-  async function readRoom() {
-    const stream = q("[data-stream]");
-    if (room === null || !stream) return;
-    const mine = room;
-    const url = org + "/channels/" + encodeURIComponent(mine.channelId) + "/messages";
-    try {
-      let got = await request("GET", url);
-      // Today may be quiet: the last day anything was said is shown instead.
-      if ((got.messages || []).length === 0 && got.days && got.days[0] && got.days[0] !== got.date) got = await request("GET", url + "?date=" + got.days[0]);
-      if (room !== mine) return;
-      const messages = got.messages || [];
-      const last = messages.length === 0 ? "" : messages[messages.length - 1].id + "/" + messages.length;
-      if (last === mine.last && !mine.failed) return;
-      mine.last = last;
-      mine.failed = false;
-      const atEnd = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 32;
-      stream.innerHTML = messages.length === 0 ? '<p class="muted">' + esc(T.quiet) + "</p>" : messages.map(message).join("");
-      if (atEnd || mine.first) { stream.scrollTop = stream.scrollHeight; mine.first = false; }
-    } catch (e) {
-      if (room !== mine) return;
-      mine.failed = true;
-      stream.innerHTML = failure(e, T.roomFailed);
-    }
-  }
-  async function sendRoom() {
-    const box = q("[data-say]");
-    if (room === null || !box || box.value.trim() === "") return;
-    const text = box.value;
-    const b = q("[data-send]");
-    if (b) b.disabled = true;
-    const note = q("[data-send-note]");
-    try {
-      await request("POST", org + "/channels/" + encodeURIComponent(room.channelId) + "/messages", { text });
-      box.value = "";
-      if (note) note.innerHTML = "";
-      if (room) room.first = true;
-      await readRoom();
-    } catch (e) { if (note) note.innerHTML = failure(e, T.sendFailed); }
-    finally { if (b) b.disabled = false; }
-  }
-  const ROOM_POLL_MS = 4000;
+  // One roadmap: its record, body and items. On its own (roadmaps/<n>) a roadmap that has a
+  // room goes to the room, where it is shown beside the stream; the detail stands here only for
+  // one still waiting for its room. In the channel page's column (view=detail) it is read again
+  // every DETAIL_POLL_MS, redrawn only when it changed, so the draft follows the discussion.
+  const DETAIL_POLL_MS = 10000;
   let poll = null;
-  const stopRoom = () => { room = null; if (poll !== null) clearInterval(poll); poll = null; };
-  async function one(n, note) {
-    stopRoom();
-    const r = await get("/" + n);
+  let drawn = "";
+  const stopPoll = () => { if (poll !== null) clearInterval(poll); poll = null; };
+  const detailHtml = (r, note) => {
     const mod = moderatorOf(r);
     const section = (title, text) => "<section><h2>" + esc(title) + '</h2><div class="card">' + (text ? esc(text) : '<span class="muted">' + esc(T.none) + "</span>") + "</div></section>";
-    const roomColumn = r.channelId
-      ? '<section class="room-col" aria-label="' + esc(T.room) + '"><div class="room-head"><h2>' + esc(T.room) + ' <span class="muted mono small">#' + esc(r.channelId) + '</span></h2><a class="channel small" href="' + esc(roomPath(r.channelId)) + '" target="_top" data-room="' + esc(r.channelId) + '">' + esc(T.channelPage) + '</a></div><div class="stream" data-stream><p class="muted">' + esc(T.loading) + '</p></div><div data-send-note></div><form class="compose" data-compose><textarea name="say" data-say rows="2" placeholder="' + esc(T.say) + '"></textarea><button type="submit" class="primary" data-send>' + esc(T.send) + "</button></form></section>"
-      : '<section class="room-col"><div class="stream"><p class="muted">' + esc(T.noRoom) + "</p></div></section>";
-    main.innerHTML = '<nav class="crumb"><a href="#" data-n="">' + esc(T.back) + '</a></nav><header class="head"><h1><span class="muted mono">#' + r.number + "</span> " + esc(r.name) + " " + pill(r) + "</h1></header>" + (note || "") +
-      '<div class="split">' + roomColumn + '<div class="detail">' +
-      '<div class="meta">' + [mod ? esc(T.moderator) + " " + esc(mod) : ""].filter(Boolean).join('<span aria-hidden="true">·</span>') + "</div>" +
+    const top = panel
+      ? '<nav class="crumb"><a href="' + esc(listPath()) + '" target="_top" data-list>' + esc(T.back) + "</a></nav>"
+      : '<nav class="crumb"><a href="#" data-n="">' + esc(T.back) + "</a></nav>";
+    return top + '<header class="head"><h1><span class="muted mono">#' + r.number + "</span> " + esc(r.name) + " " + pill(r) + "</h1>" + (panel ? "" : roomLink(r, "button primary")) + "</header>" + (note || "") +
+      '<div class="meta">' + [mod ? esc(T.moderator) + " " + esc(mod) : "", r.channelId ? "" : esc(T.noRoom)].filter(Boolean).join('<span aria-hidden="true">·</span>') + "</div>" +
       section(T.record, r.record) + section(T.body, r.body) +
-      "<section><h2>" + esc(T.items) + "</h2>" + (r.items.length === 0 ? '<p class="muted">' + esc(T.none) + "</p>" : '<ul class="rows"><li class="row" style="cursor: default"><ul class="items grow">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul></li></ul>") + "</section></div></div>";
+      "<section><h2>" + esc(T.items) + "</h2>" + (r.items.length === 0 ? '<p class="muted">' + esc(T.none) + "</p>" : '<ul class="rows"><li class="row" style="cursor: default"><ul class="items grow">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul></li></ul>") + "</section>";
+  };
+  async function one(n, note) {
+    stopPoll();
+    const r = await get("/" + n);
+    if (!panel && !note && r.channelId && enter(roomPath(r.channelId))) return;
+    drawn = JSON.stringify(r);
+    main.innerHTML = detailHtml(r, note);
     view = main.innerHTML;
-    if (r.channelId && q("[data-stream]")) {
-      room = { channelId: r.channelId, last: null, first: true, failed: false };
-      await readRoom();
-      poll = setInterval(() => { void readRoom(); }, ROOM_POLL_MS);
+    if (panel) {
+      poll = setInterval(() => {
+        void request("GET", org + "/roadmaps/" + n).then((again) => {
+          const json = JSON.stringify(again);
+          if (json === drawn) return;
+          drawn = json;
+          main.innerHTML = detailHtml(again);
+          view = main.innerHTML;
+        }).catch(() => {});
+      }, DETAIL_POLL_MS);
     }
   }
   let current = "";
   async function show(n) {
     current = n;
-    stopRoom();
+    stopPoll();
     try { await (n ? one(n) : list()); } catch (e) { draw(failure(e) + '<p><button type="button" data-retry>' + esc(T.retry) + "</button></p>", n ? "" : openButton); }
   }
+  // A roadmap on the list opens its room when it has one, its detail here when it does not.
+  const openRoadmap = (n) => {
+    const channel = rooms[n];
+    if (channel) go(roomPath(channel));
+    else location.hash = n;
+  };
   // Every control is found through #main, whatever was drawn into it last.
   main.addEventListener("click", (e) => {
     if (e.target.closest("[data-overlay]") && !e.target.closest(".dialog")) { closeForm(); return; }
     if (e.target.closest("[data-cancel]")) { closeForm(); return; }
     if (e.target.closest("[data-open]")) { void openForm(); return; }
     if (e.target.closest("[data-retry]")) { void show(current); return; }
-    const channel = e.target.closest("[data-room]");
-    if (channel) { if (enter(channel.getAttribute("href"))) e.preventDefault(); return; }
+    const room = e.target.closest("[data-room]");
+    if (room) { if (enter(room.getAttribute("href"))) e.preventDefault(); return; }
+    if (e.target.closest("[data-list]")) { if (enter(listPath())) e.preventDefault(); return; }
     const a = e.target.closest("[data-n]");
-    if (a && !e.target.closest("input, select, button, label")) { e.preventDefault(); location.hash = a.dataset.n; }
+    if (a && !e.target.closest("input, select, button, label")) {
+      e.preventDefault();
+      if (a.dataset.n === "") location.hash = "";
+      else openRoadmap(a.dataset.n);
+    }
   });
   main.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && form) { e.preventDefault(); closeForm(); return; }
-    if (e.key === "Enter" && e.target.matches && e.target.matches("li.row[data-n]")) { e.preventDefault(); location.hash = e.target.dataset.n; return; }
-    // In the room's box, Enter sends and Shift+Enter starts a new line.
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.target.name === "say") { e.preventDefault(); void sendRoom(); }
+    if (e.key === "Enter" && e.target.matches && e.target.matches("li.row[data-n]")) { e.preventDefault(); openRoadmap(e.target.dataset.n); }
   });
   main.addEventListener("input", (e) => {
     if (form && e.target.name === "name") { form.name = e.target.value; syncSubmit(); }
@@ -631,12 +608,16 @@ try {
   });
   main.addEventListener("submit", (e) => {
     e.preventDefault();
-    if (e.target.matches && e.target.matches("[data-compose]")) { void sendRoom(); return; }
     if (form) void submit();
   });
   window.addEventListener("hashchange", () => { const n = location.hash.slice(1); if (n !== current) void show(n); });
   if (m === null) say('<div class="strip bad"><p>' + esc(T.elsewhere) + " <code>" + esc(where) + "</code></p></div>");
-  else void resolveOrg().then(() => show(location.hash.slice(1) || m[3] || ""));
+  else if (panel) void resolveOrg().then(() => show(panelN));
+  else void resolveOrg().then(async () => {
+    await show(location.hash.slice(1) || m[3] || "");
+    // The sidebar's "+" opens this page with ?open=1: the dialog is up on arrival.
+    if (read(() => param(window.parent.location.search, "open") === "1", false)) void openForm();
+  });
 } catch (e) {
   if (main) say('<div class="strip bad"><p>' + esc(T.broken) + " " + esc((e && e.message) || e) + "</p></div>");
   else document.body.textContent = T.title + " — " + T.broken + " " + ((e && e.message) || e);
