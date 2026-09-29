@@ -680,6 +680,7 @@ export type Strings = {
       /** Why a stage ended badly. */
       errors: {
         command_failed: (command: string, exitCode: number | null) => string;
+        module_repository_missing: (remote: string) => string;
         command_timed_out: (command: string) => string;
         command_missing: (command: string) => string;
         jenkins_failed: (status: number) => string;
@@ -1918,6 +1919,8 @@ export type Strings = {
         missing: string;
         noRemote: string;
         otherRemote: (remote: string) => string;
+        otherBranch: (branch: string) => string;
+        noBranch: string;
         notInstalled: string;
         cloned: (branch: string | null, dirty: boolean) => string;
       };

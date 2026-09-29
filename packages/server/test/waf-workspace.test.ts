@@ -38,6 +38,7 @@ function fakeGit(existing: ReadonlySet<string> = new Set()) {
       const [remote, dir] = args.slice(args.indexOf("--") + 1);
       await fs.mkdir(path.join(dir!, ".git"), { recursive: true });
       await fs.writeFile(path.join(dir!, ".git", "origin"), remote!);
+      await fs.writeFile(path.join(dir!, ".git", "branch"), args[args.indexOf("--branch") + 1]!);
       return ok();
     }
     if (args[0] === "ls-remote") {
@@ -57,7 +58,13 @@ function fakeGit(existing: ReadonlySet<string> = new Set()) {
     const origin = await read(cwd, "origin");
     if (origin === null) return { code: 128, stdout: "", stderr: "not a git repository" };
     if (joined === "remote get-url origin") return ok(`${origin}\n`);
-    if (joined === "branch --show-current") return ok("main\n");
+    if (joined === "branch --show-current") return ok(`${(await read(cwd, "branch")) ?? "main"}\n`);
+    if (args[0] === "remote" && args[1] === "set-branches") return ok();
+    if (args[0] === "fetch") return ok();
+    if (args[0] === "checkout" && args[1] === "-B") {
+      await fs.writeFile(path.join(cwd, ".git", "branch"), args[2]!);
+      return ok();
+    }
     if (joined === "status --porcelain") return ok("");
     if (joined === "lfs install --local") return ok();
     if (args[0] === "lfs" && args[1] === "pull") return ok();
@@ -211,6 +218,35 @@ describe("WAF workspace", () => {
     const status = await prepared(s);
     expect(status.ready).toBe(false);
     expect(status.lastError).toMatch(/someone\/else/);
+  });
+
+  it("counts the activity data, and switches a clone to a branch changed in Settings", async () => {
+    const s = await setup();
+    expect((await prepared(s)).ready).toBe(true);
+    await fs.rm(path.join(s.t.root, "waf", "waf-activity-data", ".git"), { recursive: true });
+    expect((await s.workspace.status()).ready).toBe(false);
+    expect(await s.workspace.root()).toBeNull();
+    expect((await prepared(s)).ready).toBe(true);
+
+    const { settings } = (await (await s.admin.get("/api/admin/waf-workspace/settings")).json()) as {
+      settings: { repos: Record<string, { remote: string; branch: string }> };
+    };
+    const framework = { ...settings.repos.framework!, branch: "v3" };
+    const saved = await s.admin.put("/api/admin/waf-workspace/settings", {
+      repos: { ...settings.repos, framework },
+    });
+    expect(saved.status, await saved.clone().text()).toBe(200);
+    const before = await s.workspace.status();
+    expect(before.ready).toBe(false);
+    expect(before.repos.find((repo) => repo.id === "framework")).toMatchObject({
+      branch: "v2",
+      branchMatches: false,
+    });
+    const installs = s.installs.length;
+    const after = await prepared(s);
+    expect(after.ready).toBe(true);
+    expect(after.repos.find((repo) => repo.id === "framework")!.branch).toBe("v3");
+    expect(s.installs.length).toBe(installs + 1);
   });
 
   it("adds a product's media folder once, smudging its LFS files without a pull", async () => {

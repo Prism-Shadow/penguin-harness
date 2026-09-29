@@ -773,6 +773,8 @@ export const en: Strings = {
             : `${command} failed with exit code ${exitCode}. The log shows its output.`,
         command_timed_out: (command) =>
           `${command} took longer than its time limit and was stopped.`,
+        module_repository_missing: (remote) =>
+          `The module's repository ${remote} does not exist yet. Create it empty, then deploy again.`,
         command_missing: (command) => `${command} is not installed on this server.`,
         jenkins_failed: (status) =>
           status ? `Jenkins refused the request (HTTP ${status}).` : "Jenkins did not answer.",
@@ -2318,6 +2320,8 @@ export const en: Strings = {
         missing: "Not cloned",
         noRemote: "no remote",
         otherRemote: (remote) => `A clone of ${remote}, not the remote below`,
+        otherBranch: (branch) => `On ${branch}, not the branch below. Prepare switches it.`,
+        noBranch: "no branch",
         notInstalled: "Cloned, dependencies not installed",
         cloned: (branch, dirty) =>
           `Cloned${branch ? `, ${branch}` : ""}${dirty ? ", with local changes" : ""}`,

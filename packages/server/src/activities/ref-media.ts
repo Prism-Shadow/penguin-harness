@@ -68,9 +68,14 @@ export interface MediaSidecar {
   durationMs?: number;
 }
 
+/** Where the sidecar of an accepted `<key>.<ext>` is: `<key>.json` beside it. */
+export function sidecarPath(file: string): string {
+  return file.replace(/\.[^./\\]+$/, ".json");
+}
+
 /** Writes `<key>.json` beside the accepted `<key>.<ext>`, in Loom's shape. */
 export async function writeSidecar(file: string, sidecar: MediaSidecar): Promise<void> {
-  const target = file.replace(/\.[^./\\]+$/, ".json");
+  const target = sidecarPath(file);
   const body = {
     generatedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
     fileName: path.basename(file),

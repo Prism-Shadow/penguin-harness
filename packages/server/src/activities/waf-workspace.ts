@@ -318,7 +318,8 @@ export class WafWorkspaceService implements WafWorkspace {
       has("framework/node_modules") &&
       has("modules/navbar/.git") &&
       has("modules/navbar/node_modules") &&
-      has("media/.git");
+      has("media/.git") &&
+      has("waf-activity-data/.git");
     return ready ? root : null;
   }
 
@@ -334,6 +335,7 @@ export class WafWorkspaceService implements WafWorkspace {
         remote: null,
         remoteMatches: !managed,
         branch: null,
+        branchMatches: !managed,
         dirty: null,
         installed,
       };
@@ -344,6 +346,7 @@ export class WafWorkspaceService implements WafWorkspace {
       git.run(["status", "--porcelain"], dir),
     ]);
     const origin = remote.code === 0 ? remote.stdout.trim() : null;
+    const current = branch.code === 0 ? branch.stdout.trim() || null : null;
     return {
       id,
       path: dir,
@@ -351,7 +354,8 @@ export class WafWorkspaceService implements WafWorkspace {
       remote: origin,
       remoteMatches:
         !managed || (origin !== null && sameRemote(origin, this.settings().repos[id].remote)),
-      branch: branch.code === 0 ? branch.stdout.trim() || null : null,
+      branch: current,
+      branchMatches: !managed || current === this.settings().repos[id].branch,
       dirty: status.code === 0 ? status.stdout.trim() !== "" : null,
       installed,
     };
@@ -363,11 +367,13 @@ export class WafWorkspaceService implements WafWorkspace {
     const repos = await Promise.all(WAF_REPO_IDS.map((id) => this.repoStatus(root, id, !external)));
     const usable = (id: WafRepoId) => {
       const repo = repos.find((entry) => entry.id === id)!;
-      return repo.present && repo.remoteMatches && repo.installed !== false;
+      return repo.present && repo.remoteMatches && repo.branchMatches && repo.installed !== false;
     };
+    // Every repository counts: deploys need the activity data as much as builds need the
+    // framework, and a clone on another branch than the one configured builds something else.
     const ready = external
       ? (await findWafRoot(external, external)) !== null
-      : usable("framework") && usable("navbar") && usable("media");
+      : WAF_REPO_IDS.every(usable);
     return {
       managed: !external,
       root,
@@ -406,10 +412,34 @@ export class WafWorkspaceService implements WafWorkspace {
           `${WAF_REPO_PATHS[id]} is a clone of ${status.remote ?? "an unknown remote"}, not ${this.settings().repos[id].remote}. Move it aside to let Penguin clone it again.`,
         );
       if (!status.present) await this.serial(id, () => this.cloneShared(root, id));
-      if (INSTALLED.has(id) && !fs.existsSync(path.join(status.path, "node_modules")))
+      const switched =
+        status.present && !status.branchMatches
+          ? await this.serial(id, () => this.switchBranch(status))
+          : false;
+      if (INSTALLED.has(id) && (switched || !fs.existsSync(path.join(status.path, "node_modules"))))
         await this.install(status.path);
     }
     this.note("The workspace is ready.");
+  }
+
+  /**
+   * Puts an existing clone on the branch the settings name, as origin has it: a changed
+   * branch in Settings takes effect on the next Prepare. A clone with changes of its own is
+   * left alone, and the preparation fails naming it, so nothing is lost.
+   */
+  private async switchBranch(status: WafRepoStatus): Promise<boolean> {
+    const { branch } = this.settings().repos[status.id];
+    const where = WAF_REPO_PATHS[status.id];
+    if (status.dirty !== false)
+      throw new Error(
+        `${where} is on ${status.branch ?? "no branch"}, not ${branch}, and has changes of its own. Commit or move them aside, then prepare again.`,
+      );
+    this.note(`Switching ${where} from ${status.branch ?? "no branch"} to ${branch}…`);
+    // A single-branch clone fetches only its first branch until told of another.
+    await this.gitOk(status.path, ["remote", "set-branches", "--add", "origin", branch]);
+    await this.gitOk(status.path, ["fetch", "origin", branch]);
+    await this.gitOk(status.path, ["checkout", "-B", branch, `origin/${branch}`]);
+    return true;
   }
 
   private async cloneShared(root: string, id: WafRepoId): Promise<void> {

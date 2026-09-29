@@ -43,6 +43,8 @@ function fakeGit(
     remoteMain?: boolean;
     staged?: boolean;
     fail?: string;
+    /** What git says when `fail` matches; a refusal naming the command by default. */
+    failWith?: string;
     /** The working tree has authored work in it. */
     dirty?: boolean;
     /** Whether main exists locally, and as origin/main. */
@@ -60,7 +62,7 @@ function fakeGit(
         calls.push(args);
         const joined = args.join(" ");
         if (state.fail && joined.startsWith(state.fail))
-          return { code: 1, stdout: "", stderr: `fatal: ${state.fail} refused` };
+          return { code: 1, stdout: "", stderr: state.failWith ?? `fatal: ${state.fail} refused` };
         if (args[0] === "tag") {
           const lists = state.tags ?? [[]];
           const list = lists[Math.min(tagRead, lists.length - 1)]!;
@@ -285,6 +287,41 @@ describe("verify_module", () => {
     expect(git.calls.some((call) => call[0] === "merge")).toBe(false);
     expect(git.calls.some((call) => call.includes("commit"))).toBe(false);
     expect(lines).toContain("Main already had everything authored.");
+  });
+
+  it("commits a new module's first work, which git cannot stash before a first commit", async () => {
+    const dir = await moduleClone();
+    await fs.writeFile(path.join(dir, "authored.js"), "export const kept = true;");
+    const git = fakeGit({
+      dirty: true,
+      localMain: false,
+      originMain: false,
+      fail: "stash push",
+      failWith: "You do not have the initial commit yet",
+    });
+    const { ctx, lines } = context({ dir, git: git.git });
+    await run("verify_module", ctx);
+    expect(git.calls).toContainEqual(["symbolic-ref", "HEAD", "refs/heads/main"]);
+    expect(git.calls.some((call) => call[0] === "checkout" || call[0] === "reset")).toBe(false);
+    expect(git.calls.some((call) => call.join(" ") === "stash pop")).toBe(false);
+    expect(git.calls).toContainEqual(["add", "--all"]);
+    expect(lines).toContain("No commit yet: the new module's work stays in place.");
+    expect(await fs.readFile(path.join(dir, "authored.js"), "utf8")).toBe(
+      "export const kept = true;",
+    );
+  });
+
+  it("names the repository to create when a new module's has not been made", async () => {
+    const dir = await moduleClone();
+    const git = fakeGit({ fail: "fetch origin", failWith: "ERROR: Repository not found." });
+    const { ctx } = context({ dir, git: git.git });
+    const failure = await run("verify_module", ctx).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(DeployStageFailure);
+    expect((failure as DeployStageFailure).error.code).toBe("module_repository_missing");
+    expect(git.calls.some((call) => call[0] === "add")).toBe(false);
   });
 
   it("fails on a failing lint with the end of its output, and runs nothing after it", async () => {

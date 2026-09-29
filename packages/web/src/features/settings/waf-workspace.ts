@@ -46,6 +46,8 @@ function repoLine(repo: WafRepoStatus, managed: boolean): WafRepoLine {
   if (!repo.present) return { ...base, tone: managed ? "attention" : "muted", line: words.missing };
   if (!repo.remoteMatches)
     return { ...base, tone: "danger", line: words.otherRemote(repo.remote ?? words.noRemote) };
+  if (!repo.branchMatches)
+    return { ...base, tone: "attention", line: words.otherBranch(repo.branch ?? words.noBranch) };
   if (repo.installed === false) return { ...base, tone: "attention", line: words.notInstalled };
   return {
     ...base,

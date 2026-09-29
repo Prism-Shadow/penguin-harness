@@ -281,6 +281,11 @@ export type DeployStageError =
    * is absent for a QA deploy's (as runs before PROD deploys existed recorded it).
    */
   | { code: "deploy_timed_out"; minutes: number; target?: DeployTarget }
+  /**
+   * The module's repository does not exist on its remote yet. A deploy cannot make one:
+   * whoever owns the organisation creates it (empty), and the deploy then pushes main to it.
+   */
+  | { code: "module_repository_missing"; remote: string }
   /** The server stopped while the stage ran. */
   | { code: "interrupted" }
   /** Something the stage did not expect; the log says what. */

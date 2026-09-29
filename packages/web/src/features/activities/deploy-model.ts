@@ -294,6 +294,8 @@ export function stageErrorText(error: DeployStageError): string {
       return words.media_missing(error.paths, error.count);
     case "deploy_timed_out":
       return words.deploy_timed_out(error.minutes, error.target);
+    case "module_repository_missing":
+      return words.module_repository_missing(error.remote);
     case "interrupted":
       return words.interrupted;
     case "unexpected":

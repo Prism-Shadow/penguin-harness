@@ -28,6 +28,8 @@ export interface WafRepoStatus {
   /** Whether origin is the configured remote; always true for an existing checkout. */
   remoteMatches: boolean;
   branch: string | null;
+  /** Whether it is on the configured branch; always true for an existing checkout. */
+  branchMatches: boolean;
   /** Whether the working tree has changes; null when git could not say. */
   dirty: boolean | null;
   /** Whether its dependencies are installed; null for a repository that needs none. */

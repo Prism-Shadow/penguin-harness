@@ -65,6 +65,7 @@ import {
 } from "./deploy-export.js";
 import { runPreflight } from "./deploy-preflight.js";
 import { syncMedia } from "./deploy-media.js";
+import { repositoryMissing } from "./waf-workspace.js";
 import { withinRoot } from "./sandbox-paths.js";
 import {
   DEPLOY_ALL_STAGES,
@@ -418,7 +419,21 @@ const verifyModule: DeployStageDefinition = {
     // The module is where activities are authored, so what is in its working tree is work:
     // it is carried onto main as origin has it (never reset away), the newest assembled
     // module is copied over it, and all of it is committed on main before the checks run.
-    await git(ctx, ["fetch", "origin"], { timeoutMs: PUSH_TIMEOUT_MS });
+    const fetched = await git(ctx, ["fetch", "origin"], {
+      timeoutMs: PUSH_TIMEOUT_MS,
+      allowFailure: true,
+    });
+    if (fetched.code !== 0) {
+      // A new product's module starts locally; its repository has to exist before a deploy.
+      if (repositoryMissing(fetched.stderr)) {
+        const remote = await git(ctx, ["remote", "get-url", "origin"], { quiet: true });
+        throw new DeployStageFailure({
+          code: "module_repository_missing",
+          remote: remote.stdout.trim(),
+        });
+      }
+      await git(ctx, ["fetch", "origin"], { timeoutMs: PUSH_TIMEOUT_MS });
+    }
     await onMainCarryingWork(ctx, ctx.module.dir);
     if (ctx.module.source) {
       const copied = await syncModule(ctx.module.source, ctx.module.dir);
@@ -449,10 +464,16 @@ const verifyModule: DeployStageDefinition = {
 async function onMainCarryingWork(ctx: DeployStageContext, cwd: string): Promise<void> {
   const status = await git(ctx, ["status", "--porcelain"], { quiet: true, cwd });
   const work = status.stdout.trim() !== "";
-  if (work)
-    await git(ctx, ["stash", "push", "--include-untracked", "-m", "penguin-harness deploy"], {
-      cwd,
-    });
+  // git cannot stash in a repository with no commit yet: a new product's module, made
+  // locally, before its first deploy. Its work then stays where it is.
+  const stashed =
+    work &&
+    (
+      await git(ctx, ["stash", "push", "--include-untracked", "-m", "penguin-harness deploy"], {
+        cwd,
+        allowFailure: true,
+      })
+    ).code === 0;
   const local = await git(ctx, ["rev-parse", "--verify", "--quiet", `refs/heads/${BASE_BRANCH}`], {
     allowFailure: true,
     quiet: true,
@@ -463,13 +484,21 @@ async function onMainCarryingWork(ctx: DeployStageContext, cwd: string): Promise
     ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${BASE_BRANCH}`],
     { allowFailure: true, quiet: true, cwd },
   );
+  if (work && !stashed) {
+    ctx.log("No commit yet: the new module's work stays in place.");
+    // Main starts as origin has it, the work left as changes to it; with no main on origin
+    // either, main is born when the work is committed.
+    await git(ctx, ["symbolic-ref", "HEAD", `refs/heads/${BASE_BRANCH}`], { cwd });
+    if (remote.code === 0) await git(ctx, ["reset", "--mixed", `origin/${BASE_BRANCH}`], { cwd });
+    return;
+  }
   if (local.code === 0) await git(ctx, ["checkout", BASE_BRANCH], { cwd });
   else if (remote.code === 0)
     await git(ctx, ["checkout", "-b", BASE_BRANCH, `origin/${BASE_BRANCH}`], { cwd });
   else await git(ctx, ["checkout", "-B", BASE_BRANCH], { cwd });
   if (remote.code === 0) await git(ctx, ["merge", "--ff-only", `origin/${BASE_BRANCH}`], { cwd });
   // A conflict here keeps the work in the stash, and git's output says so.
-  if (work) await git(ctx, ["stash", "pop"], { cwd });
+  if (stashed) await git(ctx, ["stash", "pop"], { cwd });
 }
 
 /** Writes the package name, and the version when one is given, into package.json and its lock. */

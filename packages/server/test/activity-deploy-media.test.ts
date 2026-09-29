@@ -104,6 +104,26 @@ describe("deploy media", () => {
     ).toBe("new sound");
   });
 
+  it("publishes an accepted file's sidecar with it, and a sidecar changed on its own", async () => {
+    const clone = await tempDir("penguin-deploy-media-clone-");
+    const audio = "loom/words/words-1/audios/english/hello";
+    const image = "loom/words/words-1/images/english/cat";
+    await put(clone, `${audio}.mp3`, "hello");
+    await put(clone, `${audio}.json`, '{"text":"hello"}');
+    await put(clone, `${image}.png`, "cat");
+    await put(clone, `${image}.json`, '{"text":"a cat, redrawn"}');
+    const git = fakeGit([`${image}.png`, `${image}.json`], [`${audio}.mp3`, `${audio}.json`, `${image}.json`]);
+    const result = await syncMedia(
+      { dir: clone, references: [`media/${audio}.mp3`, `media/${image}.png`] },
+      { git: git.git, log: () => {} },
+    );
+    expect(result).toEqual({
+      copied: [`${audio}.mp3`, `${audio}.json`, `${image}.json`],
+      missing: [],
+      present: 1,
+    });
+  });
+
   it("publishes a file whose status git could not report, rather than leaving it out", async () => {
     const clone = await tempDir("penguin-deploy-media-clone-");
     await put(clone, "loom/words/words-1/uploads/cat-1.png", "cat");

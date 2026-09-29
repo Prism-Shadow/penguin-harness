@@ -19,6 +19,7 @@ function repo(id: WafRepoStatus["id"], over: Partial<WafRepoStatus> = {}): WafRe
     remote: `git@github.com:org/${id}.git`,
     remoteMatches: true,
     branch: "main",
+    branchMatches: true,
     dirty: false,
     installed: id === "framework" || id === "navbar" ? true : null,
     ...over,

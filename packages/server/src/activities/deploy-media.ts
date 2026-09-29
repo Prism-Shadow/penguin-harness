@@ -12,6 +12,7 @@
  */
 import fs from "node:fs/promises";
 import { mediaRepoPath } from "./deploy-git.js";
+import { sidecarPath } from "./ref-media.js";
 import { withinRoot } from "./sandbox-paths.js";
 
 export interface MediaGitResult {
@@ -79,6 +80,17 @@ export async function syncMedia(
     // New or changed since the repository last had it: authored media to publish.
     if (status.code !== 0 || status.stdout.trim() !== "") result.copied.push(inRepo);
     else result.present++;
+    // An accepted file's Loom sidecar (`<key>.json`, what made it) goes with it: the data
+    // never names it, so it would otherwise stay behind in the clone.
+    const sidecar = sidecarPath(inRepo);
+    if (sidecar === inRepo || result.copied.includes(sidecar)) continue;
+    const beside = withinRoot(input.dir, sidecar);
+    if (!beside || !(await fs.lstat(beside).catch(() => null))?.isFile()) continue;
+    const changed = await ports.git(["status", "--porcelain", "--", sidecar], {
+      allowFailure: true,
+      quiet: true,
+    });
+    if (changed.code !== 0 || changed.stdout.trim() !== "") result.copied.push(sidecar);
   }
   ports.log(
     `Media: ${result.present} already in the repository, ${result.copied.length} to publish, ${result.missing.length} missing.`,
