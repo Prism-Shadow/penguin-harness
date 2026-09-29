@@ -8,7 +8,7 @@ The harness has one plugin system holding two kinds of npm package, both of them
 - A **library plugin** carries content — the Skills and the hook package an *agent* runs. It is declared by a `plugin.json` manifest, and installing it copies that content onto an agent's `agent_state/`.
 - A **code package** — the **server plugin** of [Skills & Plugins](/skills#server-plugins) — carries modules: decorated classes the *server* boots as children of its own tree. It has no `plugin.json`; a package is a plugin of this kind by being listed in a Project's config.
 
-The repository ships 17 plugin directories: 13 library plugins and 4 sandbox code packages.
+The repository ships 23 plugin directories: 14 library plugins and 9 code packages — the four `sandbox-*` backends, plus `claude-code`, `company-proposals`, `company-roadmaps`, `discord-bot` and `languages`.
 
 - **Installing something?** See [Installing a plugin](#installing-a-plugin) for the two routes, and [Install a plugin on an agent](/skills#install-a-plugin-on-an-agent) for the page and the steps.
 - **Giving a plugin options of its own?** See [Configuring a plugin](#configuring-a-plugin).
@@ -25,7 +25,7 @@ The repository ships 17 plugin directories: 13 library plugins and 4 sandbox cod
 | Declared by | the host package's dependency list — the built-in library | a Project's `[plugins]` table in `.project_config.toml` |
 | Installed on | one agent, into `agent_state/skills/` and `agent_state/hooks/` | the server process, by loading the package |
 | Runs where | in an agent's Session, as instructions and hook scripts | in the server, as nodes of its module tree |
-| Examples | `agent-company`, `goal`, `humanizer` | the four `sandbox-*` backends |
+| Examples | `agent-company`, `goal`, `humanizer` | the four `sandbox-*` backends, `discord-bot`, `languages` |
 
 The files are the source of truth for both kinds. The library is read and parsed on every call with no cache, so an edited `plugin.json` or `SKILL.md` takes effect immediately; a code package's generated table is read every time it is loaded.
 
@@ -43,9 +43,9 @@ plugins/<plugin>/
 
 `plugin.json` is where a plugin's metadata lives — its `version`, `category`, `preinstall` and hook points. A library `SKILL.md` carries only `name` and `description`; the loader stamps the plugin's version and short descriptions into each installed copy, the same way an installed hook package's `hooks.json` is generated from the manifest. [Plugin file format](/skills#plugin-file-format) lists the fields one by one.
 
-Naming and versions follow one scheme. The plugin name is its directory name, matching `^[A-Za-z0-9_-]+$`, and the package is `@penguinharness/<name>` at `plugins/<name>/`. The manifest's `version` is `YYYY.MM.DD.N` — a date and a sequence number, compared by date and then by number, so `2026.08.29.10` follows `2026.08.29.9` — and it is separate from the package's npm version, which follows the release. Exactly four plugins carry `preinstall: false`, so `default_agent` is not initialized with them: `agent-company`, `continual-learning`, `humanizer` and `use-claude-code`.
+Naming and versions follow one scheme. The plugin name is its directory name, matching `^[A-Za-z0-9_-]+$`, and the package is `@penguinharness/<name>` at `plugins/<name>/`. The manifest's `version` is `YYYY.MM.DD.N` — a date and a sequence number, compared by date and then by number, so `2026.08.29.10` follows `2026.08.29.9` — and it is separate from the package's npm version, which follows the release. Exactly five plugins carry `preinstall: false`, so `default_agent` is not initialized with them: `agent-company`, `agent-company-proposals`, `continual-learning`, `humanizer` and `use-claude-code`.
 
-The library's extent is not a directory listing. The loader inside `@prismshadow/penguin-core` reads the `@penguinharness/*` entries of the host package's own dependencies and resolves each package through Node: core, the CLI and the desktop app name the 13 plugins, and `packages/server` names none, reaching them through core. In a workspace checkout the loader redirects each name to the repository's own `plugins/<name>/` — pnpm installs a `workspace:*` package as an injected snapshot that misses files added since, and a plugin you are editing has no build script to refresh it — while an npm install and the packed desktop app read the copy they carry. A declared package that Node cannot resolve throws with the path rather than quietly shrinking the library.
+The library's extent is not a directory listing. The loader inside `@prismshadow/penguin-core` reads the `@penguinharness/*` entries of the host package's own dependencies and resolves each package through Node: core and the desktop app name all 14 plugins, the CLI names 13 of them — every one but `agent-company-proposals` — and `packages/server` names none, reaching them through core. In a workspace checkout the loader redirects each name to the repository's own `plugins/<name>/` — pnpm installs a `workspace:*` package as an injected snapshot that misses files added since, and a plugin you are editing has no build script to refresh it — while an npm install and the packed desktop app read the copy they carry. A declared package that Node cannot resolve throws with the path rather than quietly shrinking the library.
 
 ## Code packages
 
@@ -66,7 +66,7 @@ export default { modules: [MyBackend], replaces: [] } satisfies Plugin;
 - `modules` adds nodes under the host's root.
 - `replaces` stands in for nodes the host already has, by the replaced node's name — a component, a module, or a whole group with its children.
 
-The contract — `Plugin`, the five kernel decorators and the sandbox vocabulary — is the `@prismshadow/penguin-core/plugin` subpath; the interfaces a module may require are `@prismshadow/penguin-server/plugin`, types only, so a backend written against the sandbox vocabulary names core alone.
+The contract — `Plugin`, the five kernel decorators and the sandbox, language and surface vocabularies — is the `@prismshadow/penguin-core/plugin` subpath; the interfaces a module may require are `@prismshadow/penguin-server/plugin`, types only, so a backend written against the sandbox vocabulary names core alone.
 
 Manifests are generated, not written. The package's build runs `scripts/gen-ifaces.mjs` over its own tsconfig and ships the resulting `ifaces.json` beside its `package.json`. That table holds the manifest of every decorated class and the signature of every interface they name; it is the module payload, and it lets the host know what the package contains without executing it. A package without one ships no modules.
 
@@ -113,26 +113,26 @@ A declaration is a contribution to `PluginConfigProvider.groups`, so it is manif
 
 The declaration is the schema; the values belong to the deployment. They live in `server_settings`, one JSON document per group under `plugin-config:<group>` — **server-global**, like the plugin load itself, because plugins load once per process. A secret is stored in the clear beside the other settings the server keeps and masked at every API surface; a masked value sent back keeps the stored one. A first boot merges what is stored onto the declared defaults, so a reader always gets a complete document.
 
-Delivery is a pull, and it is live: the module that declared a group reads it, and a save fires its watchers, which is how a plugin applies an edit without a restart or a re-assembly of the App. A group may also offer actions — steps a deployment has to take on the machine itself, such as creating the Windows sandbox's local accounts — which the admin API runs and reports on. [Settings](/settings#plugins) describes the page: it is admin-only and server-global, and a plugin that declares no options has no card there.
+Delivery is a pull, and it is live: the module that declared a group reads it, and a save fires its watchers, which is how a plugin applies an edit without a restart or a re-assembly of the App. A group may also offer actions — steps a deployment has to take on the machine itself, such as installing WSL and initializing the Windows sandbox's distro — which the admin API runs and reports on. [Settings](/settings#plugins) describes the page: it is admin-only and server-global, and a plugin that declares no options has no card there.
 
 ## The four sandbox backends
 
 The sandbox is the plugin system's largest user, and the clearest example of a code package. Its service in `packages/server` holds no backend and imports none: backends are plugin packages, and the Projects' lists say which ones exist. Each spawn's policy is routed to a backend that covers the dimensions the policy requires.
 
-| Package | Platform | `fs-write` | `network` | `mask-paths` |
-| --- | --- | --- | --- | --- |
-| `@prismshadow/penguin-plugin-sandbox-bwrap` | Linux | yes | yes | yes |
-| `@prismshadow/penguin-plugin-sandbox-seatbelt` | macOS | yes | yes | yes |
-| `@prismshadow/penguin-plugin-sandbox-wsl` | Windows | yes | yes | yes |
-| `@prismshadow/penguin-plugin-sandbox-dsh` | all three | yes | — | — |
+| Package | Platform | `fs-write` | `network` | `network-local` | `mask-paths` |
+| --- | --- | --- | --- | --- | --- |
+| `@prismshadow/penguin-plugin-sandbox-bwrap` | Linux | yes | yes | — | yes |
+| `@prismshadow/penguin-plugin-sandbox-seatbelt` | macOS | yes | yes | yes | yes |
+| `@prismshadow/penguin-plugin-sandbox-wsl` | Windows | yes | yes | — | yes |
+| `@prismshadow/penguin-plugin-sandbox-dsh` | all three | yes | — | — | — |
 
 The dimensions are `fs-write`, `network`, `network-local` and `mask-paths`, and a provider declares the subset it implements; saying nothing means `fs-write` alone. Routing is by capability rather than registration order: a policy needing only file effects goes to the first backend that covers it — the DSH adaptor, whose own chain picks bubblewrap, Landlock, Seatbelt or the Windows ACL runner per host — while a policy that also requires the network or masked paths goes to the first backend implementing those. Registration order only breaks ties between backends that both cover the request. A request nothing covers **fails closed**, naming what each backend covers, rather than letting a command run unconfined or quietly dropping a dimension it was asked for.
 
-Windows is served by bubblewrap inside a dedicated WSL2 distro, so commands there run in Linux with Windows interop switched off. The three native backends declare options of their own — bwrap's program and its probe timeout, Seatbelt's program, the WSL distro's packages and mirror — as groups whose `parent` is `sandbox`, so they are drawn inside the sandbox card; the DSH adaptor ships no options. The `sandbox` group itself sets the mode, the network level, the masked paths and whether the temporary directory stays writable. [Sandbox](/settings#sandbox) describes what the card asks and what each answer means.
+Windows is served by bubblewrap inside a dedicated WSL2 distro, so commands there run in Linux with Windows interop switched off. The three native backends declare options of their own — bwrap's program and its probe timeout, Seatbelt's program, the WSL distro's base Linux, packages, mirror and name, and whether Windows drives show read-only — as groups whose `parent` is `sandbox`, so they are drawn inside the sandbox card; the DSH adaptor ships no options. The `sandbox` group itself sets the mode, the network level, the masked paths and whether the temporary directory stays writable. [Sandbox](/settings#sandbox) describes what the card asks and what each answer means.
 
 ## Where the code lives
 
-- `packages/core/src/plugin/` — the contract: `Plugin`, the decorators, and the sandbox vocabulary.
+- `packages/core/src/plugin/` — the contract: `Plugin`, the decorators, and the sandbox, language and surface vocabularies.
 - `packages/core/src/plugins/` — the library loader: which packages are plugins, their manifests and versions, and the category groups.
 - `packages/server/src/plugin/` — the host: which plugins a process loads, the generated table reader, and the settings-group machinery.
 - `packages/server/src/sandbox/` — the sandbox service, the dimension helpers and the `sandbox` settings group.
