@@ -57,6 +57,7 @@ import { webDistEntry, webDistFor } from "./web-dist.js";
 import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
 import { createBuiltinBrowserShell } from "./builtin-browser.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
+import { logLine, logServerOutput, startDesktopLog, stopDesktopLog } from "./desktop-log.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
@@ -74,6 +75,7 @@ import {
 import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
 import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
 import {
+  childGoneLine,
   classifyWindowOpen,
   desktopLoginUrl,
   hidesOnClose,
@@ -82,6 +84,9 @@ import {
   isExternalScheme,
   isLocalSurfaceUrl,
   MAX_SERVER_RESTARTS,
+  RENDERER_HEALTHY_MS,
+  rendererGoneLine,
+  rendererReloadDelayMs,
   restartDelayMs,
   urlForLog,
 } from "./util.js";
@@ -119,13 +124,16 @@ let relayChild: EmbeddedServer["child"] | null = null;
 const builtinBrowser = createBuiltinBrowserShell({
   post: (message) => relayChild?.postMessage(message),
   locale: () => trayLocale,
-  log: (line) => process.stdout.write(`[shell] ${line}\n`),
+  log: (line) => logLine(`[shell] ${line}`),
 });
 /** App origin (embedded or attached); null until boot resolves. */
 let appOrigin: string | null = null;
 let quitting = false;
 let stopPromise: Promise<void> | null = null;
 let restartAttempts = 0;
+/** The main window's page died this many times in a row; a page that stays up resets it. */
+let rendererDeaths = 0;
+let rendererHealthyTimer: NodeJS.Timeout | null = null;
 
 // app.name, not a literal: a dev run raises this box while the installed build may be
 // running beside it, and a dialog titled "PenguinHarness" cannot be attributed to either.
@@ -210,9 +218,35 @@ function createWindow(url: string): void {
       openInSystem(target);
     }
   });
-  win.webContents.on("render-process-gone", () => win?.webContents.reload());
+  // The page's renderer died (the app-level handler below logs why): reload it, after a pause
+  // that grows while it keeps dying, so a page that crashes as it loads cannot spin.
+  const target = win;
+  target.webContents.on("render-process-gone", () => reloadAfterRendererDeath(target));
+  target.webContents.on("unresponsive", () => logLine("[shell] the window stopped responding"));
+  target.webContents.on("responsive", () => logLine("[shell] the window responds again"));
   armSmokeProbe(win);
   void win.loadURL(url);
+}
+
+/**
+ * Reloads the main window's page after its renderer died: at once the first time, then after
+ * a growing pause (rendererReloadDelayMs) while it keeps dying. A page that then stays up for
+ * RENDERER_HEALTHY_MS starts the ladder over.
+ */
+function reloadAfterRendererDeath(target: BrowserWindow): void {
+  if (rendererHealthyTimer !== null) clearTimeout(rendererHealthyTimer);
+  rendererHealthyTimer = null;
+  const wait = rendererReloadDelayMs(rendererDeaths);
+  rendererDeaths += 1;
+  if (wait > 0) logLine(`[shell] the window's page keeps dying; reloading it in ${wait} ms`);
+  setTimeout(() => {
+    if (quitting || target.isDestroyed()) return;
+    target.webContents.reload();
+    rendererHealthyTimer = setTimeout(() => {
+      rendererDeaths = 0;
+      rendererHealthyTimer = null;
+    }, RENDERER_HEALTHY_MS);
+  }, wait);
 }
 
 /**
@@ -247,7 +281,7 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
       void shell.openExternal(target);
       return { action: "deny" };
     case "deny":
-      process.stdout.write(`[shell] refused to open a window for ${urlForLog(target)}\n`);
+      logLine(`[shell] refused to open a window for ${urlForLog(target)}`);
       return { action: "deny" };
   }
 }
@@ -283,7 +317,7 @@ function guardOpenedWindow(
 /** A navigation that leaves the app: a web or mail link goes to the system; any other scheme is refused. */
 function openInSystem(target: string): void {
   if (isExternalScheme(target)) void shell.openExternal(target);
-  else process.stdout.write(`[shell] refused to hand ${urlForLog(target)} to the system\n`);
+  else logLine(`[shell] refused to hand ${urlForLog(target)} to the system`);
 }
 
 /**
@@ -341,7 +375,7 @@ function openTray(): void {
     onShowWindow: showMainWindow,
     onNavigate: navigateMainWindow,
     onQuit: () => app.quit(),
-    log: (line) => process.stdout.write(`[shell] ${line}\n`),
+    log: (line) => logLine(`[shell] ${line}`),
   });
 }
 
@@ -356,7 +390,7 @@ function setShowTrayIcon(next: boolean): void {
   try {
     updateTrayPrefs(app.getPath("userData"), { showTrayIcon: next });
   } catch (err) {
-    process.stdout.write(`[shell] the tray preference could not be saved: ${String(err)}\n`);
+    logLine(`[shell] the tray preference could not be saved: ${String(err)}`);
   }
   if (next) {
     openTray();
@@ -383,7 +417,7 @@ function setTrayLocale(next: TrayLocale): void {
   try {
     updateTrayPrefs(app.getPath("userData"), { locale: next });
   } catch (err) {
-    process.stdout.write(`[shell] the tray language could not be saved: ${String(err)}\n`);
+    logLine(`[shell] the tray language could not be saved: ${String(err)}`);
   }
   tray?.setLocale(next);
   pushTrayStatus();
@@ -446,7 +480,7 @@ async function startServerAndWindow(dataRoot: string): Promise<void> {
     profile,
     portFile: path.join(app.getPath("userData"), "server-port"),
     preferredPortFile: path.join(app.getPath("userData"), "preferred-port"),
-    log: (chunk) => process.stdout.write(`[server] ${chunk}`),
+    log: (chunk, stream) => logServerOutput(stream, chunk),
   });
   server = started;
   appOrigin = started.origin;
@@ -467,7 +501,10 @@ async function startServerAndWindow(dataRoot: string): Promise<void> {
 
 /** Unexpected server death: restart with backoff; give up with an error dialog at the cap. */
 async function handleServerExit(dataRoot: string, code: number): Promise<void> {
-  if (quitting) return;
+  if (quitting) {
+    logLine(`[shell] server exited (code ${code})`);
+    return;
+  }
   server = null;
   if (restartAttempts >= MAX_SERVER_RESTARTS) {
     fatal(`The embedded server keeps exiting (last exit code ${code}).`, "Giving up.");
@@ -475,7 +512,7 @@ async function handleServerExit(dataRoot: string, code: number): Promise<void> {
   }
   const wait = restartDelayMs(restartAttempts);
   restartAttempts += 1;
-  process.stdout.write(`[shell] server exited (code ${code}); restarting in ${wait}ms\n`);
+  logLine(`[shell] server exited (code ${code}); restarting in ${wait}ms`);
   await new Promise((resolve) => setTimeout(resolve, wait));
   if (quitting) return;
   try {
@@ -495,14 +532,14 @@ async function boot(): Promise<void> {
     releaseRoot: resolveRoot,
   });
   if (profile === "dev") {
-    process.stdout.write(`[shell] dev instance '${app.name}' on data root ${dataRoot}\n`);
+    logLine(`[shell] dev instance '${app.name}' on data root ${dataRoot}`);
   }
   const existing = await liveServerLock(dataRoot);
   if (existing !== null) {
     // Attach mode: the one-shot token only works against a server this shell spawned,
     // so the window goes through the normal login page of the existing instance.
     appOrigin = `http://localhost:${existing.port}`;
-    process.stdout.write(`[shell] attaching to the running server at ${appOrigin}\n`);
+    logLine(`[shell] attaching to the running server at ${appOrigin}`);
     createWindow(`${appOrigin}/`);
     return;
   }
@@ -514,7 +551,40 @@ async function boot(): Promise<void> {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // The log file is this instance's from here: a second launch quits above without touching it.
+  const logFile = startDesktopLog(path.join(app.getPath("userData"), "logs", "desktop.log"));
+  logLine(
+    `[shell] ${app.name} ${app.getVersion()} starting (Electron ${process.versions.electron}, ` +
+      `${process.platform} ${process.arch}, ${Math.round(os.totalmem() / 2 ** 30)} GB memory); log ${logFile}`,
+  );
+
   app.on("second-instance", () => showMainWindow());
+
+  // Every renderer and child process that dies says so in the log: the app window's page (which
+  // the window then reloads), a browser tab's, DevTools', the GPU process, the embedded server.
+  app.on("render-process-gone", (_event, contents, details) => {
+    logLine(
+      `[shell] ${rendererGoneLine({
+        type: contents.getType(),
+        id: contents.id,
+        url: contents.getURL(),
+        reason: details.reason,
+        exitCode: details.exitCode,
+      })}`,
+    );
+  });
+  app.on("child-process-gone", (_event, details) => {
+    logLine(
+      `[shell] ${childGoneLine({
+        type: details.type,
+        reason: details.reason,
+        exitCode: details.exitCode,
+        ...(details.serviceName !== undefined ? { serviceName: details.serviceName } : {}),
+        ...(details.name !== undefined ? { name: details.name } : {}),
+      })}`,
+    );
+  });
+  app.on("will-quit", () => stopDesktopLog());
 
   app.on("window-all-closed", () => {
     // macOS keeps the app alive in the Dock; elsewhere closing the window quits.
@@ -551,7 +621,7 @@ if (!app.requestSingleInstanceLock()) {
         platform: process.platform,
         env: process.env,
         shell: process.env.SHELL,
-        log: (line) => process.stdout.write(`[shell] ${line}\n`),
+        log: (line) => logLine(`[shell] ${line}`),
       });
       // Standard menu plus native desktop-only actions; the window gets no IPC channel.
       // The install item is the release profile's, like the per-launch repair below: the
