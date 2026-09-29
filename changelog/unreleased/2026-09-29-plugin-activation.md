@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** feature
 - **Scope:** `server`
+- **PR:** [Myriad-Dreamin/penguin-harness#97](https://github.com/Myriad-Dreamin/penguin-harness/pull/97)
 - **Breaking:** yes
 
 [中文版](2026-09-29-plugin-activation.zh.md)
