@@ -1096,10 +1096,15 @@ export class RoadmapService {
    * between its steps: a queued line would wait for the Task to end, and a room session that
    * works one long Task (waiting on the room in a loop of its own) then hears nothing. One that
    * is not running — or whose Task ends before the line lands — gets it as its next Task.
+   * A server older than `MessagingTaskRunner.steer` has none to offer: every line is started,
+   * as before, rather than lost to the call that is not there.
    */
   private async tell(sessionId: string, text: string): Promise<void> {
     const input = [userText(text, "server")];
-    if (this.deps.runner.statusOf(sessionId) === "running") {
+    if (
+      typeof this.deps.runner.steer === "function" &&
+      this.deps.runner.statusOf(sessionId) === "running"
+    ) {
       try {
         this.deps.runner.steer(sessionId, input, { text, images: [], files: [] });
         return;
@@ -1128,8 +1133,10 @@ export class RoadmapService {
     if (org === null) return hints;
     // An organization that runs on another machine is relayed THERE. What this server holds of
     // it is a mirror: its room sessions are that machine's, so here they would read as gone —
-    // closed, and a second set opened on this server, speaking in the same room.
-    if (org.machineId !== null) return hints;
+    // closed, and a second set opened on this server, speaking in the same room. Only a machine
+    // named there counts: a server older than `OrgView.machineId` says nothing of where the
+    // organization runs, and it is relayed as it always was rather than silently not at all.
+    if (typeof org.machineId === "string" && org.machineId !== "") return hints;
     const orgDir = orgDirOf(this.deps.root, projectId, orgId);
     const room = await readRoom(orgDir, r.channelId);
     if (room === null || room.archived) return hints;

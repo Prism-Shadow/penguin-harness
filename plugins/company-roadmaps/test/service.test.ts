@@ -273,6 +273,30 @@ describe("the room", () => {
     expect(w.runner.inputs).toEqual([]);
   });
 
+  it("relays as before on a server older than OrgView.machineId, which does not say where the organization runs", async () => {
+    await openA();
+    // That server's view has no such field: absent, not null.
+    const older: Record<string, unknown> = { ...w.gateway.org };
+    delete older.machineId;
+    w.gateway.org = older as unknown as typeof w.gateway.org;
+    await post(w.root, "room_a", "user:boss", "still relayed?");
+    await service.relayOnce();
+    expect(w.runner.to("room-1")).toHaveLength(1);
+    expect(w.runner.to("room-2")).toHaveLength(1);
+  });
+
+  it("starts the line on a server older than MessagingTaskRunner.steer, even for a running room session", async () => {
+    await openA();
+    w.runner.running.add("room-1");
+    // That server's runner has no steer to offer.
+    Object.defineProperty(w.runner, "steer", { value: undefined });
+    await post(w.root, "room_a", "user:boss", "on an older server");
+    await service.relayOnce();
+    expect(w.runner.inputs.filter((i) => i.sessionId === "room-1")).toEqual([
+      expect.objectContaining({ how: "started" }),
+    ]);
+  });
+
   it("stops two room sessions answering each other at the configured depth", async () => {
     await openA();
     w.config = { relayDepth: 2 };
