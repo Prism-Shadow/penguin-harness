@@ -198,6 +198,28 @@ Windows 上还有以下不同：
 
 数据目录默认为 `~/.penguin/data`（Windows 为 `%USERPROFILE%\.penguin\data`）。它位于安装目录之下，但安装和升级都不会改动它。设置环境变量 `PENGUIN_HOME` 可以改用其他目录。模型配置、Session 记录等数据在升级后都会保留。
 
+### Ubuntu 上的沙盒
+
+Linux 沙盒后端 `@penguinharness/sandbox-bwrap` 用 bubblewrap 约束命令，需要非特权 user namespace。Ubuntu 23.10 及以后的版本（包括默认的 Ubuntu 24.04）只把它交给带有相应 AppArmor profile 的程序（`kernel.apparmor_restrict_unprivileged_userns` 为 `1`）。桌面 `.deb` 会为应用装上这样一份 profile，应用启动的 bubblewrap 也在它的覆盖之内。安装脚本、npm 安装和 Release 压缩包都不以 root 运行，装不了 profile。这几种安装上，后端的启动检查会失败，[沙盒](/settings#沙盒)卡片显示 `@penguinharness/sandbox-bwrap is not in use:`，原因里带有 `setting up uid map: Permission denied`。
+
+解决办法是为后端自带的 bubblewrap 装一份 profile。这一步需要 root，只做一次：
+
+```bash
+sudo tee /etc/apparmor.d/penguin-sandbox-bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile penguin-sandbox-bwrap @{HOME}/.penguin/data/plugin-store/@penguinharness/sandbox-bwrap/*/*/package/vendor/linux-*/bin/bwrap flags=(unconfined) {
+  userns,
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/penguin-sandbox-bwrap
+```
+
+然后在沙盒卡片上点**保存**，后端会重新检查，无需重启。profile 在每次开机时重新加载；路径模式匹配插件仓里的每个版本，所以后端升级后依然有效。如果设置了 `PENGUIN_HOME`，把 `@{HOME}/.penguin/data` 换成那个目录。
+
+这份 profile 作用于该路径上的任何程序，而这个路径你自己就能写入。在与不受信任的用户共用的机器上，改为在沙盒卡片上把 bwrap 程序设为一份属于 root 的副本（例如 `apt install bubblewrap` 装的 `/usr/bin/bwrap`），并在 profile 里写那个路径。另一种做法是用 `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` 对所有程序解除这项限制。要在重启后保留这项设置，把同一行（去掉 `sudo sysctl -w`）写进 `/etc/sysctl.d/` 下的一个文件。
+
 ### 已发布的 npm 包
 
 | 包 | 说明 |

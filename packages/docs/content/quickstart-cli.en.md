@@ -198,6 +198,28 @@ Other differences on Windows:
 
 The data root is `~/.penguin/data` by default (`%USERPROFILE%\.penguin\data` on Windows). It sits under the install directory, but installing and upgrading never modify it. Set the `PENGUIN_HOME` environment variable to use another directory. Model configuration, Session records and other data are kept across upgrades.
 
+### Sandbox on Ubuntu
+
+The Linux sandbox backend, `@penguinharness/sandbox-bwrap`, confines commands with bubblewrap, which needs unprivileged user namespaces. Ubuntu 23.10 and later, including a default Ubuntu 24.04, grant them only to programs that have an AppArmor profile allowing it (`kernel.apparmor_restrict_unprivileged_userns` is `1`). The desktop `.deb` installs such a profile for the app, and it covers the bubblewrap the app starts. The install script, the npm install and the release archive run without root and cannot install a profile. On those installs the backend's startup check fails, and the [Sandbox](/settings#sandbox) card shows `@penguinharness/sandbox-bwrap is not in use:` with `setting up uid map: Permission denied` in the reason.
+
+To fix this, install a profile for the bubblewrap the backend ships. This takes root once:
+
+```bash
+sudo tee /etc/apparmor.d/penguin-sandbox-bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile penguin-sandbox-bwrap @{HOME}/.penguin/data/plugin-store/@penguinharness/sandbox-bwrap/*/*/package/vendor/linux-*/bin/bwrap flags=(unconfined) {
+  userns,
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/penguin-sandbox-bwrap
+```
+
+Then select **Save** on the Sandbox card. The backend is checked again without a restart. The profile loads again at every boot and covers later versions of the backend, because the pattern matches every version in the plugin store. If you set `PENGUIN_HOME`, replace `@{HOME}/.penguin/data` with that directory.
+
+The profile applies to whatever program is at that path, and you can write to that path. On a machine shared with users you do not trust, set the bwrap program on the Sandbox card to a root-owned copy, such as `/usr/bin/bwrap` from `apt install bubblewrap`, and name that path in the profile instead. The other option is to lift the restriction for every program with `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. To keep that setting after a reboot, add the same line without `sudo sysctl -w` to a file in `/etc/sysctl.d/`.
+
 ### Published npm packages
 
 | Package | Description |

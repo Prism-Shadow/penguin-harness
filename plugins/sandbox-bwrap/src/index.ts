@@ -225,7 +225,7 @@ export async function loadPenguinBwrapProvider(
     // Two distributions, two switches: Debian gates unprivileged user namespaces with a sysctl,
     // Ubuntu 23.10 and later lets only AppArmor-profiled programs create them (24.04's default).
     throw new Error(
-      `'${runner}' is missing or refuses the base profile (are unprivileged user namespaces allowed on this host? Debian: \`sysctl kernel.unprivileged_userns_clone\`; Ubuntu 23.10 and later: \`sysctl kernel.apparmor_restrict_unprivileged_userns\`)`,
+      `'${runner}' is missing or refuses the base profile (are unprivileged user namespaces allowed on this host? Debian: \`sysctl kernel.unprivileged_userns_clone\`; Ubuntu 23.10 and later: \`sysctl kernel.apparmor_restrict_unprivileged_userns\`, see "Sandbox on Ubuntu" in the CLI quickstart)`,
     );
   }
   return createPenguinBwrapProvider(internals);
