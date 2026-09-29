@@ -62,14 +62,18 @@ export function tab(id: number, patch: Partial<BuiltinBrowserTab> = {}): Builtin
   };
 }
 
-/** A shell hosting guests: answers commands (hello, tabs, cdp, cookies, clear-data) and pushes events. */
+/** A shell hosting guests: answers commands (hello, tabs, cdp, cookies, clear-data, throttle) and pushes events. */
 export class FakeShell {
   readonly port = new FakePort();
   readonly guests = new Map<number, BuiltinBrowserTab>();
   readonly cookies: DesktopBrowserCookie[] = [];
   readonly commands: DesktopBrowserCommand[] = [];
+  /** The tab lists the `throttle` commands named, in order. */
+  readonly throttled: number[][] = [];
   /** False plays a shell older than the browser: it never answers anything. */
   speaksBrowser = true;
+  /** False plays a shell older than throttling: it refuses `throttle` as an unknown op. */
+  throttles = true;
   /** Answers `cdp`; throw to make the shell refuse the command with that message. */
   cdp: CdpHandler = () => ({});
 
@@ -87,6 +91,30 @@ export class FakeShell {
   close(tabId: number): void {
     this.guests.delete(tabId);
     this.event({ kind: "tab-closed", tabId });
+  }
+
+  /** A guest's renderer dies: the shell says why, then reports the tab crashed, as builtin-browser.ts does. */
+  crash(tabId: number, reason = "crashed"): void {
+    const crashed = { ...this.guests.get(tabId)!, loading: false, crashed: reason };
+    this.guests.set(tabId, crashed);
+    this.event({ kind: "tab-crashed", tabId, reason, exitCode: 9 });
+    this.event({ kind: "tab", tab: crashed });
+  }
+
+  /** The shell's load measurement. */
+  measure(
+    tabs: { tabId: number; memoryKB: number; cpuPercent?: number }[],
+    totalKB?: number,
+  ): void {
+    this.event({
+      kind: "metrics",
+      tabs: tabs.map((t) => ({
+        tabId: t.tabId,
+        memoryKB: t.memoryKB,
+        cpuPercent: t.cpuPercent ?? 0,
+      })),
+      totalKB: totalKB ?? tabs.reduce((sum, t) => sum + t.memoryKB, 0),
+    });
   }
 
   event(event: DesktopBrowserEvent): void {
@@ -118,6 +146,10 @@ export class FakeShell {
           this.reply(msg.id, { ok: false, error: "no_such_tab" });
           return;
         }
+        if (this.guests.get(command.tabId)?.crashed !== undefined) {
+          this.reply(msg.id, { ok: false, error: "tab_crashed" });
+          return;
+        }
         try {
           const result = await this.cdp(command.tabId, command.method, command.params);
           this.reply(msg.id, { ok: true, result });
@@ -137,6 +169,14 @@ export class FakeShell {
         });
         return;
       case "clear-data":
+        this.reply(msg.id, { ok: true, result: {} });
+        return;
+      case "throttle":
+        if (!this.throttles) {
+          this.reply(msg.id, { ok: false, error: "unknown_op" });
+          return;
+        }
+        this.throttled.push([...command.tabIds]);
         this.reply(msg.id, { ok: true, result: {} });
         return;
     }

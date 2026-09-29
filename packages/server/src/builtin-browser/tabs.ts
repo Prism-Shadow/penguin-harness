@@ -96,6 +96,17 @@ export class TabRegistry {
     return previous;
   }
 
+  /**
+   * Applies a `tab-crashed` event: the tab stays, marked with why its page is gone, until the
+   * shell reports it reloaded. True when that changed the tab.
+   */
+  markCrashed(id: number, reason: string): boolean {
+    const tab = this.tabs.get(id);
+    if (tab === undefined || (tab.crashed === reason && !tab.loading)) return false;
+    this.tabs.set(id, { ...tab, loading: false, crashed: reason });
+    return true;
+  }
+
   /** Applies a `tab-closed` event; true when the tab was known. */
   remove(id: number): boolean {
     const known = this.tabs.delete(id);

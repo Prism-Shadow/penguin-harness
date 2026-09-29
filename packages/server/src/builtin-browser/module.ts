@@ -67,10 +67,16 @@ export class BuiltinBrowserRoutes {
     const browser = new BuiltinBrowser({
       port,
       root: this.paths.root,
+      // Runs in the browser's timers and shell events as well as in requests, so it never throws:
+      // an exception there would be uncaught, and an uncaught exception ends the server.
       publish: (event) => {
-        for (const user of users.list()) {
-          if (user.isAdmin)
-            channels.peek(userChannelKey(user.userId))?.publish(event, "server_event");
+        try {
+          for (const user of users.list()) {
+            if (user.isAdmin)
+              channels.peek(userChannelKey(user.userId))?.publish(event, "server_event");
+          }
+        } catch (err) {
+          log.line(`builtin browser: a '${event.type}' event could not be sent: ${String(err)}`);
         }
       },
       log: (line) => log.line(line),

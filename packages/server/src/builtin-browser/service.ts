@@ -11,7 +11,14 @@
  *
  * Every agent action names a tab (`active` included), makes it the active one, and is
  * bracketed by `builtin_browser_activity` events so the window can show the agent at work.
+ *
+ * Load: the shell measures its guests every ~10 s, and this turns each measurement into the
+ * browser's `metrics` — the tabs' memory with the verdict of load.ts — for the status and the
+ * windows. And it keeps the tabs nobody is looking at or driving cheap: every tab but the one a
+ * window shows and those an agent acts in (and for a grace period after) may be throttled by the
+ * shell while it is out of sight.
  */
+import os from "node:os";
 import type {
   BuiltinBrowserAction,
   BuiltinBrowserExecResult,
@@ -19,6 +26,7 @@ import type {
   BuiltinBrowserImportRequest,
   BuiltinBrowserImportResult,
   BuiltinBrowserImportSource,
+  BuiltinBrowserMetrics,
   BuiltinBrowserScanResult,
   BuiltinBrowserScreenshot,
   BuiltinBrowserServerEvent,
@@ -32,11 +40,12 @@ import type {
 import { HttpError } from "../http/errors.js";
 import { BrowserActions, DEFAULT_ACTION_TIMING } from "./actions.js";
 import type { ActionTiming } from "./actions.js";
-import { BrowserDriver, mapLinkError } from "./driver.js";
+import { BrowserDriver, mapLinkError, tabCrashedError } from "./driver.js";
 import { HistoryStore, historyFile, isWebUrl } from "./history.js";
 import { listImportSources, readCookies, readHistory } from "./import/index.js";
+import { assessLoad, systemMemory } from "./load.js";
 import { SettingsStore, settingsFile } from "./settings.js";
-import { ShellLink, parseTab } from "./shell-link.js";
+import { ShellLink, ShellLinkError, parseTab } from "./shell-link.js";
 import type { BrowserShellPort, ShellLinkTiming } from "./shell-link.js";
 import { TabRegistry } from "./tabs.js";
 import type { OpenRequest } from "./tabs.js";
@@ -50,23 +59,34 @@ export interface BrowserTiming extends ShellLinkTiming, ActionTiming {
   tabsTimeoutMs: number;
   /** Tab events within this window reach the admins as one `builtin_browser_tabs`. */
   publishDelayMs: number;
+  /** After an agent's action in a tab (or a new tab opening), how long it runs unthrottled. */
+  throttleGraceMs: number;
 }
 
-/** The most tabs the browser holds; an agent's new tab beyond them is refused. */
-export const MAX_TABS = 30;
+/**
+ * The most tabs the browser holds; an agent's new tab beyond them is refused. Twenty busy
+ * shopping and news sites held 3.3 GB between them (measured on Linux), which is already more
+ * than an 8 GB laptop can spare; the load warning speaks up well before this.
+ */
+export const MAX_TABS = 20;
 /** A page may open this many tabs (popups, target=_blank) in any POPUP_WINDOW_MS; more are dropped. */
 const POPUP_LIMIT = 3;
 const POPUP_WINDOW_MS = 5_000;
 
 const DEFAULT_TIMING: Pick<
   BrowserTiming,
-  "openClaimMs" | "closeWaitMs" | "tabsTimeoutMs" | "publishDelayMs"
+  "openClaimMs" | "closeWaitMs" | "tabsTimeoutMs" | "publishDelayMs" | "throttleGraceMs"
 > = {
   openClaimMs: 15_000,
   closeWaitMs: 5_000,
   tabsTimeoutMs: 5_000,
-  publishDelayMs: 30,
+  // A page announces itself in bursts (start, navigate, title, icon, stop), and a busy one never
+  // stops (a ticking title); the windows get the tab list at most five times a second.
+  publishDelayMs: 200,
+  throttleGraceMs: 30_000,
 };
+/** How long the shell gets to apply a throttling change. */
+const THROTTLE_TIMEOUT_MS = 5_000;
 
 /** The system-browser importer (./import), injectable for tests. */
 export interface Importer {
@@ -202,6 +222,10 @@ export interface BuiltinBrowserDeps {
   sleep?: (ms: number) => Promise<void>;
   importer?: Importer;
   timing?: Partial<BrowserTiming>;
+  /** This computer's memory, for the load warning (os.freemem / os.totalmem by default). */
+  systemMemory?: () => { freeBytes: number; totalBytes: number };
+  /** process.platform by default. */
+  platform?: string;
 }
 
 interface Connected {
@@ -225,6 +249,19 @@ export class BuiltinBrowser {
   private readonly popups = new Map<number, number[]>();
   private readonly now: () => number;
   private publishTimer: NodeJS.Timeout | null = null;
+  /** The last tab list the windows were sent, to skip sending the same one again. */
+  private published: string | null = null;
+  /** The shell's latest measurement with its verdict; null before the first. */
+  private metrics: BuiltinBrowserMetrics | null = null;
+  /** Per tab, when an agent last acted in it (or it opened): it runs unthrottled for a while after. */
+  private readonly actedAt = new Map<number, number>();
+  /** The throttled tabs the shell was last told of, as a key; null when it must be told again. */
+  private throttleSent: string | null = null;
+  /** An older shell does not throttle: every tab runs at full speed, as it always did. */
+  private throttleUnsupported = false;
+  /** The tab a window shows on screen (POST /tabs/on-screen); never throttled while it is there. */
+  private onScreen: number | null = null;
+  private throttleTimer: NodeJS.Timeout | null = null;
   private disposed = false;
 
   constructor(private readonly deps: BuiltinBrowserDeps) {
@@ -240,7 +277,7 @@ export class BuiltinBrowser {
       this.connected = null;
       return;
     }
-    const link = new ShellLink(deps.port, deps.timing, now);
+    const link = new ShellLink(deps.port, deps.timing, now, deps.log);
     const driver = new BrowserDriver(link, { now, ...(deps.sleep ? { sleep: deps.sleep } : {}) });
     const actions = new BrowserActions({
       driver,
@@ -264,6 +301,7 @@ export class BuiltinBrowser {
       ...(reason !== null ? { reason } : {}),
       tabs: this.tabs.list(),
       activeTabId: this.tabs.activeTabId,
+      ...(this.metrics !== null ? { metrics: this.metrics } : {}),
     };
   }
 
@@ -299,6 +337,9 @@ export class BuiltinBrowser {
     const tabId = await this.tabs.waitForClaim(request.requestId, this.timing.openClaimMs);
     if (tabId === null) throw new BrowserUnavailableError("no_window");
     if (!this.tabs.has(tabId)) await this.refreshTabs().catch(() => undefined);
+    // The agent's (or the panel's) new tab: its grace runs from now, as after an action.
+    this.actedAt.set(tabId, this.now());
+    this.syncThrottle();
     if (isWebUrl(url)) await driver.waitForLoad(tabId, this.loadWaitMs);
     return this.tabOrThrow(tabId);
   }
@@ -332,6 +373,15 @@ export class BuiltinBrowser {
     const tabId = this.resolve(tab);
     if (this.tabs.activate(tabId)) this.schedulePublish();
     return this.tabOrThrow(tabId);
+  }
+
+  /**
+   * POST /tabs/on-screen: the tab a window shows now, or none (its panel closed, the window
+   * hidden). That tab is left at full speed; the one it replaces may be throttled.
+   */
+  setOnScreen(tabId: number | null): void {
+    this.onScreen = tabId;
+    this.syncThrottle();
   }
 
   /** DELETE /tabs/:tab: the window holding the tab removes it; this waits until it is gone. */
@@ -529,6 +579,8 @@ export class BuiltinBrowser {
     this.disposed = true;
     if (this.publishTimer !== null) clearTimeout(this.publishTimer);
     this.publishTimer = null;
+    if (this.throttleTimer !== null) clearTimeout(this.throttleTimer);
+    this.throttleTimer = null;
     this.connected?.link.dispose();
     this.tabs.dispose();
     void this.history.dispose();
@@ -576,7 +628,11 @@ export class BuiltinBrowser {
     return (await this.settings.read()).homepage ?? "about:blank";
   }
 
-  /** One agent action on one tab: made active, announced busy while it runs. */
+  /**
+   * One agent action on one tab: made active, running unthrottled and announced busy while it
+   * runs. A tab whose page crashed answers `tab_crashed` at once, and so does an action whose
+   * page crashed under it, whatever error that left behind.
+   */
   private async act<T>(
     tab: string,
     action: BuiltinBrowserAction,
@@ -585,6 +641,8 @@ export class BuiltinBrowser {
   ): Promise<T> {
     const { actions } = await this.ready();
     const tabId = this.resolve(tab);
+    const crashed = this.tabs.get(tabId)?.crashed;
+    if (crashed !== undefined) throw tabCrashedError(tabId, crashed);
     if (this.tabs.activate(tabId)) this.schedulePublish();
     this.activity(tabId, action, sessionId, 1);
     try {
@@ -594,6 +652,8 @@ export class BuiltinBrowser {
       if (err instanceof HttpError && err.code === "no_such_tab" && this.tabs.remove(tabId)) {
         this.schedulePublish();
       }
+      const crashedNow = this.tabs.get(tabId)?.crashed;
+      if (crashedNow !== undefined) throw tabCrashedError(tabId, crashedNow);
       throw err;
     } finally {
       this.activity(tabId, action, sessionId, -1);
@@ -611,6 +671,10 @@ export class BuiltinBrowser {
     if (delta > 0 && sessionId !== undefined) entry.sessionId = sessionId;
     if (entry.count > 0) this.inflight.set(tabId, entry);
     else this.inflight.delete(tabId);
+    if (delta < 0) this.actedAt.set(tabId, this.now());
+    // Before the action's first command: the port keeps order, so the page is at full speed
+    // by the time the action reaches it.
+    this.syncThrottle();
     this.deps.publish({
       type: "builtin_browser_activity",
       tabId,
@@ -678,16 +742,43 @@ export class BuiltinBrowser {
     return this.tabs.list().length + this.tabs.pendingOpens();
   }
 
+  /** One shell event. Never throws: a failure is logged, and the next event starts clean. */
   private onShellEvent(event: DesktopBrowserEvent): void {
+    try {
+      this.applyShellEvent(event);
+    } catch (err) {
+      this.deps.log(`builtin browser: the shell's '${event.kind}' event failed: ${messageOf(err)}`);
+    }
+  }
+
+  private applyShellEvent(event: DesktopBrowserEvent): void {
     switch (event.kind) {
-      case "tab":
-        this.history.observe(this.tabs.upsert(event.tab), event.tab);
+      case "tab": {
+        const previous = this.tabs.upsert(event.tab);
+        if (previous === undefined) {
+          // A new tab loads at full speed for the grace period, whoever opened it.
+          if (!this.actedAt.has(event.tab.id)) this.actedAt.set(event.tab.id, this.now());
+          this.syncThrottle();
+        }
+        this.history.observe(previous, event.tab);
         this.schedulePublish();
         break;
+      }
       case "tab-closed":
         if (this.tabs.remove(event.tabId)) this.schedulePublish();
         this.inflight.delete(event.tabId);
         this.popups.delete(event.tabId);
+        this.actedAt.delete(event.tabId);
+        this.syncThrottle();
+        break;
+      case "tab-crashed":
+        this.deps.log(
+          `builtin browser: tab ${event.tabId}'s page crashed (${event.reason}, exit code ${event.exitCode})`,
+        );
+        if (this.tabs.markCrashed(event.tabId, event.reason)) this.schedulePublish();
+        break;
+      case "metrics":
+        this.measure(event.tabs, event.totalKB);
         break;
       case "open-request":
         if (isWebUrl(event.url)) this.openFromPage(event);
@@ -715,18 +806,102 @@ export class BuiltinBrowser {
       ? answer.tabs.map(parseTab).filter((tab): tab is BuiltinBrowserTab => tab !== null)
       : [];
     if (this.tabs.replaceAll(tabs)) this.schedulePublish();
+    // A shell met again (a new generation, a restarted server) is told afresh which tabs to throttle.
+    this.throttleSent = null;
+    this.syncThrottle();
   }
 
+  /** A measurement from the shell: judged (load.ts), kept for the status, and sent to the windows. */
+  private measure(
+    measured: { tabId: number; memoryKB: number; cpuPercent: number }[],
+    totalKB: number,
+  ) {
+    const open = new Set(this.tabs.ids());
+    const read =
+      this.deps.systemMemory ?? (() => ({ freeBytes: os.freemem(), totalBytes: os.totalmem() }));
+    const { freeBytes, totalBytes } = read();
+    const system = systemMemory(this.deps.platform ?? process.platform, freeBytes, totalBytes);
+    this.metrics = assessLoad(
+      {
+        at: this.now(),
+        tabs: measured.filter((tab) => open.has(tab.tabId)),
+        totalKB,
+        ...(system !== undefined ? { system } : {}),
+        tabCount: open.size,
+      },
+      this.metrics?.warnings ?? [],
+    );
+    this.deps.publish({ type: "builtin_browser_metrics", metrics: this.metrics });
+  }
+
+  /**
+   * Tells the shell which tabs may be throttled while out of sight: every open tab but the one on
+   * screen and those an agent is acting in or acted in within the grace period (new tabs
+   * included). Sent only when the list changes, and re-checked when the earliest grace runs out.
+   * A shell too old for the command leaves every tab at full speed, as before.
+   */
+  private syncThrottle(): void {
+    const link = this.connected?.link;
+    if (link === undefined || !link.connected || this.throttleUnsupported || this.disposed) return;
+    const now = this.now();
+    const grace = this.timing.throttleGraceMs;
+    let recheckAt = Number.POSITIVE_INFINITY;
+    const throttled: number[] = [];
+    for (const id of this.tabs.ids()) {
+      if (id === this.onScreen || this.inflight.has(id)) continue;
+      const acted = this.actedAt.get(id);
+      if (acted !== undefined && now - acted < grace) {
+        recheckAt = Math.min(recheckAt, acted + grace);
+        continue;
+      }
+      throttled.push(id);
+    }
+    if (this.throttleTimer !== null) clearTimeout(this.throttleTimer);
+    this.throttleTimer = null;
+    if (recheckAt !== Number.POSITIVE_INFINITY) {
+      this.throttleTimer = setTimeout(() => {
+        this.throttleTimer = null;
+        this.syncThrottle();
+      }, recheckAt - now);
+      this.throttleTimer.unref?.();
+    }
+    throttled.sort((a, b) => a - b);
+    const key = throttled.join(",");
+    if (key === this.throttleSent) return;
+    this.throttleSent = key;
+    link
+      .request({ op: "throttle", tabIds: throttled }, THROTTLE_TIMEOUT_MS)
+      .catch((err: unknown) => {
+        if (
+          err instanceof ShellLinkError &&
+          err.kind === "refused" &&
+          err.message === "unknown_op"
+        ) {
+          this.throttleUnsupported = true;
+          return;
+        }
+        // Told again with the next change.
+        if (this.throttleSent === key) this.throttleSent = null;
+      });
+  }
+
+  /** The tab list to the windows, once per burst of changes, and only when it differs from the last one sent. */
   private schedulePublish(): void {
     if (this.publishTimer !== null || this.disposed) return;
     this.publishTimer = setTimeout(() => {
       this.publishTimer = null;
       if (this.disposed) return;
-      this.deps.publish({
-        type: "builtin_browser_tabs",
-        tabs: this.tabs.list(),
-        activeTabId: this.tabs.activeTabId,
-      });
+      const tabs = this.tabs.list();
+      const activeTabId = this.tabs.activeTabId;
+      const snapshot = JSON.stringify({ tabs, activeTabId });
+      if (snapshot === this.published) return;
+      this.published = snapshot;
+      try {
+        this.deps.publish({ type: "builtin_browser_tabs", tabs, activeTabId });
+      } catch (err) {
+        this.published = null;
+        this.deps.log(`builtin browser: the tab list could not be sent: ${messageOf(err)}`);
+      }
     }, this.timing.publishDelayMs);
   }
 }

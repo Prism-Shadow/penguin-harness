@@ -99,6 +99,11 @@ interface MonitorEnd {
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+/** The tab closed, or its page crashed, under the action: the action ends with that error. */
+function tabGone(err: unknown): boolean {
+  return err instanceof HttpError && (err.code === "no_such_tab" || err.code === "tab_crashed");
+}
+
 /** A page script of ours that threw is the caller's `script_error`, with the page's message. */
 function scriptError(err: unknown): Error {
   return err instanceof PageScriptError
@@ -306,7 +311,7 @@ export class BrowserActions {
           clickCount: 1,
         });
       } catch (err) {
-        if (err instanceof HttpError && err.code === "no_such_tab") throw err;
+        if (tabGone(err)) throw err;
         return { ok: false, error: messageOf(err) };
       }
       return { ok: true };
@@ -352,7 +357,7 @@ export class BrowserActions {
             .catch(() => undefined);
         }
       } catch (err) {
-        if (err instanceof HttpError && err.code === "no_such_tab") throw err;
+        if (tabGone(err)) throw err;
         return { ok: false, error: messageOf(err) };
       }
       return { ok: true };
@@ -502,7 +507,7 @@ export class BrowserActions {
       stop();
       // A blocked page takes the enable once it is free: the disable queues behind it.
       void off();
-      if (err instanceof HttpError && err.code === "no_such_tab") throw err;
+      if (tabGone(err)) throw err;
       return async () => {};
     }
     return async () => {

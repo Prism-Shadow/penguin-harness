@@ -6,6 +6,7 @@
  *   POST   /tabs                       open a tab (a window creates it and claims it); with
  *                                      no address it opens the homepage, or a blank page
  *   POST   /tabs/claim                 a window names the tab it created for a request
+ *   POST   /tabs/on-screen             a window names the tab it shows now, or none
  *   POST   /tabs/:tab/activate         focus a tab (the user) or switch to it (the agent)
  *   DELETE /tabs/:tab                  close a tab
  *   POST   /tabs/:tab/navigate|scan|exec|click|type|screenshot|cdp   the agent's actions
@@ -144,6 +145,19 @@ export function builtinBrowserRoutes(browser: BuiltinBrowser): Hono<AppEnv> {
     const tabId = optInt(body, "tabId", 0, Number.MAX_SAFE_INTEGER);
     if (tabId === undefined) throw badRequest("tabId is required.");
     await browser.claim(requestId, tabId);
+    return c.body(null, 204);
+  });
+
+  app.post("/tabs/on-screen", async (c) => {
+    const body = await jsonBody(c);
+    const tabId = body.tabId;
+    if (
+      tabId !== null &&
+      (typeof tabId !== "number" || !Number.isSafeInteger(tabId) || tabId < 0)
+    ) {
+      throw badRequest("tabId is the tab on screen, or null for none.");
+    }
+    browser.setOnScreen(tabId);
     return c.body(null, 204);
   });
 

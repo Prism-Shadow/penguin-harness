@@ -25,7 +25,12 @@ import type { UserRow } from "../../src/db/repos/users.js";
 import { handleError } from "../../src/http/errors.js";
 import { ImportSourceNotFoundError } from "../../src/builtin-browser/import/index.js";
 import { builtinBrowserRoutes } from "../../src/builtin-browser/routes.js";
-import { BuiltinBrowser, browserUrl, homepageUrl } from "../../src/builtin-browser/service.js";
+import {
+  BuiltinBrowser,
+  MAX_TABS,
+  browserUrl,
+  homepageUrl,
+} from "../../src/builtin-browser/service.js";
 import type { Importer } from "../../src/builtin-browser/service.js";
 import { FakeShell, evaluated, expressionOf, tab } from "./fake-shell.js";
 import type { CdpHandler } from "./fake-shell.js";
@@ -281,9 +286,10 @@ describe("tabs", () => {
     expect(opens()).toBe(4);
   });
 
-  it("holds at most 30 tabs: an agent's new tab is refused, a page's popup dropped", async () => {
+  it("holds at most 20 tabs: an agent's new tab is refused, a page's popup dropped", async () => {
+    expect(MAX_TABS).toBe(20);
     const h = mount();
-    for (let id = 1; id <= 30; id++) h.shell.show(tab(id));
+    for (let id = 1; id <= MAX_TABS; id++) h.shell.show(tab(id));
     const res = await h.call("POST", "/tabs", { url: "https://example.test/" });
     expect(res.status).toBe(409);
     expect((await errorOf(res)).error.code).toBe("too_many_tabs");

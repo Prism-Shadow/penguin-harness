@@ -1,7 +1,7 @@
 /**
  * The shell link over a fake parentPort: request / reply by id, the per-request timeout, the
- * hello handshake (and a shell too old to answer it), event fan-out, and disposal taking the
- * listener off the port — the hot-swap guarantee.
+ * hello handshake (and a shell too old to answer it), event fan-out that no listener's failure
+ * can escape from, and disposal taking the listener off the port — the hot-swap guarantee.
  */
 import { describe, expect, it } from "vitest";
 import type { DesktopBrowserCommandMessage } from "../../src/api/types.js";
@@ -179,6 +179,30 @@ describe("ShellLink events", () => {
     expect(b).toEqual([{ kind: "tab", tab: tab(5) }]);
     link.dispose();
   });
+
+  it("logs a listener that throws and goes on to the next, never throwing out of the port", () => {
+    const shell = new FakeShell();
+    const logs: string[] = [];
+    const link = new ShellLink(shell.port, {}, Date.now, (line) => logs.push(line));
+    const after: unknown[] = [];
+    link.onEvent(() => {
+      throw new Error("boom");
+    });
+    link.onEvent((e) => after.push(e));
+    expect(() => shell.show(tab(5))).not.toThrow();
+    expect(after).toEqual([{ kind: "tab", tab: tab(5) }]);
+    expect(logs).toEqual(["builtin browser: a 'tab' event from the shell failed: boom"]);
+    // A frame no parser can read (a getter that throws) is dropped the same way.
+    const hostile = {
+      type: "desktop-browser-event",
+      get event(): unknown {
+        throw new Error("unreadable");
+      },
+    };
+    expect(() => shell.port.emit(hostile)).not.toThrow();
+    expect(logs.at(-1)).toBe("builtin browser: dropped a frame from the shell: unreadable");
+    link.dispose();
+  });
 });
 
 describe("wire parsing", () => {
@@ -189,6 +213,48 @@ describe("wire parsing", () => {
     expect(parseTab({ ...tab(1), favicon: "" })).toEqual(tab(1));
     expect(parseTab({ ...tab(1), loading: "no" })).toBeNull();
     expect(parseTab({ ...tab(1), id: 1.5 })).toBeNull();
+  });
+
+  it("drops a favicon too large to ride every tab list: a data: icon past 4 KB, an address past 2 KB", () => {
+    const data = (n: number) => `data:image/png;base64,${"A".repeat(n)}`;
+    expect(parseTab(tab(1, { favicon: data(3_000) }))?.favicon).toBe(data(3_000));
+    expect(parseTab(tab(1, { favicon: data(5_000) }))?.favicon).toBeUndefined();
+    const long = `https://a.test/${"p".repeat(2_100)}.ico`;
+    expect(parseTab(tab(1, { favicon: long }))?.favicon).toBeUndefined();
+  });
+
+  it("reads why a tab crashed, and nothing that is not a reason", () => {
+    expect(parseTab(tab(1, { crashed: "oom" }))).toEqual(tab(1, { crashed: "oom" }));
+    expect(parseTab({ ...tab(1), crashed: "Out of memory!" })).toEqual(tab(1));
+    expect(parseTab({ ...tab(1), crashed: 3 })).toEqual(tab(1));
+  });
+
+  it("reads a crash and a measurement", () => {
+    const event = (value: Record<string, unknown>) =>
+      parseBrowserEvent({ type: "desktop-browser-event", event: value });
+    expect(event({ kind: "tab-crashed", tabId: 3, reason: "oom", exitCode: 137 })).toEqual({
+      kind: "tab-crashed",
+      tabId: 3,
+      reason: "oom",
+      exitCode: 137,
+    });
+    // A reason the server does not know is still a crash.
+    expect(event({ kind: "tab-crashed", tabId: 3, reason: 7 })).toEqual({
+      kind: "tab-crashed",
+      tabId: 3,
+      reason: "crashed",
+      exitCode: 0,
+    });
+    expect(event({ kind: "tab-crashed", tabId: "3", reason: "oom" })).toBeNull();
+    const tabs = [{ tabId: 3, memoryKB: 204_800, cpuPercent: 1.5 }];
+    expect(event({ kind: "metrics", tabs, totalKB: 204_800 })).toEqual({
+      kind: "metrics",
+      tabs,
+      totalKB: 204_800,
+    });
+    expect(event({ kind: "metrics", tabs, totalKB: -1 })).toBeNull();
+    expect(event({ kind: "metrics", tabs: [{ tabId: 3, memoryKB: 1 }], totalKB: 1 })).toBeNull();
+    expect(event({ kind: "metrics", tabs: {}, totalKB: 1 })).toBeNull();
   });
 
   it("reads open requests, background included", () => {

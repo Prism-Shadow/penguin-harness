@@ -59,6 +59,19 @@ export function exceptionMessage(details: ExceptionDetails): string {
   return details.text ?? "The page script failed.";
 }
 
+/**
+ * 409 `tab_crashed`: the tab's page has no renderer (it crashed, or the system took its memory
+ * back) until someone reloads it, so nothing can run in it. `reason` is Electron's word for it.
+ */
+export function tabCrashedError(tabId: number, reason?: string): HttpError {
+  return new HttpError(
+    409,
+    "tab_crashed",
+    `Tab ${tabId}'s page crashed${reason !== undefined && reason !== "crashed" ? ` (${reason})` : ""}. ` +
+      `Reload it in the Browser panel, or close it (penguin browser close ${tabId}) and open the page in a new tab.`,
+  );
+}
+
 /** What a failed link request means to the route that asked. */
 export function mapLinkError(err: unknown, tabId: number): Error {
   if (!(err instanceof ShellLinkError)) return err instanceof Error ? err : new Error(String(err));
@@ -79,6 +92,7 @@ export function mapLinkError(err: unknown, tabId: number): Error {
           `Tab ${tabId} is not open in the built-in browser.`,
         );
       }
+      if (err.message === "tab_crashed") return tabCrashedError(tabId);
       return new HttpError(422, "cdp_error", err.message);
   }
 }
@@ -204,7 +218,9 @@ export class BrowserDriver {
           return true;
         }
       } catch (err) {
-        if (err instanceof HttpError && err.code === "no_such_tab") throw err;
+        // Gone or crashed: no amount of waiting loads it.
+        if (err instanceof HttpError && (err.code === "no_such_tab" || err.code === "tab_crashed"))
+          throw err;
       }
       await this.sleep(Math.max(0, Math.min(LOAD_POLL_MS, deadline - this.now())));
     }

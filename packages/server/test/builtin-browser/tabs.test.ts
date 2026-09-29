@@ -75,6 +75,19 @@ describe("TabRegistry tabs", () => {
   });
 });
 
+describe("TabRegistry crashes", () => {
+  it("marks a crashed tab with why until the shell reports it again", () => {
+    const tabs = new TabRegistry();
+    tabs.upsert(tab(3, { loading: true }));
+    expect(tabs.markCrashed(3, "oom")).toBe(true);
+    expect(tabs.get(3)).toEqual(tab(3, { loading: false, crashed: "oom" }));
+    expect(tabs.markCrashed(3, "oom")).toBe(false);
+    expect(tabs.markCrashed(9, "oom")).toBe(false);
+    tabs.upsert(tab(3));
+    expect(tabs.get(3)?.crashed).toBeUndefined();
+  });
+});
+
 describe("TabRegistry open requests", () => {
   it("resolves the waiter with the first claim and calls a second window's claim a duplicate", async () => {
     const tabs = new TabRegistry();

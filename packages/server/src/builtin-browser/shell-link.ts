@@ -12,10 +12,15 @@
  * silence past the hello timeout means "this shell cannot host the browser"; the handshake is
  * tried again later rather than trusted forever, since the one pairing that produces it — a
  * platform pushed onto an older installation — cannot change without a new shell anyway.
+ *
+ * Nothing the shell sends can take the server down: a frame is validated before anything reads
+ * it, and a listener that throws on one is logged and skipped, since an exception escaping a
+ * port listener is an uncaught exception, which ends the server process (index.ts).
  */
 import { randomUUID } from "node:crypto";
 import type {
   BuiltinBrowserTab,
+  BuiltinBrowserTabMetrics,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserEvent,
@@ -64,14 +69,35 @@ export const DEFAULT_SHELL_LINK_TIMING: ShellLinkTiming = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/**
+ * The longest favicons a tab keeps: a `data:` icon rides every tab event and every tab list the
+ * windows hear, so one a page inlines at any size (or swaps on a timer) is dropped past a
+ * 32-pixel icon's worth, as the shell does; an address longer than this is not one worth sending.
+ */
+export const MAX_DATA_FAVICON_CHARS = 4 * 1024;
+export const MAX_FAVICON_URL_CHARS = 2 * 1024;
+
+function faviconOf(value: unknown): string | undefined {
+  if (typeof value !== "string" || value === "") return undefined;
+  const limit = /^data:/i.test(value) ? MAX_DATA_FAVICON_CHARS : MAX_FAVICON_URL_CHARS;
+  return value.length <= limit ? value : undefined;
+}
+
+/** Why a renderer went away, as Electron names it: a short lowercase word. */
+function crashReasonOf(value: unknown): string | undefined {
+  return typeof value === "string" && /^[a-z][a-z-]{0,39}$/.test(value) ? value : undefined;
+}
+
 /** A tab as the shell reports it; null for anything that does not have the shape. */
 export function parseTab(value: unknown): BuiltinBrowserTab | null {
   if (!isRecord(value)) return null;
-  const { id, url, title, loading, canGoBack, canGoForward, favicon } = value;
+  const { id, url, title, loading, canGoBack, canGoForward } = value;
   if (typeof id !== "number" || !Number.isSafeInteger(id)) return null;
   if (typeof url !== "string" || typeof title !== "string") return null;
   if (typeof loading !== "boolean") return null;
   if (typeof canGoBack !== "boolean" || typeof canGoForward !== "boolean") return null;
+  const favicon = faviconOf(value.favicon);
+  const crashed = crashReasonOf(value.crashed);
   return {
     id,
     url,
@@ -79,8 +105,29 @@ export function parseTab(value: unknown): BuiltinBrowserTab | null {
     loading,
     canGoBack,
     canGoForward,
-    ...(typeof favicon === "string" && favicon !== "" ? { favicon } : {}),
+    ...(favicon !== undefined ? { favicon } : {}),
+    ...(crashed !== undefined ? { crashed } : {}),
   };
+}
+
+/** The most tabs one measurement may name. */
+const MAX_MEASURED_TABS = 1_000;
+
+const isAmount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+/** A `metrics` event's tab list; null when any entry is not a tab's measurement. */
+function parseTabMetrics(value: unknown): BuiltinBrowserTabMetrics[] | null {
+  if (!Array.isArray(value) || value.length > MAX_MEASURED_TABS) return null;
+  const tabs: BuiltinBrowserTabMetrics[] = [];
+  for (const entry of value as unknown[]) {
+    if (!isRecord(entry)) return null;
+    const { tabId, memoryKB, cpuPercent } = entry;
+    if (typeof tabId !== "number" || !Number.isSafeInteger(tabId)) return null;
+    if (!isAmount(memoryKB) || !isAmount(cpuPercent)) return null;
+    tabs.push({ tabId, memoryKB, cpuPercent });
+  }
+  return tabs;
 }
 
 /** One shell push, validated; null when the frame is not a browser event or is malformed. */
@@ -112,6 +159,17 @@ export function parseBrowserEvent(data: unknown): DesktopBrowserEvent | null {
         method: event.method,
         params: isRecord(event.params) ? event.params : {},
       };
+    case "tab-crashed": {
+      const reason = crashReasonOf(event.reason) ?? "crashed";
+      if (typeof event.tabId !== "number" || !Number.isSafeInteger(event.tabId)) return null;
+      const exitCode = typeof event.exitCode === "number" ? event.exitCode : 0;
+      return { kind: "tab-crashed", tabId: event.tabId, reason, exitCode };
+    }
+    case "metrics": {
+      const tabs = parseTabMetrics(event.tabs);
+      if (tabs === null || !isAmount(event.totalKB)) return null;
+      return { kind: "metrics", tabs, totalKB: event.totalKB };
+    }
     default:
       return null;
   }
@@ -153,6 +211,7 @@ export class ShellLink {
     private readonly port: BrowserShellPort,
     timing: Partial<ShellLinkTiming> = {},
     private readonly now: () => number = Date.now,
+    private readonly log: (line: string) => void = () => {},
   ) {
     this.timing = { ...DEFAULT_SHELL_LINK_TIMING, ...timing };
     port.on("message", this.onMessage);
@@ -264,23 +323,44 @@ export class ShellLink {
     this.connectListeners.clear();
   }
 
+  /** One frame off the port. Never throws: what fails here is logged, and the frame dropped. */
   private receive(data: unknown): void {
     if (this.disposed) return;
-    const reply = parseBrowserReply(data);
-    if (reply !== null) {
-      const pending = this.pending.get(reply.id);
-      if (pending === undefined) return;
-      this.pending.delete(reply.id);
-      clearTimeout(pending.timer);
-      if (reply.ok) pending.resolve(reply.result);
-      else
-        pending.reject(
-          new ShellLinkError("refused", reply.error ?? "The shell refused the command."),
-        );
+    let event: DesktopBrowserEvent | null;
+    try {
+      const reply = parseBrowserReply(data);
+      if (reply !== null) {
+        this.settle(reply);
+        return;
+      }
+      event = parseBrowserEvent(data);
+    } catch (err) {
+      this.log(`builtin browser: dropped a frame from the shell: ${messageOf(err)}`);
       return;
     }
-    const event = parseBrowserEvent(data);
     if (event === null) return;
-    for (const listener of this.eventListeners) listener(event);
+    for (const listener of this.eventListeners) {
+      try {
+        listener(event);
+      } catch (err) {
+        this.log(
+          `builtin browser: a '${event.kind}' event from the shell failed: ${messageOf(err)}`,
+        );
+      }
+    }
+  }
+
+  private settle(reply: DesktopBrowserReplyMessage): void {
+    const pending = this.pending.get(reply.id);
+    if (pending === undefined) return;
+    this.pending.delete(reply.id);
+    clearTimeout(pending.timer);
+    if (reply.ok) pending.resolve(reply.result);
+    else
+      pending.reject(
+        new ShellLinkError("refused", reply.error ?? "The shell refused the command."),
+      );
   }
 }
+
+const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
