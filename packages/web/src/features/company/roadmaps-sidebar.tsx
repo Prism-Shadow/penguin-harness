@@ -26,6 +26,44 @@ import { useOrgPages } from "./use-org-pages";
 import { orgChannelPath, orgContributedPagePath } from "./company-nav";
 import { roadmapsPageSrc, sidebarRoadmaps } from "./roadmaps";
 
+/**
+ * One roadmap's row: its room read the way the channel list above reads a channel — the glyph
+ * and the name, nothing trailing. The number is not shown; the room's own column heads with it.
+ * No `title` either: the name is the row's text, and `Truncated` discloses it when it is cut.
+ */
+export function RoadmapRow({
+  projectId,
+  orgId,
+  roadmap,
+  onNavigate,
+}: {
+  projectId: string;
+  orgId: string;
+  roadmap: OrgRoadmapItem & { channelId: string };
+  onNavigate?: () => void;
+}) {
+  return (
+    <li className="rounded-md transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/70">
+      <NavLink
+        to={orgChannelPath(projectId, orgId, roadmap.channelId)}
+        onClick={() => onNavigate?.()}
+        className={({ isActive }) =>
+          `flex min-w-0 items-center ${ICON_GAP.row} rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
+            isActive
+              ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+              : "text-gray-600 dark:text-gray-400"
+          }`
+        }
+      >
+        <span className="shrink-0 text-gray-400 dark:text-gray-500">
+          <Icon d={NAV_ICONS.orgRoadmaps} size={ICON_SIZE.rowLead} />
+        </span>
+        <Truncated text={roadmap.name} className="min-w-0 flex-1" />
+      </NavLink>
+    </li>
+  );
+}
+
 export function RoadmapsSidebar({
   projectId,
   orgId,
@@ -70,31 +108,13 @@ export function RoadmapsSidebar({
   const { shown, more } = sidebarRoadmaps(roadmaps ?? []);
   const pagePath = orgContributedPagePath(projectId, orgId, "roadmaps");
   const row = (r: OrgRoadmapItem & { channelId: string }) => (
-    <li
+    <RoadmapRow
       key={r.number}
-      className="rounded-md transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
-    >
-      <NavLink
-        to={orgChannelPath(projectId, orgId, r.channelId)}
-        onClick={() => onNavigate?.()}
-        title={`#${r.number} ${r.name}`}
-        className={({ isActive }) =>
-          `flex min-w-0 items-center ${ICON_GAP.row} rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
-            isActive
-              ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-              : "text-gray-600 dark:text-gray-400"
-          }`
-        }
-      >
-        <span className="shrink-0 text-gray-400 dark:text-gray-500">
-          <Icon d={NAV_ICONS.orgRoadmaps} size={ICON_SIZE.rowLead} />
-        </span>
-        <Truncated text={r.name} className="min-w-0 flex-1" />
-        <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
-          #{r.number}
-        </span>
-      </NavLink>
-    </li>
+      projectId={projectId}
+      orgId={orgId}
+      roadmap={r}
+      {...(onNavigate ? { onNavigate } : {})}
+    />
   );
 
   return (
