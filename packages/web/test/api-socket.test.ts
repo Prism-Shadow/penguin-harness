@@ -428,6 +428,25 @@ describe("deadlines", () => {
     warn.mockRestore();
   });
 
+  it("cancels a call it gives up on, so the server stops working it", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await openViaReady();
+    const answer = socket.call("GET", "/server/m1/api/projects/p/agents/a/sessions");
+    const ws = last();
+    const { id } = ws.frames().find((f) => "call" in f) as { id: number };
+    const cancels = () => ws.frames().filter((f) => "cancel" in f);
+    last().receive({ heartbeat: true });
+    vi.advanceTimersByTime(19_999);
+    // Not before its time: the call is still the server's to answer.
+    expect(cancels()).toEqual([]);
+    vi.advanceTimersByTime(1);
+    await expect(answer).rejects.toThrow("socket_timeout");
+    // The cancel names the given-up call, so the server aborts that Request and the machine
+    // proxy drops its forward (socket/serve.ts, machines/proxy.ts).
+    expect(cancels()).toEqual([{ id, cancel: true }]);
+    warn.mockRestore();
+  });
+
   it("says whether the socket carried frames while a given-up call waited", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await openViaReady();
