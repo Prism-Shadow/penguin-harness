@@ -1569,6 +1569,17 @@ export type Strings = {
     previewResolutionLabel: string;
     previewResolutionOwn: (dimensions: string) => string;
     newActivity: string;
+    openFromModules: {
+      title: string;
+      help: string;
+      loading: string;
+      empty: string;
+      search: string;
+      refs: (count: number) => string;
+      open: string;
+      opening: string;
+      opened: string;
+    };
     search: string;
     noMatches: string;
     backToActivities: string;

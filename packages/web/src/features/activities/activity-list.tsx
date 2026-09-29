@@ -41,6 +41,7 @@ export function ActivityList({
   tag: chosenTag,
   onTag,
   onRefresh,
+  onOpenFromModules,
   onCreate,
   onMedia,
 }: {
@@ -61,6 +62,8 @@ export function ActivityList({
   tag: string | null;
   onTag: (tag: string | null) => void;
   onRefresh: () => void;
+  /** Open a product that is in the WAF workspace's modules into this project. */
+  onOpenFromModules: () => void;
   onCreate: () => void;
   /** Open the project media library: every activity's uploads in one place. */
   onMedia: () => void;
@@ -100,6 +103,11 @@ export function ActivityList({
             <Button size="sm" disabled={!available} onClick={onMedia}>
               {S.activities.projectMedia.open}
             </Button>
+            {editable && (
+              <Button size="sm" disabled={!available} onClick={onOpenFromModules}>
+                {S.activities.openFromModules.title}
+              </Button>
+            )}
             {editable && (
               <Button
                 size="sm"
@@ -317,7 +325,9 @@ function SummaryStatus({ status }: { status: ActivitySummary["status"] }) {
           : (["muted", words.next[status.milestone]] as const);
   return (
     <span className={`inline-flex items-center gap-1 whitespace-nowrap text-xs ${toneInk[tone]}`}>
-      {tone !== "muted" && <span aria-hidden className={`size-1.5 rounded-full ${toneDot[tone]}`} />}
+      {tone !== "muted" && (
+        <span aria-hidden className={`size-1.5 rounded-full ${toneDot[tone]}`} />
+      )}
       {text}
     </span>
   );

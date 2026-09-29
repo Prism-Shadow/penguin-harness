@@ -127,6 +127,9 @@ import {
   type RefAssetDecision,
   type RefNumberSuggestion,
 } from "./ref-template.js";
+import { adoptLoomProduct, describeAdoption, type CarriedBinding } from "./loom-adopt.js";
+import { mapProductMetadata, parseRefDirName, readLoomProduct } from "./loom-read.js";
+import type { ClaimModuleProductResponse, ModuleProduct } from "./module-product-types.js";
 
 /** A run's id, as a pinned module build names one. */
 const RUN_ID = /^run_[a-f0-9]{32}$/;
@@ -2545,6 +2548,374 @@ export class ActivityService implements ActivityAuthoring {
       await this.syncProductFiles(product.productId);
       return { ...product, bookMode: mode, updatedAt: now };
     });
+  }
+
+  /**
+   * The products in the WAF workspace's modules no project has open: what a Loom-authored
+   * module holds under `generated/`, and a product this project owned before its index was
+   * lost. Read from each product's metadata and its refs' folders only.
+   */
+  async moduleProducts(projectId: string): Promise<ModuleProduct[]> {
+    const modules = path.join(await this.requireWafRoot(), "modules");
+    const indexed = new Set(
+      (
+        this.db
+          .prepare("SELECT module_folder AS folder, product_code AS code FROM activity_products")
+          .all() as { folder: string; code: string }[]
+      ).map((row) => `${row.folder}\u0000${row.code}`),
+    );
+    const found: ModuleProduct[] = [];
+    const folders = await fs.readdir(modules, { withFileTypes: true }).catch(() => []);
+    for (const folder of folders
+      .filter((entry) => entry.isDirectory())
+      .map((e) => e.name)
+      .sort()) {
+      const generated = path.join(modules, folder, "generated");
+      const codes = await fs.readdir(generated, { withFileTypes: true }).catch(() => []);
+      for (const code of codes
+        .filter((entry) => entry.isDirectory())
+        .map((e) => e.name)
+        .sort()) {
+        if (indexed.has(`${folder}\u0000${code}`)) continue;
+        const dir = path.join(generated, code);
+        const owner = await readProductOwner(dir).catch(() => null);
+        if (owner && owner.projectId !== projectId) continue;
+        const metadata = mapProductMetadata(
+          code,
+          folder,
+          await fs
+            .readFile(path.join(dir, "spec", "activity_metadata.json"), "utf8")
+            .then((text) => JSON.parse(text) as unknown)
+            .catch(() => null),
+        );
+        const refNums = (await fs.readdir(path.join(dir, "refs")).catch(() => [] as string[]))
+          .map((name) => parseRefDirName(code, name))
+          .filter((refNum): refNum is number => refNum !== null)
+          .sort((left, right) => left - right);
+        if (!refNums.length) continue;
+        found.push({
+          moduleFolder: folder,
+          productCode: code,
+          title: metadata.title,
+          activityType: metadata.activityType,
+          refNums,
+        });
+      }
+    }
+    return found;
+  }
+
+  /**
+   * Opens a product that is in the modules into this project, in place: the product and its
+   * refs are indexed, the project is recorded as its owner, and each ref Loom authored gets
+   * Penguin's files beside Loom's. Loom's specification is used as it is (its module folder
+   * repaired), the media plan is made from it again and Loom's bindings carried onto it, and
+   * Loom's own specification and manifest are kept as `*.loom.json`. A ref Penguin already
+   * wrote (this project's, before its index was lost) keeps its draft and ids.
+   */
+  async claimModuleProduct(
+    projectId: string,
+    input: { moduleFolder: string; productCode: string; collectionId?: string },
+  ): Promise<ClaimModuleProductResponse> {
+    const root = await this.requireWafRoot();
+    const moduleFolder = normalizeModuleFolder(input.moduleFolder, input.productCode);
+    let productCode: string;
+    try {
+      productCode = normalizeProductCode(input.productCode);
+    } catch (error) {
+      throw new HttpError(400, "activity_invalid", (error as Error).message);
+    }
+    const dir = productDir(root, moduleFolder, productCode);
+    // One claim of a product at a time: two would both find it unowned.
+    return this.locks.run(`claim:${moduleFolder}/${productCode}`, () =>
+      this.claimLocked(projectId, root, dir, moduleFolder, productCode, input.collectionId),
+    );
+  }
+
+  private async claimLocked(
+    projectId: string,
+    root: string,
+    dir: string,
+    moduleFolder: string,
+    productCode: string,
+    collectionId: string | undefined,
+  ): Promise<ClaimModuleProductResponse> {
+    if (!(await exists(path.join(dir, "refs"))))
+      throw new HttpError(404, "module_product_not_found", "No such product in the modules.");
+    const owner = await readProductOwner(dir);
+    if (owner && owner.projectId !== projectId)
+      throw new HttpError(
+        409,
+        "product_taken",
+        `Product ${productCode} belongs to another project.`,
+      );
+    if (
+      this.db
+        .prepare("SELECT 1 FROM activity_products WHERE module_folder = ? AND product_code = ?")
+        .get(moduleFolder, productCode)
+    )
+      throw new HttpError(409, "product_open", `Product ${productCode} is already open.`);
+    const read = await readLoomProduct(path.join(root, "modules"), moduleFolder, productCode);
+    if (!read.refs.length)
+      throw new HttpError(404, "module_product_not_found", "This product has no refs.");
+    const adoption = adoptLoomProduct(read.product, read.refs);
+    const collection = await this.ensureCollection(projectId, collectionId);
+    if (
+      this.db
+        .prepare("SELECT 1 FROM activity_products WHERE collection_id = ? AND product_code = ?")
+        .get(collection.collectionId, productCode)
+    )
+      throw new HttpError(
+        409,
+        "activity_exists",
+        `This project already has a product ${productCode}, in another module.`,
+      );
+    const problems = [
+      ...read.problems,
+      ...read.refs.flatMap((ref) => ref.problems.map((problem) => `Ref ${ref.refNum}: ${problem}`)),
+    ];
+    const now = new Date().toISOString();
+    const product: ActivityProduct = {
+      productId: owner?.productId ?? newId("prd"),
+      projectId,
+      collectionId: collection.collectionId,
+      productCode,
+      moduleFolder,
+      canonicalRefNum: adoption.product.canonicalRefNum,
+      activityType: adoption.product.activityType,
+      bookMode: adoption.product.bookMode,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.db
+      .prepare(
+        `INSERT INTO activity_products
+           (product_id, project_id, collection_id, product_code, module_folder,
+            canonical_ref_num, activity_type, book_mode, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        product.productId,
+        projectId,
+        product.collectionId,
+        productCode,
+        moduleFolder,
+        product.canonicalRefNum,
+        product.activityType,
+        product.bookMode,
+        now,
+        now,
+      );
+    const activityIds: string[] = [];
+    for (const mapped of adoption.activities) {
+      const specDir = refSpecDir(root, moduleFolder, productCode, mapped.refNum);
+      const penguin = await readRefDraft(specDir).catch(() => null);
+      const activity: ActivityRecord = {
+        id: penguin?.activityId ?? newId("act"),
+        collectionId: collection.collectionId,
+        productId: product.productId,
+        productCode,
+        refNum: mapped.refNum,
+        title: mapped.title,
+        displayName: mapped.displayName,
+        stable: mapped.stable,
+        activityType: product.activityType,
+        createdAt: now,
+        updatedAt: now,
+        archived: false,
+        tags: [],
+      };
+      const draftId = penguin?.draftId ?? newId("draft");
+      this.db
+        .prepare(
+          "INSERT INTO activities (id, collection_id, product_id, product_code, ref_num, title, display_name, stable, activity_type, created_at, updated_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+        )
+        .run(
+          activity.id,
+          activity.collectionId,
+          product.productId,
+          productCode,
+          mapped.refNum,
+          activity.title,
+          activity.displayName,
+          activity.stable ? 1 : 0,
+          activity.activityType,
+          now,
+          now,
+        );
+      this.db
+        .prepare(
+          "INSERT INTO activity_drafts (draft_id, activity_id, base_version_id, content_revision, status, updated_at) VALUES (?, ?, NULL, ?, ?, ?)",
+        )
+        .run(
+          draftId,
+          activity.id,
+          penguin?.contentRevision ?? contentRevision({ description: "", spec: null }),
+          penguin?.status ?? "draft",
+          now,
+        );
+      activityIds.push(activity.id);
+      if (penguin) continue;
+      try {
+        await this.adoptLoomRef(projectId, activity, draftId, specDir, mapped);
+      } catch (error) {
+        problems.push(`Ref ${mapped.refNum}: ${(error as Error).message}`);
+      }
+    }
+    await this.syncProductFiles(product.productId);
+    return {
+      collectionId: collection.collectionId,
+      activityIds,
+      message: describeAdoption(adoption),
+      problems,
+    };
+  }
+
+  /**
+   * Gives one Loom-authored ref Penguin's files: Loom's specification and manifest are kept
+   * as `*.loom.json`, an empty draft is written, and then the specification, media plan and
+   * Loom's bindings are applied through the ordinary authoring calls, so an adopted ref is
+   * checked exactly as one made here is.
+   */
+  private async adoptLoomRef(
+    projectId: string,
+    activity: ActivityRecord,
+    draftId: string,
+    specDir: string,
+    mapped: {
+      description: string;
+      spec: Record<string, unknown> | null;
+      media: Record<string, CarriedBinding[]>;
+    },
+  ): Promise<void> {
+    for (const name of ["activity_spec", "asset_manifest"]) {
+      const from = path.join(specDir, `${name}.json`);
+      const to = path.join(specDir, `${name}.loom.json`);
+      if ((await exists(from)) && !(await exists(to))) await fs.copyFile(from, to);
+    }
+    const now = new Date().toISOString();
+    const empty: ActivityDraft = {
+      draftId,
+      activityId: activity.id,
+      baseVersionId: null,
+      contentRevision: contentRevision({ description: mapped.description, spec: null }),
+      status: "draft",
+      description: mapped.description,
+      spec: null,
+      updatedAt: now,
+    };
+    empty.contentRevision = draftRevision(empty);
+    await this.writeDraft(activity, empty);
+    this.db
+      .prepare(
+        "UPDATE activity_drafts SET content_revision = ?, status = ?, updated_at = ? WHERE draft_id = ?",
+      )
+      .run(empty.contentRevision, empty.status, now, draftId);
+    if (!mapped.spec) return;
+    const specified = await this.applySpec(
+      projectId,
+      activity.id,
+      mapped.spec,
+      empty.contentRevision,
+    );
+    if (specified.status !== "valid" || !Object.keys(mapped.media).length) return;
+    await this.carryLoomMedia(projectId, activity.id, mapped.media, specified.contentRevision);
+  }
+
+  /**
+   * The media plan made from the ref's specification, with Loom's bindings carried onto it. A
+   * language Loom held besides the default holds what Loom listed for it; the rest falls
+   * back to the default.
+   */
+  private async carryLoomMedia(
+    projectId: string,
+    activityId: string,
+    media: Record<string, CarriedBinding[]>,
+    expectedRevision: string,
+  ): Promise<ActivityDraft> {
+    const planned = await this.planMedia(projectId, activityId, expectedRevision);
+    const manifest = structuredClone(planned.mediaPlan!.manifest);
+    const defaults = manifest.assets[DEFAULT_LANGUAGE_CODE] ?? [];
+    const sceneIds = new Set(
+      ((planned.spec?.scenes ?? planned.spec?.stages ?? []) as { id?: unknown }[]).map((scene) =>
+        String(scene.id),
+      ),
+    );
+    for (const [language, bindings] of Object.entries(media)) {
+      const byKey = new Map(bindings.map((binding) => [binding.key, binding]));
+      const listed = (asset: MediaAsset) =>
+        byKey.has(asset.key) || (!!asset.sourceKey && byKey.has(asset.sourceKey));
+      const base =
+        language === DEFAULT_LANGUAGE_CODE
+          ? defaults
+          : defaults.filter(listed).map((asset) => {
+              const {
+                script: _script,
+                path: _path,
+                generatedAudio: _audio,
+                generatedImage: _image,
+                generatedVideo: _video,
+                translatedFrom: _from,
+                wordTimings: _timings,
+                durationMs: _duration,
+                ...rest
+              } = structuredClone(asset);
+              return rest;
+            });
+      manifest.assets[language] = base.map((asset) => {
+        const binding = byKey.get(asset.key) ?? (asset.sourceKey && byKey.get(asset.sourceKey));
+        if (!binding) return asset;
+        return {
+          ...asset,
+          ...(binding.path ? { path: binding.path } : {}),
+          ...(asset.type === "audio" && binding.script !== undefined
+            ? { script: binding.script }
+            : {}),
+          ...(asset.type === "audio" && binding.wordTimings
+            ? { wordTimings: binding.wordTimings }
+            : {}),
+          ...(asset.type === "audio" && binding.durationMs !== undefined
+            ? { durationMs: binding.durationMs }
+            : {}),
+          ...(asset.type === "audio" && binding.playback ? binding.playback : {}),
+          ...(asset.type === "audio" && binding.playback && binding.targetDurationMs !== undefined
+            ? { targetDurationMs: binding.targetDurationMs }
+            : {}),
+        };
+      });
+      // A decodable book's word pronunciations are planned from its narration, not its
+      // specification, so they are carried as Loom had them, in the scenes that still exist.
+      const present = new Set(manifest.assets[language]!.map((asset) => asset.key));
+      for (const binding of bindings) {
+        const word = binding.bookWord;
+        if (!word || present.has(binding.key)) continue;
+        present.add(binding.key);
+        manifest.assets[language]!.push({
+          key: binding.key,
+          type: "audio",
+          role: "bookWord",
+          description: `Pronunciation of “${word.word}”.`,
+          word: word.word,
+          normalizedWord: word.normalizedWord,
+          ...(word.phonemes
+            ? { phonemes: word.phonemes, phonemeSource: word.customized ? "author" : "espeak" }
+            : {}),
+          ...(word.customized ? { customized: true } : {}),
+          ...(binding.path ? { path: binding.path } : {}),
+          ...(binding.script !== undefined ? { script: binding.script } : {}),
+          ...(binding.wordTimings ? { wordTimings: binding.wordTimings } : {}),
+          ...(binding.durationMs !== undefined ? { durationMs: binding.durationMs } : {}),
+          usages: word.usages.filter(
+            (usage) =>
+              sceneIds.has(usage.sceneId) &&
+              /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(usage.sourceKey) &&
+              usage.occurrence >= 1 &&
+              usage.sceneOccurrenceCount >= usage.occurrence,
+          ),
+        });
+      }
+    }
+    return this.applyMedia(projectId, activityId, manifest, planned.contentRevision);
   }
 }
 

@@ -1,3 +1,4 @@
+import { OpenModuleDialog } from "./open-module-dialog";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Link,
@@ -172,6 +173,7 @@ function ActivityWorkspace({
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState<string | null>(null);
   const [sort, setSort] = useState<GroupSort>("recent");
+  const [openModules, setOpenModules] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const dirty = useRef(false);
   const mounted = useRef(true);
@@ -360,9 +362,17 @@ function ActivityWorkspace({
         tag={tag}
         onTag={setTag}
         onRefresh={() => void reload()}
+        onOpenFromModules={() => setOpenModules(true)}
         onCreate={() => setCreateOpen(true)}
         onMedia={() => navigate("/activities/media")}
       />
+      {openModules && (
+        <OpenModuleDialog
+          projectId={projectId}
+          onClose={() => setOpenModules(false)}
+          onOpened={() => void reload()}
+        />
+      )}
       {createOpen && (
         <CreateActivityDialog
           projectId={projectId}

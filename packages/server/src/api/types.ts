@@ -4896,6 +4896,11 @@ export type {
   WafWorkspaceStatusResponse,
 } from "../activities/waf-workspace-types.js";
 export type {
+  ClaimModuleProductResponse,
+  ModuleProduct,
+  ModuleProductsResponse,
+} from "../activities/module-product-types.js";
+export type {
   AcceptanceOverallStatus,
   AcceptanceReport,
   AcceptanceResult,

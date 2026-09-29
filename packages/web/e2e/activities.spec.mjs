@@ -8419,3 +8419,44 @@ test("records a composed scene and keeps it as the scene's video", async ({ page
     ),
   ).toEqual([]);
 });
+
+test("opens a product that is in the modules into the project", async ({ page }) => {
+  const f = await fixture(page);
+  const claims = [];
+  const products = [
+    {
+      moduleFolder: "waf-module-r2pt01",
+      productCode: "r2pt01",
+      title: "Decodable Books",
+      activityType: "book",
+      refNums: [150, 151],
+    },
+  ];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const p = new URL(request.url()).pathname;
+    const json = (value) =>
+      route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
+    if (p === `${base}/module-products` && request.method() === "GET") return json({ products });
+    if (p === `${base}/module-products/claim` && request.method() === "POST") {
+      claims.push(request.postDataJSON());
+      return json({
+        collectionId: "col_modules",
+        activityIds: ["act_150", "act_151"],
+        message: "Opening r2pt01 with 2 refs, ref 150 canonical. Nothing was dropped.",
+        problems: [],
+      });
+    }
+    return route.fallback();
+  });
+  await page.goto(`${origin}/activities`);
+  await page.getByRole("button", { name: "Open from modules", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Open from modules" });
+  await expect(dialog.getByText("Decodable Books", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("r2pt01 · waf-module-r2pt01 · 2 refs")).toBeVisible();
+  await dialog.getByRole("button", { name: "Open", exact: true }).click();
+  await expect(dialog.getByText(/Nothing was dropped\./)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Opened", exact: true })).toBeDisabled();
+  expect(claims).toEqual([{ moduleFolder: "waf-module-r2pt01", productCode: "r2pt01" }]);
+  expect(f.errors).toEqual([]);
+});

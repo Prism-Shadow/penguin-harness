@@ -10,6 +10,10 @@ import type { ImageTarget, ImageResult } from "../activities/generated-image.js"
 import type { MediaTextTarget } from "../activities/media-text.js";
 import type { AssistFocus, AssistProposal, ProposalChange } from "../activities/assist.js";
 import type { UploadedMedia } from "../activities/upload.js";
+import type {
+  ClaimModuleProductResponse,
+  ModuleProduct,
+} from "../activities/module-product-types.js";
 import type { BundleItem, ProjectMediaListing } from "../activities/media-library-types.js";
 import type { ImplementationFeature } from "../activities/implementation-features.js";
 import type { ReadinessCheck } from "../activities/readiness-types.js";
@@ -529,6 +533,16 @@ export abstract class ActivityAuthoring extends Interface<{
    * the WAF workspace (409 `waf_workspace_not_ready` when there is none).
    */
   draftFilesDir(activity: ActivityRecord): Promise<string>;
+  /** Products in the WAF workspace's modules no project has open (see ModuleProduct). */
+  moduleProducts(projectId: string): Promise<ModuleProduct[]>;
+  /**
+   * Opens a product that is in the modules into this project, in place: 409 `product_taken`
+   * when another project owns it, `product_open` when it is open already.
+   */
+  claimModuleProduct(
+    projectId: string,
+    input: { moduleFolder: string; productCode: string; collectionId?: string },
+  ): Promise<ClaimModuleProductResponse>;
   /**
    * Run `operation` while no other change to this activity's draft or files can start, as the
    * project's activity work. A nested `exclusive` and a draft change that takes an expected
