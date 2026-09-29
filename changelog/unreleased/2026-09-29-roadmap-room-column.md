@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** feature
 - **Scope:** `web`, `plugins`
+- **PR:** [Myriad-Dreamin/penguin-harness#22](https://github.com/Myriad-Dreamin/penguin-harness/pull/22)
 
 [中文版](2026-09-29-roadmap-room-column.zh.md)
 
