@@ -653,7 +653,8 @@ jobs:
           for dir in plugins/*/; do
             # Read the name and the private flag out of the manifest rather than assuming them:
             # a name is not always @penguinharness/<dir>, and not every plugin is published (the
-            # sandbox backends are private); a private package queried on npm filters to nothing.
+            # server plugins that were never first-published are private); a private package
+            # queried on npm filters to nothing.
             # Publishing is driven by what each package says it is.
             name="$(node -p "require('./$dir/package.json').name")"
             private="$(node -p "require('./$dir/package.json').private === true")"

@@ -34,22 +34,29 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "..");
 const read = (file) => JSON.parse(readFileSync(file, "utf8"));
 
-/** Every workspace package under `packages/`, by npm name. */
+/**
+ * Every workspace package under `packages/` and `plugins/`, by npm name. Both, because the
+ * dependency runs across them: `penguin-core` depends on the Agent plugins, so a plugin marked
+ * private would ship core naming a version npm does not have. Names and private flags are read
+ * from each manifest, never assumed from the directory.
+ */
 const workspace = new Map();
-for (const dir of readdirSync(path.join(root, "packages"))) {
-  const manifest = path.join(root, "packages", dir, "package.json");
-  try {
-    const pkg = read(manifest);
-    if (pkg.name) workspace.set(pkg.name, { dir, private: pkg.private === true });
-  } catch {
-    // Not a package directory.
+for (const group of ["packages", "plugins"]) {
+  for (const dir of readdirSync(path.join(root, group))) {
+    const manifest = path.join(root, group, dir, "package.json");
+    try {
+      const pkg = read(manifest);
+      if (pkg.name) workspace.set(pkg.name, { manifest, private: pkg.private === true });
+    } catch {
+      // Not a package directory.
+    }
   }
 }
 
 const problems = [];
-for (const [name, { dir, private: isPrivate }] of workspace) {
+for (const [name, { manifest, private: isPrivate }] of workspace) {
   if (isPrivate) continue;
-  const pkg = read(path.join(root, "packages", dir, "package.json"));
+  const pkg = read(manifest);
   for (const [dep, range] of Object.entries(pkg.dependencies ?? {})) {
     const target = workspace.get(dep);
     if (target?.private) {
@@ -73,26 +80,12 @@ console.log(
 
 if (!process.argv.includes("--registry")) process.exit(0);
 
-// Everything the release publishes: the non-private packages above, plus every plugin — the
-// release loops `plugins/*/` and publishes each as `@penguinharness/<dir>`.
-// Read each plugin's own name and private flag rather than assuming them from its directory:
-// a name is not always `@penguinharness/<dir>`, and the sandbox backends are private, so a list
-// built from the directories alone names packages the release never publishes.
-const pluginNames = [];
-for (const entry of readdirSync(path.join(root, "plugins"), { withFileTypes: true })) {
-  if (!entry.isDirectory()) continue;
-  try {
-    const pkg = read(path.join(root, "plugins", entry.name, "package.json"));
-    if (pkg.name && pkg.private !== true) pluginNames.push(pkg.name);
-  } catch {
-    // Not a package directory.
-  }
-}
-
-const names = [
-  ...[...workspace.entries()].filter(([, p]) => !p.private).map(([name]) => name),
-  ...pluginNames,
-].sort();
+// Everything the release publishes: every non-private package above. The release loops
+// `plugins/*/` and skips the private ones by the same flag.
+const names = [...workspace.entries()]
+  .filter(([, p]) => !p.private)
+  .map(([name]) => name)
+  .sort();
 
 const missing = [];
 for (const name of names) {
