@@ -3,7 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** process
 - **Scope:** `core`, `plugins`
-- **PR:** [#TBD](https://github.com/Prism-Shadow/penguin-harness/pull/TBD)
+- **PR:** [#891](https://github.com/Prism-Shadow/penguin-harness/pull/891)
 
 [中文版](2026-09-29-backward-compatibility.zh.md)
 

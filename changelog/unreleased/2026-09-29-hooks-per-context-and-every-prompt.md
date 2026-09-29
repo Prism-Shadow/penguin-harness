@@ -3,7 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** feature
 - **Scope:** `core`, `server`, `cli`, `plugins`, `docs`
-- **PR:** [#TBD](https://github.com/Prism-Shadow/penguin-harness/pull/TBD)
+- **PR:** [#891](https://github.com/Prism-Shadow/penguin-harness/pull/891)
 - **Breaking:** yes — an in-process `user_prompt` hook (`SessionConfig.hooks.userPrompt`) runs on every prompt unless it is marked `trigger: "host"`, and `Session.runUserPromptHook` finds only hooks so marked
 
 [中文版](2026-09-29-hooks-per-context-and-every-prompt.zh.md)

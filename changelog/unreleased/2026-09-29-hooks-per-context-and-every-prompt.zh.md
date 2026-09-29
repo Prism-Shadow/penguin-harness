@@ -3,7 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** feature
 - **Scope:** `core`, `server`, `cli`, `plugins`, `docs`
-- **PR:** [#TBD](https://github.com/Prism-Shadow/penguin-harness/pull/TBD)
+- **PR:** [#891](https://github.com/Prism-Shadow/penguin-harness/pull/891)
 - **Breaking:** yes — 进程内的 `user_prompt` 钩子（`SessionConfig.hooks.userPrompt`）除非标记 `trigger: "host"`，否则在每条 Prompt 上运行；`Session.runUserPromptHook` 只找得到这样标记的钩子
 
 [English](2026-09-29-hooks-per-context-and-every-prompt.md)
