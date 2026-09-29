@@ -14,7 +14,6 @@ import type { Config } from "../hmr/capabilities.js";
 import { hostOnly, requestAuthority, resolvePreviewTarget } from "../services/preview-token.js";
 import { playBase } from "./play-routes.js";
 import { requestOrigin } from "../http/routes/model-oauth.js";
-import { findWafRoot } from "./waf-module.js";
 import { IMAGE_MODEL } from "./generated-image.js";
 import { audioMimeType } from "./sound.js";
 import { UPLOAD_MAX_BYTES } from "./upload.js";
@@ -225,10 +224,6 @@ export class ActivityRoutes {
         ),
       );
     });
-    app.get("/module-setup", async (c) => {
-      this.access.requireProjectOwner(c.var.user.userId, requireValidId(c, "projectId"));
-      return c.json({ wafRoot: await findWafRoot() });
-    });
     app.post("/:activityId/assemble-module", async (c) => {
       const body = await readJson(c);
       const runner = stageRunner(body);
@@ -239,7 +234,6 @@ export class ActivityRoutes {
           runner.agentId,
           requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
           {
-            wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) || undefined,
             bookMode: optionalString(body, "bookMode", { maxLen: 32 }) || undefined,
           },
           runner.runtime,
@@ -279,8 +273,6 @@ export class ActivityRoutes {
             composition: {
               language: requireString(body, "language", { minLen: 5, maxLen: 5 }),
               assetKey: requireString(body, "assetKey", { minLen: 1, maxLen: 128 }),
-              // The checkout the author chose, for scene images bound to checkout media.
-              wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) || undefined,
             },
           },
           runner.runtime,
@@ -694,14 +686,13 @@ export class ActivityRoutes {
     });
     app.get("/:activityId/media-image", async (c) => {
       const projectId = requireValidId(c, "projectId");
-      // Choosing a server-side checkout is an owner capability, like module assembly.
+      // Reading the server's checkout is an owner capability, like module assembly.
       this.access.requireProjectOwner(c.var.user.userId, projectId);
       const query = c.req.query();
       const result = await this.activities.imageContent(projectId, pathParam(c, "activityId"), {
         language: requireString(query, "language", { minLen: 5, maxLen: 5 }),
         assetKey: requireString(query, "assetKey", { minLen: 1, maxLen: 128 }),
         expectedRevision: requireString(query, "expectedRevision", { minLen: 1, maxLen: 128 }),
-        wafRoot: optionalString(query, "wafRoot", { maxLen: 4096 }) || undefined,
       });
       return new Response(new Uint8Array(result.bytes), {
         headers: {
@@ -1180,9 +1171,6 @@ export class ActivityRoutes {
         ...(optionalString(body, "voice", { maxLen: 64 })
           ? { voice: optionalString(body, "voice", { maxLen: 64 }) }
           : {}),
-        ...(optionalString(body, "wafRoot", { maxLen: 4096 })
-          ? { wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) }
-          : {}),
         ...(bookMode ? { bookMode: bookMode as "readAlong" | "decodable" } : {}),
         ...(soundProvider ? { soundProvider: soundProvider as SoundProviderId } : {}),
       });
@@ -1231,15 +1219,12 @@ export class ActivityRoutes {
     );
     // What stands between the draft and an assembled module, checked where the facts live.
     app.get("/:activityId/readiness", async (c) => {
-      const wafRoot = (c.req.query("wafRoot") ?? "").trim();
-      if (wafRoot.length > 4096) throw badRequest("wafRoot is too long.");
       const projectId = requireValidId(c, "projectId");
       const activityId = pathParam(c, "activityId");
       return c.json({
         checks: await this.activities.readiness(
           projectId,
           activityId,
-          wafRoot,
           // A module that cannot be read leaves the author's edit, which the service reads.
           await Promise.all([
             this.currentAssessment(projectId, activityId),

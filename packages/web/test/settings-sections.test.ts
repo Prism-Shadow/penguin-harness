@@ -60,6 +60,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "testBrowser",
+      "wafWorkspace",
       "deploy",
       "users",
     ]);
@@ -85,6 +86,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "testBrowser",
+      "wafWorkspace",
       "deploy",
     ]);
   });
@@ -101,6 +103,7 @@ describe("visibleSettingsSections", () => {
       "uploads",
       "company",
       "testBrowser",
+      "wafWorkspace",
       "deploy",
     ]);
   });

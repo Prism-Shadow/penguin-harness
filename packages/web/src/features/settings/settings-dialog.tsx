@@ -29,6 +29,7 @@ import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
 import { TestBrowserSection } from "./test-browser-section";
 import { DeploySection } from "./deploy-section";
+import { WafWorkspaceSection } from "./waf-workspace-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
 /** Rail glyphs, on the shared 24x24 stroke grid (see NAV_ICONS' conventions). */
@@ -52,6 +53,8 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   /** A browser window: the test browser. */
   testBrowser:
     "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 9h18M7 6h.01M10 6h.01",
+  /** Stacked folders: the WAF workspace's checkouts. */
+  wafWorkspace: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 11h18",
   /** A rocket: where activities are deployed to. */
   deploy:
     "M5 15c-1.5 1.3-2 5-2 5s3.7-.5 5-2m-3-3l4 4m-4-4c1-4 4.5-9 12-11-2 7.5-7 11-11 12m6-7a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z",
@@ -100,6 +103,7 @@ export function SettingsDialog({
     uploads: S.settings.uploadLimitsTitle,
     company: S.settings.companyModeTitle,
     testBrowser: S.settings.testBrowser.title,
+    wafWorkspace: S.settings.wafWorkspace.title,
     deploy: S.settings.deploy.title,
     users: S.admin.users,
   };
@@ -114,6 +118,7 @@ export function SettingsDialog({
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
     testBrowser: S.settings.testBrowser.about,
+    wafWorkspace: S.settings.wafWorkspace.about,
     deploy: S.settings.deploy.about,
   };
 
@@ -149,6 +154,7 @@ export function SettingsDialog({
       {current === "uploads" && <UploadsSection />}
       {current === "company" && <CompanySection />}
       {current === "testBrowser" && <TestBrowserSection />}
+      {current === "wafWorkspace" && <WafWorkspaceSection />}
       {current === "deploy" && <DeploySection />}
       {current === "users" && <AdminUsersSection />}
     </PagedDialog>

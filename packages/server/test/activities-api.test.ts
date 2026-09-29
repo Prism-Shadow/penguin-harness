@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { projectDir } from "@prismshadow/penguin-core";
 import type { ActivityDetail, ActivityDraft } from "../src/activities/domain.js";
 import { activitySpec } from "./activity-fixtures.js";
@@ -10,6 +10,7 @@ import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 describe("native activity authoring API", () => {
   const cleanups: (() => Promise<void>)[] = [];
   afterEach(async () => {
+    vi.unstubAllEnvs();
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
   it("creates an activity, persists its draft, and rejects stale edits", async () => {
@@ -378,11 +379,11 @@ describe("native activity authoring API", () => {
       137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
     ]);
     await fs.writeFile(path.join(wafRoot, "media/images/cat.png"), png);
+    vi.stubEnv("WAF_ROOT_DIR", wafRoot);
     const query = new URLSearchParams({
       language: "en-US",
       assetKey: "cat",
       expectedRevision: draft.contentRevision,
-      wafRoot,
     });
     const response = await ownerClient.get(`${endpoint}/media-image?${query}`);
     expect(response.status).toBe(200);
@@ -397,7 +398,6 @@ describe("native activity authoring API", () => {
         language: "en-US",
         assetKey: "cat",
         expectedRevision: "stale-revision",
-        wafRoot,
       })}`,
     );
     expect(staleResponse.status).toBe(409);

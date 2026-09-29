@@ -26,6 +26,20 @@ import { spawnGit, type DeployGit } from "./deploy-git.js";
 import { spawnDeployProcess, type DeployProcess } from "./deploy-process.js";
 import { normalizeRemote } from "./deploy-settings.js";
 import { findWafRoot } from "./waf-module.js";
+import type {
+  WafRepoId,
+  WafRepoStatus,
+  WafWorkspaceSettings,
+  WafWorkspaceStatus,
+} from "./waf-workspace-types.js";
+
+export type {
+  WafRepoId,
+  WafRepoSetting,
+  WafRepoStatus,
+  WafWorkspaceSettings,
+  WafWorkspaceStatus,
+} from "./waf-workspace-types.js";
 
 /** The `server_settings` key the workspace settings are stored under. */
 export const WAF_WORKSPACE_SETTINGS_KEY = "wafWorkspace";
@@ -40,7 +54,6 @@ export const WAF_LONG_TIMEOUT_MS = 20 * 60 * 1000;
 export const WAF_LOG_LINES = 200;
 
 /** The shared repositories every activity needs; product modules are cloned on demand. */
-export type WafRepoId = "framework" | "navbar" | "media" | "activityData";
 export const WAF_REPO_IDS: readonly WafRepoId[] = ["framework", "navbar", "media", "activityData"];
 
 /** Where each shared repository sits in the workspace, as a WAF checkout places it. */
@@ -56,19 +69,6 @@ const INSTALLED: ReadonlySet<WafRepoId> = new Set(["framework", "navbar"]);
 
 /** The placeholder a module remote template names the module folder with. */
 export const MODULE_PLACEHOLDER = "{module}";
-
-export interface WafRepoSetting {
-  remote: string;
-  branch: string;
-}
-
-export interface WafWorkspaceSettings {
-  /** An existing checkout Penguin reads instead of managing its own; empty when managed. */
-  externalRoot: string;
-  repos: Record<WafRepoId, WafRepoSetting>;
-  /** The remote of a product's module; `{module}` is replaced by its folder. */
-  moduleRemote: string;
-}
 
 export function defaultWafWorkspaceSettings(): WafWorkspaceSettings {
   const github = (name: string) => `git@github.com:waterfordresearchinstitute/${name}.git`;
@@ -180,34 +180,6 @@ export function checkMediaFolder(folder: string): string {
 /** Whether a failed `ls-remote` means the repository does not exist, not that it was unreachable. */
 export function repositoryMissing(stderr: string): boolean {
   return /repository not found|does not appear to be a git repository|not found/i.test(stderr);
-}
-
-export interface WafRepoStatus {
-  id: WafRepoId;
-  path: string;
-  present: boolean;
-  /** Origin's address; null when there is no clone or it has no origin. */
-  remote: string | null;
-  /** Whether origin is the configured remote; always true for an existing checkout. */
-  remoteMatches: boolean;
-  branch: string | null;
-  /** Whether the working tree has changes; null when git could not say. */
-  dirty: boolean | null;
-  /** Whether its dependencies are installed; null for a repository that needs none. */
-  installed: boolean | null;
-}
-
-export interface WafWorkspaceStatus {
-  /** False when an admin (or WAF_ROOT_DIR) named an existing checkout. */
-  managed: boolean;
-  root: string;
-  /** Whether authoring, the sandbox and deploys can use the workspace now. */
-  ready: boolean;
-  repos: WafRepoStatus[];
-  preparing: boolean;
-  /** Why the latest preparation failed; null when it did not. */
-  lastError: string | null;
-  log: string[];
 }
 
 /** The parts of the workspace that touch the outside world; a test replaces them. */

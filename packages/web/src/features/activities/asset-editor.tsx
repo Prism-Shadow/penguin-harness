@@ -63,7 +63,6 @@ export function AssetEditor({
   canGenerateMedia = canGenerate,
   canAccept,
   canPreview,
-  wafRoot,
   revision,
   voices,
   defaultVoice,
@@ -109,7 +108,6 @@ export function AssetEditor({
   canGenerateMedia?: boolean;
   canAccept: boolean;
   canPreview: boolean;
-  wafRoot: string;
   revision: string;
   /** The voices a narration can be spoken in. */
   voices: readonly VoiceOption[];
@@ -206,7 +204,6 @@ export function AssetEditor({
     language,
     assetKey: asset?.key ?? "",
     expectedRevision: revision,
-    ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
   })}`;
   const audioUrl = (runId: string) => `${endpoint}/runs/${encodeURIComponent(runId)}/audio`;
   const generatedImageUrl = (runId: string) =>

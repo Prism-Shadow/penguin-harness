@@ -46,7 +46,7 @@ import {
 } from "./media-bundle.js";
 import type { BundleItem, LibraryFile, ProjectMediaListing } from "./media-library-types.js";
 import { readBoundImage, type ImageRequest } from "./image.js";
-import { findWafRoot } from "./waf-module.js";
+import type { WafWorkspace } from "./waf-workspace.js";
 import {
   GENERATED_IMAGE_MAX_BYTES,
   inspectPng,
@@ -136,6 +136,7 @@ export class ActivityService implements ActivityAuthoring {
   @Use() private readonly db!: Db;
   @Use() private readonly mediaLibrary!: MediaLibraryPorts;
   @Use() private readonly phonemes!: ActivityPhonemes;
+  @Use() private readonly wafWorkspace!: WafWorkspace;
   private readonly locks = new ActivityLocks();
   /** The activities whose lock the running work already holds, through `exclusive`. */
   private readonly held = new AsyncLocalStorage<ReadonlySet<string>>();
@@ -168,7 +169,7 @@ export class ActivityService implements ActivityAuthoring {
     // An upload lives in this activity's workspace; only checkout media needs a WAF root.
     if (isUploadReference(bound))
       return readUpload(this.activityWorkspace(projectId, activity), bound!);
-    return readBoundImage(activity, input);
+    return readBoundImage(activity, input, await this.wafWorkspace.root());
   }
 
   private activityWorkspace(
@@ -189,12 +190,10 @@ export class ActivityService implements ActivityAuthoring {
   async readiness(
     projectId: string,
     activityId: string,
-    wafRoot: string,
     assessment?: { current: unknown; own: unknown },
   ) {
     const activity = await this.getActivity(projectId, activityId);
-    // The author's checkout when they typed one, or the one assembly would discover.
-    const checkout = await findWafRoot(process.cwd(), wafRoot || process.env.WAF_ROOT_DIR);
+    const checkout = await this.wafWorkspace.root();
     return buildReadiness(activity, {
       canonical: this.isCanonicalRef(activity),
       checkoutFound: !!checkout,

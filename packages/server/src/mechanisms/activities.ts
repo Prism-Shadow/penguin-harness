@@ -41,7 +41,6 @@ export abstract class ActivityGeneration extends Interface<{
     agentId: string,
     expectedRevision: string,
     module?: {
-      wafRoot?: string;
       bookMode?: string;
       /**
        * A narration run: its voice, and the provider (Gemini, or the narration's own, when
@@ -76,7 +75,7 @@ export abstract class ActivityGeneration extends Interface<{
        * An animated composition of a video or animation asset's scene, from its description
        * and bound images (experimental: refused while `activityVideoExperiment` is off).
        */
-      composition?: { language: string; assetKey: string; wafRoot?: string };
+      composition?: { language: string; assetKey: string };
     },
     /** Run on an external coding agent instead of the Penguin agent `agentId` names. */
     runtime?: { codingAgentId?: string },
@@ -351,7 +350,6 @@ export abstract class ActivityAuthoring extends Interface<{
   readiness(
     projectId: string,
     activityId: string,
-    wafRoot: string,
     assessment?: { current: unknown; own: unknown },
   ): Promise<ReadinessCheck[]>;
   /** Loom's implementation features, and the ones this ref asks its assembly to reproduce. */

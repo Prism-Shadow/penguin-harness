@@ -32,6 +32,7 @@ function deferred() {
 describe("activity generation through Harness sessions", () => {
   const cleanups: (() => Promise<void>)[] = [];
   afterEach(async () => {
+    vi.unstubAllEnvs();
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
@@ -180,12 +181,12 @@ describe("activity generation through Harness sessions", () => {
     );
     async function start(wafRoot?: string, bookMode?: "readAlong" | "decodable") {
       const current = (await (await client.get(endpoint)).json()) as ActivityDetail;
+      if (wafRoot) vi.stubEnv("WAF_ROOT_DIR", wafRoot);
       const response = await client.post(
         `${endpoint}/${wafRoot ? "assemble-module" : "generate-spec"}`,
         {
           agentId: "default_agent",
           expectedRevision: current.draft.contentRevision,
-          ...(wafRoot ? { wafRoot } : {}),
           ...(bookMode ? { bookMode } : {}),
         },
       );
@@ -948,11 +949,11 @@ describe("activity generation through Harness sessions", () => {
     await fs.writeFile(path.join(root, "framework/package.json"), "{}");
     const beforeRuns = f.t.deps.db.prepare("SELECT * FROM activity_runs").all();
     const beforeSessions = f.t.deps.db.prepare("SELECT session_id FROM sessions").all();
+    vi.stubEnv("WAF_ROOT_DIR", root);
     for (const mode of [undefined, "invalid"] as const) {
       const response = await f.client.post(`${f.endpoint}/assemble-module`, {
         agentId: "default_agent",
         expectedRevision: planned.contentRevision,
-        wafRoot: root,
         ...(mode === undefined ? {} : { bookMode: mode }),
       });
       expect(response.status).toBe(422);
@@ -1678,9 +1679,8 @@ describe("activity generation through Harness sessions", () => {
   });
   it("reports what stands between the draft and an assembled module", async () => {
     const { client, endpoint } = await fixture();
-    const response = await client.get(
-      `${endpoint}/readiness?wafRoot=${encodeURIComponent("Z:/no/such/checkout")}`,
-    );
+    vi.stubEnv("WAF_ROOT_DIR", "Z:/no/such/checkout");
+    const response = await client.get(`${endpoint}/readiness`);
     expect(response.status).toBe(200);
     const { checks } = (await response.json()) as { checks: { id: string; level: string }[] };
     // A fresh draft has no saved specification, which assembly refuses.

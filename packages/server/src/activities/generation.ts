@@ -49,13 +49,8 @@ import {
   imagePrompt,
   type ImageResult,
 } from "./generated-image.js";
-import {
-  findWafRoot,
-  prepareModule,
-  collectModule,
-  modulePrompt,
-  verifyMediaArtifacts,
-} from "./waf-module.js";
+import type { WafWorkspace } from "./waf-workspace.js";
+import { prepareModule, collectModule, modulePrompt, verifyMediaArtifacts } from "./waf-module.js";
 import {
   DISCARDED_PROPOSAL_FILE,
   PROPOSAL_FILE,
@@ -260,6 +255,7 @@ export class ActivityGenerationService implements ActivityGeneration {
   @Use() private readonly log!: Log;
   @Use() private readonly soundModels!: SoundModelPorts;
   @Use() private readonly settings!: Settings;
+  @Use() private readonly wafWorkspace!: WafWorkspace;
   private readonly locks = new ActivityLocks();
   private readonly observers = new Map<string, Observer>();
   private readonly operations = new Set<Promise<unknown>>();
@@ -476,7 +472,6 @@ export class ActivityGenerationService implements ActivityGeneration {
     agentId: string,
     expectedRevision: string,
     module?: {
-      wafRoot?: string;
       bookMode?: string;
       audio?: {
         language: string;
@@ -496,7 +491,7 @@ export class ActivityGenerationService implements ActivityGeneration {
       /** A phonemes run: sounds for a decodable book's words of one language. */
       phonemes?: { language: string; words: unknown };
       /** A scene composition for a video or animation asset (experimental). */
-      composition?: { language: string; assetKey: string; wafRoot?: string };
+      composition?: { language: string; assetKey: string };
     },
     runtime?: { codingAgentId?: string },
   ): Promise<ActivityRun> {
@@ -631,12 +626,12 @@ export class ActivityGenerationService implements ActivityGeneration {
                 `This activity shares its module with ref ${product?.canonicalRefNum}, which owns the module code. Assemble from that ref instead.`,
               );
             }
-            wafRoot = await findWafRoot(process.cwd(), module.wafRoot ?? process.env.WAF_ROOT_DIR);
+            wafRoot = await this.wafWorkspace.root();
             if (!wafRoot)
               throw new HttpError(
                 400,
                 "waf_checkout_missing",
-                "WAF checkout not found. Select a root containing framework, modules and media.",
+                "The WAF workspace is not prepared. An admin can prepare it in Settings.",
               );
           }
           if (codingAgentId && (audio || image || sound))
@@ -1486,7 +1481,7 @@ export class ActivityGenerationService implements ActivityGeneration {
     projectId: string,
     activityId: string,
     activity: ActivityDetail,
-    input: { language: string; assetKey: string; wafRoot?: string },
+    input: { language: string; assetKey: string },
   ): Promise<CompositionStage> {
     if (!this.videoExperiment()) throw experimentOff();
     const scene = compositionScene(activity, input);
@@ -1504,7 +1499,6 @@ export class ActivityGenerationService implements ActivityGeneration {
         language: input.language,
         assetKey: image.key,
         expectedRevision: activity.draft.contentRevision,
-        ...(input.wafRoot ? { wafRoot: input.wafRoot } : {}),
       });
       // Staged images are served back only up to this size, so a larger one is refused now
       // rather than missing from the composition later.

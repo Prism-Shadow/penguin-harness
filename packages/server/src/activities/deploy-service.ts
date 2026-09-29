@@ -26,7 +26,7 @@ import { writeSecretFile } from "../secret-file.js";
 import { sandboxMediaRoot, sandboxModuleRoot, withinRoot } from "./sandbox-paths.js";
 import { exportRevision, manifestAssetList, type ExportRef } from "./deploy-export.js";
 import type { ActivityDetail, ActivityProduct } from "./domain.js";
-import { findWafRoot } from "./waf-module.js";
+import type { WafWorkspace } from "./waf-workspace.js";
 import { buildDeployContext } from "./deploy-context.js";
 import {
   cloneUrlFor,
@@ -197,6 +197,7 @@ export class ActivityDeployService implements ActivityDeploys {
   @Use() private readonly ports!: DeployPorts;
   @Use() private readonly db!: Db;
   @Use() private readonly events!: ActivityDeployEvents;
+  @Use() private readonly wafWorkspace!: WafWorkspace;
 
   /** One Prepare clones at a time: the activity-data and media clones are shared. */
   private preparing = false;
@@ -315,7 +316,7 @@ export class ActivityDeployService implements ActivityDeploys {
     moduleFolder: string,
   ): Promise<string | null> {
     const candidates: string[] = [];
-    const wafRoot = await findWafRoot();
+    const wafRoot = await this.wafWorkspace.root();
     if (wafRoot) {
       const root = withinRoot(path.join(wafRoot, "modules"), moduleFolder);
       if (root) candidates.push(path.join(root, "package.json"));
@@ -425,7 +426,7 @@ export class ActivityDeployService implements ActivityDeploys {
 
       const paths = deployClonePaths(home, facts.product.moduleFolder);
       const root = deployReposRoot(home);
-      const wafRoot = await findWafRoot();
+      const wafRoot = await this.wafWorkspace.root();
       const sparse = mediaSparsePath(facts.activity.productCode);
       const plan: Array<{ repo: DeployRepo; dir: string; remote: string; args: string[] }> = [
         {
@@ -809,7 +810,7 @@ export class ActivityDeployService implements ActivityDeploys {
     moduleRoot: string | null,
   ): Promise<DeployActivitySnapshot> {
     const deploying = await this.activities.getActivity(projectId, activityId);
-    const wafRoot = await findWafRoot();
+    const wafRoot = await this.wafWorkspace.root();
     const checkout = wafRoot
       ? withinRoot(path.join(wafRoot, "modules"), product.moduleFolder)
       : null;

@@ -1538,8 +1538,6 @@ export type Strings = {
     mediaPathHint: string;
     saveMedia: string;
     mediaCounts: (total: number, bound: number) => string;
-    wafRoot: string;
-    wafRootHint: string;
     readingMode: string;
     readingModeHint: string;
     readingModeHelp: string;
@@ -1893,6 +1891,36 @@ export type Strings = {
         incomplete: string;
       };
       logLabel: string;
+    };
+    wafWorkspace: {
+      title: string;
+      about: string;
+      ready: string;
+      notReady: string;
+      preparing: string;
+      prepared: string;
+      external: (root: string) => string;
+      externalMissing: (root: string) => string;
+      failed: (reason: string) => string;
+      prepare: string;
+      logLabel: string;
+      repos: Record<"framework" | "navbar" | "media" | "activityData", string>;
+      repo: {
+        missing: string;
+        noRemote: string;
+        otherRemote: (remote: string) => string;
+        notInstalled: string;
+        cloned: (branch: string | null, dirty: boolean) => string;
+      };
+      sources: string;
+      remote: (name: string) => string;
+      branch: string;
+      moduleRemote: string;
+      moduleRemoteHint: string;
+      existing: string;
+      externalRoot: string;
+      externalRootHint: string;
+      invalid: string;
     };
     accentNames: Record<string, string>;
   };

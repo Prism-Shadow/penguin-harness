@@ -84,7 +84,6 @@ function CheckRow({ level, text }: { level: ReadinessLevel; text: string }) {
 export function BuildPanel({
   endpoint,
   revision,
-  wafRoot,
   runs,
   unsaved,
   proposalOpen,
@@ -93,12 +92,11 @@ export function BuildPanel({
   endpoint: string;
   /** The draft's revision: a new one is a reason to check again. */
   revision: string;
-  wafRoot: string;
   runs: ActivityRunSummary[];
   unsaved: boolean;
   proposalOpen: boolean;
   /**
-   * The controls that assemble: checkout, reading mode, Assemble. Told whether a check has
+   * The controls that assemble: reading mode, Assemble. Told whether a check has
    * failed, so Assemble is not offered until what blocks it is fixed.
    */
   children?: (blocked: boolean) => ReactNode;
@@ -110,10 +108,9 @@ export function BuildPanel({
   const settled = lastRun?.status !== "running";
   useEffect(() => {
     let cancelled = false;
-    // A path typed into the checkout field is checked once typing pauses, not per key.
+    // Checked once edits pause, not per keystroke.
     const timer = setTimeout(() => {
-      const query = wafRoot.trim() ? `?${new URLSearchParams({ wafRoot: wafRoot.trim() })}` : "";
-      apiFetch<{ checks: ReadinessCheck[] }>(`${endpoint}/readiness${query}`)
+      apiFetch<{ checks: ReadinessCheck[] }>(`${endpoint}/readiness`)
         .then((value) => {
           if (cancelled) return;
           setChecks(value.checks);
@@ -127,7 +124,7 @@ export function BuildPanel({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [endpoint, revision, wafRoot, settled]);
+  }, [endpoint, revision, settled]);
 
   return (
     <section className="space-y-3">

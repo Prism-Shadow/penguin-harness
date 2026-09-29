@@ -143,12 +143,17 @@ async function fixture(page) {
       const summaries = Object.fromEntries(
         activities.map((entry) => [
           entry.id,
-          { canonical: true, hasPlan: false, done: 0, total: 3, status: { kind: "next", milestone: "spec" } },
+          {
+            canonical: true,
+            hasPlan: false,
+            done: 0,
+            total: 3,
+            status: { kind: "next", milestone: "spec" },
+          },
         ]),
       );
       return json({ activities, summaries });
     }
-    if (p === `${base}/module-setup`) return json({ wafRoot: "C:/WAF checkout" });
     if (p === `${base}/speech-setup`) return json({ voices: ["Kore", "Puck"] });
     if (p === `${base}/act_test/media-uploads`) {
       if (request.method() === "POST") {
@@ -1088,7 +1093,7 @@ test("uploads media into the activity workspace and binds it from the library", 
   expect(f.errors).toEqual([]);
 });
 
-test("previews only saved images and resets previews across edits, checkout changes and failures", async ({
+test("previews only saved images and resets previews across edits and failures", async ({
   page,
 }) => {
   const f = await fixture(page);
@@ -1112,8 +1117,8 @@ test("previews only saved images and resets previews across edits, checkout chan
   expect(f.imageRequests[0]).toMatchObject({
     language: "en-US",
     assetKey: "cat",
-    wafRoot: "C:/WAF checkout",
   });
+  expect(f.imageRequests[0]).not.toHaveProperty("wafRoot");
   expect(f.imageRequests[0].expectedRevision).toBeTruthy();
   await expect(page.getByRole("link", { name: "Open full-size image" })).toHaveAttribute(
     "href",
@@ -1126,8 +1131,6 @@ test("previews only saved images and resets previews across edits, checkout chan
   ).toBeVisible();
   expect(f.imageRequests).toHaveLength(1);
   await binding.fill("media/images/cat.png");
-  await openSection(page, "Module preview");
-  await page.getByRole("textbox", { name: /^WAF checkout/ }).fill("C:/Other WAF");
   f.setImageFailure(true);
   await openSection(page, "Scenes and media");
   await page.getByRole("button", { name: "Preview image", exact: true }).click();
@@ -1135,7 +1138,6 @@ test("previews only saved images and resets previews across edits, checkout chan
   f.setImageFailure(false);
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.getByText("1 × 1 pixels", { exact: true })).toBeVisible();
-  expect(f.imageRequests.at(-1).wafRoot).toBe("C:/Other WAF");
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
@@ -1161,14 +1163,13 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   await page.getByRole("button", { name: "Validate and save", exact: true }).click();
   await openSection(page, "Module preview");
   await expect(assemble).toBeEnabled();
-  await expect(page.getByRole("textbox", { name: /^WAF checkout/ })).toHaveValue("C:/WAF checkout");
+  // The checkout is the server's WAF workspace, not something an author types.
+  await expect(page.getByRole("textbox", { name: /^WAF checkout/ })).toHaveCount(0);
   const sent = page.waitForRequest((request) => request.url().endsWith("/assemble-module"));
   await assemble.click();
   const payload = (await sent).postDataJSON();
-  expect(payload).toMatchObject({
-    wafRoot: "C:/WAF checkout",
-    agentId: "default_agent",
-  });
+  expect(payload).toMatchObject({ agentId: "default_agent" });
+  expect(payload).not.toHaveProperty("wafRoot");
   expect(payload).not.toHaveProperty("bookMode");
   await openSection(page, "Generation history");
   await expect(page.getByText("Module assembly", { exact: true })).toBeVisible();
@@ -1759,7 +1760,10 @@ test("the studio header wraps its controls instead of overlapping them", async (
     const boxes = [];
     for (const locator of locators) {
       const box = await locator.boundingBox();
-      expect(box, `expected a visible bounding box for ${await locator.evaluate((el) => el.outerHTML.slice(0, 80))}`).not.toBeNull();
+      expect(
+        box,
+        `expected a visible bounding box for ${await locator.evaluate((el) => el.outerHTML.slice(0, 80))}`,
+      ).not.toBeNull();
       boxes.push(box);
     }
     for (let i = 0; i < boxes.length; i++)
@@ -1939,9 +1943,7 @@ test("an activity collapses the sidebar without changing the stored choice", asy
   await page.getByRole("link", { name: "Agents", exact: true }).click();
   await expect(page).toHaveURL(/\/agents$/);
   await expect(page.getByRole("button", { name: "Collapse sidebar", exact: true })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("penguin.sidebarCollapsed"))).not.toBe(
-    "1",
-  );
+  expect(await page.evaluate(() => localStorage.getItem("penguin.sidebarCollapsed"))).not.toBe("1");
   expect(f.errors).toEqual([]);
 });
 
@@ -2731,11 +2733,9 @@ test("lists the live tap targets on the current state and resizes the map", asyn
 test("the Build stage lists what stands between the draft and a module", async ({ page }) => {
   const f = await fixture(page);
   await create(page);
-  const asked = [];
   await page.route("**/*", (route) => {
     const url = new URL(route.request().url());
     if (url.pathname !== `${base}/act_test/readiness`) return route.fallback();
-    asked.push(url.searchParams.get("wafRoot"));
     return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -2780,9 +2780,6 @@ test("the Build stage lists what stands between the draft and a module", async (
   ).toBeDisabled();
   await expect(checks.getByText("No unsaved edits.")).toBeVisible();
   await expect(page.getByText("This activity has not been assembled yet.")).toBeVisible();
-  // The checkout an author types is the one checked.
-  await page.getByRole("textbox", { name: /^WAF checkout/ }).fill("D:/waf");
-  await expect.poll(() => asked.at(-1)).toBe("D:/waf");
   expect(f.errors).toEqual([]);
 });
 
@@ -4905,9 +4902,7 @@ test("switches the studio to the Reviewing layout and saves a layout of its own"
   await expect(
     page.getByRole("separator", { name: "Activity rail width", exact: true }),
   ).toHaveAttribute("aria-valuenow", "300");
-  await expect(
-    page.getByRole("complementary", { name: "Chat", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Chat", exact: true })).toBeVisible();
 
   // Save the arrangement under a name of the author's own; the same name twice is refused.
   await page.getByRole("button", { name: "Close the panel", exact: true }).click();
@@ -7039,7 +7034,10 @@ test("on a phone, System settings from the drawer's account menu opens one dialo
   await page.goto(`${origin}/activities`);
   // The drawer's sidebar and the hidden desktop pane are both mounted now, each with an
   // account menu; the dialog they open is the layout's one.
-  await page.getByRole("button", { name: /^Sessions/ }).first().click();
+  await page
+    .getByRole("button", { name: /^Sessions/ })
+    .first()
+    .click();
   // Only the drawer's user row is on screen; the desktop pane's is hidden at this width.
   await page.getByRole("button", { name: "author", exact: true }).click();
   await page.getByRole("button", { name: "System settings", exact: true }).click();

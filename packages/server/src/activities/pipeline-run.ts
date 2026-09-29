@@ -637,7 +637,6 @@ export class PipelineRunner {
         input.agentId,
         activity.draft.contentRevision,
         {
-          ...(input.wafRoot ? { wafRoot: input.wafRoot } : {}),
           ...(input.bookMode ? { bookMode: input.bookMode } : {}),
         },
         runtime,

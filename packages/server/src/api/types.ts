@@ -4887,6 +4887,15 @@ export type {
   TestBrowserStatusResponse,
 } from "../activities/test-browser-types.js";
 export type {
+  WafRepoId,
+  WafRepoSetting,
+  WafRepoStatus,
+  WafWorkspaceSettings,
+  WafWorkspaceSettingsResponse,
+  WafWorkspaceStatus,
+  WafWorkspaceStatusResponse,
+} from "../activities/waf-workspace-types.js";
+export type {
   AcceptanceOverallStatus,
   AcceptanceReport,
   AcceptanceResult,

@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 export const activitySpec = {
   id: "sight-words",
   moduleFolder: "waf-module-sight-words",
@@ -35,4 +38,45 @@ export function catBookSpec(stories: string[] = ["The cat sat.", "The cat ran."]
       })),
     ],
   };
+}
+
+/**
+ * Makes ref 1 of a product whose module sits in a WAF checkout, with the specification the
+ * checkout keeps for it (Loom's `generated/<code>/refs/<code>-1/spec/activity_spec.json`).
+ * The module folder is the default one, `waf-module-<code>`. Returns the activity's id.
+ */
+export async function createCheckoutActivity(
+  client: {
+    post(url: string, body: unknown): Response | Promise<Response>;
+  },
+  projectId: string,
+  root: string,
+  productCode: string,
+): Promise<string> {
+  const spec = JSON.parse(
+    await fs.readFile(
+      path.join(
+        root,
+        "modules",
+        `waf-module-${productCode}`,
+        "generated",
+        productCode,
+        "refs",
+        `${productCode}-1`,
+        "spec",
+        "activity_spec.json",
+      ),
+      "utf8",
+    ),
+  ) as Record<string, unknown>;
+  const base = `/api/projects/${projectId}/activities`;
+  const created = await client.post(base, { productCode, refNum: 1, title: String(spec.title) });
+  if (created.status !== 201) throw new Error(`create: ${created.status} ${await created.text()}`);
+  const activity = (await created.json()) as { id: string; draft: { contentRevision: string } };
+  const applied = await client.post(`${base}/${activity.id}/apply-generated-spec`, {
+    expectedRevision: activity.draft.contentRevision,
+    spec,
+  });
+  if (applied.status !== 200) throw new Error(`spec: ${applied.status} ${await applied.text()}`);
+  return activity.id;
 }

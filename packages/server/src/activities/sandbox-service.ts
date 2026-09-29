@@ -62,7 +62,7 @@ import {
   moduleSourceDirs,
   type ModuleSource,
 } from "./sandbox-source.js";
-import { findWafRoot } from "./waf-module.js";
+import type { WafWorkspace } from "./waf-workspace.js";
 import {
   isAssessmentData,
   nextAssessmentPart,
@@ -253,8 +253,10 @@ export class ActivitySandboxService implements ActivitySandbox {
   @Use() private readonly generation!: ActivityGeneration;
   @Use() private readonly config!: Config;
 
+  @Use() private readonly wafWorkspace!: WafWorkspace;
+
   /** The WAF checkout, or null when there is none. A field so a test can point it. */
-  private readonly locateWafRoot: () => Promise<string | null> = () => findWafRoot();
+  private readonly locateWafRoot: () => Promise<string | null> = () => this.wafWorkspace.root();
 
   /**
    * One build per workspace, shared by everyone waiting on it.

@@ -111,7 +111,6 @@ export function CreateRefView({
   uploadsLoading,
   agents,
   defaultAgent,
-  wafRoot,
   onIdentity,
   onOpenAssessment,
   onCreated,
@@ -129,7 +128,6 @@ export function CreateRefView({
   /** The Penguin agents that can generate speech and images. */
   agents: readonly { agentId: string; name?: string | null }[];
   defaultAgent: string;
-  wafRoot: string;
   onIdentity: (record: ActivityRecord) => void;
   onOpenAssessment: () => void;
   /** The ref exists; `problem` says what failed after it was made, if anything did. */
@@ -276,7 +274,6 @@ export function CreateRefView({
       language,
       assetKey: key,
       expectedRevision: template.draft.contentRevision,
-      ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
     })}`;
 
   function current(row: RefPlanRow) {

@@ -150,8 +150,7 @@ export const en: Strings = {
       sessionsEmpty: "No agent has worked on this activity yet.",
       showTranscript: "Show",
       hideTranscript: "Hide",
-      transcriptToggle: (action: string, run: string, time: string) =>
-        `${action}: ${run}, ${time}`,
+      transcriptToggle: (action: string, run: string, time: string) => `${action}: ${run}, ${time}`,
       openFullPage: "Open full page",
     },
     studioRefs: {
@@ -430,8 +429,7 @@ export const en: Strings = {
       canonical: "Canonical ref",
       progress: (done: number, total: number) => `${done} of ${total} milestones`,
       newRef: "New ref",
-      newRefUnavailable:
-        "Plan the canonical ref's media first; a new ref copies its media plan.",
+      newRefUnavailable: "Plan the canonical ref's media first; a new ref copies its media plan.",
       status: {
         running: (what: string) => `${what} running`,
         stale: "Media plan out of date",
@@ -994,8 +992,8 @@ export const en: Strings = {
         fail: "Another ref owns this product's module code. Assemble from that ref.",
       },
       checkout: {
-        ok: "The WAF checkout was found.",
-        fail: "No WAF checkout was found. Enter its folder below.",
+        ok: "The WAF workspace is ready.",
+        fail: "The WAF workspace is not prepared. An admin can prepare it in Settings, under WAF workspace.",
       },
       unsaved: { ok: "No unsaved edits.", fail: "Save your edits first." },
       proposal: {
@@ -1818,9 +1816,6 @@ export const en: Strings = {
     saveMedia: "Validate and save media",
     mediaCounts: (total, bound) =>
       `${total} assets, ${bound} paths assigned, ${total - bound} unbound (saved plan)`,
-    wafRoot: "WAF checkout",
-    wafRootHint:
-      "Folder containing framework, modules and media. Leave empty for automatic discovery.",
     readingMode: "Reading mode",
     readingModeHint: "Choose a mode and build the media plan before assembly.",
     readingModeHelp:
@@ -2281,6 +2276,46 @@ export const en: Strings = {
         incomplete: "the installer finished, but the browser is not where it should be.",
       },
       logLabel: "Installer output",
+    },
+    wafWorkspace: {
+      title: "WAF workspace",
+      about:
+        "The checkouts activities are authored, played and deployed from: the framework, the navigation bar, media and activity data, plus one repository per product's module. Penguin clones them into its own data folder and installs what the framework and navigation bar build with. Media is cloned partially, and a product's media is fetched only when it is needed. git uses this server's own SSH keys. To use a checkout you already have instead, enter its folder below; Penguin then only reads it.",
+      ready: "Ready",
+      notReady: "Not prepared. Prepare clones what is missing.",
+      preparing: "Preparing the workspace. Cloning and installing can take several minutes.",
+      prepared: "The WAF workspace is ready.",
+      external: (root) => `Using the existing checkout at ${root}`,
+      externalMissing: (root) =>
+        `No WAF checkout at ${root}. It needs framework, modules and media folders.`,
+      failed: (reason) => `Preparing did not finish: ${reason}`,
+      prepare: "Prepare",
+      logLabel: "Preparation log",
+      repos: {
+        framework: "Framework",
+        navbar: "Navigation bar",
+        media: "Media",
+        activityData: "Activity data",
+      },
+      repo: {
+        missing: "Not cloned",
+        noRemote: "no remote",
+        otherRemote: (remote) => `A clone of ${remote}, not the remote below`,
+        notInstalled: "Cloned, dependencies not installed",
+        cloned: (branch, dirty) =>
+          `Cloned${branch ? `, ${branch}` : ""}${dirty ? ", with local changes" : ""}`,
+      },
+      sources: "Repositories",
+      remote: (name) => `${name} remote`,
+      branch: "Branch",
+      moduleRemote: "Module remote",
+      moduleRemoteHint:
+        "Where a product's module repository is. {module} is replaced by its folder, for example waf-module-r2pt01.",
+      existing: "Existing checkout",
+      externalRoot: "Checkout folder",
+      externalRootHint:
+        "Leave empty to let Penguin manage its own. The folder must hold framework, modules and media.",
+      invalid: "This value is not valid.",
     },
     accentNames: {
       neutral: "Neutral",
@@ -6423,10 +6458,10 @@ Scenarios:
       audio_changed:
         "This audio candidate or its requirement changed. Generate a new candidate before accepting.",
       media_missing:
-        "Referenced media is missing or linked in the selected WAF checkout. Check the saved paths before retrying assembly.",
+        "Referenced media is missing or linked in the WAF workspace. Check the saved paths before retrying assembly.",
       module_spec_invalid: "Module scenes need unique safe IDs other than activity.",
       waf_checkout_missing:
-        "WAF checkout not found. Select a folder containing framework, modules and media.",
+        "The WAF workspace is not prepared. An admin can prepare it in Settings, under WAF workspace.",
       run_not_found: "This generation attempt no longer exists, or you do not have access.",
       project_deleting:
         "This Project is being deleted. Activity changes and generation are unavailable.",

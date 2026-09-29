@@ -494,7 +494,6 @@ function ActivityEditor({
     };
   }, []);
   const [bookMode, setBookMode] = useState<"" | "readAlong" | "decodable">("");
-  const [wafRoot, setWafRoot] = useState("");
   const [voiceOptions, setVoiceOptions] = useState<VoiceOption[]>([]);
   const voices = voiceOptions.map((option) => option.id);
   // The voice bulk speech, retries and the stage sequence speak with where a narration names
@@ -546,18 +545,7 @@ function ActivityEditor({
   );
   useEffect(() => {
     if (!available || !editable) return;
-    let cancelled = false;
     void loadUploads();
-    void apiFetch<{ wafRoot: string | null }>(`${basePath(projectId)}/module-setup`)
-      .then((value) => {
-        if (!cancelled) setWafRoot(value.wafRoot ?? "");
-      })
-      .catch(() => {
-        /* An explicit path can still be supplied when discovery fails. */
-      });
-    return () => {
-      cancelled = true;
-    };
   }, [projectId, available, editable]);
   const dirty =
     detail !== null &&
@@ -859,7 +847,6 @@ function ActivityEditor({
           ...scope,
           ...(soundProvider ? { soundProvider } : {}),
           ...(bulkVoice ? { voice: bulkVoice } : {}),
-          ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
           ...(detail.activityType === "book" && bookMode ? { bookMode } : {}),
         },
       });
@@ -1471,7 +1458,6 @@ function ActivityEditor({
                 language,
                 assetKey,
                 expectedRevision: detail.draft.contentRevision,
-                ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
               })}`
             }
             onSelect={setBoardScene}
@@ -1528,7 +1514,6 @@ function ActivityEditor({
             savedManifest={detail.draft.mediaPlan?.manifest}
             canAccept={editable && available && !busy && !running && !dirty}
             canPreview={editable && available && !busy && !dirty}
-            wafRoot={wafRoot}
             voices={voiceOptions}
             defaultVoice={bulkVoice}
             onChange={(value) => setMedia(pretty(value))}
@@ -1571,7 +1556,6 @@ function ActivityEditor({
                       language: lang,
                       assetKey,
                       // Scene images bound to checkout media are read from the chosen checkout.
-                      ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
                     })
                 : undefined
             }
@@ -2079,7 +2063,6 @@ function ActivityEditor({
                     <BuildPanel
                       endpoint={endpoint}
                       revision={detail.draft.contentRevision}
-                      wafRoot={wafRoot}
                       runs={runs}
                       unsaved={dirty}
                       proposalOpen={!!proposal.read?.proposal?.changes.length}
@@ -2109,14 +2092,6 @@ function ActivityEditor({
                                 </Select>
                               </>
                             )}
-                            <Input
-                              size="sm"
-                              label={S.activities.wafRoot}
-                              value={wafRoot}
-                              onChange={(event) => setWafRoot(event.target.value)}
-                              disabled={busy || running}
-                              hint={S.activities.wafRootHint}
-                            />
                             <Button
                               size="sm"
                               disabled={
@@ -2139,7 +2114,6 @@ function ActivityEditor({
                                       body: {
                                         ...runner,
                                         expectedRevision: detail.draft.contentRevision,
-                                        wafRoot: wafRoot.trim() || undefined,
                                         ...(detail.activityType === "book" ? { bookMode } : {}),
                                       },
                                     },
@@ -2224,7 +2198,6 @@ function ActivityEditor({
                     uploadsLoading={uploadsLoading}
                     agents={agents}
                     defaultAgent={currentAgent?.agentId ?? ""}
-                    wafRoot={wafRoot}
                     onIdentity={(record) => {
                       setDetail((current) => (current ? { ...current, ...record } : current));
                       void onSaved();

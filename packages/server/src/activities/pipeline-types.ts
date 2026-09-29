@@ -97,6 +97,5 @@ export interface PipelineInput {
   voice?: string;
   /** Who makes the music and sound effects the sounds step generates; ElevenLabs when absent. */
   soundProvider?: SoundProviderId;
-  wafRoot?: string;
   bookMode?: "readAlong" | "decodable";
 }
