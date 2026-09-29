@@ -724,6 +724,40 @@ describe("the approvals", () => {
     });
   });
 
+  it("takes a brief that is a proposal which exists already by its link — from a person, or a moderator that does not own it — with no approvals and no start", async () => {
+    const n = await established();
+    // The moderator is told how: an existing proposal is linked, not approved.
+    expect(w.runner.to("room-1").join("\n")).toContain("/items/<key>/link");
+    // From its owner's desk a brief still waits for both approvals.
+    expect(await refusal(service.link(P, O, n, "page", 61, asAgent("acme_web")))).toEqual({
+      status: 409,
+      code: "not_approved",
+    });
+    // The moderator (acme_dev) does not own [page]: its link says what the item is.
+    const { roadmap } = await service.link(P, O, n, "page", 61, asAgent("acme_dev"));
+    expect(roadmap.delegations.page).toMatchObject({
+      stage: "delegated",
+      proposal: 61,
+      delivered: false,
+      approvals: {},
+    });
+    // Nothing to start: its owner is told nothing, and there is nothing left to approve.
+    expect(w.gateway.desks).toEqual([]);
+    expect(await refusal(service.approve(P, O, n, "page", BOSS))).toEqual({
+      status: 409,
+      code: "already_approved",
+    });
+    // A person links the moderator's own item; the owner stacked on it learns the number.
+    const person = await service.link(P, O, n, "ledger", 60, BOSS);
+    expect(person.roadmap.delegations.ledger).toMatchObject({ stage: "delegated", proposal: 60 });
+    expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_web"]);
+    // Linked once, delegated once: an establishment after a reopening leaves both as they stand.
+    await service.reopen(P, O, n, "One more look.", BOSS);
+    const again = await service.establish(P, O, n, BOSS);
+    expect(again.roadmap.delegations.page).toMatchObject({ stage: "delegated", proposal: 61 });
+    expect(again.roadmap.delegations.ledger).toMatchObject({ stage: "delegated", proposal: 60 });
+  });
+
   it("links a proposal only to an approved item, and tells the owner stacked on it the number", async () => {
     const n = await established();
     expect(await refusal(service.link(P, O, n, "ledger", 60, asAgent("acme_dev")))).toEqual({

@@ -149,6 +149,7 @@ export function approvalRequestLine(args: {
     `${tag(r)} established. Its proposal items are briefs now; each needs two approvals before its proposal may be created — a person's, given on the roadmaps page, and yours as moderator:`,
     ...args.items.map((i) => `- [${i.key}] "${i.title}" — owner ${i.owner}: ${i.brief}`),
     `Approve an item whose brief is ready: \`${curlOf("POST", routeOf(orgId, r.number, "/items/<key>/approve"))}\`. Approving creates nothing; leave an item unapproved, or reopen the roadmap, when its brief is not ready.`,
+    `An item that is a proposal which exists already is not approved — there is no work to start: link it to that proposal, which delegates it without the two approvals and tells its owner nothing (an item you own yourself is linked by a person): \`${curlOf("POST", routeOf(orgId, r.number, "/items/<key>/link"), ['\\"proposal\\":<n>'])}\`.`,
   ].join("\n");
 }
 

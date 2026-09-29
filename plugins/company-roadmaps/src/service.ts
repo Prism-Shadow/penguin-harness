@@ -914,7 +914,15 @@ export class RoadmapService {
     });
   }
 
-  /** The owner links the proposal it created; the owners stacked on it learn its number. */
+  /**
+   * The owner links the proposal it created; the owners stacked on it learn its number.
+   *
+   * An item still a brief is linked only by a person or a moderator that does not own it, and
+   * only to say what it is: a proposal that exists already. Its two approvals are what start the work on a new
+   * proposal ("approve start"), and an existing one has nothing to start — so the item is
+   * delegated and linked at once, without them, and its owner is told nothing. From its owner's
+   * desk the brief still waits for both (409 `not_approved`).
+   */
   async link(
     projectId: string,
     orgId: string,
@@ -935,17 +943,36 @@ export class RoadmapService {
           `Roadmap #${number} has delegated no proposal item ${key}.`,
         );
       }
-      if (d.stage === "brief") {
+      // A moderator who owns the item is not asked: that is the owner linking a card of its own
+      // before the approvals, which is what the gate is there to stop.
+      const existing =
+        d.stage === "brief" &&
+        (caller.agentId === null ||
+          (caller.agentId === moderatorOf(r) && caller.agentId !== d.owner));
+      if (d.stage === "brief" && !existing) {
         throw new RoadmapError(
           409,
           "not_approved",
-          `Item ${key} is still a brief: it needs a person's and the moderator's approval before a proposal is linked to it.`,
+          `Item ${key} is still a brief: it needs a person's and the moderator's approval before a proposal is linked to it (a person or the moderator links it to the proposal it already is).`,
         );
       }
-      if (caller.agentId !== null && caller.agentId !== d.owner) {
+      if (!existing && caller.agentId !== null && caller.agentId !== d.owner) {
         throw new RoadmapError(403, "not_owner", `Only ${d.owner} (or a person) links ${key}.`);
       }
       if (!isProposalNumber(proposal)) throw badRequest("proposal must be a proposal number.");
+      if (existing) {
+        await ledger.append({
+          kind: "delegated",
+          number,
+          key,
+          owner: d.owner,
+          brief: d.brief,
+          base: d.base,
+          child: null,
+          delivered: false,
+          by: caller.principal,
+        });
+      }
       await ledger.append({ kind: "linked", number, key, proposal, by: caller.principal });
       const hints: string[] = [];
       for (const [depKey, base] of basesOf(r.items)) {
