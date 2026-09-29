@@ -30,12 +30,13 @@ export function useActivityLabels(
     if (!projectId || wanted === "") return;
     for (const id of wanted.split(",")) asked.current.ids.add(id);
     // Not cancelled when `wanted` empties on the next render (the ids just went into
-    // `asked`): the answer is tagged with its project, so a late one for a project left
-    // behind is simply never read.
+    // `asked`). A late answer for a project left behind is dropped instead: stored, it
+    // would replace the current project's labels, whose ids are already marked asked.
     apiFetch<{ activities: ActivityRecord[] }>(
       `/api/projects/${encodeURIComponent(projectId)}/activities`,
     )
-      .then((res) =>
+      .then((res) => {
+        if (asked.current.projectId !== projectId) return;
         setNames({
           projectId,
           map: new Map(
@@ -44,8 +45,8 @@ export function useActivityLabels(
               { name: a.displayName ?? a.title, productCode: a.productCode },
             ]),
           ),
-        }),
-      )
+        });
+      })
       .catch(() => {
         /* No activities access on this project; the headings stay generic. */
       });

@@ -82,6 +82,7 @@ import {
 import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
 import {
   groupActivityRunsByProduct,
+  searchActivityRuns,
   withoutActivityRuns,
   withoutActivityRunWorkspaces,
 } from "../../lib/activity-sessions";
@@ -990,9 +991,7 @@ export function Sidebar({
   /** Whether the active search hits anything anywhere (drafts included) — drives the quiet no-match line. */
   const hasSearchMatches =
     shownDrafts.length > 0 ||
-    activityRuns.some((product) =>
-      product.activities.some((group) => filterRows(group.sessions).length > 0),
-    ) ||
+    (searching && searchActivityRuns(activityRuns, searchQuery).length > 0) ||
     (groupMode === "agent"
       ? orderedAgents.some((a) => filterRows(byAgent.get(a.agentId) ?? []).length > 0)
       : groupMode === "time"
@@ -1577,14 +1576,9 @@ export function Sidebar({
    * other folders.
    */
   const renderActivityRuns = () => {
-    const products = activityRuns
-      .map((product) => ({
-        ...product,
-        activities: product.activities
-          .map((group) => ({ ...group, sessions: filterRows(group.sessions) }))
-          .filter((group) => group.sessions.length > 0),
-      }))
-      .filter((product) => product.activities.length > 0);
+    // A query naming a product code or an activity keeps that heading's runs, not only
+    // the runs whose own titles match.
+    const products = searchActivityRuns(activityRuns, searching ? searchQuery : "");
     const total = products.reduce(
       (sum, product) =>
         sum + product.activities.reduce((n, group) => n + group.sessions.length, 0),
@@ -1617,7 +1611,8 @@ export function Sidebar({
                     >
                       {name}
                     </Link>
-                    {renderRows(group.sessions, groupMode !== "agent")}
+                    {/* Project-wide in every mode, so each row names its Agent. */}
+                    {renderRows(group.sessions, true)}
                   </div>
                 );
               })}

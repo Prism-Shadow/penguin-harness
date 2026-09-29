@@ -3,7 +3,7 @@
  * its studio, not in the global session list, and opening one goes back to the activity.
  */
 import type { ActivitySummary, SessionInfo } from "@prismshadow/penguin-server/api";
-import { latestConversation, withoutOrgSessions } from "./session-grouping";
+import { latestConversation, matchesSessionQuery, withoutOrgSessions } from "./session-grouping";
 
 export function withoutActivityRuns(sessions: readonly SessionInfo[]): SessionInfo[] {
   return sessions.filter((session) => session.activityId === undefined);
@@ -81,6 +81,36 @@ export function groupActivityRunsByProduct(
     ...products.filter((p) => p.productCode !== null),
     ...products.filter((p) => p.productCode === null),
   ];
+}
+
+/**
+ * The sidebar search over the Activity runs folder. The folder shows a product code and an
+ * activity name above the runs, so a query matching either keeps all of that heading's runs;
+ * otherwise a run stays when its own title matches. Headings left with no runs drop out, and
+ * a blank query keeps everything.
+ */
+export function searchActivityRuns(
+  products: readonly ProductRunGroup[],
+  query: string,
+): ProductRunGroup[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return [...products];
+  const hit = (text: string | null) => text !== null && text.toLowerCase().includes(q);
+  return products
+    .map((product) => ({
+      productCode: product.productCode,
+      activities: hit(product.productCode)
+        ? product.activities
+        : product.activities
+            .map((group) => ({
+              ...group,
+              sessions: hit(group.name)
+                ? group.sessions
+                : group.sessions.filter((session) => matchesSessionQuery(session, q)),
+            }))
+            .filter((group) => group.sessions.length > 0),
+    }))
+    .filter((product) => product.activities.length > 0);
 }
 
 /** The loaded activity-run sessions under the activity they belong to, most recent run first. */

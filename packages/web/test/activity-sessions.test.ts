@@ -3,6 +3,7 @@ import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
   groupActivityRuns,
   groupActivityRunsByProduct,
+  searchActivityRuns,
   isActivityRunWorkspace,
   withoutActivityRunWorkspaces,
   latestOwnConversation,
@@ -121,5 +122,29 @@ describe("activity sessions", () => {
       ["ABC", [["act-c", "Sounds"], ["act-a", "Letter hunt"]]],
       [null, [["act-x", null]]],
     ]);
+  });
+
+  it("searches the runs folder by product code, activity name, or run title", () => {
+    const run = (sessionId: string, title: string) =>
+      ({ sessionId, title, lastActiveAt: "2026-09-29T08:00:00Z" }) as unknown as SessionInfo;
+    const products = [
+      {
+        productCode: "ABC",
+        activities: [
+          { activityId: "a", name: "Letter hunt", sessions: [run("a1", "Generate spec"), run("a2", "Build module")] },
+          { activityId: "b", name: "Rhymes", sessions: [run("b1", "Generate spec")] },
+        ],
+      },
+      { productCode: null, activities: [{ activityId: "x", name: null, sessions: [run("x1", "Build module")] }] },
+    ];
+    const ids = (query: string) =>
+      searchActivityRuns(products, query).flatMap((p) =>
+        p.activities.flatMap((g) => g.sessions.map((s) => s.sessionId)),
+      );
+    expect(ids("abc")).toEqual(["a1", "a2", "b1"]);
+    expect(ids("letter")).toEqual(["a1", "a2"]);
+    expect(ids("build")).toEqual(["a2", "x1"]);
+    expect(ids("  ")).toEqual(["a1", "a2", "b1", "x1"]);
+    expect(ids("nothing")).toEqual([]);
   });
 });
