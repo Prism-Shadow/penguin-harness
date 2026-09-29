@@ -3,7 +3,7 @@
 - **Date:** 2026-09-28
 - **Type:** fix
 - **Scope:** `server`
-- **PR:** [Myriad-Dreamin/penguin-harness#PR_NUMBER](https://github.com/Myriad-Dreamin/penguin-harness/pull/PR_NUMBER)
+- **PR:** [Myriad-Dreamin/penguin-harness#18](https://github.com/Myriad-Dreamin/penguin-harness/pull/18)
 
 [中文版](2026-09-28-machine-hop-answers-in-time.zh.md)
 
