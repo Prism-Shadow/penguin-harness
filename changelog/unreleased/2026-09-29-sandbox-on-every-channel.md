@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** feature
 - **Scope:** `server`, `cli`, `docker`, `docs`
+- **PR:** [Myriad-Dreamin/penguin-harness#98](https://github.com/Myriad-Dreamin/penguin-harness/pull/98)
 
 [中文版](2026-09-29-sandbox-on-every-channel.zh.md)
 
