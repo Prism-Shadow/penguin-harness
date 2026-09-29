@@ -3,7 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `plugins`, `server`
-- **PR:** (to be linked)
+- **PR:** [Myriad-Dreamin/penguin-harness#59](https://github.com/Myriad-Dreamin/penguin-harness/pull/59)
 
 [English](2026-09-29-roadmap-room-delivery.md)
 
