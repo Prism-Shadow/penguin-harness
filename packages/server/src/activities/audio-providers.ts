@@ -7,7 +7,11 @@ import type {
 } from "./sound-types.js";
 import type { SpeechProviderId, SpeechProviderStatus } from "./speech-types.js";
 import { SPEECH_PROVIDER_IDS } from "./voice-catalogue.js";
-import { LOCAL_AUDIO_MODELS, type LocalAudioAvailability } from "./local-audio-models.js";
+import {
+  LOCAL_AUDIO_MODELS,
+  isLocalAudioProvider,
+  type LocalAudioAvailability,
+} from "./local-audio-models.js";
 import {
   AGENTHUB_SOUND_MODELS,
   AGENTHUB_VERSION,
@@ -18,9 +22,8 @@ import {
  * Which audio a run can actually produce, and what to say when it cannot.
  *
  * Loom's audio stack has four kinds — speech, music, effects and forced alignment — each
- * with its own provider setting. Kokoro and MusicGen run in Penguin's native local-audio
- * capability. Exact AudioGen and AudioLDM support remains unavailable until a native
- * inference path is validated.
+ * with its own provider setting. Local models run in Penguin's native local-audio
+ * capability. Availability includes the installed runtime and required model package.
  *
  * The part worth having now is honesty about capability. An activity that asks for effects
  * on a deployment with no effects provider must be told so, not handed silence. Every
@@ -60,26 +63,6 @@ export const AUDIO_PROVIDERS: readonly AudioProvider[] = [
     id: "gemini",
     kinds: ["speech"],
     credential: "GEMINI_API_KEY",
-  },
-];
-
-/**
- * Providers Loom has that this port does not carry.
- *
- * Kept as data rather than dropped silently: when someone asks why music generation is not
- * available, the answer should name what Loom used and why it is absent, not leave them
- * reading a diff.
- */
-export const LEFT_BEHIND: readonly { id: string; kinds: readonly AudioKind[]; why: string }[] = [
-  {
-    id: "audiogen",
-    kinds: ["effect"],
-    why: "the exact model's native runtime has not been validated",
-  },
-  {
-    id: "audioldm",
-    kinds: ["effect"],
-    why: "the exact model needs a native inference implementation",
   },
 ];
 
@@ -129,8 +112,8 @@ export function providerFor(kind: AudioKind, setup: AudioSetup): ProviderChoice 
   const wanted = setup.chosen?.[kind];
 
   if (wanted) {
-    if (wanted === "kokoro" || wanted === "musicgen") {
-      const expected = wanted === "kokoro" ? "speech" : "music";
+    if (isLocalAudioProvider(wanted)) {
+      const expected = wanted === "kokoro" ? "speech" : wanted === "musicgen" ? "music" : "effect";
       if (kind !== expected)
         return { kind, problem: `${kind}: "${wanted}" does not produce ${kind}.` };
       return setup.local?.[wanted]
@@ -140,16 +123,6 @@ export function providerFor(kind: AudioKind, setup: AudioSetup): ProviderChoice 
             problem: `${kind}: install the ${LOCAL_AUDIO_MODELS[wanted].package} local runtime.`,
           };
     }
-    const left = LEFT_BEHIND.find((entry) => entry.id === wanted);
-    if (left)
-      return {
-        kind,
-        problem: `${kind}: this build does not carry "${wanted}" — ${left.why}. Configure one of ${
-          AUDIO_PROVIDERS.filter((p) => p.kinds.includes(kind))
-            .map((p) => p.id)
-            .join(", ") || "none"
-        }.`,
-      };
     const checked = checkProvider(kind, wanted, have);
     if ("provider" in checked) return { kind, provider: checked.provider };
     if (checked.problem === "provider_unknown")
@@ -166,7 +139,14 @@ export function providerFor(kind: AudioKind, setup: AudioSetup): ProviderChoice 
     (entry) => entry.kinds.includes(kind) && have.has(entry.credential),
   );
   if (!usable.length) {
-    const local = kind === "speech" ? "kokoro" : kind === "music" ? "musicgen" : null;
+    const local =
+      kind === "speech"
+        ? "kokoro"
+        : kind === "music"
+          ? "musicgen"
+          : kind === "effect"
+            ? "audioldm"
+            : null;
     if (local && setup.local?.[local])
       return { kind, provider: { id: local, kinds: [kind], credential: "" } };
     const candidates = AUDIO_PROVIDERS.filter((entry) => entry.kinds.includes(kind));
@@ -363,12 +343,13 @@ export function soundProviderFor(
   catalogue: readonly AgenthubSoundModel[] = AGENTHUB_SOUND_MODELS,
   local: LocalAudioAvailability = {},
 ): SoundChoice | { problem: SoundProblem; credential?: string } {
-  if (provider === "musicgen") {
-    if (kind !== "music") return { problem: "kind_unsupported" };
-    if (model !== undefined && model !== LOCAL_AUDIO_MODELS.musicgen.model)
+  if (isLocalAudioProvider(provider) && provider !== "kokoro") {
+    if (kind !== (provider === "musicgen" ? "music" : "sfx"))
+      return { problem: "kind_unsupported" };
+    if (model !== undefined && model !== LOCAL_AUDIO_MODELS[provider].model)
       return { problem: "model_unknown" };
-    if (vaultKeys !== null && !local.musicgen) return { problem: "runtime_missing" };
-    return { provider: "musicgen", model: LOCAL_AUDIO_MODELS.musicgen.model, format: "wav" };
+    if (vaultKeys !== null && !local[provider]) return { problem: "runtime_missing" };
+    return { provider, model: LOCAL_AUDIO_MODELS[provider].model, format: "wav" };
   }
   if (provider === "agenthub") {
     const offered = agenthubSoundModels(kind, catalogue);
@@ -472,13 +453,13 @@ export function soundSetup(
   return [
     ...fixed,
     hub,
-    {
-      id: "musicgen",
-      kinds: ["music"],
+    ...(["musicgen", "audiogen", "audioldm"] as const).map((id): SoundProviderStatus => ({
+      id,
+      kinds: [id === "musicgen" ? "music" : "sfx"],
       credential: "",
-      models: { music: LOCAL_AUDIO_MODELS.musicgen.model },
-      available: !!local.musicgen,
-      ...(!local.musicgen ? { problem: "runtime_missing" as const } : {}),
-    },
+      models: { [id === "musicgen" ? "music" : "sfx"]: LOCAL_AUDIO_MODELS[id].model },
+      available: !!local[id],
+      ...(!local[id] ? { problem: "runtime_missing" as const } : {}),
+    })),
   ];
 }

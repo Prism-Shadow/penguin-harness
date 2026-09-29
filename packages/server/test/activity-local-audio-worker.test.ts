@@ -96,6 +96,62 @@ describe("native audio worker", () => {
     await expect(result).rejects.toThrow("cancelled");
   });
 
+  it.each(["audiogen", "audioldm"])(
+    "runs the %s native adapter and resamples its 16 kHz output",
+    async (provider) => {
+      const data = await fixture(`export async function generate(input) {
+      if (input.provider !== '${provider}' || input.seconds !== 2 || input.text !== 'Door creak') throw Error('bad adapter input');
+      return { audio: new Float32Array(32000).fill(0.25), rate: 16000 };
+    }`);
+      const bytes = await runLocalAudioWorker(
+        { ...data, provider, adapterUrl: data.moduleUrl, text: "Door creak", seconds: 2 },
+        new AbortController().signal,
+      );
+      expect(inspectWave(bytes, "test")).toMatchObject({ durationMs: 2000, mimeType: "audio/wav" });
+    },
+  );
+
+  it("interrupts an exact-model native adapter while inference is blocked", async () => {
+    const data = await fixture("export async function generate() { while (true) {} }");
+    const controller = new AbortController();
+    const pending = runLocalAudioWorker(
+      { ...data, provider: "audioldm", adapterUrl: data.moduleUrl },
+      controller.signal,
+    );
+    setTimeout(() => controller.abort(), 100);
+    await expect(pending).rejects.toThrow("cancelled");
+  });
+
+  it("removes only this worker's partial downloads after cancellation", async () => {
+    const data =
+      await fixture(`import { mkdir, writeFile } from 'node:fs/promises'; import path from 'node:path';
+      export async function generate({ downloadDir }) {
+        await mkdir(downloadDir, { recursive: true });
+        await writeFile(path.join(downloadDir, 'model.part'), 'partial');
+        await new Promise(() => {});
+      }`);
+    await fs.mkdir(data.cacheDir, { recursive: true });
+    await fs.writeFile(path.join(data.cacheDir, "cached-model"), "keep");
+    const controller = new AbortController();
+    const pending = runLocalAudioWorker(
+      { ...data, provider: "audiogen", adapterUrl: data.moduleUrl },
+      controller.signal,
+    );
+    // Observe the file before cancelling so this actually exercises cleanup.
+    const scratch = path.join(data.cacheDir, ".downloads");
+    for (let i = 0; i < 100; i++) {
+      const dirs = await fs.readdir(scratch).catch(() => []);
+      if (dirs[0] && (await fs.stat(path.join(scratch, dirs[0], "model.part")).catch(() => null)))
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect((await fs.readdir(scratch)).length).toBe(1);
+    controller.abort();
+    await expect(pending).rejects.toThrow("cancelled");
+    expect(await fs.readdir(scratch)).toEqual([]);
+    expect(await fs.readFile(path.join(data.cacheDir, "cached-model"), "utf8")).toBe("keep");
+  });
+
   it("rejects a crashed worker and hides runtime errors", async () => {
     const exited = await fixture("process.exit(1);");
     await expect(

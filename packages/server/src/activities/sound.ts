@@ -62,11 +62,17 @@ export function soundTarget(
       `Select a music or sound effect asset with a prompt of 1–${SOUND_PROMPT_MAX} characters.`,
     );
   const choice = soundProviderFor(asset.kind, input.provider, null, input.model, catalogue);
-  if (input.provider === "musicgen" && (asset.targetDurationMs ?? 10000) > 30000)
+  const maxDuration =
+    input.provider === "musicgen"
+      ? 30000
+      : ["audiogen", "audioldm"].includes(input.provider)
+        ? 10000
+        : Infinity;
+  if ((asset.targetDurationMs ?? 10000) > maxDuration)
     throw new HttpError(
       422,
       "sound_invalid",
-      "MusicGen supports clips up to 30 seconds. Shorten the requested length.",
+      `This provider supports clips up to ${maxDuration / 1000} seconds. Shorten the requested length.`,
     );
   if ("problem" in choice) {
     if (choice.problem === "provider_unknown")

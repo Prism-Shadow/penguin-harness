@@ -205,6 +205,16 @@ describe("sound generation through Harness sessions", () => {
       }),
       expect.objectContaining({ id: "agenthub", available: false, problem: "no_model" }),
       expect.objectContaining({ id: "musicgen", kinds: ["music"] }),
+      expect.objectContaining({
+        id: "audiogen",
+        kinds: ["sfx"],
+        models: { sfx: "facebook/audiogen-medium" },
+      }),
+      expect.objectContaining({
+        id: "audioldm",
+        kinds: ["sfx"],
+        models: { sfx: "cvssp/audioldm-s-full-v2" },
+      }),
     ]);
     await f.setVault(["ELEVENLABS_API_KEY"]);
     expect((await setup()).providers[0]).toMatchObject({ id: "elevenlabs", available: true });

@@ -40,7 +40,10 @@ export const LOCAL_AUDIO_WORKER = String.raw`(async () => {
       } finally {
         await tts.model.dispose();
       }
-    } else {
+    } else if (provider === "audiogen" || provider === "audioldm") {
+      const adapter = await import(workerData.adapterUrl);
+      ({ audio, rate } = await adapter.generate(workerData));
+    } else if (provider === "musicgen") {
       const runtime = await import(moduleUrl);
       const { AutoTokenizer, MusicgenForConditionalGeneration } = runtime.default ?? runtime;
       const tokenizer = await AutoTokenizer.from_pretrained(model, { cache_dir: cacheDir });
@@ -56,7 +59,7 @@ export const LOCAL_AUDIO_WORKER = String.raw`(async () => {
       } finally {
         await generator.dispose();
       }
-    }
+    } else { throw new Error("Unknown local audio provider."); }
     if (!(audio instanceof Float32Array) || !audio.length || !Number.isFinite(rate) || rate <= 0)
       throw new Error("The local model returned invalid audio.");
     // All activity audio uses mono PCM at 24 kHz. Linear resampling also bounds the result

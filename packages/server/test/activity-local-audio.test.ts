@@ -20,6 +20,8 @@ describe("local audio candidates", () => {
     vi.spyOn(LocalAudioService.prototype, "availability").mockReturnValue({
       kokoro: true,
       musicgen: true,
+      audiogen: true,
+      audioldm: true,
     });
     const generate = vi
       .spyOn(LocalAudioService.prototype, "generate")
@@ -63,6 +65,11 @@ describe("local audio candidates", () => {
                   description: "Music",
                   script: '<audio kind="music" duration="2">Soft piano</audio>',
                 },
+                {
+                  key: "effect",
+                  description: "Effect",
+                  script: '<audio kind="sfx" duration="2">A door creaks</audio>',
+                },
               ],
             },
           },
@@ -80,14 +87,14 @@ describe("local audio candidates", () => {
     );
     const adopted = vi.spyOn(t.deps.manager, "adopt");
     const current = async () => (await (await client.get(endpoint)).json()) as ActivityDetail;
-    const start = async (provider: "kokoro" | "musicgen" = "kokoro") => {
+    const start = async (provider: "kokoro" | "musicgen" | "audiogen" | "audioldm" = "kokoro") => {
       const response = await client.post(
         `${endpoint}/${provider === "kokoro" ? "generate-audio" : "generate-sound"}`,
         {
           agentId: "default_agent",
           expectedRevision: (await current()).draft.contentRevision,
           language: "en-US",
-          assetKey: provider === "kokoro" ? "hello" : "theme",
+          assetKey: provider === "kokoro" ? "hello" : provider === "musicgen" ? "theme" : "effect",
           provider,
           ...(provider === "kokoro" ? { voice: "af_heart" } : {}),
         },
@@ -118,7 +125,7 @@ describe("local audio candidates", () => {
     };
   }
 
-  it.each(["kokoro", "musicgen"] as const)(
+  it.each(["kokoro", "musicgen", "audiogen", "audioldm"] as const)(
     "produces and accepts %s without a model key or agent session",
     async (provider) => {
       const f = await fixture();
@@ -195,7 +202,7 @@ describe("local audio candidates", () => {
     });
     for (const provider of ["audiogen", "audioldm"])
       expect(soundProviderFor("sfx", provider, ["ELEVENLABS_API_KEY"])).toMatchObject({
-        problem: "provider_unknown",
+        problem: "runtime_missing",
       });
   });
 });

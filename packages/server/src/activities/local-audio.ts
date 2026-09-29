@@ -1,4 +1,6 @@
 import { createRequire } from "node:module";
+import { randomUUID } from "node:crypto";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
@@ -9,7 +11,7 @@ import {
   type ClassCtx,
   type Opaque,
 } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
+import type { Config, Hmr } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
 import {
   KOKORO_VOICES,
@@ -46,14 +48,28 @@ export function runLocalAudioWorker(
       reject(new Error("Local audio generation cancelled."));
       return;
     }
-    const worker = new Worker(LOCAL_AUDIO_WORKER, { eval: true, workerData: data });
+    const cacheRoot = typeof data.cacheDir === "string" ? path.resolve(data.cacheDir) : null;
+    const downloadDir = cacheRoot ? path.join(cacheRoot, ".downloads", randomUUID()) : undefined;
+    const worker = new Worker(LOCAL_AUDIO_WORKER, {
+      eval: true,
+      workerData: { ...data, downloadDir },
+    });
     let settled = false;
     const finish = (error?: Error, bytes?: Uint8Array) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
       signal.removeEventListener("abort", abort);
-      void worker.terminate().then(() => (error ? reject(error) : resolve(bytes!)), reject);
+      void worker
+        .terminate()
+        .then(async () => {
+          // Termination closes native/download handles before partial files are removed.
+          if (downloadDir && cacheRoot && downloadDir.startsWith(cacheRoot + path.sep))
+            await rm(downloadDir, { recursive: true, force: true });
+          if (error) reject(error);
+          else resolve(bytes!);
+        })
+        .catch(reject);
     };
     const abort = () => finish(new Error("Local audio generation cancelled."));
     const timeout = setTimeout(
@@ -76,6 +92,7 @@ export function runLocalAudioWorker(
 @Component()
 export class LocalAudioService implements LocalAudio {
   @Use() private readonly config!: Config;
+  @Use() private readonly hmr!: Hmr;
   private busy = false;
   private readonly stopped = new AbortController();
 
@@ -103,6 +120,8 @@ export class LocalAudioService implements LocalAudio {
     return {
       kokoro: this.moduleUrl("kokoro") !== null,
       musicgen: this.moduleUrl("musicgen") !== null,
+      audiogen: this.moduleUrl("audiogen") !== null,
+      audioldm: this.moduleUrl("audioldm") !== null,
     };
   }
   async generate(request: LocalAudioRequest, signal: AbortSignal): Promise<Uint8Array> {
@@ -138,11 +157,12 @@ export class LocalAudioService implements LocalAudio {
         "Choose a Kokoro voice for the narration's language.",
       );
     const seconds = request.seconds ?? 10;
-    if (!Number.isFinite(seconds) || seconds < 1 || seconds > 30)
+    const maxSeconds = request.provider === "audiogen" || request.provider === "audioldm" ? 10 : 30;
+    if (!Number.isFinite(seconds) || seconds < 1 || seconds > maxSeconds)
       throw new HttpError(
         400,
         "local_audio_invalid",
-        "MusicGen supports clips from 1 to 30 seconds.",
+        `This local model supports clips from 1 to ${maxSeconds} seconds.`,
       );
     this.busy = true;
     try {
@@ -152,6 +172,15 @@ export class LocalAudioService implements LocalAudio {
           seconds,
           moduleUrl,
           cacheDir: path.join(this.config.root, "models", "audio"),
+          ...(request.provider === "audiogen" || request.provider === "audioldm"
+            ? {
+                adapterUrl: this.hmr.assetsDir()
+                  ? pathToFileURL(
+                      path.join(this.hmr.assetsDir()!, `local-audio-${request.provider}.mjs`),
+                    ).href
+                  : new URL(`./local-audio-${request.provider}.mjs`, import.meta.url).href,
+              }
+            : {}),
         },
         AbortSignal.any([signal, this.stopped.signal]),
       );

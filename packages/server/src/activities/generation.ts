@@ -728,7 +728,7 @@ export class ActivityGenerationService implements ActivityGeneration {
               throw new HttpError(
                 409,
                 "local_audio_missing",
-                "Install @huggingface/transformers in the server environment before generating local music.",
+                "Install @huggingface/transformers in the server environment before generating local music or sound effects.",
               );
             if ("problem" in choice)
               throw new HttpError(

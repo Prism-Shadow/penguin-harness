@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   AUDIO_KINDS,
   AUDIO_PROVIDERS,
-  LEFT_BEHIND,
   audioCapability,
   canAlign,
   describeAudioCapability,
@@ -20,10 +19,15 @@ describe("what this build carries", () => {
     for (const kind of AUDIO_KINDS) expect(covered.has(kind), kind).toBe(true);
   });
 
-  it("keeps the providers it left behind as data, with a reason each", () => {
-    // So "why is music generation unavailable" has an answer that is not a diff.
-    expect(LEFT_BEHIND.map((entry) => entry.id)).toEqual(["audiogen", "audioldm"]);
-    for (const entry of LEFT_BEHIND) expect(entry.why, entry.id).toContain("native");
+  it("carries native adapters for all of Loom's local audio providers", () => {
+    for (const provider of ["audiogen", "audioldm"])
+      expect(
+        providerFor("effect", {
+          credentials: [],
+          chosen: { effect: provider },
+          local: { audiogen: true, audioldm: true },
+        }),
+      ).toMatchObject({ provider: { id: provider } });
   });
 });
 
@@ -49,11 +53,11 @@ describe("choosing a provider", () => {
     expect("problem" in choice && choice.problem).toContain("does not produce music");
   });
 
-  it("names a left-behind provider and what to use instead", () => {
+  it("names the missing local runtime without substituting a hosted provider", () => {
     const choice = providerFor("effect", { ...eleven, chosen: { effect: "audiogen" } });
-    expect("problem" in choice && choice.problem).toContain("does not carry");
-    expect("problem" in choice && choice.problem).toContain("native");
-    expect("problem" in choice && choice.problem).toContain("elevenlabs");
+    expect("problem" in choice && choice.problem).toContain(
+      "@huggingface/transformers local runtime",
+    );
   });
 
   it("refuses a provider nobody has heard of", () => {

@@ -1596,16 +1596,23 @@ export const en: Strings = {
       prompt: "Prompt",
       promptHint: "Describe the sound, e.g. gentle marimba loop, playful. Up to 2000 characters.",
       length: "Length (seconds)",
-      lengthHint: "1 to 60 seconds; empty lets the model choose",
-      lengthInvalid: "Enter a length from 1 to 60 seconds, or leave it empty.",
+      lengthHint: (max: number, local: boolean) =>
+        `1 to ${max} seconds; ${local ? "empty uses 10 seconds" : "empty lets the model choose"}`,
+      lengthInvalid: (max: number) => `Enter a length from 1 to ${max} seconds, or leave it empty.`,
       provider: "Provider",
       model: "Model",
       generate: "Generate",
       regenerate: "Generate again",
       generating: "Generating…",
-      providers: { elevenlabs: "ElevenLabs", agenthub: "Model", musicgen: "MusicGen (local)" },
+      providers: {
+        elevenlabs: "ElevenLabs",
+        agenthub: "Model",
+        musicgen: "MusicGen (local)",
+        audiogen: "AudioGen (local)",
+        audioldm: "AudioLDM (local)",
+      },
       localInfo:
-        "Runs on the server. The first generation downloads model weights. MusicGen supports clips up to 30 seconds.",
+        "Runs on the server and downloads model weights on first use. MusicGen supports up to 30 seconds; AudioGen and AudioLDM support up to 10 seconds.",
       problems: {
         runtime_missing: "Install the local audio dependencies on the server to use this provider.",
         credential_missing: (key: string) => `Add ${key} to the selected agent's Vault.`,

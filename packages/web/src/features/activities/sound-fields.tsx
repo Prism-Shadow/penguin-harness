@@ -19,6 +19,7 @@ import {
   parseLength,
   providerOptions,
   soundPromptOf,
+  soundMaxSeconds,
   withSoundPrompt,
 } from "./sound-model";
 
@@ -56,6 +57,8 @@ export function SoundFields({
   const length = parseLength(lengthValue);
   const options = providerOptions(providers ?? [], asset.kind);
   const provider = chosenProvider(options, choice);
+  const maxSeconds = soundMaxSeconds(provider?.id);
+  const validLength = length.ok && (length.ms ?? 10000) <= maxSeconds * 1000;
   const model = chosenModel(provider, modelChoice);
   const locked = !editable || disabled;
   return (
@@ -81,11 +84,11 @@ export function SoundFields({
             size="sm"
             type="number"
             min={1}
-            max={provider?.id === "musicgen" ? 30 : 60}
+            max={maxSeconds}
             step={0.5}
             label={words.length}
-            hint={words.lengthHint}
-            error={length.ok ? undefined : words.lengthInvalid}
+            hint={words.lengthHint(maxSeconds, maxSeconds < 60)}
+            error={validLength ? undefined : words.lengthInvalid(maxSeconds)}
             value={lengthValue}
             disabled={locked}
             onChange={(event) => {
@@ -105,7 +108,7 @@ export function SoundFields({
             <Select
               size="sm"
               label={words.provider}
-              hint={provider.id === "musicgen" ? words.localInfo : undefined}
+              hint={soundMaxSeconds(provider.id) < 60 ? words.localInfo : undefined}
               value={provider.id}
               disabled={locked}
               onChange={(event) => setChoice(event.target.value)}
@@ -144,8 +147,8 @@ export function SoundFields({
           disabled={
             !canGenerate ||
             generating ||
-            !canGenerateSound(prompt, provider, length.ok) ||
-            (provider?.id === "musicgen" && (asset.targetDurationMs ?? 10000) > 30000)
+            !canGenerateSound(prompt, provider, validLength) ||
+            (asset.targetDurationMs ?? 10000) > soundMaxSeconds(provider?.id) * 1000
           }
           onClick={() =>
             provider &&

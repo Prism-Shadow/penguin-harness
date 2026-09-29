@@ -1362,15 +1362,15 @@ export type Strings = {
       prompt: string;
       promptHint: string;
       length: string;
-      lengthHint: string;
-      lengthInvalid: string;
+      lengthHint: (max: number, local: boolean) => string;
+      lengthInvalid: (max: number) => string;
       provider: string;
       /** The model picker shown when a provider offers several models for the kind. */
       model: string;
       generate: string;
       regenerate: string;
       generating: string;
-      providers: Record<"elevenlabs" | "agenthub" | "musicgen", string>;
+      providers: Record<"elevenlabs" | "agenthub" | "musicgen" | "audiogen" | "audioldm", string>;
       localInfo: string;
       problems: {
         runtime_missing: string;

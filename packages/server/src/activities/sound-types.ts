@@ -7,7 +7,7 @@
 export type SoundKind = "music" | "sfx";
 
 /** Where a sound is made: ElevenLabs directly, or a model reached through the model hub. */
-export type SoundProviderId = "elevenlabs" | "agenthub" | "musicgen";
+export type SoundProviderId = "elevenlabs" | "agenthub" | "musicgen" | "audiogen" | "audioldm";
 
 /**
  * Why a provider cannot make a sound right now. The App words each one. `no_model`: the
