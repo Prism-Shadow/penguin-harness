@@ -20,7 +20,7 @@ import { Fold } from "../../layout/fold/fold";
 import { ICON_SIZE } from "../../../icon-scale";
 
 /** A folder toggle's and a "more" row's shape: a dense, muted row with a chevron column. */
-const FOLDER_ROW_CLASS =
+export const FOLDER_ROW_CLASS =
   "flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-xs font-medium text-fg-subtle transition-colors duration-150 hover:bg-fg/5";
 
 /**

@@ -3,7 +3,8 @@
  * room reads the way the channel list reads a channel — the glyph and the name, linked to the
  * room. The roadmap's number is not on the row, and the link carries no `title` of its own: the
  * name is already the row's text, and `Truncated` adds one only when the name is cut (a static
- * render measures no overflow, so none appears here).
+ * render measures no overflow, so none appears here). Past the first five, the rows fold under
+ * "> More (n)", the channel list's "> Archived (n)" fold with another word.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -11,6 +12,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { RoadmapRow } from "../src/features/company/roadmaps-sidebar";
 import { orgChannelPath } from "../src/features/company/company-nav";
+import { FolderSection } from "../src/components/ui/group-list";
+import { zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
 
 const roadmap = {
   number: 3,
@@ -49,5 +53,27 @@ describe("a roadmap's row in the sidebar", () => {
   it("puts no title on the link: the name is the row's own text", () => {
     expect(anchor()).not.toMatch(/\stitle="/);
     expect(html).not.toMatch(/\stitle="/);
+  });
+});
+
+describe("the section's fold", () => {
+  // The roadmaps past the first five fold as "> More (n)", drawn by the very component and in
+  // the very shape the channel list uses for "> Archived (n)": only the word differs.
+  const fold = (label: string) =>
+    renderToStaticMarkup(createElement(FolderSection, { label, open: false, onToggle: () => {} }));
+
+  it("reads More (n) in both languages", () => {
+    expect(fold(`${en.company.roadmaps.moreGroup} (3)`)).toContain("More (3)");
+    expect(fold(`${zh.company.roadmaps.moreGroup} (3)`)).toContain("更多 (3)");
+  });
+
+  it("is the channel list's archived fold with another word", () => {
+    for (const S of [zh, en]) {
+      const more = fold(`${S.company.roadmaps.moreGroup} (3)`);
+      const archived = fold(`${S.company.channels.archivedGroup} (3)`);
+      expect(more.replace(S.company.roadmaps.moreGroup, "·")).toBe(
+        archived.replace(S.company.channels.archivedGroup, "·"),
+      );
+    }
   });
 });

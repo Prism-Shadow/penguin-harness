@@ -5,7 +5,7 @@
  * row for):
  *
  * - the sidebar's ROADMAPS section, below the channel list and apart from it: the most recently
- *   active roadmaps under discussion, five at rest, the rest behind an expand;
+ *   active roadmaps with a room, five at rest, the rest folded under "More (n)";
  * - a roadmap's room is its channel, shown by the app's own channel page, and that page puts the
  *   roadmap's detail (the plugin's page, in its detail view) in a column beside the stream.
  */
@@ -37,29 +37,40 @@ export function roadmapDetailSrc(src: string, number: number): string {
   return `${src}${src.includes("?") ? "&" : "?"}view=detail&n=${number}`;
 }
 
-/** When a roadmap last moved: its latest ledger event, else when it was opened. */
-export function lastActivity(r: OrgRoadmapItem): string {
+/**
+ * When a roadmap last moved: the latest of when it was opened, its ledger events and the last
+ * message in its room (`roomAt`, when known) — a reply in the room is activity too.
+ */
+export function lastActivity(r: OrgRoadmapItem, roomAt?: string | null): string {
   let latest = r.createdAt;
   for (const e of r.events ?? []) if (e.at > latest) latest = e.at;
+  if (roomAt != null && roomAt > latest) latest = roomAt;
   return latest;
 }
 
-/** Active: under discussion, not shelved, with a room to go to. */
-export function isActiveRoadmap(r: OrgRoadmapItem): r is OrgRoadmapItem & { channelId: string } {
-  return r.status === "discussing" && !r.archived && r.channelId !== null;
+/**
+ * Listed in the sidebar: a roadmap with a room to go to that is not shelved — under discussion
+ * or established alike, since an established roadmap's room is still where it is talked about.
+ */
+export function isListedRoadmap(r: OrgRoadmapItem): r is OrgRoadmapItem & { channelId: string } {
+  return !r.archived && r.channelId !== null;
 }
 
 /**
- * The sidebar section's rows: the active roadmaps, most recently active first (ties: the higher
- * number first), split into the first {@link ROADMAPS_SHOWN} and the rest.
+ * The sidebar section's rows: the listed roadmaps, most recently active first (ties: the higher
+ * number first), split into the first {@link ROADMAPS_SHOWN} and the rest. `roomActivity` maps a
+ * room's channel id to its last message's time.
  */
-export function sidebarRoadmaps(roadmaps: readonly OrgRoadmapItem[]): {
+export function sidebarRoadmaps(
+  roadmaps: readonly OrgRoadmapItem[],
+  roomActivity: Readonly<Record<string, string>> = {},
+): {
   shown: Array<OrgRoadmapItem & { channelId: string }>;
   more: Array<OrgRoadmapItem & { channelId: string }>;
 } {
   const active = roadmaps
-    .filter(isActiveRoadmap)
-    .map((r) => ({ r, at: lastActivity(r) }))
+    .filter(isListedRoadmap)
+    .map((r) => ({ r, at: lastActivity(r, roomActivity[r.channelId]) }))
     .sort((a, b) => (a.at === b.at ? b.r.number - a.r.number : a.at < b.at ? 1 : -1))
     .map((x) => x.r);
   return { shown: active.slice(0, ROADMAPS_SHOWN), more: active.slice(ROADMAPS_SHOWN) };

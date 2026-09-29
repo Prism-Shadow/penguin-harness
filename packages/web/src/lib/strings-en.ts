@@ -5898,11 +5898,11 @@ Scenarios:
     },
     roadmaps: {
       listTitle: "Roadmaps",
-      showMore: (n: number) => `Show ${n} more`,
-      showFewer: "Show fewer",
+      /** The fold under the five most recent, read as "More (n)" like the channel list's "Archived (n)". */
+      moreGroup: "More",
       all: "All roadmaps",
       open: "Open a roadmap",
-      none: "No roadmap under discussion yet.",
+      none: "No roadmap yet.",
       loadFailed: "Could not load the roadmaps",
       panelTitle: (n: number) => `Roadmap #${n}`,
       hidePanel: "Back to the room",

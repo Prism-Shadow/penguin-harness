@@ -6071,11 +6071,11 @@ Benchmark：
      */
     roadmaps: {
       listTitle: "路线图",
-      showMore: (n: number) => `再显示 ${n} 个`,
-      showFewer: "收起",
+      /** The fold under the five most recent, read as "更多 (n)" like the channel list's "已归档 (n)". */
+      moreGroup: "更多",
       all: "全部路线图",
       open: "开一份路线图",
-      none: "还没有讨论中的路线图。",
+      none: "还没有路线图。",
       loadFailed: "路线图加载失败",
       panelTitle: (n: number) => `路线图 #${n}`,
       hidePanel: "回到讨论",
