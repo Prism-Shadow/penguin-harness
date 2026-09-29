@@ -25,11 +25,12 @@
  * hooks. The library is what this build carries; the registry is what the deployment can
  * fetch. Both are deployment-global (no Project check); only installing touches an Agent.
  *
- * The registry merges two sources: the index embedded in this package (the sandbox backends
- * the workspace ships) and the one published by the index repository. The published document
- * is cached, a failure to reach it is reported alongside the entries rather than emptying the
- * page, and a listing waits for it only briefly before answering without it — see
- * plugin/registry.ts for the three rules.
+ * The registry merges three sources into one catalogue: the index the running build carries,
+ * this machine's plugin store, and the one published by the index repository — each row one
+ * content, tagged with every source that lists it and whether this machine can install it.
+ * The published document is cached, a failure to reach it is reported alongside the entries
+ * rather than emptying the page, and a listing waits for it only briefly before answering
+ * without it — see plugin/registry.ts for these rules.
  */
 import { Hono } from "hono";
 import { existsSync } from "node:fs";
@@ -69,7 +70,6 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 import { agentHooksRoutes } from "./hooks.js";
 import {
-  BUILTIN_REGISTRY_SOURCE,
   builtinPluginRegistry,
   cachedRegistry,
   httpPluginRegistry,
@@ -78,6 +78,7 @@ import {
   withoutIcon,
   NIGHTLY_INDEX_URL,
   SOURCE_WAIT_MS,
+  storePluginRegistry,
 } from "../../plugin/registry.js";
 import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
 import {
@@ -308,6 +309,10 @@ export interface PluginRoutesOptions {
   indexUrl?: string | null;
   /** Where packages are on this machine (plugin/loader.ts's pluginBases): for the builtin readmes, and for every listed package's own display fields (localPluginDisplay). */
   bases?: () => readonly PluginBase[];
+  /** The data root, whose plugin store is a source; absent lists no store. */
+  root?: string;
+  /** The running build's assets, whose prefix carries the build's index; read per request. */
+  assetsDir?: () => string | null;
   /** Overrides the resolved source list entirely; tests pass registries directly. */
   registries?: readonly PluginRegistry[];
   fetchImpl?: typeof fetch;
@@ -374,7 +379,11 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
       waitMs: SOURCE_WAIT_MS,
     });
     const own = await prefixEntries(prefix(), new Set(entries.map((e) => e.name)));
-    return { entries: [...entries, ...own], failures, pending };
+    return {
+      entries: [...entries, ...own.map((entry) => ({ ...entry, sources: [], installable: false }))],
+      failures,
+      pending,
+    };
   };
 
   app.get("/", async (c) => {
@@ -445,12 +454,16 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   return app;
 }
 
-function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
-  const builtin = builtinPluginRegistry(options.bases);
+/** The catalogue's sources, in precedence order: the build, the store, the published index. */
+export function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
+  const local = [
+    builtinPluginRegistry(options.bases, options.assetsDir),
+    ...(options.root !== undefined ? [storePluginRegistry(options.root, options.bases)] : []),
+  ];
   // Undefined and null part ways here: a runtime that predates the setting publishes nothing
-  // and gets the default index, while `off` resolves to null and means builtin entries only.
+  // and gets the default index, while `off` resolves to null and means this machine only.
   const url = options.indexUrl === undefined ? NIGHTLY_INDEX_URL : options.indexUrl;
-  if (url === null) return [builtin];
+  if (url === null) return local;
   // The parked document goes through the remote rule too: it was fetched by a previous App,
   // which may not have dropped the icons.
   const seed = options.seed ?? null;
@@ -458,7 +471,7 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
     seed: seed === null ? null : { at: seed.at, entries: seed.entries.map(withoutIcon) },
   });
   options.onCache?.(cache);
-  return [builtin, cache];
+  return [...local, cache];
 }
 
 /**
@@ -496,6 +509,8 @@ export class PluginRegistryRoutes {
       // activation moves the current generation. The generation first: it is what runs.
       bases: () => [...pluginBases(this.config.root), ...shippedBases(this.hmr.assetsDir())],
       prefix: () => pluginsPrefix(this.config.root),
+      root: this.config.root,
+      assetsDir: () => this.hmr.assetsDir(),
       seed: parked ?? null,
       onCache: (cache) => {
         this.cache = cache;

@@ -323,7 +323,33 @@ export function npmCommand(): string {
 @Component()
 export class NpmPluginPackages implements PluginPackages {
   /** By name or by link (see installPluginSource). */
-  async install(root: string, source: string): Promise<InstalledPackage> {
+  async install(root: string, source: string, expected?: string): Promise<InstalledPackage> {
+    if (expected !== undefined) {
+      // Verify before touching the visible library prefix. Install those exact stored bytes,
+      // not a second registry fetch, which could resolve to different content.
+      const { fetchIntoStore, PACKAGE_DIR } = await import("./store.js");
+      const { archiveChunks, walkFiles, isExecutable } =
+        await import("../../../../scripts/plugin-entry.mjs");
+      const entry = await fetchIntoStore(root, source, { expected });
+      const prefix = await ensurePrefix(root);
+      const archives = path.join(prefix, ARCHIVES_DIR);
+      await fs.mkdir(archives, { recursive: true });
+      const filename = `${randomUUID()}.tar`;
+      const dir = path.join(entry.dir, PACKAGE_DIR);
+      const files = (await walkFiles(dir)).map((rel) => {
+        const abs = path.join(dir, ...rel.split("/"));
+        return { rel: `${PACKAGE_DIR}/${rel}`, abs, exec: isExecutable(abs) };
+      });
+      const output = await fs.open(path.join(archives, filename), "wx");
+      try {
+        for await (const chunk of archiveChunks(files)) await output.writeFile(chunk);
+      } finally {
+        await output.close();
+      }
+      await install(prefix, `./${ARCHIVES_DIR}/${filename}`);
+      await pruneArchives(prefix);
+      return { name: entry.name, version: entry.version };
+    }
     const installed = await installPluginSource(root, source);
     await this.store(root, installed.name);
     return installed;
@@ -337,13 +363,16 @@ export class NpmPluginPackages implements PluginPackages {
   }
 
   /** Library content stays in its prefix; server modules load only from an activated store entry. */
-  private async store(root: string, name: string): Promise<void> {
+  private async store(root: string, name: string, expected?: string): Promise<void> {
     const { storePackage, rebuildStoreIndex } = await import("./store.js");
     const prefix = pluginsPrefix(root);
     const lock = await fs
       .readFile(path.join(prefix, "package-lock.json"), "utf8")
       .catch(() => undefined);
-    await storePackage(root, installedPackageDir(prefix, name), prefix, "registry", { lock });
+    await storePackage(root, installedPackageDir(prefix, name), prefix, "registry", {
+      lock,
+      expected,
+    });
     await rebuildStoreIndex(root);
   }
 

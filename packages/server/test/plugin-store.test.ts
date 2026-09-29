@@ -6,14 +6,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { gunzipSync } from "node:zlib";
 import { parse as parseToml } from "smol-toml";
+import * as tar from "tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parsePluginIndex } from "../src/plugin/registry.js";
 import {
   fetchIntoStore,
   importPrefix,
-  packTar,
   PluginIntegrityMismatch,
   pluginStoreDir,
   readStore,
@@ -22,8 +21,11 @@ import {
   storeSources,
   syncPluginStore,
 } from "../src/plugin/store.js";
-// @ts-expect-error — a plain .mjs build script, no declarations.
-import { packArchive } from "../../../scripts/asset-archives.mjs";
+import {
+  archiveChunks,
+  archiveIntegrity,
+  packageIntegrity,
+} from "../../../scripts/plugin-entry.mjs";
 
 let dir: string;
 let root: string;
@@ -69,6 +71,7 @@ async function prefix(
         license: "MIT",
         repository: { type: "git", url: "git+https://github.com/acme/x.git" },
         keywords: ["linux"],
+        categories: ["sandbox"],
         dependencies: { native: "^2.0.0" },
         optionalDependencies: { "native-win32-x64": "2.0.0" },
       }),
@@ -94,21 +97,55 @@ async function exists(p: string): Promise<boolean> {
   );
 }
 
+/**
+ * A fixed file set and the integrity the index repository's archiver computes over it
+ * (Prism-Shadow/penguin-plugins `packages/plugin-index/src/archive.ts` `archiveIntegrity`, at
+ * 5c10e88d9): an index entry's integrity must be the store's key for the same package, so
+ * the two archivers have to produce one byte stream. The set covers what the format spells
+ * out: sort order, an executable, a path too long for the ustar name field (split into the
+ * prefix field), and a non-ASCII path (a pax header).
+ */
+const PARITY_FILES: Record<string, string> = {
+  "package/b.js": "b",
+  "package/a/package.json": "{}",
+  "package/bin/tool": "#!/bin/sh\n",
+  [`package/${"d".repeat(60)}/${"e".repeat(60)}.js`]: "long",
+  "package/grüße.txt": "unicode",
+};
+const PARITY_INTEGRITY = "sha256-92e4a245566237c24ce909fdc9dbb8cf8b43108ec7ab38e86311799ad4e9d2e5";
+
 describe("plugin store", () => {
-  it("packs with the hot push's archiver: the tar is the push archive's, before gzip", async () => {
+  it("hashes a package the way the index repository does: one archive, one integrity", async () => {
     const src = path.join(dir, "src");
-    await write(src, {
-      "package/b.js": "b",
-      "package/a/package.json": "{}",
-      "package/bin/tool": "#",
-    });
-    const rels = ["package/b.js", "package/a/package.json", "package/bin/tool"];
-    const archive = (await packArchive(
-      rels.map((rel) => ({ rel, abs: path.join(src, rel), exec: rel.endsWith("tool") })),
-    )) as Buffer;
-    const file = path.join(dir, "out.tar");
-    await packTar(src, rels, file);
-    expect((await fs.readFile(file)).equals(gunzipSync(archive))).toBe(true);
+    await write(src, PARITY_FILES);
+    const files = Object.keys(PARITY_FILES).map((rel) => ({
+      rel,
+      abs: path.join(src, ...rel.split("/")),
+      exec: rel.endsWith("/bin/tool"),
+    }));
+    expect(await archiveIntegrity(files)).toBe(PARITY_INTEGRITY);
+    // And the store's own path to it: `package/` of an entry, exec bits read off the files.
+    expect(await packageIntegrity(src)).toBe(PARITY_INTEGRITY);
+  });
+
+  it("the archive is a tar any reader unpacks, file for file", async () => {
+    const src = path.join(dir, "src");
+    await write(src, PARITY_FILES);
+    const files = Object.keys(PARITY_FILES).map((rel) => ({
+      rel,
+      abs: path.join(src, ...rel.split("/")),
+      exec: rel.endsWith("/bin/tool"),
+    }));
+    const chunks: Buffer[] = [];
+    for await (const chunk of archiveChunks(files)) chunks.push(chunk);
+    const out = path.join(dir, "out");
+    await fs.mkdir(out);
+    await fs.writeFile(path.join(dir, "out.tar"), Buffer.concat(chunks));
+    await tar.x({ file: path.join(dir, "out.tar"), cwd: out });
+    for (const [rel, text] of Object.entries(PARITY_FILES)) {
+      expect(await fs.readFile(path.join(out, ...rel.split("/")), "utf8"), rel).toBe(text);
+    }
+    expect((await fs.stat(path.join(out, "package", "bin", "tool"))).mode & 0o111).not.toBe(0);
   });
 
   it("stores a shipped package as one complete entry, its hoisted dependencies inside it", async () => {
@@ -143,8 +180,11 @@ describe("plugin store", () => {
       license: "MIT",
       repository: "https://github.com/acme/x.git",
       keywords: ["linux"],
+      categories: ["sandbox"],
       integrity: entry!.integrity,
     });
+    // The key is the package's content, hashed the index repository's way.
+    expect(await packageIntegrity(entry!.dir)).toBe(entry!.integrity);
     const lock = JSON.parse(await fs.readFile(path.join(entry!.dir, "package-lock.json"), "utf8"));
     expect(lock.lockfileVersion).toBe(3);
     expect(Object.keys(lock.packages)).toEqual([

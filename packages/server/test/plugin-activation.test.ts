@@ -216,8 +216,13 @@ describe("choosing an entry", () => {
     ).toBe(v1);
   });
 
-  it("prefers what the running build carries over a higher fetched version", () => {
-    expect(chooseEntry("@acme/p", [{}], stored, new Set([v12.integrity]))).toBe(v12);
+  it("takes the highest version over what the running build carries, and the build's content within one version", () => {
+    expect(chooseEntry("@acme/p", [{}], stored, new Set([v12.integrity]))).toBe(v2);
+    const fetched12 = entry("1.2.0", "0");
+    const both = [v1, fetched12, v12];
+    // Without the build's say, the lower integrity breaks the tie; the build's content wins it.
+    expect(chooseEntry("@acme/p", [{}], both, new Set())).toBe(fetched12);
+    expect(chooseEntry("@acme/p", [{}], both, new Set([v12.integrity]))).toBe(v12);
   });
 
   it("takes a pinned content and no other", () => {

@@ -17,10 +17,11 @@
  * whole new one, never a half.
  *
  * A generation is RESOLVED from the closure (every Project's table for this machine): for each
- * name, the store entries whose version satisfies what every Project asks; among those, the one
- * the running build carries (its hot push set, or the prefix the installation ships) before
- * one fetched from the registry, then the highest version. A push that brings new content under
- * an unchanged name and version therefore wins at the next activation, with nothing else to do.
+ * name, the entry a Project pinned (`integrity`), or else the store entries whose version
+ * satisfies what every Project asks; among those the highest version, and within one version
+ * the content the running build carries (its hot push set, or the prefix the installation
+ * ships) before one fetched from the registry. A push that brings new content under an
+ * unchanged name and version therefore wins at the next activation, with nothing else to do.
  *
  * Activation runs at every App boot — the first, a hot push's, and every re-assembly, which
  * the platform serializes on its one queue (hmr/platform.ts), so two admins' edits never
@@ -261,8 +262,9 @@ export function satisfies(version: string, range: string | undefined): boolean {
 
 /**
  * The store entry a name resolves to, or why none does: a pinned integrity takes that entry;
- * otherwise, among the entries every ask's version admits, what the running build carries
- * (`shipped`, by integrity) before anything else, then the highest version.
+ * otherwise, among the entries every ask's version admits, the highest version — and within
+ * one version, what the running build carries (`shipped`, by integrity) before any other
+ * content, so a push that brings new content under an unchanged version wins.
  */
 export function chooseEntry(
   name: string,
@@ -295,8 +297,8 @@ export function chooseEntry(
   }
   return [...fits].sort(
     (a, b) =>
-      Number(shipped.has(b.integrity)) - Number(shipped.has(a.integrity)) ||
       compareVersions(b.version, a.version) ||
+      Number(shipped.has(b.integrity)) - Number(shipped.has(a.integrity)) ||
       byCodeUnit(a.integrity, b.integrity),
   )[0]!;
 }
