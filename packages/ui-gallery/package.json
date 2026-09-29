@@ -19,6 +19,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-web": "workspace:*",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.0",

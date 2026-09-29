@@ -16,3 +16,5 @@
 @import "./foundations/foundations.css";
 
 @source "../../ui/src";
+/* The test helpers spell class patterns the guards look for; they are not markup. */
+@source not "../../ui/src/testing";

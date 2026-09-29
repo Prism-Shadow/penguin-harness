@@ -9,5 +9,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
+    // The guards scan every source file of the package, the web app and the gallery; on the
+    // hosted Windows and macOS runners one scan can take several seconds.
+    testTimeout: 30_000,
   },
 });
