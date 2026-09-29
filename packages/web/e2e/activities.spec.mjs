@@ -1003,9 +1003,7 @@ test("chooses a narration's voice from the picker and applies one voice to every
   expect(f.errors).toEqual([]);
 });
 
-test("uploads media into the ref's uploads and binds it from the library", async ({
-  page,
-}) => {
+test("uploads media into the ref's uploads and binds it from the library", async ({ page }) => {
   const f = await fixture(page);
   await create(page);
   await openSection(page, "Specification");
@@ -3978,7 +3976,11 @@ test("a narration shows every language's script, and opens another language from
           productCode: "words",
           refNum: 12,
           assets: {
-            "en-US": [narration("hello", "Hello", { path: "media/loom/words/words-1/uploads/hello-1234abcd.wav" })],
+            "en-US": [
+              narration("hello", "Hello", {
+                path: "media/loom/words/words-1/uploads/hello-1234abcd.wav",
+              }),
+            ],
             "es-MX": [narration("hello")],
           },
         },
@@ -4536,8 +4538,14 @@ test("browses the project's media, switches to the table, and downloads two file
   expect(bundles).toEqual([
     {
       items: [
-        { activityId: "act_letters", path: "media/loom/words/words-1/uploads/bell-5555666677778888.wav" },
-        { activityId: "act_words", path: "media/loom/words/words-1/uploads/cat-1111222233334444.png" },
+        {
+          activityId: "act_letters",
+          path: "media/loom/words/words-1/uploads/bell-5555666677778888.wav",
+        },
+        {
+          activityId: "act_words",
+          path: "media/loom/words/words-1/uploads/cat-1111222233334444.png",
+        },
       ],
     },
   ]);
@@ -4614,7 +4622,10 @@ test("picks a file uploaded to another activity", async ({ page }) => {
   await expect(binding).toHaveValue("media/loom/words/words-1/uploads/sun-9999aaaabbbbcccc.png");
   await expect(page.getByText("Stored with this activity.")).toBeVisible();
   expect(copies).toEqual([
-    { fromActivityId: "act_letters", path: "media/loom/words/words-1/uploads/sun-9999aaaabbbbcccc.png" },
+    {
+      fromActivityId: "act_letters",
+      path: "media/loom/words/words-1/uploads/sun-9999aaaabbbbcccc.png",
+    },
   ]);
   expect(f.errors).toEqual([]);
 });
