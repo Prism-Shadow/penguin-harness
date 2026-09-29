@@ -45,12 +45,17 @@ export interface DeployGit {
   run(args: string[], cwd: string, opts?: DeployGitOptions): Promise<DeployGitResult>;
 }
 
-/** The environment git runs in: never prompts, SSH in batch mode. */
+/**
+ * The environment git runs in: never prompts, SSH in batch mode. An operator's own
+ * `GIT_SSH_COMMAND` or `GIT_SSH` (a particular key, a proxy) is kept as it is: replacing it
+ * would break a server whose remotes only answer to that setup.
+ */
 export function gitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const ownSsh = !!base.GIT_SSH_COMMAND || !!base.GIT_SSH;
   return {
     ...base,
     GIT_TERMINAL_PROMPT: "0",
-    GIT_SSH_COMMAND: "ssh -o BatchMode=yes",
+    ...(ownSsh ? {} : { GIT_SSH_COMMAND: "ssh -o BatchMode=yes" }),
   };
 }
 
@@ -72,7 +77,7 @@ export const spawnGit: DeployGit = {
       try {
         child = spawn("git", args, {
           cwd,
-          env: { ...process.env, ...opts.env, ...gitEnv({}) },
+          env: gitEnv({ ...process.env, ...opts.env }),
           stdio: ["ignore", "pipe", "pipe"],
           shell: false,
           windowsHide: true,
