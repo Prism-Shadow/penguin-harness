@@ -340,6 +340,25 @@ describe("verify_module", () => {
     expect(at("add --all")).toBeGreaterThan(at("checkout -- README.md docs/setup.md"));
   });
 
+  it("checks origin's many files out in batches, within the command line's limit", async () => {
+    const dir = await moduleClone();
+    const deleted = Array.from({ length: 1000 }, (_, i) => `res/images/scene-${i}/picture.png`);
+    const git = fakeGit({
+      dirty: true,
+      localMain: false,
+      unborn: true,
+      deleted,
+      fail: "stash push",
+      failWith: "You do not have the initial commit yet",
+    });
+    const { ctx } = context({ dir, git: git.git });
+    await run("verify_module", ctx);
+    const checkouts = git.calls.filter((call) => call[0] === "checkout" && call[1] === "--");
+    expect(checkouts.length).toBeGreaterThan(1);
+    expect(checkouts.flatMap((call) => call.slice(2))).toEqual(deleted);
+    for (const call of checkouts) expect(call.join(" ").length).toBeLessThan(10_000);
+  });
+
   it("stops on a stash that fails in a module that has commits", async () => {
     const dir = await moduleClone();
     const git = fakeGit({ dirty: true, fail: "stash push", failWith: "needs merge" });

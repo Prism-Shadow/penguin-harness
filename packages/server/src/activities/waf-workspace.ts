@@ -441,7 +441,16 @@ export class WafWorkspaceService implements WafWorkspace {
     // A branch the clone already has keeps its commits, fast-forwarded to origin's; one it
     // has not is made from origin's. A local branch that has diverged fails, naming it.
     await this.gitOk(status.path, ["switch", branch]);
-    await this.gitOk(status.path, ["merge", "--ff-only", `origin/${branch}`]);
+    try {
+      await this.gitOk(status.path, ["merge", "--ff-only", `origin/${branch}`]);
+    } catch (error) {
+      // Left on the configured branch, the clone would read as ready although it is not
+      // origin's: it goes back to where it was, so it reads as on another branch.
+      await this.gitOk(status.path, ["checkout", "-"]);
+      throw new Error(
+        `${where}'s ${branch} has commits origin's does not, and origin's has commits it does not. Reconcile them, then prepare again. (${(error as Error).message})`,
+      );
+    }
     return true;
   }
 

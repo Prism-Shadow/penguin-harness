@@ -23,7 +23,7 @@ import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.j
 const ok = (stdout = ""): DeployGitResult => ({ code: 0, stdout, stderr: "" });
 
 /** A git that keeps each repository as a `.git` folder holding its origin and sparse paths. */
-function fakeGit(existing: ReadonlySet<string> = new Set()) {
+function fakeGit(existing: ReadonlySet<string> = new Set(), diverged = new Set<string>()) {
   const calls: Array<{ args: string[]; cwd: string; env?: Record<string, string> }> = [];
   const read = (dir: string, name: string) =>
     fs.readFile(path.join(dir, ".git", name), "utf8").catch(() => null);
@@ -61,11 +61,17 @@ function fakeGit(existing: ReadonlySet<string> = new Set()) {
     if (joined === "branch --show-current") return ok(`${(await read(cwd, "branch")) ?? "main"}\n`);
     if (args[0] === "remote" && args[1] === "set-branches") return ok();
     if (args[0] === "fetch") return ok();
-    if (args[0] === "switch") {
-      await fs.writeFile(path.join(cwd, ".git", "branch"), args[1]!);
+    if (args[0] === "switch" || joined === "checkout -") {
+      const current = (await read(cwd, "branch")) ?? "main";
+      const next = args[0] === "switch" ? args[1]! : ((await read(cwd, "previous")) ?? "main");
+      await fs.writeFile(path.join(cwd, ".git", "previous"), current);
+      await fs.writeFile(path.join(cwd, ".git", "branch"), next);
       return ok();
     }
-    if (args[0] === "merge" && args[1] === "--ff-only") return ok();
+    if (args[0] === "merge" && args[1] === "--ff-only")
+      return diverged.has(args[2]!.replace(/^origin\//, ""))
+        ? { code: 128, stdout: "", stderr: "fatal: Not possible to fast-forward, aborting." }
+        : ok();
     if (joined === "status --porcelain") return ok("");
     if (joined === "lfs install --local") return ok();
     if (args[0] === "lfs" && args[1] === "pull") return ok();
@@ -88,9 +94,12 @@ describe("WAF workspace", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  async function setup(existing?: ReadonlySet<string>, options: { autoPrepare?: boolean } = {}) {
+  async function setup(
+    existing?: ReadonlySet<string>,
+    options: { autoPrepare?: boolean; diverged?: Set<string> } = {},
+  ) {
     vi.stubEnv("WAF_ROOT_DIR", "");
-    const git = fakeGit(existing);
+    const git = fakeGit(existing, options.diverged);
     const installs: string[] = [];
     const t = await createTestApp({
       wafCheckout: false,
@@ -259,6 +268,27 @@ describe("WAF workspace", () => {
       .map((call) => call.args.join(" "));
     expect(switching).toEqual(["switch v3", "merge --ff-only origin/v3"]);
     expect(s.installs.length).toBe(installs + 1);
+  });
+
+  it("goes back to the clone's branch, not ready, when the new one has diverged from origin", async () => {
+    const s = await setup(undefined, { diverged: new Set(["v3"]) });
+    expect((await prepared(s)).ready).toBe(true);
+    const { settings } = (await (
+      await s.admin.get("/api/admin/waf-workspace/settings")
+    ).json()) as {
+      settings: { repos: Record<string, { remote: string; branch: string }> };
+    };
+    const framework = { ...settings.repos.framework!, branch: "v3" };
+    await s.admin.put("/api/admin/waf-workspace/settings", {
+      repos: { ...settings.repos, framework },
+    });
+    const after = await prepared(s);
+    expect(after.ready).toBe(false);
+    expect(after.lastError).toMatch(/framework's v3/);
+    expect(after.repos.find((repo) => repo.id === "framework")).toMatchObject({
+      branch: "v2",
+      branchMatches: false,
+    });
   });
 
   it("adds a product's media folder once, smudging its LFS files without a pull", async () => {

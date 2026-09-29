@@ -311,28 +311,41 @@ async function git(
   return result;
 }
 
-/** Characters of paths one `git add` may name, well under Windows' 32,767-character command line. */
-const ADD_BATCH_CHARS = 8_000;
+/** Characters of paths one git command may name, well under Windows' 32,767-character command line. */
+const PATHS_BATCH_CHARS = 8_000;
 
-/** Stages the paths in batches, so a product with hundreds of files never overflows the command line. */
-async function gitAdd(
+/**
+ * Runs `command -- <paths>` in batches, so hundreds of files never overflow the command line:
+ * staging a product's files, or checking out a new module's missing ones.
+ */
+async function gitPaths(
   ctx: DeployStageContext,
-  flags: readonly string[],
+  command: readonly string[],
   paths: readonly string[],
   cwd: string,
 ) {
   let batch: string[] = [];
   let size = 0;
   for (const path of paths) {
-    if (batch.length && size + path.length + 1 > ADD_BATCH_CHARS) {
-      await git(ctx, ["add", ...flags, "--", ...batch], { cwd });
+    if (batch.length && size + path.length + 1 > PATHS_BATCH_CHARS) {
+      await git(ctx, [...command, "--", ...batch], { cwd });
       batch = [];
       size = 0;
     }
     batch.push(path);
     size += path.length + 1;
   }
-  if (batch.length) await git(ctx, ["add", ...flags, "--", ...batch], { cwd });
+  if (batch.length) await git(ctx, [...command, "--", ...batch], { cwd });
+}
+
+/** Stages the paths in batches (see gitPaths). */
+function gitAdd(
+  ctx: DeployStageContext,
+  flags: readonly string[],
+  paths: readonly string[],
+  cwd: string,
+) {
+  return gitPaths(ctx, ["add", ...flags], paths, cwd);
 }
 
 function tailOf(text: string): string {
@@ -498,7 +511,7 @@ async function onMainCarryingWork(ctx: DeployStageContext, cwd: string): Promise
       // away: they are checked out, and only the module's own work is a change.
       const deleted = await git(ctx, ["ls-files", "--deleted", "-z"], { quiet: true, cwd });
       const missing = deleted.stdout.split("\0").filter(Boolean);
-      if (missing.length) await git(ctx, ["checkout", "--", ...missing], { cwd });
+      await gitPaths(ctx, ["checkout"], missing, cwd);
     }
     return;
   }
