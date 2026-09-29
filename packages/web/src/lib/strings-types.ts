@@ -1922,6 +1922,9 @@ export type Strings = {
       moduleRemoteHint: string;
       existing: string;
       externalRoot: string;
+      externalRootPick: string;
+      externalRootMenuHint: string;
+      externalRootClear: string;
       externalRootHint: string;
       invalid: string;
     };

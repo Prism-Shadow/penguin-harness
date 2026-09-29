@@ -2315,6 +2315,9 @@ export const en: Strings = {
         "Where a product's module repository is. {module} is replaced by its folder, for example waf-module-r2pt01.",
       existing: "Existing checkout",
       externalRoot: "Checkout folder",
+      externalRootPick: "None: Penguin manages its own",
+      externalRootMenuHint: "Pick the folder that holds framework, modules and media.",
+      externalRootClear: "Let Penguin manage its own",
       externalRootHint:
         "Leave empty to let Penguin manage its own. The folder must hold framework, modules and media. WAF_ROOT_DIR on the server takes precedence.",
       invalid: "This value is not valid.",

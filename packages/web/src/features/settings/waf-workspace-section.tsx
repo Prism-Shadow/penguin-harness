@@ -13,8 +13,11 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
+import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
+import { useProject } from "../../state/project";
+import { WorkspaceSelect } from "../chat/workspace-select";
 import { SectionShell } from "./section-shell";
 import {
   WAF_REPO_ORDER,
@@ -28,6 +31,8 @@ import {
 
 export function WafWorkspaceSection() {
   const words = S.settings.wafWorkspace;
+  // Browsing the server's folders is authorised through a project; any open one will do.
+  const projectId = useProject().currentProject?.projectId ?? null;
   const [status, setStatus] = useState<WafWorkspaceStatus | null>(null);
   const [settings, setSettings] = useState<WafWorkspaceSettings | null>(null);
   const [form, setForm] = useState<WafWorkspaceForm>({});
@@ -198,7 +203,28 @@ export function WafWorkspaceSection() {
       </fieldset>
       <fieldset className="space-y-3">
         <legend className="mb-2 text-sm font-semibold">{words.existing}</legend>
-        {field("externalRoot", words.externalRoot, words.externalRootHint)}
+        {projectId === null ? (
+          field("externalRoot", words.externalRoot, words.externalRootHint)
+        ) : (
+          <div>
+            <FieldLabel>{words.externalRoot}</FieldLabel>
+            <WorkspaceSelect
+              projectId={projectId}
+              workspace={form.externalRoot ?? ""}
+              onChange={(path) => setForm((current) => ({ ...current, externalRoot: path }))}
+              variant="form"
+              fieldLabel={words.externalRoot}
+              emptyLabel={words.externalRootPick}
+              menuHint={words.externalRootMenuHint}
+              clearLabel={words.externalRootClear}
+            />
+            {fieldError === "externalRoot" ? (
+              <FieldError>{words.invalid}</FieldError>
+            ) : (
+              <FieldHint>{words.externalRootHint}</FieldHint>
+            )}
+          </div>
+        )}
       </fieldset>
     </SectionShell>
   );
