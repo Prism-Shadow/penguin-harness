@@ -172,17 +172,53 @@ describe("opening a roadmap", () => {
     expect(w.gateway.opened.map((s) => s.agentId)).toEqual(["acme_dev", "acme_web"]);
   });
 
-  it("is a person's act: an employee is refused, as is a room without the employees, or no room", async () => {
+  it("is opened by an employee a person asked to: its own room, the employees named in it, the opener recorded", async () => {
+    const { roadmap } = await service.create(
+      P,
+      O,
+      { name: "Queue migration", employees: ["acme_dev", "acme_web"], brief: "Move the queue" },
+      asAgent("acme_dev"),
+    );
+    const n = roadmap.number;
+    expect(roadmap).toMatchObject({
+      status: "discussing",
+      createdBy: "agent:acme_dev",
+      channelId: `roadmap_${n}`,
+      moderator: "acme_dev",
+    });
+    // The room is opened in the employee's name, with the employees it named — no one else.
+    expect(w.gateway.rooms).toEqual([
+      {
+        projectId: P,
+        orgId: O,
+        channelId: `roadmap_${n}`,
+        name: "Queue migration",
+        purpose: `Roadmap #${n} — Move the queue`,
+        by: "agent:acme_dev",
+        agentIds: ["acme_dev", "acme_web"],
+      },
+    ]);
+    expect(w.gateway.opened.map((s) => s.agentId)).toEqual(["acme_dev", "acme_web"]);
+    expect(w.gateway.desks.map((d) => d.text)).toEqual([
+      expect.stringContaining("agent:acme_dev opened this roadmap and put you in its room"),
+      expect.stringContaining("agent:acme_dev opened this roadmap and put you in its room"),
+    ]);
+    // No person opened it, so no room session is told to wait for one.
+    for (const s of w.gateway.opened) expect(s.body).not.toContain("(a person) opened");
+    // Over an existing channel, an employee is held to the same room check a person is.
     expect(
       await refusal(
         service.create(
           P,
           O,
-          { name: "x", channelId: "room_a", employees: ["acme_dev"] },
+          { name: "x", channelId: "room_a", employees: ["acme_qa"] },
           asAgent("acme_dev"),
         ),
       ),
-    ).toEqual({ status: 403, code: "people_only" });
+    ).toEqual({ status: 400, code: "not_in_room" });
+  });
+
+  it("refuses a room without the employees, or no room", async () => {
     expect(
       await refusal(
         service.create(P, O, { name: "x", channelId: "room_a", employees: ["acme_qa"] }, BOSS),

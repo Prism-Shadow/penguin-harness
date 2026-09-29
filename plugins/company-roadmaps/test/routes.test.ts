@@ -62,13 +62,14 @@ describe("the routes", () => {
     expect((await call("POST", BASE, open)).status).toBe(404);
   });
 
-  it("open a roadmap for a person (201), and refuse an employee speaking from its session (403)", async () => {
+  it("open a roadmap for a person (201), and for an employee speaking from its session (201)", async () => {
     const made = await call("POST", BASE, open);
     expect(made.status).toBe(201);
     expect((made.json.roadmap as { number: number }).number).toBe(1);
     const claim = { sessionId: "desk-acme_dev", agentId: "acme_dev" };
-    const refused = await call("POST", BASE, { ...open, ...claim }, "token");
-    expect([refused.status, code(refused)]).toEqual([403, "people_only"]);
+    const byEmployee = await call("POST", BASE, { ...open, ...claim }, "token");
+    expect(byEmployee.status).toBe(201);
+    expect(byEmployee.json.roadmap).toMatchObject({ number: 2, createdBy: "agent:acme_dev" });
   });
 
   it("drop a Session claim that only a cookie backs: the write is the person's", async () => {

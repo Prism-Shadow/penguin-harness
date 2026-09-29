@@ -3,7 +3,7 @@
  * `/api/projects/:projectId/organizations/:orgId/roadmaps` behind its cookie gate.
  *
  *   GET    /[?channel=&status=]      the roadmaps (a room's, for the channel page's side panel)
- *   POST   /                         open one (a person): { name, employees, channelId?, brief?, parent? } — without
+ *   POST   /                         open one (a person or an employee): { name, employees, channelId?, brief?, parent? } — without
  *                                    a channelId the roadmap opens its own unlisted room
  *   GET    /:number                  one roadmap: record, body, items, delegations, room sessions, events
  *   PATCH  /:number                  { name } rename (a person or the moderator)
