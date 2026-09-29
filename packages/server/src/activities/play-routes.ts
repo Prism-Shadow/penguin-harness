@@ -85,6 +85,7 @@ export class ActivityPlayRoutes {
       range: c.req.header("range") ?? null,
       ifRange: c.req.header("if-range") ?? null,
       ifNoneMatch: c.req.header("if-none-match") ?? null,
+      version: c.req.query("v") ?? null,
     });
 
     app.get("/:token/play", async (c) => {

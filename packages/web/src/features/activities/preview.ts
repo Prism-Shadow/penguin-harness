@@ -4,13 +4,14 @@ export type ModuleViewport = { width: number; height: number };
 
 /**
  * The module's declared viewport from spec.runtime.resolution ("640x480");
- * anything unreadable falls back to Loom's smallest sandbox group.
+ * anything unreadable falls back to 640x480, the resolution the sandbox payload
+ * gives a module that declares none, so the frame and the activity agree.
  */
 export function parseResolution(value: unknown): ModuleViewport {
   const match = typeof value === "string" && /^(\d{2,5})x(\d{2,5})$/i.exec(value.trim());
   return match
     ? { width: Number(match[1]), height: Number(match[2]) }
-    : { width: 1024, height: 768 };
+    : { width: 640, height: 480 };
 }
 
 /**

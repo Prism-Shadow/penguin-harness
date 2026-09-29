@@ -45,12 +45,19 @@ function text(value: unknown): string {
  * Empty for anything not under the media root: a path pointing outside it is not a media
  * asset, and serving it from the media route would be a way out of the media root.
  */
-export function mediaUrl(asset: ManifestAsset, versionToken = ""): string {
+export function mediaUrl(asset: ManifestAsset, versionToken: VersionToken = ""): string {
   const relative = text(asset.path).replace(/\\/g, "/").replace(/^\/+/, "");
   if (!relative.startsWith("media/")) return "";
   const url = `${MEDIA_TOKEN}/${relative.slice("media/".length)}`;
-  return versionToken ? `${url}?v=${versionToken}` : url;
+  const version = typeof versionToken === "function" ? versionToken(asset) : versionToken;
+  return version ? `${url}?v=${version}` : url;
 }
+
+/**
+ * A URL's `?v=`: one token for every asset, or one per asset — the file's own, so the
+ * media route can tell a URL naming the bytes on disk from one that does not.
+ */
+export type VersionToken = string | ((asset: ManifestAsset) => string);
 
 /**
  * Whether this asset belongs in the module's declaration at all.
@@ -69,7 +76,7 @@ export function declarable(asset: ManifestAsset): boolean {
 export function declarationAsset(
   asset: ManifestAsset,
   existing: DeclarationAsset | undefined,
-  versionToken = "",
+  versionToken: VersionToken = "",
 ): DeclarationAsset | null {
   if (!declarable(asset)) return null;
   return {
@@ -111,7 +118,7 @@ export function overlayRefAssets(
   declaration: Record<string, unknown>,
   assets: readonly ManifestAsset[],
   aliases: ReadonlyMap<string, string>,
-  versionToken = "",
+  versionToken: VersionToken = "",
 ): Record<string, unknown> {
   const existing =
     declaration.assets &&
@@ -140,7 +147,7 @@ export function overlayRefAssets(
  */
 export function mediaUrlVersions(
   assets: readonly ManifestAsset[],
-  versionToken: string,
+  versionToken: VersionToken,
 ): Map<string, string> {
   const versions = new Map<string, string>();
   for (const asset of assets) {

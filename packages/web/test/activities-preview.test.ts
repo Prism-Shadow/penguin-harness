@@ -12,9 +12,9 @@ describe("activity preview helpers", () => {
   it("parses the declared module viewport with a sandbox fallback", () => {
     expect(parseResolution("640x480")).toEqual({ width: 640, height: 480 });
     expect(parseResolution(" 1280X720 ")).toEqual({ width: 1280, height: 720 });
-    expect(parseResolution(undefined)).toEqual({ width: 1024, height: 768 });
-    expect(parseResolution("wide")).toEqual({ width: 1024, height: 768 });
-    expect(parseResolution("64x")).toEqual({ width: 1024, height: 768 });
+    expect(parseResolution(undefined)).toEqual({ width: 640, height: 480 });
+    expect(parseResolution("wide")).toEqual({ width: 640, height: 480 });
+    expect(parseResolution("64x")).toEqual({ width: 640, height: 480 });
   });
 
   it("fits the viewport into the box without ever upscaling", () => {

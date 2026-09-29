@@ -57,6 +57,22 @@ export function mediaEtag(facts: MediaFileFacts): string {
   return `"${facts.size.toString(16)}-${Math.floor(facts.mtimeMs).toString(16)}"`;
 }
 
+/**
+ * The `?v=` a payload puts on a media URL: the file's own size and modification time.
+ *
+ * Per file rather than per draft, like Loom's dev-sandbox: a file can change without the
+ * draft changing (a checkout pull, an LFS fetch replacing a pointer), and a URL that stays
+ * the same across such a change is exactly what a year-long cache must never see.
+ */
+export function mediaVersion(facts: MediaFileFacts): string {
+  return `${Math.floor(facts.mtimeMs).toString(36)}-${facts.size.toString(36)}`;
+}
+
+/** How long a response whose `?v=` names the bytes it carries may be kept: for good. */
+const IMMUTABLE = "private, max-age=31536000, immutable";
+/** Anything else is kept but asked about each time; the ETag turns the ask into a 304. */
+const REVALIDATE = "private, no-cache";
+
 export interface MediaResponsePlan {
   status: 200 | 206 | 304 | 416;
   headers: Record<string, string>;
@@ -74,16 +90,24 @@ export interface MediaResponsePlan {
 export function planMediaResponse(
   pathname: string,
   facts: MediaFileFacts,
-  request: { range?: string | null; ifRange?: string | null; ifNoneMatch?: string | null },
+  request: {
+    range?: string | null;
+    ifRange?: string | null;
+    ifNoneMatch?: string | null;
+    /** The URL's `?v=`, when it had one. */
+    version?: string | null;
+  },
 ): MediaResponsePlan {
   const etag = mediaEtag(facts);
   const base: Record<string, string> = {
     ETag: etag,
     "Accept-Ranges": "bytes",
     "Content-Type": mediaContentType(pathname),
-    // A preview's media is a draft's working file: it changes under the same URL, so it
-    // must never be cached beyond the single response validated here.
-    "Cache-Control": "private, no-store",
+    // A preview's media is a draft's working file and changes under the same path. Only a
+    // URL whose version names THIS file's bytes may be cached for good; a stale or missing
+    // version is revalidated, so a replaced file shows on the next request.
+    "Cache-Control":
+      request.version && request.version === mediaVersion(facts) ? IMMUTABLE : REVALIDATE,
     "X-Content-Type-Options": "nosniff",
   };
 

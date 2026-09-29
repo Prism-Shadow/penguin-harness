@@ -39,13 +39,14 @@ import { PLAYER_BUILD_SCRIPT, PLAYER_SOURCE, playerPage, playerStamp } from "./s
 import {
   aliasesByRefKey,
   applyAliasesToLanguageGroups,
+  mediaUrl,
   mediaUrlVersions,
   overlayRefAssets,
   resolveMediaToken,
   versionMediaUrls,
   type ManifestAsset,
 } from "./sandbox-ref-assets.js";
-import { mediaContentType, planMediaResponse } from "./media-origin.js";
+import { mediaContentType, mediaVersion, planMediaResponse } from "./media-origin.js";
 import { moduleStale, previewMediaPath, previewState } from "./sandbox-model.js";
 import {
   sandboxMediaRoot,
@@ -134,6 +135,20 @@ const MAX_ASSESSMENT_SESSIONS = 500;
  */
 export const PLAY_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 
+/** How finely a play link's expiry is rounded up; see `playLinkExpiry`. */
+const PLAY_TOKEN_STEP_MS = 60 * 60 * 1000;
+
+/**
+ * When a link signed now stops working: at least the full lifetime, rounded up to the hour.
+ *
+ * Rounded so every link to the same activity signed within the hour is the SAME link. The
+ * token is part of every URL the player fetches, and Reload signs a new one; without this,
+ * each reload would start from an empty browser cache however long its media may be kept.
+ */
+export function playLinkExpiry(nowMs: number): number {
+  return Math.ceil((nowMs + PLAY_TOKEN_TTL_MS) / PLAY_TOKEN_STEP_MS) * PLAY_TOKEN_STEP_MS;
+}
+
 /** What a play token grants: one activity's preview, on one host, until it expires. */
 export interface PlayTarget {
   projectId: string;
@@ -176,7 +191,13 @@ export interface PlayerPageResult {
   html: string;
 }
 
-type RangeRequest = { range?: string | null; ifRange?: string | null; ifNoneMatch?: string | null };
+type RangeRequest = {
+  range?: string | null;
+  ifRange?: string | null;
+  ifNoneMatch?: string | null;
+  /** The URL's `?v=`; a media URL whose version names the file is cached for good. */
+  version?: string | null;
+};
 
 /** The sandbox as its callers see it. */
 export abstract class ActivitySandbox extends Interface<{
@@ -638,9 +659,10 @@ export class ActivitySandboxService implements ActivitySandbox {
     // The ref's own media, or the shared module's if this ref has planned none yet.
     const assets = manifestAssets(activity.draft.mediaPlan?.manifest);
     const aliases = aliasesByRefKey(assets);
-    // The draft revision is the version token: it changes exactly when the media plan does,
-    // which is the only time a cached URL would be wrong.
-    const versionToken = activity.draft.contentRevision.slice(0, 16);
+    // Each file's own size and time is its version: a file can change without the draft
+    // changing (a checkout pull, an LFS fetch), and the media route caches a URL whose
+    // version names the bytes on disk for good.
+    const versionToken = await this.mediaVersions(projectId, activity, assets);
     const overlaid = overlayRefAssets(
       declaration as unknown as Record<string, unknown>,
       assets,
@@ -780,6 +802,32 @@ export class ActivitySandboxService implements ActivitySandbox {
     const relative = previewMediaPath(rawPath);
     if (!relative) throw new HttpError(400, "media_path_invalid", "That is not a media path.");
     const activity = await this.activities.getActivity(projectId, activityId);
+    for (const file of await this.mediaCandidates(projectId, activity, relative)) {
+      const served = await this.serveFile(file, relative, request);
+      if (served) return served;
+    }
+    throw new HttpError(404, "media_not_found", `No media file at ${relative}.`);
+  }
+
+  /**
+   * Where a media path may live, in the order it is looked for.
+   *
+   * Shared by the media route and the payload's `?v=`, so the version a URL carries is
+   * always the one of the file that URL will actually be answered with.
+   */
+  private async mediaCandidates(
+    projectId: string,
+    activity: ActivityRecord & { draft: ActivityDraft },
+    relative: string,
+  ): Promise<string[]> {
+    const candidates: string[] = [];
+    // A recorded scene video is kept beside the draft's media, not in it (see video-render.ts);
+    // its bound path names where the player asks for it.
+    const recording = RECORDING_PATH.test(relative)
+      ? await this.activities.boundVideoFile(projectId, activity.id, `media/${relative}`)
+      : null;
+    if (recording) candidates.push(recording);
+
     const roots = [
       sandboxMediaRoot({
         draftWorkspace: this.activities.draftWorkspace(
@@ -794,24 +842,45 @@ export class ActivitySandboxService implements ActivitySandbox {
     // draft does not hold is the checkout's -- which is where every Loom asset lives.
     const wafRoot = await this.locateWafRoot();
     if (wafRoot) roots.push(path.join(wafRoot, "media"));
-
-    // A recorded scene video is kept beside the draft's media, not in it (see video-render.ts);
-    // its bound path names where the player asks for it.
-    const recording = RECORDING_PATH.test(relative)
-      ? await this.activities.boundVideoFile(projectId, activityId, `media/${relative}`)
-      : null;
-    if (recording) {
-      const served = await this.serveFile(recording, relative, request);
-      if (served) return served;
-    }
-
     for (const root of roots) {
       const file = withinRoot(root, relative);
       if (!file) throw new HttpError(400, "media_path_invalid", "That is not a media path.");
-      const served = await this.serveFile(file, relative, request);
-      if (served) return served;
+      candidates.push(file);
     }
-    throw new HttpError(404, "media_not_found", `No media file at ${relative}.`);
+    return candidates;
+  }
+
+  /**
+   * Each manifest asset's `?v=`: the size and time of the file the media route would serve.
+   *
+   * An asset with no file yet gets no version, so its URL is revalidated rather than cached
+   * for good -- the file it will be once it arrives is not the one a version could name.
+   */
+  private async mediaVersions(
+    projectId: string,
+    activity: ActivityRecord & { draft: ActivityDraft },
+    assets: readonly ManifestAsset[],
+  ): Promise<(asset: ManifestAsset) => string> {
+    const versions = new Map<string, string>();
+    for (const asset of assets) {
+      const plain = mediaUrl(asset);
+      if (!plain || versions.has(plain)) continue;
+      const relative = previewMediaPath(plain.slice(plain.indexOf("/") + 1));
+      let version = "";
+      if (relative) {
+        for (const file of await this.mediaCandidates(projectId, activity, relative).catch(
+          () => [],
+        )) {
+          const stat = await fs.stat(file).catch(() => null);
+          if (stat?.isFile()) {
+            version = mediaVersion({ size: stat.size, mtimeMs: stat.mtimeMs });
+            break;
+          }
+        }
+      }
+      versions.set(plain, version);
+    }
+    return (asset) => versions.get(mediaUrl(asset)) ?? "";
   }
 
   /** A file with range handling, or null when there is no file there. */
@@ -860,7 +929,7 @@ export class ActivitySandboxService implements ActivitySandbox {
       activityId: activity.id,
       host: host.toLowerCase(),
       shared,
-      expiresAt: Date.now() + PLAY_TOKEN_TTL_MS,
+      expiresAt: playLinkExpiry(Date.now()),
       ...(parentOrigin ? { parentOrigin } : {}),
     };
     const body = Buffer.from(JSON.stringify(target), "utf8").toString("base64url");
