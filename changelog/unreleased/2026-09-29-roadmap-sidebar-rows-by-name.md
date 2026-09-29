@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [Myriad-Dreamin/penguin-harness#20](https://github.com/Myriad-Dreamin/penguin-harness/pull/20)
 
 [中文版](2026-09-29-roadmap-sidebar-rows-by-name.zh.md)
 
