@@ -8,7 +8,7 @@
 
 [中文版](2026-09-29-plugin-activation.zh.md)
 
-A process now loads server plugins from one place: the generation `<data root>/plugins/current` points at. The loader no longer looks in the data root's npm prefix, the hot push's assets, the prefix beside the installation or the program's own dependencies; those three build sources only feed the plugin store. An absolute path (a dev checkout's plugin) is still imported as written.
+A process now loads server plugins from one place: the generation `<data root>/plugins/current` points at. The loader no longer looks in the data root's npm prefix, the hot push's assets, the prefix beside the installation or the program's own dependencies; the hot push's assets and the prefix beside the installation now only feed the plugin store. An absolute path (a dev checkout's plugin) is still imported as written.
 
 ## Generations
 
