@@ -49,6 +49,25 @@ were reached.
 `node scripts/check-publishable.mjs --registry` lists the names that need it; the `npm packaging`
 CI job runs it on every pull request and warns. **Read that warning before tagging.**
 
+### First publish of a new name
+
+Done by a maintainer whose npm account may create packages in the name's scope, on their own
+machine (Node >= 24, pnpm), with a one-off granular token revoked afterwards. CI carries no such
+credential, by design.
+
+1. A clean checkout of `main` at the commit that brings the name: `pnpm install --frozen-lockfile`,
+   then `pnpm -r build` (the bwrap build fetches its binaries from conda-forge).
+2. Copy the root `LICENSE` into the package's directory, as the release does.
+3. `pnpm --filter <name> publish --access public --no-git-checks` — never `npm publish`, which
+   leaves `workspace:*` unrewritten. It publishes the version the manifest carries; the next tag
+   publishes the release's version over it.
+4. On npmjs.com, the package's settings → Trusted Publisher: GitHub Actions,
+   `Prism-Shadow/penguin-harness`, workflow `release.yml`, environment `npm`.
+5. Before the tag: `node scripts/check-publishable.mjs --registry --strict` passes.
+
+A name that is not ready to be public is marked `"private": true` instead. The release skips it,
+and `check-publishable.mjs` fails if a published package depends on it.
+
 ## Order
 
 1. Branch `release/<version>` off `main`, in a worktree.
@@ -76,7 +95,8 @@ CI job runs it on every pull request and warns. **Read that warning before taggi
 previous release's number without thinking about it. For the rest, decide and record the decision
 in the PR body:
 
-- `plugins/sandbox-*` track their own line deliberately — leave them.
+- `plugins/sandbox-*` track their own line deliberately — leave them. The release stamps the
+  tag's version on them when it publishes, as on every plugin.
 - A package created mid-cycle at whatever number its author typed is the other case. `packages/hmr`
   arrived from #656 at 0.2.9 and was pulled into lockstep at 0.2.12: it is `private: true` and never
   published, so nothing ships wrong either way, and a package inside `packages/*` sitting three

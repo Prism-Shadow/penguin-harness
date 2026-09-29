@@ -88,6 +88,12 @@ jobs:
         run: node scripts/check-publishable.mjs --registry
       - name: Build the whole workspace, as the release does
         run: pnpm -r build
+      # pnpm pack keeps only `files`, drops symlinks and marks nothing executable beyond `bin` and
+      # `publishConfig.executableFiles`, so a plugin's directory says little about its package.
+      # Pack each published code plugin, install the tarballs with npm and load them: the vendored
+      # bwrap must run with its own libcap, and sandbox-dsh's native modules must load.
+      - name: Pack, install and load the published plugins
+        run: node scripts/check-plugin-packs.mjs
       # The release stages two things into the package directories before it publishes: the root
       # LICENSE, and the built web assets as the server's web-dist/. Neither exists in the repo, and
       # npm silently skips a `files` entry that is not on disk -- so packing without them proves the
