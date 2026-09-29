@@ -9,6 +9,10 @@
  *
  * Reverting this to trailing-only is the classic regression here: it adds a full window
  * (~5ms) to every single keystroke and the terminal immediately feels mushy.
+ *
+ * The window may be a function, which is how the stream widens it on a slow link: the
+ * merge is worth more, and costs proportionally less, the longer the round trip already is
+ * (link-quality.ts). It is read per burst, never cached.
  */
 
 export const DEFAULT_COALESCE_WINDOW_MS = 5;
@@ -20,9 +24,13 @@ export class TerminalOutputCoalescer {
 
   constructor(
     private readonly flushFn: (data: string) => void,
-    private readonly windowMs: number = DEFAULT_COALESCE_WINDOW_MS,
+    private readonly window: number | (() => number) = DEFAULT_COALESCE_WINDOW_MS,
     private readonly now: () => number = () => Date.now(),
   ) {}
+
+  private windowMs(): number {
+    return typeof this.window === "number" ? this.window : this.window();
+  }
 
   push(data: string): void {
     if (data.length === 0) return;
@@ -30,15 +38,16 @@ export class TerminalOutputCoalescer {
 
     if (this.timer !== null) return; // a trailing flush is already scheduled
 
+    const windowMs = this.windowMs();
     const elapsed = this.now() - this.lastFlushAt;
-    if (elapsed >= this.windowMs) {
+    if (elapsed >= windowMs) {
       this.flush(); // leading edge: straight through, no added latency
       return;
     }
     this.timer = setTimeout(() => {
       this.timer = null;
       this.flush();
-    }, this.windowMs - elapsed);
+    }, windowMs - elapsed);
   }
 
   /**

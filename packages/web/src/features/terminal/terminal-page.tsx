@@ -209,7 +209,7 @@ export function TerminalPage() {
           className={`flex shrink-0 items-center gap-1 ${
             status === "ready"
               ? chrome.success
-              : status === "connecting"
+              : status === "connecting" || status === "reconnecting"
                 ? chrome.attention
                 : chrome.danger
           }`}
