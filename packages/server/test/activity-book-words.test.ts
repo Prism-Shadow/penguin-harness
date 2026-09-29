@@ -19,7 +19,6 @@ import {
   type ActivityDetail,
   type ActivityDraft,
 } from "../src/activities/domain.js";
-import { carriedBindings } from "../src/activities/import-mapping.js";
 import { speechTargets } from "../src/activities/pipeline-run.js";
 import {
   planMedia,
@@ -306,40 +305,5 @@ describe("word pronunciations and narration", () => {
       address,
     );
     expect(speechTargets(manifest)).toEqual([{ language: "en-US", assetKey: "narration-1" }]);
-  });
-});
-
-describe("importing Loom's word pronunciations", () => {
-  it("carries a word's sounds under the key a refresh would give it, and names sounds elsewhere as dropped", () => {
-    const { media, lost } = carriedBindings(
-      {
-        assets: [
-          {
-            key: "book-word-cat-loomkey",
-            type: "audio",
-            role: "bookWord",
-            word: "Cat",
-            normalizedWord: "cat",
-            phonemes: ["k", "æ", "t"],
-            customized: true,
-            sourceKey: "narration-1",
-            usages: [usage("scene-2-story", "narration-1")],
-          },
-          { key: "narration-1", type: "audio", script: "The cat.", phonemes: ["x"] },
-        ],
-      },
-      ["en-US"],
-    );
-    expect(media["en-US"]![0]).toEqual({
-      key: "book-word-cat-77af778b51",
-      bookWord: {
-        word: "Cat",
-        normalizedWord: "cat",
-        phonemes: ["k", "æ", "t"],
-        customized: true,
-        usages: [usage("scene-2-story", "narration-1")],
-      },
-    });
-    expect(lost).toEqual({ phonemes: 1 });
   });
 });

@@ -145,21 +145,6 @@ export class ActivityRoutes {
         ...(summaries ? { summaries } : {}),
       });
     });
-    app.get("/import-sources", async (c) => {
-      this.access.requireProjectOwner(c.var.user.userId, requireValidId(c, "projectId"));
-      return c.json(await this.activities.availableImports());
-    });
-    app.post("/import", async (c) => {
-      const body = await readJson(c);
-      return c.json(
-        await this.activities.importFromLoom(
-          requireValidId(c, "projectId"),
-          requireString(body, "moduleFolder"),
-          requireString(body, "productCode"),
-          optionalString(body, "collectionId"),
-        ),
-      );
-    });
     // The project's media library: every activity's uploads, read across the project.
     app.get("/media-library", async (c) =>
       c.json(await this.activities.projectMedia(requireValidId(c, "projectId"))),

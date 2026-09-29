@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { carriedBindings } from "../src/activities/import-mapping.js";
 import { validateManifest } from "../src/activities/media.js";
 import { speechTargets, translationTargets } from "../src/activities/pipeline-run.js";
 import { playbackFromScript, readPlayback } from "../src/activities/playback.js";
@@ -58,26 +57,6 @@ describe("audio playback, as the module reads it", () => {
     expect(playbackFromScript('<audio kind="speech">Hi</audio>')).toBeNull();
     expect(playbackFromScript("Plain narration")).toBeNull();
     expect(playbackFromScript('<audio kind="music" volume="9">x</audio>')?.volume).toBe(0.4);
-  });
-
-  it("carries Loom's playback on import, filling what an older manifest left out", () => {
-    const { media } = carriedBindings(
-      {
-        assets: {
-          "en-US": [
-            { key: "theme", type: "audio", kind: "music", volume: 0.2 },
-            { key: "pop", type: "audio", kind: "sfx", channel: "ui", loop: false, volume: 1 },
-            { key: "hi", type: "audio", script: "Hi" },
-          ],
-        },
-      },
-      ["en-US"],
-    );
-    expect(media["en-US"]!.map((binding) => binding.playback)).toEqual([
-      { kind: "music", channel: "music", loop: true, volume: 0.2 },
-      { kind: "sfx", channel: "ui", loop: false, volume: 1 },
-      undefined,
-    ]);
   });
 
   it("does not speak or translate music and sound effects", () => {

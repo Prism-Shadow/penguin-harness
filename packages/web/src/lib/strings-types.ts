@@ -1576,17 +1576,6 @@ export type Strings = {
     previewResolutionLabel: string;
     previewResolutionOwn: (dimensions: string) => string;
     newActivity: string;
-    importFromLoom: string;
-    importHelp: string;
-    importLoading: string;
-    importNoCheckout: string;
-    importEmpty: string;
-    importSearch: string;
-    importAction: string;
-    importing: string;
-    importRefs: (count: number) => string;
-    importProblems: (count: number) => string;
-    importImported: string;
     search: string;
     noMatches: string;
     backToActivities: string;

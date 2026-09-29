@@ -55,7 +55,6 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { AssetLibraryView } from "./asset-library-view";
 import { settledPipeline, settledRuns, type Announcement } from "./run-toasts";
 import { CreateActivityDialog } from "./create-activity-dialog";
-import { ImportDialog } from "./import-dialog";
 import { ActivityWorkspace as WorkspaceShell, type StudioPanelEntry } from "./activity-workspace";
 import { AssetEditor } from "./asset-editor";
 import { SpeechCoverage } from "./speech-coverage";
@@ -174,7 +173,6 @@ function ActivityWorkspace({
   const [tag, setTag] = useState<string | null>(null);
   const [sort, setSort] = useState<GroupSort>("recent");
   const [createOpen, setCreateOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
   const dirty = useRef(false);
   const mounted = useRef(true);
   const accessible = useRef(available);
@@ -362,17 +360,9 @@ function ActivityWorkspace({
         tag={tag}
         onTag={setTag}
         onRefresh={() => void reload()}
-        onImport={() => setImportOpen(true)}
         onCreate={() => setCreateOpen(true)}
         onMedia={() => navigate("/activities/media")}
       />
-      {importOpen && (
-        <ImportDialog
-          projectId={projectId}
-          onClose={() => setImportOpen(false)}
-          onImported={() => void reload()}
-        />
-      )}
       {createOpen && (
         <CreateActivityDialog
           projectId={projectId}

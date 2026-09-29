@@ -1861,20 +1861,6 @@ export const en: Strings = {
     previewResolutionLabel: "Preview resolution",
     previewResolutionOwn: (dimensions: string) => `${dimensions} (the activity's own)`,
     newActivity: "New activity",
-    importFromLoom: "Import from Loom",
-    importHelp:
-      "Activities Loom generated in the WAF checkout's modules folder. Importing copies each ref's specification, description and media plan into this project. The module and its media stay in the checkout, and the preview plays them from there.",
-    importLoading: "Reading the checkout…",
-    importNoCheckout:
-      "No WAF checkout was found. Penguin looks for a folder holding framework, modules and media, or the one WAF_ROOT_DIR names.",
-    importEmpty: "The checkout has no activities Loom generated.",
-    importSearch: "Search Loom activities",
-    importAction: "Import",
-    importing: "Importing…",
-    importRefs: (count: number) => (count === 1 ? "1 ref" : `${count} refs`),
-    importProblems: (count: number) =>
-      count === 1 ? "1 problem reading it" : `${count} problems reading it`,
-    importImported: "Imported",
     search: "Search activities",
     noMatches: "No activities match this search.",
     backToActivities: "All activities",

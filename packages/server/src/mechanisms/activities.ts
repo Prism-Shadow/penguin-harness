@@ -11,11 +11,8 @@ import type { MediaTextTarget } from "../activities/media-text.js";
 import type { AssistFocus, AssistProposal, ProposalChange } from "../activities/assist.js";
 import type { UploadedMedia } from "../activities/upload.js";
 import type { BundleItem, ProjectMediaListing } from "../activities/media-library-types.js";
-import type { ImportOutcome } from "../activities/import-apply.js";
-import type { ImportedActivity } from "../activities/loom-import.js";
 import type { ImplementationFeature } from "../activities/implementation-features.js";
 import type { ReadinessCheck } from "../activities/readiness-types.js";
-import type { ImportMapping } from "../activities/import-mapping.js";
 import type { RefAssetDecision, RefNumberSuggestion } from "../activities/ref-template-types.js";
 import type {
   ActivityDetail,
@@ -484,26 +481,6 @@ export abstract class ActivityAuthoring extends Interface<{
     productCode: string,
     mode: "decodable" | "readAlong",
   ): Promise<ActivityProduct>;
-  /** Create everything a Loom product's mapping describes, and report what happened. */
-  importProduct(
-    projectId: string,
-    collectionId: string | undefined,
-    mapping: ImportMapping,
-  ): Promise<ImportOutcome>;
-  /** The Loom products a checkout offers. Reading only; nothing is imported by looking. */
-  availableImports(): Promise<{ modulesDir: string | null; products: ImportedActivity[] }>;
-  /** Read one Loom product, decide what Penguin would make of it, and make it. */
-  importFromLoom(
-    projectId: string,
-    moduleFolder: string,
-    productCode: string,
-    collectionId?: string,
-  ): Promise<{
-    mapping: ImportMapping;
-    outcome: ImportOutcome;
-    message: string;
-    problems: string[];
-  }>;
   /**
    * Save an author's edit of the module's configuration or assessment in the draft; the
    * assessment only on the canonical ref, because every ref shares it. An assessment problem

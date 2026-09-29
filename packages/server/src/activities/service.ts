@@ -2,7 +2,6 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs/promises";
 import { buildReadiness } from "./build-readiness.js";
 import type { GeneratedAudioFormat, MediaAsset } from "./media.js";
-import type { CarriedBinding } from "./import-mapping.js";
 import {
   IMPLEMENTATION_FEATURES,
   IMPLEMENTATION_FEATURES_FILE,
@@ -47,15 +46,6 @@ import {
 } from "./media-bundle.js";
 import type { BundleItem, LibraryFile, ProjectMediaListing } from "./media-library-types.js";
 import { readBoundImage, type ImageRequest } from "./image.js";
-import {
-  applyImport,
-  describeOutcome,
-  type ExistingProduct,
-  type ImportOutcome,
-  type ImportTarget,
-} from "./import-apply.js";
-import { describeImport, mapImport, type ImportMapping } from "./import-mapping.js";
-import { discoverLoomProducts, readLoomProduct, type ImportedActivity } from "./loom-import.js";
 import { findWafRoot } from "./waf-module.js";
 import {
   GENERATED_IMAGE_MAX_BYTES,
@@ -1379,101 +1369,6 @@ export class ActivityService implements ActivityAuthoring {
       };
     });
   }
-  /**
-   * An imported ref's media: planned from its specification as any ref's is, then bound as
-   * Loom had it. A language Loom held besides the default holds exactly what Loom listed
-   * for it, which is what it says differently; the rest falls back to the default.
-   */
-  async importMedia(
-    projectId: string,
-    activityId: string,
-    media: Record<string, CarriedBinding[]>,
-    expectedRevision: string,
-  ): Promise<ActivityDraft> {
-    const planned = await this.planMedia(projectId, activityId, expectedRevision);
-    const manifest = structuredClone(planned.mediaPlan!.manifest);
-    const defaults = manifest.assets[DEFAULT_LANGUAGE_CODE] ?? [];
-    const sceneIds = new Set(
-      ((planned.spec?.scenes ?? planned.spec?.stages ?? []) as { id?: unknown }[]).map((scene) =>
-        String(scene.id),
-      ),
-    );
-    for (const [language, bindings] of Object.entries(media)) {
-      const byKey = new Map(bindings.map((binding) => [binding.key, binding]));
-      const listed = (asset: MediaAsset) =>
-        byKey.has(asset.key) || (!!asset.sourceKey && byKey.has(asset.sourceKey));
-      const base =
-        language === DEFAULT_LANGUAGE_CODE
-          ? defaults
-          : defaults.filter(listed).map((asset) => {
-              const {
-                script: _script,
-                path: _path,
-                generatedAudio: _audio,
-                generatedImage: _image,
-                generatedVideo: _video,
-                translatedFrom: _from,
-                wordTimings: _timings,
-                durationMs: _duration,
-                ...rest
-              } = structuredClone(asset);
-              return rest;
-            });
-      manifest.assets[language] = base.map((asset) => {
-        const binding = byKey.get(asset.key) ?? (asset.sourceKey && byKey.get(asset.sourceKey));
-        if (!binding) return asset;
-        return {
-          ...asset,
-          ...(binding.path ? { path: binding.path } : {}),
-          ...(asset.type === "audio" && binding.script !== undefined
-            ? { script: binding.script }
-            : {}),
-          ...(asset.type === "audio" && binding.wordTimings
-            ? { wordTimings: binding.wordTimings }
-            : {}),
-          ...(asset.type === "audio" && binding.durationMs !== undefined
-            ? { durationMs: binding.durationMs }
-            : {}),
-          ...(asset.type === "audio" && binding.playback ? binding.playback : {}),
-          ...(asset.type === "audio" && binding.playback && binding.targetDurationMs !== undefined
-            ? { targetDurationMs: binding.targetDurationMs }
-            : {}),
-        };
-      });
-      // A decodable book's word pronunciations are planned from its narration, not its
-      // specification, so they are carried as Loom had them, in the scenes that still exist.
-      const present = new Set(manifest.assets[language]!.map((asset) => asset.key));
-      for (const binding of bindings) {
-        const word = binding.bookWord;
-        if (!word || present.has(binding.key)) continue;
-        present.add(binding.key);
-        manifest.assets[language]!.push({
-          key: binding.key,
-          type: "audio",
-          role: "bookWord",
-          description: `Pronunciation of “${word.word}”.`,
-          word: word.word,
-          normalizedWord: word.normalizedWord,
-          ...(word.phonemes
-            ? { phonemes: word.phonemes, phonemeSource: word.customized ? "author" : "espeak" }
-            : {}),
-          ...(word.customized ? { customized: true } : {}),
-          ...(binding.path ? { path: binding.path } : {}),
-          ...(binding.script !== undefined ? { script: binding.script } : {}),
-          ...(binding.wordTimings ? { wordTimings: binding.wordTimings } : {}),
-          ...(binding.durationMs !== undefined ? { durationMs: binding.durationMs } : {}),
-          usages: word.usages.filter(
-            (usage) =>
-              sceneIds.has(usage.sceneId) &&
-              /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(usage.sourceKey) &&
-              usage.occurrence >= 1 &&
-              usage.sceneOccurrenceCount >= usage.occurrence,
-          ),
-        });
-      }
-    }
-    return this.applyMedia(projectId, activityId, manifest, planned.contentRevision);
-  }
   async applyMedia(
     projectId: string,
     activityId: string,
@@ -1914,24 +1809,6 @@ export class ActivityService implements ActivityAuthoring {
     return product.canonicalRefNum === null || product.canonicalRefNum === activity.refNum;
   }
 
-  /** What a product code already holds in this collection, or null if nothing does. */
-  existingProduct(collectionId: string, productCode: string): ExistingProduct | null {
-    const product = this.db
-      .prepare("SELECT * FROM activity_products WHERE collection_id = ? AND product_code = ?")
-      .get(collectionId, productCode) as Record<string, unknown> | undefined;
-    if (!product) return null;
-    const refs = this.db
-      .prepare(
-        "SELECT ref_num AS refNum, archived FROM activities WHERE collection_id = ? AND product_code = ? ORDER BY ref_num",
-      )
-      .all(collectionId, productCode) as { refNum: number; archived: number }[];
-    return {
-      refNums: refs.filter((ref) => !ref.archived).map((ref) => ref.refNum),
-      archivedRefNums: refs.filter((ref) => ref.archived).map((ref) => ref.refNum),
-      canonicalRefNum: this.mapProduct(product).canonicalRefNum,
-    };
-  }
-
   /**
    * What an author calls a ref, and whether others may build against it.
    *
@@ -2356,113 +2233,6 @@ export class ActivityService implements ActivityAuthoring {
         .run(mode, now, product.productId);
       return { ...product, bookMode: mode, updatedAt: now };
     });
-  }
-
-  /**
-   * The Loom products a checkout offers, read only.
-   *
-   * Nothing is imported by looking; this is the list an author chooses from, and a product
-   * that could not be read fully arrives with its problems attached rather than hidden.
-   */
-  async availableImports(): Promise<{ modulesDir: string | null; products: ImportedActivity[] }> {
-    const wafRoot = await findWafRoot();
-    if (!wafRoot) return { modulesDir: null, products: [] };
-    const modulesDir = path.join(wafRoot, "modules");
-    return { modulesDir, products: await discoverLoomProducts(modulesDir) };
-  }
-
-  /**
-   * Read one Loom product, decide what Penguin would make of it, and make it.
-   *
-   * The three steps stay separate on purpose: the reader never writes, the mapping never
-   * touches the store, and this reports all of it together so an author sees what was
-   * repaired and what was lost beside what was created.
-   */
-  async importFromLoom(
-    projectId: string,
-    moduleFolder: string,
-    productCode: string,
-    collectionId?: string,
-  ): Promise<{
-    mapping: ImportMapping;
-    outcome: ImportOutcome;
-    message: string;
-    problems: string[];
-  }> {
-    const wafRoot = await findWafRoot();
-    if (!wafRoot)
-      throw new HttpError(
-        400,
-        "waf_checkout_missing",
-        "WAF checkout not found. Select a root containing framework, modules and media.",
-      );
-    let source: ImportedActivity;
-    try {
-      source = await readLoomProduct(
-        path.join(wafRoot, "modules"),
-        normalizeModuleFolder(moduleFolder, "module"),
-        normalizeProductCode(productCode),
-      );
-    } catch (error) {
-      throw new HttpError(400, "activity_invalid", (error as Error).message);
-    }
-    if (!source.refs.length)
-      throw new HttpError(404, "loom_product_not_found", "No such product in the checkout.");
-    const mapping = mapImport(source.product, source.refs);
-    const outcome = await this.importProduct(projectId, collectionId, mapping);
-    return {
-      mapping,
-      outcome,
-      message: `${describeImport(mapping)} ${describeOutcome(outcome, mapping.product.productCode)}`,
-      problems: [...source.problems, ...source.refs.flatMap((ref) => ref.problems)],
-    };
-  }
-
-  /**
-   * Import one Loom product into a collection.
-   *
-   * The ordering and failure policy live in `applyImport`; this only supplies the store.
-   * Every call it makes is an ordinary authoring call, so an imported activity is
-   * indistinguishable from one an author made here — which is the point of the trial.
-   */
-  async importProduct(
-    projectId: string,
-    collectionId: string | undefined,
-    mapping: ImportMapping,
-  ): Promise<ImportOutcome> {
-    const collection = await this.ensureCollection(projectId, collectionId);
-    const target: ImportTarget = {
-      existingProduct: async (productCode) =>
-        this.existingProduct(collection.collectionId, productCode),
-      createRef: async (input) => {
-        const created = await this.createActivity(projectId, {
-          collectionId: collection.collectionId,
-          productCode: input.productCode,
-          refNum: input.refNum,
-          title: input.title,
-          activityType: input.activityType,
-          moduleFolder: input.moduleFolder,
-        });
-        return { activityId: created.id, revision: created.draft.contentRevision };
-      },
-      setRefIdentity: async (activityId, identity) => {
-        await this.setRefIdentity(projectId, activityId, identity);
-      },
-      setDescription: async (activityId, description, revision) =>
-        (await this.updateDescription(projectId, activityId, description, revision))
-          .contentRevision,
-      setSpec: async (activityId, spec, revision) =>
-        (await this.applySpec(projectId, activityId, spec, revision)).contentRevision,
-      setBookMode: async (productCode, mode) => {
-        await this.setProductBookMode(projectId, collection.collectionId, productCode, mode);
-      },
-      setImplementationFeatures: async (activityId, selectedIds) => {
-        await this.setImplementationFeatures(projectId, activityId, selectedIds);
-      },
-      setMedia: async (activityId, media, revision) =>
-        (await this.importMedia(projectId, activityId, media, revision)).contentRevision,
-    };
-    return applyImport(mapping, target);
   }
 }
 

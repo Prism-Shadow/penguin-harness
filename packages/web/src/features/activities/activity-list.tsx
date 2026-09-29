@@ -41,7 +41,6 @@ export function ActivityList({
   tag: chosenTag,
   onTag,
   onRefresh,
-  onImport,
   onCreate,
   onMedia,
 }: {
@@ -62,7 +61,6 @@ export function ActivityList({
   tag: string | null;
   onTag: (tag: string | null) => void;
   onRefresh: () => void;
-  onImport: () => void;
   onCreate: () => void;
   /** Open the project media library: every activity's uploads in one place. */
   onMedia: () => void;
@@ -102,11 +100,6 @@ export function ActivityList({
             <Button size="sm" disabled={!available} onClick={onMedia}>
               {S.activities.projectMedia.open}
             </Button>
-            {editable && (
-              <Button size="sm" disabled={!available} onClick={onImport}>
-                {S.activities.importFromLoom}
-              </Button>
-            )}
             {editable && (
               <Button
                 size="sm"
