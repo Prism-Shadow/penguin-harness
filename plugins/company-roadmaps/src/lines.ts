@@ -1,11 +1,18 @@
 /**
  * Every text this plugin puts in front of an employee: the first input of a room session, a
- * relayed room message, and the lines an establishment, a link or a reopening puts on a desk.
- * Each carries the commands that answer it — the organization's own `penguin org channel`
- * and `penguin org proposal`, and this plugin's routes through `curl` with the session's
- * control environment (`PENGUIN_API_URL`, `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`,
- * `PENGUIN_SESSION_ID`, `PENGUIN_AGENT_ID`), whose `sessionId`/`agentId` claims attribute the
- * write to the employee.
+ * relayed room message, and the lines an establishment, an approval, a link or a reopening puts
+ * on a desk.
+ *
+ * Two kinds of reader, two rules. A **room session** (the moderator's above all) works the
+ * roadmap itself, so its texts carry the commands that answer them: `penguin org channel send`,
+ * and this plugin's routes through `curl` with the session's control environment
+ * (`PENGUIN_API_URL`, `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`, `PENGUIN_SESSION_ID`,
+ * `PENGUIN_AGENT_ID`), whose `sessionId`/`agentId` claims attribute the write to the employee:
+ * the draft, the establishment, the moderator's approval of a proposal item. A **desk** gets
+ * only what happened and what it means. No desk line carries a write command, and no text
+ * anywhere tells anyone to create a proposal card: the proposal of an item is opened only after a
+ * person and the moderator both approved its brief, by whoever the organization assigns that
+ * step to, not by this plugin's words.
  */
 import type { DraftItem, Roadmap } from "./ledger.js";
 import type { RoomMessage } from "./room.js";
@@ -85,7 +92,7 @@ export function cloneBrief(args: {
         '  write draft.json: {"sessionId": "$PENGUIN_SESSION_ID", "agentId": "$PENGUIN_AGENT_ID", "record": "...", "body": "...", "items": [{"key": "a", "kind": "proposal", "title": "...", "brief": "...", "owner": "<agent id>", "cites": ["<body section heading>"]}, {"key": "b", "kind": "roadmap", "title": "...", "brief": "...", "employees": ["<agent id>"], "cites": ["..."]}]}',
         "  (substitute the two variables' values; any of record/body/items may be left out; a proposal item is stacked on the previous one unless it says `stackedOn`)",
         `  ${curlFileOf("PUT", routeOf(orgId, r.number, "/draft"), "draft.json")}`,
-        "Nothing is created while the room discusses. When the room agrees, establish it — the roadmap is archived and every proposal item goes to its owner at once:",
+        "Nothing is created while the room discusses. When the room agrees, establish it — the roadmap is archived and every roadmap item derives its own roadmap at once, but a proposal item stays a brief: nothing is created for it, and its owner is not told, until a person and you (the moderator) have both approved it:",
         `  ${curlOf("POST", routeOf(orgId, r.number, "/establish"))}`,
       ].join("\n"),
     );
@@ -123,15 +130,38 @@ export function relayLine(r: Roadmap, msg: RoomMessage): string {
   return `${tag(r)} room \`${r.channelId ?? ""}\` — ${msg.sender} at ${msg.time}:\n${msg.text}`;
 }
 
-/** The desk line that delegates one proposal item to its owner. */
-export function delegationLine(args: {
+/**
+ * The input the moderator's room session gets when the roadmap is established with proposal
+ * items: they are briefs now, each waiting for two approvals — a person's (on the roadmaps page)
+ * and the moderator's (this command). Approving says the brief is ready to become a proposal;
+ * it creates nothing.
+ */
+export function approvalRequestLine(args: {
   orgId: string;
+  roadmap: Roadmap;
+  items: ReadonlyArray<DraftItem & { kind: "proposal" }>;
+}): string {
+  const { orgId, roadmap: r } = args;
+  return [
+    `${tag(r)} established. Its proposal items are briefs now; each needs two approvals before its proposal may be created — a person's, given on the roadmaps page, and yours as moderator:`,
+    ...args.items.map((i) => `- [${i.key}] "${i.title}" — owner ${i.owner}: ${i.brief}`),
+    `Approve an item whose brief is ready: \`${curlOf("POST", routeOf(orgId, r.number, "/items/<key>/approve"))}\`. Approving creates nothing; leave an item unapproved, or reopen the roadmap, when its brief is not ready.`,
+  ].join("\n");
+}
+
+/**
+ * The desk line telling an owner that its proposal item was approved — by a person and by the
+ * moderator, named with when — and what it is stacked on. It carries no command: the proposal is
+ * created, and its number linked back to the item, in the step the organization assigns for it.
+ */
+export function approvedLine(args: {
   roadmap: Roadmap;
   item: DraftItem & { kind: "proposal" };
   base: { title: string; proposal?: number } | null;
-  revised: boolean;
+  person: { by: string; at: string };
+  moderator: { by: string; at: string };
 }): string {
-  const { orgId, roadmap: r, item, base } = args;
+  const { roadmap: r, item, base } = args;
   const stacked =
     base === null
       ? "It is not stacked on another proposal of this roadmap."
@@ -139,11 +169,10 @@ export function delegationLine(args: {
         ? `It is stacked on "${base.title}" — proposal #${base.proposal}: base your branch on that one's.`
         : `It is stacked on "${base.title}", which has no proposal number yet; you will be told when it has.`;
   return [
-    `${tag(r)} ${args.revised ? "The brief of your item changed at the new establishment" : "The roadmap is established and you own one of its proposals"}: [${item.key}] "${item.title}".`,
+    `${tag(r)} Your item [${item.key}] "${item.title}" is approved: by ${args.person.by} (${args.person.at}) and by the moderator ${args.moderator.by} (${args.moderator.at}).`,
     `Brief: ${item.brief}`,
     stacked,
-    `Create it: \`penguin org proposal create --org-id ${orgId} --author ${item.owner} --title "${item.title}" --brief "<the brief above>"\`, then link its number back: \`${curlOf("POST", routeOf(orgId, r.number, `/items/${item.key}/link`), ['\\"proposal\\":<number>'])}\`.`,
-    `If building it shows the roadmap lacks something it needs, reopen the room: write reopen.json {"sessionId": "$PENGUIN_SESSION_ID", "agentId": "$PENGUIN_AGENT_ID", "reason": "..."} and \`${curlFileOf("POST", routeOf(orgId, r.number, "/reopen"), "reopen.json")}\`.`,
+    "Its proposal may be created now. That, and linking its number back to this item, are write steps: they are done where your organization does write steps, not from this desk.",
   ].join("\n");
 }
 
@@ -157,13 +186,16 @@ export function baseLinkedLine(
   return `${tag(r)} "${base.title}", which your item [${item.key}] "${item.title}" is stacked on, is proposal #${proposal} now: base your branch on that one's.`;
 }
 
-/** The desk line asking a derived roadmap's moderator to open its room. */
-export function roomRequestLine(args: { orgId: string; parent: Roadmap; child: Roadmap }): string {
-  const { orgId, parent, child } = args;
-  const invite = child.employees.map((e) => `agent:${e}`).join(" ");
+/**
+ * The desk line telling a derived roadmap's moderator that its room could not be opened. It
+ * carries no command: a room is opened, and bound to the roadmap, by a person or in the step the
+ * organization assigns for writes.
+ */
+export function roomRequestLine(args: { parent: Roadmap; child: Roadmap }): string {
+  const { parent, child } = args;
   return [
-    `${tag(parent)} established; it derives ${tag(child)}, which you moderate. Brief: ${child.brief}`,
-    `Open its room with the channel commands — \`penguin org channel create --org-id ${orgId} <channel_id> --name "${child.name}"\`, \`penguin org channel invite --org-id ${orgId} <channel_id> ${invite}\` — then bind it: \`${curlOf("POST", routeOf(orgId, child.number, "/room"), ['\\"channelId\\":\\"<channel_id>\\"'])}\`.`,
+    `${tag(parent)} established; it derives ${tag(child)}, which you moderate, with ${child.employees.join(", ")}. Brief: ${child.brief}`,
+    "Its room could not be opened yet, so it waits for one. Nothing is needed from this desk; when a room is bound to it, your room session there starts on its own.",
   ].join("\n");
 }
 

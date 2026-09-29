@@ -8,8 +8,12 @@
  *   GET    /:number                  one roadmap: record, body, items, delegations, room sessions, events
  *   PATCH  /:number                  { name } rename (a person or the moderator)
  *   PUT    /:number/draft            { record?, body?, items? } (a person or the moderator; while discussing)
- *   POST   /:number/establish        archive it and delegate every item (a person or the moderator)
- *   POST   /:number/items/:key/link  { proposal } the owner links the proposal it created
+ *   POST   /:number/establish        archive it; roadmap items derive their roadmaps, proposal items stay
+ *                                    briefs (a person or the moderator)
+ *   POST   /:number/items/:key/approve  one of a proposal item's two approvals: a person's, or the
+ *                                    moderator's; with both, its owner is told (nothing is created)
+ *   POST   /:number/items/:key/link  { proposal } link the proposal created for an approved item (its
+ *                                    owner or a person)
  *   POST   /:number/reopen           { reason } an owner, an employee of the room, or a person
  *   POST   /:number/room             { channelId } bind the room of a derived roadmap
  *   POST   /:number/archive | /unarchive
@@ -153,6 +157,13 @@ export function roadmapRoutes(service: RoadmapService): Hono {
     const [p, o] = orgOf(c);
     const body = await jsonBody(c);
     return c.json(await service.establish(p, o, numberParam(c), actorOf(c, body)));
+  });
+
+  app.post("/:number/items/:key/approve", async (c) => {
+    const [p, o] = orgOf(c);
+    const body = await jsonBody(c);
+    const key = c.req.param("key") ?? "";
+    return c.json(await service.approve(p, o, numberParam(c), key, actorOf(c, body)));
   });
 
   app.post("/:number/items/:key/link", async (c) => {

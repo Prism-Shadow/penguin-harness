@@ -57,7 +57,22 @@ export interface Clone {
   closedAt?: string;
 }
 
-/** What an establishment did with one item. */
+/** Who approved a proposal item, and when. */
+export interface Approval {
+  by: string;
+  at: string;
+}
+
+/** The two approvals a proposal item needs before its proposal may be created. */
+export type ApprovalRole = "person" | "moderator";
+
+/**
+ * What an establishment did with one item. A proposal item is established as a **brief**
+ * (`stage: "brief"`): nothing is created for it and its owner is not told, until a person and the
+ * moderator have both approved that brief. Then its owner is told (`stage: "delegated"`). A
+ * roadmap item derives its roadmap at once (`stage: "delegated"`). A line written before the
+ * gate existed has no stage and reads as delegated.
+ */
 export interface Delegation {
   key: string;
   owner: string;
@@ -68,8 +83,11 @@ export interface Delegation {
   child: number | null;
   delivered: boolean;
   error?: string;
-  /** The proposal number the owner linked back. */
+  /** The proposal number linked back. */
   proposal?: number;
+  stage: "brief" | "delegated";
+  /** The approvals of the brief as it stands; a changed brief starts again with none. */
+  approvals: Partial<Record<ApprovalRole, Approval>>;
 }
 
 export interface RoadmapEvent {
@@ -135,6 +153,24 @@ export type LedgerEntry =
       error?: string;
       by: string;
     }
+  | {
+      kind: "briefed";
+      number: number;
+      key: string;
+      owner: string;
+      brief: string;
+      base: string | null;
+      by: string;
+    }
+  | {
+      kind: "approved";
+      number: number;
+      key: string;
+      role: ApprovalRole;
+      /** The brief approved: an approval counts only for the brief it was given to. */
+      brief: string;
+      by: string;
+    }
   | { kind: "linked"; number: number; key: string; proposal: number; by: string }
   | { kind: "reopened"; number: number; reason: string; by: string }
   | { kind: "renamed"; number: number; name: string; by: string }
@@ -165,6 +201,8 @@ const KINDS = new Set<LedgerEntry["kind"]>([
   "draft",
   "established",
   "delegated",
+  "briefed",
+  "approved",
   "linked",
   "reopened",
   "renamed",
@@ -220,6 +258,10 @@ function noteOf(line: LedgerLine): string | undefined {
       return line.child !== null
         ? `${line.key} → roadmap #${line.child}`
         : `${line.key} → ${line.owner}`;
+    case "briefed":
+      return `${line.key}: brief (${line.owner})`;
+    case "approved":
+      return `${line.key}: ${line.role} ${line.by}`;
     case "linked":
       return `${line.key} → proposal #${line.proposal}`;
     case "reopened":
@@ -298,7 +340,33 @@ export function applyLine(state: LedgerState, line: LedgerLine): void {
         ...(prior?.proposal !== undefined && prior.owner === line.owner
           ? { proposal: prior.proposal }
           : {}),
+        stage: "delegated",
+        // The approvals that opened it stay on the record (none before the gate existed).
+        approvals: prior !== undefined && prior.brief === line.brief ? prior.approvals : {},
       };
+      break;
+    }
+    case "briefed": {
+      const prior = r.delegations[line.key];
+      r.delegations[line.key] = {
+        key: line.key,
+        owner: line.owner,
+        brief: line.brief,
+        base: line.base,
+        child: null,
+        delivered: false,
+        ...(prior?.proposal !== undefined && prior.owner === line.owner
+          ? { proposal: prior.proposal }
+          : {}),
+        stage: "brief",
+        approvals: {},
+      };
+      break;
+    }
+    case "approved": {
+      const d = r.delegations[line.key];
+      if (d !== undefined && d.stage === "brief" && d.brief === line.brief)
+        d.approvals[line.role] = { by: line.by, at: line.at };
       break;
     }
     case "linked": {

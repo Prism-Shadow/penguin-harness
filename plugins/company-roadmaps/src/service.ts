@@ -31,6 +31,7 @@ import {
   LEDGER_FILE,
   ledgerPath,
   orgDirOf,
+  type ApprovalRole,
   type DraftItem,
   type LedgerEntry,
   type Roadmap,
@@ -39,7 +40,8 @@ import {
 import {
   baseLinkedLine,
   cloneBrief,
-  delegationLine,
+  approvalRequestLine,
+  approvedLine,
   relayLine,
   reopenLine,
   roomJoinedLine,
@@ -611,9 +613,12 @@ export class RoadmapService {
   }
 
   /**
-   * The room agrees: the roadmap is archived and every item delegated at once. An item already
-   * delegated (a reopened roadmap established again) is delegated again only when its owner or
-   * its brief changed; a roadmap item that already derived its roadmap is left to it.
+   * The room agrees: the roadmap is archived. A roadmap item derives its roadmap at once. A
+   * proposal item is established as a brief and nothing more: no proposal is created and its
+   * owner is not told until a person and the moderator have both approved that brief
+   * ({@link approve}); the moderator's room session is asked for its approvals. An item already
+   * established (a reopened roadmap established again) starts again only when its owner or its
+   * brief changed; a roadmap item that already derived its roadmap is left to it.
    */
   async establish(
     projectId: string,
@@ -647,50 +652,23 @@ export class RoadmapService {
       await ledger.append({ kind: "established", number, by: caller.principal });
       const hints: string[] = [];
       const bases = basesOf(r.items);
+      const briefed: Array<DraftItem & { kind: "proposal" }> = [];
       for (const item of r.items) {
         const prior = r.delegations[item.key];
         if (item.kind === "proposal") {
           if (prior !== undefined && prior.owner === item.owner && prior.brief === item.brief)
             continue;
-          const baseKey = bases.get(item.key) ?? null;
-          const baseItem =
-            baseKey === null ? null : (r.items.find((x) => x.key === baseKey) ?? null);
-          const baseProposal = baseKey === null ? undefined : r.delegations[baseKey]?.proposal;
-          const line = delegationLine({
-            orgId,
-            roadmap: r,
-            item,
-            base:
-              baseItem === null
-                ? null
-                : {
-                    title: baseItem.title,
-                    ...(baseProposal !== undefined ? { proposal: baseProposal } : {}),
-                  },
-            revised: prior !== undefined && prior.owner === item.owner,
-          });
-          const res = await this.deliver(
-            projectId,
-            orgId,
-            ledger,
-            number,
-            item.owner,
-            line,
-            caller.principal,
-            hints,
-          );
+          // A brief, waiting for its two approvals: nothing is created, nobody is told to create.
           await ledger.append({
-            kind: "delegated",
+            kind: "briefed",
             number,
             key: item.key,
             owner: item.owner,
             brief: item.brief,
-            base: baseKey,
-            child: null,
-            delivered: res.delivered,
-            ...(res.error !== undefined ? { error: res.error } : {}),
+            base: bases.get(item.key) ?? null,
             by: caller.principal,
           });
+          briefed.push(item);
         } else {
           if (prior !== undefined && prior.child !== null) continue;
           const child = ledger.nextNumber();
@@ -733,7 +711,7 @@ export class RoadmapService {
             moderator,
             room !== null
               ? roomOpenedLine({ parent: r, child: derived })
-              : roomRequestLine({ orgId, parent: r, child: derived }),
+              : roomRequestLine({ parent: r, child: derived }),
             caller.principal,
             hints,
           );
@@ -751,12 +729,142 @@ export class RoadmapService {
           });
         }
       }
+      // The moderator is asked for its approvals in its room session, where it works the roadmap.
+      if (briefed.length > 0) {
+        const established = this.require(ledger, number);
+        const moderator = moderatorOf(established);
+        const clone = established.clones.find(
+          (c) => c.agentId === moderator && c.closedAt === undefined,
+        );
+        if (clone === undefined) {
+          hints.push(
+            `The moderator ${moderator ?? "(none)"} has no open room session to ask for its approvals.`,
+          );
+        } else {
+          try {
+            await this.deps.runner.startTask(
+              clone.sessionId,
+              [
+                userText(
+                  approvalRequestLine({ orgId, roadmap: established, items: briefed }),
+                  "server",
+                ),
+              ],
+              { queueIfBusy: true },
+            );
+          } catch (err) {
+            hints.push(
+              `The moderator's room session was not asked for its approvals: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+      }
       return { roadmap: this.view(this.require(ledger, number)), hints };
     });
     for (const child of discussing) {
       result.hints.push(...(await this.relayRoadmap(projectId, orgId, child)));
     }
     return result;
+  }
+
+  /**
+   * One of the two approvals a proposal item needs before its proposal may be created: a person
+   * approves as the person, the moderator as the moderator; nobody else approves, and nobody
+   * approves twice. Only an established roadmap's items, and only while they are briefs. When
+   * the brief has both, its owner is told — with who approved and when — and the item is
+   * delegated; nothing is created here.
+   */
+  async approve(
+    projectId: string,
+    orgId: string,
+    number: number,
+    key: string,
+    actor: OrgActor,
+  ): Promise<WriteResult> {
+    return this.withLock(projectId, orgId, async () => {
+      const { caller, ledger } = await this.open(projectId, orgId, actor);
+      const r = this.require(ledger, number);
+      this.requireStatus(r, "established");
+      const item = r.items.find((x) => x.key === key);
+      const d = r.delegations[key];
+      if (item === undefined || item.kind !== "proposal" || d === undefined) {
+        throw new RoadmapError(
+          404,
+          "item_not_found",
+          `Roadmap #${number} has established no proposal item ${key}.`,
+        );
+      }
+      if (d.stage !== "brief") {
+        throw new RoadmapError(409, "already_approved", `Item ${key} is approved already.`);
+      }
+      const moderator = moderatorOf(r);
+      const role: ApprovalRole | null =
+        caller.agentId === null ? "person" : caller.agentId === moderator ? "moderator" : null;
+      if (role === null) {
+        throw new RoadmapError(
+          403,
+          "not_approver",
+          `Only a person or the moderator (${moderator ?? "none"}) approves item ${key}.`,
+        );
+      }
+      if (d.approvals[role] !== undefined) {
+        throw new RoadmapError(
+          409,
+          "already_approved",
+          `Item ${key} has the ${role}'s approval already (${d.approvals[role]!.by}).`,
+        );
+      }
+      await ledger.append({
+        kind: "approved",
+        number,
+        key,
+        role,
+        brief: d.brief,
+        by: caller.principal,
+      });
+      const hints: string[] = [];
+      const now = this.require(ledger, number).delegations[key]!;
+      const { person, moderator: mod } = now.approvals;
+      if (person !== undefined && mod !== undefined) {
+        const base = now.base === null ? null : (r.items.find((x) => x.key === now.base) ?? null);
+        const baseProposal = now.base === null ? undefined : r.delegations[now.base]?.proposal;
+        const res = await this.deliver(
+          projectId,
+          orgId,
+          ledger,
+          number,
+          item.owner,
+          approvedLine({
+            roadmap: r,
+            item,
+            base:
+              base === null
+                ? null
+                : {
+                    title: base.title,
+                    ...(baseProposal !== undefined ? { proposal: baseProposal } : {}),
+                  },
+            person,
+            moderator: mod,
+          }),
+          caller.principal,
+          hints,
+        );
+        await ledger.append({
+          kind: "delegated",
+          number,
+          key,
+          owner: item.owner,
+          brief: now.brief,
+          base: now.base,
+          child: null,
+          delivered: res.delivered,
+          ...(res.error !== undefined ? { error: res.error } : {}),
+          by: caller.principal,
+        });
+      }
+      return { roadmap: this.view(this.require(ledger, number)), hints };
+    });
   }
 
   /** The owner links the proposal it created; the owners stacked on it learn its number. */
@@ -778,6 +886,13 @@ export class RoadmapService {
           404,
           "item_not_delegated",
           `Roadmap #${number} has delegated no proposal item ${key}.`,
+        );
+      }
+      if (d.stage === "brief") {
+        throw new RoadmapError(
+          409,
+          "not_approved",
+          `Item ${key} is still a brief: it needs a person's and the moderator's approval before a proposal is linked to it.`,
         );
       }
       if (caller.agentId !== null && caller.agentId !== d.owner) {

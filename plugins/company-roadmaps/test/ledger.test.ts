@@ -113,6 +113,64 @@ describe("the fold", () => {
     ).toBeUndefined();
   });
 
+  it("holds a proposal item as a brief until both approvals of that very brief; a line from before the gate reads as delegated", () => {
+    const briefed = (brief: string) =>
+      line({ kind: "briefed", number: 1, key: "a", owner: "acme_dev", brief, base: null });
+    const approved = (role: "person" | "moderator", brief: string, by: string) =>
+      line({ kind: "approved", number: 1, key: "a", role, brief, by });
+    const lines = [opened(1), briefed("B"), approved("person", "B", "user:boss")];
+    expect(foldLedger(lines).roadmaps.get(1)?.delegations.a).toMatchObject({
+      stage: "brief",
+      delivered: false,
+      approvals: { person: { by: "user:boss", at } },
+    });
+    // An approval of another brief counts for nothing.
+    expect(
+      foldLedger([...lines, approved("moderator", "Old", "agent:acme_dev")]).roadmaps.get(1)
+        ?.delegations.a?.approvals.moderator,
+    ).toBeUndefined();
+    const done = foldLedger([
+      ...lines,
+      approved("moderator", "B", "agent:acme_dev"),
+      line({
+        kind: "delegated",
+        number: 1,
+        key: "a",
+        owner: "acme_dev",
+        brief: "B",
+        base: null,
+        child: null,
+        delivered: true,
+      }),
+    ]).roadmaps.get(1)?.delegations.a;
+    expect(done).toMatchObject({
+      stage: "delegated",
+      approvals: { person: { by: "user:boss" }, moderator: { by: "agent:acme_dev" } },
+    });
+    // A new brief starts again with no approvals.
+    expect(foldLedger([...lines, briefed("B2")]).roadmaps.get(1)?.delegations.a).toMatchObject({
+      stage: "brief",
+      brief: "B2",
+      approvals: {},
+    });
+    // Before the gate: a bare delegation, delegated, no approvals.
+    expect(
+      foldLedger([
+        opened(1),
+        line({
+          kind: "delegated",
+          number: 1,
+          key: "a",
+          owner: "acme_dev",
+          brief: "B",
+          base: null,
+          child: null,
+          delivered: true,
+        }),
+      ]).roadmaps.get(1)?.delegations.a,
+    ).toMatchObject({ stage: "delegated", approvals: {} });
+  });
+
   it("renames, archives and unarchives", () => {
     const r = foldLedger([
       opened(1),

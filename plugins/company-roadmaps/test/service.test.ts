@@ -354,24 +354,35 @@ describe("establishing", () => {
     });
   });
 
-  it("archives the roadmap and delegates at once: each proposal to its owner's desk, stacked on the previous one", async () => {
+  it("archives the roadmap and leaves each proposal item a brief: nothing created, no owner told, the moderator asked for its approvals", async () => {
     const n = await drafted();
     const { roadmap, hints } = await service.establish(P, O, n, asAgent("acme_dev"));
     expect(hints).toEqual([]);
     expect(roadmap).toMatchObject({ status: "established", archived: true });
-    const lines = w.gateway.desks.filter((d) => d.text.includes(`[roadmap #${n} `));
-    const toDev = lines.find((d) => d.agentId === "acme_dev")!.text;
-    const toWeb = lines.find((d) => d.agentId === "acme_web")!.text;
-    expect(toDev).toContain("[ledger]");
-    expect(toDev).toContain("An append-only ledger.");
-    expect(toDev).toContain("not stacked on another proposal");
-    expect(toDev).toContain("penguin org proposal create --org-id acme --author acme_dev");
-    expect(toWeb).toContain('stacked on "Roadmap ledger", which has no proposal number yet');
+    // No proposal owner hears of its item yet — only the derived roadmap's moderator is told.
+    expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_qa"]);
+    for (const d of w.gateway.desks) {
+      expect(d.text).not.toContain("penguin org proposal create");
+      expect(d.text).not.toContain("curl");
+    }
+    expect(roadmap.delegations.ledger).toMatchObject({
+      owner: "acme_dev",
+      stage: "brief",
+      approvals: {},
+      delivered: false,
+    });
     expect(roadmap.delegations.page).toMatchObject({
       owner: "acme_web",
       base: "ledger",
-      delivered: true,
+      stage: "brief",
     });
+    // The moderator's room session is asked, with the approve command; no create anywhere.
+    const asked = w.runner.to("room-1");
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain('[ledger] "Roadmap ledger"');
+    expect(asked[0]).toContain("/items/<key>/approve");
+    expect(asked[0]).not.toContain("proposal create");
+    expect(w.runner.to("room-2")).toEqual([]);
   });
 
   it("derives a roadmap item with its own room, discussing at once, and tells its moderator the room is open", async () => {
@@ -413,9 +424,10 @@ describe("establishing", () => {
     });
     const ask = w.gateway.desks.find((d) => d.agentId === "acme_qa")!.text;
     expect(ask).toContain(`[roadmap #${child} «Test plan»], which you moderate`);
-    expect(ask).toContain(
-      "penguin org channel invite --org-id acme <channel_id> agent:acme_qa agent:acme_dev",
-    );
+    expect(ask).toContain("could not be opened yet");
+    // A desk line carries no write command.
+    expect(ask).not.toContain("penguin org channel");
+    expect(ask).not.toContain("curl");
     // Its room bound, it discusses — and its employees' room sessions open.
     await writeChannel(w.root, "room_t", ["user:boss", "agent:acme_qa", "agent:acme_dev"]);
     const bound = await service.bindRoom(P, O, child!, "room_t", asAgent("acme_qa"));
@@ -429,23 +441,27 @@ describe("establishing", () => {
   it("stops relaying the room once established", async () => {
     const n = await drafted();
     await service.establish(P, O, n, BOSS);
+    const before = w.runner.inputs.length;
     await post(w.root, "room_a", "user:boss", "after the fact");
     await service.relayOnce();
-    expect(w.runner.inputs).toEqual([]);
+    expect(w.runner.inputs).toHaveLength(before);
+    expect(w.runner.inputs.some((i) => i.text.includes("after the fact"))).toBe(false);
   });
 
   it("records a desk that cannot be told, and says so, without failing the establishment", async () => {
     const n = await drafted();
-    w.gateway.refuse.set("acme_web", "acme_web is paused by its budget");
+    w.gateway.refuse.set("acme_qa", "acme_qa is paused by its budget");
     const { roadmap, hints } = await service.establish(P, O, n, BOSS);
     expect(roadmap.status).toBe("established");
-    expect(hints).toEqual(["acme_web was not told: acme_web is paused by its budget"]);
-    expect(roadmap.delegations.page).toMatchObject({ delivered: false });
-    expect(roadmap.events.some((e) => e.kind === "notify_failed")).toBe(true);
+    expect(hints).toEqual(["acme_qa was not told: acme_qa is paused by its budget"]);
+    expect(roadmap.delegations.tests).toMatchObject({ delivered: false });
+    // The failed line is recorded on the roadmap it was about: the derived one.
+    const derived = await service.get(P, O, roadmap.delegations.tests!.child!, BOSS);
+    expect(derived.events.some((e) => e.kind === "notify_failed")).toBe(true);
   });
 });
 
-describe("after the establishment", () => {
+describe("the approvals", () => {
   async function established(): Promise<number> {
     const n = await openA();
     await service.draft(P, O, n, { body: BODY, items: ITEMS }, BOSS);
@@ -454,8 +470,68 @@ describe("after the establishment", () => {
     return n;
   }
 
-  it("links the owner's proposal, and tells the owner stacked on it the number", async () => {
+  it("needs a person and the moderator: one alone tells nobody, both tell the owner — who, and when — with no command", async () => {
     const n = await established();
+    const first = await service.approve(P, O, n, "ledger", BOSS);
+    expect(first.roadmap.delegations.ledger).toMatchObject({
+      stage: "brief",
+      approvals: { person: { by: "user:boss" } },
+    });
+    expect(w.gateway.desks).toEqual([]);
+    const both = await service.approve(P, O, n, "ledger", asAgent("acme_dev"));
+    expect(both.roadmap.delegations.ledger).toMatchObject({
+      stage: "delegated",
+      delivered: true,
+      approvals: { person: { by: "user:boss" }, moderator: { by: "agent:acme_dev" } },
+    });
+    expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_dev"]);
+    const told = w.gateway.desks[0]!.text;
+    expect(told).toContain('Your item [ledger] "Roadmap ledger" is approved: by user:boss');
+    expect(told).toContain("and by the moderator agent:acme_dev");
+    expect(told).toContain("An append-only ledger.");
+    expect(told).toContain("not stacked on another proposal");
+    expect(told).not.toContain("penguin org proposal create");
+    expect(told).not.toContain("curl");
+    // The other items are still briefs.
+    expect(both.roadmap.delegations.page).toMatchObject({ stage: "brief", approvals: {} });
+  });
+
+  it("is given by a person or the moderator only, once each, to an established roadmap's proposal items", async () => {
+    const discussing = await openA();
+    expect(await refusal(service.approve(P, O, discussing, "ledger", BOSS))).toEqual({
+      status: 409,
+      code: "not_established",
+    });
+    const n = await established();
+    expect(await refusal(service.approve(P, O, n, "ledger", asAgent("acme_web")))).toEqual({
+      status: 403,
+      code: "not_approver",
+    });
+    expect(await refusal(service.approve(P, O, n, "tests", BOSS))).toEqual({
+      status: 404,
+      code: "item_not_found",
+    });
+    await service.approve(P, O, n, "ledger", BOSS);
+    expect(await refusal(service.approve(P, O, n, "ledger", BOSS))).toEqual({
+      status: 409,
+      code: "already_approved",
+    });
+    await service.approve(P, O, n, "ledger", asAgent("acme_dev"));
+    expect(await refusal(service.approve(P, O, n, "ledger", asAgent("acme_dev")))).toEqual({
+      status: 409,
+      code: "already_approved",
+    });
+  });
+
+  it("links a proposal only to an approved item, and tells the owner stacked on it the number", async () => {
+    const n = await established();
+    expect(await refusal(service.link(P, O, n, "ledger", 60, asAgent("acme_dev")))).toEqual({
+      status: 409,
+      code: "not_approved",
+    });
+    await service.approve(P, O, n, "ledger", BOSS);
+    await service.approve(P, O, n, "ledger", asAgent("acme_dev"));
+    w.gateway.desks = [];
     expect(await refusal(service.link(P, O, n, "ledger", 60, asAgent("acme_web")))).toEqual({
       status: 403,
       code: "not_owner",
@@ -486,8 +562,7 @@ describe("after the establishment", () => {
     );
     expect(roadmap).toMatchObject({ status: "discussing", archived: false });
     for (const s of ["room-1", "room-2"]) {
-      expect(w.runner.to(s)).toHaveLength(1);
-      expect(w.runner.to(s)[0]).toContain(
+      expect(w.runner.to(s).at(-1)).toContain(
         "reopened by agent:acme_web: The ledger needs a migration first.",
       );
     }
@@ -497,8 +572,11 @@ describe("after the establishment", () => {
     expect(w.runner.inputs.some((i) => i.text.includes("said while established"))).toBe(false);
   });
 
-  it("delegates again at the next establishment only what changed", async () => {
+  it("starts a changed brief again at the next establishment — its approvals gone — and leaves the rest as they stood", async () => {
     const n = await established();
+    await service.approve(P, O, n, "ledger", BOSS);
+    await service.approve(P, O, n, "ledger", asAgent("acme_dev"));
+    await service.approve(P, O, n, "page", BOSS);
     await service.reopen(P, O, n, "Split the page.", BOSS);
     const items = [
       ITEMS[0],
@@ -506,9 +584,15 @@ describe("after the establishment", () => {
       ITEMS[2],
     ];
     await service.draft(P, O, n, { items }, BOSS);
-    await service.establish(P, O, n, BOSS);
-    expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_web"]);
-    expect(w.gateway.desks[0]?.text).toContain("The brief of your item changed");
+    w.gateway.desks = [];
+    const { roadmap } = await service.establish(P, O, n, BOSS);
+    expect(w.gateway.desks).toEqual([]);
+    expect(roadmap.delegations.ledger).toMatchObject({ stage: "delegated" });
+    expect(roadmap.delegations.page).toMatchObject({
+      stage: "brief",
+      brief: "The draft beside the room, read-only.",
+      approvals: {},
+    });
   });
 });
 

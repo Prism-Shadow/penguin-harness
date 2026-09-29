@@ -416,4 +416,67 @@ describe("a roadmap and its room", () => {
     await p.click("a[data-list]");
     expect(p.pushed).toEqual(["/org/proj/acme/roadmaps"]);
   });
+
+  it("shows a proposal item as a brief with its two approvals, and gives the person its Approve", async () => {
+    const established = {
+      ...SEEDED,
+      status: "established",
+      archived: true,
+      items: [
+        {
+          key: "a",
+          kind: "proposal",
+          title: "Ledger",
+          brief: "An append-only ledger.",
+          owner: "acme_dev",
+          cites: [],
+        },
+      ],
+      delegations: {
+        a: {
+          key: "a",
+          owner: "acme_dev",
+          brief: "An append-only ledger.",
+          stage: "brief",
+          approvals: {
+            moderator: { by: "agent:acme_dev", at: "2026-09-29T02:00:00.000Z" },
+          },
+        },
+      },
+    };
+    const approvals: string[] = [];
+    const p = await page(
+      (call, roadmaps) => {
+        if (call.method === "POST" && call.url === `${ORG}/roadmaps/1/items/a/approve`) {
+          approvals.push(call.url);
+          roadmaps[0] = {
+            ...established,
+            delegations: {
+              a: {
+                ...established.delegations.a,
+                stage: "delegated",
+                approvals: {
+                  ...established.delegations.a.approvals,
+                  person: { by: "user:admin", at: "2026-09-29T02:05:00.000Z" },
+                },
+              },
+            },
+          };
+          return { status: 200, body: { roadmap: roadmaps[0], hints: [] } };
+        }
+        return organization()(call, roadmaps);
+      },
+      [established],
+      { parent: "/org/proj/acme/channels/roadmap_1", own: "?view=detail&n=1" },
+    );
+    expect(p.text()).toContain(T.brief);
+    expect(p.text()).toContain(`${T.byModerator} acme_dev`);
+    expect(p.text()).toContain(`${T.byPerson} ${T.waiting}`);
+    expect(p.text()).toContain(T.approveHint);
+    await p.click("button[data-approve]");
+    expect(approvals).toEqual([`${ORG}/roadmaps/1/items/a/approve`]);
+    // Read again: approved by both, so no longer a brief and no button.
+    expect(p.$("button[data-approve]")).toBeNull();
+    expect(p.text()).not.toContain(T.waiting);
+  });
 });

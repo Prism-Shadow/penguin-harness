@@ -32,6 +32,11 @@
  * page's URL): the record, the body and the items, read again every few seconds. On its own,
  * `roadmaps/<n>` shows the detail only for a roadmap still waiting for its room.
  *
+ * Once a roadmap is established, each proposal item is a brief until a person and the moderator
+ * both approve it: the detail shows who approved and when, or that it is waiting, and gives the
+ * person an Approve button (`POST …/items/<key>/approve`); the moderator approves from its room
+ * session. Nothing on this page creates a proposal.
+ *
  * An organization that runs on another machine is asked THERE, as the app asks it: the page
  * reads the Project's organization list once, and when the organization names a machine every
  * request goes through `/server/<machine>/…`. Asked here instead, the room would be opened in
@@ -154,6 +159,7 @@ button:focus-visible, a:focus-visible, .row:focus-visible, input:focus-visible, 
 .items { list-style: none; margin: 0.375rem 0 0; padding: 0; font-size: 0.75rem; }
 .items li { margin: 0.125rem 0; }
 .items .brief { color: var(--rm-muted); }
+.items .approvals { margin-top: 0.25rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.375rem; font-size: 0.6875rem; }
 .empty { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 3rem 0; text-align: center; }
 .empty .title { font-size: 0.875rem; color: var(--rm-fg); }
 .empty .hint { font-size: 0.75rem; color: var(--rm-muted); max-width: 32rem; }
@@ -237,6 +243,15 @@ export const PAGE_STRINGS = {
     discussing: "discussing",
     established: "established",
     proposal: "proposal",
+    brief: "brief",
+    approvals: "approvals",
+    byPerson: "a person",
+    byModerator: "the moderator",
+    waiting: "waiting",
+    approve: "Approve",
+    approveFailed: "Could not approve",
+    approveHint:
+      "A proposal item is only a brief until a person and the moderator both approve it; nothing is created before that.",
     noRoom: "This roadmap has no room yet.",
     onMachine:
       "This organization runs on machine {m}; its roadmaps are asked there, so the plugin has to be installed on that machine too.",
@@ -287,6 +302,14 @@ export const PAGE_STRINGS = {
     discussing: "讨论中",
     established: "已确立",
     proposal: "提案",
+    brief: "仅 brief",
+    approvals: "批准",
+    byPerson: "人",
+    byModerator: "主持人",
+    waiting: "待批准",
+    approve: "批准",
+    approveFailed: "批准失败",
+    approveHint: "提案条目在人和主持人都批准之前只是一段 brief，在此之前不会建任何东西。",
     noRoom: "这份路线图还没有讨论室。",
     onMachine: "这个组织运行在机器 {m} 上；它的路线图要去那里问，所以那台机器上也得装这个插件。",
   },
@@ -409,7 +432,16 @@ try {
     return '<span class="pill ' + tone + '">' + esc(T[r.status] || r.status) + (shelved ? " · " + esc(T.archived) : "") + "</span>";
   };
   const moderatorOf = (r) => r.moderator || (r.employees && r.employees[0]) || "";
-  const itemLine = (i, d) => "<li><span>" + esc(i.title) + '</span> <span class="muted">— ' + (i.kind === "proposal" ? esc(T.owner) + " " + esc(i.owner) : esc(T.employees) + " " + esc(i.employees.join(", "))) + "</span>" + (d && d.proposal ? ' <span class="pill gray">' + esc(T.proposal) + " #" + d.proposal + "</span>" : "") + '<div class="brief">' + esc(i.brief) + "</div></li>";
+  // A proposal item that is still a brief shows its two approvals — a person's and the
+  // moderator's, who and when, or "waiting" — and, where it may ("approvable"), the person's button.
+  const approvalLine = (i, d, approvable) => {
+    if (i.kind !== "proposal" || !d || d.stage !== "brief") return "";
+    const a = d.approvals || {};
+    const one = (label, x) => esc(label) + " " + (x ? esc(String(x.by).replace(/^(user|agent):/, "")) + ' <span class="muted small">' + esc(x.at) + "</span>" : '<span class="muted">' + esc(T.waiting) + "</span>");
+    return '<div class="approvals"><span class="pill warn">' + esc(T.brief) + "</span> " + esc(T.approvals) + ": " + one(T.byPerson, a.person) + " · " + one(T.byModerator, a.moderator) +
+      (approvable && !a.person ? ' <button type="button" data-approve="' + esc(i.key) + '">' + esc(T.approve) + "</button>" : "") + "</div>";
+  };
+  const itemLine = (i, d, approvable) => "<li><span>" + esc(i.title) + '</span> <span class="muted">— ' + (i.kind === "proposal" ? esc(T.owner) + " " + esc(i.owner) : esc(T.employees) + " " + esc(i.employees.join(", "))) + "</span>" + (d && d.proposal ? ' <span class="pill gray">' + esc(T.proposal) + " #" + d.proposal + "</span>" : "") + '<div class="brief">' + esc(i.brief) + "</div>" + approvalLine(i, d, approvable) + "</li>";
   // A read of the roadmaps, first said out loud (with the rows it is about to fill sketched in).
   async function get(path) {
     const url = org + "/roadmaps" + path;
@@ -541,10 +573,25 @@ try {
     return top + '<header class="head"><h1><span class="muted mono">#' + r.number + "</span> " + esc(r.name) + " " + pill(r) + "</h1>" + (panel ? "" : roomLink(r, "button primary")) + "</header>" + (note || "") +
       '<div class="meta">' + [mod ? esc(T.moderator) + " " + esc(mod) : "", r.channelId ? "" : esc(T.noRoom)].filter(Boolean).join('<span aria-hidden="true">·</span>') + "</div>" +
       section(T.record, r.record) + section(T.body, r.body) +
-      "<section><h2>" + esc(T.items) + "</h2>" + (r.items.length === 0 ? '<p class="muted">' + esc(T.none) + "</p>" : '<ul class="rows"><li class="row" style="cursor: default"><ul class="items grow">' + r.items.map((i) => itemLine(i, r.delegations[i.key])).join("") + "</ul></li></ul>") + "</section>";
+      "<section><h2>" + esc(T.items) + "</h2>" + (r.items.length === 0 ? '<p class="muted">' + esc(T.none) + "</p>" : '<ul class="rows"><li class="row" style="cursor: default"><ul class="items grow">' + r.items.map((i) => itemLine(i, r.delegations[i.key], r.status === "established")).join("") + "</ul></li></ul>" +
+        (r.items.some((i) => i.kind === "proposal") ? '<p class="muted small">' + esc(T.approveHint) + "</p>" : "")) + "</section>";
   };
+  // The roadmap the detail shows, for the person's approvals.
+  let shown = "";
+  async function approve(key) {
+    const url = org + "/roadmaps/" + shown + "/items/" + encodeURIComponent(key) + "/approve";
+    try {
+      await request("POST", url, {});
+      await one(shown);
+    } catch (e) {
+      const slot = q("[data-approve-note]");
+      if (slot) slot.innerHTML = failure(e, T.approveFailed);
+      else main.insertAdjacentHTML("afterbegin", failure(e, T.approveFailed));
+    }
+  }
   async function one(n, note) {
     stopPoll();
+    shown = String(n);
     const r = await get("/" + n);
     if (!panel && !note && r.channelId && enter(roomPath(r.channelId))) return;
     drawn = JSON.stringify(r);
@@ -583,6 +630,8 @@ try {
     const room = e.target.closest("[data-room]");
     if (room) { if (enter(room.getAttribute("href"))) e.preventDefault(); return; }
     if (e.target.closest("[data-list]")) { if (enter(listPath())) e.preventDefault(); return; }
+    const approving = e.target.closest("[data-approve]");
+    if (approving) { approving.disabled = true; void approve(approving.getAttribute("data-approve")); return; }
     const a = e.target.closest("[data-n]");
     if (a && !e.target.closest("input, select, button, label")) {
       e.preventDefault();
