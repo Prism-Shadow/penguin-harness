@@ -155,7 +155,23 @@ docker run -d --name penguin \
   ...
 ```
 
-These options lift restrictions on everything in the container, not only on bubblewrap. The host kernel must also allow unprivileged user namespaces; check `kernel.unprivileged_userns_clone` on Debian and `kernel.apparmor_restrict_unprivileged_userns` on Ubuntu 23.10 and later.
+These options lift restrictions on everything in the container, not only on bubblewrap. The host kernel must also allow unprivileged user namespaces. On Debian, check `kernel.unprivileged_userns_clone`.
+
+Ubuntu 23.10 and later, including a default Ubuntu 24.04, grant user namespaces only to programs whose AppArmor profile allows it (`kernel.apparmor_restrict_unprivileged_userns` is `1`). `apparmor=unconfined` gives the container no profile, so the options above are not enough there, and the reason on the card ends in `setting up uid map: Permission denied`. On such a host, load a profile that allows user namespaces, once, as root:
+
+```bash
+sudo tee /etc/apparmor.d/penguin-userns >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile penguin-userns flags=(unconfined) {
+  userns,
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/penguin-userns
+```
+
+Then start the container with `apparmor=penguin-userns` in place of `apparmor=unconfined`, and keep the other two options. The profile loads again at every boot. The other option is to lift the restriction for every program on the host with `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. To keep that setting after a reboot, add the same line without `sudo sysctl -w` to a file in `/etc/sysctl.d/`.
 
 If the container does not grant them, the sandbox fails closed. The backend's startup probe fails, and the [Sandbox](/settings#sandbox) card shows `@penguinharness/sandbox-bwrap is not in use:` followed by the reason (bwrap is missing or refuses the base profile). Every mode except Off then refuses every agent command rather than running it unconfined. Off still runs commands, with the container as the only boundary.
 
