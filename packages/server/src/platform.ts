@@ -126,6 +126,7 @@ import {
 } from "./activities/test-browser.js";
 import { TestBrowserRoutes } from "./activities/test-browser-routes.js";
 import { DefaultSoundModelPorts } from "./activities/sound-models.js";
+import { LocalAudioService } from "./activities/local-audio.js";
 import { DefaultMediaLibraryPorts } from "./activities/media-bundle.js";
 import {
   ActivityQuality,
@@ -427,6 +428,7 @@ export class CodingAgentsModule {}
     ActivityVideoRenderService,
     DefaultTestBrowserPorts,
     DefaultSoundModelPorts,
+    LocalAudioService,
     DefaultMediaLibraryPorts,
     TestBrowserService,
     TestBrowserRoutes,

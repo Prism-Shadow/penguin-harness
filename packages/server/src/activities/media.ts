@@ -260,11 +260,11 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         throw new Error("Only a narration may name a voice.");
       if (
         asset.speechProvider !== undefined &&
-        (!["gemini", "elevenlabs"].includes(String(asset.speechProvider)) ||
+        (!["gemini", "elevenlabs", "kokoro"].includes(String(asset.speechProvider)) ||
           asset.type !== "audio" ||
           asset.kind !== undefined)
       )
-        throw new Error("Only a narration names a speech provider: gemini or elevenlabs.");
+        throw new Error("Only a narration names a speech provider: gemini, elevenlabs or kokoro.");
       if (
         asset.wordTimings !== undefined &&
         (asset.type !== "audio" ||

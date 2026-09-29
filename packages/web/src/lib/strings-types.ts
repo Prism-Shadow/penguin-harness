@@ -1324,6 +1324,10 @@ export type Strings = {
       label: string;
       gemini: string;
       elevenlabs: string;
+      kokoro: string;
+      localInfo: string;
+      runtimeMissing: string;
+      languageUnsupported: string;
       /** An option the chosen agent cannot use, naming the Vault key it lacks. */
       keyMissing: (key: string) => string;
       /** The accepted clip's word timings, as the highlighting preview shows them. */
@@ -1354,16 +1358,18 @@ export type Strings = {
       prompt: string;
       promptHint: string;
       length: string;
-      lengthHint: string;
-      lengthInvalid: string;
+      lengthHint: (max: number, local: boolean) => string;
+      lengthInvalid: (max: number) => string;
       provider: string;
       /** The model picker shown when a provider offers several models for the kind. */
       model: string;
       generate: string;
       regenerate: string;
       generating: string;
-      providers: Record<"elevenlabs" | "agenthub", string>;
+      providers: Record<"elevenlabs" | "agenthub" | "musicgen" | "audiogen" | "audioldm", string>;
+      localInfo: string;
       problems: {
+        runtime_missing: string;
         credential_missing: (key: string) => string;
         kind_unsupported: string;
         provider_unknown: string;

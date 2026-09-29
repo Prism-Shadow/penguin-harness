@@ -896,6 +896,7 @@ function ActivityEditor({
               ),
               voiceOptions,
               speechQueue!.voice,
+              speechQueue!.language,
             ),
           },
         });
@@ -1902,6 +1903,7 @@ function ActivityEditor({
                         updated.assets[language] ?? [],
                         provider,
                         voiceOptions,
+                        language,
                       );
                       if (!count) return;
                       setMedia(pretty(updated));
@@ -1921,7 +1923,7 @@ function ActivityEditor({
                         voiceOptions.find((option) => option.id === voice)?.providerId ??
                         (isElevenLabsVoiceId(voice) ? "elevenlabs" : "gemini");
                       if (sharedProvider(group) !== owner)
-                        applyProvider(group, owner, voiceOptions);
+                        applyProvider(group, owner, voiceOptions, language);
                       const count = applyVoice(group, voice);
                       if (!count) return;
                       // The choice shows at once and stays in the editor if the save fails.
@@ -1989,6 +1991,7 @@ function ActivityEditor({
                           editedManifest.assets[language]?.find((asset) => asset.key === key),
                           voiceOptions,
                           bulkVoice,
+                          language,
                         ),
                       })
                     }

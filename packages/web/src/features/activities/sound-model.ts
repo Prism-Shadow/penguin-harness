@@ -75,7 +75,21 @@ export interface SoundProviderOption {
 }
 
 export function providerLabel(id: string): string {
-  return id === "elevenlabs" || id === "agenthub" ? S.activities.sound.providers[id] : id;
+  return id === "elevenlabs" ||
+    id === "agenthub" ||
+    id === "musicgen" ||
+    id === "audiogen" ||
+    id === "audioldm"
+    ? S.activities.sound.providers[id]
+    : id;
+}
+
+export function soundMaxSeconds(provider: string | undefined): number {
+  return provider === "musicgen"
+    ? 30
+    : provider === "audiogen" || provider === "audioldm"
+      ? 10
+      : 60;
 }
 
 function problemText(status: SoundProviderStatus, kind: SoundKind): string | null {
@@ -92,6 +106,8 @@ function problemText(status: SoundProviderStatus, kind: SoundKind): string | nul
   }
   if (status.available) return null;
   switch (status.problem) {
+    case "runtime_missing":
+      return problems.runtime_missing;
     case "credential_missing":
       return problems.credential_missing(status.credential);
     case "kind_unsupported":

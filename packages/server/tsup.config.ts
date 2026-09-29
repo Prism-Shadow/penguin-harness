@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "tsup";
 import { FAR_SIDE_SCRIPTS } from "../../scripts/far-side-scripts.mjs";
+import { LOCAL_AUDIO_ASSETS } from "../../scripts/local-audio-assets.mjs";
 
 export default defineConfig({
   // Explicitly name entries to preserve subpath exports: "./api", "./lock",
@@ -58,7 +59,7 @@ export default defineConfig({
   onSuccess: async () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const repo = path.join(here, "..", "..");
-    for (const { name, from } of FAR_SIDE_SCRIPTS) {
+    for (const { name, from } of [...FAR_SIDE_SCRIPTS, ...LOCAL_AUDIO_ASSETS]) {
       fs.copyFileSync(path.join(repo, from), path.join(here, "dist", name));
     }
   },

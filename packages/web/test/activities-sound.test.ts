@@ -9,6 +9,7 @@ import {
   soundCandidateLabel,
   soundFailure,
   soundPromptOf,
+  soundMaxSeconds,
   withSoundPrompt,
 } from "../src/features/activities/sound-model";
 
@@ -19,6 +20,32 @@ const eleven = (over: Partial<SoundProviderStatus> = {}): SoundProviderStatus =>
   models: { music: "music_v1", sfx: "sound-generation" },
   available: true,
   ...over,
+});
+
+it("offers exact local sound-effect providers with their clip limits", () => {
+  const providers: SoundProviderStatus[] = [
+    {
+      id: "audiogen",
+      kinds: ["sfx"],
+      credential: "",
+      models: { sfx: "facebook/audiogen-medium" },
+      available: true,
+    },
+    {
+      id: "audioldm",
+      kinds: ["sfx"],
+      credential: "",
+      models: { sfx: "cvssp/audioldm-s-full-v2" },
+      available: false,
+      problem: "runtime_missing",
+    },
+  ];
+  const options = providerOptions(providers, "sfx");
+  expect(options[0]).toMatchObject({ label: "AudioGen (local)", problem: null });
+  expect(options[1]?.problem).toBeTruthy();
+  expect(soundMaxSeconds("audiogen")).toBe(10);
+  expect(soundMaxSeconds("audioldm")).toBe(10);
+  expect(soundMaxSeconds("musicgen")).toBe(30);
 });
 
 describe("a sound's prompt", () => {

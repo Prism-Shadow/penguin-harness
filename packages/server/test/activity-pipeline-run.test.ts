@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   PipelineRunner,
+  ActivityPipelineService,
+  validateSpeechLanguages,
   imageTargets,
   inScope,
   parseSelection,
@@ -48,6 +50,59 @@ function manifest(withRomanian = false): AssetManifest {
 }
 
 describe("choosing the work", () => {
+  it("also preflights unrecorded book words, respecting the selected asset", () => {
+    const media = manifest();
+    media.assets["es-MX"]!.push({
+      key: "word",
+      type: "audio",
+      role: "bookWord",
+      description: "Word",
+      phonemes: ["a"],
+      speechProvider: "kokoro",
+      usages: [],
+    });
+    expect(() => validateSpeechLanguages(media, { selection: "words", agentId: "agent" })).toThrow(
+      "Kokoro does not support es-MX (word)",
+    );
+    expect(() =>
+      validateSpeechLanguages(media, {
+        selection: "words",
+        agentId: "agent",
+        scope: { language: "es-MX", assetKey: "hello" },
+      }),
+    ).not.toThrow();
+  });
+  it.each(["es-MX", "ro-RO"])(
+    "refuses saved Kokoro for %s before starting a pipeline",
+    async (language) => {
+      const media = manifest(true);
+      media.assets[language]![0]!.speechProvider = "kokoro";
+      const start = vi.fn();
+      const pipelines = new ActivityPipelineService();
+      Object.assign(pipelines, {
+        activities: { getActivity: async () => ({ draft: { mediaPlan: { manifest: media } } }) },
+        runner: { start },
+      });
+      await expect(
+        pipelines.start("proj", "act", { selection: "narration", agentId: "agent" }),
+      ).rejects.toThrow(`Kokoro does not support ${language}`);
+      expect(start).not.toHaveBeenCalled();
+      expect(() =>
+        validateSpeechLanguages(media, {
+          selection: "narration",
+          agentId: "agent",
+          scope: { language: "en-US" },
+        }),
+      ).not.toThrow();
+      expect(() =>
+        validateSpeechLanguages(media, { selection: "images", agentId: "agent" }),
+      ).not.toThrow();
+      media.assets[language]![0]!.path = "recorded.wav";
+      expect(() =>
+        validateSpeechLanguages(media, { selection: "narration", agentId: "agent" }),
+      ).not.toThrow();
+    },
+  );
   it("finds unbound narration with a script and unbound described images, in every language", () => {
     expect(speechTargets(manifest())).toEqual([
       { language: "en-US", assetKey: "hello" },
@@ -357,6 +412,16 @@ function world(
 }
 
 describe("running the stages", () => {
+  it("validates every speech target before recording the first one", async () => {
+    const w = world();
+    await w.runner.start("proj", "act", { selection: "spec", agentId: "agent" }).done;
+    await w.runner.start("proj", "act", { selection: "media", agentId: "agent" }).done;
+    w.asset("es-MX", "hello").speechProvider = "kokoro";
+    w.started.length = 0;
+    await w.runner.start("proj", "act", { selection: "speech", agentId: "agent" }).done;
+    expect(w.runner.status("act")!.error).toContain("Kokoro does not support es-MX");
+    expect(w.started).toEqual([]);
+  });
   it("takes an activity from its script to an assembled module, accepting media on the way", async () => {
     const w = world();
     const { state, done } = w.runner.start("proj", "act", { selection: "all", agentId: "agent" });

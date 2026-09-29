@@ -173,8 +173,8 @@ describe("sound generation through Harness sessions", () => {
     expect(spoken.status).toBe(422);
     expect(JSON.stringify(await spoken.json())).toContain("sound_invalid");
     const unknown = await f.generate("door", "musicgen");
-    expect(unknown.status).toBe(400);
-    expect(JSON.stringify(await unknown.json())).toContain("sound_provider_unknown");
+    expect(unknown.status).toBe(422);
+    expect(JSON.stringify(await unknown.json())).toContain("sound_kind_unsupported");
     // External coding agents never see a Penguin agent's Vault.
     await expect(
       f.service.start(
@@ -204,6 +204,17 @@ describe("sound generation through Harness sessions", () => {
         credential: "ELEVENLABS_API_KEY",
       }),
       expect.objectContaining({ id: "agenthub", available: false, problem: "no_model" }),
+      expect.objectContaining({ id: "musicgen", kinds: ["music"] }),
+      expect.objectContaining({
+        id: "audiogen",
+        kinds: ["sfx"],
+        models: { sfx: "facebook/audiogen-medium" },
+      }),
+      expect.objectContaining({
+        id: "audioldm",
+        kinds: ["sfx"],
+        models: { sfx: "cvssp/audioldm-s-full-v2" },
+      }),
     ]);
     await f.setVault(["ELEVENLABS_API_KEY"]);
     expect((await setup()).providers[0]).toMatchObject({ id: "elevenlabs", available: true });

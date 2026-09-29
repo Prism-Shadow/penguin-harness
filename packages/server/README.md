@@ -36,6 +36,32 @@ pnpm --filter @prismshadow/penguin-server start   # node dist/index.js
 
 `pnpm typecheck / test` run tsc and vitest (tests use a temp root + in-memory DB; no ports, no live LLM calls).
 
+## Local activity audio
+
+Activities run Kokoro, MusicGen, AudioGen, and AudioLDM through the server's `LocalAudio`
+capability. Inference runs in a cancellable Node worker with CPU ONNX Runtime. These
+providers require no agent session or API key. Generated WAVs follow the same candidate
+review and acceptance flow as hosted audio.
+
+The server's optional dependencies supply the runtime. For installations that omit optional
+dependencies, install the pinned packages under `<PENGUIN_HOME>/local-audio`:
+
+```sh
+npm install --prefix <PENGUIN_HOME>/local-audio @huggingface/transformers@3.8.1 kokoro-js@1.2.1
+```
+
+The first generation downloads weights into `<PENGUIN_HOME>/models/audio`. AudioGen uses
+`facebook/audiogen-medium` via a pinned [tensor conversion](https://huggingface.co/mlx-community/audiogen-medium-mlx)
+(about 5.3 GB), including its own T5 conditioner and 16 kHz codec. AudioLDM uses the original
+[`cvssp/audioldm-s-full-v2`](https://huggingface.co/cvssp/audioldm-s-full-v2) checkpoint
+(about 1.7 GB). The adapters construct ONNX graphs over those tensors in JavaScript;
+neither Python nor MLX is required. Model licenses remain those of the linked checkpoints.
+
+AudioGen and AudioLDM accept clips from 1 to 10 seconds; MusicGen accepts up to 30 seconds.
+Leave enough RAM for the model and native inference buffers. One local inference runs at a
+time per server. Cancel or server shutdown terminates its worker, and generation times out
+after 30 minutes.
+
 ## Security notes (known MVP limits)
 
 - **CSRF**: session cookie is `SameSite=Lax` and writes accept only `Content-Type: application/json`; no CSRF token yet.

@@ -1170,8 +1170,13 @@ export class ActivityRoutes {
       const assetKey = optionalString(body, "assetKey", { maxLen: 200 });
       if (assetKey && !language) throw badRequest("assetKey needs a language.");
       const soundProvider = optionalString(body, "soundProvider", { maxLen: 32 });
-      if (soundProvider && soundProvider !== "elevenlabs" && soundProvider !== "agenthub")
-        throw badRequest("soundProvider must be elevenlabs or agenthub.");
+      if (
+        soundProvider &&
+        !["elevenlabs", "agenthub", "musicgen", "audiogen", "audioldm"].includes(soundProvider)
+      )
+        throw badRequest(
+          "Choose elevenlabs, agenthub, musicgen, audiogen or audioldm for soundProvider.",
+        );
       const state = await this.pipelines.start(projectId, activityId, {
         selection: parseSelection(body.stage),
         ...(language ? { scope: { language, ...(assetKey ? { assetKey } : {}) } } : {}),

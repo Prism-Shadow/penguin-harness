@@ -7,7 +7,7 @@
 export type SoundKind = "music" | "sfx";
 
 /** Where a sound is made: ElevenLabs directly, or a model reached through the model hub. */
-export type SoundProviderId = "elevenlabs" | "agenthub";
+export type SoundProviderId = "elevenlabs" | "agenthub" | "musicgen" | "audiogen" | "audioldm";
 
 /**
  * Why a provider cannot make a sound right now. The App words each one. `no_model`: the
@@ -15,7 +15,12 @@ export type SoundProviderId = "elevenlabs" | "agenthub";
  * for is not one the provider offers for that kind.
  */
 export type SoundProblem =
-  "provider_unknown" | "credential_missing" | "kind_unsupported" | "no_model" | "model_unknown";
+  | "provider_unknown"
+  | "credential_missing"
+  | "runtime_missing"
+  | "kind_unsupported"
+  | "no_model"
+  | "model_unknown";
 
 /** The file format a sound model returns, and so the candidate the run keeps. */
 export type SoundFormat = "wav" | "mp3";
