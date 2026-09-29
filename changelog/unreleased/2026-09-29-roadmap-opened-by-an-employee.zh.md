@@ -3,6 +3,7 @@
 - **Date:** 2026-09-29
 - **Type:** fix
 - **Scope:** `plugins`
+- **PR:** [Myriad-Dreamin/penguin-harness#103](https://github.com/Myriad-Dreamin/penguin-harness/pull/103)
 
 [English](2026-09-29-roadmap-opened-by-an-employee.md)
 
