@@ -37,6 +37,9 @@ import { S } from "../../lib/strings";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
+import { ChordKbd } from "../../components/ui/chord-kbd";
+import { useDisplayedBinding, useShortcutLabel } from "../../lib/shortcuts/use-keymap";
+import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { toneDot } from "../../lib/tone";
 import { useTerminalChrome } from "../terminal/terminal-appearance";
 import {
@@ -52,6 +55,7 @@ import {
   subscribeTerminalCloseRequests,
 } from "../terminal/terminal-view-pool";
 import type { TerminalInfo } from "../terminal/terminal-view";
+import { isBrowserOffered, subscribeBrowser } from "../builtin-browser/browser-store";
 import { confirmClose } from "./close-guard";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
@@ -89,6 +93,9 @@ import {
 } from "../chat/use-panel-width";
 import { usePointerDrag } from "./use-pointer-drag";
 
+/** Four corners pushed outward / pulled inward: the touch height toggle (see maximize). */
+const MAXIMIZE_ICON = "M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5";
+const RESTORE_ICON = "M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5";
 /** Box with an arrow escaping to the top right: detach to its own window. */
 const DETACH_ICON = "M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5";
 
@@ -99,6 +106,9 @@ function DockButton(props: {
   onClick: () => void;
   children: ReactNode;
 }) {
+  // A 24px box is a comfortable mouse target and a poor finger one; the glyph inside keeps
+  // its size either way, so only the box a finger has to land in grows.
+  const coarsePointer = useCoarsePointer();
   return (
     <button
       type="button"
@@ -106,7 +116,7 @@ function DockButton(props: {
       aria-label={props.label}
       data-testid={props.testId}
       onClick={props.onClick}
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+      className={`flex ${coarsePointer ? "h-8 w-8" : "h-6 w-6"} shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200`}
     >
       {props.children}
     </button>
@@ -136,13 +146,14 @@ function DockTabButton(props: {
   /** Terminal tabs keep their id on the node for tests and the strip's drag targeting. */
   terminalId?: string;
 }) {
+  const coarsePointer = useCoarsePointer();
   return (
     <div
       data-testid="dock-tab"
       data-tab-id={props.tabId}
       {...(props.terminalId !== undefined ? { "data-terminal-id": props.terminalId } : {})}
       data-active={props.active}
-      className={`flex h-6 max-w-44 items-center rounded-md pr-0.5 transition-colors duration-150 ${
+      className={`flex ${coarsePointer ? "h-8" : "h-6"} max-w-44 items-center rounded-md pr-0.5 transition-colors duration-150 ${
         props.active
           ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
           : "text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300"
@@ -172,7 +183,7 @@ function DockTabButton(props: {
         aria-label={`${props.closeLabel}: ${props.label}`}
         data-testid="dock-tab-close"
         onClick={props.onClose}
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+        className={`flex ${coarsePointer ? "h-6 w-6" : "h-4 w-4"} shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200`}
       >
         <CloseIcon size={10} />
       </button>
@@ -230,14 +241,18 @@ function DockPicker({
   choose,
   chooseTerminal,
   terminalSupported,
+  browserOffered,
   horizontal,
 }: {
   choose: (kind: PanelKind) => void;
   chooseTerminal: () => void;
   terminalSupported: boolean;
+  /** The built-in browser can be shown here (the desktop app's own window, with a shell that hosts it). */
+  browserOffered: boolean;
   /** The bottom (and merged) surface lays its choices out in a row, the right one as a list. */
   horizontal: boolean;
 }) {
+  const toggleChord = useDisplayedBinding("terminal.toggle");
   const rowClass =
     "flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
   const row = (kind: PanelKind) => (
@@ -276,11 +291,12 @@ function DockPicker({
               <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.iconButton} />
             </span>
             <span className="min-w-0 flex-1 truncate">{S.terminal.title}</span>
-            <kbd className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500">
-              Ctrl+`
-            </kbd>
+            {toggleChord !== null && (
+              <ChordKbd chord={toggleChord} className="text-gray-400 dark:text-gray-500" />
+            )}
           </button>
         )}
+        {browserOffered && row("builtin-browser")}
         {row("workspace")}
         {row("memory")}
         {row("trace")}
@@ -315,6 +331,8 @@ export function DockPanel({
 }: DockPanelProps) {
   useSyncExternalStore(subscribeDock, dockVersion);
   const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
+  const closeShortcut = useShortcutLabel("terminal.close");
+  const browserOffered = useSyncExternalStore(subscribeBrowser, isBrowserOffered);
   const terminalById = new Map(terminals.map((t) => [t.id, t]));
   const { position, merged, tabs, activeKey } = view;
   const horizontal = position === "bottom";
@@ -543,6 +561,27 @@ export function DockPanel({
     [horizontal],
   );
 
+  // ------------------------------------------------------------------- touch height toggle
+
+  // The bottom dock's height is set by dragging its top boundary — a 4px line, which is a
+  // mouse target and not a finger one. On touch the same two heights a user actually wants
+  // (as much as the dock can take, and back to where it was) get a button. The remembered
+  // height is per mount on purpose: the ratio itself is persisted, so a dock left maximised
+  // restores to the shared default rather than to a height from another session.
+  const coarsePointer = useCoarsePointer();
+  const restoreRatio = useRef<number | null>(null);
+  const maximized = bottomRatio() >= DOCK_RATIO_MAX;
+  const toggleMaximized = useCallback(() => {
+    if (bottomRatio() >= DOCK_RATIO_MAX) {
+      const previous = restoreRatio.current;
+      if (previous === null) resetBottomRatio();
+      else setBottomRatio(previous);
+      return;
+    }
+    restoreRatio.current = bottomRatio();
+    setBottomRatio(DOCK_RATIO_MAX);
+  }, []);
+
   // ------------------------------------------------------------------------------ add menu
 
   const openPanelHere = (kind: PanelKind): void => {
@@ -569,7 +608,7 @@ export function DockPanel({
         </DockButton>
       }
     >
-      {PANEL_KINDS.map((kind) => (
+      {PANEL_KINDS.filter((kind) => kind !== "builtin-browser" || browserOffered).map((kind) => (
         <button
           key={kind}
           type="button"
@@ -671,7 +710,8 @@ export function DockPanel({
     if (tab.kind === "terminal") terminalOrdinals.set(tab.terminalId, terminalOrdinals.size + 1);
   });
 
-  // Ctrl+W inside a shown terminal asks for its tab to close, and takes the × path above,
+  // The terminal.close shortcut (⌃⌥` / Ctrl+Alt+` by default) inside a shown terminal asks for its
+  // tab to close, and takes the × path above,
   // confirmation included. Only the dock holding that tab answers — and not while it is
   // collapsing out, when the merged view may list the same tab — so no request is answered
   // twice. The ref keeps one subscription per mount while the handler reads the current tabs.
@@ -735,7 +775,7 @@ export function DockPanel({
               active={key === activeKey}
               badge={false}
               closeLabel={S.terminal.killShell}
-              closeShortcut="Ctrl+W"
+              closeShortcut={closeShortcut ?? undefined}
               onSelect={() => activateTab(key)}
               onClose={() => closeTab(tab, label)}
             />
@@ -764,6 +804,15 @@ export function DockPanel({
             />
           </DockButton>
         )}
+        {horizontal && coarsePointer && tabs.length > 0 && (
+          <DockButton
+            label={maximized ? S.dock.restore : S.dock.maximize}
+            testId="dock-maximize"
+            onClick={toggleMaximized}
+          >
+            <GlyphIcon d={maximized ? RESTORE_ICON : MAXIMIZE_ICON} size={ICON_SIZE.rowLead} />
+          </DockButton>
+        )}
         <DockButton label={S.dock.hideDock} testId="dock-close" onClick={hide}>
           <CloseIcon size={12} />
         </DockButton>
@@ -778,6 +827,7 @@ export function DockPanel({
         choose={(kind) => openPanel(kind, merged ? undefined : position)}
         chooseTerminal={() => void openTerminalInDock(merged ? undefined : position)}
         terminalSupported={terminalSupported}
+        browserOffered={browserOffered}
         horizontal={horizontal}
       />
     ) : (

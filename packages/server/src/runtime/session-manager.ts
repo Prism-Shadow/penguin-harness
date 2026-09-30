@@ -36,6 +36,7 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
+  isHookContinue,
   isHookInput,
   isSessionMeta,
   parseUserSteeringText,
@@ -1130,7 +1131,9 @@ export class SessionManager {
    * Taps a goal run's stream for `drive`: round boundaries become goal_round events —
    * round 1 from the seeded input (core never yields a run's initial input, so it is
    * counted here, where startGoal published it), later rounds from the stop-hook continues
-   * core yields — and the goal hook's `stop` event becomes the
+   * core yields, each announced by the hook's `continue` event; a harness-stamped input
+   * nothing announced is another package's user_prompt context riding behind the
+   * objective, not a round — and the goal hook's `stop` event becomes the
    * goal_finished server event. `used` is what the hook last recorded in its event's
    * `output` — the same number its budget check used — so the UI never shows a different
    * figure. A stream that ends without the hook's terminal event (a cut-off run, an
@@ -1165,9 +1168,13 @@ export class SessionManager {
         });
       }
     }
+    // Set by a stop hook's `continue` event, spent by the input that follows it.
+    let continued = false;
     try {
       for await (const msg of gen) {
-        if (isHookInput(msg)) {
+        if (isHookContinue(msg)) continued = true;
+        if (continued && isHookInput(msg)) {
+          continued = false;
           round++;
           this.publishEvent(entry, {
             type: "goal_round",

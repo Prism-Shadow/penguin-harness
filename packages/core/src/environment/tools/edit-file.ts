@@ -24,13 +24,13 @@
  * Docs: /docs/tools § "File tools".
  */
 import path from "node:path";
-import { readFile, stat } from "node:fs/promises";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type { ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
-import { atomicWriteFile } from "../../internal/atomic-write.js";
 import { fileLockKey, withFileLock } from "../../internal/file-lock.js";
+import { describeFsError, errorCode, localFsPort } from "./fs-port.js";
+import type { FsPort } from "./fs-port.js";
 import { buildReplacementHunks, renderHunk } from "./diff.js";
 import { missingPathHint } from "./path-hint.js";
 import { describeArgumentError } from "./tool-arguments.js";
@@ -76,32 +76,37 @@ async function applyEdit(params: {
   oldString: string;
   newString: string;
   replaceAll: boolean;
+  /** The file system to work through (see fs-port.ts), and whether it is the sandboxed helper. */
+  fs: FsPort;
+  sandboxed: boolean;
   signal?: AbortSignal;
 }): Promise<EditOutcome> {
-  const { resolved, filePath, oldString, newString, replaceAll, signal } = params;
+  const { resolved, filePath, oldString, newString, replaceAll, fs, sandboxed, signal } = params;
   let content: string;
   let fileMode: number | undefined;
   try {
-    const st = await stat(resolved);
-    if (st.isDirectory()) {
+    const st = await fs.stat(resolved);
+    if (st.isDirectory) {
       return { kind: "fatal", text: `Cannot edit "${filePath}": it is a directory.` };
     }
     fileMode = st.mode & 0o777;
-    content = await readFile(resolved, { encoding: "utf8", ...(signal ? { signal } : {}) });
+    content = (await fs.readFile(resolved)).toString("utf8");
   } catch (err) {
     if (signal?.aborted) return { kind: "aborted" };
-    const code = (err as NodeJS.ErrnoException).code;
+    const code = errorCode(err);
     // ENOTDIR is the same mistake seen one segment later (a file used as a directory),
     // so it gets the same diagnosis instead of a raw errno message.
     if (code === "ENOENT" || code === "ENOTDIR") {
-      const hint = await missingPathHint(resolved);
+      const hint = await missingPathHint(resolved, fs);
       return {
         kind: "fatal",
         text: `File not found: "${filePath}". edit_file only edits existing files — check the path (absolute paths are supported), or use write_file to create it.${hint}`,
       };
     }
-    const message = err instanceof Error ? err.message : String(err);
-    return { kind: "fatal", text: `Failed to read "${filePath}": ${message}` };
+    return {
+      kind: "fatal",
+      text: `Failed to read "${filePath}": ${describeFsError(err, sandboxed)}`,
+    };
   }
   if (signal?.aborted) return { kind: "aborted" };
 
@@ -129,15 +134,16 @@ async function applyEdit(params: {
     ? content.split(oldString).join(newString)
     : content.slice(0, replaceStart) + newString + content.slice(replaceStart + oldString.length);
   try {
-    await atomicWriteFile(resolved, newContent, {
+    await fs.writeFileAtomic(resolved, Buffer.from(newContent, "utf8"), {
       ...(fileMode !== undefined ? { mode: fileMode } : {}),
-      ...(signal ? { signal } : {}),
       followSymlinks: true,
     });
   } catch (err) {
     if (signal?.aborted) return { kind: "aborted" };
-    const message = err instanceof Error ? err.message : String(err);
-    return { kind: "fatal", text: `Failed to write "${filePath}": ${message}` };
+    return {
+      kind: "fatal",
+      text: `Failed to write "${filePath}": ${describeFsError(err, sandboxed)}`,
+    };
   }
 
   return { kind: "ok", content, replaced: replaceAll ? occurrences : 1 };
@@ -204,13 +210,27 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
       const replaceAll = args["replace_all"] === true;
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
+      // Every file-system effect goes through the Session's port: its sandboxed helper
+      // when the Session is confined, this process otherwise (see fs-port.ts).
+      const fs = ctx.fs ?? localFsPort;
+      const { sandboxed } = fs;
       // One file, one writer at a time: the read and the write that follows it are a single
       // critical section, so a concurrent edit lands entirely before or entirely after this
       // one instead of being overwritten by it.
       const key = await fileLockKey(resolved);
       const outcome = await withFileLock(
         key,
-        () => applyEdit({ resolved, filePath, oldString, newString, replaceAll, signal }),
+        () =>
+          applyEdit({
+            resolved,
+            filePath,
+            oldString,
+            newString,
+            replaceAll,
+            fs,
+            sandboxed,
+            signal,
+          }),
         signal,
       ).catch((err: unknown): EditOutcome => {
         // Interrupted while queued behind another writer on the same file — the same

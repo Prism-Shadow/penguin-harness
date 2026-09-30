@@ -26,4 +26,14 @@ describe("Kbd", () => {
       ]),
     );
   });
+
+  it("draws the plain look as mono text joined by +, with no cap chrome", () => {
+    const html = renderStatic(createElement(Kbd, { keys: ["Ctrl", "W"], variant: "plain" }));
+    expect(html).toMatch(
+      /^<kbd class="[^"]*"><kbd>Ctrl<\/kbd><span aria-hidden="true">\+<\/span><kbd>W<\/kbd><\/kbd>$/,
+    );
+    const tokens = classTokens(html);
+    expect(tokens).toEqual(expect.arrayContaining(["font-mono", "text-xs"]));
+    expect(tokens).not.toContain("border-line");
+  });
 });

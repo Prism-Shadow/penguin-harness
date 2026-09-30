@@ -985,7 +985,9 @@ export class GenerativeModel implements LLMInterface {
     // configured endpoint reads (see attributionHeaders); AgentHub hands it to every request
     // the routed client makes, and endpoints with no attribution scheme get no extra headers
     // at all. The Session's id rides along for the schemes that name the conversation rather
-    // than the app.
+    // than the app; without one, attributionHeaders mints a fresh id. Computed once and kept
+    // in clientOptions, so every request of this instance — across a rotated credential too —
+    // names the same conversation.
     const headers = attributionHeaders(config.baseUrl, config.sessionId);
     this.clientOptions = {
       model: config.modelId,

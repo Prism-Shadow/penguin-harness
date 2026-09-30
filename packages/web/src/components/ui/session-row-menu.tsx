@@ -160,7 +160,7 @@ export function SessionRowMenuRows({
 
 /** The hover buttons' shared reveal classes (see SessionRowHoverActions on why pointer events are gated with opacity). */
 const hoverButtonClass =
-  "pointer-events-none flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100";
+  "pointer-events-none flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-[opacity,color] duration-150 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100";
 
 /**
  * Hover affordance: icon-only buttons that fade in over the row — the direct actions

@@ -15,6 +15,7 @@ UI 包迁移的 W2 把 Web App 的表单控件搬进 `@prismshadow/penguin-ui`�
 - **选择器**：`Select`、`OptionMenu`、`PickerList`（从模型选择器中抽出的「搜索框 + 可键盘遍历的列表」）、`Segmented`、`Switch`、`SwatchPicker`（强调色色块），以及设置行 `PrefRow`、`SettingRow` 与 `SettingsSection`。
 - **从 W3 提前的浮层**：`usePortalPanel`、`InfoPopover`（标签旁的「?」）与 `HelpFold`。
 - **新增控件**：`Checkbox`（含半选态）、`Radio` 与 `RadioGroup`、`SearchInput`（字段、面板、菜单三种形态，带清空按钮），以及取代八处手写开关行的 `ToggleRow`。
+- **迁移期间 main 合入的代码**：模型选择对话框的搜索框与侧栏的会话搜索改用 `SearchInput`（ref 可直达其输入框，搜索快捷键依赖这一点）；内置浏览器的清除数据与导入对话框改用 `Checkbox` 与 `Radio`。
 
 ## 细节
 
@@ -24,7 +25,7 @@ UI 包迁移的 W2 把 Web App 的表单控件搬进 `@prismshadow/penguin-ui`�
 ## 通用主题下可见的变化
 
 - 复选框与单选按钮由主题绘制（14 px，强调色填充），不再是浏览器原生控件。
-- 搜索框统一样式并带清空按钮；技能与机器选择器里第一次按 Esc 清空搜索词，第二次才关闭。
+- 搜索框统一样式并带清空按钮；技能与机器选择器以及模型选择对话框里第一次按 Esc 清空搜索词，第二次才关闭。
 - 菜单行：悬停与当前项底色浅一档，选项文字深一档。
 - 字段标签浅一档；出错时去掉红色底，只保留红色边框。
 - 分段控件内边距改为 4 px（高 4 px）；深色下选中段更深。

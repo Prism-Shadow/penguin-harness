@@ -94,9 +94,8 @@ export interface FontOption {
 
 /**
  * The Latin faces, only those the app already bundles (`fonts/*.css`). They replace the reading
- * and chrome sans (`--ui-font-sans`, which `--ui-font-ui` follows in Primer and Frost); a
- * theme's mono face is never replaced — Console's chrome stays mono, its identity, and a
- * pairing only changes what Console reads in.
+ * and chrome sans (`--ui-font-sans`, which every theme's `--ui-font-ui` follows); a theme's mono
+ * face is never replaced — code and the marks a theme sets in mono keep it.
  */
 export const FONT_LATIN_OPTIONS = [
   { id: "theme", label: "Theme default" },
@@ -141,7 +140,6 @@ export const BUNDLED_FONT_FAMILIES = {
   MiSans: "MiSans",
   "Noto Sans SC": "Noto Sans SC Variable",
   "JetBrains Mono": "JetBrains Mono Variable",
-  "Commit Mono": "Commit Mono",
 } as const;
 export type BundledFontName = keyof typeof BUNDLED_FONT_FAMILIES;
 
@@ -150,7 +148,7 @@ export const SYSTEM_FONT = "System";
 export type ThemeFontName = BundledFontName | typeof SYSTEM_FONT;
 
 export interface ThemeFonts {
-  /** The reading / UI sans (`--ui-font-sans`); Console's chrome is its mono face on top of it. */
+  /** The reading and chrome sans (`--ui-font-sans`, which `--ui-font-ui` follows). */
   readonly latin: ThemeFontName;
   /** `--ui-font-cjk`. */
   readonly cjk: ThemeFontName;
@@ -164,9 +162,9 @@ export interface ThemeFonts {
  * first (`System` = a stack that names no bundled family).
  */
 export const THEME_FONTS: Readonly<Record<ThemeId, ThemeFonts>> = {
-  github: { latin: SYSTEM_FONT, cjk: SYSTEM_FONT, mono: SYSTEM_FONT },
+  github: { latin: "Mona Sans", cjk: "Noto Sans SC", mono: "JetBrains Mono" },
   modern: { latin: "MiSans", cjk: "MiSans", mono: "JetBrains Mono" },
-  geek: { latin: "IBM Plex Sans", cjk: "Noto Sans SC", mono: "Commit Mono" },
+  geek: { latin: "IBM Plex Sans", cjk: "Noto Sans SC", mono: "JetBrains Mono" },
 };
 
 // ---------------------------------------------------------------------------

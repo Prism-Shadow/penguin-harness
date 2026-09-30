@@ -599,11 +599,24 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
     await close();
     await open("Thinking level", `thinking @${vp.width}`);
     await close();
-    await open("Choose model", `model @${vp.width}`);
-    // Reveal the key-less remainder — the widest state of the w-max panel — and re-check.
+    // The model picker is a dialog, not a hanging menu: at phone width it fills the screen,
+    // with the group rail folded into a chip strip that scrolls inside itself. Checked with
+    // the key-less models revealed, the state with the most groups on that strip.
+    await page.locator('button[aria-label="Choose model"]').click();
+    const picker = page.getByRole("dialog", { name: "Choose model" });
+    await expect(picker, `model @${vp.width}: dialog open`).toBeVisible();
     await page.getByRole("button", { name: /without a key/ }).click();
-    await checkPanel(`model show-all @${vp.width}`);
-    await close();
+    await page.waitForTimeout(200); // let the pop-in animation settle before measuring
+    const box = await picker.boundingBox();
+    expect(box.x, `model @${vp.width}: dialog left edge`).toBeLessThanOrEqual(0.5);
+    expect(box.width, `model @${vp.width}: dialog full width`).toBeGreaterThanOrEqual(vp.width - 1);
+    expect(box.y, `model @${vp.width}: dialog top edge`).toBeLessThanOrEqual(0.5);
+    const pd = await docWidths(page);
+    expect(pd.scrollWidth, `model @${vp.width}: no horizontal overflow`).toBeLessThanOrEqual(
+      pd.clientWidth,
+    );
+    await page.keyboard.press("Escape");
+    await expect(picker).toHaveCount(0);
     await open("Choose agent", `agent @${vp.width}`);
     await close();
     await open("Workspace", `workspace @${vp.width}`);

@@ -1,18 +1,33 @@
 /**
- * Goal-mode server tests: SessionManager.startGoal running the goal plugin's user_prompt hook
- * on a fake Session (no real LLM requests, no scripts) and driving one `session.run` — the
- * round and terminal server events derived from the stream's harness-injected inputs and
- * goal hook events.
+ * Goal-mode server tests.
+ *
+ * - SessionManager.startGoal running the goal plugin's user_prompt hook on a fake Session
+ *   (no real LLM requests, no scripts) and driving one `session.run` — the round and
+ *   terminal server events derived from the stream's harness-injected inputs and goal hook
+ *   events.
+ * - A real core Session that runs the installed scripts against a loopback model endpoint,
+ *   with a hand-written every-prompt package beside the goal package: on a goal start that
+ *   package's context rides round 1 without counting as a round, and an ordinary Task starts
+ *   no goal — for the goal package the library ships and for one installed before
+ *   user_prompt commands ran on every Prompt.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { DatabaseSync } from "node:sqlite";
 import {
   assistantText,
   buildSkillsMessage,
+  createAgent,
   emptyTokenCounts,
   hookEvent,
+  hooksDir,
   imageUrlMessage,
+  installPlugin,
+  libraryPlugin,
+  saveProjectConfig,
+  sessionScratchpadDir,
   tokenUsage,
   userText,
 } from "@prismshadow/penguin-core";
@@ -22,10 +37,19 @@ import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
-import { SessionManager } from "../src/runtime/session-manager.js";
+import { SessionManager, createCoreSessionLoader } from "../src/runtime/session-manager.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
-import { waitFor } from "./helpers.js";
+import { makeTempRoot, waitFor } from "./helpers.js";
+import {
+  MOCK_MODEL_ID,
+  clockContext,
+  requestText,
+  startMockLLM,
+  userTexts,
+  writeClockPackage,
+} from "./live-session.js";
+import type { MockLLM } from "./live-session.js";
 
 const ROW: SessionRow = {
   sessionId: "session-1",
@@ -63,6 +87,12 @@ function goalHook(
     decision,
     output: { status, round, tokens_used: tokensUsed, budget },
   });
+}
+
+function serverEvents(events: ChannelEvent[]) {
+  return events
+    .filter((e) => e.event === "server_event")
+    .map((e) => JSON.parse(e.data) as { type: string; [k: string]: unknown });
 }
 
 describe("SessionManager.startGoal", () => {
@@ -132,12 +162,6 @@ describe("SessionManager.startGoal", () => {
       recorder: { record: async () => {} },
       log: () => {},
     });
-  }
-
-  function serverEvents(events: ChannelEvent[]) {
-    return events
-      .filter((e) => e.event === "server_event")
-      .map((e) => JSON.parse(e.data) as { type: string; [k: string]: unknown });
   }
 
   it("drives one goal-mode run, mapping the round inputs and the hook's answers to goal events", async () => {
@@ -351,3 +375,172 @@ describe("SessionManager.startGoal", () => {
     expect(emptyTokenCounts().total).toBe(0);
   });
 });
+
+/**
+ * The goal package as the library installed it before user_prompt commands ran on every
+ * Prompt: an older version, and no `trigger` on start.mjs.
+ */
+const LEGACY_GOAL_MANIFEST = {
+  name: "goal",
+  description: "Goal mode",
+  version: "2026.09.01.1",
+  stop: [{ command: "stop.mjs", timeout: 60 }],
+  pre_tool_use: [],
+  user_prompt: [{ command: "start.mjs", timeout: 60 }],
+};
+
+for (const { installed, legacy } of [
+  { installed: "the goal package the library ships", legacy: false },
+  { installed: "a goal package from before user_prompt ran on every prompt", legacy: true },
+]) {
+  describe(
+    `a real Session with ${installed} and an every-prompt package`,
+    { timeout: 30_000 },
+    () => {
+      const PROJECT = "p1";
+      const AGENT = "goal_agent";
+      let root: string;
+      let mock: MockLLM;
+      let db: DatabaseSync;
+      let channels: ChannelHub;
+      let manager: SessionManager;
+      let sessionId: string;
+      let events: ChannelEvent[];
+
+      beforeEach(async () => {
+        root = await makeTempRoot();
+        mock = await startMockLLM();
+        // Saved first: an Agent reads its Project's models when it is created.
+        await saveProjectConfig(root, PROJECT, {
+          default_model: { provider: "custom", model_id: MOCK_MODEL_ID },
+          models: [
+            {
+              provider: "custom",
+              model_id: MOCK_MODEL_ID,
+              context_window: 200_000,
+              api_key: "sk-mock",
+              base_url: mock.url,
+            },
+          ],
+        });
+        const agent = await createAgent({ root, projectId: PROJECT, agentId: AGENT });
+        await installPlugin(root, PROJECT, AGENT, libraryPlugin("goal")!);
+        const hooks = hooksDir(root, PROJECT, AGENT);
+        if (legacy) {
+          await fs.writeFile(
+            path.join(hooks, "goal", "hooks.json"),
+            `${JSON.stringify(LEGACY_GOAL_MANIFEST, null, 2)}\n`,
+          );
+        }
+        await writeClockPackage(hooks);
+        const workspace = path.join(root, "workspace");
+        await fs.mkdir(workspace);
+        // Created and handed to the manager the way POST /sessions does it; its first context
+        // reads the packages as it opens.
+        const session = await agent.createSession({ workspaceDir: workspace });
+        sessionId = session.sessionId;
+        const now = new Date().toISOString();
+        const row: SessionRow = {
+          sessionId,
+          projectId: PROJECT,
+          agentId: AGENT,
+          modelId: MOCK_MODEL_ID,
+          provider: "custom",
+          workspace,
+          approvalMode: "allow-all",
+          title: null,
+          createdAt: now,
+          lastActiveAt: now,
+        };
+        db = openDatabase(":memory:");
+        const sessions = wire(SessionsRepo, { db: db });
+        sessions.insert(row);
+        channels = new ChannelHub();
+        manager = new SessionManager({
+          sessions,
+          channels,
+          sources: new SessionSources(),
+          loader: createCoreSessionLoader(root),
+          recorder: { record: async () => {} },
+          log: () => {},
+        });
+        manager.adopt(row, session);
+        events = [];
+        channels.get(sessionId).subscribe((e) => events.push(e));
+      });
+      afterEach(async () => {
+        await manager.shutdown();
+        channels.dispose();
+        db.close();
+        await mock.close();
+        await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      });
+
+      const idle = () => waitFor(() => manager.statusOf(sessionId) === "idle", 20_000);
+      /** The user texts published on the session's message stream, in order. */
+      const published = () =>
+        userTexts(
+          events.filter((e) => e.event === undefined).map((e) => JSON.parse(e.data) as OmniMessage),
+        );
+      const goalFile = () =>
+        path.join(sessionScratchpadDir(root, PROJECT, AGENT, sessionId), "GOAL.json");
+
+      it("a goal start runs the goal's start by name; the other package's context rides round 1 without counting as a round", async () => {
+        await manager.startGoal(sessionId, {
+          messages: [userText("raise coverage")],
+          objective: "raise coverage",
+          budget: 1,
+        });
+        await idle();
+
+        // start.mjs wrote the goal file; round 1 spent the budget, so round 2 was the wrap-up.
+        expect(JSON.parse(await fs.readFile(goalFile(), "utf8"))).toMatchObject({
+          objective: "raise coverage",
+          budget: 1,
+          round: 2,
+          status: "budget_limited",
+        });
+        const texts = published();
+        expect(texts.map((m) => m.sender)).toEqual(["user", "harness", "harness", "harness"]);
+        expect(texts[0]!.text).toBe("raise coverage");
+        expect(texts[1]!.text).toContain("sent automatically by goal mode");
+        expect(texts[2]!.text).toBe(clockContext("raise coverage"));
+        expect(texts[3]!.text).toContain("reached its token budget");
+
+        const server = serverEvents(events);
+        expect(server.filter((e) => e.type === "goal_round").map((e) => e.round)).toEqual([1, 2]);
+        expect(server.find((e) => e.type === "goal_finished")).toMatchObject({
+          outcome: "budget_limited",
+          rounds: 2,
+        });
+
+        // Round 1's request carries the three in that order. The wrap-up round starts from the
+        // goal hook's input, which no user submitted: the package is not asked again.
+        expect(mock.requests).toHaveLength(2);
+        const first = requestText(mock.requests[0]!);
+        const at = [
+          "raise coverage",
+          "sent automatically by goal mode",
+          clockContext("raise coverage"),
+        ].map((text) => first.indexOf(text));
+        expect(at.every((i) => i >= 0)).toBe(true);
+        expect(at).toEqual([...at].sort((a, b) => a - b));
+      });
+
+      it("an ordinary task starts no goal: the goal's start is not among the Prompt's hooks, the other package's is", async () => {
+        await manager.startTask(sessionId, [userText("fix the typo")]);
+        await idle();
+
+        expect(published()).toEqual([
+          { sender: "user", text: "fix the typo" },
+          { sender: "harness", text: clockContext("fix the typo") },
+        ]);
+        // No goal file and one request: nothing started a goal, so the goal's stop hook found
+        // none to drive into another round.
+        await expect(fs.access(goalFile())).rejects.toThrow();
+        expect(mock.requests).toHaveLength(1);
+        expect(serverEvents(events).filter((e) => e.type.startsWith("goal_"))).toEqual([]);
+      });
+    },
+  );
+}

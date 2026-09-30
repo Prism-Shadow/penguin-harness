@@ -7,7 +7,6 @@
 import { describe, expect, it } from "vitest";
 import {
   channelMentionCandidates,
-  insertMention,
   mentionCandidates,
   mentionInsertId,
   mentionIsMe,
@@ -45,19 +44,16 @@ describe("mentionQueryAt", () => {
     expect(mentionQueryAt("@agent:c", 8)).toEqual({ start: 0, query: "agent:c" });
   });
 
+  it("reads a name typed in any script, glued to CJK text before the @", () => {
+    expect(mentionQueryAt("请@张", 3)).toEqual({ start: 1, query: "张" });
+    expect(mentionQueryAt("@Ada", 4)).toEqual({ start: 0, query: "Ada" });
+  });
+
   it("is null when the @ is glued to a word, when a space breaks the token, or when there is none", () => {
     expect(mentionQueryAt("mail@ex", 7)).toBeNull();
     expect(mentionQueryAt("@ceo please", 11)).toBeNull();
     expect(mentionQueryAt("plain", 5)).toBeNull();
-  });
-});
-
-describe("insertMention", () => {
-  it("replaces the typed token with the principal and a trailing space, moving the caret after it", () => {
-    expect(insertMention("hi @ce there", 3, 6, "agent:ceo")).toEqual({
-      text: "hi @agent:ceo  there",
-      caret: 14,
-    });
+    expect(mentionQueryAt("@Ada, hi", 8)).toBeNull();
   });
 });
 

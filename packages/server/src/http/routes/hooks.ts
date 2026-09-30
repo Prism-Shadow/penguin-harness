@@ -11,9 +11,10 @@
  * routes are the skills routes' pair: POST writes every zip file under hooks/<name>/ (replace
  * semantics with `overwrite`), GET packs the whole directory back under a single top-level
  * <name>/ so the download round-trips through the POST unchanged. Every mutation here
- * invalidates the Agent's cached runtimes: hook packages are bound when a core Session is
- * built (skills are read from disk on demand, hooks are not), so a runtime that outlived the
- * change would keep running the old set until it was evicted.
+ * invalidates the Agent's cached runtimes: core reads hook packages when a model context
+ * opens, so a conversation that is running would otherwise keep the old set until its next
+ * compaction. Rebuilding the runtime re-reads them on the next Task instead — which is what
+ * lets a package installed from this page start a goal in the conversation already open.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -113,6 +114,9 @@ function normalizeHookManifest(
       }
       if (cmd.timeout !== undefined && !(typeof cmd.timeout === "number" && cmd.timeout > 0)) {
         throw badRequest(`hooks.json ${point} timeout must be a positive number of seconds.`);
+      }
+      if (cmd.trigger !== undefined && cmd.trigger !== "prompt" && cmd.trigger !== "host") {
+        throw badRequest(`hooks.json ${point} trigger must be "prompt" or "host".`);
       }
       commands += 1;
     }
