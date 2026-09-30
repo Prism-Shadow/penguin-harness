@@ -53,7 +53,7 @@ type PluginList = NonNullable<Options["remarkPlugins"]>;
  *   not actionable by anyone reading a chat transcript, and the render is identical either way.
  * - `errorColor: "currentColor"` — the default `#cc0000` is an inline style, so it cannot adapt to
  *   the dark theme, where it lands under 4:1 against a black background. Failed expressions instead
- *   render as their own source in the body colour; `.katex-error` in styles.css marks them with a
+ *   render as their own source in the body colour; `.katex-error` in prose.css marks them with a
  *   dotted underline and keeps KaTeX's parse error in the `title` tooltip.
  * - `trust: false` (KaTeX's default, restated because it is a boundary) — leaves `\href`, `\url`
  *   and `\includegraphics` inert, so a formula cannot smuggle in a link or an image request.

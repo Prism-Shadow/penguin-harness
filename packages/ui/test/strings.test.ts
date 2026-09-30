@@ -26,6 +26,7 @@ describe("UiStrings", () => {
       "clearSearch",
       "close",
       "copied",
+      "copyCode",
       "hidePassword",
       "loading",
       "moreInfo",
@@ -40,6 +41,7 @@ describe("UiStrings", () => {
       hidePassword: "Hide password",
       clearSearch: "Clear search",
       moreInfo: "More info",
+      copyCode: "Copy code",
     });
     // The one formatter: the subject folds into the name, keeping "More info" its prefix.
     expect(DEFAULT_UI_STRINGS.moreInfoAbout("Vault")).toBe("More info: Vault");

@@ -1,13 +1,13 @@
 /**
  * The expanded Markdown body the thinking block and the compaction sections share
  * (features/chat/disclosure-row.tsx). vitest is node-only here (`environment: "node"`, no
- * jsdom), so this pins the contract against the source text and styles.css — the
+ * jsdom), so this pins the contract against the source text and the stylesheets — the
  * title-reveal.test.ts convention.
  *
  * The fragile part is not the class list, it is **where the end-margin reset lives**. The
- * `.md-body` rules in styles.css sit outside any cascade layer while Tailwind's utilities are
- * emitted inside `@layer utilities`, and an unlayered declaration beats a layered one at any
- * specificity — so a `[&>*:first-child]:mt-0` utility on the body is silently inert against
+ * `.md-body` rules (the shared UI package's prose.css) sit outside any cascade layer while
+ * Tailwind's utilities are emitted inside `@layer utilities`, and an unlayered declaration beats a
+ * layered one at any specificity — so a `[&>*:first-child]:mt-0` utility on the body is inert against
  * `.md-body`'s own `margin: 0.5rem 0`, and the body carries double the inset it claims.
  * Nothing about the class list looks wrong when that happens, which is why it is asserted here.
  *
@@ -49,8 +49,9 @@ const unlayeredRules = (sheet: string) => {
 };
 
 /**
- * The unlayered rules of every stylesheet under the scanned roots — styles.css today, the shared
- * package's component CSS once the Markdown body moves there — each file stripped on its own.
+ * The unlayered rules of every stylesheet under the scanned roots — the app's styles.css and the
+ * shared package's component CSS, where the Markdown body's rules live — each file stripped on its
+ * own.
  */
 const unlayered = SCAN.files
   .filter((file) => file.name.endsWith(".css"))

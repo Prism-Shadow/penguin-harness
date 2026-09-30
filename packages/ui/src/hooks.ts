@@ -17,7 +17,8 @@
  * | `ui-glass`         | a transient layer over content: menus, popovers, the     | —                                                     |
  * |                    | modal card, the floating composer, a sticky page header  |                                                       |
  * | `ui-eyebrow`       | a group label naming the items below it (never directly  | —                                                     |
- * |                    | above an `h1`–`h4`)                                      |                                                       |
+ * |                    | above an `h1`–`h4`); hosts: `Text variant="eyebrow"`,    |                                                       |
+ * |                    | the sidebar's and group headers' labels                  |                                                       |
  * | `ui-display`       | the one display title of a page or hero                  | only on an `h1` or `[aria-level="1"]`                 |
  * | `ui-live`          | motion for something that is running right now           | `data-live="dot" \| "caret" \| "spinner"`             |
  * |                    | hosts: the Spinner, a pulsing Dot                        |                                                       |

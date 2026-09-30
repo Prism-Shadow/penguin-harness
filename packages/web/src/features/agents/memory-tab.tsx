@@ -41,6 +41,7 @@ import {
   ICONS,
   IconButton,
   InfoPopover,
+  Md,
   RadioGroup,
   SkeletonList,
   Textarea,
@@ -61,7 +62,6 @@ import { Drawer } from "../../components/ui/drawer";
 import { Sheet, type SheetSnap } from "../../components/ui/sheet";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { Md } from "../chat/md";
 import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {

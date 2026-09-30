@@ -2,12 +2,12 @@
  * Which languages the code viewer can highlight, and how a fence info string or a file extension
  * resolves to one. Pure lookup tables — no Shiki import, so this is safe to pull into the main
  * bundle; the grammars themselves are behind the dynamic imports in LANGUAGE_LOADERS and only
- * materialize as separate chunks when highlighter.ts actually loads one.
+ * materialize as separate chunks when the engine (highlighter-core.ts) actually loads one.
  *
  * The list is explicit rather than "whatever Shiki bundles" because the full bundle costs an
  * oniguruma WASM chunk and a 332-grammar registry on the first code block of a conversation (see
- * highlighter.ts). Adding a language means a loader entry plus, where the grammar declares aliases
- * of its own, the alias rows that route a fence info string to it.
+ * highlighter-core.ts). Adding a language means a loader entry plus, where the grammar declares
+ * aliases of its own, the alias rows that route a fence info string to it.
  *
  * The tables are Maps, not objects: the keys are file extensions and fence info strings, and a
  * plain object would resolve `constructor` or `__proto__` through Object.prototype to a function or

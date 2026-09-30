@@ -91,7 +91,6 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/chat/agent-topology-view.tsx": { 12: [1, "W6"], 13: [3, "W6"] },
   "features/chat/chat-input.tsx": { 7: [1, "W6"], 12: [7, "W6"], 13: [5, "W6"] },
   "features/chat/chat-page.tsx": { 6: [1, "W1b"], 12: [2, "W6"], 13: [3, "W6"], 15: [1, "W4"] },
-  "features/chat/code-block.tsx": { 13: [1, "W5"] },
   "features/chat/context-gauge.tsx": { 12: [5, "W8"] },
   "features/chat/conversation-outline.tsx": { 1: [1, "W1b"], 6: [2, "W1b"], 12: [1, "W6"] },
   "features/chat/disclosure-row.tsx": { 13: [1, "W4"], 14: [2, "W4"] },

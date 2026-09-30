@@ -30,7 +30,7 @@ const FS_MODES: SessionSandbox["mode"][] = ["read-only", "workspace-write", "dan
 const NETWORK_MODES: SessionSandbox["network"][] = ["open", "local", "none"];
 
 /** A section's small heading inside the panel. */
-function Heading({ children }: { children: ReactNode }) {
+function PanelSectionLabel({ children }: { children: ReactNode }) {
   return (
     <div className="px-3 pt-2 pb-1 text-xs font-medium text-gray-400 dark:text-gray-500">
       {children}
@@ -161,7 +161,7 @@ export function PermissionSelect({
         }
       >
         <div role="menu" aria-label={P.label} className="pb-1">
-          <Heading>{P.fs}</Heading>
+          <PanelSectionLabel>{P.fs}</PanelSectionLabel>
           {FS_MODES.map((mode) => (
             <Choice
               key={mode}
@@ -174,7 +174,7 @@ export function PermissionSelect({
               }
             />
           ))}
-          <Heading>{P.network}</Heading>
+          <PanelSectionLabel>{P.network}</PanelSectionLabel>
           {NETWORK_MODES.map((network) => (
             <Choice
               key={network}
@@ -191,7 +191,7 @@ export function PermissionSelect({
               }
             />
           ))}
-          <Heading>{P.approval}</Heading>
+          <PanelSectionLabel>{P.approval}</PanelSectionLabel>
           {APPROVAL_MODES.map((mode) => (
             <Choice
               key={mode}

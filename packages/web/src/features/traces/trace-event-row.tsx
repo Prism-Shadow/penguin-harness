@@ -12,10 +12,15 @@
  * aren't highlighted together).
  */
 import { Fragment, useState } from "react";
-import { Badge, ICONS, RequiredMark } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  ICONS,
+  REHYPE_PLUGINS,
+  REMARK_PLUGINS,
+  RequiredMark,
+} from "@prismshadow/penguin-ui";
 import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import ReactMarkdown from "react-markdown";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { S } from "../../lib/strings";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import { formatTime, humanizeTokens } from "../../lib/format";

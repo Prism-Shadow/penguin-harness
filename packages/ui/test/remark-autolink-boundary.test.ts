@@ -1,5 +1,6 @@
 /**
- * Where a bare URL ends. GFM's autolink literal stops at whitespace and only then trims trailing
+ * Where a bare URL ends (src/components/content/prose/remark-autolink-boundary.ts, through the
+ * shared pipeline). GFM's autolink literal stops at whitespace and only then trims trailing
  * punctuation, so anything that follows the URL without a space — CJK text, a comma, the `**` that
  * was meant to close a bold span — is swallowed into the href. These pin the boundary where GFM
  * stopped looking, and pin the three things that must not change: explicit links, URLs that are
@@ -9,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
-import { REMARK_PLUGINS } from "../src/lib/markdown-plugins";
+import { REMARK_PLUGINS } from "../src/components/content/prose/markdown-plugins";
 
 /** The rendered `[href, text]` of the first link, or null. */
 function firstLink(markdown: string): [string, string] | null {

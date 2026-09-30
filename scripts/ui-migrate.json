@@ -379,6 +379,53 @@
           "names": ["SectionShell→SettingsSection"]
         }
       ]
+    },
+    "W5": {
+      "packages/web/src/features/chat/md": [
+        {
+          "owner": "W5-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/prose/prose.tsx",
+          "names": ["Md", "SETTLED_MD_COMPONENTS"]
+        },
+        {
+          "owner": "W5-A",
+          "target": "packages/web/src/features/chat/workspace-links",
+          "dest": "packages/web/src/features/chat/workspace-links.tsx",
+          "names": ["WorkspaceLinksProvider"]
+        }
+      ],
+      "packages/web/src/lib/markdown-plugins": [
+        {
+          "owner": "W5-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/prose/markdown-plugins.ts",
+          "names": ["REMARK_PLUGINS", "REHYPE_PLUGINS", "NO_REHYPE_PLUGINS"]
+        }
+      ],
+      "packages/web/src/features/chat/code-block": [
+        {
+          "owner": "W5-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/code-block/code-block.tsx",
+          "names": ["CodeBlock", "CodeSurface"]
+        }
+      ],
+      "packages/web/src/features/chat/code-languages": [
+        {
+          "owner": "W5-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/code-block/code-languages.ts",
+          "names": [
+            "languageForExtension",
+            "resolveLanguage",
+            "isPlainTextLanguage",
+            "PLAIN_TEXT_LANGUAGE",
+            "LANGUAGE_LOADERS",
+            "LANGUAGE_ALIASES"
+          ]
+        }
+      ]
     }
   }
 }

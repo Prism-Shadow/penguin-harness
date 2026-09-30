@@ -19,10 +19,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { CodeSurface, languageForExtension } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { TEXT_PREVIEW_LIMIT, baseName, extOf } from "../../lib/workspace-tree";
-import { CodeSurface } from "./code-block";
-import { languageForExtension } from "./code-languages";
 
 /** Quiet period before re-highlighting, so a keystroke costs a re-render and not a tokenize. */
 const EDIT_HIGHLIGHT_SETTLE_MS = 200;

@@ -33,6 +33,8 @@ export interface UiStrings {
   moreInfo: string;
   /** The same name with the subject folded in ("More info: Vault"): InfoPopover, HelpFold. */
   moreInfoAbout: (subject: string) => string;
+  /** The name and tooltip of a code block's copy button (`CodeBlock`). */
+  copyCode: string;
 }
 
 /** The English fallbacks, used wherever no provider is mounted (a test, a stand-alone page). */
@@ -45,6 +47,7 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   clearSearch: "Clear search",
   moreInfo: "More info",
   moreInfoAbout: (subject) => `More info: ${subject}`,
+  copyCode: "Copy code",
 };
 
 const UiStringsContext = createContext<UiStrings>(DEFAULT_UI_STRINGS);

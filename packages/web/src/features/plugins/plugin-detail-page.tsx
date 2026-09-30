@@ -19,10 +19,11 @@ import {
   CopyCheckGlyph,
   GlyphIcon,
   ICONS,
+  REHYPE_PLUGINS,
+  REMARK_PLUGINS,
   Skeleton,
   useCopied,
 } from "@prismshadow/penguin-ui";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";

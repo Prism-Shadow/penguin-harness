@@ -16,6 +16,7 @@ import { AvatarsBoard } from "./boards/avatars";
 import { BadgesBoard } from "./boards/badges";
 import { ButtonsBoard } from "./boards/buttons";
 import { ChartsBoard } from "./boards/charts";
+import { ContentBoard } from "./boards/content";
 import { DialogsBoard } from "./boards/dialogs";
 import { EmptyBoard } from "./boards/empty";
 import { FilesBoard } from "./boards/files";
@@ -43,6 +44,7 @@ export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
   charts: ChartsBoard,
   avatars: AvatarsBoard,
   files: FilesBoard,
+  content: ContentBoard,
   colour: ColourBoard,
   type: TypeBoard,
   shape: ShapeBoard,

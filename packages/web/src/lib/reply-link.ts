@@ -77,8 +77,9 @@ export interface LinkBehavior {
 }
 
 /**
- * A new tab with no handle back to this window (`noreferrer` implies `noopener`): every Markdown
- * link outside a conversation, and an external one inside it.
+ * A new tab with no handle back to this window (`noreferrer` implies `noopener`): an external link
+ * inside a conversation — the same attributes the shared UI package gives every Markdown link
+ * outside one (`PROSE_NEW_TAB`).
  */
 export const NEW_TAB: LinkBehavior = { target: "_blank", rel: "noreferrer" };
 

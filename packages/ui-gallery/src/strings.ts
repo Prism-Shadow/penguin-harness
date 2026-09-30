@@ -9,7 +9,7 @@
  * the component library's topics (src/library/topics.ts), in both dictionaries; a test checks
  * each covers every id.
  */
-import type { HookName, ThemeId, ToneName } from "@prismshadow/penguin-ui";
+import type { HookName, TextVariant, ThemeId, ToneName } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
 import type { ChartToken } from "./library/chart-tokens";
@@ -424,6 +424,10 @@ export const zh = {
       },
       avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸，以及头像组。" },
       files: { title: "文件", description: "文件树与只读文件浏览器。" },
+      content: {
+        title: "内容",
+        description: "标题与文字角色、行内代码、Markdown 正文、代码块与代码面，以及差异视图。",
+      },
       colour: {
         title: "颜色",
         description: "表面、文字、线条、强调色、语义色调、图表序列与代码色。",
@@ -756,6 +760,35 @@ export const zh = {
       emptyDir: "空目录",
       readme:
         "# Docs Expert\n\n从 `corpus/` 建立 BM25 索引，回答关于 Claude Code 文档的问题。\n\n- `src/rag.ts` — 检索\n- `test/` — 用例",
+    },
+    content: {
+      headings: "标题",
+      headingsHint: "每一级取主题的字阶；展示标题只用于页面的一级标题。",
+      display: "页面展示标题",
+      heading: (level: number) => `${level} 级标题`,
+      text: "文字角色",
+      samples: {
+        body: "正文：消息、说明与设置项的字号。",
+        small: "小字：次要信息与元数据。",
+        caption: "说明：图表或控件下方的注释。",
+        eyebrow: "分组标签",
+        mono: "sess_7f3a · ~/work/penguin",
+        label: "字段标签",
+      } as Record<TextVariant, string>,
+      inline: { before: "先运行 ", code: "pnpm install", after: " 安装依赖。" },
+      prose: "Markdown 正文",
+      proseSample:
+        "## 部署检查\n\n发布前确认 **三件事**，再运行 `pnpm -r build`。详见[发布说明](https://penguin.ooo)。\n\n- 类型检查通过\n- 测试全部通过\n- 更新日志已写好\n\n> 数据根被占用时，换一个数据根，不要结束别人的进程。\n\n| 检查 | 命令 |\n| --- | --- |\n| 类型 | `pnpm typecheck` |\n| 测试 | `pnpm test` |\n\n```bash\npnpm -r build && pnpm test\n```\n\n缓存命中率为 \\(r = h / (h + m)\\)。",
+      compact: "紧凑：频道消息",
+      compactSample: "已合并 **#897**，`feat/ui-w2` 可以删了。",
+      code: "代码",
+      surface: "代码面：行号，无外框",
+      diff: "差异",
+      unified: "合并视图",
+      split: "并排视图",
+      patch: "读取补丁",
+      diffLabel: "src/config.ts 的改动",
+      patchLabel: "src/limits.ts 的改动",
     },
   },
 };

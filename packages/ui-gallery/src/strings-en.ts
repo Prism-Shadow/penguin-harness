@@ -437,6 +437,11 @@ export const en: GalleryStrings = {
         description: "The user and agent avatars at their sizes, and a stack of them.",
       },
       files: { title: "Files", description: "The file tree and the read-only file browser." },
+      content: {
+        title: "Content",
+        description:
+          "Headings and text roles, inline code, Markdown prose, code blocks and surfaces, and the diff viewer.",
+      },
       colour: {
         title: "Colour",
         description: "Surfaces, inks, lines, the accent, the tones, chart series and code colours.",
@@ -794,6 +799,35 @@ export const en: GalleryStrings = {
       emptyDir: "Empty directory",
       readme:
         "# Docs Expert\n\nBuilds a BM25 index over `corpus/` and answers questions about the Claude Code docs.\n\n- `src/rag.ts` — retrieval\n- `test/` — cases",
+    },
+    content: {
+      headings: "Headings",
+      headingsHint: "Each level takes the theme's rung; the display title is for a page's h1 only.",
+      display: "Page display title",
+      heading: (level: number) => `Heading ${level}`,
+      text: "Text roles",
+      samples: {
+        body: "Body: the size of messages, notes and settings.",
+        small: "Small: secondary information and metadata.",
+        caption: "Caption: a note under a chart or a control.",
+        eyebrow: "Group label",
+        mono: "sess_7f3a · ~/work/penguin",
+        label: "Field label",
+      },
+      inline: { before: "Run ", code: "pnpm install", after: " to install the dependencies." },
+      prose: "Markdown prose",
+      proseSample:
+        "## Release checks\n\nConfirm **three things** before you release, then run `pnpm -r build`. See the [release notes](https://penguin.ooo).\n\n- Type checks pass\n- Every test passes\n- The changelog is written\n\n> When a data root is taken, use another one — never end someone else's process.\n\n| Check | Command |\n| --- | --- |\n| Types | `pnpm typecheck` |\n| Tests | `pnpm test` |\n\n```bash\npnpm -r build && pnpm test\n```\n\nThe cache hit rate is \\(r = h / (h + m)\\).",
+      compact: "Compact: a channel message",
+      compactSample: "Merged **#897** — `feat/ui-w2` can go.",
+      code: "Code",
+      surface: "Code surface: line numbers, no frame",
+      diff: "Diff",
+      unified: "Unified",
+      split: "Side by side",
+      patch: "From a patch",
+      diffLabel: "Changes to src/config.ts",
+      patchLabel: "Changes to src/limits.ts",
     },
   },
 };

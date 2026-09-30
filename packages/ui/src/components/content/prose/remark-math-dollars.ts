@@ -11,7 +11,7 @@
  * Leaving it inline had a layout cost as well as a typographic one. KaTeX sets
  * `.katex .base { white-space: nowrap }`, so a long single-line `$$…$$` is one unbreakable run.
  * `.md-body .katex-display` scrolls inside its own block; an inline run has to be caught by the
- * separate guard in styles.css, and even caught it is still typeset cramped — inline mode uses
+ * separate guard in prose.css, and even caught it is still typeset cramped — inline mode uses
  * small integrals, small sums and squeezed fractions for a formula the author centred.
  *
  * So every text-math node opened by a dollar run is re-classed to display, which is also what makes

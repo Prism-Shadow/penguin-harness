@@ -27,6 +27,7 @@ import {
   ICON_GAP,
   ICON_SIZE,
   Input,
+  Md,
   Skeleton,
   Textarea,
 } from "@prismshadow/penguin-ui";
@@ -40,7 +41,6 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Modal } from "../../components/ui/modal";
 import type { TreeToggle } from "../../components/ui/file-tree";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { Md } from "../chat/md";
 import { OrgEmptyLine, OrgPage, OrgSection, useOrg } from "./org-layout";
 import { ErrorLine } from "./shared";
 import { COLLAPSE_ALL_ICON, HandbookExplorer } from "./handbook-explorer";

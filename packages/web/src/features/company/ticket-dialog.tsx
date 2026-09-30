@@ -42,6 +42,7 @@ import {
   ICON_GAP,
   ICON_SIZE,
   Input,
+  Md,
   Segmented,
   Select,
   Skeleton,
@@ -58,7 +59,6 @@ import { useTheme } from "../../state/theme";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Modal } from "../../components/ui/modal";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { Md } from "../chat/md";
 import { OrgSection } from "./org-layout";
 import {
   BlockedBadge,

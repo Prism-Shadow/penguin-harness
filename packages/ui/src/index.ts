@@ -69,3 +69,13 @@ export * from "./components/forms/toggle-row/toggle-row";
 export * from "./components/forms/segmented/segmented";
 export * from "./components/forms/swatch-picker/swatch-picker";
 export * from "./components/forms/pref-row/pref-row";
+
+// W5 — content: Markdown as reading text and its pipeline, the code surface and block with the
+// language tables, the type roles, and the diff viewer. The Shiki engine is not here: it is the
+// `./highlighter` subpath, so no static import of this barrel reaches it.
+export * from "./components/content/prose/prose";
+export * from "./components/content/prose/markdown-plugins";
+export * from "./components/content/code-block/code-block";
+export * from "./components/content/code-block/code-languages";
+export * from "./components/content/typography/typography";
+export * from "./components/content/diff-viewer/diff-viewer";

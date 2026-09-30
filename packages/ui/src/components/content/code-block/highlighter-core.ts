@@ -1,25 +1,41 @@
 /**
- * The Shiki engine itself: the core, the lazily loaded grammars, and one call that turns code
- * into dual-theme HTML. Imported by `highlighter.worker.ts` and, when a worker cannot be had, by
- * `highlighter.ts` directly — so the two paths share the engine rather than agreeing about it.
+ * The Shiki engine itself: the core, the lazily loaded grammars, and one call that turns code into
+ * dual-theme HTML. The package's code components never import it: `CodeSurface` asks a
+ * {@link CodeHighlighter} it is handed (by prop or by `CodeHighlighterProvider`), and the app
+ * decides where the engine runs — the Web App runs it on a worker and falls back to this thread.
+ * So it is published on its own subpath (`@prismshadow/penguin-ui/highlighter`), which a worker can
+ * import without React, and kept out of the root barrel, so no static import of the barrel can put
+ * a copy of Shiki in the entry chunk.
  *
  * Assembled from `shiki/core` with the language list in code-languages.ts instead of importing
  * `shiki` (its full bundle): that entry point drags in the oniguruma WASM engine and a registry of
  * all 332 bundled grammars, and both land on the *first* code block a conversation renders — 230 KB
  * gzip of WASM before a single token is colored. The pure-JS regex engine replaces it for free:
  * every pattern in every bundled grammar translates to a JS RegExp, and its token output is
- * byte-identical to oniguruma's. Measured on this app: ~308 KB -> ~70 KB gzip for the first block.
+ * byte-identical to oniguruma's. Measured on the Web App: ~308 KB -> ~70 KB gzip for the first
+ * block.
  *
  * The trade is coverage — a fence in a language not listed in code-languages.ts renders
  * unhighlighted instead of highlighted, where the full bundle would have known it.
  *
- * Both themes are baked into one pass as CSS variables (`--shiki-dark`, see styles.css), so
- * switching light/dark never re-highlights. Grammars load lazily and are cached per language, so a
+ * Both themes of {@link CODE_THEMES} are baked into one pass: the light colours inline, the dark
+ * ones as `--shiki-dark` variables that prose.css switches to under the dark mode, so switching
+ * light/dark never re-highlights. Grammars load lazily and are cached per language, so a
  * conversation downloads only the languages it shows, once each.
  */
 import { createHighlighterCore, type HighlighterCore, type LanguageInput } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 import { LANGUAGE_LOADERS, isPlainTextLanguage, resolveLanguage } from "./code-languages";
+import type { HighlightOptions } from "./highlight-options";
+
+export type { CodeHighlighter, CodeMark, HighlightOptions } from "./highlight-options";
+
+/**
+ * The syntax palette, one Shiki theme per mode. The token contract has no syntax colours, so every
+ * app theme shares this pair; the surface around the code — its fill, rules, gutter and selection —
+ * is the theme's own, from the `--ui-code-*` tokens.
+ */
+export const CODE_THEMES = { light: "github-light", dark: "github-dark" } as const;
 
 let corePromise: Promise<HighlighterCore> | undefined;
 const grammarPromises = new Map<string, Promise<void>>();
@@ -73,20 +89,35 @@ const BLOCK_LINES = {
  * Highlights `code` as `language`, returning Shiki's dual-theme HTML, or undefined when the
  * language isn't one this bundle carries. Rejects only on an unexpected failure (chunk fetch,
  * grammar error); callers fall back to unhighlighted text either way.
+ *
+ * `marks` wrap character ranges in an element of their own (Shiki's decorations), splitting the
+ * tokens they cross — the diff viewer's changed words. Always a new element, never a class merged
+ * onto a token or a line that a range happens to cover whole, so a line stays a bare
+ * `<span class="line">` a caller can cut the markup at. Empty ranges are dropped; the ranges must
+ * not overlap.
  */
 export async function highlight(
   code: string,
   language: string,
-  blockLines: boolean,
+  options: HighlightOptions = {},
 ): Promise<string | undefined> {
   const id = resolveLanguage(language);
   if (!id) return undefined;
   const core = await getCore();
   const load = isPlainTextLanguage(id) ? undefined : LANGUAGE_LOADERS.get(id);
   if (load) await loadGrammar(core, id, load);
+  const decorations = (options.marks ?? [])
+    .filter((mark) => mark.end > mark.start)
+    .map((mark) => ({
+      start: { line: mark.line, character: mark.start },
+      end: { line: mark.line, character: mark.end },
+      properties: { class: mark.className },
+      alwaysWrap: true,
+    }));
   return core.codeToHtml(code, {
     lang: id,
-    themes: { light: "github-light", dark: "github-dark" },
-    ...(blockLines ? { transformers: [BLOCK_LINES] } : {}),
+    themes: CODE_THEMES,
+    ...(options.blockLines === true ? { transformers: [BLOCK_LINES] } : {}),
+    ...(decorations.length > 0 ? { decorations } : {}),
   });
 }
