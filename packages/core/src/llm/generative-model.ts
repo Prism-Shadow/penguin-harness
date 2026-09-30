@@ -679,9 +679,9 @@ export function isFatalProviderRejection(error: unknown): boolean {
 
 /**
  * A stateful LLM object attached to a Session. MMSP's `streamingResponseStateful` maintains
- * conversation history internally; this class is only responsible for protocol translation,
- * streaming aggregation, and token accumulation. **It never retries internally** — retries are
- * handled by `context_engine`.
+ * conversation history internally; this class is only responsible for protocol translation
+ * and token accounting. **It never retries internally** — retries are handled by
+ * `context_engine`.
  */
 export class GenerativeModel implements LLMInterface {
   private client: AutoLLMClient;
@@ -852,8 +852,8 @@ export class GenerativeModel implements LLMInterface {
    * **Never throws to `context_engine`**: whether it ends normally or is interrupted/errors out,
    * every `partial_*` segment is closed as `start → delta → stop → complete message`,
    * and the terminal state is then returned as `LLMOutcome`:
-   *   - **Normal completion**: `finish()` closes out and produces `token_usage` (usage is only
-   *     produced in this case) → `completed`;
+   *   - **Normal completion**: the `stop` event closed every item; `token_usage` is produced
+   *     (only in this case) → `completed`;
    *   - **User interruption**: `finishInterrupted("aborted")` closes out, produces no usage →
    *     `aborted`;
    *   - **Fatal failure** — a definitive provider 4xx rejection (`isFatalProviderRejection`),
