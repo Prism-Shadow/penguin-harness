@@ -1913,7 +1913,8 @@ const en: Messages = {
     proposalDeployTo:
       "The target server: a port on this machine (an ssh -L tunnel or a local server) or a full origin",
     proposalDeployDryRun: "Resolve and fetch the head, print the plan, and push nothing",
-    proposalDeployPlanned: (n, head) => `Proposal #${n} would deploy ${head} (dry run, nothing pushed).`,
+    proposalDeployPlanned: (n, head) =>
+      `Proposal #${n} would deploy ${head} (dry run, nothing pushed).`,
     proposalDeployDone: (n, head, revision) =>
       `Proposal #${n} deployed: the target now runs ${revision} (${head}).`,
     proposalFeedbackDesc:
@@ -3153,7 +3154,8 @@ const zh: Messages = {
     proposalDeployTo: "目标 server：本机端口（ssh -L 隧道或本机服务）或完整 origin",
     proposalDeployDryRun: "只解析并取回 head、打印计划，不推送",
     proposalDeployPlanned: (n, head) => `提案 #${n} 将部署 ${head}（演练，未推送）。`,
-    proposalDeployDone: (n, head, revision) => `提案 #${n} 已部署：目标现在跑的是 ${revision}（${head}）。`,
+    proposalDeployDone: (n, head, revision) =>
+      `提案 #${n} 已部署：目标现在跑的是 ${revision}（${head}）。`,
     proposalFeedbackDesc: "把实施中的发现反馈给作者（加 --runtime 则是测试 dev 分支的发现）",
     proposalConcludeDesc:
       "把一次讨论的结论送到负责人的工位，只送一次（在讨论会话里执行，或由人加 --discussion 指定）",

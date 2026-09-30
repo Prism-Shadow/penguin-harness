@@ -105,10 +105,17 @@ export function revisionNames(revision: string, head: string): boolean {
 export async function deployProposal(o: DeployOptions): Promise<DeployOutcome> {
   const n = o.proposal.number;
   if (o.proposal.implPrUrl === null) {
-    return { ok: false, reason: `proposal #${n} has no impl PR; register one with \`penguin org proposal impl ${n} <url>\`` };
+    return {
+      ok: false,
+      reason: `proposal #${n} has no impl PR; register one with \`penguin org proposal impl ${n} <url>\``,
+    };
   }
   const pr = parseImplPr(o.proposal.implPrUrl);
-  if (pr === null) return { ok: false, reason: `impl PR is not a GitHub pull request URL: ${o.proposal.implPrUrl}` };
+  if (pr === null)
+    return {
+      ok: false,
+      reason: `impl PR is not a GitHub pull request URL: ${o.proposal.implPrUrl}`,
+    };
   const baseUrl = targetUrl(o.to);
   const unsafe = plaintextProblem(baseUrl);
   if (unsafe !== null) return { ok: false, reason: unsafe };
@@ -125,7 +132,9 @@ export async function deployProposal(o: DeployOptions): Promise<DeployOutcome> {
   const ref = `refs/penguin-deploy/pr-${pr.pull}`;
   const git = (args: string[], capture = false): Promise<RunResult> =>
     o.run("git", ["-C", repoDir, ...args], { cwd: repoDir, capture });
-  if ((await git(["fetch", "--no-tags", pr.repoUrl, `+refs/pull/${pr.pull}/head:${ref}`])).code !== 0) {
+  if (
+    (await git(["fetch", "--no-tags", pr.repoUrl, `+refs/pull/${pr.pull}/head:${ref}`])).code !== 0
+  ) {
     return { ok: false, reason: `could not fetch refs/pull/${pr.pull}/head from ${pr.repoUrl}` };
   }
   const parsed = await git(["rev-parse", "--verify", `${ref}^{commit}`], true);
@@ -138,7 +147,10 @@ export async function deployProposal(o: DeployOptions): Promise<DeployOutcome> {
 
   const tree = path.join(repoDir, ".worktrees", `deploy-${head.slice(0, 12)}`);
   if ((await git(["worktree", "add", "--detach", tree, head])).code !== 0) {
-    return { ok: false, reason: `could not create the worktree ${tree} (is one left from an earlier run?)` };
+    return {
+      ok: false,
+      reason: `could not create the worktree ${tree} (is one left from an earlier run?)`,
+    };
   }
   try {
     if ((await o.run("pnpm", ["install", "--frozen-lockfile"], { cwd: tree })).code !== 0) {
@@ -150,7 +162,10 @@ export async function deployProposal(o: DeployOptions): Promise<DeployOutcome> {
       return { ok: false, reason: "pnpm -r build failed in the worktree" };
     }
     if ((await o.run(o.node, ["scripts/deploy.mjs", o.to], { cwd: tree })).code !== 0) {
-      return { ok: false, reason: "the generation's scripts/deploy.mjs failed; the target keeps its version" };
+      return {
+        ok: false,
+        reason: "the generation's scripts/deploy.mjs failed; the target keeps its version",
+      };
     }
   } finally {
     await git(["worktree", "remove", "--force", tree]);
@@ -158,7 +173,10 @@ export async function deployProposal(o: DeployOptions): Promise<DeployOutcome> {
 
   const revision = await o.readRevision(baseUrl, o.env);
   if (revision === null || !revisionNames(revision, head)) {
-    return { ok: false, reason: `the target reports ${revision ?? "no revision"}, expected ${head}` };
+    return {
+      ok: false,
+      reason: `the target reports ${revision ?? "no revision"}, expected ${head}`,
+    };
   }
   return { ok: true, head, revision, dryRun: false };
 }
@@ -177,7 +195,9 @@ export const spawnRun: Run = (command, args, opts) =>
     const chunks: Buffer[] = [];
     child.stdout?.on("data", (c: Buffer) => chunks.push(c));
     child.on("error", () => resolve({ code: -1, stdout: "" }));
-    child.on("close", (code) => resolve({ code: code ?? -1, stdout: Buffer.concat(chunks).toString("utf8") }));
+    child.on("close", (code) =>
+      resolve({ code: code ?? -1, stdout: Buffer.concat(chunks).toString("utf8") }),
+    );
   });
 
 /** One request with deploy.mjs's Host rule: on a loopback bind 127.0.0.1 is the preview host, the API answers as `localhost`. */
@@ -187,15 +207,28 @@ function request(
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
   const url = new URL(urlStr);
   const lib = url.protocol === "https:" ? https : http;
-  const headers = { ...init.headers, ...(url.hostname === "127.0.0.1" ? { host: "localhost" } : {}) };
+  const headers = {
+    ...init.headers,
+    ...(url.hostname === "127.0.0.1" ? { host: "localhost" } : {}),
+  };
   return new Promise((resolve, reject) => {
     const req = lib.request(
-      { hostname: url.hostname, port: url.port, path: url.pathname, method: init.method ?? "GET", headers },
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        method: init.method ?? "GET",
+        headers,
+      },
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c: Buffer) => chunks.push(c));
         res.on("end", () =>
-          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString("utf8") }),
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks).toString("utf8"),
+          }),
         );
       },
     );
@@ -222,6 +255,8 @@ export const httpReadRevision: ReadRevision = async (baseUrl, env) => {
   }
   const res = await request(`${baseUrl}/api/version`, { headers: auth });
   if (res.status !== 200) return null;
-  const report = JSON.parse(res.body) as { harness?: { source?: { revision?: string } | null } | null };
+  const report = JSON.parse(res.body) as {
+    harness?: { source?: { revision?: string } | null } | null;
+  };
   return report.harness?.source?.revision ?? null;
 };

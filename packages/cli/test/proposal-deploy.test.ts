@@ -59,7 +59,10 @@ const line = (c: Call): string => `${c.command} ${c.args.join(" ")}`;
 
 describe("resolves a proposal to its impl PR head and plans the push", () => {
   it("parses the impl PR, the target and the plaintext rule", () => {
-    expect(parseImplPr(PR)).toEqual({ repoUrl: "https://github.com/acme/penguin-harness.git", pull: 42 });
+    expect(parseImplPr(PR)).toEqual({
+      repoUrl: "https://github.com/acme/penguin-harness.git",
+      pull: 42,
+    });
     expect(parseImplPr("https://gitlab.com/acme/x/-/merge_requests/1")).toBeNull();
     expect(targetUrl("53531")).toBe("http://127.0.0.1:53531");
     expect(targetUrl("https://box.example.com/")).toBe("https://box.example.com");
@@ -70,7 +73,11 @@ describe("resolves a proposal to its impl PR head and plans the push", () => {
 
   it.each([
     ["no impl PR", { proposal: { number: 7, implPrUrl: null } }, /no impl PR/],
-    ["an impl PR that is not a GitHub PR", { proposal: { number: 7, implPrUrl: "https://x.test/1" } }, /not a GitHub/],
+    [
+      "an impl PR that is not a GitHub PR",
+      { proposal: { number: 7, implPrUrl: "https://x.test/1" } },
+      /not a GitHub/,
+    ],
     ["a plaintext remote target", { to: "http://box.example.com" }, /plaintext/],
     ["no credential", { env: {} }, /PENGUIN_ADMIN_PASSWORD or PENGUIN_API_TOKEN/],
   ])("refuses %s before running anything", async (_name, over, reason) => {
@@ -103,7 +110,10 @@ describe("builds the head in a throwaway worktree and runs that generation's dep
     const outcome = await deployProposal(options({ run }));
     expect(outcome).toMatchObject({ ok: true, head: HEAD, dryRun: false });
     expect(calls.slice(1).map((c) => [line(c), c.cwd])).toEqual([
-      [`git -C ${CHECKOUT} fetch --no-tags https://github.com/acme/penguin-harness.git +refs/pull/42/head:refs/penguin-deploy/pr-42`, CHECKOUT],
+      [
+        `git -C ${CHECKOUT} fetch --no-tags https://github.com/acme/penguin-harness.git +refs/pull/42/head:refs/penguin-deploy/pr-42`,
+        CHECKOUT,
+      ],
       [`git -C ${CHECKOUT} rev-parse --verify refs/penguin-deploy/pr-42^{commit}`, CHECKOUT],
       [`git -C ${CHECKOUT} worktree add --detach ${TREE} ${HEAD}`, CHECKOUT],
       ["pnpm install --frozen-lockfile", TREE],
@@ -122,9 +132,13 @@ describe("builds the head in a throwaway worktree and runs that generation's dep
   ])("stops when %s fails and still removes the worktree", async (_name, failOn, reason) => {
     const { run, calls } = recorder(failOn);
     let read = 0;
-    const outcome = await deployProposal(options({ run, readRevision: async () => (read++, null) }));
+    const outcome = await deployProposal(
+      options({ run, readRevision: async () => (read++, null) }),
+    );
     expect(outcome.ok ? "" : outcome.reason).toMatch(reason);
-    expect(line(calls[calls.length - 1]!)).toBe(`git -C ${CHECKOUT} worktree remove --force ${TREE}`);
+    expect(line(calls[calls.length - 1]!)).toBe(
+      `git -C ${CHECKOUT} worktree remove --force ${TREE}`,
+    );
     const failedAt = calls.findIndex(failOn);
     expect(calls.slice(failedAt + 1, -1)).toEqual([]);
     expect(read).toBe(0);
