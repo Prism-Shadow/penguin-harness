@@ -89,7 +89,7 @@ export interface SessionHooks {
   stop?: StopHook[];
   /** Consulted by the engine before each tool call's approval (see tool-hook.ts). */
   preToolUse?: PreToolUseHook[];
-  /** Run by `Session.runUserPromptHook` when the host accepts a prompt for a package's flow (see prompt-hook.ts). */
+  /** Consulted every time the user submits a Prompt; the ones marked `trigger: "host"` run only through `Session.runUserPromptHook` (see prompt-hook.ts). */
   userPrompt?: UserPromptHook[];
   /** How a `subagent` answer is honored; without it the request is recorded as unhonored. */
   spawnSubagent?: HookSubagentSpawner;

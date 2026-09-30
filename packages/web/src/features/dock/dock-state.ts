@@ -4,7 +4,7 @@
  * The dock is TWO surfaces — one on the right edge, one at the bottom of the chat page —
  * and every side element is a TAB in one of them: the subagents panel, the Workspace
  * files panel, the Memory panel, the Trace panel, the messaging panel, the scheduled-tasks
- * panel, and any number of terminals. A dock
+ * panel, the built-in browser, and any number of terminals. A dock
  * shows its tabs in a strip and renders the active one; an OPEN dock with no tabs shows a
  * picker instead (choose what to open here), which is what the toolbar's two pull-open
  * buttons land on. Both docks can be open at once, and any tab can live in either dock
@@ -39,8 +39,14 @@ const MAX_SCOPES = 40;
 
 export type DockPosition = "right" | "bottom";
 
-/** The singleton panel kinds. Terminals are the one multi-instance tab kind. */
-export type PanelKind = "agents" | "workspace" | "memory" | "trace" | "messaging" | "schedules";
+/**
+ * The singleton panel kinds. Terminals are the one multi-instance tab kind. The built-in
+ * browser is one set of pages shared by every conversation, so each conversation's tab shows
+ * the same browser; it exists only in the desktop app, and the menus that offer panels ask
+ * features/builtin-browser whether to list it.
+ */
+export type PanelKind =
+  "agents" | "workspace" | "memory" | "trace" | "messaging" | "schedules" | "builtin-browser";
 
 export const PANEL_KINDS: readonly PanelKind[] = [
   "agents",
@@ -49,6 +55,7 @@ export const PANEL_KINDS: readonly PanelKind[] = [
   "trace",
   "messaging",
   "schedules",
+  "builtin-browser",
 ];
 
 export type DockTab =

@@ -70,6 +70,7 @@ See `packages/core/src/trace/writer.ts` for the implementation.
 An illustrative Trace head follows, one OmniMessage envelope per line. Note the order:
 
 - The user's input is written before the `request_begin` it is sent with.
+- What the [user-prompt hooks](/agent-loop#user-prompt-hooks) answer follows the user's input directly: a harness-stamped user text per context, or a `hook` event for a hook that failed.
 - On the first run, the toolset follows the input as a `tool_list_ready` event, after an `mcp_connect_begin` / `mcp_connect_end` pair when MCP servers are configured. `session_meta` does not carry the tool definitions.
 
 ```jsonl
@@ -185,6 +186,6 @@ The approval mechanism itself is covered in [Tools & Approval](/tools).
 ### Moving Trace files across deployments
 
 - **Export:** in a conversation's Trace panel, **Export** downloads the selected file verbatim as JSONL.
-- **Import:** in [System settings](/settings#import-a-trace) → **General**, **Import Trace** adds a file to the Project and agent you choose, as a new conversation. Files can be up to 14 MB.
+- **Import:** in [Settings](/settings#import-a-trace) → **General**, **Import Trace** adds a file to the Project and agent you choose, as a new conversation. Files can be up to 14 MB.
 
 An import whose session id already exists anywhere in this installation is rejected, so an imported file always becomes index 001 of a new Session.

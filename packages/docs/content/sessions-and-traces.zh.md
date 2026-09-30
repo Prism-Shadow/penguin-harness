@@ -70,6 +70,7 @@ Trace 是只追加的 JSON Lines 文件，每行是一个 OmniMessage 信封，�
 下面是一个示意性的 Trace 开头，每行一个 OmniMessage 信封。注意顺序：
 
 - 用户输入先写入，之后才是与它一起发送的 `request_begin`。
+- [User-prompt hook](/agent-loop#user-prompt-hook) 的回答紧跟在用户输入之后：每个 context 一条带 harness 标记的 user 文本，失败的钩子则是一条 `hook` 事件。
 - 首次运行时，工具集以 `tool_list_ready` 事件跟在输入之后；如果配置了 MCP Server，在这之前还有一对 `mcp_connect_begin` / `mcp_connect_end`。`session_meta` 不携带工具定义。
 
 ```jsonl
@@ -185,6 +186,6 @@ Web App 的 Trace 视图和用量、成本统计都来自这份数据，不存�
 ### 跨部署迁移 Trace 文件
 
 - **导出：** 在对话的 Trace 面板中，**导出**会把选中的文件原样下载为 JSONL。
-- **导入：** 在[系统设置](/settings#导入-trace) → **通用**中，**导入 Trace** 会把文件添加到你选择的 Project 和 Agent，成为一个新对话。文件最大 14 MB。
+- **导入：** 在[设置](/settings#导入-trace) → **通用**中，**导入 Trace** 会把文件添加到你选择的 Project 和 Agent，成为一个新对话。文件最大 14 MB。
 
 如果文件的 session id 已在本安装的任何位置存在，导入即失败，因此导入的文件总是成为新 Session 的 001 号文件。

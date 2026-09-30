@@ -129,7 +129,7 @@ interface InlineDataPayload {
 }
 ```
 
-`sender` 区分 user 角色文本的来源：真人用户（`user`）、驱动子 Agent 的父 Agent（`parent_agent`）、harness 的自动注入（`harness`，例如后台任务的完成回报和钩子 `continue` 注入的输入），以及 Server 自己的触发（`server`，例如定时任务）。这个字段不会发给供应商。
+`sender` 区分 user 角色文本的来源：真人用户（`user`）、驱动子 Agent 的父 Agent（`parent_agent`）、harness 的自动注入（`harness`，例如后台任务的完成回报、stop 钩子 `continue` 注入的输入，以及 `user_prompt` 钩子补充的 context），以及 Server 自己的触发（`server`，例如定时任务）。这个字段不会发给供应商。
 
 `tool_call` 与 `tool_call_output` 通过 `tool_call_id` 严格配对。一轮内的调用构成一个批次，输出按原始调用顺序回填（见 [Agent 运行循环](/agent-loop)）。
 
@@ -356,7 +356,8 @@ interface SubagentPayload {
 
 interface HookPayload {
   type: "hook";
-  hook: "stop" | "pre_tool_use";    // the hook point that fired (see the agent loop's hooks)
+  hook: "stop" | "pre_tool_use"     // the hook point that fired (see the agent loop's hooks)
+    | "user_prompt";                // user_prompt: only for a hook that failed
   name: string;               // the hook's name: "goal", "continual-learning", …
   decision?: "continue" | "stop"    // stop point
     | "allow" | "deny";             // pre_tool_use point; absent when the hook only left a record

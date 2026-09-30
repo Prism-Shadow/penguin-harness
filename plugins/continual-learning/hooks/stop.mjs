@@ -63,12 +63,25 @@ function isTaskStart(r) {
   return true;
 }
 
-/** The just-ended Task's records: everything after the last Task-starting input — the whole file when none is in it (a compaction rotated the file mid-Task). */
+/** Whether a record belongs to a Task's input: a Task-starting user text, or an image sent with one. */
+function isTaskInput(r) {
+  if (isTaskStart(r)) return true;
+  return isMain(r) && r.type === "model_msg" && !!r.payload && r.payload.type === "image_url";
+}
+
+/**
+ * The just-ended Task's records: everything from its input on — the whole file when no input
+ * is in it (a compaction rotated the file mid-Task). An input is a batch: the user's message,
+ * its images, and what the harness sent right behind it (a user_prompt hook's context, goal
+ * mode's round-1 protocol). The window opens at the batch's first record, so the excerpt
+ * keeps what the user asked.
+ */
 function taskWindow(records) {
   let start = 0;
   records.forEach((r, i) => {
     if (isTaskStart(r)) start = i;
   });
+  while (start > 0 && isTaskInput(records[start - 1])) start -= 1;
   return records.slice(start);
 }
 

@@ -59,10 +59,18 @@ export interface LibrarySkill extends SkillMetadata {
   files?: Record<string, string>;
 }
 
-/** One hook script entry: `command` is a path relative to the plugin's `hooks/` directory, run with Node; `timeout` in seconds (core's default applies when absent). */
+/**
+ * When a `user_prompt` command runs: `prompt` on every Prompt the user submits, `host` only
+ * when the host starts the package's flow by name (`Session.runUserPromptHook` — goal mode's
+ * start). Meaningless at the other hook points.
+ */
+export type UserPromptTrigger = "prompt" | "host";
+
+/** One hook script entry: `command` is a path relative to the plugin's `hooks/` directory, run with Node; `timeout` in seconds (core's default applies when absent); `trigger` says when a `user_prompt` command runs (see {@link userPromptTrigger} for the default). */
 export interface HookCommand {
   command: string;
   timeout?: number;
+  trigger?: UserPromptTrigger;
 }
 
 /**
@@ -82,7 +90,7 @@ export interface HookManifest {
   stop: HookCommand[];
   /** Pre-tool-use commands, consulted before each tool call's approval. */
   pre_tool_use: HookCommand[];
-  /** User-prompt expansion commands, run by the host when it accepts a prompt for the flow the package owns (goal mode's start). */
+  /** User-prompt expansion commands: run on every Prompt the user submits, or — `trigger: "host"` — only when the host starts the flow the package owns (goal mode's start). */
   user_prompt: HookCommand[];
 }
 
@@ -165,6 +173,40 @@ export function comparePluginVersions(a: string, b: string): number {
   if (!va || !vb) return Number(va !== null) - Number(vb !== null);
   if (va.date !== vb.date) return va.date < vb.date ? -1 : 1;
   return va.seq - vb.seq;
+}
+
+/**
+ * The first manifest version written for a harness that runs `user_prompt` commands on every
+ * Prompt. See {@link userPromptTrigger}.
+ */
+export const USER_PROMPT_EVERY_PROMPT_SINCE = "2026.09.29.1";
+
+/**
+ * When one `user_prompt` command of a manifest runs. A command that says so decides; one
+ * that does not runs on every Prompt.
+ *
+ * COMPAT (remove at 0.3.0 release preparation; the release notes must first require
+ * updating the goal plugin): the point used to be reached by name only, and the goal
+ * package installed before this version starts an unbudgeted goal whenever its `start.mjs`
+ * runs without a budget. A manifest carrying a real plugin version older than
+ * {@link USER_PROMPT_EVERY_PROMPT_SINCE} therefore keeps the by-name reading for the
+ * commands that name no trigger. A manifest with no version, or one that is not a plugin
+ * version (a hand-written package), is not affected.
+ */
+export function userPromptTrigger(
+  manifestVersion: string,
+  command: HookCommand,
+): UserPromptTrigger {
+  if (command.trigger !== undefined) return command.trigger;
+  return predatesEveryPromptHooks(manifestVersion) ? "host" : "prompt";
+}
+
+/** Whether a manifest version is a real plugin version from before `user_prompt` commands ran on every Prompt (the compatibility rule of {@link userPromptTrigger}). */
+export function predatesEveryPromptHooks(manifestVersion: string): boolean {
+  return (
+    parsePluginVersion(manifestVersion) !== null &&
+    comparePluginVersions(manifestVersion, USER_PROMPT_EVERY_PROMPT_SINCE) < 0
+  );
 }
 
 /**

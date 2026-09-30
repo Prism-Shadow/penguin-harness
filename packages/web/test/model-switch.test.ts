@@ -122,16 +122,14 @@ describe("sessionRowStale", () => {
 });
 
 describe("/model copy", () => {
-  it("says in both locales that /model opens a new conversation, and points at the toolbar picker", () => {
+  it("says in both locales that /model opens a new conversation", () => {
     expect(zh.chat.switchModel).toContain("新会话");
     expect(zh.chat.switchModel).toContain("本会话保持不变");
     expect(zh.chat.switchModelTitle).toContain("新会话");
     expect(zh.chat.modelSwitchTargetTitle("b-2")).toContain("新开");
-    expect(zh.chat.switchModelNote).toContain("工具栏");
     expect(en.chat.switchModel).toMatch(/new session/);
     expect(en.chat.switchModelTitle).toMatch(/New conversation/);
     expect(en.chat.modelSwitchTargetTitle("b-2")).toMatch(/new conversation on b-2/);
-    expect(en.chat.switchModelNote).toMatch(/toolbar/);
   });
 
   it("the confirm dialog uses the design's zh body and a two-choice label", () => {

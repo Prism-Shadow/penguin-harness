@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Starts a goal — the plugin's user_prompt hook: writes the Session's GOAL.json and prints
-// the round-1 protocol message as the prompt's expansion context.
+// the round-1 protocol message as the prompt's expansion context. The manifest marks it
+// `trigger: "host"`: it runs when the host starts a goal, never on an ordinary prompt.
 //
-// stdin:  { "hook": "user_prompt", "session_id", "scratchpad_dir", "prompt", "budget" }
+// stdin:  { "hook": "user_prompt", "session_id", "trace_path", "scratchpad_dir", "prompt",
+//           "budget" }
 //         prompt = the user's text with leading marker blocks stripped (the objective later
 //         rounds restate and the file records); budget = tokens for the whole goal, -1 or
 //         absent = none.

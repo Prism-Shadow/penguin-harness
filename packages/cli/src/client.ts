@@ -182,18 +182,25 @@ export async function resolveConnection(
 }
 
 /**
- * Error the client raises for non-2xx responses; `code` is the server's error code when the
- * body carried one, and `detail` the server's own message, unwrapped (empty when none) — for
- * a caller that localizes the code and still needs the specifics.
+ * Error the client raises for non-2xx responses; `code` is the server's error code when the body
+ * carried one, and `body` the parsed JSON body itself (undefined when it was not JSON), for a
+ * command that renders the server's own words or reads a field beside the code.
  */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
-    readonly detail = "",
+    readonly body?: unknown,
   ) {
     super(message);
+  }
+
+  /** The server's own message, unwrapped (empty when the body carried none) — for a caller that localizes the code and still needs the specifics. */
+  get detail(): string {
+    const message = (this.body as { error?: { message?: unknown } } | null | undefined)?.error
+      ?.message;
+    return typeof message === "string" ? message : "";
   }
 }
 
@@ -262,10 +269,12 @@ export class ServerClient {
   private async toError(res: Response): Promise<ApiError> {
     let code = "http_error";
     let message = "";
+    let payload: unknown;
     try {
-      const body = (await res.json()) as { error?: { code?: string; message?: string } };
-      if (body.error?.code) code = body.error.code;
-      if (body.error?.message) message = body.error.message;
+      payload = await res.json();
+      const body = payload as { error?: { code?: string; message?: string } } | null;
+      if (body?.error?.code) code = body.error.code;
+      if (body?.error?.message) message = body.error.message;
     } catch {
       // Non-JSON error body: keep the fallback wording.
     }
@@ -282,7 +291,7 @@ export class ServerClient {
       res.status,
       code,
       this.t.client.httpError(res.status, code, message),
-      message,
+      payload,
     );
   }
 

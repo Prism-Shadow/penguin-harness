@@ -19,11 +19,14 @@ import type { OmniMessage } from "../src/omnimessage/index.js";
 import type { OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
 import {
   agentsMdPath,
+  hooksDir,
   projectConfigPath,
+  skillsDir,
   systemConfigPath,
   tracesDir,
 } from "../src/state/paths.js";
 import {
+  MODEL_CATALOG,
   addModel,
   createAgent,
   DEFAULT_AGENT_ID,
@@ -1036,6 +1039,67 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
+  it("a Skill and a hook package written during the old context are the next context's", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-authored");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    const skillDir = path.join(
+      skillsDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+      "clock-reading",
+    );
+    const hookDir = path.join(hooksDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "flow");
+    try {
+      await bootstrapped(session);
+
+      // Written as plain files, the way a model working on its own configuration does it:
+      // no installer, and a manifest that lists only the point it uses. The command is
+      // host-triggered so the Session can be asked for it by name.
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(skillDir, "SKILL.md"),
+        "---\nname: clock-reading\ndescription: Reads analog clocks.\n---\n\nLook at the hands.\n",
+      );
+      await fs.mkdir(hookDir, { recursive: true });
+      await fs.writeFile(
+        path.join(hookDir, "hooks.json"),
+        JSON.stringify({ user_prompt: [{ command: "start.mjs", trigger: "host" }] }),
+      );
+      await fs.writeFile(
+        path.join(hookDir, "start.mjs"),
+        'process.stdout.write(JSON.stringify({ context: "started" }));\n',
+      );
+
+      // Nothing changes in the middle of a context.
+      expect(promptOf(session)).not.toContain("clock-reading");
+      expect(await session.runUserPromptHook("flow", "go")).toBeNull();
+
+      await openNext(session);
+      expect(promptOf(session)).toContain("`clock-reading` — Reads analog clocks.");
+      expect(await session.runUserPromptHook("flow", "go")).toEqual({ context: "started" });
+
+      // The one switch over every package is read on the same schedule…
+      await patchSystemConfig((cfg) => {
+        cfg.hooks = { enabled: false };
+      });
+      expect(await session.runUserPromptHook("flow", "go")).toEqual({ context: "started" });
+      await openNext(session);
+      expect(await session.runUserPromptHook("flow", "go")).toBeNull();
+
+      // …and so is a package's removal.
+      await patchSystemConfig((cfg) => {
+        cfg.hooks = { enabled: true };
+      });
+      await openNext(session);
+      expect(await session.runUserPromptHook("flow", "go")).toEqual({ context: "started" });
+      await fs.rm(hookDir, { recursive: true, force: true });
+      await openNext(session);
+      expect(await session.runUserPromptHook("flow", "go")).toBeNull();
+    } finally {
+      session.dispose();
+    }
+  });
+
   it("session_meta records no level; the config default and a null pin shape only the LLM base", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-thinking-meta");
@@ -1365,6 +1429,56 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
       expect(lastBuilt()!.systemPrompt).toContain("claude-sonnet-4-6");
       // The Session's own answer follows the opened context.
       expect(session.provider).toBe("anthropic");
+      expect(session.modelId).toBe("claude-sonnet-4-6");
+    } finally {
+      session.dispose();
+    }
+  });
+});
+
+describe("Agent.createSession credential rule (a keyless gateway row never borrows a vendor key)", () => {
+  it("refuses a keyless gateway preset before any client exists, even with OPENAI_API_KEY set", async () => {
+    // stubProviderKeys has set OPENAI_API_KEY and friends: the pre-rule behaviour was to hand
+    // AgentHub no key and let its generic client read the variable — sending the user's
+    // OpenAI key to the gateway. The preset carries the gateway's base URL and no key.
+    const preset = MODEL_CATALOG.find((m) => m.provider === "openrouter" && m.retired !== true)!;
+    expect(process.env.OPENAI_API_KEY).toBeDefined();
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-gateway-keyless");
+    await fs.mkdir(ws, { recursive: true });
+    await expect(
+      agent.createSession({ workspaceDir: ws, provider: preset.provider, modelId: preset.modelId }),
+    ).rejects.toThrow(/has no API key/);
+    // No Session, so nothing to dispose; the same row with its own key is a normal Session
+    // (an Agent reads the Project config when it is created, so a fresh one sees the key).
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: preset.provider,
+      model_id: preset.modelId,
+      api_key: "sk-gateway-own-key",
+    });
+    const keyed = await createAgent();
+    const session = await keyed.createSession({
+      workspaceDir: ws,
+      provider: preset.provider,
+      modelId: preset.modelId,
+    });
+    try {
+      expect(session.provider).toBe(preset.provider);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("still lets a keyless vendor preset lean on the vendor's own variable", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-vendor-keyless");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+    });
+    try {
       expect(session.modelId).toBe("claude-sonnet-4-6");
     } finally {
       session.dispose();

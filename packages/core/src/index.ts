@@ -25,7 +25,7 @@ export * from "./interfaces/index.js";
 export type * from "./version-info.js";
 
 // Only the default server port leaves internal: the CLI / server default-port source of truth.
-export { DEFAULT_SERVER_PORT } from "./internal/ports.js";
+export { DEFAULT_DEV_SERVER_PORT, DEFAULT_SERVER_PORT } from "./internal/ports.js";
 export { SERVER_RESTART_EXIT_CODE } from "./internal/server-lifecycle.js";
 
 // Submodules
@@ -60,8 +60,9 @@ export type {
   ModelSwitchResult,
   ModelSwitchSupport,
   SessionConfig,
+  SessionOpenedContext,
 } from "./session.js";
-export type { AgentAssembly, PromptSection } from "./agent.js";
+export type { AgentAssembly, ModelRequestContext, PromptSection } from "./agent.js";
 // Session-title generation lives in internal/ (an assembly detail of Session.generateTitle);
 // only its narrow public surface is re-exported: the result type (part of
 // Session.generateTitle's signature) and the two cleaners, sanitizeTitle and truncateTitle,

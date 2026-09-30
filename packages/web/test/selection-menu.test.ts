@@ -1,11 +1,13 @@
 /**
- * lib/selection-menu.ts: the rules behind the conversation's menu for selected text.
+ * lib/selection-menu.ts: the rules behind the conversation's own menu, for selected text and
+ * for web links.
  *
  * Which gestures it takes matters as much in the negative as in the positive: everything it
  * declines keeps the browser's own menu, so a rule that took a touch press-and-hold, a
  * right-click in a field, or a selection that runs into the composer would take a menu away
- * from someone who needed it. The excerpt half pins what reaches the model: the blockquote
- * the message carries, and the label the chip shows instead of it.
+ * from someone who needed it — and a link it took that is not a web page (a Workspace file, an
+ * anchor) would offer to open an App route as a page. The excerpt half pins what reaches the
+ * model: the blockquote the message carries, and the label the chip shows instead of it.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -14,11 +16,15 @@ import {
   excerptBlockquote,
   excerptLabel,
   excerptReference,
+  linkAnchor,
+  linkMenuItems,
+  menuLinkHref,
   normalizeExcerpt,
   opensSelectionMenu,
   selectionEndAnchor,
+  streamMenuContent,
 } from "../src/lib/selection-menu";
-import type { SelectionMenuRequest } from "../src/lib/selection-menu";
+import type { SelectionMenuRequest, StreamMenuRequest } from "../src/lib/selection-menu";
 
 /** A right-click on a selection of reply text: the case the menu exists for. */
 const REQUEST: SelectionMenuRequest = {
@@ -142,5 +148,115 @@ describe("excerptReference", () => {
       excerpt: "Run the migration first.\nThen restart.",
       text: "> Run the migration first.\n> Then restart.",
     });
+  });
+});
+
+describe("menuLinkHref", () => {
+  it("takes an absolute web address, normalized by the URL parser", () => {
+    expect(menuLinkHref("https://example.com/docs?page=2#intro")).toBe(
+      "https://example.com/docs?page=2#intro",
+    );
+    expect(menuLinkHref("http://localhost:5173")).toBe("http://localhost:5173/");
+    expect(menuLinkHref(" HTTPS://Example.COM ")).toBe("https://example.com/");
+  });
+
+  it("leaves a Workspace file, an anchor and a relative href alone", () => {
+    // These keep their own behaviour: the Files panel, a scroll, or staying put. Resolved
+    // against the App's origin they would read as http addresses of the App itself.
+    for (const href of ["notes.md", "./src/app.ts", "../README.md", "/home/me/x.txt", "#fn-1"]) {
+      expect(menuLinkHref(href)).toBeNull();
+    }
+  });
+
+  it("offers nothing for another scheme, an emptied href, or none", () => {
+    for (const href of ["mailto:a@example.com", "file:///etc/passwd", "ftp://example.com/", ""]) {
+      expect(menuLinkHref(href)).toBeNull();
+    }
+    expect(menuLinkHref(null)).toBeNull();
+  });
+});
+
+describe("linkMenuItems", () => {
+  it("offers the built-in browser first where it can open the link", () => {
+    expect(linkMenuItems(true)).toEqual(["openInBuiltinBrowser", "openExternal", "copyLink"]);
+  });
+
+  it("leaves it out everywhere else", () => {
+    expect(linkMenuItems(false)).toEqual(["openExternal", "copyLink"]);
+  });
+});
+
+describe("streamMenuContent", () => {
+  const LINK = "https://example.com/";
+  /** A right-click on a link with nothing selected. */
+  const ON_LINK: StreamMenuRequest = {
+    selectedText: "",
+    rangeCount: 0,
+    firstRangeInStream: false,
+    pointerType: "mouse",
+    onEditable: false,
+    linkHref: LINK,
+  };
+
+  it("takes a secondary click on a web link, with the link's rows alone", () => {
+    expect(streamMenuContent(ON_LINK)).toEqual({ linkHref: LINK, selection: false });
+  });
+
+  it("takes the keyboard's request on a focused link too", () => {
+    expect(streamMenuContent({ ...ON_LINK, pointerType: "" })).toEqual({
+      linkHref: LINK,
+      selection: false,
+    });
+  });
+
+  it("adds the selection's rows after the link's when text in the stream is selected", () => {
+    expect(streamMenuContent({ ...REQUEST, linkHref: LINK })).toEqual({
+      linkHref: LINK,
+      selection: true,
+    });
+  });
+
+  it("keeps the link's rows when the selection is one the selection rules decline", () => {
+    expect(streamMenuContent({ ...REQUEST, linkHref: LINK, firstRangeInStream: false })).toEqual({
+      linkHref: LINK,
+      selection: false,
+    });
+  });
+
+  it("opens exactly as before off a link: the selection's rows, or nothing at all", () => {
+    expect(streamMenuContent({ ...REQUEST, linkHref: null })).toEqual({
+      linkHref: null,
+      selection: true,
+    });
+    expect(streamMenuContent({ ...ON_LINK, linkHref: null })).toBeNull();
+  });
+
+  it("leaves a touch or pen press-and-hold on a link to the OS link menu", () => {
+    expect(streamMenuContent({ ...ON_LINK, pointerType: "touch" })).toBeNull();
+    expect(streamMenuContent({ ...ON_LINK, pointerType: "pen" })).toBeNull();
+  });
+
+  it("declines a gesture in a field, link or not", () => {
+    expect(streamMenuContent({ ...ON_LINK, onEditable: true })).toBeNull();
+  });
+});
+
+describe("linkAnchor", () => {
+  const box = (top: number, left: number, right: number) => ({
+    top,
+    bottom: top + 20,
+    left,
+    right,
+  });
+
+  it("drops a keyboard-opened menu from the link's first line", () => {
+    // A link wrapped over two lines: the menu hangs under the part where it starts.
+    expect(linkAnchor([box(100, 380, 600), box(120, 40, 120)], box(100, 40, 600))).toEqual(
+      box(100, 380, 600),
+    );
+  });
+
+  it("falls back to the bounding box when the link reports no line boxes", () => {
+    expect(linkAnchor([], box(300, 10, 90))).toEqual(box(300, 10, 90));
   });
 });
