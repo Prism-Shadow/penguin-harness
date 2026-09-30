@@ -57,6 +57,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { isDesktopShellWindow } from "../../lib/account-menu";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { joinWorkspacePath } from "../../lib/file-path";
+import { writeClipboard } from "../../lib/clipboard";
 import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
 import type { DragSignal } from "../../lib/file-drop";
 import { MB_BYTES, splitBySize } from "../../lib/upload-limits";
@@ -102,12 +103,7 @@ import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import {
-  CopiedStatus,
-  CopyCheckGlyph,
-  useCopied,
-  writeClipboard,
-} from "../../components/ui/copy-button";
+import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -1505,9 +1501,9 @@ export function WorkspaceBrowser({
   const copyPath = (target: FileMenuTarget): void => {
     // A menu row cannot carry the copy button's own at-the-control feedback: the row acts and
     // the panel closes out from under it. A toast is the confirmation that survives that, and
-    // it says the same word (sidebar.tsx's copy-id row does the same).
-    writeClipboard(target.path);
-    toastSuccess(S.common.copied);
+    // it says the same word (sidebar.tsx's copy-id row does the same) — only once the write
+    // has landed.
+    void writeClipboard(target.path).then((ok) => ok && toastSuccess(S.common.copied));
   };
 
   const addToChat = (target: FileMenuTarget): void => {

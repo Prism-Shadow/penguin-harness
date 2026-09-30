@@ -224,6 +224,28 @@ export const zh = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `退出码 ${code}`,
+    /**
+     * The touch key bar (terminal-keybar.tsx), shown only under `(pointer: coarse)`: the
+     * keys a phone's soft keyboard has none of. Cap faces are the key names themselves
+     * (Esc / Tab / Ctrl / Alt / ^C) and stay untranslated, as on a physical keyboard; these
+     * are their accessible names.
+     */
+    touchKeys: {
+      label: "终端快捷键",
+      esc: "Esc 键",
+      tab: "Tab 键",
+      /** Sticky: tap to arm, the next character composes with it. */
+      ctrl: "Ctrl 键（点一下，下一个字符生效）",
+      alt: "Alt 键（点一下，下一个字符生效）",
+      up: "上方向键",
+      down: "下方向键",
+      left: "左方向键",
+      right: "右方向键",
+      interrupt: "中断（Ctrl+C）",
+      paste: "粘贴",
+      hideKeyboard: "收起键盘",
+      showKeyboard: "调出键盘",
+    },
   },
 
   /** The dock surfaces (right / bottom) every side element renders in as a tab. */
@@ -264,6 +286,9 @@ export const zh = {
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
+    /** Touch-only: the bottom dock's height toggle, standing in for a boundary drag. */
+    maximize: "放大到整屏",
+    restore: "还原高度",
   },
 
   /** The built-in browser (desktop app only): its dock panel, toolbar and dialogs. */
@@ -2339,10 +2364,28 @@ export const zh = {
       empty: "此文件夹为空",
       noMatch: (q: string): string => `没有名称包含「${q}」的项目`,
       deniedTitle: "无法读取此文件夹",
-      /** The server runs on macOS and privacy protection refused the folder. */
-      deniedMac:
-        "macOS 阻止了对此文件夹的访问。请在「系统设置 → 隐私与安全性 → 文件与文件夹」中允许访问后重试。",
       denied: "运行服务的账户没有读取此文件夹的权限。",
+      /**
+       * macOS privacy protection refused the folder and this page cannot ask for it (a browser
+       * tab, or another machine's listing): the process that reads it has to be allowed.
+       */
+      deniedMacServer:
+        "macOS 阻止了对此文件夹的访问。运行服务的进程需要被放行：从终端启动的服务归该终端所有，请在「系统设置 → 隐私与安全性 → 文件与文件夹」里放行该终端（或给它完全磁盘访问权限）后重试。",
+      /** The desktop app can ask: before it has (see allowAccess). */
+      deniedMacAsk:
+        "macOS 阻止了对此文件夹的访问。点「允许访问」向 macOS 申请，macOS 询问时选择允许。",
+      /** Asked, and the folder is still refused: a packaged app. */
+      deniedMacRefused:
+        "系统没有放行。若「文件与文件夹」里没有 PenguinHarness，请在「完全磁盘访问权限」里用 + 添加它，然后再试。",
+      /** Asked, and the folder is still refused: a development instance, whose reads macOS charges to its terminal. */
+      deniedMacRefusedDev:
+        "这是未打包的开发实例：macOS 把它的文件访问算在启动它的终端名下。请在「文件与文件夹」里放行该终端（或给它完全磁盘访问权限），再试。",
+      /** Has the desktop app read the folder in its own name, which is what makes macOS ask. */
+      allowAccess: "允许访问",
+      /** The same button while the app's read waits for the user to answer macOS. */
+      allowAccessWaiting: "等待 macOS 询问…",
+      /** Opens System Settings at the Privacy & Security pane the box names. */
+      openSystemSettings: "打开系统设置",
       loadFailed: "无法打开此文件夹",
     },
     /** Grouping toggle of the sidebar conversation list (workspace grouping is the default) and the workspace groups. */
@@ -4044,6 +4087,12 @@ Benchmark：
     statusPaused: "已暂停",
     pause: "暂停组织",
     resume: "恢复组织",
+    deleteOrg: "删除组织",
+    deleteOrgDesc: "把组织移入 Project 的回收目录。员工保留为 Agent，对话也保留。",
+    deleteOrgConfirm:
+      "组织会从公司模式里消失。组织的文件移入 Project 的回收目录（organizations/.trash），可以手工移回来恢复。员工仍是 Project 的 Agent；工位与工单的对话会保留，但组织不在了，就没有页面再列出它们。要再次使用这个 id，需先删除旧 CEO 的 Agent。只是想让组织停下来而不丢任何东西，请改用暂停。",
+    deleteOrgTypeId: (orgId: string) => `输入 ${orgId} 以确认`,
+    deleted: (orgId: string) => `组织 ${orgId} 已删除`,
     pauseInfo:
       "暂停后所有自动触发停止——日程不再到点、@ 不再送达员工；你仍可以打开任意工位会话直接对话。组织只会被暂停，不会被删除：它的对话、员工与工单始终可以回去看。",
     settingsLoadFailed: "组织设置读取失败",
@@ -4798,6 +4847,8 @@ Benchmark：
       handbook_index_required: "手册索引（README.md）不能删除。",
       browser_unavailable: "内置浏览器不可用：它需要 PenguinHarness 桌面应用处于打开状态。",
       source_not_found: "找不到这个浏览器配置文件。",
+      shell_unreachable: "无法联系桌面应用。",
+      timeout: "操作超时，请重试。",
     },
   },
 };

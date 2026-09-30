@@ -36,7 +36,9 @@ import type {
   CommandPolicyRuleDto,
   DefaultModelResponse,
   DefaultModelUpdateRequest,
+  DesktopPrivacyPane,
   DesktopUpdateStatusResponse,
+  DirAccessResponse,
   DirectorySkillsResponse,
   DirListResponse,
   EndpointModelListRequest,
@@ -715,6 +717,18 @@ export const listDirs = (projectId: string, path = "", machineId?: string | null
     : apiFetch<DirListResponse>(
         `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/dirs?path=${encodeURIComponent(path)}`,
       );
+
+/**
+ * Asks the desktop shell to read a folder macOS refused, in the app's own name — what makes
+ * macOS ask the user. Always this server: only the shell that started it can be asked. The
+ * answer waits on the user's reply to that prompt.
+ */
+export const requestDirAccess = (projectId: string, path: string) =>
+  apiFetch<DirAccessResponse>(`/api/projects/${encodeURIComponent(projectId)}/dirs/access`, {
+    method: "POST",
+    body: { path },
+    server: null,
+  });
 
 /**
  * Skills a directory carries under `.agents/skills` / `.claude/skills`: what picking it at Agent
@@ -1757,6 +1771,13 @@ export const patchOrganization = (
   body: OrganizationPatchRequest,
 ) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
 
+/**
+ * Owner only. The organization itself goes — to the Project's trash, restorable by hand; its
+ * employees' Agents and its desk and ticket Sessions are left as they are.
+ */
+export const deleteOrganization = (projectId: string, orgId: string) =>
+  apiFetch<void>(orgBase(projectId, orgId), { method: "DELETE" });
+
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
 
@@ -2025,6 +2046,14 @@ export const getDesktopTray = () => apiFetch<DesktopTrayStatusResponse>("/api/de
  */
 export const setDesktopTray = (patch: DesktopTrayPatch) =>
   apiFetch<void>("/api/desktop/tray", { method: "PUT", body: patch });
+
+/** Has the desktop shell open System Settings at a Privacy & Security pane (macOS). */
+export const openPrivacySettings = (pane: DesktopPrivacyPane) =>
+  apiFetch<void>("/api/desktop/privacy-settings", {
+    method: "POST",
+    body: { pane },
+    server: null,
+  });
 
 // ---- Workflows (an Agent's own extension packages, served as tabs beside the chat) ----
 const workflowsBase = (projectId: string, agentId: string) =>
