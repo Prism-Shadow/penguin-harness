@@ -282,7 +282,6 @@ describe("ProposalService", () => {
         return remotes;
       },
       pluginConfig: { get: () => values },
-      probe: async () => ({ installId: "self-id", commit: A, describe: "v0.2.13-1-gaaaaaaa" }),
     });
     const first = await delegated();
     const second = await delegated();

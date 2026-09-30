@@ -1,8 +1,8 @@
 /**
- * The server registry (servers.ts): `this` always first and never registered; a repeat
- * refused by name, by normalised address, or by the install id the address answers with
- * (the answering server's own included); a registration written as one `server` line under
- * the caller's name — and a check that no concurrent registration can slip between.
+ * The server registry (servers.ts): nothing on it by default — no server registers itself;
+ * a repeat refused by name, by normalised address, or by the install id the address answers
+ * with; a registration written as one `server` line under the caller's name — and a check
+ * that no concurrent registration can slip between.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -38,12 +38,10 @@ describe("names and addresses", () => {
     }
   });
 
-  it("refuses a malformed name, and `this` as a repeat of the answering server", () => {
+  it("refuses a malformed name; `this` is a name like any other", () => {
     expect(serverNameOf(" desk-1 ")).toBe("desk-1");
+    expect(serverNameOf("this")).toBe("this");
     expect(() => serverNameOf("a b")).toThrow(expect.objectContaining({ code: "bad_request" }));
-    expect(() => serverNameOf("This")).toThrow(
-      expect.objectContaining({ code: "server_registered" }),
-    );
   });
 
   it("reads an install answer, and refuses one without an id", () => {
@@ -67,34 +65,31 @@ describe("requireUnregistered", () => {
   const registered = [
     { name: "desk", url: "http://localhost:53531", installId: "desk-id", at: "t", by: "agent:a" },
   ];
-  const self = { installId: "self-id" };
-  const refused = (candidate: { name: string; url: string; installId: string }) => {
+  const refused = (candidate: { name: string; url: string; installId: string | null }) => {
     try {
-      requireUnregistered(registered, self, candidate);
+      requireUnregistered(registered, candidate);
     } catch (err) {
       return err as { code: string; message: string };
     }
     return null;
   };
 
-  it("refuses the answering server behind another address, by its install id", () => {
-    expect(
-      refused({ name: "x", url: "http://127.0.0.1:7364", installId: "self-id" }),
-    ).toMatchObject({
-      code: "server_registered",
-      message: expect.stringContaining('"this"'),
-    });
-  });
-
   it("refuses a repeat by name, by address, and by install id — naming the entry there", () => {
     expect(refused({ name: "DESK", url: "http://h:1", installId: "n" })?.message).toContain("desk");
-    expect(
-      refused({ name: "y", url: "http://localhost:53531", installId: "n" })?.message,
-    ).toContain("as desk");
+    expect(refused({ name: "y", url: "http://localhost:53531", installId: "n" })?.message).toContain(
+      "as desk",
+    );
     expect(
       refused({ name: "y", url: "http://127.0.0.1:53531", installId: "desk-id" })?.message,
     ).toContain("same server as desk");
     expect(refused({ name: "y", url: "http://h:2", installId: "n" })).toBeNull();
+  });
+
+  it("checks name and address alone before the address is read", () => {
+    expect(refused({ name: "y", url: "http://localhost:53531", installId: null })?.code).toBe(
+      "server_registered",
+    );
+    expect(refused({ name: "y", url: "http://127.0.0.1:53531", installId: null })).toBeNull();
   });
 });
 
@@ -102,7 +97,6 @@ describe("placeServer", () => {
   const reading = (commit: string | null): ServerReading => ({
     name: "s",
     url: "http://h",
-    self: false,
     commit,
     describe: null,
     error: null,
@@ -226,14 +220,15 @@ describe("registering over the routes", () => {
       .filter((l) => l !== "")
       .map((l) => JSON.parse(l) as Record<string, unknown>);
 
-  it("lists this server alone before anything is registered", async () => {
+  it("lists nothing before anything is registered: no server registers itself", async () => {
     const res = await call("GET", "/servers");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      servers: [
-        { name: "this", url: null, self: true, installId: "self-id", registeredAt: null, by: null },
-      ],
-    });
+    expect(await res.json()).toEqual({ servers: [] });
+    // The answering server's own address is registered like any other, once.
+    const own = await call("POST", "/servers", { name: "here", url: "http://localhost" });
+    expect(own.status).toBe(200);
+    const again = await call("POST", "/servers", { name: "loop", url: "http://127.0.0.1:9" });
+    expect(again.status).toBe(409);
   });
 
   it("registers a server as one `server` line under the caller, and refuses every kind of repeat without a line", async () => {
@@ -244,12 +239,9 @@ describe("registering over the routes", () => {
     });
     expect(ok.status).toBe(200);
     const { servers } = (await ok.json()) as {
-      servers: Array<{ name: string; url: string | null }>;
+      servers: Array<{ name: string; url: string }>;
     };
-    expect(servers.map((s) => [s.name, s.url])).toEqual([
-      ["this", null],
-      ["desk", "http://localhost:53531"],
-    ]);
+    expect(servers.map((s) => [s.name, s.url])).toEqual([["desk", "http://localhost:53531"]]);
     expect(await lines()).toEqual([
       expect.objectContaining({
         kind: "server",
@@ -264,8 +256,6 @@ describe("registering over the routes", () => {
       [{ name: "desk", url: "http://h:1" }, "name desk"],
       [{ name: "again", url: "http://localhost:53531" }, "as desk"],
       [{ name: "tunnel", url: "http://127.0.0.1:53531" }, "same server as desk"],
-      [{ name: "me", url: "http://localhost" }, '"this"'],
-      [{ name: "me2", url: "http://127.0.0.1:9" }, '"this"'],
     ] as const) {
       const res = await call("POST", "/servers", body);
       expect(res.status, JSON.stringify(body)).toBe(409);

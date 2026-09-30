@@ -63,7 +63,6 @@ import {
   readServers,
   registryOf,
   requireUnregistered,
-  SELF_NAME,
   serverNameOf,
   ServerRegistryError,
   type ProbeServer,
@@ -1476,51 +1475,28 @@ export class ProposalService {
     return this.deps.probe ?? fetchProbe();
   }
 
-  /** The answering server's install id over `selfUrl`; null when it cannot be read (then only name and address guard a repeat of it). */
-  private async selfInstallId(selfUrl: string): Promise<string | null> {
-    try {
-      return (await this.probe()(selfUrl)).installId;
-    } catch {
-      return null;
-    }
-  }
-
-  /** The registry: `this` first, then every registered server. */
-  async servers(
-    projectId: string,
-    orgId: string,
-    selfUrl: string,
-    actor: OrgActor,
-  ): Promise<ProposalServersResponse> {
+  /** The registry: every registered server, in order; none is on it by default. */
+  async servers(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalServersResponse> {
     const { ledger } = await this.open(projectId, orgId, actor);
-    const installId = await this.selfInstallId(selfUrl);
-    return { servers: registryOf(ledger.servers(), { installId }) };
+    return { servers: registryOf(ledger.servers()) };
   }
 
   /**
-   * Registers a server, anyone in the organization: refused when it repeats `this` or a
-   * registered server by name, address or install id (read from the address now).
+   * Registers a server, anyone in the organization: refused when it repeats a registered
+   * server by name, address or install id (read from the address now).
    */
   async registerServer(
     projectId: string,
     orgId: string,
     req: ProposalServerRegisterRequest,
-    selfUrl: string,
     actor: OrgActor,
   ): Promise<ProposalServersResponse> {
     const { ledger, caller } = await this.open(projectId, orgId, actor);
     try {
       const name = serverNameOf(typeof req.name === "string" ? req.name : "");
       const url = normalizeServerUrl(typeof req.url === "string" ? req.url : "");
-      if (url === normalizeServerUrl(selfUrl)) {
-        throw new ServerRegistryError(
-          409,
-          "server_registered",
-          `${url} is the server answering this request ("${SELF_NAME}"); it is registered already.`,
-        );
-      }
       // Name and address first: a repeat of either is refused without asking the address.
-      requireUnregistered(ledger.servers(), { installId: null }, { name, url, installId: null });
+      requireUnregistered(ledger.servers(), { name, url, installId: null });
       let identity;
       try {
         identity = await this.probe()(url);
@@ -1531,14 +1507,13 @@ export class ProposalService {
           `${url} was not read as a penguin server: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-      const self = { installId: await this.selfInstallId(selfUrl) };
       const candidate = { name, url, installId: identity.installId };
-      await ledger.appendChecked(() => requireUnregistered(ledger.servers(), self, candidate), {
+      await ledger.appendChecked(() => requireUnregistered(ledger.servers(), candidate), {
         kind: "server",
         ...candidate,
         by: caller.principal,
       });
-      return { servers: registryOf(ledger.servers(), self) };
+      return { servers: registryOf(ledger.servers()) };
     } catch (err) {
       if (err instanceof ServerRegistryError) {
         throw new ProposalError(err.status, err.code, err.message);
@@ -1555,20 +1530,19 @@ export class ProposalService {
   async graph(
     projectId: string,
     orgId: string,
-    selfUrl: string,
     actor: OrgActor,
   ): Promise<ProposalGraphResponse> {
     const { org, ledger } = await this.open(projectId, orgId, actor);
     const errors: string[] = [];
     const [config, servers] = await Promise.all([
       this.deliveryRepo(org, ledger, errors),
-      readServers(ledger.servers(), selfUrl, this.probe()),
+      readServers(ledger.servers(), this.probe()),
     ]);
     return this.prGraph.read({
       repo: config.repo ?? "",
       base: config.base,
       origins: config.origins,
-      servers: servers.readings,
+      servers,
       errors,
       proposals: ledger.proposals().map((p) => ({
         number: p.number,

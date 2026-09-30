@@ -9,7 +9,7 @@
 
 ## 登记 server
 
-company-proposals 在账本里以 `server` 行记一份 penguin server 名单。`penguin org proposal server add <name> <url>`（`POST …/proposals/servers`）登记一台，组织内任何人都可以登记；`penguin org proposal server ls`（`GET …/proposals/servers`）列出名单。应答请求的这台 server 始终在首位，名为 `this`，不需要登记。名字重复、规范化后的地址重复、或该地址回的 installId 与已有一台相同，都回 409 `server_registered`——最后一条认得出换了地址的本机或已登记的 server。读不成 penguin server 的地址回 422 `server_unreachable`。
+company-proposals 在账本里以 `server` 行记一份 penguin server 名单。`penguin org proposal server add <name> <url>`（`POST …/proposals/servers`）登记一台，组织内任何人都可以登记；`penguin org proposal server ls`（`GET …/proposals/servers`）列出名单；名单上只有登记过的 server，没有哪台自动登记自己。名字重复、规范化后的地址重复、或该地址回的 installId 与已有一台相同，都回 409 `server_registered`——最后一条认得出换了地址的已登记 server。读不成 penguin server 的地址回 422 `server_unreachable`。
 
 ## 关系图上的 commit
 

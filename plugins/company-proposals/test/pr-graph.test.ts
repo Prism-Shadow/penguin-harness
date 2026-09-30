@@ -251,8 +251,7 @@ describe("PrGraphReader", () => {
     const { gh, calls } = fakeGitHub();
     const reading = (name: string, commit: string | null, error: string | null = null) => ({
       name,
-      url: name === "this" ? null : `http://${name}`,
-      self: name === "this",
+      url: `http://${name}`,
       commit,
       describe: commit === null ? null : `v1-1-g${commit.slice(0, 7)}`,
       error,
@@ -260,14 +259,14 @@ describe("PrGraphReader", () => {
     const g = await new PrGraphReader({ gh, now: () => 0 }).read({
       ...config,
       servers: [
-        reading("this", A1.slice(0, 9)),
+        reading("here", A1.slice(0, 9)),
         reading("late", X),
         reading("local", L),
         reading("dark", null, "/api/install answered 401"),
       ],
     });
     expect(g.servers.map((s) => [s.name, s.at, s.relation, s.ahead, s.error])).toEqual([
-      ["this", 11, "same", 0, null],
+      ["here", 11, "same", 0, null],
       ["late", 12, "ahead", 3, null],
       ["local", null, null, null, null],
       ["dark", null, null, null, "/api/install answered 401"],

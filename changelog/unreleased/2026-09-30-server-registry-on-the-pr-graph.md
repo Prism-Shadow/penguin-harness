@@ -9,7 +9,7 @@
 
 ## Registering a server
 
-company-proposals keeps a registry of penguin servers in its ledger, as `server` lines. `penguin org proposal server add <name> <url>` (`POST …/proposals/servers`) registers one, and anybody in the organization may. `penguin org proposal server ls` (`GET …/proposals/servers`) lists the registry. The server answering the request is always first, as `this`, and is never registered. A registration is refused with 409 `server_registered` when it repeats a name, a normalised address, or the install id the address answers with — the last one catches the answering server itself, or a registered one, behind another address. An address that is not read as a penguin server answers 422 `server_unreachable`.
+company-proposals keeps a registry of penguin servers in its ledger, as `server` lines. `penguin org proposal server add <name> <url>` (`POST …/proposals/servers`) registers one, and anybody in the organization may. `penguin org proposal server ls` (`GET …/proposals/servers`) lists the registry, which holds only what was registered: no server registers itself. A registration is refused with 409 `server_registered` when it repeats a name, a normalised address, or the install id the address answers with — the last one catches a registered server behind another address. An address that is not read as a penguin server answers 422 `server_unreachable`.
 
 ## The commit a server runs, on the graph
 

@@ -1956,10 +1956,10 @@ const en: Messages = {
       "No deploy scripts. A server admin registers one with: penguin org proposal deploy-script add <id> -- <command>",
     deployScriptHeader: ["ID", "COMMAND", "DESCRIPTION", "BY"],
     proposalServerDesc:
-      "The penguin servers the PR graph places at the commit each one runs (this server is always on it)",
+      "The penguin servers somebody registered, which the PR graph places at the commit each one runs",
     proposalServerAddDesc:
       "Register a penguin server by a name and its address; a server already on the registry is refused",
-    proposalServerLsDesc: "List the registered servers, this one first",
+    proposalServerLsDesc: "List the registered servers",
     proposalFeedbackDesc:
       "Send the author feedback from the implementation (or, with --runtime, from testing the dev branch)",
     proposalConcludeDesc:
@@ -3216,9 +3216,9 @@ const zh: Messages = {
     deployScriptNone:
       "还没有部署脚本。服务器管理员可以这样登记：penguin org proposal deploy-script add <id> -- <command>",
     deployScriptHeader: ["ID", "命令", "说明", "登记人"],
-    proposalServerDesc: "关系图按各自所跑的 commit 标出的 penguin server（本机始终在列）",
+    proposalServerDesc: "员工登记的 penguin server，关系图按各自所跑的 commit 标出它们",
     proposalServerAddDesc: "按名字与地址登记一台 penguin server；已在名单上的会被挡住",
-    proposalServerLsDesc: "列出已登记的 server，本机在首位",
+    proposalServerLsDesc: "列出已登记的 server",
     proposalFeedbackDesc: "把实施中的发现反馈给作者（加 --runtime 则是测试 dev 分支的发现）",
     proposalConcludeDesc:
       "把一次讨论的结论送到负责人的工位，只送一次（在讨论会话里执行，或由人加 --discussion 指定）",

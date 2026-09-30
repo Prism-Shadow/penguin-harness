@@ -6999,7 +6999,7 @@ export interface ProposalGraphResponse {
   /** What could not be read from GitHub; the graph is partial when present. */
   errors: string[];
   checkedAt: string;
-  /** Every registered server (this one first) with the commit it runs and the layer that commit sits on. */
+  /** Every registered server with the commit it runs and the layer that commit sits on. */
   servers: ProposalGraphServer[];
 }
 
@@ -7010,9 +7010,7 @@ export interface ProposalGraphResponse {
  */
 export interface ProposalGraphServer {
   name: string;
-  /** Null for the server that answers (it is read in place, not over a registered address). */
-  url: string | null;
-  self: boolean;
+  url: string;
   commit: string | null;
   describe: string | null;
   at: number | null;
@@ -7022,15 +7020,13 @@ export interface ProposalGraphServer {
   error: string | null;
 }
 
-/** A server on the organization's registry; the answering server is always the first, named `this`. */
+/** A server on the organization's registry: only servers somebody registered; none registers itself. */
 export interface ProposalServer {
   name: string;
-  url: string | null;
-  self: boolean;
-  installId: string | null;
-  /** Null for `this`, which is never registered. */
-  registeredAt: string | null;
-  by: string | null;
+  url: string;
+  installId: string;
+  registeredAt: string;
+  by: string;
 }
 
 /** GET …/proposals/servers, and the answer to POST …/proposals/servers. */

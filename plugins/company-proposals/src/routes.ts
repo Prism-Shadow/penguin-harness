@@ -8,7 +8,7 @@
  *                                   its new proposals come from approved roadmap items)
  *   GET    /test-groups              the test groups a proposal may use, in order: { groups: [{ id, description }] }
  *   GET    /graph                    the delivery repository's open PRs as a commit graph (pr-graph.ts), with the servers placed on it
- *   GET    /servers                  the server registry, `this` first (servers.ts)
+ *   GET    /servers                  the server registry: the servers registered, none by default (servers.ts)
  *   POST   /servers                  anybody in the organization registers one: { name, url }; a repeat is 409 server_registered
  *   GET    /deploy-scripts           the organization's deploy scripts (deploy-routes.ts)
  *   POST   /deploy-scripts           { id, command[], description? } register one (a person who is a server admin)
@@ -44,7 +44,6 @@
  * is honoured only behind the local API token (see callerSessionId).
  */
 import { Hono } from "hono";
-import type { Context } from "hono";
 import type { ProposalMaterialKind } from "@prismshadow/penguin-server/api";
 import { MATERIAL_KINDS, ProposalError, type ProposalService } from "./service.js";
 import type { DeployService } from "./deploy.js";
@@ -61,11 +60,6 @@ import {
 
 /** The slot's contribution id, as the manifest names it. */
 export const ROUTES_ID = "company-proposals.routes";
-
-/** The address the caller reached this server by: how the registry reads `this` (servers.ts). */
-function selfUrlOf(c: Context): string {
-  return new URL(c.req.url).origin;
-}
 
 export function proposalRoutes(service: ProposalService, deploys: DeployService): Hono {
   const app = new Hono();
@@ -105,20 +99,11 @@ export function proposalRoutes(service: ProposalService, deploys: DeployService)
   );
 
   app.get("/graph", async (c) =>
-    c.json(
-      await service.graph(param(c, "projectId"), param(c, "orgId"), selfUrlOf(c), actorOfQuery(c)),
-    ),
+    c.json(await service.graph(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
   );
 
   app.get("/servers", async (c) =>
-    c.json(
-      await service.servers(
-        param(c, "projectId"),
-        param(c, "orgId"),
-        selfUrlOf(c),
-        actorOfQuery(c),
-      ),
-    ),
+    c.json(await service.servers(param(c, "projectId"), param(c, "orgId"), actorOfQuery(c))),
   );
 
   app.post("/servers", async (c) => {
@@ -129,7 +114,6 @@ export function proposalRoutes(service: ProposalService, deploys: DeployService)
         param(c, "projectId"),
         param(c, "orgId"),
         req,
-        selfUrlOf(c),
         actorOf(c, body),
       ),
     );

@@ -2,16 +2,16 @@
  * The organization's registry of penguin servers, and where each one's commit sits on the PR
  * graph.
  *
- * The server that answers is always on the registry, first, as `this`: it is never
- * registered. Anyone in the organization adds another by a name and its address; the add is
- * refused when the name, the normalised address, or the install id the address answers with
- * is one the registry already has — the id is what recognises one server behind two
- * addresses (a loopback name and a tunnel port), including the answering server itself.
+ * The registry holds exactly the servers somebody registered: no server registers itself,
+ * the one answering included (the board's call — nothing is on it by default). Anyone in the
+ * organization adds one by a name and its address; the add is refused when the name, the
+ * normalised address, or the install id the address answers with is one the registry already
+ * has — the id is what recognises one server behind two addresses (a loopback name and a
+ * tunnel port).
  *
  * A server's commit is read from its public `GET /api/install` (`installId`, `commit`,
- * `describe`), the same read for `this` (over the address the caller reached it by) as for
- * the others: the answering server holds no credential for another, and keeping one per
- * server would put secrets into the organization's data. Nothing here writes a git ref.
+ * `describe`): the server drawing the graph holds no credential for another, and keeping one
+ * per server would put secrets into the organization's data. Nothing here writes a git ref.
  */
 import type {
   InstallResponse,
@@ -19,9 +19,6 @@ import type {
   ProposalServer,
 } from "@prismshadow/penguin-server/api";
 import type { RegisteredServer } from "./ledger.js";
-
-/** The name the answering server goes by on the registry; no registration may take it. */
-export const SELF_NAME = "this";
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const PROBE_TIMEOUT_MS = 5_000;
@@ -59,13 +56,6 @@ export function serverNameOf(raw: string): string {
       `A server name is 1–64 letters, digits, ".", "_" or "-", starting with a letter or digit: ${JSON.stringify(raw)}`,
     );
   }
-  if (name.toLowerCase() === SELF_NAME) {
-    throw new ServerRegistryError(
-      409,
-      "server_registered",
-      `"${SELF_NAME}" is the server answering this request; it is registered already.`,
-    );
-  }
   return name;
 }
 
@@ -99,24 +89,18 @@ export function normalizeServerUrl(raw: string): string {
 }
 
 /**
- * Throws `server_registered` when the candidate repeats the answering server or a registered
- * one — by name, by address, or by the install id the address answered with. With no id yet
- * (`installId: null`, before the address is read) only name and address are checked.
+ * Throws `server_registered` when the candidate repeats a registered server — by name, by
+ * address, or by the install id the address answered with. With no id yet (`installId: null`,
+ * before the address is read) only name and address are checked.
  */
 export function requireUnregistered(
   registered: RegisteredServer[],
-  self: { installId: string | null },
   candidate: { name: string; url: string; installId: string | null },
 ): void {
   const taken = (message: string): never => {
     throw new ServerRegistryError(409, "server_registered", message);
   };
   const id = candidate.installId;
-  if (id !== null && self.installId !== null && self.installId === id) {
-    taken(
-      `${candidate.url} is the server answering this request ("${SELF_NAME}"); it is registered already.`,
-    );
-  }
   for (const s of registered) {
     if (s.name.toLowerCase() === candidate.name.toLowerCase()) {
       taken(`The name ${s.name} is registered already, for ${s.url}.`);
@@ -163,8 +147,7 @@ export function identityOf(body: unknown): ServerIdentity {
 /** A server as the graph reads it: its identity now, or why it could not be read. */
 export interface ServerReading {
   name: string;
-  url: string | null;
-  self: boolean;
+  url: string;
   commit: string | null;
   describe: string | null;
   error: string | null;
@@ -209,78 +192,42 @@ export function placeServer(
   return best === null ? out : { ...out, at: best.number, relation: "ahead", ahead: best.ahead };
 }
 
-/** The registry as the API lists it: `this` first, then the registered servers in order. */
-export function registryOf(
-  registered: RegisteredServer[],
-  self: { installId: string | null },
-): ProposalServer[] {
-  return [
-    {
-      name: SELF_NAME,
-      url: null,
-      self: true,
-      installId: self.installId,
-      registeredAt: null,
-      by: null,
-    },
-    ...registered.map((s) => ({
-      name: s.name,
-      url: s.url,
-      self: false,
-      installId: s.installId,
-      registeredAt: s.at,
-      by: s.by,
-    })),
-  ];
+/** The registry as the API lists it: the registered servers, in the order they were registered. */
+export function registryOf(registered: RegisteredServer[]): ProposalServer[] {
+  return registered.map((s) => ({
+    name: s.name,
+    url: s.url,
+    installId: s.installId,
+    registeredAt: s.at,
+    by: s.by,
+  }));
 }
 
 /**
- * Reads every server on the registry now, in parallel: `this` over `selfUrl` (the address the
- * caller reached it by), the others over their registered addresses. A server that cannot be
- * read keeps its place with the reason.
+ * Reads every registered server now, in parallel, over its registered address. A server that
+ * cannot be read keeps its place with the reason.
  */
 export async function readServers(
   registered: RegisteredServer[],
-  selfUrl: string,
   probe: ProbeServer,
-): Promise<{ self: ServerIdentity | null; readings: ServerReading[] }> {
-  const targets = [
-    { name: SELF_NAME, url: selfUrl, shown: null as string | null, self: true },
-    ...registered.map((s) => ({
-      name: s.name,
-      url: s.url,
-      shown: s.url as string | null,
-      self: false,
-    })),
-  ];
-  const answers = await Promise.allSettled(targets.map((t) => probe(t.url)));
-  let self: ServerIdentity | null = null;
-  const readings = targets.map((t, i): ServerReading => {
+): Promise<ServerReading[]> {
+  const answers = await Promise.allSettled(registered.map((s) => probe(s.url)));
+  return registered.map((s, i): ServerReading => {
     const a = answers[i]!;
     if (a.status === "rejected") {
       const reason = a.reason instanceof Error ? a.reason.message : String(a.reason);
-      return {
-        name: t.name,
-        url: t.shown,
-        self: t.self,
-        commit: null,
-        describe: null,
-        error: reason,
-      };
+      return { name: s.name, url: s.url, commit: null, describe: null, error: reason };
     }
-    if (t.self) self = a.value;
     const error =
       a.value.commit === null
         ? "the server reports no commit (a build older than the field, or one with neither a pushed revision nor a stamped commit)"
         : null;
     return {
-      name: t.name,
-      url: t.shown,
-      self: t.self,
+      name: s.name,
+      url: s.url,
       commit: a.value.commit,
       describe: a.value.describe,
       error,
     };
   });
-  return { self, readings };
 }

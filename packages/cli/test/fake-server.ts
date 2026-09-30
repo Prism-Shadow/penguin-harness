@@ -109,7 +109,7 @@ export interface FakeOrgState {
   proposals?: Map<number, Json>;
   /** What `GET …/proposals/graph` answers (ProposalGraphResponse); absent = 409 graph_not_configured. */
   proposalGraph?: Json;
-  /** The registry `…/proposals/servers` answers; `this` alone until a POST adds one (a repeated name is 409). */
+  /** The registry `…/proposals/servers` answers; empty until a POST adds one (a repeated name is 409). */
   proposalServers?: Json[];
 }
 
@@ -1342,15 +1342,7 @@ export class FakeServer {
         : this.json(org.proposalGraph);
     }
     if (b === "servers") {
-      const self: Json = {
-        name: "this",
-        url: null,
-        self: true,
-        installId: "self-id",
-        registeredAt: null,
-        by: null,
-      };
-      const registry: Json[] = (org.proposalServers ??= [self]);
+      const registry: Json[] = (org.proposalServers ??= []);
       if (method === "POST") {
         if (!isNonEmptyString(body?.name) || !isNonEmptyString(body?.url)) {
           return this.badRequest("name and url are required.");
@@ -1362,7 +1354,6 @@ export class FakeServer {
         registry.push({
           name,
           url: body.url,
-          self: false,
           installId: `${name}-id`,
           registeredAt: ORG_NOW,
           by: isNonEmptyString(body.agentId) ? `agent:${body.agentId}` : "user:admin",
