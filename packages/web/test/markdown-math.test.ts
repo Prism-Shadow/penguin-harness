@@ -36,10 +36,10 @@ describe("the pipeline every renderer shares", () => {
     expectEveryRootScanned(SCAN);
   });
 
-  it("are the known renderers: Md, the shared file browser, a Trace event and a plugin's page", () => {
+  it("are the known renderers: Md, a Trace event and a plugin's page", () => {
+    // The shared file browser draws its Markdown through `Md`, so it is not one of them.
     expect(renderers.map((file) => file.id).sort()).toEqual([
       "packages/ui/src/components/content/prose/prose.tsx",
-      "packages/web/src/components/ui/file-browser.tsx",
       "packages/web/src/features/plugins/plugin-detail-page.tsx",
       "packages/web/src/features/traces/trace-event-row.tsx",
     ]);
@@ -57,7 +57,7 @@ describe("the pipeline every renderer shares", () => {
       }
       expect(file.text, file.id).toContain(HOME[file.root]);
     }
-    expect(total).toBe(5); // Md, the shared file browser, a plugin's page, two in trace-event-row
+    expect(total).toBe(4); // Md, a plugin's page, two in trace-event-row
   });
 
   it("no renderer assembles its own pipeline out of the underlying plugins", () => {

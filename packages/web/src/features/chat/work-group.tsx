@@ -1,42 +1,25 @@
 /**
- * "Reasoning & Tools" group: collapses a run of consecutive thinking +
- * tool-call items into one aggregated group.
- * Expand policy, two layers deep: the group opens while it is running and closes itself once
- * it is done, and the thinking/tool rows inside it are appended one at a time and stay closed
- * — the reader is shown that a step happened and how long it took, not its contents, until
- * they ask. A manual toggle by the user is respected afterward. A pending approval **forces it
- * open** — otherwise the approval buttons would be unreachable.
+ * The session's "Reasoning & Tools" group: binds a run of consecutive thinking and tool-call
+ * items to the shared UI package's `WorkGroup`, which draws it and owns its expand policy.
  *
- * Hierarchy: the group header is **a distinct title bar** (solid light-gray background + small
- * uppercase status text), and the thinking/tool-call rows inside the group sit on the white
- * area below it — the two are deliberately different layers, otherwise "Running"/"Done" would
- * blend visually with the step rows and the parent-child relationship would be unreadable.
+ * What is decided here is the group's state, from the stream model:
  *
- * Status semantics: the group only counts as "Done" once the model stops calling tools. As long
- * as this is still the last segment and the Task is running, the model could add another step
- * at any moment (there can be a brief gap with no active item between two steps), so it always
- * shows "Running"; it flips to "Done" only once a later message (e.g. body text) pushes the
- * group away from the end, or the Task has actually finished.
+ * - Running vs Done: the group only counts as done once the model stops calling tools. While it
+ *   is the last segment and the Task runs, the model could add another step at any moment (with
+ *   a brief gap between two steps where no item is active), so it shows "Running"; it flips to
+ *   "Done" once a later message pushes it away from the end, or the Task finishes. Following this
+ *   rather than the per-item activity is what keeps the group from collapsing between steps.
+ * - A pending approval anywhere in the group forces it open: the approval buttons live inside.
+ * - The duration is `summarizeWork`'s span; it ticks only while an item is in flight.
  */
-import { useEffect, useRef, useState } from "react";
-import {
-  ActivityProgress,
-  Chevron,
-  DISCLOSURE_CARD_CLASS,
-  DISCLOSURE_HEADER_ROW_CLASS,
-  DISCLOSURE_HEADER_STICKY_CLASS,
-  DISCLOSURE_HEADER_TITLE_CLASS,
-  LiveDuration,
-  StatusIcon,
-} from "@prismshadow/penguin-ui";
+import { WorkGroup } from "@prismshadow/penguin-ui";
+import type { WorkGroupProps } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { humanizeDuration } from "../../lib/format";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import { MessageItem } from "./message-item";
 import type { StreamRenderContext } from "./message-stream";
 import { summarizeWork } from "./work-summary";
-import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 
 /** Item kinds that belong in the group: thinking and tool calls (subagent cards are nested inside the run_subagent tool card, not listed separately). */
 export function isWorkItem(item: ChatItem): boolean {
@@ -62,7 +45,35 @@ function hasPendingApproval(items: ChatItem[], ctx: StreamRenderContext): boolea
   );
 }
 
-export function WorkGroup({
+/** The group's state as the package's `WorkGroup` takes it, minus the rows. */
+export function useWorkGroupState(
+  items: ChatItem[],
+  ctx: StreamRenderContext,
+  isLast: boolean,
+): Omit<WorkGroupProps, "rows"> {
+  // Whether any item is in flight right now — also the only window in which the group's span is
+  // still growing, which the duration display depends on.
+  const stepRunning = items.some((it) => itemActive(it, ctx));
+  // Last segment + Task running = the model might still call another tool → Running, even with
+  // no active item right now.
+  const running = (isLast && ctx.taskRunning) || stepRunning;
+  const { steps, durationMs, startMs } = summarizeWork(items);
+  return {
+    running,
+    stepRunning,
+    // A group of thinking only is thinking; anything with a tool call in it is tool work.
+    kind: items.some((it) => it.kind === "tool_call") ? "tool" : "thinking",
+    // The title doubles as status: "Running" while in progress, "Done" when finished.
+    title: running ? S.chat.workRunning : S.chat.workDone,
+    // A pure-thinking group (no tool calls) doesn't show "0 steps".
+    ...(steps > 0 ? { count: S.chat.workGroupSteps(steps) } : {}),
+    ...(startMs !== undefined ? { startMs } : {}),
+    durationMs,
+    pending: hasPendingApproval(items, ctx),
+  };
+}
+
+export function SessionWorkGroup({
   items,
   ctx,
   isLast,
@@ -72,163 +83,14 @@ export function WorkGroup({
   /** Whether this group is the last segment of the message stream (current turn still in progress): decides the default expanded/collapsed state. */
   isLast: boolean;
 }) {
-  // Whether any item is in flight right now — also the only window in which the group's span is
-  // still growing, which the duration display below depends on.
-  const itemsRunning = items.some((it) => itemActive(it, ctx));
-  // Last segment + Task running = the model might still call another tool → show Running (even if there's no active item right now).
-  const active = (isLast && ctx.taskRunning) || itemsRunning;
-  const pending = hasPendingApproval(items, ctx);
-  const [open, setOpen] = useState(active);
-  const userToggled = useRef(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  // Before any manual toggle, follow the header's own Running/Done state: expanded while the
-  // group is working, collapsed the moment it is done — whether that is later messages pushing
-  // it away from the end mid-turn, or the Task ending on it. Deliberately `active` and not
-  // per-item `itemsRunning`: there can be a brief gap with no active item between two steps
-  // within a turn, and collapsing on that basis would flicker on every step and lose the
-  // internal expanded state — the "last segment + Task running" half of `active` bridges those
-  // gaps, so the group closes once and stays closed.
-  useEffect(() => {
-    if (!userToggled.current) setOpen(active);
-  }, [active]);
-
-  // A pending approval must stay actionable: expand the group body regardless of collapsed state (the approval row lives inside it).
-  const shown = open || pending;
-  const { steps, durationMs, startMs } = summarizeWork(items);
-  // The header is a work step of its own for the activity hook: a group of thinking only is
-  // thinking, anything with a tool call in it is tool work.
-  const activityKind = items.some((it) => it.kind === "tool_call") ? "tool" : "thinking";
-
+  const state = useWorkGroupState(items, ctx, isLast);
   return (
-    // overflow-clip (not overflow-hidden): the header below is position:sticky, and an
-    // overflow-hidden ancestor is a scroll container — the header would then stick to this
-    // card instead of the message list's scrollport, i.e. not stick at all. `clip` keeps
-    // the exact same clipping (rounded corners included) without creating a scroll
-    // container, and a sticky element never leaves its containing block, so the stuck
-    // header itself is never clipped.
-    // ui-frame: the group is a framed box with a head (the header) and a body (the tree), so a
-    // theme that draws its transcript without boxes can take this one away.
-    <div ref={rootRef} className={`ui-frame ${DISCLOSURE_CARD_CLASS}`}>
-      {/* Group header: a distinct title bar (solid background), on a separate layer from the
-          step rows below it. Sticky against the message list's scrollport so a long expanded
-          group can be collapsed from anywhere inside it — without this, finding the start of
-          a long thinking/tool run means scrolling all the way back up. This is the FIRST of
-          two stacked sticky levels: the currently scrolled thinking/tool row pins right
-          below it at top-4 (see thinking-block.tsx / tool-call-card.tsx), so the bar
-          directly above the content is always the section being read — the group header
-          alone would skip a level. The background must stay fully opaque (the old dark
-          900/60 read identically over the solid-900 card, but stuck over scrolling rows it
-          would let them bleed through); z above the row level (z-[4]), below the stream's
-          own overlays (back-to-bottom uses z-10). -top-4, not top-0: sticky offsets resolve
-          against the scrollport INSIDE the scroll container's padding, so top-0 pins a py-4
-          strip lower than the visible top and content scrolls through that gap; -top-4 is
-          the same rem unit as the container's py-4, cancelling exactly at every font scale
-          (the rows' top-4 = this offset plus the header's 2rem height, same reasoning). */}
-      <button
-        type="button"
-        data-group-header
-        aria-expanded={shown}
-        onClick={() => {
-          userToggled.current = true;
-          // Collapsing while the header is stuck: the group's real top edge sits above the
-          // fold, so after the body vanishes the viewport would land on unrelated content —
-          // bring the (now header-only) group back into view once React commits. `nearest`
-          // makes expanding and in-view collapsing a no-op. A forced-open pending approval
-          // keeps the body (shown stays true), so that click moves nothing either.
-          const willClose = open && !pending;
-          setOpen((v) => !v);
-          if (willClose) {
-            requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
-          }
-        }}
-        className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} ${DISCLOSURE_HEADER_ROW_CLASS}`}
-        data-slot="head"
-        data-kind={activityKind}
-        data-state={active ? "running" : "done"}
-      >
-        <StatusIcon state={active ? "running" : "done"} />
-        {/* The title doubles as status: "Running" while in progress, "Done" when finished. */}
-        <span
-          data-slot="label"
-          className={`${DISCLOSURE_HEADER_TITLE_CLASS} ${active ? toneInk.busy : "text-gray-500 dark:text-gray-400"}`}
-        >
-          {active ? S.chat.workRunning : S.chat.workDone}
-        </span>
-        {/* A pure-thinking group (no tool calls) doesn't show "0 steps"; below sm the count is
-            dropped entirely (title on the header carries nothing extra — the header must stay
-            a single uncut line on phones). */}
-        {steps > 0 && (
-          <span
-            data-slot="detail"
-            className="hidden shrink-0 font-mono text-xs text-gray-400 sm:inline"
-          >
-            {S.chat.workGroupSteps(steps)}
-          </span>
-        )}
-        {/* Both states show the same quantity: the summarizeWork span (earliest item start →
-            latest item end). That's the canonical definition here — it's what work-summary.ts
-            documents, and unlike a group-open→now wall clock it is reconstructible from the
-            stored timestamps, so reloading the transcript reproduces the same number. While an
-            item is in flight its end isn't known yet, so the tick extends the span to *now*
-            (whole seconds); with nothing in flight the value freezes at the computed span, with
-            decimals — the same "don't tick through a wait we don't count" idiom as a tool card
-            parked on an approval. Ticking on while the group merely stays Running (the model
-            thinking between steps, or streaming its answer) would climb past the span and then
-            snap backwards the moment the group settles. */}
-        {itemsRunning
-          ? startMs !== undefined && (
-              <span data-slot="detail" className="shrink-0 font-mono text-xs text-gray-400">
-                <LiveDuration sinceMs={startMs} />
-              </span>
-            )
-          : durationMs > 0 && (
-              <span data-slot="detail" className="shrink-0 font-mono text-xs text-gray-400">
-                {humanizeDuration(durationMs)}
-              </span>
-            )}
-        {pending && !shown && (
-          <>
-            {/* Below sm the pill collapses to a bare amber dot (title/aria carry the meaning):
-                the text pill would push the header past one line on phones. role="img", not a
-                live region — same non-live semantics as the text pill, so re-renders don't
-                chatter at screen readers. */}
-            <span
-              className={`hidden shrink-0 rounded px-1 text-[10px] font-medium sm:inline ${toneSurface.attention}`}
-            >
-              {S.chat.approvalWaiting}
-            </span>
-            <span
-              role="img"
-              data-tooltip={S.chat.approvalWaiting}
-              aria-label={S.chat.approvalWaiting}
-              className={`h-1.5 w-1.5 shrink-0 rounded-full sm:hidden ${toneDot.attention}`}
-            />
-          </>
-        )}
-        <ActivityProgress running={itemsRunning} />
-        <span className="min-w-0 flex-1" />
-        <Chevron open={shown} className="text-gray-400" />
-      </button>
-      {/* ui-tree: the steps hang off the header one level down, so a theme may join them to
-          it with connector rules instead of the box. Each step is wrapped rather than marked
-          on its own root, because the thinking and tool rows also render outside a group. */}
-      {shown && (
-        <div
-          data-slot="body"
-          className="ui-tree anim-fade divide-y divide-gray-100 border-t border-gray-200 dark:divide-gray-800/60 dark:border-gray-800"
-        >
-          {items.map((item, index) => (
-            <div
-              key={item.id}
-              data-depth="1"
-              {...(index === items.length - 1 ? { "data-last": "true" } : {})}
-            >
-              <MessageItem item={item} ctx={ctx} />
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <WorkGroup
+      {...state}
+      rows={items.map((item) => ({
+        key: item.id,
+        content: <MessageItem item={item} ctx={ctx} />,
+      }))}
+    />
   );
 }

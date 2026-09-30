@@ -289,6 +289,36 @@ describe("the content board", () => {
   });
 });
 
+describe("the streaming board", () => {
+  it("plays the streaming Session's answer through the package's reply body, on one seed, with a replay", () => {
+    const board = read("../src/library/boards/streaming.tsx");
+    expect(board).toMatch(/import \{ AssistantText, [^}]*\} from "@prismshadow\/penguin-ui";/);
+    expect(board).not.toMatch(/web\/src\/features\/chat/);
+    expect(board).toMatch(/streamScript\(text, BOARD_SEED\)/);
+    expect(board).toMatch(/const answer = streamingAnswer\(state\.lang\);/);
+    expect(board).toMatch(
+      /<AssistantText key=\{run\} text=\{stream\.text\} streaming=\{stream\.streaming\} \/>/,
+    );
+    expect(board).toMatch(/<ReplayButton onClick=\{\(\) => setRun\(\(n\) => n \+ 1\)\} \/>/);
+  });
+
+  it("names the current theme's mode, read from the frame root's computed style", () => {
+    const board = read("../src/library/boards/streaming.tsx");
+    expect(board).toMatch(/getComputedStyle\(document\.documentElement\)/);
+    expect(board).toMatch(/getPropertyValue\("--ui-stream-reveal"\)/);
+    expect(board).toMatch(/getPropertyValue\("--ui-stream-rate"\)/);
+    expect(board).toMatch(/new MutationObserver\(update\)/);
+    // Every keyword the package lists is named in both dictionaries.
+    for (const S of [zh, en]) {
+      const t = S.library.streaming;
+      expect(Object.keys(t.modes).sort()).toEqual([...STREAM_REVEALS].sort());
+      for (const text of [t.reply, t.receiving, t.received, t.unset, t.reduced, t.rate(90)])
+        expect(text.trim()).not.toBe("");
+      for (const text of Object.values(t.modes)) expect(text.trim()).not.toBe("");
+    }
+  });
+});
+
 describe("the layout and data boards", () => {
   it("show every layout and data component from the package, and nothing from the app", () => {
     const boards = {
@@ -330,37 +360,6 @@ describe("the layout and data boards", () => {
     const data = read("../src/library/boards/data.tsx");
     expect(data).toMatch(/<Table framed=\{false\} size="sm">/);
     expect(data).toMatch(/onClick=\{/);
-  });
-});
-
-describe("the streaming board", () => {
-  it("plays the streaming Session's answer through the app's reply body, on one seed, with a replay", () => {
-    const board = read("../src/library/boards/streaming.tsx");
-    expect(board).toMatch(
-      /import \{ AssistantReplyBody \} from "\.\.\/\.\.\/\.\.\/\.\.\/web\/src\/features\/chat\/assistant-reply-body";/,
-    );
-    expect(board).toMatch(/streamScript\(text, BOARD_SEED\)/);
-    expect(board).toMatch(/const answer = streamingAnswer\(state\.lang\);/);
-    expect(board).toMatch(
-      /<AssistantReplyBody key=\{run\} text=\{stream\.text\} streaming=\{stream\.streaming\} \/>/,
-    );
-    expect(board).toMatch(/<ReplayButton onClick=\{\(\) => setRun\(\(n\) => n \+ 1\)\} \/>/);
-  });
-
-  it("names the current theme's mode, read from the frame root's computed style", () => {
-    const board = read("../src/library/boards/streaming.tsx");
-    expect(board).toMatch(/getComputedStyle\(document\.documentElement\)/);
-    expect(board).toMatch(/getPropertyValue\("--ui-stream-reveal"\)/);
-    expect(board).toMatch(/getPropertyValue\("--ui-stream-rate"\)/);
-    expect(board).toMatch(/new MutationObserver\(update\)/);
-    // Every keyword the package lists is named in both dictionaries.
-    for (const S of [zh, en]) {
-      const t = S.library.streaming;
-      expect(Object.keys(t.modes).sort()).toEqual([...STREAM_REVEALS].sort());
-      for (const text of [t.reply, t.receiving, t.received, t.unset, t.reduced, t.rate(90)])
-        expect(text.trim()).not.toBe("");
-      for (const text of Object.values(t.modes)) expect(text.trim()).not.toBe("");
-    }
   });
 });
 

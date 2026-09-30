@@ -10,9 +10,13 @@ import { currentPlatform } from "../../lib/shortcuts/platform";
 import { keyboardLayout } from "../../lib/shortcuts/store";
 import type { Chord } from "../../lib/shortcuts/types";
 
-export function ChordKbd({ chord, className = "" }: { chord: Chord; className?: string }) {
+/** The chord's keys as `Kbd` takes them: one glyph run on macOS, one key per `+` token elsewhere. */
+export function chordKeys(chord: Chord): string[] {
   const platform = currentPlatform();
   const label = formatChord(chord, platform, keyboardLayout() ?? undefined);
-  const keys = platform === "mac" ? [label] : label.split("+");
-  return <Kbd keys={keys} variant="plain" className={className} />;
+  return platform === "mac" ? [label] : label.split("+");
+}
+
+export function ChordKbd({ chord, className = "" }: { chord: Chord; className?: string }) {
+  return <Kbd keys={chordKeys(chord)} variant="plain" className={className} />;
 }

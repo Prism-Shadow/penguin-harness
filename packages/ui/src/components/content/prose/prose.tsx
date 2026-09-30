@@ -150,8 +150,9 @@ const SETTLED_COMPONENTS: Components = {
 };
 
 /**
- * The settled map, for a read-only Markdown surface that keeps the code-block chrome and swaps
- * only the link and image adapters (the shared file browser).
+ * The settled map, for a read-only Markdown surface that renders through react-markdown itself
+ * and keeps the code-block chrome. A surface that only swaps the link and image adapters (the
+ * file browser) passes them to `Md` instead.
  */
 export const SETTLED_MD_COMPONENTS: Components = SETTLED_COMPONENTS;
 

@@ -9,11 +9,8 @@
  * on hand at once and nothing here is fetched per directory.
  */
 import { useEffect, useState } from "react";
-import { Badge, ICONS, Modal } from "@prismshadow/penguin-ui";
-import { FileBrowser } from "../../components/ui/file-browser";
-import type { FileBrowserPreview } from "../../components/ui/file-browser";
-import type { TreeToggle } from "../../components/ui/file-tree";
-import type { FileTreeRow } from "../../lib/file-tree";
+import { Badge, FileBrowser, ICONS, Modal } from "@prismshadow/penguin-ui";
+import type { FileBrowserPreview, FileTreeRow, TreeToggle } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { baseName } from "../../lib/workspace-tree";
@@ -244,6 +241,10 @@ export function PluginDetailModal({
         headerFallback={plugin.name}
         preview={preview}
         emptyPreview={error ?? S.common.none}
+        emptyDirLabel={S.files.empty}
+        truncatedLabel={S.files.previewTruncated}
+        unsupportedLabel={S.files.previewUnsupported}
+        downloadLabel={S.files.download}
         stripFrontmatter
         onToggleDir={toggleDir}
         onOpenFile={setSelected}

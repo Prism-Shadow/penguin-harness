@@ -8,9 +8,12 @@
  * at nothing, or hides the one failure worth an alert.
  *
  * Only the two halves live here; that the classification reaches `error_records` this way is
- * proved end to end in messaging.test.ts and messaging-qq.test.ts.
+ * proved end to end in messaging.test.ts and messaging-qq.test.ts, and the verdicts a failure
+ * carries are asserted where the transports decide them (messaging-wire.test.ts and the qq and
+ * wechat transport suites).
  */
 import { describe, expect, it } from "vitest";
+import { MessagingChannelError } from "../src/runtime/messaging/connector.js";
 import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
 import {
   MessagingMediaTooLargeError,
@@ -19,6 +22,7 @@ import {
   MessagingUnsupportedError,
 } from "../src/runtime/messaging/media.js";
 import { MessagingConnectionClosedError } from "../src/runtime/messaging/qq-api.js";
+import { TelegramApiError } from "../src/runtime/messaging/telegram-api.js";
 
 /** Feishu's 99991672, which every one of its calls throws alike — the point of the code half. */
 const scopeDenial = (): MessagingPermissionError =>
@@ -157,5 +161,56 @@ describe("messagingErrorKind", () => {
         "messaging_connect_failed",
       ),
     ).toBe("unexpected");
+  });
+
+  it("a connection failure or a text send is read from the connector's own verdict", () => {
+    // The two capture points where the chat hears nothing and the only question is whether
+    // anybody has to act. A failure the next attempt gets past is routine there…
+    const blip = new MessagingChannelError("getUpdates failed: socket hang up", true);
+    expect(messagingErrorKind(blip, "messaging_connect_failed")).toBe("expected");
+    expect(messagingErrorKind(blip, "messaging_send_failed")).toBe("expected");
+    expect(
+      messagingErrorKind(
+        new TelegramApiError(
+          "sendMessage failed: Too Many Requests: retry after 5 (code 429)",
+          429,
+        ),
+        "messaging_send_failed",
+      ),
+    ).toBe("expected");
+    // …and one that meets the same refusal every time stays a defect, whichever channel's
+    // type carries the verdict.
+    expect(
+      messagingErrorKind(
+        new MessagingChannelError("Token exchange failed: appid invalid (code 100007)", false),
+        "messaging_connect_failed",
+      ),
+    ).toBe("unexpected");
+    expect(
+      messagingErrorKind(
+        new TelegramApiError(
+          "sendMessage failed: Forbidden: bot was blocked by the user (code 403)",
+          403,
+        ),
+        "messaging_send_failed",
+      ),
+    ).toBe("unexpected");
+    // A plain Error carries no verdict, whatever its words say: unclassified stays loud.
+    expect(
+      messagingErrorKind(
+        new Error("getUpdates failed: socket hang up"),
+        "messaging_connect_failed",
+      ),
+    ).toBe("unexpected");
+  });
+
+  it("reads that verdict at those two capture points and nowhere else", () => {
+    // The same transports throw at the file and download capture points, which answer the
+    // question by type and code: a reply's file that did not go out is said nowhere but its
+    // record, and whether the upload would work next time does not change that.
+    const blip = new MessagingChannelError("sendPhoto failed: socket hang up", true);
+    expect(messagingErrorKind(blip, "messaging_file_send_failed")).toBe("unexpected");
+    expect(messagingErrorKind(blip, "messaging_image_fetch_failed")).toBe("unexpected");
+    expect(messagingErrorKind(blip, "messaging_inbound_failed")).toBe("unexpected");
   });
 });

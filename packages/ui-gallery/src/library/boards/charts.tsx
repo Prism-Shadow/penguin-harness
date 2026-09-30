@@ -18,7 +18,7 @@ import type {
   TraceToolSpan,
   UsageSeriesPoint,
 } from "@prismshadow/penguin-server/api";
-import { Legend, Ring, Sparkline, TokenDonut } from "@prismshadow/penguin-ui";
+import { ContextRing, Legend, Ring, Sparkline, TokenDonut } from "@prismshadow/penguin-ui";
 import type { LegendItem, RingSegment, ToneName } from "@prismshadow/penguin-ui";
 import { humanizeTokens } from "../../../../web/src/lib/format";
 import { TimelineChart } from "../../../../web/src/features/traces/timeline-chart";
@@ -101,6 +101,9 @@ const SPEND: readonly { ratio: number; tone: ToneName }[] = [
   { ratio: 0.86, tone: "attention" },
   { ratio: 1.2, tone: "danger" },
 ];
+
+/** The composer's context ring at rest, past its attention mark and past its danger mark. */
+const CONTEXT_SHARES = [0.62, 0.9, 0.99] as const;
 
 /** A whole split into shares, each in its series slot. */
 const SHARES: readonly RingSegment[] = [0.34, 0.22, 0.18, 0.12].map((value, series) => ({
@@ -265,8 +268,14 @@ export function ChartsBoard() {
             ))}
             <Ring segments={[]} max={1} size={40} width={4} label={t.ringNoBudget} />
             <Ring segments={SHARES} max={1} size={40} width={6} label={t.ringShares} />
-            <span className="lib-cell text-fg-subtle">
-              <Ring segments={[{ value: 0.62 }]} max={1} size={12} width={2} trackOpacity={0.25} />
+            <span className="lib-cell">
+              {CONTEXT_SHARES.map((ratio) => (
+                <ContextRing
+                  key={ratio}
+                  ratio={ratio}
+                  label={t.ringContextAt(Math.round(ratio * 100))}
+                />
+              ))}
               <span className="lib-caption">{t.ringContext}</span>
             </span>
           </div>

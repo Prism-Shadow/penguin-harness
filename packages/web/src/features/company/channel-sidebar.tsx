@@ -22,9 +22,11 @@ import {
   GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
+  NAV_FILL,
   PlusIcon,
   SkeletonList,
   Text,
+  railItemClass,
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
@@ -126,7 +128,9 @@ function ChannelRow({
   const note = badgeNote(channel);
   const unread = channel.unread > 0;
   return (
-    <li className="group relative flex items-center rounded-md transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/70">
+    <li
+      className={`group relative flex items-center rounded-md transition-colors duration-150 ${NAV_FILL.hover}`}
+    >
       <NavLink
         to={orgChannelPath(projectId, orgId, channel.channelId)}
         onClick={() => onNavigate?.()}
@@ -135,7 +139,7 @@ function ChannelRow({
         className={({ isActive }) =>
           `flex min-w-0 flex-1 items-center ${ICON_GAP.row} rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
             isActive
-              ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+              ? `${NAV_FILL.selected} font-medium text-gray-900 dark:text-gray-100`
               : unread
                 ? "font-medium text-gray-900 dark:text-gray-100"
                 : "text-gray-600 dark:text-gray-400"
@@ -326,13 +330,7 @@ export function ChannelRailRows({ projectId, orgId }: { projectId: string; orgId
             data-tooltip={name}
             data-tooltip-placement="right"
             aria-label={name}
-            className={({ isActive }) =>
-              `relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
-                isActive
-                  ? "bg-gray-200/70 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  : "text-gray-500 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-              }`
-            }
+            className={({ isActive }) => railItemClass({ active: isActive })}
           >
             <GlyphIcon d={channelGlyph(channel.channelId)} size={18} />
             {channel.unread > 0 && (
