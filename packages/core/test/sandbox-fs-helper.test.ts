@@ -69,7 +69,8 @@ describe("the helper's port", () => {
     for (const fs of [localFsPort, port]) {
       const st = await fs.stat(file);
       expect(st).toMatchObject({ isFile: true, isDirectory: false, size: 11 });
-      expect(st.mode & 0o777).toBe(0o640);
+      // Permission bits are a POSIX fact; Windows answers a fixed 0o666.
+      if (process.platform !== "win32") expect(st.mode & 0o777).toBe(0o640);
       expect((await fs.readFile(file)).toString()).toBe("alpha\nbeta\n");
       expect((await fs.readRange(file, 6, 100)).toString()).toBe("beta\n");
       expect((await fs.readRange(file, 100, 10)).length).toBe(0);
@@ -90,7 +91,8 @@ describe("the helper's port", () => {
       followSymlinks: true,
     });
     expect(await readFile(file, "utf8")).toBe("gamma\n");
-    expect((await localFsPort.stat(file)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32")
+      expect((await localFsPort.stat(file)).mode & 0o777).toBe(0o600);
     expect(await readFile(path.join(tmp, "link.txt"), "utf8")).toBe("gamma\n");
   });
 
