@@ -38,6 +38,8 @@ const SERVED = {
     noNetworkSupported: false,
     localNetworkSupported: false,
     unavailableBackends: [],
+    // The Sandbox card's presets table rides beside it (session-sandbox.test.ts pins its rows).
+    presets: expect.any(Array),
   },
 };
 
