@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { app, utilityProcess } from "electron";
 import type { UtilityProcess } from "electron";
+import type { Profile } from "./app-identity.js";
 import { embeddedCliEntry } from "./launcher.js";
 import { osProxyEnv } from "./os-proxy.js";
 import { choosePort, readPreferredPort, rememberPreferredPort } from "./port-memory.js";
@@ -105,6 +106,8 @@ async function waitForHttp(origin: string, exited: () => boolean): Promise<void>
  */
 export async function startEmbeddedServer(opts: {
   dataRoot: string;
+  /** Which instance this is; the server reaches other machines' matching installation by it. */
+  profile: Profile;
   /** Pinned web dist (packaged app), or null to leave it to the server's default lookup. */
   webDist: string | null;
   /**
@@ -114,7 +117,8 @@ export async function startEmbeddedServer(opts: {
   cliEntry: string | null;
   portFile: string;
   preferredPortFile: string;
-  log: (chunk: string) => void;
+  /** One chunk of the server's output, as it arrived on `stream`. */
+  log: (chunk: string, stream: "stdout" | "stderr") => void;
 }): Promise<EmbeddedServer> {
   const token = randomBytes(32).toString("base64url");
   fs.rmSync(opts.portFile, { force: true });
@@ -130,6 +134,7 @@ export async function startEmbeddedServer(opts: {
       // The server's "use system HTTP proxy" switch then governs whether they are used.
       ...(await osProxyEnv()),
       PENGUIN_HOME: opts.dataRoot,
+      PENGUIN_PROFILE: opts.profile,
       ...(opts.webDist !== null ? { PENGUIN_WEB_DIST: opts.webDist } : {}),
       ...(opts.cliEntry !== null ? { PENGUIN_CLI_ENTRY: opts.cliEntry } : {}),
       HOST: "127.0.0.1",
@@ -138,8 +143,8 @@ export async function startEmbeddedServer(opts: {
       PENGUIN_PORT_FILE: opts.portFile,
     },
   });
-  child.stdout?.on("data", (chunk: Buffer) => opts.log(String(chunk)));
-  child.stderr?.on("data", (chunk: Buffer) => opts.log(String(chunk)));
+  child.stdout?.on("data", (chunk: Buffer) => opts.log(String(chunk), "stdout"));
+  child.stderr?.on("data", (chunk: Buffer) => opts.log(String(chunk), "stderr"));
   let exited = false;
   child.on("exit", () => {
     exited = true;

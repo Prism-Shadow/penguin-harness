@@ -69,6 +69,7 @@ function dropCompanyModeTables(db: DatabaseSync): void {
 function open024(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   db.exec("DROP TABLE IF EXISTS model_promotions");
   dropCompanyModeTables(db);
   db.exec("DROP TABLE messaging_bindings");
@@ -110,6 +111,7 @@ const PRE_CHANNEL_CHAT_DDL = `
 function open6(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(PRE_CHANNEL_CHAT_DDL);
   // SCHEMA_SQL declares the CURRENT shape; migration 8's queue came after 6.
@@ -123,6 +125,7 @@ function open7(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
+  db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec("PRAGMA user_version = 7");
   return db;
@@ -132,8 +135,18 @@ function open7(): DatabaseSync {
 function open8(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec("PRAGMA user_version = 8");
+  return db;
+}
+
+/** A database stamped at migration 9: promotions exist, but provider auth refresh tokens do not. */
+function open9(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
+  db.exec("PRAGMA user_version = 9");
   return db;
 }
 
@@ -141,6 +154,7 @@ function open8(): DatabaseSync {
 function open029(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   db.exec("DROP TABLE IF EXISTS model_promotions");
   dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
@@ -161,6 +175,7 @@ function open029(): DatabaseSync {
 function openPreProfile(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   db.exec("DROP TABLE IF EXISTS model_promotions");
   dropProfileColumns(db);
   // Version 4 predates company mode as well: its three migrations (6–8) come after the
@@ -543,18 +558,31 @@ describe("migration 7 → current: company-mode-desk-notices", () => {
 describe("migration 8 → current: model-promotions", () => {
   it("creates the promotions table, and its down drops it again", () => {
     const db = open8();
-    const tableExists = () =>
+    const promotionsTableExists = () =>
       db
         .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'model_promotions'")
         .get();
+    const authTokensTableExists = () =>
+      db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'model_provider_auth_tokens'",
+        )
+        .get();
     try {
-      expect(migrate(db).applied).toEqual(["model-promotions"]);
-      expect(schemaVersion(db)).toBe(9);
-      expect(tableExists()).toEqual({ "1": 1 });
+      expect(migrate(db).applied).toEqual([
+        "model-promotions",
+        "model-provider-auth-tokens",
+        "sessions-sandbox",
+        "machines-columns",
+      ]);
+      expect(schemaVersion(db)).toBe(12);
+      expect(promotionsTableExists()).toEqual({ "1": 1 });
+      expect(authTokensTableExists()).toEqual({ "1": 1 });
 
       rollbackTo(db, 8);
       expect(schemaVersion(db)).toBe(8);
-      expect(tableExists()).toBeUndefined();
+      expect(promotionsTableExists()).toBeUndefined();
+      expect(authTokensTableExists()).toBeUndefined();
     } finally {
       db.close();
     }
@@ -563,8 +591,55 @@ describe("migration 8 → current: model-promotions", () => {
   it("is safe to create while a pushed platform boots", () => {
     const db = open8();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["model-promotions"]);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "model-promotions",
+        "model-provider-auth-tokens",
+        "sessions-sandbox",
+        "machines-columns",
+      ]);
+      expect(schemaVersion(db)).toBe(12);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("migration 9 → current: model-provider-auth-tokens", () => {
+  it("creates the server-side refresh-token table, writable and rollback-safe", () => {
+    const db = open9();
+    const tableExists = () =>
+      db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'model_provider_auth_tokens'",
+        )
+        .get();
+    try {
+      expect(migrate(db).applied).toEqual([
+        "model-provider-auth-tokens",
+        "sessions-sandbox",
+        "machines-columns",
+      ]);
+      expect(schemaVersion(db)).toBe(12);
+      expect(tableExists()).toEqual({ "1": 1 });
+      db.exec(
+        "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
+          " VALUES ('owner', 'hash', 1, '2026-09-20T00:00:00.000Z')",
+      );
+      db.exec(
+        "INSERT INTO projects (project_id, owner_user_id, created_at)" +
+          " VALUES ('p1', 'owner', '2026-09-20T00:00:00.000Z')",
+      );
+      db.exec(
+        "INSERT INTO model_provider_auth_tokens (project_id, provider, refresh_token, access_token_expires_at, updated_at)" +
+          " VALUES ('p1', 'modelscope', 'refresh', '2026-09-20T00:00:00.000Z', '2026-09-20T00:00:00.000Z')",
+      );
+      expect(db.prepare("SELECT refresh_token FROM model_provider_auth_tokens").all()).toEqual([
+        { refresh_token: "refresh" },
+      ]);
+
+      rollbackTo(db, 9);
       expect(schemaVersion(db)).toBe(9);
+      expect(tableExists()).toBeUndefined();
     } finally {
       db.close();
     }
@@ -611,6 +686,45 @@ describe("0.2.4 → current", () => {
       );
       migrate(db);
       expect(db.prepare("SELECT user_id FROM users").all()).toEqual([{ user_id: "admin" }]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("a machines table from before migration 4", () => {
+  /** The machines table as the machines line created it before release: forwards, no session, no platform. */
+  const ADOPTED_MACHINES_DDL = `
+    CREATE TABLE machines (
+      address      TEXT PRIMARY KEY,
+      machine_id   TEXT,
+      version      TEXT,
+      installed_at TEXT,
+      forward_port INTEGER,
+      forward_pid  INTEGER,
+      remote_port  INTEGER
+    );
+  `;
+
+  it("is adopted by migration 4 as it stands, and gains the columns the row writes at 10", () => {
+    // What a data root that ran the machines line before its migration holds: IF NOT EXISTS
+    // kept the table, and the first connect failed on the insert naming session_pid.
+    const db = open029();
+    try {
+      db.exec(ADOPTED_MACHINES_DDL);
+      db.exec("PRAGMA user_version = 3");
+      expect(migrate(db).applied).toEqual(
+        MIGRATIONS.filter((m) => m.version > 3).map((m) => m.name),
+      );
+      const columns = (db.prepare("PRAGMA table_info(machines)").all() as { name: string }[]).map(
+        (c) => c.name,
+      );
+      expect(columns).toEqual(expect.arrayContaining(["session_pid", "platform"]));
+      db.prepare(
+        "INSERT INTO machines (address, machine_id, version, installed_at, session_pid, remote_port, platform) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run("ssh:nas", null, "9.9.9", "2026-09-04T00:00:00.000Z", 42, 7364, "linux");
+      // Idempotent: a table that already has them is left as it is.
+      expect(migrate(db).applied).toEqual([]);
     } finally {
       db.close();
     }

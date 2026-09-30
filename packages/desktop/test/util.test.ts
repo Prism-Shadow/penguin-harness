@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appOriginFor,
+  childGoneLine,
   classifyWindowOpen,
   desktopLoginUrl,
   hidesOnClose,
@@ -9,6 +10,8 @@ import {
   isExternalScheme,
   isLocalSurfaceUrl,
   parsePortFile,
+  rendererGoneLine,
+  rendererReloadDelayMs,
   restartDelayMs,
   urlForLog,
 } from "../src/util.js";
@@ -187,6 +190,48 @@ describe("urlForLog", () => {
 describe("restartDelayMs", () => {
   it("doubles from 1s and caps at 8s", () => {
     expect([0, 1, 2, 3, 4].map(restartDelayMs)).toEqual([1000, 2000, 4000, 8000, 8000]);
+  });
+});
+
+describe("rendererReloadDelayMs", () => {
+  it("reloads at once the first time, then backs off to a 30s ceiling", () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map(rendererReloadDelayMs)).toEqual([
+      0, 1000, 2000, 4000, 8000, 16000, 30000, 30000,
+    ]);
+  });
+});
+
+describe("process-gone log lines", () => {
+  it("names the page by origin and path, never its query, with the reason and exit code", () => {
+    expect(
+      rendererGoneLine({
+        type: "webview",
+        id: 12,
+        url: "https://www.amazon.com/your-orders/orders?token=secret",
+        reason: "oom",
+        exitCode: -536870904,
+      }),
+    ).toBe(
+      "a renderer is gone: webview 12 https://www.amazon.com/your-orders/orders (oom, exit code -536870904)",
+    );
+    expect(
+      rendererGoneLine({ type: "window", id: 1, url: "", reason: "crashed", exitCode: 11 }),
+    ).toBe("a renderer is gone: window 1 (crashed, exit code 11)");
+  });
+
+  it("names a child process by its type and service", () => {
+    expect(childGoneLine({ type: "GPU", reason: "crashed", exitCode: 139 })).toBe(
+      "a child process is gone: GPU (crashed, exit code 139)",
+    );
+    expect(
+      childGoneLine({
+        type: "Utility",
+        reason: "oom",
+        exitCode: 9,
+        serviceName: "penguin-server",
+        name: "penguin-server",
+      }),
+    ).toBe("a child process is gone: Utility penguin-server (oom, exit code 9)");
   });
 });
 

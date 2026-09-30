@@ -6,6 +6,7 @@ import type { Opaque } from "@prismshadow/penguin-core/kernel";
 import type { SessionSource, ApprovalMode } from "../api/types.js";
 import type { SessionRow } from "../db/repos/sessions.js";
 import type { ThinkingLevelName } from "@prismshadow/penguin-core";
+import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import type { ScheduleStateRow } from "../db/repos/schedules.js";
 import type { ScheduleFileCache } from "../runtime/schedule-store.js";
 import type { ScheduleEntryView } from "../runtime/scheduler.js";
@@ -23,6 +24,7 @@ export abstract class SessionIndex extends Interface<{
   listByAgent(projectId: string, agentId: string): SessionRow[];
   listByProject(projectId: string): SessionRow[];
   updateApprovalMode(sessionId: string, mode: ApprovalMode): void;
+  updateSandbox(sessionId: string, sandbox: SandboxSettings): void;
   updateThinkingLevel(sessionId: string, level: ThinkingLevelName): void;
   updateTitle(sessionId: string, title: string): void;
   updateTitleIfNull(sessionId: string, title: string): void;

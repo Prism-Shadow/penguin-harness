@@ -33,6 +33,14 @@ function memStorage(): DraftStorage & { map: Map<string, string> } {
 }
 
 describe("parseDraft (field-by-field validation)", () => {
+  it("keeps the permission picks it recognizes and drops the rest", () => {
+    expect(
+      parseDraft(JSON.stringify({ sandbox: { mode: "read-only", network: "sideways" } })).sandbox,
+    ).toEqual({ mode: "read-only" });
+    expect(parseDraft(JSON.stringify({ sandbox: { mode: "bogus" } })).sandbox).toBeUndefined();
+    expect(parseDraft(JSON.stringify({ sandbox: "open" })).sandbox).toBeUndefined();
+  });
+
   it("null / empty string / bad JSON / non-objects all yield an empty draft", () => {
     expect(parseDraft(null)).toEqual({});
     expect(parseDraft("")).toEqual({});
