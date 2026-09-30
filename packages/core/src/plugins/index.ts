@@ -201,22 +201,6 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
   };
 }
 
-/**
- * The nearest package root above this module: `packages/core` from source or dist, and the
- * bundling package's own root wherever core is inlined (the CLI bundle, the desktop server
- * bundle) — which is exactly whose package.json lists the plugin packages to resolve.
- */
-function packageRoot(): string {
-  const start = path.dirname(fileURLToPath(import.meta.url));
-  let dir = start;
-  for (;;) {
-    if (fs.existsSync(path.join(dir, "package.json"))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) throw new Error(`No package.json above the plugin loader at ${start}`);
-    dir = parent;
-  }
-}
-const PKG_ROOT = packageRoot();
 /** npm-name prefix of the per-plugin packages (the host package's dependencies name them). */
 const PLUGIN_PKG_PREFIX = "@penguinharness/";
 
@@ -251,7 +235,7 @@ function workspaceRootAbove(from: string): string | null {
 export function workspacePluginRoot(
   name: string,
   resolvedDir: string,
-  packageRoot: string = PKG_ROOT,
+  packageRoot: string,
 ): string {
   const workspace = workspaceRootAbove(packageRoot);
   if (workspace === null) return resolvedDir;
@@ -267,36 +251,119 @@ export function workspacePluginRoot(
 }
 
 /**
+ * The host package: the package whose `dependencies` name the plugin packages. Two fixed
+ * starting points, tried in this order, each walked upward to the first package.json that
+ * names a plugin package:
+ *
+ * 1. the installation this module sits in — `packages/core` from source or dist, the
+ *    bundling package's own root wherever core is inlined (the CLI bundle, the desktop
+ *    server bundle);
+ * 2. the installation of the running program (`process.argv[1]`, symlinks resolved) — the
+ *    one that matters for a hot-pushed platform bundle, which sits in the data root's store
+ *    where nothing above it is a package, and whose plugins are the ones installed with the
+ *    program that booted it.
+ *
+ * A package.json on the way up that does not name a plugin package is skipped, and so is
+ * one that cannot be read or parsed (somebody else's file, not this one's answer); neither
+ * stops the walk from reaching the host above it. There is no fallback to whichever
+ * package.json was read first: when neither starting point leads to a host, the library
+ * call fails naming both.
+ *
+ * Determined on first use and never at import: the bundle has to LOAD on a machine that has
+ * no host package, and the library call is then what fails.
+ */
+interface HostPackage {
+  root: string;
+  /** Resolves the plugin packages the way a `require` from the host package would. */
+  require: NodeJS.Require;
+}
+
+const LOADER_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+function programDir(): string | null {
+  const entry = process.argv[1];
+  if (typeof entry !== "string" || entry === "") return null;
+  const resolved = path.resolve(entry);
+  // A package manager's bin is a symlink into the installation it belongs to.
+  try {
+    return path.dirname(fs.realpathSync(resolved));
+  } catch {
+    return path.dirname(resolved);
+  }
+}
+
+/** From `start` upward, the first package.json whose `dependencies` name a plugin package. */
+function hostPackageAbove(start: string): HostPackage | null {
+  for (let dir = start; ;) {
+    const file = path.join(dir, "package.json");
+    if (fs.existsSync(file)) {
+      const candidate: HostPackage = { root: dir, require: createRequire(file) };
+      try {
+        if (Object.keys(readDependencies(candidate)).some((d) => d.startsWith(PLUGIN_PKG_PREFIX)))
+          return candidate;
+      } catch {
+        // Unreadable or malformed: walk on.
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+let host: HostPackage | null | undefined;
+function hostPackage(): HostPackage {
+  const program = programDir();
+  if (host === undefined)
+    host = hostPackageAbove(LOADER_DIR) ?? (program === null ? null : hostPackageAbove(program));
+  if (host === null) {
+    throw new Error(
+      `No package.json naming a ${PLUGIN_PKG_PREFIX} plugin package above the plugin loader at ${LOADER_DIR}` +
+        (program === null
+          ? " (no running program to look above: process.argv[1] is empty)"
+          : ` or above the program at ${program}`),
+    );
+  }
+  return host;
+}
+
+/** The host package's `dependencies`, read fresh — the same file its own `require` resolves from. */
+function readDependencies(pkg: HostPackage): Record<string, string> {
+  const parsed = JSON.parse(fs.readFileSync(path.join(pkg.root, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+  };
+  return parsed.dependencies ?? {};
+}
+
+/**
  * Where the plugin directories live, name → absolute root. Each plugin is its own npm package
  * (`@penguinharness/<name>`, `plugins/<name>/` in the repo): the host package's `dependencies`
  * name them (core, the CLI, and the desktop app — whose packaged manifest keeps that field
  * and nothing else, so `devDependencies` would not survive into an installer), and each is
- * resolved through Node from this module's own location, so the lookup walks the same
- * `node_modules` chain a `require` from here would: an npm install and the packed desktop
- * app (electron-builder collects the declared packages into its node_modules) each land on
- * their own copy, and a workspace checkout is redirected to its `plugins/<name>/` directory
- * (see workspacePluginRoot). Read fresh on every call, like the plugin files themselves.
+ * resolved through Node from the host package (hostPackage), so the lookup walks the same
+ * `node_modules` chain a `require` from there would: the workspace, an npm install, the
+ * packed desktop app (electron-builder collects the declared packages into its node_modules)
+ * and the program a hot-pushed platform booted from all land on their own copy, and a workspace
+ * checkout is redirected to its `plugins/<name>/` directory (see workspacePluginRoot). Read
+ * fresh on every call, like the plugin files themselves.
  */
 function pluginRoots(): Map<string, string> {
   const roots = new Map<string, string>();
-  const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")) as {
-    dependencies?: Record<string, string>;
-  };
-  const require = createRequire(import.meta.url);
-  for (const dep of Object.keys(pkg.dependencies ?? {})) {
+  const pkg = hostPackage();
+  for (const dep of Object.keys(readDependencies(pkg))) {
     if (!dep.startsWith(PLUGIN_PKG_PREFIX)) continue;
     let manifest: string;
     try {
-      manifest = require.resolve(`${dep}/package.json`);
+      manifest = pkg.require.resolve(`${dep}/package.json`);
     } catch (err) {
       // A declared plugin that Node cannot find is a broken install (the deployment did not
       // carry the package), not a smaller library.
       throw new Error(
-        `Plugin package ${dep} is declared in ${PKG_ROOT}/package.json but cannot be resolved: ${err instanceof Error ? err.message : String(err)}`,
+        `Plugin package ${dep} is declared in ${pkg.root}/package.json but cannot be resolved: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
     const name = dep.slice(PLUGIN_PKG_PREFIX.length);
-    roots.set(name, workspacePluginRoot(name, path.dirname(manifest)));
+    roots.set(name, workspacePluginRoot(name, path.dirname(manifest), pkg.root));
   }
   return roots;
 }
