@@ -63,7 +63,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "components/layout/project-dialogs.tsx": { 13: [1, "W3"] },
   "components/layout/sidebar.tsx": {
     1: [5, "W1b+W7"],
-    12: [5, "W7"],
+    12: [3, "W7"],
     13: [3, "W7"],
     14: [2, "W7"],
   },

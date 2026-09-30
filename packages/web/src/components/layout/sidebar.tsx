@@ -2185,13 +2185,13 @@ export function Sidebar({
           roomier controls — would otherwise turn into a sideways scrollbar under the list;
           nothing here is meant to be reached by scrolling sideways. */}
       <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2">
-        <nav className="space-y-0.5">
+        <nav className="space-y-px">
           {/* The pinned area's scrolling rows. Mid-drag an empty one still takes a row's
               height, so there is somewhere to drop an entry that should become pinned. */}
           {(scrollingPinnedItems.length > 0 || navDrag !== null) && (
             <div
               {...navAreaDropProps("pinned")}
-              className={`relative flex flex-col gap-0.5 ${
+              className={`relative flex flex-col gap-px ${
                 scrollingPinnedItems.length === 0 ? "min-h-8" : ""
               }`}
             >
@@ -2205,7 +2205,7 @@ export function Sidebar({
           {(collapsibleNavItems.length > 0 || navDrag !== null) && (
             <div
               {...(inCompany ? {} : navAreaDropProps("collapsible"))}
-              className="relative flex flex-col gap-0.5"
+              className="relative flex flex-col gap-px"
             >
               {/* Expand/collapse SLIDE: grid-template-rows tweens between 0fr and 1fr with
                   the inner overflow-hidden clipping the rows (the skills/models-page
@@ -2224,7 +2224,7 @@ export function Sidebar({
               >
                 <div className="overflow-hidden" inert={navCollapsed}>
                   <div
-                    className={`space-y-0.5 transition-opacity duration-200 ${
+                    className={`space-y-px transition-opacity duration-200 ${
                       navCollapsed ? "opacity-0" : "opacity-100"
                     }`}
                   >
