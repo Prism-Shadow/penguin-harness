@@ -405,6 +405,7 @@ The table below lists the built-in groups and the environment variables their mo
 | --- | --- | --- |
 | tokendance | `OPENAI_API_KEY` | The recommended group. OpenAI-compatible gateway, preset base URL `https://tokendance.space/gateway/v1`; model ids are bare, with no vendor prefix (e.g. `glm-5.3`, `kimi-k3`); pricing is the gateway's own CNY rates, several of them currently discounted |
 | penguin-go | `PENGUIN_GO_API_KEY` | Preset relay group, fixed base URL `https://token.penguin.ooo/api`; its header authorizes a key for you or takes one you set by hand. See [The Penguin Go group](#the-penguin-go-group) |
+| opencode-go | `OPENAI_API_KEY` | OpenCode Go subscription gateway. Each model pins its own protocol: Chat Completions or Responses at `https://opencode.ai/zen/go/v1`, Anthropic Messages at `https://opencode.ai/zen/go` (that client's variable is `ANTHROPIC_API_KEY`). See [The OpenCode Go group](#the-opencode-go-group) |
 | deepseek | `DEEPSEEK_API_KEY` | Group of the default model |
 | openrouter | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI (OpenAI-compatible), preset base URL `https://api.fireworks.ai/inference/v1`; API model ids look like `accounts/fireworks/models/<slug>` |
@@ -427,6 +428,7 @@ The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / tok
 - The other gateway presets use the Chat Completions client (`client_type = "openai-chat"`).
 - ModelScope is an aggregate gateway like Penguin Go: its Qwen presets use `openai-chat-vllm-adapter`, carrying Qwen template thinking controls over Chat Completions, while its DeepSeek preset pins `deepseek-v4` and uses AgentHub's Responses client.
 - Those gateway clients read the same `OPENAI_*` variables, so the credential rules are identical either way.
+- The OpenCode Go group is the exception: its models use three protocols, so each one pins its own; see [The OpenCode Go group](#the-opencode-go-group).
 
 The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax preset uses `https://api.minimax.io/v1`. `MINIMAX_BASE_URL` is read only for entries without their own `base_url`.
 
@@ -441,6 +443,15 @@ The group's key comes from its header; see [Authorize a new API key](#authorize-
 - The platform's promotions replace the ones stored for this group. As in every other group, `.project_config.toml` holds the list price and the promotion lives in the server's database; **Sync presets** never sets one, and each authorization or **Sync** replaces them. If that record is lost, usage is priced at the list price until the next one writes it back.
 
 The platform quotes peak rates in USD per million Tokens. The group's DeepSeek rows follow DeepSeek's current line-up, `deepseek-flash` and `deepseek-v4-pro`, and declare the same off-peak schedule as the direct DeepSeek group, so their cards and cost records use half price outside Beijing weekday 9:00–12:00 and 14:00–18:00.
+
+### The OpenCode Go group
+
+`opencode-go` holds the 27 models OpenCode lists for its Go subscription. One key serves all of them: set it once with **Set key** on the group header.
+
+- **Protocols.** OpenCode serves each model on one of three endpoints, so each row pins its own `client_type` and base URL. Chat Completions (`openai-chat`) and Responses (`openai-responses`) models use `https://opencode.ai/zen/go/v1`. Anthropic Messages (`ant-messages`) models use `https://opencode.ai/zen/go`, because the client adds `/v1/messages` itself. Like every gateway's rows, none of them falls back to `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`: the key goes on the group. A model you add to the group yourself gets `openai-chat` and the `/v1` base URL.
+- **Prices.** Go is a monthly subscription whose usage limits are dollar amounts per model: a monthly allowance, of which at most 20% can be used in five hours and 50% in a week. The rows record the per-token rates a request draws from that allowance, so for this group the cost center shows how much of it you used, not a bill. `gpt-5.6-luna`, `grok-4.6`, `qwen3.7-plus` and `qwen3.6-plus` record their base tier, which covers up to 272K, 200K, 256K and 256K input tokens respectively. The four DeepSeek models follow DeepSeek's off-peak schedule; see [Prices and promotions](#prices-and-promotions).
+- **Opt-in and regions.** Five models answer with an error until the key's OpenCode workspace opts in to them. `muse-spark-1.3-contributor` and `muse-spark-1.2-contributor` need consent to Meta training on prompts and completions. `deepseek-v4.1-flash`, `deepseek-v4-flash` and `deepseek-v4-pro` need consent to being served from China. Some models also refuse requests from certain regions: from mainland China, `gpt-5.6-luna` and both Muse Spark models answer with an error.
+- **Session header.** Requests to the group name their conversation in `x-opencode-session`; see [App attribution](#app-attribution).
 
 ### The ModelScope group
 
@@ -471,7 +482,7 @@ The list is not exhaustive.
 - **DeepSeek images.** `deepseek-flash` is V4.1 Flash and reads images; `deepseek-v4-pro` is the V4 Pro 0813 release and is text-only. To send an image, use `deepseek-flash`.
 - **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, and **Sync presets** keeps its price current. A retired row is never added to a Project that does not have it, and a new Project never gets one.
 - **OpenAI twice.** The whole OpenAI line-up is listed twice: directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions).
-- **GLM-5.3 Flash five times.** It appears directly as `glm-5.3-flash`, under the same id on TokenDance, and as OpenRouter's `z-ai/glm-5.3-flash`, Fireworks AI's `accounts/fireworks/models/glm-5p3-flash` and Qwen pay-as-you-go's `ZHIPU/GLM-5.3-Flash`. Every row accepts images: AgentHub's GLM client forwards image parts for this one GLM id, every other GLM id refuses them, and the gateway rows go through the generic OpenAI-compatible clients, which carry images for any id. What the rows do not share is the price: each records what its own seller charges, so they disagree while a promotion runs.
+- **GLM-5.3 Flash six times.** It appears directly as `glm-5.3-flash`, under the same id on TokenDance and OpenCode Go, and as OpenRouter's `z-ai/glm-5.3-flash`, Fireworks AI's `accounts/fireworks/models/glm-5p3-flash` and Qwen pay-as-you-go's `ZHIPU/GLM-5.3-Flash`. Every row accepts images: AgentHub's GLM client forwards image parts for this one GLM id, every other GLM id refuses them, and the gateway rows go through the generic OpenAI-compatible clients, which carry images for any id. What the rows do not share is the price: each records what its own seller charges, so they disagree while a promotion runs.
 - **OpenRouter free tier.** The catalog carries the `:free` model variant `nvidia/nemotron-3-ultra-550b-a55b:free` and the `openrouter/free` unified Free Models Router. They cost nothing, but OpenRouter's free-tier rate limits and data policy apply.
 
 ### Prices and promotions
@@ -480,7 +491,7 @@ The list is not exhaustive.
 - **Rows with no price.** The pricing block can be absent altogether, which records "nobody has looked this vendor's price up" rather than "free": such a row shows no price badge on the **Models** page, and the cost center reports its usage as uncosted. ModelScope's preset rows are the catalog's only ones — ModelScope bills for api-inference, but its model pages are client-rendered and carry no read-able rate. Three zeros would be worse than absent: they would read as the free tier and badge a billed gateway "Free".
 - **Base tier only.** Where a vendor's prices step up with input size, the catalog records the base tier. MiniMax M3 records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; above that, every rate doubles, and the priority tier is 1.5x, so long-context and priority usage is underestimated. OpenAI (above 272K) and Gemini 3.1 Pro (above 200K) follow the same convention.
 - **DeepSeek off-peak.** The direct DeepSeek rows record the official peak prices and declare DeepSeek's off-peak schedule: outside Beijing time 9:00–12:00 and 14:00–18:00 on weekdays, every bucket is halved. The **Models** page shows a `50% off` tag during those hours, and the cost center bills at that rate.
-  - Four resold rows follow the same schedule because their sellers pass DeepSeek's windows through: TokenDance's `deepseek-v4.1-flash`, OpenRouter's `deepseek/deepseek-v4.1-flash`, and Penguin Go's `deepseek-flash` and `deepseek-v4-pro`.
+  - Eight resold rows follow the same schedule because their sellers pass DeepSeek's windows through: TokenDance's `deepseek-v4.1-flash`, OpenRouter's `deepseek/deepseek-v4.1-flash`, Penguin Go's `deepseek-flash` and `deepseek-v4-pro`, and OpenCode Go's `deepseek-v4.1-flash`, `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp` and `deepseek-v4-pro`.
   - Qwen bills the DeepSeek models it resells on a schedule of its own, half price from 22:00 to 8:00 Beijing time every day. `deepseek-v4.1-flash` in both Qwen groups, and the Token Plan's `deepseek-v4-pro-0813`, declare that one instead, and the tag's tooltip names the windows of whichever schedule the row follows.
   - The stored price is always the peak price, so what is on disk does not depend on the hour a Project was created or synced.
 - **Flat promotions.** Nine TokenDance models are discounted today:
@@ -546,9 +557,9 @@ The catalog decides these headers by **endpoint host**, not by the entry's provi
 | `openrouter.ai` | `X-OpenRouter-Title` | `PenguinHarness` |
 | `openrouter.ai` | `X-OpenRouter-Categories` | `cli-agent,personal-agent` |
 | `tokendance.space` | `X-App-URL` | `https://penguin.ooo/` |
-| `opencode.ai` | `x-opencode-session` | The Session id, sent only when a Session id is known |
+| `opencode.ai` | `x-opencode-session` | The Session id; a request outside any Session (a connectivity test, a vision probe) sends a fresh id of its own |
 
-Every other endpoint, including every direct vendor and every gateway that reads no such header, receives no extra headers. The OpenRouter and TokenDance headers state the app's identity only. The OpenCode header names the conversation, because that gateway routes each conversation by it; no header carries anything about the user or the agent.
+Every other endpoint, including every direct vendor and every gateway that reads no such header, receives no extra headers. The OpenRouter and TokenDance headers state the app's identity only. The OpenCode header names the conversation, because that gateway routes and caches each conversation by it and refuses a request that names none; no header carries anything about the user or the agent.
 
 ## How it works
 
