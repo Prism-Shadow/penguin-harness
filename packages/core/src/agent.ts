@@ -265,7 +265,7 @@ export interface ResumeSessionOptions {
 interface SessionSpec {
   sessionId: string;
   workspaceDir: string;
-  /** The model the Session was created on (or resumed on): the reference the caller's explicit credentials below belong to. The model a context runs on is the context's own fact (see AssembledContext.modelEntry). */
+  /** The model the Session was created on (or resumed on). The model a context runs on is the context's own fact (see AssembledContext.modelEntry); this one only says which entry the credentials below were given for. */
   creationRef: ModelRef;
   /**
    * Explicit credentials the SDK caller gave (CreateSessionOptions / ResumeSessionOptions
@@ -273,7 +273,7 @@ interface SessionSpec {
    * context an in-session switch opens on another model runs on that entry's own configured
    * credentials (a key handed in for one vendor must never be sent to another).
    */
-  credentialOverride: { apiKey?: string; baseUrl?: string };
+  credentialOverride: { apiKey: string | undefined; baseUrl: string | undefined };
   /**
    * The Session's thinking-level pin, the tri-state of {@link CreateSessionOptions.thinkingLevel}:
    * a value pins every context opened from now on; `null` runs them without a level;
@@ -721,10 +721,7 @@ export class Agent {
       sessionId,
       workspaceDir,
       creationRef: ref,
-      credentialOverride: {
-        ...(opts.apiKey !== undefined ? { apiKey: opts.apiKey } : {}),
-        ...(opts.baseUrl !== undefined ? { baseUrl: opts.baseUrl } : {}),
-      },
+      credentialOverride: { apiKey: opts.apiKey, baseUrl: opts.baseUrl },
       thinkingLevel: opts.thinkingLevel,
       subagentDepth: opts.subagentDepth ?? 0,
       ...(opts.source !== undefined ? { source: opts.source } : {}),
@@ -821,10 +818,7 @@ export class Agent {
       sessionId,
       workspaceDir,
       creationRef: ref,
-      credentialOverride: {
-        ...(opts.apiKey !== undefined ? { apiKey: opts.apiKey } : {}),
-        ...(opts.baseUrl !== undefined ? { baseUrl: opts.baseUrl } : {}),
-      },
+      credentialOverride: { apiKey: opts.apiKey, baseUrl: opts.baseUrl },
       thinkingLevel: undefined,
       subagentDepth: 0,
       ...(meta.source === "subagent" || meta.source === "schedule" || meta.source === "benchmark"
@@ -1492,7 +1486,7 @@ export class Agent {
       contextWindow: () => current.modelEntry.context_window,
       modelSwitch,
 
-      createBareLLM: () => createBareLLM(),
+      createBareLLM,
       subagentRunner,
     };
   }

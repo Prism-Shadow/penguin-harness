@@ -57,7 +57,6 @@ export type {
 export { Session } from "./session.js";
 export type {
   ModelSwitchOptions,
-  ModelSwitchResult,
   ModelSwitchSupport,
   SessionConfig,
   SessionOpenedContext,

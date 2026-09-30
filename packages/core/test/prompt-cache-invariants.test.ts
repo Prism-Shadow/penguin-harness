@@ -324,4 +324,67 @@ describe("prompt-cache invariants of request assembly", () => {
     expect(opening.content[0]!.text).toContain("[context_summary]");
     expect(opening.content[1]!.text).toBe("task two");
   });
+
+  it("a model switch that does not complete leaves the old model's line intact: every later request still extends the one before it", async () => {
+    const target = { provider: "anthropic", model_id: "claude-opus-4-7" };
+    const first = recordingModel(modelConfig(), [
+      { text: "First answer.", promptTokens: 20 },
+      // The first switch's compaction request is cut by the user: nothing is committed.
+      { text: "[summary]half a summ", promptTokens: 30, outcome: "abort-after-text" },
+      // The second switch's summary is complete, and the target's window cannot take it.
+      { text: `[summary]${"x".repeat(4000)}[/summary]`, promptTokens: 30 },
+      { text: "Second answer.", promptTokens: 40 },
+    ]);
+    const engine = new ContextEngine({
+      llm: first.model,
+      environment: fakeEnvironment,
+      compaction: compactionSettings(),
+      openNextContext: () => {
+        throw new Error("a switch that does not complete opens no context");
+      },
+    });
+    /** Drives a switch to its end and returns its terminal status; `onMessage` sees each record. */
+    const switchStatus = async (
+      gen: ReturnType<ContextEngine["switchModel"]>,
+      onMessage: (payload: { type?: string; event_type?: string }) => void = () => {},
+    ) => {
+      for (;;) {
+        const res = await gen.next();
+        if (res.done) return res.value;
+        onMessage(res.value.payload as { type?: string; event_type?: string });
+      }
+    };
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+    const controller = new AbortController();
+    const aborted = await switchStatus(
+      engine.switchModel({ ref: target }, controller.signal),
+      (payload) => {
+        if (payload.type === "partial_text" && payload.event_type === "delta") controller.abort();
+      },
+    );
+    const refused = await switchStatus(
+      engine.switchModel({ ref: target, summaryRoom: { tokens: 100, contextWindow: 4096 } }),
+    );
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+
+    expect([aborted, refused]).toEqual(["aborted", "fatal"]);
+    // Four requests, all to the OLD model with one config: the aborted compaction request, the
+    // same request again (nothing was committed, so nothing moved), and the next turn on top of
+    // the committed compaction exchange. Nothing about either target reached the wire.
+    expect(first.requests).toHaveLength(4);
+    const reasons = diagnoseSeries(first.requests);
+    expect(reasons, formatDiagnostics(first.requests, reasons)).toEqual([
+      { type: "none" },
+      { type: "none" },
+      { type: "none" },
+    ]);
+    expect(new Set(first.requests.map(configFingerprint)).size).toBe(1);
+    expect(first.requests.map((r) => r.wireConfig.model)).toEqual(
+      Array(4).fill("claude-sonnet-4-6"),
+    );
+    const last = wireMessage(first.requests[3]!, -1);
+    expect(last.role).toBe("user");
+    expect(last.content.at(-1)!.text).toBe("task two");
+  });
 });

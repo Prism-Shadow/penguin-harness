@@ -26,6 +26,7 @@ import {
   imageUrlMessage,
   sessionMeta,
   tokenUsage,
+  toolCall,
   toolListReady,
   userText,
 } from "../src/omnimessage/index.js";
@@ -342,7 +343,7 @@ describe("in-session model switch", () => {
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
-    expect(result).toEqual({ status: "completed", previous: MODEL_A, next: MODEL_B });
+    expect(result).toBe("completed");
     // The target was validated before anything else happened.
     expect(h.validated).toEqual([MODEL_B]);
     // An ordinary manual summarize pair: nothing on it names a model.
@@ -440,7 +441,7 @@ describe("in-session model switch", () => {
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
-    expect(result.status).toBe("completed");
+    expect(result).toBe("completed");
     // No model was asked anything, and nothing was compacted: the summary is already held and
     // the closing pair is already on the closed file.
     expect(llmA.calls).toHaveLength(2);
@@ -494,7 +495,7 @@ describe("in-session model switch", () => {
     expect(h.session.compactability()).toBe("just_compacted");
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
-    expect(result.status).toBe("completed");
+    expect(result).toBe("completed");
     expect(compactionEvents(all)).toEqual([]);
     expectEndsWithMetaOn(all, MODEL_B);
     expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`, `${SESSION_ID}_002.jsonl`]);
@@ -525,7 +526,7 @@ describe("in-session model switch", () => {
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
-    expect(result.status).toBe("completed");
+    expect(result).toBe("completed");
     expect(compactionEvents(all)).toEqual([
       { type: "compaction_begin", reason: "manual", mode: "discard", context: 0, turns: 0 },
       { type: "compaction_end", reason: "manual", mode: "discard", status: "completed" },
@@ -590,7 +591,7 @@ describe("in-session model switch", () => {
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
-    expect(result.status).toBe("completed");
+    expect(result).toBe("completed");
     expect(compactionEvents(all).map((e) => [e.reason, e.mode])).toEqual([
       ["manual", "discard"],
       ["manual", "discard"],
@@ -646,7 +647,7 @@ describe("in-session model switch", () => {
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_C));
 
-    expect(result).toEqual({ status: "completed", previous: MODEL_B, next: MODEL_C });
+    expect(result).toBe("completed");
     // B's context holds the summary as an input but no completed turn: a discard pair closes it.
     expect(compactionEvents(all)).toEqual([
       { type: "compaction_begin", reason: "manual", mode: "discard", context: 0, turns: 0 },
@@ -723,7 +724,7 @@ describe("in-session model switch", () => {
     expect(h.session.compactability()).toBe("just_compacted");
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_C));
-    expect(result.status).toBe("completed");
+    expect(result).toBe("completed");
     expect(compactionEvents(all).map((e) => [e.reason, e.mode])).toEqual([
       ["manual", "discard"],
       ["manual", "discard"],
@@ -776,7 +777,7 @@ describe("in-session model switch", () => {
     const failedPath = h.trace.currentPath();
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
-    expect(result.status).toBe("completed");
+    expect(result).toBe("completed");
     expect(compactionEvents(all).map((e) => [e.reason, e.mode])).toEqual([
       ["manual", "discard"],
       ["manual", "discard"],
@@ -798,6 +799,83 @@ describe("in-session model switch", () => {
       SUMMARY_TEXT,
       "task three",
     ]);
+  });
+
+  it("a summary written mid-Task is kept the same way: the Task's next request fails, a switch follows, and the summary heads the target's file", async () => {
+    const llmA = new ScriptedLLM(
+      [
+        // A tool turn over the threshold: the compaction runs mid-Task, the tool output folded
+        // into its request.
+        { messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }), usage(150, 150)] },
+        { messages: [assistantText(SUMMARY_REPLY), usage(160, 310)] },
+      ],
+      "A",
+    );
+    // The context the compaction opened, still on A: the Task's continuation request fails.
+    const llmA2 = new ScriptedLLM(
+      [{ messages: [], outcome: { status: "fatal", errorMessage: "A rejected the request" } }],
+      "A2",
+    );
+    const llmB = new ScriptedLLM([{ messages: [assistantText("answer"), usage(20, 330)] }], "B");
+    const h = harness(traces, {
+      llmA,
+      llms: { [MODEL_A.model_id]: [llmA2], [MODEL_B.model_id]: [llmB] },
+      compaction: settings({ maxContextLength: 100 }),
+    });
+    sessions.push(h.session);
+
+    await collect(h.session.run([userText("task one")], { approve: allowAll }));
+    // The Task itself sent the summary, as the new context's first input.
+    expect(llmA2.calls[0]!.map(textOf)).toEqual([SUMMARY_TEXT]);
+    expect(h.session.compactability()).toBe("just_compacted");
+
+    const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
+    expect(result).toBe("completed");
+    expect(compactionEvents(all).map((e) => [e.reason, e.mode])).toEqual([
+      ["manual", "discard"],
+      ["manual", "discard"],
+    ]);
+    expectEndsWithMetaOn(all, MODEL_B);
+
+    const opened = await readTrace(h.trace.currentPath());
+    expect(payloadTypes(opened)).toEqual(["session_meta", "tool_list_ready", "text"]);
+    expect(modelOf(opened[0]!)).toEqual(MODEL_B);
+    expect(textOf(opened[2]!)).toBe(SUMMARY_TEXT);
+    expect(resumeTrace(opened).carryOver.map(textOf)).toEqual([SUMMARY_TEXT]);
+  });
+
+  it("a second switch before typing checks the held summary too: a target it does not fit is refused, and the Session stays where the first switch put it", async () => {
+    const longSummary = `[summary]${"x".repeat(12000)}[/summary]`;
+    const llmA = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(50, 50)] },
+        { messages: [assistantText(longSummary), usage(3100, 3150)] },
+      ],
+      "A",
+    );
+    const h = harness(traces, {
+      llmA,
+      llms: {
+        [MODEL_B.model_id]: [new ScriptedLLM([], "B")],
+        [MODEL_C.model_id]: [new ScriptedLLM([], "C")],
+      },
+      // C takes the summary; B: 4096 − prefix − 2048 headroom leaves ~2k for a ~3k summary.
+      windows: { [MODEL_B.model_id]: 4096, [MODEL_C.model_id]: 200000 },
+    });
+    sessions.push(h.session);
+    await collect(h.session.run([userText("task one")], { approve: allowAll }));
+    await collect(switchTo(h.session, MODEL_C));
+    const writtenBefore = h.written.length;
+
+    // C's context holds the summary and no completed turn: nothing would be compacted, so the
+    // misfit is refused before the discard pair that would otherwise close C's file.
+    const refusal = await collect(switchTo(h.session, MODEL_B)).catch((e: unknown) => e);
+    expect(refusal).toBeInstanceOf(ModelSwitchRefusedError);
+    expect((refusal as ModelSwitchRefusedError).reason).toBe("summary_too_large");
+    expect(h.written).toHaveLength(writtenBefore);
+    expect(h.opens).toEqual([MODEL_C]);
+    expect(h.session.modelId).toBe(MODEL_C.model_id);
+    expect(await h.files()).toEqual([`${SESSION_ID}_001.jsonl`, `${SESSION_ID}_002.jsonl`]);
   });
 
   it("a held summary the target's window cannot take refuses a just-compacted switch before any event, and a roomier target then takes it", async () => {
@@ -847,7 +925,7 @@ describe("in-session model switch", () => {
 
     // The summary is still held: a target with room takes it at the head of its file.
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_C));
-    expect(result.status).toBe("completed");
+    expect(result).toBe("completed");
     expect(compactionEvents(all)).toEqual([]);
     expectEndsWithMetaOn(all, MODEL_C);
     const opened = await readTrace(h.trace.currentPath());
@@ -933,7 +1011,7 @@ describe("in-session model switch", () => {
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
-    expect(result).toEqual({ status: "completed", previous: MODEL_A, next: MODEL_B });
+    expect(result).toBe("completed");
     expect(all).toEqual([]);
     expect(h.written).toEqual([]);
     expect(h.validated).toEqual([MODEL_B]);
@@ -967,7 +1045,7 @@ describe("in-session model switch", () => {
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_A));
 
-    expect(result).toEqual({ status: "completed", previous: MODEL_A, next: MODEL_A });
+    expect(result).toBe("completed");
     expect(all).toEqual([]);
     expect(llmA.calls).toHaveLength(1);
     expect(h.session.compactability()).toBe("ok");
@@ -1006,7 +1084,7 @@ describe("in-session model switch", () => {
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
-    expect(result).toEqual({ status: "fatal", previous: MODEL_A, next: MODEL_B });
+    expect(result).toBe("fatal");
     expect(compactionEvents(all)[1]).toEqual({
       type: "compaction_end",
       reason: "manual",
@@ -1046,7 +1124,7 @@ describe("in-session model switch", () => {
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
-    expect(result.status).toBe("aborted");
+    expect(result).toBe("aborted");
     expect(compactionEvents(all)[1]).toMatchObject({ reason: "manual", status: "aborted" });
     expect(hasMeta(all)).toBe(false);
     expect(h.session.modelId).toBe(MODEL_A.model_id);
@@ -1075,10 +1153,10 @@ describe("in-session model switch", () => {
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
-    expect(result.status).toBe("fatal");
+    expect(result).toBe("fatal");
     const end = compactionEvents(all)[1] as CompactionEndPayload;
     expect(end).toMatchObject({ reason: "manual", status: "fatal", error_code: "unsupported" });
-    expect(end.error_message).toMatch(/about 3000 tokens/);
+    expect(end.error_message).toMatch(/about 30\d\d tokens/);
     expect(end.error_message).toMatch(/4096 tokens/);
     expect(end.error_message).toMatch(/stays on its current model/);
     expect(hasMeta(all)).toBe(false);
@@ -1108,7 +1186,7 @@ describe("in-session model switch", () => {
     await collect(h.session.run([userText("task one")], { approve: allowAll }));
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
-    expect(result.status).toBe("completed");
+    expect(result).toBe("completed");
     expectEndsWithMetaOn(all, MODEL_B);
     expect(h.session.modelId).toBe(MODEL_B.model_id);
   });
@@ -1167,7 +1245,7 @@ describe("in-session model switch", () => {
 
     const { all, result } = await collectWithReturn(switchTo(h.session, MODEL_B));
 
-    expect(result.status).toBe("completed");
+    expect(result).toBe("completed");
     expect(resumedLLM.calls).toHaveLength(1);
     expect(compactionEvents(all)[0]).toMatchObject({ reason: "manual", turns: 3 });
     expectEndsWithMetaOn(all, MODEL_B);

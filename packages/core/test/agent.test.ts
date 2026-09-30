@@ -1408,15 +1408,16 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
         }
       ).engine.deps.openNextContext;
 
-      // A plain rotation: the same model, re-assembled, with its own vision answer.
+      // A plain rotation: the same model, re-assembled, with the image fold its vision answer
+      // calls for (none for a model that takes images).
       const kept = await opener({ emit: () => {} });
       expect((kept.sessionMeta!.payload as { model_id: string }).model_id).toBe("deepseek-flash");
       const deepseek = agent.projectConfig.models.find((m) => m.model_id === "deepseek-flash")!;
-      expect(kept.modelHasVision).toBe(deepseek.vision !== false);
+      expect(kept.foldInputImages === null).toBe(deepseek.vision !== false);
       expect(lastBuilt()!.modelId).toBe("deepseek-flash");
       expect(session.modelId).toBe("deepseek-flash");
 
-      // A switch's rotation: the target, with its own vision answer and window-derived settings.
+      // A switch's rotation: the target, with its own fold and window-derived settings.
       const switched = await opener({
         emit: () => {},
         modelRef: { provider: "anthropic", model_id: "claude-sonnet-4-6" },
@@ -1424,7 +1425,7 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
       expect((switched.sessionMeta!.payload as { model_id: string }).model_id).toBe(
         "claude-sonnet-4-6",
       );
-      expect(switched.modelHasVision).toBe(true);
+      expect(switched.foldInputImages).toBeNull();
       expect(lastBuilt()!.modelId).toBe("claude-sonnet-4-6");
       expect(lastBuilt()!.systemPrompt).toContain("claude-sonnet-4-6");
       // The Session's own answer follows the opened context.

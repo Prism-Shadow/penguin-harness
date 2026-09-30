@@ -7,8 +7,8 @@
  * What this file pins is the HTTP contract on `SessionSwitchModelRequest` — the 400 for half a
  * pair, each 409 code, 202 for a streamed switch and 200 for a Session that never ran — and the
  * bookkeeping the contract implies: the index row and the runtime entry move to the new model
- * (so `GET /` and the compaction threshold follow it, and a client refetching on the new
- * context's `session_meta` already reads it), stay put when the compaction fails or is aborted,
+ * (so `GET /` and the compaction threshold follow it, and a client re-reading the Session on the
+ * new context's `session_meta` already finds it), stay put when the compaction fails or is aborted,
  * and usage is attributed to the model that served each request — the switch's own compaction
  * request to the previous model, the next Task to the new one.
  */
@@ -23,13 +23,7 @@ import {
   sessionMeta,
   tokenUsage,
 } from "@prismshadow/penguin-core";
-import type {
-  ModelRef,
-  ModelSwitchResult,
-  OmniMessage,
-  StopReason,
-  TokenCounts,
-} from "@prismshadow/penguin-core";
+import type { OmniMessage, StopReason, TokenCounts } from "@prismshadow/penguin-core";
 import type {
   ModelRefDto,
   ServerEvent,
@@ -47,7 +41,7 @@ const SID = "session-2026-09-16-10-00-00-aabb0007";
 const PROJECT = "switcher-default_project";
 const A: ModelRefDto = { provider: "custom", modelId: "m-alpha" };
 const B: ModelRefDto = { provider: "custom", modelId: "m-beta" };
-/** Configured with B on purpose left out: the manager must refuse it before core is asked. */
+/** Not in the Project config: core refuses it, and the manager answers with the refusal's code. */
 const UNKNOWN: ModelRefDto = { provider: "custom", modelId: "m-nowhere" };
 const WINDOW_A = 1_000_000;
 const WINDOW_B = 200_000;
@@ -76,8 +70,8 @@ interface SwitchFake extends RuntimeSession {
  * A fake Session shaped like core's for a switch: the compaction request's token_usage rides
  * between a plain manual pair, and the getters move only once the new context is open — after
  * the completed `compaction_end` and before the new context's `session_meta` is yielded, exactly
- * as core adopts the opened context before `openContextFile` yields its meta — so the manager's
- * two update sites are exercised in the real order.
+ * as core adopts the opened context before `openContextFile` yields its meta — so the manager
+ * follows the runtime in the real order.
  */
 function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake {
   const fake: SwitchFake = {
@@ -97,15 +91,13 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
       yield tokenUsage(counts(50), counts(50));
     },
     async *compact(): AsyncGenerator<OmniMessage> {},
-    async *switchModel(opts): AsyncGenerator<OmniMessage, ModelSwitchResult> {
+    async *switchModel(opts): AsyncGenerator<OmniMessage, StopReason> {
       fake.signals.push(opts.signal);
-      const previous: ModelRef = { provider: fake.provider, model_id: fake.modelId };
-      const next: ModelRef = { provider: opts.provider, model_id: opts.modelId };
       if (behaviour.kind === "throw") throw behaviour.error;
       if (behaviour.kind === "inline") {
         fake.provider = opts.provider;
         fake.modelId = opts.modelId;
-        return { status: "completed", previous, next };
+        return "completed";
       }
       yield compactionBegin({ reason: "manual", mode: "summarize", context: 4000, turns: 3 });
       // The compaction request itself, on the model being left.
@@ -136,7 +128,7 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
           workspace: "/tmp/w",
         });
       }
-      return { status, previous, next };
+      return status;
     },
   };
   return fake;
@@ -267,13 +259,20 @@ describe("POST /switch-model", () => {
     expect(fake.signals).toHaveLength(0); // core was never asked
   });
 
-  it("409 model_not_configured: the target is not in the Project config — refused before core is asked", async () => {
-    const fake = switchFake(A, { kind: "inline" });
-    adopt(fake);
+  it("409 model_not_configured: core finds no such entry in the Project config on disk", async () => {
+    adopt(
+      switchFake(A, {
+        kind: "throw",
+        error: new ModelSwitchRefusedError(
+          "model_not_configured",
+          "Model is not in the Project config: custom/m-nowhere.",
+        ),
+      }),
+    );
     const res = await api.post(url, UNKNOWN);
     expect(res.status).toBe(409);
     expect(await errorCode(res)).toBe("model_not_configured");
-    expect(fake.signals).toHaveLength(0);
+    expect(t.deps.manager.statusOf(SID)).toBe("idle");
     expect(row().modelId).toBe(A.modelId);
   });
 
@@ -311,7 +310,7 @@ describe("POST /switch-model", () => {
     // A Session just compacted has a summary in hand; core refuses before any event when the
     // target cannot take it (there is no pair to end `fatal`). The message names both sizes.
     const message =
-      "The summary held for the next context (about 15000 tokens) does not fit the context window of the model switched to (8000 tokens, about 5000 left after its prompt and tools); the Session stays on its current model.";
+      "The summary (about 15000 tokens) does not fit the context window of the model switched to (8000 tokens, about 5000 left after its prompt and tools); the Session stays on its current model.";
     adopt(
       switchFake(A, {
         kind: "throw",
