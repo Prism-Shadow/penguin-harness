@@ -45,8 +45,7 @@
  * auto-routed by AgentHub and leave client_type unset; seven gateway groups (OpenRouter,
  * Fireworks AI, SiliconFlow, TokenDance, OpenCode Go, Qwen Pay-As-You-Go and Qwen Token Plan)
  * can't be auto-routed, so every gateway row **always pins an explicit client_type** and
- * inlines its preset base URL. ModelScope is a mixed-protocol aggregator like Penguin Go:
- * each row pins the AgentHub protocol that its upstream model should display and use.
+ * inlines its preset base URL. ModelScope's rows pin one protocol too (see below).
  * Two groups pin at GROUP level as well (ModelProviderInfo.clientType, read
  * through providerClientType), so that a model the user adds there speaks the same protocol
  * as the presets: vLLM, whose added models have no preset base URL to inherit either, and
@@ -68,9 +67,9 @@
  * - `ant-messages` for the OpenCode Go rows its endpoint table serves on the Anthropic
  *   Messages API. That group pins row by row, since its models sit on three protocols: the
  *   rest of it is `openai-chat` and `openai-responses` — see its block comment.
- * ModelScope's rows follow the same explicit-row rule as Penguin Go even though the endpoint is
- * one gateway: its Qwen rows pin the vLLM adapter, while its DeepSeek row pins `deepseek-v4` so
- * the frontend shows each model's actual AgentHub protocol instead of flattening the group.
+ * ModelScope's rows all pin `openai-responses`: ModelScope serves every preset through its
+ * OpenAI Responses endpoint, and the explicit pin keeps a Qwen or DeepSeek id from auto-routing
+ * to a vendor client with a different request shape.
  *
  * Two direct-vendor rows pin anyway, because their own id does not route: the MiniMax M3
  * preset pins AgentHub's first-party `minimax-m3` protocol and direct API endpoint, and
@@ -289,8 +288,8 @@ export const MODELSCOPE_PROVIDER_ID = "modelscope";
  * group records the OPENAI_* pair as the fact it is — and that is exactly why a keyless
  * gateway row is refused the fallback (see modelEnvFallback): the variable holds the user's
  * OpenAI (or Anthropic) key, and a gateway is neither. ModelScope also records the OPENAI_*
- * pair because its group credential is an api-inference access token even when a row's
- * protocol is model-specific; its rows are refused the fallback on the same terms.
+ * pair because its group credential is an api-inference access token; its rows are refused
+ * the fallback on the same terms.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
@@ -2997,9 +2996,9 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
 /**
  * Resolves the credential environment for a configured model entry. Most groups follow the
  * AgentHub client selected by model id / protocol. Aggregate groups are deliberately different:
- * Penguin Go's Google and DeepSeek routes share one relay credential, and ModelScope's Qwen and
- * DeepSeek routes share one api-inference token, so the provider-scoped variable must win over
- * the selected protocol everywhere the harness resolves a key. Whether a keyless row may use
+ * Penguin Go's Google and DeepSeek routes share one relay credential, and ModelScope's rows
+ * share one api-inference token, so the provider-scoped variable must win over the selected
+ * protocol everywhere the harness resolves a key. Whether a keyless row may use
  * that variable is modelEnvFallback's decision: ModelScope's is OPENAI_*, a vendor variable, so
  * its rows get no fallback.
  */
