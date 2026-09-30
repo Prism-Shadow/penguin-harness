@@ -265,11 +265,11 @@ describe("parseManifest", () => {
   it("reads an empty requires, provides, contributes or children left out as empty", () => {
     expect(
       parseManifest({
-        name: "SandboxMxc",
+        name: "SandboxBwrap",
         contributes: { "SandboxModule.providers": [{ id: "p" }] },
       }),
     ).toEqual({
-      name: "SandboxMxc",
+      name: "SandboxBwrap",
       requires: {},
       provides: {},
       contributes: { "SandboxModule.providers": [{ id: "p" }] },
@@ -333,6 +333,45 @@ describe("bootModules", () => {
     const booted = await bootModules(root, { ifaces: table, resources });
     expect(order).toEqual(["sessions", "scheduler", "http"]);
     expect(booted.api("sessions", "sessions")).toBe(sessionsApi);
+    booted.dispose();
+  });
+
+  it("a data-only contribution orders nothing: its contributor may require the slot's owner", async () => {
+    const Registry: IfaceDecl = {
+      name: "Registry",
+      methods: { names: { params: [], returns: { data: "string[]" } } },
+      slots: { entries: { data: { title: "string" } } },
+    };
+    const t: IfaceTable = { ...table, "registry#Registry": Registry, "user#Registry": Registry };
+    const registry = manifest({ name: "registry", provides: { registry: "Registry" } });
+    const user = manifest({
+      name: "user",
+      requires: { registry: { iface: "Registry", from: "registry" } },
+      contributes: { "registry.entries": [{ id: "user.entry", title: "User" }] },
+    });
+    const order: string[] = [];
+    const root = defineModule(manifest({ name: "platform", children: ["registry", "user"] }), {
+      create: () => ({ api: {} }),
+      children: [
+        defineModule(user, {
+          create(ctx) {
+            order.push("user");
+            expect((ctx.use.registry as { names(): string[] }).names()).toEqual(["User"]);
+            return { api: {} };
+          },
+        }),
+        defineModule(registry, {
+          create(ctx) {
+            order.push("registry");
+            const names = (ctx.contributions.entries ?? []).map((c) => c.data.title as string);
+            expect(ctx.contributions.entries?.[0]).not.toHaveProperty("code");
+            return { api: { registry: { names: () => names } } };
+          },
+        }),
+      ],
+    });
+    const booted = await bootModules(root, { ifaces: t, resources });
+    expect(order).toEqual(["registry", "user"]);
     booted.dispose();
   });
 

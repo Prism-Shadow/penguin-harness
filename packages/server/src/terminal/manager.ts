@@ -29,6 +29,7 @@ import { Hmr, ResourceGroups } from "../hmr/capabilities.js";
 import { terminalRoutes } from "./routes.js";
 import { identityFrom } from "./identity.js";
 import type { Auth } from "../mechanisms/identity.js";
+import type { RemoteTerminals } from "../machines/terminal-relay.js";
 
 /** How long an exited session stays listable/attachable before it is disposed. */
 export const EXITED_SESSION_GRACE_MS = 5 * 60 * 1000;
@@ -56,6 +57,12 @@ export class TerminalManager {
       graceMs?: number;
       /** Where a pushed bundle's node-pty assets live (hmr.assetsDir); absent falls back to the packaged require. */
       assets?: () => string | null;
+      /**
+       * A pty this manager does not hold — served elsewhere and named in the id — asked
+       * after the local registry says no, so `get` answers for it in the shape the
+       * runtime's owner check reads.
+       */
+      beyond?: (id: string) => TerminalSession | undefined;
     } = {},
   ) {}
 
@@ -205,7 +212,7 @@ export class TerminalManager {
   }
 
   get(id: string): TerminalSession | undefined {
-    return this.sessions.get(id);
+    return this.sessions.get(id) ?? this.opts.beyond?.(id);
   }
 
   list(userId: string): TerminalSession[] {
@@ -318,12 +325,15 @@ export class TerminalModule {
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly resourceGroups!: ResourceGroups;
   @Use() private readonly auth!: Auth;
+  /** Answers `get` for a pty on a machine (machines/terminal-relay.ts). */
+  @Use() private readonly remote!: RemoteTerminals;
   @Provide() terminals!: Terminals;
   @Bind("TerminalModule.routes") routes!: ReturnType<typeof terminalRoutes>;
   setup({ resources, effect }: ClassCtx, context: Json) {
     const terminals = new TerminalManager(resources, {
       // A pushed bundle's node-pty binaries live where the host materialized them.
       assets: () => this.hmr.assetsDir() ?? null,
+      beyond: (id) => this.remote.get(id),
     });
     // Shells started before this App existed are still running in the registry: claim
     // them back so a push is invisible to whoever was typing in one — unless their group

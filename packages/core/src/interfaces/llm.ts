@@ -20,6 +20,12 @@ import type { ToolCallIdAllocator } from "../llm/tool-call-ids.js";
 export interface GenerativeModelConfig {
   modelId: string;
   apiKey?: string;
+  /**
+   * Optional host-owned credential resolver, called before every upstream request. When it
+   * returns a different key, the AgentHub client is rebuilt with its stateful history intact.
+   * Core assigns no provider semantics to this hook.
+   */
+  resolveApiKey?: () => Promise<string | undefined>;
   baseUrl?: string;
   /**
    * AgentHub client protocol (`openai-chat` / `openai-responses` / `claude-4-8` /

@@ -106,7 +106,7 @@ In desktop mode (a server spawned by the desktop app), every route in this group
 
 ## Server Settings (admin only)
 
-Server-wide proxy, attachment and company-mode settings.
+Server-wide proxy, attachment and company-mode settings, and the settings groups plugins declare.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -114,6 +114,9 @@ Server-wide proxy, attachment and company-mode settings.
 | PUT | `/api/admin/settings` | Updates settings; omitted fields keep their current value, and an invalid field rejects the whole PUT. Returns the full updated settings |
 | GET | `/api/admin/settings/proxy-probe` | The reachability probe's targets: `{targets: [{provider, url}]}`. Makes no request |
 | POST | `/api/admin/settings/proxy-probe/:provider` | Probes one target over the server's outbound path, sending no credential: `{probe: {provider, url, outcome, ms, status?}}` |
+| GET | `/api/admin/plugin-config` | Every settings group modules declare, the sandbox's first: `{plugins: [{name, configuration, values, parent?, notices?}]}`. See [Plugin settings](#plugin-settings) |
+| PUT | `/api/admin/plugin-config` | Saves one group's values: `{name, values}`. Returns every group, as GET does |
+| POST | `/api/admin/plugin-config/action` | Runs one of a group's actions: `{name, action}`. Returns what happened, with every group as it stands afterwards |
 
 A probe's `outcome` is `reachable` for any HTTP answer, and otherwise `timeout`, `dns`, `refused`, `tls` or `network`. A `:provider` that is not in the target list returns `404` `probe_target_not_found`.
 
@@ -160,6 +163,14 @@ Two limits cannot be changed: the number of files per message (20) and the inlin
 
 `companyMode` is the server's **Enable company mode** switch, off by default. A change applies without a restart: while the switch is off, every organization route returns `404` `company_mode_off` and the organization scheduler fires nothing.
 
+### Plugin settings
+
+A settings group is a contribution to `PluginConfigProvider.groups`; the sandbox's comes first. Each group in the list carries its schema (`configuration`), its stored values merged onto the defaults with secrets masked, the group whose card it is drawn inside (`parent`), and live status lines (`notices`).
+
+Field types are `string`, `secret`, `boolean`, `number`, `enum` (with `options`) and `list` (one value per line, optional `maxItems`). A `number` may declare `minimum` and `maximum`, and a `string` or `list` a `pattern` (with `patternErrorMessage`) that every value or line must match.
+
+On PUT, fields the request omits keep their value, `null` or `""` clears one, and a secret sent back as its mask keeps the stored value. A refused field returns `400` `plugin_config_invalid` naming it; a name no group answers to returns `404` `plugin_config_unknown`. The declaring module picks the change up itself, through its watch or at its next read, with no restart.
+
 ## Machines (admin only)
 
 Installs this server's build on other hosts over ssh and manages the connections to them.
@@ -181,7 +192,7 @@ These routes are admin only on a personal server as much as on a multi-user one:
 - `POST …/connect` holds an `ssh -T -D` session that never times out when idle, reconnects on its own if it drops, and is restored after a restart or a hot push. A Windows machine returns `409` `connect_unsupported`, because there is no shell to hold a session on.
 - `POST …/disconnect` leaves the remote server running because it belongs to that machine, and other people may be using it.
 - `POST …/restart` exists as its own action because a machine's files can be updated while it runs, and only a restart makes the process match them.
-- `GET …/dirs` addresses the machine by its own id, like the API proxy below. It returns `404` when the machine is not connected, because a read never opens ssh by itself.
+- `GET …/dirs` addresses the machine by its own id, like the API proxy below. It returns `404` when the machine is not connected, because a read never opens ssh by itself, and `403 dir_permission_denied` for a directory that machine refuses to list. Its entries are folders only, without `kind` or `mtime`.
 
 ### Machine fields
 
@@ -613,7 +624,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 - An explicit `workspace` must be an existing directory; it is never created. When omitted, the Workspace is a temporary one created automatically. The approval mode defaults to `allow-all`.
 - `client` is a provenance hint stored on the row: `"cli"` from the CLI, `"web"` by default. The server itself writes `"org"` on an organization's desk and ticket sessions, and a client cannot send that value. Only `excludeOrg` reads it as a filter, and only to drop those rows.
 - `source` accepts only `"benchmark"`, for a Session created by a Benchmark evaluation or optimization. The server sets `subagent` and `schedule` itself.
-- `GET /dirs` starts at the home directory when `path` is omitted; an explicit `path` must be absolute. It answers `{path, parent, entries}` with the subdirectories only, and an unreadable directory lists as empty so the user can still go back up.
+- `GET /dirs` starts at the home directory when `path` is omitted; an explicit `path` must be absolute. It answers `{path, parent, entries, platform}`: every entry carries its `kind` (`dir` or `file`) and `mtime`, and on Windows the home request adds `roots`, the drive roots that exist. A directory the server may not read answers `403 dir_permission_denied` rather than an empty list — on macOS that is usually a Files and Folders permission the user has not granted.
 - `GET /dir-skills` reads only `<path>/.agents/skills` and `<path>/.claude/skills` of an absolute `path`, and answers `{path, skills}`. A directory without Skills answers with an empty list. See `POST /agents` under [Agents](#agents).
 
 ## Usage and Traces (Agent Level)
@@ -1035,7 +1046,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two kinds of chann
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | `GET /api/sessions/:sessionId/stream` | The Session's message stream and run events, including `session_created` for its subagent Sessions and the goal-mode events |
-| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_state`, `session_background`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated` and company mode's `org_*` events |
+| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_state`, `session_background`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated` and company mode's `org_*` events |
 
 ### Wire Format
 
@@ -1060,7 +1071,7 @@ export type ServerEvent =
   | { type: "credentials_updated" }
   | { type: "hello" }
   | { type: "web_updated"; rev: string }
-  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
+  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source?: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "goal_started"; sessionId: string; objective: string; budget: number }
@@ -1083,7 +1094,7 @@ export type ServerEvent =
 | `credentials_updated` | The Project's model credentials changed |
 | `hello` | Handshake on the user channel |
 | `web_updated` | A hot update replaced the served web assets; clients reload |
-| `session_created` | A new Session was registered, such as a subagent Session |
+| `session_created` | A Session now exists: created by the Web App, the CLI, a schedule, or an agent spawning a child |
 | `schedule_fired` | A scheduled task fired and its prompt was delivered |
 | `schedule_queued` | The target Session is running, so this firing was queued |
 | `goal_started` | A goal run began, before its first round |
@@ -1101,7 +1112,7 @@ export type ServerEvent =
 - `session_background` fires when a command moves to the background past its yield window or starts with `run_in_background`, when a process exits or is stopped, and when a background subagent starts, settles or is released. It carries `SessionInfo.backgroundTasks` as it now stands (`processes` = background command sessions still running, `subagents` = subagent Sessions moved to the background and mid-round), zeros included, so a list can clear its mark without refetching. The list rows and the single-Session GET omit the field when both counts are zero. Its audience is the same as for `session_state`.
 - `credentials_updated` follows `PUT /models` or a completed key-minting flow. Cached runtimes were invalidated, so the client clears any composer state disabled by an auth failure.
 - `web_updated` carries the new web revision as `rev` and is sent to every user channel.
-- `session_created` is sent on the parent Session's channel.
+- `session_created` is sent for every creation to the user channels of the Project's owner and members, and for a subagent also on the parent Session's channel. `source` is absent for a user-created Session, as it is on the row. A title set through `PATCH /api/sessions/:id` is announced as `session_title` the same way.
 - `schedule_fired` names in `sessionId` the Session that received the prompt, which in new-Session mode is a new Session. A queued firing is sent once the Session is idle.
 - `goal_round` carries `used`, the tokens counted so far.
 - The `org_*` events are sent to the user channels of the Project's members. `org_channel` includes the message's mentions, so a client can tell whether it is addressed. These events are best effort; the organization routes carry the durable state.
@@ -1111,7 +1122,7 @@ export type ServerEvent =
 - Event ids increase monotonically per channel and have the form `<epoch>-<seq>`.
 - Each channel keeps a bounded replay buffer: the most recent 10,000 events or 8MB.
 - On reconnect with `Last-Event-ID`, the server replays the gap if the id is still in the buffer. Otherwise it first sends `resync_required`, and the client refetches `/messages` before continuing.
-- A heartbeat comment line is written every 20 seconds.
+- A heartbeat comment line is written every 20 seconds. The same beat re-checks the session behind the connection and ends the stream when that session is gone or has expired, so a client whose sign-in was revoked stops streaming instead of waiting for its next request to fail. Revoking sessions directly — an admin resetting a password or deleting an account — ends that user's open streams at once; the heartbeat is the catch-all. A stream authenticated by the local API token has no session row and is left alone.
 - Event order: on a reconnect that carries `Last-Event-ID`, the replayed gap (or `resync_required`) arrives first, then the initial events (the authoritative `task_state` snapshot and any still-pending `approval_request`s), then the live stream. A fresh connection without `Last-Event-ID` skips the replay, so its first event is the `task_state` snapshot.
 
 ### Recommended Client Pattern

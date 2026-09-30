@@ -198,7 +198,7 @@ See [Cost Center](/usage).
 
 ## Company mode
 
-Company mode is a beta work mode of the Web App in which a Project's agents run as a company. It is off until an admin turns it on in **System settings**.
+Company mode is a beta work mode of the Web App in which a Project's agents run as a company. It is off until an admin turns it on in **Settings**.
 
 ### Organization
 

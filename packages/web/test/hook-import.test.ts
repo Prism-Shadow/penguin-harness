@@ -31,6 +31,8 @@ const CONTRACT = [
   '"continue" | "stop"',
   '"allow" | "deny"',
   '"context"',
+  '"trigger"',
+  '"host"',
   "^[A-Za-z0-9_-]+$",
 ];
 
