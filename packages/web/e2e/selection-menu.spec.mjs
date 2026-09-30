@@ -76,8 +76,8 @@ test("selected conversation text offers Copy and Add to conversation", async ({ 
   const reply = page.getByText(SENTENCE, { exact: true });
   await expect(reply).toBeVisible({ timeout: 30_000 });
 
-  const copyRow = page.getByRole("button", { name: "复制", exact: true });
-  const addRow = page.getByRole("button", { name: "添加到对话", exact: true });
+  const copyRow = page.getByRole("menuitem", { name: "复制", exact: true });
+  const addRow = page.getByRole("menuitem", { name: "添加到对话", exact: true });
 
   // Nothing selected: the app's menu stays shut and the browser keeps its own.
   await page.evaluate(() => window.getSelection()?.removeAllRanges());
@@ -195,7 +195,7 @@ test("an open selection menu holds a live reply's auto-follow, and closing it ca
   // click would first scroll the target into view. Retried: a snap's scroll event from just
   // before the click can still land after the menu opened, and a scroll that moves the menu's
   // anchor closes it, which is the behaviour the hold must not take away from the user.
-  const addRow = page.getByRole("button", { name: "添加到对话", exact: true });
+  const addRow = page.getByRole("menuitem", { name: "添加到对话", exact: true });
   await expect(async () => {
     const at = await page.evaluate(() => {
       const stream = document.querySelector("[data-outline-anchor]").closest(".overflow-y-auto");

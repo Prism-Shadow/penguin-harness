@@ -8,13 +8,10 @@
 import { useLayoutEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
-import { CopyButton } from "@prismshadow/penguin-ui";
+import { CopyButton, HelpFold, Select, Textarea } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { agentDisplayName } from "../../state/project";
-import { HelpFold } from "../../components/ui/help-fold";
-import { Textarea } from "../../components/ui/input";
-import { Select } from "../../components/ui/select";
 import { composeAiPrompt } from "./ai-create-prompt";
 
 export interface AiExample {

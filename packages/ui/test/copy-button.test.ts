@@ -11,10 +11,10 @@ import {
   CopyCheckGlyph,
 } from "../src/components/actions/copy-button/copy-button";
 import { ICONS } from "../src/components/icons/icons";
-import { UiStringsProvider } from "../src/strings";
+import { DEFAULT_UI_STRINGS, UiStringsProvider } from "../src/strings";
 import { classTokens, renderStatic } from "../src/testing";
 
-const ZH = { close: "关闭", copied: "已复制", loading: "加载中…" };
+const ZH = { ...DEFAULT_UI_STRINGS, close: "关闭", copied: "已复制", loading: "加载中…" };
 
 describe("CopyButton", () => {
   it("names the action, shows no text, and keeps the live region as a sibling", () => {

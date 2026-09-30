@@ -1,0 +1,155 @@
+/**
+ * Dropdown select: **custom-drawn** (not the native browser select) but keeping the native API —
+ * it parses `<option>` children and follows the `value` / `onChange(e.target.value)` convention.
+ * The menu is rendered via portal to body (fixed positioning from the shared usePortalPanel hook),
+ * so it is never clipped by a Modal or scroll container; it closes on outside click, Esc, a scroll
+ * that moves the trigger, or resize. The trigger wears the control look Input wears, and the panel
+ * is the menu panel every picker shares.
+ */
+import { Children, isValidElement, useId, useState } from "react";
+import type { ChangeEvent, ReactNode, SelectHTMLAttributes } from "react";
+import { createPortal } from "react-dom";
+import { ChevronDown } from "../../icons/marks/marks";
+import {
+  ChoiceCheck,
+  menuPanelClass,
+  menuRowClass,
+  menuRowTone,
+} from "../../overlays/menu-panel/menu-panel";
+import { usePortalPanel } from "../../overlays/portal-panel/use-portal-panel";
+import { Field, controlBase } from "../field/field";
+import { errorClass, sizeClass, sizeTextClass } from "../input/input";
+import type { ControlSize } from "../input/input";
+
+export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> {
+  label?: string;
+  hint?: string;
+  /** Field-value error: the error border + message below, exactly like Input. */
+  error?: string;
+  /** Same size tier as Input: sm is for filter bars, keeps the toolbar from growing taller. */
+  size?: ControlSize;
+}
+
+interface Opt {
+  value: string;
+  label: ReactNode;
+  disabled?: boolean;
+}
+
+/** Parses the option list out of `<option>` children. */
+function parseOptions(children: ReactNode): Opt[] {
+  const out: Opt[] = [];
+  Children.forEach(children, (child) => {
+    if (!isValidElement(child) || child.type !== "option") return;
+    const p = child.props as { value?: string | number; children?: ReactNode; disabled?: boolean };
+    out.push({
+      value: p.value !== undefined ? String(p.value) : "",
+      label: p.children ?? "",
+      ...(p.disabled ? { disabled: true } : {}),
+    });
+  });
+  return out;
+}
+
+const CONTROL_CLASS = `flex w-full items-center gap-2 text-left ${controlBase} disabled:cursor-not-allowed disabled:opacity-60`;
+
+export function Select({
+  label,
+  hint,
+  error,
+  required,
+  size = "sm",
+  className,
+  children,
+  value,
+  onChange,
+  disabled,
+  // Forwarded like a native select would: a control with no visible `label` (one sitting in
+  // an already-labelled settings row, say) still has to name itself to a screen reader, and
+  // the selected option's text says what is chosen, not what is being chosen.
+  "aria-label": ariaLabel,
+}: SelectProps) {
+  const options = parseOptions(children);
+  const current = String(value ?? "");
+  const selected = options.find((o) => o.value === current);
+  const errorId = useId();
+
+  const [open, setOpen] = useState(false);
+  const { triggerRef, panelRef, position } = usePortalPanel({
+    open,
+    onClose: () => setOpen(false),
+    // Row height is roughly 36px (px-3 py-1.5 + text) — only used to decide up vs down.
+    estimatedHeight: options.length * 36 + 8,
+  });
+
+  const pick = (v: string) => {
+    setOpen(false);
+    // Synthesize a minimal event object, following the caller's onChange(e.target.value) convention.
+    onChange?.({ target: { value: v } } as unknown as ChangeEvent<HTMLSelectElement>);
+    triggerRef.current?.focus();
+  };
+
+  const control = (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        {...(ariaLabel !== undefined ? { "aria-label": ariaLabel } : {})}
+        aria-required={required || undefined}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        onClick={() => setOpen((v) => !v)}
+        className={`${CONTROL_CLASS} ${sizeClass[size]} ${error ? errorClass : ""} ${className ?? ""}`}
+      >
+        <span className="min-w-0 flex-1 truncate">
+          {selected?.label ?? options[0]?.label ?? ""}
+        </span>
+        <ChevronDown className="text-fg-subtle" />
+      </button>
+      {open &&
+        position &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="listbox"
+            className={`ui-glass ${menuPanelClass} fixed z-[60] max-h-60`}
+            style={{
+              left: position.left,
+              width: position.triggerWidth,
+              top: position.topPx,
+              bottom: position.bottomPx,
+            }}
+          >
+            {options.map((o, i) => (
+              <button
+                key={`${o.value}-${i}`}
+                type="button"
+                role="option"
+                aria-selected={o.value === current}
+                disabled={o.disabled}
+                onClick={() => pick(o.value)}
+                // Menu-row text takes the control's own tier, so the dropdown reads exactly
+                // like an Input of that tier.
+                className={`flex items-center gap-2 ${menuRowClass} ${sizeTextClass[size]} disabled:opacity-50 ${menuRowTone(
+                  o.value === current,
+                )}`}
+              >
+                <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                <ChoiceCheck on={o.value === current} />
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+
+  return (
+    <Field label={label} hint={hint} error={error} errorId={errorId} required={required}>
+      {control}
+    </Field>
+  );
+}

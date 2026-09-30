@@ -31,14 +31,24 @@ import {
   Badge,
   Button,
   CloseIcon,
+  ConfirmModal,
   EmptyState,
+  FieldError,
+  FieldHint,
+  FieldLabel,
+  FormPicker,
   GlyphIcon,
   HiddenFileInput,
   ICONS,
   ICON_SIZE,
+  Input,
+  Modal,
   Skeleton,
   SkeletonCard,
+  Textarea,
   UpdatePill,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -52,12 +62,6 @@ import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/b
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Input, Textarea } from "../../components/ui/input";
-import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { FormPicker } from "../../components/ui/form-picker";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { STAT_ICONS } from "../../lib/stat-icons";
@@ -87,8 +91,7 @@ const CARD_ICONS = {
   /** New chat (plus sign) */
   newChat: ICONS.plus,
   /** Delete (trash can) */
-  trash:
-    "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6",
+  trash: ICONS.trash,
   /** Total session count (chat bubble) */
   sessions: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
   /** Vault key count (key: bow + teeth) */
@@ -1006,6 +1009,7 @@ export function AgentsPage() {
           title={S.todo.agentsConfirmTitle(kernelTodo.count)}
           tone="primary"
           confirmLabel={S.agent.kernelUpdateAction}
+          cancelLabel={S.common.cancel}
           busy={kernelRunning}
           onClose={() => setKernelConfirmOpen(false)}
           onConfirm={() => void runKernelUpdates(kernelTodo.items)}
@@ -1039,6 +1043,8 @@ export function AgentsPage() {
           setDeleteError(null);
         }}
         onConfirm={() => void doDelete()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting ? S.agent.deleteConfirm(deleting.name) : ""}

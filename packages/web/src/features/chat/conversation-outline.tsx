@@ -36,9 +36,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { FocusEvent, MouseEvent, RefObject } from "react";
-import { GlyphIcon } from "@prismshadow/penguin-ui";
+import { Dot, Dropdown, GlyphIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Dropdown } from "../../components/ui/dropdown";
 import type { OutlineEntry } from "./outline-model";
 import {
   globalTurnNumber,
@@ -331,9 +330,10 @@ export function ConversationOutline({
               className="group/tick pointer-events-auto flex w-10 items-center pl-2.5"
             >
               {/* The visible tick: a short bar, longer and darker at the reading position
-                  (the button is the real hit target — pitch-tall and wider than the bar). */}
+                  (the button is the real hit target — pitch-tall and wider than the bar). Only
+                  the colour eases; the length snaps, since tweening a width is layout motion. */}
               <span
-                className={`h-[2px] rounded-full transition-all duration-150 ${
+                className={`h-[2px] rounded-full transition-colors duration-150 ${
                   active
                     ? "w-5 bg-gray-800 dark:bg-gray-200"
                     : "w-3.5 bg-gray-300 group-hover/tick:bg-gray-500 dark:bg-gray-700 dark:group-hover/tick:bg-gray-400"
@@ -364,11 +364,11 @@ export function ConversationOutline({
             {hovered.question || S.chat.outlineNoText}
           </p>
           {cardAnswer !== "" && (
-            <p
-              className={`mt-1 line-clamp-3 text-sm leading-snug text-gray-500 dark:text-gray-400 ${
-                hovered.answer === "" ? "animate-pulse" : ""
-              }`}
-            >
+            <p className="mt-1 line-clamp-3 text-sm leading-snug text-gray-500 dark:text-gray-400">
+              {/* An empty answer here is the reply still being written: the live dot says so. */}
+              {hovered.answer === "" && (
+                <Dot tone="success" pulse className="mr-1.5 align-middle" />
+              )}
               {cardAnswer}
             </p>
           )}
@@ -457,11 +457,10 @@ export function OutlineMenuButton({
                 {entry.question || S.chat.outlineNoText}
               </span>
               {answer !== "" && (
-                <span
-                  className={`mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400 ${
-                    entry.answer === "" ? "animate-pulse" : ""
-                  }`}
-                >
+                <span className="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">
+                  {entry.answer === "" && (
+                    <Dot tone="success" pulse className="mr-1.5 align-middle" />
+                  )}
                   {answer}
                 </span>
               )}

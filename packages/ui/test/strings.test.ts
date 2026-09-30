@@ -22,8 +22,31 @@ function Probe() {
 
 describe("UiStrings", () => {
   it("holds the accessibility fallbacks, in English", () => {
-    expect(Object.keys(DEFAULT_UI_STRINGS).sort()).toEqual(["close", "copied", "loading"]);
-    expect(DEFAULT_UI_STRINGS).toEqual({ close: "Close", copied: "Copied", loading: "Loading…" });
+    expect(Object.keys(DEFAULT_UI_STRINGS).sort()).toEqual([
+      "clearSearch",
+      "close",
+      "copied",
+      "dismiss",
+      "hidePassword",
+      "loading",
+      "moreInfo",
+      "moreInfoAbout",
+      "notifications",
+      "showPassword",
+    ]);
+    expect(DEFAULT_UI_STRINGS).toMatchObject({
+      close: "Close",
+      copied: "Copied",
+      loading: "Loading…",
+      showPassword: "Show password",
+      hidePassword: "Hide password",
+      clearSearch: "Clear search",
+      moreInfo: "More info",
+      notifications: "Notifications",
+      dismiss: "Dismiss",
+    });
+    // The one formatter: the subject folds into the name, keeping "More info" its prefix.
+    expect(DEFAULT_UI_STRINGS.moreInfoAbout("Vault")).toBe("More info: Vault");
   });
 
   it("falls back to the defaults when no provider is mounted", () => {
@@ -33,7 +56,12 @@ describe("UiStrings", () => {
   });
 
   it("reads the nearest provider's words", () => {
-    const zh: UiStrings = { close: "关闭", copied: "已复制", loading: "加载中…" };
+    const zh: UiStrings = {
+      ...DEFAULT_UI_STRINGS,
+      close: "关闭",
+      copied: "已复制",
+      loading: "加载中…",
+    };
     const html = renderStatic(
       createElement(UiStringsProvider, { strings: zh }, createElement(Probe)),
     );

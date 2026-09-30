@@ -6,7 +6,7 @@
  * Project with a check mark on the open one (picking one opens its overview), then the two
  * entries that make and shape one — "New organization" (success makes the new organization
  * the shell's current one and lands in its CEO's desk session) and "Organization settings".
- * Same Dropdown, same menu rows as the Project switcher, so the two modes read as one shell.
+ * Same Dropdown, same Menu rows as the Project switcher, so the two modes read as one shell.
  *
  * Beside it lives what the sidebar shows in place of a channel list while the user has no
  * organization at all — the same create dialog, reached from the slot where the list would be.
@@ -16,20 +16,20 @@ import { useNavigate } from "react-router";
 import {
   Badge,
   Button,
-  CheckIcon,
   ChevronDown,
-  GlyphIcon,
+  Dropdown,
   ICONS,
   ICON_GAP,
-  ICON_SIZE,
-  PlusIcon,
+  MenuItem,
+  MenuLabel,
+  MenuRadioItem,
+  MenuSeparator,
   SkeletonList,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneSurface } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
-import { Dropdown } from "../../components/ui/dropdown";
 import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
 import {
   CreateOrganizationDialog,
@@ -37,11 +37,6 @@ import {
   useOrganizationCreated,
 } from "./org-dialogs";
 import { OrgStatusDot, OrgStatusPill, orgStatusText } from "./shared";
-import { menuRowClass, menuRowTone } from "../../components/ui/field";
-
-/** The switcher's rows: the shared menu row, a list of organizations and the actions under it. */
-const menuItemBase = `flex items-center ${ICON_GAP.menu} ${menuRowClass} text-sm`;
-const menuItemClass = `${menuItemBase} ${menuRowTone()}`;
 
 export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
@@ -152,38 +147,35 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
       >
         {groups.map((group) => (
           <div key={group.projectId} role="group" aria-label={projectName(group.projectId)}>
-            <p className="px-3.5 pb-0.5 pt-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-              {projectName(group.projectId)}
-            </p>
+            <MenuLabel>{projectName(group.projectId)}</MenuLabel>
             {group.organizations.map((o) => {
               const key = orgKey(o.projectId, o.orgId);
               const active = key === currentKey;
               return (
-                <button
+                <MenuRadioItem
                   key={key}
-                  type="button"
                   data-tooltip={S.company.inProject(projectName(o.projectId), o.name)}
                   aria-current={active ? "true" : undefined}
-                  onClick={() => {
+                  onSelect={() => {
                     setOpen(false);
                     go(orgPagePath(o.projectId, o.orgId, "overview"));
                   }}
-                  className={`${menuItemBase} ${menuRowTone(active)}`}
-                >
-                  <OrgStatusDot org={o} />
-                  <span className="min-w-0 flex-1 truncate">{o.name}</span>
-                  {o.invalid !== undefined ? (
-                    <Badge tone="danger">{S.company.orgInvalid}</Badge>
-                  ) : o.status === "paused" ? (
-                    <Badge tone="attention">{S.company.orgPaused}</Badge>
-                  ) : null}
-                  {active && (
-                    <span className="shrink-0 text-gray-500 dark:text-gray-400">
-                      <CheckIcon />
-                      <span className="sr-only">{S.company.switcherCurrent}</span>
-                    </span>
-                  )}
-                </button>
+                  glyph={<OrgStatusDot org={o} />}
+                  label={
+                    <>
+                      {o.name}
+                      {active && <span className="sr-only">{S.company.switcherCurrent}</span>}
+                    </>
+                  }
+                  trailing={
+                    o.invalid !== undefined ? (
+                      <Badge tone="danger">{S.company.orgInvalid}</Badge>
+                    ) : o.status === "paused" ? (
+                      <Badge tone="attention">{S.company.orgPaused}</Badge>
+                    ) : undefined
+                  }
+                  checked={active}
+                />
               );
             })}
           </div>
@@ -193,36 +185,25 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
             {company.orgsLoaded ? S.company.noOrganizations : S.common.loading}
           </p>
         )}
-        <div className="mt-1.5 border-t border-gray-100 pt-1.5 dark:border-gray-800">
-          <button
-            type="button"
-            className={menuItemClass}
-            onClick={() => {
+        <MenuSeparator />
+        <MenuItem
+          glyph={ICONS.plus}
+          label={S.company.createOrg}
+          onSelect={() => {
+            setOpen(false);
+            setCreateOpen(true);
+          }}
+        />
+        {settingsTarget !== null && (
+          <MenuItem
+            glyph={ICONS.gear}
+            label={S.company.orgSettings}
+            onSelect={() => {
               setOpen(false);
-              setCreateOpen(true);
+              setSettingsOpen(true);
             }}
-          >
-            <span className="shrink-0 text-gray-400 dark:text-gray-500">
-              <PlusIcon size={ICON_SIZE.rowLead} />
-            </span>
-            {S.company.createOrg}
-          </button>
-          {settingsTarget !== null && (
-            <button
-              type="button"
-              className={menuItemClass}
-              onClick={() => {
-                setOpen(false);
-                setSettingsOpen(true);
-              }}
-            >
-              <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                <GlyphIcon d={ICONS.gear} size={ICON_SIZE.rowLead} />
-              </span>
-              {S.company.orgSettings}
-            </button>
-          )}
-        </div>
+          />
+        )}
       </Dropdown>
 
       <CreateOrganizationDialog

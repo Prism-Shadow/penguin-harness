@@ -1,18 +1,19 @@
 /**
- * Escape-layer stack (components/ui/modal.tsx): modals AND Dropdown menus register as
- * layers, and Escape only acts on the topmost one. This is what makes one Escape close a
- * menu opened inside a dialog while the dialog stays up (the next Escape closes it), and
- * keeps nested dialogs closing one at a time.
+ * Escape-layer stack (the UI package's src/components/overlays/esc-layers/esc-layers.ts):
+ * modals, drawers, sheets, the lightbox AND Dropdown menus register as layers, and Escape only
+ * acts on the topmost one. This is what makes one Escape close a menu opened inside a dialog
+ * while the dialog stays up (the next Escape closes it), and keeps nested dialogs closing one at
+ * a time.
  */
 import { describe, expect, it } from "vitest";
-import { isTopEscLayer, popEscLayer, pushEscLayer } from "../src/components/ui/modal";
+import { hasEscLayers, isTopEscLayer, popEscLayer, pushEscLayer } from "@prismshadow/penguin-ui";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
 describe("esc layer sources", () => {
   it("scan every source root, and find the stack in one place", () => {
     const scan = scanSources();
     expectEveryRootScanned(scan);
-    expectSingleHome(scan, "packages/web/src/components/ui/modal.tsx");
+    expectSingleHome(scan, "packages/ui/src/components/overlays/esc-layers/esc-layers.ts");
   });
 });
 
@@ -20,6 +21,8 @@ describe("esc layer stack", () => {
   it("only the topmost layer may act; popping restores the one below", () => {
     const modal = pushEscLayer();
     expect(isTopEscLayer(modal)).toBe(true);
+    // An open layer is what holds the app's global shortcuts back.
+    expect(hasEscLayers()).toBe(true);
     // A menu opened inside the modal stacks above it: the first Escape belongs to the menu.
     const menu = pushEscLayer();
     expect(isTopEscLayer(menu)).toBe(true);
@@ -28,6 +31,7 @@ describe("esc layer stack", () => {
     expect(isTopEscLayer(modal)).toBe(true);
     popEscLayer(modal);
     expect(isTopEscLayer(modal)).toBe(false);
+    expect(hasEscLayers()).toBe(false);
   });
 
   it("tolerates out-of-order removal (an outer layer unmounting first)", () => {

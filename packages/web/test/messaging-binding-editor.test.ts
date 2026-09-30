@@ -25,7 +25,9 @@ import {
   type MessagingChannelFacts,
 } from "../src/features/messaging/messaging-binding-editor";
 import { emptyMessagingForm } from "../src/features/messaging/messaging-binding-form";
+import { UiStringsProvider } from "@prismshadow/penguin-ui";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { uiStringsOf } from "../src/lib/ui-strings";
 import { en } from "../src/lib/strings-en";
 import { formatDateTime } from "../src/lib/format";
 
@@ -82,8 +84,15 @@ function stateOf(
   };
 }
 
+// The "?" labels read the package's UiStrings, which the app provides from the active dictionary.
 const render = (state: MessagingBindingEditorState) =>
-  renderToStaticMarkup(createElement(MessagingBindingBody, { b: state }));
+  renderToStaticMarkup(
+    createElement(
+      UiStringsProvider,
+      { strings: uiStringsOf(S) },
+      createElement(MessagingBindingBody, { b: state }),
+    ),
+  );
 
 describe("MessagingBindingBody", () => {
   it("opens on the fields: no explanatory prose above the first input", () => {
@@ -140,7 +149,7 @@ describe("MessagingBindingBody", () => {
     const dark = render(stateOf("feishu", { feishu: saved }));
     expect(dark).toContain("abcd…7890");
     expect(dark).toContain(S.feishu.clearSecret);
-    expect(dark).toContain('type="checkbox"/>');
+    expect(dark).toMatch(/<input[^>]*type="checkbox"[^>]*\/>/);
     expect(dark).not.toContain(S.messaging.disableBeforeClearHint);
 
     // Enabled: clearing would leave a live connection running on a credential the store no

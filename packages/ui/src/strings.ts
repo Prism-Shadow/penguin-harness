@@ -23,6 +23,20 @@ export interface UiStrings {
   copied: string;
   /** A busy fallback a primitive may announce while its caller has named nothing. */
   loading: string;
+  /** The name of a password field's reveal toggle while the value is masked (`PasswordInput`). */
+  showPassword: string;
+  /** The same toggle's name while the value is shown. */
+  hidePassword: string;
+  /** The name of a search box's clear button (`SearchInput`). */
+  clearSearch: string;
+  /** The "?" disclosure's name when it names no subject, and a help fold's row text. */
+  moreInfo: string;
+  /** The same name with the subject folded in ("More info: Vault"): InfoPopover, HelpFold. */
+  moreInfoAbout: (subject: string) => string;
+  /** The toast stack's name as a live region and landmark (`Toaster`). */
+  notifications: string;
+  /** What pressing a toast does, read after its text: it dismisses it (`Toaster`). */
+  dismiss: string;
 }
 
 /** The English fallbacks, used wherever no provider is mounted (a test, a stand-alone page). */
@@ -30,6 +44,13 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   close: "Close",
   copied: "Copied",
   loading: "Loading…",
+  showPassword: "Show password",
+  hidePassword: "Hide password",
+  clearSearch: "Clear search",
+  moreInfo: "More info",
+  moreInfoAbout: (subject) => `More info: ${subject}`,
+  notifications: "Notifications",
+  dismiss: "Dismiss",
 };
 
 const UiStringsContext = createContext<UiStrings>(DEFAULT_UI_STRINGS);

@@ -41,8 +41,15 @@ import {
   CloseIcon,
   EmptyState,
   GlyphIcon,
+  ICONS,
   ICON_GAP,
   ICON_SIZE,
+  InfoPopover,
+  NoticeStrip,
+  Segmented,
+  noAutofill,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -56,10 +63,6 @@ import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { noAutofill } from "../../components/ui/input";
-import { Segmented } from "../../components/ui/segmented";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { TrendChart } from "../usage/trend-chart";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
@@ -90,11 +93,6 @@ import {
 } from "./finance-tree";
 import type { SpendStateKey } from "./finance-tree";
 import { agentPrincipal } from "./principals";
-import { NoticeStrip } from "../../components/ui/notice-strip";
-
-/** Pencil (lucide): the budget cell's edit affordance. */
-const PENCIL_ICON =
-  "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497zM15 5l4 4";
 
 /** Percent (lucide percent): the ratio tile's glyph. */
 const PERCENT_ICON =
@@ -653,7 +651,7 @@ export function FinancePage() {
                                       : formatMoney(employee.budget, currency)}
                                   </span>
                                   <GlyphIcon
-                                    d={PENCIL_ICON}
+                                    d={ICONS.pencil}
                                     size={ICON_SIZE.inlineGlyph}
                                     className="text-gray-300 transition-colors duration-150 group-hover:text-gray-600 dark:text-gray-600 dark:group-hover:text-gray-300"
                                   />

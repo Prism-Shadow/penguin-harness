@@ -15,20 +15,25 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { VaultEntryInfo, VaultUpdateRequest } from "@prismshadow/penguin-server/api";
-import { Button, SettingsEmpty, SkeletonList } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  ConfirmModal,
+  HelpFold,
+  Input,
+  Modal,
+  NoticeStrip,
+  PasswordInput,
+  SettingsEmpty,
+  SkeletonList,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { Input } from "../../components/ui/input";
-import { PasswordInput } from "../../components/ui/password-input";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { HelpFold } from "../../components/ui/help-fold";
 import { AiCreateModal, CreateButtons } from "../ai-create";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Vault key naming rule (consistent with core/server): shell environment variable name. */
 const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -304,6 +309,7 @@ export function VaultTab({
         title={S.vault.overwriteTitle}
         tone="primary"
         confirmLabel={S.common.save}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => setOverwriting(null)}
         onConfirm={() => void addEntry()}
@@ -320,6 +326,8 @@ export function VaultTab({
         busy={busy}
         onClose={() => setDeleting(null)}
         onConfirm={() => void confirmRemove()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting !== null ? S.vault.deleteConfirm(deleting) : ""}

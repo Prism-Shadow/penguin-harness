@@ -15,13 +15,11 @@
  */
 import { useEffect, useState } from "react";
 import type { UsageErrorItem, UsageErrors } from "@prismshadow/penguin-server/api";
-import { Badge } from "@prismshadow/penguin-ui";
+import { Badge, ConfirmModal, toastError, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Empty } from "./usage-charts";
 import { toneInk } from "../../lib/tone";
 
@@ -411,6 +409,7 @@ export function ErrorsPanel({
         tone="danger"
         title={S.usage.errorsClearTitle}
         confirmLabel={S.usage.errorsClear}
+        cancelLabel={S.common.cancel}
         busy={clearing}
         onClose={() => setConfirmingClear(false)}
         onConfirm={() => void runClear()}

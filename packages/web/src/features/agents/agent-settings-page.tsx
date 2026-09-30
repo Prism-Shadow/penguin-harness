@@ -24,14 +24,24 @@ import type {
 import type { ToolDefinitionConfig, ToolPermission } from "@prismshadow/penguin-core/interfaces";
 import {
   Button,
+  ConfirmModal,
   CopyButton,
   GlyphIcon,
   HiddenFileInput,
   ICONS,
   ICON_SIZE,
+  InfoPopover,
+  Input,
+  OptionMenu,
   Skeleton,
+  Switch,
+  Textarea,
   UpdateDot,
+  toastError,
+  toastInfo,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
+import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -39,11 +49,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { Tabs } from "../../components/ui/tabs";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { Input, Textarea } from "../../components/ui/input";
-import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
-import { Switch } from "../../components/ui/switch";
-import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
+import { useSaveConfirm } from "./save-confirm";
 import { SkillsTab } from "./skills-tab";
 import { HooksTab } from "./hooks-tab";
 import { MemoryTab } from "./memory-tab";
@@ -53,7 +59,6 @@ import { SchedulesTab } from "./schedules-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
-import { InfoPopover } from "../../components/ui/info-popover";
 
 type TabKey =
   | "overview"
@@ -609,6 +614,8 @@ function OverviewTab({
         onConfirm={() => {
           if (conflict !== null) void runImport(conflict, true);
         }}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
       </ConfirmModal>
@@ -624,6 +631,7 @@ function OverviewTab({
         onClose={() => setKernelOpen(false)}
         onConfirm={() => void runKernelUpdate()}
         confirmLabel={S.agent.kernelUpdateAction}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {S.agent.kernelUpdateConfirmBody}
@@ -638,6 +646,7 @@ function OverviewTab({
         onClose={() => setResetOpen(false)}
         onConfirm={() => void runReset()}
         confirmLabel={S.agent.resetConfigAction}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.resetConfigConfirmBody}</p>
       </ConfirmModal>

@@ -12,13 +12,17 @@
  * browser.
  */
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { THEME_IDS } from "@prismshadow/penguin-ui";
+import {
+  PrefRow,
+  Segmented,
+  Select,
+  SwatchPicker,
+  THEME_IDS,
+  ToggleRow,
+} from "@prismshadow/penguin-ui";
 import { FONT_CJK_OPTIONS, FONT_LATIN_OPTIONS, TEXT_SIZES } from "@prismshadow/penguin-ui/boot";
 import { S } from "../../lib/strings";
 import * as api from "../../api/endpoints";
-import { Segmented } from "../../components/ui/segmented";
-import { Select } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
 import { isDesktopShellWindow } from "../../lib/account-menu";
 import {
   launcherHiddenVersion,
@@ -27,7 +31,7 @@ import {
   writeLauncherHidden,
 } from "../dock/dock-launcher-state";
 import { useAuth } from "../../state/auth";
-import { useTheme } from "../../state/theme";
+import { accentSwatches, useTheme } from "../../state/theme";
 import type {
   FontCjk,
   FontLatin,
@@ -37,7 +41,6 @@ import type {
   ThemeMode,
 } from "../../state/theme";
 import { FONT_FOLLOWS_THEME, effectiveAccent } from "../../state/theme-prefs";
-import { AccentPicker, PrefRow } from "./setting-row";
 
 /**
  * A font select's choices: the theme's own face first — it is the default, and the named faces
@@ -117,6 +120,7 @@ export function AppearanceSection() {
     setTerminalMode,
     toolAliases,
     setToolAliases,
+    dark,
   } = useTheme();
   // The fan's "hide launcher" entry writes the same preference, so this row follows it.
   useSyncExternalStore(subscribeLauncherHidden, launcherHiddenVersion);
@@ -178,8 +182,11 @@ export function AppearanceSection() {
           as the theme's own accent, which is what the page paints, and comes back with the
           theme that lists it. */}
       <PrefRow label={S.settings.accent} info={S.settings.accentInfo}>
-        <AccentPicker
-          themeId={themeId}
+        <SwatchPicker
+          options={accentSwatches(themeId, dark).map((swatch) => ({
+            ...swatch,
+            label: S.settings.accentNames[swatch.value] ?? swatch.value,
+          }))}
           value={effectiveAccent(themeId, accent)}
           onChange={setAccent}
         />
@@ -208,16 +215,25 @@ export function AppearanceSection() {
       <PrefRow label={S.settings.terminalTheme} info={S.settings.terminalThemeInfo}>
         <Segmented options={terminalThemeOptions} value={terminalMode} onChange={setTerminalMode} />
       </PrefRow>
-      <PrefRow label={S.settings.launcher} info={S.settings.launcherInfo}>
-        <Switch checked={launcherShown} onChange={(shown) => writeLauncherHidden(!shown)} />
-      </PrefRow>
-      <PrefRow label={S.settings.toolAliases} info={S.settings.toolAliasesInfo}>
-        <Switch checked={toolAliases} onChange={setToolAliases} />
-      </PrefRow>
+      <ToggleRow
+        label={S.settings.launcher}
+        info={S.settings.launcherInfo}
+        checked={launcherShown}
+        onChange={(shown) => writeLauncherHidden(!shown)}
+      />
+      <ToggleRow
+        label={S.settings.toolAliases}
+        info={S.settings.toolAliasesInfo}
+        checked={toolAliases}
+        onChange={setToolAliases}
+      />
       {offersTrayIcon && (
-        <PrefRow label={S.settings.trayIcon} info={S.settings.trayIconInfo}>
-          <Switch checked={trayIcon} onChange={changeTrayIcon} />
-        </PrefRow>
+        <ToggleRow
+          label={S.settings.trayIcon}
+          info={S.settings.trayIconInfo}
+          checked={trayIcon}
+          onChange={changeTrayIcon}
+        />
       )}
     </div>
   );

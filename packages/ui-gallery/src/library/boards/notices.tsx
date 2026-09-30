@@ -1,15 +1,13 @@
 /**
- * 提示条: the app's NoticeStrip in every tone — plain, with the leading mark a call site draws
+ * 提示条: the package's NoticeStrip in every tone — plain, with the leading mark a call site draws
  * (`data-slot="icon"`, which a theme that draws its own tone mark hides), and with actions.
  */
-import { Button } from "@prismshadow/penguin-ui";
-import { NoticeStrip } from "../../../../web/src/components/ui/notice-strip";
-import { toneDot } from "../../../../web/src/lib/tone";
-import type { Tone } from "../../../../web/src/lib/tone";
+import { Button, Dot, NoticeStrip } from "@prismshadow/penguin-ui";
+import type { NoticeStripTone } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
-const TONES: readonly Tone[] = ["link", "success", "busy", "attention", "danger", "muted"];
+const TONES: readonly NoticeStripTone[] = ["info", "success", "attention", "danger", "neutral"];
 
 const STRIP_CLASS = "flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm";
 
@@ -31,11 +29,9 @@ export function NoticesBoard() {
         <div className="lib-stack">
           {TONES.map((tone) => (
             <NoticeStrip key={tone} tone={tone} className={STRIP_CLASS}>
-              <span
-                data-slot="icon"
-                aria-hidden
-                className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]}`}
-              />
+              <span data-slot="icon" className="flex">
+                <Dot tone={tone} />
+              </span>
               <span>{t.texts[tone]}</span>
             </NoticeStrip>
           ))}
@@ -43,7 +39,7 @@ export function NoticesBoard() {
       </BoardGroup>
       <BoardGroup title={t.withActions}>
         <div className="lib-stack">
-          {(["link", "attention", "danger"] as const).map((tone) => (
+          {(["info", "attention", "danger"] as const).map((tone) => (
             <NoticeStrip key={tone} tone={tone} className={STRIP_CLASS}>
               <span className="min-w-0 flex-1">{t.texts[tone]}</span>
               <span data-slot="actions" className="flex shrink-0 gap-2">

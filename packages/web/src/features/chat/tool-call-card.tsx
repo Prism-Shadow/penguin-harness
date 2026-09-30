@@ -16,7 +16,7 @@
  */
 import { useMemo, useRef, useState } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
-import { Chevron, StatusIcon } from "@prismshadow/penguin-ui";
+import { Chevron, StatusIcon, ZoomableImage } from "@prismshadow/penguin-ui";
 import type { RunState } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
@@ -31,7 +31,6 @@ import {
   DISCLOSURE_ROW_STICKY_CLASS,
   activityState,
 } from "./disclosure-row";
-import { ZoomableImage } from "../../components/ui/image-zoom";
 import { toneInk } from "../../lib/tone";
 import { ApprovalButtons } from "./approval-buttons";
 import { LiveDuration, useElapsedPast } from "./live-duration";
