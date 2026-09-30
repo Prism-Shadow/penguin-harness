@@ -29,7 +29,8 @@
  *   session is desktop_shell_only; outside desktop mode the route does not exist), resolves the
  *   path as a read does, and reports an opener that cannot start as 502 reveal_failed.
  *
- * The route describes share one app each; every case works in a Project of its own.
+ * The route describes share one app and one Project, every case working in a Session (and so a
+ * Workspace) of its own; the desktop-mode reveal cases share one desktop app.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -461,44 +462,50 @@ describe("workspace-files-service", () => {
   });
 });
 
+/**
+ * The route describes' app: an owner whose Project has a model configured, and an outsider.
+ * Every case works in a Session of its own, and so in a Workspace of its own.
+ */
+let t: TestApp;
+let owner: ReturnType<typeof apiClient>;
+let outsider: ReturnType<typeof apiClient>;
+let projectId: string;
+
+beforeAll(async () => {
+  t = await createTestApp();
+  owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
+  outsider = apiClient(t.app, (await provisionUser(t.app, "outsider")).cookie);
+  const created = (await (
+    await owner.post("/api/projects", { projectId: "owner-ws", name: "project" })
+  ).json()) as ProjectCreateResponse;
+  projectId = created.project.projectId;
+  await owner.put(`/api/projects/${projectId}/models`, {
+    defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
+    models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6", contextWindow: 128000 }],
+  });
+});
+afterAll(async () => {
+  await t.cleanup();
+});
+
+/** A new Session of the owner's, its Workspace holding a.txt and sub/b.md. */
+async function sessionWithFiles(): Promise<{ sessionId: string; workspace: string }> {
+  const sess = (await (
+    await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
+  ).json()) as SessionCreateResponse;
+  const workspace = sess.session.workspace;
+  await fs.mkdir(path.join(workspace, "sub"));
+  await fs.writeFile(path.join(workspace, "a.txt"), "A");
+  await fs.writeFile(path.join(workspace, "sub", "b.md"), "B");
+  return { sessionId: sess.session.sessionId, workspace };
+}
+
 describe("files/stat route (batch existence check)", () => {
-  let t: TestApp;
-  let owner: ReturnType<typeof apiClient>;
-  let outsider: ReturnType<typeof apiClient>;
   let sessionId: string;
   let workspace: string;
 
-  beforeAll(async () => {
-    t = await createTestApp();
-    const a = await provisionUser(t.app, "owner");
-    const b = await provisionUser(t.app, "outsider");
-    owner = apiClient(t.app, a.cookie);
-    outsider = apiClient(t.app, b.cookie);
-  });
-  afterAll(async () => {
-    await t.cleanup();
-  });
-
-  // Every case works in a Project of its own.
-  let projects = 0;
   beforeEach(async () => {
-    projects += 1;
-    const created = (await (
-      await owner.post("/api/projects", { projectId: `owner-stat_${projects}`, name: "project" })
-    ).json()) as ProjectCreateResponse;
-    const projectId = created.project.projectId;
-    await owner.put(`/api/projects/${projectId}/models`, {
-      defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
-      models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6", contextWindow: 128000 }],
-    });
-    const sess = (await (
-      await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
-    ).json()) as SessionCreateResponse;
-    sessionId = sess.session.sessionId;
-    workspace = sess.session.workspace;
-    await fs.mkdir(path.join(sess.session.workspace, "sub"));
-    await fs.writeFile(path.join(sess.session.workspace, "a.txt"), "A");
-    await fs.writeFile(path.join(sess.session.workspace, "sub", "b.md"), "B");
+    ({ sessionId, workspace } = await sessionWithFiles());
   });
 
   it("files/content on html: inline stays text/plain; preview=1 keeps text/html under a CSP sandbox; download keeps the real type with no CSP", async () => {
@@ -636,43 +643,11 @@ describe("files/stat route (batch existence check)", () => {
 });
 
 describe("files/move, files/search and the files/content delete", () => {
-  let t: TestApp;
-  let owner: ReturnType<typeof apiClient>;
-  let outsider: ReturnType<typeof apiClient>;
   let sessionId: string;
   let workspace: string;
 
-  beforeAll(async () => {
-    t = await createTestApp();
-    const a = await provisionUser(t.app, "owner");
-    const b = await provisionUser(t.app, "outsider");
-    owner = apiClient(t.app, a.cookie);
-    outsider = apiClient(t.app, b.cookie);
-  });
-  afterAll(async () => {
-    await t.cleanup();
-  });
-
-  // Every case works in a Project of its own.
-  let projects = 0;
   beforeEach(async () => {
-    projects += 1;
-    const created = (await (
-      await owner.post("/api/projects", { projectId: `owner-ops_${projects}`, name: "project" })
-    ).json()) as ProjectCreateResponse;
-    const projectId = created.project.projectId;
-    await owner.put(`/api/projects/${projectId}/models`, {
-      defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
-      models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6", contextWindow: 128000 }],
-    });
-    const sess = (await (
-      await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
-    ).json()) as SessionCreateResponse;
-    sessionId = sess.session.sessionId;
-    workspace = sess.session.workspace;
-    await fs.mkdir(path.join(workspace, "sub"));
-    await fs.writeFile(path.join(workspace, "a.txt"), "A");
-    await fs.writeFile(path.join(workspace, "sub", "b.md"), "B");
+    ({ sessionId, workspace } = await sessionWithFiles());
   });
 
   it("files/move: 204 and the file is where it was sent; an occupied destination is 409 target_exists; a directory is a 400", async () => {
@@ -768,35 +743,16 @@ describe("files/move, files/search and the files/content delete", () => {
 });
 
 describe("agent delete route", () => {
-  let t: TestApp;
-  let owner: ReturnType<typeof apiClient>;
-  let outsider: ReturnType<typeof apiClient>;
-  let projectId: string;
-
-  beforeAll(async () => {
-    t = await createTestApp();
-    const a = await provisionUser(t.app, "owner");
-    const b = await provisionUser(t.app, "outsider");
-    owner = apiClient(t.app, a.cookie);
-    outsider = apiClient(t.app, b.cookie);
-  });
-  afterAll(async () => {
-    await t.cleanup();
-  });
-
-  // Every case works in a Project of its own.
-  let projects = 0;
-  beforeEach(async () => {
-    projects += 1;
-    const created = (await (
-      await owner.post("/api/projects", { projectId: `owner-ws_${projects}`, name: "project" })
-    ).json()) as ProjectCreateResponse;
-    projectId = created.project.projectId;
-  });
+  // A name per attempt: the Project is the file's, so a retry must not meet its own Agent.
+  let temps = 0;
 
   it("owner deletes an Agent: 204, the directory and list entry disappear; default_agent 409; outsiders 404", async () => {
+    temps += 1;
     const created = (await (
-      await owner.post(`/api/projects/${projectId}/agents`, { agentId: "temp_agent", name: "temp" })
+      await owner.post(`/api/projects/${projectId}/agents`, {
+        agentId: `temp_agent_${temps}`,
+        name: "temp",
+      })
     ).json()) as AgentCreateResponse;
     const agentId = created.agent.agentId;
     const dir = path.join(t.root, projectId, "agents", agentId);
@@ -839,50 +795,48 @@ describe("files/reveal route (the desktop shell's own window)", () => {
     return { cookie: admin.cookie, sessionId: session.sessionId, workspace: session.workspace };
   }
 
+  // One desktop-mode app for the cases that need one; each case sets what its opener does.
+  let desktop: TestApp;
+  let shell: ReturnType<typeof apiClient>;
+  let revealed: string[];
+  let opener: (filePath: string) => Promise<void>;
+
+  beforeAll(async () => {
+    desktop = await createDesktopApp({ reveal: (filePath) => opener(filePath) });
+    shell = apiClient(desktop.app, await desktopLoginCookie(desktop.app));
+  });
+  afterAll(async () => {
+    await desktop.cleanup();
+  });
+  beforeEach(() => {
+    revealed = [];
+    opener = async (filePath) => {
+      revealed.push(filePath);
+    };
+  });
+
   it("opens the file for the shell's own window: 204, and the opener is handed the canonical path", async () => {
-    const revealed: string[] = [];
-    const t = await createDesktopApp({
-      reveal: async (filePath) => {
-        revealed.push(filePath);
-      },
-    });
-    try {
-      const { sessionId, workspace } = await seedSession(t);
-      const shell = apiClient(t.app, await desktopLoginCookie(t.app));
-      const res = await shell.post(`/api/sessions/${sessionId}/files/reveal?path=a.txt`);
-      expect(res.status).toBe(204);
-      expect(await res.text()).toBe("");
-      // The absolute path the OS can act on, with every symlink already resolved away.
-      expect(revealed).toEqual([await fs.realpath(path.join(workspace, "a.txt"))]);
-    } finally {
-      await t.cleanup();
-    }
+    const { sessionId, workspace } = await seedSession(desktop);
+    const res = await shell.post(`/api/sessions/${sessionId}/files/reveal?path=a.txt`);
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe("");
+    // The absolute path the OS can act on, with every symlink already resolved away.
+    expect(revealed).toEqual([await fs.realpath(path.join(workspace, "a.txt"))]);
   });
 
   it("refuses a browser session on the same desktop-mode server with desktop_shell_only", async () => {
-    const revealed: string[] = [];
-    const t = await createDesktopApp({
-      reveal: async (filePath) => {
-        revealed.push(filePath);
-      },
-    });
-    try {
-      const { cookie, sessionId } = await seedSession(t);
-      // The seeded admin signed in through the login form: the same user, the same machine
-      // for all the server knows, and still not the window the shell is drawing.
-      const res = await apiClient(t.app, cookie).post(
-        `/api/sessions/${sessionId}/files/reveal?path=a.txt`,
-      );
-      expect(res.status).toBe(403);
-      expect(((await res.json()) as ErrorBody).error.code).toBe("desktop_shell_only");
-      expect(revealed).toEqual([]);
-    } finally {
-      await t.cleanup();
-    }
+    const { cookie, sessionId } = await seedSession(desktop);
+    // The seeded admin signed in through the login form: the same user, the same machine
+    // for all the server knows, and still not the window the shell is drawing.
+    const res = await apiClient(desktop.app, cookie).post(
+      `/api/sessions/${sessionId}/files/reveal?path=a.txt`,
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as ErrorBody).error.code).toBe("desktop_shell_only");
+    expect(revealed).toEqual([]);
   });
 
   it("does not exist outside desktop mode", async () => {
-    const revealed: string[] = [];
     const t = await createTestApp({
       reveal: async (filePath) => {
         revealed.push(filePath);
@@ -902,42 +856,24 @@ describe("files/reveal route (the desktop shell's own window)", () => {
   });
 
   it("resolves the path as a read does: `..` is a 400 and a missing file a 404, with nothing opened", async () => {
-    const revealed: string[] = [];
-    const t = await createDesktopApp({
-      reveal: async (filePath) => {
-        revealed.push(filePath);
-      },
-    });
-    try {
-      const { sessionId } = await seedSession(t);
-      const shell = apiClient(t.app, await desktopLoginCookie(t.app));
-      const escape = await shell.post(
-        `/api/sessions/${sessionId}/files/reveal?path=${encodeURIComponent("../secret.txt")}`,
-      );
-      expect(escape.status).toBe(400);
-      const missing = await shell.post(`/api/sessions/${sessionId}/files/reveal?path=nope.txt`);
-      expect(missing.status).toBe(404);
-      expect(((await missing.json()) as ErrorBody).error.code).toBe("path_not_found");
-      expect(revealed).toEqual([]);
-    } finally {
-      await t.cleanup();
-    }
+    const { sessionId } = await seedSession(desktop);
+    const escape = await shell.post(
+      `/api/sessions/${sessionId}/files/reveal?path=${encodeURIComponent("../secret.txt")}`,
+    );
+    expect(escape.status).toBe(400);
+    const missing = await shell.post(`/api/sessions/${sessionId}/files/reveal?path=nope.txt`);
+    expect(missing.status).toBe(404);
+    expect(((await missing.json()) as ErrorBody).error.code).toBe("path_not_found");
+    expect(revealed).toEqual([]);
   });
 
   it("reports an opener that cannot start as 502 reveal_failed", async () => {
-    const t = await createDesktopApp({
-      reveal: () => Promise.reject(new Error("spawn xdg-open ENOENT")),
-    });
-    try {
-      const { sessionId } = await seedSession(t);
-      const shell = apiClient(t.app, await desktopLoginCookie(t.app));
-      const res = await shell.post(`/api/sessions/${sessionId}/files/reveal?path=a.txt`);
-      expect(res.status).toBe(502);
-      const body = (await res.json()) as ErrorBody;
-      expect(body.error.code).toBe("reveal_failed");
-      expect(body.error.message).toContain("ENOENT");
-    } finally {
-      await t.cleanup();
-    }
+    opener = () => Promise.reject(new Error("spawn xdg-open ENOENT"));
+    const { sessionId } = await seedSession(desktop);
+    const res = await shell.post(`/api/sessions/${sessionId}/files/reveal?path=a.txt`);
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.error.code).toBe("reveal_failed");
+    expect(body.error.message).toContain("ENOENT");
   });
 });
