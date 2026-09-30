@@ -100,6 +100,7 @@ Sign-in, sign-out, account claiming, and the current user's password, profile, p
 | GET | `/api/me` | The current user's info |
 | PUT | `/api/me/password` | Changes the password: `{oldPassword, newPassword}` |
 | PUT | `/api/me/profile` | Sets the avatar and nickname: `{displayName?, avatar?}` → `{user}` |
+| GET | `/api/me/avatar?rev=…` | The current user's avatar image; `rev` is `user.avatarRev`, and the response is cached for good |
 | GET | `/api/me/prefs` | Reads UI preferences |
 | PUT | `/api/me/prefs` | Writes UI preferences (shallow merge); `browserBackend` is refused (`400`), since it is chosen through [`PUT /api/builtin-browser/backend`](#agent-browser) |
 | GET | `/api/me/archived-sessions/groups` | The groups of [Settings › Archived chats](/settings#archived-chats): `?q=&source=&projectId=` → `{groups, total, asOf}` |
