@@ -1839,7 +1839,9 @@ describe("penguin org proposal (the company-proposals plugin's routes)", () => {
     );
     stdout.length = 0;
     expect(await cli(["org", "proposal", "server", "ls"])).toBe(0);
-    expect(out()).toBe("desk  http://localhost:53531  desk-id  agent:dev1  2026-09-02T10:00:00.000Z\n");
+    expect(out()).toBe(
+      "desk  http://localhost:53531  desk-id  agent:dev1  2026-09-02T10:00:00.000Z\n",
+    );
   });
 
   it("graph marks each server on its layer and lists the ones on no layer", async () => {

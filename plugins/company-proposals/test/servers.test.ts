@@ -76,9 +76,9 @@ describe("requireUnregistered", () => {
 
   it("refuses a repeat by name, by address, and by install id — naming the entry there", () => {
     expect(refused({ name: "DESK", url: "http://h:1", installId: "n" })?.message).toContain("desk");
-    expect(refused({ name: "y", url: "http://localhost:53531", installId: "n" })?.message).toContain(
-      "as desk",
-    );
+    expect(
+      refused({ name: "y", url: "http://localhost:53531", installId: "n" })?.message,
+    ).toContain("as desk");
     expect(
       refused({ name: "y", url: "http://127.0.0.1:53531", installId: "desk-id" })?.message,
     ).toContain("same server as desk");

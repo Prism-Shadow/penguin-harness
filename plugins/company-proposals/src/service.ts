@@ -1476,7 +1476,11 @@ export class ProposalService {
   }
 
   /** The registry: every registered server, in order; none is on it by default. */
-  async servers(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalServersResponse> {
+  async servers(
+    projectId: string,
+    orgId: string,
+    actor: OrgActor,
+  ): Promise<ProposalServersResponse> {
     const { ledger } = await this.open(projectId, orgId, actor);
     return { servers: registryOf(ledger.servers()) };
   }
@@ -1527,11 +1531,7 @@ export class ProposalService {
    * Always drawn: with no delivery repository at all it is the base branch alone, and
    * `errors` says why.
    */
-  async graph(
-    projectId: string,
-    orgId: string,
-    actor: OrgActor,
-  ): Promise<ProposalGraphResponse> {
+  async graph(projectId: string, orgId: string, actor: OrgActor): Promise<ProposalGraphResponse> {
     const { org, ledger } = await this.open(projectId, orgId, actor);
     const errors: string[] = [];
     const [config, servers] = await Promise.all([
