@@ -1051,7 +1051,7 @@ export const postCompact = (sessionId: string) =>
  * {@link TaskCreateResponse} — the switch compacts on the current model first and streams like
  * `/compact`; the new context's `session_meta` follows a completed compaction, and it is what
  * says the Session switched — or **200** with a {@link SessionResponse} when the Session never
- * ran and switched inside the request. `modelSwitchOutcome` tells the two apart by the body.
+ * ran and switched inside the request. Only the latter carries `session`.
  */
 export const switchSessionModel = (sessionId: string, body: SessionSwitchModelRequest) =>
   apiFetch<TaskCreateResponse | SessionResponse>(

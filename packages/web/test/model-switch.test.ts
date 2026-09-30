@@ -1,17 +1,14 @@
 /**
- * In-conversation model switch (model-switch.ts): the picker's gate, the two success shapes of
- * the switch request, the stale-row predicate that makes the Session DTO follow the running
- * context's `session_meta`, and the copy of the `/model` handoff, the confirm dialog and the
- * model-change marker in both locales. (The Web suite runs in a node environment and renders no
- * React, so the pure helpers are what get exercised.)
+ * In-conversation model switch (model-switch.ts): the picker's gate, what the switch will do to
+ * the context, the stale-row predicate that makes the Session row follow the running context's
+ * `session_meta`, and the copy of the `/model` handoff, the confirm dialog and the model-change
+ * marker in both locales. (The Web suite runs in a node environment and renders no React, so
+ * the pure helpers are what get exercised.)
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import {
-  modelSwitchOutcome,
-  sessionModelPick,
   sessionModelPickerDisabled,
   sessionRowStale,
   switchContextShape,
@@ -57,67 +54,31 @@ describe("switchContextShape", () => {
   });
 });
 
-describe("sessionModelPick", () => {
-  it("does nothing for the model the conversation is already on", () => {
-    expect(
-      sessionModelPick({ current: A, picked: { ...A }, status: "idle", shape: "compact" }),
-    ).toEqual({ act: "none" });
-  });
-
-  it("does nothing while busy, even for another model", () => {
-    for (const status of ["running", "compacting"] as const) {
-      expect(sessionModelPick({ current: A, picked: B, status, shape: "compact" })).toEqual({
-        act: "none",
-      });
-    }
-  });
-
-  it("asks first, carrying the transcript's shape so the dialog promises only what the switch does", () => {
-    for (const shape of ["compact", "empty", "compacted"] as const) {
-      expect(sessionModelPick({ current: A, picked: B, status: "idle", shape })).toEqual({
-        act: "confirm",
-        shape,
-      });
-    }
-    // Same provider, another model id is still another model.
-    expect(
-      sessionModelPick({
-        current: A,
-        picked: { provider: A.provider, modelId: "a-2" },
-        status: "idle",
-        shape: "compact",
-      }).act,
-    ).toBe("confirm");
-  });
-});
-
-describe("modelSwitchOutcome", () => {
-  it("tells the inline 200 (a SessionResponse) from the streaming 202 (a TaskCreateResponse)", () => {
-    const session = { sessionId: "session-1", ...B } as unknown as SessionInfo;
-    expect(modelSwitchOutcome({ session })).toEqual({ kind: "applied", session });
-    expect(modelSwitchOutcome({ sessionId: "session-2" })).toEqual({
-      kind: "streaming",
-      sessionId: "session-2",
-    });
-  });
-});
-
 describe("sessionRowStale", () => {
-  it("is never stale before a session_meta was seen", () => {
-    expect(sessionRowStale(null, A)).toBe(false);
+  /** A Session row, or a running context's model as its session_meta names it: both are a model under a Session id. */
+  const on = (model: { provider: string; modelId: string }, sessionId = "session-1") => ({
+    sessionId,
+    ...model,
+  });
+
+  it("is never stale before a session_meta was seen, or without a row", () => {
+    expect(sessionRowStale(null, on(A))).toBe(false);
     expect(sessionRowStale(null, null)).toBe(false);
+    expect(sessionRowStale(on(B), null)).toBe(false);
   });
 
   it("is not stale while the row names the running context's model", () => {
-    expect(sessionRowStale({ ...A }, A)).toBe(false);
+    expect(sessionRowStale(on(A), on(A))).toBe(false);
   });
 
   it("is stale when the running context's model differs from the row's, by either half", () => {
-    expect(sessionRowStale(B, A)).toBe(true);
-    expect(sessionRowStale({ provider: A.provider, modelId: "a-2" }, A)).toBe(true);
-    expect(sessionRowStale({ provider: "other", modelId: A.modelId }, A)).toBe(true);
-    // A row not loaded yet disagrees with any model the stream names.
-    expect(sessionRowStale(B, null)).toBe(true);
+    expect(sessionRowStale(on(B), on(A))).toBe(true);
+    expect(sessionRowStale(on({ provider: A.provider, modelId: "a-2" }), on(A))).toBe(true);
+    expect(sessionRowStale(on({ provider: "other", modelId: A.modelId }), on(A))).toBe(true);
+  });
+
+  it("says nothing about another Session's row: the stream of the conversation the page just left", () => {
+    expect(sessionRowStale(on(B, "session-1"), on(A, "session-2"))).toBe(false);
   });
 });
 

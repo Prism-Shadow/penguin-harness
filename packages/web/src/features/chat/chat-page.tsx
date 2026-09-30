@@ -115,12 +115,7 @@ import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { modelLabel } from "./model-select";
-import {
-  modelSwitchOutcome,
-  sessionModelPick,
-  sessionRowStale,
-  switchContextShape,
-} from "./model-switch";
+import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "./model-switch";
 import type { SwitchContextShape } from "./model-switch";
 import { hasConfiguredKey, promotedPricing, sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
@@ -1687,32 +1682,29 @@ export function ChatPage() {
   );
 
   // Session toolbar model picker: switches THIS conversation's model (the `/model` handoff opens
-  // a new conversation instead). Re-picking the current model does nothing; any other pick asks
-  // first, worded for what the switch will do: compact the context on the current model before
-  // moving on, or — right after a compaction, when there is nothing to compact — continue on
-  // the picked model from the summary already held.
+  // a new conversation instead). Re-picking the current model does nothing, and neither does a
+  // pick that raced a Task starting (the picker is disabled then, and the server would refuse
+  // it anyway); any other pick asks first, worded for what the switch will do: compact the
+  // context on the current model before moving on, or — right after a compaction, when there is
+  // nothing to compact — continue on the picked model from the summary already held.
   const onPickSessionModel = useCallback(
     (ref: ModelRefDto) => {
-      if (!selected) return;
-      const pick = sessionModelPick({
-        current: { provider: selected.provider, modelId: selected.modelId },
-        picked: ref,
-        status: stream.taskState,
-        // Read at pick time: the model's items mutate in place. The live tail decides, behind
-        // whatever window was backfilled above it.
-        shape: switchContextShape([...stream.prefixItems, ...stream.model.items]),
-      });
-      if (pick.act === "confirm") setModelSwitchAsk({ to: ref, shape: pick.shape });
+      if (!selected || sameModelRef(ref, selected)) return;
+      if (sessionModelPickerDisabled(stream.taskState)) return;
+      // Read at pick time: the model's items mutate in place. The live tail decides, behind
+      // whatever window was backfilled above it.
+      const shape = switchContextShape([...stream.prefixItems, ...stream.model.items]);
+      setModelSwitchAsk({ to: ref, shape });
     },
     [selected, stream.taskState, stream.prefixItems, stream.model],
   );
 
   // The dialog's confirm. 202 = the switch is streaming: the compaction row (or, right after a
-  // compaction, the model-change marker alone) carries it from here, and the effect below
-  // refetches the Session once the new context's session_meta names the new model. 200 = the
-  // Session never ran and switched inside the request: its row is applied at once. A refusal
-  // (409 busy / same model / not configured / unavailable / compaction not configured) is a
-  // toast.
+  // compaction, the model-change marker alone) carries it from here, and the effect below moves
+  // the Session row once the new context's session_meta names the new model. 200 = the Session
+  // never ran and switched inside the request: the row comes back with the response. A refusal
+  // (409 busy / same model / not configured / unavailable / compaction not configured / summary
+  // too large) is a toast.
   const confirmModelSwitch = useCallback(async () => {
     const ask = modelSwitchAsk;
     if (!selected || ask === null || modelSwitchPosting) return;
@@ -1724,9 +1716,8 @@ export function ChatPage() {
         provider: ask.to.provider,
         modelId: ask.to.modelId,
       });
-      const outcome = modelSwitchOutcome(res);
-      if (outcome.kind === "applied") {
-        applySessionRow(outcome.session);
+      if ("session" in res) {
+        applySessionRow(res.session);
         toastSuccess(S.chat.modelSwitchInSessionApplied(to));
         return;
       }
@@ -1738,7 +1729,7 @@ export function ChatPage() {
           : S.chat.modelSwitchInSessionSwitching(to),
       );
       // The switch shares get-or-resume-or-heal with /compact: follow a self-healed id.
-      await syncHealedSessionId(selected.sessionId, outcome.sessionId);
+      await syncHealedSessionId(selected.sessionId, res.sessionId);
     } catch (e) {
       toastError(apiErrorText(e, { modelId: ask.to.modelId }));
     } finally {
@@ -1754,47 +1745,20 @@ export function ChatPage() {
     syncHealedSessionId,
   ]);
 
-  // The Session DTO (model badge, context window, window notice, header price) is the authority
-  // for the current model, and nothing on the stream updates it. When the running context's
-  // session_meta names another model than the row on hand — a switch completed, on this tab or
-  // another one watching the Session, or the row was held from before a switch — the row is
-  // refetched once the Session is idle again. Once per Session and model pair — recorded only
-  // when the fetch succeeded, so a server row that still disagrees is not refetched in a loop,
-  // while a failed fetch (one transient error) is retried at the next change and surfaced,
-  // rather than leaving the badge, the context ring and the price on the old model until a
-  // reload. Runs per stream version because the model mutates in place; one fetch in flight
-  // per pair.
-  const staleRowFetchedRef = useRef<string | null>(null);
-  const staleRowFetchingRef = useRef<string | null>(null);
+  // The Session row (model badge, context window, window notice, header price) follows the
+  // model the conversation is on: when the running context's session_meta names another model
+  // than the row on hand — a switch completed, on this tab or another one watching the
+  // Session, or the row was held from before a switch — the row moves to it in place, the way
+  // a title does. The server moved its own row before it published that record. Runs per
+  // stream version because the model mutates in place.
   useEffect(() => {
-    const contextModel = stream.model.contextModel;
-    if (selectedSessionId === null || stream.loading || stream.taskState !== "idle") return;
-    if (contextModel === null || !sessionRowStale(contextModel, activeModelRef)) return;
-    const key = `${selectedSessionId}:${contextModel.provider}/${contextModel.modelId}`;
-    if (staleRowFetchedRef.current === key || staleRowFetchingRef.current === key) return;
-    staleRowFetchingRef.current = key;
-    void api
-      .getSession(selectedSessionId)
-      .then((res) => {
-        staleRowFetchedRef.current = key;
-        applySessionRow(res.session);
-      })
-      .catch((e: unknown) => toastError(apiErrorText(e)))
-      .finally(() => {
-        if (staleRowFetchingRef.current === key) staleRowFetchingRef.current = null;
-      });
-    // `version` is the model's change signal; the model ref is rebuilt per render from the row.
+    const running = stream.model.contextModel;
+    if (!selected || running === null || stream.loading) return;
+    if (!sessionRowStale(running, selected)) return;
+    applySessionRow({ ...selected, provider: running.provider, modelId: running.modelId });
+    // `version` is the model's change signal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    stream.version,
-    stream.model,
-    stream.loading,
-    stream.taskState,
-    selectedSessionId,
-    selected?.provider,
-    selected?.modelId,
-    applySessionRow,
-  ]);
+  }, [stream.version, stream.model, stream.loading, selected, applySessionRow]);
 
   // "New Chat" = enter draft state: no Session is created until the first message is sent.
   // Typed-but-unsent text in the ACTIVE new-chat draft first becomes a parked draft

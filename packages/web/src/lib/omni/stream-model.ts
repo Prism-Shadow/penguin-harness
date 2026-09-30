@@ -493,13 +493,13 @@ export interface StreamModel {
   /** Absolute `agent_state` path from session_meta (null until it arrives); the Memory root `<agent_state>/memory/` for the Task summary's memory-change rows. */
   agentState: string | null;
   /**
-   * The model the running context was opened on, from the latest `session_meta` (null until one
-   * arrives). A Session's model can change between contexts — each context's meta records its
-   * own — so this follows rotations, and a main-session meta naming another model than the one
-   * held pushes a model-change marker. Display only: the Session DTO stays the authority for the
-   * current model (the chat page refetches it when the two disagree).
+   * The model the running context was opened on, and the Session its `session_meta` names (null
+   * until one arrives). A Session's model can change between contexts — each context's meta
+   * records its own — so this follows rotations, and a main-session meta naming another model
+   * than the one held pushes a model-change marker. The chat page moves its Session row to this
+   * model when the two disagree (see `sessionRowStale`).
    */
-  contextModel: { provider: string; modelId: string } | null;
+  contextModel: { sessionId: string; provider: string; modelId: string } | null;
   /**
    * Elapsed-time stamps for the subagents panel's topology nodes (nested models only — the main
    * session's timing is covered by task stats). Stamped in routeNested: the `firstSeen` pair when
@@ -782,12 +782,12 @@ export function pushMessage(
       model.items.push({
         kind: "model_change",
         id: nextId(model),
-        from: held,
+        from: { provider: held.provider, modelId: held.modelId },
         to: next,
         ...(tsMs !== undefined ? { tsMs } : {}),
       });
     }
-    model.contextModel = next;
+    model.contextModel = { sessionId: p.session_id, ...next };
   }
   if (msg.type === "session_meta" && model.nested) {
     const p = msg.payload as SessionMetaPayload;

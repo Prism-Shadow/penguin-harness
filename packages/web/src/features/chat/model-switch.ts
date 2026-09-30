@@ -8,17 +8,11 @@
  * streams an ordinary compaction row, then the new context's `session_meta`), except for a
  * Session that never ran, which has no context to compact and switches inside the request (200
  * with the updated Session). Only that `session_meta` says the Session moved: the stream model
- * turns it into a model-change marker, and the page refetches the Session row when the row
- * names another model (see sessionRowStale). A compaction that fails streams no meta, and the
- * Session stays on the model it was on.
+ * turns it into a model-change marker, and the page moves its Session row to the model it
+ * names (see sessionRowStale). A compaction that fails streams no meta, and the Session stays
+ * on the model it was on.
  */
-import type {
-  ModelRefDto,
-  SessionInfo,
-  SessionResponse,
-  SessionStatus,
-  TaskCreateResponse,
-} from "@prismshadow/penguin-server/api";
+import type { ModelRefDto, SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { sameModelRef } from "../models/model-grouping";
 import type { ThinkingSwitchItem } from "./thinking-level";
 
@@ -61,49 +55,22 @@ export function switchContextShape(items: ReadonlyArray<ThinkingSwitchItem>): Sw
 }
 
 /**
- * What a pick asks of the page:
- * - `"none"` — the current model (nothing to switch), or a pick that raced a Task starting
- *   (the picker is disabled then, and the server would refuse it anyway);
- * - `"confirm"` — open the confirm dialog, worded for `shape` (see {@link SwitchContextShape}).
- */
-export type SessionModelPick = { act: "none" } | { act: "confirm"; shape: SwitchContextShape };
-
-export function sessionModelPick(opts: {
-  current: ModelRefDto | null;
-  picked: ModelRefDto;
-  status: SessionStatus;
-  /** The loaded transcript's shape (the live tail behind any backfilled window), see `switchContextShape`. */
-  shape: SwitchContextShape;
-}): SessionModelPick {
-  if (sameModelRef(opts.picked, opts.current)) return { act: "none" };
-  if (sessionModelPickerDisabled(opts.status)) return { act: "none" };
-  return { act: "confirm", shape: opts.shape };
-}
-
-/**
- * The two success shapes of `POST …/switch-model`, told apart by the body (the client does not
- * expose the status code): a {@link SessionResponse} carries `session` — the Session never ran
- * and already switched — while a {@link TaskCreateResponse} carries the (possibly self-healed)
- * `sessionId` of a switch that is now streaming.
- */
-export type ModelSwitchOutcome =
-  { kind: "applied"; session: SessionInfo } | { kind: "streaming"; sessionId: string };
-
-export function modelSwitchOutcome(res: TaskCreateResponse | SessionResponse): ModelSwitchOutcome {
-  if ("session" in res) return { kind: "applied", session: res.session };
-  return { kind: "streaming", sessionId: res.sessionId };
-}
-
-/**
- * Whether the Session row on hand is stale: the running context's `session_meta` (the stream
- * model's `contextModel`) names another model than the row does — a switch completed, on this
- * tab or another one watching the Session, or the row was held from before a switch. The page
- * refetches the row once the Session is idle. False while no meta has been seen: a history
- * window that starts after the context's meta derives nothing, and the row stands.
+ * Whether the Session row on hand names another model than the conversation is on: the running
+ * context's `session_meta` (the stream model's `contextModel`) is of this Session and says so —
+ * a switch completed, on this tab or another one watching the Session, or the row was held from
+ * before a switch. The page then moves the row to that model; the server moved its own before
+ * it published the record. False while no meta of this Session has been seen: a history window
+ * that starts after the context's meta derives nothing, and the stream of a conversation the
+ * page has just left says nothing about the row it now holds.
  */
 export function sessionRowStale(
-  contextModel: ModelRefDto | null,
-  current: ModelRefDto | null,
+  contextModel: (ModelRefDto & { sessionId: string }) | null,
+  row: Pick<SessionInfo, "sessionId" | "provider" | "modelId"> | null,
 ): boolean {
-  return contextModel !== null && !sameModelRef(contextModel, current);
+  return (
+    contextModel !== null &&
+    row !== null &&
+    contextModel.sessionId === row.sessionId &&
+    !sameModelRef(contextModel, row)
+  );
 }

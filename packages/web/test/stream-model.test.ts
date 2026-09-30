@@ -451,7 +451,7 @@ describe("approvals and events", () => {
     // The window's first meta only sets the context model.
     pushMessage(m, onModel("anthropic", "a-1"));
     expect(items(m)).toEqual([]);
-    expect(m.contextModel).toEqual({ provider: "anthropic", modelId: "a-1" });
+    expect(m.contextModel).toEqual({ sessionId: "s1", provider: "anthropic", modelId: "a-1" });
 
     // A switch streams an ordinary manual pair, then the new context's meta on another model.
     pushMessage(
@@ -468,7 +468,7 @@ describe("approvals and events", () => {
       to: { provider: "openai", modelId: "b-2" },
       tsMs: Date.parse("2026-09-17T08:00:00.000Z"),
     });
-    expect(m.contextModel).toEqual({ provider: "openai", modelId: "b-2" });
+    expect(m.contextModel).toEqual({ sessionId: "s1", provider: "openai", modelId: "b-2" });
 
     // A same-pair rewrite — an ordinary rotation's meta, or the same record served twice by
     // history and the live tail — pushes nothing.
@@ -483,7 +483,7 @@ describe("approvals and events", () => {
     expect(child.model.meta).toMatchObject({ provider: "deepseek", modelId: "ds-1" });
     expect(markers(child.model)).toEqual([]);
     expect(markers(m)).toHaveLength(1);
-    expect(m.contextModel).toEqual({ provider: "openai", modelId: "b-2" });
+    expect(m.contextModel).toEqual({ sessionId: "s1", provider: "openai", modelId: "b-2" });
   });
 
   it("a round settled behind a switch's compaction row and marker places its stats row above both", () => {
