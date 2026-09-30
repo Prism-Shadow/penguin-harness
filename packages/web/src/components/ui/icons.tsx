@@ -161,6 +161,9 @@ export function CloseButton({
   );
 }
 
+/** Plus: "add one of these" — the dock's add-tab trigger, the terminal page's new shell. */
+export const ADD_ICON = "M12 5v14M5 12h14";
+
 /**
  * "No key" marker for a model row without an API key — the model picker's and the models
  * page's: a key struck through by a prohibition slash (grayscale via currentColor, matching
