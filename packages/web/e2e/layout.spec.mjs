@@ -27,10 +27,11 @@
  *   chrome used to stop fitting below ~412px;
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - the collapsed rail shows, in product-specified order, last conversation / new chat /
- *   Agents / Plugins / Models / Cost Center / Evaluation Center, each labeled by a
- *   localized (en + zh) styled tooltip on hover and by no native `title` (two tooltips would
- *   stack); "last conversation" targets the most recently active non-archived session and is
- *   disabled while none exists; expanding from the rail restores the pinned sidebar;
+ *   Agents / Models / Plugins / Cost Center / Evaluation Center (the user is a member, so no
+ *   Machines), each labeled by a localized (en + zh) styled tooltip on hover and by no native
+ *   `title` (two tooltips would stack); "last conversation" targets the most recently active
+ *   non-archived session and is disabled while none exists; expanding from the rail restores
+ *   the pinned sidebar;
  * - login page: a single brand penguin logo above the form (part of the form area; the
  *   background still only has the trace animation), the trace animation grows in after a
  *   delayed blank first paint, no two trace segments cross or touch (except where a fork shares
@@ -419,20 +420,24 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
     "Last conversation",
     "New chat",
     "Agents",
-    "Plugins",
     "Models",
+    "Plugins",
     "Cost Center",
     "Evaluation Center",
   ];
   const attrs = (name) =>
     entries.evaluateAll((els, n) => els.map((el) => el.getAttribute(n)), name);
-  expect(await attrs("aria-label"), "rail order (en)").toEqual(EN);
+  // An entry on a badge trail appends what is waiting (" · …") to its name, and Models does
+  // here: replacing the Project's model table above leaves presets to sync. The order is
+  // about the names.
+  const names = async () => (await attrs("aria-label")).map((label) => label.split(" · ")[0]);
+  expect(await names(), "rail order (en)").toEqual(EN);
   // No native title anywhere on the rail: it would open a second, slower tooltip under the
   // styled one, which is the whole reason the styled one exists.
   expect(await attrs("title"), "rail carries no native tooltips (en)").toEqual(EN.map(() => null));
   const tooltip = page.getByTestId("tooltip");
   await rail.getByRole("link", { name: "Models" }).hover();
-  await expect(tooltip, "rail tooltip (en)").toHaveText("Models");
+  await expect(tooltip, "rail tooltip (en)").toHaveText(/^Models/);
   await rail.getByRole("button", { name: "Last conversation" }).hover();
   await expect(tooltip, "rail tooltip follows the pointer (en)").toHaveText("Last conversation");
 
@@ -491,15 +496,16 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
   await page.reload();
   await expect(entries).toHaveCount(7);
-  const ZH = ["最近一次对话", "新建对话", "智能体", "插件市场", "模型库", "成本中心", "评估中心"];
-  expect(await attrs("aria-label"), "rail order (zh)").toEqual(ZH);
+  const ZH = ["最近一次对话", "新建对话", "智能体", "模型库", "插件市场", "成本中心", "评估中心"];
+  expect(await names(), "rail order (zh)").toEqual(ZH);
   expect(await attrs("title"), "rail carries no native tooltips (zh)").toEqual(ZH.map(() => null));
   await rail.getByRole("link", { name: "模型库" }).hover();
-  await expect(page.getByTestId("tooltip"), "rail tooltip (zh)").toHaveText("模型库");
+  await expect(page.getByTestId("tooltip"), "rail tooltip (zh)").toHaveText(/^模型库/);
 
   // --- Expand: the rail's top button (localized) restores the pinned sidebar ---
   await page.getByRole("button", { name: "展开侧栏" }).click();
-  await expect(page.locator("aside")).toHaveClass(/w-64/);
+  // The app's sidebar is the first <aside>; the Plugins page open here has one of its own.
+  await expect(page.locator("aside").first()).toHaveClass(/w-64/);
   await expect(page.getByRole("button", { name: "收起侧栏" })).toBeVisible();
 });
 

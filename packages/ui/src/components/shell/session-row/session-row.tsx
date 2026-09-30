@@ -55,7 +55,7 @@ export interface RowActionItem {
 }
 
 /** A hover button's glyph: a notch under the icon-button rung, sized to the row's 24px buttons. */
-const ACTION_GLYPH = 14;
+export const ROW_ACTION_GLYPH = 14;
 
 /**
  * The hover buttons: the reveal is gated on pointer events exactly as on opacity, because an
@@ -63,9 +63,9 @@ const ACTION_GLYPH = 14;
  * are invisible for the whole session. Keyboard focus is unaffected by `pointer-events`, so Tab
  * still reaches them, and revealing one re-arms its click. `focus` rather than `focus-visible`:
  * the time they swap with hides on plain focus-within, and the two must agree or the slot goes
- * blank.
+ * blank. The sidebar's nav entries draw their pin toggle with the same look (sidebar-frame.tsx).
  */
-const HOVER_BUTTON =
+export const ROW_HOVER_BUTTON =
   "pointer-events-none flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-fg-subtle opacity-0 transition-[color,opacity] duration-150 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100";
 
 /**
@@ -99,11 +99,11 @@ export function RowHoverActions({
           data-tooltip={action.label}
           aria-label={action.label}
           onClick={action.onSelect}
-          className={`${HOVER_BUTTON} ${
+          className={`${ROW_HOVER_BUTTON} ${
             action.danger === true ? "hover:text-tone-danger-fg" : "hover:text-fg"
           }`}
         >
-          <GlyphIcon d={action.glyph} size={ACTION_GLYPH} />
+          <GlyphIcon d={action.glyph} size={ROW_ACTION_GLYPH} />
         </button>
       ))}
       <button
@@ -112,11 +112,11 @@ export function RowHoverActions({
         aria-label={moreLabel}
         aria-haspopup="menu"
         onClick={openMore}
-        className={`${HOVER_BUTTON} hover:text-fg`}
+        className={`${ROW_HOVER_BUTTON} hover:text-fg`}
       >
         {/* Hairline-stroke dots vanish at this size, so the ellipsis is drawn filled: the stroke
             rides on top of the fill, landing the dots at the other glyphs' weight. */}
-        <GlyphIcon d={ICONS.ellipsis} size={ACTION_GLYPH} filled />
+        <GlyphIcon d={ICONS.ellipsis} size={ROW_ACTION_GLYPH} filled />
       </button>
     </>
   );
