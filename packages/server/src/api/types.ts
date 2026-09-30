@@ -4813,10 +4813,9 @@ export interface SkillArchiveInstallRequest {
 
 /**
  * One published version of a plugin — the index entry format every plugin registry
- * speaks (modeled on the typst/packages `index.json` schema: a flat array of
- * per-version entries; a plugin published at several versions appears once per
- * version). Installation is out of scope here: an entry's `name` is the package
- * specifier a Project's plugin list names.
+ * speaks: a flat array of per-version entries, so a plugin published at several
+ * versions appears once per version. Installation is out of scope here: an entry's
+ * `name` is the package specifier a Project's plugin list names.
  */
 export interface PluginIndexEntry {
   /** Package specifier — the string a Project's plugin list names. */
