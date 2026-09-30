@@ -1,17 +1,17 @@
 /**
  * Console (`geek`) — as plain as a terminal. The interface and its reading text are set in IBM
  * Plex Sans; JetBrains Mono is kept for code and for the marks that are technical on purpose —
- * the status-line tags, a step's label and block bar, a chart's axis labels. Paper-white light
+ * the status-line tags, a step's label, a chart's axis labels. Paper-white light
  * and warm near-black dark with no fill on a card or a row (a card is the page), one accent —
  * black and white by default, the interface orange and five terminal hues as presets — square
  * corners everywhere, no shadow anywhere, hairlines only where they carry structure, a
  * ruled full-bleed window, a standalone frame a plain hairline box, the selected navigation row
  * set in the bold cut, a block caret, motion that jumps in steps, and the agent's work rendered
- * as a transcript — `└` steps, mono capitals, a hatched block bar. References: opencode.ai (the
- * paper and the warm black, the ruled column, the underline tabs, the calm dark), e2b.dev (the
- * orange, the square shapes, the stepped signals), claude.dev's blog (the tree, the progress
- * line, the near-boxless dark) and a Linux console (the owner's ask of 2026-09-29: as minimal as
- * possible, no decoration).
+ * as a transcript — `└` steps, mono capitals. References: opencode.ai (the paper and the warm
+ * black, the ruled column, the underline tabs, the calm dark), e2b.dev (the orange, the square
+ * shapes, the stepped signals), claude.dev's blog (the tree, the progress line, the near-boxless
+ * dark) and a Linux console (the owner's ask of 2026-09-29: as minimal as possible, no
+ * decoration).
  *
  * Status of each group:
  * - Light is opencode's paper (`#fdfcfc` page, `rgb(29 29 31)` ink, `rgb(100 98 98)` muted),
@@ -82,6 +82,7 @@
     --ui-canvas: #fbfafa;
     --ui-surface: var(--ui-canvas);
     --ui-surface-muted: #f4f2f2;
+    --ui-fill-neutral: var(--color-gray-100);
     --ui-inset: #f0eeee;
     --ui-overlay: var(--ui-canvas);
     --ui-overlay-backdrop: rgb(19 16 16 / 0.28);
@@ -411,6 +412,7 @@
        steps up, an inset steps down */
     --ui-canvas: #131010;
     --ui-surface-muted: #221f1f;
+    --ui-fill-neutral: var(--color-gray-800);
     --ui-inset: #0d0b0b;
     --ui-overlay-backdrop: rgb(0 0 0 / 0.6);
 
@@ -572,6 +574,9 @@
   /* Tabs: a 2px ink rule under the selected tab, opencode's underline; no hover bar. */
   :root[data-theme="geek"] .ui-underline-nav [role="tab"] {
     position: relative;
+    /* The ink rule below is the only marker: the host's own bottom border (and its hover bar)
+       gives way. */
+    border-bottom-color: transparent;
   }
   :root[data-theme="geek"] .ui-underline-nav [role="tab"]::after {
     content: "";
@@ -700,13 +705,11 @@
      its label is the mono face at the small rung, uppercase and tracked like an eyebrow, muted
      once the step is done and the body ink while it runs (the danger ink when it failed), the
      detail (a path, an argument preview, a duration) is muted in the host's own face (the host
-     sets a duration or a step count in mono and a description in the sans), and while the step
-     runs the progress slot draws a hatched block bar in the mono face: a dotted track of `░`
-     under a shaded fill of `▓` that advances a block at a time and starts over — indeterminate,
-     because a step has no percentage. The host hides the slot; the recipe shows it. A step in a
-     work group hangs off the `└` its tree row draws, so no connector is added here. The slots
-     are found anywhere inside the row (a card nests them in its own button). Under reduced
-     motion the bar holds one fill. */
+     sets a duration or a step count in mono and a description in the sans). The progress slot
+     stays hidden, as the host leaves it: the spinner and the ticking duration already say a step
+     is running (the owner dropped the block bar, 2026-09-30). A step in a work group hangs off
+     the `└` its tree row draws, so no connector is added here. The slots are found anywhere
+     inside the row (a card nests them in its own button). */
   :root[data-theme="geek"] .ui-activity {
     border-color: transparent;
     border-radius: 0;
@@ -742,40 +745,42 @@
   :root[data-theme="geek"] .ui-activity[data-state="error"] [data-slot="label"] {
     color: var(--ui-tone-danger-fg);
   }
+  /* Folds: the leading mark is the fold — ▸ closed, ▾ open, in the row's state ink (subtle when
+     settled, danger on error). While the row runs its spinner stays; the
+     chevrons go. */
+  :root[data-theme="geek"] .ui-activity :is([data-slot="toggle"], [data-slot="toggle-end"]) {
+    display: none;
+  }
+  :root[data-theme="geek"]
+    .ui-activity:has([data-slot="toggle"]):not([data-state="running"])
+    [data-slot="mark"]
+    > * {
+    display: none;
+  }
+  :root[data-theme="geek"]
+    .ui-activity:has([data-slot="toggle"]):not([data-state="running"])
+    [data-slot="mark"]::before {
+    content: "▸";
+    display: inline-block;
+    width: 1em;
+    line-height: 1;
+    text-align: center;
+    color: var(--ui-fg-subtle);
+  }
+  :root[data-theme="geek"]
+    :is(.ui-activity[aria-expanded="true"], .ui-activity:has(> [aria-expanded="true"])):has(
+      [data-slot="toggle"]
+    ):not([data-state="running"])
+    [data-slot="mark"]::before {
+    content: "▾";
+  }
+  :root[data-theme="geek"] .ui-activity[data-state="error"] [data-slot="mark"]::before {
+    color: var(--ui-tone-danger-fg);
+  }
   :root[data-theme="geek"] .ui-activity [data-slot="detail"] {
     font-size: var(--ui-text-small-size);
     color: var(--ui-fg-muted);
   }
-  :root[data-theme="geek"] .ui-activity[data-state="running"] [data-slot="progress"] {
-    position: relative;
-    display: inline-block;
-    vertical-align: middle;
-    font-family: var(--ui-font-mono);
-    font-size: var(--ui-text-small-size);
-    line-height: 1;
-    letter-spacing: 0;
-    color: var(--ui-fg-subtle);
-  }
-  :root[data-theme="geek"] .ui-activity[data-state="running"] [data-slot="progress"]::before {
-    content: "░░░░░░░░░░░░";
-  }
-  :root[data-theme="geek"] .ui-activity[data-state="running"] [data-slot="progress"]::after {
-    content: "▓▓▓▓▓▓▓▓▓▓▓▓";
-    position: absolute;
-    inset: 0;
-    color: var(--ui-fg);
-    clip-path: inset(0 50% 0 0);
-    animation: ui-geek-progress 2.4s steps(12, end) infinite;
-  }
-  @keyframes ui-geek-progress {
-    from {
-      clip-path: inset(0 100% 0 0);
-    }
-    to {
-      clip-path: inset(0 0 0 0);
-    }
-  }
-
   /* A reply still arriving is typed out behind a block cursor, the way a terminal prints (the
      reveal paces it a character at a time): the stream's caret is a solid cell in the body
      ink, one character of the chrome's mono face wide, with the host's own glyph painted out.

@@ -1,13 +1,13 @@
 /**
  * The expanded Markdown body the thinking block and the compaction sections share
- * (features/chat/disclosure-row.tsx). vitest is node-only here (`environment: "node"`, no
- * jsdom), so this pins the contract against the source text and styles.css — the
+ * (the shared UI package's disclosure-row.tsx). vitest is node-only here (`environment: "node"`, no
+ * jsdom), so this pins the contract against the source text and the stylesheets — the
  * title-reveal.test.ts convention.
  *
  * The fragile part is not the class list, it is **where the end-margin reset lives**. The
- * `.md-body` rules in styles.css sit outside any cascade layer while Tailwind's utilities are
- * emitted inside `@layer utilities`, and an unlayered declaration beats a layered one at any
- * specificity — so a `[&>*:first-child]:mt-0` utility on the body is silently inert against
+ * `.md-body` rules (the shared UI package's prose.css) sit outside any cascade layer while
+ * Tailwind's utilities are emitted inside `@layer utilities`, and an unlayered declaration beats a
+ * layered one at any specificity — so a `[&>*:first-child]:mt-0` utility on the body is inert against
  * `.md-body`'s own `margin: 0.5rem 0`, and the body carries double the inset it claims.
  * Nothing about the class list looks wrong when that happens, which is why it is asserted here.
  *
@@ -16,15 +16,15 @@
  * rounded box the transcript uses for a quotation.
  */
 import { describe, expect, it } from "vitest";
-import {
-  DISCLOSURE_BODY_MD_CLASS,
-  DISCLOSURE_OUTPUT_PRE_CLASS,
-} from "../src/features/chat/disclosure-row";
+import { DISCLOSURE_BODY_MD_CLASS, DISCLOSURE_OUTPUT_PRE_CLASS } from "@prismshadow/penguin-ui";
 import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
 const SCAN = scanSources();
 
-const thinking = sourceFile(SCAN, "packages/web/src/features/chat/thinking-block.tsx").text;
+const thinking = sourceFile(
+  SCAN,
+  "packages/ui/src/components/chat/thinking-block/thinking-block.tsx",
+).text;
 const compaction = sourceFile(SCAN, "packages/web/src/features/chat/compaction-banner.tsx").text;
 
 /**
@@ -49,8 +49,9 @@ const unlayeredRules = (sheet: string) => {
 };
 
 /**
- * The unlayered rules of every stylesheet under the scanned roots — styles.css today, the shared
- * package's component CSS once the Markdown body moves there — each file stripped on its own.
+ * The unlayered rules of every stylesheet under the scanned roots — the app's styles.css and the
+ * shared package's component CSS, where the Markdown body's rules live — each file stripped on its
+ * own.
  */
 const unlayered = SCAN.files
   .filter((file) => file.name.endsWith(".css"))
@@ -60,7 +61,7 @@ const unlayered = SCAN.files
 describe("the disclosure body's sources", () => {
   it("scan every source root, and find the shared classes in one place", () => {
     expectEveryRootScanned(SCAN);
-    expectSingleHome(SCAN, "packages/web/src/features/chat/disclosure-row.tsx");
+    expectSingleHome(SCAN, "packages/ui/src/components/layout/disclosure-row/disclosure-row.tsx");
   });
 });
 
@@ -85,15 +86,7 @@ describe("the disclosure body's relation to the output block", () => {
   it("wears the same divider, inset and ink", () => {
     const body = classes(DISCLOSURE_BODY_MD_CLASS);
     const output = classes(DISCLOSURE_OUTPUT_PRE_CLASS);
-    for (const shared of [
-      "border-t",
-      "border-gray-100",
-      "dark:border-gray-800",
-      "px-3",
-      "py-2",
-      "text-gray-600",
-      "dark:text-gray-300",
-    ]) {
+    for (const shared of ["border-t", "border-line-muted", "px-3", "py-2", "text-fg-muted"]) {
       expect(output).toContain(shared);
       expect(body).toContain(shared);
     }

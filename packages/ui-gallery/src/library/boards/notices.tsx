@@ -1,8 +1,9 @@
 /**
  * 提示条: the package's NoticeStrip in every tone — plain, with the leading mark a call site draws
- * (`data-slot="icon"`, which a theme that draws its own tone mark hides), and with actions.
+ * (`data-slot="icon"`, which a theme that draws its own tone mark hides), and with actions — then
+ * the Notice built on it in its three variants with its action slots, and the page to-do.
  */
-import { Button, Dot, NoticeStrip } from "@prismshadow/penguin-ui";
+import { Button, Dot, ICONS, Notice, NoticeStrip, TodoNotice } from "@prismshadow/penguin-ui";
 import type { NoticeStripTone } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
@@ -52,6 +53,44 @@ export function NoticesBoard() {
           ))}
         </div>
       </BoardGroup>
+      <BoardGroup title={t.variants}>
+        <div className="lib-stack">
+          <span className="lib-caption">{t.variantNames.strip}</span>
+          <div className="lib-box">
+            <Notice tone="danger" variant="strip" retry={{ label: t.retry, onClick: noop }}>
+              {t.texts.danger}
+            </Notice>
+          </div>
+          <span className="lib-caption">{t.variantNames.callout}</span>
+          <Notice
+            tone="attention"
+            variant="callout"
+            title={t.calloutTitle}
+            glyph={ICONS.info}
+            dismiss={{ label: t.dismiss, onClick: noop }}
+            action={{ label: t.action, onClick: noop }}
+          >
+            {t.calloutBody}
+          </Notice>
+          <span className="lib-caption">{t.variantNames.inline}</span>
+          <Notice tone="info" variant="inline" dismiss={{ onClick: noop }}>
+            {t.texts.info}
+          </Notice>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.todo}>
+        <div className="lib-stack">
+          <TodoNotice
+            text={t.todoText}
+            actionLabel={t.todoAction}
+            onAction={noop}
+            dismissLabel={t.todoDismiss}
+            onDismiss={noop}
+          />
+        </div>
+      </BoardGroup>
     </div>
   );
 }
+
+function noop() {}

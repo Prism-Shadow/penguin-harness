@@ -86,7 +86,7 @@ function DropTarget(props: {
     <div
       data-dock-pos={props.position}
       data-testid="dock-layout-target"
-      className={`${props.shape} rounded-[3px] border transition-colors duration-100 ${
+      className={`${props.shape} rounded-[3px] border transition-colors duration-150 ${
         active
           ? "border-sky-400 bg-sky-500/60"
           : "border-gray-400/70 bg-gray-500/10 dark:border-white/30 dark:bg-white/10"
@@ -121,7 +121,7 @@ export function DockDragOverlay({ candidate }: { candidate: DockPosition | null 
       {/* Drop-target widget, kept a comfortable margin off the host's corner. */}
       <div
         data-testid="dock-layout-widget"
-        className="fixed z-[70] flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white/95 p-2.5 shadow-lg dark:border-white/20 dark:bg-gray-900/90"
+        className="fixed z-[70] flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white/95 p-2 shadow-lg dark:border-white/20 dark:bg-gray-900/90"
         style={{ left: host.right - 108, top: host.bottom - 96 }}
       >
         <DropTarget position="bottom" candidate={candidate} shape="h-4 w-9" />

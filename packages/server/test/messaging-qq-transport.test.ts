@@ -27,6 +27,7 @@ import {
   QQApiError,
   createQQTransport,
 } from "../src/runtime/messaging/qq-api.js";
+import { MessagingChannelError } from "../src/runtime/messaging/connector.js";
 import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
 import { waitFor } from "./helpers.js";
 
@@ -349,7 +350,7 @@ describe("the QQ OpenAPI send", () => {
     });
   });
 
-  it("types a refusal as QQApiError and a transfer failure as a plain Error", async () => {
+  it("types a refusal as QQApiError and a transfer failure as one that recovers", async () => {
     // The distinction the markdown-to-text fallback turns on: the platform answered and
     // delivered nothing, so another form of the same message is safe to send — where a
     // request that never completed may already have been delivered.
@@ -360,6 +361,19 @@ describe("the QQ OpenAPI send", () => {
         const err = await bot.sendMessage(args).catch((e: unknown) => e);
         expect(err).toBeInstanceOf(QQApiError);
         expect((err as QQApiError).code).toBe(40054001);
+        // A 4xx refusal meets the same no next time: the error table keeps it a defect.
+        expect((err as QQApiError).recovers).toBe(false);
+        expect(messagingErrorKind(err, "messaging_send_failed")).toBe("unexpected");
+      },
+    );
+    await withFetch(
+      (call) => (call.url.includes("/v2/") ? jsonResponse({ err_code: 22009 }, 503) : null),
+      async () => {
+        const bot = createQQTransport().createClient(CREDS);
+        const err = await bot.sendMessage(args).catch((e: unknown) => e);
+        // The platform's own fault, whatever its code says: the next send goes through.
+        expect(err).toBeInstanceOf(QQApiError);
+        expect(messagingErrorKind(err, "messaging_send_failed")).toBe("expected");
       },
     );
     await withFetch(
@@ -370,8 +384,10 @@ describe("the QQ OpenAPI send", () => {
       async () => {
         const bot = createQQTransport().createClient(CREDS);
         const err = await bot.sendMessage(args).catch((e: unknown) => e);
-        expect(err).toBeInstanceOf(Error);
+        expect(err).toBeInstanceOf(MessagingChannelError);
         expect(err).not.toBeInstanceOf(QQApiError);
+        expect((err as MessagingChannelError).recovers).toBe(true);
+        expect(messagingErrorKind(err, "messaging_send_failed")).toBe("expected");
       },
     );
   });
@@ -502,6 +518,15 @@ describe("the QQ gateway session", () => {
         await waitFor(() => h.sockets.length === 3);
         h.sockets[2]!.deliver({ op: OP_HELLO, d: { heartbeat_interval: 45_000 } });
         expect(h.sockets[2]!.frames(OP_IDENTIFY)).toHaveLength(1);
+
+        // The two closes look alike on the wire, so their verdicts come from the session: the
+        // reconnect the platform asked for is routine, and the refused resume — which loses
+        // whatever arrived in the gap — is not, and is reported although the same outage has
+        // already reported the routine one.
+        expect(h.errors.map((err) => messagingErrorKind(err, "messaging_connect_failed"))).toEqual([
+          "expected",
+          "unexpected",
+        ]);
       } finally {
         conn.close();
       }
@@ -555,6 +580,15 @@ describe("the QQ gateway session", () => {
     expect((await verdictOf(4009)).recovers).toBe(true);
     expect((await verdictOf(4900)).recovers).toBe(true);
     expect((await verdictOf(4913)).recovers).toBe(true);
+    // The transport's own closes: a socket that dropped with no close frame at all, and a server
+    // or proxy going away, failing or restarting. The next handshake is the whole of the fix.
+    expect((await verdictOf(1006)).recovers).toBe(true);
+    expect((await verdictOf(1001)).recovers).toBe(true);
+    expect((await verdictOf(1011)).recovers).toBe(true);
+    expect((await verdictOf(1014)).recovers).toBe(true);
+    // A close nobody explained is not presumed routine.
+    expect((await verdictOf(1000)).recovers).toBe(false);
+    expect((await verdictOf(1005)).recovers).toBe(false);
     // A rejected token and an intent the bot was never granted reconnect just as eagerly and
     // meet the identical refusal every time, so retrying is not recovery.
     expect((await verdictOf(4004)).recovers).toBe(false);
@@ -634,6 +668,9 @@ describe("the QQ gateway session", () => {
         expect(socket.closes).toBe(1);
         expect(h.errors).toHaveLength(1);
         expect(String(h.errors[0])).toContain("heartbeat");
+        // A dead pipe the next socket replaces: routine, whatever the retries meet next.
+        expect(h.errors[0]).toBeInstanceOf(MessagingChannelError);
+        expect(messagingErrorKind(h.errors[0], "messaging_connect_failed")).toBe("expected");
       } finally {
         conn.close();
       }
@@ -652,10 +689,67 @@ describe("the QQ gateway session", () => {
         expect(h.sockets[0]!.closes).toBe(1);
         expect(h.errors).toHaveLength(1);
         expect(String(h.errors[0])).toContain("handshake");
+        expect(messagingErrorKind(h.errors[0], "messaging_connect_failed")).toBe("expected");
       } finally {
         conn.close();
       }
     });
+  });
+
+  it("judges the two calls in front of the socket the way it judges a send", async () => {
+    // The token exchange and the gateway lookup are plain HTTPS: a request that never arrived
+    // may go through next time, and a refusal is judged by its status.
+    const firstError = (answer: (call: Call) => Response | null): Promise<unknown> =>
+      withFetch(answer, async () => {
+        const errors: unknown[] = [];
+        const conn = await createQQTransport({ gatewayRetryMs: () => 5 }).openGateway(CREDS, {
+          onMessage: () => {},
+          onError: (err) => {
+            errors.push(err);
+          },
+        });
+        try {
+          await waitFor(() => errors.length > 0);
+          return errors[0];
+        } finally {
+          conn.close();
+        }
+      });
+    const kindOf = (err: unknown) => messagingErrorKind(err, "messaging_connect_failed");
+
+    expect(
+      kindOf(
+        await firstError((call) => {
+          if (call.url.endsWith("/gateway")) throw new TypeError("fetch failed");
+          return null;
+        }),
+      ),
+    ).toBe("expected");
+    expect(
+      kindOf(
+        await firstError((call) => {
+          if (call.url.endsWith("/app/getAppAccessToken")) throw new TypeError("fetch failed");
+          return null;
+        }),
+      ),
+    ).toBe("expected");
+    expect(
+      kindOf(
+        await firstError((call) =>
+          call.url.endsWith("/gateway") ? jsonResponse({ message: "busy" }, 502) : null,
+        ),
+      ),
+    ).toBe("expected");
+    // A secret the platform refuses stays refused however often it is exchanged.
+    expect(
+      kindOf(
+        await firstError((call) =>
+          call.url.endsWith("/app/getAppAccessToken")
+            ? jsonResponse({ code: 100007, message: "appid invalid" }, 400)
+            : null,
+        ),
+      ),
+    ).toBe("unexpected");
   });
 
   it("stops opening sockets once the connection is closed", async () => {

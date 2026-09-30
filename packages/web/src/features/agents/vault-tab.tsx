@@ -33,7 +33,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { AiCreateModal, CreateButtons } from "../ai-create";
+import { AiCreateModal } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 
 /** Vault key naming rule (consistent with core/server): shell environment variable name. */
 const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -224,7 +225,7 @@ export function VaultTab({
       {/* Add entry points (owner): two separate buttons. The manual one opens the form in a modal
           (submitting the same key name overwrites the original value), the AI one the prompt. */}
       {isOwner && entries !== null && (
-        <CreateButtons
+        <AiCreateButtons
           size="sm"
           disabled={busy}
           onAi={() => setAiAdding(true)}

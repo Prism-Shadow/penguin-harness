@@ -19,6 +19,10 @@
  * - A folder the server may not read gets a box of its own: the desktop app's access request
  *   only on a Mac, in the shell, browsing its own server, and never Retry alone where there is
  *   something better to do.
+ * - The footer's no-folder button is there whenever the host offers no folder, and its tooltip
+ *   names the folder a temporary Workspace would get (a Windows path keeps its separator) —
+ *   none without the Agent's directory, while another machine is browsed, or for an unknown
+ *   layout.
  */
 import { describe, expect, it } from "vitest";
 import type { DirEntryInfo, DirListResponse } from "@prismshadow/penguin-server/api";
@@ -28,6 +32,7 @@ import {
   addToQuickAccess,
   canGoBack,
   canGoForward,
+  clearButton,
   defaultPlaces,
   deniedBox,
   drivePlaces,
@@ -45,6 +50,7 @@ import {
   saveQuickAccess,
   splitBreadcrumbs,
   stepSelection,
+  tempWorkspacePath,
   typeSelectIndex,
   visibleEntries,
 } from "../src/features/chat/workspace-finder-model";
@@ -383,5 +389,34 @@ describe("a folder the server may not read", () => {
       const box = deniedBox({ platform: "darwin", desktopShell: true, machine: null, ask });
       expect(box.allow !== "none" || box.settings !== null, ask.phase).toBe(true);
     }
+  });
+});
+
+describe("the footer's no-folder button", () => {
+  const stateDir = "/home/me/.penguin/data/default_project/agents/writer/agent_state";
+  const base = { offered: true, stateDir: null, machine: null };
+
+  it("is there whenever the host offers no folder", () => {
+    expect(clearButton({ ...base, offered: false })).toBeNull();
+    expect(clearButton(base)).not.toBeNull();
+  });
+
+  it("names the folder a temporary Workspace would get, in its tooltip", () => {
+    expect(clearButton({ ...base, stateDir })).toEqual({
+      fullPath: "/home/me/.penguin/data/default_project/agents/writer/workspaces/tmp-…",
+    });
+  });
+
+  it("names none without the Agent's directory, or while another machine is browsed", () => {
+    expect(clearButton(base)).toEqual({ fullPath: null });
+    expect(clearButton({ ...base, stateDir, machine: "far" })).toEqual({ fullPath: null });
+  });
+
+  it("keeps a Windows path's separator, and names nothing for an unknown layout", () => {
+    expect(tempWorkspacePath("C:\\Users\\me\\.penguin\\data\\p\\agents\\a\\agent_state")).toBe(
+      "C:\\Users\\me\\.penguin\\data\\p\\agents\\a\\workspaces\\tmp-…",
+    );
+    expect(tempWorkspacePath("/srv/agents/a/state")).toBeNull();
+    expect(tempWorkspacePath("/")).toBeNull();
   });
 });
