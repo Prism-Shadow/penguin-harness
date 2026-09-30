@@ -49,6 +49,7 @@ const POLICY: DeslopPolicy = {
  * W4's Notice), that wave; otherwise the wave that moves or rebuilds the file (A-architecture §7:
  * W1 marks and actions, W2 forms, W3 overlays, W4 layout, navigation, notices and data display, W5
  * content, W6 chat, W7 files, shell and dock, W8 charts). `W1b+W7` splits an entry between two.
+ * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight.
  */
 const ALLOWLIST: DeslopAllowlist = {
   "components/account/update-modal.tsx": {
@@ -71,6 +72,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "components/ui/copy-button.tsx": { 12: [2, "W1"] },
   "components/ui/group-list.tsx": { 12: [1, "W4"], 13: [3, "W4"], 14: [2, "W4"] },
   "components/ui/input.tsx": { 9: [1, "W2"] },
+  "components/ui/kbd.tsx": { 13: [1, "W10"] },
   "components/ui/option-menu.tsx": { 13: [1, "W2"] },
   "components/ui/paged-dialog.tsx": { 13: [1, "W3"], 14: [2, "W3"] },
   "components/ui/segmented.tsx": { 12: [2, "W2"] },
@@ -93,6 +95,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/benchmark/benchmark-page.tsx": { 13: [2, "W4"], 18: [1, "W4"] },
   "features/benchmark/create-benchmark-modal.tsx": { 13: [1, "W3"] },
   "features/benchmark/evaluation-detail-modal.tsx": { 13: [2, "W3"] },
+  "features/builtin-browser/browser-tab-strip.tsx": { 11: [2, "W10"], 12: [2, "W10"] },
   "features/chat/agent-topology-view.tsx": { 12: [1, "W6"], 13: [3, "W6"] },
   "features/chat/chat-input.tsx": { 7: [1, "W6"], 12: [7, "W6"], 13: [5, "W6"] },
   "features/chat/chat-page.tsx": { 6: [1, "W1b"], 12: [2, "W6"], 13: [3, "W6"], 15: [1, "W4"] },
@@ -106,6 +109,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/chat/memory-view.tsx": { 13: [2, "W6"] },
   "features/chat/message-item.tsx": { 4: [2, "W6"], 6: [1, "W6"], 13: [3, "W6"] },
   "features/chat/message-stream.tsx": { 11: [2, "W1b"] },
+  "features/chat/model-picker-modal.tsx": { 12: [1, "W10"] },
   "features/chat/shortcuts-folder.tsx": { 12: [1, "W7"] },
   "features/chat/step-banner.tsx": { 13: [1, "W6"], 14: [2, "W6"] },
   "features/chat/subagent-chip.tsx": { 11: [2, "W1b"], 13: [1, "W6"] },
@@ -120,6 +124,7 @@ const ALLOWLIST: DeslopAllowlist = {
     13: [1, "W7"],
     18: [1, "W7"],
   },
+  "features/chat/workspace-finder.tsx": { 12: [6, "W10"] },
   "features/chat/workspace-tree-view.tsx": { 13: [1, "W7"] },
   "features/company/beta-badge.tsx": { 13: [1, "W4"] },
   "features/company/calendar-page.tsx": { 12: [3, "W4"], 13: [10, "W4"] },
@@ -136,7 +141,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/company/org-chart-page.tsx": { 13: [2, "W4"] },
   "features/company/org-dialogs.tsx": { 13: [1, "W4"] },
   "features/company/org-layout.tsx": { 12: [1, "W4"], 13: [2, "W4"], 14: [2, "W4"] },
-  "features/company/org-session-groups.tsx": { 12: [1, "W4"] },
+  "features/company/org-session-groups.tsx": { 12: [2, "W4+W10"], 13: [1, "W10"] },
   "features/company/org-switcher.tsx": { 13: [3, "W4"], 14: [2, "W4"] },
   "features/company/overview-page.tsx": { 12: [2, "W4"], 13: [2, "W4"], 14: [4, "W4"] },
   "features/company/shared.tsx": { 13: [3, "W4"] },
@@ -144,7 +149,8 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/company/tickets-page.tsx": { 12: [4, "W4"], 13: [6, "W4"] },
   "features/dock/dock-drag.tsx": { 3: [1, "W7"], 12: [1, "W7"] },
   "features/dock/dock-launcher.tsx": { 13: [1, "W7"], 18: [3, "W7"], 19: [4, "W7"] },
-  "features/dock/dock-panel.tsx": { 1: [2, "W7"], 12: [2, "W7"], 13: [1, "W7"] },
+  "features/dock/dock-panel.tsx": { 1: [2, "W7"], 12: [2, "W7"] },
+  "features/models/model-tags.ts": { 13: [1, "W10"] },
   "features/models/models-page.tsx": { 1: [1, "W4"], 11: [8, "W1b"], 12: [7, "W4"], 13: [8, "W4"] },
   "features/models/protocol-suffix.tsx": { 11: [2, "W1b"] },
   "features/plugins/plugin-detail-page.tsx": { 13: [2, "W4"] },
@@ -161,7 +167,11 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/semantic-id/semantic-id-field.tsx": { 11: [2, "W1b"] },
   "features/settings/proxy-section.tsx": { 13: [1, "W2"] },
   "features/settings/setting-row.tsx": { 1: [1, "W2"], 2: [1, "W2"] },
+  "features/settings/shortcut-recorder.tsx": { 12: [1, "W10"], 13: [1, "W10"] },
+  "features/settings/shortcuts-section.tsx": { 13: [1, "W10"] },
   "features/skills/skill-pick-list.tsx": { 12: [1, "W2"] },
+  "features/terminal/terminal-appearance.ts": { 9: [1, "W10"] },
+  "features/terminal/terminal-keybar.tsx": { 12: [1, "W10"] },
   "features/traces/timeline-chart.tsx": { 6: [2, "W8"], 13: [10, "W8"] },
   "features/traces/trace-event-row.tsx": { 12: [2, "W4"], 13: [1, "W4"] },
   "features/traces/trace-file-view.tsx": { 12: [2, "W4"], 13: [5, "W4"], 15: [1, "W4"] },
@@ -171,7 +181,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "pages/login.tsx": { 9: [1, "W4"] },
 };
 
-const WAVES = /^W(?:1a?|1b|[2-9])(?:\+W(?:1a?|1b|[2-9]))*$/;
+const WAVES = /^W(?:1a?|1b|10|[2-9])(?:\+W(?:1a?|1b|10|[2-9]))*$/;
 const relOf = (id: string) => id.slice("packages/web/src/".length);
 
 describe("de-slop rules over packages/web/src", () => {

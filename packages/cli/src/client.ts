@@ -181,12 +181,17 @@ export async function resolveConnection(
   return conn;
 }
 
-/** Error the client raises for non-2xx responses; `code` is the server's error code when the body carried one. */
+/**
+ * Error the client raises for non-2xx responses; `code` is the server's error code when the body
+ * carried one, and `body` the parsed JSON body itself (undefined when it was not JSON), for a
+ * command that renders the server's own words or reads a field beside the code.
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly body?: unknown,
   ) {
     super(message);
   }
@@ -257,10 +262,12 @@ export class ServerClient {
   private async toError(res: Response): Promise<ApiError> {
     let code = "http_error";
     let message = "";
+    let payload: unknown;
     try {
-      const body = (await res.json()) as { error?: { code?: string; message?: string } };
-      if (body.error?.code) code = body.error.code;
-      if (body.error?.message) message = body.error.message;
+      payload = await res.json();
+      const body = payload as { error?: { code?: string; message?: string } } | null;
+      if (body?.error?.code) code = body.error.code;
+      if (body?.error?.message) message = body.error.message;
     } catch {
       // Non-JSON error body: keep the fallback wording.
     }
@@ -273,7 +280,12 @@ export class ServerClient {
           : this.t.client.authFailed(this.conn.baseUrl),
       );
     }
-    return new ApiError(res.status, code, this.t.client.httpError(res.status, code, message));
+    return new ApiError(
+      res.status,
+      code,
+      this.t.client.httpError(res.status, code, message),
+      payload,
+    );
   }
 
   /**

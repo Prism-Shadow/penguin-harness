@@ -215,12 +215,99 @@ describe("script hooks", () => {
         '{ decision: "stop", reason: `${input.hook} ${input.session_id} ${input.trace_path}` }',
       ),
     );
-    const hook = scriptStopHook("demo", dir, "stop.mjs", 5);
+    const hook = scriptStopHook("demo", dir, "stop.mjs", { timeoutS: 5 });
     expect(hook.name).toBe("demo");
     expect(await hook.run({ sessionId: "s1", tracePath: "/t/s1_001.jsonl" })).toEqual({
       decision: "stop",
       reason: "stop s1 /t/s1_001.jsonl",
     });
+  });
+});
+
+describe("script hooks under the sandbox", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-hooks-sandbox-"));
+  });
+  afterEach(async () => {
+    await rmEventually(dir);
+  });
+
+  it("spawns the confiner's argv with the runner's environment laid over the script's", async () => {
+    // A stand-in runner: runs the script it is handed, and shows that it ran through it.
+    const runner = path.join(dir, "runner.mjs");
+    await fs.writeFile(
+      runner,
+      [
+        'import { pathToFileURL } from "node:url";',
+        'process.env.HOOK_RAN_THROUGH = "runner";',
+        "await import(pathToFileURL(process.argv[2]).href);",
+      ].join("\n"),
+    );
+    const script = path.join(dir, "report.mjs");
+    await fs.writeFile(
+      script,
+      "process.stdout.write(JSON.stringify({ through: process.env.HOOK_RAN_THROUGH, marker: process.env.HOOK_RUNNER_MARK }));\n",
+    );
+    const seen: string[][] = [];
+    const out = (await runHookScript(
+      script,
+      {},
+      {
+        confine: (argv) => {
+          seen.push([...argv]);
+          return { argv: [argv[0]!, runner, ...argv.slice(1)], env: { HOOK_RUNNER_MARK: "set" } };
+        },
+      },
+    )) as { through: string; marker: string };
+    expect(seen).toEqual([[process.execPath, script]]);
+    expect(out).toEqual({ through: "runner", marker: "set" });
+  });
+
+  it("fails the hook when the confiner cannot enforce its policy, and never runs the script", async () => {
+    const script = path.join(dir, "touch.mjs");
+    const witness = path.join(dir, "ran");
+    await fs.writeFile(
+      script,
+      `import fs from "node:fs"; fs.writeFileSync(${JSON.stringify(witness)}, "");\n`,
+    );
+    await expect(
+      runHookScript(
+        script,
+        {},
+        {
+          confine: () => {
+            throw new Error("no sandbox backend is mounted");
+          },
+        },
+      ),
+    ).rejects.toThrow(/sandbox: no sandbox backend is mounted/);
+    await expect(fs.access(witness)).rejects.toThrow();
+  });
+
+  it("an installed command reads the Session's confiner at every run, with the package directory as cwd and the Session's scope", async () => {
+    const script = path.join(dir, "stop.mjs");
+    await fs.writeFile(script, 'process.stdout.write(JSON.stringify({ decision: "stop" }));\n');
+    const scopes: unknown[] = [];
+    let confiner: ((argv: readonly string[], opts: unknown) => { argv: readonly string[] }) | null =
+      null;
+    const hook = scriptStopHook("demo", dir, "stop.mjs", {
+      confineSpawn: () => confiner,
+      scope: { workspaceDir: "/ws", scratchpadDir: "/scratch/s1" },
+    });
+    // Unconfined while the getter answers null…
+    expect(await hook.run(stopInput())).toEqual({ decision: "stop" });
+    // …confined under whatever it answers next, with the scope a command would get.
+    confiner = (argv, opts) => {
+      scopes.push(opts);
+      return { argv };
+    };
+    expect(await hook.run(stopInput())).toEqual({ decision: "stop" });
+    expect(scopes).toEqual([{ cwd: dir, workspaceDir: "/ws", scratchpadDir: "/scratch/s1" }]);
+    confiner = () => {
+      throw new Error("refused");
+    };
+    await expect(hook.run(stopInput())).rejects.toThrow(/sandbox: refused/);
   });
 });
 
@@ -277,7 +364,7 @@ describe("Session user-prompt hook", () => {
     await rmEventually(dir);
   });
 
-  it("runs the named package's hook with the Session's own id and scratchpad, null when absent", async () => {
+  it("runs the named package's host-triggered hook with the Session's own id and scratchpad, null when absent", async () => {
     const script = path.join(dir, "expand.mjs");
     await fs.writeFile(
       script,
@@ -314,7 +401,9 @@ describe("Session user-prompt hook", () => {
       },
       imagesDir: scratchpad,
       modelHasVision: true,
-      hooks: { userPrompt: [scriptUserPromptHook("goal", dir, "expand.mjs")] },
+      hooks: {
+        userPrompt: [scriptUserPromptHook("goal", dir, "expand.mjs", { trigger: "host" })],
+      },
     });
     const result = await session.runUserPromptHook("goal", "ship it", { budget: 500 });
     expect(result?.context).toBe(`user_prompt/session-1/ship it/500 @ ${scratchpad}`);

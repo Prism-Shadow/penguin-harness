@@ -38,6 +38,7 @@ import {
   addTokenCounts,
   emptyTokenCounts,
   isCompleteModelMessage,
+  isModelMessage,
   isSessionMeta,
   partialText,
   requestBegin,
@@ -79,6 +80,8 @@ import type {
   ApproveFn,
   PreToolUseFn,
   PreToolUseOutcome,
+  UserPromptFn,
+  UserPromptOutcome,
   EnvironmentInterface,
   LLMInterface,
   LLMOutcome,
@@ -172,6 +175,8 @@ export interface RunOptions {
   approve?: ApproveFn;
   /** Pre-tool-use hook consult, called before `approve` for each complete tool_call; its events are recorded on the stream, its decision applied (see {@link PreToolUseFn}). */
   preToolUse?: PreToolUseFn;
+  /** User-prompt hook consult, called once with this call's Prompt after it is written and before the first request; its records follow the Prompt on the stream and in the Trace, and the user texts among them join the request input (see {@link UserPromptFn}). */
+  userPrompt?: UserPromptFn;
 }
 
 /**
@@ -710,7 +715,7 @@ export class ContextEngine {
     const carryOver = this.pendingCarryOver;
     this.pendingCarryOver = [];
     const prefix = summary ? [summary, ...carryOver] : carryOver;
-    const input = prefix.length ? [...prefix, ...newMessages] : newMessages;
+    let input = prefix.length ? [...prefix, ...newMessages] : newMessages;
 
     // Input is written to Trace (Prompt record, incl. audit trail) but not replayed to
     // the render layer. carry-over is not written to Trace: real messages (tool outputs etc.)
@@ -721,6 +726,27 @@ export class ContextEngine {
     // context's first input record, is written as usual.
     if (summary) await this.write(summary);
     for (const msg of newMessages) await this.write(msg);
+    // User-prompt hooks (RunOptions.userPrompt, wired by the Session from the Agent's
+    // installed hook packages): consulted once per Prompt, here, so what they answer lands
+    // right behind the user's message — on the stream, in the Trace and in the request
+    // input alike. A throw collapses to nothing to add: a broken hook must not cost the
+    // user their Prompt.
+    if (opts?.userPrompt && !signal?.aborted) {
+      let expanded: UserPromptOutcome | null = null;
+      try {
+        expanded = await opts.userPrompt(newMessages, signal);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[penguin] userPrompt consult threw: ${message}; ignoring.\n`);
+      }
+      const contexts: OmniMessage[] = [];
+      for (const record of expanded?.records ?? []) {
+        yield record;
+        await this.write(record);
+        if (isModelMessage(record)) contexts.push(record);
+      }
+      if (contexts.length > 0) input = [...input, ...contexts];
+    }
     if (this.pendingBootstrapRecords) {
       // First run only: the connect pair, then the toolset record, follow the input into
       // the Trace (see ContextEngineDeps.bootstrapRecords for the ordering rationale).

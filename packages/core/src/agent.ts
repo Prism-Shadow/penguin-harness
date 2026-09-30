@@ -31,12 +31,14 @@ import {
   listInstalledHooks,
   projectDir,
   resolveSessionMemory,
+  resolveModelCredential,
   resolveModelRef,
   sessionScratchpadDir,
   systemConfigPath,
   tracesDir,
   type AgentState,
   type CompactionConfig,
+  type InstalledHook,
   type ModelRef,
   type ModelEntry,
   type ProjectConfig,
@@ -58,8 +60,10 @@ import {
 } from "./trace/index.js";
 import { Session } from "./session.js";
 import { scriptPreToolUseHook, scriptStopHook, scriptUserPromptHook } from "./hooks/script-hook.js";
+import type { ScriptHookOptions } from "./hooks/script-hook.js";
 import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
-import type { SessionConfig } from "./session.js";
+import { predatesEveryPromptHooks, userPromptTrigger } from "./plugins/index.js";
+import type { SessionConfig, SessionOpenedContext } from "./session.js";
 import {
   createTempWorkspace,
   formatSessionId,
@@ -83,11 +87,7 @@ import type {
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
-import type {
-  CompactionSettings,
-  OpenContextOptions,
-  OpenedContext,
-} from "./engine/context-engine.js";
+import type { CompactionSettings, OpenContextOptions } from "./engine/context-engine.js";
 import type {
   ApproveFn,
   CommandPolicyConfig,
@@ -228,7 +228,13 @@ export interface CreateSessionOptions {
    * own config.
    */
   thinkingLevel?: ThinkingLevelName | null;
-  /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
+  /**
+   * Explicit credentials; if unspecified, falls back to the credentials in the Project config,
+   * then — only when the entry's requests go to the vendor's own endpoint (no base URL, or a
+   * vendor endpoint) — to the vendor's environment variable, read by AgentHub. A keyless entry
+   * pointed anywhere else (a gateway, a self-hosted server) is refused with a
+   * ModelCredentialError; see resolveModelCredential.
+   */
   apiKey?: string;
   baseUrl?: string;
   /** Internal use: this Session's depth in the subagent spawn chain (0 at the top level), used to cap spawn depth. */
@@ -240,7 +246,7 @@ export interface CreateSessionOptions {
 export interface ResumeSessionOptions {
   /** Id of the Session to resume. */
   sessionId: string;
-  /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
+  /** Explicit credentials; if unspecified, falls back to the Project config, then to the vendor's environment variable on the same terms as CreateSessionOptions.apiKey. */
   apiKey?: string;
   baseUrl?: string;
 }
@@ -289,9 +295,9 @@ interface SessionRuntime {
    * Opens the context that follows a completed compaction (see ContextEngineDeps.openNextContext):
    * the whole configuration assembled anew from the Agent State, the Environment re-equipped
    * with it, then the same opening procedure as `bootstrap` — and the session_meta recording
-   * the context alongside its engine settings.
+   * the context alongside its engine settings, with the hooks the context runs with.
    */
-  openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext>;
+  openNextContext: (opts: OpenContextOptions) => Promise<SessionOpenedContext>;
   /** The running context's command policy — follows the rotation (see SessionConfig.commandPolicy). */
   commandPolicy: () => CommandPolicyConfig | undefined;
 
@@ -318,6 +324,14 @@ interface AssembledContext {
   /** `system_config.max_turns`; the engine treats absent as unlimited (-1). */
   maxTurns: number | undefined;
   compaction: CompactionSettings;
+  /**
+   * The hook packages this context consults: the ones installed in `agent_state/hooks/`
+   * when it opened. Empty with `hooks.enabled: false` — the one switch over all of them,
+   * the packages stay installed — and for a child Session, which carries no hooks: a
+   * subagent's work belongs to its parent's Trace, and a child could not spawn a subagent
+   * anyway.
+   */
+  hookPackages: InstalledHook[];
   /** The session_meta describing this context: the prompt it runs with, and the Session-fixed facts. */
   meta: SessionMetaPayload;
 }
@@ -348,6 +362,26 @@ function resolveCompaction(
     mode: config?.mode === "discard" ? "discard" : "summarize",
     prompt: config?.prompt ?? DEFAULT_COMPACTION_PROMPT,
   };
+}
+
+/**
+ * The credential a Session's (or a describer's) client is built with for a model entry: the
+ * explicit override, else the entry's inline fields, else — only where resolveModelCredential
+ * allows it — nothing, so the routed client reads its own environment variable. A keyless
+ * entry whose endpoint is not the vendor's own throws its ModelCredentialError here, which
+ * hosts file with the SDKs' missing-credential errors (the server's `isMissingCredential`).
+ */
+function entryCredential(
+  entry: ModelEntry,
+  opts: { apiKey?: string | undefined; baseUrl?: string | undefined },
+): { apiKey?: string; baseUrl?: string } {
+  return resolveModelCredential({
+    provider: entry.provider,
+    modelId: entry.model_id,
+    clientType: entry.client_type,
+    baseUrl: opts.baseUrl ?? entry.base_url,
+    apiKey: opts.apiKey ?? entry.api_key,
+  });
 }
 
 /**
@@ -430,8 +464,9 @@ export class Agent {
    * Assembles what a model context runs with, from the Agent State as it is on disk **now**:
    * `system_config.yaml` in full — the prompt template with its section prompts and toggles,
    * the builtin tool entries and MCP Servers, the compaction settings, `max_turns`, the
-   * model defaults — plus `AGENTS.md`, the vault, the installed Skills' metadata, the Memory
-   * indexes, the schedule roster and the Environment values (the date included). Every
+   * model defaults — plus `AGENTS.md`, the vault, the installed Skills' metadata, the
+   * installed hook packages, the Memory indexes, the schedule roster and the Environment
+   * values (the date included). Every
    * context opener goes through here — createSession, the context a completed compaction
    * opens (buildRuntime's openNextContext) and a resume that finds its context closed — so an
    * edit made during one context, by the user or by the model working on its own
@@ -461,6 +496,13 @@ export class Agent {
     // the one on disk at its open.
     const projectConfig = await loadProjectConfig(root, projectId);
     const commandPolicy = projectConfig.command_policy;
+    // Hook packages are not part of the request prefix, and are read on the same schedule
+    // all the same: a package the model wrote during one context is consulted from the next.
+    const child = spec.subagentDepth > 0 || spec.source === "subagent";
+    const hookPackages =
+      child || state.systemConfig.hooks?.enabled === false
+        ? []
+        : await listInstalledHooks(root, projectId, agentId);
     let systemPrompt = opts.systemPrompt;
     if (systemPrompt === undefined) {
       const installedSkills = await listInstalledSkills(root, projectId, agentId);
@@ -566,6 +608,7 @@ export class Agent {
       // Max turns is an Agent runtime parameter (system_config), not a Session option.
       maxTurns: state.systemConfig.max_turns,
       compaction,
+      hookPackages,
       meta,
     };
   }
@@ -604,11 +647,11 @@ export class Agent {
         `Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`,
       );
     }
-    // Credentials are inlined on the model entry (single config file); an
-    // explicit argument takes priority, falling back to AgentHub reading env vars
-    // when both are absent.
-    const apiKey = opts.apiKey ?? modelEntry.api_key;
-    const baseUrl = opts.baseUrl ?? modelEntry.base_url;
+    // Credentials are inlined on the model entry (single config file); an explicit
+    // argument takes priority. With neither, the entry may lean on the environment only
+    // where the rule in resolveModelCredential allows (the vendor's own endpoint): a keyless
+    // row pointed elsewhere is refused here, before any client exists.
+    const { apiKey, baseUrl } = entryCredential(modelEntry, opts);
 
     // An explicit Workspace must already exist as a directory: if it
     // doesn't, throw rather than auto-create (to avoid a typo silently working in
@@ -651,17 +694,12 @@ export class Agent {
     const context = await this.assembleContext(spec);
     const rt = this.buildRuntime(spec, context);
 
-    const hooks = await this.sessionHooks(
-      rt.subagentRunner,
-      spec.subagentDepth > 0 || opts.source === "subagent",
-    );
-
     const trace = new Writer({
       tracesDir: tracesDir(this.state.root, this.state.projectId, this.state.agentId),
       sessionId,
     });
 
-    return this.newSession(spec, context, rt, trace, { ...(hooks ? { hooks } : {}) });
+    return this.newSession(spec, context, rt, trace);
   }
 
   /**
@@ -724,8 +762,9 @@ export class Agent {
         `The original Session's Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model add\` to configure it again before resuming.`,
       );
     }
-    const apiKey = opts.apiKey ?? modelEntry.api_key;
-    const baseUrl = opts.baseUrl ?? modelEntry.base_url;
+    // Same credential rule as createSession (see entryCredential): a key deleted since the
+    // Session was created surfaces here, at resume.
+    const { apiKey, baseUrl } = entryCredential(modelEntry, opts);
 
     // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
     // and contexts opened without a pin read the Agent config's chain (the same chain
@@ -784,8 +823,6 @@ export class Agent {
       return r;
     };
 
-    const hooks = await this.sessionHooks(rt.subagentRunner, meta.source === "subagent");
-
     // Continue writing to the original Trace file (the Trace only records real messages; synthesized paired placeholders are re-emitted in memory alongside carry-over).
     const trace = new Writer({
       tracesDir: dir,
@@ -815,7 +852,6 @@ export class Agent {
 
     return this.newSession(spec, context, rt, trace, {
       bootstrap,
-      ...(hooks ? { hooks } : {}),
       // session_meta is already in the original Trace file, so it isn't rewritten; on the first write after a compaction-triggered rotation, the file is split first.
       metaAlreadyWritten: true,
       initialEngineState: {
@@ -898,6 +934,8 @@ export class Agent {
       environment: rt.environment,
       trace,
       openNextContext: rt.openNextContext,
+      // The first context's hooks; each context `openNextContext` opens brings its own.
+      hooks: this.sessionHooks(rt.subagentRunner, context.hookPackages, spec),
 
       createBareLLM: rt.createBareLLM,
       compaction: context.compaction,
@@ -1129,10 +1167,13 @@ export class Agent {
         visionDescriber = {
           // The model attribution in the tool output matches the request's source: both are the entry's upstream model_id.
           modelId: visionEntry.model_id,
+          // Resolved on each call rather than once here: the same credential rule as the
+          // session model (a keyless entry pointed away from its vendor is refused), and a
+          // refusal is a failed read_file, not a failed Session.
           createLLM: () =>
             new GenerativeModel({
               modelId: visionEntry.model_id,
-              ...(visionEntry.api_key !== undefined ? { apiKey: visionEntry.api_key } : {}),
+              ...entryCredential(visionEntry, {}),
               ...(this.assembly?.resolveModelApiKey
                 ? {
                     resolveApiKey: () =>
@@ -1145,7 +1186,6 @@ export class Agent {
                       }),
                   }
                 : {}),
-              ...(visionEntry.base_url !== undefined ? { baseUrl: visionEntry.base_url } : {}),
               ...(visionEntry.client_type !== undefined
                 ? { clientType: visionEntry.client_type }
                 : {}),
@@ -1297,7 +1337,7 @@ export class Agent {
     // records live and writes them at the head of the rotated Trace file. An Agent State
     // that cannot be assembled (a config that no longer parses) throws: the run fails with
     // that error and the engine keeps the old context.
-    const openNextContext = async ({ emit }: OpenContextOptions): Promise<OpenedContext> => {
+    const openNextContext = async ({ emit }: OpenContextOptions): Promise<SessionOpenedContext> => {
       const next = await this.assembleContext(spec);
       current = next;
       environment.reconfigure({ toolConfig: next.toolConfig, vault: next.vault });
@@ -1307,6 +1347,7 @@ export class Agent {
         sessionMeta: sessionMeta(next.meta),
         maxTurns: next.maxTurns ?? -1,
         compaction: next.compaction,
+        hooks: this.sessionHooks(subagentRunner, next.hookPackages, spec),
       };
     };
 
@@ -1364,54 +1405,63 @@ export class Agent {
   }
 
   /**
-   * The hooks of a top-level Session: every hook package installed in the Agent's
-   * `agent_state/hooks/` (read fresh per Session, like skills), each command run as a script
-   * (hooks/script-hook.ts), plus the spawner that honors a hook's `subagent` answer —
-   * a detached child Session of this Agent (or the one it names) whose stream is dropped (its
-   * own Trace is the record) and which inherits the run's approval callback. Child Sessions —
-   * spawned or revived subagents — carry no hooks: a subagent's work belongs to its parent's
-   * Trace, and a child could not spawn a subagent anyway.
+   * The hooks a model context runs with, built from the hook packages it was assembled with
+   * (see AssembledContext.hookPackages): each command run as a script (hooks/script-hook.ts),
+   * plus the spawner that honors a stop hook's `subagent` answer — a detached child Session
+   * of this Agent (or the one it names) whose stream is dropped (its own Trace is the
+   * record) and which inherits the run's approval callback.
    *
-   * `hooks.enabled: false` in the Agent's config switches all of them off at once: the
-   * packages stay installed, and this is the one place a Session's hooks are assembled.
+   * Always a whole set, empty lists included: the Session replaces its hooks with it when
+   * the context opens, which is how uninstalling the last package reaches a conversation
+   * that is running. This is the one place a Session's hooks are assembled.
    */
-  private async sessionHooks(
+  private sessionHooks(
     runner: SubagentRunner,
-    child: boolean,
-  ): Promise<SessionHooks | undefined> {
-    if (child) return undefined;
+    installed: readonly InstalledHook[],
+    spec: SessionSpec,
+  ): SessionHooks {
     const { root, projectId, agentId } = this.state;
-    // Read from disk rather than from this Agent object's load-time snapshot: a long-lived
-    // Agent would otherwise keep building Sessions on a config edited since it was loaded
-    // (the same reason assembleContext re-loads the state).
-    const { systemConfig } = await loadAgentState({ root, projectId, agentId });
-    if (systemConfig.hooks?.enabled === false) return undefined;
-    const installed = await listInstalledHooks(root, projectId, agentId);
-    // Hook scripts get the same PATH front as commands do (see
-    // CreateAgentOptions.pathPrepend). Only the environment half applies: a hook is run as
-    // `node <script>` directly, with no shell and so no login profile to re-prepend
-    // anything after it.
-    const pathPrepend = this.pathPrepend;
+    const ctx: ControlEnvContext = { projectId, agentId, sessionId: spec.sessionId };
+    // A hook script is spawned the way a command is: the same PATH front (see
+    // CreateAgentOptions.pathPrepend — only the environment half applies, a hook is run
+    // as `node <script>` with no shell to re-order PATH afterwards), and the same sandbox
+    // (CreateAgentOptions.confineSpawn, bound to this Session's coordinates and re-read
+    // at every run), with the Session's Workspace and scratchpad as its scope.
+    const options: ScriptHookOptions = {
+      ...(this.pathPrepend ? { pathPrepend: this.pathPrepend } : {}),
+      ...(this.confineSpawn ? { confineSpawn: () => this.confineSpawn!(ctx) } : {}),
+      scope: {
+        workspaceDir: spec.workspaceDir,
+        scratchpadDir: sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
+      },
+    };
+    const withTimeout = (timeoutS: number | undefined): ScriptHookOptions => ({
+      ...options,
+      ...(timeoutS !== undefined ? { timeoutS } : {}),
+    });
     const stop = installed.flatMap((hook) =>
       hook.stop.map((cmd) =>
-        scriptStopHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
+        scriptStopHook(hook.name, hook.dir, cmd.command, withTimeout(cmd.timeout)),
       ),
     );
     const preToolUse = installed.flatMap((hook) =>
       hook.pre_tool_use.map((cmd) =>
-        scriptPreToolUseHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
+        scriptPreToolUseHook(hook.name, hook.dir, cmd.command, withTimeout(cmd.timeout)),
       ),
     );
-    const userPrompt = installed.flatMap((hook) =>
-      hook.user_prompt.map((cmd) =>
-        scriptUserPromptHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
-      ),
-    );
-    if (stop.length === 0 && preToolUse.length === 0 && userPrompt.length === 0) return undefined;
+    const userPrompt = installed.flatMap((hook) => {
+      remindToUpdate(hook);
+      return hook.user_prompt.map((cmd) =>
+        scriptUserPromptHook(hook.name, hook.dir, cmd.command, {
+          ...withTimeout(cmd.timeout),
+          trigger: userPromptTrigger(hook.version, cmd),
+        }),
+      );
+    });
     return {
-      ...(stop.length > 0 ? { stop } : {}),
-      ...(preToolUse.length > 0 ? { preToolUse } : {}),
-      ...(userPrompt.length > 0 ? { userPrompt } : {}),
+      stop,
+      preToolUse,
+      userPrompt,
       spawnSubagent: async (request: HookSubagentRequest, approve?: ApproveFn) => {
         const handle = await runner.spawn({
           ...(request.agentId !== undefined ? { agentId: request.agentId } : {}),
@@ -1426,6 +1476,26 @@ export class Agent {
       },
     };
   }
+}
+
+/** Package directories already named by {@link remindToUpdate} in this process. */
+const remindedPackages = new Set<string>();
+
+/**
+ * COMPAT (remove at 0.3.0 release preparation, together with the rule it reports — see
+ * plugins' userPromptTrigger): says once per process, per package directory, that an
+ * installed package predates `user_prompt` commands running on every Prompt and is being
+ * read the old way. The user-facing reminder is the plugin library's update notice; this
+ * line is for whoever reads the host's log.
+ */
+function remindToUpdate(hook: InstalledHook): void {
+  if (!predatesEveryPromptHooks(hook.version)) return;
+  if (!hook.user_prompt.some((cmd) => cmd.trigger === undefined)) return;
+  if (remindedPackages.has(hook.dir)) return;
+  remindedPackages.add(hook.dir);
+  process.stderr.write(
+    `[hooks] ${hook.name} ${hook.version} (${hook.dir}) predates user_prompt hooks running on every prompt: its user_prompt commands run only when the host starts them by name. Update the package from the plugin library; this compatibility reading ends with 0.3.0.\n`,
+  );
 }
 
 /** Drives a hook-spawned child to completion in the background, dropping its stream (its own Trace is the record), and releases it. */

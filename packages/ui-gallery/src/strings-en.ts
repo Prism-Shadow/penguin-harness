@@ -594,7 +594,6 @@ export const en: GalleryStrings = {
         gray: "default",
         brand: "origin",
         green: "running",
-        yellow: "free",
         amber: "aborted",
         red: "failed",
       },

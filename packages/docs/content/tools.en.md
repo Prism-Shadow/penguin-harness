@@ -188,9 +188,15 @@ The tools' arguments (explicit keys):
 
 ### File tools
 
-`read_file` / `edit_file` / `write_file` run with the user's full permissions, like the shell tool. Relative paths resolve against the Workspace, and absolute paths are allowed. A symlinked path is followed to the file it names: reads, edits and writes all land on that file, and the link stays a link. `read_file` refuses the secret stores `.vault.toml` and `.project_config.toml`, matched by file name in any directory and after following symlinks.
+`read_file` / `edit_file` / `write_file` are harness code, but every file-system effect they have — a stat, a read, an atomic write, a directory listing, a symlink resolution, and `read_file`'s download of an image URL — goes through a file-system port. Relative paths resolve against the Workspace, and absolute paths are allowed. A symlinked path is followed to the file it names: reads, edits and writes all land on that file, and the link stays a link. `read_file` refuses the secret stores `.vault.toml` and `.project_config.toml`, matched by file name in any directory and after following symlinks.
 
-The file tools return a single final output rather than a stream, with one exception: for a text-only model, `read_file` streams the vision model's description of an image. They never throw. Failures come back as explanatory text with `stop_reason: fatal`.
+In a Session the [sandbox](/settings#sandbox) confines, the port is a helper process the same confiner wraps that wraps a command: the harness starts a Node process with the helper's program inline (`node -e …`, builtin modules only, so nothing has to ship beside a bundle) under the same policy and scope — the Workspace and the Session's scratchpad — and the tools' operations cross to it as JSON lines on its stdin and stdout. What the tools can do is then exactly what a command can: the backend that bounds the Session's commands bounds them, mask paths included, and a download follows the network level. One helper serves a Session: it starts at the first confined file operation, is reused for the rest, is started over when the Session's policy changes or after a crash, is killed when a call is aborted (the sandbox may be stalling that operation), and stops with the Session. A refused write comes back as the kernel's permission error, and the tool names the sandbox so the next attempt can take another route:
+
+```text
+Failed to write "/etc/hosts": EROFS: read-only file system, open '/etc/hosts' — refused by this session's sandbox, which does not allow that here.
+```
+
+Under the WSL backend the helper runs inside the distro, which the initialization installs `nodejs` into: Windows drive paths are mapped to their `/mnt/<drive>` spelling on the way in and back on the way out. A distro initialized before `nodejs` joined the package list needs initializing again. Without a sandbox, as when the SDK or the CLI runs standalone or the sandbox is off, the port is the harness process itself and the tools run with the user's full permissions, like the shell tool.
 
 `edit_file` and `write_file` serialize per file within the server process, keyed by the file's real path, so a symlink and its target count as one file. Parallel edits of one file are applied one after another, and an `old_string` that an earlier edit removed fails to match instead of overwriting it. Writes from other processes are outside this lock.
 
@@ -390,7 +396,7 @@ tools:
 
 Each `tools.mcpServers` entry is `{ name, config }`. `name` becomes the tool-name prefix: it must start with a letter or digit and contain only letters, digits, `_` and `-`, and a duplicate name is skipped. `config` describes the transport. Three transports are supported:
 
-- `stdio`: a local process (`command` / `args` / `env` / `cwd`). The process environment is the SDK's safe inherited defaults plus the entry's `env`, with `env` winning. Unlike command subprocesses, MCP Server processes do **not** receive the agent's Vault: list any variable a Server needs in the entry's `env`. `cwd` defaults to the Session's Workspace.
+- `stdio`: a local process (`command` / `args` / `env` / `cwd`). The process environment is the SDK's safe inherited defaults plus the entry's `env`, with `env` winning. Unlike command subprocesses, MCP Server processes do **not** receive the agent's Vault: list any variable a Server needs in the entry's `env`. `cwd` defaults to the Session's Workspace. The process starts under the Session's [sandbox](/settings#sandbox) exactly as a command does: the same confiner rewrites its argv, and a policy no backend can enforce fails the Server's connect rather than starting it unconfined.
 - `http`: Streamable HTTP, the current spec's remote transport (`url` / `headers`).
 - `sse`: the legacy HTTP+SSE transport, kept for servers that have not migrated (`url` / `headers`).
 
