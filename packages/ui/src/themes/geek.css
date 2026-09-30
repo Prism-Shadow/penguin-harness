@@ -770,8 +770,9 @@
      reveal paces it a character at a time): the stream's caret is a solid cell in the body
      ink, one character of the chrome's mono face wide, with the host's own glyph painted out.
      While the text so far ends in a paragraph, that paragraph runs in — it lays out inline
-     with the caret after it — so the cursor sits right after its last character; after a list,
-     a table or a code block it waits at the start of the next line, like a prompt. The cursor
+     with the caret after it — so the cursor sits right after its last character; after a list
+     the last item draws the cell itself (below); after a table or a code block it waits at the
+     start of the next line, like a prompt. The cursor
      blinks in the theme's stepped live signal, and nothing else moves: no veil, no fade. Under
      reduced motion it holds still (theme.css). */
   :root[data-theme="geek"] .ui-stream[data-state="streaming"] > p:has(+ [data-slot="caret"]) {
