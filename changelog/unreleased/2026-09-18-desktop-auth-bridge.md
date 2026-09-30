@@ -35,6 +35,6 @@ Web App opens the authorization page directly when it runs inside the shell.
   hands it to the system browser — Electron has no popup blocker, so the tab a browser needs to
   open inside the click is not needed there. The page tells the desktop window from a browser by
   the renderer (`Electron/` in the user agent), so this holds in attach mode too, where the
-  window signs in through the login page like a browser.
+  window is signed in to a server that was not started in desktop mode.
 - In a browser, including one signed into a desktop-mode server, the flow is unchanged: a blank
   tab opens inside the click and navigates to the authorization page when the URL arrives.

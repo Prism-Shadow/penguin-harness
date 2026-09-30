@@ -18,7 +18,7 @@ const SAFARI_UA =
 
 describe("isElectronRenderer", () => {
   it("recognises the shell's window by Electron's own token, in any session", () => {
-    // Attach mode signs the shell's window in through the login page; it is still Electron.
+    // In attach mode the shell's window holds no desktop-mode session; it is still Electron.
     expect(isElectronRenderer(ELECTRON_UA)).toBe(true);
   });
 
