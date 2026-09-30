@@ -1,8 +1,9 @@
 # Agent 的命令带的是它所在会话自己的凭据，磁盘上不再留管理员 token
 
 - **Date:** 2026-09-30
-- **Type:** security
+- **Type:** feature
 - **Scope:** `server`, `cli`, `docs`, `scripts`
+- **PR:** [Myriad-Dreamin/penguin-harness#121](https://github.com/Myriad-Dreamin/penguin-harness/pull/121)
 - **Breaking:** yes — `<root>/api-token` 不再存在；会话之外的命令行改为登录
 
 [English](2026-09-30-session-credential.md)

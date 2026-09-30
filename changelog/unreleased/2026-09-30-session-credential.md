@@ -1,8 +1,9 @@
 # An agent's commands carry its session's own credential, and no admin token is left on disk
 
 - **Date:** 2026-09-30
-- **Type:** security
+- **Type:** feature
 - **Scope:** `server`, `cli`, `docs`, `scripts`
+- **PR:** [Myriad-Dreamin/penguin-harness#121](https://github.com/Myriad-Dreamin/penguin-harness/pull/121)
 - **Breaking:** yes — `<root>/api-token` is gone; a command line outside a session signs in instead
 
 [中文版](2026-09-30-session-credential.zh.md)
