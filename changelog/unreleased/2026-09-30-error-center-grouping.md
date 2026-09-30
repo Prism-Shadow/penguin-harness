@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#908](https://github.com/Prism-Shadow/penguin-harness/pull/908)
 
 [中文版](2026-09-30-error-center-grouping.zh.md)
 
