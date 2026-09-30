@@ -20,8 +20,8 @@ import {
   ChartLine,
   ChartPoint,
   TimelineBar,
+  curvePath,
 } from "../../../../web/src/components/ui/chart";
-import { curvePath } from "../../../../web/src/features/usage/chart-geom";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 

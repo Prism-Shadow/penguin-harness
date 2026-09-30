@@ -383,9 +383,7 @@ export function MachinesPage() {
                         type="button"
                         onClick={() => toggleAdding(machine.id)}
                         className={`flex w-full min-w-0 items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                          on
-                            ? "bg-gray-100 shadow-[inset_3px_0_0_var(--accent-bg)] dark:bg-gray-800/60"
-                            : ""
+                          on ? "bg-gray-100 dark:bg-gray-800/60" : ""
                         }`}
                       >
                         <span

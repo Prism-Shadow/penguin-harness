@@ -31,8 +31,8 @@ The Web App's Appearance settings gained a theme picker — Primer (通用), Fro
 
 ## Charts follow the theme
 
-- Every chart draws through one shared set of chart parts — bars, lines, the fill under a line, points, grid and axis labels, and the Trace timeline's bars: the cost center's requests, Token and cost charts, the context donut, the Evaluation Center's score chart and sparkline, the agents' activity sparkline and the Trace timeline. The theme decides how each part looks: its palette, bar width, corners, outline and fill, line width and curve, point shape and the fill under a line.
-- Frost draws soft, low-glare pastels — pale, borderless, rounded bars, smooth curves and a faint grid; Console draws thin, solid bars with a 1px outline, stepped 1px lines, square points and a dashed grid. Primer draws them as before, except that the Trace timeline now uses the same palette shades as the other charts — in dark mode its bars are one step deeper, and the approval-wait bar is a slightly deeper rose in both modes.
+- Every chart draws through one shared set of chart parts — bars, lines, the fill under a line, points, grid and axis labels, and the Trace timeline's bars: the cost center's requests, Token and cost charts, the context donut, the Evaluation Center's score chart and sparkline, the agents' activity sparkline and the Trace timeline. The theme decides how each part looks: its palette, bar width, corners, outline and fill, line width and curve, point shape and the fill under a line. The context donut's track stays a solid ring in every theme, even where a theme dashes the grid.
+- Frost draws soft, low-glare pastels — pale, borderless, rounded bars, smooth curves and a faint grid; Console draws thin, solid bars with a 1px outline, stepped 1px lines, square points and a dashed grid. Primer keeps its look with two small changes: in light mode the amber, sky, emerald, teal and orange series are one step deeper so every series reads at 3:1 on white, and the Trace timeline uses the same palette as the other charts — in dark mode its bars are one step deeper, and the approval-wait bar is a slightly deeper rose in both modes. In Primer light the settings switch's knob gains a gray hairline while off, so it stays visible on its pale track.
 
 ## Frost and Console, refined
 
@@ -44,7 +44,7 @@ The Web App's Appearance settings gained a theme picker — Primer (通用), Fro
 
 - Dark mode keeps near-white for headings and emphasis and sets body text a step below it, at least 11:1 against every page surface; secondary text stays at least 6:1 and meta text (timestamps, placeholders) at least 4.5:1. Primer's dark canvas is lifted off pure black, and the gray scale behind `dark:` classes moves with it.
 - In Console, messages, the composer's input and Session titles read in the sans reading face; navigation, labels, step rows and code stay monospaced. Console's work group loses its box, and Frost's work group lines its steps up with the header.
-- Frost's dialogs are opaque (only menus, popovers and tooltips stay frosted), and at phone width the app fills the screen with no inset around it.
+- Frost's dialogs are opaque (only menus, popovers and tooltips stay frosted), and the page behind a dialog, sheet, drawer, the command palette or a zoomed image is blurred as well as dimmed. At phone width the app fills the screen with no inset around it.
 
 ## Details
 

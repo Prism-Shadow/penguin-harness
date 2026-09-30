@@ -332,8 +332,8 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
     expect(TOKEN_GROUPS.find((group) => group.id === "shell")?.names.length).toBe(9);
     // 215, plus the integration round's four (the emphasis ink and the switch's three), plus
     // the chart round's nine (two more series, the reference line, six geometry names), plus
-    // the bar outline's three.
-    expect(TOKEN_NAMES.length).toBe(231);
+    // the bar outline's three, plus the knob's hairline edge (2026-09-30).
+    expect(TOKEN_NAMES.length).toBe(232);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {
@@ -429,6 +429,7 @@ describe("the integration revision of the contract (2026-09-29)", () => {
       "--ui-switch-track",
       "--ui-switch-knob",
       "--ui-switch-knob-on",
+      "--ui-switch-knob-line",
     ]);
     for (const theme of THEMES) {
       if (theme.status !== "filled") continue;
@@ -561,16 +562,21 @@ describe("the chart style tokens (round 7)", () => {
     ]);
   });
 
-  it("keeps Primer at today's palette and geometry", () => {
+  it("keeps Primer at today's geometry, and its palette at the steps that read on white", () => {
+    // The one Primer change of the theme work (2026-09-30): amber, sky, emerald, teal and orange
+    // move from their 500 steps (2.2–2.9:1 on white) to the 600 steps the app's dark series
+    // already used; violet, rose and fuchsia clear 3:1 at 500 and stay.
     const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     const light = primer.analysis.modes.light;
     expect(light.get("--ui-chart-1")).toBe("oklch(60.6% 0.25 292.717)"); // violet-500
-    expect(light.get("--ui-chart-2")).toBe("oklch(76.9% 0.188 70.08)"); // amber-500
-    expect(light.get("--ui-chart-3")).toBe("oklch(68.5% 0.169 237.323)"); // sky-500
+    expect(light.get("--ui-chart-2")).toBe("oklch(66.6% 0.179 58.318)"); // amber-600
+    expect(light.get("--ui-chart-3")).toBe("oklch(58.8% 0.158 241.966)"); // sky-600
     expect(light.get("--ui-chart-4")).toBe("oklch(64.5% 0.246 16.439)"); // rose-500
-    expect(light.get("--ui-chart-5")).toBe("oklch(69.6% 0.17 162.48)"); // emerald-500
+    expect(light.get("--ui-chart-5")).toBe("oklch(59.6% 0.145 163.225)"); // emerald-600
     expect(light.get("--ui-chart-6")).toBe("oklch(66.7% 0.295 322.15)"); // fuchsia-500
+    expect(light.get("--ui-chart-7")).toBe("oklch(60% 0.118 184.704)"); // teal-600
+    expect(light.get("--ui-chart-8")).toBe("oklch(64.6% 0.222 41.116)"); // orange-600
     expect(light.get("--ui-chart-ref")).toBe("var(--ui-chart-2)");
     expect(light.get("--ui-chart-bar-fill")).toBe("0.6");
     expect(light.get("--ui-chart-bar-radius")).toBe("0px");
@@ -582,9 +588,11 @@ describe("the chart style tokens (round 7)", () => {
     expect(light.get("--ui-chart-bar-stroke")).toBe("0px");
     expect(light.get("--ui-chart-bar-stroke-color")).toBe("series");
     expect(light.get("--ui-chart-bar-opacity")).toBe("1");
+    // Dark restates only what still differs from light: the timeline's emerald-400 work phase
+    // and fuchsia-600.
     const dark = primer.analysis.modes.dark;
-    expect(dark.get("--ui-chart-2")).toBe("oklch(66.6% 0.179 58.318)"); // amber-600
-    expect(dark.get("--ui-chart-3")).toBe("oklch(58.8% 0.158 241.966)"); // sky-600
+    expect(dark.get("--ui-chart-5")).toBe("oklch(76.5% 0.177 163.223)"); // emerald-400
+    expect(dark.get("--ui-chart-6")).toBe("oklch(59.1% 0.293 322.896)"); // fuchsia-600
   });
 
   it("writes the geometry in the units the app parses, and a curve the app knows", () => {

@@ -19,3 +19,4 @@ export {
 } from "./marks";
 export type { ChartPaint } from "./marks";
 export { TimelineBar } from "./timeline-bar";
+export { BAR_W, curvePath, fitBarWidth, roundCoord } from "./geom";

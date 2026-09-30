@@ -45,7 +45,8 @@ export function Drawer({ open, side = "left", title, onClose, children, widthCla
   return (
     <div className="fixed inset-0 z-50">
       <div
-        className="anim-fade absolute inset-0 bg-[var(--ui-overlay-backdrop)]"
+        // ui-scrim: the dimmed layer behind the drawer; a theme may blur the page through it.
+        className="ui-scrim anim-fade absolute inset-0 bg-[var(--ui-overlay-backdrop)]"
         onMouseDown={onClose}
       />
       <div

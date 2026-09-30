@@ -54,10 +54,12 @@ export function Switch({ checked, onChange, disabled, className, title, ...rest 
     >
       <span
         aria-hidden
-        className={`inline-block size-4 rounded-full border border-black/10 transition-transform duration-200 ease-out ${
+        className={`inline-block size-4 rounded-full border transition-transform duration-200 ease-out ${
+          // The off knob sits on a pale track, so its edge is the theme's knob line (it carries the
+          // 3:1 there); on the accent track the fill already contrasts and the edge stays faint.
           checked
-            ? "translate-x-4.5 bg-(--ui-switch-knob-on)"
-            : "translate-x-0.5 bg-(--ui-switch-knob)"
+            ? "translate-x-4.5 border-black/10 bg-(--ui-switch-knob-on)"
+            : "translate-x-0.5 border-switch-knob-line bg-(--ui-switch-knob)"
         }`}
       />
     </button>

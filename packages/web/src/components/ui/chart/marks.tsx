@@ -22,7 +22,7 @@
 import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
 import { seriesStroke, useChartStyle } from "../../../lib/chart-style";
 import type { ChartStyle } from "../../../lib/chart-style";
-import { curvePath, fitBarWidth } from "../../../features/usage/chart-geom";
+import { curvePath, fitBarWidth } from "./geom";
 
 export type ChartPaint =
   /** Palette slot `series` (0-based; cycles past the last). */

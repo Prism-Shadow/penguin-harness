@@ -215,6 +215,7 @@
     --ui-switch-track: var(--color-gray-200);
     --ui-switch-knob: var(--ui-fg-muted);
     --ui-switch-knob-on: var(--ui-accent-fg);
+    --ui-switch-knob-line: rgb(0 0 0 / 0.1);
 
     /* Typography — families. MiSans sets Latin and Chinese alike; the system CJK faces stay ahead
        of the generic fallbacks for the rare ideograph MiSans's slices do not carry. Chrome and
@@ -484,8 +485,9 @@
    * `animate-spin`, `.ui-glass` replace a panel's opaque fill and `.ui-shell` re-paint the
    * window's columns.
    *
-   * Frost gives all thirteen a recipe: glass, eyebrow (its ink; the rung is theme.css's),
-   * display, live, frame, underline-nav, shell, icon-decor, tree, field, activity, notice, chart.
+   * Frost gives all fourteen a recipe: glass, eyebrow (its ink; the rung is theme.css's),
+   * display, live, frame, underline-nav, shell, icon-decor, tree, field, activity, notice, chart,
+   * scrim.
    */
 
   /* Frosted transient layer: menus, popovers, tooltips and the floating composer — the small
@@ -519,6 +521,28 @@
   @media (prefers-reduced-transparency: reduce) {
     :root[data-theme="modern"] .ui-glass {
       background-color: color-mix(in srgb, var(--ui-overlay) 96%, transparent);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  /* The scrim — the dimmed layer behind a dialog, drawer or sheet: the page blurs behind it
+     under the host's dim (--ui-overlay-backdrop), the reference's frosted backdrop, in both
+     modes. The blur is the scrim's backdrop only — a backdrop filter never reaches an element's
+     own descendants — so a dialog drawn inside the scrim stays sharp; and the scrim is already
+     fixed to the viewport, so becoming a containing block moves nothing. Without backdrop
+     filters, or under reduced transparency, the dim alone remains. */
+  :root[data-theme="modern"] .ui-scrim {
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :root[data-theme="modern"] .ui-scrim {
+      background-color: var(--ui-overlay-backdrop);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    :root[data-theme="modern"] .ui-scrim {
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }

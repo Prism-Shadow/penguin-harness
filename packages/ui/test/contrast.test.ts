@@ -24,8 +24,9 @@
  *   dim): in dark, body text at 11:1 or better on the three page surfaces, the muted ink at
  *   6:1 and the subtle ink at 4.5:1; light keeps 7:1 and 4.5:1; the emphasis ink at 4.5:1 in
  *   both;
- * - the switch: its knob on the off track and, for the theme's accent and every preset, the
- *   `knob-on` on the accent — 3:1, so the knob never vanishes on a near-white dark accent.
+ * - the switch: its knob on the off track — 3:1, the knob itself or its hairline edge
+ *   (`knob-line` over the track) — and, for the theme's accent and every preset, the `knob-on`
+ *   on the accent — 3:1, so the knob never vanishes on a near-white dark accent.
  *
  * `fg-subtle` has no floor in light — placeholder and disabled ink, which WCAG exempts, and
  * Primer's is the app's — and holds 4.5:1 in dark, where timestamps and meta text read from it.
@@ -74,39 +75,13 @@ interface ContrastException {
   readonly until: string;
 }
 
-/** Known shortfalls. Empty is the goal; every entry names its fix. */
-const EXCEPTIONS: readonly ContrastException[] = [
-  {
-    theme: "github",
-    mode: "light",
-    fg: "--ui-switch-knob",
-    bg: "--ui-switch-track",
-    reason:
-      "Primer light keeps the app's white knob on its gray-200 off track (1.2:1); the knob's own " +
-      "hairline draws the edge, and the light look is pinned until a Primer polish wave",
-    until: "Primer polish (a knob or a track that clears 3:1)",
-  },
-  // Primer's light chart palette is today's, pinned exactly (2026-09-29): the 500 steps of
-  // amber, sky, emerald, teal and orange sit at 2.2–2.9:1 on white, and the reference curve is
-  // the amber. Frost and Console clear the floor in both modes; Primer's dark palette does too.
-  ...(
-    [
-      ["--ui-chart-2", "amber-500 at 2.15:1"],
-      ["--ui-chart-3", "sky-500 at 2.71:1"],
-      ["--ui-chart-5", "emerald-500 at 2.46:1"],
-      ["--ui-chart-7", "teal-500 at 2.42:1"],
-      ["--ui-chart-8", "orange-500 at 2.89:1"],
-      ["--ui-chart-ref", "the amber reference curve at 2.15:1"],
-    ] as const
-  ).map(([fg, reason]) => ({
-    theme: "github" as const,
-    mode: "light" as const,
-    fg,
-    bg: "--ui-canvas" as const,
-    reason: `Primer's light charts keep today's palette (${reason} on white)`,
-    until: "Primer polish (a 600-step palette for light)",
-  })),
-];
+/**
+ * Known shortfalls. Empty is the goal, and it is empty: the last entries — Primer's white knob on
+ * its gray-200 track, and its light chart palette at the 500 steps — were lifted on 2026-09-30
+ * (a gray-500 hairline on the knob, which the switch check measures as its edge; the 600 steps
+ * for the light series). An entry names its fix and the wave that lifts it.
+ */
+const EXCEPTIONS: readonly ContrastException[] = [];
 
 const PAGE_SURFACES = ["--ui-canvas", "--ui-surface", "--ui-surface-muted", "--ui-inset"] as const;
 
@@ -153,7 +128,7 @@ const pairsFor = (mode: ThemeModeName): readonly Pair[] => [
     bg,
     min: 4.5,
   })),
-  { fg: "--ui-switch-knob", bg: "--ui-switch-track", min: 3 },
+  // The knob on the off track is measured by `knobReads` below: the knob, or its hairline edge.
   // A frosted layer's ink on the glass over the worst backdrop it can float over (black in
   // light, white in dark): a menu stays legible whatever scrolls behind it.
   { fg: "--ui-fg", bg: "--ui-glass-bg", min: 4.5 },
@@ -343,6 +318,49 @@ describe("theme contrast", () => {
         });
         const names = stale.map((e) => `${e.fg} on ${e.bg} (${e.until})`);
         expect(names, `remove from EXCEPTIONS:\n${names.join("\n")}\n`).toEqual([]);
+      });
+    }
+  }
+});
+
+/**
+ * Whether the switch's knob reads on its off track: the knob itself at 3:1, or — where a theme
+ * keeps a knob that does not (Primer's white knob on gray-200, today's look) — its hairline edge,
+ * `--ui-switch-knob-line` composited over the track, at 3:1. A transparent edge is no edge.
+ */
+function knobReads(mode: ThemeModeName, theme: ThemeFileAnalysis): { ok: boolean; detail: string } {
+  const resolve: Resolve = (name) => {
+    const value = resolveThemeValue(name, mode, theme, defaultTheme);
+    if (value === null) return `${name} does not resolve to a value`;
+    return parseColor(value) ?? `${name} = \`${value}\` is not a colour this suite can read`;
+  };
+  const track = opaqueBackground("--ui-switch-track", mode, resolve);
+  const knob = resolve("--ui-switch-knob");
+  const line = resolve("--ui-switch-knob-line");
+  if (typeof track === "string") return { ok: false, detail: track };
+  if (typeof knob === "string") return { ok: false, detail: knob };
+  if (typeof line === "string") return { ok: false, detail: line };
+  const direct = contrastRatio(composite(knob, track), track);
+  const edge = line.a === 0 ? null : contrastRatio(composite(line, track), track);
+  const colors = `${formatColor(composite(knob, track))} on ${formatColor(track)}`;
+  const edgeNote = edge === null ? "no edge" : `edge ${edge.toFixed(2)}:1`;
+  return {
+    ok: direct >= 3 || (edge !== null && edge >= 3),
+    detail: `knob ${direct.toFixed(2)}:1 on the off track (${colors}), ${edgeNote}`,
+  };
+}
+
+describe("the switch's knob on its off track", () => {
+  for (const id of THEME_IDS) {
+    const theme = themeAnalysis(id);
+    if (theme === null) {
+      it.skip(`src/themes/${id}.css — PENDING, switch not checked: no tokens declared yet`, () => {});
+      continue;
+    }
+    for (const mode of THEME_MODES) {
+      it(`${id} ${mode}: the knob reads at 3:1, itself or by its edge`, () => {
+        const result = knobReads(mode, theme);
+        expect(result.ok, result.detail).toBe(true);
       });
     }
   }

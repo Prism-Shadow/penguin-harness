@@ -10,9 +10,9 @@
  * linear in Primer and Frost and steps it eight times a turn in Console, without either theme
  * redrawing the arc.
  *
- * Arriving ahead of the rest of W1's component set because the screens need it now; its
- * `spinner.demo.tsx` lands with that set (the gallery reaches a demo through a module's parts,
- * and the modules are written on the same PR as the demos).
+ * The one component the package exports so far (`index.ts`): the Web App renders it where it
+ * used to hand-draw a ring, and the gallery reviews it as the Web App's screens render it — the
+ * package ships no demos of its own.
  */
 import type { ToneName } from "../../../tokens";
 

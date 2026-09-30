@@ -30,6 +30,7 @@
  * |                    | row, a tool-call row, a work group's header              |                                                       |
  * | `ui-notice`        | a notice: a toast, an inline notice strip                | `data-tone="info" \| "success" \| "warning" \| "danger" \| "neutral"`; children may carry `data-slot="icon" \| "title" \| "body" \| "actions"` |
  * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"` |
+ * | `ui-scrim`         | the dimmed layer behind a dialog, drawer or sheet        | —                                                     |
  *
  * `ui-shell` is the one place a theme may paint a field of colour: Frost paints the navigation
  * column a soft grey beside a near-white main column, flat (its earlier warm field and floating
@@ -96,6 +97,13 @@
  * and 1px stepped lines with square joins. Nearly all of that is tokens the chart primitives
  * read (`--ui-chart-*`); a recipe adds only what a token cannot say — dashes, joins and caps,
  * pixel alignment, a fade. A series keeps the colour its host gave it in every theme.
+ *
+ * `ui-scrim` (2026-09-30) is the backdrop a dialog, drawer or sheet dims the page with: the host
+ * paints its dim from `--ui-overlay-backdrop` and carries the hook, whether the scrim is a
+ * sibling behind the panel or the full-viewport overlay the panel sits in. Primer and Console
+ * leave the dim as it is; Frost blurs the page behind it, the reference's frosted backdrop — a
+ * backdrop filter never reaches the element's own descendants, so a panel inside the scrim stays
+ * sharp. It moves only with the host's fade, so reduced motion needs nothing from it.
  */
 export const HOOKS = [
   "ui-glass",
@@ -111,6 +119,7 @@ export const HOOKS = [
   "ui-activity",
   "ui-notice",
   "ui-chart",
+  "ui-scrim",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

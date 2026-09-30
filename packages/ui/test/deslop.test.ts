@@ -64,10 +64,10 @@ const POLICY: DeslopPolicy = {
   pulseHomes: ["dot.tsx", "skeleton.tsx", "streaming-caret.tsx"],
   // Rule 11: the one Spinner (K-redesign §5.1).
   spinnerHomes: ["components/icons/spinner/spinner.tsx"],
-  // Rule 20: tokens only; hex colours in identity data, the avatar palette, and the contract, whose
-  // accent presets carry the swatch a picker paints for a preset the active theme does not apply.
+  // Rule 20: tokens only; hex colours in the avatar palette and in the contract, whose accent
+  // presets carry the swatch a picker paints for a preset the active theme does not apply.
   tokensOnly: true,
-  hexHomes: ["fixtures/", "avatar.ts", "tokens.ts"],
+  hexHomes: ["avatar.ts", "tokens.ts"],
 };
 
 /** Occurrences a named wave removes, by root-relative path. The package starts with none. */
@@ -88,9 +88,7 @@ function nothingToRead(rule: DeslopRule, surface: "markup" | "stylesheet"): stri
   const active = ACTIVE.filter((f) => (surface === "markup" ? MARKUP : /\.css$/).test(f.name));
   if (surface === "stylesheet") return active.length > 0 ? null : "no stylesheet to read";
   if (rule === 21) {
-    return active.some((f) => f.rel.startsWith("fixtures/") || /^strings.*\.ts$/.test(f.name))
-      ? null
-      : "no fixtures or strings dictionary yet";
+    return active.some((f) => /^strings.*\.ts$/.test(f.name)) ? null : "no strings dictionary yet";
   }
   if (!hasTsx) {
     return "no .tsx under packages/ui/src yet — the screens (#763), the modules (#764) and the W1 components are read when they land";
@@ -506,6 +504,7 @@ describe("the rule checks, on known shapes", () => {
       "18:backdrop-blur-md",
     ]);
     expect(tsx('<i className="ui-glass backdrop-blur-md" />')).toEqual([]);
+    expect(tsx('<i className="ui-scrim backdrop-blur-md" />')).toEqual([]);
     expect(
       found(
         "t.css",
@@ -541,6 +540,13 @@ describe("the rule checks, on known shapes", () => {
       '18::root .ui-shell > [data-slot="nav"] { backdrop-filter: blur(4px) }',
       "18::root .ui-frame { background: …gradient() }",
     ]);
+    // The scrim behind a dialog may blur the page as the glass does (Frost's frosted backdrop).
+    expect(
+      found(
+        "t.css",
+        ":root .ui-scrim { backdrop-filter: blur(14px); }\n:root .ui-glass { -webkit-backdrop-filter: blur(16px); }",
+      ),
+    ).toEqual([]);
   });
 
   it("rule 19 — shadows", () => {
@@ -567,7 +573,7 @@ describe("the rule checks, on known shapes", () => {
     expect(
       tsx('<i className="bg-gray-100 dark:bg-surface text-white" style={{ color: "#2563eb" }} />'),
     ).toEqual(["20:bg-gray-100", "20:dark:bg-surface", "20:text-white", "20:#2563eb"]);
-    expect(found("fixtures/data.ts", 'export const C = "#2563eb";')).toEqual([]);
+    expect(found("tokens.ts", 'export const C = "#2563eb";')).toEqual([]);
     expect(found("screens/p.tsx", 'export const L = "trace file #001";')).toEqual([]);
     expect(
       found("x.tsx", 'export const X = () => <i className="bg-gray-100" />;', PALETTE_OK),
@@ -602,7 +608,7 @@ describe("the rule checks, on known shapes", () => {
   });
 
   it("rule 21 — emoji in copy", () => {
-    expect(found("fixtures/en.ts", 'export const T = { title: "✨ New" };')).toEqual(["21:✨"]);
+    expect(found("strings.ts", 'export const T = { title: "✨ New" };')).toEqual(["21:✨"]);
     expect(found("strings-en.ts", 'export const S = { ok: "Done ✓", copy: "© 2026" };')).toEqual(
       [],
     );

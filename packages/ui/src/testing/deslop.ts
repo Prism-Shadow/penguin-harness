@@ -98,7 +98,7 @@ export interface DeslopPolicy {
    * source reads tokens only; false for the web app, which leaves the palette wave by wave.
    */
   readonly tokensOnly: boolean;
-  /** Rule 20: where markup may spell a hex colour — identity data and the avatar palette. */
+  /** Rule 20: where source may spell a hex colour — the avatar palette and the contract's swatches. */
   readonly hexHomes: readonly string[];
 }
 
@@ -974,10 +974,10 @@ const nestedSurfaceCheck: Check = (analysis) => {
   });
 };
 
-/** Rule 18: gradient backgrounds, and backdrop filters on a unit without `.ui-glass`. */
+/** Rule 18: gradient backgrounds, and backdrop filters on a unit without `.ui-glass` / `.ui-scrim`. */
 const decorationCheck: Check = (analysis) =>
   analysis.units.flatMap((unit) => {
-    const glass = unit.tokens.some((t) => t.utility === "ui-glass");
+    const glass = unit.tokens.some((t) => t.utility === "ui-glass" || t.utility === "ui-scrim");
     return unit.tokens.flatMap((token) => {
       const u = token.utility;
       const gradient =
@@ -1002,10 +1002,9 @@ const hexCheck: Check = (analysis, policy) => {
   );
 };
 
-/** Rule 21: emoji in a `strings*.ts` dictionary or under `fixtures/`. */
+/** Rule 21: emoji in a `strings*.ts` dictionary. */
 const emojiCheck: Check = (analysis) => {
-  const { rel, name } = analysis.file;
-  if (!/^strings.*\.ts$/.test(name) && !rel.startsWith("fixtures/")) return [];
+  if (!/^strings.*\.ts$/.test(analysis.file.name)) return [];
   return analysis.strings
     .filter((chunk) => EMOJI.test(chunk.text))
     .map((chunk) => ({ line: chunk.line, found: chunk.text.match(EMOJI)![0] }));
@@ -1155,16 +1154,18 @@ const cssHookMonoCheck: Check = (analysis) =>
   );
 
 /**
- * Gradients painted by a hook recipe — the atmosphere tell — and backdrop filters off `.ui-glass`.
+ * Gradients painted by a hook recipe — the atmosphere tell — and backdrop filters off the two
+ * hooks that may blur: `.ui-glass` (the frosted layer) and `.ui-scrim` (the dimmed backdrop
+ * behind a dialog, which Frost blurs; user decision, 2026-09-30).
  * Two recipes may paint a gradient, each with a job: `.ui-shell`'s colour field behind the app
  * window, which holds the floating sheet and the glass layers against it (user decision,
  * 2026-09-19), and the RUNNING state of `.ui-activity`, whose highlight sweeping across a label
  * is the signal that a step is in progress (user decision, 2026-09-29) — never the resting
  * states, so a finished transcript carries no wash. A third, `.ui-chart`, may paint one as a
- * MASK: a line's area fading towards the baseline, a bar's hatch — a gradient that carries the
- * data's shape, not atmosphere (user decision, 2026-09-29). A gradient on any other hook, as a
- * background or as a mask, is still the tell. A gradient in app CSS that is not a hook (the
- * context bar's hatch, which carries meaning) is review.
+ * MASK: a line's area fading towards the baseline — a gradient that carries the data's shape,
+ * not atmosphere (user decision, 2026-09-29). A gradient on any other hook, as a background or
+ * as a mask, is still the tell. A gradient in app CSS that is not a hook (the context bar's
+ * hatch, which carries meaning) is review.
  */
 const GRADIENT_RECIPES = /\.ui-shell\b|\.ui-activity\[data-state="running"\]|\.ui-chart\b/;
 
@@ -1182,7 +1183,7 @@ const cssDecorationCheck: Check = (analysis) =>
     if (
       /^(?:-webkit-)?backdrop-filter$/.test(decl.name) &&
       decl.value !== "none" &&
-      !fullSelector(rule).includes(".ui-glass")
+      !/\.ui-(?:glass|scrim)\b/.test(selector)
     ) {
       return [{ line: decl.line, found: `${rule.selector} { ${decl.name}: ${decl.value} }` }];
     }

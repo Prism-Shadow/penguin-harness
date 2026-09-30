@@ -95,10 +95,11 @@
   --color-accent-line: var(--ui-accent-line);
 
   /* The switch: bg-switch-track (off), bg-switch-knob (the knob on it), bg-switch-knob-on (the
-     knob on the accent). */
+     knob on the accent), border-switch-knob-line (the knob's hairline edge). */
   --color-switch-track: var(--ui-switch-track);
   --color-switch-knob: var(--ui-switch-knob);
   --color-switch-knob-on: var(--ui-switch-knob-on);
+  --color-switch-knob-line: var(--ui-switch-knob-line);
 
   /* Semantic tones: text-tone-danger-fg, bg-tone-success-bg, border-tone-attention-line, … */
   --color-tone-success-fg: var(--ui-tone-success-fg);

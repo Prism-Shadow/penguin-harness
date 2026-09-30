@@ -10,6 +10,7 @@ import { Button } from "../../components/ui/button";
 import { Modal } from "../../components/ui/modal";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
+import { Spinner } from "@prismshadow/penguin-ui";
 
 const POLL_MS = 3_000;
 
@@ -273,7 +274,7 @@ export function KeyAuthDialog({
         </p>
         {(phase === "starting" || phase === "waiting" || phase === "applying") && (
           <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-            <span className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent" />
+            <Spinner size="xs" label={S.common.loading} />
             {phase === "starting"
               ? S.models.platformKeyStarting
               : phase === "applying"

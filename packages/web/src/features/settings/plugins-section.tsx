@@ -38,6 +38,7 @@ import { SectionShell } from "./section-shell";
 import { useSessions } from "../../state/sessions";
 import { MachinePicker } from "../machines/machine-picker";
 import { NoticeStrip } from "../../components/ui/notice-strip";
+import { Spinner } from "@prismshadow/penguin-ui";
 
 /** The picker's value for this server; a machine id is never this short. */
 const THIS_SERVER = "*";
@@ -528,10 +529,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
         {(entry.notices ?? []).map((notice, i) =>
           notice.tone === "progress" ? (
             <p key={i} className={`flex items-center gap-2 text-xs ${toneInk.busy}`}>
-              <span
-                aria-hidden
-                className="inline-block size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
-              />
+              <Spinner size="sm" label={S.common.loading} />
               <span className="min-w-0 break-words">{localized(notice.text, notice.textZh)}</span>
             </p>
           ) : notice.tone === "attention" ? (

@@ -118,18 +118,21 @@
     --ui-tone-info-emphasis: oklch(50% 0.134 242.749); /* sky-700 */
     --ui-tone-info-emphasis-fg: #ffffff;
 
-    /* ---- Charts: today's series palette in its roles (violet, amber, sky, rose, emerald,
-       fuchsia, then teal and orange from the employee palette), the reference curve amber like
-       the second series, the token-kind blues, and today's geometry — bars at 60% of their band
-       with square tops, 2px lines joined straight, 2.5px points, a 10% fill under a line. ---- */
+    /* ---- Charts: the series palette in its roles (violet, amber, sky, rose, emerald, fuchsia,
+       then teal and orange from the employee palette). Amber, sky, emerald, teal and orange sit
+       at their 600 steps — the steps the app's dark series already used — since their 500s read
+       at 2.2–2.9:1 on white (lifted 2026-09-30, the one Primer change of the theme work; violet,
+       rose and fuchsia clear 3:1 at 500). The reference curve is amber like the second series;
+       the token-kind blues and today's geometry — bars at 60% of their band with square tops,
+       2px lines joined straight, 2.5px points, a 10% fill under a line. ---- */
     --ui-chart-1: oklch(60.6% 0.25 292.717); /* violet-500 */
-    --ui-chart-2: oklch(76.9% 0.188 70.08); /* amber-500 */
-    --ui-chart-3: oklch(68.5% 0.169 237.323); /* sky-500 */
+    --ui-chart-2: oklch(66.6% 0.179 58.318); /* amber-600 */
+    --ui-chart-3: oklch(58.8% 0.158 241.966); /* sky-600 */
     --ui-chart-4: oklch(64.5% 0.246 16.439); /* rose-500 */
-    --ui-chart-5: oklch(69.6% 0.17 162.48); /* emerald-500 */
+    --ui-chart-5: oklch(59.6% 0.145 163.225); /* emerald-600 */
     --ui-chart-6: oklch(66.7% 0.295 322.15); /* fuchsia-500 */
-    --ui-chart-7: oklch(70.4% 0.14 182.503); /* teal-500 */
-    --ui-chart-8: oklch(70.5% 0.213 47.604); /* orange-500 */
+    --ui-chart-7: oklch(60% 0.118 184.704); /* teal-600 */
+    --ui-chart-8: oklch(64.6% 0.222 41.116); /* orange-600 */
     --ui-chart-ref: var(--ui-chart-2);
     --ui-chart-cache-read: #7dd3fc;
     --ui-chart-cache-write: #0ea5e9;
@@ -203,12 +206,14 @@
 
     /* ---- Controls: the switch the app has always drawn — the gray-200 track when off, a white
        knob, and the accent's own label ink for the knob on the accent (white on the dark fills).
-       The white knob on the gray-200 track is under 3:1 and kept on purpose: it is today's look,
-       and the knob's own hairline draws its edge; the contrast suite records it as the one
-       exception, for the Primer polish wave to lift. ---- */
+       The white knob on the gray-200 track is under 3:1 and kept: it is today's look, and the
+       knob's own hairline draws its edge — that hairline is gray-500 here (2026-09-30, the
+       least visible change that reads at 3:1 on the track; it was a 10% black), so the edge
+       carries the knob where the fill cannot. ---- */
     --ui-switch-track: var(--color-gray-200);
     --ui-switch-knob: #ffffff;
     --ui-switch-knob-on: var(--ui-accent-fg);
+    --ui-switch-knob-line: var(--color-gray-500);
 
     /* ---- Typography — families: the system stacks the app ships today; chrome and reading text
        share the one face. The sans stack reads the CJK face where the app's stack names the two
@@ -440,14 +445,11 @@
     --ui-tone-info-bg: oklch(29.3% 0.066 243.157 / 0.4); /* sky-950/40 */
     --ui-tone-info-line: oklch(50% 0.134 242.749); /* sky-700 */
 
-    /* ---- Charts: the 600 steps the app's dark series use, emerald at 400 as the timeline
-       draws its work phase; violet and rose hold ---- */
-    --ui-chart-2: oklch(66.6% 0.179 58.318); /* amber-600 */
-    --ui-chart-3: oklch(58.8% 0.158 241.966); /* sky-600 */
+    /* ---- Charts: light now shares the 600 steps the app's dark series use, so dark restates
+       only what still differs — emerald at 400 as the timeline draws its work phase, fuchsia at
+       600; violet and rose hold ---- */
     --ui-chart-5: oklch(76.5% 0.177 163.223); /* emerald-400 */
     --ui-chart-6: oklch(59.1% 0.293 322.896); /* fuchsia-600 */
-    --ui-chart-7: oklch(60% 0.118 184.704); /* teal-600 */
-    --ui-chart-8: oklch(64.6% 0.222 41.116); /* orange-600 */
     --ui-chart-grid: var(--color-gray-800);
     --ui-chart-axis: var(--color-gray-500);
 
@@ -465,6 +467,7 @@
     /* ---- Controls: the app's dark off track, and the body ink as the knob on it ---- */
     --ui-switch-track: var(--color-gray-700);
     --ui-switch-knob: var(--ui-fg);
+    --ui-switch-knob-line: rgb(0 0 0 / 0.1);
 
     /* ---- Selection and scrollbar ---- */
     --ui-selection-bg: rgb(255 255 255 / 0.18);
@@ -478,8 +481,10 @@
    * card with a muted head, the accent bar under a tab, the sidebar's muted fill beside the
    * canvas, monochrome icons, a bordered tree box with the host's own indent, a form's label
    * above its control and a settings row's label beside it, a plain row for a step of the
-   * agent's work — so no recipe is written for those, and none may be until a Primer polish wave
-   * changes that look on purpose. The two rules every theme shares (the eyebrow on the h6 rung,
+   * agent's work, a plain dim behind a dialog — so no recipe is written for those, and none may
+   * be until a Primer polish wave changes that look on purpose (the 2026-09-30 lift of the light
+   * chart steps and the knob's hairline was such a change, made in tokens, not recipes). The
+   * two rules every theme shares (the eyebrow on the h6 rung,
    * the display title in the emphasis ink) live in theme.css and are what the app's group labels
    * and page titles already draw: 11px semibold tracked capitals, and the body ink in light.
    */

@@ -235,6 +235,7 @@
     --ui-switch-track: var(--color-gray-200);
     --ui-switch-knob: var(--ui-fg-muted);
     --ui-switch-knob-on: var(--ui-accent-fg);
+    --ui-switch-knob-line: rgb(0 0 0 / 0.1);
 
     /* Typography — families. Latin face first, so ASCII always renders in the theme's face; the
        chrome is the mono face — one stack, read by both names — with Noto behind it for Han, and
@@ -484,8 +485,9 @@
    * `animate-spin` and `.ui-frame` redraw a card's box.
    *
    * Console gives a recipe to: eyebrow (its ink; the rung is theme.css's), display, live, frame,
-   * underline-nav, shell, icon-decor, tree, field, activity, notice, chart. `.ui-glass` is a
-   * no-op here: the overlay is opaque through the glass tokens.
+   * underline-nav, shell, icon-decor, tree, field, activity, notice, chart. `.ui-glass` and
+   * `.ui-scrim` are no-ops here: the overlay is opaque through the glass tokens, and the page
+   * behind a dialog is dimmed, not blurred.
    */
 
   /* Group label on the h6 rung (theme.css): the chrome face, uppercase, tracked — and muted. */
@@ -816,12 +818,15 @@
      in the Trace timeline, so its rule carries both spellings — a dashed stroke, and a dashed
      rule under a lane with no fill — and an engine ignores the one that does not apply. */
   :root[data-theme="geek"] .ui-chart [data-part="grid"] {
-    stroke-dasharray: 2 3;
     background-color: transparent;
     border-bottom: var(--ui-border-w) dashed var(--ui-line-emphasis);
   }
-  /* Pixel alignment is for straight rules only: the donut's track is a grid part too, and a
-     circle without anti-aliasing is a staircase. */
+  /* Dashes and pixel alignment are for the grid's straight rules — the SVG lines, and the HTML
+     lane rule above — never the donut's track, a circle that is a grid part too and stays a
+     solid ring (dashed it read as stitching; without anti-aliasing it is a staircase). */
+  :root[data-theme="geek"] .ui-chart line[data-part="grid"] {
+    stroke-dasharray: 2 3;
+  }
   :root[data-theme="geek"] .ui-chart line:is([data-part="grid"], [data-part="axis"]) {
     shape-rendering: crispEdges;
   }

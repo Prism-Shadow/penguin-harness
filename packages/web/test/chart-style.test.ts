@@ -1,5 +1,5 @@
 /**
- * The charts' theme reading (lib/chart-style.ts) and the geometry it drives (chart-geom.ts):
+ * The charts' theme reading (lib/chart-style.ts) and the geometry it drives (chart/geom.ts):
  * tokens parse into the record with the default theme's values as the fallback for each one,
  * and the default values draw exactly what the charts drew before they read tokens.
  */
@@ -10,7 +10,8 @@ import {
   readChartStyle,
   seriesStroke,
 } from "../src/lib/chart-style";
-import { curvePath, fitBarWidth, linePath, makeGeom } from "../src/features/usage/chart-geom";
+import { makeGeom, seriesPoints } from "../src/features/usage/chart-geom";
+import { curvePath, fitBarWidth } from "../src/components/ui/chart/geom";
 
 const reader = (tokens: Record<string, string>) => (name: string) => tokens[name] ?? "";
 
@@ -90,8 +91,9 @@ describe("the geometry the tokens drive", () => {
   const g = makeGeom(3, 100, 640);
 
   it("draws the default theme exactly as before: straight lines, 60% bars", () => {
-    expect(linePath(g, [0, 100, 50])).toBe(linePath(g, [0, 100, 50], "linear"));
-    expect(linePath(g, [0, 100])).toMatch(/^M[\d.]+,[\d.]+ L[\d.]+,[\d.]+$/);
+    const points = seriesPoints(g, [0, 100, 50]);
+    expect(curvePath(points)).toBe(curvePath(points, "linear"));
+    expect(curvePath(seriesPoints(g, [0, 100]))).toMatch(/^M[\d.]+,[\d.]+ L[\d.]+,[\d.]+$/);
     expect(fitBarWidth(20)).toBe(fitBarWidth(20, DEFAULT_CHART_STYLE.barFill));
   });
 

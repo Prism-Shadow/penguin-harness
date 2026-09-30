@@ -332,6 +332,7 @@ export const zh = {
       "ui-activity": "正在工作的思考行或工具行：运行中、已完成或出错",
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
+      "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
     } as Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],

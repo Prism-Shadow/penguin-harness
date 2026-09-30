@@ -327,6 +327,7 @@ export const en: GalleryStrings = {
       "ui-notice":
         "a notice strip or toast, coloured by its tone: info, success, warning, danger or neutral",
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
+      "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],

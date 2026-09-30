@@ -367,8 +367,15 @@ export const TOKEN_GROUPS = [
     // The switch's off track and the knob on it, and the knob on the on track (the accent). A
     // knob keeps 3:1 against its track in every theme, mode and preset — `knob-on` follows the
     // accent's label ink, which already flips to a dark ink on a light fill — so the knob never
-    // vanishes on a near-white dark accent.
-    names: ["--ui-switch-track", "--ui-switch-knob", "--ui-switch-knob-on"],
+    // vanishes on a near-white dark accent. `knob-line` is the knob's hairline edge: where the
+    // knob itself does not reach 3:1 on the off track (Primer's white knob on gray-200, kept),
+    // the edge does — a gray-500 hairline there (2026-09-30), a faint one elsewhere.
+    names: [
+      "--ui-switch-track",
+      "--ui-switch-knob",
+      "--ui-switch-knob-on",
+      "--ui-switch-knob-line",
+    ],
   },
   {
     id: "type-families",

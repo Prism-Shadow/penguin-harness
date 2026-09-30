@@ -11,9 +11,10 @@
  * a theme may recolour or drop), `ui-tree` (rows that nest, which Console joins with connector
  * rules) and `ui-field` (a labelled control row, which Console sets as a table row) — and the
  * eleventh, `ui-activity` (a step of the agent's work: Frost sweeps a highlight across its label,
- * Console renders a transcript; user decision, 2026-09-29), and the twelfth and thirteenth,
- * `ui-notice` and `ui-chart` (notices and charts that differ per theme; the same day). This suite
- * holds the source to it:
+ * Console renders a transcript; user decision, 2026-09-29), the twelfth and thirteenth,
+ * `ui-notice` and `ui-chart` (notices and charts that differ per theme; the same day), and the
+ * fourteenth, `ui-scrim` (the dimmed backdrop behind a dialog, which Frost blurs; 2026-09-30).
+ * This suite holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -58,6 +59,7 @@ const APPENDIX_A = [
   "ui-activity",
   "ui-notice",
   "ui-chart",
+  "ui-scrim",
 ];
 
 /**
@@ -123,6 +125,9 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // span with a 1-based `data-series`), so the chart recipes carry HTML spellings beside the
   // SVG ones.
   "ui-chart": ["ChartFrame", "TokenDonut", "ScoreSparkline", "ActivitySparkline", "TimelineChart"],
+  // The dimmed backdrop (2026-09-30): a sibling behind a sheet or drawer, or the full-viewport
+  // overlay a modal, the command palette, the harness overlay and the lightbox sit in.
+  "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -193,7 +198,7 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the thirteen of Appendix A, each with its hosts", () => {
+  it("are the fourteen of Appendix A, each with its hosts", () => {
     expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
     expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
   });

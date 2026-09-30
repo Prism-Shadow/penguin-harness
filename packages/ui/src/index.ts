@@ -5,3 +5,6 @@
  */
 export * from "./hooks";
 export * from "./tokens";
+// The component set, as it lands: the Spinner first (the Web App renders it where it used to
+// hand-draw a ring).
+export * from "./components/icons/spinner/spinner";
