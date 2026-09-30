@@ -1987,11 +1987,7 @@ export function WorkspaceBrowser({
         {/* Copies the text that was read, which is all of the file unless the preview was cut off. */}
         {sourceShown && preview.content !== undefined && (
           <>
-            <Tooltip
-              label={copied ? S.common.copied : S.chat.copyCode}
-              placement="bottom"
-              className="shrink-0"
-            >
+            <Tooltip label={S.chat.copyCode} placement="bottom" className="shrink-0">
               <button
                 type="button"
                 aria-label={S.chat.copyCode}

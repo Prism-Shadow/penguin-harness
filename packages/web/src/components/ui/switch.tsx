@@ -56,7 +56,7 @@ export function Switch({ checked, onChange, disabled, className, title, ...rest 
         aria-hidden
         className={`inline-block size-4 rounded-full border border-black/10 transition-transform duration-200 ease-out ${
           checked
-            ? "translate-x-[18px] bg-(--ui-switch-knob-on)"
+            ? "translate-x-4.5 bg-(--ui-switch-knob-on)"
             : "translate-x-0.5 bg-(--ui-switch-knob)"
         }`}
       />

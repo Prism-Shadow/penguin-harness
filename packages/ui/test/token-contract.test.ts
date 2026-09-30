@@ -310,8 +310,9 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
       expect(TOKEN_NAMES).toContain(name);
     }
     expect(TOKEN_GROUPS.find((group) => group.id === "shell")?.names.length).toBe(9);
-    // 215, plus the integration round's four (the emphasis ink and the switch's three).
-    expect(TOKEN_NAMES.length).toBe(219);
+    // 215, plus the integration round's four (the emphasis ink and the switch's three), plus
+    // the chart round's nine (two more series, the reference line, six geometry names).
+    expect(TOKEN_NAMES.length).toBe(228);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {
@@ -502,6 +503,95 @@ describe("the integration revision of the contract (2026-09-29)", () => {
         ).toEqual(["color"]);
       }
     }
+  });
+});
+
+describe("the chart style tokens (round 7)", () => {
+  // A chart draws with tokens the app reads once per theme: the palette in fixed roles, a
+  // reference line, and the geometry. Primer's are today's charts; a curve is one of the three
+  // keywords the app knows, and the geometry is written in the units the app parses.
+  const chart = TOKEN_GROUPS.find((group) => group.id === "chart");
+
+  it("names the eight series, the reference line and the six geometry values", () => {
+    expect(chart?.names).toEqual([
+      "--ui-chart-1",
+      "--ui-chart-2",
+      "--ui-chart-3",
+      "--ui-chart-4",
+      "--ui-chart-5",
+      "--ui-chart-6",
+      "--ui-chart-7",
+      "--ui-chart-8",
+      "--ui-chart-ref",
+      "--ui-chart-cache-read",
+      "--ui-chart-cache-write",
+      "--ui-chart-output",
+      "--ui-chart-grid",
+      "--ui-chart-axis",
+      "--ui-chart-bar-fill",
+      "--ui-chart-bar-radius",
+      "--ui-chart-line-width",
+      "--ui-chart-point-radius",
+      "--ui-chart-curve",
+      "--ui-chart-area-opacity",
+    ]);
+  });
+
+  it("keeps Primer at today's palette and geometry", () => {
+    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
+    if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
+    const light = primer.analysis.modes.light;
+    expect(light.get("--ui-chart-1")).toBe("oklch(60.6% 0.25 292.717)"); // violet-500
+    expect(light.get("--ui-chart-2")).toBe("oklch(76.9% 0.188 70.08)"); // amber-500
+    expect(light.get("--ui-chart-3")).toBe("oklch(68.5% 0.169 237.323)"); // sky-500
+    expect(light.get("--ui-chart-4")).toBe("oklch(64.5% 0.246 16.439)"); // rose-500
+    expect(light.get("--ui-chart-5")).toBe("oklch(69.6% 0.17 162.48)"); // emerald-500
+    expect(light.get("--ui-chart-6")).toBe("oklch(66.7% 0.295 322.15)"); // fuchsia-500
+    expect(light.get("--ui-chart-ref")).toBe("var(--ui-chart-2)");
+    expect(light.get("--ui-chart-bar-fill")).toBe("0.6");
+    expect(light.get("--ui-chart-bar-radius")).toBe("0px");
+    expect(light.get("--ui-chart-line-width")).toBe("2px");
+    expect(light.get("--ui-chart-point-radius")).toBe("2.5px");
+    expect(light.get("--ui-chart-curve")).toBe("linear");
+    expect(light.get("--ui-chart-area-opacity")).toBe("0.1");
+    const dark = primer.analysis.modes.dark;
+    expect(dark.get("--ui-chart-2")).toBe("oklch(66.6% 0.179 58.318)"); // amber-600
+    expect(dark.get("--ui-chart-3")).toBe("oklch(58.8% 0.158 241.966)"); // sky-600
+  });
+
+  it("writes the geometry in the units the app parses, and a curve the app knows", () => {
+    for (const theme of THEMES) {
+      if (theme.status !== "filled") continue;
+      for (const mode of THEME_MODES) {
+        const values = new Map([...theme.analysis.modes.light, ...theme.analysis.modes[mode]]);
+        const at = `${theme.id} ${mode}`;
+        expect(values.get("--ui-chart-curve"), at).toMatch(/^(?:linear|smooth|step)$/);
+        for (const name of ["--ui-chart-bar-fill", "--ui-chart-area-opacity"]) {
+          expect(Number(values.get(name)), `${at} ${name}`).toBeGreaterThanOrEqual(0);
+          expect(Number(values.get(name)), `${at} ${name}`).toBeLessThanOrEqual(1);
+        }
+        for (const name of [
+          "--ui-chart-bar-radius",
+          "--ui-chart-line-width",
+          "--ui-chart-point-radius",
+        ]) {
+          expect(values.get(name), `${at} ${name}`).toMatch(/^\d+(?:\.\d+)?px$/);
+        }
+      }
+    }
+  });
+
+  it("differs between the themes in geometry, not only in colour", () => {
+    const geometry = (id: ThemeId) => {
+      const theme = THEMES.find((entry) => entry.id === id);
+      if (theme === undefined || theme.status !== "filled") return null;
+      const light = theme.analysis.modes.light;
+      return ["bar-fill", "bar-radius", "line-width", "curve"]
+        .map((part) => light.get(`--ui-chart-${part}`))
+        .join(" ");
+    };
+    const all = THEME_IDS.map(geometry).filter((value) => value !== null);
+    expect(new Set(all).size).toBe(all.length);
   });
 });
 

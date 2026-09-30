@@ -8,6 +8,10 @@
  * keyboard focus — so an icon rail labeled only by `title` reads as unlabeled. A guard test
  * fails on a `title` attribute on an intrinsic element.
  *
+ * Either way in, a hint shows only for an element with no visible text of its own or one
+ * whose visible text is cut off (`hintAllowed`, checked when the hint would open): a label the
+ * reader can already read in full gets no tooltip.
+ *
  * Two ways in, one panel:
  * - `<Tooltip label>` wraps its trigger in a measuring span — for a trigger that needs the
  *   wrapper's extras (`suppressed`, a placement beside a rail).
@@ -84,6 +88,64 @@ const contentMaxWidth: Record<TooltipContent, string> = {
 
 /** The attribute `TooltipLayer` reads; its value is the panel's text. */
 export const TOOLTIP_ATTR = "data-tooltip";
+
+/** A box that may clip its content: the four numbers a truncation check reads. */
+export interface ClipBox {
+  scrollWidth: number;
+  clientWidth: number;
+  scrollHeight: number;
+  clientHeight: number;
+}
+
+/** Layout reports up to a pixel of overflow for text that fits (line boxes, rounding). */
+const CUT_SLACK_PX = 1;
+
+/** Whether a box's content runs past its visible area: its text is cut off. */
+export function isCutOff(box: ClipBox): boolean {
+  return (
+    box.scrollWidth > box.clientWidth + CUT_SLACK_PX ||
+    box.scrollHeight > box.clientHeight + CUT_SLACK_PX
+  );
+}
+
+/**
+ * The tooltip rule: a hint shows only where its words are not already on screen — for an
+ * element that shows no text of its own (an icon-only control, a chart mark, a status glyph)
+ * or one whose visible text is cut off. An element whose text is fully visible gets no hint,
+ * whatever it carries: a hint that repeats what the reader can see is noise, and one that
+ * adds to it hides that information behind a hover. `boxes` are the element and its
+ * descendants, measured when the hint would open, since a column resize can cut a label off
+ * or give it back at any time.
+ */
+export function hintAllowed(visibleText: string, boxes: Iterable<ClipBox>): boolean {
+  if (visibleText.trim() === "") return true;
+  for (const box of boxes) if (isCutOff(box)) return true;
+  return false;
+}
+
+/** Text a reader cannot see: screen-reader-only copy, or anything the page does not render. */
+function unseen(node: Element | null): boolean {
+  if (node === null) return false;
+  if (node.closest(".sr-only") !== null) return true;
+  const check = (node as { checkVisibility?: () => boolean }).checkVisibility;
+  return check !== undefined && !check.call(node);
+}
+
+/** `hintAllowed`, with its inputs read off the element at the moment the hint would open. */
+export function hintAllowedFor(el: Element): boolean {
+  let text = "";
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if (!unseen(node.parentElement)) text += node.textContent ?? "";
+  }
+  const boxes: ClipBox[] = [];
+  for (const node of [el, ...el.querySelectorAll("*")]) {
+    // An inline box or a hidden one has no area to clip, and a screen-reader-only span is
+    // clipped on purpose — neither says the visible text was cut.
+    if (node instanceof HTMLElement && node.clientWidth > 0 && !unseen(node)) boxes.push(node);
+  }
+  return hintAllowed(text, boxes);
+}
 
 /** The trigger's viewport box — the part of a DOMRect the geometry reads. */
 export type TriggerRect = Pick<DOMRect, "top" | "bottom" | "left" | "right" | "width" | "height">;
@@ -182,8 +244,11 @@ export function Tooltip({
     if (suppressed === true || timerRef.current !== null) return;
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      const rect = anchorRef.current?.getBoundingClientRect();
-      if (!rect) return;
+      const anchor = anchorRef.current;
+      // Measured now, not when the trigger rendered: whether its label is cut off depends on
+      // the width it has at this moment.
+      if (anchor === null || !hintAllowedFor(anchor)) return;
+      const rect = anchor.getBoundingClientRect();
       const viewport = { width: window.innerWidth, height: window.innerHeight };
       setPosition(
         placement === "bottom" ? belowTrigger(rect, viewport) : besideTrigger(rect, viewport),
@@ -316,7 +381,7 @@ export function TooltipLayer() {
         timer = null;
         const el = current;
         const request = el === null ? null : tooltipRequest(el);
-        if (el === null || request === null || !el.isConnected) return;
+        if (el === null || request === null || !el.isConnected || !hintAllowedFor(el)) return;
         const rect = el.getBoundingClientRect();
         const viewport = { width: window.innerWidth, height: window.innerHeight };
         setOpen({

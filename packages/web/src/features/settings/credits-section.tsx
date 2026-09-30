@@ -4,9 +4,10 @@
  * metadata (the same record its licence files and build scripts are checked against), so a face
  * added or dropped there appears or disappears here without an edit.
  *
- * MiSans's licence asks software that uses the face to say so, and this page is where the app
- * says it: the sentence heads the page, for every account and every backend, which is why the
- * page itself is visible to everyone, the desktop shell's window included.
+ * MiSans's licence asks software that uses the face to credit it, and this page is where the
+ * app does: the face is listed with its licence for every account and every backend, which is
+ * why the page itself is visible to everyone, the desktop shell's window included. The page is
+ * the list and nothing else; the rail already names it.
  *
  * Each licence text is a disclosure (the WAI-ARIA pattern: a real button with `aria-expanded`
  * and `aria-controls`, the panel kept in the DOM and `hidden` while folded). A licence runs to
@@ -86,14 +87,10 @@ function CreditRow({ font }: { font: FontCredit }) {
 
 export function CreditsSection() {
   return (
-    <div>
-      <p className="text-sm">{S.settings.fontCredit}</p>
-      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{S.settings.creditsIntro}</p>
-      <ul className="mt-4 divide-y divide-gray-100 dark:divide-gray-800/60">
-        {FONT_CREDITS.map((font) => (
-          <CreditRow key={font.id} font={font} />
-        ))}
-      </ul>
-    </div>
+    <ul className="divide-y divide-gray-100 dark:divide-gray-800/60">
+      {FONT_CREDITS.map((font) => (
+        <CreditRow key={font.id} font={font} />
+      ))}
+    </ul>
   );
 }

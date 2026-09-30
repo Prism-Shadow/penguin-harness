@@ -28,8 +28,11 @@ const params = parseLibraryParams(window.location.search);
 getStore({ lang: params.lang, signedIn: true });
 installFetchShim();
 
-// Framed, a focus must not scroll the page around the frame (see src/app/main.tsx).
+// Framed, the document is sized by the page around it and must never show a scrollbar of its own
+// (library.css keys on the attribute; set before the first paint), and a focus must not scroll
+// the page around the frame (see src/app/main.tsx).
 if (window.parent !== window) {
+  document.documentElement.dataset.framed = "1";
   const focus = HTMLElement.prototype.focus;
   HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
     focus.call(this, { ...options, preventScroll: true });

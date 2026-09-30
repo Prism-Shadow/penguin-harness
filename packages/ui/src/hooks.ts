@@ -31,10 +31,11 @@
  * | `ui-notice`        | a notice: a toast, an inline notice strip                | `data-tone="info" \| "success" \| "warning" \| "danger" \| "neutral"`; children may carry `data-slot="icon" \| "title" \| "body" \| "actions"` |
  * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"` |
  *
- * `ui-shell` is the one place a theme may paint a field of colour: Frost lays a soft warm field
- * behind the window, leaves the navigation column transparent on it and floats the main column as
- * a rounded sheet; Console rules the columns off each other with hairlines, full bleed; Primer
- * changes nothing — the window's look is its own classes.
+ * `ui-shell` is the one place a theme may paint a field of colour: Frost paints the navigation
+ * column a soft grey beside a near-white main column, flat (its earlier warm field and floating
+ * sheet were retired at the owner's review of 2026-09-29); Console rules the columns off each
+ * other with hairlines, full bleed; Primer changes nothing — the window's look is its own
+ * classes.
  *
  * The three structure hooks (2026-09-19) are how the themes differ in organisation, not only in
  * colour and radius:
@@ -42,10 +43,9 @@
  * - `ui-icon-decor` marks the icons a theme may recolour or drop: a nav row's glyph, a group
  *   header's, a menu row's, an empty state's illustration — never a status mark, a file kind, a
  *   tool glyph or an avatar, which carry information and stay in every theme. Primer keeps them
- *   monochrome; Frost colours them by role (the accent on navigation rows and empty states, the
- *   muted ink on group headers, a menu row's own ink — a danger row keeps its red); Console hides
- *   them, so the eyebrow and the selected row's weight carry the structure and it shows far
- *   fewer icons.
+ *   monochrome; Frost draws them in the muted ink (a menu row's keeps the row's own ink — a
+ *   danger row keeps its red); Console hides them, so the eyebrow and the selected row's weight
+ *   carry the structure and it shows far fewer icons.
  *   A call site applies it by passing `decor="<role>"` to an icon renderer (`GlyphIcon`,
  *   `Glyph`), which writes the class and `data-role` for it; the hook guard reads the prop on
  *   the call site and holds the enclosing row or header to the host list. A wrapper that holds
@@ -64,9 +64,10 @@
  *   so a tree row carries no pseudo-elements of its own.
  * - `ui-field` marks a labelled control row — a form field or a settings row — so a theme can
  *   lay its parts out its own way: Primer keeps the host's layout (label above in a form, label
- *   left and control right in settings); Frost puts the label above and stretches the control
- *   across, roomily; Console sets a tabular row with a fixed label column
- *   (`--ui-field-label-w`) and the control left-aligned in the next, so a settings page reads
+ *   left and control right in settings); Frost keeps the host's row and sets it as a band in a
+ *   soft-filled group, the block's first and last rows rounded; Console sets a tabular row with
+ *   a fixed label column (`--ui-field-label-w`) and the control left-aligned in the next, so a
+ *   settings page reads
  *   like a table. The hint (or error) may be its own slot or sit inside the label slot.
  *
  * `ui-activity` (2026-09-29) is how a theme renders work in progress without the component
@@ -86,8 +87,9 @@
  * `ui-notice` and `ui-chart` (2026-09-29) let notices and charts differ per theme where their
  * components had one look. A notice names its tone; Primer keeps the host's own strip, Frost
  * floats a soft card on the overlay surface with the tone as one small dot of its ink, Console
- * writes a log line — the chrome face, an uppercase tone tag (`INFO`, `OK`, `WARN`, `ERR`,
- * `NOTE`) and a hairline down the left edge in the tone's ink, no fill. A chart names its parts;
+ * prints a console status line — a bracketed tone tag (`[INFO]`, `[ OK ]`, `[WARN]`, `[FAIL]`,
+ * `[NOTE]`) in the tone's ink and the chrome face, the message in the reading face, nothing
+ * round it. A chart names its parts;
  * Primer keeps the host's drawing, Frost all but hides the grid, rounds joins, caps and points and
  * fades a line's area, Console dashes the grid on crisp pixels, sets axis labels as tracked mono
  * capitals, hardens lines to 1px with square joins and hatches bars. A series keeps the colour

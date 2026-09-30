@@ -227,8 +227,17 @@ export const TOKEN_GROUPS = [
     ],
   },
   {
-    id: "color-charts",
-    title: "Colour — charts",
+    id: "chart",
+    title: "Charts — series colours and geometry",
+    // The categorical palette has fixed roles across themes — 1 violet, 2 amber, 3 sky, 4 rose,
+    // 5 emerald, 6 fuchsia, 7 teal, 8 orange in Primer's hues, each theme picking its own hue
+    // for the role — and the usage charts take entity series from 1–4 in order, the Trace
+    // timeline its phases from 1, 3, 2, 4 and 5. `ref` is a reference line (a hit-rate or
+    // success-rate curve); the three token-kind blues stay their own. The geometry is what a
+    // chart draws with, read once per theme through the app's chart-style hook: the share of
+    // its band a bar fills (0–1), a bar's top radius, the series stroke, the point radius, how
+    // a line joins its points (`linear` | `smooth` | `step`) and the fill under a line (0–1).
+    // Lengths are px: the charts draw in SVG user units.
     names: [
       "--ui-chart-1",
       "--ui-chart-2",
@@ -236,11 +245,20 @@ export const TOKEN_GROUPS = [
       "--ui-chart-4",
       "--ui-chart-5",
       "--ui-chart-6",
+      "--ui-chart-7",
+      "--ui-chart-8",
+      "--ui-chart-ref",
       "--ui-chart-cache-read",
       "--ui-chart-cache-write",
       "--ui-chart-output",
       "--ui-chart-grid",
       "--ui-chart-axis",
+      "--ui-chart-bar-fill",
+      "--ui-chart-bar-radius",
+      "--ui-chart-line-width",
+      "--ui-chart-point-radius",
+      "--ui-chart-curve",
+      "--ui-chart-area-opacity",
     ],
   },
   {

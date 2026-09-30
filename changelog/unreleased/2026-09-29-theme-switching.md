@@ -15,7 +15,7 @@ The Web App's Appearance settings gained a theme picker — Primer (通用), Fro
 - **Accent** lists the active theme's own presets after "Theme's own". A preset another theme lists is kept: it shows as the theme's own accent until a theme that lists it is active again.
 - **Font size** has five steps — XS 14px, S 15px, M 16px (the new default), L 18px (the old default) and XL 20px. A size chosen in an earlier release carries over by pixels; see [backward compatibility](2026-09-29-backward-compatibility.md).
 - **Fonts** picks the Latin face and the CJK face separately, each defaulting to the theme's own; the monospaced face always stays the theme's.
-- A new **Credits** page, last in the Personal group and open to every account (the desktop window included), lists each bundled font — its family, the themes that use it, its license, and the full license text on request. The MiSans credit moved there from the account menu.
+- A new **Credits** page, last in the Personal group and open to every account (the desktop window included), lists each bundled font — its family, the themes that use it, its license, and the full license text on request. The MiSans credit moved there from the account menu, as MiSans's entry in the list.
 
 ## The themes reach the real app
 
@@ -24,9 +24,20 @@ The Web App's Appearance settings gained a theme picker — Primer (通用), Fro
 
 ## Tooltips, pickers and counts
 
-- Every hover hint in the Web App shows in the app's own tooltip — the one the sidebar's rail used — instead of the browser's: it opens after a short pause, on keyboard focus as well as on hover, and follows the theme. Truncated text shows whole in it. Elements whose hint was their only name keep that name for screen readers.
+- Every hover hint in the Web App shows in the app's own tooltip — the one the sidebar's rail used — instead of the browser's: it opens after a short pause, on keyboard focus as well as on hover, and follows the theme. A hint shows only where its words are not already on screen: on an icon-only control or a chart mark, or when the element's text is cut off, and then it shows the text whole. Elements whose hint was their only name keep that name for screen readers.
+- A copy button turns its icon into a check for a moment after copying; its label and its tooltip never change to "Copied".
 - Pickers and menus share one look: the panel, row spacing, hover and selected states and the check mark of the settings selects, in the composer's model, thinking, permission and skill pickers, the agent, machine, protocol and organization pickers, and every menu.
 - The pending-approval count beside a Session title is a plain number in the attention colour, with no rounded badge behind it.
+
+## Charts follow the theme
+
+- The cost center's charts, the context donut, the Evaluation Center's score sparkline and the Trace timeline draw with the theme's chart style: its series palette, bar width and corner radius, line width, point size, line curve and the fill under a line. Primer draws them as before, except that the Trace timeline now uses the same palette shades as the other charts — in dark mode its bars are one step deeper, and the approval-wait bar is a slightly deeper rose in both modes.
+
+## Frost and Console, refined
+
+- Frost follows a calm, cool off-white: the sidebar and the main area are told apart by fill alone (no inset card, radius or shadow), groups are soft fills instead of lines — the Settings rows sit in one soft band — dialogs are opaque with 20px corners, status pills have no border, and icons are muted monochrome.
+- Console is pared down to a terminal's plainness: cards, rows and menus are the page plus a hairline, tints and shadows are gone, and notices and toasts read as status lines (`[ OK ]`, `[WARN]`, `[FAIL]`, `[INFO]`, `[NOTE]`).
+- The settings switch's knob now scales with the theme's spacing, so it no longer runs past Console's track; the two font pickers in Appearance stay on one line.
 
 ## Calmer dark mode
 

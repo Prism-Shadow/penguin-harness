@@ -3,8 +3,13 @@
  * newest point marked. Normalized to the observed range with a small floor, so a series that
  * moved from 60 to 90 fills the box and a flat one draws a level line through its middle
  * instead of collapsing onto an edge; there are no ticks — the number beside it is the value.
- * A single score is a lone point. Pure SVG, its own geometry (outside the icon family).
+ * A single score is a lone point. Pure SVG, its own geometry (outside the icon family), drawn
+ * in the theme's chart style at a sparkline's scale: three quarters of the line width and four
+ * fifths of the point radius, and the theme's curve.
  */
+import { useChartStyle } from "../../lib/chart-style";
+import { curvePath } from "../usage/chart-geom";
+
 const W = 72;
 const H = 22;
 const PAD = 2.5;
@@ -29,6 +34,7 @@ export function ScoreSparkline({
     (v, i) => [PAD + i * step, H - PAD - ((v - low) / span) * (H - 2 * PAD)] as const,
   );
   const last = points[points.length - 1];
+  const chart = useChartStyle();
   return (
     <svg
       width={W}
@@ -41,18 +47,24 @@ export function ScoreSparkline({
       className={`ui-chart text-gray-500 dark:text-gray-400 ${className}`}
     >
       {points.length > 1 && (
-        <polyline
+        <path
           data-part="series"
-          points={points.map(([x, y]) => `${x},${y}`).join(" ")}
+          d={curvePath(points, chart.curve)}
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth={chart.lineWidth * 0.75}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
       )}
       {last !== undefined && (
-        <circle data-part="point" cx={last[0]} cy={last[1]} r={2} fill="currentColor" />
+        <circle
+          data-part="point"
+          cx={last[0]}
+          cy={last[1]}
+          r={chart.pointRadius * 0.8}
+          fill="currentColor"
+        />
       )}
     </svg>
   );

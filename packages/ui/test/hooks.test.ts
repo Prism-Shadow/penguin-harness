@@ -119,7 +119,10 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // renders through. The charts: the usage charts' frame (its children — the trend, requests and
   // token-bar charts — carry parts, not the hook), the token donut and the benchmark sparkline.
   "ui-notice": ["Toaster", "NoticeStrip"],
-  "ui-chart": ["ChartFrame", "TokenDonut", "ScoreSparkline"],
+  // The Trace timeline draws its lanes and spans as HTML (`grid` on a lane track, `bar` on a
+  // span with a 1-based `data-series`), so the chart recipes carry HTML spellings beside the
+  // SVG ones.
+  "ui-chart": ["ChartFrame", "TokenDonut", "ScoreSparkline", "TimelineChart"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */

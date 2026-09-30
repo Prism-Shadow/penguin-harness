@@ -775,7 +775,11 @@
   width: 100%;
   border: 0;
   background: transparent;
-  transition: height 120ms ease-out;
+}
+/* Until the board has reported its height the frame is the pending size: shown then, never
+   clipped, and never animated between sizes — a growing frame would scroll the page under it. */
+.g-lib:not([data-loaded]) .g-lib-frame {
+  visibility: hidden;
 }
 
 /* ---- Fitted frames: the app laid out at its window width, scaled to the column -------------- */

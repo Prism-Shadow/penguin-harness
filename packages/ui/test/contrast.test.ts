@@ -86,6 +86,26 @@ const EXCEPTIONS: readonly ContrastException[] = [
       "hairline draws the edge, and the light look is pinned until a Primer polish wave",
     until: "Primer polish (a knob or a track that clears 3:1)",
   },
+  // Primer's light chart palette is today's, pinned exactly (2026-09-29): the 500 steps of
+  // amber, sky, emerald, teal and orange sit at 2.2–2.9:1 on white, and the reference curve is
+  // the amber. Frost and Console clear the floor in both modes; Primer's dark palette does too.
+  ...(
+    [
+      ["--ui-chart-2", "amber-500 at 2.15:1"],
+      ["--ui-chart-3", "sky-500 at 2.71:1"],
+      ["--ui-chart-5", "emerald-500 at 2.46:1"],
+      ["--ui-chart-7", "teal-500 at 2.42:1"],
+      ["--ui-chart-8", "orange-500 at 2.89:1"],
+      ["--ui-chart-ref", "the amber reference curve at 2.15:1"],
+    ] as const
+  ).map(([fg, reason]) => ({
+    theme: "github" as const,
+    mode: "light" as const,
+    fg,
+    bg: "--ui-canvas" as const,
+    reason: `Primer's light charts keep today's palette (${reason} on white)`,
+    until: "Primer polish (a 600-step palette for light)",
+  })),
 ];
 
 const PAGE_SURFACES = ["--ui-canvas", "--ui-surface", "--ui-surface-muted", "--ui-inset"] as const;
@@ -137,6 +157,21 @@ const pairsFor = (mode: ThemeModeName): readonly Pair[] => [
   // A frosted layer's ink on the glass over the worst backdrop it can float over (black in
   // light, white in dark): a menu stays legible whatever scrolls behind it.
   { fg: "--ui-fg", bg: "--ui-glass-bg", min: 4.5 },
+  // Every series colour and the reference line as a mark on the page: a bar, a line or a point
+  // must read against the canvas (WCAG's 3:1 for a graphical object).
+  ...(
+    [
+      "--ui-chart-1",
+      "--ui-chart-2",
+      "--ui-chart-3",
+      "--ui-chart-4",
+      "--ui-chart-5",
+      "--ui-chart-6",
+      "--ui-chart-7",
+      "--ui-chart-8",
+      "--ui-chart-ref",
+    ] as const
+  ).map((fg) => ({ fg, bg: "--ui-canvas" as const, min: 3 })),
   ...(["--ui-canvas", "--ui-surface"] as const).map((bg) => ({
     fg: "--ui-fg-link" as const,
     bg,

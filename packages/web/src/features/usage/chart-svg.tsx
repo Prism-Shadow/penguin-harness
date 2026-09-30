@@ -34,6 +34,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -49,14 +50,62 @@ import {
 /** Height (CSS px) of the invisible band laid over a line series so it can be hovered: a 2px stroke is too thin to aim at. */
 export const LINE_HIT_H = 10;
 
-/**
- * Stroke width of every data line on the page — the cost line, the
- * success-rate lines, the cache-hit-rate curve. One weight for all of them,
- * so no line reads as more important than another just because it was written
- * later. Chrome (grid lines, the hover indicator, axis-break marks) stays at
- * 1 and is deliberately not this.
+/*
+ * Every data line on the page — the cost line, the success-rate lines, the cache-hit-rate
+ * curve — is drawn at the theme's one line width (useChartStyle), so no line reads as more
+ * important than another just because it was written later. Chrome (grid lines, the hover
+ * indicator, axis-break marks) stays at 1 and is deliberately not that width.
  */
-export const DATA_STROKE_W = 2;
+
+/**
+ * A bar, or the top segment of a stack, with the theme's top-corner radius
+ * (`--ui-chart-bar-radius`, via useChartStyle). A radius of 0 draws the plain rect the charts
+ * always drew; otherwise the top two corners round, clamped so a short or thin bar keeps its
+ * shape, and the bottom stays square where it meets the next segment or the baseline.
+ */
+export function BarShape({
+  x,
+  y,
+  width,
+  height,
+  radius,
+  className,
+  fill,
+  opacity,
+  style,
+  series,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  radius: number;
+  className?: string;
+  fill?: string;
+  opacity?: number;
+  style?: CSSProperties;
+  /** The series index, for a theme's recipe (`data-series`). */
+  series?: number;
+}) {
+  const r = Math.max(0, Math.min(radius, width / 2, height));
+  const common = {
+    "data-part": "bar",
+    ...(series !== undefined ? { "data-series": series } : {}),
+    className,
+    fill,
+    opacity,
+    style,
+  };
+  if (r === 0) return <rect x={x} y={y} width={width} height={height} {...common} />;
+  const right = x + width;
+  const bottom = y + height;
+  return (
+    <path
+      d={`M${x},${bottom} V${y + r} A${r},${r} 0 0 1 ${x + r},${y} H${right - r} A${r},${r} 0 0 1 ${right},${y + r} V${bottom} Z`}
+      {...common}
+    />
+  );
+}
 
 /** Cell width (CSS px) below which axis-break marks are dropped: any narrower and successive marks sit closer together than they are wide, smearing into a hatched baseline. */
 const AXIS_BREAK_MIN_STEP = 8;

@@ -9,13 +9,13 @@
  * usage exceeds the limit, the ring is filled proportionally to usage and
  * colored by threshold (>80% amber / >95% red) to signal approaching/exceeding
  * the limit; exact values show in the shared tooltip on hover.
- * Segments use the site-wide TOKEN_COLORS (works in both light/dark); the base
+ * Segments use the theme's Token-kind colours (useChartStyle); the base
  * ring uses a currentColor gray.
  * The context usage under the chat page's input box is a **single-color,
  * single-value** ring (total only), custom-drawn in context-gauge — it doesn't
  * use this component.
  */
-import { TOKEN_COLORS } from "../../lib/token-colors";
+import { useChartStyle } from "../../lib/chart-style";
 import { humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -35,6 +35,7 @@ export function TokenDonut({
   /** Outer diameter in pixels. */
   size?: number;
 }) {
+  const chart = useChartStyle();
   const total = cacheRead + cacheWrite + output;
   const strokeWidth = Math.max(2, Math.round(size * 0.16));
   const center = size / 2;
@@ -56,16 +57,16 @@ export function TokenDonut({
     {
       key: "cacheRead",
       value: cacheRead,
-      color: TOKEN_COLORS.cacheRead,
+      color: chart.cacheRead,
       label: S.usage.colCacheRead,
     },
     {
       key: "cacheWrite",
       value: cacheWrite,
-      color: TOKEN_COLORS.cacheWrite,
+      color: chart.cacheWrite,
       label: S.usage.colCacheWrite,
     },
-    { key: "output", value: output, color: TOKEN_COLORS.output, label: S.usage.colOutput },
+    { key: "output", value: output, color: chart.output, label: S.usage.colOutput },
   ];
   const title =
     `${S.chat.contextUsage} ${humanizeTokens(total)}/${humanizeTokens(max)}` +

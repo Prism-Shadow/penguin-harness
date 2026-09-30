@@ -1,9 +1,12 @@
 /**
  * The chrome's tooltips, one layer for the whole page: any element carrying `data-tooltip` gets a
- * drawn panel under it on hover and on keyboard focus, after a short delay. What it replaces is
- * the native `title`, which waits about a second, takes the platform's look and never shows on
- * focus. Like `title`, the attribute names nothing to assistive technology, so an element whose
- * only name was its title carries an `aria-label` with the same words.
+ * drawn panel under it on hover and on keyboard focus, after a short delay — but only when the
+ * hint adds something: the element shows no text of its own, or the text it shows is cut off
+ * (lib/tip.ts, decided at the moment it would open, since truncation depends on the room the
+ * element has right then). What it replaces is the native `title`, which waits about a second,
+ * takes the platform's look and never shows on focus. Like `title`, the attribute names nothing
+ * to assistive technology, so an element whose only name was its title carries an `aria-label`
+ * with the same words.
  *
  * The panel is portaled to the body at fixed viewport coordinates and takes no pointer events, so
  * it never covers a click meant for what it describes, and it closes on leave, blur, Escape, a
@@ -12,7 +15,7 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { placeTip } from "../lib/tip";
+import { placeTip, shouldHint } from "../lib/tip";
 import type { TipPlacement } from "../lib/tip";
 
 export const TOOLTIP_ATTR = "data-tooltip";
@@ -50,6 +53,7 @@ export function ChromeTooltips() {
       timer = setTimeout(() => {
         timer = null;
         if (!el.isConnected) return;
+        if (!shouldHint(el.textContent ?? "", [el, ...el.querySelectorAll("*")])) return;
         const viewport = { width: window.innerWidth, height: window.innerHeight };
         setOpen({ label, at: placeTip(el.getBoundingClientRect(), viewport) });
       }, OPEN_DELAY_MS);

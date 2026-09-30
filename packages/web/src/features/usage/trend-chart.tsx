@@ -22,7 +22,8 @@ import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-se
 import { formatMoney } from "../../lib/format";
 import type { Currency } from "../../state/theme";
 import { makeGeom, linePath, areaPath } from "./chart-geom";
-import { ChartFrame, DATA_STROKE_W, useChartWidth } from "./chart-svg";
+import { ChartFrame, useChartWidth } from "./chart-svg";
+import { useChartStyle } from "../../lib/chart-style";
 import { bucketAxisLabel, bucketFullLabel } from "./usage-controls";
 import { Empty } from "./usage-charts";
 
@@ -43,6 +44,7 @@ export function TrendChart({
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const [ref, width] = useChartWidth();
+  const chart = useChartStyle();
   // Nothing was recorded anywhere in the range: an empty grid would read as a
   // flat zero cost, so say there is nothing rather than draw nothing.
   if (series.length === 0) return <Empty />;
@@ -55,7 +57,7 @@ export function TrendChart({
   // 2.5px-radius dot needs roughly this much room or the row fuses into a rope
   // (61 minute buckets in a half-width card sit ~7px apart). Below that the
   // line stands alone and only the hovered point gets its dot.
-  const everyDot = geom.step >= MIN_DOT_STEP;
+  const everyDot = geom.step >= MIN_DOT_STEP + 2 * (chart.pointRadius - 2.5);
 
   return (
     <div ref={ref}>
@@ -82,17 +84,18 @@ export function TrendChart({
             {/* Area fill: the line closes down to the baseline, low opacity reinforces the trend's sense of "volume" */}
             <path
               data-part="area"
-              d={areaPath(geom, cost)}
+              d={areaPath(geom, cost, chart.curve)}
               className="fill-current"
               stroke="none"
-              opacity={hover !== null ? 0.06 : 0.1}
+              // The theme's fill under a line, dimmed while a point is singled out.
+              opacity={hover !== null ? chart.areaOpacity * 0.6 : chart.areaOpacity}
             />
             <path
               data-part="series"
-              d={linePath(geom, cost)}
+              d={linePath(geom, cost, chart.curve)}
               fill="none"
               stroke="currentColor"
-              strokeWidth={DATA_STROKE_W}
+              strokeWidth={chart.lineWidth}
               opacity={hover !== null ? 0.35 : 1}
             />
             {everyDot &&
@@ -102,7 +105,7 @@ export function TrendChart({
                   data-part="point"
                   cx={geom.x(i)}
                   cy={geom.y(cost[i] ?? 0)}
-                  r={hover === i ? 4 : 2.5}
+                  r={hover === i ? chart.pointRadius + 1.5 : chart.pointRadius}
                   className="fill-current"
                   opacity={hover !== null && hover !== i ? 0.25 : 1}
                 />
@@ -112,7 +115,7 @@ export function TrendChart({
                 data-part="point"
                 cx={geom.x(hover)}
                 cy={geom.y(cost[hover] ?? 0)}
-                r={4}
+                r={chart.pointRadius + 1.5}
                 className="fill-current"
               />
             )}

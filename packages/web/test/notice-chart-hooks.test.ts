@@ -130,14 +130,20 @@ describe("charts", () => {
       "features/usage/chart-svg.tsx",
       "components/ui/token-donut.tsx",
       "features/benchmark/score-sparkline.tsx",
+      "features/traces/timeline-chart.tsx",
     ]) {
       expect(text(id), id).toContain("ui-chart");
     }
-    const parts = ["features/usage/trend-chart.tsx", "features/usage/usage-charts.tsx"]
+    const parts = [
+      "features/usage/trend-chart.tsx",
+      "features/usage/usage-charts.tsx",
+      "features/usage/chart-svg.tsx",
+      "features/traces/timeline-chart.tsx",
+    ]
       .map(text)
       .join("\n");
     for (const part of ["series", "area", "bar", "point"]) {
-      expect(parts).toContain(`data-part="${part}"`);
+      expect(parts, part).toMatch(new RegExp(`data-part(?:=|": )"${part}"`));
     }
     expect(text("features/usage/chart-svg.tsx")).toContain('data-part="grid"');
   });

@@ -118,18 +118,30 @@
     --ui-tone-info-emphasis: oklch(50% 0.134 242.749); /* sky-700 */
     --ui-tone-info-emphasis-fg: #ffffff;
 
-    /* ---- Colour — charts (the context-window part order, then the token-kind blues) ---- */
-    --ui-chart-1: oklch(68.5% 0.169 237.323); /* sky-500 */
+    /* ---- Charts: today's series palette in its roles (violet, amber, sky, rose, emerald,
+       fuchsia, then teal and orange from the employee palette), the reference curve amber like
+       the second series, the token-kind blues, and today's geometry — bars at 60% of their band
+       with square tops, 2px lines joined straight, 2.5px points, a 10% fill under a line. ---- */
+    --ui-chart-1: oklch(60.6% 0.25 292.717); /* violet-500 */
     --ui-chart-2: oklch(76.9% 0.188 70.08); /* amber-500 */
-    --ui-chart-3: oklch(66.7% 0.295 322.15); /* fuchsia-500 */
+    --ui-chart-3: oklch(68.5% 0.169 237.323); /* sky-500 */
     --ui-chart-4: oklch(64.5% 0.246 16.439); /* rose-500 */
-    --ui-chart-5: oklch(60.6% 0.25 292.717); /* violet-500 */
-    --ui-chart-6: oklch(69.6% 0.17 162.48); /* emerald-500 */
+    --ui-chart-5: oklch(69.6% 0.17 162.48); /* emerald-500 */
+    --ui-chart-6: oklch(66.7% 0.295 322.15); /* fuchsia-500 */
+    --ui-chart-7: oklch(70.4% 0.14 182.503); /* teal-500 */
+    --ui-chart-8: oklch(70.5% 0.213 47.604); /* orange-500 */
+    --ui-chart-ref: var(--ui-chart-2);
     --ui-chart-cache-read: #7dd3fc;
     --ui-chart-cache-write: #0ea5e9;
     --ui-chart-output: #0369a1;
     --ui-chart-grid: var(--color-gray-200);
     --ui-chart-axis: var(--color-gray-400);
+    --ui-chart-bar-fill: 0.6;
+    --ui-chart-bar-radius: 0px;
+    --ui-chart-line-width: 2px;
+    --ui-chart-point-radius: 2.5px;
+    --ui-chart-curve: linear;
+    --ui-chart-area-opacity: 0.1;
 
     /* ---- Colour — code ---- */
     --ui-code-bg: var(--color-gray-50);
@@ -425,11 +437,14 @@
     --ui-tone-info-bg: oklch(29.3% 0.066 243.157 / 0.4); /* sky-950/40 */
     --ui-tone-info-line: oklch(50% 0.134 242.749); /* sky-700 */
 
-    /* ---- Colour — charts ---- */
-    --ui-chart-1: oklch(58.8% 0.158 241.966); /* sky-600 */
+    /* ---- Charts: the 600 steps the app's dark series use, emerald at 400 as the timeline
+       draws its work phase; violet and rose hold ---- */
     --ui-chart-2: oklch(66.6% 0.179 58.318); /* amber-600 */
-    --ui-chart-3: oklch(59.1% 0.293 322.896); /* fuchsia-600 */
-    --ui-chart-6: oklch(59.6% 0.145 163.225); /* emerald-600 */
+    --ui-chart-3: oklch(58.8% 0.158 241.966); /* sky-600 */
+    --ui-chart-5: oklch(76.5% 0.177 163.223); /* emerald-400 */
+    --ui-chart-6: oklch(59.1% 0.293 322.896); /* fuchsia-600 */
+    --ui-chart-7: oklch(60% 0.118 184.704); /* teal-600 */
+    --ui-chart-8: oklch(64.6% 0.222 41.116); /* orange-600 */
     --ui-chart-grid: var(--color-gray-800);
     --ui-chart-axis: var(--color-gray-500);
 

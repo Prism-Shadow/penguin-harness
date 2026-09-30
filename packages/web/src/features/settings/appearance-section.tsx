@@ -72,11 +72,14 @@ function FontSelect<T extends string>({
   onChange: (next: T) => void;
 }) {
   return (
-    <span className="flex items-center gap-1.5">
-      <span aria-hidden className="text-xs text-gray-500 dark:text-gray-400">
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span
+        aria-hidden
+        className="shrink-0 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400"
+      >
         {name}
       </span>
-      <span className="w-36">
+      <span className="w-36 min-w-0 shrink">
         <Select
           aria-label={`${S.settings.fonts} · ${name}`}
           value={value}
@@ -185,7 +188,9 @@ export function AppearanceSection() {
         <Segmented options={textSizeOptions} value={textSize} onChange={setTextSize} cols={5} />
       </PrefRow>
       <PrefRow label={S.settings.fonts} info={S.settings.fontsInfo}>
-        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+        {/* One line always: the pair shrinks rather than wraps (a wrapped pair read as two
+            settings under the stacked label a theme may give this row). */}
+        <div className="flex min-w-0 items-center justify-end gap-x-3">
           <FontSelect<FontLatin>
             name={S.settings.fontLatin}
             value={fontLatin}

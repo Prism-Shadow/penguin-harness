@@ -1,21 +1,22 @@
 /**
- * Frost (`modern`) — soft, roomy, floating. A warm colour field behind the app window, the
- * navigation column transparent on it, the main column a rounded sheet floating over it; pill
- * controls, generous radii on boxes, regular-weight titles set large with negative tracking,
- * frosted glass on the layers that float over content, motion that springs and de-blurs, and
- * work in progress shown by nothing more than a highlight sweeping across its label.
- * References: sierra.ai (the colour field, the type, the pills), Figma's UI3 (the floating
- * sheet, the roomy density) and Codex / macOS (the lineless working state).
+ * Frost (`modern`) — soft, roomy, quiet. A cool-neutral off-white with almost no lines: the
+ * navigation column is a soft grey beside a near-white main column (flat — no field, no
+ * floating sheet), grouping comes from soft grey fills rather than borders, a card's edge is a
+ * hairline that barely exists, dialogs are opaque on a dimmed backdrop with large corners; pill
+ * controls, regular-weight titles set large with negative tracking, a light frost on the small
+ * layers that float over content, motion that springs and de-blurs, and work in progress shown
+ * by nothing more than a highlight sweeping across its label. References: the owner's three
+ * captures of 2026-09-29 (a grey sidebar beside a near-white transcript, an opaque About dialog
+ * on a blurred page, a settings dialog whose rows sit in soft-filled groups), with Codex /
+ * macOS for the lineless working state; the earlier sierra.ai warm field and floating sheet
+ * were retired at that review.
  *
  * Status of each group:
- * - The light palette is measured on sierra.ai (its Tailwind theme and computed styles). The
- *   field behind the window is Sierra's colour field held to an app: one warm sand tone with two
- *   soft radial washes (sage from the top-left, sand from the bottom-right) at an alpha that keeps
- *   muted navigation text at 4.5:1 where the washes are strongest; never blue-grey, never loud.
- *   Sierra ships no dark mode: the dark section is a proposal on the same warm-neutral hue, set
- *   calm (2026-09-29) but not dim — the body ink about 12:1 on the canvas, the near-white kept
- *   for headings, the muted ink about 6.2:1 and the subtle 4.7:1 on the muted surface (a first
- *   pass at 9:1 read too dim to the owner).
+ * - Light is a near-neutral grey ramp with a faint cool cast: the canvas `#fafafa` (never a
+ *   stark white slab), the navigation column and grouped rows `#f3f4f5`, cards white, lines a
+ *   step above the fill they sit on. Dark is the same ramp inverted, set calm but not dim — the
+ *   body ink about 11:1 on the muted surface, the near-white kept for headings, the muted ink
+ *   6.5:1 and the subtle 4.9:1 there.
  * - The accent family derives from `--ui-accent`: hover and active are the accent shaded, the
  *   wash and the line are the accent at an alpha, so a preset sets the one value per mode.
  * - Semantic tones use Sierra's hues, tuned until every tone reads at 4.5:1 as text on its own
@@ -37,43 +38,43 @@
  */
 @layer ui-theme {
   :root[data-theme="modern"] {
-    /* Tailwind bridge: the app's gray classes land on the warm ramp. white = the card surface. */
+    /* Tailwind bridge: the app's gray classes land on the cool-neutral ramp. white = the card
+       surface. */
     --color-white: var(--ui-surface);
-    --color-gray-50: #f6f5f3;
-    --color-gray-100: #efedea;
-    --color-gray-200: #e4e0dc;
-    --color-gray-300: #c1bcb7;
-    --color-gray-400: #8a8783;
-    --color-gray-500: #5c5a57;
-    --color-gray-600: #514e4b;
-    --color-gray-700: #433f3d;
-    --color-gray-800: #363433;
-    --color-gray-900: #302e2d;
-    --color-gray-950: #222222;
+    --color-gray-50: #fafafa;
+    --color-gray-100: #f3f4f5;
+    --color-gray-200: #e6e8ea;
+    --color-gray-300: #d0d3d6;
+    --color-gray-400: #979b9f;
+    --color-gray-500: #686c71;
+    --color-gray-600: #565a5e;
+    --color-gray-700: #424549;
+    --color-gray-800: #313336;
+    --color-gray-900: #242628;
+    --color-gray-950: #18191b;
 
-    /* Colour — surfaces. The canvas is the floating sheet's own colour: a warm off-white the
-       white cards still lift from. */
-    --ui-canvas: #f6f5f3;
+    /* Colour — surfaces. The canvas is a near-white, not a white slab; grouped rows and the
+       navigation column sit on the muted grey; cards and dialogs are white. */
+    --ui-canvas: #fafafa;
     --ui-surface: #ffffff;
-    --ui-surface-muted: #efedea;
-    --ui-inset: #f6f5f3;
+    --ui-surface-muted: #f3f4f5;
+    --ui-inset: #f5f6f7;
     --ui-overlay: #ffffff;
-    --ui-overlay-backdrop: rgb(48 46 45 / 0.28);
+    --ui-overlay-backdrop: rgb(24 25 27 / 0.4);
 
-    /* Colour — text. Muted ink is a step darker than Sierra's #696764 so navigation labels clear
-       4.5:1 on the field's washes, where they sit with no fill under them. */
-    --ui-fg: #302e2d;
+    /* Colour — text */
+    --ui-fg: #232527;
     --ui-fg-emphasis: var(--ui-fg);
-    --ui-fg-muted: #5c5a57;
-    --ui-fg-subtle: #8a8783;
-    --ui-fg-link: #345eb2;
-    --ui-fg-link-hover: #26468a;
+    --ui-fg-muted: #686c71;
+    --ui-fg-subtle: #979b9f;
+    --ui-fg-link: #2f66c4;
+    --ui-fg-link-hover: #244f9a;
 
-    /* Colour — lines */
-    --ui-line: #e4e0dc;
-    --ui-line-muted: #eeebe7;
-    --ui-line-emphasis: #c1bcb7;
-    --ui-divider: #ebe8e4;
+    /* Colour — lines: a step above the fill they sit on, so a card's edge barely exists */
+    --ui-line: #e9eaec;
+    --ui-line-muted: #f0f1f2;
+    --ui-line-emphasis: #d0d3d6;
+    --ui-divider: #f0f1f2;
 
     /* Colour — accent: Sierra's forest green. The rest of the family derives from it: hover and
        active are the accent shaded toward black (the label is white, so a darker fill only gains
@@ -86,106 +87,118 @@
     --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 14%, transparent);
     --ui-accent-line: color-mix(in srgb, var(--ui-accent) 35%, transparent);
 
-    /* Colour — semantic tones */
+    /* Colour — semantic tones: a soft tint with its ink and no edge — a tone's line is its tint,
+       so a badge or a pill is a tinted shape, never a bordered one. */
     --ui-tone-success-fg: #007a3a;
-    --ui-tone-success-bg: #e4eee6;
-    --ui-tone-success-line: rgb(126 209 133 / 0.5);
+    --ui-tone-success-bg: #e4f2e8;
+    --ui-tone-success-line: var(--ui-tone-success-bg);
     --ui-tone-success-emphasis: #007a3a;
     --ui-tone-success-emphasis-fg: #ffffff;
     --ui-tone-attention-fg: #806210;
-    --ui-tone-attention-bg: #faf3d9;
-    --ui-tone-attention-line: rgb(235 194 71 / 0.5);
+    --ui-tone-attention-bg: #fbf4dc;
+    --ui-tone-attention-line: var(--ui-tone-attention-bg);
     --ui-tone-attention-emphasis: #ebc247;
-    --ui-tone-attention-emphasis-fg: #302e2d;
+    --ui-tone-attention-emphasis-fg: #232527;
     --ui-tone-danger-fg: #c72d06;
-    --ui-tone-danger-bg: #fdeae5;
-    --ui-tone-danger-line: rgb(233 78 42 / 0.5);
+    --ui-tone-danger-bg: #fcebe8;
+    --ui-tone-danger-line: var(--ui-tone-danger-bg);
     --ui-tone-danger-emphasis: #c72d06;
     --ui-tone-danger-emphasis-fg: #ffffff;
     --ui-tone-done-fg: #7644a6;
-    --ui-tone-done-bg: #f2ecf8;
-    --ui-tone-done-line: rgb(166 115 222 / 0.5);
+    --ui-tone-done-bg: #f1edf8;
+    --ui-tone-done-line: var(--ui-tone-done-bg);
     --ui-tone-done-emphasis: #7644a6;
     --ui-tone-done-emphasis-fg: #ffffff;
-    --ui-tone-neutral-fg: #625e5b;
-    --ui-tone-neutral-bg: #efedea;
-    --ui-tone-neutral-line: #e4e0dc;
-    --ui-tone-neutral-emphasis: #716f6c;
+    --ui-tone-neutral-fg: #5f6367;
+    --ui-tone-neutral-bg: #f3f4f5;
+    --ui-tone-neutral-line: var(--ui-tone-neutral-bg);
+    --ui-tone-neutral-emphasis: #6d7176;
     --ui-tone-neutral-emphasis-fg: #ffffff;
-    --ui-tone-info-fg: #345eb2;
-    --ui-tone-info-bg: #eaf1fb;
-    --ui-tone-info-line: rgb(52 94 178 / 0.3);
-    --ui-tone-info-emphasis: #345eb2;
+    --ui-tone-info-fg: #2f66c4;
+    --ui-tone-info-bg: #eaf0fa;
+    --ui-tone-info-line: var(--ui-tone-info-bg);
+    --ui-tone-info-emphasis: #2f66c4;
     --ui-tone-info-emphasis-fg: #ffffff;
 
-    /* Colour — charts */
-    --ui-chart-1: #345eb2;
-    --ui-chart-2: #d9772b;
-    --ui-chart-3: #2f8f5b;
-    --ui-chart-4: #7644a6;
-    --ui-chart-5: #c49a1c;
-    --ui-chart-6: #c2456b;
+    /* Charts: a muted, warm palette in the roles (plum, honey, ocean, clay, sage, orchid, teal,
+       apricot — every one clearing 3:1 on the canvas), the reference curve in the subtle ink so
+       it reads as secondary, the token-kind blues, and a soft geometry — slim bars with rounded
+       tops, a heavier line drawn as a smooth curve, larger round points, a fuller wash under a
+       line. */
+    --ui-chart-1: #6d4fa3;
+    --ui-chart-2: #b07a1a;
+    --ui-chart-3: #3b6ea8;
+    --ui-chart-4: #c2456b;
+    --ui-chart-5: #2f8f5b;
+    --ui-chart-6: #a6479a;
+    --ui-chart-7: #2a8a8a;
+    --ui-chart-8: #c96a2b;
+    --ui-chart-ref: var(--ui-fg-muted);
     --ui-chart-cache-read: #a8c5ec;
     --ui-chart-cache-write: #5d8ad3;
     --ui-chart-output: #243f7a;
-    --ui-chart-grid: #efedea;
-    --ui-chart-axis: #8a8783;
+    --ui-chart-grid: #eef0f1;
+    --ui-chart-axis: #979b9f;
+    --ui-chart-bar-fill: 0.5;
+    --ui-chart-bar-radius: 3px;
+    --ui-chart-line-width: 2.5px;
+    --ui-chart-point-radius: 3px;
+    --ui-chart-curve: smooth;
+    --ui-chart-area-opacity: 0.14;
 
     /* Colour — code */
-    --ui-code-bg: #f6f5f3;
-    --ui-code-line: #efedea;
-    --ui-code-gutter: #8a8783;
-    --ui-code-selection: rgb(52 94 178 / 0.16);
+    --ui-code-bg: #f5f6f7;
+    --ui-code-line: #e9eaec;
+    --ui-code-gutter: #979b9f;
+    --ui-code-selection: rgb(47 102 196 / 0.16);
     --ui-diff-add-bg: #e7f3ea;
     --ui-diff-add-word: #c2e5ca;
-    --ui-diff-del-bg: #fcebe6;
+    --ui-diff-del-bg: #fcebe8;
     --ui-diff-del-word: #f6c9bb;
-    --ui-diff-hunk-bg: #ebf1fa;
+    --ui-diff-hunk-bg: #eaf0fa;
 
-    /* Shape: generous on boxes — a 6 / 8 / 12 / 16 / 24 px scale at the 16px root — with the
-       pill kept for every pressable control. */
+    /* Shape: large on boxes — 6 / 8 / 12 / 20 / 24 px at the 16px root, so a card takes 12px
+       and a dialog 20px — with the pill kept for every pressable control. */
     --ui-radius-xs: 0.375rem;
     --ui-radius-sm: 0.5rem;
     --ui-radius-md: 0.75rem;
-    --ui-radius-lg: 1rem;
+    --ui-radius-lg: 1.25rem;
     --ui-radius-xl: 1.5rem;
     --ui-radius-pill: 9999px;
     --ui-radius-control: 9999px;
     --ui-border-w: 1px;
     --ui-border-w-thick: 2px;
 
-    /* Elevation: untinted and soft — a hairline ring and a long, faint drop; depth on cards comes
-       from white on the warm canvas, not from a shadow. `flat` is a zero shadow rather than
-       `none`: Tailwind composes shadows into a comma list, where `none` would invalidate the
-       whole declaration. Glass is stronger here than a menu alone needs, because it also reads
-       against the colour field behind the window. */
+    /* Elevation: untinted and soft — a faint drop, no ring (a layer's edge is its own hairline).
+       `flat` is a zero shadow rather than `none`: Tailwind composes shadows into a comma list,
+       where `none` would invalidate the whole declaration. The frost is light and nearly opaque:
+       a small layer over content keeps a hint of what moves under it, no more. */
     --ui-shadow-flat: 0 0 #0000;
-    --ui-shadow-raised: 0 1px 2px rgb(48 46 45 / 0.05);
-    --ui-shadow-overlay: 0 0 0 1px rgb(48 46 45 / 0.05), 0 8px 24px -8px rgb(0 0 0 / 0.14);
-    --ui-shadow-modal: 0 0 0 1px rgb(48 46 45 / 0.05), 0 24px 56px -20px rgb(0 0 0 / 0.22);
+    --ui-shadow-raised: 0 1px 2px rgb(0 0 0 / 0.04);
+    --ui-shadow-overlay: 0 4px 16px -4px rgb(0 0 0 / 0.1);
+    --ui-shadow-modal: 0 12px 40px -12px rgb(0 0 0 / 0.18);
     --ui-shadow-drawer: var(--ui-shadow-modal);
-    --ui-glass-bg: rgb(255 255 255 / 0.8);
-    --ui-glass-blur: 20px;
-    --ui-glass-saturate: 1.3;
-    --ui-glass-line: rgb(48 46 45 / 0.1);
+    --ui-glass-bg: rgb(255 255 255 / 0.85);
+    --ui-glass-blur: 16px;
+    --ui-glass-saturate: 1.2;
+    --ui-glass-line: rgb(0 0 0 / 0.06);
 
-    /* Shell: Sierra's colour field, held to an app. A warm sand field with a sage wash from the
-       top-left corner and a sand wash from the bottom-right; the navigation column has no fill of
-       its own, the main column is the canvas floating as a sheet with a 0.75rem inset, a 1.25rem
-       corner and a soft untinted shadow. No rule between the columns: the gap is the rule. */
-    --ui-shell-field: #ece9e3;
-    --ui-shell-wash-1: rgb(120 156 122 / 0.18);
-    --ui-shell-wash-2: rgb(212 166 118 / 0.16);
-    --ui-shell-nav-bg: transparent;
+    /* Shell: flat. The navigation column is the muted grey, the main column the canvas, and the
+       change of fill is the whole edge between them — no field, no washes, no gap, no corner,
+       no shadow (the floating sheet was retired at the owner's review of 2026-09-29). */
+    --ui-shell-field: var(--ui-surface-muted);
+    --ui-shell-wash-1: transparent;
+    --ui-shell-wash-2: transparent;
+    --ui-shell-nav-bg: var(--ui-surface-muted);
     --ui-shell-main-bg: var(--ui-canvas);
     --ui-shell-line: transparent;
-    --ui-shell-gap: 0.75rem;
-    --ui-shell-radius: 1.25rem;
-    --ui-shell-shadow: 0 1px 2px rgb(48 46 45 / 0.04), 0 16px 40px -16px rgb(48 46 45 / 0.18);
+    --ui-shell-gap: 0px;
+    --ui-shell-radius: 0px;
+    --ui-shell-shadow: 0 0 #0000;
 
     /* Structure: a roomy tree (a 0.75rem inset, 1.125rem per level) against a soft guide in the
-       line colour; a field stacks its label over its control with a half-rem between, so the
-       label column is unused. */
+       line colour; a field keeps the host's label-beside-control row (the label column is
+       unused), with a half-rem between label and control. */
     --ui-tree-inset: 0.75rem;
     --ui-tree-indent: 1.125rem;
     --ui-tree-guide: var(--ui-line);
@@ -328,43 +341,43 @@
     --ui-focus-ring: 3px solid color-mix(in srgb, var(--ui-accent) 32%, transparent);
     --ui-focus-ring-offset: 1px;
     --ui-focus-ring-input: 0 0 0 3px color-mix(in srgb, var(--ui-accent) 22%, transparent);
-    --ui-selection-bg: rgb(52 94 178 / 0.2);
+    --ui-selection-bg: rgb(47 102 196 / 0.2);
     --ui-scrollbar-w: thin;
-    --ui-scrollbar-thumb: rgb(48 46 45 / 0.22);
-    --ui-scrollbar-thumb-hover: rgb(48 46 45 / 0.4);
+    --ui-scrollbar-thumb: rgb(0 0 0 / 0.2);
+    --ui-scrollbar-thumb-hover: rgb(0 0 0 / 0.36);
     --ui-scrollbar-track: transparent;
     --ui-scrollbar-visibility: hover;
   }
 
-  /* Dark: a proposal (sierra.ai has no dark mode) on the same warm hue, never blue-grey, and
-     calm: the body ink is a warm 70% white, the near-white is kept for headings. */
+  /* Dark: the same cool-neutral ramp inverted — calm greys, fills rather than lines, the body
+     ink a light grey and the near-white kept for headings. */
   :root[data-theme="modern"].dark {
-    /* Tailwind bridge: 950 canvas, 900 surface, 800 hover / panel line, 700 control line, then
+    /* Tailwind bridge: 950 canvas, 900 surface, 800 grouped rows / hover, 700 control line, then
        the ink ramp — 500 subtle, 400 muted, 100 body, 50 the near-white for headings. white
        stays literal: `dark:*-white/N` hairlines read it as ink. */
     --color-white: #ffffff;
-    --color-gray-50: #f3f1ee;
-    --color-gray-100: #ded9d2;
-    --color-gray-200: #c9c4bc;
-    --color-gray-300: #b8b3ab;
-    --color-gray-400: #a7a29b;
-    --color-gray-500: #8f8a83;
-    --color-gray-600: #5f5b56;
-    --color-gray-700: #3a3734;
-    --color-gray-800: #2b2926;
-    --color-gray-900: #1e1d1b;
-    --color-gray-950: #161514;
+    --color-gray-50: #f5f5f6;
+    --color-gray-100: #e4e4e5;
+    --color-gray-200: #cfd0d2;
+    --color-gray-300: #bcbdbf;
+    --color-gray-400: #adaeb0;
+    --color-gray-500: #95979a;
+    --color-gray-600: #6a6c70;
+    --color-gray-700: #3a3c3f;
+    --color-gray-800: #2f3033;
+    --color-gray-900: #232426;
+    --color-gray-950: #1b1c1e;
 
-    /* Colour — surfaces */
-    --ui-canvas: #161514;
-    --ui-surface: #1e1d1b;
-    --ui-surface-muted: #262422;
-    --ui-inset: #121110;
-    --ui-overlay: #23221f;
-    --ui-overlay-backdrop: rgb(0 0 0 / 0.5);
+    /* Colour — surfaces: the navigation column a step below the canvas, cards a step above,
+       grouped rows another */
+    --ui-canvas: #1b1c1e;
+    --ui-surface: #232426;
+    --ui-surface-muted: #2a2b2e;
+    --ui-inset: #161718;
+    --ui-overlay: #262729;
+    --ui-overlay-backdrop: rgb(0 0 0 / 0.55);
 
-    /* Colour — text: body about 12:1 on the canvas, muted about 6.2:1 and subtle 4.7:1 on the
-       muted surface */
+    /* Colour — text: body about 11:1 on the muted surface, muted 6.5:1 and subtle 4.9:1 there */
     --ui-fg: var(--color-gray-100);
     --ui-fg-emphasis: var(--color-gray-50);
     --ui-fg-muted: var(--color-gray-400);
@@ -373,10 +386,10 @@
     --ui-fg-link-hover: #b8d7f9;
 
     /* Colour — lines */
-    --ui-line: rgb(255 255 255 / 0.1);
-    --ui-line-muted: rgb(255 255 255 / 0.06);
-    --ui-line-emphasis: rgb(255 255 255 / 0.22);
-    --ui-divider: rgb(255 255 255 / 0.06);
+    --ui-line: rgb(255 255 255 / 0.07);
+    --ui-line-muted: rgb(255 255 255 / 0.04);
+    --ui-line-emphasis: rgb(255 255 255 / 0.16);
+    --ui-divider: rgb(255 255 255 / 0.04);
 
     /* Colour — accent. The green lifts and takes the canvas as ink (white on it is under
        4.5:1), so hover now shades toward white and active toward black — away from the ink,
@@ -388,39 +401,35 @@
     --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 18%, transparent);
     --ui-accent-line: color-mix(in srgb, var(--ui-accent) 45%, transparent);
 
-    /* Colour — semantic tones */
+    /* Colour — semantic tones: the tints lifted; a tone's line stays its tint */
     --ui-tone-success-fg: #7ed185;
     --ui-tone-success-bg: rgb(126 209 133 / 0.14);
-    --ui-tone-success-line: rgb(126 209 133 / 0.35);
     --ui-tone-success-emphasis: #2a7a3f;
     --ui-tone-attention-fg: #ebc247;
     --ui-tone-attention-bg: rgb(235 194 71 / 0.14);
-    --ui-tone-attention-line: rgb(235 194 71 / 0.35);
-    --ui-tone-attention-emphasis-fg: #161514;
+    --ui-tone-attention-emphasis-fg: #1b1c1e;
     --ui-tone-danger-fg: #f0765a;
     --ui-tone-danger-bg: rgb(233 78 42 / 0.16);
-    --ui-tone-danger-line: rgb(233 78 42 / 0.4);
     --ui-tone-danger-emphasis: #c23a1c;
     --ui-tone-done-fg: #c9a8f0;
     --ui-tone-done-bg: rgb(166 115 222 / 0.16);
-    --ui-tone-done-line: rgb(166 115 222 / 0.4);
     --ui-tone-done-emphasis: #7f52b5;
     --ui-tone-neutral-fg: var(--color-gray-300);
     --ui-tone-neutral-bg: rgb(255 255 255 / 0.06);
-    --ui-tone-neutral-line: rgb(255 255 255 / 0.12);
-    --ui-tone-neutral-emphasis: #57534e;
+    --ui-tone-neutral-emphasis: #5a5c60;
     --ui-tone-info-fg: #8bbff5;
     --ui-tone-info-bg: rgb(139 191 245 / 0.14);
-    --ui-tone-info-line: rgb(139 191 245 / 0.35);
     --ui-tone-info-emphasis: #3a6bc4;
 
-    /* Colour — charts */
-    --ui-chart-1: #8bbff5;
-    --ui-chart-2: #f0a45f;
-    --ui-chart-3: #7ed185;
-    --ui-chart-4: #c9a8f0;
-    --ui-chart-5: #ebc247;
-    --ui-chart-6: #f08aa8;
+    /* Charts: the same roles lifted for the dark page */
+    --ui-chart-1: #a98ed6;
+    --ui-chart-2: #d9ab4a;
+    --ui-chart-3: #7fa9df;
+    --ui-chart-4: #e07a97;
+    --ui-chart-5: #7ed185;
+    --ui-chart-6: #d48ccb;
+    --ui-chart-7: #6fc2bb;
+    --ui-chart-8: #f0a45f;
     --ui-chart-cache-read: #c5dcf7;
     --ui-chart-cache-write: #7fb0ee;
     --ui-chart-output: #4a7fd0;
@@ -428,8 +437,8 @@
     --ui-chart-axis: var(--color-gray-500);
 
     /* Colour — code */
-    --ui-code-bg: #121110;
-    --ui-code-line: rgb(255 255 255 / 0.08);
+    --ui-code-bg: #161718;
+    --ui-code-line: rgb(255 255 255 / 0.07);
     --ui-code-gutter: var(--color-gray-500);
     --ui-code-selection: rgb(139 191 245 / 0.22);
     --ui-diff-add-bg: rgb(126 209 133 / 0.1);
@@ -438,21 +447,17 @@
     --ui-diff-del-word: rgb(233 78 42 / 0.32);
     --ui-diff-hunk-bg: rgb(139 191 245 / 0.1);
 
-    /* Elevation: a faint top edge on raised surfaces; overlays keep a 1px light ring or they sink
-       into the dark canvas. */
+    /* Elevation: a faint top edge on raised surfaces; overlays keep a soft drop, their edge a
+       light hairline of their own. */
     --ui-shadow-raised: inset 0 1px 0 rgb(255 255 255 / 0.04);
-    --ui-shadow-overlay: 0 0 0 1px rgb(255 255 255 / 0.08), 0 8px 24px -8px rgb(0 0 0 / 0.6);
-    --ui-shadow-modal: 0 0 0 1px rgb(255 255 255 / 0.08), 0 16px 48px -16px rgb(0 0 0 / 0.7);
-    --ui-glass-bg: rgb(30 29 27 / 0.82);
-    --ui-glass-line: rgb(255 255 255 / 0.1);
+    --ui-shadow-overlay: 0 4px 16px -4px rgb(0 0 0 / 0.5);
+    --ui-shadow-modal: 0 12px 40px -12px rgb(0 0 0 / 0.6);
+    --ui-glass-bg: rgb(35 36 38 / 0.85);
+    --ui-glass-line: rgb(255 255 255 / 0.08);
 
-    /* Shell: a deep warm field a step below the canvas, the same two washes turned down, and the
-       sheet held off the field by a darker shadow. Fills, rule, inset and corner keep their base
-       values. */
-    --ui-shell-field: #100f0e;
-    --ui-shell-wash-1: rgb(74 164 92 / 0.14);
-    --ui-shell-wash-2: rgb(212 120 74 / 0.1);
-    --ui-shell-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 16px 40px -16px rgb(0 0 0 / 0.6);
+    /* Shell: the navigation column a step below the canvas; the rest keeps its base values */
+    --ui-shell-field: #17181a;
+    --ui-shell-nav-bg: #17181a;
 
     /* Controls: the dark off track, and the body ink as the knob on it */
     --ui-switch-track: var(--color-gray-700);
@@ -462,8 +467,8 @@
     --ui-focus-ring: 3px solid color-mix(in srgb, var(--ui-accent) 40%, transparent);
     --ui-focus-ring-input: 0 0 0 3px color-mix(in srgb, var(--ui-accent) 28%, transparent);
     --ui-selection-bg: rgb(139 191 245 / 0.28);
-    --ui-scrollbar-thumb: rgb(243 241 238 / 0.18);
-    --ui-scrollbar-thumb-hover: rgb(243 241 238 / 0.32);
+    --ui-scrollbar-thumb: rgb(255 255 255 / 0.16);
+    --ui-scrollbar-thumb-hover: rgb(255 255 255 / 0.3);
   }
 
   /*
@@ -477,26 +482,28 @@
    * display, live, frame, underline-nav, shell, icon-decor, tree, field, activity, notice, chart.
    */
 
-  /* Frosted transient layer: menus, popovers, tooltips, the modal card, the floating composer and
-     a sticky page header — the layers with content moving underneath, which is what glass shows;
-     over the shell's colour field the frost is what keeps them legible. Never on cards, the
-     sidebar or the login card, where nothing scrolls behind. Elevation stays the host's own
-     shadow token. */
+  /* Frosted transient layer: menus, popovers, tooltips and the floating composer — the small
+     layers with content moving underneath, which is what a light frost shows. Never on cards,
+     the sidebar or the login card, where nothing scrolls behind. Elevation stays the host's own
+     shadow token; the edge is the glass hairline, barely there. */
   :root[data-theme="modern"] .ui-glass {
     background-color: var(--ui-glass-bg);
     -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
     backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
     border-color: var(--ui-glass-line);
   }
-  /* A dialog is a large surface with a page of its own to read, not a layer over moving content:
-     it is opaque and unfrosted, so the page behind never shows through its text (even at 96%
-     the Settings dialog let the transcript's lines ghost through its rows). Menus, popovers and
-     tooltips keep the frost at a translucency whose ink clears 4.5:1 on the worst backdrop —
-     the contrast suite measures the glass over black in light and over white in dark. */
+  /* A dialog is opaque, unfrosted and edgeless, with the large corner, on a dimmed backdrop —
+     the reference's About and settings dialogs: a page of its own to read, nothing of the page
+     behind showing through (even at 96% the Settings dialog let the transcript's lines ghost
+     through its rows). Menus, popovers and tooltips keep the frost at a translucency whose ink
+     clears 4.5:1 on the worst backdrop — the contrast suite measures the glass over black in
+     light and over white in dark. */
   :root[data-theme="modern"] .ui-glass[role="dialog"] {
     background-color: var(--ui-overlay);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+    border-color: transparent;
+    border-radius: var(--ui-radius-lg);
   }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     :root[data-theme="modern"] .ui-glass {
@@ -529,11 +536,13 @@
     animation-duration: 1.2s;
   }
 
-  /* Tool cards, code blocks and the work group: rounded on the box scale, the header inside the
-     box with no fill or rule of its own — it takes the box's fill rather than none, because a
-     work group's header sticks while its rows scroll under it and must stay opaque. */
+  /* Tool cards, code blocks and the work group: rounded on the box scale with an edge that
+     barely exists, the header inside the box with no fill or rule of its own — it takes the
+     box's fill rather than none, because a work group's header sticks while its rows scroll
+     under it and must stay opaque. */
   :root[data-theme="modern"] .ui-frame {
     border-radius: var(--ui-radius-md);
+    border-color: var(--ui-line-muted);
   }
   :root[data-theme="modern"] .ui-frame > [data-slot="head"] {
     background-color: inherit;
@@ -589,13 +598,11 @@
     background-color: var(--ui-accent);
   }
 
-  /* The app window: the colour field behind everything, painted with the two washes (the one
-     gradient a theme may paint — a field with a job, holding the sheet and the glass layers
-     against it); the navigation column sits on the field with no fill; the main column and the
-     dock float as sheets — inset from the field's edge by the shell gap (not from the column
-     beside them: the gap between two sheets is one gap, not two), rounded on the shell corner,
-     under the soft shell shadow, and clipped so their own rectangular children keep the corner.
-     A host's rule between the columns turns transparent: the gap is the rule. */
+  /* The app window, flat: the navigation column on the muted grey, the main column and the dock
+     on the canvas, and the change of fill the whole edge between them — the shell tokens set no
+     gap, corner, shadow or wash, so the recipe below (which still reads them, as the tokens may
+     yet say otherwise) paints nothing but the two fills. A host's rule between the columns turns
+     transparent. */
   :root[data-theme="modern"] .ui-shell {
     background-color: var(--ui-shell-field);
     background-image:
@@ -630,15 +637,10 @@
     }
   }
 
-  /* Decorative icons carry colour, by role: the accent on a navigation row, an empty state's
-     illustration and wherever no role is named (so the user's accent preset recolours them too),
-     the muted ink on a group header, and a menu row's own ink — a danger row's icon stays as red
-     as its label, so no rule is written for `menu`. Ink only: the icon never gets a tinted chip
-     of its own colour behind it. */
+  /* Decorative icons are drawn in the muted ink, as the reference's sidebar draws its glyphs —
+     quiet, one colour, beside labels in the body ink; a menu row's icon keeps the row's own ink
+     (a danger row's stays as red as its label). Ink only: no tinted chip behind an icon. */
   :root[data-theme="modern"] .ui-icon-decor:not([data-role="menu"]) {
-    color: var(--ui-accent);
-  }
-  :root[data-theme="modern"] .ui-icon-decor[data-role="group"] {
     color: var(--ui-fg-muted);
   }
 
@@ -688,19 +690,21 @@
     content: none;
   }
 
-  /* A labelled control row stacks: the label above, the control stretched across the row, a
-     half-rem between them and the hint under the control. A settings row lays out the same way
-     as a form field, so a page of them reads as one roomy form. */
+  /* A labelled control row is a band in a grouped block, the way the reference lists its
+     settings: the muted fill, the row's own padding, the label beside its control (the host's
+     layout), the host's faint divider between rows, and the block's corners rounded on its first
+     and last rows. Grouping by fill, not by border. */
   :root[data-theme="modern"] .ui-field {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: var(--ui-field-gap);
-    column-gap: 0;
-    align-items: start;
+    padding: var(--ui-row-py) var(--ui-row-px);
+    background-color: var(--ui-surface-muted);
   }
-  :root[data-theme="modern"] .ui-field > [data-slot="control"] {
-    justify-self: stretch;
-    min-width: 0;
+  :root[data-theme="modern"] .ui-field:first-child {
+    border-start-start-radius: var(--ui-radius-md);
+    border-start-end-radius: var(--ui-radius-md);
+  }
+  :root[data-theme="modern"] .ui-field:last-child {
+    border-end-start-radius: var(--ui-radius-md);
+    border-end-end-radius: var(--ui-radius-md);
   }
 
   /* Work in progress is shown the way Codex and macOS show it: nothing around the row — no
@@ -736,9 +740,9 @@
     }
   }
 
-  /* A notice floats: a soft card on the overlay surface under the overlay's shadow, no coloured
-     border and no tinted fill — the tone is one small dot of its ink at the start (a toast is a
-     button; the dot is its `::before`, which a button draws too). The dot sits out of the flow,
+  /* A notice is a soft card: the overlay surface under the overlay's shadow, no coloured border
+     and no tinted fill — the tone is one small dot of its ink at the start (a toast is a button;
+     the dot is its `::before`, which a button draws too). The dot sits out of the flow,
      absolutely at the row's inset with the host padded to make room, because a host lays its
      body and actions out as a flex row — a dot in the flow would be a third item and push the
      body to the middle. A toast that also carries `ui-glass` frosts like every other floating
@@ -773,9 +777,13 @@
      are round with a thin ring of the surface, bars have soft ends. The colours stay the host's
      — a series keeps the ink its data was given; only weight, joins, the grid and the labels are
      the theme's. The area's fade is a mask, the one gradient a chart may paint. */
+  /* The grid and the bars are drawn in SVG by the usage charts and as HTML by the Trace
+     timeline (lane tracks and span bars): each rule carries both spellings, and an engine
+     ignores the one that does not apply to it. */
   :root[data-theme="modern"] .ui-chart [data-part="grid"] {
     stroke: var(--ui-chart-grid);
     stroke-dasharray: none;
+    background-color: var(--ui-chart-grid);
   }
   /* The axis part is both the tick text and the axis-break marks, so lines and text split by
      element: a stroke on text would outline its glyphs. */
@@ -800,7 +808,8 @@
     stroke-width: 1.5;
   }
   :root[data-theme="modern"] .ui-chart [data-part="bar"] {
-    rx: 2px;
+    rx: var(--ui-chart-bar-radius);
+    border-radius: var(--ui-chart-bar-radius);
   }
 
   /* MiSans ships Regular (400) and Medium (500) only. A heavier request renders in Medium rather

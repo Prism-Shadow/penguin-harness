@@ -10,7 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { nextOptionIndex, placePanel, typeaheadIndex } from "../src/lib/listbox";
-import { placeTip } from "../src/lib/tip";
+import { placeTip, shouldHint } from "../src/lib/tip";
 
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const read = (rel: string) => readFileSync(path.join(SRC, rel), "utf8");
@@ -78,6 +78,31 @@ describe("the panel placement", () => {
   });
 });
 
+describe("the tooltip rule", () => {
+  const fits = { scrollWidth: 80, clientWidth: 80, scrollHeight: 20, clientHeight: 20 };
+  const cutOff = { scrollWidth: 140, clientWidth: 80, scrollHeight: 20, clientHeight: 20 };
+  const wrapped = { scrollWidth: 80, clientWidth: 80, scrollHeight: 40, clientHeight: 20 };
+
+  it("hints an icon-only element, whatever its boxes", () => {
+    expect(shouldHint("", [fits])).toBe(true);
+    expect(shouldHint("  \n ", [fits, fits])).toBe(true);
+    expect(shouldHint("", [])).toBe(true);
+  });
+
+  it("hints text only when some box of it is cut off, sideways or downward", () => {
+    expect(shouldHint("Copy breadcrumb", [fits, fits])).toBe(false);
+    expect(shouldHint("Primer › Chat · dark", [fits, cutOff])).toBe(true);
+    expect(shouldHint("Two lines", [wrapped])).toBe(true);
+  });
+
+  it("is what the layer asks before it opens", () => {
+    const layer = read("chrome/tooltip.tsx");
+    expect(layer).toMatch(
+      /if \(!shouldHint\(el\.textContent \?\? "", \[el, \.\.\.el\.querySelectorAll\("\*"\)\]\)\) return;/,
+    );
+  });
+});
+
 describe("the tooltip placement", () => {
   const viewport = { width: 1000, height: 800 };
 
@@ -135,6 +160,15 @@ describe("the chrome's idiom", () => {
     expect(offenders).toEqual([]);
     expect(read("chrome/site.tsx")).toMatch(/<ChromeTooltips \/>/);
     expect(read("chrome/tooltip.tsx")).toMatch(/TOOLTIP_ATTR = "data-tooltip"/);
+  });
+
+  it("marks a copy as done on the icon alone, never by swapping the text", () => {
+    for (const file of ["chrome/crumb.tsx", "pages/surface.tsx", "pages/library.tsx"]) {
+      const source = read(file);
+      expect(source).toMatch(/copied[^\n]*\? "check" :/);
+      expect(source).not.toMatch(/copied\b[^\n]*\? S\./);
+    }
+    expect(read("strings.ts")).not.toMatch(/\bcopied:/);
   });
 
   it("keeps the bar to one row, with the menu button for phone width only", () => {

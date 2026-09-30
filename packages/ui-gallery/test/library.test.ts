@@ -146,6 +146,44 @@ describe("the sections", () => {
   });
 });
 
+describe("the charts board", () => {
+  it("mounts every chart kind the app draws, the Trace timeline included", () => {
+    const board = read("../src/library/boards/charts.tsx");
+    for (const chart of [
+      "TokenDonut",
+      "TrendChart",
+      "TokenBarChart",
+      "TokenLegend",
+      "RequestsChart",
+      "ActivitySparkline",
+      "ScoreSparkline",
+      "TimelineChart",
+    ]) {
+      expect(board).toMatch(new RegExp(`<${chart}[\\s/>]`));
+    }
+    expect(board).toMatch(
+      /from "\.\.\/\.\.\/\.\.\/\.\.\/web\/src\/features\/traces\/timeline-chart"/,
+    );
+  });
+});
+
+describe("the library frame's sizing", () => {
+  it("never shows a scrollbar: the framed document cannot scroll, the frame is hidden until sized and never animates", () => {
+    expect(read("../src/library/main.tsx")).toMatch(
+      /document\.documentElement\.dataset\.framed = "1";/,
+    );
+    expect(read("../src/library/library.css")).toMatch(
+      /html\[data-framed\],\s*html\[data-framed\] body \{\s*overflow: hidden;/,
+    );
+    const css = read("../src/chrome.css");
+    expect(css).toMatch(/\.g-lib:not\(\[data-loaded\]\) \.g-lib-frame \{\s*visibility: hidden;/);
+    expect(css).not.toMatch(/\.g-lib-frame \{[^}]*transition/s);
+    expect(read("../src/chrome/library-frame.tsx")).toMatch(
+      /data-loaded=\{height !== null \|\| undefined\}/,
+    );
+  });
+});
+
 describe("the demo file tree", () => {
   it("flattens open directories in order, with each row's place in its set", () => {
     const rows = flattenTree(DEMO_TREE, new Set(["src"]));

@@ -165,9 +165,9 @@ describe("the Settings dialog", () => {
     expect(source).not.toContain("SECTION_RULES");
   });
 
-  it("renders the credits page, which carries the MiSans credit the account menu used to", () => {
+  it("renders the credits page, which lists the bundled fonts and nothing before them", () => {
     // MiSans's licence asks the app to credit it wherever it runs, so the page is visible to
-    // every viewer (pinned above) and the sentence heads it.
+    // every viewer (pinned above); the list is the whole page.
     expect(source).toContain('{current === "credits" && <CreditsSection />}');
     const credits = readFileSync(
       resolve(
@@ -176,7 +176,7 @@ describe("the Settings dialog", () => {
       ),
       "utf8",
     );
-    expect(credits).toContain("{S.settings.fontCredit}");
+    expect(credits).not.toContain("S.settings.fontCredit");
     expect(credits).toContain("FONT_CREDITS.map");
     expect(credits).toContain("aria-controls={panelId}");
   });

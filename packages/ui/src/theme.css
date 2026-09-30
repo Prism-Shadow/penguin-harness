@@ -139,6 +139,9 @@
   --color-chart-4: var(--ui-chart-4);
   --color-chart-5: var(--ui-chart-5);
   --color-chart-6: var(--ui-chart-6);
+  --color-chart-7: var(--ui-chart-7);
+  --color-chart-8: var(--ui-chart-8);
+  --color-chart-ref: var(--ui-chart-ref);
   --color-chart-cache-read: var(--ui-chart-cache-read);
   --color-chart-cache-write: var(--ui-chart-cache-write);
   --color-chart-output: var(--ui-chart-output);

@@ -217,7 +217,6 @@ export const zh = {
   },
   section: {
     copyLink: "复制链接",
-    copied: "已复制",
     copyBreadcrumb: "复制路径",
     unset: "未定义",
   },
@@ -409,7 +408,11 @@ export const zh = {
       },
       empty: { title: "空状态", description: "列表或详情为空时的占位文字，可带操作。" },
       loading: { title: "加载", description: "转圈与骨架屏。" },
-      charts: { title: "图表", description: "Token 环形图、用量趋势图与评分折线，使用演示数据。" },
+      charts: {
+        title: "图表",
+        description:
+          "应用里的每一种统计图，使用演示数据：环形图、趋势与用量柱、请求与成功率、活动折线、评分折线，以及轨迹时间线。",
+      },
       avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸。" },
       files: { title: "文件", description: "文件树与只读文件浏览器。" },
       colour: {
@@ -596,10 +599,20 @@ export const zh = {
     charts: {
       donut: "Token 环形图",
       donutHint: "缓存读取、缓存写入与输出的构成，环的余量随接近上限变色。",
-      trend: "用量趋势",
+      trend: "成本趋势",
       trendHint: "十四天的成本折线，悬停查看某一天。",
+      tokens: "Token 用量",
+      tokensHint: "按种类堆叠的每日 Token 柱，叠加缓存命中率曲线；悬停图例高亮一种。",
+      requests: "请求与成功率",
+      requestsHint: "按智能体堆叠的每日请求数，与各自的成功率线。",
+      agents: ["docs-expert", "release-notes"] as readonly string[],
+      activity: "活动折线",
+      activityHint: "智能体卡片上的十四天会话数曲线，只看相对起伏。",
       sparkline: "评分折线",
       sparklineHint: "一个评估任务的历次得分，最新一次标出。",
+      timeline: "轨迹时间线",
+      timelineHint:
+        "一次 Task 的模型分段与工具调用：思考、回复、工具调用、等待审批与执行，各占一道。",
     },
     avatars: {
       user: "用户头像",

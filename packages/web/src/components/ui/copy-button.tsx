@@ -5,10 +5,10 @@
  *   - the write is optimistic (an insecure context or denied permission must not leave the
  *     control stuck), matching the clipboard convention used across the chat views;
  *   - the feedback is ALWAYS shown AT THE BUTTON, and it is the icon alone: copy swaps to
- *     the check for COPIED_MS and the tooltip flips to "已复制" (#312 — no transient
- *     "已复制" text is rendered, and the feedback never replaces an unrelated label/title
- *     elsewhere). A control that keeps a visible text label (e.g. "复制 Prompt") keeps it
- *     unchanged and swaps only its glyph — see CopyCheckGlyph + useCopied;
+ *     the check for COPIED_MS. No text changes anywhere — not a label, not the tooltip, which
+ *     keeps naming the action (#312). A control that keeps a visible text label (e.g.
+ *     "复制 Prompt") keeps it unchanged and swaps only its glyph — see CopyCheckGlyph +
+ *     useCopied;
  *   - the icon swap is silent, so every copy affordance also renders a CopiedStatus live
  *     region beside itself — that is the screen-reader half of the same feedback.
  */
@@ -17,7 +17,7 @@ import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { GlyphIcon } from "./glyph-icon";
 
-/** How long the copied state (check icon + flipped tooltip) stays after a click. */
+/** How long the copied state (the check icon) stays after a click. */
 const COPIED_MS = 1500;
 
 /** Best-effort clipboard write (never throws; no-op where the API is unavailable). */
@@ -66,8 +66,8 @@ export function CopyCheckGlyph({ copied, size }: { copied: boolean; size?: numbe
 /**
  * Screen-reader half of the copy feedback, rendered NEXT TO the control (never inside it,
  * so it joins neither the visible label nor the accessible name). The check glyph is
- * `aria-hidden` and the tooltip flip is never announced — a `title` only contributes when
- * there is no `aria-label` — so without this region the confirmation is silent. The region
+ * `aria-hidden` and the tooltip names the action, not the result, so without this region the
+ * confirmation is silent. The region
  * is always rendered and merely filled on copy: a live region announces changes to its
  * content, so it has to exist before the text appears.
  *
@@ -102,7 +102,7 @@ export function CopyButton({
 }: {
   /** The string to copy, or a getter for content computed at click time (e.g. a formatted stats line). */
   text: string | (() => string);
-  /** Accessible name / idle tooltip for the copy action (the tooltip flips to "已复制" while copied). */
+  /** Accessible name and tooltip of the copy action; neither changes while copied. */
   label: string;
   /** Overrides the compact default look (e.g. the reply row's fixed-size button). */
   className?: string;
@@ -112,7 +112,7 @@ export function CopyButton({
     <>
       <button
         type="button"
-        data-tooltip={copied ? S.common.copied : label}
+        data-tooltip={label}
         aria-label={label}
         onClick={() => flash(typeof text === "function" ? text() : text)}
         className={className}

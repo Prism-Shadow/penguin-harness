@@ -24,8 +24,9 @@
  * its place in that column — as a zero and a dash, not as a missing bucket.
  * `breaks` marks where the axis skipped an interval.
  *
- * Every data line is drawn at DATA_STROKE_W, and a bucket with no rate to
- * show is drawn at NO_RATE_PLOT so the stroke stays continuous. Neither is a
+ * Every data line is drawn at the theme's line width (useChartStyle), and a
+ * bucket with no rate to show is drawn at NO_RATE_PLOT so the stroke stays
+ * continuous. Neither is a
  * claim about the data: the hover table prints a dash there.
  *
  * Unified highlight interaction (a site-wide convention): highlight = fade
@@ -39,8 +40,8 @@ import { useState } from "react";
 import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { formatPercent, humanizeTokens } from "../../lib/format";
-import { TOKEN_COLORS } from "../../lib/token-colors";
-import { NEUTRAL_SERIES, seriesColor, type SeriesColor } from "../../lib/category-colors";
+import { NEUTRAL_SERIES } from "../../lib/category-colors";
+import { seriesStroke, useChartStyle, type ChartStyle } from "../../lib/chart-style";
 import {
   makeGeom,
   makeRangeGeom,
@@ -52,7 +53,7 @@ import {
   PAD_R_AXIS,
   type TokenBucketKey,
 } from "./chart-geom";
-import { ChartFrame, DATA_STROKE_W, LineHits, useChartWidth } from "./chart-svg";
+import { BarShape, ChartFrame, LineHits, useChartWidth } from "./chart-svg";
 import {
   bucketAxisLabel,
   bucketFullLabel,
@@ -93,10 +94,27 @@ function rateCell(v: number | null | undefined): string {
   return formatPercent(v == null ? null : v / 100);
 }
 
-/** Text/swatch classes for the i-th drawn entity (the folded tail wears the neutral). */
-function entityColor(s: EntitySeries, i: number): SeriesColor {
-  return s.other ? NEUTRAL_SERIES : seriesColor(i);
+/**
+ * How the i-th drawn entity is painted: the theme's series slot i, or the neutral classes for
+ * the folded tail. `color` sets currentColor (a mark) or the fill (a swatch) through `style`.
+ */
+interface EntityPaint {
+  text: string;
+  swatch: string;
+  color?: string;
 }
+
+function entityColor(chart: ChartStyle, s: EntitySeries, i: number): EntityPaint {
+  return s.other ? NEUTRAL_SERIES : { text: "", swatch: "", color: seriesStroke(chart, i) };
+}
+
+/** A mark's `style` for its paint: currentColor for a stroke or a fill that reads it. */
+const inkStyle = (paint: EntityPaint) =>
+  paint.color !== undefined ? { color: paint.color } : undefined;
+
+/** A swatch's `style` for its paint. */
+const swatchStyle = (paint: EntityPaint) =>
+  paint.color !== undefined ? { backgroundColor: paint.color } : undefined;
 
 // —— Requests + success rate, broken down by entity ——
 
@@ -128,6 +146,7 @@ function RequestsLegend({
   active: number | null;
   onHover: (i: number | null) => void;
 }) {
+  const chart = useChartStyle();
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500 dark:text-gray-400">
       {entities.map((e, i) => (
@@ -141,7 +160,8 @@ function RequestsLegend({
           }`}
         >
           <span
-            className={`inline-block h-2 w-2 shrink-0 rounded-[2px] ${entityColor(e, i).swatch}`}
+            className={`inline-block h-2 w-2 shrink-0 rounded-[2px] ${entityColor(chart, e, i).swatch}`}
+            style={swatchStyle(entityColor(chart, e, i))}
           />
           <span className="max-w-40 truncate font-mono">{e.label}</span>
         </button>
@@ -198,6 +218,7 @@ export function RequestsChart({
   const [hover, setHover] = useState<number | null>(null);
   const [mark, setMark] = useState<RequestsMark | null>(null);
   const [ref, width] = useChartWidth();
+  const chart = useChartStyle();
   const drawn = foldEntitySeries(entities, S.usage.legendOther);
   if (series.length === 0 || drawn.length === 0) return <Empty />;
 
@@ -209,7 +230,7 @@ export function RequestsChart({
   const lines = rates.map(plotRates);
   const geom = makeGeom(series.length, niceCountMax(...totals.requests), width, PAD_R_AXIS);
   const rateGeom = makeRangeGeom(series.length, 0, 100, width, PAD_R_AXIS);
-  const barW = fitBarWidth(geom.step);
+  const barW = fitBarWidth(geom.step, chart.barFill);
   const buckets = series.map((p) => p.bucket);
   const segs = series.map((_, i) =>
     stackSegments(
@@ -259,7 +280,8 @@ export function RequestsChart({
                     }`}
                   >
                     <span
-                      className={`inline-block h-2 w-2 shrink-0 rounded-[2px] ${entityColor(e, si).swatch}`}
+                      className={`inline-block h-2 w-2 shrink-0 rounded-[2px] ${entityColor(chart, e, si).swatch}`}
+                      style={swatchStyle(entityColor(chart, e, si))}
                     />
                     <span className="max-w-32 truncate">{e.label}</span>
                     <span className="ml-auto min-w-8 pl-2 text-right tabular-nums">
@@ -337,15 +359,17 @@ export function RequestsChart({
             {/* Stacked request bars, bottom-up in list order (1px seams would over-fragment thin bars, so segments sit flush). */}
             {series.map((_, i) =>
               segs[i]!.map((seg) => (
-                <rect
+                <BarShape
                   key={`${buckets[i]}-${seg.index}`}
-                  data-part="bar"
-                  data-series={seg.index}
+                  series={seg.index}
                   x={geom.x(i) - barW / 2}
                   y={seg.y}
                   width={barW}
                   height={seg.h}
-                  className={`${entityColor(drawn[seg.index]!, seg.index).text} transition-opacity duration-150`}
+                  // Only the stack's top rounds: the segments below meet flush.
+                  radius={seg.y === Math.min(...segs[i]!.map((s) => s.y)) ? chart.barRadius : 0}
+                  className={`${entityColor(chart, drawn[seg.index]!, seg.index).text} transition-opacity duration-150`}
+                  style={inkStyle(entityColor(chart, drawn[seg.index]!, seg.index))}
                   fill="currentColor"
                   opacity={barOpacity(seg.index, i)}
                 />
@@ -361,12 +385,13 @@ export function RequestsChart({
                 key={`rate-${e.label}:${si}`}
                 data-part="series"
                 data-series={si}
-                d={linePath(rateGeom, lines[si]!)}
+                d={linePath(rateGeom, lines[si]!, chart.curve)}
                 fill="none"
                 stroke="currentColor"
-                strokeWidth={DATA_STROKE_W}
+                strokeWidth={chart.lineWidth}
                 strokeDasharray="4 3"
-                className={`${entityColor(e, si).text} pointer-events-none transition-opacity duration-150`}
+                className={`${entityColor(chart, e, si).text} pointer-events-none transition-opacity duration-150`}
+                style={inkStyle(entityColor(chart, e, si))}
                 opacity={lineLit(si) ? 1 : 0.15}
               />
             ))}
@@ -393,9 +418,9 @@ interface SegHover {
   key: TokenLegendKey | null;
 }
 
-/** The hit-rate curve's color classes (amber — distinct from the bars' blue family, CVD-checked against sky in the series palette). */
-const HIT_RATE_TEXT = "text-amber-500 dark:text-amber-600";
-const HIT_RATE_SWATCH = "bg-amber-500 dark:bg-amber-600";
+/** The Token kinds' colours, from the theme (the stacked bars, their legend and bubble). */
+const tokenColor = (chart: ChartStyle, key: TokenBucketKey): string =>
+  key === "cacheRead" ? chart.cacheRead : key === "cacheWrite" ? chart.cacheWrite : chart.output;
 
 /**
  * Per-bucket Token buckets → a three-segment stacked bar (SVG, reusing the
@@ -436,13 +461,14 @@ export function TokenBarChart({
 }) {
   const [hover, setHover] = useState<SegHover | null>(null);
   const [ref, width] = useChartWidth();
+  const chart = useChartStyle();
   if (series.length === 0 || series.every((p) => p.total === 0)) return <Empty />;
 
   const sums = series.map((p) => p.cacheRead + p.cacheWrite + p.output);
   const max = Math.max(1, ...sums);
   const geom = makeGeom(series.length, max, width, PAD_R_AXIS);
   const rateGeom = makeRangeGeom(series.length, 0, 100, width, PAD_R_AXIS);
-  const barW = fitBarWidth(geom.step);
+  const barW = fitBarWidth(geom.step, chart.barFill);
   const buckets = series.map((p) => p.bucket);
   const segs = series.map((p) => barSegments(geom, p));
   // As in the requests charts: `rates` keeps the nulls for the bubble, `line`
@@ -500,11 +526,17 @@ export function TokenBarChart({
               <>
                 <p className="text-gray-400">{bucketFullLabel(granularity, p.bucket)}</p>
                 {(["cacheRead", "cacheWrite", "output"] as const).map((k) =>
-                  bubbleRow(sq(TOKEN_COLORS[k]), bucketLabel(k), humanizeTokens(p[k]), key === k),
+                  bubbleRow(
+                    sq(tokenColor(chart, k)),
+                    bucketLabel(k),
+                    humanizeTokens(p[k]),
+                    key === k,
+                  ),
                 )}
                 {bubbleRow(
                   <span
-                    className={`inline-block h-0.5 w-2 shrink-0 rounded-sm ${HIT_RATE_SWATCH}`}
+                    className="inline-block h-0.5 w-2 shrink-0 rounded-sm"
+                    style={{ backgroundColor: chart.ref }}
                   />,
                   S.usage.legendHitRate,
                   rateCell(rates[i]),
@@ -560,14 +592,14 @@ export function TokenBarChart({
         >
           {series.map((p, i) =>
             segs[i]!.map((s) => (
-              <rect
+              <BarShape
                 key={`${p.bucket}-${s.key}`}
-                data-part="bar"
                 x={geom.x(i) - barW / 2}
                 y={s.y}
                 width={barW}
                 height={s.h}
-                fill={TOKEN_COLORS[s.key]}
+                radius={s.y === Math.min(...segs[i]!.map((t) => t.y)) ? chart.barRadius : 0}
+                fill={tokenColor(chart, s.key)}
                 className="transition-opacity duration-150"
                 opacity={dimmed(i, s.key) ? 0.2 : 1}
               />
@@ -576,15 +608,16 @@ export function TokenBarChart({
           {/* Cache-hit-rate curve, dashed, in front of the bars on the right-hand 0–100% scale.
               pointer-events-none: the column/segment hit rects stay hoverable through it. */}
           <g
-            className={`${HIT_RATE_TEXT} pointer-events-none transition-opacity duration-150`}
+            className="pointer-events-none transition-opacity duration-150"
+            style={{ color: chart.ref }}
             opacity={curveDim ? 0.3 : 1}
           >
             <path
               data-part="series"
-              d={linePath(rateGeom, line)}
+              d={linePath(rateGeom, line, chart.curve)}
               fill="none"
               stroke="currentColor"
-              strokeWidth={DATA_STROKE_W}
+              strokeWidth={chart.lineWidth}
               strokeDasharray="5 4"
             />
             {hover !== null && (
@@ -592,7 +625,7 @@ export function TokenBarChart({
                 data-part="point"
                 cx={rateGeom.x(hover.i)}
                 cy={rateGeom.y(line[hover.i] ?? 0)}
-                r={2.5}
+                r={chart.pointRadius}
                 className="fill-current"
               />
             )}
@@ -617,6 +650,7 @@ export function TokenLegend({
     ["output", S.usage.colOutput],
   ];
   const dim = (key: TokenLegendKey) => (active != null && active !== key ? "opacity-30" : "");
+  const chart = useChartStyle();
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1">
       {items.map(([key, label]) => (
@@ -629,7 +663,7 @@ export function TokenLegend({
         >
           <span
             className="inline-block h-2 w-3 rounded-sm"
-            style={{ backgroundColor: TOKEN_COLORS[key] }}
+            style={{ backgroundColor: tokenColor(chart, key) }}
           />
           {label}
         </button>
@@ -641,7 +675,10 @@ export function TokenLegend({
         onMouseLeave={() => onHover?.(null)}
         className={`flex items-center gap-1 text-[10px] text-gray-500 transition-opacity duration-150 dark:text-gray-400 ${dim("hitRate")}`}
       >
-        <span className={`inline-block h-0.5 w-3 rounded-sm ${HIT_RATE_SWATCH}`} />
+        <span
+          className="inline-block h-0.5 w-3 rounded-sm"
+          style={{ backgroundColor: chart.ref }}
+        />
         {S.usage.legendHitRate}
       </button>
     </div>

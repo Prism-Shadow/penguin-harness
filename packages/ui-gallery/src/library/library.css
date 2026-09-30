@@ -9,7 +9,13 @@
 @source "../../../web/src";
 @import "../foundations/foundations.css";
 
-/* The page is exactly as tall as its board: the frame around it takes the height from here. */
+/* Framed, the document is exactly as tall as its board — the page around it takes the height
+   from the board and sizes the frame — so it never scrolls itself: a scrollbar would only flash
+   between the board's first paint and the frame's resize. Standalone, the page scrolls as usual. */
+html[data-framed],
+html[data-framed] body {
+  overflow: hidden;
+}
 .lib-page {
   padding: 1.5rem;
   background: var(--ui-canvas);

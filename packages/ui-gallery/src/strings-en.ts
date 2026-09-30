@@ -206,7 +206,6 @@ export const en: GalleryStrings = {
   },
   section: {
     copyLink: "Copy link",
-    copied: "Copied",
     copyBreadcrumb: "Copy breadcrumb",
     unset: "unset",
   },
@@ -426,7 +425,8 @@ export const en: GalleryStrings = {
       loading: { title: "Loading", description: "The spinner and the skeletons." },
       charts: {
         title: "Charts",
-        description: "The token donut, a usage trend chart and the score sparkline, on demo data.",
+        description:
+          "Every chart kind in the app, on demo data: the donut, cost trend and token bars, requests and success rate, the activity and score sparklines, and the Trace timeline.",
       },
       avatars: { title: "Avatars", description: "The user and agent avatars at their sizes." },
       files: { title: "Files", description: "The file tree and the read-only file browser." },
@@ -634,10 +634,22 @@ export const en: GalleryStrings = {
       donut: "Token donut",
       donutHint:
         "Cache reads, cache writes and output; the ring's remainder warns as usage nears the limit.",
-      trend: "Usage trend",
+      trend: "Cost trend",
       trendHint: "Fourteen days of cost as a line; hover a day.",
+      tokens: "Token usage",
+      tokensHint:
+        "Daily tokens stacked by kind, with the cache-hit-rate curve over them; hover a legend entry to highlight one.",
+      requests: "Requests and success rate",
+      requestsHint: "Daily requests stacked by agent, each with its success-rate line.",
+      agents: ["docs-expert", "release-notes"],
+      activity: "Activity sparkline",
+      activityHint:
+        "The agent card's fourteen-day session count curve; relative ups and downs only.",
       sparkline: "Score sparkline",
       sparklineHint: "One benchmark's scores over its runs, the newest marked.",
+      timeline: "Trace timeline",
+      timelineHint:
+        "One Task's model segments and tool calls: thinking, reply, tool-call generation, approval wait and execution, each in its lane.",
     },
     avatars: {
       user: "User avatar",

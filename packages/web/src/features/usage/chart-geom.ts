@@ -6,8 +6,8 @@
  * the x()/y() mapping, SVG paths, x-axis label indices. Bars fit the
  * container (fitBarWidth — no horizontal scrolling), per-segment geometry
  * (including per-segment hit bands) is produced by barSegments, and every line
- * on the page — cost, cache hit rate, success rate — is drawn by linePath as
- * straight segments between its points, with no smoothing anywhere; there's
+ * on the page — cost, cache hit rate, success rate — is drawn by linePath in the
+ * theme's curve (straight segments in the default theme, see curvePath); there's
  * also hover-bubble placement (pointer
  * lower-right, flipping at the edges). See chart-svg.tsx for the render
  * skeleton.
@@ -19,6 +19,7 @@
  * ~495px, a 0.77 factor), while requirements like "at least 25px wide" must
  * land on **real display pixels**. So the canvas width is supplied by the caller after measuring the container.
  */
+import type { ChartCurve } from "../../lib/chart-style";
 
 /** Canvas height and padding (carried over from the original TrendChart constants; width is now measured from the container, see the file header). */
 export const CHART_H = 200;
@@ -91,23 +92,65 @@ export function makeRangeGeom(
   };
 }
 
-/** Line path: `M x0,y0 L x1,y1 …` (identical to the original TrendChart's cost line). */
-export function linePath(geom: ChartGeom, values: number[]): string {
-  return values.map((v, i) => `${i === 0 ? "M" : "L"}${geom.x(i)},${geom.y(v)}`).join(" ");
+/**
+ * A series' path through its points, drawn the way the theme's `--ui-chart-curve` says:
+ * - `linear`: `M x0,y0 L x1,y1 …`, straight segments (identical to the original cost line);
+ * - `step`: a level run from each point to halfway to the next, then a vertical jump — the
+ *   value holds over its own cell, as a bar would;
+ * - `smooth`: a cubic through every point (Catmull-Rom tangents), with each control point held
+ *   between its segment's two values, so the curve never swings above a peak or below a
+ *   trough the data does not have.
+ */
+export function curvePath(
+  points: ReadonlyArray<readonly [number, number]>,
+  curve: ChartCurve = "linear",
+): string {
+  if (points.length === 0) return "";
+  if (curve === "step") {
+    const parts = [`M${points[0]![0]},${points[0]![1]}`];
+    for (let i = 1; i < points.length; i++) {
+      const [x0] = points[i - 1]!;
+      const [x1, y1] = points[i]!;
+      const mid = rnd((x0 + x1) / 2);
+      parts.push(`H${mid} V${y1} H${x1}`);
+    }
+    return parts.join(" ");
+  }
+  if (curve === "smooth" && points.length > 2) {
+    const parts = [`M${points[0]![0]},${points[0]![1]}`];
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[Math.max(0, i - 1)]!;
+      const p1 = points[i]!;
+      const p2 = points[i + 1]!;
+      const p3 = points[Math.min(points.length - 1, i + 2)]!;
+      const lo = Math.min(p1[1], p2[1]);
+      const hi = Math.max(p1[1], p2[1]);
+      const clampY = (y: number) => Math.min(hi, Math.max(lo, y));
+      const c1x = rnd(p1[0] + (p2[0] - p0[0]) / 6);
+      const c1y = rnd(clampY(p1[1] + (p2[1] - p0[1]) / 6));
+      const c2x = rnd(p2[0] - (p3[0] - p1[0]) / 6);
+      const c2y = rnd(clampY(p2[1] - (p3[1] - p1[1]) / 6));
+      parts.push(`C${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`);
+    }
+    return parts.join(" ");
+  }
+  return points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x},${y}`).join(" ");
+}
+
+/** A series' line, in the theme's curve (see curvePath); linear is the default. */
+export function linePath(geom: ChartGeom, values: number[], curve: ChartCurve = "linear"): string {
+  return curvePath(
+    values.map((v, i) => [geom.x(i), geom.y(v)] as const),
+    curve,
+  );
 }
 
 /** Area path: the line drops vertically to the baseline (y=0) at the end, then closes back along the baseline to the start; used by the cost line's fill layer. */
-export function areaPath(geom: ChartGeom, values: number[]): string {
+export function areaPath(geom: ChartGeom, values: number[], curve: ChartCurve = "linear"): string {
   const n = values.length;
   if (n === 0) return "";
   const baseY = geom.y(0);
-  const parts: string[] = [];
-  for (let i = 0; i < n; i++)
-    parts.push(`${i === 0 ? "M" : "L"}${geom.x(i)},${geom.y(values[i]!)}`);
-  parts.push(`L${geom.x(n - 1)},${baseY}`);
-  parts.push(`L${geom.x(0)},${baseY}`);
-  parts.push("Z");
-  return parts.join(" ");
+  return `${linePath(geom, values, curve)} L${geom.x(n - 1)},${baseY} L${geom.x(0)},${baseY} Z`;
 }
 
 /** Path coordinates keep 2 decimal places: the path string stays short and readable, and is easy to assert on in unit tests. */
@@ -213,14 +256,14 @@ export const BAR_W = 25;
 export const MIN_HIT_H = 8;
 
 /**
- * Bar width that always fits the container (**no horizontal scrolling**): 60%
- * of the cell width — leaving ≥ 40% as spacing so adjacent bars never touch —
+ * Bar width that always fits the container (**no horizontal scrolling**): the theme's
+ * `--ui-chart-bar-fill` share of the cell width (60% by default) — leaving ≥ 40% as spacing so adjacent bars never touch —
  * capped at BAR_W (few points must not balloon into slabs) and floored at 1px:
  * a dense range at fine granularity degrades to hairlines, not to overlap
  * (only a degenerate sub-1.7px cell can make the 1px floor fill its cell).
  */
-export function fitBarWidth(step: number): number {
-  return Math.max(1, Math.min(BAR_W, Math.floor(step * 0.6)));
+export function fitBarWidth(step: number, fill = 0.6): number {
+  return Math.max(1, Math.min(BAR_W, Math.floor(step * fill)));
 }
 
 /** One segment within a stacked bar: the visual rectangle is drawn strictly to value, the hit band is computed separately (small segments are raised to be hoverable). */

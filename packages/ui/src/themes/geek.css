@@ -1,14 +1,16 @@
 /**
- * Console (`geek`) — mono chrome. Navigation, controls, labels, headings, badges and tables are
- * set in Commit Mono; only reading text (message bubbles, assistant prose, the composer's input)
- * stays in IBM Plex Sans. Paper-white light and warm near-black dark, one interface orange,
- * square corners everywhere, hairlines only where they carry structure, depth by surface steps
- * rather than shadow, a ruled full-bleed window, standalone frames whose head sits in the box's
- * top rule like a TUI, the selected navigation row set in the bold cut, a block caret, motion that
- * jumps in steps, and the agent's work rendered as a transcript — `└` steps, mono capitals, a
- * hatched block bar. References: opencode.ai (the mono chrome, the paper and the warm black, the
- * ruled column, the underline tabs, the calm dark), e2b.dev (the orange, the square shapes, the
- * stepped signals) and claude.dev's blog (the tree, the progress line, the near-boxless dark).
+ * Console (`geek`) — mono chrome, as plain as a terminal. Navigation, controls, labels,
+ * headings, badges and tables are set in Commit Mono; only reading text (message bubbles,
+ * assistant prose, the composer's input) stays in IBM Plex Sans. Paper-white light and warm
+ * near-black dark with no fill on a card or a row (a card is the page), one interface orange,
+ * square corners everywhere, no shadow anywhere, hairlines only where they carry structure, a
+ * ruled full-bleed window, a standalone frame a plain hairline box, the selected navigation row
+ * set in the bold cut, a block caret, motion that jumps in steps, and the agent's work rendered
+ * as a transcript — `└` steps, mono capitals, a hatched block bar. References: opencode.ai (the
+ * mono chrome, the paper and the warm black, the ruled column, the underline tabs, the calm
+ * dark), e2b.dev (the orange, the square shapes, the stepped signals), claude.dev's blog (the
+ * tree, the progress line, the near-boxless dark) and a Linux console (the owner's ask of
+ * 2026-09-29: as minimal as possible, no decoration).
  *
  * Status of each group:
  * - Light is opencode's paper (`#fdfcfc` page, `rgb(29 29 31)` ink, `rgb(100 98 98)` muted),
@@ -19,10 +21,10 @@
  *   opencode's `rgb(184 178 178)` (8.7:1) read too dim to the owner. The accent is E2B's orange; in dark it takes black ink, as every dark fill
  *   here does, and the rest of the family derives from it (hover and active shaded, the wash and
  *   the line at an alpha), so a preset sets the one value per mode.
- * - Semantic tones are a hairline plus a 10–14% tint on E2B's code hues (proposal), tuned so every
- *   tone reads at 4.5:1 as text on its own tint and 3:1 as a mark on every surface; the line and
- *   the solid fill of a tone are its ink, declared once; dark danger is lifted to `#ff5252` so it
- *   clears its tint on the warm surface. Chart colours are proposals.
+ * - Semantic tones are a hairline and its ink on E2B's code hues, with no tint (a badge is a
+ *   ruled word, never a coloured shape), tuned so every tone reads at 4.5:1 as text on the page
+ *   and 3:1 as a mark on every surface; the line and the solid fill of a tone are its ink,
+ *   declared once; dark danger is lifted to `#ff5252` so it reads on the warm black.
  * - Fonts: Commit Mono (400 / 700, the face opencode and e2b.dev ship) for the chrome and for
  *   code — one stack, the chrome face reads the data face — IBM Plex Sans for reading, Noto Sans
  *   SC behind both for Han (`fonts/geek.css`). The Plex Sans Condensed face the old uppercase h1
@@ -34,11 +36,13 @@
  * - Density and type are Console's own: a 0.225rem space unit (10% under Tailwind's 0.25rem, so
  *   every `h-8` and `px-2` shrinks with it) and a 0.8125rem body rung. Medium weight is 400 —
  *   Commit Mono has no 500 — so emphasis in the chrome is colour, and strong is the 700 cut.
- * - Lines (2026-09-29): a rule is drawn only where it carries structure. The window's columns
- *   are ruled off each other and a standalone frame keeps its box; a frame that holds a tree or
- *   sits in one gives its box up, a tree row hangs off a `└` alone (no `│` between siblings —
- *   the indent already says the level), an overlay's own 1px line is its edge (no ring around
- *   it), and a step of the agent's work is a bare row.
+ * - Lines and fills (2026-09-29): a rule is drawn only where it carries structure, and a fill
+ *   nowhere but a hover. The window's columns are ruled off each other and a standalone frame
+ *   keeps a plain hairline box (the earlier TUI head — the title standing in the top rule — was
+ *   decoration and went); a frame that holds a tree or sits in one gives its box up, a tree row
+ *   hangs off a `└` alone (no `│` between siblings — the indent already says the level), an
+ *   overlay's own 1px line is its edge (no ring around it), a step of the agent's work is a bare
+ *   row, and the card surface is the page itself.
  *
  * Shape of the file (the same in every theme): one `@layer ui-theme` block holding the base rule,
  * which defines every name in tokens.ts in its group order with its light value, after the gray
@@ -65,12 +69,13 @@
     --color-gray-900: #1d1d1f;
     --color-gray-950: #131010;
 
-    /* Colour — surfaces: the page is paper, a card the white step above it */
+    /* Colour — surfaces: the page is paper, and a card or an overlay is the page too — a
+       hairline, not a fill, sets it apart; only a hover and an inset (a code block) step off it */
     --ui-canvas: #fbfafa;
-    --ui-surface: #ffffff;
+    --ui-surface: var(--ui-canvas);
     --ui-surface-muted: #f4f2f2;
     --ui-inset: #f0eeee;
-    --ui-overlay: #ffffff;
+    --ui-overlay: var(--ui-canvas);
     --ui-overlay-backdrop: rgb(19 16 16 / 0.28);
 
     /* Colour — text. A link is the ink, underlined by the markup; it turns orange on hover. */
@@ -98,26 +103,26 @@
     --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 10%, transparent);
     --ui-accent-line: color-mix(in srgb, var(--ui-accent) 50%, transparent);
 
-    /* Colour — semantic tones: hairline + tint, never a pastel pill. A tone's line and its solid
-       fill are its ink, so each tone is three values per mode (ink, tint, the fill's label);
-       neutral's line is the plain line and its fill a mid grey. */
+    /* Colour — semantic tones: a hairline and its ink, no tint — a badge is a ruled word on the
+       page. A tone's line and its solid fill are its ink, so each tone is two values per mode
+       (ink, the fill's label); neutral's line is the plain line and its fill a mid grey. */
     --ui-tone-success-fg: #4d6000;
-    --ui-tone-success-bg: rgb(77 96 0 / 0.1);
+    --ui-tone-success-bg: transparent;
     --ui-tone-success-line: var(--ui-tone-success-fg);
     --ui-tone-success-emphasis: var(--ui-tone-success-fg);
     --ui-tone-success-emphasis-fg: #ffffff;
     --ui-tone-attention-fg: #7d6300;
-    --ui-tone-attention-bg: rgb(138 109 0 / 0.1);
+    --ui-tone-attention-bg: transparent;
     --ui-tone-attention-line: var(--ui-tone-attention-fg);
     --ui-tone-attention-emphasis: var(--ui-tone-attention-fg);
     --ui-tone-attention-emphasis-fg: #ffffff;
     --ui-tone-danger-fg: #ad2000;
-    --ui-tone-danger-bg: rgb(173 32 0 / 0.1);
+    --ui-tone-danger-bg: transparent;
     --ui-tone-danger-line: var(--ui-tone-danger-fg);
     --ui-tone-danger-emphasis: var(--ui-tone-danger-fg);
     --ui-tone-danger-emphasis-fg: #ffffff;
     --ui-tone-done-fg: #9a0fa4;
-    --ui-tone-done-bg: rgb(154 15 164 / 0.1);
+    --ui-tone-done-bg: transparent;
     --ui-tone-done-line: var(--ui-tone-done-fg);
     --ui-tone-done-emphasis: var(--ui-tone-done-fg);
     --ui-tone-done-emphasis-fg: #ffffff;
@@ -127,23 +132,35 @@
     --ui-tone-neutral-emphasis: #5f5c5c;
     --ui-tone-neutral-emphasis-fg: #ffffff;
     --ui-tone-info-fg: #003ee9;
-    --ui-tone-info-bg: rgb(0 62 233 / 0.08);
+    --ui-tone-info-bg: transparent;
     --ui-tone-info-line: var(--ui-tone-info-fg);
     --ui-tone-info-emphasis: var(--ui-tone-info-fg);
     --ui-tone-info-emphasis-fg: #ffffff;
 
-    /* Colour — charts */
-    --ui-chart-1: #2f6bd8;
-    --ui-chart-2: #d24b1f;
-    --ui-chart-3: #5f7a00;
-    --ui-chart-4: #9a0fa4;
-    --ui-chart-5: #a87d00;
-    --ui-chart-6: #00857a;
+    /* Charts: terminal hues in the roles (indigo, ochre, cobalt, crimson, phosphor, magenta,
+       cyan, orange — the presets' own hues, deep enough for paper), the reference curve in the
+       muted ink, the token-kind blues, and a plotter's geometry — wide bars with square tops,
+       1px lines stepped between points, small square points, next to no fill under a line. */
+    --ui-chart-1: #5b3fd6;
+    --ui-chart-2: #a87d00;
+    --ui-chart-3: #2f6bd8;
+    --ui-chart-4: #c8123f;
+    --ui-chart-5: #1f7a1f;
+    --ui-chart-6: #b0177e;
+    --ui-chart-7: #0e7490;
+    --ui-chart-8: #d24b1f;
+    --ui-chart-ref: var(--ui-fg-muted);
     --ui-chart-cache-read: #9ab8f6;
     --ui-chart-cache-write: #3d74ec;
     --ui-chart-output: #0030b5;
     --ui-chart-grid: #efeded;
     --ui-chart-axis: #8f8b8b;
+    --ui-chart-bar-fill: 0.8;
+    --ui-chart-bar-radius: 0px;
+    --ui-chart-line-width: 1px;
+    --ui-chart-point-radius: 2px;
+    --ui-chart-curve: step;
+    --ui-chart-area-opacity: 0.06;
 
     /* Colour — code (E2B light code hues live in the Shiki theme, W5) */
     --ui-code-bg: #f4f2f2;
@@ -362,14 +379,13 @@
     --color-gray-600: #5a5453;
     --color-gray-700: #2f2b2b;
     --color-gray-800: #242020;
-    --color-gray-900: #1a1717;
+    --color-gray-900: var(--ui-canvas);
 
-    /* Colour — surfaces: warm steps up from the page */
+    /* Colour — surfaces: the warm black is the page, the card and the overlay alike; a hover
+       steps up, an inset steps down */
     --ui-canvas: #131010;
-    --ui-surface: #1a1717;
     --ui-surface-muted: #221f1f;
     --ui-inset: #0d0b0b;
-    --ui-overlay: #1d1a1a;
     --ui-overlay-backdrop: rgb(0 0 0 / 0.6);
 
     /* Colour — text: body about 12:1 on the canvas, headings and links near-white, muted about
@@ -396,32 +412,29 @@
     --ui-accent-muted: color-mix(in srgb, var(--ui-accent) 16%, transparent);
     --ui-accent-line: color-mix(in srgb, var(--ui-accent) 60%, transparent);
 
-    /* Colour — semantic tones: E2B's code hues; fills take black ink. The lines and the fills
-       follow the inks from the base rule. */
+    /* Colour — semantic tones: E2B's code hues; fills take black ink. The lines, the fills and
+       the absent tints follow the base rule. */
     --ui-tone-success-fg: #9dc20c;
-    --ui-tone-success-bg: rgb(157 194 12 / 0.14);
     --ui-tone-success-emphasis-fg: #000000;
     --ui-tone-attention-fg: #f2c230;
-    --ui-tone-attention-bg: rgb(242 194 48 / 0.14);
     --ui-tone-attention-emphasis-fg: #000000;
     --ui-tone-danger-fg: #ff5252;
-    --ui-tone-danger-bg: rgb(255 82 82 / 0.14);
     --ui-tone-danger-emphasis-fg: #000000;
     --ui-tone-done-fg: #b57cff;
-    --ui-tone-done-bg: rgb(181 124 255 / 0.14);
     --ui-tone-done-emphasis-fg: #000000;
     --ui-tone-neutral-emphasis: #5a5453;
     --ui-tone-info-fg: #5696fd;
-    --ui-tone-info-bg: rgb(86 150 253 / 0.14);
     --ui-tone-info-emphasis-fg: #000000;
 
-    /* Colour — charts */
-    --ui-chart-1: #5696fd;
-    --ui-chart-2: #ff795b;
-    --ui-chart-3: #9dc20c;
-    --ui-chart-4: #b57cff;
-    --ui-chart-5: #f2c230;
-    --ui-chart-6: #3fc1b0;
+    /* Charts: the same roles as bright terminal hues on the warm black */
+    --ui-chart-1: #9b7bff;
+    --ui-chart-2: #f2c230;
+    --ui-chart-3: #5696fd;
+    --ui-chart-4: #ff5c8a;
+    --ui-chart-5: #3ddc84;
+    --ui-chart-6: #ff6ac1;
+    --ui-chart-7: #22d3ee;
+    --ui-chart-8: #ff795b;
     --ui-chart-cache-read: #a8c8fe;
     --ui-chart-cache-write: #5696fd;
     --ui-chart-output: #2059d1;
@@ -507,58 +520,20 @@
     }
   }
 
-  /* Ruled frame, drawn like a TUI box: the head's title sits IN the top rule. The box gives up
-     its own border; the head draws the top rule through its vertical middle and the two sides
-     below the rule, its first and last children (the title group, the meta or actions) patch the
-     rule behind themselves with the frame's own fill, and the body, foot and panes draw the sides
-     and the bottom. A frame with no head keeps a plain top rule. Head text is the chrome face at
-     its own size; a path inside stays mono because it is a path. The parts of the box are
-     selected through `:where()`, which adds no specificity, so the boxless rules further down
-     (a frame that holds a tree or sits in one) can take every part of it back. */
+  /* A frame is a plain hairline box on the page: one rule round it, one under its head and over
+     its foot, one between panes, no fill of its own, head text in the chrome face. (A first
+     pass drew a TUI box with the title standing in the top rule; it was decoration and went.)
+     The parts are selected through `:where()`, which adds no specificity, so the boxless rules
+     further down — a frame that holds a tree or sits in one — can take every part of it back. */
   :root[data-theme="geek"] .ui-frame {
-    border: 0;
+    border: var(--ui-border-w) solid var(--ui-line);
     border-radius: 0;
-    background-color: var(--ui-surface);
+    background-color: transparent;
   }
   :root[data-theme="geek"] .ui-frame > :where([data-slot="head"]) {
-    position: relative;
-    min-height: calc(var(--ui-space-unit) * 9);
-    padding-inline: calc(var(--ui-space-unit) * 3);
-    border-bottom: 0;
-    background-color: inherit;
-    font-family: var(--ui-font-ui);
-  }
-  :root[data-theme="geek"] .ui-frame > :where([data-slot="head"])::before {
-    content: "";
-    position: absolute;
-    inset: 50% 0 auto;
-    height: var(--ui-border-w);
-    background-color: var(--ui-line);
-  }
-  :root[data-theme="geek"] .ui-frame > :where([data-slot="head"])::after {
-    content: "";
-    position: absolute;
-    inset: 50% 0 0;
-    border-inline: var(--ui-border-w) solid var(--ui-line);
-    pointer-events: none;
-  }
-  :root[data-theme="geek"]
-    .ui-frame
-    > :where([data-slot="head"])
-    > :where(:first-child, :last-child) {
-    position: relative;
-    z-index: 1;
-    padding-inline: var(--ui-space-unit);
-    background-color: inherit;
-  }
-  :root[data-theme="geek"] .ui-frame > :where(:not([data-slot="head"])) {
-    border-inline: var(--ui-border-w) solid var(--ui-line);
-  }
-  :root[data-theme="geek"] .ui-frame > :where(:first-child:not([data-slot="head"])) {
-    border-top: var(--ui-border-w) solid var(--ui-line);
-  }
-  :root[data-theme="geek"] .ui-frame > :where(:last-child:not([data-slot="head"])) {
     border-bottom: var(--ui-border-w) solid var(--ui-line);
+    background-color: transparent;
+    font-family: var(--ui-font-ui);
   }
   :root[data-theme="geek"] .ui-frame > :where([data-slot="foot"]) {
     border-top: var(--ui-border-w) solid var(--ui-line);
@@ -652,42 +627,14 @@
 
   /* A frame headed by a step of the agent's work (a work group, open or collapsed — collapsed
      it has no tree, so the head is what names it) or holding a tree, or sitting inside one (a
-     tool card hung off an elbow), gives up the TUI box: no fill, no rule on any part (the host's
-     own rules between head and body included), no rule through the head, and the head keeps
-     the host's own positioning and geometry — `revert-layer` hands them back to the host's
-     utilities, so a header that sticks while its rows scroll keeps sticking with the height it
-     had — so the rows hang off the head, or the card off its elbow, by the connector rules
-     alone. A frame standing on its own keeps its box. */
+     tool card hung off an elbow), gives up the box: no rule on it or on any part (the host's
+     own rules between head and body included), so the rows hang off the head, or the card off
+     its elbow, by the connector rules alone. A frame standing on its own keeps its box. */
   :root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity),
-  :root[data-theme="geek"] .ui-tree .ui-frame {
-    background-color: transparent;
-  }
+  :root[data-theme="geek"] .ui-tree .ui-frame,
   :root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity) > *,
   :root[data-theme="geek"] .ui-tree .ui-frame > * {
     border: 0;
-  }
-  :root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity) > [data-slot="head"],
-  :root[data-theme="geek"] .ui-tree .ui-frame > [data-slot="head"] {
-    position: revert-layer;
-    min-height: revert-layer;
-    padding-inline: revert-layer;
-  }
-  :root[data-theme="geek"]
-    .ui-frame:has(> .ui-tree, > .ui-activity)
-    > [data-slot="head"]
-    > :is(:first-child, :last-child),
-  :root[data-theme="geek"]
-    .ui-tree
-    .ui-frame
-    > [data-slot="head"]
-    > :is(:first-child, :last-child) {
-    padding-inline: revert-layer;
-  }
-  :root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity) > [data-slot="head"]::before,
-  :root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity) > [data-slot="head"]::after,
-  :root[data-theme="geek"] .ui-tree .ui-frame > [data-slot="head"]::before,
-  :root[data-theme="geek"] .ui-tree .ui-frame > [data-slot="head"]::after {
-    display: none;
   }
 
   /* A labelled control row is a table row: a fixed label column, the control left-aligned in the
@@ -799,52 +746,54 @@
     }
   }
 
-  /* A notice is a log line: the chrome face at the small rung, an uppercase tone tag in the
-     tone's ink before the text, a hairline down the left edge in the same ink, no corner, no
-     shadow — the one coloured left rule this theme draws, the log's gutter, drawn here by the
-     hook and never by a component (user decision, 2026-09-29). It is painted in the page's own
-     colour: nothing on the page, opaque where a toast floats over content. */
+  /* A notice is a status line, the way a console prints one: a bracketed tone tag in the tone's
+     ink — `[ OK ]`, `[WARN]`, `[FAIL]` — in the chrome face at the start, the message beside it
+     in the reading face, nothing round it, painted in the page's own colour (quiet on the page,
+     opaque where a toast floats over content). The tag stands out of the flow — absolutely at
+     the row's inset, the host padded for it — because a host lays its body and actions out as a
+     flex row, and a tag in the flow would be a third item pushing the body to the middle. A
+     toast is the same line inside one hairline, so it has an edge where it floats. (Two earlier
+     passes — a coloured left rule, then a solid tone block — were decoration and went.) */
   :root[data-theme="geek"] .ui-notice {
     position: relative;
-    padding-inline-start: calc(var(--ui-row-px) + 5ch);
+    padding-inline-start: calc(4rem + var(--ui-row-px));
     border: 0;
-    border-inline-start: var(--ui-border-w) solid var(--_tone-fg);
     border-radius: 0;
     background-color: var(--ui-canvas);
     box-shadow: none;
     color: var(--ui-fg);
-    font-family: var(--ui-font-ui);
-    font-size: var(--ui-text-small-size);
+    font-family: var(--ui-font-sans);
+  }
+  :root[data-theme="geek"] button.ui-notice {
+    border: var(--ui-border-w) solid var(--ui-line-emphasis);
   }
   /* The host's own leading mark gives way to the tag: two marks would say the same thing. */
   :root[data-theme="geek"] .ui-notice [data-slot="icon"] {
     display: none;
   }
-  /* The tag stands out of the flow — absolutely at the row's inset, in the four columns the host
-     is padded for — because a host lays its body and actions out as a flex row, and a tag in the
-     flow would be a third item pushing the body to the middle. */
   :root[data-theme="geek"] .ui-notice::before {
-    content: "INFO";
+    content: "[INFO]";
     position: absolute;
     inset-inline-start: var(--ui-row-px);
     inset-block: 0;
     display: flex;
     align-items: center;
-    font-weight: var(--ui-weight-strong);
-    letter-spacing: var(--ui-tracking-label);
     color: var(--_tone-fg);
+    font-family: var(--ui-font-ui);
+    font-size: var(--ui-text-small-size);
+    font-weight: var(--ui-weight-strong);
   }
   :root[data-theme="geek"] .ui-notice[data-tone="success"]::before {
-    content: "OK";
+    content: "[ OK ]";
   }
   :root[data-theme="geek"] .ui-notice[data-tone="warning"]::before {
-    content: "WARN";
+    content: "[WARN]";
   }
   :root[data-theme="geek"] .ui-notice[data-tone="danger"]::before {
-    content: "ERR";
+    content: "[FAIL]";
   }
   :root[data-theme="geek"] .ui-notice[data-tone="neutral"]::before {
-    content: "NOTE";
+    content: "[NOTE]";
   }
 
   /* Charts are drawn like a terminal plot: a dashed grid on crisp pixels, axis labels in the
@@ -852,10 +801,16 @@
      squares (a pixel-aligned circle this small is a square), and bars hatched like a `▓` — a
      stripe mask over the bar's own colour, the one gradient a chart may paint. The colours stay
      the host's. */
+  /* The grid and the bars are drawn in SVG by the usage charts and as HTML by the Trace
+     timeline (lane tracks and span bars): each rule carries both spellings — a dashed stroke
+     and a dashed rule under an HTML lane, a stripe mask over either kind of bar — and an
+     engine ignores the one that does not apply to it. */
   :root[data-theme="geek"] .ui-chart [data-part="grid"] {
     stroke: var(--ui-line-emphasis);
     stroke-dasharray: 2 3;
     shape-rendering: crispEdges;
+    background-color: transparent;
+    border-bottom: var(--ui-border-w) dashed var(--ui-line-emphasis);
   }
   /* The axis part is both the tick text and the axis-break marks, so lines and text split by
      element: a stroke on text would outline its glyphs. */

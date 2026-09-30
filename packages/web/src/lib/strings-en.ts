@@ -198,9 +198,7 @@ export const en: Strings = {
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "Settings",
     /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
-    fontCredit: "Uses the MiSans font by Xiaomi",
     creditsTitle: "Credits",
-    creditsIntro: "The fonts bundled with the app, and the license each ships under.",
     creditsThemes: "Used by",
     creditsNoTheme: "Not a theme's default",
     creditsLicense: "License",
