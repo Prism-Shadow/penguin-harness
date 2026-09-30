@@ -102,6 +102,7 @@ import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
 import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
 import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
+import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -262,6 +263,7 @@ export function createCoreSessionLoader(
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
     pathPrepend?: () => string[];
     confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null;
+    sandboxPolicy?: (ctx: ControlEnvContext) => SandboxSettings | null;
     assembly?: AgentAssembly;
   } = {},
 ): SessionLoader {
@@ -275,6 +277,7 @@ export function createCoreSessionLoader(
         ...(opts.controlEnv ? { controlEnv: opts.controlEnv } : {}),
         ...(opts.pathPrepend ? { pathPrepend: opts.pathPrepend } : {}),
         ...(opts.confineSpawn ? { confineSpawn: opts.confineSpawn } : {}),
+        ...(opts.sandboxPolicy ? { sandboxPolicy: opts.sandboxPolicy } : {}),
         ...(opts.assembly ? { assembly: opts.assembly } : {}),
       });
       const located = await findLatestTraceFile(
@@ -2334,6 +2337,8 @@ export abstract class SessionEnv extends Interface<{
   /** The directories at the FRONT of every command's PATH: the harness's own CLI shim (see CreateAgentOptions.pathPrepend). */
   pathPrepend(): string[];
   confineSpawn(ctx: ControlEnvContext): SpawnConfiner | null;
+  /** The Session's sandbox policy itself, for the file tools that apply it in-process (see CreateAgentOptions.sandboxPolicy). */
+  sandboxPolicy(ctx: ControlEnvContext): SandboxSettings | null;
 }>() {}
 
 @Module()
@@ -2423,16 +2428,19 @@ export class SessionsModule {
       // Each Session confines under its OWN policy — the snapshot on its row, its root's for a
       // subagent — so a settings change reaches only Sessions created after it. A row from
       // before snapshots takes the settings at its first command and keeps them from then on.
-      confineSpawn: (ctx: ControlEnvContext) =>
-        sandbox.confinerFor(() => {
-          const root = manager.rootSessionOf(ctx.sessionId);
-          const row = sessionsRepo.findById(root);
-          if (row?.sandbox) return row.sandbox;
-          const snapshot = sandbox.currentSettings();
-          if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
-          return snapshot;
-        }),
+      confineSpawn: (ctx: ControlEnvContext) => sandbox.confinerFor(() => policyOf(ctx)),
+      // The same snapshot, handed to core as the policy itself: the file tools run inside
+      // the harness process and apply it there, where no runner can wrap them.
+      sandboxPolicy: (ctx: ControlEnvContext) => policyOf(ctx),
     };
+    function policyOf(ctx: ControlEnvContext): SandboxSettings {
+      const root = manager.rootSessionOf(ctx.sessionId);
+      const row = sessionsRepo.findById(root);
+      if (row?.sandbox) return row.sandbox;
+      const snapshot = sandbox.currentSettings();
+      if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
+      return snapshot;
+    }
 
     const notifyProjectUsers = (projectId: string, event: ServerEvent): void =>
       this.projectEvents.notifyProjectUsers(projectId, event);
@@ -2452,6 +2460,7 @@ export class SessionsModule {
         controlEnv: env.controlEnv,
         pathPrepend: env.pathPrepend,
         confineSpawn: env.confineSpawn,
+        sandboxPolicy: env.sandboxPolicy,
         assembly,
       }),
       sources,
@@ -2489,6 +2498,7 @@ export class SessionsModule {
       orgIdsOfProject: (projectId) => orgCache.orgIdsOfProject(projectId),
       pathPrepend: env.pathPrepend,
       confineSpawn: env.confineSpawn,
+      sandboxPolicy: env.sandboxPolicy,
       assembly,
       sandboxDefaults: () => sandbox.currentSettings(),
       sandboxLocalNetwork: () =>

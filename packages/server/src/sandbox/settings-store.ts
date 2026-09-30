@@ -76,9 +76,9 @@ export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
             title: "Network",
             titleZh: "网络",
             description:
-              "What a confined command may reach. Local network allows only this machine's localhost, and needs a backend that can enforce it.",
+              "What a confined command, hook script or read_file URL may reach. Local network allows only this machine's localhost, and needs a backend that can enforce it.",
             descriptionZh:
-              "被封禁的命令能访问的网络。本地网络只允许访问本机 localhost，需要能实施它的后端。",
+              "被封禁的命令、钩子脚本与 read_file 的 URL 能访问的网络。本地网络只允许访问本机 localhost，需要能实施它的后端。",
             default: "open",
             options: [
               { value: "open", title: "Full access", titleZh: "完全访问" },
@@ -95,9 +95,9 @@ export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
             title: "Temporary directory writable",
             titleZh: "临时目录可写",
             description:
-              "Confined commands may write the system temp directory, in either mode. Shells and most tools need one to start; off keeps it read-only too.",
+              "Confined commands, hook scripts and file tools may write the system temp directory, in either mode. Shells and most tools need one to start; off keeps it read-only too.",
             descriptionZh:
-              "被封禁的命令在两种模式下都可以写系统临时目录。Shell 与大多数工具需要它才能启动；关闭后临时目录同样只读。",
+              "被封禁的命令、钩子脚本与文件工具在两种模式下都可以写系统临时目录。Shell 与大多数工具需要它才能启动；关闭后临时目录同样只读。",
             default: true,
           },
           maskPaths: {
@@ -105,8 +105,8 @@ export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
             title: "Masked paths",
             titleZh: "屏蔽路径",
             description:
-              "One absolute path per line, hidden from confined commands (reads included).",
-            descriptionZh: "每行一个绝对路径，对被封禁的命令隐藏（包括读取）。",
+              "One absolute path per line, hidden from confined commands, hook scripts and file tools (reads included).",
+            descriptionZh: "每行一个绝对路径，对被封禁的命令、钩子脚本与文件工具隐藏（包括读取）。",
             maxItems: 64,
             // POSIX `/…`, Windows `C:\…` or `C:/…`, or a UNC `\\server\…`.
             pattern: "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\)",
@@ -176,8 +176,8 @@ export class SandboxSettingsStatus {
             const needs = required.join(" + ");
             notices.push({
               tone: "attention",
-              text: `The saved mode needs ${needs}, and no usable backend implements it: every agent command is refused until one does.`,
-              textZh: `当前保存的模式需要 ${needs}，但没有可用的后端实现它：在有后端能实施之前，Agent 的每条命令都会被拒绝。`,
+              text: `The saved mode needs ${needs}, and no usable backend implements it: every agent command and hook script is refused until one does.`,
+              textZh: `当前保存的模式需要 ${needs}，但没有可用的后端实现它：在有后端能实施之前，Agent 的每条命令与钩子脚本都会被拒绝。`,
             });
           }
         }
@@ -191,8 +191,8 @@ export class SandboxSettingsStatus {
             declined.length === 0 ? "" : `已安装 ${declined.join("、")}，但它们适用于其他平台。`;
           notices.push({
             tone: "attention",
-            text: `This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Off refuses every agent command.${elsewhere}`,
-            textZh: `当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，除「关闭」外的任何模式都会拒绝 Agent 的每条命令。${elsewhereZh}`,
+            text: `This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Off refuses every agent command and hook script.${elsewhere}`,
+            textZh: `当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，除「关闭」外的任何模式都会拒绝 Agent 的每条命令与钩子脚本。${elsewhereZh}`,
           });
         } else {
           const list = backends.map((b) => `${b.name} (${b.dimensions.join(", ")})`).join(" · ");

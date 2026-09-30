@@ -141,7 +141,7 @@ To upload a zip file:
 3. If a package with the same name is already installed, confirm with **Overwrite**.
 
 > [!WARNING]
-> An imported hook package takes effect at once. While the agent has hooks on, its scripts run on this machine at every hook point, so import only packages you trust.
+> An imported hook package takes effect at once. While the agent has hooks on, its scripts run on this machine at every hook point, so import only packages you trust. They run under the conversation's [sandbox](/settings#sandbox), the same policy as the agent's commands; with the sandbox off, they have the harness's own permissions.
 
 ## Server plugins
 

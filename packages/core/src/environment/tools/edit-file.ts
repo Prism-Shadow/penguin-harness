@@ -204,6 +204,13 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
       const replaceAll = args["replace_all"] === true;
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
+      // The Session's sandbox, applied here because no runner wraps this process: decided
+      // on where the write lands (see file-access.ts), before the file is read or locked.
+      const denied = await ctx.fileAccess?.denyWrite(resolved);
+      if (denied) {
+        yield delta(denied);
+        return { stopReason: "fatal" };
+      }
       // One file, one writer at a time: the read and the write that follows it are a single
       // critical section, so a concurrent edit lands entirely before or entirely after this
       // one instead of being overwritten by it.

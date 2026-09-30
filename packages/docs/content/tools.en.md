@@ -188,7 +188,15 @@ The tools' arguments (explicit keys):
 
 ### File tools
 
-`read_file` / `edit_file` / `write_file` run with the user's full permissions, like the shell tool. Relative paths resolve against the Workspace, and absolute paths are allowed. A symlinked path is followed to the file it names: reads, edits and writes all land on that file, and the link stays a link. `read_file` refuses the secret stores `.vault.toml` and `.project_config.toml`, matched by file name in any directory and after following symlinks.
+`read_file` / `edit_file` / `write_file` run inside the harness process, with the user's permissions, within the Session's sandbox. Relative paths resolve against the Workspace, and absolute paths are allowed. A symlinked path is followed to the file it names: reads, edits and writes all land on that file, and the link stays a link. `read_file` refuses the secret stores `.vault.toml` and `.project_config.toml`, matched by file name in any directory and after following symlinks.
+
+The Session's [sandbox](/settings#sandbox) holds the file tools to the same policy as its commands, but no sandbox runner can wrap a tool that runs in the harness process, so the harness decides each operation itself, just before it runs, on the real path. Symlinks are followed to their target, and a path that does not exist yet is resolved through its deepest existing ancestor, so a link inside the Workspace cannot carry a write outside it. A write must land under a directory the mode makes writable: the Workspace, the Session's scratchpad and the temporary directory under workspace write, the temporary directory alone under read-only. A read is refused only under a masked path, which cannot be written either, and an image URL is fetched only as far as the network level reaches: nowhere under no network, loopback hosts under local network. A refused call ends `fatal` with one sentence for the model that starts `Denied by the sandbox:` and says what was refused, so the next attempt can take another route:
+
+```text
+Denied by the sandbox: "/etc/hosts" is outside the directories this session may write to (mode workspace-write; writable: <workspace>, <scratchpad>, /tmp).
+```
+
+The check and the operation are one step apart, so a command that swaps a directory for a link in between is not caught. Without a sandbox policy, as when the SDK or the CLI runs standalone or the sandbox is off, nothing is refused and the tools run with the user's full permissions, like the shell tool.
 
 The file tools return a single final output rather than a stream, with one exception: for a text-only model, `read_file` streams the vision model's description of an image. They never throw. Failures come back as explanatory text with `stop_reason: fatal`.
 

@@ -59,8 +59,10 @@ import {
 } from "./trace/index.js";
 import { Session } from "./session.js";
 import { scriptPreToolUseHook, scriptStopHook, scriptUserPromptHook } from "./hooks/script-hook.js";
+import type { ScriptHookOptions } from "./hooks/script-hook.js";
 import type { HookSubagentRequest, SessionHooks } from "./hooks/stop-hook.js";
 import { predatesEveryPromptHooks, userPromptTrigger } from "./plugins/index.js";
+import type { SandboxSettings } from "./plugin/sandbox.js";
 import type { SessionConfig, SessionOpenedContext } from "./session.js";
 import {
   createTempWorkspace,
@@ -150,6 +152,14 @@ export interface CreateAgentOptions {
    * keep a policy per Session. Absent = commands spawn unconfined.
    */
   confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null;
+  /**
+   * The Session's sandbox policy for the file tools, which run in this process and apply
+   * it themselves (see {@link EnvironmentConfig.sandboxPolicy}). Host policy exactly like
+   * `confineSpawn`: the same policy the commands are confined under, evaluated with the
+   * Session's coordinates, re-read at every call, inherited by subagents' Sessions.
+   * Absent = the file tools are unconfined.
+   */
+  sandboxPolicy?: (ctx: ControlEnvContext) => SandboxSettings | null;
   /**
    * What a host adds to every Session this Agent assembles — see {@link AgentAssembly}.
    * Host policy like
@@ -390,6 +400,7 @@ export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent>
     opts.pathPrepend,
     opts.confineSpawn,
     opts.assembly,
+    opts.sandboxPolicy,
   );
 }
 
@@ -407,6 +418,8 @@ export class Agent {
     private readonly confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null,
     /** See {@link CreateAgentOptions.assembly}; read at every Session creation. */
     private readonly assembly?: AgentAssembly,
+    /** See {@link CreateAgentOptions.sandboxPolicy}; evaluated per Session with that Session's coordinates. */
+    private readonly sandboxPolicy?: (ctx: ControlEnvContext) => SandboxSettings | null,
   ) {}
 
   /**
@@ -906,7 +919,7 @@ export class Agent {
       trace,
       openNextContext: rt.openNextContext,
       // The first context's hooks; each context `openNextContext` opens brings its own.
-      hooks: this.sessionHooks(rt.subagentRunner, context.hookPackages),
+      hooks: this.sessionHooks(rt.subagentRunner, context.hookPackages, spec),
 
       createBareLLM: rt.createBareLLM,
       compaction: context.compaction,
@@ -990,6 +1003,7 @@ export class Agent {
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
                 ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
                 ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
+                ...(parentAgent.sandboxPolicy ? { sandboxPolicy: parentAgent.sandboxPolicy } : {}),
                 ...(parentAgent.assembly ? { assembly: parentAgent.assembly } : {}),
               })
             : parentAgent;
@@ -1040,6 +1054,7 @@ export class Agent {
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
                 ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
                 ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
+                ...(parentAgent.sandboxPolicy ? { sandboxPolicy: parentAgent.sandboxPolicy } : {}),
                 ...(parentAgent.assembly ? { assembly: parentAgent.assembly } : {}),
               });
         const childSession = await childAgent.resumeSession({ sessionId });
@@ -1224,6 +1239,17 @@ export class Agent {
               }),
           }
         : {}),
+      // The same policy, for the file tools that apply it in this process.
+      ...(this.sandboxPolicy
+        ? {
+            sandboxPolicy: () =>
+              this.sandboxPolicy!({
+                projectId: this.state.projectId,
+                agentId: this.state.agentId,
+                sessionId,
+              }),
+          }
+        : {}),
     });
 
     // The tool_call_id uniqueness registry is shared by every context's LLM object: its
@@ -1316,7 +1342,7 @@ export class Agent {
         sessionMeta: sessionMeta(next.meta),
         maxTurns: next.maxTurns ?? -1,
         compaction: next.compaction,
-        hooks: this.sessionHooks(subagentRunner, next.hookPackages),
+        hooks: this.sessionHooks(subagentRunner, next.hookPackages, spec),
       };
     };
 
@@ -1384,33 +1410,47 @@ export class Agent {
    * the context opens, which is how uninstalling the last package reaches a conversation
    * that is running. This is the one place a Session's hooks are assembled.
    */
-  private sessionHooks(runner: SubagentRunner, installed: readonly InstalledHook[]): SessionHooks {
-    // Hook scripts get the same PATH front as commands do (see
-    // CreateAgentOptions.pathPrepend). Only the environment half applies: a hook is run as
-    // `node <script>` directly, with no shell and so no login profile to re-prepend
-    // anything after it.
-    const pathPrepend = this.pathPrepend;
+  private sessionHooks(
+    runner: SubagentRunner,
+    installed: readonly InstalledHook[],
+    spec: SessionSpec,
+  ): SessionHooks {
+    const { root, projectId, agentId } = this.state;
+    const ctx: ControlEnvContext = { projectId, agentId, sessionId: spec.sessionId };
+    // A hook script is spawned the way a command is: the same PATH front (see
+    // CreateAgentOptions.pathPrepend — only the environment half applies, a hook is run
+    // as `node <script>` with no shell to re-order PATH afterwards), and the same sandbox
+    // (CreateAgentOptions.confineSpawn, bound to this Session's coordinates and re-read
+    // at every run), with the Session's Workspace and scratchpad as its scope.
+    const options: ScriptHookOptions = {
+      ...(this.pathPrepend ? { pathPrepend: this.pathPrepend } : {}),
+      ...(this.confineSpawn ? { confineSpawn: () => this.confineSpawn!(ctx) } : {}),
+      scope: {
+        workspaceDir: spec.workspaceDir,
+        scratchpadDir: sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
+      },
+    };
+    const withTimeout = (timeoutS: number | undefined): ScriptHookOptions => ({
+      ...options,
+      ...(timeoutS !== undefined ? { timeoutS } : {}),
+    });
     const stop = installed.flatMap((hook) =>
       hook.stop.map((cmd) =>
-        scriptStopHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
+        scriptStopHook(hook.name, hook.dir, cmd.command, withTimeout(cmd.timeout)),
       ),
     );
     const preToolUse = installed.flatMap((hook) =>
       hook.pre_tool_use.map((cmd) =>
-        scriptPreToolUseHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
+        scriptPreToolUseHook(hook.name, hook.dir, cmd.command, withTimeout(cmd.timeout)),
       ),
     );
     const userPrompt = installed.flatMap((hook) => {
       remindToUpdate(hook);
       return hook.user_prompt.map((cmd) =>
-        scriptUserPromptHook(
-          hook.name,
-          hook.dir,
-          cmd.command,
-          cmd.timeout,
-          pathPrepend,
-          userPromptTrigger(hook.version, cmd),
-        ),
+        scriptUserPromptHook(hook.name, hook.dir, cmd.command, {
+          ...withTimeout(cmd.timeout),
+          trigger: userPromptTrigger(hook.version, cmd),
+        }),
       );
     });
     return {

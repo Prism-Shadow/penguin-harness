@@ -18,6 +18,7 @@ import type { ApproveFn, RunCutoff, ThinkingLevelName } from "./shared.js";
 import type { LLMInterface } from "./llm.js";
 // Concrete classes, used only for EnvironmentServices type annotations (type-only import; no runtime dependency, no circular reference).
 import type { CommandSessionManager } from "../environment/tools/command/session-manager.js";
+import type { SandboxSettings } from "../plugin/sandbox.js";
 import type { SubagentSessionManager } from "../environment/tools/subagent/session-manager.js";
 
 // ---------------------------------------------------------------------------
@@ -333,6 +334,16 @@ export interface EnvironmentConfig {
    * default for SDK/CLI standalone use).
    */
   confineSpawn?: () => SpawnConfiner | null;
+  /**
+   * The Session's sandbox policy, for the file tools (see
+   * {@link SandboxSettings}). read_file / edit_file / write_file run inside this process,
+   * so no runner can wrap them: the tools apply the policy themselves before each
+   * operation, on the real path they are about to touch (see tools/file-access.ts).
+   * A getter re-read at every call, like {@link EnvironmentConfig.confineSpawn}, so a
+   * policy the host changes reaches the next call. Absent, or a getter returning null =
+   * the tools are unconfined (the default for SDK/CLI standalone use).
+   */
+  sandboxPolicy?: () => SandboxSettings | null;
 }
 
 /**
@@ -366,13 +377,15 @@ export type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; 
  * @param opts - spawn context: `cwd` is the working directory of THIS command (per-call,
  *   may differ from the workspace); `workspaceDir` is the Session's Workspace root — the
  *   directory a workspace-scoped confinement policy should treat as writable, never
- *   inferred from `cwd` (a command may run in a workdir outside the Workspace).
+ *   inferred from `cwd` (a command may run in a workdir outside the Workspace);
+ *   `scratchpadDir` is the Session's scratchpad, writable beside the workspace under
+ *   that policy (absent for a Session without one).
  * @returns what to spawn instead: the argv, and any environment entries the runner
  *   itself needs (see {@link ConfinedSpawn}).
  */
 export type SpawnConfiner = (
   argv: readonly string[],
-  opts: { cwd: string; workspaceDir: string },
+  opts: { cwd: string; workspaceDir: string; scratchpadDir?: string },
 ) => ConfinedSpawn;
 
 /**

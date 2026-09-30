@@ -133,7 +133,7 @@ Task 由若干连续的 Request（轮）组成。每一轮：
 
 Session 咨询的钩子，就是安装在 Agent 的 `agent_state/hooks/` 目录里的钩子包，无论是[插件](/skills#钩子包)携带的，还是有人（包括 Agent 自己）手写进去的。它们像 Skill 一样，连同 `hooks.enabled` 开关，在每个模型上下文开启时从磁盘读取：创建 Session 时、每次压缩之后，以及恢复时。新上下文的钩子整体替换旧的，因此对话中写入的钩子包从下一个上下文起生效。SDK 嵌入方也可以经 `SessionConfig.hooks.stop` / `.preToolUse` / `.userPrompt` 注册进程内函数。
 
-已安装的钩子是纯 Node 脚本，像 Claude Code 运行 command hook 那样以子进程运行。它只被告知去哪里看，其余一切都由它从 Trace 推导：Token 用量、轮数、Task 的结束方式，以及它自己的状态文件。退出码非零即为失败，stderr 的末尾成为 reason；超时的脚本会被终止，超时时长取清单里的 `timeout`，缺省 60 秒。
+已安装的钩子是纯 Node 脚本，像 Claude Code 运行 command hook 那样以子进程运行。这个子进程与命令完全一样，在 Session 的[沙盒](/settings#沙盒)下运行：同一份策略，同一个后端。沙盒无法封禁它时，该次钩子失败，reason 以 `hook failed: sandbox:` 开头，脚本绝不会脱离封禁运行。它只被告知去哪里看，其余一切都由它从 Trace 推导：Token 用量、轮数、Task 的结束方式，以及它自己的状态文件。退出码非零即为失败，stderr 的末尾成为 reason；超时的脚本会被终止，超时时长取清单里的 `timeout`，缺省 60 秒。
 
 ### Stop hook
 

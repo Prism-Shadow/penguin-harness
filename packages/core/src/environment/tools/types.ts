@@ -9,6 +9,7 @@
  */
 import type { OmniMessage, StopReason } from "../../omnimessage/index.js";
 import type { ApproveFn, ToolDefinitionConfig } from "../../interfaces/index.js";
+import type { SandboxFileAccess } from "./file-access.js";
 
 /**
  * Tool execution context: runtime information needed to execute one tool call.
@@ -32,6 +33,8 @@ export interface ToolExecutionContext {
   detachSignal?: AbortSignal;
   /** The parent Agent's approval callback; run_subagent passes it through to the child Session so it inherits the parent's approval mode (unused by most tools). */
   approve?: ApproveFn;
+  /** The Session's sandbox policy as the file tools apply it (see file-access.ts); absent = the tools are unconfined. */
+  fileAccess?: SandboxFileAccess;
 }
 
 /**

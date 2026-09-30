@@ -182,6 +182,8 @@ export interface SessionServiceDeps {
   orgIdsOfProject?: (projectId: string) => ReadonlyMap<string, string>;
   /** Spawn-confinement getter (the sandbox module's), forwarded into core beside proxyEnv. */
   confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null;
+  /** The Session's sandbox policy for core's file tools (the sandbox module's), forwarded beside confineSpawn. */
+  sandboxPolicy?: (ctx: ControlEnvContext) => SandboxSettings | null;
   /** The server's Sandbox settings: what a new Session's policy is snapshotted from. */
   sandboxDefaults?: () => SandboxSettings;
   /** Host-owned model-request hooks, forwarded to core for every Session LLM. */
@@ -556,6 +558,7 @@ export class SessionService {
       ...(this.deps.controlEnv ? { controlEnv: this.deps.controlEnv } : {}),
       ...(this.deps.pathPrepend ? { pathPrepend: this.deps.pathPrepend } : {}),
       ...(this.deps.confineSpawn ? { confineSpawn: this.deps.confineSpawn } : {}),
+      ...(this.deps.sandboxPolicy ? { sandboxPolicy: this.deps.sandboxPolicy } : {}),
       ...(this.deps.assembly ? { assembly: this.deps.assembly } : {}),
     });
     let session;

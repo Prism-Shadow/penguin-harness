@@ -4,6 +4,7 @@
  * not reach a Session that already exists.
  */
 import { describe, expect, it } from "vitest";
+import { assistantText, sessionMeta, userText, withOrigin } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { SandboxProvider, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { openDatabase } from "../src/db/database.js";
@@ -11,6 +12,7 @@ import { migrate } from "../src/db/migrations.js";
 import { SCHEMA_SQL } from "../src/db/schema.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { RuntimeSession, SessionEnv } from "../src/runtime/session-manager.js";
 import { SandboxService } from "../src/sandbox/index.js";
 import { applySandboxPick, sessionSandboxOf } from "../src/services/session-service.js";
 
@@ -158,6 +160,102 @@ describe("confining under a Session's own policy", () => {
 
     snapshot = { mode: "danger-full-access" };
     expect(sessionConfiner(["true"], opts).argv).toEqual(["true"]);
+  });
+});
+
+/** A root Session whose run spawns one subagent: registering it ties the child to this root. */
+function spawningSession(sessionId: string, childId: string): RuntimeSession {
+  return {
+    sessionId,
+    toolPermission: () => "rw",
+    generateTitle: async () => ({ title: null, usage: null }),
+    compactability: () => "ok" as const,
+    steer: () => false,
+    skipReconnectWait: () => false,
+    async *run() {
+      yield withOrigin(
+        sessionMeta({
+          session_id: childId,
+          model_id: "m",
+          provider: "prov",
+          model_context_window: 1000,
+          system_prompt: "sys",
+          agent_state: "/root/p/child_agent/agent_state",
+          workspace: "/w",
+          source: "subagent",
+        }),
+        childId,
+      );
+      yield assistantText("done");
+    },
+    async *compact() {},
+  };
+}
+
+describe("the policy SessionEnv hands core for the file tools", () => {
+  const ctx = (sessionId: string) => ({ projectId: "p", agentId: "a", sessionId });
+
+  it("is the Session's snapshot, its root's for a subagent, and the settings snapshotted onto a row without one", async () => {
+    const { createTestApp, waitFor } = await import("./helpers.js");
+    const t = await createTestApp({ titles: { maybeGenerate: () => {} } });
+    try {
+      const env = t.deps.tree.api<SessionEnv>("SessionRuntimeModule", "SessionEnv");
+      const sandbox = t.deps.tree.api<SandboxService>("SandboxModule", "sandbox");
+      const repo = t.deps.sessionsRepo;
+
+      // The Session's own snapshot, whatever the settings say.
+      sandbox.configure({ mode: "read-only" });
+      const row: SessionRow = { ...ROW, sandbox: { mode: "workspace-write", network: "none" } };
+      repo.insert(row);
+      expect(env.sandboxPolicy(ctx("session-1"))).toEqual({
+        mode: "workspace-write",
+        network: "none",
+      });
+
+      // A subagent follows its root: a change made on the root after the child registered
+      // reaches it, while the child's own row keeps the copy taken at registration.
+      t.deps.manager.adopt(row, spawningSession("session-1", "child-1"));
+      await t.deps.manager.startTask("session-1", [userText("go")]);
+      await waitFor(() => t.deps.manager.statusOf("session-1") === "idle");
+      repo.updateSandbox("session-1", { mode: "read-only", maskPaths: ["/secret"] });
+      expect(repo.findById("child-1")?.sandbox).toEqual({
+        mode: "workspace-write",
+        network: "none",
+      });
+      expect(env.sandboxPolicy(ctx("child-1"))).toEqual({
+        mode: "read-only",
+        maskPaths: ["/secret"],
+      });
+
+      // A row from before snapshots takes the settings at its first read, and keeps them.
+      repo.insert({ ...ROW, sessionId: "session-legacy" });
+      expect(env.sandboxPolicy(ctx("session-legacy"))).toEqual({ mode: "read-only" });
+      expect(repo.findById("session-legacy")?.sandbox).toEqual({ mode: "read-only" });
+      sandbox.configure({ mode: "workspace-write" });
+      expect(env.sandboxPolicy(ctx("session-legacy"))).toEqual({ mode: "read-only" });
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("is the snapshot the commands' confiner took: both seams read one policy", async () => {
+    const { createTestApp } = await import("./helpers.js");
+    const t = await createTestApp({ titles: { maybeGenerate: () => {} } });
+    try {
+      const env = t.deps.tree.api<SessionEnv>("SessionRuntimeModule", "SessionEnv");
+      const sandbox = t.deps.tree.api<SandboxService>("SandboxModule", "sandbox");
+      t.deps.sessionsRepo.insert({ ...ROW, sessionId: "session-legacy" });
+
+      // The row's first command snapshots full access; a later settings change does not
+      // reach the file tools, which apply that same snapshot.
+      sandbox.configure({ mode: "danger-full-access" });
+      const confiner = env.confineSpawn(ctx("session-legacy"));
+      expect(confiner!(["true"], { cwd: "/w", workspaceDir: "/w" }).argv).toEqual(["true"]);
+      sandbox.configure({ mode: "read-only" });
+      expect(env.sandboxPolicy(ctx("session-legacy"))).toEqual({ mode: "danger-full-access" });
+    } finally {
+      await t.cleanup();
+    }
   });
 });
 

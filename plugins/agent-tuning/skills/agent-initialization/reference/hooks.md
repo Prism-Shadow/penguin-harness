@@ -92,7 +92,7 @@ The first `continue` wins. After a cutoff a `continue` is recorded but not run: 
 
 ## Failures
 
-A non-zero exit, stdout that is not JSON, or a timeout is a failure. The harness records it as a `hook` event carrying the error (the tail of stderr for a non-zero exit) and carries on as if the hook had no opinion. To debug a hook that seems not to fire, look for `"type":"hook"` records in the Trace file, and run the script by hand:
+A non-zero exit, stdout that is not JSON, or a timeout is a failure. So is a script the Session's sandbox could not confine: it never runs, and its error starts with `sandbox:`. The harness records a failure as a `hook` event carrying the error (the tail of stderr for a non-zero exit) and carries on as if the hook had no opinion. To debug a hook that seems not to fire, look for `"type":"hook"` records in the Trace file, and run the script by hand:
 
 ```bash
 echo '{"hook":"stop","session_id":"test","trace_path":"/path/to/trace.jsonl"}' | node stop.mjs; echo "exit $?"

@@ -248,7 +248,8 @@ interface ToolExecutionRequest {
 interface EnvironmentConfig {
   workspaceDir: string;
   toolConfig: ToolConfig;                   // { customTools: ToolDefinitionConfig[]; mcpServers: MCPServerConfig[] }
-  sessionScratchpadDir?: string;            // this Session's scratchpad (scratchpad/<sessionId>); enables truncated-output recovery
+  sessionScratchpadDir?: string;            // this Session's scratchpad (scratchpad/<sessionId>); enables truncated-output recovery,
+                                            // and is writable beside the Workspace under a workspace-write sandbox
   services?: EnvironmentServices;           // runtime services injected into individual tools
   vault?: Record<string, string>;           // Vault env vars, injected into exec_command / input_command subprocesses
   proxyEnv?: () => ProxyEnvPolicy | null;   // command-subprocess proxy policy; re-read per spawn, absent or null = pass through
@@ -257,6 +258,8 @@ interface EnvironmentConfig {
   pathPrepend?: () => string[];             // directories put at the front of PATH for command subprocesses; re-read per spawn
   confineSpawn?: () => SpawnConfiner | null; // sandbox confinement for command subprocesses; re-read per spawn,
                                             // absent or null = commands spawn unconfined
+  sandboxPolicy?: () => SandboxSettings | null; // the Session's sandbox policy, which the file tools apply
+                                            // themselves on the real path; re-read per call, absent or null = unconfined
 }
 
 // "strip" removes HTTP(S)_PROXY/ALL_PROXY (NO_PROXY kept); "inject" forces the explicit
@@ -265,11 +268,28 @@ interface EnvironmentConfig {
 type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
 
 // Rewrites the exact argv a command is about to spawn so it runs confined. Fail-closed: a
-// confiner that cannot enforce its policy throws, and the command fails to spawn.
+// confiner that cannot enforce its policy throws, and the command fails to spawn. What
+// workspace-write may write is `workspaceDir` and `scratchpadDir` (the Session's scratchpad,
+// absent without one), never `cwd`. Handed to createAgent, the same confiner also confines
+// hook scripts: argv `[node, <script>]`, `cwd` the package directory.
 type SpawnConfiner = (
   argv: readonly string[],
-  opts: { cwd: string; workspaceDir: string },
-) => readonly string[];
+  opts: { cwd: string; workspaceDir: string; scratchpadDir?: string },
+) => ConfinedSpawn;
+
+interface ConfinedSpawn {
+  argv: readonly string[];                  // spawned instead of the original argv
+  env?: Readonly<Record<string, string>>;   // entries the sandbox runner itself needs, laid over the command's env
+}
+
+// The policy itself (@prismshadow/penguin-core/plugin). "danger-full-access" with no network cut
+// and no masked path is the sandbox off.
+type SandboxSettings = {
+  mode: "read-only" | "workspace-write" | "danger-full-access";
+  network?: "none" | "local";               // absent = unrestricted; also bounds read_file's URL source
+  maskPaths?: string[];                     // hidden from commands, hook scripts and the file tools, reads included
+  writableTemp?: boolean;                   // absent = the temporary directory is writable
+};
 
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // needed by run_subagent
@@ -309,7 +329,8 @@ interface BuiltinTool {
   detachable?: boolean;              // has a background form a running call can be moved to
   execute(
     args: Record<string, unknown>,
-    ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, detachSignal?, approve? }
+    ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, detachSignal?, approve?, fileAccess? };
+                                     // fileAccess = the Session's sandbox, for a tool that touches files in-process
   ): AsyncGenerator<OmniMessage, ToolResult | void>;
 }
 
@@ -382,7 +403,7 @@ interface VisionDescriberService {
 | --- | --- |
 | Swap or customize model access | Implement `LLMInterface` (or just set `client_type` for OpenAI-compatible endpoints) |
 | Swap the execution sandbox | Implement `EnvironmentInterface` |
-| Confine the commands an agent runs | Supply `confineSpawn` with a `SpawnConfiner` |
+| Confine what an agent runs and writes | Supply `confineSpawn` with a `SpawnConfiner` for commands and hook scripts, and `sandboxPolicy` with the same policy for the file tools |
 | Add a tool | Implement `BuiltinTool`, register a factory, and list the tool under `tools.builtin` in `system_config.yaml` (entries without a registered factory are skipped); or connect an MCP server under `tools.mcpServers` |
 | Customize approval policy | Inject an `ApproveFn` (the CLI and Web approval modes are wrappers over it) |
 | Change an agent's behavior | Edit its Agent State (`system_config.yaml`, `AGENTS.md`, Skills); see the [Configuration Reference](/configuration) |

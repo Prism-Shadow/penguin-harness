@@ -248,14 +248,16 @@ The **Plugins** page is admin-only and server-global. It shows the options each 
 
 ### Sandbox
 
-The sandbox is the first card on the page. It sets the confinement every agent command is spawned under:
+The sandbox is the first card on the page. It sets the policy a new Session is confined under. One policy governs the commands the agent runs, the hook scripts its Session runs, and the file tools (`read_file`, `edit_file`, `write_file`):
 
-- **Confinement mode**: off (full access), workspace write only, or read-only.
-- **Network**: full access, local network (localhost only), or no network. The local level needs a backend that can enforce it.
+- **Confinement mode**: off (full access), workspace write only, or read-only. Workspace write allows writes to the Session's Workspace, its scratchpad (the plan file, a goal's state file, attachments) and the temporary directory; read-only allows the temporary directory only.
+- **Network**: full access, local network (localhost only), or no network. It applies to the image URLs `read_file` fetches too. The local level needs a backend that can enforce it.
 - **Temporary directory**: whether it stays writable. On by default, in either confining mode, because shells and most tools cannot start without one.
-- **Masked paths**: paths hidden from a confined command, one absolute path per line, at most 64.
+- **Masked paths**: paths hidden from the agent's commands, hook scripts and file tools, reads included; one absolute path per line, at most 64.
 
-A sandbox backend installed as a plugin (bwrap, Seatbelt, DSH) enforces the mode. The card lists the mounted backends and the isolation each one implements, and says so when there is none. Without a backend, every mode but off refuses every agent command.
+Neither confining mode lets the agent write its Agent State: `AGENTS.md`, `system_config.yaml`, Skills, hook packages, memory, the vault and scheduled tasks. To let an agent write memory, write its own Skills or hook packages, or change its configuration, switch that conversation to full access with its **Permissions** button. MCP Servers started over `stdio` run unconfined.
+
+A sandbox backend installed as a plugin (bwrap, Seatbelt, WSL, DSH) enforces the policy on commands and hook scripts; the harness enforces it on the file tools itself. The card lists the mounted backends and the isolation each one implements, and says so when there is none. Without a backend, every mode but off refuses every agent command and fails every hook. Two backends grant less than the policy: DSH does not make the scratchpad writable, and under WSL a hook script cannot run yet, because the distro has no Node, so every hook fails instead of running unconfined.
 
 A backend's own options, such as bwrap's program and its probe timeout of 1–30 seconds, or Seatbelt's program, are drawn inside the same card, and the card's one **Save** stores both. A backend that failed its check, for example on a wrong program path, is loaded again by that save, with no restart.
 

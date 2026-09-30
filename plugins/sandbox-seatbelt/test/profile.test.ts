@@ -47,6 +47,25 @@ describe.skipIf(process.platform === "win32")("seatbelt profile", () => {
     expect(withTemp).toContain(`(subpath "${canonicalPath(tmpdir())}")`);
   });
 
+  it("workspace-write allows the policy's further roots (the Session's scratchpad) beside the workspace; read-only ignores them", () => {
+    const scratchpad = "/data/agent/scratchpad/session-1";
+    const profile = seatbeltProfile({
+      mode: "workspace-write",
+      workspaceRoot: WS,
+      writableRoots: [scratchpad],
+    });
+    expect(profile).toContain(
+      `(allow file-write* (subpath "${canonicalPath(WS)}") (subpath "${canonicalPath(scratchpad)}"))`,
+    );
+
+    const readOnly = seatbeltProfile({
+      mode: "read-only",
+      workspaceRoot: WS,
+      writableRoots: [scratchpad],
+    });
+    expect(readOnly).toBe(seatbeltProfile({ mode: "read-only", workspaceRoot: WS }));
+  });
+
   it("read-only with writable temp: the temp areas are the only writable roots", () => {
     expect(writableRoots({ mode: "read-only", workspaceRoot: WS, writableTemp: true })).toEqual([
       ...new Set(["/tmp", tmpdir()].map(canonicalPath)),

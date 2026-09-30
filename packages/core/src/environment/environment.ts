@@ -50,6 +50,8 @@ import type {
 } from "../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
+import { SandboxFileAccess } from "./tools/file-access.js";
+import type { SandboxSettings } from "../plugin/sandbox.js";
 import { McpToolProvider } from "./mcp/provider.js";
 import { CommandSessionManager } from "./tools/command/index.js";
 import { ManagedSubagentSession, SubagentSessionManager } from "./tools/subagent/index.js";
@@ -159,6 +161,10 @@ export class Environment implements EnvironmentInterface {
   private readonly subagentRunner: SubagentRunner | null;
   /** The runtime services every tool factory receives — Session-lifetime registries and sinks, so each context's toolset is assembled onto the same ones. */
   private readonly services: EnvironmentServices;
+  /** The Session's sandbox policy for the file tools, re-read at every call (see EnvironmentConfig.sandboxPolicy); null = unconfined. */
+  private readonly sandboxPolicy: (() => SandboxSettings | null) | null;
+  /** The Session's scratchpad, writable beside the Workspace under a workspace-write policy. */
+  private readonly sessionScratchpadDir: string | null;
 
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
@@ -178,7 +184,12 @@ export class Environment implements EnvironmentInterface {
       ...(config.pathPrepend !== undefined ? { pathPrepend: config.pathPrepend } : {}),
       ...(config.confineSpawn !== undefined ? { confineSpawn: config.confineSpawn } : {}),
       workspaceDir: config.workspaceDir,
+      ...(config.sessionScratchpadDir !== undefined
+        ? { scratchpadDir: config.sessionScratchpadDir }
+        : {}),
     });
+    this.sandboxPolicy = config.sandboxPolicy ?? null;
+    this.sessionScratchpadDir = config.sessionScratchpadDir ?? null;
     this.subagentSessions = new SubagentSessionManager();
     // Background-task liveness fans in from both registries and from the subagent run-state
     // pings: the host's background-state listener hears every change of "what is still
@@ -635,11 +646,25 @@ export class Environment implements EnvironmentInterface {
     // Environment has a Session scratchpad. It captures the tool's complete text before the
     // rolling tail evicts the middle, but does not alter the model/frontend stream.
     let archiveCapture: TruncatedToolOutputCapture | null = null;
+    // The file tools' sandbox: the policy as it is at this call, bound to this Session's
+    // Workspace and scratchpad (see tools/file-access.ts).
+    const policy = this.sandboxPolicy?.() ?? null;
+    const fileAccess =
+      policy === null
+        ? undefined
+        : new SandboxFileAccess({
+            policy,
+            workspaceDir: this.workspaceDir,
+            ...(this.sessionScratchpadDir !== null
+              ? { scratchpadDir: this.sessionScratchpadDir }
+              : {}),
+          });
     const gen = tool.execute(args, {
       workspaceDir: this.workspaceDir,
       toolCallId,
       signal: ac.signal,
       detachSignal: detachCtrl.signal,
+      ...(fileAccess !== undefined ? { fileAccess } : {}),
       // Pass through the parent's approve callback (run_subagent uses it so the child Session
       // inherits the parent's approval mode; other tools ignore it).
       ...(request.approve ? { approve: request.approve } : {}),

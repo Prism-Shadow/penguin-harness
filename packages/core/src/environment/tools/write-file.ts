@@ -11,8 +11,9 @@
  * overwritten file's permission bits), so a crash mid-write cannot leave the target
  * half-written; a symlinked path is followed to the file it names, so the link survives
  * and the content lands where it points. Relative paths resolve against the Workspace;
- * absolute paths are allowed (tools run with the user's full permissions, same as the
- * shell tool). The write is serialized against edit_file and other write_file calls on the
+ * absolute paths are allowed, within what the Session's sandbox lets the file tools write
+ * (see file-access.ts; unconfined, the tool runs with the user's full permissions, same
+ * as the shell tool). The write is serialized against edit_file and other write_file calls on the
  * same file in this process (see internal/file-lock.ts), so a concurrent edit of that file
  * applies either to the content this call replaced or to the content it wrote — never
  * computed from the one and written over the other.
@@ -156,6 +157,13 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
       }
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
+      // The Session's sandbox, applied here because no runner wraps this process: decided
+      // on where the write lands (see file-access.ts), before anything is read or locked.
+      const denied = await ctx.fileAccess?.denyWrite(resolved);
+      if (denied) {
+        yield delta(denied);
+        return { stopReason: "fatal" };
+      }
       // One file, one writer at a time: the previous content this call reads back and the
       // content it writes are a single critical section, so a concurrent edit of the same
       // file is applied either before this write or on top of it.

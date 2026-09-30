@@ -188,7 +188,15 @@ exec_command(cmd)
 
 ### 文件工具
 
-`read_file` / `edit_file` / `write_file` 与 shell 工具一样，以用户的完整权限运行。相对路径以 Workspace 为基准解析，也允许绝对路径。符号链接会解析到它指向的文件：读取、编辑和写入都作用于目标文件，链接本身仍是链接。`read_file` 拒绝读取机密存储 `.vault.toml` 和 `.project_config.toml`：无论文件位于哪个目录、路径是否经过符号链接，都按文件名匹配。
+`read_file` / `edit_file` / `write_file` 在 harness 进程内以用户的权限运行，受 Session 的沙盒约束。相对路径以 Workspace 为基准解析，也允许绝对路径。符号链接会解析到它指向的文件：读取、编辑和写入都作用于目标文件，链接本身仍是链接。`read_file` 拒绝读取机密存储 `.vault.toml` 和 `.project_config.toml`：无论文件位于哪个目录、路径是否经过符号链接，都按文件名匹配。
+
+Session 的[沙盒](/settings#沙盒)让文件工具与它的命令遵守同一份策略；但在 harness 进程内运行的工具无法由沙盒运行器包裹，因此由 harness 在每次操作前自行判定，判定依据是真实路径。符号链接解析到它的目标，尚不存在的路径沿最深的已存在祖先解析，因此 Workspace 内的链接无法把写入带到 Workspace 之外。写入必须落在模式允许写的目录之下：仅工作区可写时是 Workspace、Session 的 scratchpad 和临时目录，只读时只有临时目录。只有屏蔽路径之下的读取会被拒绝，屏蔽路径同样不可写；图片 URL 只在网络档位允许的范围内读取：无网络时一律拒绝，本地网络时只允许回环地址。被拒绝的调用以 `fatal` 收尾，给模型一句以 `Denied by the sandbox:` 开头、说明拒绝了什么的话，让它换一条路再试：
+
+```text
+Denied by the sandbox: "/etc/hosts" is outside the directories this session may write to (mode workspace-write; writable: <workspace>, <scratchpad>, /tmp).
+```
+
+判定与操作之间隔着一步，其间有命令把目录换成链接时无法察觉。没有沙盒策略时（SDK 或 CLI 独立运行，或沙盒关闭），什么都不会被拒绝，文件工具与 shell 工具一样以用户的完整权限运行。
 
 文件工具返回单个最终输出，而不是流式输出；唯一的例外是：对纯文本模型，`read_file` 会流式返回视觉模型对图片的描述。这些工具从不抛出异常。失败时以解释性文字返回，并带有 `stop_reason: fatal`。
 

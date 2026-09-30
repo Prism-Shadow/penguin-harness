@@ -127,7 +127,7 @@ cd "$TARGET/agent_state/hooks/append-time"
 echo '{"hook":"user_prompt","session_id":"test","scratchpad_dir":"/tmp","prompt":"hello"}' | node time.mjs; echo "exit $?"
 ```
 
-A hook runs on the user's machine with the harness's own permissions, on every prompt, tool call or task. Tell the user what each hook you install does and at which point it fires. One switch turns all of an agent's hooks off without uninstalling them: `hooks.enabled: false` in `system_config.yaml`.
+A hook runs on the user's machine, on every prompt, tool call or task, under the Session's sandbox: the same policy as the agent's commands, which with the sandbox off means the harness's own permissions. Tell the user what each hook you install does and at which point it fires. One switch turns all of an agent's hooks off without uninstalling them: `hooks.enabled: false` in `system_config.yaml`.
 
 ## When a change takes effect
 

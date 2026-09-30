@@ -426,8 +426,14 @@ export function createReadFileTool(
       }
       const limit = limitArg.value;
 
-      // A URL is only ever an image source: no path resolution, no text window.
+      // A URL is only ever an image source: no path resolution, no text window. The
+      // Session's sandbox decides whether the network it needs is there (see file-access.ts).
       if (isHttpUrl(filePath)) {
+        const denied = ctx.fileAccess?.denyUrl(filePath);
+        if (denied) {
+          yield delta(denied);
+          return { stopReason: "fatal" };
+        }
         return yield* readImageSource(filePath, args, ctx, describer, delta);
       }
 
@@ -442,6 +448,12 @@ export function createReadFileTool(
         yield delta(
           `Refusing to read "${filePath}": ${secretHit} holds the user's secrets and must never enter the conversation.`,
         );
+        return { stopReason: "fatal" };
+      }
+      // The Session's sandbox: a masked path is unreadable here as it is for a command.
+      const denied = await ctx.fileAccess?.denyRead(resolved);
+      if (denied) {
+        yield delta(denied);
         return { stopReason: "fatal" };
       }
 

@@ -31,4 +31,4 @@ export {
   scriptStopHook,
   scriptUserPromptHook,
 } from "./script-hook.js";
-export type { RunHookScriptOptions } from "./script-hook.js";
+export type { RunHookScriptOptions, ScriptHookOptions } from "./script-hook.js";
