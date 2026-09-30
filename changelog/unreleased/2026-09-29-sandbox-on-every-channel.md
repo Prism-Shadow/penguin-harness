@@ -17,7 +17,7 @@ Before this change, the builtin plugins reached a server through three channels:
 
 ## npm global install
 
-- `@prismshadow/penguin-cli` declares the four sandbox backends as optional dependencies. They are private today, so npm skips them and the install still succeeds. Once they are published they install with the CLI.
+- `@prismshadow/penguin-cli` declares the four sandbox backends as optional dependencies. They are not published to npm yet, and npm skips an optional dependency it cannot install, so the install still succeeds without them. Once they are published they install with the CLI.
 - An installation without a builtin plugins prefix (no `plugins/index.json` beside its program) imports, as what it ships, the server plugins among its package's optional dependencies that npm installed: those carrying a generated `ifaces.json`. The server resolves them the way Node would from the package and stores each once per process. A workspace link in a dev checkout is not imported.
 
 ## Registry fetch

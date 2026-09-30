@@ -17,7 +17,7 @@
 
 ## npm 全局安装
 
-- `@prismshadow/penguin-cli` 把四个沙盒后端声明为可选依赖。它们目前是 private 包，npm 会跳过，安装照常成功；发布之后就会随 CLI 一起装上。
+- `@prismshadow/penguin-cli` 把四个沙盒后端声明为可选依赖。它们尚未发布到 npm，而 npm 装不上可选依赖时会跳过它，所以安装照常成功、只是不带后端；发布之后就会随 CLI 一起装上。
 - 没有内置插件前缀（程序旁没有 `plugins/index.json`）的安装，把其包的可选依赖中 npm 实际装上的服务端插件（带生成的 `ifaces.json` 的那些），作为本安装随包下发的内容导入。服务器按 Node 从该包出发的方式解析它们，每个进程只入仓一次；开发检出里的 workspace 链接不导入。
 
 ## 从 registry 现取
