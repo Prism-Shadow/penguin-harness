@@ -3,6 +3,7 @@
 - **Date:** 2026-10-01
 - **Type:** feature
 - **Scope:** `web`, `ui`, `server`, `docs`
+- **PR:** [#938](https://github.com/Prism-Shadow/penguin-harness/pull/938)
 
 [English](2026-10-01-files-panel-folders.md)
 
