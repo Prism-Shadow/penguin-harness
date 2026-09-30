@@ -4,8 +4,9 @@
  * seam's config interface (hmr/capabilities.ts's HMR_INTERFACES) — are therefore optional in
  * the interface, and an absent one reads as its default; otherwise the kernel refuses the push
  * ("does not satisfy 'Config': missing [...]") and every machine on an older runtime keeps
- * the platform it had. `supervised` is NOT one of them: the seam claims it by name, so a
- * runtime without it is refused at the claim with a reason, before any module boots.
+ * the platform it had. So the seam's config interface is kept to what a released runtime
+ * already publishes: a setting the platform needs on its own — whether a supervisor
+ * relaunches this process, say — is read from the environment instead (services/process-restart.ts).
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestApp, loginAdmin, type TestApp } from "./helpers.js";
