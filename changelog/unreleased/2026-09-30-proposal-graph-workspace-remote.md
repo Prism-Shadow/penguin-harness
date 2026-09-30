@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `plugins`
+- **PR:** [Myriad-Dreamin/penguin-harness#123](https://github.com/Myriad-Dreamin/penguin-harness/pull/123)
 
 [中文版](2026-09-30-proposal-graph-workspace-remote.zh.md)
 
