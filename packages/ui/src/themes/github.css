@@ -352,6 +352,11 @@
     --ui-dur-layout: 200ms;
     --ui-ease-layout: var(--ui-ease-in-out);
 
+    /* ---- Streaming: today's reply — the text shows as it lands, under the host's own pulsing
+       caret; no pace, so no rate. ---- */
+    --ui-stream-reveal: instant;
+    --ui-stream-rate: 0;
+
     /* ---- Icons ---- */
     --ui-icon-stroke: 1.7;
     --ui-icon-cap: round;
@@ -486,7 +491,8 @@
    * card with a muted head, the accent bar under a tab, the sidebar's muted fill beside the
    * canvas, monochrome icons, a bordered tree box with the host's own indent, a form's label
    * above its control and a settings row's label beside it, a plain row for a step of the
-   * agent's work, a plain dim behind a dialog — so no recipe is written for those, and none may
+   * agent's work, a plain dim behind a dialog, a streaming reply under the host's own pulsing
+   * caret glyph — so no recipe is written for those, and none may
    * be until a Primer polish wave changes that look on purpose (the 2026-09-30 lift of the light
    * chart steps and the knob's hairline was such a change, made in tokens, not recipes). The
    * two rules every theme shares (the eyebrow on the h6 rung,

@@ -12,6 +12,7 @@ import { formatMessageTime } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { splitAttachments } from "../../lib/attachments";
 import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
+import { AssistantReplyBody } from "./assistant-reply-body";
 import { MessageFilesCard } from "./message-files-card";
 import { MemoryChangesCard } from "./memory-changes-card";
 import { ThinkingBlock } from "./thinking-block";
@@ -359,11 +360,10 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // footer, and rendering both would pop up two copy buttons in the same spot. The stats
       // line's copy grabs **all** of this turn's assistant text (see collectTaskAssistant),
       // which is more useful than copying segment by segment.
+      // The body (Markdown, caret, the theme's reveal) is AssistantReplyBody; the stop reason
+      // and a nested reply's files card follow the text once it is fully revealed.
       return (
-        <div className="md-body anim-msg my-3 font-sans text-base leading-relaxed text-gray-800 dark:text-gray-100">
-          {/* Re-renders the accumulated text directly while streaming (a key point of the contract implementation); memoized so settled messages skip the re-parse, and code blocks highlight once on settle (see md.tsx). */}
-          <Md text={item.text} streaming={item.streaming} />
-          {item.streaming && <span className="animate-pulse text-gray-400">▌</span>}
+        <AssistantReplyBody text={item.text} streaming={item.streaming}>
           {item.stopReason && item.stopReason !== "completed" && (
             <span className="ml-1 font-mono text-xs text-gray-400">[{item.stopReason}]</span>
           )}
@@ -376,7 +376,7 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
               onOpenFile={ctx.onOpenFile}
             />
           )}
-        </div>
+        </AssistantReplyBody>
       );
     case "thinking":
       return <ThinkingBlock item={item} />;

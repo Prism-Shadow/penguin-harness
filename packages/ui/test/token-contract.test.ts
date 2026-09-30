@@ -26,6 +26,7 @@ import {
 import {
   ACCENT_PRESETS,
   DEFAULT_THEME_ID,
+  STREAM_REVEALS,
   THEME_ACCENT_PRESETS,
   THEME_IDS,
   THEME_MODES,
@@ -334,8 +335,8 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
     // 215, plus the integration round's four (the emphasis ink and the switch's three), plus
     // the chart round's nine (two more series, the reference line, six geometry names), plus
     // the bar outline's three, plus the knob's hairline edge (2026-09-30), plus the update
-    // mark's fill (W1, the same day).
-    expect(TOKEN_NAMES.length).toBe(233);
+    // mark's fill (W1, the same day), plus the streaming pair (the same day).
+    expect(TOKEN_NAMES.length).toBe(235);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {
@@ -670,6 +671,52 @@ describe("the chart style tokens (round 7)", () => {
     };
     const all = THEME_IDS.map(geometry).filter((value) => value !== null);
     expect(new Set(all).size).toBe(all.length);
+  });
+});
+
+describe("the streaming tokens (2026-09-30)", () => {
+  // A reply that is still arriving is paced by the app from two tokens it reads once per theme:
+  // the reveal, one of the exact keywords it knows, and the rate in characters per second, a
+  // plain number it can parse (0 only where nothing is paced). Neither varies by mode.
+  const stream = TOKEN_GROUPS.find((group) => group.id === "stream");
+
+  it("names the reveal and its rate", () => {
+    expect(stream?.names).toEqual(["--ui-stream-reveal", "--ui-stream-rate"]);
+    expect([...STREAM_REVEALS]).toEqual(["instant", "fade", "typewriter"]);
+  });
+
+  it("gives every theme and mode a keyword the app knows and a rate it can parse", () => {
+    for (const theme of THEMES) {
+      if (theme.status !== "filled") continue;
+      for (const mode of THEME_MODES) {
+        const values = new Map([...theme.analysis.modes.light, ...theme.analysis.modes[mode]]);
+        const at = `${theme.id} ${mode}`;
+        const reveal = values.get("--ui-stream-reveal");
+        const rate = values.get("--ui-stream-rate") ?? "";
+        expect(STREAM_REVEALS as readonly string[], `${at} --ui-stream-reveal`).toContain(reveal);
+        expect(rate, `${at} --ui-stream-rate is a plain number`).toMatch(/^\d+(?:\.\d+)?$/);
+        if (reveal !== "instant") {
+          expect(Number(rate), `${at} a paced reveal needs a rate`).toBeGreaterThan(0);
+        }
+      }
+      // One value for both modes: the dark rule leaves the pair to the base rule.
+      expect(theme.analysis.modes.dark.has("--ui-stream-reveal"), theme.id).toBe(false);
+      expect(theme.analysis.modes.dark.has("--ui-stream-rate"), theme.id).toBe(false);
+    }
+  });
+
+  it("reveals Primer as today (instant), Frost by fading and Console by typing", () => {
+    const expected: Readonly<Record<ThemeId, string>> = {
+      github: "instant",
+      modern: "fade",
+      geek: "typewriter",
+    };
+    for (const theme of THEMES) {
+      if (theme.status !== "filled") continue;
+      expect(theme.analysis.modes.light.get("--ui-stream-reveal"), theme.id).toBe(
+        expected[theme.id],
+      );
+    }
   });
 });
 
