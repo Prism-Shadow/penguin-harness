@@ -173,7 +173,7 @@ Select the model name in the composer's toolbar and pick another model. The pick
 - **Compact and switch**: the context is compacted on the current model (always a summary, even when the agent is configured to discard), and the conversation then continues on the new model. If the compaction fails or is aborted, the conversation stays on the current model.
 - **Cancel**: keeps the current model.
 
-Right after a compaction there is nothing to compact, so the dialog says the conversation continues on the new model from the existing summary and the button reads **Switch**; a conversation with no messages yet switches at once.
+Right after a compaction there is nothing to compact, so the dialog says the conversation continues on the new model from where that compaction left it and the button reads **Switch**; a conversation with no messages yet switches at once.
 
 The switch shows in the conversation as a compaction row followed by a "Model switched · A → B" marker (right after a compaction, the marker alone). A failed compaction shows as a failed compaction row with no marker. Once switched, the model badge, the context window and the cost estimate follow the new model.
 

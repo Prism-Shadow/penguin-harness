@@ -143,7 +143,7 @@ The compaction is an ordinary `manual` one: nothing on the `compaction_begin` / 
 
 The Session keeps its model when the compaction fails or is aborted, and when the summary does not fit the target model's context window: a summary the switch produced ends the compaction `fatal`, one already held refuses the switch before any event. The target must be in the Project configuration and constructible (credentials in place), or the switch is refused before any request. A Session that never ran has no context to compact: it switches directly and writes nothing.
 
-Resume reads the model from the latest file, so a Session restarted right after a switch runs on the new model with the summary pending. The one gap: a restart between two switches with no completed turn in between rebuilds the summary as ordinary pending input, so a second switch does not write it again; it stays in the closed file.
+Resume reads the model from the latest file, so a Session restarted right after a switch runs on the new model with the summary pending. The summary is still known as the one that file opened with: another switch before the first turn completes writes it on to the next file, restart or not.
 
 For how to use the picker, see [Switch the model](/chat#switch-the-model).
 
