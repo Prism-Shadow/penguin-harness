@@ -173,14 +173,14 @@ describe("layout relocation", () => {
 
 describe("the six panel and navigation commands", () => {
   const cases: Array<[CommandId, Partial<KeyLike> & { code: string }]> = [
-    ["sessions.search", { code: "KeyK" }],
-    ["chat.new", { code: "KeyO", shiftKey: true }],
-    ["sidebar.toggle", { code: "KeyB" }],
-    ["dock.toggleRight", { code: "KeyB", altKey: true }],
-    ["dock.toggleBottom", { code: "KeyJ" }],
+    ["sessions.search", { code: "KeyS", altKey: true }],
+    ["chat.new", { code: "KeyN", altKey: true }],
+    ["sidebar.toggle", { code: "Digit1", altKey: true }],
+    ["dock.toggleRight", { code: "Digit2", altKey: true }],
+    ["dock.toggleBottom", { code: "Digit3", altKey: true }],
   ];
 
-  it("bind with Mod: ⌘ on a Mac, Ctrl elsewhere", () => {
+  it("bind with Mod+Alt: ⌥⌘ on a Mac, Ctrl+Alt elsewhere", () => {
     for (const [id, init] of cases) {
       expect(matchShortcut(key({ ...init, metaKey: true }), defaults("mac"), ALL, "mac"), id).toBe(
         id,
@@ -200,14 +200,14 @@ describe("the six panel and navigation commands", () => {
     }
   });
 
-  it("reads an AltGr character as typing, not as Mod+Alt: `{` stays typable on Czech and Hungarian Windows", () => {
-    const altGr = key({ code: "KeyB", key: "{", ctrlKey: true, altKey: true, altGraph: true });
+  it("reads an AltGr character as typing, not as Mod+Alt: `ś` stays typable on Polish Windows", () => {
+    const altGr = key({ code: "KeyS", key: "ś", ctrlKey: true, altKey: true, altGraph: true });
     expect(matchShortcut(altGr, defaults("windows"), ALL, "windows")).toBeNull();
     expect(
       matchShortcut(
         key({
-          code: "KeyB",
-          key: "{",
+          code: "KeyS",
+          key: "ś",
           ctrlKey: true,
           altKey: true,
           getModifierState: (k) => k === "AltGraph",
@@ -217,15 +217,15 @@ describe("the six panel and navigation commands", () => {
         "windows",
       ),
     ).toBeNull();
-    // A real Ctrl+Alt+B still is the chord.
+    // A real Ctrl+Alt+S still is the chord.
     expect(
       matchShortcut(
-        key({ code: "KeyB", ctrlKey: true, altKey: true }),
+        key({ code: "KeyS", ctrlKey: true, altKey: true }),
         defaults("windows"),
         ALL,
         "windows",
       ),
-    ).toBe("dock.toggleRight");
+    ).toBe("sessions.search");
   });
 
   it("opens a new terminal on Ctrl+Shift+` on every platform, like the toggle", () => {

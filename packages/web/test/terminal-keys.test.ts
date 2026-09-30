@@ -1,8 +1,8 @@
 /**
  * The focused terminal's key decision (src/lib/shortcuts/terminal-keys.ts) as a table: the close
  * chord (⌃⌥` on a Mac, Ctrl+Alt+` elsewhere) closing while Ctrl+W reaches readline everywhere, the
- * shell keeping every key xterm sends (Ctrl+B, Ctrl+K, Ctrl+J stay the shell's even when bound),
- * the missing-close fallback, and the repeat.
+ * shell keeping every key xterm sends even when it is bound (the Ctrl+Alt defaults on Linux), the
+ * missing-close fallback, and the repeat.
  */
 import { describe, expect, it } from "vitest";
 import { SHORTCUT_COMMANDS, defaultChord } from "../src/lib/shortcuts/registry";
@@ -68,26 +68,19 @@ describe("terminalKeyAction", () => {
       "shell",
     ],
     ["⌘W is not the close on a Mac", "mac", key({ code: "KeyW", metaKey: true }), host(), "shell"],
-    // The shell keeps the control characters an app command is bound to; the page never
-    // takes them from a focused terminal.
+    // A bound app command's chord goes back to xterm, which sends the shell what it sends:
+    // on Linux the Ctrl+Alt defaults reach the shell as Meta.
     [
-      "Ctrl+B (sidebar.toggle) is the shell's",
+      "Ctrl+Alt+1 (sidebar.toggle) is the shell's on Linux",
       "linux",
-      key({ code: "KeyB", ctrlKey: true }),
+      key({ code: "Digit1", ctrlKey: true, altKey: true }),
       host(),
       "shell",
     ],
     [
-      "Ctrl+K (sessions.search) is the shell's",
-      "windows",
-      key({ code: "KeyK", ctrlKey: true }),
-      host(),
-      "shell",
-    ],
-    [
-      "Ctrl+J (dock.toggleBottom) is the shell's",
+      "Ctrl+Alt+S (sessions.search) likewise",
       "linux",
-      key({ code: "KeyJ", ctrlKey: true }),
+      key({ code: "KeyS", ctrlKey: true, altKey: true }),
       host(),
       "shell",
     ],
@@ -107,7 +100,20 @@ describe("terminalKeyAction", () => {
       host(),
       "shell",
     ],
-    ["⌘B likewise on a Mac", "mac", key({ code: "KeyB", metaKey: true }), host(), "shell"],
+    [
+      "⌥⌘1 likewise on a Mac",
+      "mac",
+      key({ code: "Digit1", metaKey: true, altKey: true }),
+      host(),
+      "shell",
+    ],
+    [
+      "Ctrl+Alt+3 likewise on Windows, where xterm leaves Ctrl+Alt to AltGr",
+      "windows",
+      key({ code: "Digit3", ctrlKey: true, altKey: true }),
+      host(),
+      "shell",
+    ],
     [
       "an unanswered chord is the shell's (Ctrl+Alt+P before the palette)",
       "linux",

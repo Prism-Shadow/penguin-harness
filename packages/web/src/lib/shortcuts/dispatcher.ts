@@ -52,7 +52,7 @@ let blocker: (() => boolean) | null = null;
 
 /**
  * Installs the predicate that suspends global commands: while a dialog or a menu is open (the
- * Esc-layer stack in components/ui/modal.tsx), a command must not run behind it — ⌘K would open
+ * Esc-layer stack in components/ui/modal.tsx), a command must not run behind it — ⌥⌘S would open
  * the sidebar search under the overlay and pull focus out of the dialog. The store stays free of
  * React, so the layer owner installs the predicate itself at module scope.
  */

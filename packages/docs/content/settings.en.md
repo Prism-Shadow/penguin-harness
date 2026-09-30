@@ -5,7 +5,7 @@ description: Manage your profile, preferences and password, and, as an admin, us
 
 **System settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences and password, and, for an admin, the server's users, proxy, upload limits and company mode.
 
-- Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance) and [Account](#account).
+- Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance), [Keyboard shortcuts](#keyboard-shortcuts) and [Account](#account).
 - Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Upload limits](#upload-limits) and [Company mode](#company-mode).
 
 ## Open System settings
@@ -24,6 +24,7 @@ The rail is grouped into **Personal** and **Server**:
 | [Profile](#profile) | Personal | Everyone |
 | [General](#general) | Personal | Everyone |
 | [Appearance](#appearance) | Personal | Everyone |
+| [Keyboard shortcuts](#keyboard-shortcuts) | Personal | Everyone |
 | [Account](#account) | Personal | Only where a password exists to change |
 | [Users](#users) | Server | Admin only, and not in the desktop app |
 | [Proxy options](#proxy-options) | Server | Admin only |
@@ -35,7 +36,7 @@ Personal preferences apply the moment they are touched. There is no Save button 
 Where your personal preferences are stored:
 
 - In this browser: language, currency, notifications, theme, terminal theme, font size, accent, the shortcuts launcher, and tool short names.
-- With your account on the server: your profile and your personal Company mode switch.
+- With your account on the server: your profile, your keyboard shortcuts and your personal Company mode switch.
 
 The Server pages are admin-only and server-global. A non-admin sees neither those entries nor any hint that they exist: they are left with the Personal pages alone, and the rail draws no group headings at all.
 
@@ -128,6 +129,24 @@ The **Appearance** page is personal.
 About **Tray icon**: the desktop app keeps an icon in the system tray: the Windows notification area, the macOS menu bar, or the Linux tray. It stays there for as long as the app runs. Click the icon to come back to the window. Right-click it to start a new Session or quit.
 
 Turning it off removes the icon at once, with no restart. Closing the window then no longer hides it there: the app stays in the Dock on macOS, and quits on Windows and Linux.
+
+## Keyboard shortcuts
+
+The **Keyboard shortcuts** page is personal. It lists every command you can rebind, by group, each with its current key combination as your platform writes it: ⌥⌘S on a Mac, Ctrl+Alt+S elsewhere. The defaults are listed under [Keyboard shortcuts](/chat#keyboard-shortcuts) in Chat.
+
+1. Select the combination on a row. The button waits for a new one.
+2. Press the new combination. Esc cancels, and Backspace or Delete clears the binding. A combination needs Ctrl or Alt (⌘ or ⌃ on a Mac) unless it is an F key: Shift alone, and Option alone on a Mac, is typing.
+
+A changed row gets a **Restore default** button, and **Reset all** restores every row at once. A change applies at once in every tab of this browser; your other browsers and the desktop app pick it up the next time they load. Bindings are kept per platform, so a Mac and a Windows machine each have their own.
+
+As soon as a binding is set, the line under its row says what stands in its way:
+
+- Another command on the same combination: which of the two fires.
+- A combination the browser keeps for itself, such as Ctrl+W or ⌘W: it only works in the desktop app. This note is amber.
+- In the desktop app, a combination its menu also carries: the binding overrides that menu item.
+- A combination the browser also uses, such as Ctrl+P or ⌘P for printing: in a browser tab, the binding takes over that browser function.
+
+Bindings are shared by your browsers and the desktop app, so the browser's notes show in the desktop app too. No default sits on a combination the browser keeps. Save keeps Ctrl+S / ⌘S and takes over the browser's Save Page while an editor has focus, so its row carries a note; on a Mac so do the two rows whose defaults Chrome also uses, ⌥⌘P and ⌥⌘N.
 
 ## Account
 

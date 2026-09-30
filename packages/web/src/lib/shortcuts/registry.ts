@@ -25,32 +25,36 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommand[] = [
     id: "sessions.search",
     scope: "global",
     group: "general",
-    defaults: { default: "Mod+KeyK" },
+    // Mod+K is the browser's web search.
+    defaults: { default: "Mod+Alt+KeyS" },
   },
   {
     id: "chat.new",
     scope: "global",
     group: "general",
-    // ChatGPT's new-chat chord; plain Mod+N is the browser's new window everywhere.
-    defaults: { default: "Mod+Shift+KeyO" },
+    // Mod+N opens a browser window. On macOS this takes over Chrome's ⌥⌘N (split view).
+    defaults: { default: "Mod+Alt+KeyN" },
   },
   {
     id: "sidebar.toggle",
     scope: "global",
     group: "panels",
-    defaults: { default: "Mod+KeyB" },
+    // Mod+B is Firefox's bookmarks sidebar; the three panel toggles count Mod+Alt+1 to 3.
+    defaults: { default: "Mod+Alt+Digit1" },
   },
   {
     id: "dock.toggleRight",
     scope: "global",
     group: "panels",
-    defaults: { default: "Mod+Alt+KeyB" },
+    // Mod+Alt+B is Chrome's bookmark manager on macOS.
+    defaults: { default: "Mod+Alt+Digit2" },
   },
   {
     id: "dock.toggleBottom",
     scope: "global",
     group: "panels",
-    defaults: { default: "Mod+KeyJ" },
+    // Mod+J opens the browser's downloads.
+    defaults: { default: "Mod+Alt+Digit3" },
   },
   {
     id: "terminal.toggle",

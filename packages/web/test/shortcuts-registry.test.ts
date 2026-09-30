@@ -76,9 +76,10 @@ describe("registry defaults", () => {
   });
 
   it("names every default that shares a chord with a browser function", () => {
-    // Save takes the browser's Save Page on purpose; on macOS Chrome binds ⌥⌘P to Page Setup.
+    // Save takes the browser's Save Page on purpose; on macOS Chrome binds ⌥⌘P to Page Setup
+    // and ⌥⌘N to split view.
     const expected: Record<Platform, CommandId[]> = {
-      mac: ["palette.toggle", "editor.save"],
+      mac: ["palette.toggle", "chat.new", "editor.save"],
       windows: ["editor.save"],
       linux: ["editor.save"],
     };

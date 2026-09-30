@@ -2,13 +2,14 @@
  * What a focused terminal does with a keydown after the clipboard keys have had their turn.
  * Pure: the surface passes what it knows (whether it offers a close) and acts on the answer.
  *
- * The shell keeps every key xterm would send it. Ctrl+B, Ctrl+K and Ctrl+J are a shell's tmux
- * prefix, kill-line and newline, so an app command bound to one of them yields to the shell
- * while a terminal has focus, as on main before the registry existed. The app commands still
- * reachable from a focused terminal are the ones xterm sends nothing for and so never cancels:
- * Ctrl+` and Ctrl+Shift+` (the terminal toggle and new terminal) and every ⌘ chord on a Mac —
+ * The shell keeps every key xterm would send it, so an app command bound to one yields to the
+ * shell while a terminal has focus: Ctrl+W stays readline's delete-word and Ctrl+B tmux's prefix,
+ * and on Linux a Ctrl+Alt chord reaches the shell as Meta (Ctrl+Alt+1 arrives as Esc 1). The app
+ * commands still reachable from a focused terminal are the ones xterm sends nothing for and so
+ * never cancels — Ctrl+` and Ctrl+Shift+` (the terminal toggle and new terminal), every ⌘ chord
+ * on a Mac, and on Windows a Ctrl+Alt chord on a character key, which xterm leaves to AltGr — and
  * those bubble to the window dispatcher on their own. The one terminal-scoped command,
- * `terminal.close`, is decided here.
+ * `terminal.close` (⌃⌥` / Ctrl+Alt+` by default), is decided here, before xterm sees it.
  */
 import { matchShortcut } from "./match";
 import type { KeyLike, Keymap, Platform } from "./types";

@@ -366,10 +366,11 @@ export function TerminalView({
        * 2. The keymap (lib/shortcuts/terminal-keys.ts decides). The terminal-scope command
        *    (`terminal.close`, ⌃⌥` / Ctrl+Alt+` by default) is consumed here so it never
        *    reaches the shell. Everything else is xterm's: the shell keeps every key xterm would
-       *    send it (Ctrl+B, Ctrl+K, Ctrl+J stay a tmux prefix, kill-line and newline even when
-       *    an app command is bound to them), and the chords xterm sends nothing for — Ctrl+`,
-       *    Ctrl+Shift+`, every ⌘ chord — are left un-prevented and bubble to the window
-       *    dispatcher that owns them.
+       *    send it, even one an app command is bound to (Ctrl+W, tmux's Ctrl+B, and on Linux
+       *    the Ctrl+Alt chords, which xterm sends as Meta), and the chords xterm sends nothing
+       *    for — Ctrl+`, Ctrl+Shift+`, every ⌘ chord, and on Windows the Ctrl+Alt ones it
+       *    leaves to AltGr — are left un-prevented and bubble to the window dispatcher that
+       *    owns them.
        */
       const platform = currentPlatform();
       term.attachCustomKeyEventHandler((event) => {
