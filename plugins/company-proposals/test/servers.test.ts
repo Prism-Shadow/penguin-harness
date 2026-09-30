@@ -41,7 +41,9 @@ describe("names and addresses", () => {
   it("refuses a malformed name, and `this` as a repeat of the answering server", () => {
     expect(serverNameOf(" desk-1 ")).toBe("desk-1");
     expect(() => serverNameOf("a b")).toThrow(expect.objectContaining({ code: "bad_request" }));
-    expect(() => serverNameOf("This")).toThrow(expect.objectContaining({ code: "server_registered" }));
+    expect(() => serverNameOf("This")).toThrow(
+      expect.objectContaining({ code: "server_registered" }),
+    );
   });
 
   it("reads an install answer, and refuses one without an id", () => {
@@ -51,7 +53,11 @@ describe("names and addresses", () => {
       describe: "v1-1-gabc1234",
     });
     // A server older than the commit fields still has an id.
-    expect(identityOf({ installId: "i" })).toEqual({ installId: "i", commit: null, describe: null });
+    expect(identityOf({ installId: "i" })).toEqual({
+      installId: "i",
+      commit: null,
+      describe: null,
+    });
     expect(() => identityOf({ installId: null })).toThrow(/no install id/);
     expect(() => identityOf("<html>")).toThrow(/no install id/);
   });
@@ -66,13 +72,15 @@ describe("requireUnregistered", () => {
     try {
       requireUnregistered(registered, self, candidate);
     } catch (err) {
-      return (err as { code: string; message: string });
+      return err as { code: string; message: string };
     }
     return null;
   };
 
   it("refuses the answering server behind another address, by its install id", () => {
-    expect(refused({ name: "x", url: "http://127.0.0.1:7364", installId: "self-id" })).toMatchObject({
+    expect(
+      refused({ name: "x", url: "http://127.0.0.1:7364", installId: "self-id" }),
+    ).toMatchObject({
       code: "server_registered",
       message: expect.stringContaining('"this"'),
     });
@@ -80,12 +88,12 @@ describe("requireUnregistered", () => {
 
   it("refuses a repeat by name, by address, and by install id — naming the entry there", () => {
     expect(refused({ name: "DESK", url: "http://h:1", installId: "n" })?.message).toContain("desk");
-    expect(refused({ name: "y", url: "http://localhost:53531", installId: "n" })?.message).toContain(
-      "as desk",
-    );
-    expect(refused({ name: "y", url: "http://127.0.0.1:53531", installId: "desk-id" })?.message).toContain(
-      "same server as desk",
-    );
+    expect(
+      refused({ name: "y", url: "http://localhost:53531", installId: "n" })?.message,
+    ).toContain("as desk");
+    expect(
+      refused({ name: "y", url: "http://127.0.0.1:53531", installId: "desk-id" })?.message,
+    ).toContain("same server as desk");
     expect(refused({ name: "y", url: "http://h:2", installId: "n" })).toBeNull();
   });
 });
@@ -138,7 +146,10 @@ describe("placeServer", () => {
 describe("registering over the routes", () => {
   let root: string;
   let service: ProposalService;
-  let answers: Record<string, { installId: string; commit: string | null; describe: string | null } | Error>;
+  let answers: Record<
+    string,
+    { installId: string; commit: string | null; describe: string | null } | Error
+  >;
 
   const org: OrgView = {
     orgId: ORG,
@@ -162,8 +173,16 @@ describe("registering over the routes", () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "proposals-servers-"));
     answers = {
       "http://localhost": { installId: "self-id", commit: "a".repeat(40), describe: "v1" },
-      "http://localhost:53531": { installId: "desk-id", commit: "abc1234", describe: "v1-1-gabc1234" },
-      "http://127.0.0.1:53531": { installId: "desk-id", commit: "abc1234", describe: "v1-1-gabc1234" },
+      "http://localhost:53531": {
+        installId: "desk-id",
+        commit: "abc1234",
+        describe: "v1-1-gabc1234",
+      },
+      "http://127.0.0.1:53531": {
+        installId: "desk-id",
+        commit: "abc1234",
+        describe: "v1-1-gabc1234",
+      },
       "http://127.0.0.1:9": { installId: "self-id", commit: null, describe: null },
     };
     service = new ProposalService({
@@ -211,7 +230,9 @@ describe("registering over the routes", () => {
     const res = await call("GET", "/servers");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      servers: [{ name: "this", url: null, self: true, installId: "self-id", registeredAt: null, by: null }],
+      servers: [
+        { name: "this", url: null, self: true, installId: "self-id", registeredAt: null, by: null },
+      ],
     });
   });
 
@@ -222,7 +243,9 @@ describe("registering over the routes", () => {
       agentId: "acme_dev",
     });
     expect(ok.status).toBe(200);
-    const { servers } = (await ok.json()) as { servers: Array<{ name: string; url: string | null }> };
+    const { servers } = (await ok.json()) as {
+      servers: Array<{ name: string; url: string | null }>;
+    };
     expect(servers.map((s) => [s.name, s.url])).toEqual([
       ["this", null],
       ["desk", "http://localhost:53531"],
@@ -256,7 +279,9 @@ describe("registering over the routes", () => {
   it("answers 422 for an address that is not read as a penguin server", async () => {
     const res = await call("POST", "/servers", { name: "gone", url: "http://localhost:1" });
     expect(res.status).toBe(422);
-    expect(((await res.json()) as { error: { code: string; message: string } }).error).toMatchObject({
+    expect(
+      ((await res.json()) as { error: { code: string; message: string } }).error,
+    ).toMatchObject({
       code: "server_unreachable",
       message: expect.stringContaining("ECONNREFUSED"),
     });

@@ -112,7 +112,12 @@ export function proposalRoutes(service: ProposalService, deploys: DeployService)
 
   app.get("/servers", async (c) =>
     c.json(
-      await service.servers(param(c, "projectId"), param(c, "orgId"), selfUrlOf(c), actorOfQuery(c)),
+      await service.servers(
+        param(c, "projectId"),
+        param(c, "orgId"),
+        selfUrlOf(c),
+        actorOfQuery(c),
+      ),
     ),
   );
 

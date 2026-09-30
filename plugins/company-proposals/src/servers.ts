@@ -82,7 +82,11 @@ export function normalizeServerUrl(raw: string): string {
     throw new ServerRegistryError(400, "bad_request", `Not a URL: ${JSON.stringify(raw)}`);
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new ServerRegistryError(400, "bad_request", `A server is reached over http or https: ${url.protocol}`);
+    throw new ServerRegistryError(
+      400,
+      "bad_request",
+      `A server is reached over http or https: ${url.protocol}`,
+    );
   }
   if (url.username !== "" || url.password !== "") {
     throw new ServerRegistryError(400, "bad_request", "A server address carries no credentials.");
@@ -107,7 +111,9 @@ export function requireUnregistered(
     throw new ServerRegistryError(409, "server_registered", message);
   };
   if (self.installId !== null && self.installId === candidate.installId) {
-    taken(`${candidate.url} is the server answering this request ("${SELF_NAME}"); it is registered already.`);
+    taken(
+      `${candidate.url} is the server answering this request ("${SELF_NAME}"); it is registered already.`,
+    );
   }
   for (const s of registered) {
     if (s.name.toLowerCase() === candidate.name.toLowerCase()) {
@@ -115,7 +121,9 @@ export function requireUnregistered(
     }
     if (s.url === candidate.url) taken(`${s.url} is registered already, as ${s.name}.`);
     if (s.installId === candidate.installId) {
-      taken(`${candidate.url} is the same server as ${s.name} (${s.url}); it is registered already.`);
+      taken(
+        `${candidate.url} is the same server as ${s.name} (${s.url}); it is registered already.`,
+      );
     }
   }
 }
@@ -142,7 +150,9 @@ export function fetchProbe(fetchImpl: typeof fetch = fetch): ProbeServer {
 export function identityOf(body: unknown): ServerIdentity {
   const b = (typeof body === "object" && body !== null ? body : {}) as Partial<InstallResponse>;
   if (typeof b.installId !== "string" || b.installId === "") {
-    throw new Error("/api/install named no install id — not a penguin server, or one that could not establish its id");
+    throw new Error(
+      "/api/install named no install id — not a penguin server, or one that could not establish its id",
+    );
   }
   const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
   return { installId: b.installId, commit: str(b.commit), describe: str(b.describe) };
@@ -203,7 +213,14 @@ export function registryOf(
   self: { installId: string | null },
 ): ProposalServer[] {
   return [
-    { name: SELF_NAME, url: null, self: true, installId: self.installId, registeredAt: null, by: null },
+    {
+      name: SELF_NAME,
+      url: null,
+      self: true,
+      installId: self.installId,
+      registeredAt: null,
+      by: null,
+    },
     ...registered.map((s) => ({
       name: s.name,
       url: s.url,
@@ -227,7 +244,12 @@ export async function readServers(
 ): Promise<{ self: ServerIdentity | null; readings: ServerReading[] }> {
   const targets = [
     { name: SELF_NAME, url: selfUrl, shown: null as string | null, self: true },
-    ...registered.map((s) => ({ name: s.name, url: s.url, shown: s.url as string | null, self: false })),
+    ...registered.map((s) => ({
+      name: s.name,
+      url: s.url,
+      shown: s.url as string | null,
+      self: false,
+    })),
   ];
   const answers = await Promise.allSettled(targets.map((t) => probe(t.url)));
   let self: ServerIdentity | null = null;
@@ -235,11 +257,28 @@ export async function readServers(
     const a = answers[i]!;
     if (a.status === "rejected") {
       const reason = a.reason instanceof Error ? a.reason.message : String(a.reason);
-      return { name: t.name, url: t.shown, self: t.self, commit: null, describe: null, error: reason };
+      return {
+        name: t.name,
+        url: t.shown,
+        self: t.self,
+        commit: null,
+        describe: null,
+        error: reason,
+      };
     }
     if (t.self) self = a.value;
-    const error = a.value.commit === null ? "the server reports no commit (a build older than the field, or one with neither a pushed revision nor a stamped commit)" : null;
-    return { name: t.name, url: t.shown, self: t.self, commit: a.value.commit, describe: a.value.describe, error };
+    const error =
+      a.value.commit === null
+        ? "the server reports no commit (a build older than the field, or one with neither a pushed revision nor a stamped commit)"
+        : null;
+    return {
+      name: t.name,
+      url: t.shown,
+      self: t.self,
+      commit: a.value.commit,
+      describe: a.value.describe,
+      error,
+    };
   });
   return { self, readings };
 }

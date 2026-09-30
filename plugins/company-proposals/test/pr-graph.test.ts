@@ -278,7 +278,9 @@ describe("PrGraphReader", () => {
     const lines = g.errors.filter((e) => e.startsWith("server "));
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(
-      new RegExp(`^server local: commit ${L} not compared with any layer: no fake compare for [0-9a-f]{40}\\.\\.\\.${L}$`),
+      new RegExp(
+        `^server local: commit ${L} not compared with any layer: no fake compare for [0-9a-f]{40}\\.\\.\\.${L}$`,
+      ),
     );
   });
 
