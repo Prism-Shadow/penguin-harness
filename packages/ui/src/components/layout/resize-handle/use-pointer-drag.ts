@@ -1,8 +1,8 @@
 /**
- * Shared pointer-drag state machine for the dock's gestures (header move, tab drag, boundary
- * resize) and the context gauge's threshold cutter: a movement threshold separating taps from
- * drags, and latest-callback refs so `onEnd` never sees stale state. Spread the returned props
- * on the gesture's surface.
+ * The pointer-drag state machine every drag gesture in the app shares — a resize handle, the
+ * dock's header move and tab drag, a canvas pan, a gauge's threshold cutter: a movement threshold
+ * separating taps from drags, and latest-callback refs so `onEnd` never sees stale state. Spread
+ * the returned props on the gesture's surface.
  *
  * The press is taken on the element; everything after it runs on WINDOW listeners. An
  * element-bound `pointermove` stops arriving the moment pointer capture is lost — a control
@@ -14,6 +14,7 @@
  * keeps a fast pull from selecting text or scrolling the page under it; losing it costs nothing.
  */
 import { useEffect, useMemo, useRef } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 
 interface DragState<T> {
   payload: T;
@@ -26,9 +27,9 @@ interface DragState<T> {
   release: () => void;
 }
 
-export function usePointerDrag<T>(options: {
+export interface PointerDragOptions<T> {
   /** Resolves the drag payload from the initial event; null refuses the gesture. */
-  begin: (event: React.PointerEvent<HTMLElement>) => T | null;
+  begin: (event: ReactPointerEvent<HTMLElement>) => T | null;
   /** px of movement that turns the press into a drag (0 = immediately). */
   threshold?: number;
   /** Movement, as the native event: the gesture is tracked on the window, not on the element. */
@@ -37,7 +38,11 @@ export function usePointerDrag<T>(options: {
   onEnd?: (payload: T, dragged: boolean) => void;
   /** Abandoned gesture (pointercancel): clear visuals, apply nothing. */
   onCancel?: () => void;
-}) {
+}
+
+export function usePointerDrag<T>(options: PointerDragOptions<T>): {
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+} {
   const latest = useRef(options);
   latest.current = options;
   const state = useRef<DragState<T> | null>(null);
@@ -48,7 +53,7 @@ export function usePointerDrag<T>(options: {
 
   return useMemo(
     () => ({
-      onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+      onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
         if (event.button !== 0) return;
         // A second press while a gesture is live (another finger, a release the window never
         // saw): abandon the old one rather than leave its visuals stuck.

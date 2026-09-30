@@ -15,7 +15,8 @@
  * | hook               | the job                                                  | anatomy the recipes rely on                           |
  * | ------------------ | -------------------------------------------------------- | ----------------------------------------------------- |
  * | `ui-glass`         | a transient layer over content: menus, popovers, the     | —                                                     |
- * |                    | modal card, the floating composer, a sticky page header  |                                                       |
+ * |                    | modal card, the floating composer and launcher, a sticky |                                                       |
+ * |                    | page header                                              |                                                       |
  * | `ui-eyebrow`       | a group label naming the items below it (never directly  | —                                                     |
  * |                    | above an `h1`–`h4`); hosts: `Text variant="eyebrow"`,    |                                                       |
  * |                    | the sidebar's and group headers' labels                  |                                                       |
@@ -26,8 +27,10 @@
  * | `ui-frame`         | a ruled box with a head, a body, a foot and panes        | children carry `data-slot="head" \| "body" \| "foot" \| "pane"` |
  * |                    | hosts: the transcript's cards, the code block, `Card`,   |                                                       |
  * |                    | a framed `Table`                                         |                                                       |
- * | `ui-underline-nav` | the selected-tab marker of a tab bar                     | items `[role="tab"]`, selected by `aria-selected="true"` |
+ * | `ui-underline-nav` | the selected-tab marker of a tab bar (a page's tabs, a   | items `[role="tab"]`, selected by `aria-selected="true"` |
+ * |                    | dock's tab strip)                                        |                                                       |
  * | `ui-shell`         | the app window: a navigation column beside a main column | children carry `data-slot="nav" \| "main"` (a right column may carry `"dock"`); the selected nav row is `[aria-current="page"]` |
+ * |                    | host: `AppShell`                                         |                                                       |
  * | `ui-icon-decor`    | an icon that says nothing its label does not already say | on the icon itself (or the element holding only it); optional `data-role="nav" \| "group" \| "menu" \| "empty"` |
  * |                    | hosts: the icon renderers' call sites, `NavRow`'s glyph  |                                                       |
  * | `ui-tree`          | a container whose rows nest                              | rows carry `data-depth="0"…"8"`, the last row of a level `data-last="true"`; a row's children may follow it in a `data-branch` element carrying the children's `data-depth` |

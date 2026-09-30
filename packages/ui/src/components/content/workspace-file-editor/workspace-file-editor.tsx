@@ -5,7 +5,7 @@
  * editing a file looks exactly like reading it — same line numbers, same colours, same
  * wrapping — and pressing Edit reflows nothing.
  *
- * The two layers are stacked in a single grid cell (styles.css's `.code-editor`), so the taller
+ * The two layers are stacked in a single grid cell (prose.css's `.code-editor`), so the taller
  * one sizes the box and the one scroll container carries both. Nothing is synchronised in JS,
  * which is what makes it impossible for them to drift apart: there is only one scroll position.
  * What they do have to agree on is every metric that decides where a glyph lands — family,
@@ -19,9 +19,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { CodeSurface, languageForExtension } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { TEXT_PREVIEW_LIMIT, baseName, extOf } from "../../lib/workspace-tree";
+import { CodeSurface } from "../code-block/code-block";
+import { languageForFileName } from "../code-block/code-languages";
 
 /** Quiet period before re-highlighting, so a keystroke costs a re-render and not a tokenize. */
 const EDIT_HIGHLIGHT_SETTLE_MS = 200;
@@ -29,14 +28,24 @@ const EDIT_HIGHLIGHT_SETTLE_MS = 200;
 export function WorkspaceFileEditor({
   path,
   value,
+  label,
   wrap,
+  highlight = true,
   onChange,
   onSave,
 }: {
+  /** The file being edited: its name picks the highlighting language. */
   path: string;
   value: string;
+  /** The textarea's accessible name ("Editing notes.md"). */
+  label: string;
   /** Soft-wrap long lines instead of scrolling sideways (the preview header's toggle). */
   wrap: boolean;
+  /**
+   * Colour the text. Tokenizing runs on a worker, so a large file costs latency on the colours
+   * rather than a stalled editor; the caller bounds it only by what a load can put here.
+   */
+  highlight?: boolean;
   onChange: (next: string) => void;
   onSave: () => void;
 }) {
@@ -63,14 +72,10 @@ export function WorkspaceFileEditor({
       className="code-editor-host h-full min-h-0 overflow-auto text-xs leading-relaxed"
     >
       <CodeSurface
-        language={languageForExtension(extOf(baseName(path)))}
+        language={languageForFileName(path)}
         code={value}
-        // The editor colours whatever it can hold: tokenizing runs on a worker, so a large
-        // file costs latency on the colours rather than a stalled editor, and a ceiling of its
-        // own would only refuse to colour a file for no gain. The bound left is the preview
-        // cap, which is all a load can put here; the settle delay keeps a burst of typing from
-        // queueing a pass per keystroke.
-        highlight={value.length <= TEXT_PREVIEW_LIMIT}
+        highlight={highlight}
+        // The settle delay keeps a burst of typing from queueing a pass per keystroke.
         settleMs={EDIT_HIGHLIGHT_SETTLE_MS}
         lineNumbers
         wrap={wrap}
@@ -83,7 +88,7 @@ export function WorkspaceFileEditor({
           onKeyDown={onKeyDown}
           onCompositionStart={() => setComposing(true)}
           onCompositionEnd={() => setComposing(false)}
-          aria-label={S.files.editorLabel(baseName(path))}
+          aria-label={label}
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"

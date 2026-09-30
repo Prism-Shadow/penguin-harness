@@ -156,3 +156,39 @@ export * from "./components/charts/legend/legend";
 
 // W8-B — the command palette: the search box over the caller's actions, and its filter.
 export * from "./components/overlays/command-palette/command-palette";
+
+// W7-A — files: the pointer-drag machine with the resize handle and the split pane built on it,
+// the file tree and its row logic, the read-only file browser, the Files panel's tree and preview
+// panes, the drop overlay, the file menu's rows, the in-place editor, the breadcrumbs and their
+// fit, and the frontmatter helper the Markdown readers share.
+export * from "./components/layout/resize-handle/use-pointer-drag";
+export * from "./components/layout/resize-handle/resize-handle";
+export * from "./components/layout/resize-handle/split-pane";
+export * from "./components/files/file-tree/tree-rows";
+export * from "./components/files/file-tree/file-tree";
+export * from "./components/files/file-browser/file-browser";
+export * from "./components/files/tree-pane/tree-pane";
+export * from "./components/files/preview-pane/preview-pane";
+export * from "./components/files/drop-overlay/drop-overlay";
+export * from "./components/files/workspace-file-menu/workspace-file-menu";
+export * from "./components/content/workspace-file-editor/workspace-file-editor";
+export * from "./components/navigation/breadcrumbs/crumb-fit";
+export * from "./components/navigation/breadcrumbs/breadcrumbs";
+export * from "./components/content/prose/frontmatter";
+
+// W7-C — the dock: its tab strip, its frame and header buttons, the picker of an empty dock, the
+// toolbar's dock toggles, and the floating launcher's ball and fan.
+export * from "./components/navigation/dock-tabs/dock-tabs";
+export * from "./components/shell/dock-frame/dock-frame";
+export * from "./components/shell/dock-picker/dock-picker";
+export * from "./components/shell/panels-toolbar/panels-toolbar";
+export * from "./components/shell/launcher/launcher";
+
+// W7-B — the shell: the app window and its columns, the folded rail, the phone's top bar, the
+// pinned sidebar's frame with its nav fold, list header and controls, and the conversation row
+// with the hover actions it shares.
+export * from "./components/shell/app-shell/app-shell";
+export * from "./components/shell/rail/rail";
+export * from "./components/shell/mobile-top-bar/mobile-top-bar";
+export * from "./components/shell/sidebar-frame/sidebar-frame";
+export * from "./components/shell/session-row/session-row";

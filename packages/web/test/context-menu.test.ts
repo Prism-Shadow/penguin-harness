@@ -8,9 +8,9 @@
  * everywhere else, and nothing in a node-only suite (`environment: "node"`, no jsdom) would notice
  * a `preventDefault` that had crept onto a document-level listener — so the scan asserts there is
  * no global contextmenu listener in either root. And the feature must not be mouse-only: the
- * sidebar's Session rows spread all three openers (right-click, Shift+F10, press-and-hold) and
- * name the anchor's owner, which the scroll rule needs to leave a menu open while an unrelated
- * container scrolls.
+ * sidebar's Session rows (the UI package's `SessionRow`) spread all three openers (right-click,
+ * Shift+F10, press-and-hold) and name the anchor's owner, which the scroll rule needs to leave a
+ * menu open while an unrelated container scrolls.
  */
 import { describe, expect, it } from "vitest";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
@@ -34,6 +34,8 @@ const DROPDOWN = "packages/ui/src/components/overlays/dropdown/dropdown.tsx";
 const CONTEXT_MENU = "packages/ui/src/components/overlays/portal-panel/use-row-context-menu.ts";
 const RULES = "packages/ui/src/components/overlays/portal-panel/context-menu.ts";
 const SIDEBAR = "packages/web/src/components/layout/sidebar.tsx";
+/** The sidebar's conversation row, which owns the row's menu wiring. */
+const SESSION_ROW = "packages/ui/src/components/shell/session-row/session-row.tsx";
 
 describe("sourceFiles", () => {
   it("scans every source root, and finds the menu modules in one place each", () => {
@@ -51,6 +53,7 @@ describe("sourceFiles", () => {
     expect(paths.filter((p) => p.includes("\\"))).toEqual([]);
     expect(paths).toContain(CONTEXT_MENU);
     expect(paths).toContain(SIDEBAR);
+    expect(paths).toContain(SESSION_ROW);
   });
 });
 
@@ -68,18 +71,21 @@ describe("native-menu suppression scope", () => {
   });
 
   it("gives the sidebar row all three openers, so the menu is not mouse-only", () => {
-    const sidebar = sourceFiles().find(([path]) => path === SIDEBAR);
-    expect(sidebar).toBeDefined();
+    const row = sourceFiles().find(([path]) => path === SESSION_ROW);
+    expect(row).toBeDefined();
     // The row spreads the hook's handlers (contextmenu + Shift+F10 + press-and-hold) and
     // guards its own click against the one a hold replays.
-    expect(sidebar![1]).toContain("{...ctx.rowProps}");
-    expect(sidebar![1]).toContain("ctx.consumeLongPressClick()");
+    expect(row![1]).toContain("{...ctx.rowProps}");
+    expect(row![1]).toContain("ctx.consumeLongPressClick()");
+    // And the sidebar draws its conversations with that row.
+    const sidebar = sourceFiles().find(([path]) => path === SIDEBAR);
+    expect(sidebar![1]).toContain("<SessionRow");
   });
 
   it("names the anchor's owner alongside the anchor, so the scroll rule has one to test", () => {
     // Without the wiring, scrollMovesAnchor is asked about a null owner on every scroll and
     // answers "dismiss" — the package's rule tests would still pass while the bug was back.
-    const sidebar = sourceFiles().find(([path]) => path === SIDEBAR);
-    expect(sidebar![1]).toContain("anchorOwner={ctx.anchorOwner}");
+    const row = sourceFiles().find(([path]) => path === SESSION_ROW);
+    expect(row![1]).toContain("anchorOwner={ctx.anchorOwner}");
   });
 });

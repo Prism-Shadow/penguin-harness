@@ -14,11 +14,16 @@
  */
 import { useEffect, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { GlyphIcon, ICON_SIZE, Md, SkeletonList } from "@prismshadow/penguin-ui";
+import {
+  GlyphIcon,
+  ICON_SIZE,
+  Md,
+  SkeletonList,
+  bodyWithoutFrontmatter,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeDate } from "../../lib/format";
-import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
 import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/omni/memory-changes";
 import { memoryRowKey } from "../../lib/omni/memory-changes";
 import { useLocale } from "../../state/locale";

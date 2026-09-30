@@ -12,6 +12,8 @@ import { S } from "../src/lib/strings";
 import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
 const SCAN = scanSources();
+/** The sidebar's conversation row: the package draws the marks, the sidebar hands it their words. */
+const SESSION_ROW = "packages/ui/src/components/shell/session-row/session-row.tsx";
 
 describe("the activity marks' sources", () => {
   it("scan every source root, and find the icon module in one place", () => {
@@ -87,14 +89,16 @@ describe("the app's words for the activity marks", () => {
   });
 
   it("hands every mark its label wherever the app draws one", () => {
+    // The sidebar row is the package's SessionRow: the sidebar names each mark, the row draws
+    // the mark with the name it was handed.
     const sidebar = sourceFile(SCAN, "packages/web/src/components/layout/sidebar.tsx").text;
-    expect(sidebar).toMatch(
-      /<ActivityIcon activity=\{activity\} label=\{sessionActivityLabel\(activity\)\}/,
-    );
-    expect(sidebar).toMatch(/<ScheduleMark label=\{S\.chat\.sessionScheduled\}/);
-    expect(sidebar).toMatch(
-      /<BackgroundTasksMark\s+label=\{S\.chat\.backgroundTasks\(background\)\}/,
-    );
+    expect(sidebar).toMatch(/\{ state: activity, label: sessionActivityLabel\(activity\) \}/);
+    expect(sidebar).toMatch(/scheduledLabel: S\.chat\.sessionScheduled/);
+    expect(sidebar).toMatch(/label: S\.chat\.backgroundTasks\(background\)/);
+    const row = sourceFile(SCAN, SESSION_ROW).text;
+    expect(row).toMatch(/<ActivityIcon activity=\{activity\.state\} label=\{activity\.label\}/);
+    expect(row).toMatch(/<ScheduleMark label=\{scheduledLabel\}/);
+    expect(row).toMatch(/<BackgroundTasksMark label=\{background\.label\}/);
     const desks = sourceFile(SCAN, "packages/web/src/features/company/org-session-groups.tsx").text;
     expect(desks).toMatch(
       /<ActivityIcon activity=\{activity\} label=\{sessionActivityLabel\(activity\)\}/,
@@ -102,9 +106,9 @@ describe("the app's words for the activity marks", () => {
   });
 
   it("reserves the glyph's box on a row with no glyph, so a row never shifts", () => {
-    // Every glyph renders into the same row-mark box, and the sidebar reserves that box when
-    // there is no glyph at all — otherwise the title would re-flow as a run starts, finishes and
-    // is read. The placeholder is read from the sidebar itself so the two cannot drift apart.
+    // Every glyph renders into the same row-mark box, and the sidebar's row reserves that box
+    // when there is no glyph at all — otherwise the title would re-flow as a run starts, finishes
+    // and is read. The placeholder is read from the row itself so the two cannot drift apart.
     expect(ICON_SIZE.rowMark).toBe(12);
     for (const activity of ACTIVITIES) {
       const markup = renderToStaticMarkup(
@@ -112,7 +116,7 @@ describe("the app's words for the activity marks", () => {
       );
       expect(markup).toContain("width:12px;height:12px");
     }
-    const sidebar = sourceFile(SCAN, "packages/web/src/components/layout/sidebar.tsx").text;
-    expect(sidebar).toMatch(/activity === null.*\n?.*className="block h-3 w-3 shrink-0"/);
+    const row = sourceFile(SCAN, SESSION_ROW).text;
+    expect(row).toMatch(/activity === null.*\n?.*className="block h-3 w-3 shrink-0"/);
   });
 });

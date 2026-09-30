@@ -41,6 +41,7 @@ import {
   Notice,
   toastError,
   toastSuccess,
+  usePointerDrag,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -50,7 +51,6 @@ import { toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
-import { usePointerDrag } from "../dock/use-pointer-drag";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import { orgKey } from "./company-nav";
 import { liveEmployeeStates } from "./org-sessions";

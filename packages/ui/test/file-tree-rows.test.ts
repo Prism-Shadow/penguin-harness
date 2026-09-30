@@ -1,11 +1,12 @@
 /**
- * The shared file tree's DOM-free logic (lib/file-tree.ts): where a row's subtree ends in the
- * flat row list, and the keyboard step over those rows — the WAI-ARIA tree pattern's up/down
- * move, right to open a directory or step into it, left to close it or step out to its parent.
+ * The file tree's DOM-free logic (src/components/files/file-tree/tree-rows.ts): where a row's
+ * subtree ends in the flat row list, and the keyboard step over those rows — the WAI-ARIA tree
+ * pattern's up/down move, right to open a directory or step into it, left to close it or step out
+ * to its parent.
  */
 import { describe, expect, it } from "vitest";
-import { subtreeEnd, treeKeyStep } from "../src/lib/file-tree";
-import type { FileTreeRow } from "../src/lib/file-tree";
+import { subtreeEnd, treeKeyStep } from "../src/components/files/file-tree/tree-rows";
+import type { FileTreeRow } from "../src/components/files/file-tree/tree-rows";
 
 const baseName = (path: string): string => path.slice(path.lastIndexOf("/") + 1);
 

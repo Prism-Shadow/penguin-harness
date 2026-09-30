@@ -1,13 +1,13 @@
 /**
- * The app's file tree: one row per entry on screen, indented by depth, a chevron and a folder
- * glyph on directories, a page glyph on files. Clicking a directory opens or closes it,
- * clicking a file hands it to the caller.
+ * The file tree: one row per entry on screen, indented by depth, a chevron and a folder glyph on
+ * directories, a page glyph on files. Clicking a directory opens or closes it, clicking a file
+ * hands it to the caller.
  *
- * The caller brings the rows (`lib/file-tree.ts` states their shape) and nothing else about how
- * they were produced: the Workspace panel lists one directory per level as it is opened, the
- * plugin browser groups a listing it already holds. What this owns is the drawing and the
- * interaction — indentation, glyphs, the selected and hover treatment, the ARIA tree semantics
- * and the keyboard walk.
+ * The caller brings the rows (tree-rows.ts states their shape) and nothing else about how they
+ * were produced: the Workspace panel lists one directory per level as it is opened, the plugin
+ * browser groups a listing it already holds. What this owns is the drawing and the interaction —
+ * indentation, glyphs, the selected and hover treatment, the ARIA tree semantics and the
+ * keyboard walk.
  *
  * Keyboard: the WAI-ARIA tree pattern with a roving tab stop — one row is in the tab order
  * (the focused one, else the selected one, else the first), arrows move between rows and
@@ -21,18 +21,22 @@
  * text is not the whole of what it means — the handbook's pinned index.
  *
  * The rows stay one flat list; what nests is the drawing. An open directory's descendants go
- * in a `role="group"` box whose height is animated, so a subtree grows out of its directory's
- * row and shrinks back into it. Only the directory the caller says was just toggled animates,
- * so a re-render, a filter or an unrelated commit animates nothing. Closing is the awkward
- * half: the rows are gone from `rows` by the time the view hears about it, so the view keeps
- * the last committed rows and re-renders the closed directory's own descendants, inert, for
+ * in a `role="group"` box whose height is animated (file-tree.css), so a subtree grows out of its
+ * directory's row and shrinks back into it. Only the directory the caller says was just toggled
+ * animates, so a re-render, a filter or an unrelated commit animates nothing. Closing is the
+ * awkward half: the rows are gone from `rows` by the time the view hears about it, so the view
+ * keeps the last committed rows and re-renders the closed directory's own descendants, inert, for
  * as long as the shrink lasts.
  */
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { Chevron, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
-import { subtreeEnd, treeKeyStep } from "../../lib/file-tree";
-import type { FileTreeRow } from "../../lib/file-tree";
+import { ICON_SIZE } from "../../../icon-scale";
+import { Chevron } from "../../icons/chevron/chevron";
+import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
+import { ICONS } from "../../icons/icons";
+import { subtreeEnd, treeKeyStep } from "./tree-rows";
+import type { FileTreeRow } from "./tree-rows";
+import "./file-tree.css";
 
 /** Left padding of a depth-0 row, in px; deeper rows add `TREE_INDENT_PX` per level. */
 const TREE_PAD_PX = 6;
@@ -45,8 +49,8 @@ const CHEVRON_COL_PX = 14;
 
 /**
  * How long a closing subtree is kept on screen when its animation never reports back. Under
- * `prefers-reduced-motion` the keyframes are off, so no `animationend` ever arrives and this
- * timer is the only thing that drops the retained rows. Comfortably past the 200ms shrink.
+ * reduced motion the keyframes are off, so no `animationend` ever arrives and this timer is the
+ * only thing that drops the retained rows. Comfortably past the 200ms shrink.
  */
 const CLOSE_FALLBACK_MS = 260;
 
@@ -57,23 +61,7 @@ export interface TreeToggle {
   serial: number;
 }
 
-export function FileTree<Row extends FileTreeRow>({
-  rows,
-  label,
-  selectedPath,
-  loadingDirs,
-  dropTargetDir = null,
-  scrollTo = null,
-  toggled = null,
-  rowTitle,
-  rowLabel,
-  rowTrailing,
-  emptyLabel,
-  className = "",
-  children,
-  onToggleDir,
-  onOpenFile,
-}: {
+export interface FileTreeProps<Row extends FileTreeRow> {
   rows: readonly Row[];
   /** The tree's accessible name. */
   label: string;
@@ -87,7 +75,7 @@ export function FileTree<Row extends FileTreeRow>({
   scrollTo?: { path: string } | null;
   /** The directory last opened or closed, whose subtree animates. Null: nothing to animate. */
   toggled?: TreeToggle | null;
-  /** A row's `title` tooltip; the path by default. */
+  /** A row's tooltip; the path by default. */
   rowTitle?: (row: Row) => string;
   /**
    * A row's accessible name, for the row whose visible text leaves out what the row means — the
@@ -106,7 +94,25 @@ export function FileTree<Row extends FileTreeRow>({
   children?: ReactNode;
   onToggleDir: (dir: string) => void;
   onOpenFile: (path: string) => void;
-}) {
+}
+
+export function FileTree<Row extends FileTreeRow>({
+  rows,
+  label,
+  selectedPath,
+  loadingDirs,
+  dropTargetDir = null,
+  scrollTo = null,
+  toggled = null,
+  rowTitle,
+  rowLabel,
+  rowTrailing,
+  emptyLabel,
+  className = "",
+  children,
+  onToggleDir,
+  onOpenFile,
+}: FileTreeProps<Row>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
 
@@ -234,21 +240,21 @@ export function FileTree<Row extends FileTreeRow>({
         aria-label={rowLabel?.(row)}
         {...(retained ? {} : { onClick: () => activate(row), onFocus: () => setFocused(row.path) })}
         style={{ paddingLeft: TREE_PAD_PX + row.depth * TREE_INDENT_PX }}
-        className={`flex cursor-pointer select-none items-center gap-1.5 py-1 pr-2 text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400/60 ${
+        className={`flex cursor-pointer select-none items-center gap-1.5 py-1 pr-2 text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fg-subtle/60 ${
           dropHere
-            ? "bg-sky-50 ring-2 ring-inset ring-sky-500/60 dark:bg-sky-950/40"
+            ? "bg-tone-info-bg ring-2 ring-inset ring-tone-info-emphasis/60"
             : selected
-              ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-              : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/50"
+              ? "bg-line-muted text-fg"
+              : "text-fg hover:bg-surface-muted"
         } ${loading ? "opacity-60" : ""}`}
       >
-        <span className="flex w-3.5 shrink-0 justify-center text-gray-400" aria-hidden>
+        <span className="flex w-3.5 shrink-0 justify-center text-fg-subtle" aria-hidden>
           {row.kind === "dir" && <Chevron open={row.expanded} size={ICON_SIZE.chevronDense} />}
         </span>
         <GlyphIcon
           d={row.kind === "dir" ? (row.expanded ? ICONS.folderOpen : ICONS.folder) : ICONS.file}
           size={ICON_SIZE.rowLead}
-          className="text-gray-400"
+          className="text-fg-subtle"
         />
         <span className="min-w-0 flex-1 truncate">{row.name}</span>
         {rowTrailing?.(row)}
@@ -260,7 +266,7 @@ export function FileTree<Row extends FileTreeRow>({
   const renderEmptyLine = (row: Row): ReactNode => (
     <p
       key={`empty:${row.path}`}
-      className="py-1 pr-2 text-xs text-gray-400"
+      className="py-1 pr-2 text-xs text-fg-subtle"
       style={{ paddingLeft: TREE_PAD_PX + (row.depth + 1) * TREE_INDENT_PX + CHEVRON_COL_PX }}
     >
       {emptyLabel}

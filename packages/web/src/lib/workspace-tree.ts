@@ -3,23 +3,23 @@
  *   - the directory tree's shape — listings fetched lazily per directory and keyed by its
  *     Workspace-relative path ("" is the root), the set of open directories, and the flat
  *     row list the tree renders from the two (the row's own shape and the keyboard step over
- *     it are shared with the app's other file trees, in lib/file-tree.ts);
+ *     it are the UI package's `FileTree`'s, shared with the app's other file trees);
  *   - the search box's filter over the rows that are loaded;
  *   - which directory a dropped batch lands in;
  *   - when the panel is too narrow for a tree beside a preview, and how wide the tree pane
  *     may be dragged when it is not;
- *   - how many breadcrumb segments fit on the toolbar's single row;
  *   - which files count as text — by extension, or by looking at their first bytes when
- *     the extension says nothing — and so can be previewed as text and edited in place;
+ *     the extension says nothing — and so can be previewed as text and edited in place, and
+ *     how the read-only file browser previews a file by its name;
  *   - the persisted preferences (tree visibility, tree width, soft wrap) and the
  *     unsaved-changes decision;
  *   - what the panel's "add to conversation" puts in the composer — the `@path` reference,
  *     the fenced block a preview selection becomes, and where each of them may be spliced
  *     into a draft that is already half typed.
  */
+import type { FileBrowserPreviewKind, FileTreeRow } from "@prismshadow/penguin-ui";
 import type { WorkspaceFileEntry, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import { joinWorkspacePath } from "./file-path";
-import type { FileTreeRow } from "./file-tree";
 
 // ------------------------------------------------------------------------------- layout
 
@@ -37,13 +37,6 @@ export function isNarrowLayout(panelWidth: number): boolean {
 
 /** Narrowest the tree pane may be dragged: below this a nested name is all ellipsis. */
 export const TREE_MIN_WIDTH = 160;
-
-/**
- * The divider between the tree and the preview, in px — `w-1.5` in the panel. It rides with
- * the tree pane in the sliding container that shows and hides them together, which is why
- * that container's width has to know it.
- */
-export const TREE_DIVIDER_PX = 6;
 
 /** Room the preview keeps whatever the tree is dragged to. */
 export const PREVIEW_MIN_WIDTH = 240;
@@ -215,45 +208,6 @@ export function searchRows(hits: readonly WorkspaceSearchHit[]): TreeRow[] {
   }));
 }
 
-// -------------------------------------------------------------------------- breadcrumbs
-
-/** The single item a run of dropped leading segments collapses into. */
-export const CRUMB_ELLIPSIS = "…";
-
-/** What of a path the toolbar can show: the trailing segments that fit, and whether anything was dropped ahead of them. */
-export interface CrumbLayout {
-  visible: string[];
-  collapsed: boolean;
-}
-
-/**
- * Which breadcrumb segments fit across `availablePx`, tail first. The current directory —
- * the last segment — is always kept, however long it is; leading segments are taken while
- * they fit and the rest collapse into one ellipsis item, so the toolbar's actions never get
- * pushed onto a second row. `measure` gives a rendered item's width in px, ellipsis item
- * included, which is what lets a test state a fixed per-character width.
- */
-export function visibleCrumbSegments(
-  segments: readonly string[],
-  availablePx: number,
-  measure: (text: string) => number,
-): CrumbLayout {
-  if (segments.length === 0) return { visible: [], collapsed: false };
-  const last = segments.length - 1;
-  const visible = [segments[last]!];
-  let used = measure(segments[last]!);
-  for (let i = last - 1; i >= 0; i -= 1) {
-    // Taking this segment still leaves an ellipsis ahead of it unless it is the first one,
-    // so the ellipsis is priced into every step but the last.
-    const ellipsis = i > 0 ? measure(CRUMB_ELLIPSIS) : 0;
-    const width = measure(segments[i]!);
-    if (used + width + ellipsis > availablePx) break;
-    visible.unshift(segments[i]!);
-    used += width;
-  }
-  return { visible, collapsed: visible.length < segments.length };
-}
-
 // --------------------------------------------------------------------------------- drop
 
 /**
@@ -330,6 +284,19 @@ export function previewKindFor(name: string): PreviewKind {
   if (ext === "md") return "md";
   if (TEXT_EXTS.has(ext)) return "text";
   return "unknown";
+}
+
+/**
+ * How a file previews in the read-only file browser (the UI package's `FileBrowser`), from its
+ * name: the Workspace panel's own classification, minus the two answers a read-only browser
+ * cannot give. HTML reads as its source, since rendering it would need the panel's sandboxed
+ * frame; a name that says nothing reads as unsupported, since nobody there is reading the first
+ * bytes to find out.
+ */
+export function previewKindOf(name: string): FileBrowserPreviewKind {
+  const kind = previewKindFor(name);
+  if (kind === "html") return "text";
+  return kind === "unknown" ? "unsupported" : kind;
 }
 
 /**
@@ -557,19 +524,6 @@ export interface ExcerptReference {
   excerpt: string;
   /** What goes into the message: the excerpt as a Markdown blockquote. */
   text: string;
-}
-
-/**
- * A file name split for display: the stem, and the extension with its dot still on it.
- *
- * Only a real extension counts. A leading dot is part of the name — `.gitignore` is all stem —
- * and a name with no dot has no extension at all. Splitting it lets the stem ellipsize while the
- * extension stays: the extension is the shortest part and says what kind of thing this is, so it
- * is the last thing worth losing when the row runs out of room.
- */
-export function splitFileName(name: string): { stem: string; ext: string } {
-  const dot = name.lastIndexOf(".");
-  return dot > 0 ? { stem: name.slice(0, dot), ext: name.slice(dot) } : { stem: name, ext: "" };
 }
 
 /**

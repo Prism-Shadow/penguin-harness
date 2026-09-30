@@ -17,11 +17,11 @@
  * the page expands the ones above the selected document.
  */
 import type { OrgHandbookFile } from "@prismshadow/penguin-server/api";
+import { FileTree } from "@prismshadow/penguin-ui";
+import type { TreeToggle } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/format";
 import type { Locale } from "../../state/locale";
-import { FileTree } from "../../components/ui/file-tree";
-import type { TreeToggle } from "../../components/ui/file-tree";
 import type { HandbookRow } from "./handbook-tree";
 
 /** Collapse-all mark (lucide chevrons-down-up): two chevrons closing on each other. */

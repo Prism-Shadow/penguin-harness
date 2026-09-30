@@ -54,6 +54,7 @@ import {
   Textarea,
   ToggleRow,
   UploadIcon,
+  bodyWithoutFrontmatter,
   buttonClass,
   toastError,
   toastSuccess,
@@ -77,8 +78,6 @@ import {
   planMemoryImport,
 } from "./memory-transfer";
 import type { MemoryImportPlan } from "./memory-transfer";
-
-import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";

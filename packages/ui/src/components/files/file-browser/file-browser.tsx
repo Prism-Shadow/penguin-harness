@@ -1,40 +1,33 @@
 /**
- * The read-only file browser: the shared `FileTree` in an aside on the left, one preview pane
- * on the right. The plugin detail Modal and the Benchmark case dialog are both this, so files
- * that cannot be edited are read the same way wherever they are met — the Workspace files
- * panel draws the same tree, with its own editing, HTML sandbox and selection machinery
- * around it.
+ * The read-only file browser: a `FileTree` in an aside on the left, one preview pane on the
+ * right. The Web App's plugin detail Modal and its Benchmark case dialog are both this, so files
+ * that cannot be edited are read the same way wherever they are met — the Workspace files panel
+ * draws the same tree, with its own editing, HTML sandbox and selection machinery around it.
  *
  * What this owns is the layout and the preview: the two panes, their scroll caps, the header
  * line naming what is open with its Download link, and how each kind of file is drawn —
- * markdown through the chat markdown pipeline, text through the code block, an image and a
- * PDF from their own URLs.
+ * Markdown through the shared pipeline (`Md`), text through the code block, an image and a PDF
+ * from their own URLs.
  *
  * What the host owns is where the files come from: how the rows are produced (the plugin
  * groups a listing it already holds, the case dialog lists one directory per level as it is
- * opened), how a preview's content is fetched, and what a relative markdown reference points
+ * opened), how a preview's content is fetched, and what a relative Markdown reference points
  * at. A row's `path` is the only identifier here — it is what the tree highlights, what
  * `onOpenFile` hands back and what the header prints — so a host whose paths are not unique
- * on their own (the case dialog's two materials) prefixes them itself.
+ * on their own (the case dialog's two materials) prefixes them itself. The words are the host's
+ * too: the four this draws on its own arrive as props.
  */
 import { useMemo } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
-import {
-  CodeBlock,
-  REHYPE_PLUGINS,
-  REMARK_PLUGINS,
-  SETTLED_MD_COMPONENTS,
-  SkeletonList,
-  languageForExtension,
-} from "@prismshadow/penguin-ui";
-import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
-import type { FileTreeRow } from "../../lib/file-tree";
-import { S } from "../../lib/strings";
-import { extOf, previewKindFor } from "../../lib/workspace-tree";
-import { FileTree } from "./file-tree";
-import type { TreeToggle } from "./file-tree";
+import { CodeBlock } from "../../content/code-block/code-block";
+import { languageForFileName } from "../../content/code-block/code-languages";
+import { bodyWithoutFrontmatter } from "../../content/prose/frontmatter";
+import { Md } from "../../content/prose/prose";
+import { SkeletonList } from "../../feedback/skeleton/skeleton";
+import { FileTree } from "../file-tree/file-tree";
+import type { TreeToggle } from "../file-tree/file-tree";
+import type { FileTreeRow } from "../file-tree/tree-rows";
 
 /** A reference naming a scheme of its own (`https:`, `mailto:`) points outside the browsed files. */
 const EXTERNAL_REF_RE = /^[a-z][a-z0-9+.-]*:/i;
@@ -51,18 +44,6 @@ const DEFAULT_PREVIEW_HEIGHT = 50;
 
 /** How a read-only preview draws a file. */
 export type FileBrowserPreviewKind = "text" | "md" | "image" | "pdf" | "unsupported";
-
-/**
- * How a file previews here, from its name: the Workspace panel's own classification, minus the
- * two answers a read-only browser cannot give. HTML reads as its source, since rendering it
- * would need the panel's sandboxed frame; a name that says nothing reads as unsupported, since
- * nobody here is reading the first bytes to find out.
- */
-export function previewKindOf(name: string): FileBrowserPreviewKind {
-  const kind = previewKindFor(name);
-  if (kind === "html") return "text";
-  return kind === "unknown" ? "unsupported" : kind;
-}
 
 /** The file in the preview pane, and everything it takes to draw it. */
 export interface FileBrowserPreview {
@@ -81,29 +62,7 @@ export interface FileBrowserPreview {
   downloadUrl?: string;
 }
 
-export function FileBrowser<Row extends FileTreeRow>({
-  rows,
-  treeLabel,
-  selectedPath,
-  loadingDirs,
-  toggled = null,
-  rowTrailing,
-  treeLoading = false,
-  treeError = null,
-  headerFallback,
-  headerPath,
-  preview,
-  emptyPreview,
-  stripFrontmatter = false,
-  resolveRef,
-  treeWidth = DEFAULT_TREE_WIDTH,
-  treeMaxHeight = DEFAULT_TREE_MAX_HEIGHT,
-  previewHeight = DEFAULT_PREVIEW_HEIGHT,
-  minHeight,
-  className = "",
-  onToggleDir,
-  onOpenFile,
-}: {
+export interface FileBrowserProps<Row extends FileTreeRow> {
   rows: readonly Row[];
   /** The tree's accessible name. */
   treeLabel: string;
@@ -125,10 +84,18 @@ export function FileBrowser<Row extends FileTreeRow>({
   preview: FileBrowserPreview | null;
   /** The preview body while nothing is selected. */
   emptyPreview: string;
+  /** What an open directory holding nothing says in place of its children. */
+  emptyDirLabel: string;
+  /** The note under a preview that stopped short of the whole file. */
+  truncatedLabel: string;
+  /** The preview body for a file this browser cannot draw. */
+  unsupportedLabel: string;
+  /** The header's download link. */
+  downloadLabel: string;
   /** Markdown: drop a leading frontmatter block before rendering. */
   stripFrontmatter?: boolean;
   /**
-   * What a relative markdown reference points at: the URL to load an image from, and the tree
+   * What a relative Markdown reference points at: the URL to load an image from, and the tree
    * path a link opens in place. Called only for a reference that is neither an in-page anchor
    * nor a scheme of its own; null leaves the reference as the file wrote it.
    */
@@ -144,7 +111,35 @@ export function FileBrowser<Row extends FileTreeRow>({
   className?: string;
   onToggleDir: (dir: string) => void;
   onOpenFile: (path: string) => void;
-}) {
+}
+
+export function FileBrowser<Row extends FileTreeRow>({
+  rows,
+  treeLabel,
+  selectedPath,
+  loadingDirs,
+  toggled = null,
+  rowTrailing,
+  treeLoading = false,
+  treeError = null,
+  headerFallback,
+  headerPath,
+  preview,
+  emptyPreview,
+  emptyDirLabel,
+  truncatedLabel,
+  unsupportedLabel,
+  downloadLabel,
+  stripFrontmatter = false,
+  resolveRef,
+  treeWidth = DEFAULT_TREE_WIDTH,
+  treeMaxHeight = DEFAULT_TREE_MAX_HEIGHT,
+  previewHeight = DEFAULT_PREVIEW_HEIGHT,
+  minHeight,
+  className = "",
+  onToggleDir,
+  onOpenFile,
+}: FileBrowserProps<Row>) {
   // The sizes ride in as custom properties rather than as classes: a media query decides where
   // each one applies (the tree column exists only from `md` up), which an inline style cannot
   // say, and a class name composed at runtime is one Tailwind never sees to generate.
@@ -156,8 +151,10 @@ export function FileBrowser<Row extends FileTreeRow>({
   } as CSSProperties;
 
   /**
-   * The markdown adapters, rebuilt only when the host's resolver changes: react-markdown takes
-   * these as element types, so a fresh map every render would remount the whole body.
+   * The Markdown adapters, rebuilt only when the host's resolver changes: react-markdown takes
+   * these as element types, so a fresh map every render would remount the whole body. `Md`
+   * keeps its own fenced-code adapter underneath; the link and image ones are replaced by ones
+   * that know the browsed files.
    */
   const markdownComponents = useMemo<Components>(() => {
     /** What a reference of the file's own points at; null for an external or unresolved one. */
@@ -165,10 +162,7 @@ export function FileBrowser<Row extends FileTreeRow>({
       if (EXTERNAL_REF_RE.test(ref)) return null;
       return resolveRef?.(ref) ?? null;
     };
-    // The chat's settled adapters underneath (the code-block chrome for fenced code), with the
-    // link and image adapters replaced by ones that know the browsed files.
     return {
-      ...SETTLED_MD_COMPONENTS,
       img: ({ src, alt }) => {
         const resolved = typeof src === "string" ? target(src) : null;
         const url = resolved === null ? src : resolved.url;
@@ -214,7 +208,7 @@ export function FileBrowser<Row extends FileTreeRow>({
   /** The note under a preview that stopped short of the whole file. */
   const truncatedNote = (p: FileBrowserPreview): ReactNode => {
     if (p.truncated !== true) return null;
-    return <p className="mt-2 text-xs text-gray-400">{S.files.previewTruncated}</p>;
+    return <p className="mt-2 text-xs text-fg-subtle">{truncatedLabel}</p>;
   };
 
   const previewBody = (): ReactNode => {
@@ -223,17 +217,19 @@ export function FileBrowser<Row extends FileTreeRow>({
       // either, so the pane waits with the tree rather than announcing an empty browser; a
       // listing that failed is done waiting, and the host's empty text says what happened.
       if (treeLoading && treeError === null) return <SkeletonList rows={8} />;
-      return <p className="text-sm text-gray-400">{emptyPreview}</p>;
+      return <p className="text-sm text-fg-subtle">{emptyPreview}</p>;
     }
     if (preview.loading === true) return <SkeletonList rows={8} />;
-    if (preview.error !== undefined) return <p className="text-sm text-red-500">{preview.error}</p>;
+    if (preview.error !== undefined) {
+      return <p className="text-sm text-tone-danger-fg">{preview.error}</p>;
+    }
     if (preview.kind === "image") {
       return (
         <img
           src={preview.url}
           alt={preview.name}
           loading="lazy"
-          className="max-w-full rounded-md border border-gray-200 dark:border-gray-800"
+          className="max-w-full rounded-md border border-line"
         />
       );
     }
@@ -242,7 +238,7 @@ export function FileBrowser<Row extends FileTreeRow>({
         <iframe
           src={preview.url}
           title={preview.name}
-          className="h-[50vh] w-full rounded-md border border-gray-200 dark:border-gray-800"
+          className="h-[50vh] w-full rounded-md border border-line"
         />
       );
     }
@@ -250,14 +246,11 @@ export function FileBrowser<Row extends FileTreeRow>({
       const text = preview.content ?? "";
       return (
         <>
-          <div className="md-body text-sm text-gray-800 dark:text-gray-100">
-            <ReactMarkdown
-              remarkPlugins={REMARK_PLUGINS}
-              rehypePlugins={REHYPE_PLUGINS}
+          <div className="md-body text-sm text-fg">
+            <Md
+              text={stripFrontmatter ? bodyWithoutFrontmatter(text) : text}
               components={markdownComponents}
-            >
-              {stripFrontmatter ? bodyWithoutFrontmatter(text) : text}
-            </ReactMarkdown>
+            />
           </div>
           {truncatedNote(preview)}
         </>
@@ -268,7 +261,7 @@ export function FileBrowser<Row extends FileTreeRow>({
       return (
         <>
           <CodeBlock
-            language={languageForExtension(extOf(preview.name))}
+            language={languageForFileName(preview.name)}
             code={code}
             highlight={code.length <= HIGHLIGHT_LIMIT}
           />
@@ -276,19 +269,21 @@ export function FileBrowser<Row extends FileTreeRow>({
         </>
       );
     }
-    return <p className="text-sm text-gray-500 dark:text-gray-400">{S.files.previewUnsupported}</p>;
+    return <p className="text-sm text-fg-muted">{unsupportedLabel}</p>;
   };
 
   return (
     <div
       style={sizes}
-      className={`grid min-h-[var(--fb-min-height)] grid-cols-1 overflow-hidden rounded-md border border-gray-200 md:grid-cols-[var(--fb-tree-width)_minmax(0,1fr)] dark:border-gray-800 ${className}`}
+      className={`grid min-h-[var(--fb-min-height)] grid-cols-1 overflow-hidden rounded-md border border-line md:grid-cols-[var(--fb-tree-width)_minmax(0,1fr)] ${className}`}
     >
       {/* Both panes scroll on their own inside fixed heights, so whatever the host draws above
           the browser stays put while a file is read. */}
-      <aside className="border-b border-gray-200 bg-gray-50/60 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-950/30">
+      <aside className="border-b border-line bg-surface-inset/60 md:border-b-0 md:border-r">
         <div className="max-h-44 overflow-y-auto md:max-h-[var(--fb-tree-max-height)]">
-          {treeError !== null && <p className="px-3 py-2 text-xs text-red-500">{treeError}</p>}
+          {treeError !== null && (
+            <p className="px-3 py-2 text-xs text-tone-danger-fg">{treeError}</p>
+          )}
           {/* A `tree` with no `treeitem` in it is not one: while the listing is in flight, or
               when it failed or held nothing, the aside carries the skeleton or the error and
               no tree at all. */}
@@ -301,7 +296,7 @@ export function FileBrowser<Row extends FileTreeRow>({
               loadingDirs={loadingDirs}
               toggled={toggled}
               rowTrailing={rowTrailing}
-              emptyLabel={S.files.empty}
+              emptyLabel={emptyDirLabel}
               onToggleDir={onToggleDir}
               onOpenFile={onOpenFile}
             />
@@ -310,17 +305,17 @@ export function FileBrowser<Row extends FileTreeRow>({
       </aside>
 
       <section className="min-w-0">
-        <div className="flex min-h-11 flex-wrap items-center gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800">
+        <div className="flex min-h-11 flex-wrap items-center gap-2 border-b border-line px-3 py-2">
           <div className="min-w-0 flex-1">
-            <p className="truncate font-mono text-xs text-gray-500">{headerLine()}</p>
+            <p className="truncate font-mono text-xs text-fg-muted">{headerLine()}</p>
           </div>
           {preview !== null && preview.downloadUrl !== undefined && (
             <a
               href={preview.downloadUrl}
               download={preview.name}
-              className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+              className="rounded-control px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors duration-150 hover:bg-line-muted hover:text-fg"
             >
-              {S.files.download}
+              {downloadLabel}
             </a>
           )}
         </div>

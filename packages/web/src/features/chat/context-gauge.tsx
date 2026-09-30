@@ -68,7 +68,14 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
-import { ConfirmModal, Input, Legend, Ring, usePortalPanel } from "@prismshadow/penguin-ui";
+import {
+  ConfirmModal,
+  Input,
+  Legend,
+  Ring,
+  usePointerDrag,
+  usePortalPanel,
+} from "@prismshadow/penguin-ui";
 import { getSessionContext } from "../../api/endpoints";
 import {
   MIN_COMPACTION_THRESHOLD,
@@ -83,7 +90,6 @@ import {
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { usePointerDrag } from "../dock/use-pointer-drag";
 import { contextComposition } from "./context-parts";
 import type { ContextPartKey } from "./context-parts";
 

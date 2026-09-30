@@ -35,11 +35,11 @@ const WEB = SCAN.files.filter((file) => file.root === "web");
 
 /**
  * The homes §3 names, as the web app spells them today. It has no Spinner of its own (the
- * package's is the one), the chevron's rotation left with the chevron, and the sheet's and the
- * drawer's motion with them (W3).
+ * package's is the one), the chevron's rotation left with the chevron, the sheet's and the
+ * drawer's motion with them (W3), and the launcher fan's with the launcher (W7).
  */
 const POLICY: DeslopPolicy = {
-  transformMotion: ["dock-launcher.tsx"],
+  transformMotion: [],
   entranceMotion: [],
   pulseHomes: ["dot.tsx", "streaming-caret.tsx"],
   spinnerHomes: [],
@@ -58,45 +58,26 @@ const POLICY: DeslopPolicy = {
 const ALLOWLIST: DeslopAllowlist = {
   "components/account/update-modal.tsx": { 11: [2, "W1b"] },
   "components/account/update-row.tsx": { 11: [2, "W1b"] },
-  "components/layout/app-layout.tsx": { 1: [1, "W7"] },
-  "components/layout/sidebar.tsx": {
-    1: [5, "W1b+W7"],
-    12: [5, "W7"],
-    13: [2, "W7"],
-    14: [2, "W7"],
-  },
-  "components/ui/session-row-menu.tsx": { 1: [1, "W1b"] },
+  "components/layout/sidebar.tsx": { 1: [2, "W1b"] },
   "features/chat/agent-topology-view.tsx": { 12: [1, "W6"], 13: [3, "W6"] },
   "features/chat/chat-input.tsx": { 7: [1, "W6"], 12: [7, "W6"], 13: [5, "W6"] },
   "features/chat/chat-page.tsx": { 6: [1, "W1b"], 12: [2, "W6"], 13: [3, "W6"] },
   "features/chat/conversation-outline.tsx": { 1: [1, "W1b"], 6: [2, "W1b"], 12: [1, "W6"] },
   "features/chat/draft-view.tsx": { 12: [1, "W6"], 13: [1, "W6"] },
-  "features/chat/drop-zone.tsx": { 18: [1, "W7"] },
   "features/chat/memory-view.tsx": { 13: [2, "W6"] },
   "features/chat/message-item.tsx": { 4: [2, "W6"], 6: [1, "W6"], 13: [3, "W6"] },
   "features/chat/message-stream.tsx": { 11: [2, "W1b"] },
-  "features/chat/shortcuts-folder.tsx": { 12: [1, "W7"] },
   "features/chat/step-banner.tsx": { 13: [1, "W6"], 14: [2, "W6"] },
   "features/chat/subagent-chip.tsx": { 11: [2, "W1b"], 13: [1, "W6"] },
   "features/chat/subagents-view.tsx": { 13: [2, "W6"], 14: [2, "W6"] },
   "features/chat/task-stats-line.tsx": { 6: [1, "W1b"], 13: [1, "W6"] },
   "features/chat/tool-call-card.tsx": { 6: [2, "W6"] },
   "features/chat/work-group.tsx": { 13: [1, "W6"] },
-  "features/chat/workspace-browser.tsx": {
-    1: [1, "W7"],
-    11: [4, "W1b"],
-    12: [3, "W7"],
-    13: [1, "W7"],
-    18: [1, "W7"],
-  },
-  "features/chat/workspace-tree-view.tsx": { 13: [1, "W7"] },
+  "features/chat/workspace-browser.tsx": { 11: [4, "W1b"] },
   "features/company/channel-composer.tsx": { 13: [2, "W6"] },
   "features/company/channel-header.tsx": { 13: [3, "W6"] },
   "features/company/channel-view.tsx": { 12: [1, "W6"], 13: [6, "W6"] },
   "features/company/chart-card.tsx": { 6: [1, "W1b"] },
-  "features/dock/dock-drag.tsx": { 3: [1, "W7"], 12: [1, "W7"] },
-  "features/dock/dock-launcher.tsx": { 13: [1, "W7"], 18: [3, "W7"], 19: [4, "W7"] },
-  "features/dock/dock-panel.tsx": { 1: [2, "W7"], 12: [2, "W7"], 13: [1, "W7"] },
   "features/models/models-page.tsx": { 11: [8, "W1b"] },
   "features/models/protocol-suffix.tsx": { 11: [2, "W1b"] },
   "features/semantic-id/semantic-id-field.tsx": { 11: [2, "W1b"] },

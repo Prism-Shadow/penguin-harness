@@ -7,15 +7,14 @@
  * The two entries that hold for either kind come first — copy the relative path, add a
  * reference to the conversation — and the kind-specific one comes last: a folder takes an
  * upload, a file gives a download. Download is an `<a download>` rather than a button, the
- * same shape the preview header already uses: it is the browser's own save, not a fetch this
+ * same shape the preview header already uses: it is the browser's own save, not a fetch the
  * app has to run.
  *
- * The rows are the UI package's Menu rows at the small density, the one every overflow and
- * context menu in the app uses, so they read the same as the Session row's menu.
+ * The rows are the Menu rows at the small density, the one every overflow and context menu in
+ * the app uses, so they read the same as the Session row's menu.
  */
-import { ICONS, Menu, MenuItem } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { STAT_ICONS } from "../../lib/stat-icons";
+import { ICONS } from "../../icons/icons";
+import { Menu, MenuItem } from "../../overlays/menu/menu";
 
 /** The one Workspace entry a menu is acting on. */
 export interface FileMenuTarget {
@@ -23,8 +22,20 @@ export interface FileMenuTarget {
   kind: "dir" | "file";
 }
 
+/** The rows' words, from the caller's dictionary. */
+export interface WorkspaceFileMenuLabels {
+  copyPath: string;
+  addToChat: string;
+  addSelectionToChat: string;
+  uploadHere: string;
+  download: string;
+  rename: string;
+  delete: string;
+}
+
 export function WorkspaceFileMenuRows({
   target,
+  labels,
   downloadHref,
   downloadName,
   onCopyPath,
@@ -36,6 +47,7 @@ export function WorkspaceFileMenuRows({
   onClose,
 }: {
   target: FileMenuTarget;
+  labels: WorkspaceFileMenuLabels;
   /** The file's download URL; never asked for a directory. */
   downloadHref: (path: string) => string;
   downloadName: (path: string) => string;
@@ -52,7 +64,7 @@ export function WorkspaceFileMenuRows({
    * Renames or moves the file — one action, because both are the same write of a new path, and
    * offering them separately would mean asking which one the user meant. Files only: a
    * directory has no version marker, so the precondition that keeps this from overwriting the
-   * Agent's work cannot be stated for one.
+   * agent's work cannot be stated for one.
    */
   onRename?: (target: FileMenuTarget) => void;
   /** Deletes the file, behind a confirmation and the same precondition. */
@@ -62,34 +74,30 @@ export function WorkspaceFileMenuRows({
 }) {
   return (
     <Menu density="sm">
-      <MenuItem
-        glyph={STAT_ICONS.copy}
-        label={S.files.copyPath}
-        onSelect={() => onCopyPath(target)}
-      />
+      <MenuItem glyph={ICONS.copy} label={labels.copyPath} onSelect={() => onCopyPath(target)} />
       <MenuItem
         glyph={ICONS.messagePlus}
-        label={S.files.addToChat}
+        label={labels.addToChat}
         onSelect={() => onAddToChat(target)}
       />
       {onAddSelection !== undefined && (
         <MenuItem
           glyph={ICONS.messagePlus}
-          label={S.files.addSelectionToChat}
+          label={labels.addSelectionToChat}
           onSelect={onAddSelection}
         />
       )}
       {target.kind === "dir" ? (
         <MenuItem
           glyph={ICONS.upload}
-          label={S.files.uploadHere}
+          label={labels.uploadHere}
           onSelect={() => onUploadInto(target.path)}
         />
       ) : (
         <>
           <MenuItem
             glyph={ICONS.download}
-            label={S.files.download}
+            label={labels.download}
             href={downloadHref(target.path)}
             download={downloadName(target.path)}
             onSelect={onClose}
@@ -100,14 +108,14 @@ export function WorkspaceFileMenuRows({
           {onRename !== undefined && (
             <MenuItem
               glyph={ICONS.penLine}
-              label={S.files.renameTitle}
+              label={labels.rename}
               onSelect={() => onRename(target)}
             />
           )}
           {onDelete !== undefined && (
             <MenuItem
               glyph={ICONS.trash}
-              label={S.common.delete}
+              label={labels.delete}
               danger
               onSelect={() => onDelete(target)}
             />

@@ -1,11 +1,11 @@
 /**
- * frontmatter.ts unit tests: stripping the leading YAML block from a memory file's content,
- * shared by the agent-settings memory tab and the chat Memory panel. The cases that matter are
- * the ones a hand-written topic file actually produces — no block, an unterminated block, CRLF,
- * a BOM, and a `---` rule further down the body.
+ * The frontmatter helper (src/components/content/prose/frontmatter.ts): stripping the leading YAML
+ * block from a Markdown file's content, shared by the memory views and the file browser. The cases
+ * that matter are the ones a hand-written topic file actually produces — no block, an unterminated
+ * block, CRLF, a BOM, and a `---` rule further down the body.
  */
 import { describe, expect, it } from "vitest";
-import { bodyWithoutFrontmatter } from "../src/lib/frontmatter";
+import { bodyWithoutFrontmatter } from "../src/components/content/prose/frontmatter";
 
 describe("bodyWithoutFrontmatter", () => {
   it("strips a well-formed block and keeps the body verbatim", () => {

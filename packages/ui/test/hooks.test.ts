@@ -68,15 +68,15 @@ const APPENDIX_A = [
  * it exists: the last test below fails on a host no scanned file declares.
  *
  * Glass is for the layers that float over the page (the composer card, dialogs, menus, popovers,
- * tooltips); the eyebrow and display rungs for the sidebar's list label and the page titles; live
- * marks for the spinner, a pulsing state dot and the machines page's working marks; frames for
- * the transcript's cards, the code block, the page's cards and a table that is its own box; the
- * shell for the app layout; a decorative icon for the rows and headers whose label already says
- * what the icon says (sidebar rows and group headers, a nav row's glyph in a rail, a menu row's
- * glyph, a tab, an empty state) — a session row is not a host, its avatar and marks carry
- * information; a tree for a file tree and a work group's steps; a field for a settings row;
- * activity for the transcript's work in progress (the work group's header, a tool call, the
- * thinking row).
+ * tooltips, the floating launcher); the eyebrow and display rungs for the sidebar's list label
+ * and the page titles; live marks for the spinner, a pulsing state dot and the machines page's
+ * working marks; frames for the transcript's cards, the code block, the page's cards and a table
+ * that is its own box; the shell for the app window; a decorative icon for the rows and headers
+ * whose label already says what the icon says (a nav row's glyph in the sidebar or a rail, a group
+ * header's, a menu row's glyph, a tab, an empty state) — a session row is not a host, its avatar
+ * and marks carry information; a tree for a file tree and a work group's steps; a field for a
+ * settings row; activity for the transcript's work in progress (the work group's header, a tool
+ * call, the thinking row).
  */
 const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-glass": [
@@ -89,9 +89,14 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "Tooltip",
     "TooltipLayer",
     "TooltipPanel",
+    // The floating launcher (W7): its ball and caption, and the fan's entries, float over the
+    // conversation with content moving underneath.
+    "LauncherBall",
+    "LauncherFan",
   ],
-  // `Text` carries it for its eyebrow role (W5), the one door a group label takes in new code.
-  "ui-eyebrow": ["Sidebar", "GroupHeader", "PagedDialog", "Text"],
+  // `Text` carries it for its eyebrow role (W5), the one door a group label takes in new code —
+  // the sidebar's list label among them (W7).
+  "ui-eyebrow": ["GroupHeader", "PagedDialog", "Text"],
   // The page titles are `PageHeader`'s; the usage page and the draft view's hero still write
   // their own until their waves (W8, W6).
   "ui-display": ["Heading", "PageHeader", "EmptyState", "UsagePage", "DraftView"],
@@ -99,14 +104,14 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The transcript's cards and the code block, and the page-level boxes (W4): the card and a
   // table that is its own box.
   "ui-frame": ["ToolCallCard", "WorkGroup", "CodeBlock", "Card", "Table"],
-  "ui-underline-nav": ["Tabs"],
-  "ui-shell": ["AppLayout"],
+  // The page tab bar, and a dock's tab strip (W7).
+  "ui-underline-nav": ["Tabs", "DockTabs"],
+  // The app window (W7: the package's shell; the web's layout route renders it).
+  "ui-shell": ["AppShell"],
   "ui-icon-decor": [
     "GlyphIcon",
-    "Sidebar",
     "NavRow",
     "SettingsDialog",
-    "MenuItemGlyph",
     "MenuItem",
     "GroupHeader",
     "Tabs",

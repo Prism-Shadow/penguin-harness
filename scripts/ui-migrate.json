@@ -723,6 +723,92 @@
         }
       ]
     },
+    "W7": {
+      "packages/web/src/features/dock/use-pointer-drag": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/layout/resize-handle/use-pointer-drag.ts",
+          "names": ["usePointerDrag"]
+        }
+      ],
+      "packages/web/src/lib/file-tree": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/files/file-tree/tree-rows.ts",
+          "names": ["FileTreeRow", "TreeKeyAction", "subtreeEnd", "treeKeyStep"]
+        }
+      ],
+      "packages/web/src/components/ui/file-tree": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/files/file-tree/file-tree.tsx",
+          "names": ["FileTree", "TreeToggle"]
+        }
+      ],
+      "packages/web/src/components/ui/file-browser": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/files/file-browser/file-browser.tsx",
+          "names": ["FileBrowser", "FileBrowserPreview", "FileBrowserPreviewKind"]
+        },
+        {
+          "owner": "W7-A",
+          "target": "packages/web/src/lib/workspace-tree",
+          "dest": "packages/web/src/lib/workspace-tree.ts",
+          "names": ["previewKindOf"]
+        }
+      ],
+      "packages/web/src/features/chat/workspace-file-menu": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/files/workspace-file-menu/workspace-file-menu.tsx",
+          "names": ["WorkspaceFileMenuRows", "FileMenuTarget"]
+        }
+      ],
+      "packages/web/src/features/chat/workspace-editor": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/workspace-file-editor/workspace-file-editor.tsx",
+          "names": ["WorkspaceFileEditor"]
+        }
+      ],
+      "packages/web/src/lib/workspace-tree": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/navigation/breadcrumbs/crumb-fit.ts",
+          "names": ["CRUMB_ELLIPSIS", "CrumbLayout", "visibleCrumbSegments", "splitFileName"]
+        },
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/layout/resize-handle/resize-handle.tsx",
+          "names": ["TREE_DIVIDER_PX→RESIZE_HANDLE_PX"]
+        }
+      ],
+      "packages/web/src/lib/frontmatter": [
+        {
+          "owner": "W7-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/prose/frontmatter.ts",
+          "names": ["bodyWithoutFrontmatter"]
+        }
+      ],
+      "packages/web/src/features/chat/panels-toolbar": [
+        {
+          "owner": "W7-C",
+          "target": "packages/web/src/features/chat/dock-toggles",
+          "dest": "packages/web/src/features/chat/dock-toggles.tsx",
+          "names": ["PanelsToolbar→DockToggles", "PanelsToolbarProps→DockTogglesProps"]
+        }
+      ]
+    },
     "W8": {
       "packages/web/src/features/palette/command-palette": [
         {

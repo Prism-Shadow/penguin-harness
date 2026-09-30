@@ -127,6 +127,11 @@ export const ICONS = {
    * it sits level with the other marks of a stats row.
    */
   clockCompact: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2",
+  /**
+   * A clock read backwards (lucide history): the face opens into an arrow turning back. Going
+   * back to where the reader was, which a bare clock face — "ordered by time" — does not say.
+   */
+  history: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5M12 7v5l4 2",
   /** A calendar (lucide calendar): two rings, the header rule and the page. */
   calendar:
     "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
@@ -236,6 +241,13 @@ export const ICONS = {
   chevronLeft: "M15 18l-6-6 6-6",
   /** The same chevron pointing right: the next page. */
   chevronRight: "M9 18l6-6-6-6",
+  /**
+   * A chevron pointing left at an upright bar on the left edge: fold a column away against that
+   * edge — the sidebar collapsing to its rail.
+   */
+  chevronLeftPipe: "M15 6l-6 6 6 6M4 4v16",
+  /** The mirror: a chevron pointing right at a bar on the right edge, unfolding the column. */
+  chevronRightPipe: "M9 6l6 6-6 6M20 4v16",
 
   // --- Layout -------------------------------------------------------------------------------
 
@@ -243,6 +255,11 @@ export const ICONS = {
   panelBottom: "M4 5h16v14H4zM4 14h16",
   /** A window with a right pane. */
   panelRight: "M4 5h16v14H4zM14 5v14",
+  /**
+   * A pane with an arrow escaping its top-right corner: this moves out into a window of its own.
+   * A different drawing from `externalLink`, whose arrow leaves from the pane's edge.
+   */
+  boxArrowOut: "M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5",
   /** Four square tiles of two heights. */
   tiles: "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z",
   /** Four rounded tiles of two heights (lucide layout-dashboard). */
@@ -263,6 +280,10 @@ export const ICONS = {
     "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM8 7v7M12 7v4M16 7v9",
   /** Bars of three heights on a baseline. */
   barChart: "M4 20V10m6 10V4m6 16v-7m4 7H2",
+  /** Three full-width lines (lucide menu): the phone's button that opens the navigation drawer. */
+  menu: "M4 6h16M4 12h16M4 18h16",
+  /** Three sliders on their tracks (lucide sliders-horizontal): a list's display options. */
+  slidersHorizontal: "M21 5h-7M10 5H3M21 12h-9M8 12H3M21 19h-5M12 19H3M14 2v6M8 9v6M16 16v6",
 
   // --- Status -------------------------------------------------------------------------------
 
