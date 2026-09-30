@@ -7,8 +7,15 @@
  * and the one stacked on it learns the number; an owner reopens it. Nothing here starts a
  * server or a Session.
  */
+import fs from "node:fs/promises";
 import { beforeEach, describe, expect, it } from "vitest";
-import { RoadmapError, type RoadmapService } from "../src/index.js";
+import {
+  RoadmapError,
+  ledgerPath,
+  parseLedger,
+  type LedgerLine,
+  type RoadmapService,
+} from "../src/index.js";
 import { BOSS, ORG, PROJECT, asAgent, post, world, writeChannel, type World } from "./fakes.js";
 
 const P = PROJECT;
@@ -22,6 +29,11 @@ async function refusal(run: Promise<unknown>): Promise<{ status: number; code: s
     throw err;
   }
   throw new Error("expected a refusal");
+}
+
+/** The organization's roadmap ledger as it stands on disk. */
+async function ledgerOf(root: string): Promise<LedgerLine[]> {
+  return parseLedger(await fs.readFile(ledgerPath(root, P, O), "utf8")).lines;
 }
 
 const BODY = `# Queue migration
@@ -706,30 +718,78 @@ describe("the approvals", () => {
     return n;
   }
 
-  it("needs a person and the moderator: one alone tells nobody, both tell the owner — who, and when — with no command", async () => {
+  it("needs a person and the moderator: one alone creates nothing, the second creates the proposal, links it and tells the owner its number", async () => {
     const n = await established();
     const first = await service.approve(P, O, n, "ledger", BOSS);
     expect(first.roadmap.delegations.ledger).toMatchObject({
       stage: "brief",
       approvals: { person: { by: "user:boss" } },
     });
+    expect(w.proposals.created).toEqual([]);
     expect(w.gateway.desks).toEqual([]);
+    const lines = (await ledgerOf(w.root)).length;
     const both = await service.approve(P, O, n, "ledger", asAgent("acme_dev"));
+    // Created through company-proposals: the owner the author, the item's title and brief.
+    expect(w.proposals.created).toEqual([
+      {
+        projectId: P,
+        orgId: O,
+        author: "acme_dev",
+        title: "Roadmap ledger",
+        brief: "An append-only ledger.",
+        delegatedBy: "agent:acme_dev",
+        roadmap: { number: n, key: "ledger" },
+      },
+    ]);
     expect(both.roadmap.delegations.ledger).toMatchObject({
       stage: "delegated",
+      proposal: 200,
       delivered: true,
       approvals: { person: { by: "user:boss" }, moderator: { by: "agent:acme_dev" } },
     });
-    expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_dev"]);
+    expect((await ledgerOf(w.root)).slice(lines).map((l) => l.kind)).toEqual([
+      "approved",
+      "delegated",
+      "linked",
+    ]);
+    expect((await ledgerOf(w.root)).at(-1)).toMatchObject({
+      kind: "linked",
+      number: n,
+      key: "ledger",
+      proposal: 200,
+      by: "agent:acme_dev",
+    });
+    // The owner is told once, with the number; the one stacked on it learns the number too.
+    expect(w.gateway.desks.map((d) => d.agentId)).toEqual(["acme_dev", "acme_web"]);
     const told = w.gateway.desks[0]!.text;
     expect(told).toContain('Your item [ledger] "Roadmap ledger" is approved: by user:boss');
     expect(told).toContain("and by the moderator agent:acme_dev");
     expect(told).toContain("An append-only ledger.");
     expect(told).toContain("not stacked on another proposal");
+    expect(told).toContain("proposal #200");
+    expect(told).not.toContain("may be created now");
     expect(told).not.toContain("penguin org proposal create");
     expect(told).not.toContain("curl");
+    expect(w.gateway.desks[1]!.text).toContain("is proposal #200 now");
     // The other items are still briefs.
     expect(both.roadmap.delegations.page).toMatchObject({ stage: "brief", approvals: {} });
+  });
+
+  it("records no approval when the proposal cannot be created: the item stays a brief and the approval can be given again", async () => {
+    const n = await established();
+    await service.approve(P, O, n, "ledger", asAgent("acme_dev"));
+    const lines = (await ledgerOf(w.root)).length;
+    w.proposals.refuse = "author must be an employee of acme: acme_dev";
+    expect(await refusal(service.approve(P, O, n, "ledger", BOSS))).toEqual({
+      status: 409,
+      code: "proposal_not_created",
+    });
+    expect(await ledgerOf(w.root)).toHaveLength(lines);
+    expect(w.gateway.desks).toEqual([]);
+    const again = await service.approve(P, O, n, "ledger", BOSS);
+    expect(again.roadmap.delegations.ledger).toMatchObject({ stage: "delegated", proposal: 200 });
+    // The creation is recorded in the person's name when the person's approval completes it.
+    expect(w.proposals.created.map((c) => c.delegatedBy)).toEqual(["user:boss"]);
   });
 
   it("is given by a person or the moderator only, once each, to an established roadmap's proposal items", async () => {
@@ -776,7 +836,8 @@ describe("the approvals", () => {
       delivered: false,
       approvals: {},
     });
-    // Nothing to start: its owner is told nothing, and there is nothing left to approve.
+    // Nothing to start: nothing is created, its owner is told nothing, and there is nothing left to approve.
+    expect(w.proposals.created).toEqual([]);
     expect(w.gateway.desks).toEqual([]);
     expect(await refusal(service.approve(P, O, n, "page", BOSS))).toEqual({
       status: 409,
@@ -793,7 +854,7 @@ describe("the approvals", () => {
     expect(again.roadmap.delegations.ledger).toMatchObject({ stage: "delegated", proposal: 60 });
   });
 
-  it("links a proposal only to an approved item, and tells the owner stacked on it the number", async () => {
+  it("is linked by its owner only after both approvals, which have linked it already, and tells the owner stacked on it the number", async () => {
     const n = await established();
     expect(await refusal(service.link(P, O, n, "ledger", 60, asAgent("acme_dev")))).toEqual({
       status: 409,
@@ -801,19 +862,15 @@ describe("the approvals", () => {
     });
     await service.approve(P, O, n, "ledger", BOSS);
     await service.approve(P, O, n, "ledger", asAgent("acme_dev"));
+    expect(w.gateway.desks).toContainEqual({
+      agentId: "acme_web",
+      text: `[roadmap #${n} «Queue migration»] "Roadmap ledger", which your item [page] "Side panel" is stacked on, is proposal #200 now: base your branch on that one's.`,
+    });
     w.gateway.desks = [];
     expect(await refusal(service.link(P, O, n, "ledger", 60, asAgent("acme_web")))).toEqual({
       status: 403,
       code: "not_owner",
     });
-    const { roadmap } = await service.link(P, O, n, "ledger", 60, asAgent("acme_dev"));
-    expect(roadmap.delegations.ledger?.proposal).toBe(60);
-    expect(w.gateway.desks).toEqual([
-      {
-        agentId: "acme_web",
-        text: `[roadmap #${n} «Queue migration»] "Roadmap ledger", which your item [page] "Side panel" is stacked on, is proposal #60 now: base your branch on that one's.`,
-      },
-    ]);
     expect((await refusal(service.link(P, O, n, "tests", 61, BOSS))).status).toBe(404);
   });
 

@@ -12,7 +12,8 @@
  * never writes it); every employee in the room gets its desk cloned for the room — a session of
  * its own opened through the organization gateway — and the room's messages reach those
  * sessions through the session runtime (service.ts's relay). Establishing a roadmap ends the
- * discussion and delegates each proposal to its owner, who creates it with company-proposals.
+ * discussion; a proposal item's second approval (a person's and the moderator's) creates its
+ * proposal in company-proposals — through that plugin's module, wired below — and links it.
  */
 import type { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/plugin";
@@ -27,6 +28,7 @@ import type {
   SessionIndex,
 } from "@prismshadow/penguin-server/plugin";
 import { RoadmapService } from "./service.js";
+import { ProposalCreator } from "./proposals.js";
 import { ROUTES_ID, roadmapRoutes } from "./routes.js";
 import { PAGE_ROUTES_ID, pageRoutes } from "./page.js";
 import { claimListeners, roomClaim, type ClaimListener } from "./claim.js";
@@ -90,6 +92,7 @@ export {
   pageRoutes,
 } from "./page.js";
 export { claimListeners, discussingRoomOf, roomClaim } from "./claim.js";
+export { ProposalCreator };
 export type { ChannelRef, ClaimListener } from "./claim.js";
 
 /** The channel claim's contribution id, as the manifest names it. */
@@ -186,6 +189,7 @@ export class CompanyRoadmapsPlugin {
   @Use("RuntimeModule") private readonly paths!: Paths;
   @Use("RuntimeModule") private readonly log!: Log;
   @Use("PluginConfigModule") private readonly pluginConfig!: PluginConfig;
+  @Use("CompanyProposalsPlugin") private readonly proposals!: ProposalCreator;
   @Bind(ROUTES_ID) routes!: Hono;
   @Bind(PAGE_ROUTES_ID) page!: Hono;
 
@@ -194,6 +198,7 @@ export class CompanyRoadmapsPlugin {
       gateway: this.gateway,
       runner: this.runner,
       sessions: this.sessions,
+      proposals: this.proposals,
       root: this.paths.root,
       log: this.log,
       pluginConfig: this.pluginConfig,

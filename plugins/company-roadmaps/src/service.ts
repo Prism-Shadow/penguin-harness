@@ -9,11 +9,12 @@
  * one: the room reaches the clones, never the desks, and an organization that runs on another
  * machine is relayed there, not from its mirror here. The moderator
  * keeps the draft (a record, a body written as a paper, items that are only briefs); nothing
- * is created while the room discusses. Establishing ends the discussion and delegates every
- * item at once: a proposal item is a line on its owner's desk (the owner creates it with
- * company-proposals and links its number back), stacked on the previous proposal item unless
- * it says otherwise; a roadmap item becomes a derived roadmap waiting for its room. An owner
- * who finds the roadmap lacking reopens it, and the room discusses again.
+ * is created while the room discusses. Establishing ends the discussion; a proposal item
+ * waits there as a brief until a person and the moderator approve it, and the second approval
+ * creates its proposal through company-proposals (its owner the author), links it and tells
+ * the owner the number — stacked on the previous proposal item unless it says otherwise. A
+ * roadmap item becomes a derived roadmap waiting for its room. An owner who finds the roadmap
+ * lacking reopens it, and the room discusses again.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -28,6 +29,7 @@ import type {
   SessionIndex,
 } from "@prismshadow/penguin-server/plugin";
 import { CONFIG_GROUP, configOf, type RoadmapConfig } from "./config.js";
+import type { ProposalCreator } from "./proposals.js";
 import {
   Ledger,
   LEDGER_FILE,
@@ -100,6 +102,8 @@ export interface ServiceDeps {
   runner: Pick<MessagingTaskRunner, "statusOf" | "steer" | "startTask">;
   /** Whether a room session still exists. */
   sessions: Pick<SessionIndex, "findById">;
+  /** company-proposals' creation: what an item's second approval calls. */
+  proposals: ProposalCreator;
   /** The data root (Paths.root). */
   root: string;
   log: Pick<Log, "line">;
@@ -812,11 +816,15 @@ export class RoadmapService {
   }
 
   /**
-   * One of the two approvals a proposal item needs before its proposal may be created: a person
+   * One of the two approvals a proposal item needs before its proposal is created: a person
    * approves as the person, the moderator as the moderator; nobody else approves, and nobody
-   * approves twice. Only an established roadmap's items, and only while they are briefs. When
-   * the brief has both, its owner is told — with who approved and when — and the item is
-   * delegated; nothing is created here.
+   * approves twice. Only an established roadmap's items, and only while they are briefs.
+   *
+   * The second approval creates the proposal — through company-proposals, its owner the
+   * author, its title and brief the item's — before anything is recorded here: a creation
+   * that fails fails the approval, which stands unrecorded and can be given again. Then the
+   * approval, the delegation and the link are recorded, the owner is told the number (with
+   * who approved and when), and the owners stacked on the item learn it too.
    */
   async approve(
     projectId: string,
@@ -858,6 +866,26 @@ export class RoadmapService {
           `Item ${key} has the ${role}'s approval already (${d.approvals[role]!.by}).`,
         );
       }
+      const other = role === "person" ? d.approvals.moderator : d.approvals.person;
+      let proposal: number | null = null;
+      if (other !== undefined) {
+        try {
+          proposal = await this.deps.proposals.createFromRoadmap(projectId, orgId, {
+            author: item.owner,
+            title: item.title,
+            brief: d.brief,
+            delegatedBy: caller.principal,
+            roadmap: { number, key },
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          throw new RoadmapError(
+            409,
+            "proposal_not_created",
+            `Item ${key}'s proposal could not be created, so this approval is not recorded: ${message}`,
+          );
+        }
+      }
       await ledger.append({
         kind: "approved",
         number,
@@ -869,7 +897,7 @@ export class RoadmapService {
       const hints: string[] = [];
       const now = this.require(ledger, number).delegations[key]!;
       const { person, moderator: mod } = now.approvals;
-      if (person !== undefined && mod !== undefined) {
+      if (proposal !== null && person !== undefined && mod !== undefined) {
         const base = now.base === null ? null : (r.items.find((x) => x.key === now.base) ?? null);
         const baseProposal = now.base === null ? undefined : r.delegations[now.base]?.proposal;
         const res = await this.deliver(
@@ -890,6 +918,7 @@ export class RoadmapService {
                   },
             person,
             moderator: mod,
+            proposal,
           }),
           caller.principal,
           hints,
@@ -906,6 +935,8 @@ export class RoadmapService {
           ...(res.error !== undefined ? { error: res.error } : {}),
           by: caller.principal,
         });
+        await ledger.append({ kind: "linked", number, key, proposal, by: caller.principal });
+        await this.tellStacked(projectId, orgId, ledger, r, item, proposal, caller, hints);
       }
       return { roadmap: this.view(this.require(ledger, number)), hints };
     });
@@ -972,24 +1003,38 @@ export class RoadmapService {
       }
       await ledger.append({ kind: "linked", number, key, proposal, by: caller.principal });
       const hints: string[] = [];
-      for (const [depKey, base] of basesOf(r.items)) {
-        if (base !== key) continue;
-        const dep = r.items.find((x) => x.key === depKey);
-        const depOwner = r.delegations[depKey]?.owner;
-        if (dep === undefined || depOwner === undefined || depOwner === caller.agentId) continue;
-        await this.deliver(
-          projectId,
-          orgId,
-          ledger,
-          number,
-          depOwner,
-          baseLinkedLine(r, dep, item, proposal),
-          caller.principal,
-          hints,
-        );
-      }
+      await this.tellStacked(projectId, orgId, ledger, r, item, proposal, caller, hints);
       return { roadmap: this.view(this.require(ledger, number)), hints };
     });
+  }
+
+  /** The owners of the items stacked on `item` learn the number of its proposal (not the caller's own). */
+  private async tellStacked(
+    projectId: string,
+    orgId: string,
+    ledger: Ledger,
+    r: Roadmap,
+    item: DraftItem,
+    proposal: number,
+    caller: Caller,
+    hints: string[],
+  ): Promise<void> {
+    for (const [depKey, base] of basesOf(r.items)) {
+      if (base !== item.key) continue;
+      const dep = r.items.find((x) => x.key === depKey);
+      const depOwner = r.delegations[depKey]?.owner;
+      if (dep === undefined || depOwner === undefined || depOwner === caller.agentId) continue;
+      await this.deliver(
+        projectId,
+        orgId,
+        ledger,
+        r.number,
+        depOwner,
+        baseLinkedLine(r, dep, item, proposal),
+        caller.principal,
+        hints,
+      );
+    }
   }
 
   /**

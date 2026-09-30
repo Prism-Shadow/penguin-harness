@@ -335,6 +335,23 @@ export class ProposalService {
     return { org, ledger, caller: { principal, agentId, userId: actor.userId } };
   }
 
+  /** The organization and its ledger, for a write no caller makes over HTTP (createFromRoadmap). */
+  private async openInternal(
+    projectId: string,
+    orgId: string,
+  ): Promise<{ org: OrgView; ledger: Ledger }> {
+    if (!this.deps.gateway.companyModeEnabled()) {
+      throw new ProposalError(404, "company_mode_off", "Company mode is off.");
+    }
+    const org = await this.deps.gateway.organization(projectId, orgId);
+    if (org === null) {
+      throw new ProposalError(404, "org_not_found", `Organization does not exist: ${orgId}`);
+    }
+    const ledger = this.ledger(projectId, orgId);
+    await ledger.load();
+    return { org, ledger };
+  }
+
   private requireProposal(ledger: Ledger, number: number): Proposal {
     const p = ledger.get(number);
     if (p === undefined) {
@@ -665,9 +682,10 @@ export class ProposalService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Anyone in the organization starts a proposal — a person delegating, an employee proposing
-   * (the CEO to the board is the canonical case) or delegating to a colleague. The author is
-   * the employee named, else the employee that asks; a person has to name one.
+   * A person starts a proposal by delegating it to an employee, named as its author. An
+   * employee does not: a new proposal comes from a roadmap item that a person and the
+   * moderator approved, and company-roadmaps creates it then (createFromRoadmap). An
+   * employee that wants a change of an existing proposal publishes a new revision of it.
    */
   async create(
     projectId: string,
@@ -676,11 +694,19 @@ export class ProposalService {
     actor: OrgActor,
   ): Promise<ProposalDetail> {
     const { org, ledger, caller } = await this.open(projectId, orgId, actor);
+    if (!this.isPerson(caller)) {
+      throw forbidden(
+        "roadmap_only",
+        "An employee does not create a proposal. A new proposal comes from a roadmap item that a person and the moderator approved: raise it as an item in the roadmap's room. To change an existing proposal, publish a new revision of it.",
+      );
+    }
     const delivery = this.delivery(ledger);
     const brief = req.brief.trim();
     if (brief === "") throw badRequest("brief must not be empty.");
-    const author = req.author ?? caller.agentId;
-    if (author === null) throw badRequest("author is required: name the employee that writes it.");
+    const author = req.author;
+    if (author === undefined) {
+      throw badRequest("author is required: name the employee that writes it.");
+    }
     this.requireEmployee(org, author, "author");
     const number = ledger.nextNumber();
     const title = req.title?.trim() || brief.split("\n")[0]!.slice(0, 120);
@@ -707,6 +733,42 @@ export class ProposalService {
       delivery,
       this.detail(p, caller, this.readPositions(projectId, orgId, caller.userId)),
     );
+  }
+
+  /**
+   * The proposal of a roadmap item that has both approvals, created by company-roadmaps while
+   * it records the second one — the one way an employee's proposal comes into being. It is
+   * not a route: nobody reaches it over HTTP. The `created` line names the item it came from;
+   * the author is told by the roadmap (with the number), not here, so it hears of it once.
+   */
+  async createFromRoadmap(
+    projectId: string,
+    orgId: string,
+    req: {
+      author: string;
+      title: string;
+      brief: string;
+      delegatedBy: string;
+      roadmap: { number: number; key: string };
+    },
+  ): Promise<number> {
+    const { org, ledger } = await this.openInternal(projectId, orgId);
+    const brief = req.brief.trim();
+    if (brief === "") throw badRequest("brief must not be empty.");
+    this.requireEmployee(org, req.author, "author");
+    const number = ledger.nextNumber();
+    const line = await ledger.append({
+      kind: "created",
+      number,
+      title: req.title.trim() || brief.split("\n")[0]!.slice(0, 120),
+      author: req.author,
+      delegatedBy: req.delegatedBy,
+      brief,
+      roadmap: { number: req.roadmap.number, key: req.roadmap.key },
+    });
+    this.notify(org, number, line.seq, "created");
+    await this.ensureSkills(projectId, req.author);
+    return number;
   }
 
   /**

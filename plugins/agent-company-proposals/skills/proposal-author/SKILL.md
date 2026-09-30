@@ -1,18 +1,18 @@
 ---
 name: proposal-author
-description: Write and revise a PenguinHarness company proposal — a short, abstract description of a change that a person reads — and comments on, passage by passage — while it is being built; start one yourself or take a delegation, publish it with penguin org proposal, open the implementation session (your own, or a colleague's), mark it ready, work through the person's batched comments and the implementation's feedback, and keep the scope a subset.
+description: Write and revise a PenguinHarness company proposal — a short, abstract description of a change that a person reads — and comments on, passage by passage — while it is being built; take a delegation or an approved roadmap item, publish it with penguin org proposal, open the implementation session (your own, or a colleague's), mark it ready, work through the person's batched comments and the implementation's feedback, and keep the scope a subset.
 version: 2026.10.11.1
 ---
 
 # Proposal Author
 
-A **proposal** is a change written for a person to read: what is changed, why, and one test that shows it — in terms of interfaces, never files. It is a task mechanism, not a job: any employee proposes — on a person's delegation, or on its own when a change needs the board's eyes (the CEO proposing a plan is the plain case) — and you write it and, in the same breath, open the implementation session, so the person reads while the code takes shape. You build it yourself unless a colleague is better placed. The implementation's findings change the proposal; the person's comments change it too. Nothing in it waits for anyone: the person reads at their pace, the build goes at its own, and you keep the two in step. Approving, rejecting and commenting stay with people.
+A **proposal** is a change written for a person to read: what is changed, why, and one test that shows it — in terms of interfaces, never files. It is a task mechanism, not a job: any employee writes one — on a person's delegation, or as the owner of a roadmap item a person and the moderator approved (a change that needs the board's eyes goes to a roadmap first) — and you write it and, in the same breath, open the implementation session, so the person reads while the code takes shape. You build it yourself unless a colleague is better placed. The implementation's findings change the proposal; the person's comments change it too. Nothing in it waits for anyone: the person reads at their pace, the build goes at its own, and you keep the two in step. Approving, rejecting and commenting stay with people.
 
 Everything in `company-employee` applies to you too — the handbook first, the working language, the desk that schedules and does not do. This skill is what writing a proposal adds; it arrives on your Agent by itself the first time you write or build one. The organization must have the `company-proposals` plugin installed; without it every `penguin org proposal` command answers that the plugin is missing.
 
 ## Before you start
 
-If the message only names this skill without a concrete request, ask what should be proposed. A delegation arrives on your desk as one line — `[proposal #<n>] <who> asks you to write it: <brief>` — or as a person talking to your desk directly. Everything the plugin tells you comes the same way: a `[proposal #<n>]` line that says what happened and names the command to run next; there is no proposals channel. When a line arrives the number already exists: read it with `penguin org proposal show <n>` before writing a line. A proposal of your own starts with `penguin org proposal create --brief "<one sentence>"` — you are its author; name `--author <colleague>` only to hand it to someone else.
+If the message only names this skill without a concrete request, ask what should be proposed. A delegation arrives on your desk as one line — `[proposal #<n>] <who> asks you to write it: <brief>` — or as a person talking to your desk directly. Everything the plugin tells you comes the same way: a `[proposal #<n>]` line that says what happened and names the command to run next; there is no proposals channel. When a line arrives the number already exists: read it with `penguin org proposal show <n>` before writing a line. You do not create a proposal yourself (`penguin org proposal create` answers an employee 403 `roadmap_only`): a new proposal comes from a roadmap item that a person and the moderator approved — raise it as an item in the roadmap's room, and the second approval creates it with you as its author. To change an existing proposal, publish a new revision of it.
 
 ## The document
 
@@ -74,7 +74,6 @@ Every ticket change woke the desk, a dozen times a day for one employee, each ru
 ```bash
 penguin org proposal show <n>                                  # the brief, the current text, comments, events
 penguin org proposal publish <n> --file proposal.md            # a revision; a comment follows its passage into the new text
-penguin org proposal create --brief "…" [--author <colleague>]  # a proposal of your own (or handed to a colleague)
 penguin org proposal brief <n> -m "…"                          # rewrite the brief when it no longer says what is proposed; the text stays
 penguin org proposal implement <n> [--agent <colleague>] -m "…"  # the implementation session — yours, or a colleague's; prints its id
 penguin org proposal ready <n>                                 # tell the person it can be read

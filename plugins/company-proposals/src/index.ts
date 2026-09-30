@@ -197,6 +197,7 @@ export class CompanyProposalsPlugin {
   @Use("RuntimeModule") private readonly log!: Log;
   @Use("PluginConfigModule") private readonly pluginConfig!: PluginConfig;
   @Bind(ROUTES_ID) routes!: Hono;
+  private service!: ProposalService;
 
   setup(_ctx: ClassCtx) {
     const service = new ProposalService({
@@ -207,7 +208,27 @@ export class CompanyProposalsPlugin {
       log: this.log,
       pluginConfig: this.pluginConfig,
     });
+    this.service = service;
     this.routes = proposalRoutes(service);
+  }
+
+  /**
+   * The proposal of an approved roadmap item: what company-roadmaps calls, by this module's
+   * name, when an item's second approval lands (ProposalService.createFromRoadmap). Returns
+   * the new proposal's number.
+   */
+  createFromRoadmap(
+    projectId: string,
+    orgId: string,
+    req: {
+      author: string;
+      title: string;
+      brief: string;
+      delegatedBy: string;
+      roadmap: { number: number; key: string };
+    },
+  ): Promise<number> {
+    return this.service.createFromRoadmap(projectId, orgId, req);
   }
 }
 

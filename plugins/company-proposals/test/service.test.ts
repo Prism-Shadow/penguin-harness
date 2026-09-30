@@ -462,33 +462,74 @@ describe("ProposalService", () => {
     expect(agents.updates).toEqual(["acme_dev"]);
   });
 
-  it("an employee proposes on its own: it is the author and the delegator, and its own desk is not told", async () => {
-    const created = await service.create(PROJECT, ORG, { brief: "Rotate the API token" }, author);
-    expect(created).toMatchObject({
-      number: 1,
-      author: "acme_dev",
-      delegatedBy: "agent:acme_dev",
-      status: "drafting",
-    });
-    expect(created.events[0]).toMatchObject({ kind: "created", by: "agent:acme_dev" });
-    // Telling it of its own act would only start a run on its own desk.
+  it("an employee does not create a proposal; a person does", async () => {
+    const written = async (): Promise<number> =>
+      (await fs.readFile(ledgerPath(root, PROJECT, ORG), "utf8").catch(() => ""))
+        .split("\n")
+        .filter((l) => l.trim() !== "").length;
+    // Neither on its own nor handed to a colleague: the way out is named, and nothing is written.
+    for (const req of [{ brief: "Rotate the API token" }, { author: "acme_impl", brief: "Split" }]) {
+      const err = await service.create(PROJECT, ORG, req, author).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ProposalError);
+      expect(err).toMatchObject({ status: 403, code: "roadmap_only" });
+      expect((err as Error).message).toContain("roadmap item");
+      expect((err as Error).message).toContain("new revision");
+    }
+    expect(await written()).toBe(0);
     expect(gateway.desks).toEqual([]);
-    expect(agents.updates).toEqual(["acme_dev"]);
-    // Delegating to a colleague: the colleague is the author and its desk is told.
-    const handed = await service.create(
+    expect(agents.updates).toEqual([]);
+    // A person's create is as it was: one created line, and the author's desk is told.
+    const created = await service.create(
       PROJECT,
       ORG,
       { author: "acme_impl", brief: "Split the sweep" },
-      author,
+      BOSS,
     );
-    expect(handed).toMatchObject({ number: 2, author: "acme_impl", delegatedBy: "agent:acme_dev" });
+    expect(created).toMatchObject({ number: 1, author: "acme_impl", delegatedBy: "user:boss" });
+    expect(await written()).toBe(1);
     expect(gateway.desks).toEqual([
-      { agentId: "acme_impl", text: expect.stringMatching(/^\[proposal #2\] acme_dev asks you/) },
+      { agentId: "acme_impl", text: expect.stringMatching(/^\[proposal #1\] boss asks you/) },
     ]);
-    expect(agents.updates).toEqual(["acme_dev", "acme_impl"]);
-    // A person sees the employee's proposal as unread; the employee counts nothing.
-    const seen = await service.get(PROJECT, ORG, 1, BOSS);
-    expect(seen.unread).toBe(1);
+  });
+
+  it("a roadmap creates an employee's proposal: the created line names the item, and the author hears it from the roadmap", async () => {
+    const number = await service.createFromRoadmap(PROJECT, ORG, {
+      author: "acme_dev",
+      title: "Roadmap ledger",
+      brief: "An append-only ledger.",
+      delegatedBy: "agent:acme_ceo",
+      roadmap: { number: 3, key: "ledger" },
+    });
+    expect(number).toBe(1);
+    const text = await fs.readFile(ledgerPath(root, PROJECT, ORG), "utf8");
+    expect(JSON.parse(text.trim())).toMatchObject({
+      kind: "created",
+      number: 1,
+      title: "Roadmap ledger",
+      author: "acme_dev",
+      delegatedBy: "agent:acme_ceo",
+      brief: "An append-only ledger.",
+      roadmap: { number: 3, key: "ledger" },
+    });
+    // The roadmap tells the owner, with the number; this plugin does not tell it twice.
+    expect(gateway.desks).toEqual([]);
+    expect(agents.updates).toEqual(["acme_dev"]);
+    expect(await service.get(PROJECT, ORG, 1, BOSS)).toMatchObject({
+      author: "acme_dev",
+      delegatedBy: "agent:acme_ceo",
+      status: "drafting",
+    });
+    // The author must be an employee, and nothing is written when it is not.
+    await expect(
+      service.createFromRoadmap(PROJECT, ORG, {
+        author: "ghost",
+        title: "x",
+        brief: "x",
+        delegatedBy: "user:boss",
+        roadmap: { number: 3, key: "x" },
+      }),
+    ).rejects.toMatchObject({ status: 400, code: "bad_request" });
+    expect((await fs.readFile(ledgerPath(root, PROJECT, ORG), "utf8")).trim().split("\n")).toHaveLength(1);
   });
 
   it("the skills plugin is installed only where it is missing, and a library without it is only logged", async () => {
@@ -1678,7 +1719,13 @@ describe("ProposalService", () => {
     });
 
     // The author drops its own empty draft: nobody else is on it, so nobody is told.
-    const own = (await service.create(PROJECT, ORG, { brief: "Folded into #1" }, author)).number;
+    const own = await service.createFromRoadmap(PROJECT, ORG, {
+      author: "acme_dev",
+      title: "Folded into #1",
+      brief: "Folded into #1",
+      delegatedBy: "user:boss",
+      roadmap: { number: 1, key: "fold" },
+    });
     const before = gateway.desks.length;
     const dropped = await service.reject(PROJECT, ORG, own, "Folded into #1.", author);
     expect(dropped).toMatchObject({ status: "rejected", revision: 0 });

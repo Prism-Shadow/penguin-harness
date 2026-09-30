@@ -1,13 +1,14 @@
 /**
  * What the unit suites stand the plugin on: the organization gateway, the session runtime's
- * input and the session index as fakes that record what they were asked, and an organization
- * directory on disk whose channels are written the way the organization writes them.
+ * input, the session index and company-proposals' creation as fakes that record what they were
+ * asked, and an organization directory on disk whose channels are written the way the
+ * organization writes them.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { OrgActor, OrgGateway, OrgView } from "@prismshadow/penguin-server/plugin";
-import { RoadmapService, orgDirOf } from "../src/index.js";
+import { RoadmapService, orgDirOf, type ProposalCreator } from "../src/index.js";
 
 export const PROJECT = "proj";
 export const ORG = "acme";
@@ -121,6 +122,44 @@ export class FakeGateway implements Pick<
       { unlisted: true },
     );
     return { channelId: args.channelId };
+  }
+}
+
+/**
+ * company-proposals' creation: every proposal it was asked to create, numbered from 200 so a
+ * test tells a created number from one it linked by hand; `refuse` makes the next call throw.
+ */
+export class FakeProposals implements ProposalCreator {
+  created: Array<{
+    projectId: string;
+    orgId: string;
+    author: string;
+    title: string;
+    brief: string;
+    delegatedBy: string;
+    roadmap: { number: number; key: string };
+  }> = [];
+  refuse: string | null = null;
+  private next = 200;
+
+  async createFromRoadmap(
+    projectId: string,
+    orgId: string,
+    req: {
+      author: string;
+      title: string;
+      brief: string;
+      delegatedBy: string;
+      roadmap: { number: number; key: string };
+    },
+  ): Promise<number> {
+    if (this.refuse !== null) {
+      const message = this.refuse;
+      this.refuse = null;
+      throw new Error(message);
+    }
+    this.created.push({ projectId, orgId, ...req });
+    return this.next++;
   }
 }
 
@@ -243,6 +282,7 @@ export interface World {
   gateway: FakeGateway;
   runner: FakeRunner;
   sessions: FakeSessions;
+  proposals: FakeProposals;
   config: Record<string, unknown>;
   logs: string[];
   service: () => RoadmapService;
@@ -256,6 +296,7 @@ export async function world(): Promise<World> {
     gateway: Object.assign(new FakeGateway(), { root }),
     runner: new FakeRunner(),
     sessions: new FakeSessions(),
+    proposals: new FakeProposals(),
     config: {},
     logs: [],
     service: () =>
@@ -263,6 +304,7 @@ export async function world(): Promise<World> {
         gateway: w.gateway,
         runner: w.runner as never,
         sessions: w.sessions,
+        proposals: w.proposals,
         root,
         log: { line: (l) => w.logs.push(l) },
         pluginConfig: { get: () => w.config },

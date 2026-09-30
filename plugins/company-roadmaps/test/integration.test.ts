@@ -2,6 +2,8 @@
  * The plugin on the real server: installed through a Project's config, loaded by the real
  * loader, and its requirements — the organization gateway (CompanyModule) and the session
  * runtime (SessionRuntimeModule), which is what lets it clone a desk for a room and feed it —
+ * and company-proposals' module (CompanyProposalsPlugin), through which an approved item's
+ * proposal is created, installed beside it —
  * resolved from the real module tree, and its channel claim contributed to the organization
  * module by a node of its own (the tree refuses a node that contributes there while requiring
  * the gateway: a cycle); its settings group declared on the Plugins page; its
@@ -26,6 +28,8 @@ import { CONFIG_GROUP, DEFAULT_POLL_SECONDS, DEFAULT_RELAY_DEPTH } from "../src/
 import { PAGE_SRC } from "../src/page.js";
 
 const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+/** company-proposals, which this plugin requires: it is installed with it. */
+const PROPOSALS_DIR = path.resolve(PLUGIN_DIR, "..", "company-proposals");
 const BASE = "/api/projects/default_project/organizations/acme/roadmaps";
 
 async function status(run: Promise<unknown>): Promise<number> {
@@ -41,15 +45,17 @@ describe("the company-roadmaps plugin on a real server", () => {
 
   beforeAll(async () => {
     await fs.access(defaultServerEntry());
-    harness = await startHarness({ plugins: [PLUGIN_DIR] });
+    harness = await startHarness({ plugins: [PROPOSALS_DIR, PLUGIN_DIR] });
     api = await harness.login();
   }, 90_000);
   afterAll(async () => {
     await harness?.stop();
   });
 
-  it("is loaded, both nodes: the gateway and the session runtime resolved, and the claim taken by the organization module without a cycle", async () => {
-    const [row] = await harness.installedPlugins();
+  it("is loaded, both nodes: the gateway, the session runtime and company-proposals resolved, and the claim taken by the organization module without a cycle", async () => {
+    const row = (await harness.installedPlugins()).find((r) =>
+      r.modules.includes("CompanyRoadmapsPlugin"),
+    );
     expect(row).toMatchObject({
       active: true,
       modules: ["CompanyRoadmapsPlugin", "RoadmapRoomClaim"],

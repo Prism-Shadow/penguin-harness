@@ -77,7 +77,7 @@ The ledger is one append-only file per organization, `<root>/<project>/organizat
 
 ## API
 
-`/api/projects/:projectId/organizations/:orgId/proposals` — `GET /`, `POST /` (`{ author, brief, title? }`), `GET|PUT /:number` (`{ markdown }`), `PUT /:number/brief` (`{ brief }`, the author or a person), `POST /:number/ready|approve|reject|merged|implement|materials|feedback|comments|comments/request|comments/:id/resolve|read` (`reject` takes `{ reason }` from a person or any employee), `POST /:number/discussions` (a person; answers the session) and `POST /:number/discussions/:sessionId/conclude` (`{ text }`, a person or that session). Every route answers 404 while company mode is off.
+`/api/projects/:projectId/organizations/:orgId/proposals` — `GET /`, `POST /` (`{ author, brief, title? }`, a person; an employee gets 403 `roadmap_only` — its new proposals are created by [company-roadmaps](../company-roadmaps/README.md) when a roadmap item gets its second approval, through this plugin's module method `createFromRoadmap`, and their `created` line names the roadmap and the item), `GET|PUT /:number` (`{ markdown }`), `PUT /:number/brief` (`{ brief }`, the author or a person), `POST /:number/ready|approve|reject|merged|implement|materials|feedback|comments|comments/request|comments/:id/resolve|read` (`reject` takes `{ reason }` from a person or any employee), `POST /:number/discussions` (a person; answers the session) and `POST /:number/discussions/:sessionId/conclude` (`{ text }`, a person or that session). Every route answers 404 while company mode is off.
 
 ## Development
 

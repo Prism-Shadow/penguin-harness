@@ -49,6 +49,8 @@ export type LedgerEntry =
       /** The principal that started it: `user:<id>` or `agent:<id>` (a bare user id in lines written before principals were recorded). */
       delegatedBy: string;
       brief: string;
+      /** The roadmap item it was created for, when a roadmap created it (an approved item's second approval). */
+      roadmap?: { number: number; key: string };
     }
   | {
       kind: "revised";

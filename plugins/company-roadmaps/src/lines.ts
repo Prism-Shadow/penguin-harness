@@ -147,17 +147,18 @@ export function approvalRequestLine(args: {
 }): string {
   const { orgId, roadmap: r } = args;
   return [
-    `${tag(r)} established. Its proposal items are briefs now; each needs two approvals before its proposal may be created — a person's, given on the roadmaps page, and yours as moderator:`,
+    `${tag(r)} established. Its proposal items are briefs now; each needs two approvals, and the second creates its proposal — a person's, given on the roadmaps page, and yours as moderator:`,
     ...args.items.map((i) => `- [${i.key}] "${i.title}" — owner ${i.owner}: ${i.brief}`),
-    `Approve an item whose brief is ready: \`${curlOf("POST", routeOf(orgId, r.number, "/items/<key>/approve"))}\`. Approving creates nothing; leave an item unapproved, or reopen the roadmap, when its brief is not ready.`,
+    `Approve an item whose brief is ready: \`${curlOf("POST", routeOf(orgId, r.number, "/items/<key>/approve"))}\`. The second approval — a person's and yours — creates the item's proposal, its owner the author, and links it; leave an item unapproved, or reopen the roadmap, when its brief is not ready.`,
     `An item that is a proposal which exists already is not approved — there is no work to start: link it to that proposal, which delegates it without the two approvals and tells its owner nothing (an item you own yourself is linked by a person): \`${curlOf("POST", routeOf(orgId, r.number, "/items/<key>/link"), ['\\"proposal\\":<n>'])}\`.`,
   ].join("\n");
 }
 
 /**
  * The desk line telling an owner that its proposal item was approved — by a person and by the
- * moderator, named with when — and what it is stacked on. It carries no command: the proposal is
- * created, and its number linked back to the item, in the step the organization assigns for it.
+ * moderator, named with when — that its proposal is created and linked, with the number, and
+ * what it is stacked on. It carries no command: the proposal is written in the step the
+ * organization assigns for it.
  */
 export function approvedLine(args: {
   roadmap: Roadmap;
@@ -165,6 +166,7 @@ export function approvedLine(args: {
   base: { title: string; proposal?: number } | null;
   person: { by: string; at: string };
   moderator: { by: string; at: string };
+  proposal: number;
 }): string {
   const { roadmap: r, item, base } = args;
   const stacked =
@@ -177,7 +179,7 @@ export function approvedLine(args: {
     `${tag(r)} Your item [${item.key}] "${item.title}" is approved: by ${args.person.by} (${args.person.at}) and by the moderator ${args.moderator.by} (${args.moderator.at}).`,
     `Brief: ${item.brief}`,
     stacked,
-    "Its proposal may be created now. That, and linking its number back to this item, are write steps: they are done where your organization does write steps, not from this desk.",
+    `Its proposal is created for you: proposal #${args.proposal}, with you as its author and this brief, linked to this item. Writing it is a write step: it is done where your organization does write steps, not from this desk.`,
   ].join("\n");
 }
 

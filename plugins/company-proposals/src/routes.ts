@@ -4,7 +4,8 @@
  * `c.get("user")` is the signed-in user and `c.get("sessionVia")` says how they signed in.
  *
  *   GET    /                         the queue (each with the caller's unread count)
- *   POST   /                         start one: { author?, brief, title? } (author defaults to the calling employee)
+ *   POST   /                         start one: { author, brief, title? } (a person; an employee gets 403 roadmap_only —
+ *                                   its new proposals come from approved roadmap items)
  *   GET    /test-groups              the test groups a proposal may use, in order: { groups: [{ id, description }] }
  *   GET    /graph                    the delivery repository's open PRs as a commit graph (pr-graph.ts)
  *   POST   /adopt-impl               anybody in the organization: proposals without an impl PR take their latest delivery-repo `pr` material
