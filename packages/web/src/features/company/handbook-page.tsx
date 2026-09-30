@@ -30,6 +30,7 @@ import {
   Input,
   Md,
   Modal,
+  RuledSection,
   Skeleton,
   Textarea,
   toastError,
@@ -42,7 +43,7 @@ import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/form
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
 import type { TreeToggle } from "../../components/ui/file-tree";
-import { OrgEmptyLine, OrgPage, OrgSection, useOrg } from "./org-layout";
+import { OrgEmptyLine, OrgPage, useOrg } from "./org-layout";
 import { ErrorLine } from "./shared";
 import { COLLAPSE_ALL_ICON, HandbookExplorer } from "./handbook-explorer";
 import {
@@ -293,7 +294,7 @@ export function HandbookPage() {
       <div className={PANES_CLASS}>
         {/* The create button sits in the section's action slot rather than the page's: it
             is the list's own action, and a button in both headers keeps their rules level. */}
-        <OrgSection
+        <RuledSection
           title={S.company.handbook.documents}
           count={files?.length ?? 0}
           actions={
@@ -329,7 +330,7 @@ export function HandbookPage() {
           {tree.nodes.length === 0 && (
             <OrgEmptyLine>{S.company.handbook.noOtherDocuments}</OrgEmptyLine>
           )}
-        </OrgSection>
+        </RuledSection>
 
         <section className="min-w-0" aria-label={selected}>
           {/* The document's own header: its path (a file name, not a heading, so no

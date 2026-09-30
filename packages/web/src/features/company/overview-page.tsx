@@ -38,6 +38,7 @@ import {
   GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
+  RuledSection,
   Segmented,
   toastError,
 } from "@prismshadow/penguin-ui";
@@ -57,7 +58,7 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import { orgChannelPath, orgKey, orgPagePath } from "./company-nav";
 import type { CompanyNavKey } from "./company-nav";
 import { CHANNEL_ICON } from "./channel-sidebar";
-import { OrgEmptyLine, OrgPage, OrgPageSkeleton, OrgSection, useOrg } from "./org-layout";
+import { OrgEmptyLine, OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
   BudgetBar,
   ErrorLine,
@@ -675,7 +676,7 @@ export function OverviewPage() {
       </div>
 
       {steps.fresh ? (
-        <OrgSection
+        <RuledSection
           title={S.company.overview.firstStepsTitle}
           info={S.company.overview.firstStepsInfo}
           className="mt-8"
@@ -693,11 +694,11 @@ export function OverviewPage() {
               />
             ))}
           </ol>
-        </OrgSection>
+        </RuledSection>
       ) : (
         <>
           {/* The inbox: everything that needs the reader, newest first. */}
-          <OrgSection
+          <RuledSection
             title={S.company.overview.inbox}
             info={S.company.overview.inboxInfo}
             count={inbox.length}
@@ -757,12 +758,12 @@ export function OverviewPage() {
                 ))}
               </ul>
             )}
-          </OrgSection>
+          </RuledSection>
 
           {/* Today's timeline: a dot per instance on a rule, in the tone of its outcome. */}
           {/* No jump of its own: the KPI cell above carries the one button to the calendar,
               and every row's title opens it too. */}
-          <OrgSection title={S.company.overview.today} count={today.total} className="mt-8">
+          <RuledSection title={S.company.overview.today} count={today.total} className="mt-8">
             {today.entries.length === 0 ? (
               <OrgEmptyLine>{S.company.overview.todayEmpty}</OrgEmptyLine>
             ) : (
@@ -803,10 +804,10 @@ export function OverviewPage() {
                 )}
               </ol>
             )}
-          </OrgSection>
+          </RuledSection>
 
           {/* Budget alerts: who, warned or paused, when. */}
-          <OrgSection
+          <RuledSection
             title={S.company.overview.alerts}
             count={detail.alerts.length}
             className="mt-8"
@@ -836,7 +837,7 @@ export function OverviewPage() {
                 ))}
               </ul>
             )}
-          </OrgSection>
+          </RuledSection>
         </>
       )}
     </OrgPage>

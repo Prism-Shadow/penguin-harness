@@ -63,6 +63,7 @@ import {
   Select,
   SkeletonList,
   Switch,
+  TodoNotice,
   buttonClass,
   toastError,
   toastInfo,
@@ -77,7 +78,8 @@ import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
 import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { AiCreateModal, CreateButtons } from "../ai-create";
+import { AiCreateModal } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
@@ -137,7 +139,6 @@ import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { noticeCounts } from "../../lib/bulk-update";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
@@ -1160,7 +1161,7 @@ export function ModelsPage() {
                 </Button>
               )}
               {isOwner && (
-                <CreateButtons
+                <AiCreateButtons
                   size="sm"
                   // Only the form needs the table: AddGroupDialog is mounted behind `rows`, so
                   // without it the manual button would be a dead click. The AI path is left live

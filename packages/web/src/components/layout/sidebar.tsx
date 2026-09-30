@@ -53,6 +53,8 @@ import {
   ChevronDown,
   ConfirmModal,
   Dropdown,
+  FolderSection,
+  GroupHeader,
   ICONS,
   ICON_SIZE,
   Input,
@@ -62,6 +64,7 @@ import {
   MenuRadioItem,
   MenuSeparator,
   Modal,
+  MoreRow,
   ScheduleMark,
   SearchInput,
   Segmented,
@@ -165,11 +168,8 @@ import { NAV_ICONS } from "../../lib/nav-icons";
 import {
   GROUP_MODE_ICONS,
   SORT_MODE_ICONS,
-  FolderSection,
-  GroupHeader,
   GroupPager,
   Icon,
-  MoreRow,
   initialGroupMode,
   newEntityForGroupMode,
   storeGroupMode,
@@ -194,7 +194,7 @@ import { pendingScheduleSessions } from "../../features/schedules/schedule-panel
 import { useProjectSchedules } from "../../features/schedules/schedule-store";
 import { useCompany } from "../../state/company";
 import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-switcher";
-import { BetaBadge } from "../../features/company/beta-badge";
+import { CompanyBetaBadge } from "../../features/company/company-beta";
 import { ChannelSidebar } from "../../features/company/channel-sidebar";
 import { OrgSessionGroups } from "../../features/company/org-session-groups";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
@@ -1782,7 +1782,7 @@ export function Sidebar({
               {
                 value: "company" as const,
                 label: S.company.modeCompany,
-                badge: { node: <BetaBadge />, name: S.company.beta },
+                badge: { node: <CompanyBetaBadge />, name: S.company.beta },
               },
             ]}
             value={company.workMode}

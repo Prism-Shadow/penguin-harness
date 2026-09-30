@@ -15,7 +15,8 @@
  * component is de-slopped when it moves, and not after.
  *
  * Rule 20 (palette classes, `dark:`, hex) is the package's: the web app speaks the palette until
- * each wave moves it to tokens. Rule 22 waits for a `PageHeader` (W4).
+ * each wave moves it to tokens. Rule 22 reads a `PageHeader`, and the one the app renders is the
+ * package's (W4), whose suite runs the rule; here it runs only if the web app declares its own.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -55,12 +56,7 @@ const POLICY: DeslopPolicy = {
  * content, W6 chat, W7 files, shell and dock, W8 charts). `W1b+W7` splits an entry between two.
  */
 const ALLOWLIST: DeslopAllowlist = {
-  "components/account/update-modal.tsx": {
-    1: [1, "W4"],
-    3: [1, "W4"],
-    6: [1, "W4"],
-    11: [2, "W1b"],
-  },
+  "components/account/update-modal.tsx": { 11: [2, "W1b"] },
   "components/account/update-row.tsx": { 11: [2, "W1b"] },
   "components/layout/app-layout.tsx": { 1: [1, "W7"] },
   "components/layout/sidebar.tsx": {
@@ -69,7 +65,6 @@ const ALLOWLIST: DeslopAllowlist = {
     13: [2, "W7"],
     14: [2, "W7"],
   },
-  "components/ui/group-list.tsx": { 12: [1, "W4"], 13: [3, "W4"], 14: [2, "W4"] },
   "components/ui/session-row-menu.tsx": { 1: [1, "W1b"] },
   "features/agents/agent-settings-page.tsx": { 12: [3, "W4"] },
   "features/agents/hooks-tab.tsx": { 12: [1, "W4"], 13: [2, "W4"] },
@@ -87,10 +82,8 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/chat/chat-page.tsx": { 6: [1, "W1b"], 12: [2, "W6"], 13: [3, "W6"], 15: [1, "W4"] },
   "features/chat/context-gauge.tsx": { 12: [5, "W8"] },
   "features/chat/conversation-outline.tsx": { 1: [1, "W1b"], 6: [2, "W1b"], 12: [1, "W6"] },
-  "features/chat/disclosure-row.tsx": { 13: [1, "W4"], 14: [2, "W4"] },
   "features/chat/draft-view.tsx": { 12: [1, "W6"], 13: [1, "W6"] },
   "features/chat/drop-zone.tsx": { 18: [1, "W7"] },
-  "features/chat/live-duration.tsx": { 6: [1, "W4"] },
   "features/chat/memory-view.tsx": { 13: [2, "W6"] },
   "features/chat/message-item.tsx": { 4: [2, "W6"], 6: [1, "W6"], 13: [3, "W6"] },
   "features/chat/message-stream.tsx": { 11: [2, "W1b"] },
@@ -98,7 +91,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/chat/step-banner.tsx": { 13: [1, "W6"], 14: [2, "W6"] },
   "features/chat/subagent-chip.tsx": { 11: [2, "W1b"], 13: [1, "W6"] },
   "features/chat/subagents-view.tsx": { 13: [2, "W6"], 14: [2, "W6"] },
-  "features/chat/task-stats-line.tsx": { 6: [1, "W1b"], 13: [1, "W6"], 15: [1, "W4"] },
+  "features/chat/task-stats-line.tsx": { 6: [1, "W1b"], 13: [1, "W6"] },
   "features/chat/tool-call-card.tsx": { 6: [2, "W6"] },
   "features/chat/work-group.tsx": { 13: [1, "W6"] },
   "features/chat/workspace-browser.tsx": {
@@ -109,7 +102,6 @@ const ALLOWLIST: DeslopAllowlist = {
     18: [1, "W7"],
   },
   "features/chat/workspace-tree-view.tsx": { 13: [1, "W7"] },
-  "features/company/beta-badge.tsx": { 13: [1, "W4"] },
   "features/company/calendar-page.tsx": { 12: [3, "W4"], 13: [10, "W4"] },
   "features/company/channel-composer.tsx": { 13: [2, "W6"] },
   "features/company/channel-header.tsx": { 13: [3, "W6"] },
@@ -123,11 +115,9 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/company/handbook-page.tsx": { 12: [2, "W4"], 13: [3, "W4"] },
   "features/company/org-chart-page.tsx": { 13: [2, "W4"] },
   "features/company/org-dialogs.tsx": { 13: [1, "W4"] },
-  "features/company/org-layout.tsx": { 12: [1, "W4"], 13: [2, "W4"], 14: [2, "W4"] },
   "features/company/org-session-groups.tsx": { 12: [1, "W4"] },
   "features/company/org-switcher.tsx": { 13: [2, "W4"] },
   "features/company/overview-page.tsx": { 12: [2, "W4"], 13: [2, "W4"], 14: [4, "W4"] },
-  "features/company/shared.tsx": { 13: [3, "W4"] },
   "features/company/ticket-dialog.tsx": { 12: [6, "W4"], 13: [3, "W4"], 14: [2, "W4"] },
   "features/company/tickets-page.tsx": { 12: [4, "W4"], 13: [6, "W4"] },
   "features/dock/dock-drag.tsx": { 3: [1, "W7"], 12: [1, "W7"] },
@@ -151,7 +141,6 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/traces/trace-file-view.tsx": { 12: [2, "W4"], 13: [5, "W4"], 15: [1, "W4"] },
   "features/usage/usage-charts.tsx": { 13: [3, "W8"] },
   "features/usage/usage-page.tsx": { 12: [1, "W8"] },
-  "pages/login.tsx": { 9: [1, "W4"] },
 };
 
 const WAVES = /^W(?:1a?|1b|[2-9])(?:\+W(?:1a?|1b|[2-9]))*$/;
@@ -189,7 +178,7 @@ describe("de-slop rules over packages/web/src", () => {
         analyzeFile(file).components.some((c) => PAGE_HEADER_COMPONENTS.includes(c.name)),
       )
     ) {
-      it.skip(`${title} — PENDING: the web app has no PageHeader (W4 adds it to the package)`, () => {});
+      it.skip(`${title} — the PageHeader is the package's, whose suite runs this rule`, () => {});
       continue;
     }
     it(title, () => {

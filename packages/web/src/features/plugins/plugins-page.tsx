@@ -63,6 +63,7 @@ import {
   Skeleton,
   SkeletonCard,
   StatusIcon,
+  TodoNotice,
   UpdateDot,
   toastError,
   toastSuccess,
@@ -81,7 +82,6 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { TodoNotice } from "../../components/ui/todo-notice";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { prepareNewChatDraft } from "../chat/new-chat";

@@ -35,6 +35,7 @@ import {
   OptionMenu,
   Skeleton,
   Switch,
+  Tabs,
   Textarea,
   UpdateDot,
   toastError,
@@ -48,7 +49,6 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
-import { Tabs } from "../../components/ui/tabs";
 import { useSaveConfirm } from "./save-confirm";
 import { SkillsTab } from "./skills-tab";
 import { HooksTab } from "./hooks-tab";

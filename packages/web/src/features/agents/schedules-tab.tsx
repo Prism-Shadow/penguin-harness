@@ -40,7 +40,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
-import { AiCreateModal, CreateButtons } from "../ai-create";
+import { AiCreateModal } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { ScheduleFormModal } from "../schedules/schedule-form-modal";
 import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
 import { toggleBody } from "../schedules/schedule-upsert";
@@ -166,7 +167,7 @@ export function SchedulesTab({
           two buttons offer the AI path and the form side by side; a member, who cannot write
           files here, gets the AI button alone — asking the agent is a message, not a write. */}
       <div className="flex justify-end">
-        <CreateButtons
+        <AiCreateButtons
           size="sm"
           onAi={() => openAi("")}
           {...(isOwner ? { onManual: () => setForm({ editing: null }) } : {})}

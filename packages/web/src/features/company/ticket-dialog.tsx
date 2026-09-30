@@ -46,6 +46,7 @@ import {
   Md,
   Modal,
   NoticeStrip,
+  RuledSection,
   Segmented,
   Select,
   Skeleton,
@@ -62,7 +63,6 @@ import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
-import { OrgSection } from "./org-layout";
 import {
   BlockedBadge,
   JumpButton,
@@ -512,7 +512,7 @@ function TicketDialog({
               )}
 
               {/* Summary: the header fields as a definition list, a form while editing. */}
-              <OrgSection title={S.company.tickets.summary} actions={sectionActions("summary")}>
+              <RuledSection title={S.company.tickets.summary} actions={sectionActions("summary")}>
                 {editing === "summary" && summaryDraft !== null ? (
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div className="md:col-span-2">
@@ -655,13 +655,13 @@ function TicketDialog({
                       )}
                   </dl>
                 )}
-              </OrgSection>
+              </RuledSection>
 
-              <OrgSection title={S.company.tickets.goal} actions={sectionActions("goal")}>
+              <RuledSection title={S.company.tickets.goal} actions={sectionActions("goal")}>
                 {textSection("goal", detail.goal, S.company.tickets.noGoal)}
-              </OrgSection>
+              </RuledSection>
 
-              <OrgSection
+              <RuledSection
                 title={S.company.tickets.acceptance}
                 actions={sectionActions("acceptance")}
               >
@@ -670,12 +670,12 @@ function TicketDialog({
                   detail.acceptanceCriteria,
                   S.company.tickets.noAcceptance,
                 )}
-              </OrgSection>
+              </RuledSection>
 
               {/* Progress: the sentences as written, oldest first, plus the one-line append.
                   Who wrote one and when is a history entry, not a chip on the sentence; the
                   bullets are md-compact so a one-line note reads as a line, not a paragraph. */}
-              <OrgSection title={S.company.tickets.progress}>
+              <RuledSection title={S.company.tickets.progress}>
                 {detail.progress.length === 0 ? (
                   <p className="text-xs text-gray-400 dark:text-gray-500">
                     {S.company.tickets.progressEmpty}
@@ -706,11 +706,11 @@ function TicketDialog({
                     {S.company.tickets.addProgress}
                   </Button>
                 </div>
-              </OrgSection>
+              </RuledSection>
 
-              <OrgSection title={S.company.tickets.result} actions={sectionActions("result")}>
+              <RuledSection title={S.company.tickets.result} actions={sectionActions("result")}>
                 {textSection("result", detail.result, S.company.tickets.noResult)}
-              </OrgSection>
+              </RuledSection>
 
               {/* The child tickets, folded: a plain list, each row opened by its own button. */}
               <Fold

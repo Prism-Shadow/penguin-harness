@@ -1,12 +1,10 @@
 /**
  * Company mode says it is a beta, in the two shapes that fact takes in the shell.
  *
- * The tag — a mini 内测版 / Beta mark riding at the top-right of 「公司」 in the 开发 | 公司
- * work-mode switch, which is the one control that names the mode itself and is in view on
- * every page of both modes. A superscript rather than a `Badge`: it qualifies the word it
- * sits on instead of reporting a state, so it must not read as a status mark, and at that
- * size it must not push the switch's two options around either — segmented.tsx pins it out
- * of flow and folds its text into the option's accessible name.
+ * The tag — the package's `BetaBadge` in this app's words, a mini "Beta" mark riding at the
+ * top-right of "Company" in the Development | Company work-mode switch, which is the one control
+ * that names the mode itself and is in view on every page of both modes. The switch
+ * (`Segmented`) pins it out of flow and folds its text into the option's accessible name.
  *
  * The notice — the sentence a person gets the first time they switch this browser into the
  * mode (state/company.tsx's `setWorkMode`), and the once-only decision behind it. The flag
@@ -14,6 +12,7 @@
  * browser having shown a toast, not about the user: a second browser is a second first time,
  * and a preferences round trip would decide it too late to toast on the click that caused it.
  */
+import { BetaBadge } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 
 /** The localStorage key remembering that this browser has shown the beta notice. */
@@ -50,20 +49,7 @@ export function markBetaNoticeShown(storage?: BetaNoticeStorage): void {
   }
 }
 
-/**
- * The tag itself: the smallest legible rung, in the muted ink and border that keep it from
- * reading as a status mark. The px size is deliberate — this is a superscript over a
- * `text-xs` option, and there is no rung below `text-xs` to step down to. Its host hides it
- * from the accessible name, so the tooltip is the only thing it says on its own, and it is a
- * `title` because the switch it rides on carries no `Tooltip` of any kind.
- */
-export function BetaBadge() {
-  return (
-    <span
-      data-tooltip={S.company.betaTitle}
-      className="whitespace-nowrap rounded-sm border border-gray-300 px-0.5 py-px text-[9px] font-medium leading-none text-gray-500 dark:border-gray-600 dark:text-gray-400"
-    >
-      {S.company.beta}
-    </span>
-  );
+/** The beta tag on the "Company" option, its tooltip saying what the beta means. */
+export function CompanyBetaBadge() {
+  return <BetaBadge label={S.company.beta} title={S.company.betaTitle} />;
 }

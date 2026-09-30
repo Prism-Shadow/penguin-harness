@@ -53,7 +53,7 @@ import { toastAttention } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { apiErrorText } from "../lib/api-error";
 import { S } from "../lib/strings";
-import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/beta-badge";
+import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/company-beta";
 import { channelBadgeCounts } from "../features/company/channel-list";
 import { orgKey, parseOrgKey } from "../features/company/company-nav";
 import type { WorkMode } from "../features/company/company-nav";

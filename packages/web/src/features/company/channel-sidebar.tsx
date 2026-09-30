@@ -18,6 +18,7 @@ import { NavLink, useNavigate } from "react-router";
 import type { OrgChannelItem } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  FolderSection,
   GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
@@ -32,7 +33,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { toneInk, toneSurface } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { FolderSection, Icon } from "../../components/ui/group-list";
+import { Icon } from "../../components/ui/group-list";
 import { Truncated } from "../../components/ui/truncated";
 import { orgChannelPath } from "./company-nav";
 import { JoinChannelConfirm, NewChannelDialog } from "./channel-dialogs";

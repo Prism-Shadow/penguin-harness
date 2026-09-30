@@ -30,6 +30,7 @@ import {
   AgentAvatar,
   Button,
   Dropdown,
+  FolderSection,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
@@ -47,7 +48,7 @@ import { toneDot, toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
-import { FolderSection, Icon } from "../../components/ui/group-list";
+import { Icon } from "../../components/ui/group-list";
 import {
   DESK_ROW_ACTIONS,
   SessionRowHoverActions,

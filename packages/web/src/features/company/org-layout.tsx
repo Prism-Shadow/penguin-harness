@@ -18,9 +18,10 @@
  * overview's inbox, a channel's reference — so the window belongs to the shell around the
  * pages rather than to any one of them.
  *
- * The page primitives live here too — `OrgPage`, `OrgSection`, `OrgEmptyLine` and the
- * skeleton — so every organization page shares one frame, one header row and one section
- * rule instead of each drawing its own.
+ * The page primitives live here too — `OrgPage` (the UI package's page frame and header at the
+ * organization pages' width), `OrgEmptyLine` and the skeleton — so every organization page
+ * shares one frame and one header row instead of each drawing its own; a page's sections are
+ * the package's `RuledSection`.
  */
 import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -31,9 +32,9 @@ import {
   EmptyState,
   GlyphIcon,
   ICONS,
-  ICON_GAP,
   ICON_SIZE,
-  InfoPopover,
+  PageFrame,
+  PageHeader,
   Skeleton,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -59,15 +60,6 @@ export function useOrg(): OrgContextValue {
   return ctx;
 }
 
-/** The scrolling column every organization surface sits in, and the width the narrow pages read best at. */
-function OrgFrame({ wide = false, children }: { wide?: boolean; children: ReactNode }) {
-  return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className={wide ? "min-w-0" : "mx-auto max-w-6xl"}>{children}</div>
-    </div>
-  );
-}
-
 /**
  * The frame the two organization-less surfaces sit in — the empty landing and the stale deep
  * link. Each is one short block of guidance with nothing above or below it, so the column
@@ -78,9 +70,9 @@ function OrgFrame({ wide = false, children }: { wide?: boolean; children: ReactN
  */
 function OrgCenteredFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="flex min-h-full flex-col justify-center">{children}</div>
-    </div>
+    <PageFrame width="full" contentClassName="flex min-h-full flex-col justify-center">
+      {children}
+    </PageFrame>
   );
 }
 
@@ -93,9 +85,9 @@ export function OrgIndexRedirect() {
   // first load never reads as a broken route.
   if (!company.orgsLoaded) {
     return (
-      <OrgFrame>
+      <PageFrame width="xl">
         <OrgPageSkeleton />
-      </OrgFrame>
+      </PageFrame>
     );
   }
   const target = resolveOrgLanding(
@@ -276,10 +268,11 @@ export function OrgLayout() {
 }
 
 /**
- * The page frame every organization page shares: a scrolling column with the page title,
- * its "?" (the page's semantics, disclosed on request) and the header actions on one row,
- * the content below. The organization's name is not repeated in the title — the switcher
- * above the sidebar already names it; the overview's own hero is the one place it is.
+ * The page every organization page is: the package's page frame at the organization pages'
+ * width, with its header — the page title, its "?" (the page's semantics, disclosed on
+ * request) and the header actions on one row — and the content below. The organization's
+ * name is not repeated in the title — the switcher above the sidebar already names it; the
+ * overview's own hero is the one place it is.
  */
 export function OrgPage({
   title,
@@ -296,18 +289,10 @@ export function OrgPage({
   children: ReactNode;
 }) {
   return (
-    <OrgFrame wide={wide}>
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <h1 className={`flex min-w-0 items-center ${ICON_GAP.row} text-xl font-semibold`}>
-          {title}
-          {info !== undefined && <InfoPopover label={title}>{info}</InfoPopover>}
-        </h1>
-        {actions !== undefined && (
-          <div className="flex flex-wrap items-center gap-2">{actions}</div>
-        )}
-      </div>
+    <PageFrame width={wide ? "full" : "xl"}>
+      <PageHeader title={title} info={info} actions={actions} />
       {children}
-    </OrgFrame>
+    </PageFrame>
   );
 }
 
@@ -317,55 +302,11 @@ export function OrgPageSkeleton() {
     <div className="space-y-6" aria-busy="true">
       <Skeleton className="h-20" />
       <Skeleton className="h-24" />
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Skeleton className="h-40" />
         <Skeleton className="h-40" />
       </div>
     </div>
-  );
-}
-
-/**
- * A ruled section: a small uppercase title with an optional count, its "?" and optional
- * trailing controls, a rule beneath, then the body. Sections, not cards — the page reads
- * as one column of titled runs rather than a grid of boxes.
- */
-export function OrgSection({
-  title,
-  info,
-  count,
-  actions,
-  children,
-  className = "",
-}: {
-  title: string;
-  info?: string;
-  /** How many items the body holds, shown after the title (omit for sections that are not lists). */
-  count?: number;
-  actions?: ReactNode;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <section className={`min-w-0 ${className}`}>
-      <div className="mb-3 flex items-center justify-between gap-2 border-b border-gray-200 pb-2 dark:border-gray-800">
-        <h2
-          className={`flex min-w-0 items-center ${ICON_GAP.row} text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
-        >
-          {title}
-          {count !== undefined && (
-            <span className="rounded-full bg-gray-100 px-1.5 text-[10px] font-semibold tabular-nums text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-              {count}
-            </span>
-          )}
-          {info !== undefined && <InfoPopover label={title}>{info}</InfoPopover>}
-        </h2>
-        {actions !== undefined && (
-          <div className="flex shrink-0 items-center gap-1.5">{actions}</div>
-        )}
-      </div>
-      {children}
-    </section>
   );
 }
 

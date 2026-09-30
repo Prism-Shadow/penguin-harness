@@ -20,9 +20,12 @@
  * |                    | above an `h1`–`h4`); hosts: `Text variant="eyebrow"`,    |                                                       |
  * |                    | the sidebar's and group headers' labels                  |                                                       |
  * | `ui-display`       | the one display title of a page or hero                  | only on an `h1` or `[aria-level="1"]`                 |
- * | `ui-live`          | motion for something that is running right now           | `data-live="dot" \| "caret" \| "spinner"`             |
+ * |                    | hosts: `Heading level={1} display`, `PageHeader`'s title |                                                       |
+ * | `ui-live`          | motion for something that is running right now           | `data-live="dot" \| "caret" \| "spinner" \| "bar"`   |
  * |                    | hosts: the Spinner, a pulsing Dot                        |                                                       |
  * | `ui-frame`         | a ruled box with a head, a body, a foot and panes        | children carry `data-slot="head" \| "body" \| "foot" \| "pane"` |
+ * |                    | hosts: the transcript's cards, the code block, `Card`,   |                                                       |
+ * |                    | a framed `Table`                                         |                                                       |
  * | `ui-underline-nav` | the selected-tab marker of a tab bar                     | items `[role="tab"]`, selected by `aria-selected="true"` |
  * | `ui-shell`         | the app window: a navigation column beside a main column | children carry `data-slot="nav" \| "main"` (a right column may carry `"dock"`); the selected nav row is `[aria-current="page"]` |
  * | `ui-icon-decor`    | an icon that says nothing its label does not already say | on the icon itself (or the element holding only it); optional `data-role="nav" \| "group" \| "menu" \| "empty"` |

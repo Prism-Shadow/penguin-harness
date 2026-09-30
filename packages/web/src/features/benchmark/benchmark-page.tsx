@@ -45,7 +45,8 @@ import { useSessions } from "../../state/sessions";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { useLocale } from "../../state/locale";
-import { AiCreateModal, CreateButtons, pickDefaultAgent } from "../ai-create";
+import { AiCreateModal, pickDefaultAgent } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { latestWithDelta, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
 import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompts";
 import { benchmarkRoute } from "./benchmark-route";
@@ -85,7 +86,7 @@ export function BenchmarkCreateButtons({
   onAi: () => void;
   onManual: () => void;
 }) {
-  return <CreateButtons size="sm" onAi={onAi} {...(isOwner ? { onManual } : {})} />;
+  return <AiCreateButtons size="sm" onAi={onAi} {...(isOwner ? { onManual } : {})} />;
 }
 
 /**

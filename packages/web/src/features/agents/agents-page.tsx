@@ -46,6 +46,7 @@ import {
   Skeleton,
   SkeletonCard,
   Textarea,
+  TodoNotice,
   UpdatePill,
   toastError,
   toastSuccess,
@@ -62,7 +63,6 @@ import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/b
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { TodoNotice } from "../../components/ui/todo-notice";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
@@ -78,7 +78,8 @@ import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { AiCreateModal, CreateButtons } from "../ai-create";
+import { AiCreateModal } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { mergeAgents } from "../../lib/benchmark-merge";
 import type { AgentSource } from "../../lib/benchmark-merge";
 import { useSessions } from "../../state/sessions";
@@ -498,7 +499,7 @@ export function AgentsPage() {
                   placeholder={S.agent.searchPlaceholder}
                 />
               </div>
-              <CreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
+              <AiCreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
             </div>
           </div>
 
@@ -782,7 +783,7 @@ export function AgentsPage() {
                 title={S.agent.firstAgentTitle}
                 description={S.agent.firstAgentDesc}
                 action={
-                  <CreateButtons size="sm" onAi={() => setAiOpen(true)} onManual={openCreate} />
+                  <AiCreateButtons size="sm" onAi={() => setAiOpen(true)} onManual={openCreate} />
                 }
               />
             )}

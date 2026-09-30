@@ -21,6 +21,7 @@ import {
   ICONS,
   Input,
   Modal,
+  RuledSection,
   Segmented,
   Select,
   Textarea,
@@ -39,7 +40,6 @@ import { useTheme } from "../../state/theme";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { OrgSection } from "./org-layout";
 import { MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
@@ -224,7 +224,7 @@ export function HireDialog({
         }
       >
         <div className="space-y-5">
-          <OrgSection title={S.company.chart.hireAgentSection}>
+          <RuledSection title={S.company.chart.hireAgentSection}>
             <div className="space-y-3">
               <div>
                 <FieldLabel>{S.company.chart.hireSource}</FieldLabel>
@@ -325,8 +325,8 @@ export function HireDialog({
                 </>
               )}
             </div>
-          </OrgSection>
-          <OrgSection title={S.company.chart.hirePositionSection}>
+          </RuledSection>
+          <RuledSection title={S.company.chart.hirePositionSection}>
             <div className="space-y-3">
               <Input
                 label={S.company.chart.employeeTitle}
@@ -370,7 +370,7 @@ export function HireDialog({
                 }}
               />
             </div>
-          </OrgSection>
+          </RuledSection>
         </div>
       </Modal>
       <ConfirmModal
