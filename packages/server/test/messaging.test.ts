@@ -129,7 +129,6 @@ import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js"
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp, TestAppOptions } from "./helpers.js";
 
-const SID = "session-2026-08-25-10-00-00-fe15aa01";
 const BASE = (sid: string) => `/api/sessions/${sid}/messaging/feishu`;
 
 /**
@@ -3249,6 +3248,7 @@ describe("an inbound message whose Task cannot start", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let fake: FakeFeishuSdk;
+  const SID = uniqueSessionId();
 
   beforeEach(async () => {
     fake = new FakeFeishuSdk();
@@ -3307,6 +3307,7 @@ describe("a redelivered inbound message", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let fake: FakeFeishuSdk;
+  const SID = uniqueSessionId();
   let runs: InputPayload[][];
   let clock: number;
 
@@ -3484,7 +3485,7 @@ describe("a message carrying several files", () => {
   afterEach(() => {
     release?.();
     bridge.stop();
-    // The binding goes with the case, so the next case's bridge starts on its own alone.
+    // The binding goes with the case, so the next case's bridge starts with its own alone.
     t.deps.messaging.unbindSession(SID);
   });
 
