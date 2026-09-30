@@ -58,6 +58,7 @@ import {
   subscribeTerminalCloseRequests,
 } from "../terminal/terminal-view-pool";
 import type { TerminalInfo } from "../terminal/terminal-view";
+import { isBrowserOffered, subscribeBrowser } from "../builtin-browser/browser-store";
 import { confirmClose } from "./close-guard";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
@@ -238,11 +239,14 @@ function DockPicker({
   choose,
   chooseTerminal,
   terminalSupported,
+  browserOffered,
   horizontal,
 }: {
   choose: (kind: PanelKind) => void;
   chooseTerminal: () => void;
   terminalSupported: boolean;
+  /** The built-in browser can be shown here (the desktop app's own window, with a shell that hosts it). */
+  browserOffered: boolean;
   /** The bottom (and merged) surface lays its choices out in a row, the right one as a list. */
   horizontal: boolean;
 }) {
@@ -289,6 +293,7 @@ function DockPicker({
             </kbd>
           </button>
         )}
+        {browserOffered && row("builtin-browser")}
         {row("workspace")}
         {row("memory")}
         {row("trace")}
@@ -323,6 +328,7 @@ export function DockPanel({
 }: DockPanelProps) {
   useSyncExternalStore(subscribeDock, dockVersion);
   const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
+  const browserOffered = useSyncExternalStore(subscribeBrowser, isBrowserOffered);
   const terminalById = new Map(terminals.map((t) => [t.id, t]));
   const { position, merged, tabs, activeKey } = view;
   const horizontal = position === "bottom";
@@ -577,7 +583,7 @@ export function DockPanel({
         </DockButton>
       }
     >
-      {PANEL_KINDS.map((kind) => (
+      {PANEL_KINDS.filter((kind) => kind !== "builtin-browser" || browserOffered).map((kind) => (
         <button
           key={kind}
           type="button"
@@ -786,6 +792,7 @@ export function DockPanel({
         choose={(kind) => openPanel(kind, merged ? undefined : position)}
         chooseTerminal={() => void openTerminalInDock(merged ? undefined : position)}
         terminalSupported={terminalSupported}
+        browserOffered={browserOffered}
         horizontal={horizontal}
       />
     ) : (

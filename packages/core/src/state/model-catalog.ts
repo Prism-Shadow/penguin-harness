@@ -19,7 +19,9 @@
  * lists, TokenDance's deepseek-v4-flash-0731 / deepseek-v4-pro-0813 / kimi-k3 promotions, the
  * OpenRouter qwen/qwen3.8-27b row, the Fireworks AI and SiliconFlow additions, and both Qwen
  * groups' line-ups with their peak/off-peak DeepSeek rows: 2026-09-16 — per each provider's
- * docs).
+ * docs; and the ModelScope group, whose preset ids were read from public model pages and
+ * endpoint listings — their windows, vision flags and prices are NOT verified and say so on the
+ * rows themselves: 2026-09-18 and 2026-09-20).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -40,10 +42,12 @@
  * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
  * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
  * non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor ids are
- * auto-routed by AgentHub and leave client_type unset; the six gateway groups (OpenRouter,
- * Fireworks AI, SiliconFlow, TokenDance, Qwen Pay-As-You-Go, Qwen Token Plan) can't be
- * auto-routed, so every gateway row **always pins an explicit client_type** and inlines its
- * preset base URL. Two groups pin at GROUP level as well (ModelProviderInfo.clientType, read
+ * auto-routed by AgentHub and leave client_type unset; six gateway groups (OpenRouter,
+ * Fireworks AI, SiliconFlow, TokenDance, Qwen Pay-As-You-Go and Qwen Token Plan)
+ * can't be auto-routed, so every gateway row **always pins an explicit client_type** and
+ * inlines its preset base URL. ModelScope is a mixed-protocol aggregator like Penguin Go:
+ * each row pins the AgentHub protocol that its upstream model should display and use.
+ * Two groups pin at GROUP level as well (ModelProviderInfo.clientType, read
  * through providerClientType), so that a model the user adds there speaks the same protocol
  * as the presets: vLLM, whose added models have no preset base URL to inherit either, and
  * OpenRouter, whose do — see each group's own block comment.
@@ -55,12 +59,16 @@
  * - `openai-responses` for every OpenRouter row: OpenRouter serves the Responses API for
  *   every upstream at the same base URL the rows already carry, and the group pins the same
  *   protocol so a user-added entry inherits it;
- * - `openai-chat` for the other gateway rows (AgentHub 0.4.2's canonical name for the
- *   generic Chat Completions client — the bare "openai" spelling is a deprecated upstream
- *   alias, see canonicalClientType);
+ * - `openai-chat` for the other OpenAI-compatible gateway rows (AgentHub 0.4.2's canonical
+ *   name for the generic Chat Completions client — the bare "openai" spelling is a
+ *   deprecated upstream alias, see canonicalClientType);
  * - `openai-chat-vllm-adapter` for the vLLM group, which is Chat Completions on the wire
  *   but maps the thinking level onto the served model's own chat template
  *   (VLLM_CLIENT_TYPE).
+ * ModelScope's rows follow the same explicit-row rule as Penguin Go even though the endpoint is
+ * one gateway: its Qwen rows pin the vLLM adapter, while its DeepSeek row pins `deepseek-v4` so
+ * the frontend shows each model's actual AgentHub protocol instead of flattening the group.
+ *
  * Two direct-vendor rows pin anyway, because their own id does not route: the MiniMax M3
  * preset pins AgentHub's first-party `minimax-m3` protocol and direct API endpoint, and
  * `deepseek-flash` pins `deepseek-v4` because AgentHub 0.4.11 routes DeepSeek on that
@@ -90,11 +98,36 @@ export interface ModelProviderOAuth {
   keyName: string;
 }
 
+/**
+ * A group whose credential the App obtains through its own authorization flow rather than by
+ * asking the vendor: the client registers a one-time code and device secret with an external
+ * bridge, sends the user to the page that bridge hands back, and polls until the bridge
+ * delivers the credential. Distinct from `oauth`, where the App itself speaks the vendor's
+ * PKCE page — here the App never reaches the vendor at all, because the bridge holds the
+ * client secret that conversation would need.
+ *
+ * The bridge's own address is deliberately NOT here: this file is bundled for the browser and
+ * cannot read configuration, so the App resolves the bridge server-side from its environment
+ * (PENGUIN_GO_ORIGIN / MODELSCOPE_BRIDGE_URL), keyed by the group's id.
+ */
+export interface ModelProviderBridgeAuth {
+  /**
+   * Which App-side flow serves this group — one route family and one service per value, so
+   * the Web App picks from the group's descriptor rather than from its id.
+   */
+  flow: "penguin-go" | "modelscope";
+}
+
 export interface ModelProviderInfo {
   id: string;
   /** Display name (brand name, shared by Chinese and English UI). */
   label: string;
-  /** API key env var name (AgentHub reads this automatically when credential is blank). */
+  /**
+   * API key env var name: the pair AgentHub's client for this group's rows reads when handed no
+   * key. Whether a keyless row may actually lean on it is decided per entry by
+   * modelEnvFallback — a gateway group records OPENAI_* because that is what its generic
+   * client reads, and precisely for that reason its rows never get the fallback.
+   */
   envKey: string;
   /** base URL env var name. */
   envBaseUrlKey: string;
@@ -113,6 +146,13 @@ export interface ModelProviderInfo {
    * every provider whose keys are only obtainable from its console.
    */
   oauth?: ModelProviderOAuth;
+  /**
+   * The App-side authorization flow that obtains this group's credential (see
+   * ModelProviderBridgeAuth); absent for every group whose credential comes from a console or
+   * from the vendor's own page. Declaring it is what puts the "authorize a key" action on the
+   * group in the Web App.
+   */
+  bridgeAuth?: ModelProviderBridgeAuth;
   /**
    * The AgentHub protocol EVERY entry in this group speaks, models the user adds included.
    *
@@ -213,10 +253,14 @@ const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
 const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
 export const PENGUIN_GO_BASE_URL = "https://token.penguin.ooo/api";
 
 /** Provider id for the preconfigured Penguin Go relay group. */
 export const PENGUIN_GO_PROVIDER_ID = "penguin-go";
+
+/** Provider id for the ModelScope group. */
+export const MODELSCOPE_PROVIDER_ID = "modelscope";
 
 /**
  * Provider list (web model page groups in this order BY DEFAULT — a user's dragged
@@ -229,12 +273,16 @@ export const PENGUIN_GO_PROVIDER_ID = "penguin-go";
  * moves when the curation changes: a Project that has ever reordered its groups has every
  * key stored already, so it keeps the arrangement its user built.
  *
- * The six gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance, Qwen
- * Pay-As-You-Go and Qwen Token Plan — reach their models through one of AgentHub's generic
+ * The six OpenAI-compatible gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance,
+ * Qwen Pay-As-You-Go and Qwen Token Plan — reach their models through one of AgentHub's generic
  * OpenAI-protocol clients (`openai-responses` for OpenRouter, `openai-chat` for the rest).
  * Those clients read **OPENAI_API_KEY / OPENAI_BASE_URL** when the credential is blank, not
- * the gateway's own variable names, so every gateway group records the OPENAI_* pair and the
- * env fallback hint the frontend shows is accurate either way.
+ * the gateway's own variable names, so every such gateway group records the OPENAI_* pair as the
+ * fact it is — and that is exactly why a keyless gateway row is refused the fallback (see
+ * modelEnvFallback): the variable holds the user's OpenAI key, and a gateway is not OpenAI.
+ * ModelScope also records the OPENAI_* pair because its group credential is an api-inference
+ * access token even when a row's protocol is model-specific; its rows are refused the fallback
+ * on the same terms.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
@@ -262,6 +310,7 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     envBaseUrlKey: "PENGUIN_GO_BASE_URL",
     apiKeyUrl: "https://token.penguin.ooo/",
     modelsUrl: "https://token.penguin.ooo/",
+    bridgeAuth: { flow: "penguin-go" },
   },
   {
     id: "deepseek",
@@ -369,6 +418,28 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     modelsUrl:
       "https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-overview",
     gatewayBaseUrl: QWEN_TOKEN_PLAN_BASE_URL,
+  },
+  {
+    // ModelScope's own inference service: OpenAI-compatible, reselling other vendors' models
+    // under `org/Model-Name` ids. Two things set it apart from the gateways above.
+    //
+    // Its credential is the account's access token rather than a minted API key, and the
+    // group obtains one through the authorization bridge instead of sending the user to copy
+    // it out of the console (bridgeAuth below; the console link stays for anyone who already
+    // has a token). ModelScope is the vendor here as well as the gateway — the bridge exists
+    // because its OAuth requires a client secret the desktop App cannot keep locally, not
+    // because inference requests are routed through that bridge.
+    //
+    // The endpoint host is still inlined on every preset row; the row's own `client_type` tells
+    // the frontend which AgentHub protocol that upstream model uses, as with Penguin Go.
+    id: MODELSCOPE_PROVIDER_ID,
+    label: "ModelScope",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://www.modelscope.cn/my/myaccesstoken",
+    modelsUrl: "https://www.modelscope.cn/models",
+    gatewayBaseUrl: MODELSCOPE_BASE_URL,
+    bridgeAuth: { flow: "modelscope" },
   },
   {
     // Self-hosted: the user runs the server, so there is no console to mint a key at
@@ -1927,6 +1998,52 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: QWEN_PAYG_BASE_URL,
   },
+  // -- ModelScope (api-inference aggregate, preset base URL). Preset ids keep ModelScope's
+  // own `org/Model-Name` spelling; DeepSeek was read from the endpoint's public /v1/models
+  // listing (2026-09-18), and the Qwen additions from their public model pages (2026-09-20).
+  //
+  // Like Penguin Go, this is a mixed-protocol aggregate: rows pin the AgentHub protocol the
+  // upstream model should display and use. The Qwen ids have no native AgentHub qwen client and
+  // therefore use the vLLM Chat Completions adapter, which maps thinking controls onto their
+  // chat templates; the DeepSeek id pins `deepseek-v4` so it shows the same protocol family as
+  // the direct and Penguin Go DeepSeek V4 rows instead of flattening the group to one protocol.
+  //
+  // The window and vision flags are NOT read from ModelScope's own docs — its model pages are
+  // client-rendered and carry no price. They repeat what other rows of the same models record,
+  // because ModelScope serves the same upstream ids.
+  //
+  // `pricing` is deliberately absent. ModelScope bills for api-inference and does not publish a
+  // read-able rate, so an absent pricing — which the catalog reads as "nobody has looked this
+  // up", leaving the row unbadged and the group's usage uncosted — is the honest state. A
+  // three-zero pricing would be worse than absent here, not better: `isFreeModel` would badge a
+  // billed gateway as "Free". Whoever next reads ModelScope's pricing page should fill it in. --
+  {
+    modelId: "deepseek-ai/DeepSeek-V4.1-Flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: MODELSCOPE_PROVIDER_ID,
+    contextWindow: 1000000,
+    supportsVision: true,
+    clientType: "deepseek-v4",
+    baseUrl: MODELSCOPE_BASE_URL,
+  },
+  {
+    modelId: "Qwen/Qwen3.8-27B",
+    displayName: "Qwen 3.8 27B",
+    provider: MODELSCOPE_PROVIDER_ID,
+    contextWindow: 262144,
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+    baseUrl: MODELSCOPE_BASE_URL,
+  },
+  {
+    modelId: "Qwen/Qwen3.8-Flash-Next",
+    displayName: "Qwen 3.8 Flash Next",
+    provider: MODELSCOPE_PROVIDER_ID,
+    contextWindow: 262144,
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+    baseUrl: MODELSCOPE_BASE_URL,
+  },
   // -- MiniMax (direct M3 Responses client; official USD pay-as-you-go list prices, standard
   // tier at <=512K input — every rate doubles above 512K, and the priority tier is 1.5x). --
   {
@@ -2419,6 +2536,55 @@ export function providerClientType(providerId: string): string | undefined {
   return providerInfo(providerId)?.clientType;
 }
 
+/**
+ * A first-party vendor group: one this catalog knows, that is not `custom`, carries no
+ * gateway endpoint and pins no protocol of its own — DeepSeek, Google, OpenAI, Anthropic,
+ * Z.AI, Moonshot, MiniMax, and the Penguin Go relay.
+ *
+ * What distinguishes it is that nothing in it decides a protocol: its entries persist no
+ * `client_type`, so AgentHub places every one of them by the spelling of the upstream model
+ * id alone. That makes the group's contents a closed set — the ids this catalog ships, plus
+ * the few whose preset pins a protocol because their own id would not route — and an id
+ * outside it cannot be started at all, whatever else is configured on the entry. Every
+ * surface that has to answer "may a model be added here, and is this one routable?" reads
+ * the group's shape through this one predicate rather than re-deriving it: the models page's
+ * group actions and its config dialog, the models PUT, and the CLI's `config model add`.
+ *
+ * Every other group answers the protocol question by itself and therefore takes any id the
+ * endpoint serves: `custom` and user-defined groups detect or pick it, a gateway inherits its
+ * preset's, and a group-level pin (OpenRouter, vLLM) hands it to every entry.
+ */
+export function isVendorGroup(providerId: string): boolean {
+  const info = providerInfo(providerId);
+  return (
+    info !== undefined &&
+    info.id !== "custom" &&
+    info.gatewayBaseUrl === undefined &&
+    info.clientType === undefined
+  );
+}
+
+/**
+ * Whether this entry would be written into a vendor group with an id AgentHub cannot place
+ * — the configuration that produces `"<id> is not supported. Supported client types: …"` on
+ * the first request, and nothing before it.
+ *
+ * `resolveModelEnv` is the authority: it mirrors AutoLLMClient's routing rules branch for
+ * branch and returns undefined on exactly the ids that client rejects. A blank id is not a
+ * routing failure — the entry is still being typed, and the required-field validation is
+ * what has something to say about it.
+ */
+export function unroutableVendorModel(
+  provider: string,
+  modelId: string,
+  clientType?: string,
+): boolean {
+  const id = modelId.trim();
+  if (id === "" || !isVendorGroup(provider)) return false;
+  const pinned = clientType?.trim();
+  return resolveModelEnv(id, pinned === "" ? undefined : pinned) === undefined;
+}
+
 /** Env var fallback for a single model (the var names AgentHub's client actually reads when api_key / base_url is blank). */
 export interface ModelEnvInfo {
   envKey: string;
@@ -2486,22 +2652,263 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
 
 /**
  * Resolves the credential environment for a configured model entry. Most groups follow the
- * AgentHub client selected by model id / protocol. The Penguin Go relay is deliberately
- * different: its Google and OpenAI routes share one relay credential, so its provider-scoped
- * variable must win over both clients' vendor variables everywhere the harness resolves a key.
+ * AgentHub client selected by model id / protocol. Aggregate groups are deliberately different:
+ * Penguin Go's Google and DeepSeek routes share one relay credential, and ModelScope's Qwen and
+ * DeepSeek routes share one api-inference token, so the provider-scoped variable must win over
+ * the selected protocol everywhere the harness resolves a key. Whether a keyless row may use
+ * that variable is modelEnvFallback's decision: ModelScope's is OPENAI_*, a vendor variable, so
+ * its rows get no fallback.
  */
 export function resolveProviderModelEnv(
   provider: string,
   modelId: string,
   clientType?: string,
 ): ModelEnvInfo | undefined {
-  if (provider === PENGUIN_GO_PROVIDER_ID) {
+  if (provider === PENGUIN_GO_PROVIDER_ID || provider === MODELSCOPE_PROVIDER_ID) {
     const group = providerInfo(provider);
     return group === undefined
       ? undefined
       : { envKey: group.envKey, envBaseUrlKey: group.envBaseUrlKey };
   }
   return resolveModelEnv(modelId, clientType);
+}
+
+/**
+ * The endpoints AgentHub's vendor clients talk to when handed no base URL, per credential
+ * variable: the OpenAI and Anthropic SDK defaults, Google's Generative Language host, the
+ * defaults the vendor-specific clients (deepseek_v4, glm5_3, kimi_k3, minimax_m3) carry, plus
+ * the second official host where a vendor runs two (Z.AI's mainland bigmodel.cn, Moonshot's
+ * international .ai, MiniMax's mainland minimaxi.com). A key taken from the environment is
+ * sent only to one of these — see modelEnvFallback.
+ */
+export const VENDOR_ENDPOINTS: Readonly<Record<string, readonly string[]>> = {
+  OPENAI_API_KEY: ["https://api.openai.com/v1"],
+  ANTHROPIC_API_KEY: ["https://api.anthropic.com"],
+  GEMINI_API_KEY: ["https://generativelanguage.googleapis.com"],
+  DEEPSEEK_API_KEY: [DEEPSEEK_BASE_URL],
+  ZAI_API_KEY: ["https://api.z.ai/api/paas/v4", "https://open.bigmodel.cn/api/paas/v4"],
+  MOONSHOT_API_KEY: ["https://api.moonshot.cn/v1", "https://api.moonshot.ai/v1"],
+  MINIMAX_API_KEY: [MINIMAX_BASE_URL, "https://api.minimaxi.com/v1"],
+};
+
+/**
+ * Endpoint equality for the credential rule: scheme and host compared case-insensitively
+ * (with the port), the path without trailing slashes; a value that does not parse as a URL
+ * matches nothing.
+ */
+export function sameEndpoint(a: string, b: string): boolean {
+  const norm = (value: string): string | undefined => {
+    try {
+      const u = new URL(value.trim());
+      return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
+    } catch {
+      return undefined;
+    }
+  };
+  const na = norm(a);
+  return na !== undefined && na === norm(b);
+}
+
+/** What the credential rule reads off a model entry: the paired reference, the pinned protocol and the endpoint. */
+export interface ModelCredentialShape {
+  provider: string;
+  modelId: string;
+  /** Pinned AgentHub client type; blank or absent = auto-routed by model id. */
+  clientType?: string | undefined;
+  /** Inline base URL; blank or absent = the routed client's default endpoint (or its `*_BASE_URL` variable). */
+  baseUrl?: string | undefined;
+}
+
+/** The environment pair a keyless entry may fall back to, and who reads it. */
+export interface ModelEnvFallback extends ModelEnvInfo {
+  /**
+   * `true`: AgentHub's routed client reads this pair itself, so the harness hands it no key
+   * and the client's own environment lookup — and its own error when the variable is unset —
+   * apply unchanged. `false`: a provider-scoped pair no AgentHub client knows (the Penguin Go
+   * relay's); the harness reads it and passes the value explicitly, refusing when it is unset.
+   */
+  readByClient: boolean;
+}
+
+/**
+ * The environment fallback a keyless model entry is allowed, or `undefined` when it gets
+ * none and must carry its own key.
+ *
+ * AgentHub's clients read a vendor variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …)
+ * whenever they are handed no key, whatever base URL they were pointed at — so a keyless row
+ * in a gateway group would send the user's own OpenAI or Anthropic key to the gateway. The
+ * rule here is about the **destination**, not the group's label: environment keys are for
+ * official endpoints only.
+ *
+ * - No base URL on the entry: the routed client talks to its own default endpoint, or to the
+ *   `*_BASE_URL` the user set beside the key — that pairing is AgentHub's own and is left to
+ *   it entirely; the client reads the pair itself.
+ * - A base URL that is one of that vendor's own official endpoints (VENDOR_ENDPOINTS; the
+ *   catalog pins the DeepSeek and MiniMax rows this way) — allowed.
+ * - Anything else — every gateway group's preset endpoint, custom / user-defined / vLLM rows
+ *   with their own endpoints, a vendor row re-pointed at a proxy — refused. A row's own base
+ *   URL equal to the `*_BASE_URL` variable's value earns no exception either (per the user:
+ *   environment keys are for official endpoints only): put the key on the row.
+ * - A group with a provider-scoped pair (Penguin Go, whose key no AgentHub client reads) is
+ *   allowed that pair for every one of its rows, regardless of base URL; the harness reads it.
+ *   A group pair that is itself a vendor variable (ModelScope records OPENAI_*) is not
+ *   provider-scoped: its rows follow the destination rule like any other gateway's.
+ *
+ * Pure, so the server and the models page answer the same question for the preview, the
+ * dialog hint and the refusal.
+ */
+export function modelEnvFallback(entry: ModelCredentialShape): ModelEnvFallback | undefined {
+  const clientType = entry.clientType?.trim() || undefined;
+  const clientPair = resolveModelEnv(entry.modelId, clientType);
+  const groupPair = resolveProviderModelEnv(entry.provider, entry.modelId, clientType);
+  // VENDOR_ENDPOINTS keys every variable an AgentHub client reads (each pair resolveModelEnv
+  // can name), so a group pair outside it is one only the harness knows.
+  if (
+    groupPair !== undefined &&
+    groupPair.envKey !== clientPair?.envKey &&
+    !Object.hasOwn(VENDOR_ENDPOINTS, groupPair.envKey)
+  ) {
+    return { ...groupPair, readByClient: false };
+  }
+  if (clientPair === undefined) return undefined;
+  const baseUrl = entry.baseUrl?.trim();
+  if (!baseUrl) return { ...clientPair, readByClient: true };
+  if ((VENDOR_ENDPOINTS[clientPair.envKey] ?? []).some((own) => sameEndpoint(own, baseUrl))) {
+    return { ...clientPair, readByClient: true };
+  }
+  return undefined;
+}
+
+/**
+ * The variable a keyless entry added to this group with the group's defaults falls back to,
+ * or `undefined` when such an entry gets none: gateways (a preset base URL), the pinned
+ * self-hosted group (vLLM), custom and user-defined groups all point away from the vendors'
+ * own endpoints. The group-level key dialog's hint and the group header read this.
+ */
+export function providerEnvFallbackKey(providerId: string): string | undefined {
+  const info = providerInfo(providerId);
+  if (
+    info === undefined ||
+    info.id === "custom" ||
+    info.gatewayBaseUrl !== undefined ||
+    info.clientType !== undefined
+  ) {
+    return undefined;
+  }
+  return info.envKey;
+}
+
+/**
+ * A model entry that cannot be given to an AgentHub client as configured: no key, and no
+ * environment variable it may use; or a relay row with no endpoint for its relay key. The
+ * message names the model and what to do, and says "API key" so hosts that classify
+ * credential errors by message (the server's `isMissingCredential`) file it with the SDKs'
+ * own missing-credential errors.
+ */
+export class ModelCredentialError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelCredentialError";
+  }
+}
+
+/** What a client is constructed with: an explicit key, or none when the routed client may read its own variable. */
+export interface ResolvedModelCredential {
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+/**
+ * The credential an AgentHub client is built with for a **model entry**, applying
+ * modelEnvFallback's rule (the one function every path shares): Session creation and resume,
+ * the vision describer, the connectivity / speed / vision probes and the utility completion
+ * go through here; the endpoint listing and protocol detection, which have a protocol and a
+ * URL but no entry, apply the same rule through endpointEnvApiKey.
+ *
+ * - An inline key (the entry's, or an explicit override) is used as given.
+ * - No key, fallback allowed and read by the client: no key is handed over, the client reads
+ *   the pair itself — byte-for-byte what happened before this rule existed, including the
+ *   SDK's own error when the variable is unset too (an entry with no base URL under a Bedrock
+ *   `ANTHROPIC_BASE_URL` and no `ANTHROPIC_API_KEY` stays valid).
+ * - No key, fallback allowed but provider-scoped: the variable's value is passed explicitly,
+ *   and an unset variable is refused here rather than letting the client read a vendor's.
+ * - No key, no fallback: refused with a ModelCredentialError before any client exists.
+ * - A provider-scoped group's row (Penguin Go) is also refused without a base URL, whatever
+ *   the key's source: the relay key must not travel to the vendor's default endpoint.
+ */
+export function resolveModelCredential(
+  entry: ModelCredentialShape & { apiKey?: string | undefined },
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): ResolvedModelCredential {
+  const ref = `${entry.provider}/${entry.modelId}`;
+  const baseUrl = entry.baseUrl || undefined;
+  const apiKey = entry.apiKey || undefined;
+  const fallback = modelEnvFallback(entry);
+  if (fallback !== undefined && !fallback.readByClient && !baseUrl?.trim()) {
+    throw new ModelCredentialError(
+      `Model ${ref} has no base URL. Its API key belongs to the ${providerInfo(entry.provider)?.label ?? entry.provider} endpoint and cannot be sent to the vendor's default endpoint: set the base URL on the model entry.`,
+    );
+  }
+  if (apiKey !== undefined) return { apiKey, ...(baseUrl !== undefined ? { baseUrl } : {}) };
+  if (fallback === undefined) {
+    // A Bedrock region on the entry is not "not the vendor's": it is AWS, whose usual
+    // credential is the default provider chain rather than a key. Until AgentHub stops
+    // letting its Bedrock client attach ANTHROPIC_API_KEY, a keyless row here is refused,
+    // and the message says what still works.
+    if (baseUrl?.trim().toLowerCase().startsWith("bedrock://")) {
+      throw new ModelCredentialError(
+        `Model ${ref} has no API key. A Bedrock endpoint set on the model entry cannot fall back to the environment yet: set the entry's AWS key (access,secret), or leave its base URL empty and set ANTHROPIC_BASE_URL=${baseUrl.trim()} in the server environment.`,
+      );
+    }
+    throw new ModelCredentialError(
+      `Model ${ref} has no API key. Its endpoint is not the vendor's own, so no environment variable is used for it: set the API key on the model entry.`,
+    );
+  }
+  if (fallback.readByClient) return baseUrl !== undefined ? { baseUrl } : {};
+  const value = env[fallback.envKey]?.trim();
+  if (!value) {
+    throw new ModelCredentialError(
+      `Model ${ref} has no API key: set one on the model entry, or set ${fallback.envKey} in the server environment.`,
+    );
+  }
+  return { apiKey: value, ...(baseUrl !== undefined ? { baseUrl } : {}) };
+}
+
+/**
+ * The key the environment lends a bare endpoint spoken to on a generic protocol client —
+ * the add-group listing and the protocol probes, which have a base URL and a protocol but no
+ * entry yet. Same rule as modelEnvFallback: only a vendor's own endpoint gets the vendor's
+ * key; a gateway or a private server gets none.
+ */
+export function endpointEnvApiKey(
+  clientType: string,
+  baseUrl: string | undefined,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string | undefined {
+  const fallback = modelEnvFallback({ provider: "custom", modelId: "", clientType, baseUrl });
+  if (fallback === undefined) return undefined;
+  return env[fallback.envKey]?.trim() || undefined;
+}
+
+/**
+ * The variable the UI may present as covering a keyless entry — the masked preview on the
+ * card, the dialog's "leave empty to use …" hint — or `undefined` when nothing should be
+ * promised. Narrower than modelEnvFallback on purpose: a row with no base URL in a group whose
+ * defaults point away from the vendor (the vLLM presets, a custom row saved without an
+ * endpoint) does fall back to OPENAI_API_KEY under the rule, but presenting that as "key
+ * configured" would encourage exactly the misconfiguration that sends the OpenAI key and a
+ * self-hosted model id to api.openai.com. The preview therefore needs the row to name a vendor
+ * endpoint itself, or to sit in a group whose defaults are the vendor's (providerEnvFallbackKey).
+ * The server's `GET /models` preview and the web dialog's hint both read this, so the two
+ * cannot disagree.
+ */
+export function modelEnvPreviewKey(entry: ModelCredentialShape): string | undefined {
+  const fallback = modelEnvFallback(entry);
+  if (fallback === undefined) return undefined;
+  if (entry.baseUrl?.trim() || providerEnvFallbackKey(entry.provider) !== undefined) {
+    return fallback.envKey;
+  }
+  return undefined;
 }
 
 /**

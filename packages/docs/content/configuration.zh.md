@@ -18,6 +18,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 | `PENGUIN_WEB_DIST` | 前端静态资源目录 | 服务器包自带的 `web-dist`（源码检出中为 `packages/web/dist`） |
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的源，例如 `https://preview.example.com` | 未设置：每次请求推导对应的回环地址 |
 | `PENGUIN_GO_ORIGIN` | 服务端发起 Penguin Go Key 授权时调用的可信源 | `https://token.penguin.ooo` |
+| `MODELSCOPE_BRIDGE_URL` | 服务端发起 ModelScope Key 授权时调用的授权中转层地址 | `https://go.penguin.ooo/modelscope` |
 | `PENGUIN_TRUST_PROXY` | 设为 `1` 时信任 `x-forwarded-proto` 请求头 | 未设置：忽略请求头 |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 预置内置管理员的固定初始密码（自动化测试 / e2e） | 未设置：生成随机密码 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
@@ -31,6 +32,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 - `PENGUIN_TRUST_PROXY`：只在反向代理终结 TLS、并由代理自己设置或清除这个请求头时启用。启用后，会话 Cookie 会带上 `Secure` 标记，热更新的网络检查也能识别出 HTTPS。
 - `PENGUIN_SEED_ADMIN_PASSWORD`：不设置时，预置管理员时会生成一个随机密码，哈希后立即丢弃，没有人见过；账号通过首次登录链接认领。
 - `PENGUIN_GO_ORIGIN`：它是服务端配置，不接受浏览器指定的端点。取值必须是不带路径的 HTTPS 源；只有 `localhost`、`127.0.0.1` 和 `[::1]` 这类集成环境可以用明文 HTTP。带路径、凭据、查询参数或 fragment 的取值会在启动时被拒绝。见[授权获取新 API key](/models#授权获取新-api-key)。
+- `MODELSCOPE_BRIDGE_URL`：与 `PENGUIN_GO_ORIGIN` 一样是服务端配置，不接受浏览器指定的端点。它必须是不带凭据、查询参数或 fragment 的 HTTPS 地址。不同之处是**它允许带路径前缀**，因为生产环境的中转层就挂在 `https://go.penguin.ooo/modelscope` 下。见[授权获取新 API key](/models#授权获取新-api-key)。
 - `PENGUIN_UPDATE_CHECK`：设为 `off` 只关闭自动的版本检查，不影响其他对外请求：模型请求、已启用的远程控制连接、Key 授权和代理测试照常联网。
 - `PENGUIN_NO_LOGIN_SHELL_ENV`：不设置时，导入只填补启动过程没有设置的变量。见[桌面应用快速开始](/quickstart-desktop)。
 - `PENGUIN_CLI_ENTRY`：服务器从源码检出启动时，会回退到检出目录中的 `packages/cli/dist/penguin.js`。
@@ -40,7 +42,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 Agent 用 `exec_command` 运行的命令继承宿主环境，但有以下改动：
 
 - **移除：** `PORT`、`HOST`、`FORCE_COLOR`、`CLICOLOR_FORCE` 以及所有 `PENGUIN_*` 变量。这些变量配置的是 PenguinHarness 本身，不是命令。如果不移除，`exec_command` 启动的开发服务器会读到 `PORT`，试图绑定本应留给 PenguinHarness 的端口，而不是自己另选。
-- **代理：** 在服务器运行的 Session 中，由[系统设置](/settings#代理选项)里的 **Agent 环境使用代理** 开关决定代理变量。关闭时移除 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY`；开启时注入已配置的代理地址，没有配置地址时透传宿主的变量。
+- **代理：** 在服务器运行的 Session 中，由[设置](/settings#代理选项)里的 **Agent 环境使用代理** 开关决定代理变量。关闭时移除 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY`；开启时注入已配置的代理地址，没有配置地址时透传宿主的变量。
 - **密钥保险柜：** 之后再叠加 Agent 的[密钥保险柜](#vault)，所以在保险柜里设置的 `PORT` 或 `PENGUIN_*` 变量确实能传给命令。
 - **控制变量：** 由服务器驱动的 Session 随后注入 `PENGUIN_API_URL`、`PENGUIN_API_TOKEN`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`（公司模式下还有 `PENGUIN_ORG_ID`），Agent 自己发起的 `penguin` 调用因此能到达运行它的服务器。这些变量会覆盖密钥保险柜里的同名条目。见 [CLI 参考](/cli)。
 - **强制：** `GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER` 和 `GIT_PAGER` 始终取固定值，命令不会因为等待编辑器、凭证提示或分页器而卡住。任何来源都无法覆盖它们，密钥保险柜也不例外。
@@ -64,20 +66,20 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 
 ### 供应商凭证变量
 
-模型条目没有内联 `api_key` 时，AgentHub 会回退到供应商的环境变量。`*_BASE_URL` 的值只在条目没有内联 `base_url` 时才会使用。
+模型条目没有内联 `api_key` 时，**只在请求确实发往该供应商的官方端点时**回退到供应商的环境变量：条目没有 `base_url`，或 `base_url` 是厂商自己的端点。`*_BASE_URL` 的值只在条目没有内联 `base_url` 时才会使用；自带 `base_url` 的条目一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。其余条目——网关分组预置的端点、带自己端点的 custom、vLLM 与自建分组——必须有自己的 `api_key`，否则 PenguinHarness 拒绝为它构建客户端；见[设置 API key](/models#设置-api-key)。
 
 | 供应商 | API key | Base URL |
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai、openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai、openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、modelscope、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
+openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量——按上面的规则，它们的条目并不会回退到这对变量：变量里存的是你的 OpenAI key，而网关不是 OpenAI。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，即使某条预置固定了模型专属协议也是如此；它的条目同样不会回退到这对变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 
@@ -106,7 +108,7 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 | `max_tokens` | 数字 | Agent 的 `model.max_tokens` | 单个模型的最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens` |
 | `fast_mode` | 布尔 | 关闭 | 单个模型的快速模式（供应商收取溢价的快速服务档位） |
 | `pricing` | 表 | — | 三档价格 `cache_read` / `cache_write` / `output`，以美元每百万 Token 计价（`unit = "usd_per_mtok"`）。这里记的始终是牌价 |
-| `api_key` | 字符串 | 供应商的环境变量 | 内联凭证 |
+| `api_key` | 字符串 | 供应商的环境变量，仅限厂商自己的端点 | 内联凭证 |
 | `base_url` | 字符串 | 部分模型目录条目有预设 | 自定义 base URL |
 | `created_at` | 字符串 | — | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |
 
@@ -116,7 +118,7 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 - `fast_mode`：只持久化 `true`。只有 AgentHub 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
 - `pricing`：这里记的是牌价。正在进行的促销不写入这个文件：服务端把它保存在 `web.db` 里，计算成本时再从牌价中扣除。见[价格与促销](/models#价格与促销)。
 - `base_url`：内置模型目录为网关以及固定客户端的直连条目预设了这个字段，即 MiniMax M3 和 DeepSeek 的 `deepseek-flash`。
-- `api_key`：为空时，AgentHub 回退到供应商的环境变量。
+- `api_key`：为空时，只在条目的端点是厂商自己的地址时回退到供应商的环境变量（见[供应商凭证变量](#供应商凭证变量)）；网关、custom 与 vLLM 条目需要自己的 key。
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
@@ -286,7 +288,7 @@ enabled = false
 | `skills.prompt` | 内置模板 | `{{SKILLS}}` 块；包含 `{{SKILL_METADATA}}` |
 | `schedules.enabled` | `true` | 定时任务小节是否进入上下文 |
 | `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 块，讲解基于文件的任务管理；包含 `{{SCHEDULE_LIST}}` |
-| `hooks.enabled` | `true` | 新 Session 是否在循环的钩子点运行已安装的钩子包 |
+| `hooks.enabled` | `true` | 是否在循环的钩子点运行已安装的钩子包 |
 | `tools.builtin` | 省略时为完整默认工具集 | 工具条目；一旦写入，就整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`） |
 

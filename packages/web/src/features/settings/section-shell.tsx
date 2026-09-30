@@ -1,5 +1,5 @@
 /**
- * Shared frame for a System settings page that saves explicitly: body, and a trailing
+ * Shared frame for a Settings page that saves explicitly: body, and a trailing
  * action row. The dialog pane already draws the page heading and the "?" that discloses
  * what the page is, so the shell adds no title, no explanatory line and no box of its own.
  * Pages that apply on the spot pass no actions and the row is not drawn, so nothing on

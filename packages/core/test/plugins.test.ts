@@ -41,7 +41,7 @@ describe("loadLibraryPlugins", () => {
   it("loads every plugin directory sorted by name, each with a date-sequence version and a category", () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    expect(plugins.length).toBe(13);
+    expect(plugins.length).toBe(14);
     for (const plugin of plugins) {
       expect(plugin.version, plugin.name).toMatch(PLUGIN_VERSION_PATTERN);
       expect(
@@ -101,14 +101,14 @@ describe("loadLibraryPlugins", () => {
     expect(Object.keys(files).some((rel) => rel.startsWith("reference/"))).toBe(true);
   });
 
-  it("a hook plugin carries a manifest naming its stop scripts and the hooks/ files to install", () => {
+  it("a hook plugin carries a manifest naming its scripts and the hooks/ files to install; goal's start runs only when the host starts a goal", () => {
     const goal = libraryPlugin("goal");
     expect(goal?.hooks?.manifest).toMatchObject({
       name: "goal",
       version: goal!.version,
       stop: [{ command: "stop.mjs", timeout: 60 }],
       pre_tool_use: [],
-      user_prompt: [{ command: "start.mjs", timeout: 60 }],
+      user_prompt: [{ command: "start.mjs", timeout: 60, trigger: "host" }],
     });
     expect(goal!.hooks!.manifest.description_zh).toBeDefined();
     expect(Object.keys(goal!.hooks!.files).sort()).toEqual(["lib.mjs", "start.mjs", "stop.mjs"]);
@@ -182,6 +182,7 @@ describe("groupPlugins / loadPluginGroups", () => {
     expect(groups.map((g) => g.id)).toEqual(PLUGIN_CATEGORIES.map((c) => c.id));
     const names = (id: string) => groups.find((g) => g.id === id)?.plugins.map((p) => p.name);
     expect(names("office-productivity")).toEqual([
+      "browser-automation",
       "continual-learning",
       "data-analysis",
       "goal",

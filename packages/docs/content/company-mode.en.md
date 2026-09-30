@@ -21,10 +21,10 @@ Development mode is one person talking to one agent. Company mode, the Web App's
 
 - You need an admin account. Company mode is off by default on every server, and only admins see its server switch.
 
-1. Open **System settings** › Server › **Company mode**, and turn on **Enable company mode**. The change is saved at once.
+1. Open **Settings** › Server › **Company mode**, and turn on **Enable company mode**. The change is saved at once.
 2. At the top left of the sidebar, the mode switch reads **Development** | **Company**, with a **Beta** tag. Select **Company**.
 
-To go back, select **Development**. Every user sees the mode switch while the server switch is on. To hide it for yourself only, turn off **Company mode** under **System settings** › Personal › **General**; organizations keep running. See [Switches and lifecycle](#switches-and-lifecycle).
+To go back, select **Development**. Every user sees the mode switch while the server switch is on. To hide it for yourself only, turn off **Company mode** under **Settings** › Personal › **General**; organizations keep running. See [Switches and lifecycle](#switches-and-lifecycle).
 
 ## Create an organization
 
@@ -276,8 +276,8 @@ The organization settings include **Working language**, **Approval mode** and **
 
 | Switch | Where | Effect |
 | --- | --- | --- |
-| Server | **System settings** › Server › **Company mode** (admins only; off by default) | Off stops the organization scheduler: nothing fires, and nothing is backfilled when it is turned back on. Every organization route answers 404, and the mode switch disappears for everyone. |
-| Personal | **System settings** › Personal › **General** › **Company mode** (shown only while the server switch is on) | Hides the mode switch for you only. Organizations keep running. |
+| Server | **Settings** › Server › **Company mode** (admins only; off by default) | Off stops the organization scheduler: nothing fires, and nothing is backfilled when it is turned back on. Every organization route answers 404, and the mode switch disappears for everyone. |
+| Personal | **Settings** › Personal › **General** › **Company mode** (shown only while the server switch is on) | Hides the mode switch for you only. Organizations keep running. |
 | Organization | **Pause organization** in the organization settings | Stops all of the organization's automatic triggers. People can still open any desk and talk to it. |
 
 **There is no delete.** An organization is either running or paused, and that is its whole lifecycle. Deleting one would throw away the only way back to its conversations, employees, desks and tickets, while a paused organization costs nothing to keep: it fires nothing, and every desk is still there to talk to.
