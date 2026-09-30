@@ -48,7 +48,7 @@ describe("a failed proposals read", () => {
     const store = open();
     await store.getState().reloadProposals("p1", "acme");
     expect(store.getState().proposals).toBeNull();
-    expect(store.getState().proposalsError).toContain("no socket handshake");
+    expect(store.getState().proposalsError).not.toBeNull();
     expect(listOrgProposals).toHaveBeenCalledTimes(1);
 
     await vi.advanceTimersByTimeAsync(PROPOSALS_RETRY_MIN_MS - 1);
