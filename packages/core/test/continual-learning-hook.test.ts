@@ -59,6 +59,20 @@ const user = (text: string) => ({
   type: "model_msg",
   payload: { type: "text", role: "user", text },
 });
+// A user text the harness sent, e.g. a user_prompt hook's context written right behind the Prompt.
+const harness = (text: string) => ({
+  type: "model_msg",
+  payload: { type: "text", role: "user", text, sender: "harness" },
+});
+const image = () => ({
+  type: "model_msg",
+  payload: {
+    type: "image_url",
+    role: "user",
+    image_url: "data:image/png;base64,aGk=",
+    stop_reason: "completed",
+  },
+});
 const assistant = (text: string) => ({
   type: "model_msg",
   payload: { type: "text", role: "assistant", text },
@@ -139,6 +153,35 @@ describe("continual-learning stop.mjs", () => {
     expect(stop()).toBeUndefined();
     await fs.rm(path.join(agentState, "skills"), { recursive: true, force: true });
     expect(stop()).toBeUndefined();
+  });
+
+  it("opens the window at the user's own message when the harness sent a context right behind it", async () => {
+    // The Task's input is a batch: the user's message, then a user_prompt hook's context.
+    await append([meta(), user("big refactor")]);
+    for (let i = 1; i <= 35; i++) await append(turn(i));
+    await append([
+      user("[use_skills]\nskills: web-design\n[/use_skills]\n\nport the parser"),
+      harness("The local time is 10:00."),
+    ]);
+    for (let i = 1; i <= 31; i++) await append(turn(i));
+    const res = stop();
+    expect(res).toMatchObject({ output: { turns: 31 } });
+    const prompt = res!.subagent!.prompt;
+    expect(prompt).toContain("Skills invoked in this task: web-design");
+    expect(prompt.indexOf("[user] port the parser")).toBeGreaterThan(-1);
+    expect(prompt.indexOf("[user] port the parser")).toBeLessThan(
+      prompt.indexOf("[user] The local time is 10:00."),
+    );
+    // The window is still this Task's own: the one before it stays out.
+    expect(prompt).not.toContain("big refactor");
+  });
+
+  it("keeps an image sent with the message inside the batch", async () => {
+    await append([meta(), user("match this mockup"), image(), harness("The local time is 10:00.")]);
+    for (let i = 1; i <= 31; i++) await append(turn(i));
+    const res = stop();
+    expect(res).toMatchObject({ output: { turns: 31 } });
+    expect(res!.subagent!.prompt).toContain("[user] match this mockup");
   });
 
   it("mid-task deliveries do not reset the window: steering and steered notices ride inside", async () => {

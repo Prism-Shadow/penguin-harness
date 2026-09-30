@@ -14,6 +14,7 @@ W3 of the UI-package migration moves the Web App's overlays into `@prismshadow/p
 - **Tooltips:** `Tooltip`, `TooltipLayer` and `TooltipPanel`, with the rule that hides a hint repeating text already shown whole.
 - **Dialogs:** the Esc layer stack (`pushEscLayer`, `useDialogLayer`, `useEscLayer`), `Modal`, `ConfirmModal`, `PagedDialog`, `Drawer`, `Sheet` and `Lightbox`, with the spring and sheet physics they animate by.
 - **Toasts and notices:** `Toaster` with its store (`toastSuccess`, `toastInfo`, `toastAttention`, `toastError`) and `NoticeStrip`.
+- **On code that came from main during the migration:** `Modal` keeps the Workspace finder's full-screen phone layout (`fullScreenOnPhone`); the Esc layer stack reports whether any layer is open (`hasEscLayers`), which the Web App installs as its shortcut blocker so no global shortcut runs behind a dialog or menu; `FormPickerTrigger` (the model picker's and the Workspace finder's trigger) moves with `FormPicker`; the conversation's link menu, the built-in browser's overflow menu and the Workspace finder's context menu use the `Menu` rows.
 
 ## Details
 

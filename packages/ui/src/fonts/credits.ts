@@ -14,7 +14,6 @@ import { THEME_IDS } from "../tokens";
 import type { ThemeId } from "../tokens";
 import { THEME_FONTS } from "../boot";
 import type { BundledFontName } from "../boot";
-import commitMono from "./LICENSES/commit-mono.txt?raw";
 import ibmPlexSans from "./LICENSES/ibm-plex-sans.txt?raw";
 import ibmPlexSansCondensed from "./LICENSES/ibm-plex-sans-condensed.txt?raw";
 import jetbrainsMono from "./LICENSES/jetbrains-mono.txt?raw";
@@ -78,22 +77,14 @@ export const FONT_CREDITS: readonly FontCredit[] = [
     licenseText: ibmPlexSans,
   },
   {
-    // Declared in `fonts/geek.css` and named by no theme since Console's h1 moved to the mono
-    // bold; its files still ship until the dependency is dropped, so it is still credited.
+    // Declared in `fonts/geek.css` and named by no theme since Console's uppercase condensed h1
+    // went; its files still ship until the dependency is dropped, so it is still credited.
     id: "ibm-plex-sans-condensed",
     family: "IBM Plex Sans Condensed",
     themes: [],
     source: "@fontsource/ibm-plex-sans-condensed",
     licenseTitle: OFL,
     licenseText: ibmPlexSansCondensed,
-  },
-  {
-    id: "commit-mono",
-    family: "Commit Mono",
-    themes: namedBy("Commit Mono"),
-    source: "@fontsource/commit-mono",
-    licenseTitle: OFL,
-    licenseText: commitMono,
   },
   {
     id: "noto-sans-sc",

@@ -37,6 +37,7 @@ import {
   Button,
   ConfirmModal,
   CopyButton,
+  Dot,
   Dropdown,
   EmptyState,
   GlyphIcon,
@@ -51,6 +52,8 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { switchDeskModel } from "../company/desk-model";
+import { useCompany } from "../../state/company";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { useWorkflowTabs, WorkflowFrame, WorkflowTabStrip } from "../workflows/workflow-tabs";
@@ -96,6 +99,7 @@ import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
+import { approvalModeChoices } from "./approval-mode";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import {
   compactionTally,
@@ -137,6 +141,7 @@ import { SchedulePanel } from "../schedules/schedule-panel";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
 import { DockLauncher } from "../dock/dock-launcher";
+import { BuiltinBrowserPanel } from "../builtin-browser/browser-panel";
 import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
 // importing it also registers the global Ctrl+` hotkey with the app bundle
@@ -157,7 +162,7 @@ import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope"
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
 import { PanelsToolbar } from "./panels-toolbar";
-import { toneDot, toneInk } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { exitedProcessIds, reportableProcessFailure } from "./process-list";
 
@@ -300,6 +305,7 @@ export function ChatPage() {
   const location = useLocation();
   const params = useParams<{ sessionId?: string }>();
   const { user } = useAuth();
+  const company = useCompany();
   const { currency } = useTheme();
   const { currentProject, currentAgent, setCurrentAgentId, reloadAgents, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -1254,6 +1260,38 @@ export function ChatPage() {
           prevModelId: selected.modelId,
         }),
       };
+      // A desk is not forked: the switch is the EMPLOYEE's. Its model goes into the chart and
+      // its desk is renewed onto it (features/company/desk-model.ts), so the organization —
+      // its sidebar, its calendar rounds, its @mentions — follows to the Session the person
+      // is now talking in, instead of staying on the old one while a stray one is opened.
+      if (selected.orgId !== undefined) {
+        try {
+          const deskId = await switchDeskModel(
+            api,
+            {
+              projectId,
+              orgId: selected.orgId,
+              agentId: selected.agentId,
+              sessionId: selected.sessionId,
+            },
+            ref,
+          );
+          if (deskId !== null) {
+            const res = await api.postTask(deskId, { input: [origin, ...input] });
+            discardSessionDraft();
+            void company.reloadOrgChart();
+            void company.reloadOrgSessions();
+            navigate(`/chat/${res.sessionId}`);
+            return true;
+          }
+        } catch (e) {
+          // The model may be written and the desk renewed by now; the lists say which.
+          void company.reloadOrgChart();
+          void company.reloadOrgSessions();
+          toastError(apiErrorText(e, { modelId: ref.modelId }));
+          return false;
+        }
+      }
       let createdId: string | null = null;
       try {
         const created = await api.createSession(
@@ -1285,7 +1323,7 @@ export function ChatPage() {
         return false;
       }
     },
-    [projectId, selected, addSession, discardSessionDraft, navigate],
+    [projectId, selected, addSession, discardSessionDraft, navigate, company],
   );
 
   // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
@@ -1772,6 +1810,9 @@ export function ChatPage() {
    * its own handled-once request guard is what the conversation-switch e2e covers.
    */
   const renderPanel = (kind: PanelKind, active: boolean): ReactNode => {
+    // The browser is one set of pages shared by every conversation, not a Session's view,
+    // so it needs no Session and works on the draft page too.
+    if (kind === "builtin-browser") return <BuiltinBrowserPanel active={active} />;
     if (!selected)
       return (
         <EmptyState
@@ -1797,6 +1838,7 @@ export function ChatPage() {
             subagents={stream.subagents}
             models={models?.models ?? []}
             approvalMode={selected.approvalMode}
+            approvalModes={approvalModeChoices(selected.client, selected.approvalMode)}
             onChangeApprovalMode={onChangeApprovalMode}
             onChangeSandbox={onChangeSandbox}
             modeSaving={modeSaving}
@@ -1950,6 +1992,8 @@ export function ChatPage() {
       sessionId={selected.sessionId}
       vision={vision}
       approvalMode={selected.approvalMode}
+      // An organization's Session is not offered always-ask: nobody is there to be asked.
+      approvalModes={approvalModeChoices(selected.client, selected.approvalMode)}
       onChangeApprovalMode={onChangeApprovalMode}
       sandbox={selected.sandbox}
       onChangeSandbox={onChangeSandbox}
@@ -2244,14 +2288,14 @@ export function ChatPage() {
                   <ul className="mt-1 space-y-1.5">
                     {processes.map((p) => (
                       <li key={p.processId} className="flex items-center gap-2">
-                        <span
-                          aria-hidden
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            p.running
-                              ? `animate-pulse ${toneDot.busy}`
-                              : "bg-gray-300 dark:bg-gray-600"
-                          }`}
-                        />
+                        {p.running ? (
+                          <Dot tone="success" pulse />
+                        ) : (
+                          <span
+                            aria-hidden
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600"
+                          />
+                        )}
                         <span className="min-w-0 flex-1">
                           <Truncated text={p.cmd} className="font-mono text-xs" codeTooltip />
                           <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">

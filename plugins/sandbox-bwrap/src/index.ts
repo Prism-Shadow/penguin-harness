@@ -14,7 +14,7 @@
  *
  *   --ro-bind / /  --dev /dev  --proc /proc  --die-with-parent   the read-only world
  *   [writable temp]    --tmpfs /tmp  --bind <tmpdir> <same>         a private, writable /tmp
- *   [workspace-write]  --bind <workspaceRoot> <same>
+ *   [workspace-write]  --bind <workspaceRoot> <same>  --bind <writableRoot> <same>…
  *   [network: none]    --unshare-net                             no network namespace
  *   [mask-paths]       --tmpfs <dir> | --ro-bind /dev/null <file>  shadowing the above
  *   --  <the caller's argv>
@@ -124,12 +124,15 @@ export abstract class BwrapConfigReader {
 export const BWRAP_GROUP = "sandbox-bwrap";
 
 /**
- * The writable roots a policy grants, canonical and deduplicated: the workspace under
- * `workspace-write`, and the temp areas whenever the policy makes temp writable (either mode).
+ * The writable roots a policy grants, canonical and deduplicated: the workspace and the
+ * policy's further roots (the Session's scratchpad) under `workspace-write`, and the temp
+ * areas whenever the policy makes temp writable (either mode).
  */
 export function writableRoots(policy: SandboxPolicy): string[] {
   const roots = [
-    ...(policy.mode === "workspace-write" ? [policy.workspaceRoot] : []),
+    ...(policy.mode === "workspace-write"
+      ? [policy.workspaceRoot, ...(policy.writableRoots ?? [])]
+      : []),
     ...(policy.writableTemp === true ? ["/tmp", tmpdir()] : []),
   ].map((root) => path.resolve(root));
   return [...new Set(roots)];

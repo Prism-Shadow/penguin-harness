@@ -4,7 +4,7 @@ A Windows sandbox backend for PenguinHarness. Each agent command runs in a dedic
 
 | Dimension  | How                                                                                        |
 | ---------- | ------------------------------------------------------------------------------------------ |
-| fs-write   | The distro is read-only; the Workspace is bound read-write (or read-only) at its /mnt path |
+| fs-write   | The distro is read-only; the Workspace is bound read-write (or read-only) at its /mnt path, and under `workspace-write` so are the policy's `writableRoots` (the Session's scratchpad) |
 | network    | `network: "none"` runs the command in an empty network namespace; `"local"` is not supported |
 | mask-paths | A tmpfs over a directory, `/dev/null` over a file                                          |
 

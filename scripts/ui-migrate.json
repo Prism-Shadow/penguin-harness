@@ -78,7 +78,15 @@
             "MAGIC_WAND_ICON→ICONS.wand",
             "HAND_ICON→ICONS.hand",
             "SCHEDULE_ICON→ICONS.alarmClock",
-            "COMPANY_MODE_ICON→ICONS.building"
+            "COMPANY_MODE_ICON→ICONS.building",
+            "ADD_ICON→ICONS.plus",
+            "WARNING_ICON→ICONS.triangleAlert",
+            "GLOBE_ICON→ICONS.globe",
+            "ARROW_BACK_ICON→ICONS.arrowLeftCentered",
+            "ARROW_FORWARD_ICON→ICONS.arrowRightCentered",
+            "CODE_ICON→ICONS.angleBrackets",
+            "HOME_ICON→ICONS.house",
+            "LINK_ICON→ICONS.chainLink"
           ]
         },
         {
@@ -237,7 +245,13 @@
           "owner": "WP-C",
           "target": "@prismshadow/penguin-ui",
           "dest": "packages/ui/src/components/actions/copy-button/copy-button.tsx",
-          "names": ["CopyButton", "useCopied", "CopiedStatus", "CopyCheckGlyph", "writeClipboard"]
+          "names": ["CopyButton", "useCopied", "CopiedStatus", "CopyCheckGlyph"]
+        },
+        {
+          "owner": "WP-C",
+          "target": "packages/web/src/lib/clipboard",
+          "dest": "packages/web/src/lib/clipboard.ts",
+          "names": ["writeClipboard"]
         }
       ],
       "packages/web/src/components/ui/hidden-file-input": [

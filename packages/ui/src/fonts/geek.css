@@ -1,18 +1,15 @@
 /**
  * Console (`geek`) Latin faces, all OFL-1.1:
- * - IBM Plex Sans (the reading face), variable `wght`, latin + latin-ext —
+ * - IBM Plex Sans (the chrome and reading face), variable `wght`, latin + latin-ext —
  *   @fontsource-variable/ibm-plex-sans
- * - Commit Mono (the chrome face and the code face), static 400 and 700 — @fontsource/commit-mono.
- *   Fontsource builds it as a single `latin` file with no `unicode-range`, so none is declared here
- *   either: the browser loads the file for any chrome or mono text and falls back per missing
- *   glyph.
  * - IBM Plex Sans Condensed, static 600, latin + latin-ext — @fontsource/ibm-plex-sans-condensed.
- *   Declared but no longer named by the theme: the uppercase condensed h1 gave way to the mono
- *   chrome's bold h1. A declared face nobody names is never downloaded; drop the dependency and
+ *   Declared but no longer named by the theme: the uppercase condensed h1 gave way to the chrome
+ *   face's bold h1. A declared face nobody names is never downloaded; drop the dependency and
  *   these two rules with the next install.
  *
- * Only `themes/geek.css` names these families, so no other theme ever downloads them. The
- * `url()`s are relative to this file on purpose — see `index.css`.
+ * Console's mono face, JetBrains Mono, is Primer's and Frost's too, declared once in
+ * `github.css`. Only `themes/geek.css` names the families here, so no other theme ever downloads
+ * them. The `url()`s are relative to this file on purpose — see `index.css`.
  */
 
 @font-face {
@@ -63,22 +60,4 @@
   unicode-range:
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
     U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: "Commit Mono";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 400;
-  src: url("../../node_modules/@fontsource/commit-mono/files/commit-mono-latin-400-normal.woff2")
-    format("woff2");
-}
-
-@font-face {
-  font-family: "Commit Mono";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 700;
-  src: url("../../node_modules/@fontsource/commit-mono/files/commit-mono-latin-700-normal.woff2")
-    format("woff2");
 }

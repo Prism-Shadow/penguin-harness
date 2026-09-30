@@ -415,6 +415,17 @@
 :root[data-motion="reduced"] :is(.ui-activity, .ui-activity *)::after {
   animation: none;
 }
+/* The `ui-stream` recipes animate the stream's caret (Console's stepped blink; Primer's is the
+   host's own pulse) and ease a layer drawn on the host itself (Frost's veil leaving on `done`),
+   so both are named: the caret holds still and a layer goes at once. The reveal's pace is the
+   app's, which shows the whole text under either signal; Frost also draws no veil then. */
+:root[data-motion="reduced"] .ui-stream [data-slot="caret"],
+:root[data-motion="reduced"] .ui-stream::before,
+:root[data-motion="reduced"] .ui-stream::after,
+:root[data-motion="reduced"] .ui-stream li::after {
+  animation: none;
+  transition: none;
+}
 @media (prefers-reduced-motion: reduce) {
   :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
     animation: none;
@@ -430,6 +441,13 @@
   :is(.ui-activity, .ui-activity *)::after {
     animation: none;
   }
+  .ui-stream [data-slot="caret"],
+  .ui-stream::before,
+  .ui-stream::after,
+  .ui-stream li::after {
+    animation: none;
+    transition: none;
+  }
 }
 
 /* The `ui-tree` depth ladder, shared by the themes' recipes: a row or a branch carrying
@@ -443,7 +461,7 @@
 
    Two recipes are the same in every theme and so live here once, reading tokens: the eyebrow is
    the h6 rung (a theme says what the rung is — Primer's small tracked capitals, Frost's
-   sentence case, Console's tracked mono capitals — and may add its ink in its own rule), and
+   sentence case, Console's tracked capitals — and may add its ink in its own rule), and
    the display title takes the emphasis ink, the near-white a dark theme keeps for its headings
    over a calmer body ink. A theme file's own `.ui-eyebrow` / `.ui-display` rules come later in
    the layer and add to these. */
@@ -523,10 +541,10 @@
 }
 
 /* The user's font pairing (boot.ts, `FONT_LATIN_OPTIONS` / `FONT_CJK_OPTIONS`): a chosen Latin
-   face replaces the reading sans — `--ui-font-ui` follows it in Primer and Frost, and Console's
-   chrome stays in its mono face, which no pairing touches — and a chosen CJK face replaces
-   `--ui-font-cjk`, which every theme's sans stack reads for Han (the mono stacks that read it
-   follow too: Han inside code takes the chosen face, the Latin code face stays). No attribute is
+   face replaces the sans — every theme's chrome face (`--ui-font-ui`) reads it, and the mono
+   face, which no pairing touches, stays — and a chosen CJK face replaces `--ui-font-cjk`, which
+   every theme's sans stack reads for Han (the mono stacks that read it follow too: Han inside
+   code takes the chosen face, the Latin code face stays). No attribute is
    the theme's own choice, declared in its theme file. Only faces the app bundles are listed, so
    a choice never names a family the page cannot load; the Latin stacks keep the CJK face ahead
    of the generic fallbacks, and a Latin face first, so ASCII always renders in the chosen face.

@@ -1,19 +1,32 @@
 /**
  * One-click sync of the Project model table with the built-in catalog ("sync presets" next
- * to the search box): union semantics — catalog entries not configured locally are added;
- * entries present on both sides are reset to the catalog's fields (context window, pricing,
- * protocol, base URL, vision, and the promotion — the catalog wins wherever the two differ).
- * Missing catalog pricing removes local pricing, and a missing catalog promotion removes the
- * stored one. Locally added models (including user-defined groups) are kept untouched. A retired
- * catalog entry (see `ModelCatalogEntry.retired`) is never added, but one configured locally is
- * reset like any other preset, which is what keeps its stored price on the catalog's.
+ * to the search box): union semantics — catalog entries not configured locally are added,
+ * and an entry present on both sides has its catalog facts brought back in line while the
+ * fields describing this installation's own deployment are left exactly as they are.
+ *
+ * That split is the whole rule, and it runs along one question: does the catalog know the
+ * answer better than the user does?
+ *
+ * - **Catalog facts** — context window, the three price buckets, the protocol pin, the vision
+ *   flag, and the promotion — describe the model itself, so the catalog wins wherever the two
+ *   differ. Missing catalog pricing removes local pricing, and a missing catalog promotion
+ *   removes the stored one. The protocol pin is the reason this direction matters: re-syncing
+ *   is how a built-in row saved before the catalog pinned its protocol gets repaired.
+ * - **Deployment fields** — base URL, API key, output cap, fast mode — say how this install
+ *   reaches the model, and nothing in the catalog can know them. A sync never overwrites one.
+ *   An empty base URL is the single exception, and it is a fill rather than a reset: see
+ *   {@link baseUrlFill}.
+ *
+ * Locally added models (including user-defined groups) are kept untouched. A retired catalog
+ * entry (see `ModelCatalogEntry.retired`) is never added, but one configured locally has its
+ * facts updated like any other preset, which is what keeps its stored price on the catalog's.
  * Credentials are never touched: merged rows carry no apiKey input (the PUT keeps the stored
  * key) and existing rows keep their credential display state.
  *
  * The price a sync writes is the catalog's list price; the promotion running on it is stored by
  * the server outside the config file, which is why it travels as a declaration rather than as a
  * field — see {@link catalogPromotion}, which also covers the Penguin Go group it leaves alone.
- * The display name is the one catalog field that is filled but never overwritten — see
+ * The display name is filled but never overwritten, on the same terms as the base URL — see
  * {@link displayNameFill}.
  */
 import {
@@ -30,10 +43,19 @@ type PresetEntry = ReturnType<typeof catalogModelEntries>[number];
 /** One saved model entry, as the models endpoint sends it. */
 type ModelDto = ModelsResponse["models"][number];
 
-/** The catalog-owned fields, in the string-typed form both sides are compared in. */
+/** The catalog facts, in the string-typed form both sides are compared in. */
 type CatalogFields = ReturnType<typeof presetFields>;
 
-/** The catalog-owned fields of a row, in RowState's string-typed form (mirrors toRow). */
+/**
+ * The catalog facts of a preset entry, in RowState's string-typed form (mirrors toRow): the
+ * fields a sync rewrites outright on a row that already exists, because they describe the
+ * model and the catalog tracks it.
+ *
+ * What is missing from here is deliberate. The base URL, the API key, the output cap and fast
+ * mode belong to the installation rather than to the model, so they are never compared and
+ * never written over: a merged row keeps its own through the `{...row, ...fields}` spread, and
+ * the base URL's fill-only repair lives in {@link baseUrlFill}.
+ */
 function presetFields(p: PresetEntry) {
   const pricing = p.pricing
     ? {
@@ -49,7 +71,6 @@ function presetFields(p: PresetEntry) {
     cacheRead: pricing?.cacheRead ?? "",
     cacheWrite: pricing?.cacheWrite ?? "",
     output: pricing?.output ?? "",
-    baseUrl: p.base_url ?? "",
   };
 }
 
@@ -72,6 +93,34 @@ function presetFields(p: PresetEntry) {
 function displayNameFill(p: PresetEntry, current: string | undefined): string | undefined {
   if (current?.trim()) return undefined;
   return catalogEntryFor(p.provider, p.model_id)?.displayName;
+}
+
+/**
+ * The base URL a sync writes onto an entry that currently holds `current`, or undefined to leave
+ * it alone (`undefined` for `current` is a saved entry with no credential block at all, which
+ * the row state spells as the empty string — both mean the same thing here).
+ *
+ * Fill-only, like the display name and for a stronger reason. An entry's base URL is how THIS
+ * install reaches the model — a proxy, a self-hosted gateway, an egress the company routes
+ * everything through — and the catalog, which ships one list for every install, cannot know
+ * better than the person who typed it. Overwriting a stored one takes the model offline and
+ * leaves no trace of what it used to be, so a sync never does.
+ *
+ * An empty field is a different situation: there is nothing to destroy, and on the rows the
+ * catalog carries a URL for the empty state is far more likely damage than intent. A gateway
+ * group and a `custom`-group preset (Atria) reach nothing without one, because neither the
+ * group nor the protocol implies an endpoint — such a row is simply broken until something puts
+ * the URL back, and a sync is the one thing that knows it. Filling it in is therefore the same
+ * repair the name fill performs, at the same cost: a base URL deliberately cleared comes back on
+ * the next sync, and clearing one has no meaning on these rows anyway. A first-party vendor row
+ * is untouched either way — the catalog carries no URL for one (the client brings the official
+ * endpoint), so there is never anything to fill.
+ */
+function baseUrlFill(p: PresetEntry, current: string | undefined): string | undefined {
+  if (current?.trim()) return undefined;
+  // A catalog entry with no URL of its own has nothing to fill with, and an empty one would be
+  // a rewrite that changes nothing while counting as an update the badge could never clear.
+  return p.base_url ? p.base_url : undefined;
 }
 
 /** A promotion as the catalog declares it for one row: `undefined` is "none". */
@@ -138,9 +187,12 @@ function presetToRow(p: PresetEntry): RowState {
     // the same lookup is fill-only (see displayNameFill).
     ...(displayName !== undefined ? { displayName } : {}),
     ...(promotion !== null ? declared(promotion) : {}),
-    // The output cap and fast mode are user-owned, not catalog-owned (deliberately outside
-    // presetFields, so a sync never clobbers them on existing rows): fresh rows inherit the
-    // Agent setting / default to off.
+    // The deployment fields, which presetFields deliberately leaves out so that no sync ever
+    // rewrites them on an existing row (see the module doc). A brand-new row has no deployment
+    // to preserve, so it starts on the catalog's base URL where there is one — that is what
+    // makes a freshly added gateway model reachable — and on the defaults for the rest: the
+    // output cap inherits the Agent setting, fast mode is off, and the key is the user's to add.
+    baseUrl: p.base_url ?? "",
     maxTokens: "",
     fastMode: false,
     originalBaseUrl: "",
@@ -150,13 +202,18 @@ function presetToRow(p: PresetEntry): RowState {
 }
 
 /**
- * The saved entry's form of those same fields, straight from the DTO. It mirrors the subset of
- * `models-page.tsx`'s `toRow` the catalog owns — deliberately, so the badge below can read a
- * model table the page has not loaded into row state. `test/catalog-sync.test.ts` pins the two
- * together: whatever `toRow` does to a DTO, this must do to the same DTO, or the badge and the
- * sync button would disagree about whether anything is out of date. The promotion is the one
- * catalog-owned value compared outside these fields, and both sides read it verbatim: `toRow`
- * copies `discount` straight off the DTO.
+ * The saved entry's form of those same catalog facts, straight from the DTO. It mirrors the
+ * subset of `models-page.tsx`'s `toRow` the catalog owns — deliberately, so the badge below can
+ * read a model table the page has not loaded into row state. `test/catalog-sync.test.ts` pins
+ * the two together: whatever `toRow` does to a DTO, this must do to the same DTO, or the badge
+ * and the sync button would disagree about whether anything is out of date.
+ *
+ * Three values are compared outside these fields, and all three read the DTO the same way
+ * `toRow` does: the promotion (`toRow` copies `discount` verbatim), the display name, and the
+ * base URL — the last two because they are filled rather than reset, so their emptiness is the
+ * only thing about them either side looks at. No deployment field appears here at all — a row
+ * the sync would not rewrite must not count as out of date, or the dot would sit over a button
+ * that has nothing to do.
  */
 function savedFields(m: ModelDto): CatalogFields {
   return {
@@ -166,7 +223,6 @@ function savedFields(m: ModelDto): CatalogFields {
     cacheRead: m.pricing ? String(m.pricing.cacheRead) : "",
     cacheWrite: m.pricing ? String(m.pricing.cacheWrite) : "",
     output: m.pricing ? String(m.pricing.output) : "",
-    baseUrl: m.credential?.baseUrl ?? "",
   };
 }
 
@@ -185,9 +241,11 @@ export interface CatalogDelta {
  *
  * The same union `syncRowsWithCatalog` applies, so the two cannot disagree about whether there
  * is anything to do: catalog entries the table does not carry are additions (retired ones
- * never are), entries it does carry whose catalog-owned fields differ — a promotion-only
- * difference included, outside the Penguin Go group — or whose display name is blank are
- * updates, and locally added models are invisible to both. `refs` is what a dismissal is stamped
+ * never are), entries it does carry whose catalog facts differ — a promotion-only difference
+ * included, outside the Penguin Go group — or whose display name or base URL the sync would
+ * fill are updates, and locally added models are invisible to both. A row whose base URL is
+ * merely different from the catalog's is NOT an update: the sync leaves that URL alone, so
+ * counting it would be a dot nobody could ever put down. `refs` is what a dismissal is stamped
  * against, so a later catalog release touching a different model raises the badge again (see
  * `lib/todo-badges.ts`).
  */
@@ -207,10 +265,13 @@ export function catalogDelta(
     }
     const fields = savedFields(entry);
     const target = presetFields(p);
-    // The name counts as an update on the same fill-only rule the merge applies, or a Project
-    // carrying rows with no name would hold a badge the button answers "already up to date".
+    // The name and the base URL count as updates on the same fill-only rule the merge applies,
+    // and only on it: either one blank is a repair the button performs, either one set is a row
+    // the button leaves alone. Reading them any other way would leave a Project holding a badge
+    // the button answers "already up to date".
     if (
       displayNameFill(p, entry.displayName) !== undefined ||
+      baseUrlFill(p, entry.credential?.baseUrl) !== undefined ||
       promotionDiffers(catalogPromotion(p), entry.discount) ||
       (Object.keys(target) as (keyof CatalogFields)[]).some((k) => fields[k] !== target[k])
     ) {
@@ -222,11 +283,15 @@ export function catalogDelta(
 }
 
 /**
- * Merges the current rows with the built-in catalog. Existing rows keep their identity,
- * credential state, and list position (fields are updated in place); catalog-only entries
- * other than retired ones are appended in catalog order. Returns the merged rows plus
- * added/updated counts for the success toast (updated counts only rows the merge actually
- * rewrote).
+ * Merges the current rows with the built-in catalog. Existing rows keep their identity, their
+ * credential state, their deployment fields and their list position (the catalog facts are
+ * updated in place); catalog-only entries other than retired ones are appended in catalog
+ * order. Returns the merged rows plus added/updated counts for the success toast.
+ *
+ * `updated` counts the rows the merge actually rewrote, which is what the toast claims it is.
+ * A row that differs from the catalog only in a field the sync will not touch — a base URL of
+ * the user's own, an output cap, fast mode — is not rewritten and is not counted, so the number
+ * the toast reports is the number of rows that came back different.
  *
  * Every preset row outside the Penguin Go group leaves the merge declaring its catalog
  * promotion, rewritten or not (see catalogPromotion), so such a row is a new object even when
@@ -252,10 +317,15 @@ export function syncRowsWithCatalog(
     }
     const row = next[i]!;
     const fields = presetFields(p);
-    const fill = displayNameFill(p, row.displayName);
+    const nameFill = displayNameFill(p, row.displayName);
+    // Only ever fills a blank one. Everything the row says about reaching the model — this URL
+    // when it is set, the stored key, the output cap, fast mode — survives the spread below
+    // untouched, because none of it is in `fields`.
+    const urlFill = baseUrlFill(p, row.baseUrl);
     const promotion = catalogPromotion(p);
     const changed =
-      fill !== undefined ||
+      nameFill !== undefined ||
+      urlFill !== undefined ||
       promotionDiffers(promotion, row.discount) ||
       (Object.keys(fields) as (keyof typeof fields)[]).some((k) => row[k] !== fields[k]);
     if (changed) updated += 1;
@@ -263,7 +333,8 @@ export function syncRowsWithCatalog(
       next[i] = {
         ...row,
         ...fields,
-        ...(fill !== undefined ? { displayName: fill } : {}),
+        ...(nameFill !== undefined ? { displayName: nameFill } : {}),
+        ...(urlFill !== undefined ? { baseUrl: urlFill } : {}),
         // Only a rewritten row reaches here without a catalog promotion: a Penguin Go row,
         // which keeps the platform's promotion it already has.
         ...(promotion !== null

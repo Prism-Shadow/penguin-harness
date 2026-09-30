@@ -15,14 +15,14 @@ export const WORKFLOW_THEME_HREF = "/workflow-ui.css";
 
 /**
  * Custom properties copied from the app's root to the frame's. The gray scale is Tailwind's
- * (`@theme` in styles.css, with the dark overrides), the accent pair and font stack are the
- * app's own; every one is read RESOLVED, so light/dark and the chosen accent are already
+ * (`@theme` in styles.css, with the dark overrides), the accent pair (the theme's `--ui-accent` tokens) and font stack are
+ * the app's own; every one is read RESOLVED, so light/dark and the chosen accent are already
  * applied and the frame needs none of that logic.
  */
 export const WORKFLOW_THEME_VARS = [
   "--font-app-sans",
-  "--accent-bg",
-  "--accent-fg",
+  "--ui-accent",
+  "--ui-accent-fg",
   "--color-gray-50",
   "--color-gray-100",
   "--color-gray-200",

@@ -1,9 +1,10 @@
 /**
- * A search box over a keyboard-walkable list: the candidate panel a picker opens (the model
- * dropdown, the in-session model switch, the agent handoff picker). The search box, the internal
- * scroll cap, the row chrome, the keyboard navigation and the "current entry" check all live here,
- * so the pickers built on it differ only in what a row *contains* (a provider logo, an agent
- * avatar) and in what they hang below the list (`footer`, e.g. a "show all" expander).
+ * A search box over a keyboard-walkable list: the candidate panel a picker opens (the agent
+ * handoff picker, the schedule form's session picker; the model picker grew into a dialog of its
+ * own). The search box, the internal scroll cap, the row chrome, the keyboard navigation and the
+ * "current entry" check all live here, so the pickers built on it differ only in what a row
+ * *contains* (an agent avatar, a session title) and in what they hang below the list (`footer`,
+ * e.g. a "show all" expander).
  *
  * Keyboard navigation deliberately starts with **no** row highlighted: the search box is
  * autofocused, and pre-highlighting a row would repaint a panel that has looked the same since

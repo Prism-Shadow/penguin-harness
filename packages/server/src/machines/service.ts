@@ -464,20 +464,27 @@ export class MachinesService {
    * The subdirectories of `dir` on a machine, over the HELD connection — so picking a
    * workspace on it costs one command and no round trip to its API. Null when the machine is
    * not connected: a read must not open ssh on its own, or a disconnected machine would be
-   * reconnected by whoever browsed it.
+   * reconnected by whoever browsed it. `"denied"` when the directory is there and may not be
+   * read — told apart from absence so the picker can say which it is.
    */
   async listDirs(
     machineId: string,
     dir: string,
-  ): Promise<{
-    path: string;
-    parent: string | null;
-    entries: { name: string; path: string }[];
-  } | null> {
+  ): Promise<
+    | {
+        path: string;
+        parent: string | null;
+        entries: { name: string; path: string }[];
+      }
+    | "denied"
+    | null
+  > {
     const row = this.#rowFor(machineId);
     if (row === null || this.#liveSession(row.address) === null) return null;
     const target = this.#targetOf(row.address.slice("ssh:".length));
     const result = await this.#effects.runOn(target, listDirsCommand(dir));
+    // listDirsCommand's exit 4: the directory exists and refused the listing.
+    if (result.code === 4) return "denied";
     if (result.code !== 0) return null;
     const [head, rest] = result.stdout.split(DIR_LIST_MARK);
     const path = (head ?? "").trim().split("\n").pop()?.trim() ?? "";

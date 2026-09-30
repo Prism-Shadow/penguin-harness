@@ -78,6 +78,11 @@ export const ICONS = {
     "M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M10 6h4M10 10h4M10 14h4M10 18h4",
   /** Two pages meeting at the spine (lucide book-open). */
   bookOpen: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
+  /** A globe: the 9-radius circle, its equator and one meridian. */
+  globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a13 13 0 0 1 0 18 13 13 0 0 1 0-18z",
+  /** A house with its door (lucide house). */
+  house:
+    "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
   /** A puzzle piece (lucide puzzle). */
   puzzle:
     "M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.24-.24.581-.353.917-.303.515.077.877.528 1.073 1.01a2.5 2.5 0 1 0 3.259-3.259c-.482-.196-.933-.558-1.01-1.073-.05-.336.062-.676.303-.917l1.525-1.525A2.402 2.402 0 0 1 12 1.998c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z",
@@ -206,6 +211,11 @@ export const ICONS = {
   paperPlane: "M22 2 11 13M22 2l-7 20-4-9-9-4z",
   /** A pane with an arrow leaving it: this opens outside the app, in a tab of its own. */
   externalLink: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3",
+  /** Two links of a chain (lucide link): an address. */
+  chainLink:
+    "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
+  /** A pair of angle brackets facing apart (lucide code). */
+  angleBrackets: "M16 18l6-6-6-6M8 6l-6 6 6 6",
   /**
    * Two arcs chasing each other round a circle (lucide refresh-cw): read it again. The arc idiom
    * keeps it in the same family as the other round-trip glyphs.
@@ -236,6 +246,14 @@ export const ICONS = {
   chevronLeft: "M15 18l-6-6 6-6",
   /** The same chevron pointing right: the next page. */
   chevronRight: "M9 18l6-6-6-6",
+  /**
+   * An arrow pointing left, centred in the box: head and shaft span the same width, where
+   * `arrowLeft`'s head sits left of centre. With its mirror, a pair that steps back and forward
+   * along one line.
+   */
+  arrowLeftCentered: "M19 12H5m6-6-6 6 6 6",
+  /** The mirror of `arrowLeftCentered`, pointing right. */
+  arrowRightCentered: "M5 12h14m-6-6 6 6-6 6",
 
   // --- Layout -------------------------------------------------------------------------------
 
@@ -271,6 +289,9 @@ export const ICONS = {
   /** A question mark in the status circle: the "?" that discloses an explanation (InfoPopover). */
   helpCircle:
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.3a2.5 2.5 0 0 1 4.9.8c0 1.7-2.5 2.5-2.5 2.5M12 16.8h.01",
+  /** A triangle with an exclamation mark (lucide triangle-alert): a warning worth acting on. */
+  triangleAlert:
+    "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3zM12 9v4m0 4h.01",
   /** A check in the status circle. */
   checkCircle: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm-3.5-9.2 2.4 2.5 4.6-4.8",
   /** A cross in the status circle. */
