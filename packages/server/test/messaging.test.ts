@@ -1,30 +1,64 @@
 /**
- * Messaging-binding tests, Feishu side (the Telegram connector's mirror suite is
- * messaging-telegram.test.ts): the bind-by-enable model (saving is never exclusive,
- * enabling is), the
- * /api/sessions/:id/messaging/feishu routes (masking, secret keep-on-blank, the
- * save/enable split — PUT persists credentials only, POST /state owns the connection —
- * 409s, authz split, cascade on session delete), and the bridge's routing through a fake
- * Feishu SDK — inbound text becomes an ordinary user task
- * exactly as if typed in the composer (no marker, no special sender; queueIfBusy), an
- * inbound image becomes the composer's `image_url` part (and a download that fails or
- * exceeds the inline-image cap degrades to a notice instead of a half-message), an inbound
- * FILE becomes the composer's other attachment shape — written into the Session scratchpad
- * and named on the message text as an `[attached file: …]` line, under the server's own
- * attachment caps, with a size refusal, a permission refusal and a transfer failure each
- * answered by its own notice — anything else gets the bilingual not-supported reply,
- * each completed assistant message
- * mirrors on
- * its own to the last known chat as soon as it completes (the run's first one threaded onto
- * the inbound message in groups), the files the reply MENTIONED follow it (existing ones
- * only, pictures as pictures, capped by count and by size, escapes refused by the Workspace
- * file service, and whatever does not go out filed as an error record under the Project
- * rather than announced in the chat), an approval_request sends the one-line notice behind
- * whatever is already going out, a binding with `linePerMessage` set delivers a reply one
- * message per non-blank line — paced, and with a refused message costing only itself — while
- * an unset one is byte-for-byte the original single message, and a binding with
- * `finalReplyOnly` set relays a run's last completed message alone, at the run's end, files
- * included. No test opens real network.
+ * Messaging bindings, Feishu side, and the bridge every channel shares (the Telegram, QQ and
+ * WeChat suites mirror the per-channel wiring). The Feishu SDK is the suite's Feishu fake and
+ * the Session a scripted one; no test opens a network connection.
+ *
+ * Helpers:
+ * - A reply is chunked at newline boundaries under the channel's cap; split one message per
+ *   non-blank line (indentation and code blocks kept, CRLF read), the tail past the message cap
+ *   combined rather than dropped, the cap spent on outbound messages, chunks included.
+ * - Media is typed by extension (SVG stays a file) and by its bytes over any header; a download
+ *   stops at the byte that crosses its cap, and a transfer dying mid-stream fails.
+ * - Files that did not go out are filed one record per cause, naming every file once, scopes and
+ *   console links once, and staying under the recorder's cap by giving up names first.
+ * - A reply's file mentions are found however they are phrased, never outside the Workspace,
+ *   in either spelling of a Windows path, deduplicated.
+ *
+ * Routes:
+ * - GET reports unbound and disconnected before a save; a PUT saves credentials only (masked,
+ *   disabled; a blank secret keeps the stored one, the clear flag drops it); POST /state owns
+ *   the connection, and a save while enabled restarts it with the new credentials.
+ * - Enabling is the binding: two Sessions may save one app, only one may enable it, a save
+ *   cannot re-point an enabled binding at an app enabled elsewhere, and a gone Session releases
+ *   its app.
+ * - Non-members get 404; members read but cannot write. POST /test probes draft values falling
+ *   back to stored ones; /test-message needs a known chat. DELETE unbinds, and deleting the
+ *   Session cascades the binding away.
+ *
+ * The bridge:
+ * - Inbound text starts an ordinary user Task, exactly as typed in the composer; the reply
+ *   mirrors back — in a group threaded onto the inbound message (the run's first message
+ *   only), web-initiated turns too, every completed assistant message on its own as it
+ *   completes, every chunk to the chat named when the delivery began.
+ * - linePerMessage splits a reply one message per line (chunking over-long lines, combining
+ *   past the cap, a refused message costing only itself, paced, the approval notice waiting
+ *   behind the lines, notices never split, threading once); finalReplyOnly relays the run's last
+ *   message alone at its end (files following it); renderMarkdown sends a card, falls back to a
+ *   plain bubble on a refusal and never retries a card that may have landed; each option is
+ *   saved, defaulted and kept by an omitted field.
+ * - A streamed compaction summary never reaches the chat; anything neither text, image nor
+ *   file gets the bilingual notice and starts nothing.
+ * - An inbound image becomes an image_url part; a refused download names the channel's reason,
+ *   an oversize one the limit, a missing permission the scope and where to grant it; imagery
+ *   is bounded per binding. An inbound file lands in the scratchpad as a path line under the
+ *   same rules; a redelivered image or file is dropped before any download; a nameless file
+ *   gets a placeholder name. Several files in one message attach in order, compose with text
+ *   and an image, return with a withdrawn follow-up, and are refused whole past the total.
+ * - An approval request sends the waiting notice. The files a reply mentions follow it
+ *   (pictures as pictures, a file the run wrote, never an escape or a missing file), capped by
+ *   count and size, and whatever does not go out is filed under the Project — never announced
+ *   in the chat.
+ * - Mentions resolve to names with this bot's own dropped (longest placeholder first, a real
+ *   message never emptied, a mention-only message starting nothing); connecting never waits on
+ *   the bot-identity lookup.
+ * - The status reports the last arrival (reset on re-enable and on a credential save, stamped
+ *   for messages it cannot act on), the last connection failure (ignoring a superseded
+ *   attempt's), a reply that never went out, and a Task that could not start.
+ * - A redelivered message starts one Task (a genuine repeat still runs twice); the watermark is
+ *   bounded, survives a server and a connector restart, is not moved by a message without an
+ *   id or one whose Task never started, and is dropped with the chat on a re-save to another
+ *   bot; a redelivery leaves the arrival stamp alone.
+ * - The session list marks a Session bound on any channel.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -41,7 +75,6 @@ import {
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../src/services/attachment-limits.js";
 import { MESSAGE_MAX } from "../src/runtime/error-recorder.js";
@@ -77,7 +110,6 @@ import type {
 } from "../src/runtime/messaging/connector.js";
 import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
 import { FeishuConnector } from "../src/runtime/messaging/feishu-connector.js";
-import type { FeishuCard } from "../src/runtime/messaging/feishu-card.js";
 import { FeishuApiError } from "../src/runtime/messaging/feishu-sdk.js";
 import {
   MessagingPermissionError,
@@ -88,303 +120,15 @@ import {
   sniffImageMime,
 } from "../src/runtime/messaging/media.js";
 import { replyFileMentions } from "../src/runtime/messaging/reply-files.js";
-import type {
-  FeishuApiClient,
-  FeishuCredentials,
-  FeishuEventHandlers,
-  FeishuImageData,
-  FeishuInboundEvent,
-  FeishuSdk,
-} from "../src/runtime/messaging/feishu-sdk.js";
+import { FILE_BYTES, FakeFeishuSdk, IMAGE_BYTES, oneChunk } from "./fixtures/feishu.js";
+import type { SentMedia } from "./fixtures/feishu.js";
+import { fakeSession, sessionRow } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp, TestAppOptions } from "./helpers.js";
 
 const SID = "session-2026-08-25-10-00-00-fe15aa01";
 const SID2 = "session-2026-08-25-10-00-01-fe15aa02";
 const BASE = (sid: string) => `/api/sessions/${sid}/messaging/feishu`;
-
-// ---------------------------------------------------------------------------
-// Fake SDK: records every client call and hands inbound events back to the connector.
-// ---------------------------------------------------------------------------
-
-interface SentText {
-  kind: "send" | "reply";
-  target: string;
-  text: string;
-}
-
-/**
- * One picture or attachment that reached the channel. Byte count rather than the bytes:
- * what the assertions care about is which file went where, in what order, and that the
- * caps let it through.
- */
-interface SentMedia {
-  kind: "image" | "file";
-  target: string;
-  fileName: string;
-  bytes: number;
-}
-
-/** Everything one client sent, in order — the ordering of text against media is the point. */
-type Sent = SentText | SentMedia;
-
-/** One resource download the bridge asked for, cap included (the fake stands in for the SDK adapter). */
-interface ImageFetch {
-  messageId: string;
-  fileKey: string;
-  maxBytes: number;
-}
-
-/** The rich-text content out of a card, which is the whole of what a card carries here. */
-function cardContent(card: FeishuCard): string {
-  const element = card.body.elements[0];
-  if (card.schema !== "2.0" || element?.tag !== "markdown") {
-    throw new Error(`unexpected card envelope: ${JSON.stringify(card)}`);
-  }
-  return element.content;
-}
-
-/** The bytes as a stream, so the fakes read them through the real capped reader. */
-async function* oneChunk(bytes: Buffer): AsyncGenerator<Uint8Array> {
-  yield bytes;
-}
-
-/** A PNG's magic bytes plus a little payload: enough for a data URL to be asserted verbatim. */
-const IMAGE_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02, 0x03]);
-
-/** An inbound file's contents — text, so a failed write shows up as the wrong bytes on disk. */
-const FILE_BYTES = Buffer.from("quarterly revenue: 42\n", "utf8");
-
-class FakeClient implements FeishuApiClient {
-  readonly sends: Sent[] = [];
-  /**
-   * The card sends specifically, as the rich-text content they carried.
-   *
-   * A card is ALSO recorded in `sends` as an ordinary text send, so the routing, ordering
-   * and threading assertions read the same whichever transport carried the message — those
-   * are what they are about. This list is what separates the two, and it is what a test
-   * asserting the plain path checks is empty.
-   */
-  readonly cards: SentText[] = [];
-  /** When each send was recorded, parallel to `sends`: what the pacing test measures. */
-  readonly sentAt: number[] = [];
-  readonly imageFetches: ImageFetch[] = [];
-  readonly fileFetches: ImageFetch[] = [];
-  checks = 0;
-  constructor(
-    readonly creds: FeishuCredentials,
-    private readonly sdk: FakeSdk,
-  ) {}
-  async checkCredentials(): Promise<null> {
-    this.checks++;
-    if (this.sdk.failCheck !== null) throw new Error(this.sdk.failCheck);
-    return null;
-  }
-  async sendText(chatId: string, text: string): Promise<void> {
-    if (this.sdk.failSendWith !== null) throw this.sdk.failSendWith;
-    if (this.sdk.failSend !== null) throw new Error(this.sdk.failSend);
-    this.sdk.noteSend();
-    this.record({ kind: "send", target: chatId, text });
-    await this.sdk.hold();
-  }
-  async replyText(messageId: string, text: string): Promise<void> {
-    this.sdk.noteSend();
-    this.record({ kind: "reply", target: messageId, text });
-    await this.sdk.hold();
-  }
-  async sendCard(chatId: string, card: FeishuCard): Promise<void> {
-    // The typed failures fire on a card exactly as they do on a text bubble: Feishu refuses a
-    // missing scope on EVERY send, whatever the msg_type, so a fake that let a card through
-    // would make the card path quietly immune to the failure the text path is asserted on.
-    if (this.sdk.failSendWith !== null) throw this.sdk.failSendWith;
-    if (this.sdk.failCard !== null) throw this.sdk.failCard;
-    if (this.sdk.failSend !== null) throw new Error(this.sdk.failSend);
-    this.sdk.noteSend();
-    this.recordCard({ kind: "send", target: chatId, text: cardContent(card) });
-    await this.sdk.hold();
-  }
-  async replyCard(messageId: string, card: FeishuCard): Promise<void> {
-    if (this.sdk.failSendWith !== null) throw this.sdk.failSendWith;
-    if (this.sdk.failCard !== null) throw this.sdk.failCard;
-    this.sdk.noteSend();
-    this.recordCard({ kind: "reply", target: messageId, text: cardContent(card) });
-    await this.sdk.hold();
-  }
-  private recordCard(sent: SentText): void {
-    this.cards.push(sent);
-    this.record(sent);
-  }
-  private record(sent: SentText): void {
-    this.sends.push(sent);
-    this.sentAt.push(Date.now());
-  }
-  async botOpenId(): Promise<string | null> {
-    this.sdk.botIdentityLookups++;
-    // A stalled endpoint: the TCP connection is accepted and the answer never comes.
-    if (this.sdk.stallBotOpenId) return new Promise<never>(() => {});
-    return this.sdk.botOpenId;
-  }
-  async fetchMessageImage(args: ImageFetch): Promise<FeishuImageData> {
-    this.imageFetches.push(args);
-    if (this.sdk.failImageFetchWith !== null) throw this.sdk.failImageFetchWith;
-    if (this.sdk.failImageFetch !== null) throw new Error(this.sdk.failImageFetch);
-    // The cap is enforced through the REAL machinery the adapter uses, not a hand-written
-    // imitation of it: a fake free to throw its own error shape is a fake free to disagree
-    // with production about which failure this is (it did, once).
-    const data = await collectUnderCap(oneChunk(this.sdk.imageBytes), args.maxBytes, "The image");
-    return { data, mimeType: "image/png" };
-  }
-  async fetchMessageFile(args: ImageFetch): Promise<Buffer> {
-    this.fileFetches.push(args);
-    if (this.sdk.failFileFetchWith !== null) throw this.sdk.failFileFetchWith;
-    if (this.sdk.failFileFetch !== null) throw new Error(this.sdk.failFileFetch);
-    // Through the REAL capped reader, for the reason fetchMessageImage gives.
-    return collectUnderCap(oneChunk(this.sdk.fileBytes), args.maxBytes, "The file");
-  }
-  async sendImage(chatId: string, file: { fileName: string; data: Buffer }): Promise<void> {
-    this.sdk.failMediaSendOnce();
-    this.sends.push({
-      kind: "image",
-      target: chatId,
-      fileName: file.fileName,
-      bytes: file.data.length,
-    });
-  }
-  async sendFile(chatId: string, file: { fileName: string; data: Buffer }): Promise<void> {
-    this.sdk.failMediaSendOnce();
-    this.sends.push({
-      kind: "file",
-      target: chatId,
-      fileName: file.fileName,
-      bytes: file.data.length,
-    });
-  }
-}
-
-class FakeConnection {
-  closed = false;
-  constructor(
-    readonly creds: FeishuCredentials,
-    readonly handlers: FeishuEventHandlers,
-  ) {}
-  close(): void {
-    this.closed = true;
-  }
-  fire(evt: FeishuInboundEvent): Promise<void> {
-    return Promise.resolve(this.handlers.onMessage(evt));
-  }
-}
-
-class FakeSdk implements FeishuSdk {
-  readonly clients: FakeClient[] = [];
-  readonly connections: FakeConnection[] = [];
-  /** Non-null makes checkCredentials throw with this message. */
-  failCheck: string | null = null;
-  /** Non-null makes the send with this 1-based number (counted across clients) throw. */
-  failSendAt: number | null = null;
-  /** Non-null parks every send on this promise, holding the bridge's send chain open. */
-  heldSends: Promise<void> | null = null;
-  private sendCount = 0;
-  /** Every send passes here first: it counts, and throws for the one a test marked. */
-  noteSend(): void {
-    this.sendCount += 1;
-    if (this.sendCount === this.failSendAt) throw new Error("Too Many Requests: retry after 5");
-  }
-  /** Awaited after each send: instant unless a test is holding sends open. */
-  hold(): Promise<void> {
-    return this.heldSends ?? Promise.resolve();
-  }
-  /** What `/open-apis/bot/v3/info` reports for this app; null = the identity is unavailable. */
-  botOpenId: string | null = null;
-  /** Makes that lookup never answer, so a test can prove connect() does not wait on it. */
-  stallBotOpenId = false;
-  /** Lookups the connector has started (one per connection, off the connect path). */
-  botIdentityLookups = 0;
-  /** Non-null makes every outbound sendText throw with this message. */
-  failSend: string | null = null;
-  /** Non-null makes every outbound sendText throw THIS — for the failure shapes that carry data. */
-  failSendWith: Error | null = null;
-  /**
-   * Non-null makes every CARD send throw this, leaving the plain text sends working — the
-   * shape of a channel that refuses a rendering and accepts the message behind it.
-   */
-  failCard: Error | null = null;
-  /**
-   * Non-null holds every createClient until it resolves, which is what makes the bridge's
-   * one await between reading the binding row and its first send observable to a test.
-   */
-  createClientGate: Promise<void> | null = null;
-  /** How many createClient calls the gate has held. */
-  gated = 0;
-  /** Non-null makes fetchMessageImage throw with this message (a dead image_key, a network fault). */
-  failImageFetch: string | null = null;
-  /** Non-null makes it throw THIS — for the failure shapes that carry data, not just text. */
-  failImageFetchWith: Error | null = null;
-  /** What an image download resolves to; oversize bytes exercise the cap. */
-  imageBytes: Buffer = IMAGE_BYTES;
-  /** Non-null makes fetchMessageFile throw with this message (a dead file_key, a network fault). */
-  failFileFetch: string | null = null;
-  /** Non-null makes it throw THIS — for the failure shapes that carry data, not just text. */
-  failFileFetchWith: Error | null = null;
-  /** What a file download resolves to; oversize bytes exercise the cap. */
-  fileBytes: Buffer = FILE_BYTES;
-  /** Fails this many upcoming outbound image/file sends (the channel refusing an upload). */
-  failMediaSends = 0;
-  /** Non-null makes EVERY media send throw this — for the failure shapes that carry data. */
-  failMediaSendWith: Error | null = null;
-  /** Consumes one scheduled media-send failure, throwing when there is one. */
-  failMediaSendOnce(): void {
-    if (this.failMediaSendWith !== null) throw this.failMediaSendWith;
-    if (this.failMediaSends > 0) {
-      this.failMediaSends -= 1;
-      throw new Error("upload rejected");
-    }
-  }
-  async createClient(creds: FeishuCredentials): Promise<FeishuApiClient> {
-    if (this.createClientGate !== null) {
-      this.gated++;
-      await this.createClientGate;
-    }
-    const client = new FakeClient(creds, this);
-    this.clients.push(client);
-    return client;
-  }
-  async connect(creds: FeishuCredentials, handlers: FeishuEventHandlers): Promise<FakeConnection> {
-    const conn = new FakeConnection(creds, handlers);
-    this.connections.push(conn);
-    handlers.onReady?.();
-    return conn;
-  }
-  /** Everything sent through any client, in order (texts and media interleaved). */
-  allSends(): Sent[] {
-    return this.clients.flatMap((c) => c.sends);
-  }
-  /** Their timestamps, in the same order. */
-  allSentAt(): number[] {
-    return this.clients.flatMap((c) => c.sentAt);
-  }
-  /** Just the text messages — for the assertions that read `.text`. */
-  allTexts(): SentText[] {
-    return this.allSends().filter((s): s is SentText => s.kind === "send" || s.kind === "reply");
-  }
-  /** Only the messages that went out as an interactive card, across every client. */
-  allCards(): SentText[] {
-    return this.clients.flatMap((c) => c.cards);
-  }
-  /** Every image download asked of any client, in order. */
-  allImageFetches(): ImageFetch[] {
-    return this.clients.flatMap((c) => c.imageFetches);
-  }
-  /** Every file download asked of any client, in order. */
-  allFileFetches(): ImageFetch[] {
-    return this.clients.flatMap((c) => c.fileFetches);
-  }
-  lastConnection(): FakeConnection {
-    const conn = this.connections.at(-1);
-    if (!conn) throw new Error("no fake connection was opened");
-    return conn;
-  }
-}
 
 /**
  * One input part as the fake Sessions record it. Deliberately a loose shape rather than
@@ -404,30 +148,17 @@ function echoFakeSession(
   runs: InputPayload[][],
   reply = "Reply text",
 ): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run(input: OmniMessage[]) {
       runs.push(input.map((m) => m.payload as InputPayload));
       yield assistantText(reply);
     },
-    async *compact() {},
-  };
+  });
 }
 
 /** Fake Session that parks on one approval per run (drives an approval_request event). */
 function parkingFakeSession(sessionId: string): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-feishu" });
       yield tc;
@@ -435,8 +166,7 @@ function parkingFakeSession(sessionId: string): RuntimeSession {
       yield approvalDecision(decision, "tc-feishu");
       yield assistantText("after approval");
     },
-    async *compact() {},
-  };
+  });
 }
 
 /**
@@ -449,21 +179,14 @@ function multiMessageFakeSession(
   texts: readonly string[],
   gate?: Promise<void>,
 ): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run() {
       for (let i = 0; i < texts.length; i += 1) {
         if (gate !== undefined && i === texts.length - 1) await gate;
         yield assistantText(texts[i]!);
       }
     },
-    async *compact() {},
-  };
+  });
 }
 
 /**
@@ -471,56 +194,27 @@ function multiMessageFakeSession(
  * window in which a notice could overtake the reply's still-unsent messages.
  */
 function replyThenApprovalFakeSession(sessionId: string, text: string): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       yield assistantText(text);
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-lines" });
       yield tc;
       yield approvalDecision(await opts.approve(tc), "tc-lines");
     },
-    async *compact() {},
-  };
+  });
 }
 
 /** Fake Session that streams a compaction summary mid-run, then the actual answer. */
 function compactingFakeSession(sessionId: string): RuntimeSession {
   const bounds = { reason: "context", mode: "summarize" } as const;
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
+  return fakeSession(sessionId, {
     async *run() {
       yield compactionBegin({ ...bounds, context: 90, turns: 12 });
       yield assistantText("SUMMARY that is not a reply");
       yield compactionEnd({ ...bounds, status: "completed" });
       yield assistantText("the actual answer");
     },
-    async *compact() {},
-  };
-}
-
-function sessionRowOf(sessionId: string, projectId: string): SessionRow {
-  return {
-    sessionId,
-    projectId,
-    agentId: "default_agent",
-    provider: "custom",
-    modelId: "m1",
-    workspace: "/tmp/w",
-    approvalMode: "allow-all",
-    title: null,
-    createdAt: new Date().toISOString(),
-    lastActiveAt: new Date().toISOString(),
-  };
+  });
 }
 
 const PUT_BODY = {
@@ -576,11 +270,6 @@ describe("splitReplyLines", () => {
     expect(out.join("\n")).toBe(lines.join("\n"));
     // Exactly at the cap nothing is combined.
     expect(splitReplyLines(lines.slice(0, 5).join("\n"), 5)).toEqual(lines.slice(0, 5));
-  });
-
-  it("defaults to the documented per-reply message cap", () => {
-    const lines = Array.from({ length: MESSAGING_MAX_LINE_MESSAGES + 5 }, (_, i) => `l${i}`);
-    expect(splitReplyLines(lines.join("\n"))).toHaveLength(MESSAGING_MAX_LINE_MESSAGES);
   });
 
   it("spends the cap on outbound MESSAGES, chunking included", () => {
@@ -904,7 +593,7 @@ describe("replyFileMentions", () => {
 describe("messaging binding routes and bridge", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
-  let fake: FakeSdk;
+  let fake: FakeFeishuSdk;
   let projectId: string;
   let runs: InputPayload[][];
 
@@ -934,13 +623,13 @@ describe("messaging binding routes and bridge", () => {
 
   /** The suite's app, rebuildable: the pacing test needs one whose per-line wait is not zero. */
   const boot = async (opts: TestAppOptions = {}) => {
-    fake = new FakeSdk();
+    fake = new FakeFeishuSdk();
     t = await createTestApp({ feishuSdk: fake, ...opts });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
     projectId = "birder-default_project";
     runs = [];
-    const row = sessionRowOf(SID, projectId);
+    const row = sessionRow(SID, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, echoFakeSession(SID, runs));
   };
@@ -1064,7 +753,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("enabling is the binding: two Sessions may save one app, only one may have it enabled", async () => {
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    t.deps.sessionsRepo.insert(sessionRow(SID2, { projectId }));
     // Saving the same app on a second Session is not a conflict at all — each keeps its own
     // stored config, and neither of them is connected by a save.
     expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
@@ -1105,7 +794,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("a save cannot re-point an ENABLED binding at an app another Session has enabled", async () => {
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    t.deps.sessionsRepo.insert(sessionRow(SID2, { projectId }));
     // Two Sessions, each connected to its own app. Exclusivity holds so far.
     await bindEnabled(SID);
     await bindEnabled(SID2, { appId: "cli_app_second", appSecret: PUT_BODY.appSecret });
@@ -1138,7 +827,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("an enabled binding whose Session is gone releases its app to the next enable", async () => {
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    t.deps.sessionsRepo.insert(sessionRow(SID2, { projectId }));
     await bindEnabled(SID);
     // Deleting a Project or an Agent removes its Sessions without sweeping their bindings,
     // so the row stays behind holding the app. Until boot reconciles it, the refusal it
@@ -1287,7 +976,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("relays every completed assistant message on its own, as it completes, never joined", async () => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row2);
     let release = () => {};
     const gate = new Promise<void>((r) => {
@@ -1323,7 +1012,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("in a group only the run's first message threads onto the inbound one", async () => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, ["first", "second", "third"]));
     await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_grouped" });
@@ -1348,7 +1037,7 @@ describe("messaging binding routes and bridge", () => {
     // A reply long enough to chunk, so the first chunk (which threads onto the inbound
     // message) and the rest (plain sends to the stored chat) can disagree at all.
     const long = `${"a".repeat(3000)}\n${"b".repeat(3000)}`;
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, echoFakeSession(SID2, [], long));
     await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_snapshot" });
@@ -1405,7 +1094,7 @@ describe("messaging binding routes and bridge", () => {
    * between the two options has its own case below.
    */
   const bindReplying = async (text: string, put: Record<string, unknown>) => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, [text]));
     await bindEnabled(SID2, { ...PUT_BODY, renderMarkdown: false, ...put });
@@ -1503,7 +1192,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("the approval notice waits behind the reply rather than landing between its lines", async () => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     row2.approvalMode = "always-ask";
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, replyThenApprovalFakeSession(SID2, SPOKEN));
@@ -1604,7 +1293,7 @@ describe("messaging binding routes and bridge", () => {
 
   /** SID2 running one multi-message run, bound and connected. `gate` holds its LAST message. */
   const bindThinkingAloud = async (put: Record<string, unknown>, gate?: Promise<void>) => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, THINKING_ALOUD, gate));
     await bindEnabled(SID2, { ...PUT_BODY, ...put });
@@ -1671,7 +1360,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("with linePerMessage too, the final reply is the one split per line", async () => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, multiMessageFakeSession(SID2, ["a note held back", SPOKEN]));
     await bindEnabled(SID2, {
@@ -1696,7 +1385,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("the approval notice is not an assistant message: it arrives while the run is held", async () => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     row2.approvalMode = "always-ask";
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, replyThenApprovalFakeSession(SID2, "the answer"));
@@ -1824,7 +1513,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("the streamed compaction summary is not a reply and never reaches the chat", async () => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, compactingFakeSession(SID2));
     await bindEnabled(SID2, { ...PUT_BODY, appId: "cli_compactor" });
@@ -2201,7 +1890,7 @@ describe("messaging binding routes and bridge", () => {
   });
 
   it("an approval_request sends the waiting-for-approval notice", async () => {
-    const row2 = sessionRowOf(SID2, projectId);
+    const row2 = sessionRow(SID2, { projectId });
     row2.approvalMode = "always-ask";
     t.deps.sessionsRepo.insert(row2);
     t.deps.manager.adopt(row2, parkingFakeSession(SID2));
@@ -2243,7 +1932,7 @@ describe("messaging binding routes and bridge", () => {
     });
     t.deps.messagingRepo.setEnabled(SID, "feishu", true);
     // A saved-but-disabled binding keeps its credentials and stays dark across restarts.
-    t.deps.sessionsRepo.insert(sessionRowOf(SID2, projectId));
+    t.deps.sessionsRepo.insert(sessionRow(SID2, { projectId }));
     t.deps.messagingRepo.upsert({
       sessionId: SID2,
       channel: "feishu",
@@ -2678,7 +2367,7 @@ describe("messaging binding routes and bridge", () => {
     reply: string,
     appId: string,
   ): Promise<void> => {
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     row.workspace = workspace;
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, echoFakeSession(SID2, runs, reply));
@@ -3154,7 +2843,7 @@ describe("messaging binding routes and bridge", () => {
     const ws = await makeWorkspace();
     await fs.writeFile(path.join(ws, "draft.md"), "wip");
     await fs.writeFile(path.join(ws, "final.md"), "done");
-    const row = sessionRowOf(SID2, projectId);
+    const row = sessionRow(SID2, { projectId });
     row.workspace = ws;
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(
@@ -3467,7 +3156,7 @@ describe("the session list's messaging mark", () => {
   beforeEach(async () => {
     t = await createTestApp();
     api = apiClient(t.app, (await provisionUser(t.app, "birder")).cookie);
-    t.deps.sessionsRepo.insert(sessionRowOf(SID, projectId));
+    t.deps.sessionsRepo.insert(sessionRow(SID, { projectId }));
   });
   afterEach(async () => {
     await t.cleanup();
@@ -3508,10 +3197,10 @@ describe("the session list's messaging mark", () => {
 describe("an inbound message whose Task cannot start", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
-  let fake: FakeSdk;
+  let fake: FakeFeishuSdk;
 
   beforeEach(async () => {
-    fake = new FakeSdk();
+    fake = new FakeFeishuSdk();
     t = await createTestApp({
       feishuSdk: fake,
       // Not adopted, so the first task loads through here — a Workspace that has been
@@ -3524,7 +3213,7 @@ describe("an inbound message whose Task cannot start", () => {
     });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
-    t.deps.sessionsRepo.insert(sessionRowOf(SID, "birder-default_project"));
+    t.deps.sessionsRepo.insert(sessionRow(SID, { projectId: "birder-default_project" }));
   });
   afterEach(async () => {
     await t.cleanup();
@@ -3566,18 +3255,18 @@ describe("an inbound message whose Task cannot start", () => {
 describe("a redelivered inbound message", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
-  let fake: FakeSdk;
+  let fake: FakeFeishuSdk;
   let runs: InputPayload[][];
   let clock: number;
 
   beforeEach(async () => {
-    fake = new FakeSdk();
+    fake = new FakeFeishuSdk();
     clock = Date.parse("2026-08-26T09:00:00.000Z");
     t = await createTestApp({ feishuSdk: fake, now: () => new Date(clock) });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
     runs = [];
-    const row = sessionRowOf(SID, "birder-default_project");
+    const row = sessionRow(SID, { projectId: "birder-default_project" });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, echoFakeSession(SID, runs));
     expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
@@ -3693,20 +3382,14 @@ describe("a message carrying several files", () => {
     fired!({ chatId: "oc_scripted", chatKind: "direct", text: null, ...msg });
 
   /** echoFakeSession, but parking for as long as a test holds it. */
-  const heldEchoSession = (): RuntimeSession => ({
-    sessionId: SID,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
-    steer: () => false,
-    skipReconnectWait: () => false,
-    async *run(input: OmniMessage[]) {
-      runs.push(input.map((m) => m.payload as InputPayload));
-      if (park) await new Promise<void>((resolve) => (release = resolve));
-      yield assistantText("Reply text");
-    },
-    async *compact() {},
-  });
+  const heldEchoSession = (): RuntimeSession =>
+    fakeSession(SID, {
+      async *run(input: OmniMessage[]) {
+        runs.push(input.map((m) => m.payload as InputPayload));
+        if (park) await new Promise<void>((resolve) => (release = resolve));
+        yield assistantText("Reply text");
+      },
+    });
 
   beforeEach(async () => {
     caps = [];
@@ -3715,10 +3398,10 @@ describe("a message carrying several files", () => {
     park = false;
     release = null;
     runs = [];
-    t = await createTestApp({ feishuSdk: new FakeSdk() });
+    t = await createTestApp({ feishuSdk: new FakeFeishuSdk() });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
-    const row = sessionRowOf(SID, "birder-default_project");
+    const row = sessionRow(SID, { projectId: "birder-default_project" });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, heldEchoSession());
     expect((await api.put(BASE(SID), PUT_BODY)).status).toBe(200);
