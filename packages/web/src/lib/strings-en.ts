@@ -31,6 +31,9 @@ export const en: Strings = {
     expandGroup: "Expand",
     pinGroup: "Pin group",
     unpinGroup: "Unpin group",
+    /** A nav entry's pin toggle: a pinned entry stays visible when the collapsible area folds. */
+    pinEntry: "Pin",
+    unpinEntry: "Unpin",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "Overview",
