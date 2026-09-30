@@ -46,6 +46,7 @@ import {
 import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
 import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
+import type { RemoteTerminals } from "../machines/terminal-relay.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
 import { Hono } from "hono";
@@ -69,6 +70,7 @@ import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
 import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost } from "../plugin/loader.js";
 import { migrate } from "../db/migrations.js";
+import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "../mechanisms/identity.js";
 
 /**
@@ -298,7 +300,14 @@ async function createInner(
   const plugins =
     caps === null
       ? pluginHostFrom(ctx.resources)
-      : await loadPluginHost(ctx.resources, caps.config.root, caps.hmr.assetsDir());
+      : await loadPluginHost(
+          ctx.resources,
+          caps.config.root,
+          caps.hmr.assetsDir(),
+          // A Project may list a plugin for one machine only (`[plugins.<machineId>]`); this
+          // server's own id says which of those tables are its own.
+          new MachinesRepo(caps.db).ownId(),
+        );
   // Plus whatever a test stood up in process, which no closure could name (see the id).
   const injected = ctx.resources.claim<PluginHost | null>(HMR_TEST_PLUGINS_RESOURCE_ID);
   if (injected != null && typeof injected.entries === "function") {
@@ -341,6 +350,9 @@ async function createInner(
   const auth = business?.api<Auth>("IdentityModule", "Auth") ?? null;
   const identity = identityFrom(auth);
   const manager = business?.api<SessionManager>("SessionRuntimeModule", "Sessions") ?? null;
+  // A pty on a machine, served through this server's own stream (machines/terminal-relay.ts).
+  // A bare kernel reaches no machines and serves only its own ptys.
+  const remote = business?.api<RemoteTerminals>("TerminalRelay", "TerminalRelay") ?? null;
   // The runtime's one mid-request need of the CURRENT App is a hook installed over a
   // claimed capability — overwrite-only across swaps, so a dead generation's hook is
   // replaced and never removed: "is this session busy" for the channel sweep.
@@ -435,7 +447,12 @@ async function createInner(
     }),
     http,
     terminals: () => terminals,
-    attachStream: (ws, session, url, log) => bindTerminalStream(ws, session, url, log),
+    attachStream: (ws, session, url, log) => {
+      // The runtime handed the socket over exactly as for a local pty; the relay takes it
+      // when the session is a reference to a machine's pty, and declines a local one.
+      if (remote?.attach(ws, session, url, log) === true) return;
+      bindTerminalStream(ws, session, url, log);
+    },
     business: () => business,
     // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
     // effect cannot await — exposed for index.ts's shutdown to call before disposing.

@@ -234,6 +234,17 @@ export class AuthService implements Auth {
   }
 
   /**
+   * Whether a user is an admin, by id — for a caller that has a user's NAME rather than an
+   * authenticated request: the terminal relay reads the owner out of a pty reference the
+   * runtime has already matched against the signed-in user (machines/terminal-relay.ts), and
+   * what is left to decide is whether that user may reach machines at all. Unknown users are
+   * not admins.
+   */
+  isAdmin(userId: string): boolean {
+    return this.users.findById(userId)?.isAdmin === true;
+  }
+
+  /**
    * Desktop-mode sign-in: an admin session with no password check — the claim route already
    * redeemed the shell's one-shot token, which is the credential here. Throws only on a
    * broken deployment (seeding runs before the route exists).
@@ -341,6 +352,20 @@ export class AuthService implements Auth {
     const via: SessionVia =
       session.via === "desktop" ? "desktop" : session.via === "setup" ? "setup" : "password";
     return { user, via, renewed };
+  }
+
+  /**
+   * Whether the session behind a cookie token still exists and has not expired — the same
+   * two facts {@link authenticateWithMeta} establishes, without its sliding renewal or its
+   * user lookup. A connection that outlives the request that opened it has to re-ask
+   * periodically (the SSE heartbeat does, once per beat), and asking through the renewing
+   * path would top the expiry up every time: a window nobody has touched since last week
+   * would stay signed in purely because it is still connected.
+   */
+  sessionIsLive(token: string): boolean {
+    const session = this.authSessions.findByTokenHash(sessionTokenHash(token));
+    if (!session) return false;
+    return Date.parse(session.expiresAt) > this.clock.now().getTime();
   }
 
   private issueSession(userId: string, via: SessionViaValue): string {

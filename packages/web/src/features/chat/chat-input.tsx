@@ -6,9 +6,8 @@
  * immediately on change) + help text (to the right of approval mode) | context usage (ring
  * indicator) + Model + send (up arrow);
  * In draft state (Session not yet created), when models/onChangeModel are supplied, the model
- * selector sits to the left of the send button (provider logo + name, popup opens **downward**,
- * with a top quick-search box, an internal scroll cap to avoid overflowing the screen, and a
- * configured-key-first list with a bottom "show all" row — see ModelSelect) — once
+ * selector sits to the left of the send button (provider logo + name; it opens the model-picker
+ * dialog — search, provider-group rail, configured-key-first listing — see ModelSelect) — once
  * the Session is created the model is locked, and the same spot switches to a read-only
  * logo + name display;
  * Draft state also renders a thinking-level picker left of the model selector (backed by the
@@ -83,6 +82,7 @@ import type {
   PendingFollowUpInfo,
   PendingSteeringInfo,
   RecalledMessageResponse,
+  SessionSandbox,
   SessionStatus,
   SkillMetadataItem,
   TaskInputPart,
@@ -95,6 +95,7 @@ import { agentDisplayName } from "../../state/project";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
+import { PermissionSelect } from "./permission-select";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CheckIcon, ChevronDown } from "../../components/ui/icons";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
@@ -107,7 +108,8 @@ import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import { sameModelRef } from "../models/model-grouping";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
-import { ModelMenuList, ModelSelect, PickerList, modelLabel } from "./model-select";
+import { ModelSelect, PickerList, modelLabel } from "./model-select";
+import { ModelPickerModal } from "./model-picker-modal";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
@@ -133,119 +135,12 @@ import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
 
 /**
- * Illustrative icon for each approval mode (24x24 line art, grayscale via currentColor, no
- * color-coding): allow-all uses a warning triangle — it permits everything at the user's own
- * risk, the shape hints at it visually without rendering tension through color; deny-all is a
- * no-entry sign, read-only is an eye, always-ask is a question-mark circle.
- */
-const APPROVAL_MODE_ICONS: Record<ApprovalMode, string> = {
-  "allow-all":
-    "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4m0 4h.01",
-  "deny-all": "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.64 5.64l12.72 12.72",
-  "read-only":
-    "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
-  "always-ask":
-    "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.1 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3m.07 4h.01",
-};
-
-/**
- * Approval mode selector (custom-drawn dropdown, not the browser's native select): small,
- * grayscale.
- * Popup direction depends on context: for the draft card, vertically centered with room below
- * -> opens downward; for the chat input area docked at the bottom of the screen, where opening
- * downward would overflow the viewport with nowhere to scroll -> opens upward.
- * The menu lists `modes` (see approval-mode.ts); the trigger always names `value`.
- */
-function ApprovalModeSelect({
-  value,
-  modes,
-  onChange,
-  disabled,
-  direction = "up",
-}: {
-  value: ApprovalMode;
-  modes: readonly ApprovalMode[];
-  onChange: (mode: ApprovalMode) => void;
-  disabled: boolean;
-  direction?: "up" | "down";
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      // w-max: width exactly wraps the longest line (no wrapping within a line), avoiding an
-      // overly wide panel. Placement is portal-driven (the toolbar scrolls horizontally on
-      // phones, which would otherwise clip the panel); only size classes belong here.
-      menuClass="w-max"
-      portal={{ direction, align: "left" }}
-      button={
-        // Button styling matches the model selector (h-8 / rounded-md / solid hover background).
-        <button
-          type="button"
-          aria-label={S.chat.approvalMode}
-          title={`${S.chat.approvalMode}：${S.chat.approvalModeNames[value] ?? value}`}
-          disabled={disabled}
-          onClick={() => setOpen((v) => !v)}
-          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-        >
-          {/* Icon changes with the current mode (allow-all = warning triangle, grayscale, no color-coding) */}
-          <GlyphIcon d={APPROVAL_MODE_ICONS[value]} />
-          {/* Button shows only the description (the mode id is spelled out in the menu); when the card is narrower than @md, only the icon remains (title shows the full name). */}
-          <span className="hidden min-w-0 truncate @md:block">
-            {S.chat.approvalModeNames[value] ?? value}
-          </span>
-          <ChevronDown size={ICON_SIZE.caretDense} />
-        </button>
-      }
-    >
-      {modes.map((m) => (
-        <button
-          key={m}
-          type="button"
-          onClick={() => {
-            onChange(m);
-            setOpen(false);
-          }}
-          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-            m === value
-              ? "font-medium text-gray-900 dark:text-gray-100"
-              : "text-gray-600 dark:text-gray-400"
-          }`}
-        >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-            className="shrink-0 text-gray-400 dark:text-gray-500"
-          >
-            <path d={APPROVAL_MODE_ICONS[m]} />
-          </svg>
-          {/* Description first, mode id after (copy in strings); single line, no wrapping, selected checkmark at line end. */}
-          <span className="min-w-0 flex-1 truncate whitespace-nowrap">
-            {S.chat.approvalModes[m] ?? m}
-          </span>
-          <span className="w-3 shrink-0 text-center">{m === value ? "✓" : ""}</span>
-        </button>
-      ))}
-    </Dropdown>
-  );
-}
-
-/**
- * Agent candidate panel for the `/agent` switch picker — the agent-side counterpart of
- * ModelMenuList, and now literally the same panel (PickerList: search, scroll cap, keyboard
- * navigation, current-entry marker). Only the row differs: the Agent avatar (the same identity
- * tile the draft Agent picker uses), the agentId in monospace — the id is what identifies an
- * Agent everywhere else in the app — and the display name after it when it differs. The
- * conversation's own Agent is marked like the model list marks the session's model; picking it
- * is still a real action (a fresh conversation with the same Agent), not a no-op.
+ * Agent candidate panel for the `/agent` switch picker, on the shared PickerList (search, scroll
+ * cap, keyboard navigation, current-entry marker). The row is the Agent avatar (the same identity
+ * tile the draft Agent picker uses), the agentId in monospace — the id is what identifies an Agent
+ * everywhere else in the app — and the display name after it when it differs. The conversation's
+ * own Agent is marked like the model list marks the session's model; picking it is still a real
+ * action (a fresh conversation with the same Agent), not a no-op.
  */
 function AgentMenuList({
   agents,
@@ -290,10 +185,11 @@ function AgentMenuList({
 }
 
 /**
- * Popup frame shared by the two `/` switch pickers (`/model`, `/agent`): the upward-opening
- * panel and its title bar. It opens upward from the composer and is height-capped to the room
- * actually measured above it (see upwardMaxH), so it can never render off-screen; the panel has
- * no trigger button of its own, so dismissal (click-outside / Escape) is handled by the host.
+ * Popup frame of the `/agent` switch picker: the upward-opening panel and its title bar (`/model`
+ * opens the model-picker dialog instead). It opens upward from the composer and is height-capped to
+ * the room actually measured above it (see upwardMaxH), so it can never render off-screen; the
+ * panel has no trigger button of its own, so dismissal (click-outside / Escape) is handled by the
+ * host.
  */
 function SwitchPickerPanel({
   panelRef,
@@ -523,18 +419,16 @@ function SkillSelect({
           disabled={disabled}
           // The panel is unmounted while closed, so its search box starts empty on every open.
           onClick={() => setOpen(!open)}
-          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          // Icon only, the + button's square; the selected count rides the corner.
+          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
-          <GlyphIcon d={BOOK_ICON} className="shrink-0" />
-          {/* When the card is narrower than @md, only the icon + badge remain (title shows the full name). */}
-          <span className="hidden min-w-0 truncate @md:block">{S.chat.skillsSelect}</span>
+          <GlyphIcon d={BOOK_ICON} size={15} className="shrink-0" />
           {/* Selected-count badge (the chip row above the input mirrors the selection too). */}
           {selected.length > 0 && (
-            <span className="shrink-0 rounded-full bg-gray-200/80 px-1.5 py-px font-mono text-[10px] font-semibold text-gray-700 dark:bg-gray-700/60 dark:text-gray-200">
+            <span className="absolute -top-0.5 -right-0.5 min-w-3.5 rounded-full bg-gray-200 px-1 text-center font-mono text-[9px] leading-3.5 font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">
               {selected.length}
             </span>
           )}
-          <ChevronDown size={ICON_SIZE.caretDense} />
         </button>
       }
     >
@@ -830,6 +724,8 @@ export function ChatInput({
   approvalMode,
   approvalModes,
   onChangeApprovalMode,
+  sandbox,
+  onChangeSandbox,
   modeSaving,
   autoFocus,
   agents,
@@ -995,12 +891,16 @@ export function ChatInput({
   vision: boolean;
   approvalMode: ApprovalMode;
   /**
-   * The modes the approval picker lists, in order (`approvalModeChoices`): all four, except
-   * that an organization's Session leaves out `always-ask` unless it is the current value.
-   * The trigger shows `approvalMode` whatever the list holds.
+   * The modes the permission button's Approval section lists, in order (`approvalModeChoices`):
+   * all four, except that an organization's Session leaves out `always-ask` unless it is the
+   * current value. The button's level and title follow `approvalMode` whatever the list holds.
    */
   approvalModes: readonly ApprovalMode[];
-  onChangeApprovalMode: (mode: ApprovalMode) => void;
+  /** A returned promise keeps the permission button's pick on screen until the save settles. */
+  onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<unknown>;
+  /** The Session's own sandbox policy (the draft's pick before there is a Session). */
+  sandbox: SessionSandbox;
+  onChangeSandbox: (pick: Partial<SessionSandbox>) => void | Promise<unknown>;
   modeSaving: boolean;
   autoFocus?: boolean;
   /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
@@ -1095,13 +995,12 @@ export function ChatInput({
   const [slashIndex, setSlashIndex] = useState(0);
   // Slash token start where Escape closed the menu: it stays shut for that one token.
   const [slashDismissed, setSlashDismissed] = useState<number | null>(null);
-  // Switch pickers (opened by /model — session state — and /agent). Each command consumes its
-  // slash token immediately (same as /compact), so closing a picker — Escape, click outside, or
-  // the picked-current-model no-op — can never re-open the slash menu, and there is no stale
-  // token range to recompute at pick time; whatever text remains is the draft (and becomes the
-  // new session's first message once the staged switch is sent).
+  // Switch pickers (opened by /model — session state, the model-picker dialog — and /agent, an
+  // upward panel). Each command consumes its slash token immediately (same as /compact), so closing
+  // a picker — Escape, click outside, or the picked-current-model no-op — can never re-open the
+  // slash menu, and there is no stale token range to recompute at pick time; whatever text remains
+  // is the draft (and becomes the new session's first message once the staged switch is sent).
   const [modelSwitchOpen, setModelSwitchOpen] = useState(false);
-  const modelSwitchRef = useRef<HTMLDivElement>(null);
   const [agentSwitchOpen, setAgentSwitchOpen] = useState(false);
   const agentSwitchRef = useRef<HTMLDivElement>(null);
   // Anchor for the popups that open upward, and the room actually available above them.
@@ -1600,27 +1499,26 @@ export function ChatInput({
   const slashOpen = slashMatches.length > 0;
   const activeSlash = slashMatches[Math.min(slashIndex, slashMatches.length - 1)];
 
-  // Close a switch picker on click-outside / Escape (same convention as Dropdown; these panels
-  // have no trigger button of their own, so the handling lives here). Only one can be open at a
-  // time — the slash menu that opens them is suppressed while either is up.
+  // Close the `/agent` picker on click-outside / Escape (same convention as Dropdown; the panel
+  // has no trigger button of its own, so the handling lives here). The `/model` picker is a
+  // Modal and closes itself — its overlay click and esc layer — so it is not handled here.
   useEffect(() => {
-    if (!modelSwitchOpen && !agentSwitchOpen) return;
+    if (!agentSwitchOpen) return;
     // Dismissing the panel puts the caret back where the user was typing: the picker's search
     // box stole the focus when it opened, and without this it would be left on <body>.
     const closeAll = () => {
-      setModelSwitchOpen(false);
       setAgentSwitchOpen(false);
       textareaRef.current?.focus();
     };
     // globalThis.* event types: the React ones imported above would shadow the DOM ones here.
     const onClick = (e: globalThis.MouseEvent) => {
-      const panel = modelSwitchOpen ? modelSwitchRef.current : agentSwitchRef.current;
+      const panel = agentSwitchRef.current;
       if (panel && !panel.contains(e.target as Node)) closeAll();
     };
     const onKey = (e: globalThis.KeyboardEvent) => {
       // `isComposing`: Escape while an IME candidate list is up means "drop the candidates",
       // not "close the picker". Closing there would be unrecoverable — the command already
-      // consumed its `/agent` / `/model` token, so the user's remaining draft is all they have
+      // consumed its `/agent` token, so the user's remaining draft is all they have
       // and the picker is the only way back to the pick they were making.
       if (e.key === "Escape" && !e.isComposing) closeAll();
     };
@@ -1630,7 +1528,7 @@ export function ChatInput({
       window.removeEventListener("mousedown", onClick);
       window.removeEventListener("keydown", onKey);
     };
-  }, [modelSwitchOpen, agentSwitchOpen]);
+  }, [agentSwitchOpen]);
 
   /** Stage a model as the /model chip (null = drop it), keeping the draft cache in step. */
   const stageModel = (m: ModelInfo | null) => {
@@ -1690,7 +1588,7 @@ export function ChatInput({
   // top edge sits well below the viewport's. A static `40vh` cap can't know that distance and
   // clipped the first rows on shorter windows, so measure the real gap when a menu opens.
   useEffect(() => {
-    if (!slashOpen && !modelSwitchOpen && !agentSwitchOpen) return;
+    if (!slashOpen && !agentSwitchOpen) return;
     const measure = () => {
       const el = anchorRef.current;
       if (!el) return;
@@ -1708,7 +1606,7 @@ export function ChatInput({
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [slashOpen, modelSwitchOpen, agentSwitchOpen]);
+  }, [slashOpen, agentSwitchOpen]);
 
   /** Auto-grow the textarea (caps at roughly 6 lines, scrolls internally beyond that). */
   const autoGrow = () => {
@@ -2189,29 +2087,27 @@ export function ChatInput({
         </div>
       )}
 
-      {/* /model switch picker (session state): reuses the draft model dropdown's list —
-          search + configured-key-first grouping + "show all"; the current model is marked and
-          picking it is a no-op. The /model token was already consumed when the command ran,
-          so cancelling (Escape / click outside) keeps the remaining draft and cannot re-open
-          the slash menu. A pick only stages the chip below — the switch happens on send. */}
-      {modelSwitchOpen && models && (
-        <SwitchPickerPanel
-          panelRef={modelSwitchRef}
-          maxHeight={upwardMaxH}
+      {/* /model switch picker (session state): the same model-picker dialog the draft's model
+          selector opens, on the session's model; picking it is a no-op. The /model token was
+          already consumed when the command ran, so cancelling (Escape / overlay click) keeps
+          the remaining draft and cannot re-open the slash menu, and the dialog hands focus back
+          to the textarea it was opened from. A pick only stages the chip below — the switch
+          happens on send. */}
+      {models && (
+        <ModelPickerModal
+          open={modelSwitchOpen}
+          onClose={() => setModelSwitchOpen(false)}
           title={S.chat.switchModelTitle}
-        >
-          <ModelMenuList
-            models={models}
-            value={modelRef}
-            {...(defaultModel !== undefined ? { defaultModel } : {})}
-            onPick={pickSwitchModel}
-          />
-        </SwitchPickerPanel>
+          models={models}
+          value={modelRef}
+          {...(defaultModel !== undefined ? { defaultModel } : {})}
+          onPick={pickSwitchModel}
+        />
       )}
 
-      {/* /agent handoff picker: the same panel as the /model one above (title bar + search box
-          + capped list + keyboard navigation), and the same staged semantics — the pick becomes
-          the target chip, and sending is what hands the conversation over. */}
+      {/* /agent handoff picker (title bar + search box + capped list + keyboard navigation),
+          with the same staged semantics as /model — the pick becomes the target chip, and
+          sending is what hands the conversation over. */}
       {agentSwitchOpen && (
         <SwitchPickerPanel
           panelRef={agentSwitchRef}
@@ -2670,71 +2566,77 @@ export function ChatInput({
               className="hidden"
               onChange={onPickAttachments}
             />
-            {/* "+" extension menu, leading the row: input add-ons (image upload, file
+            {/* The three icon buttons — +, permission, skills — sit as one tight cluster: the
+                row's wider gap would read them as unrelated controls. */}
+            <div className="flex shrink-0 items-center gap-0.5">
+              {/* "+" extension menu, leading the row: input add-ons (image upload, file
                 attachment, goal mode) plus the input settings footer (mid-run send mode —
                 usable while running, which is exactly when it matters, so the button itself
                 never disables). The uploads live in here rather than as their own toolbar
                 buttons: one 8x8 slot instead of three, which is the difference between the
                 phone row scrolling and not. */}
-            {variant === "session" && (
-              <PlusMenu
-                items={[
-                  {
-                    key: "image",
-                    icon: IMAGE_ICON,
-                    label: S.chat.uploadImage,
-                    // Without vision the images still send — as scratchpad file paths — so the
-                    // entry stays usable and the hint says what will happen instead. Goal mode
-                    // changes nothing here: a goal's images ride its first message as ordinary
-                    // image input, so the model's vision decides how they arrive, exactly as
-                    // for any other send.
-                    desc: vision ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
-                    active: images.length > 0,
-                    onSelect: () => imageInputRef.current?.click(),
-                  },
-                  {
-                    key: "file",
-                    icon: PAPERCLIP_ICON,
-                    label: S.chat.uploadFile,
-                    // The description doubles as the explanation of where the file ends up:
-                    // it is filed into the session scratchpad and reached by path, never
-                    // inlined into the conversation.
-                    desc: S.chat.uploadFileDesc,
-                    active: attachments.length > 0,
-                    // Unlike images, a file cannot ride a goal: the server refuses file
-                    // attachments on a goal request.
-                    disabled: goalOn,
-                    onSelect: () => attachmentInputRef.current?.click(),
-                  },
-                  {
-                    key: "goal",
-                    icon: GOAL_ICON,
-                    label: S.chat.goalMode,
-                    desc: S.chat.goalModeDesc,
-                    active: goalOn,
-                    disabled: running || compacting || busy,
-                    onSelect: () => toggleGoal(!goalOn),
-                  },
-                ]}
-                footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
+              {variant === "session" && (
+                <PlusMenu
+                  items={[
+                    {
+                      key: "image",
+                      icon: IMAGE_ICON,
+                      label: S.chat.uploadImage,
+                      // Without vision the images still send — as scratchpad file paths — so the
+                      // entry stays usable and the hint says what will happen instead. Goal mode
+                      // changes nothing here: a goal's images ride its first message as ordinary
+                      // image input, so the model's vision decides how they arrive, exactly as
+                      // for any other send.
+                      desc: vision ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
+                      active: images.length > 0,
+                      onSelect: () => imageInputRef.current?.click(),
+                    },
+                    {
+                      key: "file",
+                      icon: PAPERCLIP_ICON,
+                      label: S.chat.uploadFile,
+                      // The description doubles as the explanation of where the file ends up:
+                      // it is filed into the session scratchpad and reached by path, never
+                      // inlined into the conversation.
+                      desc: S.chat.uploadFileDesc,
+                      active: attachments.length > 0,
+                      // Unlike images, a file cannot ride a goal: the server refuses file
+                      // attachments on a goal request.
+                      disabled: goalOn,
+                      onSelect: () => attachmentInputRef.current?.click(),
+                    },
+                    {
+                      key: "goal",
+                      icon: GOAL_ICON,
+                      label: S.chat.goalMode,
+                      desc: S.chat.goalModeDesc,
+                      active: goalOn,
+                      disabled: running || compacting || busy,
+                      onSelect: () => toggleGoal(!goalOn),
+                    },
+                  ]}
+                  footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
+                  direction={models && onChangeModel ? "down" : "up"}
+                />
+              )}
+              <PermissionSelect
+                approvalMode={approvalMode}
+                approvalModes={approvalModes}
+                sandbox={sandbox}
+                onChangeApprovalMode={onChangeApprovalMode}
+                onChangeSandbox={onChangeSandbox}
+                disabled={modeSaving}
                 direction={models && onChangeModel ? "down" : "up"}
               />
-            )}
-            <ApprovalModeSelect
-              value={approvalMode}
-              modes={approvalModes}
-              onChange={onChangeApprovalMode}
-              disabled={modeSaving}
-              direction={models && onChangeModel ? "down" : "up"}
-            />
-            {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
-            <SkillSelect
-              skills={skills}
-              selected={selectedSkills}
-              onToggle={toggleSkill}
-              disabled={running || compacting || busy}
-              direction={models && onChangeModel ? "down" : "up"}
-            />
+              {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
+              <SkillSelect
+                skills={skills}
+                selected={selectedSkills}
+                onToggle={toggleSkill}
+                disabled={running || compacting || busy}
+                direction={models && onChangeModel ? "down" : "up"}
+              />
+            </div>
             {/* Help text: shown only when the card is wide enough (@lg); it never competes for
                 space on phones, where the group scrolls instead. */}
             <span

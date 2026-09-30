@@ -2,13 +2,17 @@
  * The ticket board: five columns in lifecycle order (shaping in ticket-board.ts), each with
  * its colour bar and count, a card per ticket — title, priority, due date (danger once
  * passed), the blocked badge, a muted line naming its parent, and its owner — a search box
- * and a blocked-only switch, drag-and-drop between columns that confirms the move (a move
- * into rejected asks for a one-line reason) before posting it, the create form, and the
- * tickets and files the server could not accept.
- * The whole card is the drag handle, and its title is the one click target: the title is a
- * text button that opens the detail dialog (the shell's one host renders it, so the board
- * stays where it is), the rest of the card is inert, and a drag never fires a click — so
- * dragging anywhere (the title included) moves the ticket while clicking the title opens it.
+ * and a blocked-only switch, moving a card between columns by dragging it, which
+ * confirms the move (a move into rejected asks for a one-line reason) before posting it, the
+ * create form, and the tickets and files the server could not accept.
+ * The whole card is one button — the board's one exception to the company pages' rule against
+ * whole-area click targets, and it holds no control of its own. A click anywhere on it (Enter
+ * and Space too) opens the detail dialog in place (the shell's one host renders it, so the
+ * board stays where it is). Dragging it moves it: a mouse or pen press that travels a few pixels
+ * lifts the card, which follows the pointer and, released over another column, asks to move
+ * there. A finger has to hold the card still for a moment before it lifts, so a finger that moves
+ * scrolls the page as usual (ticket-press.ts, ticket-drag.ts). The dialog's move control is the
+ * way to move a ticket without dragging.
  * The priority rides on the title's line, one size under it. What a card deliberately does
  * not carry is the session count, the cost and any live session status — those are the
  * dialog's, and a ticket is not the place to watch a session run.
@@ -22,8 +26,8 @@
  * shell state, not a route.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent } from "react";
-import { useSearchParams } from "react-router";
+import { createPortal } from "react-dom";
+import { useLocation, useSearchParams } from "react-router";
 import type {
   OrgChartResponse,
   OrgTicketItem,
@@ -75,9 +79,8 @@ import { MoveTicketConfirm } from "./ticket-dialog";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, splitPrincipalList } from "./principals";
 import { dayKey } from "./calendar-geom";
+import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
 
-/** Private drag payload type of a card move (never text/plain: a mis-aimed drop must not paste into a text field). */
-const TICKET_DRAG_MIME = "application/x-penguin-ticket-id";
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
 /** Clock face (lucide): the due-date mark on a card. */
@@ -104,14 +107,13 @@ export function TicketsPage() {
   const company = useCompany();
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.tickets}` : S.nav.org.tickets);
   const [board, setBoard] = useState<OrgTicketsResponse | null>(null);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [blockedOnly, setBlockedOnly] = useState(params.get("blocked") === "1");
   const [query, setQuery] = useState("");
-  const [drag, setDrag] = useState<{ ticketId: string; from: OrgTicketStatus } | null>(null);
-  const [dropOver, setDropOver] = useState<OrgTicketStatus | null>(null);
   const [move, setMove] = useState<{ ticket: OrgTicketItem; to: OrgTicketStatus } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -159,6 +161,11 @@ export function TicketsPage() {
     setParams(next, { replace: true });
   };
   const openTicket = (ticketId: string) => company.openTicket(projectId, orgId, ticketId);
+  const drag = useTicketBoardDrag({
+    onOpen: (ticket) => openTicket(ticket.ticketId),
+    onDrop: (ticket, to) => setMove({ ticket, to }),
+  });
+  const { lifted, dropOver } = drag;
 
   // `?ticket=` and the open dialog, kept in step in both directions: the query opens the
   // dialog on arrival (a deep link, a reload), and the dialog writes itself back into the
@@ -173,7 +180,14 @@ export function TicketsPage() {
       : null;
   const syncedTicket = useRef<string | null>(null);
   const { openTicket: openTicketInShell } = company;
+  const routedPath = location.pathname;
   useEffect(() => {
+    // The browser has already left this page: a click that closes the dialog and navigates
+    // (opening a ticket session) is rendered first with the dialog closed and this page still
+    // mounted, since the router commits its new location in a transition. Writing the query now
+    // would resolve against this page's stale location and replace the new history entry with
+    // the board — the navigation would silently land back here.
+    if (window.location.pathname !== routedPath) return;
     if (urlTicket !== syncedTicket.current) {
       syncedTicket.current = urlTicket;
       if (urlTicket !== null) {
@@ -192,7 +206,7 @@ export function TicketsPage() {
       },
       { replace: true },
     );
-  }, [urlTicket, dialogTicket, projectId, orgId, openTicketInShell, setParams]);
+  }, [urlTicket, dialogTicket, projectId, orgId, openTicketInShell, setParams, routedPath]);
 
   const confirmMove = async (reason: string) => {
     if (move === null) return;
@@ -214,65 +228,15 @@ export function TicketsPage() {
     }
   };
 
-  const columnDrop = (status: OrgTicketStatus) => ({
-    onDragOver: (e: ReactDragEvent) => {
-      if (
-        drag === null ||
-        !e.dataTransfer.types.includes(TICKET_DRAG_MIME) ||
-        !canMove(drag.from, status)
-      )
-        return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      if (dropOver !== status) setDropOver(status);
-    },
-    onDragLeave: (e: ReactDragEvent) => {
-      const to = e.relatedTarget;
-      if (to instanceof Node && e.currentTarget.contains(to)) return;
-      setDropOver((prev) => (prev === status ? null : prev));
-    },
-    onDrop: (e: ReactDragEvent) => {
-      if (drag === null || !canMove(drag.from, status) || board === null) return;
-      e.preventDefault();
-      const ticket = allTickets(board).find((t) => t.ticketId === drag.ticketId);
-      setDrag(null);
-      setDropOver(null);
-      if (ticket === undefined) return;
-      setMove({ ticket, to: status });
-    },
-  });
-
-  /** A card: the title with its priority first (the title is the button that opens it), then what decides its urgency, then where it hangs and who holds it. */
-  const card = (t: OrgTicketItem) => {
+  /** A card's face: the title with its priority first, then what decides its urgency, then where it hangs and who holds it. */
+  const cardBody = (t: OrgTicketItem) => {
     const overdue = isOverdue(t.due, todayKey) && t.status !== "done" && t.status !== "rejected";
     return (
-      <div
-        key={t.ticketId}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData(TICKET_DRAG_MIME, t.ticketId);
-          e.dataTransfer.effectAllowed = "move";
-          setDrag({ ticketId: t.ticketId, from: t.status });
-        }}
-        onDragEnd={() => {
-          setDrag(null);
-          setDropOver(null);
-        }}
-        title={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
-        className={`block w-full cursor-grab rounded-md border bg-white p-2.5 text-left text-xs transition-colors duration-150 hover:border-gray-300 dark:bg-gray-900 dark:hover:border-gray-600 ${
-          t.invalid !== undefined
-            ? "border-red-300 dark:border-red-800"
-            : "border-gray-200 dark:border-gray-800"
-        } ${drag?.ticketId === t.ticketId ? "opacity-50" : ""}`}
-      >
-        <div className="flex items-start gap-1.5">
-          <TitleButton
-            title={S.company.tickets.openTicket}
-            className="line-clamp-2 flex-1 text-[13px] font-medium leading-snug text-gray-900 dark:text-gray-100"
-            onClick={() => openTicket(t.ticketId)}
-          >
+      <>
+        <span className="flex items-start gap-1.5">
+          <span className="line-clamp-2 min-w-0 flex-1 text-[13px] font-medium leading-snug text-gray-900 dark:text-gray-100">
             {t.title}
-          </TitleButton>
+          </span>
           {/* The priority reads with the title and shares its line, a size under it; the line
               below carries what is time-bound — the due date and the blocked mark. */}
           <span className="mt-px shrink-0">
@@ -284,11 +248,11 @@ export function TicketsPage() {
               <span className="sr-only">{S.company.tickets.invalid}</span>
             </span>
           )}
-        </div>
+        </span>
         {/* The time-bound line, drawn only when there is something on it: the priority has
             moved up to the title and an empty row would leave a gap under it. */}
         {(t.due !== undefined || isBlocked(t)) && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+          <span className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
             {t.due !== undefined && (
               <span
                 className={`inline-flex items-center gap-1 font-mono tabular-nums ${overdue ? toneInk.danger : ""}`}
@@ -307,27 +271,55 @@ export function TicketsPage() {
                 />
               </span>
             )}
-          </div>
+          </span>
         )}
         {t.parent !== undefined && (
-          <p
-            className="mt-2 truncate text-[11px] text-gray-400 dark:text-gray-500"
+          <span
+            className="mt-2 block truncate text-[11px] text-gray-400 dark:text-gray-500"
             title={t.parent}
           >
             {S.company.tickets.parentLine(titles.get(t.parent) ?? t.parent)}
-          </p>
+          </span>
         )}
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+        <span className="mt-2 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
           <span
             className="flex min-w-0 text-gray-700 dark:text-gray-200"
             title={`${S.company.tickets.owner} ${principalLabel(t.owner, names)}`}
           >
             <PrincipalChip principal={t.owner} names={names} size={ICON_SIZE.rowLead} />
           </span>
-        </div>
-      </div>
+        </span>
+      </>
     );
   };
+
+  /** The card's frame: a hairline box, danger-edged when the server flagged the ticket. */
+  const cardFrame = (t: OrgTicketItem) =>
+    `block w-full rounded-md border bg-white p-2.5 text-left text-xs dark:bg-gray-900 ${
+      t.invalid !== undefined
+        ? "border-red-300 dark:border-red-800"
+        : "border-gray-200 dark:border-gray-800"
+    }`;
+
+  /**
+   * A card: one button over the whole face. Unselectable and without the platform's long-press
+   * callout, so dragging it never selects its words and holding it on a touch screen never raises
+   * a menu; dimmed in place while its ghost is being carried.
+   */
+  const card = (t: OrgTicketItem) => (
+    <button
+      key={t.ticketId}
+      type="button"
+      data-ticket-card={t.ticketId}
+      title={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
+      {...drag.cardProps(t)}
+      className={`${cardFrame(t)} cursor-pointer select-none transition-[border-color,opacity] duration-150 [-webkit-touch-callout:none] hover:border-gray-300 dark:hover:border-gray-600 ${
+        lifted?.ticket.ticketId === t.ticketId ? "opacity-40" : ""
+      }`}
+    >
+      {cardBody(t)}
+    </button>
+  );
 
   const columns = board === null ? null : boardColumns(board, { blockedOnly, query, names });
   const narrowed = blockedOnly || query.trim() !== "";
@@ -401,7 +393,7 @@ export function TicketsPage() {
           </div>
         )}
 
-      <div className="overflow-x-auto pb-2">
+      <div ref={drag.boardRef} className="overflow-x-auto pb-2">
         <div className="grid min-w-[50rem] grid-cols-5 gap-3">
           {columns === null
             ? TICKET_COLUMNS.map((status) => <ColumnSkeleton key={status} status={status} />)
@@ -410,7 +402,7 @@ export function TicketsPage() {
                   key={col.status}
                   role="group"
                   aria-label={`${S.company.tickets.columns[col.status] ?? col.status} · ${col.tickets.length}`}
-                  {...columnDrop(col.status)}
+                  {...{ [TICKET_COLUMN_ATTR]: col.status }}
                   className={`${columnClass} ${
                     dropOver === col.status
                       ? "border-[var(--accent-bg)] ring-1 ring-[var(--accent-bg)]"
@@ -438,7 +430,7 @@ export function TicketsPage() {
                             : "border-gray-300 text-gray-400 dark:border-gray-700 dark:text-gray-500"
                         }`}
                       >
-                        {drag !== null && canMove(drag.from, col.status)
+                        {lifted !== null && canMove(lifted.ticket.status, col.status)
                           ? S.company.tickets.dropHere
                           : narrowed
                             ? S.company.tickets.searchNoMatch
@@ -492,6 +484,26 @@ export function TicketsPage() {
           )}
         </div>
       )}
+
+      {/* The lifted card's ghost: the card's own face at its own width, following the
+          pointer above everything else and never under it — the column hit test reads through
+          it. The pointer's moves write its position straight to the element. */}
+      {lifted !== null &&
+        createPortal(
+          <div
+            ref={drag.ghostRef}
+            aria-hidden
+            style={{ width: lifted.width, transform: drag.ghostTransform() }}
+            className="pointer-events-none fixed left-0 top-0 z-[60]"
+          >
+            <div
+              className={`${cardFrame(lifted.ticket)} rotate-1 shadow-lg ring-1 ring-[var(--accent-bg)]`}
+            >
+              {cardBody(lifted.ticket)}
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {/* Move confirmation: the target column, and a reason when the target is rejected —
           the same dialog the detail's own move goes through. */}

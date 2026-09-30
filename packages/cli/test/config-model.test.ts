@@ -187,11 +187,13 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       tmpRoot,
     ]);
     await runModel(["add", "--model-id", "in-house-1", "--provider", "mylab", "--root", tmpRoot]);
-    // A non-catalog id under a first-party vendor group: client_type is not set (AgentHub auto-routes by upstream id).
+    // A non-catalog id under a first-party vendor group: client_type is not set (AgentHub
+    // auto-routes by upstream id). The id has to be one that routing places — the group
+    // carries nothing else that could name a protocol for it (see the refusal test below).
     await runModel([
       "add",
       "--model-id",
-      "my-fine-tune",
+      "deepseek-v4-my-tune",
       "--provider",
       "deepseek",
       "--root",
@@ -229,10 +231,98 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       parsed.models.find((m) => m.provider === p && m.model_id === id)!;
     expect(by("custom", "my-openai-proxy").client_type).toBe("openai-chat");
     expect(by("mylab", "in-house-1").client_type).toBe("openai-chat");
-    expect(by("deepseek", "my-fine-tune").client_type).toBeUndefined();
+    expect(by("deepseek", "deepseek-v4-my-tune").client_type).toBeUndefined();
     expect(by("openrouter", "acme/some-model").client_type).toBe("openai-responses");
     expect(by("openrouter", "acme/some-model").base_url).toBe("https://openrouter.ai/api/v1");
     expect(by("mylab", "special-1").client_type).toBe("verbatim-type");
+  });
+
+  it("refuses a NEW vendor-group entry whose id AgentHub cannot route, and leaves the config untouched", async () => {
+    // The Web App no longer offers an add entry point on a vendor group at all; this command
+    // writes the same file without passing through the server, so it has to refuse the same
+    // configuration rather than leave a second way into it.
+    const stored = async (p: string, id: string) => {
+      const parsed = parseToml(
+        await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
+      ) as { models: Array<Record<string, unknown>> };
+      return parsed.models.find((m) => m.provider === p && m.model_id === id);
+    };
+    // One accepted add first, so there is a config file on disk for the refusal to leave alone.
+    await runModel(["add", "--model-id", "seed", "--provider", "custom", "--root", tmpRoot]);
+    const refused = await runModel([
+      "add",
+      "--model-id",
+      "qwen/qwen3.8-flash-next",
+      "--provider",
+      "deepseek",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("cannot be routed");
+    expect(refused.err).toContain("custom group");
+    expect(await stored("deepseek", "qwen/qwen3.8-flash-next")).toBeUndefined();
+
+    // The same id is fine wherever the group itself answers the protocol question.
+    const custom = await runModel([
+      "add",
+      "--model-id",
+      "qwen/qwen3.8-flash-next",
+      "--provider",
+      "custom",
+      "--base-url",
+      "https://gateway.example/v1",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(custom.code).toBe(0);
+
+    // And inside a vendor group once the entry names its own protocol, which is what the two
+    // presets whose ids do not route rely on.
+    const pinned = await runModel([
+      "add",
+      "--model-id",
+      "qwen/qwen3.8-flash-next",
+      "--provider",
+      "deepseek",
+      "--client-type",
+      "openai-chat",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(pinned.code).toBe(0);
+    const entry = await stored("deepseek", "qwen/qwen3.8-flash-next");
+    expect(entry?.client_type).toBe("openai-chat");
+  });
+
+  it("an entry already stored in a vendor group still updates, however its id routes", async () => {
+    // Grandfathering, the same rule the models PUT applies: a row written before this rule
+    // existed keeps every other operation working, so no legacy entry is left unmaintainable.
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await runModel(["add", "--model-id", "seed", "--provider", "custom", "--root", tmpRoot]);
+    await fs.appendFile(
+      file,
+      '\n[[models]]\nprovider = "deepseek"\nmodel_id = "legacy-fine-tune"\n',
+      "utf8",
+    );
+
+    const update = await runModel([
+      "add",
+      "--model-id",
+      "legacy-fine-tune",
+      "--provider",
+      "deepseek",
+      "--context-window",
+      "65536",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(update.code).toBe(0);
+    const parsed = parseToml(await fs.readFile(file, "utf8")) as {
+      models: Array<Record<string, unknown>>;
+    };
+    const entry = parsed.models.find((m) => m.model_id === "legacy-fine-tune");
+    expect(entry?.context_window).toBe(65536);
   });
 
   it("a new entry naming a catalog row inherits that row's pinned client_type and base_url; --client-type still wins", async () => {

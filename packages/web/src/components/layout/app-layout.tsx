@@ -7,6 +7,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
+import { nagsAboutInitialPassword } from "../../lib/account-menu";
 import { S } from "../../lib/strings";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
@@ -24,7 +25,7 @@ import { COMPANY_MODE_ICON, CloseIcon, NAV_ICONS } from "../ui/icons";
 import { useCompany } from "../../state/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
 import { ChannelRailRows } from "../../features/company/channel-sidebar";
-import { DeskRailRows } from "../../features/company/org-session-groups";
+import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
 import {
   COMPANY_NAV_KEYS,
   isOrgRoute,
@@ -38,7 +39,9 @@ import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
 import { setDockScope } from "../../features/dock/dock-state";
+import { AppPalette } from "../../features/palette/app-palette";
 import { toneStrip } from "../../lib/tone";
 
 /**
@@ -290,21 +293,22 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             </Tooltip>
           );
         })}
-        {/* The organization's channels and then its desks, under the pages the way they sit
-            under the nav in the pinned sidebar. A hairline says where each run ends; a channel
-            row carries its own unread count and a desk its running dot, since a rail with no
-            labels must still say how much is waiting. */}
+        {/* The organization's channels, its desks and then its Temporary entries, under the
+            pages the way they sit under the nav in the pinned sidebar. A hairline says where each
+            run ends; a channel row carries its own unread count and a desk or an entry its
+            running dot, since a rail with no labels must still say how much is waiting. */}
         {inCompany && navOrg !== null && (
           <>
             <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
             <ChannelRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
             <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
             <DeskRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
+            <TempSessionRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
           </>
         )}
       </nav>
       {/* The account menu opens here, on the rail, instead of the avatar expanding the sidebar
-          first: appearance and System settings, the update row and signing out all stay one
+          first: appearance and Settings, the update row and signing out all stay one
           click away while collapsed. Same component as the pinned sidebar's (user-menu.tsx). */}
       <UserMenu
         className="mt-auto shrink-0"
@@ -351,7 +355,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 }
 
 export function AppLayout() {
-  const { user, desktopMode } = useAuth();
+  const { user, desktopMode, sessionVia } = useAuth();
   // The docks belong to the conversation they were arranged in, so switching Sessions
   // switches the arrangement with it (dock-state.ts). The draft page's route id ("new" /
   // a parked draft id) is a scope of its own, handed to the Session the first send
@@ -383,7 +387,8 @@ export function AppLayout() {
   // dismissed banner never flashes before disappearing. Hydration only runs when the banner
   // would show at all; unreachable prefs fail open (treated as not dismissed, banner shows).
   const [passwordBannerDismissed, setPasswordBannerDismissed] = useState<boolean | null>(null);
-  const passwordBannerRelevant = Boolean(user?.passwordIsInitial) && !desktopMode;
+  const passwordBannerRelevant =
+    Boolean(user?.passwordIsInitial) && nagsAboutInitialPassword({ desktopMode, sessionVia });
   useEffect(() => {
     if (!passwordBannerRelevant) return;
     let cancelled = false;
@@ -517,6 +522,11 @@ export function AppLayout() {
             views live in this pool and are adopted into dock tab bodies by DOM handoff,
             so navigating between pages never reconnects a terminal. */}
         <TerminalDockRuntime />
+        {/* The built-in browser's pages (desktop app only): they live here, outside every page,
+            and are laid over the dock's browser tab by coordinates — a webview moved in the DOM
+            reloads, so navigating the app must never re-parent one. */}
+        <BuiltinBrowserLayer />
+        <AppPalette />
       </div>
 
       {/* The software-update modal, opened from the sidebar's update row and the draft

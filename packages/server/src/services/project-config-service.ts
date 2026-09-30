@@ -33,12 +33,12 @@ import {
   DEFAULT_COMMAND_POLICY_RULES,
   effectiveCommandPolicyRules,
   parseCommandPolicy,
-  parsePluginTable,
-  pluginTableToToml,
+  parsePluginTables,
+  pluginTablesToToml,
   GenerativeModel,
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
-  PENGUIN_GO_PROVIDER_ID,
+  MODELSCOPE_PROVIDER_ID,
   catalogEntryFor,
   defaultProjectConfig,
   imageUrlMessage,
@@ -47,15 +47,18 @@ import {
   projectConfigFromTable,
   projectConfigPath,
   renderProjectConfigToml,
-  resolveProviderModelEnv,
+  modelEnvFallback,
+  modelEnvPreviewKey,
+  resolveModelCredential,
   userText,
 } from "@prismshadow/penguin-core";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { unroutableVendorModel } from "@prismshadow/penguin-core/model-catalog";
 import type {
-  PluginTable,
+  PluginTables,
   CommandPolicyRule,
   GenerativeModelConfig,
   LLMOutcome,
+  ModelRequestContext,
   ModelRef,
   OmniMessage,
   ProjectConfig,
@@ -79,6 +82,7 @@ import type {
   ModelVisionDetectResponse,
 } from "../api/types.js";
 import { badRequest } from "../http/validate.js";
+import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";
 import type {
   PlatformCatalogPricing,
@@ -99,6 +103,8 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type {
   ModelPromotion,
+  ModelProviderAuthToken,
+  ModelProviderAuthTokens,
   ModelPromotions,
   ProjectConfigStore,
 } from "../mechanisms/projects.js";
@@ -114,48 +120,6 @@ export type RawTable = Record<string, unknown>;
 export function maskApiKey(key: string): string {
   if (key.length <= 12) return "***";
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
-}
-
-/**
- * Whether a model's env fallback is *first-party*: the entry points at the provider's own
- * official endpoint, so consulting the vendor variable (ANTHROPIC_API_KEY, …) is the intended
- * configuration and its value may be previewed masked. Excluded — no detection, no preview:
- *
- * - gateway groups and any group pinning a protocol, e.g. OpenRouter or vLLM (both reach a
- *   generic OpenAI-protocol client whose fallback is OPENAI_API_KEY, the *official OpenAI*
- *   variable; steering it to a reseller or to the user's own server is exactly the
- *   misconfiguration the preview must not encourage), and the custom group;
- * - user-defined groups (not in MODEL_PROVIDERS at all);
- * - any entry re-pointed away from the official shape: a catalog preset whose client_type or
- *   base_url differs from the catalog's own values, or an off-catalog vendor-group entry that
- *   pins either (a bare auto-routed id targets the vendor's first-party client and stays in).
- *
- * `envKey` itself is still reported for every routable entry — this gate governs only the
- * presence preview.
- */
-export function envFallbackFirstParty(entry: {
-  provider: string;
-  modelId: string;
-  clientType: string | undefined;
-  baseUrl: string | undefined;
-}): boolean {
-  const group = providerInfo(entry.provider);
-  if (
-    group === undefined ||
-    group.id === "custom" ||
-    group.gatewayBaseUrl !== undefined ||
-    group.clientType !== undefined
-  ) {
-    return false;
-  }
-  const cat = catalogEntryFor(entry.provider, entry.modelId);
-  if (cat !== undefined) {
-    return (
-      canonicalClientType(entry.clientType) === canonicalClientType(cat.clientType) &&
-      entry.baseUrl === cat.baseUrl
-    );
-  }
-  return entry.clientType === undefined && entry.baseUrl === undefined;
 }
 
 function asTable(v: unknown): RawTable {
@@ -218,40 +182,6 @@ function promotedRates(rates: PricingRates, discount: number): PricingRates {
     cacheWrite: off(rates.cacheWrite),
     output: off(rates.output),
   };
-}
-
-function modelEnvironmentApiKey(
-  provider: string,
-  modelId: string,
-  clientType: string | undefined,
-): string | undefined {
-  const envKey = resolveProviderModelEnv(provider, modelId, clientType)?.envKey;
-  return envKey ? process.env[envKey]?.trim() || undefined : undefined;
-}
-
-function probeApiKey(input: {
-  provider: string;
-  modelId: string;
-  clientType: string | undefined;
-  requestKey: string | undefined;
-  savedKey: string | undefined;
-  clearSavedKey: boolean | undefined;
-}): string | undefined {
-  return (
-    input.requestKey ??
-    (input.clearSavedKey ? undefined : input.savedKey) ??
-    modelEnvironmentApiKey(input.provider, input.modelId, input.clientType)
-  );
-}
-
-function assertRelayConnection(
-  provider: string,
-  apiKey: string | undefined,
-  baseUrl: string | undefined,
-): void {
-  if (provider !== PENGUIN_GO_PROVIDER_ID) return;
-  if (apiKey === undefined) throw new Error("Missing API key for Penguin Go.");
-  if (!baseUrl?.trim()) throw new Error("Missing API base URL for Penguin Go.");
 }
 
 /**
@@ -413,13 +343,20 @@ export function utilityCompletionConfig(
   modelId: string,
   entry: Record<string, unknown>,
 ): GenerativeModelConfig {
-  const apiKey = optStr(entry.api_key);
-  const baseUrl = optStr(entry.base_url);
   const clientType = canonicalClientType(optStr(entry.client_type));
+  // The same credential rule as every other client the harness builds (see core's
+  // resolveModelCredential): a keyless entry pointed away from its vendor throws here, which
+  // completeOnce reports as the failure it is.
+  const credential = resolveModelCredential({
+    provider: optStr(entry.provider) ?? "",
+    modelId,
+    clientType,
+    baseUrl: optStr(entry.base_url),
+    apiKey: optStr(entry.api_key),
+  });
   return {
     modelId,
-    ...(apiKey ? { apiKey } : {}),
-    ...(baseUrl ? { baseUrl } : {}),
+    ...credential,
     ...(clientType ? { clientType } : {}),
     tools: [],
     thinkingLevel: "none",
@@ -463,16 +400,60 @@ export class ProjectConfigService implements ProjectConfigStore {
    * entry) falls back to a full read.
    */
   private readonly cache = new Map<string, { mtimeMs: number; table: RawTable }>();
+  private readonly providerCredentialLocks = new Map<string, Promise<unknown>>();
+  private modelApiKeyResolver:
+    ((context: ModelRequestContext) => Promise<string | undefined>) | undefined;
 
   @Use() private readonly paths!: Paths;
   /** Optional for narrow service tests; the production Projects module always provides it. */
   @Use() private readonly promotions?: ModelPromotions;
+  /** Optional for narrow service tests; OAuth refresh metadata lives in web.db, not TOML. */
+  @Use() private readonly providerAuthTokens?: ModelProviderAuthTokens;
   private get root(): string {
     return this.paths.root;
   }
 
   private filePath(projectId: string): string {
     return projectConfigPath(this.root, projectId);
+  }
+
+  setModelApiKeyResolver(
+    resolver: (context: ModelRequestContext) => Promise<string | undefined>,
+  ): void {
+    this.modelApiKeyResolver = resolver;
+  }
+
+  private requestApiKeyResolver(
+    projectId: string,
+    provider: string,
+    modelId: string,
+    enabled = true,
+  ): Pick<GenerativeModelConfig, "resolveApiKey"> | Record<string, never> {
+    if (!enabled || this.modelApiKeyResolver === undefined) return {};
+    return {
+      resolveApiKey: () => this.modelApiKeyResolver!({ projectId, provider, modelId }),
+    };
+  }
+
+  private async withProviderCredentialLock<T>(
+    projectId: string,
+    provider: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const key = `${projectId}\0${provider}`;
+    const previous = this.providerCredentialLocks.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const current = previous.catch(() => undefined).then(() => gate);
+    this.providerCredentialLocks.set(key, current);
+    await previous.catch(() => undefined);
+    try {
+      return await task();
+    } finally {
+      release();
+      if (this.providerCredentialLocks.get(key) === current)
+        this.providerCredentialLocks.delete(key);
+    }
   }
 
   /**
@@ -754,21 +735,24 @@ export class ProjectConfigService implements ProjectConfigStore {
     return this.getCommandPolicy(projectId);
   }
 
-  /** The `[plugins]` table this Project asks for, in the file's order; empty when it asks for none. */
-  async getPlugins(projectId: string): Promise<PluginTable> {
-    return parsePluginTable((await this.readRaw(projectId)).plugins) ?? {};
+  /**
+   * The `[plugins]` key this Project writes: the shared table and each machine's own, in the
+   * file's order; both empty when it asks for none.
+   */
+  async getPluginTables(projectId: string): Promise<PluginTables> {
+    return parsePluginTables((await this.readRaw(projectId)).plugins) ?? { all: {}, machines: {} };
   }
 
   /**
-   * Replaces this Project's plugin table (a declarative PUT, validated at the route).
+   * Replaces this Project's plugin tables (a declarative PUT, validated at the route).
    * Read-modify-write like setCommandPolicy, so every other key survives. An empty table is
    * written as an empty table rather than removed: "this Project asks for none" is a
    * decision, and a reader cannot tell it from "never configured" if the key vanishes.
    */
-  async setPlugins(projectId: string, plugins: PluginTable): Promise<PluginTable> {
+  async setPluginTables(projectId: string, tables: PluginTables): Promise<PluginTables> {
     const raw = await this.readRaw(projectId);
-    await this.writeRaw(projectId, { ...raw, plugins: pluginTableToToml(plugins) });
-    return this.getPlugins(projectId);
+    await this.writeRaw(projectId, { ...raw, plugins: pluginTablesToToml(tables) });
+    return this.getPluginTables(projectId);
   }
 
   /**
@@ -819,9 +803,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    * one costs real money, unlike the protocol probes).
    *
    * Credential resolution is the connectivity test's, verbatim — the request's key, else
-   * the stored one, unless "clear" is checked. The environment layer needs no code here:
-   * omitting apiKey lets AgentHub read the protocol's own variable, which is the same
-   * chain protocol detection spells out by hand because it bypasses the SDK. Nothing
+   * the stored one, unless "clear" is checked, else the environment where core's
+   * resolveModelCredential allows it (the vendor's own endpoint; never a gateway's). Nothing
    * secret is returned; the failure message is the provider's own text, truncated.
    */
   async detectVision(
@@ -834,22 +817,27 @@ export class ProjectConfigService implements ProjectConfigStore {
     const savedBaseUrl = optStr(entry.base_url);
     const baseUrl = req.baseUrl === null ? undefined : (req.baseUrl ?? savedBaseUrl);
     const clientType = canonicalClientType(req.clientType ?? optStr(entry.client_type));
-    const apiKey = probeApiKey({
-      provider: req.provider,
-      modelId: req.modelId,
-      clientType,
-      requestKey: req.apiKey,
-      savedKey: optStr(entry.api_key),
-      clearSavedKey: req.clearApiKey,
-    });
+    const draftKey = req.clearApiKey ? undefined : (req.apiKey ?? optStr(entry.api_key));
     try {
-      assertRelayConnection(req.provider, apiKey, baseUrl);
-      // Inside the try for the same reason as testModel: the SDK throws on a missing
-      // credential during construction, and that must read as "probe failed", not a 500.
+      // Inside the try for the same reason as testModel: both the credential rule's refusal
+      // and the SDK's own missing-credential throw at construction must read as "probe
+      // failed", not a 500.
+      const credential = resolveModelCredential({
+        provider: req.provider,
+        modelId: req.modelId,
+        clientType,
+        baseUrl,
+        apiKey: draftKey,
+      });
       const llm = new GenerativeModel({
         modelId: req.modelId,
-        ...(apiKey ? { apiKey } : {}),
-        ...(baseUrl ? { baseUrl } : {}),
+        ...credential,
+        ...this.requestApiKeyResolver(
+          projectId,
+          req.provider,
+          req.modelId,
+          req.apiKey === undefined && req.clearApiKey !== true,
+        ),
         ...(clientType ? { clientType } : {}),
         tools: [],
         // The lowest real level, not "none": several reasoning endpoints reject a request
@@ -917,7 +905,10 @@ export class ProjectConfigService implements ProjectConfigStore {
       // Inside the try for the same reason as the probes: the SDK throws during
       // construction when a credential is missing, and that must read as a failure with a
       // reason rather than an exception out of a dialog's helper.
-      const llm = new GenerativeModel(utilityCompletionConfig(ref.model_id, entry));
+      const llm = new GenerativeModel({
+        ...utilityCompletionConfig(ref.model_id, entry),
+        ...this.requestApiKeyResolver(projectId, ref.provider, ref.model_id),
+      });
       return await collectUtilityCompletion(
         llm.streamGenerate({ newMessages: [userText(prompt)] }),
       );
@@ -940,14 +931,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     // The pre-0.4.2 "openai" spelling (request or stored entry) is normalized to the
     // canonical "openai-chat" (deprecated upstream alias; see canonicalClientType).
     const clientType = canonicalClientType(req.clientType ?? optStr(entry.client_type));
-    const apiKey = probeApiKey({
-      provider: req.provider,
-      modelId: req.modelId,
-      clientType,
-      requestKey: req.apiKey,
-      savedKey: optStr(entry.api_key),
-      clearSavedKey: req.clearApiKey,
-    });
+    const draftKey = req.clearApiKey ? undefined : (req.apiKey ?? optStr(entry.api_key));
     // Fast mode follows the form draft like baseUrl (the frontend always sends the current
     // toggle), falling back to the stored annotation: the probe then exercises exactly the
     // serving tier sessions would use, so a model rejecting fast_mode fails the test with
@@ -956,17 +940,29 @@ export class ProjectConfigService implements ProjectConfigStore {
 
     const startedAt = Date.now();
     try {
-      assertRelayConnection(req.provider, apiKey, baseUrl);
-      // Construction must be inside the try block: the underlying provider SDK can
-      // throw during **client construction** itself when a credential is missing
-      // (models on the OpenAI protocol need apiKey/OPENAI_API_KEY) — the whole point
-      // of a connectivity test is to collapse that kind of failure into
-      // `{ ok:false }`; if construction were outside the try, a missing-key test
-      // would bubble up as a 500.
+      // Credential resolution and construction must both be inside the try block: core's
+      // credential rule refuses a keyless entry pointed away from its vendor (a gateway row
+      // never borrows OPENAI_API_KEY / ANTHROPIC_API_KEY from the server environment — the
+      // group speed test runs through here too), and the provider SDK can throw during
+      // **client construction** itself when a credential is missing. The whole point of a
+      // connectivity test is to collapse that kind of failure into `{ ok:false }`; outside
+      // the try, a missing-key test would bubble up as a 500.
+      const credential = resolveModelCredential({
+        provider: req.provider,
+        modelId: req.modelId,
+        clientType,
+        baseUrl,
+        apiKey: draftKey,
+      });
       const llm = new GenerativeModel({
         modelId: req.modelId,
-        ...(apiKey ? { apiKey } : {}),
-        ...(baseUrl ? { baseUrl } : {}),
+        ...credential,
+        ...this.requestApiKeyResolver(
+          projectId,
+          req.provider,
+          req.modelId,
+          req.apiKey === undefined && req.clearApiKey !== true,
+        ),
         ...(clientType ? { clientType } : {}),
         ...(fastMode ? { fastMode: true } : {}),
         tools: [],
@@ -1027,10 +1023,12 @@ export class ProjectConfigService implements ProjectConfigStore {
    *   1. the request body's key (what the user just typed in the dialog);
    *   2. otherwise, when the optional paired reference names a stored entry and "clear"
    *      isn't checked, that entry's saved key (the frontend only ever sees the mask);
-   *   3. otherwise the environment variable for whichever protocol each probe speaks,
-   *      resolved inside detectModelProtocol because the protocol is the thing being
-   *      determined (ANTHROPIC_API_KEY for ant-messages, OPENAI_API_KEY for the two
-   *      OpenAI protocols).
+   *   3. otherwise the environment: a provider-scoped variable (the Penguin Go relay's
+   *      PENGUIN_GO_API_KEY) resolved here for the group's rows, and otherwise the variable
+   *      of whichever protocol each probe speaks, resolved inside detectModelProtocol
+   *      because the protocol is the thing being determined — and only for a URL that is
+   *      the vendor's own (see core's endpointEnvApiKey), never for a gateway or a private
+   *      server.
    * Layers 2 and 3 are read server-side only and never travel back to the browser.
    * Detection still runs with no credential at all: a protocol-shaped 401/403 proves the
    * route. Never throws on probe failures — every outcome is reported per probe.
@@ -1049,24 +1047,31 @@ export class ProjectConfigService implements ProjectConfigStore {
       apiKey = entry !== undefined ? optStr(entry.api_key) : undefined;
       savedClientType = entry === undefined ? undefined : optStr(entry.client_type);
     }
-    const relayRequest = req.provider === PENGUIN_GO_PROVIDER_ID;
-    if (apiKey === undefined && relayRequest && req.provider && req.modelId) {
-      apiKey = modelEnvironmentApiKey(req.provider, req.modelId, savedClientType);
+    if (apiKey === undefined && req.provider && req.modelId) {
+      // A provider-scoped pair (the relay's) is the harness's to read, for any URL in that
+      // group; a vendor pair is left to the per-probe rule in detectModelProtocol. Without a
+      // relay key, anonymous probing is still safe and can identify a route from its 401.
+      const fallback = modelEnvFallback({
+        provider: req.provider,
+        modelId: req.modelId,
+        clientType: savedClientType,
+      });
+      if (fallback !== undefined && !fallback.readByClient) {
+        apiKey = process.env[fallback.envKey]?.trim() || undefined;
+      }
     }
     return detectModelProtocol({
       baseUrl: req.baseUrl,
       ...(apiKey ? { apiKey } : {}),
-      // Without a relay key, anonymous probing is still safe and can identify a route from
-      // its 401. An empty env prevents the lower-level detector from substituting a vendor key.
-      ...(relayRequest ? { env: {} } : {}),
     });
   }
 
   /**
    * Endpoint model listing for the add-group import (see EndpointModelListRequest). All
    * parameters come from the request — a group being created has no stored entry to fall
-   * back to; an omitted key follows the same environment chain as the connectivity test
-   * (the wrapped SDK reads the protocol's own variable). Never throws: SDK construction
+   * back to; an omitted key is lent the protocol's environment variable only when the URL is
+   * that vendor's own (core's endpointEnvApiKey), and refused otherwise. Never throws: SDK
+   * construction
    * and request failures collapse into `{ ok:false, message }`, an AgentHub
    * UnsupportedOperationError additionally sets `unsupported` so the dialog can point at
    * the manual path, and a listing that outlives LIST_MODELS_TIMEOUT_MS is reported as
@@ -1139,12 +1144,14 @@ export class ProjectConfigService implements ProjectConfigStore {
         // persists it).
         const clientType = canonicalClientType(optStr(m.client_type));
         const cat = catalogEntryFor(provider, modelId);
-        // The env fallback is reported as-is: follows the same rule as
-        // AgentHub routing — an explicit client_type takes priority (the openai
-        // protocol reads OPENAI_*, independent of the group), otherwise it's
-        // auto-routed to a provider client based on model_id; an id that can't be
-        // routed has no fallback (no envKey, and AgentHub will reject that id).
-        const envKey = resolveProviderModelEnv(provider, modelId, clientType)?.envKey;
+        const credBaseUrl = optStr(m.base_url);
+        // The env fallback the entry is actually allowed (core's modelEnvFallback): the
+        // variable AgentHub's routed client reads — an explicit client_type takes priority,
+        // otherwise the id auto-routes — but only while the entry's endpoint is the vendor's
+        // own. A gateway, custom or vLLM row with its own endpoint gets no envKey at all:
+        // reporting a name there would promise a fallback the harness refuses.
+        const fallback = modelEnvFallback({ provider, modelId, clientType, baseUrl: credBaseUrl });
+        const envKey = fallback?.envKey;
         const vision = typeof m.vision === "boolean" ? m.vision : cat?.supportsVision;
         // Output cap: TOML annotation only (user-owned; the built-in catalog never presets it).
         const maxTokens = optNum(m.max_tokens);
@@ -1161,18 +1168,22 @@ export class ProjectConfigService implements ProjectConfigStore {
           m.display_name === "" ? "" : (optStr(m.display_name) ?? cat?.displayName);
         // credential is inlined on the entry: a credential block is emitted if either api_key or base_url is present.
         const apiKey = optStr(m.api_key);
-        const credBaseUrl = optStr(m.base_url);
         const createdAt = optStr(m.created_at);
-        // Masked env-fallback preview, first-party entries only (see envFallbackFirstParty):
-        // presence is implied by the field, the plaintext never leaves the server, and an
-        // empty variable counts as absent — it would not authenticate either. Read from this
-        // process's env, which on the desktop already includes the imported login-shell
+        // Masked env-fallback preview, for the entries the UI may present as covered (core's
+        // modelEnvPreviewKey — the dialog's hint reads the same function): a row on a vendor
+        // endpoint, or a keyless row in a group whose defaults are the vendor's. A vLLM preset
+        // or a custom row with no base URL does fall back under the rule, but is not shown as
+        // configured. Presence is implied by the field, the plaintext never leaves the server,
+        // and an empty variable counts as absent — it would not authenticate either. Read from
+        // this process's env, which on the desktop already includes the imported login-shell
         // variables.
-        const envValue =
-          envKey !== undefined &&
-          envFallbackFirstParty({ provider, modelId, clientType, baseUrl: credBaseUrl })
-            ? (process.env[envKey] ?? "")
-            : "";
+        const previewKey = modelEnvPreviewKey({
+          provider,
+          modelId,
+          clientType,
+          baseUrl: credBaseUrl,
+        });
+        const envValue = previewKey !== undefined ? (process.env[previewKey] ?? "") : "";
         const envKeyMasked = envValue !== "" ? maskApiKey(envValue) : undefined;
         const info: ModelInfo = {
           provider,
@@ -1232,8 +1243,21 @@ export class ProjectConfigService implements ProjectConfigStore {
    * `discount` is stored (null clears it); an omitted one keeps the stored promotion unless
    * the entry renames the row or changes its pricing; a row left out of the table takes its
    * promotion with it. A `discount` outside (0, 1) rejects the request before any write.
+   *
+   * An entry the request adds to a first-party vendor group under a model id AgentHub cannot
+   * route is rejected as well (`model_not_routable`); one already stored under that key is
+   * written as it stands. See the loop below for why the two differ.
    */
   async updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse> {
+    return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, () =>
+      this.updateModelsUnlocked(projectId, req),
+    );
+  }
+
+  private async updateModelsUnlocked(
+    projectId: string,
+    req: ModelsUpdateRequest,
+  ): Promise<ModelsResponse> {
     req.models.forEach((entry, i) => {
       const { discount } = entry;
       if (discount === undefined || discount === null) return;
@@ -1243,9 +1267,34 @@ export class ProjectConfigService implements ProjectConfigStore {
     });
     const raw = await this.readRaw(projectId);
     const prevModels = asArray(raw.models);
+    const hadModelScopeGroup = prevModels.some(
+      (model) => model.provider === MODELSCOPE_PROVIDER_ID,
+    );
+
+    // A vendor group carries the built-in catalog and nothing else: its entries persist no
+    // client_type, so AgentHub places each one by the spelling of the model id alone, and an
+    // id it cannot place fails at request time with a sentence listing client types the user
+    // never chose. Refused here, while the request can still be sent somewhere that works.
+    //
+    // Only an entry this request introduces is judged. The models page replaces the whole
+    // table on every save, so an id written before this rule existed would otherwise block
+    // every later edit of every other row; such a row is left exactly as it is, and the page
+    // marks it. A key change is a different entry — moving a model into a vendor group, or
+    // renaming one inside it, is the act of writing it there — so it is judged like a new one.
+    for (const entry of req.models) {
+      if (!unroutableVendorModel(entry.provider, entry.modelId, entry.clientType)) continue;
+      if (prevModels.some((m) => entryMatches(m, entry.provider, entry.modelId))) continue;
+      throw new HttpError(
+        400,
+        "model_not_routable",
+        `Model ${showRef(entry.provider, entry.modelId)} cannot be routed: a vendor group carries built-in models only. Add it under a custom group, where its protocol can be picked or detected.`,
+      );
+    }
 
     const seen = new Set<string>();
     const nextModels: RawTable[] = [];
+    let keepModelScopeGroup = false;
+    let clearModelScopeProviderAuthToken = false;
     // Rename mapping (old reference key -> new reference): default model / vision model pointers follow a key change instead of being lost on a full table replacement.
     const renamed = new Map<string, ModelRefDto>();
     // Each row's promotion, settled against the stored set once the file is written.
@@ -1347,15 +1396,19 @@ export class ProjectConfigService implements ProjectConfigStore {
       if (entry.clearApiKey) {
         delete next.api_key;
         delete next.created_at;
+        if (entry.provider === MODELSCOPE_PROVIDER_ID) clearModelScopeProviderAuthToken = true;
       }
       if (entry.apiKey !== undefined) {
         next.api_key = entry.apiKey;
         next.created_at = new Date().toISOString();
+        if (entry.provider === MODELSCOPE_PROVIDER_ID) clearModelScopeProviderAuthToken = true;
       }
       if (entry.baseUrl === null) delete next.base_url;
       else if (entry.baseUrl !== undefined) next.base_url = entry.baseUrl;
+      if (entry.provider === MODELSCOPE_PROVIDER_ID) keepModelScopeGroup = true;
       nextModels.push(next);
     }
+    if (hadModelScopeGroup && !keepModelScopeGroup) clearModelScopeProviderAuthToken = true;
 
     // default_model: when provided it must be present in models; when omitted the previous value is kept (the pointer follows a key rename; if it was deleted, it's removed).
     let defaultModel: ModelRefDto | undefined;
@@ -1418,20 +1471,27 @@ export class ProjectConfigService implements ProjectConfigStore {
     else delete next.default_model;
     if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
     else delete next.vision_model;
-    await this.writeRaw(projectId, next);
-    if (this.promotions !== undefined) {
-      const stored = new Map(
-        this.promotions.list(projectId).map((p) => [refKey(p.provider, p.modelId), p.discount]),
-      );
-      const rows: ModelPromotion[] = [];
-      for (const { provider, modelId, declared, keep } of promotionPlan) {
-        const discount = keep ? stored.get(refKey(provider, modelId)) : declared;
-        if (discount !== undefined && discount !== null) rows.push({ provider, modelId, discount });
+    const commit = async (): Promise<ModelsResponse> => {
+      await this.writeRaw(projectId, next);
+      if (this.promotions !== undefined) {
+        const stored = new Map(
+          this.promotions.list(projectId).map((p) => [refKey(p.provider, p.modelId), p.discount]),
+        );
+        const rows: ModelPromotion[] = [];
+        for (const { provider, modelId, declared, keep } of promotionPlan) {
+          const discount = keep ? stored.get(refKey(provider, modelId)) : declared;
+          if (discount !== undefined && discount !== null)
+            rows.push({ provider, modelId, discount });
+        }
+        // Built from the new table alone, so a dropped row's promotion is gone with it.
+        this.promotions.replaceAll(projectId, rows);
       }
-      // Built from the new table alone, so a dropped row's promotion is gone with it.
-      this.promotions.replaceAll(projectId, rows);
-    }
-    return this.getModels(projectId);
+      if (clearModelScopeProviderAuthToken) {
+        this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
+      }
+      return this.getModels(projectId);
+    };
+    return commit();
   }
 
   /**
@@ -1443,6 +1503,45 @@ export class ProjectConfigService implements ProjectConfigStore {
    * Returns how many entries were written; an empty group writes nothing and returns 0.
    */
   async setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number> {
+    if (provider === MODELSCOPE_PROVIDER_ID) {
+      return this.withProviderCredentialLock(projectId, provider, async () => {
+        const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+        if (applied > 0) this.providerAuthTokens?.delete(projectId, MODELSCOPE_PROVIDER_ID);
+        return applied;
+      });
+    }
+    return this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+  }
+
+  async setGroupApiKeyWithProviderAuthToken(
+    projectId: string,
+    provider: string,
+    apiKey: string,
+    token: Omit<ModelProviderAuthToken, "provider" | "updatedAt">,
+    options: { expectedRefreshToken?: string } = {},
+  ): Promise<number> {
+    return this.withProviderCredentialLock(projectId, provider, async () => {
+      if (options.expectedRefreshToken !== undefined) {
+        const current = this.providerAuthTokens?.get(projectId, provider);
+        if (current?.refreshToken !== options.expectedRefreshToken) return 0;
+      }
+      const applied = await this.setGroupApiKeyUnlocked(projectId, provider, apiKey);
+      if (applied > 0) {
+        this.providerAuthTokens?.upsert(projectId, {
+          provider,
+          refreshToken: token.refreshToken,
+          accessTokenExpiresAt: token.accessTokenExpiresAt,
+        });
+      }
+      return applied;
+    });
+  }
+
+  private async setGroupApiKeyUnlocked(
+    projectId: string,
+    provider: string,
+    apiKey: string,
+  ): Promise<number> {
     const raw = await this.readRaw(projectId);
     const createdAt = new Date().toISOString();
     let applied = 0;

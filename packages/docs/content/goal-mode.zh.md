@@ -148,16 +148,18 @@ Task 结束后，stop 钩子读取 Trace 和目标文件，按下面的顺序逐
 
 目标模式并不内置在核心里。`goal` 插件是一个[钩子包](/skills#钩子包)，包含两个脚本：
 
-- `start.mjs` 是它的 [`user_prompt` 钩子](/agent-loop#user-prompt-hook)：写入目标文件，并以第 1 轮的协议消息作为扩展 `context`，应答提交的 Prompt。
+- `start.mjs` 是它由宿主触发的 [`user_prompt` 钩子](/agent-loop#user-prompt-hook)，标记为 `"trigger": "host"`：只在目标启动时运行，普通的 Prompt 不会触发它。它写入目标文件，并以第 1 轮的协议消息作为扩展 `context` 作答。
 - `stop.mjs` 是一个 [stop 钩子](/agent-loop#stop-hook)：每个 Task 结束后读取 Session 的 Trace，应答 `continue` 并附上下一轮的消息，或者应答 `stop`。
 
 核心 SDK 完全不知道目标是什么，询问钩子的那个循环是通用的。
 
 ### 启动流程
 
-服务端让 Session 运行 goal 包的 `user_prompt` 钩子，也就是已安装的 `agent_state/hooks/goal/start.mjs`，脚本从 stdin 收到 `{ hook: "user_prompt", session_id, scratchpad_dir, prompt, budget }`。随后服务端启动目标运行：先原样发送你输入的消息，再发送脚本打印的 `{ context }`，这条消息带 `sender: "harness"` 标记。之后由 stop 钩子接手。
+服务端经 `Session.runUserPromptHook("goal", prompt, { budget })` 让 Session 运行 goal 包由宿主触发的 `user_prompt` 命令，也就是已安装的 `agent_state/hooks/goal/start.mjs`，脚本从 stdin 收到 `{ hook: "user_prompt", session_id, trace_path, scratchpad_dir, prompt, budget }`。随后服务端启动目标运行：先原样发送你输入的消息，再发送脚本打印的 `{ context }`，这条消息带 `sender: "harness"` 标记。之后由 stop 钩子接手。
 
 因此在 SDK 里，目标就是装了插件的 Agent 上一次普通的 `session.run`，启动时用同样的方式写好目标文件：调用 `Session.runUserPromptHook("goal", …)`，或者直接运行脚本。
+
+启动目标的那条 Prompt 仍是你提交的 Prompt，所以其他钩子包的 `user_prompt` 钩子照常在它上面运行。它们的 context 排在 goal 的协议消息之后，都不算作一轮：轮次只从第 1 轮的协议消息、或 stop 钩子 `continue` 注入的输入开始。
 
 ### 计数与记录
 
