@@ -1,5 +1,5 @@
 /**
- * The chart primitives on their own (packages/web/src/components/ui/chart), each on a small
+ * The chart primitives on their own (the package's `charts/marks`), each on a small
  * stage with demo data: the bar, the line, the area, the point, the arc, the grid and axis
  * labels, and the Trace timeline's HTML bar. They read the theme's chart tokens themselves; the
  * stages only say where a mark sits and which slot it paints with.
@@ -9,8 +9,6 @@
  * primitive uses, as a key to what the token chooses.
  */
 import type { ReactNode } from "react";
-import { useChartStyle } from "../../../../web/src/lib/chart-style";
-import type { ChartCurve } from "../../../../web/src/lib/chart-style";
 import {
   ChartArc,
   ChartArea,
@@ -21,7 +19,9 @@ import {
   ChartPoint,
   TimelineBar,
   curvePath,
-} from "../../../../web/src/components/ui/chart";
+  useChartStyle,
+} from "@prismshadow/penguin-ui";
+import type { ChartCurve } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 

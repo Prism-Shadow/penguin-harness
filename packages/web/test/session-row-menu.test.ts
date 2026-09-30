@@ -29,6 +29,8 @@ import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } fro
 
 const SCAN = scanSources();
 const ROW_MENU = "packages/web/src/components/ui/session-row-menu.tsx";
+/** The package's row, which draws the hover buttons both the sidebar and the desk rows use. */
+const SESSION_ROW = "packages/ui/src/components/shell/session-row/session-row.tsx";
 
 /** Every test that switches locale puts the default (zh) back. */
 afterEach(() => setActiveStrings(zh));
@@ -100,8 +102,9 @@ describe("contextMenuActions", () => {
 describe("the hover buttons' CSS contract", () => {
   // Node-only suite, so this is asserted against the source text (title-reveal.test.ts
   // convention). It is worth pinning: an invisible button still takes taps, and these are
-  // invisible for the whole of every touch session, delete included.
-  const source = sourceFile(SCAN, ROW_MENU).text;
+  // invisible for the whole of every touch session, delete included. The buttons are the UI
+  // package's (`RowHoverActions`); this module hands them their actions.
+  const source = sourceFile(SCAN, SESSION_ROW).text;
 
   it("gates pointer events on the same conditions as visibility, leaving no phantom tap target", () => {
     expect(source).toContain("pointer-events-none");

@@ -17,7 +17,7 @@ import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
 import { WorkspaceLinksProvider } from "./workspace-links";
-import { WorkGroup, isWorkItem } from "./work-group";
+import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
@@ -103,7 +103,7 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
 
   const renderSeg = (seg: Seg, i: number): ReactNode =>
     seg.type === "group" ? (
-      <WorkGroup
+      <SessionWorkGroup
         key={`wg-${seg.items[0]!.id}`}
         items={seg.items}
         ctx={ctx}

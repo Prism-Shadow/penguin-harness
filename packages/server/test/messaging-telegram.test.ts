@@ -45,6 +45,8 @@ import {
   messagingImageFailedNotice,
   messagingInboundFileTooLargeNotice,
 } from "../src/runtime/messaging/bridge.js";
+import { MessagingChannelError } from "../src/runtime/messaging/connector.js";
+import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
 import { MessagingMediaTooLargeError, collectUnderCap } from "../src/runtime/messaging/media.js";
 import type {
   TelegramBotClient,
@@ -1929,6 +1931,8 @@ class ConflictBotClient implements TelegramBotClient {
   pollCalls = 0;
   /** getUpdates rejects with the 409 while this is true. */
   conflict = false;
+  /** Failures the next polls reject with, one each and in order, ahead of the conflict. */
+  readonly failWith: Error[] = [];
   /** Rejects the parked long poll (what Telegram does to the loser of the conflict). */
   private parkedReject: ((err: Error) => void) | null = null;
 
@@ -1957,6 +1961,8 @@ class ConflictBotClient implements TelegramBotClient {
     signal: AbortSignal;
   }): Promise<TelegramUpdate[]> {
     this.pollCalls++;
+    const failure = this.failWith.shift();
+    if (failure !== undefined) return Promise.reject(failure);
     if (this.conflict)
       return Promise.reject(new Error(`getUpdates failed: ${CONFLICT_DESCRIPTION}`));
     if (args.timeoutSec === 0) return Promise.resolve([]);
@@ -1969,6 +1975,10 @@ class ConflictBotClient implements TelegramBotClient {
   startConflicting(): void {
     this.conflict = true;
     this.parkedReject?.(new Error(`getUpdates failed: ${CONFLICT_DESCRIPTION}`));
+  }
+  /** Ends the parked long poll with this failure, as a dropped connection does. */
+  failParked(err: Error): void {
+    this.parkedReject?.(err);
   }
 }
 
@@ -2068,6 +2078,40 @@ describe("telegram poll loop under a persistent 409", () => {
     expect(errors).toBe(1);
     conn.close();
     expect(inbound).toEqual([]);
+  });
+
+  it("a failure that recovers on its own does not silence the refusal behind it", async () => {
+    // A dropped poll is filed as routine, so if it kept the outage's one report, a token
+    // revoked while the connection was down would never be filed: the binding stays down and
+    // the dashboard reads zero defects. The adapter's verdicts are asserted where they are made
+    // (messaging-wire.test.ts); these stand in for them.
+    const { connector, transport } = conflictConnector();
+    const errors: unknown[] = [];
+    let readies = 0;
+    const conn = await connector.connect(
+      { botToken: TOKEN },
+      {
+        onMessage: async () => {},
+        onReady: () => {
+          readies++;
+        },
+        onError: (err) => {
+          errors.push(err);
+        },
+      },
+    );
+    const bot = transport.clients[0]!;
+    await waitFor(() => readies === 1);
+    const revoked = () => new TelegramApiError("getUpdates failed: Unauthorized (code 401)", 401);
+    bot.failWith.push(revoked(), revoked());
+    bot.failParked(new MessagingChannelError("getUpdates failed: socket hang up", true));
+    await waitFor(() => bot.failWith.length === 0 && readies === 2);
+    conn.close();
+    // The blip, then the refusal behind it — and nothing more: the repeat stays quiet.
+    expect(errors.map((err) => messagingErrorKind(err, "messaging_connect_failed"))).toEqual([
+      "expected",
+      "unexpected",
+    ]);
   });
 
   it("probes for a webhook once per connection, before the first poll", async () => {

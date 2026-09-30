@@ -120,6 +120,17 @@ export function languageForExtension(ext: string): string {
 }
 
 /**
+ * The language a file's name says it is written in: from its extension, or from the whole name
+ * when it has none (`Makefile`), a leading dot included (`.env`). A path works as well as a name:
+ * only its last segment is read.
+ */
+export function languageForFileName(name: string): string {
+  const base = name.slice(name.lastIndexOf("/") + 1);
+  const dot = base.lastIndexOf(".");
+  return languageForExtension(dot >= 0 ? base.slice(dot + 1) : base);
+}
+
+/**
  * Fence info string / language prop -> the id to highlight with, or undefined when nothing here
  * covers it (the caller then renders the code unhighlighted). An empty language means an
  * unannotated fence, which renders as plain text rather than nothing.

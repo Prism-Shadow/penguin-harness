@@ -14,6 +14,7 @@
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { useUiStrings } from "../../../strings";
 import { Chevron } from "../../icons/chevron/chevron";
+import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICON_SIZE } from "../../../icon-scale";
 
 /** A folder toggle's and a "more" row's shape: a dense, muted row with a chevron column. */
@@ -160,6 +161,7 @@ export function GroupHeader({
   open,
   onToggle,
   icon,
+  glyph,
   label,
   uppercase = false,
   muted = false,
@@ -175,8 +177,14 @@ export function GroupHeader({
 }: {
   open: boolean;
   onToggle: () => void;
-  /** The leading visual (an avatar, a folder glyph), sized by the caller. */
-  icon: ReactNode;
+  /** The leading visual the caller sized: an avatar, which says who the group is. */
+  icon?: ReactNode;
+  /**
+   * The leading glyph as a registry path (a folder, a calendar), drawn at the header's glyph rung
+   * in the subtle ink. It repeats what the label says, so it is decorative (`ui-icon-decor`, role
+   * `group`): a theme may recolour or drop it. Takes the place of `icon`.
+   */
+  glyph?: string;
   label: string;
   /** A group label rather than a name whose casing matters: set on the eyebrow rung. */
   uppercase?: boolean;
@@ -219,7 +227,16 @@ export function GroupHeader({
         {...(title !== undefined ? { "data-tooltip": title } : {})}
         className="flex min-w-0 flex-1 items-center gap-1 self-stretch rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-fg/5"
       >
-        {icon}
+        {glyph !== undefined ? (
+          <GlyphIcon
+            d={glyph}
+            size={ICON_SIZE.groupHeaderGlyph}
+            decor="group"
+            className="text-fg-subtle"
+          />
+        ) : (
+          icon
+        )}
         <span
           className={`min-w-0 truncate ${uppercase ? "ui-eyebrow" : "text-xs font-semibold"} ${ink}`}
         >

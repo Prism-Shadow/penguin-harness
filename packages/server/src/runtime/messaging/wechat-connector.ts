@@ -88,6 +88,7 @@ import type {
   MessagingOutboundFile,
   MessagingSendOptions,
 } from "./connector.js";
+import { MessagingChannelError } from "./connector.js";
 import { wechatMarkdownOf } from "./wechat-markdown.js";
 import type {
   WeChatBotClient,
@@ -323,6 +324,8 @@ export class WeChatConnector implements MessagingChannelConnector {
     /** Drains that closed on their deadline without the platform answering. */
     let drainAttempts = 0;
     let failures = 0;
+    /** What this outage has already reported (see qq-api's GatewaySession.reported). */
+    let reported: "none" | "routine" | "defect" = "none";
     let cursor = "";
     while (!isClosed()) {
       try {
@@ -376,6 +379,7 @@ export class WeChatConnector implements MessagingChannelConnector {
         // endpoints, so a failure that only ever hits the poll would otherwise be zeroed by
         // every recovery, never walk the backoff up, and write one error record per attempt.
         failures = 0;
+        reported = "none";
         for (const evt of messages) {
           if (isClosed()) return;
           // The token is learned BEFORE the bridge is told, so the reply to this very
@@ -390,8 +394,14 @@ export class WeChatConnector implements MessagingChannelConnector {
         ready = false;
         failures += 1;
         // Reported once per outage, not once per attempt: a token revoked overnight would
-        // otherwise write one error record per retry until somebody looked.
-        if (failures === 1) handlers.onError?.(err);
+        // otherwise write one error record per retry until somebody looked. A failure that
+        // recovers on its own is filed `expected`, so it does not get to be the whole story:
+        // the first one after it that does not recover is reported too.
+        const routine = err instanceof MessagingChannelError && err.recovers;
+        if (reported === "none" || (reported === "routine" && !routine)) {
+          reported = routine ? "routine" : "defect";
+          handlers.onError?.(err);
+        }
         await this.sleep(this.retryDelayMs(failures), signal);
       }
     }

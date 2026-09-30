@@ -2583,6 +2583,7 @@ Scenarios:
       },
     },
     sessionList: "Sessions",
+    sessionListByMode: { workspace: "Workspaces", agent: "Agents", time: "Recent" },
     defaultSessionTitle: "New chat",
     agent: "Agent",
     model: "Model",
@@ -3536,11 +3537,13 @@ Scenarios:
     errorsColKind: "Type",
     errorsColMessage: "Message",
     errorsEmpty: "No errors",
-    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    /** Time cell tooltip on a row that folds several of a day's records: when the first one was. */
+    errorsFirstAt: (time: string): string => `First at ${time}`,
+    /** Detail-table pager: newer/older step back through pages of the same filtered set; it counts rows, not records. */
     errorsNewer: "Newer",
     errorsOlder: "Older",
-    errorsPageOf: (page: number, pages: number, total: number) =>
-      `Page ${page} / ${pages} · ${total} total`,
+    errorsPageOf: (page: number, pages: number, rows: number) =>
+      `Page ${page} / ${pages} · ${rows} row${rows === 1 ? "" : "s"}`,
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "Clear",
     errorsClearTitle: "Clear error records",

@@ -50,12 +50,12 @@ import {
   LiveDuration,
   Md,
   StatusIcon,
+  StepBanner,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import type { CompactionItem } from "../../lib/omni/stream-model";
 import { compactionResultVisible, compactionSummaryText } from "../../lib/omni/compaction-summary";
-import { StepBanner } from "./step-banner";
 
 /**
  * One body section: the thinking block's row (status icon + label + wall time + chevron) over

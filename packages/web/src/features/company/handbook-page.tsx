@@ -37,6 +37,7 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
+import type { TreeToggle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -47,7 +48,6 @@ import { keymap } from "../../lib/shortcuts/store";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
-import type { TreeToggle } from "../../components/ui/file-tree";
 import { OrgEmptyLine, OrgPage, useOrg } from "./org-layout";
 import { ErrorLine } from "./shared";
 import { COLLAPSE_ALL_ICON, HandbookExplorer } from "./handbook-explorer";

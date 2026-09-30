@@ -39,7 +39,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { ModelSelect } from "../chat/model-select";
+import { ModelCatalogSelect } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 import { itemModelRef } from "./schedule-upsert";
@@ -95,7 +95,7 @@ function filterSessions(sessions: SessionInfo[], query: string): SessionInfo[] {
 
 /**
  * Searchable Session picker for the bind-to-Session mode: the shared FormPicker (same
- * trigger look as ModelSelect/WorkspaceSelect) whose panel is the shared PickerList (search
+ * trigger look as ModelCatalogSelect/WorkspaceSelect) whose panel is the shared PickerList (search
  * box + keyboard nav). The Agent's full Session list is fetched once when the picker first
  * opens — un-paged, mirroring how the form one-shots getModels — so search covers every
  * Session rather than only the sidebar's loaded active page. The stored value is still the
@@ -218,7 +218,7 @@ function initialForm(editing: ScheduleItem | null, lockedSessionId: string | und
     sessionId: editing.sessionId ?? "",
     workspace: editing.workspace ?? "",
     // A schedule that follows the Project default stores no model; the default takes its
-    // place in the picker once the model list arrives (ModelSelect has no null state).
+    // place in the picker once the model list arrives (ModelCatalogSelect has no null state).
     model: itemModelRef(editing),
     ...pinned,
   };
@@ -248,7 +248,7 @@ function ScheduleFormDialog({
   const [busy, setBusy] = useState(false);
   // Model dropdown data; a load failure doesn't block the form — falling back to "Project default" is fine.
   const [models, setModels] = useState<ModelInfo[]>([]);
-  // The Project default model reference, kept so ModelSelect can mark it and so the form can
+  // The Project default model reference, kept so ModelCatalogSelect can mark it and so the form can
   // treat "the default is selected" as "follow the default" (omit the model from the body).
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | null>(null);
 
@@ -444,13 +444,13 @@ function ScheduleFormDialog({
                 </div>
               ) : (
                 // New-Session mode: Model and Workspace use the same form-variant pickers as
-                // the Project default-settings dialog (ModelSelect / WorkspaceSelect), so the
+                // the Project default-settings dialog (ModelCatalogSelect / WorkspaceSelect), so the
                 // two surfaces read identically.
                 <>
                   <div>
                     <FieldLabel>{S.schedule.model}</FieldLabel>
                     {models.length > 0 ? (
-                      <ModelSelect
+                      <ModelCatalogSelect
                         models={models}
                         value={form.model}
                         {...(defaultModel ? { defaultModel } : {})}
