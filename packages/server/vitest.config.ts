@@ -36,6 +36,10 @@
  * `restoreMocks` makes the spy half of that mechanical rather than a reading of the suite:
  * a `vi.spyOn` whose inline `mockRestore()` is skipped by a failing assertion above it
  * would otherwise stay installed for every later file in the same worker.
+ *
+ * `setupFiles` carries one sweep: after each file, every temp root it created through
+ * `makeTempRoot()` is removed (test/temp-roots.ts). The creator owns the cleanup, so a test
+ * that forgets its `rm` — or never reaches it — no longer leaves a root behind in TMPDIR.
  */
 import { defineConfig } from "vitest/config";
 
@@ -44,6 +48,7 @@ export default defineConfig({
     environment: "node",
     isolate: false,
     restoreMocks: true,
+    setupFiles: ["test/setup-temp-roots.ts"],
     testTimeout: process.platform === "win32" ? 30_000 : 5_000,
     hookTimeout: process.platform === "win32" ? 30_000 : 10_000,
     retry: process.platform === "win32" ? 2 : process.platform === "darwin" ? 1 : 0,

@@ -91,9 +91,9 @@ import type { ChromeHost } from "../src/builtin-browser/hosted-chrome.js";
 import { ProcessShellPort, SystemChromeHost } from "../src/builtin-browser/module.js";
 import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
 
-export async function makeTempRoot(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
-}
+import { makeTempRoot } from "./temp-roots.js";
+
+export { makeTempRoot };
 
 let symlinkCapability: boolean | undefined;
 
