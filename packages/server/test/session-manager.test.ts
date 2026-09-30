@@ -28,7 +28,8 @@
  * - Session deletion interrupts and blocks new Tasks until it ends; a loader answering a new id
  *   heals the index; a swept channel is re-read before every publish; a Project abort hands
  *   back its in-flight runs; a loader's HttpError passes through; shutdown disposes every
- *   environment and refuses new Tasks.
+ *   environment and refuses new Tasks, and a run parked on an approval is denied, winds down,
+ *   and is disposed only after it has.
  * - Idle entries are evicted (running ones, pending approvals and working subagents pin them);
  *   invalidating an Agent's or a Project's runtimes rebuilds them at next access, never
  *   mid-run, and publishes a discarded runtime's background count as cleared.
@@ -1155,6 +1156,34 @@ describe("session-manager", () => {
     manager.adopt(ROW, fake);
     await manager.shutdown();
     expect(disposed).toBe(1);
+  });
+
+  it("shutdown denies a call parked on a person, lets the run wind down, and disposes after it", async () => {
+    // What a hot swap or an exit meets mid-conversation: a run waiting on an approval nobody
+    // in this process will ever give.
+    const order: string[] = [];
+    const fake = fakeSession("session-1", {
+      async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+        try {
+          const tc = toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
+          yield tc;
+          order.push(`decided ${await opts.approve(tc)}`);
+          order.push(`aborted ${String(opts.signal.aborted)}`);
+        } finally {
+          order.push("run ended");
+        }
+      },
+    });
+    (fake as { dispose?: () => void }).dispose = () => {
+      order.push("disposed");
+    };
+    const manager = makeManager(loaderOf(fake));
+    await manager.startTask("session-1", [userText("write it")]);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+
+    await manager.shutdown();
+    // The environment goes only once the run has let go of it.
+    expect(order).toEqual(["decided deny", "aborted true", "run ended", "disposed"]);
   });
 
   it("rejects new Tasks once shutdown is set (503 shutting_down)", async () => {
