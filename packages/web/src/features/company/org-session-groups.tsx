@@ -1,13 +1,17 @@
 /**
- * The 工位 group under the company sidebar's channel list, and the collapsed rail's twin.
+ * The Desks and Temporary groups under the company sidebar's channel list, and the collapsed
+ * rail's twins.
  *
- * One row per employee, in chart order, expanded by default: the organization's people are
- * its primary objects, and a desk is where a person is talked to. Every employee has a desk
+ * Desks: one row per employee, in chart order, expanded by default: the organization's people
+ * are its primary objects, and a desk is where a person is talked to. Every employee has a desk
  * session from the moment it is hired, so a row normally carries one; a row whose id these
  * caches have not learned yet still stands there and opens the desk on click, exactly as the
- * org chart's card does. Ticket sessions have no group of their own — a session exists
- * because a ticket started it, and it is read from that ticket's drawer, where the work it
- * belongs to is on screen beside it.
+ * org chart's card does.
+ *
+ * Temporary: ticket sessions have no group of their own. Each exists because a ticket started
+ * it, and it is opened from that ticket's dialog. The ones opened from there are listed below the
+ * desks, newest first, until the reader removes one with its ✕ or all of them with the header's
+ * "Close all"; the group shows only while it lists something (temp-session.ts).
  *
  * A row that names a desk session carries the development list's row menu (right-click, and
  * the hover ellipsis), pared down to the two actions an organization leaves to the reader:
@@ -30,6 +34,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
+import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
@@ -39,7 +44,7 @@ import { useRowContextMenu } from "../../components/ui/context-menu";
 import { writeClipboard } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { FolderSection, Icon } from "../../components/ui/group-list";
-import { MESSAGING_RELAY_ICON } from "../../components/ui/icons";
+import { CloseIcon, MESSAGING_RELAY_ICON } from "../../components/ui/icons";
 import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
 import {
   DESK_ROW_ACTIONS,
@@ -52,8 +57,15 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
 import { orgKey } from "./company-nav";
-import { deskRows, orgRowActivity } from "./org-sessions";
+import { deskRows, orgRowActivity, ticketSessionTitles } from "./org-sessions";
 import type { OrgDeskRow } from "./org-sessions";
+import {
+  dismissAllTempSessions,
+  dismissTempSession,
+  tempSessionRows,
+  useTempSessions,
+} from "./temp-session";
+import type { TempSessionRow } from "./temp-session";
 
 /**
  * The row's surface — the hover and active fill — on the wrapper rather than on the button,
@@ -80,7 +92,8 @@ const DESK_ROW_STATE: SessionRowState = { archived: false, pinned: false };
 /**
  * Opening a desk: the store's row when one exists, and otherwise the desk endpoint, which
  * creates it — the same call the org chart's card makes, so the two entry points cannot
- * disagree about what "open the desk" means.
+ * disagree about what "open the desk" means. `openSession` is how a Temporary row opens its
+ * session.
  */
 function useOpenDesk(projectId: string, orgId: string, onNavigate?: () => void) {
   const navigate = useNavigate();
@@ -114,7 +127,7 @@ function useOpenDesk(projectId: string, orgId: string, onNavigate?: () => void) 
       setOpening(null);
     }
   };
-  return { openDesk, opening };
+  return { openDesk, openSession, opening };
 }
 
 /**
@@ -255,6 +268,135 @@ function DeskRow({
   );
 }
 
+/** A Temporary row with what it draws besides its entry. */
+interface TempRowView extends TempSessionRow {
+  /** The employee's name, for the avatar and the tooltip. */
+  name: string;
+  activity: ReturnType<typeof orgRowActivity>;
+}
+
+/**
+ * This organization's Temporary rows for the signed-in user, with what each draws: the title the
+ * organization gives the session (the ticket's listing at open time until the route names it),
+ * the employee's name, and the live run state. A desk session is left to its desk row.
+ */
+function useTempRows(
+  projectId: string,
+  orgId: string,
+  desks: readonly OrgDeskRow[],
+  activeSessionId: string | null,
+): TempRowView[] {
+  const company = useCompany();
+  const { user } = useAuth();
+  const live = useLiveSessionStatuses();
+  const list = useTempSessions(user?.userId ?? null, projectId, orgId);
+  const titles = ticketSessionTitles(company.orgSessions.get(orgKey(projectId, orgId)));
+  return tempSessionRows(
+    list,
+    desks.map((d) => d.sessionId),
+    activeSessionId,
+  ).map((row) => {
+    const named = titles.get(row.sessionId);
+    const title = named ?? (row.title !== "" ? row.title : S.company.sessionList.untitledSession);
+    const name =
+      company.orgChart?.employees.find((e) => e.agentId === row.agentId)?.name ?? row.agentId;
+    const status = live.get(row.sessionId);
+    return { ...row, title, name, activity: status === undefined ? null : orgRowActivity(status) };
+  });
+}
+
+/**
+ * One Temporary row: the employee's avatar, the session's title and its run mark, then a ✕ that
+ * removes the row and nothing else. The page stays where it is, even on this session.
+ */
+function TempRow({
+  row,
+  onOpen,
+  onDismiss,
+}: {
+  row: TempRowView;
+  onOpen: () => void;
+  onDismiss: () => void;
+}) {
+  const label =
+    row.activity === "running" ? `${row.title} · ${S.company.sessionList.running}` : row.title;
+  const remove = S.company.sessionList.closeTemporary;
+  return (
+    <li>
+      <div className={rowSurface(row.active)}>
+        <button
+          type="button"
+          aria-current={row.active ? "true" : undefined}
+          title={`${row.name} · ${row.title}`}
+          aria-label={label}
+          onClick={onOpen}
+          className={rowButton(row.active)}
+        >
+          <AgentAvatar
+            id={row.agentId}
+            name={row.name}
+            size={ICON_SIZE.rowLead}
+            className="shrink-0 rounded"
+          />
+          <Truncated text={row.title} className="min-w-0 flex-1" />
+          {row.activity !== null && <SessionActivityIcon activity={row.activity} />}
+        </button>
+        {/* The same trailing slot a desk row keeps for its menu, so the run marks line up
+            across the two groups. */}
+        <button
+          type="button"
+          title={remove}
+          aria-label={remove}
+          onClick={onDismiss}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+        >
+          <CloseIcon />
+        </button>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * The collapsed rail's Temporary entries, after the desks and a hairline: avatars with their
+ * running dots, drawn the way the desks are.
+ */
+export function TempSessionRailRows({ projectId, orgId }: { projectId: string; orgId: string }) {
+  const company = useCompany();
+  const live = useLiveSessionStatuses();
+  const desks = deskRows(company.orgChart, company.orgSessions.get(orgKey(projectId, orgId)), live);
+  const rows = useTempRows(projectId, orgId, desks, null);
+  const { openSession } = useOpenDesk(projectId, orgId);
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <span aria-hidden className="my-0.5 h-px w-5 shrink-0 bg-gray-200 dark:bg-gray-800" />
+      {rows.map((row) => {
+        const entry = S.company.sessionList.temporaryEntry(row.title);
+        const name = row.activity !== null ? `${entry} · ${S.company.sessionList.running}` : entry;
+        return (
+          <button
+            key={row.sessionId}
+            type="button"
+            title={name}
+            aria-label={name}
+            onClick={() => openSession(row.sessionId, row.agentId)}
+            className="relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
+          >
+            <AgentAvatar id={row.agentId} name={row.name} size={18} className="rounded" />
+            {row.activity !== null && (
+              <span
+                aria-hidden
+                className={`absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full ${toneDot.busy}`}
+              />
+            )}
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
 export function OrgSessionGroups({
   projectId,
   orgId,
@@ -268,13 +410,16 @@ export function OrgSessionGroups({
   onNavigate?: () => void;
 }) {
   const company = useCompany();
+  const { user } = useAuth();
   const [desksOpen, setDesksOpen] = useState(true);
+  const [tempOpen, setTempOpen] = useState(true);
   /** The desk whose messaging binding is open in the dialog; null when none is. */
   const [messagingSessionId, setMessagingSessionId] = useState<string | null>(null);
   const live = useLiveSessionStatuses();
   const orgSessions = company.orgSessions.get(orgKey(projectId, orgId));
   const desks = deskRows(company.orgChart, orgSessions, live);
-  const { openDesk, opening } = useOpenDesk(projectId, orgId, onNavigate);
+  const { openDesk, openSession, opening } = useOpenDesk(projectId, orgId, onNavigate);
+  const tempRows = useTempRows(projectId, orgId, desks, activeSessionId);
   // Nothing has been read for this organization yet: a skeleton, not an "empty" claim.
   const chartFailed = company.orgChart === null && company.orgChartError !== null;
   const loading = company.orgChart === null && orgSessions === undefined && !chartFailed;
@@ -314,6 +459,37 @@ export function OrgSessionGroups({
           </ul>
         )}
       </FolderSection>
+      {tempRows.length > 0 && (
+        <FolderSection
+          label={S.company.sessionList.temporary(tempRows.length)}
+          open={tempOpen}
+          onToggle={() => setTempOpen((v) => !v)}
+          // One click, no confirmation: nothing is lost, each session stays one click away in
+          // its ticket. Nothing navigates, even when the session on screen was listed.
+          action={
+            <button
+              type="button"
+              onClick={() => dismissAllTempSessions(user?.userId ?? null, projectId, orgId)}
+              className="shrink-0 rounded px-1.5 py-1 text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+            >
+              {S.company.sessionList.closeAllTemporary}
+            </button>
+          }
+        >
+          <ul className="space-y-0.5">
+            {tempRows.map((row) => (
+              <TempRow
+                key={row.sessionId}
+                row={row}
+                onOpen={() => openSession(row.sessionId, row.agentId)}
+                onDismiss={() =>
+                  dismissTempSession(user?.userId ?? null, projectId, orgId, row.sessionId)
+                }
+              />
+            ))}
+          </ul>
+        </FolderSection>
+      )}
       {/* Messaging binding dialog (the row menu's "Messaging binding…"): the row's indicator
           follows the dialog's own enable/disable outcome, written into the company store's
           copy of the sessions route. */}
