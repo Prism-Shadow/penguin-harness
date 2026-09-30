@@ -92,6 +92,22 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/** The boot's `GET /api/me`, until the provider's mount has used it — see {@link prefetchMe}. */
+let bootMe: Promise<MeResponse> | null = null;
+
+/**
+ * Asks `GET /api/me` before the app mounts, so the answer is on its way while the boot waits
+ * for `GET /api/install` (main.tsx) instead of being asked only after it. The provider's
+ * mount takes this request rather than making its own, and lets go of it only once a mount
+ * that was not torn down has read it: StrictMode's first mount in development is cleaned up
+ * before any answer can reach it, and its second takes the same request.
+ */
+export function prefetchMe(): void {
+  if (bootMe !== null) return;
+  bootMe = api.getMe();
+  bootMe.catch(() => {}); // read by the provider's mount, which handles the failure
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null | undefined>(undefined);
   // Assume isolated until told otherwise: the warning is the exceptional state, and
@@ -115,10 +131,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .getMe()
+    (bootMe ?? api.getMe())
       .then((res) => {
         if (cancelled) return;
+        bootMe = null;
         setUser(res.user);
         setPreviewIsolated(res.previewIsolated);
         setDesktopMode(res.desktopMode);
@@ -128,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
+        bootMe = null;
         if (err instanceof ApiError && err.status === 401) setUser(null);
         else setUser(null);
       });

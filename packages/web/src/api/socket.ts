@@ -225,6 +225,17 @@ export class ApiSocket {
   }
 
   /**
+   * The API client has a `/api/me` request on its way: the identity is what that answers. A
+   * call made meanwhile waits for the same answer instead of asking the question a second
+   * time — at boot the page's first calls are made before that request comes back. A request
+   * that fails leaves the identity unsettled, and the next call asks for itself.
+   */
+  identityPending(userId: Promise<string | null>): void {
+    userId.catch(() => {}); // read by ready(), which asks again on a rejection
+    this.#identity = userId;
+  }
+
+  /**
    * A sign-in or sign-out went through, or the session was found expired: whoever the
    * socket was for, it is not that any more. It closes; the next call settles the identity
    * afresh and opens the right one.
@@ -731,13 +742,20 @@ export class ApiSocket {
   }
 }
 
+/**
+ * Who a `/api/me` answer says is signed in: null for a 401, the user id for a success. Rejects
+ * on anything else — the answer could not tell.
+ */
+export function identityOf(status: number, body: unknown): string | null {
+  if (status === 401) return null;
+  if (status < 200 || status >= 300) throw new Error(`/api/me answered ${status}`);
+  return (body as { user?: { userId?: string } } | null)?.user?.userId ?? null;
+}
+
 /** Who the page is signed in as, asked of the server over HTTP; null when nobody. Rejects when it cannot tell. */
 async function whoAmI(): Promise<string | null> {
   const res = await fetch("/api/me", { credentials: "same-origin" });
-  if (res.status === 401) return null;
-  if (!res.ok) throw new Error(`/api/me answered ${res.status}`);
-  const body = (await res.json()) as { user?: { userId?: string } };
-  return body.user?.userId ?? null;
+  return identityOf(res.status, res.ok ? await res.json() : null);
 }
 
 /** The page's socket: to this origin, same cookie the page holds, on the signed-in user's reserved id. */

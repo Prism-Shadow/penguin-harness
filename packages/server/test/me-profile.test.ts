@@ -45,19 +45,56 @@ describe("PUT /api/me/profile", () => {
     const bob = await provisionUser(t.app, "bob");
     // Neither field is sent at all before one is set, rather than sent as null.
     expect(bob.user.displayName).toBeUndefined();
-    expect(bob.user.avatar).toBeUndefined();
+    expect(bob.user.avatarRev).toBeUndefined();
 
     const api = apiClient(t.app, bob.cookie);
     const res = await api.put("/api/me/profile", { displayName: "Bob Loblaw", avatar: PNG_1X1 });
     expect(res.status).toBe(200);
     const saved = (await res.json()) as UpdateProfileResponse;
     expect(saved.user.displayName).toBe("Bob Loblaw");
-    expect(saved.user.avatar).toBe(PNG_1X1);
+    expect(saved.user.avatarRev).toMatch(/^[0-9a-f]{12}$/);
     // The response is the row, not an echo of the request: the menu updates from it without
     // a second call, so a divergence here would show stale data until the next reload.
     const me = (await (await api.get("/api/me")).json()) as MeResponse;
     expect(me.user.displayName).toBe("Bob Loblaw");
-    expect(me.user.avatar).toBe(PNG_1X1);
+    expect(me.user.avatarRev).toBe(saved.user.avatarRev);
+  });
+
+  it("keeps the image out of GET /api/me and serves it from GET /api/me/avatar, cached for good", async () => {
+    const bob = await provisionUser(t.app, "bob");
+    const api = apiClient(t.app, bob.cookie);
+    await api.put("/api/me/profile", { avatar: PNG_1X1 });
+
+    const meRes = await api.get("/api/me");
+    const me = (await meRes.json()) as MeResponse & { user: { avatar?: unknown } };
+    expect(me.user.avatar).toBeUndefined();
+    expect(JSON.stringify(me)).not.toContain("base64");
+
+    const img = await api.get(`/api/me/avatar?rev=${me.user.avatarRev}`);
+    expect(img.status).toBe(200);
+    expect(img.headers.get("content-type")).toBe("image/png");
+    expect(img.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+    const bytes = Buffer.from(await img.arrayBuffer());
+    expect(bytes.equals(Buffer.from(PNG_1X1.slice(PNG_1X1.indexOf(",") + 1), "base64"))).toBe(true);
+
+    // A new picture is a new revision, so the cached image is never the old one.
+    const other = PNG_1X1.replace("image/png", "image/webp");
+    const next = (await (
+      await api.put("/api/me/profile", { avatar: other })
+    ).json()) as UpdateProfileResponse;
+    expect(next.user.avatarRev).not.toBe(me.user.avatarRev);
+
+    // Cleared, there is nothing to serve.
+    await api.put("/api/me/profile", { avatar: null });
+    expect((await api.get("/api/me/avatar")).status).toBe(404);
+  });
+
+  it("serves each account its own avatar only", async () => {
+    const bob = await provisionUser(t.app, "bob");
+    await apiClient(t.app, bob.cookie).put("/api/me/profile", { avatar: PNG_1X1 });
+    const carol = await provisionUser(t.app, "carol");
+    expect((await apiClient(t.app, carol.cookie).get("/api/me/avatar")).status).toBe(404);
+    expect((await t.app.request("/api/me/avatar")).status).toBe(401);
   });
 
   it("is a patch: an absent field keeps its value, null clears it", async () => {
@@ -70,7 +107,7 @@ describe("PUT /api/me/profile", () => {
       await api.put("/api/me/profile", { avatar: null })
     ).json()) as UpdateProfileResponse;
     expect(avatarOnly.user.displayName).toBe("Bob");
-    expect(avatarOnly.user.avatar).toBeUndefined();
+    expect(avatarOnly.user.avatarRev).toBeUndefined();
 
     const nameCleared = (await (
       await api.put("/api/me/profile", { displayName: null })
@@ -139,7 +176,7 @@ describe("PUT /api/me/profile", () => {
     expect((await errorOf(oversize)).message).toMatch(/at most 131072 characters/);
 
     const me = (await (await api.get("/api/me")).json()) as MeResponse;
-    expect(me.user.avatar).toBeUndefined();
+    expect(me.user.avatarRev).toBeUndefined();
   });
 
   it("rejects a body naming neither field", async () => {
@@ -157,13 +194,13 @@ describe("PUT /api/me/profile", () => {
     });
     const admin = await loginAdmin(t.app);
     const list = (await (await apiClient(t.app, admin.cookie).get("/api/admin/users")).json()) as {
-      users: { userId: string; displayName?: string; avatar?: string }[];
+      users: { userId: string; displayName?: string; avatar?: string; avatarRev?: string }[];
     };
     const row = list.users.find((u) => u.userId === "bob");
     expect(row?.displayName).toBe("Bob Loblaw");
-    // The list is unpaged and its table shows only the nickname, so an avatar per account
-    // would be up to 128 KiB of payload that nothing renders.
+    // The table shows only the nickname, and the image is served to its own account alone.
     expect(row?.avatar).toBeUndefined();
+    expect(row?.avatarRev).toBeUndefined();
     expect(list.users.find((u) => u.userId === "admin")?.displayName).toBeUndefined();
   });
 });

@@ -13,6 +13,9 @@
  *
  * It costs one same-origin request to the server this page was just served by, and it is
  * bounded (see syncInstallScope): it can delay the first paint, it can never prevent it.
+ * `GET /api/me` — what the route guard waits on before it draws anything — is asked at the
+ * same moment rather than after the mount, so the two waits overlap instead of adding up.
+ * Asking it early reads nothing from the store, so it does not race the sweep.
  *
  * A boot that actually swept RELOADS instead of mounting, and does not render at all on this
  * pass — every module in the static import graph was evaluated before this file ran, so any
@@ -24,6 +27,7 @@ import { createRoot } from "react-dom/client";
 import { hasEscLayers } from "@prismshadow/penguin-ui";
 import { App } from "./app";
 import { bootInstallScope, watchInstallScope } from "./lib/install-scope";
+import { prefetchMe } from "./state/auth";
 // The global shortcut dispatcher installs itself at module evaluation (a React effect would
 // leave a post-paint window where a chord is dead); the import is what evaluates it.
 import { setShortcutBlocker } from "./lib/shortcuts/dispatcher";
@@ -51,6 +55,9 @@ function mount(): void {
 // A second tab can recognise a replaced root while this one is open, leaving everything on
 // screen here pointing at a data root that is gone.
 watchInstallScope();
+
+// Who is signed in, asked while the install id is being asked rather than after it.
+prefetchMe();
 
 // The rejection handler mounts too: bootInstallScope already swallows everything it can, and
 // the app must mount even if it somehow does not.

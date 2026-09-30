@@ -35,6 +35,6 @@ export function profileControls(user: UserInfo, typedNickname: string): ProfileC
     nicknameToStore,
     canSaveNickname: (nicknameToStore ?? "") !== (user.displayName ?? ""),
     canRestoreNickname: user.displayName !== undefined,
-    canRestoreAvatar: user.avatar !== undefined,
+    canRestoreAvatar: user.avatarRev !== undefined,
   };
 }

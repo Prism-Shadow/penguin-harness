@@ -9,7 +9,7 @@
  *    in components/ui/avatar-crop-dialog.tsx); the centre crop is where that choice starts.
  * 2. **The size.** 128x128 is the largest rung any surface draws (the Profile page's preview
  *    is 64px, the nav tile 28px), doubled for a 2x screen. A bigger source buys nothing and is
- *    paid for on every page load, since the data URL travels inside `GET /api/me`.
+ *    paid for by every surface that draws it (`GET /api/me/avatar`).
  * 3. **The format.** PNG first, because a flat or generated image stays small and stays sharp;
  *    a photograph does not, so a PNG over its budget is re-exported as JPEG.
  *

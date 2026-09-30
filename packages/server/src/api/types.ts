@@ -81,10 +81,11 @@ export interface UserInfo {
    */
   displayName?: string;
   /**
-   * Avatar as a `data:image/...;base64,` URL, at most 131072 characters. Omitted when unset,
-   * and a surface with no value draws the letter placeholder instead.
+   * Present when the account has an avatar: the content revision of the image served at
+   * `GET /api/me/avatar` (append it as `?rev=` — the image is cached for good). Omitted when
+   * unset, and a surface with no value draws the letter placeholder instead.
    */
-  avatar?: string;
+  avatarRev?: string;
   createdAt: string;
 }
 

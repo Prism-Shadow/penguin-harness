@@ -33,6 +33,7 @@ import { openAppInfo } from "../../lib/use-update-flow";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
 import { onSettingsRequest } from "../../features/settings/settings-request";
 import type { SettingsSectionKey } from "../../lib/settings-sections";
+import { meAvatarUrl } from "../../api/endpoints";
 
 export function UserMenu({
   trigger,
@@ -98,7 +99,7 @@ export function UserMenu({
               <UserAvatar
                 userId={user.userId}
                 {...(user.displayName !== undefined ? { displayName: user.displayName } : {})}
-                {...(user.avatar !== undefined ? { avatar: user.avatar } : {})}
+                {...(user.avatarRev !== undefined ? { avatar: meAvatarUrl(user.avatarRev) } : {})}
               />
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{user.displayName ?? user.userId}</p>

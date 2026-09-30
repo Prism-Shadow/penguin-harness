@@ -18,7 +18,7 @@ import { S } from "../lib/strings";
 import { apiUrl } from "../lib/server-context";
 import { machineForOrgPath, orgInPath, rememberSessionsIn } from "../lib/org-machines";
 import { machineForPath } from "../lib/session-machines";
-import { SocketTimeoutError, apiSocket } from "./socket";
+import { SocketTimeoutError, apiSocket, identityOf } from "./socket";
 
 /**
  * Unified API error: carries the HTTP status code and server error code (server error body
@@ -236,8 +236,14 @@ export async function apiFetchWithMeta<T>(
   // is not waited on: the call goes out over HTTP at once, as it did before the socket.
   const overSocket = wantsSocket && !apiSocket.isUnavailable() && (await apiSocket.ready());
   let answer = overSocket ? await callOverSocket(method, url, options.body, target) : null;
-  if (answer === null || answer.status === 415 || answer.status === 421)
-    answer = await callOverHttp(method, url, options.body);
+  if (answer === null || answer.status === 415 || answer.status === 421) {
+    const http = callOverHttp(method, url, options.body);
+    // The socket's own question is this one: it waits for this answer rather than asking again.
+    if (target === null && path === "/api/me" && method === "GET") {
+      apiSocket.identityPending(http.then((a) => identityOf(a.status, a.body)));
+    }
+    answer = await http;
+  }
 
   if (answer.status < 200 || answer.status >= 300) {
     let code = "http_error";

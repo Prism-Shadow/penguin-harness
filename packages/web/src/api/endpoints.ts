@@ -315,6 +315,9 @@ export const getInstall = () => apiFetch<InstallResponse>("/api/install");
 
 export const getMe = () => apiFetch<MeResponse>("/api/me");
 
+/** Where the signed-in account's avatar is served from; `rev` (its `avatarRev`) makes the URL the image's own, so it is cached for good. */
+export const meAvatarUrl = (rev: string): string => `/api/me/avatar?rev=${encodeURIComponent(rev)}`;
+
 export const changePassword = (body: PasswordChangeRequest) =>
   apiFetch<void>("/api/me/password", { method: "PUT", body });
 

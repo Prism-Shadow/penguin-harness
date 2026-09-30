@@ -251,7 +251,9 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
                 <UserAvatar
                   userId={user?.userId ?? "?"}
                   {...(user?.displayName !== undefined ? { displayName: user.displayName } : {})}
-                  {...(user?.avatar !== undefined ? { avatar: user.avatar } : {})}
+                  {...(user?.avatarRev !== undefined
+                    ? { avatar: api.meAvatarUrl(user.avatarRev) }
+                    : {})}
                 >
                   {/* Update reminder, mirroring the pinned sidebar's avatar: the App info row sits
                       in the menu this opens, and the label above names what is waiting. */}

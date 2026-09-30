@@ -6,7 +6,7 @@
  * admin. Sessions are rows in auth_sessions (cookie holds the token, the row its sha256), so
  * they outlive a restart and renew in place.
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { tokensEqual } from "./api-token.js";
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
@@ -60,14 +60,26 @@ export function generateInitialAdminPassword(): string {
  */
 export type SessionVia = "password" | "desktop" | "setup" | "token";
 
-/** Row -> DTO. The two profile columns are omitted rather than sent as null when unset. */
+/**
+ * The content revision of a stored avatar: the `?rev=` of `GET /api/me/avatar`, so the image is
+ * cached for good and a new picture is a new URL (the employee avatar's shape).
+ */
+export function avatarRevOf(avatar: string): string {
+  return createHash("sha256").update(avatar).digest("hex").slice(0, 12);
+}
+
+/**
+ * Row -> DTO. The two profile columns are omitted rather than sent as null when unset. The
+ * avatar travels as its revision, not as the image: `GET /api/me` is on every page's first
+ * paint, and a data URL of up to 128 KiB inside it was most of that answer.
+ */
 export function toUserInfo(row: UserRow): UserInfo {
   return {
     userId: row.userId,
     isAdmin: row.isAdmin,
     passwordIsInitial: row.passwordIsInitial,
     ...(row.displayName !== null ? { displayName: row.displayName } : {}),
-    ...(row.avatar !== null ? { avatar: row.avatar } : {}),
+    ...(row.avatar !== null ? { avatarRev: avatarRevOf(row.avatar) } : {}),
     createdAt: row.createdAt,
   };
 }

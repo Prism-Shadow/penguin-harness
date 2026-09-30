@@ -36,13 +36,13 @@ export class AdminService implements Admin {
   @Use() private readonly hasher!: PasswordHasher;
 
   /**
-   * Every account, for the admin user backend. The avatar is dropped on the way out: a stored
-   * avatar is a data URL of up to 128 KiB and this list is unpaged, so carrying one per account
-   * would answer a table that only shows the nickname with megabytes.
+   * Every account, for the admin user backend. The avatar's revision is dropped on the way
+   * out: the table shows only the nickname, and the image it names is served to its own
+   * account alone (`GET /api/me/avatar`).
    */
   listUsers(): UserInfo[] {
     return this.users.list().map((row) => {
-      const { avatar: _avatar, ...info } = toUserInfo(row);
+      const { avatarRev: _avatarRev, ...info } = toUserInfo(row);
       return info;
     });
   }

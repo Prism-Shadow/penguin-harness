@@ -50,8 +50,6 @@ describe("profileControls", () => {
 
   it("reads the avatar's Restore default off what is stored, not off the typed nickname", () => {
     expect(profileControls(bare, "Bob").canRestoreAvatar).toBe(false);
-    expect(
-      profileControls({ ...bare, avatar: "data:image/png;base64,AAAA" }, "").canRestoreAvatar,
-    ).toBe(true);
+    expect(profileControls({ ...bare, avatarRev: "0123456789ab" }, "").canRestoreAvatar).toBe(true);
   });
 });
