@@ -27,6 +27,7 @@ import {
   DownloadIcon,
   GlyphIcon,
   HiddenFileInput,
+  ICONS,
   IconButton,
   SettingsEmpty,
   SkeletonList,
@@ -53,10 +54,6 @@ import { HelpFold } from "../../components/ui/help-fold";
 
 /** The Button look on the upload `<label>`; the Hooks tab's upload label borrows it. */
 export const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
-
-/** Delete (trash can) icon path — the same glyph as the agents page card delete; the Hooks tab's row delete borrows it. */
-export const TRASH_ICON =
-  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
 
 /** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the skill name for the confirm copy. */
 interface PendingOverwrite {
@@ -309,7 +306,7 @@ export function SkillsTab({
                 disabled={busy}
                 onClick={() => setRemoving(skill.name)}
               >
-                <GlyphIcon d={TRASH_ICON} size={14} />
+                <GlyphIcon d={ICONS.trash} size={14} />
               </IconButton>
             </div>
           ))}

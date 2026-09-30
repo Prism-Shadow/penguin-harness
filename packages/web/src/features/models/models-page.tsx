@@ -59,6 +59,7 @@ import {
   Link,
   ProviderLogo,
   SkeletonList,
+  Spinner,
   buttonClass,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -218,13 +219,10 @@ function inputToUsd(inputStr: string, currency: Currency): string {
 }
 
 /**
- * Group-header action glyphs this page draws itself (24x24 line paths); add, bulk key and the
- * catalog sync read `ICONS.plus`, `ICONS.key` and `ICONS.rotateCw`. The trash can is the tapered
- * bin the agent cards' delete action wears, not the registry's straight-sided `ICONS.trash`.
+ * The one group-header action glyph this page draws itself (a 24x24 line path), an arrow entering
+ * a door: authorize with the provider and come back with a key. Add, bulk key, the catalog sync
+ * and delete read `ICONS.plus`, `ICONS.key`, `ICONS.rotateCw` and `ICONS.trash`.
  */
-const TRASH_ICON =
-  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
-/** Arrow entering a door: authorize with the provider and come back with a key. */
 const SIGN_IN_ICON = "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3";
 
 /** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
@@ -1407,7 +1405,7 @@ export function ModelsPage() {
                           title={S.models.deleteGroup}
                           onClick={() => setDeleteGroupFor(group.provider.id)}
                         >
-                          <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.groupHeaderAction} />
+                          <GlyphIcon d={ICONS.trash} size={ICON_SIZE.groupHeaderAction} />
                           <span className="hidden @3xl:inline">{S.models.deleteGroup}</span>
                         </Button>
                       )}
@@ -2000,18 +1998,11 @@ function AddGroupDialog({
                 <Button
                   variant="link"
                   size="sm"
-                  disabled={detecting || busy}
+                  loading={detecting}
+                  disabled={busy}
                   onClick={() => void detect()}
                   title={S.models.detectProtocolHint}
                   className="shrink-0"
-                  leading={
-                    detecting && (
-                      <span
-                        aria-hidden
-                        className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                      />
-                    )
-                  }
                 >
                   {detecting ? S.models.detecting : S.models.detectProtocol}
                 </Button>
@@ -3323,18 +3314,10 @@ function ModelDialog({
               <Button
                 variant="link"
                 size="sm"
-                disabled={detecting}
+                loading={detecting}
                 onClick={() => void detectFromButton()}
                 title={S.models.detectProtocolHint}
                 className="shrink-0"
-                leading={
-                  detecting && (
-                    <span
-                      aria-hidden
-                      className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                    />
-                  )
-                }
               >
                 {detecting ? S.models.detecting : S.models.detectProtocol}
               </Button>
@@ -3589,18 +3572,10 @@ function ModelDialog({
                     <Button
                       variant="link"
                       size="sm"
-                      disabled={visionDetecting}
+                      loading={visionDetecting}
                       onClick={() => void detectVisionFromButton()}
                       title={S.models.detectVisionHint}
                       className="shrink-0"
-                      leading={
-                        visionDetecting && (
-                          <span
-                            aria-hidden
-                            className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                          />
-                        )
-                      }
                     >
                       {visionDetecting ? S.models.detectingVision : S.models.detectVision}
                     </Button>
@@ -4007,7 +3982,7 @@ function ModelOAuthDialog({
         )}
         {phase === "waiting" && !manual && (
           <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-            <span className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent" />
+            <Spinner size="xs" label={S.common.loading} />
             {S.models.oauthWaiting}
           </p>
         )}

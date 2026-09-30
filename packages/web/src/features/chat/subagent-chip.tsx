@@ -8,7 +8,7 @@
  * subtree, so a nested approval stays discoverable with the panel closed. Clicking opens the
  * panel focused on this child via ctx.onOpenSubagent.
  */
-import { AgentAvatar } from "@prismshadow/penguin-ui";
+import { AgentAvatar, Spinner } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { hasPendingWithinOrigin } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
@@ -61,10 +61,7 @@ export function SubagentChip({
         </span>
       )}
       {running && (
-        <span
-          aria-hidden
-          className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-gray-400 border-t-transparent"
-        />
+        <Spinner size="xs" label={S.common.loading} className="text-gray-400 dark:text-gray-500" />
       )}
       {pending && (
         <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.attention}`} />

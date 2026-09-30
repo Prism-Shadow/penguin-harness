@@ -23,6 +23,7 @@ import {
   Button,
   EmptyState,
   GlyphIcon,
+  ICONS,
   ICON_GAP,
   ICON_SIZE,
   Skeleton,
@@ -55,10 +56,6 @@ import { UseBenchmarkModal } from "./use-benchmark-modal";
 
 /** The Skills a design conversation is opened with (see the create modal below). */
 const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];
-
-/** Delete (trash can), the same card-row mark the Agents list carries. */
-const TRASH_ICON =
-  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
 
 /** How many tested Agents a card names before the rest fold into a "+n". */
 const AVATARS_SHOWN = 3;
@@ -271,7 +268,7 @@ export function BenchmarkCard({
             onClick={onDelete}
             className={masked ? "relative z-10" : undefined}
           >
-            <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
           </Button>
         )}
       </div>

@@ -58,6 +58,7 @@ import {
   ICONS,
   ICON_SIZE,
   SkeletonList,
+  Spinner,
   useCopied,
   writeClipboard,
 } from "@prismshadow/penguin-ui";
@@ -1799,7 +1800,7 @@ export function WorkspaceBrowser({
               aria-label={uploadLabel}
             />
             {uploading !== null ? (
-              <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              <Spinner size="sm" label={uploadLabel} />
             ) : (
               <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
             )}
@@ -2355,7 +2356,7 @@ export function WorkspaceBrowser({
             className={`${iconActionClass} disabled:opacity-40`}
           >
             {saving ? (
-              <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              <Spinner size="sm" label={S.common.saving} />
             ) : (
               <GlyphIcon d={STAT_ICONS.check} size={ICON_SIZE.iconButton} />
             )}

@@ -30,7 +30,7 @@
  * the call site — so no extra row appears in the happy path.
  */
 import { useState } from "react";
-import { ChevronDown } from "@prismshadow/penguin-ui";
+import { ChevronDown, Spinner } from "@prismshadow/penguin-ui";
 import { Dropdown } from "../../components/ui/dropdown";
 import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 // This menu is an OptionMenu by hand (its trigger lives inside the base URL field, which
@@ -99,14 +99,7 @@ export function ProtocolSuffixMenu({
           <span className="truncate">{path}</span>
           {/* Same 10px box as the chevron it replaces: switching to the busy state must not
               resize the trigger, or the input's reserved padding would jump mid-detection. */}
-          {detecting ? (
-            <span
-              aria-hidden
-              className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-            />
-          ) : (
-            <ChevronDown size={10} />
-          )}
+          {detecting ? <Spinner size="xs" label={S.models.detecting} /> : <ChevronDown size={10} />}
         </button>
       }
     >
