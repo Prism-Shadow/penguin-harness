@@ -94,7 +94,8 @@ function BalancePin({ pinned, onToggle }: { pinned: boolean; onToggle: () => voi
 /**
  * A group's balance in its header: read once when the header mounts, again on every refresh.
  * The refresh glyph is revealed with the header, like the pin, except beside a dash, where it
- * stays in view because its hint is the only place the reason is shown.
+ * stays in view because its hint is the only place the reason is shown. The pin comes first, so
+ * a pinned balance keeps its pin against the amount and the hidden glyph's slot trails.
  */
 export function GroupBalance({
   projectId,
@@ -117,6 +118,10 @@ export function GroupBalance({
       >
         {text}
       </span>
+      <BalancePin
+        pinned={pinned}
+        onToggle={() => setPinnedBalance(pinned ? null : { projectId, provider: provider.id })}
+      />
       <button
         type="button"
         onClick={() => void requestBalance(projectId, provider.id, true)}
@@ -128,10 +133,6 @@ export function GroupBalance({
       >
         <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.groupHeaderAction} />
       </button>
-      <BalancePin
-        pinned={pinned}
-        onToggle={() => setPinnedBalance(pinned ? null : { projectId, provider: provider.id })}
-      />
     </span>
   );
 }
