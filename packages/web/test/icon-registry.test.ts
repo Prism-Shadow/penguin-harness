@@ -5,10 +5,12 @@
  * A path typed out in a feature file is how one bin came to be drawn five ways and a redraw came to
  * reach one surface and not the others. So new glyphs go into the registry, named for what they
  * draw, and a feature file reads them from there. What feature files still hold is listed below per
- * file, with the wave that moves or rebuilds the file. A near-copy of a registry glyph is not kept
- * beside it: the call site draws the registry's, so a bin or a pencil looks the same everywhere.
- * The counts are exact both ways, like the de-slop list: a new path fails as new, and one that goes
- * away fails until its entry shrinks, so the list only tightens.
+ * file, with the wave that moves or rebuilds the file (`W7+W10` splits an entry between two);
+ * `W10` is the follow-up sweep of the code that landed on main while the waves were in flight. A
+ * near-copy of a registry glyph is not kept beside it: the call site draws the registry's, so a bin
+ * or a pencil looks the same everywhere. The counts are exact both ways, like the de-slop list: a
+ * new path fails as new, and one that goes away fails until its entry shrinks, so the list only
+ * tightens.
  *
  * Two shapes are counted: a `const *_ICON` whose value is path data, and a literal `d="M…"` on an
  * element. A computed path (a chart's line, a sparkline, the topology view's edges) is not a
@@ -36,18 +38,21 @@ const ALLOWLIST: Readonly<Record<string, readonly [number, string]>> = {
   "features/chat/subagents-view.tsx": [1, "W6"],
   "features/chat/task-stats-line.tsx": [1, "W6"],
   "features/chat/workspace-browser.tsx": [1, "W7"],
+  "features/chat/workspace-finder.tsx": [11, "W10"],
   "features/company/channel-header.tsx": [4, "W6"],
   "features/company/channel-sidebar.tsx": [2, "W4"],
   "features/company/channel-view.tsx": [1, "W6"],
   "features/company/finance-page.tsx": [1, "W4"],
   "features/company/handbook-explorer.tsx": [1, "W4"],
   "features/company/shared.tsx": [2, "W4"],
-  "features/dock/dock-panel.tsx": [1, "W7"],
+  "features/dock/dock-panel.tsx": [3, "W7+W10"],
   "features/models/models-page.tsx": [4, "W4"],
   "features/plugins/plugins-page.tsx": [2, "W4"],
   "features/schedules/schedule-panel.tsx": [3, "W4"],
   "features/schedules/schedule-suggestions.tsx": [3, "W4"],
   "features/semantic-id/semantic-id-field.tsx": [1, "W2"],
+  "features/settings/shortcuts-section.tsx": [1, "W10"],
+  "features/terminal/terminal-keybar.tsx": [3, "W10"],
   "features/traces/trace-event-row.tsx": [1, "W4"],
 };
 

@@ -1029,8 +1029,13 @@ const pageHeaderCheck: Check = (analysis) =>
 
 const fullSelector = (rule: CssStyleRule) => [...rule.parents, rule.selector].join(" ");
 
-/** Transition shorthand items; a missing property is `all`, as in CSS. */
-function transitionItems(value: string): { property: string; duration: string | null }[] {
+/**
+ * Transition shorthand items; a missing property is `all`, as in CSS. `discrete` marks an item
+ * that carries `allow-discrete`: a property that cannot interpolate, flipped at one instant.
+ */
+function transitionItems(
+  value: string,
+): { property: string; duration: string | null; discrete: boolean }[] {
   const items: string[] = [];
   let depth = 0;
   let current = "";
@@ -1049,7 +1054,9 @@ function transitionItems(value: string): { property: string; duration: string | 
     .map((item) => {
       let property: string | null = null;
       let duration: string | null = null;
+      let discrete = false;
       for (const part of item.match(/[\w-]+\((?:[^()]|\([^()]*\))*\)|\S+/g) ?? []) {
+        if (part === "allow-discrete") discrete = true;
         if (DURATION_TOKEN.test(part) || milliseconds(part) !== null) duration ??= part;
         else if (
           property === null &&
@@ -1061,19 +1068,32 @@ function transitionItems(value: string): { property: string; duration: string | 
           property = part;
         }
       }
-      return { property: property ?? "all", duration };
+      return { property: property ?? "all", duration, discrete };
     });
 }
 
 const declarations = (analysis: FileAnalysis) =>
   analysis.cssRules.flatMap((rule) => rule.declarations.map((decl) => ({ rule, decl })));
 
+/**
+ * The one discrete hold rule 1 lets through: a `.ui-stream` recipe's veil keeps its gradient
+ * while its opacity fades out on `done`, by naming `background-image` in a shorthand item with
+ * `allow-discrete` (user decision, 2026-09-30). A discrete transition interpolates nothing — the
+ * image is swapped at one instant, and with a `step-end` timing that instant is the end of the
+ * fade — so the finished reply settles instead of snapping, and nothing moves that the rule
+ * guards. Anywhere else, or without `allow-discrete`, `background-image` is off the set as ever.
+ */
+const DISCRETE_HOLD = { property: "background-image", selector: /\.ui-stream\b/ } as const;
+
 /** Rule 1: `transition` / `transition-property` naming `all` (or nothing) or a property off the set. */
 const cssTransitionCheck: Check = (analysis, policy) =>
-  declarations(analysis).flatMap(({ decl }) => {
+  declarations(analysis).flatMap(({ rule, decl }) => {
+    const hold = DISCRETE_HOLD.selector.test(fullSelector(rule));
     const properties =
       decl.name === "transition"
-        ? transitionItems(decl.value).map((item) => item.property)
+        ? transitionItems(decl.value)
+            .filter((item) => !(hold && item.discrete && item.property === DISCRETE_HOLD.property))
+            .map((item) => item.property)
         : decl.name === "transition-property"
           ? decl.value
               .split(",")
@@ -1143,10 +1163,22 @@ const cssUppercaseCheck: Check = (analysis) =>
       : [],
   );
 
-/** Rule 16: a hook recipe (`.ui-*`) setting a mono `font-family`. */
+/**
+ * Marks a recipe may set in the mono face because they are technical on purpose (user decision,
+ * 2026-09-30, when Console's chrome moved to a sans and kept mono for these alone): a
+ * `.ui-activity` step's label and progress bar, the transcript's capitals and its block bar; a
+ * `.ui-notice` tag drawn in `::before`, a console status line's `[ OK ]`; and the text of a
+ * `.ui-chart`, a plot's axis labels. A detail slot, a frame's head or a notice's message is
+ * not one of them.
+ */
+const MONO_MARKS =
+  /\.ui-activity\b[^,]*\[data-slot="(?:label|progress)"\]|\.ui-notice\b[^,\s]*::before|\.ui-chart\b[^,]*\btext\b/;
+
+/** Rule 16: a hook recipe (`.ui-*`) setting a mono `font-family`, off the marks above. */
 const cssHookMonoCheck: Check = (analysis) =>
   declarations(analysis).flatMap(({ rule, decl }) =>
     /\.ui-[a-z]/.test(fullSelector(rule)) &&
+    !MONO_MARKS.test(fullSelector(rule)) &&
     decl.name === "font-family" &&
     /--ui-font-mono|monospace/.test(decl.value)
       ? [{ line: decl.line, found: `${rule.selector} { font-family: ${decl.value} }` }]
@@ -1163,11 +1195,16 @@ const cssHookMonoCheck: Check = (analysis) =>
  * is the signal that a step is in progress (user decision, 2026-09-29) — never the resting
  * states, so a finished transcript carries no wash. A third, `.ui-chart`, may paint one as a
  * MASK: a line's area fading towards the baseline — a gradient that carries the data's shape,
- * not atmosphere (user decision, 2026-09-29). A gradient on any other hook, as a background or
- * as a mask, is still the tell. A gradient in app CSS that is not a hook (the context bar's
- * hatch, which carries meaning) is review.
+ * not atmosphere (user decision, 2026-09-29). A fourth, the STREAMING state of `.ui-stream`,
+ * paints the veil a reply surfaces through while it arrives — the gradient is how its newest
+ * lines read as fading in (user decision, 2026-09-30) — and, like the activity row's, never on
+ * the finished reply: the `done` state's rule may hold the image only through its fade-out, by
+ * the discrete transition rule 1 allows, and never declares one. A gradient on any other hook,
+ * as a background or as a mask, is still the tell. A gradient in app CSS that is not a hook (the
+ * context bar's hatch, which carries meaning) is review.
  */
-const GRADIENT_RECIPES = /\.ui-shell\b|\.ui-activity\[data-state="running"\]|\.ui-chart\b/;
+const GRADIENT_RECIPES =
+  /\.ui-shell\b|\.ui-activity\[data-state="running"\]|\.ui-chart\b|\.ui-stream\[data-state="streaming"\]/;
 
 const cssDecorationCheck: Check = (analysis) =>
   declarations(analysis).flatMap(({ rule, decl }) => {

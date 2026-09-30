@@ -66,20 +66,20 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 
 ### 供应商凭证变量
 
-模型条目没有内联 `api_key` 时，AgentHub 会回退到供应商的环境变量。`*_BASE_URL` 的值只在条目没有内联 `base_url` 时才会使用。
+模型条目没有内联 `api_key` 时，**只在请求确实发往该供应商的官方端点时**回退到供应商的环境变量：条目没有 `base_url`，或 `base_url` 是厂商自己的端点。`*_BASE_URL` 的值只在条目没有内联 `base_url` 时才会使用；自带 `base_url` 的条目一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。其余条目——网关分组预置的端点、带自己端点的 custom、vLLM 与自建分组——必须有自己的 `api_key`，否则 PenguinHarness 拒绝为它构建客户端；见[设置 API key](/models#设置-api-key)。
 
 | 供应商 | API key | Base URL |
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai、openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、modelscope、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai、openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、modelscope、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，即使某条预置固定了模型专属协议也是如此。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
+openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量——按上面的规则，它们的条目并不会回退到这对变量：变量里存的是你的 OpenAI key，而网关不是 OpenAI。opencode-go 分组中走 Anthropic Messages 的模型同理，其客户端读取的是 `ANTHROPIC_*`。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，三条预置都固定使用通用 Responses 客户端；它的条目同样不会回退到这对变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 
@@ -108,7 +108,7 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 | `max_tokens` | 数字 | Agent 的 `model.max_tokens` | 单个模型的最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens` |
 | `fast_mode` | 布尔 | 关闭 | 单个模型的快速模式（供应商收取溢价的快速服务档位） |
 | `pricing` | 表 | — | 三档价格 `cache_read` / `cache_write` / `output`，以美元每百万 Token 计价（`unit = "usd_per_mtok"`）。这里记的始终是牌价 |
-| `api_key` | 字符串 | 供应商的环境变量 | 内联凭证 |
+| `api_key` | 字符串 | 供应商的环境变量，仅限厂商自己的端点 | 内联凭证 |
 | `base_url` | 字符串 | 部分模型目录条目有预设 | 自定义 base URL |
 | `created_at` | 字符串 | — | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |
 
@@ -118,7 +118,7 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 - `fast_mode`：只持久化 `true`。只有 AgentHub 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
 - `pricing`：这里记的是牌价。正在进行的促销不写入这个文件：服务端把它保存在 `web.db` 里，计算成本时再从牌价中扣除。见[价格与促销](/models#价格与促销)。
 - `base_url`：内置模型目录为网关以及固定客户端的直连条目预设了这个字段，即 MiniMax M3 和 DeepSeek 的 `deepseek-flash`。
-- `api_key`：为空时，AgentHub 回退到供应商的环境变量。
+- `api_key`：为空时，只在条目的端点是厂商自己的地址时回退到供应商的环境变量（见[供应商凭证变量](#供应商凭证变量)）；网关、custom 与 vLLM 条目需要自己的 key。
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
@@ -288,7 +288,7 @@ enabled = false
 | `skills.prompt` | 内置模板 | `{{SKILLS}}` 块；包含 `{{SKILL_METADATA}}` |
 | `schedules.enabled` | `true` | 定时任务小节是否进入上下文 |
 | `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 块，讲解基于文件的任务管理；包含 `{{SCHEDULE_LIST}}` |
-| `hooks.enabled` | `true` | 新 Session 是否在循环的钩子点运行已安装的钩子包 |
+| `hooks.enabled` | `true` | 是否在循环的钩子点运行已安装的钩子包 |
 | `tools.builtin` | 省略时为完整默认工具集 | 工具条目；一旦写入，就整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`） |
 

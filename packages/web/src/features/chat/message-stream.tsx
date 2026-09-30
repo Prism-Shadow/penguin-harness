@@ -3,8 +3,9 @@
  * bottom while streaming — an upward swipe immediately pauses follow, and scrolling back near
  * the bottom resumes it (see stream-follow.ts for the exact rule).
  * StreamRenderContext threads the pending-approval map and approval callback down to tool
- * cards at any nesting depth. Text selected in the stream gets the app's own context menu
- * (Copy / Add to conversation — see stream-selection-menu.tsx).
+ * cards at any nesting depth. Text selected in the stream, and a web link in it, get the app's
+ * own context menu (Copy / Add to conversation; open the link or copy its address — see
+ * stream-selection-menu.tsx).
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";

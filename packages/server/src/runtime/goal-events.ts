@@ -3,7 +3,8 @@
  * event named `goal` whose `output` carries the goal file's state (status, round, tokens_used,
  * budget). The manager maps them to goal_round / goal_finished server events; the CLI reads
  * those server events rather than the hook events, so this is the only place the plugin's
- * record shape is interpreted. Round boundaries are core's `isHookInput`.
+ * record shape is interpreted. Round boundaries are core's: an `isHookInput` that an
+ * `isHookContinue` event announced.
  */
 import { isEventMessage } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";

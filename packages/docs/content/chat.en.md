@@ -246,7 +246,10 @@ Good to know:
 Terminals open as tabs in the docks, or on the standalone `/terminal` page.
 
 - Ctrl+` shows or hides the terminal tabs. With no terminal open, it takes over a running shell no conversation holds, or starts a new one.
-- Ctrl+W, with a terminal focused, closes that terminal after a confirmation, like the × on its tab. The keystroke never reaches the shell. Browsers reserve Ctrl+W for closing the browser tab and may act on it first; the desktop app passes it to the terminal.
+- Ctrl+Shift+` starts a new terminal in the docks.
+- Ctrl+Alt+`, with a terminal focused, closes that terminal after a confirmation, like the × on its tab. The keystroke never reaches the shell. Ctrl+W does: it is readline's delete-word.
+
+The three terminal keys use the Control key on a Mac too.
 
 ## Check Session stats
 
@@ -349,8 +352,17 @@ A group's active conversations, and each open folder, show ten conversations at 
 | Shift+F10 | Open the menu of the focused conversation row, or of the Files panel |
 | Esc | Close a menu; fold the shortcuts launcher; cancel a pending threshold change |
 | Left / Right | Move the focused compaction threshold marker by 1,000 Tokens (10,000 with Shift) |
+| Ctrl+Alt+S | Open **Search chats** in the sidebar |
+| Ctrl+Alt+N | Start a new chat |
+| Ctrl+Alt+1 | Show or hide the sidebar |
+| Ctrl+Alt+2 | Show or hide the right sidebar |
+| Ctrl+Alt+3 | Show or hide the bottom panel |
 | Ctrl+` | Show or hide the terminal tabs |
-| Ctrl+W | Close the focused terminal, after confirmation |
+| Ctrl+Shift+` | Start a new terminal |
+| Ctrl+Alt+` | Close the focused terminal, after confirmation |
+| Ctrl+S | Save in the Files panel's editor or the handbook |
+
+On a Mac, ⌘ takes the place of Ctrl in Ctrl+S and in the Ctrl+Alt rows other than the terminal's (⌘S, ⌥⌘S); the three terminal keys use the Control key there too. Every row from Ctrl+Alt+S down is a default: change it under [System settings › Keyboard shortcuts](/settings#keyboard-shortcuts).
 
 ## Limits
 

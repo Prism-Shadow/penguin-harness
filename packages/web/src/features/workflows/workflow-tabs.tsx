@@ -14,6 +14,7 @@ import type { WorkflowInfo, WorkflowVersion } from "@prismshadow/penguin-server/
 import { Button } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
+import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { forwardFrameKeys, readDocumentTheme, themeWorkflowFrame } from "../../lib/workflow-theme";
@@ -95,7 +96,7 @@ const FRAME_REVEAL_TIMEOUT_MS = 4000;
 
 const TAB_BASE =
   "relative h-9 shrink-0 border-b-2 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400";
-const TAB_ACTIVE = "border-[var(--accent-bg)] font-medium text-gray-900 dark:text-gray-100";
+const TAB_ACTIVE = "border-accent font-medium text-gray-900 dark:text-gray-100";
 const TAB_IDLE =
   "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
 
@@ -287,6 +288,7 @@ export function WorkflowFrame({
   // Filling the app: the bar's button, or the page asking for it itself
   // (`parent.postMessage({ type: "penguin:fill-app" }, "*")`) — only from our own frame.
   const navigate = useNavigate();
+  const paletteShortcut = useShortcutLabel("palette.toggle");
   const fillApp = useCallback(
     () =>
       void navigate(workflowAppPath(projectId, agentId, tab.workflowId, tab.key, tab.machineId)),
@@ -313,7 +315,12 @@ export function WorkflowFrame({
         {tab.version !== null && <span>v{tab.version}</span>}
         <span className="font-mono">{tab.revision}</span>
         <span className="flex-1" />
-        <Button variant="secondary" size="sm" title={S.workflows.fillAppHint} onClick={fillApp}>
+        <Button
+          variant="secondary"
+          size="sm"
+          title={S.workflows.fillAppHint(paletteShortcut)}
+          onClick={fillApp}
+        >
           {S.workflows.fillApp}
         </Button>
         <Button

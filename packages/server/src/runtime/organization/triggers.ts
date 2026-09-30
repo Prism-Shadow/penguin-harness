@@ -6,7 +6,8 @@
  * pass provisions the ones that are missing, a trigger falls back on it, and it renews a
  * desk when the CEO reassigns a workspace; ticket sessions are opened per start. Both are
  * stamped `client: "org"` at creation — the durable marker development mode's list reads to
- * leave them out of it.
+ * leave them out of it — and take the organization's approval mode of that moment; a later
+ * change of the mode reaches them through `syncApprovalMode` (reconcile.ts).
  */
 import { buildOrgTriggerMessage, userText } from "@prismshadow/penguin-core";
 import type { OrgTriggerOrigin } from "@prismshadow/penguin-core";

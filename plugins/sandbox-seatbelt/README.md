@@ -24,7 +24,7 @@ still name another program, and a host where it does not work is caught by the l
 (allow default)                              ; start from the host's world
 (deny file-write*)                           ; nothing is writable…
 (allow file-write* (literal "/dev/null") …)  ; …beyond the required sinks
-;; workspace-write, and the temp areas when temp is writable
+;; workspace-write (the Workspace and the policy's writableRoots, the Session's scratchpad), and the temp areas when temp is writable
 (allow file-write* (subpath "<workspaceRoot>") …)
 ;; network: none
 (deny network*)

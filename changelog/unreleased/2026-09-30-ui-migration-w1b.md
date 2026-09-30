@@ -10,7 +10,7 @@ The de-slop batch of the UI package migration replaced the Web App's hand-drawn 
 
 ## Details
 
-- **Spinners:** twelve hand-drawn rings became the package's `Spinner`: the update dialog and the account-menu update row, loading earlier history, the subagent row, the Files panel's upload and save, the model page's sign-in wait, the protocol picker and the three detect buttons, and the id generator. The detect buttons and the id generator's button show it through `Button`'s `loading`.
+- **Spinners:** thirteen hand-drawn rings became the package's `Spinner`: the update dialog and the account-menu update row, loading earlier history, the subagent row, the Files panel's upload and save, the model page's sign-in wait, the protocol picker and the three detect buttons, the id generator, and a loading tab in the built-in browser's tab strip. The detect buttons and the id generator's button show it through `Button`'s `loading`.
 - **Pulses:** the chat panel's running-process dot, the org chart's running state and the conversation outline's "answering" preview take `Dot` with `pulse`. The fork button shows the `Spinner` while the fork runs, where its glyph used to pulse.
 - **Transitions:** the session rows' hover buttons, the sidebar's draft-delete and group-pin buttons, and the outline's ticks name the properties they animate instead of `transition-all`.
 - **Glyphs:** the tapered bin (memory, skills, hooks, benchmark, model and agent pages) draws `ICONS.trash`; the memory tab's edit pen draws `ICONS.penLine` and the finance page's budget pencil `ICONS.pencil`.

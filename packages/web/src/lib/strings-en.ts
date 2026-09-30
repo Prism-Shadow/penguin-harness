@@ -138,6 +138,53 @@ export const en: Strings = {
     adminOnly: "Only an admin can manage machines.",
   },
 
+  /** Keyboard shortcuts: the registry's command and group labels (lib/shortcuts/registry.ts). */
+  shortcuts: {
+    commands: {
+      "palette.toggle": "Command palette",
+      "sessions.search": "Search sessions",
+      "chat.new": "New chat",
+      "sidebar.toggle": "Show or hide the sidebar",
+      "dock.toggleRight": "Show or hide the right sidebar",
+      "dock.toggleBottom": "Show or hide the bottom panel",
+      "terminal.toggle": "Show or hide the terminal",
+      "terminal.new": "New terminal",
+      "terminal.close": "Close the focused terminal",
+      "editor.save": "Save",
+    },
+    groups: {
+      general: "General",
+      panels: "Panels",
+      terminal: "Terminal",
+      editor: "Editor",
+    },
+    /** Where a focus-scoped command wins, for the shadowed-conflict hint. */
+    scopes: {
+      terminal: "the terminal",
+      editor: "the editor",
+    },
+    unbound: "Not set",
+    /** The recorder button's tooltip. */
+    rebind: "Change shortcut",
+    record: "Press the new shortcut…",
+    recordHint: "Esc cancels · Backspace clears",
+    needsModifier:
+      "Hold Ctrl or Alt (⌘ or ⌃ on macOS); Shift only together with them. Or use an F key",
+    resetRow: "Restore default",
+    resetAll: "Reset all",
+    resetAllBody: (n: number): string => `Restore ${n} shortcuts to their defaults?`,
+    conflictSame: (other: string): string =>
+      `Shares its shortcut with "${other}"; only the first in the list fires`,
+    conflictShadowed: (other: string, surface: string): string =>
+      `In ${surface}, "${other}" takes this shortcut first`,
+    browserReserved:
+      "The browser keeps this combination for itself; it only works in the desktop app",
+    browserCommon:
+      "The browser also uses this combination; in a browser tab it takes over that browser function",
+    desktopMenuReserved: "Overrides the desktop app's menu shortcut of the same keys",
+    saveFailed: "Shortcuts could not be saved to the account",
+  },
+
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",
@@ -161,6 +208,21 @@ export const en: Strings = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `exit code ${code}`,
+    touchKeys: {
+      label: "Terminal keys",
+      esc: "Escape",
+      tab: "Tab",
+      ctrl: "Ctrl (tap, then the next character)",
+      alt: "Alt (tap, then the next character)",
+      up: "Arrow up",
+      down: "Arrow down",
+      left: "Arrow left",
+      right: "Arrow right",
+      interrupt: "Interrupt (Ctrl+C)",
+      paste: "Paste",
+      hideKeyboard: "Dismiss the keyboard",
+      showKeyboard: "Show the keyboard",
+    },
   },
 
   dock: {
@@ -184,6 +246,108 @@ export const en: Strings = {
     launcherPanels: "Shortcuts",
     launcherHide: "Hide launcher",
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
+    maximize: "Fill the screen",
+    restore: "Restore the height",
+  },
+
+  builtinBrowser: {
+    panelTitle: "Browser",
+    tabs: "Tabs",
+    newTab: "New tab",
+    closeTab: "Close tab",
+    untitled: "New tab",
+    back: "Back",
+    forward: "Forward",
+    reload: "Reload",
+    stop: "Stop loading",
+    address: "Address",
+    addressPlaceholder: "Search or enter address",
+    suggestions: "History",
+    more: "More",
+    importAction: "Import from browser…",
+    clearDataAction: "Clear browsing data…",
+    setHomepageAction: "Set homepage…",
+    openExternal: "Open in system browser",
+    devTools: "Developer tools",
+    home: "Home",
+    agentBusy: (action: string): string => `An agent is using the browser: ${action}`,
+    agentBusyTab: "An agent is using this tab",
+    actions: {
+      navigate: "opening a page",
+      scan: "reading the page",
+      exec: "running a script",
+      click: "clicking",
+      type: "typing",
+      screenshot: "taking a screenshot",
+      cdp: "sending a DevTools command",
+    },
+    unavailableTitle: "Built-in browser unavailable",
+    unavailableDesktop: "The built-in browser runs in the PenguinHarness desktop app.",
+    unavailableShell: "This desktop app is too old for the built-in browser. Update it to use it.",
+    unavailableWindow: "No app window is available to show the browser.",
+    openFailed: (reason: string): string => `Could not open a tab: ${reason}`,
+    importTitle: "Import from browser",
+    importIntro:
+      "Copies sign-ins and history from a browser on this computer into the built-in browser. The browser you import from is left unchanged.",
+    importLoading: "Looking for browsers…",
+    importNone: "No browser to import from was found on this computer.",
+    importSourcesFailed: (reason: string): string => `Could not list the browsers: ${reason}`,
+    importSource: "Import from",
+    importWhat: "What to import",
+    importCookies: "Cookies and sign-ins",
+    importHistory: "History",
+    importDomains: "Only these sites",
+    importDomainsHint:
+      "Comma separated, for example amazon.com, github.com. Leave empty to import every site.",
+    importDomainsPlaceholder: "amazon.com, github.com",
+    importKeychainNote: "Your Mac may ask for Keychain access.",
+    importRun: "Import",
+    importRunning: "Importing…",
+    importDone: "Done",
+    importCookiesResult: (c: {
+      found: number;
+      imported: number;
+      skipped: number;
+      failed: number;
+    }): string =>
+      `Cookies: ${c.imported} of ${c.found} imported` +
+      (c.skipped > 0 ? `, ${c.skipped} skipped` : "") +
+      (c.failed > 0 ? `, ${c.failed} failed` : ""),
+    importHistoryResult: (h: { found: number; imported: number }): string =>
+      `History: ${h.imported} of ${h.found} entries imported`,
+    importFailed: (reason: string): string => `Import failed: ${reason}`,
+    clearTitle: "Clear browsing data",
+    clearBody: "Choose what to remove from the built-in browser. This cannot be undone.",
+    clearCookies: "Cookies and sign-ins",
+    clearCache: "Cached images and files",
+    clearStorage: "Site storage",
+    clearHistory: "History",
+    clearConfirm: "Clear",
+    clearDone: "Browsing data cleared",
+    clearFailed: (reason: string): string => `Could not clear the data: ${reason}`,
+    homepageTitle: "Set homepage",
+    homepageIntro: "New tabs and the Home button open this page.",
+    homepageAddress: "Address",
+    homepagePlaceholder: "example.com",
+    homepageHintEmpty: "Leave empty for none; new tabs then open blank.",
+    homepageHintOpens: (url: string): string => `Opens ${url}`,
+    homepageUseCurrent: "Use current page",
+    homepageClear: "Clear",
+    homepageFailed: (reason: string): string => `Could not save the homepage: ${reason}`,
+    crashedTitle: "This page crashed",
+    crashedOutOfMemory: "It ran out of memory. Close tabs you no longer need, then reload it.",
+    crashedBody: "Reload it to try again.",
+    crashedTab: "The page crashed",
+    load: {
+      memory: (size: string, tabs: number): string =>
+        `The browser is using ${size} across ${tabs} ${tabs === 1 ? "tab" : "tabs"}.`,
+      lowSystemMemory: (percent: number): string =>
+        `This computer is low on memory (${percent}% free).`,
+      manyTabs: (tabs: number): string => `${tabs} tabs are open.`,
+      advice: "Close tabs you no longer need.",
+      join: (sentences: string[]): string => sentences.join(" "),
+      heavyTab: (size: string): string => `Uses ${size} of memory`,
+    },
   },
 
   tracePanel: {
@@ -211,6 +375,10 @@ export const en: Strings = {
     profile: "Profile",
     generalTitle: "General",
     appearanceTitle: "Appearance",
+    shortcutsTitle: "Keyboard shortcuts",
+    /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
+    shortcutsInfo:
+      "Shortcuts follow the platform: ⌘ on macOS, Ctrl elsewhere. A change applies at once in every tab of this browser; the account's other browsers and the desktop app pick it up the next time they load. Bindings are stored per account and per platform, so a Mac and a Windows machine each keep their own. A browser tab cannot receive the chords the browser itself reserves (Ctrl+W / ⌘W, for example), so those work in the desktop app only; a chord the browser also uses (Ctrl+P / ⌘P prints) takes over that browser function in a browser tab. The list marks both.",
     accountTitle: "Account",
     /** Trace import: the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "Import Trace",
@@ -364,8 +532,17 @@ export const en: Strings = {
     title: "Command Palette",
     placeholder: "Type to filter commands…",
     noResults: "No matching commands",
-    hint: "Ctrl+P / Ctrl+Shift+P (⌘P) to toggle · ↑↓ to select · Enter to run",
+    /** Footer of the palette; `toggle` is the formatted palette.toggle chord, null while unbound. */
+    hint: (toggle: string | null): string =>
+      toggle === null
+        ? "↑↓ to select · Enter to run"
+        : `${toggle} to toggle · ↑↓ to select · Enter to run`,
     harnessHistory: "Harness history",
+  },
+  modelPicker: {
+    groups: "Model groups",
+    hideModelsWithoutKey: "Hide models without a key",
+    hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,
   },
   workflows: {
     tabsLabel: "Chat and workflows",
@@ -383,10 +560,16 @@ export const en: Strings = {
     restore: "Restore",
     remove: "Remove",
     fillApp: "Fill the app",
-    fillAppHint:
-      "Show this page as the whole app; Ctrl+P / Ctrl+Shift+P opens the command palette to leave",
+    /** `palette` is the formatted palette.toggle chord, null while unbound. */
+    fillAppHint: (palette: string | null): string =>
+      palette === null
+        ? "Show this page as the whole app; the command palette is the way to leave"
+        : `Show this page as the whole app; ${palette} opens the command palette to leave`,
     exitFullPage: "Exit full page (back to chat)",
-    exitHint: "Press Ctrl+P or Ctrl+Shift+P for the command palette to get back to the chat.",
+    exitHint: (palette: string | null): string =>
+      palette === null
+        ? "Open the command palette to get back to the chat."
+        : `Press ${palette} for the command palette to get back to the chat.`,
     noSuchPage: "This workflow does not exist or has no page.",
     removeConfirm: "Delete this workflow and all its recorded versions?",
     removeYes: "Remove",
@@ -1142,11 +1325,8 @@ export const en: Strings = {
     addToGroup: "Add model",
     editTitle: "Model settings",
     addTitle: "Add model (OpenAI protocol)",
-    addTitleVendor: "Add model",
     addProtocolHint:
       "New models use the OpenAI Chat Completions protocol; set the base URL to a compatible endpoint",
-    vendorProtocolHint: (vendor: string): string =>
-      `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     addProtocolHintPinned: (protocol: string): string =>
       `Models in this group always use the ${protocol} protocol; set the base URL to your own server`,
     addProtocolHintPinnedGateway: (protocol: string): string =>
@@ -1154,6 +1334,25 @@ export const en: Strings = {
     autoRouteNone:
       "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
     useCustomGroup: "Move to Custom",
+    /** Warning on a hand-added vendor-group row whose model id AgentHub cannot route (such a row can no longer be created, only inherited). */
+    vendorRowUnroutable:
+      "This model ID cannot be routed and will fail at request time: a vendor group carries built-in models only.",
+    /** The way out offered beside that warning: opens the config dialog with the row already in the custom group. */
+    moveToCustomGroup: "Move to a custom group",
+    /**
+     * Warning on a built-in row saved before the catalog pinned the protocol its id needs:
+     * re-merging the catalog repairs it, and a move would be the wrong advice. It never
+     * quotes the sync button's own label — a member sees this sentence with no button beside
+     * it, and the owner who does have one reads the label right there.
+     */
+    vendorRowStalePin:
+      "This built-in model's entry predates the protocol the catalog now pins for it, so it cannot be routed; re-syncing the built-in catalog restores that pin.",
+    /** Connectivity test on a hand-added row: replaces the upstream "is not supported" sentence, which names client types the user has no way to act on. */
+    testNotRoutable:
+      "Failed: this model ID cannot be routed. A vendor group carries built-in models only — move it to a custom group and pick or detect its protocol.",
+    /** Connectivity test on a built-in row missing its pin: the same split the card makes, so the two never give opposite advice. */
+    testStalePin:
+      "Failed: this built-in model's entry predates the protocol the catalog now pins for it, so it cannot be routed. Re-syncing the built-in catalog restores that pin; it does not belong in a custom group.",
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
@@ -1162,7 +1361,7 @@ export const en: Strings = {
     groupModeImport: "Import models",
     groupImportAll: "Import all models",
     groupImportNeedUrl: "Fill in a valid base URL first (http/https)",
-    groupImportKeyHint: "Leave empty to read the protocol's OPENAI_* / ANTHROPIC_* env vars",
+    groupImportKeyHint: "The endpoint's API key (required unless the URL is the vendor's own)",
     groupImportListing: "Fetching model list…",
     groupImportSaving: (n: number): string => `Importing ${n} models…`,
     groupImportUnsupported: "This protocol cannot list models — add them manually",
@@ -1187,7 +1386,7 @@ export const en: Strings = {
     noSearchResults: "No matching models",
     syncCatalog: "Sync presets",
     syncCatalogHint:
-      "Update preset models from the built-in catalog: add missing entries and reset differing ones to the catalog's fields; locally added models and API keys are left untouched",
+      "Update preset models from the built-in catalog: add missing entries, and refresh context window, pricing, protocol and vision on the ones already here. Your base URL, API key and output cap are never overwritten, and locally added models are left untouched",
     syncDone: (added: number, updated: number) =>
       `Presets synced: ${added} added, ${updated} updated`,
     syncUpToDate: "Presets are already up to date",
@@ -1928,8 +2127,8 @@ export const en: Strings = {
     importPromptTail: (projectId: string, agentId: string): string =>
       [
         "Read the source in full first and review every script for malicious behavior (exfiltrating data, touching files outside its source, running unknown commands); continue only once it is safe.",
-        'Then produce a PenguinHarness hook package: a hooks.json (name, description, description_zh, version in the YYYY.MM.DD.N format, and one command list per hook point — stop / pre_tool_use / user_prompt — each entry { "command": "<script path relative to the package>", "timeout": <seconds> }) plus plain Node .mjs scripts using builtin modules only.',
-        'Script contract: stdin carries one JSON object — at the stop point { "hook": "stop", "session_id", "trace_path" } (trace_path is the Trace file the Session is writing, absent without a Trace); the pre_tool_use point adds tool_name, tool_call_id and arguments (the raw argument JSON string); the user_prompt point carries scratchpad_dir and prompt instead. Empty stdout means no opinion; otherwise stdout is one JSON answer — stop: { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }, pre_tool_use: { "decision": "allow" | "deny", "reason", "output" }, user_prompt: { "context" }. A non-zero exit, non-JSON stdout or a timeout is recorded as a failure and ignored.',
+        'Then produce a PenguinHarness hook package: a hooks.json (name, description, description_zh, version in the YYYY.MM.DD.N format, and one command list per hook point — stop / pre_tool_use / user_prompt — each entry { "command": "<script path relative to the package>", "timeout": <seconds> }) plus plain Node .mjs scripts using builtin modules only. A hook point the package does not use may be left out or []; a user_prompt entry may add "trigger": "prompt" (every prompt the user submits, the default) or "host" (only when the host starts the package\'s flow by name).',
+        'Script contract: stdin carries one JSON object — at the stop point { "hook": "stop", "session_id", "trace_path" } (trace_path is the Trace file the Session is writing, absent without a Trace); the pre_tool_use point adds tool_name, tool_call_id and arguments (the raw argument JSON string); the user_prompt point carries trace_path, scratchpad_dir and prompt (the user\'s message text). Empty stdout means no opinion; otherwise stdout is one JSON answer — stop: { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }, pre_tool_use: { "decision": "allow" | "deny", "reason", "output" }, user_prompt: { "context" }, which is sent right behind the user\'s message on every prompt. A non-zero exit, non-JSON stdout or a timeout is recorded as a failure and ignored.',
         `Install it into agent_state/hooks/<name>/ of agent "${agentId}" in Project "${projectId}" (the directory name is the package name and must match ^[A-Za-z0-9_-]+$), then tell me what it does and at which hook point it fires.`,
       ].join("\n"),
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
@@ -1941,7 +2140,7 @@ export const en: Strings = {
     injection: {
       enable: "Enable hooks",
       enableHint:
-        "With it on, every Session this agent starts runs all installed hook packages at the loop's hook points. With it off, a new Session runs no hooks at all and the installed packages stay on disk. A Task already running keeps the setting it started with.",
+        "With it on, every Session this agent starts runs all installed hook packages at the loop's hook points. With it off, a new Session runs no hooks at all and the installed packages stay on disk. A Task already running keeps the setting it started with until its context is compacted.",
       savedToast: "Saved — takes effect from the next turn",
     },
   },
@@ -2079,19 +2278,80 @@ export const en: Strings = {
       `Context compacted; thinking level switched to "${to}".`,
     thinkingSwitchCompactFailed:
       "The compaction did not finish; the thinking level was switched anyway.",
-    /** The machine a workspace lives on; the row only shows when more than one is reachable. */
-    workspaceMachine: "Machine",
     workspaceHere: "here",
     /** Why a listed machine cannot be picked — shown ON its row, where the question is asked. */
     workspaceMachineWhy: {
       "no-identity": "not identified",
     },
-    workspaceUseThis: "Use this dir",
-    workspaceUp: "Parent dir",
-    workspaceNoSubdirs: "No subdirectories",
     workspaceAuto: "Temporary workspace",
     workspaceClear: "Use a temporary workspace instead",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
+    /** The Workspace finder: the modal the Workspace pickers open (workspace-finder.tsx). */
+    finder: {
+      choose: "Choose",
+      back: "Back",
+      forward: "Forward",
+      up: "Up",
+      refresh: "Refresh",
+      address: "Path",
+      addressPlaceholder: "An absolute path, or one starting with ~",
+      editPath: "Edit path",
+      filter: "Filter",
+      showSidebar: "Show sidebar",
+      hideSidebar: "Hide sidebar",
+      quickAccess: "Quick access",
+      thisPc: "This PC",
+      recent: "Recent",
+      machines: "Machines",
+      places: {
+        desktop: "Desktop",
+        documents: "Documents",
+        downloads: "Downloads",
+        pictures: "Pictures",
+      },
+      documentsMac: "Documents",
+      addToQuickAccess: "Add to Quick access",
+      removeFromQuickAccess: "Remove from Quick access",
+      addCurrentToQuickAccess: "Add the current folder to Quick access",
+      removeNamed: (name: string): string => `Remove ${name} from Quick access`,
+      open: "Open",
+      openFolder: (name: string): string => `Open ${name}`,
+      chooseThis: "Choose this folder",
+      chooseCurrent: "Choose the current folder",
+      copyPath: "Copy path",
+      /** Accessible name of the breadcrumb trail. */
+      path: "Current path",
+      columnName: "Name",
+      columnModified: "Date modified",
+      /** Tooltip on a file row: files are listed for context but cannot be picked. */
+      fileNotSelectable: "Only folders can be chosen",
+      empty: "This folder is empty",
+      noMatch: (q: string): string => `Nothing here has "${q}" in its name`,
+      deniedTitle: "Can't read this folder",
+      denied: "The account running the server is not allowed to read this folder.",
+      /**
+       * macOS privacy protection refused the folder and this page cannot ask for it (a browser
+       * tab, or another machine's listing): the process that reads it has to be allowed.
+       */
+      deniedMacServer:
+        "macOS is blocking access to this folder. The process running the server has to be allowed: a server started from a terminal belongs to that terminal, so allow the terminal in System Settings → Privacy & Security → Files and Folders (or give it Full Disk Access), then retry.",
+      /** The desktop app can ask: before it has (see allowAccess). */
+      deniedMacAsk:
+        "macOS is blocking access to this folder. Use “Allow access” to ask macOS for it, and allow it when macOS asks.",
+      /** Asked, and the folder is still refused: a packaged app. */
+      deniedMacRefused:
+        "macOS did not allow it. If PenguinHarness is not listed under Files and Folders, add it under Full Disk Access with +, then retry.",
+      /** Asked, and the folder is still refused: a development instance, whose reads macOS charges to its terminal. */
+      deniedMacRefusedDev:
+        "This is an unpackaged development instance: macOS counts its file access against the terminal that started it. Allow that terminal under Files and Folders (or give it Full Disk Access), then retry.",
+      /** Has the desktop app read the folder in its own name, which is what makes macOS ask. */
+      allowAccess: "Allow access",
+      /** The same button while the app's read waits for the user to answer macOS. */
+      allowAccessWaiting: "Waiting for macOS…",
+      /** Opens System Settings at the Privacy & Security pane the box names. */
+      openSystemSettings: "Open System Settings",
+      loadFailed: "Can't open this folder",
+    },
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
     groupByWorkspace: "Group by workspace",
     groupByAgent: "Group by agent",
@@ -2792,6 +3052,12 @@ Scenarios:
       budget_limited: "budget exhausted",
       aborted: "interrupted",
     } as Record<string, string>,
+    linkMenu: {
+      openInBuiltinBrowser: "Open in built-in browser",
+      openExternal: "Open in system browser",
+      openInNewTab: "Open in new tab",
+      copyLink: "Copy link address",
+    },
   },
 
   /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
@@ -3179,7 +3445,6 @@ Scenarios:
     /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
     wrapLines: "Wrap",
     unsaved: "Unsaved changes",
-    saveTitle: "Save (Ctrl+S / ⌘S)",
     saveConfirmTitle: "Save file",
     saveConfirm: (name: string): string =>
       `Save changes to ${name}? The file in the Workspace will be overwritten.`,
@@ -3799,10 +4064,17 @@ Scenarios:
       "deny-all": "Deny all",
     } as Record<string, string>,
     status: "Status",
-    statusActive: "Active",
+    statusActive: "Running",
     statusPaused: "Paused",
     pause: "Pause organization",
     resume: "Resume organization",
+    deleteOrg: "Delete organization",
+    deleteOrgDesc:
+      "Moves the organization to the Project's trash. Its employees stay as Agents and its conversations are kept.",
+    deleteOrgConfirm:
+      "The organization disappears from company mode. Its files go to the Project's trash (organizations/.trash) and can be moved back by hand. Its employees remain Agents of the Project; its desk and ticket conversations are kept, but with the organization gone no page lists them any more. Its id can be reused only after the old CEO's Agent is deleted. To stop an organization without losing anything, pause it instead.",
+    deleteOrgTypeId: (orgId: string) => `Type ${orgId} to confirm`,
+    deleted: (orgId: string) => `Organization ${orgId} deleted`,
     pauseInfo:
       "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. An organization is paused, never deleted: its conversations, employees and tickets stay reachable.",
     settingsLoadFailed: "The organization's settings could not be read",
@@ -3819,6 +4091,11 @@ Scenarios:
     /** Principals as the chat and tickets name them. */
     principalSystem: "System",
     principalAll: "Everyone",
+    /** A data path in a ticket drawn as a capsule: the hover names the whole path, a click copies it. */
+    pathCapsule: {
+      hint: (path: string): string => `${path}\nClick to copy the full path`,
+      copy: (path: string): string => `Copy path ${path}`,
+    },
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "Unbounded",
@@ -3832,6 +4109,10 @@ Scenarios:
       noEmployees: "This organization has no employees yet",
       untitledSession: "Untitled session",
       loadFailed: "The employee list could not be loaded",
+      temporary: (n: number): string => `Temporary (${n})`,
+      temporaryEntry: (title: string): string => `Temporary · ${title}`,
+      closeTemporary: "Remove from Temporary",
+      closeAllTemporary: "Close all",
     },
     overview: {
       title: "Overview",
@@ -4091,7 +4372,7 @@ Scenarios:
     },
     tickets: {
       title: "Tickets",
-      info: "Five columns are a ticket's life: proposed → in progress → review → done / rejected. Drag a card to move it between columns, click a card's title to open its detail in place; a blocked ticket stays in its column with a badge. A ticket is the organization's unit of work: use New ticket, top right, to create one and name an owner, and the owner's desk session starts a ticket session for it.",
+      info: "Five columns are a ticket's life: proposed → in progress → review → done / rejected. Click a card to open its detail in place, and drag it to another column to move it (on a touch screen, press and hold the card first); a blocked ticket stays in its column with a badge. A ticket is the organization's unit of work: use New ticket, top right, to create one and name an owner, and the owner's desk session starts a ticket session for it.",
       columns: {
         proposed: "Proposed",
         in_progress: "In progress",
@@ -4435,8 +4716,9 @@ Scenarios:
       documentLoadFailed: "Could not load the document",
       /** A row's tooltip: when the file was last written, and its size. */
       updatedAt: (time: string, size: string): string => `Updated ${time} · ${size}`,
-      /** Beside the editor's buttons: what the text is, and the shortcut. */
-      editorHint: "Markdown · Ctrl/⌘+S to save",
+      /** Beside the editor's buttons: what the text is, and the save shortcut (null while unbound). */
+      editorHint: (shortcut: string | null): string =>
+        shortcut === null ? "Markdown" : `Markdown · ${shortcut} to save`,
     },
   },
   errors: {
@@ -4473,6 +4755,8 @@ Scenarios:
         "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
+      model_not_routable:
+        "This model ID cannot be routed by a vendor group's protocol. Vendor groups carry built-in models only — add the model under a custom group and pick or detect its protocol.",
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
       goal_plugin_not_installed:
@@ -4488,6 +4772,7 @@ Scenarios:
       image_too_large: "The image is too large to send inline.",
       dir_not_absolute: "The directory must be an absolute path.",
       dir_not_found: "That directory does not exist or is inaccessible.",
+      dir_permission_denied: "Reading that directory is not allowed.",
       not_a_dir: "That path is not a directory.",
       path_not_found: "That path does not exist.",
       reveal_failed: "Could not open the folder.",
@@ -4560,6 +4845,11 @@ Scenarios:
       ticket_session_failed: "The ticket session could not be started.",
       handbook_file_not_found: "That document no longer exists.",
       handbook_index_required: "The handbook index (README.md) cannot be deleted.",
+      browser_unavailable:
+        "The built-in browser is unavailable: it needs the PenguinHarness desktop app to be open.",
+      source_not_found: "That browser profile was not found.",
+      shell_unreachable: "The desktop app could not be reached.",
+      timeout: "That took too long. Try again.",
     },
   },
 };

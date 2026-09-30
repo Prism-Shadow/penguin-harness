@@ -158,6 +158,19 @@ describe("sandbox service — the built-in interface and its optional dimensions
     expect(svc.backends()).toEqual([{ name: "dsh-local", dimensions: ["fs-write"] }]);
   });
 
+  it("the Session's scratchpad reaches the backend as a further writable root, and without one no such field does", async () => {
+    const dsh = fake("dsh");
+    const svc = await service([["dsh-local", dsh.provider]]);
+    const confine = svc.confinerFor(() => ({ mode: "workspace-write" }));
+    confine([...ARGV], { ...OPTS, scratchpadDir: "/data/agent/scratchpad/session-1" });
+    confine([...ARGV], OPTS);
+    expect(dsh.calls[0]).toMatchObject({
+      workspaceRoot: "/work/project",
+      writableRoots: ["/data/agent/scratchpad/session-1"],
+    });
+    expect(dsh.calls[1]).not.toHaveProperty("writableRoots");
+  });
+
   it("requiring a dimension nothing implements is refused, naming what each backend does", async () => {
     const dsh = fake("dsh");
     const svc = await service([["dsh-local", dsh.provider]]);
