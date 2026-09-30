@@ -3,16 +3,17 @@
  * positioned (z-40, per the layering convention — chrome avoids stacking contexts, in-flow
  * menus are z-40, overlays are z-50, and **portaled** popups are z-[60] so they clear an
  * open Modal, matching Select's portal panel). menuClass controls the docking direction and
- * width.
+ * width. The rows inside are the caller's — the Menu family (`Menu`, `MenuItem`, …) for a plain
+ * menu, or any body a picker needs (a search box over a list, a directory browser).
  *
  * `portal` switches the panel to the shared popup strategy (same idea as OptionMenu's
- * use-portal-panel): mounted on document.body with `position: fixed` against viewport
+ * usePortalPanel): mounted on document.body with `position: fixed` against viewport
  * coordinates, so **no ancestor's overflow can clip it**. Anchoring inside a scrolling
  * container (the composer toolbar scrolls horizontally on phones) makes that mandatory:
  * setting one axis to a non-`visible` overflow makes the other compute to `auto` too, so an
  * absolutely-positioned panel — an upward one especially — is clipped away entirely.
  *
- * Escape goes through the shared esc-layer stack (see modal.tsx): while open, the menu is
+ * Escape goes through the shared esc-layer stack (esc-layers.ts): while open, the menu is
  * the topmost layer, so one Escape closes only the menu even inside a Modal — the Modal's
  * own handler sees itself not on top and stays; the next Escape closes the dialog. The
  * event is deliberately NOT stopped, so element-level Escape handlers inside the panel
@@ -21,7 +22,7 @@
  * Keyboard: opening moves focus to the panel's first focusable item, Up/Down walk the
  * items (wrapping), and closing via Escape returns focus to the trigger — without this a
  * keyboard user could open a menu and never reach its contents, which is exactly what
- * happened when the sidebar's row actions moved from bare buttons into these panels.
+ * happened when a list's row actions moved from bare buttons into these panels.
  *
  * `anchorRect` turns the same panel into a context menu: placement measures the given
  * viewport box instead of the container's own, so the menu can hang off the point a
@@ -37,19 +38,18 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import {
-  menuPanelClass,
-  menuRowClass,
-  menuRowTone,
-  scrollMovesAnchor,
-} from "@prismshadow/penguin-ui";
-import { FOCUSABLE_SELECTOR, isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
+  FOCUSABLE_SELECTOR,
+  isTopEscLayer,
+  popEscLayer,
+  pushEscLayer,
+} from "../esc-layers/esc-layers";
+import { menuPanelClass } from "../menu-panel/menu-panel";
+import type { AnchorRect } from "../portal-panel/context-menu";
+import { scrollMovesAnchor } from "../portal-panel/use-portal-panel";
 
 /** Gap between the trigger and the portaled panel, and the panel's minimum distance from the viewport edge (px). */
 const PANEL_GAP = 4;
 const VIEWPORT_MARGIN = 8;
-
-/** The panel's plain row: full-width, left-aligned, hover-filled. Shared so menus opened from different anchors cannot drift apart on density. */
-export const menuItemClass = `block ${menuRowClass} text-sm ${menuRowTone()}`;
 
 /** Portal docking: which way the panel opens and which of its edges lines up with the trigger. */
 export interface DropdownPortal {
@@ -82,7 +82,11 @@ export function Dropdown({
   menuStyle?: CSSProperties;
   /** Extra classes for the root container (e.g. flex-1 in a flex layout). */
   className?: string;
-  /** Render the panel through a body portal at fixed viewport coordinates, escaping any clipping ancestor. */
+  /**
+   * Render the panel through a body portal at fixed viewport coordinates, escaping any clipping
+   * ancestor. New menus pass it; the in-flow panel stays only for the call sites that still sit
+   * in an unclipped container.
+   */
   portal?: DropdownPortal;
   /**
    * Place the panel against this viewport box instead of the container's own — a context
@@ -90,7 +94,7 @@ export function Dropdown({
    * Requires `portal`. While set, a scroll that moved the anchored content dismisses the
    * panel rather than re-placing it — see `anchorOwner` for which scrolls those are.
    */
-  anchorRect?: { top: number; bottom: number; left: number; right: number } | null;
+  anchorRect?: AnchorRect | null;
   /**
    * The element the `anchorRect` was measured from. A scroll then dismisses the panel only
    * when this element moved with it, which is what keeps a context menu in the sidebar

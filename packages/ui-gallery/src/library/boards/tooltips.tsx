@@ -1,6 +1,5 @@
-/** 悬停提示: the app's one tooltip, by attribute (read by the frame's TooltipLayer) and by component, and on a truncated line. */
-import { Button } from "@prismshadow/penguin-ui";
-import { Tooltip } from "../../../../web/src/components/ui/tooltip";
+/** 悬停提示: the package's one tooltip, by attribute (read by the frame's TooltipLayer) and by component, and on a truncated line. */
+import { Button, Tooltip } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
@@ -48,10 +47,10 @@ export function TooltipsBoard() {
       </BoardGroup>
       <BoardGroup title={t.component} aside={t.componentHint}>
         <div className="lib-row">
-          <Tooltip label={t.beside} placement="right">
+          <Tooltip label={t.besideTip} placement="right">
             <Button size="sm">{t.beside}</Button>
           </Tooltip>
-          <Tooltip label={t.below} placement="bottom">
+          <Tooltip label={t.belowTip} placement="bottom">
             <Button size="sm">{t.below}</Button>
           </Tooltip>
         </div>

@@ -58,13 +58,15 @@ import {
   PasswordInput,
   Segmented,
   Switch,
+  toastError,
+  toastInfo,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { toneInk, type Tone } from "../../lib/tone";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { QQScanConnect } from "./qq-scan-connect";
 import { WeChatScanConnect } from "./wechat-scan-connect";
 import {

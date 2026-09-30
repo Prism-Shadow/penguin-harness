@@ -18,8 +18,8 @@
  * usable terminal rather than a dead end.
  */
 import { useCallback, useMemo, useState } from "react";
+import { ConfirmModal } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useTerminalChrome } from "./terminal-appearance";
 import { killTerminal } from "./terminal-list";
 import {
@@ -218,6 +218,7 @@ export function TerminalPage() {
         onClose={() => setConfirmKill(false)}
         onConfirm={() => void killConfirmed()}
         confirmLabel={S.terminal.killShell}
+        cancelLabel={S.common.cancel}
       >
         {info && (
           <p className="break-words text-sm text-gray-600 dark:text-gray-300">

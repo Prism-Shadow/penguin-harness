@@ -19,11 +19,17 @@
 import { useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
-import { HiddenFileInput, PrefRow, Select, UploadIcon } from "@prismshadow/penguin-ui";
+import {
+  HiddenFileInput,
+  PrefRow,
+  Select,
+  UploadIcon,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 

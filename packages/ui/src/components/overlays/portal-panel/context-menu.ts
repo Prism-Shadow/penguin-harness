@@ -1,14 +1,14 @@
 /**
- * Pure geometry and gesture rules behind a row context menu (the sidebar's Session rows
- * are the first user). The component half is `components/ui/context-menu.tsx`; the parts
- * that decide *where* a menu lands and *whether* a gesture counts as a request for one
- * live here so they can be tested in this package's node-only vitest environment.
+ * Pure geometry and gesture rules behind a row context menu (the app's Session rows are the
+ * first user). The hook half is `use-row-context-menu.ts`; the parts that decide *where* a menu
+ * lands and *whether* a gesture counts as a request for one live here so they can be tested in
+ * the package's node-only vitest environment.
  *
- * A context menu must not be a mouse-only affordance: `design/specs/06-PROTOTYPE.md`
- * states that hover-reveal is desktop-only because touch screens have no hover, and a
- * secondary click is desktop-only for the same reason. So three gestures open the same
- * menu — a right-click at the pointer, the platform's keyboard chord against the focused
- * row, and press-and-hold on touch — and the rules for telling them apart are here.
+ * A context menu must not be a mouse-only affordance: hover-reveal is desktop-only because touch
+ * screens have no hover, and a secondary click is desktop-only for the same reason. So three
+ * gestures open the same menu — a right-click at the pointer, the platform's keyboard chord
+ * against the focused row, and press-and-hold on touch — and the rules for telling them apart
+ * are here.
  */
 
 /** Viewport-space box a portaled panel is placed against (the Dropdown's `anchorRect`). */

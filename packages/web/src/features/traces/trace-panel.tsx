@@ -15,7 +15,13 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { DownloadIcon, EmptyState, ICON_SIZE, Skeleton } from "@prismshadow/penguin-ui";
+import {
+  DownloadIcon,
+  EmptyState,
+  ICON_SIZE,
+  NoticeStrip,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -28,7 +34,6 @@ import {
   sortTraceFiles,
 } from "./trace-refresh";
 import type { TraceHighlight } from "./timeline-chart";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** File pills rendered before the "+N" overflow control expands them (a long Session can hold dozens of compaction shards). */
 const FILE_PILL_CAP = 6;

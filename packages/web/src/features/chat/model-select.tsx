@@ -14,6 +14,8 @@ import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import {
   Badge,
   ChevronDown,
+  Dropdown,
+  FormPicker,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
@@ -21,8 +23,6 @@ import {
   ProviderLogo,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Dropdown } from "../../components/ui/dropdown";
-import { FormPicker } from "../../components/ui/form-picker";
 import {
   hasConfiguredKey,
   isFreeModel,

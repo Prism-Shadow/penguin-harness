@@ -9,10 +9,9 @@
  */
 import { useState } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
-import { Button, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
+import { Button, GlyphIcon, ICONS, Modal } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
-import { Modal } from "../../components/ui/modal";
 import { AiCreatePanel, composeAiPrompt } from "../ai-create";
 import { scheduleExamples } from "./schedule-suggestions";
 

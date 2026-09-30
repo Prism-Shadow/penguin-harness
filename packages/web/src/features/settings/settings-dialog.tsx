@@ -8,7 +8,8 @@
  * anything not on it falls back to the first page they can actually open.
  */
 import { useEffect, useState } from "react";
-import { ICONS } from "@prismshadow/penguin-ui";
+import { ICONS, PagedDialog } from "@prismshadow/penguin-ui";
+import type { PagedDialogGroup } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
   resolveSettingsSection,
@@ -17,8 +18,6 @@ import {
 } from "../../lib/settings-sections";
 import type { SettingsGroupKey, SettingsSectionKey } from "../../lib/settings-sections";
 import { useAuth } from "../../state/auth";
-import { PagedDialog } from "../../components/ui/paged-dialog";
-import type { PagedDialogGroup } from "../../components/ui/paged-dialog";
 import { Icon } from "../../components/ui/group-list";
 import { ProfileSection } from "./profile-section";
 import { GeneralSection } from "./general-section";

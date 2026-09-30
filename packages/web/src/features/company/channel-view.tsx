@@ -49,7 +49,10 @@ import {
   GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
+  NoticeStrip,
   Skeleton,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -60,7 +63,6 @@ import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
@@ -94,7 +96,6 @@ import {
 } from "./channel-stream";
 import type { BubbleShape, ChannelDay, StreamItem } from "./channel-stream";
 import { parsePrincipal } from "./principals";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */
 interface StreamMeta {
@@ -739,7 +740,7 @@ export function ChannelView() {
               <ChannelComposer candidates={candidates} names={names} onSend={send} />
             ) : detail !== null && detail.archived ? (
               <NoticeStrip
-                tone="muted"
+                tone="neutral"
                 as="p"
                 className="mt-3 rounded-md border px-3 py-2 text-xs"
                 role="status"

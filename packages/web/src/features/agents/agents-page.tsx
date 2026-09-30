@@ -31,19 +31,24 @@ import {
   Badge,
   Button,
   CloseIcon,
+  ConfirmModal,
   EmptyState,
   FieldError,
   FieldHint,
   FieldLabel,
+  FormPicker,
   GlyphIcon,
   HiddenFileInput,
   ICONS,
   ICON_SIZE,
   Input,
+  Modal,
   Skeleton,
   SkeletonCard,
   Textarea,
   UpdatePill,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -57,10 +62,6 @@ import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/b
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { FormPicker } from "../../components/ui/form-picker";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { STAT_ICONS } from "../../lib/stat-icons";
@@ -1009,6 +1010,7 @@ export function AgentsPage() {
           title={S.todo.agentsConfirmTitle(kernelTodo.count)}
           tone="primary"
           confirmLabel={S.agent.kernelUpdateAction}
+          cancelLabel={S.common.cancel}
           busy={kernelRunning}
           onClose={() => setKernelConfirmOpen(false)}
           onConfirm={() => void runKernelUpdates(kernelTodo.items)}
@@ -1042,6 +1044,8 @@ export function AgentsPage() {
           setDeleteError(null);
         }}
         onConfirm={() => void doDelete()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting ? S.agent.deleteConfirm(deleting.name) : ""}

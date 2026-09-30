@@ -636,6 +636,10 @@ export const zh = {
     moreInfo: "说明",
     /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
     moreInfoAbout: (subject: string) => `说明：${subject}`,
+    /** The toast stack's name as a live region (the shared UI package's `Toaster`). */
+    notifications: "通知",
+    /** Read after a toast's text: pressing the toast dismisses it. */
+    dismiss: "关闭",
     name: "名称",
     username: "用户名",
     role: "角色",

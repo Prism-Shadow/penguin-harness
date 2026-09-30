@@ -25,6 +25,7 @@ import type { HookItem } from "@prismshadow/penguin-server/api";
 import {
   Badge,
   Button,
+  ConfirmModal,
   CopiedStatus,
   CopyCheckGlyph,
   DownloadIcon,
@@ -32,9 +33,12 @@ import {
   HelpFold,
   HiddenFileInput,
   ICONS,
+  Modal,
   SettingsEmpty,
   SkeletonList,
   Textarea,
+  toastError,
+  toastSuccess,
   useCopied,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -43,9 +47,6 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Modal } from "../../components/ui/modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { localizedText } from "../chat/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
 import { useAiBridge } from "../ai-create";
@@ -406,6 +407,7 @@ export function HooksTab({
         open={overwriting !== null}
         title={S.hooks.importOverwriteTitle}
         confirmLabel={S.hooks.importOverwriteAction}
+        cancelLabel={S.common.cancel}
         busy={uploading}
         onClose={() => setOverwriting(null)}
         onConfirm={() => {
@@ -424,6 +426,8 @@ export function HooksTab({
         busy={busy}
         onClose={() => setRemoving(null)}
         onConfirm={() => void confirmRemove()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {removing !== null ? S.hooks.uninstallConfirmBody(removing, agentName) : ""}

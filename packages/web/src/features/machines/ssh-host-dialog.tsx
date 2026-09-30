@@ -16,13 +16,10 @@ import type {
   SshHostRequest,
   SshHostResponse,
 } from "@prismshadow/penguin-server/api";
-import { Button, Input } from "@prismshadow/penguin-ui";
+import { Button, Input, Modal, NoticeStrip, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { Modal } from "../../components/ui/modal";
-import { toastSuccess } from "../../components/ui/toast";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 type Field = "alias" | "hostName" | "user" | "port" | "identityFile";
 type Form = Record<Field, string>;

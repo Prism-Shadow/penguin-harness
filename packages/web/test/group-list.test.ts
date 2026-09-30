@@ -66,9 +66,9 @@ describe("list-options glyphs", () => {
     // drift apart. Node-only suite, so this reads the sources (title-reveal.test.ts).
     const sidebar = sourceFile(SCAN, "packages/web/src/components/layout/sidebar.tsx").text;
     for (const mode of ["workspace", "agent", "time"] satisfies GroupMode[])
-      expect(sidebar).toContain(`icon={GROUP_MODE_ICONS.${mode}}`);
+      expect(sidebar).toContain(`glyph={GROUP_MODE_ICONS.${mode}}`);
     for (const mode of ["recent", "manual"] satisfies SessionSortMode[])
-      expect(sidebar).toContain(`icon={SORT_MODE_ICONS.${mode}}`);
+      expect(sidebar).toContain(`glyph={SORT_MODE_ICONS.${mode}}`);
   });
 
   it("gives every row a glyph that differs, so an icon distinguishes rather than decorates", () => {

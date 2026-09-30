@@ -3,8 +3,8 @@
  * global Ctrl+` hotkey. Split from dock-state.ts so the store stays pure (unit-testable
  * without fetch); this module owns every server round-trip a terminal tab needs.
  */
+import { toastError } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { toastError } from "../../components/ui/toast";
 import {
   HttpStatusError,
   fetchJson,

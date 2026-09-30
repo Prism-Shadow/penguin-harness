@@ -38,13 +38,20 @@ import type {
   ProxyProbeTargetDto,
   ServerSettings,
 } from "@prismshadow/penguin-server/api";
-import { Button, Input, SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Input,
+  SettingsSection,
+  ToggleRow,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 
 /** Brand names: identical in every locale, so they are keyed off the server's provider id rather than doubled into both dictionaries. */
 const PROVIDER_LABEL: Record<ProxyProbeProvider, string> = {

@@ -1,5 +1,5 @@
 /**
- * Gesture math for the bottom Sheet (pure functions, unit-test covered):
+ * Gesture math for the bottom Sheet and the dock launcher (pure functions, unit-test covered):
  * - project: projects release velocity to an inertial endpoint using the
  *   iOS scroll deceleration curve — the snap point is chosen from the
  *   projected point rather than the release point, so a quick flick can

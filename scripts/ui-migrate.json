@@ -379,6 +379,200 @@
           "names": ["SectionShell→SettingsSection"]
         }
       ]
+    },
+    "W3": {
+      "packages/web/src/components/ui/modal": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/modal/modal.tsx",
+          "names": ["Modal", "ModalProps"]
+        },
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/esc-layers/esc-layers.ts",
+          "names": [
+            "pushEscLayer",
+            "popEscLayer",
+            "isTopEscLayer",
+            "FOCUSABLE_SELECTOR",
+            "nextFocusIndex",
+            "useDialogLayer"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/confirm-modal": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/confirm-modal/confirm-modal.tsx",
+          "names": ["ConfirmModal"]
+        },
+        {
+          "owner": "W3-B",
+          "target": "packages/web/src/features/agents/save-confirm",
+          "dest": "packages/web/src/features/agents/save-confirm.tsx",
+          "names": ["useSaveConfirm"]
+        }
+      ],
+      "packages/web/src/components/ui/paged-dialog": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/paged-dialog/paged-dialog.tsx",
+          "names": ["PagedDialog", "PagedDialogItem", "PagedDialogGroup"]
+        }
+      ],
+      "packages/web/src/components/ui/drawer": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/drawer/drawer.tsx",
+          "names": ["Drawer", "DrawerProps"]
+        }
+      ],
+      "packages/web/src/components/ui/sheet": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/drawer/sheet.tsx",
+          "names": ["Sheet", "SheetProps", "SheetSnap"]
+        }
+      ],
+      "packages/web/src/components/ui/image-zoom": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/lightbox/lightbox.tsx",
+          "names": ["ZoomableImage"]
+        }
+      ],
+      "packages/web/src/lib/spring": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/motion/spring.ts",
+          "names": [
+            "SPRING_DEFAULT",
+            "SPRING_MOMENTUM",
+            "stepSpring",
+            "isSettled",
+            "createSpringDriver",
+            "SpringConfig",
+            "SpringDriver"
+          ]
+        }
+      ],
+      "packages/web/src/lib/sheet-physics": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/motion/sheet-physics.ts",
+          "names": ["project", "rubberband", "nearestSnap"]
+        }
+      ],
+      "packages/web/src/components/ui/use-reduced-motion": [
+        {
+          "owner": "W3-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/motion/use-reduced-motion.ts",
+          "names": ["usePrefersReducedMotion"]
+        }
+      ],
+      "packages/web/src/components/ui/dropdown": [
+        {
+          "owner": "W3-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/dropdown/dropdown.tsx",
+          "names": ["Dropdown", "DropdownPortal"]
+        }
+      ],
+      "packages/web/src/components/ui/form-picker": [
+        {
+          "owner": "W3-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/forms/select/form-picker.tsx",
+          "names": ["FormPicker"]
+        }
+      ],
+      "packages/web/src/components/ui/context-menu": [
+        {
+          "owner": "W3-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/portal-panel/use-row-context-menu.ts",
+          "names": ["useRowContextMenu", "RowContextMenu", "ContextMenuRowProps"]
+        }
+      ],
+      "packages/web/src/lib/context-menu": [
+        {
+          "owner": "W3-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/portal-panel/context-menu.ts",
+          "names": [
+            "AnchorRect",
+            "ContextMenuEventLike",
+            "Point",
+            "pointerAnchor",
+            "isPointerContextMenu",
+            "contextMenuAnchor",
+            "isContextMenuKey",
+            "LONG_PRESS_MS",
+            "LONG_PRESS_SLOP_PX",
+            "LONG_PRESS_SETTLE_MS",
+            "isLongPressPointer",
+            "longPressMoved",
+            "withinSettleWindow",
+            "HoldState",
+            "IDLE_HOLD",
+            "HoldEvent",
+            "HoldOutcome",
+            "reduceHold"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/tooltip": [
+        {
+          "owner": "W3-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/tooltip/tooltip.tsx",
+          "names": [
+            "Tooltip",
+            "TooltipLayer",
+            "TooltipPlacement",
+            "TooltipContent",
+            "TOOLTIP_ATTR",
+            "ClipBox",
+            "isCutOff",
+            "hintAllowed",
+            "hintAllowedFor",
+            "TriggerRect",
+            "Viewport",
+            "PanelPosition",
+            "besideTrigger",
+            "belowTrigger",
+            "TooltipRequest",
+            "tooltipRequest",
+            "namedHint"
+          ]
+        }
+      ],
+      "packages/web/src/components/ui/toast": [
+        {
+          "owner": "W3-C",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/overlays/toaster/toaster.tsx",
+          "names": ["Toaster", "toastSuccess", "toastError", "toastInfo", "toastAttention"]
+        }
+      ],
+      "packages/web/src/components/ui/notice-strip": [
+        {
+          "owner": "W3-C",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/notice/notice-strip.tsx",
+          "names": ["NoticeStrip", "NOTICE_TONE", "NoticeTone"]
+        }
+      ]
     }
   }
 }

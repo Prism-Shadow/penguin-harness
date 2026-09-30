@@ -33,6 +33,10 @@ export interface UiStrings {
   moreInfo: string;
   /** The same name with the subject folded in ("More info: Vault"): InfoPopover, HelpFold. */
   moreInfoAbout: (subject: string) => string;
+  /** The toast stack's name as a live region and landmark (`Toaster`). */
+  notifications: string;
+  /** What pressing a toast does, read after its text: it dismisses it (`Toaster`). */
+  dismiss: string;
 }
 
 /** The English fallbacks, used wherever no provider is mounted (a test, a stand-alone page). */
@@ -45,6 +49,8 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   clearSearch: "Clear search",
   moreInfo: "More info",
   moreInfoAbout: (subject) => `More info: ${subject}`,
+  notifications: "Notifications",
+  dismiss: "Dismiss",
 };
 
 const UiStringsContext = createContext<UiStrings>(DEFAULT_UI_STRINGS);

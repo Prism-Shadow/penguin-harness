@@ -29,11 +29,11 @@ import type {
   TraceOtherSpan,
   TraceToolSpan,
 } from "@prismshadow/penguin-server/api";
+import { namedHint } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { packToolLanes, toolSpanBounds } from "./lane-packing";
 import type { PackedLane } from "./lane-packing";
-import { namedHint } from "../../components/ui/tooltip";
 import { ChartSwatch, TimelineBar, type ChartPaint } from "../../components/ui/chart";
 
 /**

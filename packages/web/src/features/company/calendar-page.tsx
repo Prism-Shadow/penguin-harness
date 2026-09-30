@@ -29,16 +29,22 @@ import type {
 import {
   Button,
   CloseIcon,
+  ConfirmModal,
   GlyphIcon,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
   Input,
+  Modal,
+  NoticeStrip,
   Segmented,
   Select,
   Skeleton,
   Switch,
   Textarea,
+  toastAttention,
+  toastError,
+  toastSuccess,
   usePortalPanel,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -51,9 +57,6 @@ import { toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastAttention, toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";
 import {
   cadenceOf,
@@ -72,7 +75,6 @@ import {
 } from "./calendar-geom";
 import type { Cadence, CalendarView, EventInstance, GridDay } from "./calendar-geom";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {
   fired: "success",
@@ -812,7 +814,7 @@ export function CalendarPage() {
 
       {events !== null && events.length === 0 && invalidFiles.length === 0 && !hintDismissed && (
         <NoticeStrip
-          tone="muted"
+          tone="neutral"
           className="mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs"
         >
           <span className="min-w-0 flex-1">{S.company.calendar.emptyHint}</span>
@@ -1016,6 +1018,7 @@ export function CalendarPage() {
         title={S.common.confirmSaveTitle}
         tone="primary"
         confirmLabel={S.common.save}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setConfirmSave(false))}
         onConfirm={() => void save()}
@@ -1028,6 +1031,7 @@ export function CalendarPage() {
         open={deleting !== null}
         title={S.company.calendar.delete}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setDeleting(null))}
         onConfirm={() => void remove()}

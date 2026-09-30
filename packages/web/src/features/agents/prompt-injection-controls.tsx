@@ -28,14 +28,20 @@ import type {
   AgentSkillsConfigDto,
   AgentVaultConfigDto,
 } from "@prismshadow/penguin-server/api";
-import { Button, InfoPopover, Textarea, ToggleRow } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  InfoPopover,
+  NoticeStrip,
+  Textarea,
+  ToggleRow,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { useSaveConfirm } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
-import { NoticeStrip } from "../../components/ui/notice-strip";
+import { useSaveConfirm } from "./save-confirm";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 

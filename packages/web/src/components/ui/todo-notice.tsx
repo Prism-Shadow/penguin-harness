@@ -13,10 +13,10 @@
  * `<h1>`. The Skills library, the model library and the cost center were three different shapes
  * before, and a reader who had learned one had learned nothing about the next.
  *
- * `toneStrip.attention` is the tone by its own definition — "unfinished: waiting on time, a
- * queue, or the user" is exactly what all four trails are — and by its own shape, since
- * `toneStrip` is the map for a bordered notice that owns a row. Its pale amber ground is the
- * block's requested pale yellow, arrived at through the token rather than around it. Not
+ * `attention` is the tone by its own definition — "unfinished: waiting on time, a queue, or the
+ * user" is exactly what all four trails are — and `NoticeStrip` is the shape by its own, the
+ * bordered notice that owns a row. Its pale amber ground is the block's requested pale yellow,
+ * arrived at through the token rather than around it. Not
  * `danger`, which means failed, destructive or over a limit: a Skill with a newer copy in the
  * library is none of those, and repainting a failure strip this colour to match would lose the
  * one distinction the tones exist to carry.
@@ -39,8 +39,7 @@
  * want the same gap under their title. A page whose container spaces its children (the cost
  * center's `space-y-4`) overrides it, which is the right answer there too.
  */
-import { Button, ICON_GAP, UPDATE_DOT_INLINE } from "@prismshadow/penguin-ui";
-import { NoticeStrip } from "./notice-strip";
+import { Button, ICON_GAP, NoticeStrip, UPDATE_DOT_INLINE } from "@prismshadow/penguin-ui";
 
 export function TodoNotice({
   text,

@@ -33,10 +33,16 @@ import type {
   SubagentRuntimeInfo,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import { AgentAvatar, EmptyState, GlyphIcon, ICON_SIZE, StatusIcon } from "@prismshadow/penguin-ui";
+import {
+  AgentAvatar,
+  EmptyState,
+  GlyphIcon,
+  ICON_SIZE,
+  StatusIcon,
+  toastError,
+} from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
 import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "../../api/endpoints";
-import { toastError } from "../../components/ui/toast";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";

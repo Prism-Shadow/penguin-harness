@@ -8,14 +8,7 @@
  * in-place panel.
  */
 import { useState } from "react";
-import {
-  Button,
-  ChevronDown,
-  ChoiceCheck,
-  menuRowClass,
-  menuRowTone,
-} from "@prismshadow/penguin-ui";
-import { Dropdown } from "../../components/ui/dropdown";
+import { Button, ChevronDown, Dropdown, MenuItem } from "@prismshadow/penguin-ui";
 
 export interface MachineChoice {
   value: string;
@@ -61,17 +54,14 @@ export function MachinePicker({
           const selected = choice.value === value;
           return (
             <li key={choice.value} role="option" aria-selected={selected}>
-              <button
-                type="button"
-                onClick={() => {
+              <MenuItem
+                label={choice.label}
+                checked={selected}
+                onSelect={() => {
                   setOpen(false);
                   if (!selected) onChange(choice.value);
                 }}
-                className={`${menuRowClass} flex items-center gap-2 text-sm ${menuRowTone(selected)}`}
-              >
-                <span className="min-w-0 flex-1 truncate">{choice.label}</span>
-                <ChoiceCheck on={selected} />
-              </button>
+              />
             </li>
           );
         })}
