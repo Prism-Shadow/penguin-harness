@@ -90,7 +90,11 @@ import {
   resolveProviderModelEnv,
   unroutableVendorModel,
 } from "@prismshadow/penguin-core/model-catalog";
-import type { FastModeProtocol, ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import type {
+  FastModeProtocol,
+  ModelProviderBridgeAuth,
+  ModelProviderInfo,
+} from "@prismshadow/penguin-core/model-catalog";
 import {
   allGroupKeys,
   discountedPrice,
@@ -106,6 +110,7 @@ import {
   loadModelGroupOrder,
   saveModelGroupOrder,
 } from "./model-group-order";
+import { TAG_INK, TAG_SHAPE, modelTags } from "./model-tags";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -138,7 +143,36 @@ import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
-import { PlatformKeyAuthDialog } from "./platform-key-auth-dialog";
+import { KeyAuthDialog } from "./key-auth-dialog";
+import type { KeyAuthTexts } from "./key-auth-dialog";
+
+/**
+ * The authorization flows a group's "authorize a key" dialog can run, keyed by the flow named
+ * in that group's catalog descriptor. Everything the two differ in lives here — the four
+ * endpoint calls and the copy — because everything else about the dialog is shared, and a
+ * group picks its entry by carrying `bridgeAuth` rather than by being named in this file.
+ */
+const KEY_AUTH: Record<
+  ModelProviderBridgeAuth["flow"],
+  { endpoints: api.KeyAuthEndpoints; texts: KeyAuthTexts }
+> = {
+  "penguin-go": {
+    endpoints: api.platformAuthEndpoints,
+    texts: {
+      intro: S.models.platformKeyIntro,
+      appliedBody: S.models.platformKeyAppliedBody,
+      errors: S.models.platformKeyErrors,
+    },
+  },
+  modelscope: {
+    endpoints: api.modelScopeAuthEndpoints,
+    texts: {
+      intro: S.models.modelScopeKeyIntro,
+      appliedBody: S.models.modelScopeKeyAppliedBody,
+      errors: S.models.modelScopeKeyErrors,
+    },
+  },
+};
 
 /** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */
 const CURRENCY_SYMBOL: Record<Currency, string> = { USD: "$", CNY: "¥" };
@@ -894,9 +928,10 @@ export function ModelsPage() {
   const searching = query.trim() !== "";
 
   /**
-   * "Sync presets": merge the built-in catalog into the current table (union; the catalog
-   * wins on differing preset entries, local additions and API keys stay untouched — see
-   * catalog-sync.ts). No-op with a toast when everything is already up to date.
+   * "Sync presets": merge the built-in catalog into the current table (union; the catalog wins
+   * on the facts it tracks about a model, while base URLs, keys and output caps stay as this
+   * install has them, and local additions are untouched — see catalog-sync.ts). No-op with a
+   * toast when everything is already up to date.
    */
   const syncPresets = async () => {
     if (!rows) return;
@@ -1113,6 +1148,12 @@ export function ModelsPage() {
           : null,
     };
   };
+
+  // Which dialog the open authorization runs: the group's descriptor decides, so a group with
+  // a bridge flow gets the shared bridge dialog and every other authorizable group gets the
+  // PKCE one. Null means the open group authorizes some other way (or none).
+  const oauthFlow = oauthFor === null ? undefined : providerInfo(oauthFor)?.bridgeAuth?.flow;
+  const oauthKeyAuth = oauthFlow === undefined ? null : KEY_AUTH[oauthFlow];
 
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
@@ -1333,10 +1374,12 @@ export function ModelsPage() {
                         </Button>
                       )}
                       {isOwner &&
-                        (group.provider.oauth || group.provider.id === PENGUIN_GO_PROVIDER_ID) && (
+                        (group.provider.oauth || group.provider.bridgeAuth !== undefined) && (
                           // Authorize-a-key action: rendered off the group's own catalog
                           // descriptor, so a provider gains this button by publishing a flow
-                          // rather than by being named here. Same narrow-row rule as its
+                          // rather than by being named here — `oauth` for the ones whose PKCE
+                          // round-trip the App runs itself, `bridgeAuth` for the ones an
+                          // authorization bridge runs for it. Same narrow-row rule as its
                           // neighbours — the label goes, the icon and its names stay. It leads the
                           // manual key action: where a group can mint a key, that is the shorter path.
                           <Button
@@ -1542,13 +1585,15 @@ export function ModelsPage() {
           momentary absence of rows reads as zero and is never seen. */}
       {projectId &&
         oauthFor !== null &&
-        (oauthFor === PENGUIN_GO_PROVIDER_ID ? (
-          <PlatformKeyAuthDialog
+        (oauthKeyAuth !== null ? (
+          <KeyAuthDialog
             projectId={projectId}
             providerLabel={
               MODEL_PROVIDERS.find((provider) => provider.id === oauthFor)?.label ?? oauthFor
             }
             count={rows?.filter((row) => row.provider === oauthFor).length ?? 0}
+            endpoints={oauthKeyAuth.endpoints}
+            texts={oauthKeyAuth.texts}
             onClose={() => {
               setOauthFor(null);
               if (keyLanded.current) void load();
@@ -2085,35 +2130,6 @@ function AddGroupDialog({
 // ---------------------------------------------------------------------------
 
 /**
- * Card tag palette. Every mark wears one small neutral pill — the same faint surface and border
- * whatever it says — and the hue survives only in the text. Six marks filling six coloured
- * chips turned a row of tags into confetti; on a page whose job is scanning names, the marks
- * are meant to be noticed second.
- *
- * Three inks, so the row groups instead of enumerating: what the model IS (its default status),
- * what it CAN do, and what it COSTS. Identity is carried by the words in every case — the ink
- * only sorts them at a glance, and never alone says which mark this is.
- *
- * These are identities, not judgements, which is why they are spelled here instead of in
- * `lib/tone.ts`, whose five tones each rate a thing's state — the same reason
- * `category-colors.ts` and `update-dot.tsx` keep their own colours. Contrast against the
- * surfaces a card sits on (white and gray-50 in light; this app's overridden gray-950 `#000000`
- * and gray-900 `#0d0d0d` in dark) clears 4.5:1 for every ink; the shared border is decorative,
- * so it is not held to 3:1.
- */
-/** The pill itself: no fill at all, so a row of marks sits on the card rather than on top of it. */
-const TAG_SHAPE =
-  "whitespace-nowrap rounded-full border border-gray-200 px-1.5 text-[10px] font-medium leading-[15px] dark:border-gray-700";
-const TAG_INK = {
-  /** This model's standing in the Project. */
-  status: "text-brand-700 dark:text-brand-300",
-  /** What it can do. */
-  capability: "text-emerald-700 dark:text-emerald-400",
-  /** What it costs. */
-  price: "text-amber-700 dark:text-amber-400",
-} as const;
-
-/**
  * Card: display name + lifetime Token spend + status badges; context / pricing / key status folded
  * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
  * title row's right edge. All three lines are one click target opening the config dialog (the
@@ -2177,75 +2193,21 @@ export function ModelCard({
       }
     : { cacheRead: row.cacheRead, cacheWrite: row.cacheWrite, output: row.output };
   /**
-   * Every standing mark this row carries, in one horizontal row of its own.
+   * Every standing mark this row carries (model-tags.ts, shared with the model picker's rows),
+   * in one horizontal row of its own.
    *
    * They had been sharing the title's line, where each was width the model's NAME had to give
    * up — a long name truncated to make room for a mark that could have been read anywhere. A
    * row of their own costs one line and gives the name the whole of the first.
-   *
-   * Order is fixed rather than by which happen to be true, so the eye can learn where to look:
-   * what this Project chose (default, vision proxy) before what the model is (vision, fast,
-   * free) before what it costs today (the discount).
    */
-  const tags: Array<{ key: string; label: string; title?: string; className: string }> = [
-    ...(isDefault
-      ? [
-          {
-            key: "default",
-            label: S.models.default,
-            className: TAG_INK.status,
-          },
-        ]
-      : []),
-    ...(row.vision
-      ? [
-          {
-            key: "vision",
-            label: S.models.visionBadge,
-            className: TAG_INK.capability,
-          },
-        ]
-      : []),
-    ...(isVisionModel
-      ? [
-          {
-            key: "visionModel",
-            label: S.models.visionModelBadge,
-            className: TAG_INK.capability,
-          },
-        ]
-      : []),
-    ...(row.fastMode
-      ? [
-          {
-            key: "fastMode",
-            label: S.models.fastModeBadge,
-            className: TAG_INK.capability,
-          },
-        ]
-      : []),
-    ...(isFreeModel(row)
-      ? [
-          {
-            key: "free",
-            label: S.models.freeBadge,
-            className: TAG_INK.price,
-          },
-        ]
-      : []),
-    ...(discount
-      ? [
-          {
-            key: "discount",
-            label: S.models.discountBadge(discount.percent),
-            title: discount.peak
-              ? S.models.offPeakTitle(discount.percent, discount.peak)
-              : S.models.discountTitle(discount.percent),
-            className: TAG_INK.price,
-          },
-        ]
-      : []),
-  ];
+  const tags = modelTags({
+    isDefault,
+    vision: row.vision,
+    isVisionModel,
+    fastMode: row.fastMode,
+    free: isFreeModel(row),
+    discount,
+  });
 
   const priceLine = (a: string, b: string, c: string): string =>
     `${displayPrice(a, currency)} / ${displayPrice(b, currency)} / ${displayPrice(c, currency)}`;

@@ -163,6 +163,49 @@ export function restartDelayMs(attempt: number): number {
   return Math.min(1000 * 2 ** attempt, 8000);
 }
 
+/** A window whose page stays up this long after a reload is healthy again: the next crash reloads at once. */
+export const RENDERER_HEALTHY_MS = 60_000;
+
+/**
+ * How long the main window waits before reloading a page whose renderer died, by how many times
+ * it has died in a row (0-based): at once the first time, then 1s, 2s, 4s … up to 30s, so a
+ * page that crashes as it loads cannot spin the machine in a reload loop.
+ */
+export function rendererReloadDelayMs(attempt: number): number {
+  return attempt <= 0 ? 0 : Math.min(1000 * 2 ** (attempt - 1), 30_000);
+}
+
+/** What died, as the log names it: Electron's render-process-gone details and the page. */
+export interface RendererGone {
+  /** `webContents.getType()`: the app window's page is a `window`, a browser tab a `webview`. */
+  type: string;
+  id: number;
+  url: string;
+  reason: string;
+  exitCode: number;
+}
+
+/** The log line for a renderer that went away: which page, and why (never the page's query). */
+export function rendererGoneLine(gone: RendererGone): string {
+  const page = gone.url === "" ? "" : ` ${urlForLog(gone.url)}`;
+  return `a renderer is gone: ${gone.type} ${gone.id}${page} (${gone.reason}, exit code ${gone.exitCode})`;
+}
+
+/** The log line for another child process that went away (Electron's child-process-gone details). */
+export function childGoneLine(gone: {
+  type: string;
+  reason: string;
+  exitCode: number;
+  serviceName?: string;
+  name?: string;
+}): string {
+  const names = [gone.serviceName, gone.name].filter(
+    (name): name is string => name !== undefined && name !== "",
+  );
+  const named = names.length > 0 ? ` ${[...new Set(names)].join(" / ")}` : "";
+  return `a child process is gone: ${gone.type}${named} (${gone.reason}, exit code ${gone.exitCode})`;
+}
+
 /**
  * Whether closing the main window hides it into the tray instead of destroying it.
  *

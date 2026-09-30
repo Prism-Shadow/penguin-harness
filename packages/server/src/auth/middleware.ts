@@ -116,10 +116,52 @@ const ALLOWED_WRITE_CONTENT_TYPES = [
   "application/octet-stream",
 ];
 
+/**
+ * A workflow's own handler (`…/workflows/:id/api/*`) takes any body — an upload, a form of a
+ * program it relays — so there the content type cannot be the defense. What stands in for it
+ * is the browser's own account of where the request came from, which a page cannot forge:
+ * `Sec-Fetch-Site`, and `Origin` against `Host` for a browser that sends no fetch metadata.
+ * A request with neither is not a browser's, and carries no ambient cookie to ride on.
+ */
+const WORKFLOW_API = /^\/api\/projects\/[^/]+\/agents\/[^/]+\/workflows\/[^/]+\/api(\/|$)/;
+
+function fromThisOrigin(header: (name: string) => string | undefined): boolean {
+  const site = header("sec-fetch-site");
+  if (site !== undefined) return site === "same-origin";
+  const origin = header("origin");
+  if (origin === undefined) return true;
+  try {
+    return new URL(origin).host === header("host");
+  } catch {
+    return false;
+  }
+}
+
+const crossOrigin = () =>
+  new HttpError(
+    403,
+    "cross_origin_write",
+    "A request to a workflow's handler must come from this app's own pages.",
+  );
+
 export const jsonOnlyWrites: MiddlewareHandler = async (c, next) => {
+  // A workflow's handler answers every method, so its GET is whatever the workflow made it
+  // — not the read every other route's GET is. A `SameSite=Lax` cookie rides along on a
+  // cross-site top-level navigation, so `window.open` on another site would otherwise run
+  // that handler as the signed-in user; the browser's own account of where the request came
+  // from is what settles it, on every method rather than only on writes.
+  if (!WRITE_METHODS.has(c.req.method) && WORKFLOW_API.test(c.req.path)) {
+    if (!fromThisOrigin((name) => c.req.header(name))) throw crossOrigin();
+  }
   if (WRITE_METHODS.has(c.req.method)) {
     const contentType = c.req.header("content-type")?.toLowerCase();
-    if (contentType && !ALLOWED_WRITE_CONTENT_TYPES.some((t) => contentType.startsWith(t))) {
+    const forgeable =
+      contentType !== undefined &&
+      contentType !== "" &&
+      !ALLOWED_WRITE_CONTENT_TYPES.some((t) => contentType.startsWith(t));
+    if (forgeable && WORKFLOW_API.test(c.req.path)) {
+      if (!fromThisOrigin((name) => c.req.header(name))) throw crossOrigin();
+    } else if (forgeable) {
       throw new HttpError(
         415,
         "unsupported_media_type",

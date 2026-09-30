@@ -9,6 +9,7 @@
  */
 import type { OmniMessage, StopReason } from "../../omnimessage/index.js";
 import type { ApproveFn, ToolDefinitionConfig } from "../../interfaces/index.js";
+import type { ToolFs } from "./fs-port.js";
 
 /**
  * Tool execution context: runtime information needed to execute one tool call.
@@ -32,6 +33,12 @@ export interface ToolExecutionContext {
   detachSignal?: AbortSignal;
   /** The parent Agent's approval callback; run_subagent passes it through to the child Session so it inherits the parent's approval mode (unused by most tools). */
   approve?: ApproveFn;
+  /**
+   * The file system the file tools work through (see fs-port.ts): the Session's sandboxed
+   * helper for a confined Session, this process for an unconfined one, decided on first
+   * use. Absent = this process.
+   */
+  fs?: ToolFs;
 }
 
 /**

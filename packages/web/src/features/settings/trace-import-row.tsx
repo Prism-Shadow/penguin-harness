@@ -1,5 +1,5 @@
 /**
- * Trace import (System settings → General): a `.jsonl` Trace exported from another install
+ * Trace import (Settings → General): a `.jsonl` Trace exported from another install
  * becomes a conversation of the chosen Agent.
  *
  * Both halves of the destination are picked here, Project included. The endpoint is

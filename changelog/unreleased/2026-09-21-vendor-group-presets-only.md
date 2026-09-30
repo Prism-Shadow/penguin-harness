@@ -47,7 +47,7 @@ carries no gateway base URL and pins no protocol of its own. `unroutableVendorMo
 `PUT /api/projects/:projectId/models` refuses an entry the request introduces into a vendor group
 under an unroutable id, with `400 model_not_routable` and a message naming the entry and the way
 out; the Web App localizes it by code. An entry already stored under that key is written back
-untouched — see [backward compatibility](2026-09-21-backward-compatibility.md).
+untouched — see [backward compatibility](2026-09-21-backward-compatibility-vendor-groups.md).
 
 `penguin config model add` writes the config file directly rather than through that route, so it
 refuses the same configuration (exit code 1, nothing written) when the entry is new. An entry that

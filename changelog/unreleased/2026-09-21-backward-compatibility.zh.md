@@ -1,54 +1,22 @@
-# 向后兼容
+# ModelScope refresh token 向后兼容
 
 - **Date:** 2026-09-21
 - **Type:** process
-- **Scope:** `server`, `cli`, `web`, `core`
-- **PR:** [#843](https://github.com/Prism-Shadow/penguin-harness/pull/843)
-- **Breaking:** yes — 模型表 PUT 与 `penguin config model add` 若要把一方厂商分组无法路由的模型 id 写进去，一律拒绝（`400 model_not_routable` / 退出码 1）；已存的条目照常工作，也从不被改写
+- **Scope:** `server`, `model-catalog`
+- **PR:** [#814](https://github.com/Prism-Shadow/penguin-harness/pull/814)
 
 [English](2026-09-21-backward-compatibility.md)
 
-[一方厂商分组只承载内置模型](2026-09-21-vendor-group-presets-only.zh.md)关闭了一种写得进去、却从来跑不
-起来的配置。跨版本存活的只有一样：已经这样写下的条目。
+[ModelScope 授权改动](2026-09-21-modelscope-authorization.zh.md)新增服务端 refresh 元数据，同时不修改 Project TOML schema，也不让既有模型凭据失效。
 
-## 旧形态：厂商分组里没有协议、id 又无处可路由的条目
+## 既有数据
 
-`.project_config.toml` 里可能存在这样一条 `[[models]]`：`provider` 是一方厂商分组，没有 `client_type`，
-`model_id` 又不匹配 AgentHub 的任何一条路由规则。直到本版本之前，Web App 的新增弹窗与
-`penguin config model add` 都接受它。它从来没能服务过任何一次请求：AgentHub 在构造客户端时就抛出
-`<id> is not supported`。
+数据库 migration 10 新增 `model_provider_auth_tokens` 表，用于保存 refresh token 与 access token 到期时间。既有 `.project_config.toml` 文件无需迁移：当前凭据继续使用既有的 `api_key` 字段，本次改动前保存的 access token 在到期前仍然可用。既有 Project 通过**同步预置**加入 ModelScope 预置模型。
 
-选择：**长期容忍，并把它标出来。** 模型配置页每次保存都整表替换，如果连已存的行也拒绝，一条遗留条目就会
-卡住其余每一行后续的每一次编辑——包括用户正要去那里修的那项设置。因此拒绝只针对请求新引入的条目：按同一
-`(provider, model_id)` 键已存在的条目原样放行；改键（换 id，或移入厂商分组）按新条目判定，因为那正是「把
-它写进去」这个动作本身。
+## 回滚
 
-**用户无需做任何事。** 条目留在原处，与此前完全一样在请求时失败。模型配置页会在这样的卡片上给出标记，并
-提供**移到自定义分组**：点开即是已完成迁移的配置弹窗，在那里选择或检测协议——这是唯一能让该模型可用的操作，
-且完全可选。
+旧版本会忽略新表，并继续使用 Project 文件中的 access token。数据库回滚到版本 10 以下会删除已保存的 refresh 元数据，因此 ModelScope 请求只能继续到该 access token 过期；重新升级到当前版本后再次授权，即可恢复静默续期。
 
-## 另一种旧形态：在协议被钉住之前保存的内置模型
+## 移除计划
 
-预置行带的是写入该 Project 时目录的说法。`deepseek-flash` 就是现成的例子：AgentHub 只按 `deepseek-v4`
-这个子串路由 DeepSeek，而发布出来的 V4.1 Flash id 并不含它，因此目录行钉了
-`client_type = "deepseek-v4"`——在该钉住之前写下的 Project，`deepseek/deepseek-flash` 这一行一个协议都
-没有。按同一条规则，这一行无法路由，而它正是该 Project 的默认模型。
-
-它同样不会被拒绝（本就已存），而且出路不是迁移：**同步预置**会把目录的协议写回该条目。页面按目录是否持有
-这一对 `(provider, model_id)` 区分两类行，给出各自对应的操作，绝不把内置模型劝进自定义分组。预置同步的角标
-本就指向同一套合并，这里只是把后果落到行自身上。
-
-`penguin config model add` 采用同一分界：点名一个已存在的条目即更新它，这种形态的条目也不例外；在厂商分组
-下点名一个 id 无法路由的新条目，则在写入任何内容之前被拒绝。
-
-## 没有任何计划中的删除项
-
-这是一条校验规则，不是垫片：没有第二条读取旧格式的代码路径，这里也没有任何东西带有效期。唯一会改变该规则
-的是 AgentHub 自己放宽路由，而 `resolveModelEnv` 镜像的正是它——某一行一旦开始可路由，标记自然消失。
-
-## 兼容性
-
-升级不对任何人提出要求。本版本之前写下的配置照常读取与保存；厂商分组无法路由的条目继续留在表里，现在会在页
-面上直说这件事。变的是此后允许写入什么：引入这类条目的模型表 PUT 返回 `400 model_not_routable`，
-`penguin config model add` 以退出码 1 拒绝——把自己的模型加进厂商分组的脚本，改为加进自定义分组，或用
-`--client-type` 点名该模型所用的协议。
+只要仍支持从 schema 9 或更早版本升级，版本 10 的 migration 代码与版本 9 fixture 就会保留。将最低支持数据库基线提升到 9 以上的发布负责移除该 migration 代码与 fixture。只要模型组令牌刷新仍依赖 `model_provider_auth_tokens` 表，该表就继续保留在当前 schema 中。

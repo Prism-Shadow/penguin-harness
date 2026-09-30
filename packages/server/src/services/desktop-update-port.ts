@@ -73,16 +73,24 @@ export function parseTrayStatusMessage(data: unknown): DesktopTrayStatus | null 
   return { showTrayIcon: status.showTrayIcon, locale };
 }
 
-/** Connects the port to the service: stores validated status pushes, registers the command senders. */
+/**
+ * Connects the port to the service: stores validated status pushes, registers the command
+ * senders. A frame that fails to apply is logged and dropped: an exception escaping a port
+ * listener is uncaught, and an uncaught exception ends the server (index.ts).
+ */
 export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): void {
   port.on("message", (e) => {
-    const status = parseUpdaterStatusMessage(e.data);
-    if (status !== null) {
-      desktop.setUpdateStatus(status);
-      return;
+    try {
+      const status = parseUpdaterStatusMessage(e.data);
+      if (status !== null) {
+        desktop.setUpdateStatus(status);
+        return;
+      }
+      const tray = parseTrayStatusMessage(e.data);
+      if (tray !== null) desktop.setTrayStatus(tray);
+    } catch (err) {
+      console.error(`[server] dropped a frame from the desktop shell: ${String(err)}`);
     }
-    const tray = parseTrayStatusMessage(e.data);
-    if (tray !== null) desktop.setTrayStatus(tray);
   });
   desktop.onUpdateCommand((action) => {
     port.postMessage({

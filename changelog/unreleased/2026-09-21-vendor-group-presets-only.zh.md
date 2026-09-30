@@ -37,7 +37,7 @@ id 路由」：目录认识、不是 `custom`、没有网关 base URL、也不�
 
 `PUT /api/projects/:projectId/models` 拒绝本次请求新引入、且 id 无法路由的厂商分组条目，返回
 `400 model_not_routable`，报文点名该条目与出路，Web App 按 error code 本地化。已按该键存在的条目原样写回
-——见[向后兼容](2026-09-21-backward-compatibility.zh.md)。
+——见[向后兼容](2026-09-21-backward-compatibility-vendor-groups.zh.md)。
 
 `penguin config model add` 直接写配置文件、不经过该路由，因此对新条目以同样的口径拒绝（退出码 1，不写入
 任何内容）。已存在的条目照旧更新；显式 `--client-type`——或如 MiniMax M3 与直连 `deepseek-flash` 那样由
