@@ -376,9 +376,12 @@ export const zh = {
     groups: "模型分组",
     /** Footer toggle while models without a key are listed: turns the listing back off. */
     hideModelsWithoutKey: "隐藏未配置 key 的模型",
-    /** Footer keyboard legend; `mod` is "⌘" on macOS and "Ctrl+" elsewhere. */
-    hint: (mod: string): string =>
-      `↑↓ 选择 · ←→ 切换分组与列表 · ${mod}1–9 跳到分组 · Enter 确认 · Esc 关闭`,
+    /**
+     * Footer keyboard legend; `mod` is "⌥" on macOS and "Alt+" elsewhere. Only the two moves a
+     * list does not suggest by itself — ↑↓, Enter and Esc go without saying, and the footer
+     * shares its line with the key-less toggle.
+     */
+    hint: (mod: string): string => `←→ 切换分组与列表 · ${mod}1–9 跳到分组`,
   },
   workflows: {
     tabsLabel: "聊天与工作流",

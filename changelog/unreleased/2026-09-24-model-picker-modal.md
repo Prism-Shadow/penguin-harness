@@ -12,7 +12,7 @@ The model picker is now a dialog. It opens on the current model and makes a mode
 
 - A search field sits on top. Below it, a rail on the left lists the provider groups (logo, name, model count) in the order saved on the models page, and the right side lists the models of the active group.
 - Typing in the search field replaces the right side with matches from every group, grouped by provider with the best matches first. Clearing the search returns to the group view.
-- Each row shows the display name, the upstream id when it differs, and the same markers as before: the Free badge, the no-key mark, the Project default and the current-model check.
+- Each row is one line: the provider's logo, the display name, and right after the name the badges the model library's cards wear — Default, Vision, Fast, Free and a running discount — then the no-key mark and the current-model check. The upstream id is no longer printed; hovering a row shows it.
 - At phone width the dialog fills the screen, and the rail becomes a strip of group chips that scrolls sideways above the list.
 
 ## Focus and keyboard

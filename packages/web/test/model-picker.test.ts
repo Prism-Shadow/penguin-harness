@@ -1,9 +1,10 @@
 /**
  * The model-picker dialog's pure logic (model-picker-logic.ts): which groups the rail shows
- * and how the key-less models stay reachable, which group is active on open, how search
- * ranks and groups results across providers, and how the keyboard moves between the rail
- * and the list. A short source contract pins the wiring the node suite cannot render: every
- * host opens the dialog, and the dialog is the shared Modal rather than an overlay of its own.
+ * and how the key-less models stay reachable, which group is active on open, which marks a
+ * row wears, how search ranks and groups results across providers, and how the keyboard moves
+ * between the rail and the list. A short source contract pins what the node suite cannot
+ * render: every host opens the dialog, the dialog is the shared Modal rather than an overlay
+ * of its own, and a row reads as logo, name and marks rather than as an upstream id.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -17,9 +18,11 @@ import {
   matchRank,
   movePickerNav,
   pickerGroups,
+  pickerRowTags,
   searchPickerGroups,
   stepIndex,
 } from "../src/features/chat/model-picker-logic";
+import { S } from "../src/lib/strings";
 
 const configured = (
   provider: string,
@@ -109,6 +112,44 @@ describe("initialGroupId / entryRow: the opening focus", () => {
     const bare = pool.map((m) => keyless(m.provider, m.modelId));
     expect(initialGroupId(pickerGroups(bare, { showAll: false }), null)).toBe("deepseek");
     expect(initialGroupId([], null)).toBeNull();
+  });
+});
+
+describe("pickerRowTags: a row's marks", () => {
+  const keys = (tags: { key: string }[]) => tags.map((t) => t.key);
+  const priced = { cacheRead: 0.3, cacheWrite: 3.75, output: 15 };
+
+  it("follows the model card's order: default, vision, fast, then the discount", () => {
+    const m = {
+      provider: "custom",
+      modelId: "my-proxy",
+      fastMode: true,
+      pricing: priced,
+      discount: 0.2,
+    };
+    const tags = pickerRowTags(m, { provider: "custom", modelId: "my-proxy" });
+    expect(keys(tags)).toEqual(["default", "vision", "fastMode", "discount"]);
+    expect(tags[3]!.label).toBe(S.models.discountBadge(20));
+    expect(tags[3]!.title).toBe(S.models.discountTitle(20));
+  });
+
+  it("counts an unannotated entry as vision-capable, as everywhere else", () => {
+    expect(keys(pickerRowTags({ provider: "custom", modelId: "a" }, null))).toEqual(["vision"]);
+    expect(pickerRowTags({ provider: "custom", modelId: "a", vision: false }, null)).toEqual([]);
+  });
+
+  it("marks zero-cost rows free, and leaves unpriced ones unmarked", () => {
+    const free = { cacheRead: 0, cacheWrite: 0, output: 0 };
+    const row = { provider: "custom", modelId: "a", vision: false };
+    expect(keys(pickerRowTags({ ...row, pricing: free }, null))).toEqual(["free"]);
+    expect(keys(pickerRowTags({ ...row, pricing: priced }, null))).toEqual([]);
+    expect(keys(pickerRowTags(row, null))).toEqual([]);
+  });
+
+  it("marks only the default model of this Project as default", () => {
+    const row = { provider: "anthropic", modelId: "claude-sonnet-4-6", vision: false };
+    expect(keys(pickerRowTags(row, { provider: "openrouter", modelId: row.modelId }))).toEqual([]);
+    expect(keys(pickerRowTags(row, undefined))).toEqual([]);
   });
 });
 
@@ -221,5 +262,11 @@ describe("wiring (source contract)", () => {
   it("/model opens the same dialog", () => {
     expect(chatInput).toMatch(/<ModelPickerModal[\s\S]*?open=\{modelSwitchOpen\}/);
     expect(chatInput).not.toContain("ModelMenuList");
+  });
+
+  it("a row reads as its provider's logo, its name and its marks; the id is only its tooltip", () => {
+    expect(modal).toContain("<ProviderLogo provider={m.provider}");
+    expect(modal).toContain("pickerRowTags(m, defaultModel");
+    expect(modal).not.toMatch(/>\s*\{m\.modelId\}\s*</);
   });
 });

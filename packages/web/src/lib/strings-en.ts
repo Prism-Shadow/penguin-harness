@@ -342,8 +342,7 @@ export const en: Strings = {
   modelPicker: {
     groups: "Model groups",
     hideModelsWithoutKey: "Hide models without a key",
-    hint: (mod: string): string =>
-      `↑↓ to select · ←→ between groups and models · ${mod}1–9 to jump to a group · Enter to choose · Esc to close`,
+    hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,
   },
   workflows: {
     tabsLabel: "Chat and workflows",

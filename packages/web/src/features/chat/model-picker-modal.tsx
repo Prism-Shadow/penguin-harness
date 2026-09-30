@@ -4,6 +4,10 @@
  * the composer's pill, the dialog forms' field (both in model-select.tsx) and the in-session
  * `/model` switch.
  *
+ * - **Rows** read as the provider's logo, the model's name and its marks (pickerRowTags: the
+ *   models page's default / vision / fast / free / discount pills), then the no-key glyph and
+ *   the ✓. The upstream id is not printed; it is the row's tooltip, which also tells apart two
+ *   groups' models of the same name.
  * - **Opens on the current model**: its group is active and its row highlighted and scrolled
  *   into view. With nothing chosen, the first group with a configured key is active.
  * - **Search** replaces the right side with matches from every group, grouped by provider,
@@ -30,14 +34,14 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { Badge } from "../../components/ui/badge";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CloseButton } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { noAutofill, panelSearchClass } from "../../components/ui/input";
 import { ProviderLogo } from "../../components/ui/provider-logo";
-import { hasConfiguredKey, isFreeModel, sameModelRef } from "../models/model-grouping";
+import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { loadModelGroupOrder } from "../models/model-group-order";
+import { TAG_SHAPE } from "../models/model-tags";
 import { useProject } from "../../state/project";
 import {
   entryRow,
@@ -47,6 +51,7 @@ import {
   modelLabel,
   movePickerNav,
   pickerGroups,
+  pickerRowTags,
   searchPickerGroups,
   stepIndex,
 } from "./model-picker-logic";
@@ -92,9 +97,10 @@ export function ModelPickerModal({ open, onClose, title, ...body }: ModelPickerM
       title={title}
       headerless
       bare
-      // Full screen on a phone: the rail needs a strip of its own above the list, and a bottom
-      // sheet leaves too little height for both.
-      widthClass="sm:max-w-3xl max-sm:rounded-none max-sm:border-0"
+      // Sized to its rows — a logo, a name and a few pills on one line — so the list does not
+      // open an empty band between a name and its ✓. Full screen on a phone: the rail needs a
+      // strip of its own above the list, and a bottom sheet leaves too little height for both.
+      widthClass="sm:max-w-xl max-sm:rounded-none max-sm:border-0"
     >
       <ModelPickerBody {...body} onClose={onClose} />
     </Modal>
@@ -237,6 +243,9 @@ function ModelPickerBody({
     }
   };
 
+  // Discounts follow the clock (off-peak tiers); the body remounts per opening, so one reading
+  // per render is as fresh as the rows need.
+  const now = new Date();
   const renderRow = (m: ModelInfo, isHighlighted: boolean, onHover: () => void) => {
     const current = sameModelRef(m, value);
     const label = modelLabel(m);
@@ -251,36 +260,32 @@ function ModelPickerBody({
         <button
           type="button"
           tabIndex={-1}
+          title={label === m.modelId ? label : `${label} · ${m.modelId}`}
           // Mouse movement, not mouseenter: rows scrolling under a resting pointer while the
           // keyboard drives the list must not steal the highlight.
           onMouseMove={isHighlighted ? undefined : onHover}
           onClick={() => onPick(m)}
           className={`flex w-full items-center gap-2 px-4 py-2 text-left transition-colors duration-150 ${
-            isHighlighted ? "bg-gray-100 dark:bg-gray-800" : ""
-          }`}
+            current ? "text-gray-900 dark:text-gray-100" : "text-gray-700 dark:text-gray-300"
+          }${isHighlighted ? " bg-gray-100 dark:bg-gray-800" : ""}`}
         >
-          <span className="min-w-0 flex-1">
-            <span
-              className={`block truncate text-sm ${
-                current
-                  ? "font-medium text-gray-900 dark:text-gray-100"
-                  : "text-gray-700 dark:text-gray-300"
-              }`}
-            >
+          <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
+          {/* The marks follow the name rather than the row's far edge, so each reads as part of
+              the model it describes; a long name truncates before they give way. */}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className={`min-w-0 truncate text-sm${current ? " font-medium" : ""}`}>
               {label}
             </span>
-            {label !== m.modelId && (
-              <span className="block truncate font-mono text-xs text-gray-400 dark:text-gray-500">
-                {m.modelId}
+            {pickerRowTags(m, defaultModel, now).map((tag) => (
+              <span
+                key={tag.key}
+                title={tag.title}
+                className={`${TAG_SHAPE} shrink-0 ${tag.className}`}
+              >
+                {tag.label}
               </span>
-            )}
+            ))}
           </span>
-          {/* Zero-cost rows: the model library card's light-yellow "Free" badge. */}
-          {isFreeModel(m.pricing) && (
-            <span className="shrink-0">
-              <Badge tone="yellow">{S.models.freeBadge}</Badge>
-            </span>
-          )}
           {!hasConfiguredKey(m) && (
             <span
               role="img"
@@ -291,14 +296,7 @@ function ModelPickerBody({
               <GlyphIcon d={NO_KEY_ICON} size={ICON_SIZE.inlineGlyph} />
             </span>
           )}
-          {sameModelRef(m, defaultModel) && (
-            <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-              {S.models.default}
-            </span>
-          )}
-          <span className="w-3 shrink-0 text-center text-xs text-gray-700 dark:text-gray-300">
-            {current ? "✓" : ""}
-          </span>
+          <span className="w-3 shrink-0 text-center text-xs">{current ? "✓" : ""}</span>
         </button>
       </li>
     );
@@ -317,7 +315,7 @@ function ModelPickerBody({
       }}
       // The Modal panel adds the bottom safe-area inset below this, so the phone height leaves
       // room for it rather than pushing the search field under the status bar.
-      className="flex h-[calc(100dvh_-_env(safe-area-inset-bottom))] flex-col pt-[env(safe-area-inset-top)] sm:h-[min(36rem,85vh)] sm:pt-0"
+      className="flex h-[calc(100dvh_-_env(safe-area-inset-bottom))] flex-col pt-[env(safe-area-inset-top)] sm:h-[min(32rem,80vh)] sm:pt-0"
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2.5 dark:border-gray-800">
         <input

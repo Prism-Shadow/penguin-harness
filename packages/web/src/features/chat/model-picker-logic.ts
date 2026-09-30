@@ -6,6 +6,7 @@
  *   picker has always applied (visibleChatModels: configured-key models plus the selected and
  *   the default one, everything once "show all" is on or when nothing has a key);
  * - which group is active when the modal opens;
+ * - which marks a row wears;
  * - how search results rank and group across providers;
  * - how the arrow keys move between the group rail and the model list.
  *
@@ -13,13 +14,18 @@
  * the modal and the triggers share it without importing each other.
  */
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import type { ModelInfo } from "@prismshadow/penguin-server/api";
 import {
+  discountedPrice,
   groupModelRows,
   hasConfiguredKey,
+  isFreeModel,
   sameModelRef,
   visibleChatModels,
 } from "../models/model-grouping";
 import type { ModelCredentialRowLike, ModelRefValue, ModelRowLike } from "../models/model-grouping";
+import { modelTags } from "../models/model-tags";
+import type { ModelTag } from "../models/model-tags";
 
 /**
  * Display label for a model: the display name, or falls back to the upstream id (model_id is
@@ -110,6 +116,35 @@ export function initialGroupId<T extends ModelCredentialRowLike>(
   if (holding) return holding.id;
   const keyed = groups.find((g) => g.rows.some(hasConfiguredKey));
   return (keyed ?? groups[0])?.id ?? null;
+}
+
+/**
+ * The marks a picker row wears after its name — the models page's card marks (model-tags.ts),
+ * read off the models endpoint's DTO: the Project default, vision (an unannotated entry counts
+ * as supporting it, as everywhere else), fast mode, zero cost, and the saving in effect at
+ * `now`. The vision proxy is left to the models page: it says nothing about which model to
+ * chat with.
+ */
+export function pickerRowTags(
+  m: Pick<ModelInfo, "provider" | "modelId" | "vision" | "fastMode" | "pricing" | "discount">,
+  defaultModel: ModelRefValue | null | undefined,
+  now: Date = new Date(),
+): ModelTag[] {
+  return modelTags({
+    isDefault: sameModelRef(m, defaultModel),
+    vision: m.vision !== false,
+    fastMode: m.fastMode === true,
+    free: isFreeModel(m.pricing),
+    discount: discountedPrice(
+      {
+        provider: m.provider,
+        modelId: m.modelId,
+        ...(m.discount !== undefined ? { discount: m.discount } : {}),
+        ...m.pricing,
+      },
+      now,
+    ),
+  });
 }
 
 /** Where a row's highlight lands when its group becomes active: the current model, else the top. */
