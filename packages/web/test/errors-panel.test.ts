@@ -102,7 +102,9 @@ describe("ErrorsPanel rows", () => {
     };
     const html = render({ items: [folded] });
     expect(html).toContain("×3");
-    expect(html).toContain(`title="${S.usage.errorsFirstAt(formatDateTime(folded.firstTs))}"`);
+    expect(html).toContain(
+      `data-tooltip="${S.usage.errorsFirstAt(formatDateTime(folded.firstTs))}"`,
+    );
     // The time shown is the latest one.
     expect(html).toContain(formatDateTime(folded.ts));
   });

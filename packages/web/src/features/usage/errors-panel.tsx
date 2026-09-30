@@ -313,7 +313,7 @@ export function ErrorsPanel({
                     {/* The latest of the row's records; the first is in the tooltip. */}
                     <td
                       className="py-1.5 pr-2 align-top font-mono tabular-nums text-gray-400"
-                      title={
+                      data-tooltip={
                         e.count > 1 ? S.usage.errorsFirstAt(formatDateTime(e.firstTs)) : undefined
                       }
                     >
