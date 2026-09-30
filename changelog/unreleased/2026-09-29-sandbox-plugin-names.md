@@ -4,7 +4,6 @@
 - **Type:** refactor
 - **Scope:** `plugins`, `server`, `docs`, `release`, `ci`
 - **PR:** [Myriad-Dreamin/penguin-harness#68](https://github.com/Myriad-Dreamin/penguin-harness/pull/68)
-- **Breaking:** yes — a Project's `[plugins]` table must name the sandbox backends by their new package names
 
 [中文版](2026-09-29-sandbox-plugin-names.zh.md)
 
@@ -29,16 +28,3 @@ is the npm package `@penguinharness/<dir>`.
   backend name (`penguin-<x>`) and its contribution ids carry no package name, so saved sandbox
   settings are kept.
 - The backends stay private and unpublished; only the name changed.
-
-## Compatibility
-
-The old names are no longer recognized: nothing reads them as the new ones. A Project whose
-`[plugins]` table in `.project_config.toml` (the shared table or a machine's own) still names a
-backend the old way loads no backend under that name after upgrading. If its sandbox settings rely
-on that backend, every confined command fails closed.
-
-To migrate, rename the key in each affected table, for example
-`"@prismshadow/penguin-plugin-sandbox-bwrap" = "*"` → `"@penguinharness/sandbox-bwrap" = "*"`.
-Alternatively, remove the backend on the Plugins page and install it again. No released version
-wrote these names into a `[plugins]` table, so only development and pre-release data roots are
-affected.
