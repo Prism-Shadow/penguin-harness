@@ -15,13 +15,14 @@
   "license": "Apache-2.0",
   "files": [
     "dist",
+    "vendor",
     "README.md",
     "ifaces.json"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+    "build": "node ../../scripts/vendor-bwrap.mjs && node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
   },
   "devDependencies": {
     "@prismshadow/penguin-core": "workspace:*",

@@ -18,10 +18,10 @@
  * the 2026-09-16 refresh — the direct DeepSeek group down to the two names its pricing page
  * lists, TokenDance's deepseek-v4-flash-0731 / deepseek-v4-pro-0813 / kimi-k3 promotions, the
  * OpenRouter qwen/qwen3.8-27b row, the Fireworks AI and SiliconFlow additions, and both Qwen
- * groups' line-ups with their peak/off-peak DeepSeek rows: 2026-09-16 — per each provider's
- * docs; and the ModelScope group, whose preset ids were read from public model pages and
- * endpoint listings — their windows, vision flags and prices are NOT verified and say so on the
- * rows themselves: 2026-09-18 and 2026-09-20).
+ * groups' line-ups with their peak/off-peak DeepSeek rows: 2026-09-16; the OpenCode Go group:
+ * 2026-09-18 — per each provider's docs; and the ModelScope group, whose preset ids were read
+ * from public model pages and endpoint listings — their windows, vision flags and prices are
+ * NOT verified and say so on the rows themselves: 2026-09-18 and 2026-09-20).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -42,8 +42,8 @@
  * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
  * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
  * non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor ids are
- * auto-routed by AgentHub and leave client_type unset; six gateway groups (OpenRouter,
- * Fireworks AI, SiliconFlow, TokenDance, Qwen Pay-As-You-Go and Qwen Token Plan)
+ * auto-routed by AgentHub and leave client_type unset; seven gateway groups (OpenRouter,
+ * Fireworks AI, SiliconFlow, TokenDance, OpenCode Go, Qwen Pay-As-You-Go and Qwen Token Plan)
  * can't be auto-routed, so every gateway row **always pins an explicit client_type** and
  * inlines its preset base URL. ModelScope is a mixed-protocol aggregator like Penguin Go:
  * each row pins the AgentHub protocol that its upstream model should display and use.
@@ -55,7 +55,7 @@
  * against `client_type || model_id` and never looks at base_url, so an unpinned gateway id
  * would be routed by its own spelling — `openai/gpt-5.6-sol` would reach the first-party
  * GPT-5.6 client aimed at a gateway, and `anthropic/claude-opus-4.8` would throw outright
- * (dotted "4.8" matches neither "4-8" nor "-5"). Three protocols are pinned:
+ * (dotted "4.8" matches neither "4-8" nor "-5"). Four protocols are pinned:
  * - `openai-responses` for every OpenRouter row: OpenRouter serves the Responses API for
  *   every upstream at the same base URL the rows already carry, and the group pins the same
  *   protocol so a user-added entry inherits it;
@@ -64,7 +64,10 @@
  *   deprecated upstream alias, see canonicalClientType);
  * - `openai-chat-vllm-adapter` for the vLLM group, which is Chat Completions on the wire
  *   but maps the thinking level onto the served model's own chat template
- *   (VLLM_CLIENT_TYPE).
+ *   (VLLM_CLIENT_TYPE);
+ * - `ant-messages` for the OpenCode Go rows its endpoint table serves on the Anthropic
+ *   Messages API. That group pins row by row, since its models sit on three protocols: the
+ *   rest of it is `openai-chat` and `openai-responses` — see its block comment.
  * ModelScope's rows follow the same explicit-row rule as Penguin Go even though the endpoint is
  * one gateway: its Qwen rows pin the vLLM adapter, while its DeepSeek row pins `deepseek-v4` so
  * the frontend shows each model's actual AgentHub protocol instead of flattening the group.
@@ -122,7 +125,12 @@ export interface ModelProviderInfo {
   id: string;
   /** Display name (brand name, shared by Chinese and English UI). */
   label: string;
-  /** API key env var name (AgentHub reads this automatically when credential is blank). */
+  /**
+   * API key env var name: the pair AgentHub's client for this group's rows reads when handed no
+   * key. Whether a keyless row may actually lean on it is decided per entry by
+   * modelEnvFallback — a gateway group records OPENAI_* because that is what its generic
+   * client reads, and precisely for that reason its rows never get the fallback.
+   */
   envKey: string;
   /** base URL env var name. */
   envBaseUrlKey: string;
@@ -250,6 +258,10 @@ const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
 export const PENGUIN_GO_BASE_URL = "https://token.penguin.ooo/api";
+/** OpenCode Go's OpenAI-protocol base: the clients append /chat/completions or /responses. */
+const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
+/** OpenCode Go's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
+const OPENCODE_GO_MESSAGES_BASE_URL = "https://opencode.ai/zen/go";
 
 /** Provider id for the preconfigured Penguin Go relay group. */
 export const PENGUIN_GO_PROVIDER_ID = "penguin-go";
@@ -261,21 +273,24 @@ export const MODELSCOPE_PROVIDER_ID = "modelscope";
  * Provider list (web model page groups in this order BY DEFAULT — a user's dragged
  * arrangement is stored per Project and wins over this sequence; see the web's
  * model-group-order.ts). The sequence is a hand-curated display order: TokenDance leads as
- * the recommended group, Penguin Go follows, then DeepSeek as the default model's
- * provider, and custom
+ * the recommended group, Penguin Go follows, then OpenCode Go, then DeepSeek as the default
+ * model's provider, and custom
  * (custom OpenAI-protocol models) is always last; in between, gateways and first-party
  * vendors are interleaved by expected use rather than sorted by kind. Only this default
  * moves when the curation changes: a Project that has ever reordered its groups has every
  * key stored already, so it keeps the arrangement its user built.
  *
- * The six OpenAI-compatible gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance,
- * Qwen Pay-As-You-Go and Qwen Token Plan — reach their models through one of AgentHub's generic
- * OpenAI-protocol clients (`openai-responses` for OpenRouter, `openai-chat` for the rest).
- * Those clients read **OPENAI_API_KEY / OPENAI_BASE_URL** when the credential is blank, not
- * the gateway's own variable names, so every such gateway group records the OPENAI_* pair and the
- * env fallback hint the frontend shows is accurate either way. ModelScope also records the
- * OPENAI_* pair because its group credential is an api-inference access token even when a row's
- * protocol is model-specific.
+ * The seven gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance, OpenCode Go,
+ * Qwen Pay-As-You-Go and Qwen Token Plan — reach their models through AgentHub's generic
+ * protocol clients (`openai-responses` for OpenRouter, `openai-chat` for the rest, and all
+ * three generic clients within OpenCode Go). Those clients read the vendor variables
+ * (**OPENAI_API_KEY / OPENAI_BASE_URL**, and ANTHROPIC_* for OpenCode Go's `ant-messages`
+ * rows) when the credential is blank, not the gateway's own variable names, so every gateway
+ * group records the OPENAI_* pair as the fact it is — and that is exactly why a keyless
+ * gateway row is refused the fallback (see modelEnvFallback): the variable holds the user's
+ * OpenAI (or Anthropic) key, and a gateway is neither. ModelScope also records the OPENAI_*
+ * pair because its group credential is an api-inference access token even when a row's
+ * protocol is model-specific; its rows are refused the fallback on the same terms.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
@@ -304,6 +319,20 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://token.penguin.ooo/",
     modelsUrl: "https://token.penguin.ooo/",
     bridgeAuth: { flow: "penguin-go" },
+  },
+  {
+    // One key serves the whole group, but its models sit on three protocols (see the group's
+    // block comment in MODEL_CATALOG), so no group-level pin. The env pair records what its
+    // Chat Completions majority's client reads, and a model added here by hand gets the preset
+    // base URL below with openai-chat. Like every gateway's, a keyless row is refused that
+    // fallback (modelEnvFallback): the key goes on the rows.
+    id: "opencode-go",
+    label: "OpenCode Go",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://opencode.ai/auth",
+    modelsUrl: "https://opencode.ai/docs/go/",
+    gatewayBaseUrl: OPENCODE_GO_BASE_URL,
   },
   {
     id: "deepseek",
@@ -1826,6 +1855,330 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "deepseek-v4",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
+  // -- OpenCode Go (subscription gateway). The lineup, model ids, endpoints and per-token rates
+  // are from opencode.ai/docs/go (read 2026-09-18), which lists these 27 models. Context
+  // windows and input modalities are from the opencode-go provider on models.dev, the model
+  // registry OpenCode maintains (hy3 records its input cap instead; see its row). The gateway's
+  // /models listing also answers ten older ids the docs page does not list and models.dev
+  // marks deprecated (minimax-m2.5, kimi-k2.5, glm-5, deepseek-flash, qwen3.5-plus,
+  // mimo-v2-pro, mimo-v2-omni, hy3-preview, grok-4.5, omen-alpha); they are left out. So is
+  // union-alpha, a limited-time free model the page listed on 2026-09-17 and dropped by
+  // 2026-09-18.
+  //
+  // Protocol: the docs page's endpoint table puts each model on one path, and each row pins
+  // the generic client for it: `openai-chat` for /chat/completions and `openai-responses` for
+  // /responses, both on OPENCODE_GO_BASE_URL, and `ant-messages` for /v1/messages on
+  // OPENCODE_GO_MESSAGES_BASE_URL. The paths are not interchangeable: /chat/completions refuses
+  // grok-4.6 and fails for gpt-5.6-luna. The pins are load-bearing too: unpinned, gpt-5.6-luna,
+  // glm-*, kimi-k3, kimi-k2.6, deepseek-v4* and minimax-m3 would reach their first-party
+  // clients, and the other ids would not route at all. The gateway refuses a request that does
+  // not name its conversation (400 "Request is missing x-opencode-session"), which
+  // attributionHeaders does for this host on every request: a Session's requests carry its id,
+  // and a request outside any Session — a connectivity test, a vision probe — a fresh one.
+  //
+  // Vision: from models.dev, and checked live on 2026-09-17 and 2026-09-18 by sending an image
+  // of a number. Every vision row that could be reached read it back, and the text-only rows
+  // refused the image or answered without seeing it. The rows below that could not be reached
+  // keep models.dev's flag.
+  //
+  // Pricing: Go is a monthly subscription whose usage limits are dollar amounts. Each model has
+  // a monthly allowance, capped at 20% per 5 hours and 50% per week. A request draws the
+  // per-token rates the docs page publishes, and those are what the rows store. So the cost
+  // center shows allowance spent, not an invoice, as with the Qwen Token Plan rows, which store
+  // per-token list prices rather than the plan's fee. Where the page lists no cached-write rate,
+  // cache_write carries the input rate. Four rows are tiered and store their base tier: GPT-5.6
+  // Luna above 272K input tokens, Grok 4.6 above 200K, Qwen 3.7 Plus and Qwen 3.6 Plus above
+  // 256K. The four DeepSeek rows publish a peak and an off-peak rate on DeepSeek's own windows
+  // (peak 01:00-04:00 and 06:00-10:00 UTC on weekdays, i.e. DEEPSEEK_OFF_PEAK), off-peak
+  // exactly half, so they store the peak rate and declare that schedule. DeepSeek V4.1 Flash's
+  // running "4x" offer (ends 2026-09-20) raises its monthly allowance, not its rates, so no
+  // row carries a `discount`.
+  //
+  // Account opt-in and region: five models answer 403 until the key's OpenCode workspace opts
+  // in. The two Muse Spark Contributor models require consent to Meta training on prompts and
+  // completions. deepseek-v4.1-flash, deepseek-v4-flash and deepseek-v4-pro require consent to
+  // China-hosted serving. Some upstreams also refuse a caller's region: from a mainland China
+  // address, gpt-5.6-luna answers 403 unsupported_country_region_territory and both Muse Spark
+  // rows 403 "not available in your country", while gpt-5.6-luna passed every check from
+  // outside it. The rows that could not be reached follow the docs page and the protocol the
+  // other rows on their path proved. --
+  {
+    modelId: "deepseek-v4.1-flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.006, 0.3, 1.2),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-v4-flash",
+    displayName: "DeepSeek V4 Flash",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.006, 0.3, 1.2),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-v4-flash-vision-exp",
+    displayName: "DeepSeek V4 Flash Vision Exp",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.006, 0.3, 1.2),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-v4-pro",
+    displayName: "DeepSeek V4 Pro",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.044, 1.32, 3.96),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "glm-5.3",
+    displayName: "GLM-5.3",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.26, 1.4, 4.4),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "glm-5.3-flash",
+    displayName: "GLM-5.3 Flash",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.03, 0.15, 0.5),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "glm-5.2",
+    displayName: "GLM-5.2",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.26, 1.4, 4.4),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "glm-5.1",
+    displayName: "GLM-5.1",
+    provider: "opencode-go",
+    contextWindow: 202752,
+    pricing: usd(0.26, 1.4, 4.4),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "gpt-5.6-luna",
+    displayName: "GPT-5.6 Luna",
+    provider: "opencode-go",
+    contextWindow: 1050000,
+    pricing: usd(0.02, 0.25, 1.2),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "grok-4.6",
+    displayName: "Grok 4.6",
+    provider: "opencode-go",
+    contextWindow: 500000,
+    pricing: usd(0.5, 2, 6),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "hy4-preview",
+    displayName: "Hy4 preview",
+    provider: "opencode-go",
+    contextWindow: 1024000,
+    pricing: usd(0.042, 0.834, 2.501),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    // models.dev lists a 256,000-token context for Hy3 but caps its input at 192,000. Compaction
+    // derives from this field, so it records the input cap: at 256,000 a Session would keep
+    // sending prompts the upstream refuses until it compacted at ~254K.
+    modelId: "hy3",
+    displayName: "Hy3",
+    provider: "opencode-go",
+    contextWindow: 192000,
+    pricing: usd(0.035, 0.14, 0.58),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "kimi-k3",
+    displayName: "Kimi K3",
+    provider: "opencode-go",
+    contextWindow: 1048576,
+    pricing: usd(0.3, 3, 15),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "kimi-k2.7-code",
+    displayName: "Kimi K2.7 Code",
+    provider: "opencode-go",
+    contextWindow: 262144,
+    pricing: usd(0.19, 0.95, 4),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "kimi-k2.6",
+    displayName: "Kimi K2.6",
+    provider: "opencode-go",
+    contextWindow: 262144,
+    pricing: usd(0.16, 0.95, 4),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "longcat-2.0",
+    displayName: "LongCat 2.0",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.006, 0.3, 1.2),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "mimo-v2.5",
+    displayName: "MiMo-V2.5",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.0028, 0.14, 0.28),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "mimo-v2.5-pro",
+    displayName: "MiMo-V2.5-Pro",
+    provider: "opencode-go",
+    contextWindow: 1048576,
+    pricing: usd(0.003625, 0.435, 0.87),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "minimax-m3",
+    displayName: "MiniMax M3",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.06, 0.3, 1.2),
+    supportsVision: true,
+    clientType: "ant-messages",
+    baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
+  },
+  {
+    modelId: "minimax-m2.7",
+    displayName: "MiniMax M2.7",
+    provider: "opencode-go",
+    contextWindow: 204800,
+    pricing: usd(0.06, 0.375, 1.2),
+    supportsVision: false,
+    clientType: "ant-messages",
+    baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
+  },
+  {
+    modelId: "muse-spark-1.3-contributor",
+    displayName: "Muse Spark 1.3 Contributor",
+    provider: "opencode-go",
+    contextWindow: 1048576,
+    pricing: usd(0.002, 0.1, 0.2),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "muse-spark-1.2-contributor",
+    displayName: "Muse Spark 1.2 Contributor",
+    provider: "opencode-go",
+    contextWindow: 1048576,
+    pricing: usd(0.002, 0.1, 0.2),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "qwen3.8-flash",
+    displayName: "Qwen 3.8 Flash",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.016, 0.2, 0.47),
+    supportsVision: true,
+    clientType: "ant-messages",
+    baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
+  },
+  {
+    modelId: "qwen3.8-max",
+    displayName: "Qwen 3.8 Max",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.25, 2.5, 6),
+    supportsVision: true,
+    clientType: "ant-messages",
+    baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
+  },
+  {
+    modelId: "qwen3.7-max",
+    displayName: "Qwen 3.7 Max",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.5, 3.125, 7.5),
+    supportsVision: false,
+    clientType: "ant-messages",
+    baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
+  },
+  {
+    modelId: "qwen3.7-plus",
+    displayName: "Qwen 3.7 Plus",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.04, 0.5, 1.6),
+    supportsVision: true,
+    clientType: "ant-messages",
+    baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
+  },
+  {
+    modelId: "qwen3.6-plus",
+    displayName: "Qwen 3.6 Plus",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.05, 0.625, 3),
+    supportsVision: true,
+    clientType: "ant-messages",
+    baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
+  },
   // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model
   // table, and for the rows added 2026-09-16 per their model pages' input modalities).
   // Pricing and context windows from each model's page at www.qianwenai.com/models/<id>
@@ -2527,6 +2880,55 @@ export function providerClientType(providerId: string): string | undefined {
   return providerInfo(providerId)?.clientType;
 }
 
+/**
+ * A first-party vendor group: one this catalog knows, that is not `custom`, carries no
+ * gateway endpoint and pins no protocol of its own — DeepSeek, Google, OpenAI, Anthropic,
+ * Z.AI, Moonshot, MiniMax, and the Penguin Go relay.
+ *
+ * What distinguishes it is that nothing in it decides a protocol: its entries persist no
+ * `client_type`, so AgentHub places every one of them by the spelling of the upstream model
+ * id alone. That makes the group's contents a closed set — the ids this catalog ships, plus
+ * the few whose preset pins a protocol because their own id would not route — and an id
+ * outside it cannot be started at all, whatever else is configured on the entry. Every
+ * surface that has to answer "may a model be added here, and is this one routable?" reads
+ * the group's shape through this one predicate rather than re-deriving it: the models page's
+ * group actions and its config dialog, the models PUT, and the CLI's `config model add`.
+ *
+ * Every other group answers the protocol question by itself and therefore takes any id the
+ * endpoint serves: `custom` and user-defined groups detect or pick it, a gateway inherits its
+ * preset's, and a group-level pin (OpenRouter, vLLM) hands it to every entry.
+ */
+export function isVendorGroup(providerId: string): boolean {
+  const info = providerInfo(providerId);
+  return (
+    info !== undefined &&
+    info.id !== "custom" &&
+    info.gatewayBaseUrl === undefined &&
+    info.clientType === undefined
+  );
+}
+
+/**
+ * Whether this entry would be written into a vendor group with an id AgentHub cannot place
+ * — the configuration that produces `"<id> is not supported. Supported client types: …"` on
+ * the first request, and nothing before it.
+ *
+ * `resolveModelEnv` is the authority: it mirrors AutoLLMClient's routing rules branch for
+ * branch and returns undefined on exactly the ids that client rejects. A blank id is not a
+ * routing failure — the entry is still being typed, and the required-field validation is
+ * what has something to say about it.
+ */
+export function unroutableVendorModel(
+  provider: string,
+  modelId: string,
+  clientType?: string,
+): boolean {
+  const id = modelId.trim();
+  if (id === "" || !isVendorGroup(provider)) return false;
+  const pinned = clientType?.trim();
+  return resolveModelEnv(id, pinned === "" ? undefined : pinned) === undefined;
+}
+
 /** Env var fallback for a single model (the var names AgentHub's client actually reads when api_key / base_url is blank). */
 export interface ModelEnvInfo {
   envKey: string;
@@ -2597,7 +2999,9 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
  * AgentHub client selected by model id / protocol. Aggregate groups are deliberately different:
  * Penguin Go's Google and DeepSeek routes share one relay credential, and ModelScope's Qwen and
  * DeepSeek routes share one api-inference token, so the provider-scoped variable must win over
- * the selected protocol everywhere the harness resolves a key.
+ * the selected protocol everywhere the harness resolves a key. Whether a keyless row may use
+ * that variable is modelEnvFallback's decision: ModelScope's is OPENAI_*, a vendor variable, so
+ * its rows get no fallback.
  */
 export function resolveProviderModelEnv(
   provider: string,
@@ -2611,6 +3015,244 @@ export function resolveProviderModelEnv(
       : { envKey: group.envKey, envBaseUrlKey: group.envBaseUrlKey };
   }
   return resolveModelEnv(modelId, clientType);
+}
+
+/**
+ * The endpoints AgentHub's vendor clients talk to when handed no base URL, per credential
+ * variable: the OpenAI and Anthropic SDK defaults, Google's Generative Language host, the
+ * defaults the vendor-specific clients (deepseek_v4, glm5_3, kimi_k3, minimax_m3) carry, plus
+ * the second official host where a vendor runs two (Z.AI's mainland bigmodel.cn, Moonshot's
+ * international .ai, MiniMax's mainland minimaxi.com). A key taken from the environment is
+ * sent only to one of these — see modelEnvFallback.
+ */
+export const VENDOR_ENDPOINTS: Readonly<Record<string, readonly string[]>> = {
+  OPENAI_API_KEY: ["https://api.openai.com/v1"],
+  ANTHROPIC_API_KEY: ["https://api.anthropic.com"],
+  GEMINI_API_KEY: ["https://generativelanguage.googleapis.com"],
+  DEEPSEEK_API_KEY: [DEEPSEEK_BASE_URL],
+  ZAI_API_KEY: ["https://api.z.ai/api/paas/v4", "https://open.bigmodel.cn/api/paas/v4"],
+  MOONSHOT_API_KEY: ["https://api.moonshot.cn/v1", "https://api.moonshot.ai/v1"],
+  MINIMAX_API_KEY: [MINIMAX_BASE_URL, "https://api.minimaxi.com/v1"],
+};
+
+/**
+ * Endpoint equality for the credential rule: scheme and host compared case-insensitively
+ * (with the port), the path without trailing slashes; a value that does not parse as a URL
+ * matches nothing.
+ */
+export function sameEndpoint(a: string, b: string): boolean {
+  const norm = (value: string): string | undefined => {
+    try {
+      const u = new URL(value.trim());
+      return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
+    } catch {
+      return undefined;
+    }
+  };
+  const na = norm(a);
+  return na !== undefined && na === norm(b);
+}
+
+/** What the credential rule reads off a model entry: the paired reference, the pinned protocol and the endpoint. */
+export interface ModelCredentialShape {
+  provider: string;
+  modelId: string;
+  /** Pinned AgentHub client type; blank or absent = auto-routed by model id. */
+  clientType?: string | undefined;
+  /** Inline base URL; blank or absent = the routed client's default endpoint (or its `*_BASE_URL` variable). */
+  baseUrl?: string | undefined;
+}
+
+/** The environment pair a keyless entry may fall back to, and who reads it. */
+export interface ModelEnvFallback extends ModelEnvInfo {
+  /**
+   * `true`: AgentHub's routed client reads this pair itself, so the harness hands it no key
+   * and the client's own environment lookup — and its own error when the variable is unset —
+   * apply unchanged. `false`: a provider-scoped pair no AgentHub client knows (the Penguin Go
+   * relay's); the harness reads it and passes the value explicitly, refusing when it is unset.
+   */
+  readByClient: boolean;
+}
+
+/**
+ * The environment fallback a keyless model entry is allowed, or `undefined` when it gets
+ * none and must carry its own key.
+ *
+ * AgentHub's clients read a vendor variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …)
+ * whenever they are handed no key, whatever base URL they were pointed at — so a keyless row
+ * in a gateway group would send the user's own OpenAI or Anthropic key to the gateway. The
+ * rule here is about the **destination**, not the group's label: environment keys are for
+ * official endpoints only.
+ *
+ * - No base URL on the entry: the routed client talks to its own default endpoint, or to the
+ *   `*_BASE_URL` the user set beside the key — that pairing is AgentHub's own and is left to
+ *   it entirely; the client reads the pair itself.
+ * - A base URL that is one of that vendor's own official endpoints (VENDOR_ENDPOINTS; the
+ *   catalog pins the DeepSeek and MiniMax rows this way) — allowed.
+ * - Anything else — every gateway group's preset endpoint, custom / user-defined / vLLM rows
+ *   with their own endpoints, a vendor row re-pointed at a proxy — refused. A row's own base
+ *   URL equal to the `*_BASE_URL` variable's value earns no exception either (per the user:
+ *   environment keys are for official endpoints only): put the key on the row.
+ * - A group with a provider-scoped pair (Penguin Go, whose key no AgentHub client reads) is
+ *   allowed that pair for every one of its rows, regardless of base URL; the harness reads it.
+ *   A group pair that is itself a vendor variable (ModelScope records OPENAI_*) is not
+ *   provider-scoped: its rows follow the destination rule like any other gateway's.
+ *
+ * Pure, so the server and the models page answer the same question for the preview, the
+ * dialog hint and the refusal.
+ */
+export function modelEnvFallback(entry: ModelCredentialShape): ModelEnvFallback | undefined {
+  const clientType = entry.clientType?.trim() || undefined;
+  const clientPair = resolveModelEnv(entry.modelId, clientType);
+  const groupPair = resolveProviderModelEnv(entry.provider, entry.modelId, clientType);
+  // VENDOR_ENDPOINTS keys every variable an AgentHub client reads (each pair resolveModelEnv
+  // can name), so a group pair outside it is one only the harness knows.
+  if (
+    groupPair !== undefined &&
+    groupPair.envKey !== clientPair?.envKey &&
+    !Object.hasOwn(VENDOR_ENDPOINTS, groupPair.envKey)
+  ) {
+    return { ...groupPair, readByClient: false };
+  }
+  if (clientPair === undefined) return undefined;
+  const baseUrl = entry.baseUrl?.trim();
+  if (!baseUrl) return { ...clientPair, readByClient: true };
+  if ((VENDOR_ENDPOINTS[clientPair.envKey] ?? []).some((own) => sameEndpoint(own, baseUrl))) {
+    return { ...clientPair, readByClient: true };
+  }
+  return undefined;
+}
+
+/**
+ * The variable a keyless entry added to this group with the group's defaults falls back to,
+ * or `undefined` when such an entry gets none: gateways (a preset base URL), the pinned
+ * self-hosted group (vLLM), custom and user-defined groups all point away from the vendors'
+ * own endpoints. The group-level key dialog's hint and the group header read this.
+ */
+export function providerEnvFallbackKey(providerId: string): string | undefined {
+  const info = providerInfo(providerId);
+  if (
+    info === undefined ||
+    info.id === "custom" ||
+    info.gatewayBaseUrl !== undefined ||
+    info.clientType !== undefined
+  ) {
+    return undefined;
+  }
+  return info.envKey;
+}
+
+/**
+ * A model entry that cannot be given to an AgentHub client as configured: no key, and no
+ * environment variable it may use; or a relay row with no endpoint for its relay key. The
+ * message names the model and what to do, and says "API key" so hosts that classify
+ * credential errors by message (the server's `isMissingCredential`) file it with the SDKs'
+ * own missing-credential errors.
+ */
+export class ModelCredentialError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelCredentialError";
+  }
+}
+
+/** What a client is constructed with: an explicit key, or none when the routed client may read its own variable. */
+export interface ResolvedModelCredential {
+  apiKey?: string;
+  baseUrl?: string;
+}
+
+/**
+ * The credential an AgentHub client is built with for a **model entry**, applying
+ * modelEnvFallback's rule (the one function every path shares): Session creation and resume,
+ * the vision describer, the connectivity / speed / vision probes and the utility completion
+ * go through here; the endpoint listing and protocol detection, which have a protocol and a
+ * URL but no entry, apply the same rule through endpointEnvApiKey.
+ *
+ * - An inline key (the entry's, or an explicit override) is used as given.
+ * - No key, fallback allowed and read by the client: no key is handed over, the client reads
+ *   the pair itself — byte-for-byte what happened before this rule existed, including the
+ *   SDK's own error when the variable is unset too (an entry with no base URL under a Bedrock
+ *   `ANTHROPIC_BASE_URL` and no `ANTHROPIC_API_KEY` stays valid).
+ * - No key, fallback allowed but provider-scoped: the variable's value is passed explicitly,
+ *   and an unset variable is refused here rather than letting the client read a vendor's.
+ * - No key, no fallback: refused with a ModelCredentialError before any client exists.
+ * - A provider-scoped group's row (Penguin Go) is also refused without a base URL, whatever
+ *   the key's source: the relay key must not travel to the vendor's default endpoint.
+ */
+export function resolveModelCredential(
+  entry: ModelCredentialShape & { apiKey?: string | undefined },
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): ResolvedModelCredential {
+  const ref = `${entry.provider}/${entry.modelId}`;
+  const baseUrl = entry.baseUrl || undefined;
+  const apiKey = entry.apiKey || undefined;
+  const fallback = modelEnvFallback(entry);
+  if (fallback !== undefined && !fallback.readByClient && !baseUrl?.trim()) {
+    throw new ModelCredentialError(
+      `Model ${ref} has no base URL. Its API key belongs to the ${providerInfo(entry.provider)?.label ?? entry.provider} endpoint and cannot be sent to the vendor's default endpoint: set the base URL on the model entry.`,
+    );
+  }
+  if (apiKey !== undefined) return { apiKey, ...(baseUrl !== undefined ? { baseUrl } : {}) };
+  if (fallback === undefined) {
+    // A Bedrock region on the entry is not "not the vendor's": it is AWS, whose usual
+    // credential is the default provider chain rather than a key. Until AgentHub stops
+    // letting its Bedrock client attach ANTHROPIC_API_KEY, a keyless row here is refused,
+    // and the message says what still works.
+    if (baseUrl?.trim().toLowerCase().startsWith("bedrock://")) {
+      throw new ModelCredentialError(
+        `Model ${ref} has no API key. A Bedrock endpoint set on the model entry cannot fall back to the environment yet: set the entry's AWS key (access,secret), or leave its base URL empty and set ANTHROPIC_BASE_URL=${baseUrl.trim()} in the server environment.`,
+      );
+    }
+    throw new ModelCredentialError(
+      `Model ${ref} has no API key. Its endpoint is not the vendor's own, so no environment variable is used for it: set the API key on the model entry.`,
+    );
+  }
+  if (fallback.readByClient) return baseUrl !== undefined ? { baseUrl } : {};
+  const value = env[fallback.envKey]?.trim();
+  if (!value) {
+    throw new ModelCredentialError(
+      `Model ${ref} has no API key: set one on the model entry, or set ${fallback.envKey} in the server environment.`,
+    );
+  }
+  return { apiKey: value, ...(baseUrl !== undefined ? { baseUrl } : {}) };
+}
+
+/**
+ * The key the environment lends a bare endpoint spoken to on a generic protocol client —
+ * the add-group listing and the protocol probes, which have a base URL and a protocol but no
+ * entry yet. Same rule as modelEnvFallback: only a vendor's own endpoint gets the vendor's
+ * key; a gateway or a private server gets none.
+ */
+export function endpointEnvApiKey(
+  clientType: string,
+  baseUrl: string | undefined,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string | undefined {
+  const fallback = modelEnvFallback({ provider: "custom", modelId: "", clientType, baseUrl });
+  if (fallback === undefined) return undefined;
+  return env[fallback.envKey]?.trim() || undefined;
+}
+
+/**
+ * The variable the UI may present as covering a keyless entry — the masked preview on the
+ * card, the dialog's "leave empty to use …" hint — or `undefined` when nothing should be
+ * promised. Narrower than modelEnvFallback on purpose: a row with no base URL in a group whose
+ * defaults point away from the vendor (the vLLM presets, a custom row saved without an
+ * endpoint) does fall back to OPENAI_API_KEY under the rule, but presenting that as "key
+ * configured" would encourage exactly the misconfiguration that sends the OpenAI key and a
+ * self-hosted model id to api.openai.com. The preview therefore needs the row to name a vendor
+ * endpoint itself, or to sit in a group whose defaults are the vendor's (providerEnvFallbackKey).
+ * The server's `GET /models` preview and the web dialog's hint both read this, so the two
+ * cannot disagree.
+ */
+export function modelEnvPreviewKey(entry: ModelCredentialShape): string | undefined {
+  const fallback = modelEnvFallback(entry);
+  if (fallback === undefined) return undefined;
+  if (entry.baseUrl?.trim() || providerEnvFallbackKey(entry.provider) !== undefined) {
+    return fallback.envKey;
+  }
+  return undefined;
 }
 
 /**
@@ -2705,9 +3347,10 @@ export function fastModeProtocol(
  * config, avoiding duplicate hand-written copies). `provider` and `model_id` are persisted as
  * separate fields (`model_id` is the plain upstream id); models whose upstream id can be
  * auto-routed by AgentHub leave client_type unset; gateway models (OpenRouter / SiliconFlow)
- * always pin a client_type — openai-responses for the OpenRouter rows, openai-chat for the
- * rest — and inline a preset base_url. The direct MiniMax M3 entry also pins its protocol and
- * endpoint. No secrets are included, so only an API key is needed.
+ * always pin a client_type — openai-responses for the OpenRouter rows, each OpenCode Go row's
+ * own endpoint protocol, openai-chat for the rest — and inline a preset base_url. The direct
+ * MiniMax M3 entry also pins its protocol and endpoint. No secrets are included, so only an
+ * API key is needed.
  *
  * Pricing is written as the LIST price the catalog records (a scheduled row's PEAK price),
  * never a discounted number. What is on disk then stays true whatever promotion is live and
@@ -2859,10 +3502,14 @@ function hostMatches(host: string, domain: string): boolean {
  *   takes priority over any App URL recorded on the API key — the same key may be in use by
  *   other tools, so the per-request value is the accurate one.
  * - OpenCode (https://opencode.ai): `x-opencode-session` alone, and it names the conversation
- *   rather than the app — the gateway keys its backend routing on it, so the value has to hold
- *   still across a Session's requests and differ between Sessions. It is therefore sent only
- *   when a Session id is at hand: a stand-in constant would file every conversation under one
- *   session, which serves the gateway worse than naming none.
+ *   rather than the app — the gateway keys its routing and prompt caching on it, so the value
+ *   has to hold still across a conversation's requests and differ between conversations. It
+ *   is **always** sent: the gateway refuses a request that names none (400 "Request is missing
+ *   x-opencode-session"). A Session's requests carry the Session's id; a request with none (a
+ *   connectivity test, a vision probe) gets a fresh random id, making it a conversation of its
+ *   own — never a shared constant, which would file every such request under one session. A
+ *   caller that sends several requests without a Session computes the headers once and
+ *   reuses them (GenerativeModel does, per instance), so they share that one id.
  */
 export function attributionHeaders(
   baseUrl: string | undefined,
@@ -2878,6 +3525,9 @@ export function attributionHeaders(
     };
   }
   if (hostMatches(host, "tokendance.space")) return { "X-App-URL": APP_URL };
-  if (hostMatches(host, "opencode.ai") && sessionId) return { "x-opencode-session": sessionId };
+  if (hostMatches(host, "opencode.ai")) {
+    // The global Web Crypto rather than node:crypto: this module is bundled into the web app too.
+    return { "x-opencode-session": sessionId || globalThis.crypto.randomUUID() };
+  }
   return undefined;
 }

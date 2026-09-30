@@ -1,19 +1,20 @@
 /**
- * The conversation's selection menu, rendered (react-dom/server static markup, and the rows'
- * own element tree for their click handlers — node env, no DOM): the rows it draws, and what
- * each does with the selection it was opened on. "Add to conversation" stages a chip
+ * The conversation's own menu, rendered (react-dom/server static markup, and the rows' own
+ * element tree for their click handlers — node env, no DOM): the rows it draws, and what each
+ * does with the selection or the link it was opened on. "Add to conversation" stages a chip
  * through the composer's control — the same `addReference` the Files panel stages through —
  * and that chip shows the excerpt rather than a path; Copy writes the selection and confirms
- * with a toast, the menu-row convention.
+ * with a toast, the menu-row convention. A link's rows open it in the built-in browser or
+ * outside the app, or copy its address.
  *
- * Reading the selection off the page and anchoring the panel are DOM work this environment
- * cannot run; the rules deciding both are pinned in selection-menu.test.ts.
+ * Reading the selection and the link off the page and anchoring the panel are DOM work this
+ * environment cannot run; the rules deciding them are pinned in selection-menu.test.ts.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement, isValidElement } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SelectionMenuRows } from "../src/features/chat/stream-selection-menu";
+import { LinkMenuRows, SelectionMenuRows } from "../src/features/chat/stream-selection-menu";
 import type { CapturedSelection } from "../src/features/chat/stream-selection-menu";
 import type { ComposerControl } from "../src/features/chat/chat-input";
 import { ReferenceChip } from "../src/features/chat/reference-chip";
@@ -36,6 +37,20 @@ vi.mock("../src/components/ui/toast", async (importOriginal) => {
   };
 });
 
+/** Links handed to the built-in browser (its real call talks to the server and the dock). */
+const openedInBrowser = vi.hoisted(() => [] as string[]);
+
+vi.mock("../src/features/builtin-browser/browser-actions", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../src/features/builtin-browser/browser-actions")>();
+  return {
+    ...actual,
+    openLinkInBrowser: (url: string) => {
+      openedInBrowser.push(url);
+    },
+  };
+});
+
 const EXCERPT = "Run the migration first.\nThen restart the server so it picks up the new schema.";
 
 /** A selection as the stream captures it: the text as selected (a trailing newline included). */
@@ -49,6 +64,12 @@ function rows(props: Parameters<typeof SelectionMenuRows>[0]): Row[] {
   return ([] as ReactNode[]).concat(fragment.props.children).filter(isValidElement) as Row[];
 }
 
+/** The same for a link's rows. */
+function linkRows(props: Parameters<typeof LinkMenuRows>[0]): Row[] {
+  const fragment = LinkMenuRows(props) as ReactElement<{ children: ReactNode }>;
+  return ([] as ReactNode[]).concat(fragment.props.children).filter(isValidElement) as Row[];
+}
+
 /** A row's visible label: its text children, without the glyph. */
 const label = (row: Row) =>
   ([] as ReactNode[])
@@ -59,6 +80,7 @@ const label = (row: Row) =>
 afterEach(() => {
   setActiveStrings(zh);
   toasts.length = 0;
+  openedInBrowser.length = 0;
   vi.unstubAllGlobals();
 });
 
@@ -146,5 +168,93 @@ describe("Copy", () => {
     expect(writeText).toHaveBeenCalledExactlyOnceWith(SELECTION.text);
     expect(toasts).toEqual([S.common.copied]);
     expect(onDone).toHaveBeenCalledExactlyOnceWith(SELECTION);
+  });
+});
+
+const HREF = "https://example.com/your-orders";
+
+describe("LinkMenuRows", () => {
+  it("draws Open in built-in browser, Open in system browser, then Copy link address", () => {
+    const html = renderToStaticMarkup(
+      createElement(LinkMenuRows, {
+        href: HREF,
+        builtinBrowser: true,
+        desktopShell: true,
+        onDone: () => {},
+      }),
+    );
+    const at = [
+      S.chat.linkMenu.openInBuiltinBrowser,
+      S.chat.linkMenu.openExternal,
+      S.chat.linkMenu.copyLink,
+    ].map((name) => html.indexOf(`${name}</button>`));
+    expect(at.every((i) => i > -1)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+
+  it("leaves the built-in browser out where it cannot run, and names a new tab in a browser", () => {
+    const html = renderToStaticMarkup(
+      createElement(LinkMenuRows, {
+        href: HREF,
+        builtinBrowser: false,
+        desktopShell: false,
+        onDone: () => {},
+      }),
+    );
+    expect(html).not.toContain(S.chat.linkMenu.openInBuiltinBrowser);
+    expect(html).not.toContain(S.chat.linkMenu.openExternal);
+    expect(html).toContain(`${S.chat.linkMenu.openInNewTab}</button>`);
+    expect(html).toContain(`${S.chat.linkMenu.copyLink}</button>`);
+  });
+
+  it("follows the UI language", () => {
+    setActiveStrings(en);
+    const html = renderToStaticMarkup(
+      createElement(LinkMenuRows, {
+        href: HREF,
+        builtinBrowser: true,
+        desktopShell: true,
+        onDone: () => {},
+      }),
+    );
+    expect(html).toContain("Open in built-in browser</button>");
+    expect(html).toContain("Open in system browser</button>");
+    expect(html).toContain("Copy link address</button>");
+  });
+
+  it("opens the link in the built-in browser through the browser's own new tab", () => {
+    const onDone = vi.fn();
+    const row = linkRows({ href: HREF, builtinBrowser: true, desktopShell: true, onDone }).find(
+      (r) => label(r) === S.chat.linkMenu.openInBuiltinBrowser,
+    );
+    row!.props.onClick();
+    expect(openedInBrowser).toEqual([HREF]);
+    expect(onDone).toHaveBeenCalledOnce();
+  });
+
+  it("opens the link outside the app as a new window with no handle back", () => {
+    const open = vi.fn();
+    vi.stubGlobal("window", { open });
+    const onDone = vi.fn();
+    const row = linkRows({ href: HREF, builtinBrowser: false, desktopShell: true, onDone }).find(
+      (r) => label(r) === S.chat.linkMenu.openExternal,
+    );
+    row!.props.onClick();
+    expect(open).toHaveBeenCalledExactlyOnceWith(HREF, "_blank", "noopener,noreferrer");
+    expect(openedInBrowser).toEqual([]);
+    expect(onDone).toHaveBeenCalledOnce();
+  });
+
+  it("copies the address and confirms with a toast, as Copy does", () => {
+    const writeText = vi.fn(async () => {});
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const onDone = vi.fn();
+    const row = linkRows({ href: HREF, builtinBrowser: true, desktopShell: true, onDone }).find(
+      (r) => label(r) === S.chat.linkMenu.copyLink,
+    );
+    row!.props.onClick();
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(HREF);
+    expect(toasts).toEqual([S.common.copied]);
+    expect(onDone).toHaveBeenCalledOnce();
   });
 });

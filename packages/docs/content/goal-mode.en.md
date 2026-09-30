@@ -148,16 +148,18 @@ Deleting the Session deletes its scratchpad, and `GOAL.json` with it.
 
 Goal mode is not built into the core. The `goal` plugin is a [hook package](/skills#hook-packages) with two scripts:
 
-- `start.mjs` is its [`user_prompt` hook](/agent-loop#user-prompt-hooks). It writes the goal file and answers the submitted prompt with round 1's protocol message as its expansion `context`.
+- `start.mjs` is its host-triggered [`user_prompt` hook](/agent-loop#user-prompt-hooks), marked `"trigger": "host"`: it runs when a goal starts, never on an ordinary prompt. It writes the goal file and answers with round 1's protocol message as its expansion `context`.
 - `stop.mjs` is a [stop hook](/agent-loop#stop-hooks). After every Task it reads the Session's Trace and answers `continue` with the next round's message, or `stop`.
 
 Nothing in the core SDK knows what a goal is. The loop that consults hooks is generic.
 
 ### Starting a goal
 
-The server asks the Session to run the goal package's `user_prompt` hook: the installed `agent_state/hooks/goal/start.mjs`, which receives `{ hook: "user_prompt", session_id, scratchpad_dir, prompt, budget }` on stdin. The server then starts the goal run with your message exactly as typed, followed by the `{ context }` the script prints, stamped `sender: "harness"`. The stop hook takes it from there.
+The server asks the Session to run the goal package's host-triggered `user_prompt` command through `Session.runUserPromptHook("goal", prompt, { budget })`: the installed `agent_state/hooks/goal/start.mjs`, which receives `{ hook: "user_prompt", session_id, trace_path, scratchpad_dir, prompt, budget }` on stdin. The server then starts the goal run with your message exactly as typed, followed by the `{ context }` the script prints, stamped `sender: "harness"`. The stop hook takes it from there.
 
 In the SDK, a goal is therefore a plain `session.run` on an agent with the plugin installed. You start it by writing the goal file the same way: call `Session.runUserPromptHook("goal", …)`, or run the script directly.
+
+The prompt that starts a goal is still a prompt you submitted, so other packages' `user_prompt` hooks run on it as on any other. Their contexts follow the goal's protocol message, and none of them counts as a round: a round starts only with round 1's protocol message or with the input a stop hook's `continue` injects.
 
 ### Counting and recording
 

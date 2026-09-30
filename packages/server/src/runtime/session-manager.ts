@@ -36,6 +36,7 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
+  isHookContinue,
   isHookInput,
   isSessionMeta,
   parseUserSteeringText,
@@ -90,10 +91,9 @@ import { ModelScopeAuth } from "../services/modelscope-auth-service.js";
 import { TitleGenerator } from "./title-generator.js";
 import { loopbackHostRoles } from "../services/preview-token.js";
 import { mergedNoProxy } from "../net/proxy.js";
-import { userChannelKey } from "../http/routes/events.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
-import type { Members, ProjectConfigStore, Projects } from "../mechanisms/projects.js";
+import type { ProjectConfigStore, ProjectEvents } from "../mechanisms/projects.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { Errors, UsageRecording } from "../mechanisms/observability.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
@@ -261,7 +261,7 @@ export function createCoreSessionLoader(
     proxyEnv?: () => ProxyEnvPolicy | null;
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
     pathPrepend?: () => string[];
-    confineSpawn?: () => SpawnConfiner | null;
+    confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null;
     assembly?: AgentAssembly;
   } = {},
 ): SessionLoader {
@@ -639,6 +639,17 @@ function isPlainText(role: "user" | "assistant") {
 
 export class SessionManager {
   private readonly entries = new Map<string, RuntimeEntry>();
+  /**
+   * Each registered subagent Session's ROOT Session: a subagent runs under its root's
+   * sandbox policy, as it runs under its root's approval mode, so a change the person makes
+   * in the composer reaches the children already running.
+   */
+  private readonly childRoots = new Map<string, string>();
+
+  /** The Session whose policy governs `sessionId`: its root for a subagent, else itself. */
+  rootSessionOf(sessionId: string): string {
+    return this.childRoots.get(sessionId) ?? sessionId;
+  }
   /** Per-Session mutex (serializes get-or-load and status flips); auto-cleaned once the chain drains. */
   private readonly locks = new Map<string, Promise<unknown>>();
   private readonly log: (line: string) => void;
@@ -1120,7 +1131,9 @@ export class SessionManager {
    * Taps a goal run's stream for `drive`: round boundaries become goal_round events —
    * round 1 from the seeded input (core never yields a run's initial input, so it is
    * counted here, where startGoal published it), later rounds from the stop-hook continues
-   * core yields — and the goal hook's `stop` event becomes the
+   * core yields, each announced by the hook's `continue` event; a harness-stamped input
+   * nothing announced is another package's user_prompt context riding behind the
+   * objective, not a round — and the goal hook's `stop` event becomes the
    * goal_finished server event. `used` is what the hook last recorded in its event's
    * `output` — the same number its budget check used — so the UI never shows a different
    * figure. A stream that ends without the hook's terminal event (a cut-off run, an
@@ -1155,9 +1168,13 @@ export class SessionManager {
         });
       }
     }
+    // Set by a stop hook's `continue` event, spent by the input that follows it.
+    let continued = false;
     try {
       for await (const msg of gen) {
-        if (isHookInput(msg)) {
+        if (isHookContinue(msg)) continued = true;
+        if (continued && isHookInput(msg)) {
+          continued = false;
           round++;
           this.publishEvent(entry, {
             type: "goal_round",
@@ -2077,6 +2094,8 @@ export class SessionManager {
     // row deliberately stores no source column.
     const source = asSessionSource(p.source) ?? "subagent";
     this.deps.sources.set(childSid, source);
+    const root = this.rootSessionOf(entry.sessionId);
+    this.childRoots.set(childSid, root);
     const createdAt = this.now().toISOString();
     // A sub-session of an organization's Session is company mode's own as much as the desk
     // or ticket session that spawned it: it inherits the durable "org" stamp, which is the
@@ -2095,6 +2114,9 @@ export class SessionManager {
       // A subagent's approvals are inherited from the parent Session; the index row is
       // inserted with defaults (matches the convention for Sessions discovered by the CLI).
       approvalMode: "allow-all",
+      // The root's policy at registration, so the child row stands on its own if it is ever
+      // resumed directly; while registered it follows the root (see rootSessionOf).
+      sandbox: this.deps.sessions.findById(root)?.sandbox ?? null,
       title: null,
       ...(parentClient === "org" ? { client: "org" as const } : {}),
       // Its Trace exists by construction.
@@ -2298,6 +2320,8 @@ export abstract class SessionServiceIface extends Interface<
     | "listSessions"
     | "sessionStats"
     | "createSession"
+    | "defaultSandbox"
+    | "updateSandbox"
     | "latestTracePath"
     | "adoptUnmanagedTraceSessions"
   >
@@ -2309,7 +2333,7 @@ export abstract class SessionEnv extends Interface<{
   controlEnv(ctx: ControlEnvContext): Record<string, string>;
   /** The directories at the FRONT of every command's PATH: the harness's own CLI shim (see CreateAgentOptions.pathPrepend). */
   pathPrepend(): string[];
-  confineSpawn(): SpawnConfiner | null;
+  confineSpawn(ctx: ControlEnvContext): SpawnConfiner | null;
 }>() {}
 
 @Module()
@@ -2331,8 +2355,7 @@ export class SessionsModule {
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traceStore!: TraceIndexStore;
   @Use(SandboxModule) private readonly sandbox!: Sandbox;
-  @Use() private readonly projectsRepo!: Projects;
-  @Use() private readonly membersRepo!: Members;
+  @Use() private readonly projectEvents!: ProjectEvents;
   @Use() private readonly messagingRepo!: MessagingBindings;
   /** Company-mode caches: which organization owns a Session (read at every command spawn). */
   @Use() private readonly orgCache!: OrgCache;
@@ -2397,20 +2420,22 @@ export class SessionsModule {
       // this field publishes a config without it and wrote no shim either: no field, no
       // directory, feature off, rather than a push declined over a PATH entry.
       pathPrepend: (): string[] => (config.cliEntry ? [cliShimDir(config.root)] : []),
-      confineSpawn: () => sandbox.confiner(),
+      // Each Session confines under its OWN policy — the snapshot on its row, its root's for a
+      // subagent — so a settings change reaches only Sessions created after it. A row from
+      // before snapshots takes the settings at its first command and keeps them from then on.
+      confineSpawn: (ctx: ControlEnvContext) =>
+        sandbox.confinerFor(() => {
+          const root = manager.rootSessionOf(ctx.sessionId);
+          const row = sessionsRepo.findById(root);
+          if (row?.sandbox) return row.sandbox;
+          const snapshot = sandbox.currentSettings();
+          if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
+          return snapshot;
+        }),
     };
 
-    const notifyProjectUsers = (projectId: string, event: ServerEvent): void => {
-      const ownerUserId = this.projectsRepo.findById(projectId)?.ownerUserId;
-      if (ownerUserId === undefined) return;
-      const audience = new Set([
-        ownerUserId,
-        ...this.membersRepo.list(projectId).map((m) => m.userId),
-      ]);
-      for (const userId of audience) {
-        channels.peek(userChannelKey(userId))?.publish(event, "server_event");
-      }
-    };
+    const notifyProjectUsers = (projectId: string, event: ServerEvent): void =>
+      this.projectEvents.notifyProjectUsers(projectId, event);
     const titles = this.titleGenerators.create({
       sessions: sessionsRepo,
       channels,
@@ -2453,6 +2478,7 @@ export class SessionsModule {
       traceStore: this.traceStore,
       proxyEnv: env.proxyEnv,
       controlEnv: env.controlEnv,
+      notifyProjectUsers,
       messagingChannel: (sessionId) => enabledMessagingChannel(this.messagingRepo, sessionId),
       // Company mode: which organization owns a Session, so development mode's list can hide
       // organization sessions and the company sidebar can group its own. The caches are a
@@ -2464,6 +2490,9 @@ export class SessionsModule {
       pathPrepend: env.pathPrepend,
       confineSpawn: env.confineSpawn,
       assembly,
+      sandboxDefaults: () => sandbox.currentSettings(),
+      sandboxLocalNetwork: () =>
+        sandbox.backends().some((b) => b.dimensions.includes("network-local")),
     });
     this.manager = manager;
     this.sessionService = sessionService;

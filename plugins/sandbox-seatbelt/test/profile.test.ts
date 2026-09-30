@@ -11,7 +11,11 @@ import path from "node:path";
 import {
   canonicalPath,
   createSeatbeltProvider,
+  defaultRunner,
+  loadSeatbeltProvider,
   seatbeltProfile,
+  seatbeltSettingsOf,
+  SYSTEM_RUNNER,
   writableRoots,
 } from "../src/index.js";
 
@@ -31,10 +35,71 @@ describe.skipIf(process.platform === "win32")("seatbelt profile", () => {
     expect(profile).not.toContain(`(subpath "${WS}")`);
   });
 
-  it("workspace-write: the workspace and the temp areas become writable", () => {
+  it("workspace-write: the workspace becomes writable, and the temp areas only when temp is", () => {
     const profile = seatbeltProfile({ mode: "workspace-write", workspaceRoot: WS });
     expect(profile).toContain(`(allow file-write* (subpath "${canonicalPath(WS)}")`);
-    expect(profile).toContain(canonicalPath(tmpdir()));
+    expect(profile).not.toContain(`(subpath "${canonicalPath(tmpdir())}")`);
+    const withTemp = seatbeltProfile({
+      mode: "workspace-write",
+      workspaceRoot: WS,
+      writableTemp: true,
+    });
+    expect(withTemp).toContain(`(subpath "${canonicalPath(tmpdir())}")`);
+  });
+
+  it("workspace-write allows the policy's further roots (the Session's scratchpad) beside the workspace; read-only ignores them", () => {
+    const scratchpad = "/data/agent/scratchpad/session-1";
+    const profile = seatbeltProfile({
+      mode: "workspace-write",
+      workspaceRoot: WS,
+      writableRoots: [scratchpad],
+    });
+    expect(profile).toContain(
+      `(allow file-write* (subpath "${canonicalPath(WS)}") (subpath "${canonicalPath(scratchpad)}"))`,
+    );
+
+    const readOnly = seatbeltProfile({
+      mode: "read-only",
+      workspaceRoot: WS,
+      writableRoots: [scratchpad],
+    });
+    expect(readOnly).toBe(seatbeltProfile({ mode: "read-only", workspaceRoot: WS }));
+  });
+
+  it("read-only with writable temp: the temp areas are the only writable roots", () => {
+    expect(writableRoots({ mode: "read-only", workspaceRoot: WS, writableTemp: true })).toEqual([
+      ...new Set(["/tmp", tmpdir()].map(canonicalPath)),
+    ]);
+  });
+
+  it("full access denies no writes, yet still cuts the network when asked", () => {
+    const profile = seatbeltProfile({
+      mode: "danger-full-access",
+      workspaceRoot: WS,
+      network: "none",
+    });
+    // No write denial at all — "(allow default)" already permits every file write.
+    expect(profile).not.toContain("(deny file-write*)");
+    // The network cut still applies.
+    expect(profile).toContain("(deny network*)");
+  });
+
+  it("network: local denies every socket, then lets the host's localhost back in", () => {
+    const profile = seatbeltProfile({
+      mode: "workspace-write",
+      workspaceRoot: WS,
+      network: "local",
+    });
+    const deny = profile.indexOf("(deny network*)");
+    expect(deny).toBeGreaterThan(-1);
+    for (const form of [
+      '(allow network-outbound (remote ip "localhost:*"))',
+      '(allow network-bind (local ip "localhost:*"))',
+      '(allow network-inbound (local ip "localhost:*"))',
+    ]) {
+      // Later rules win in SBPL: each allowance comes after the blanket denial.
+      expect(profile.indexOf(form)).toBeGreaterThan(deny);
+    }
   });
 
   it("network: none denies every socket", () => {
@@ -93,6 +158,7 @@ describe("seatbelt provider", () => {
     expect(createSeatbeltProvider({ probe: () => true }).dimensions).toEqual([
       "fs-write",
       "network",
+      "network-local",
       "mask-paths",
     ]);
   });
@@ -124,5 +190,36 @@ describe("seatbelt provider", () => {
     expect(() => provider.confine([...ARGV], policy)).toThrow(/cannot confine on this host/);
     expect(() => provider.confine([...ARGV], policy)).toThrow(/only on macOS/);
     expect(probes).toBe(1);
+  });
+});
+
+describe("seatbelt on another platform", () => {
+  it("declines off macOS (not a failure), and fails with a reason on macOS it cannot serve", async () => {
+    const other = "linux" as const;
+    await expect(loadSeatbeltProvider({ platform: other, probe: () => true })).resolves.toBeNull();
+    await expect(loadSeatbeltProvider({ platform: "darwin", probe: () => false })).rejects.toThrow(
+      /is missing or refuses/,
+    );
+    await expect(
+      loadSeatbeltProvider({ platform: "darwin", probe: () => true }),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe("the sandbox-exec it runs", () => {
+  it("names the macOS program by its absolute path, so PATH cannot decide what confines", () => {
+    expect(SYSTEM_RUNNER).toBe("/usr/bin/sandbox-exec");
+    expect(defaultRunner(() => true)).toBe(SYSTEM_RUNNER);
+    // A host without it (or any non-macOS machine running these tests) falls back to a lookup,
+    // and the load-time probe is what rejects a host where nothing answers.
+    expect(defaultRunner(() => false)).toBe("sandbox-exec");
+  });
+
+  it("what the deployment names wins over the OS's own", () => {
+    expect(seatbeltSettingsOf({ runner: " /opt/sandbox-exec " }, SYSTEM_RUNNER).runner).toBe(
+      "/opt/sandbox-exec",
+    );
+    expect(seatbeltSettingsOf({}, SYSTEM_RUNNER).runner).toBe(SYSTEM_RUNNER);
+    expect(seatbeltSettingsOf({ runner: "" }, "sandbox-exec").runner).toBe("sandbox-exec");
   });
 });

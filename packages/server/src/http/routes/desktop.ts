@@ -1,14 +1,16 @@
 /**
  * Desktop-mode routes: POST /api/desktop/shutdown, the client-update relay under
- * /api/desktop/update, the tray-icon preference at /api/desktop/tray, plus the shared
- * desktop-mode guard that turns off multi-user surfaces (see rejectInDesktopMode).
+ * /api/desktop/update, the tray-icon preference at /api/desktop/tray, the Privacy & Security
+ * pane at /api/desktop/privacy-settings, plus the shared desktop-mode guard that turns off
+ * multi-user surfaces (see rejectInDesktopMode).
  *
  * Platform code, all of it: what the shell's window may ask of the shell is policy. The
  * shutdown route is authenticated by the shell's Bearer token, not the cookie session (the
  * shell holds no cookie), so its group is unauthenticated and checks the token itself; it
  * answers 202 first, then triggers the graceful shutdown a beat later so the response is not
- * cut off by the closing listener. The update and tray routes are called by the page, so their
- * groups sit behind the cookie gate and are further restricted to the shell's own window.
+ * cut off by the closing listener. The update, tray and privacy-settings routes are called by
+ * the page, so their groups sit behind the cookie gate and are further restricted to the
+ * shell's own window.
  */
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
@@ -70,7 +72,7 @@ export function desktopRoutes(deps: DesktopRouteDeps): Hono {
 }
 
 /**
- * The shared gate for the two page-facing desktop surfaces: they exist only in desktop
+ * The shared gate for the page-facing desktop surfaces: they exist only in desktop
  * mode, and only for the shell's own window (`sessionVia === "desktop"`, the same
  * two-field rule as the change-password gate, inverted). A browser signed into the same
  * desktop-mode server must not read the machine's updater state, restart its GUI app, or
@@ -169,6 +171,35 @@ export function desktopTrayRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+/**
+ * Opens System Settings at a Privacy & Security pane — Files and Folders, or Full Disk Access —
+ * for the Workspace picker's box about a folder macOS refused. The shell opens it (on macOS
+ * only) and sends nothing back, so the answer is an acknowledgement. Like the relays above, the
+ * member is optional on a layer older than the picker's box.
+ */
+export function desktopPrivacySettingsRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.post("/", async (c) => {
+    const desktop = shellSessionOf(
+      deps,
+      c,
+      "System Settings is opened from the desktop app's own window.",
+    );
+    const body = (await c.req.json().catch(() => null)) as { pane?: unknown } | null;
+    const pane = body?.pane;
+    if (pane !== "files" && pane !== "fullDisk") {
+      throw new HttpError(400, "invalid_privacy_pane", 'pane must be "files" or "fullDisk".');
+    }
+    if (!desktop.requestPrivacySettings?.(pane)) {
+      throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
+    }
+    return c.body(null, 202);
+  });
+
+  return app;
+}
+
 @Component({
   contributes: {
     "HttpModule.routes": [
@@ -211,5 +242,25 @@ export class DesktopTrayRoutes {
   @Bind("DesktopTrayRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = desktopTrayRoutes({ desktop: this.desktop.current() });
+  }
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "DesktopPrivacySettingsRoutes.routes",
+        prefix: "/api/desktop/privacy-settings",
+        auth: "user",
+        order: 10,
+      },
+    ],
+  },
+})
+export class DesktopPrivacySettingsRoutes {
+  @Use() private readonly desktop!: Desktop;
+  @Bind("DesktopPrivacySettingsRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = desktopPrivacySettingsRoutes({ desktop: this.desktop.current() });
   }
 }

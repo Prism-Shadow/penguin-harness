@@ -1,6 +1,6 @@
 /**
  * PagedDialog: a large modal whose left rail switches sub-pages — the shared shell for
- * multi-page settings surfaces (System settings today; Project settings converges on the
+ * multi-page settings surfaces (Settings today; Project settings converges on the
  * same shell). Purely presentational: the caller owns which pages exist, which one is
  * active, and what the pane renders; the shell draws the rail (grouped, icon + label,
  * solid-fill active row — the sidebar's convention), the pane heading, and the close

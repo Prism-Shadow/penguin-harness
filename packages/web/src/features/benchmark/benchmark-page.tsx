@@ -7,7 +7,8 @@
  * label, a sparkline of the scoreboard, when it was last evaluated, and its actions; opening one
  * enters the Benchmark's own page (`/benchmark/:benchmarkId`) instead of splitting this one in
  * two, the way an Agent's card enters its settings. `?agentId=` narrows the list to the
- * Benchmarks that tested that Agent.
+ * Benchmarks that tested that Agent. The list is read off this server and every machine it holds
+ * (benchmark-sources.ts): a Benchmark written on a machine is listed too, under its id.
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -25,6 +26,9 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { agentDisplayName, useProject } from "../../state/project";
+import { useSessions } from "../../state/sessions";
+import type { MergedBenchmark } from "../../lib/benchmark-merge";
+import { nameOnMachine } from "../../lib/workspace-machines";
 import { useLocale } from "../../state/locale";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
@@ -39,6 +43,7 @@ import { AiCreateModal, CreateButtons, pickDefaultAgent } from "../ai-create";
 import { latestWithDelta, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
 import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompts";
 import { benchmarkRoute } from "./benchmark-route";
+import { fetchBenchmarks } from "./benchmark-sources";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
 import { ScoreSparkline } from "./score-sparkline";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
@@ -156,6 +161,7 @@ export function BenchmarkCard({
   benchmark,
   locale,
   nameOf,
+  machineName,
   canDelete,
   onOpen,
   onUse,
@@ -164,6 +170,8 @@ export function BenchmarkCard({
   benchmark: BenchmarkSummary;
   locale: "zh" | "en";
   nameOf: (agentId: string) => string;
+  /** The ssh alias of the one machine that holds this Benchmark, or null when this server has it. */
+  machineName: string | null;
   canDelete: boolean;
   onOpen: () => void;
   onUse: () => void;
@@ -190,7 +198,9 @@ export function BenchmarkCard({
         className="min-w-[14rem] flex-1 text-left"
       >
         <span className="flex items-center gap-2">
-          <span className="min-w-0 truncate text-base font-bold">{benchmark.title}</span>
+          <span className="min-w-0 truncate text-base font-bold">
+            {machineName !== null ? nameOnMachine(benchmark.title, machineName) : benchmark.title}
+          </span>
           <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
             {benchmark.id}
           </span>
@@ -314,6 +324,7 @@ export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
   const navigate = useNavigate();
   const { currentProject, currentAgent, agents } = useProject();
+  const { machineIds, machineLabels } = useSessions();
   const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
@@ -321,7 +332,9 @@ export function BenchmarkPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filterAgentId = searchParams.get("agentId");
 
-  const [benchmarks, setBenchmarks] = useState<BenchmarkSummary[] | null>(null);
+  const [benchmarks, setBenchmarks] = useState<MergedBenchmark[] | null>(null);
+  /** Bumped to read the list again — after a delete that leaves a machine's copy behind. */
+  const [reload, setReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [models, setModels] = useState<ModelsResponse | null>(null);
@@ -333,17 +346,18 @@ export function BenchmarkPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
-  // Benchmarks belong to the Project, so the page reads one list — and a Project change starts
-  // it over rather than showing the previous Project's cards while the next list is in flight.
+  // Benchmarks belong to the Project, so the page reads one list, merged over this server and
+  // the machines it holds — and a Project change starts it over rather than showing the previous
+  // Project's cards while the next list is in flight. A machine that connects re-asks.
+  const machinesKey = machineIds.join(",");
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
     setBenchmarks(null);
     setError(null);
-    api
-      .listBenchmarks(projectId)
-      .then((data) => {
-        if (!cancelled) setBenchmarks(data.benchmarks);
+    fetchBenchmarks(projectId, machinesKey === "" ? [] : machinesKey.split(","))
+      .then((merged) => {
+        if (!cancelled) setBenchmarks(merged);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(apiErrorText(e));
@@ -351,7 +365,7 @@ export function BenchmarkPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, machinesKey, reload]);
 
   // The Project's models, for the Use dialog's conversation-model picker; a failure just
   // leaves the picker at the Project default.
@@ -373,6 +387,9 @@ export function BenchmarkPage() {
 
   const agentOf = (agentId: string): AgentSummary | undefined =>
     agents.find((a) => a.agentId === agentId);
+  /** The ssh alias of a machine, or null for this server. An unlabelled machine falls back to its id. */
+  const machineNameOf = (machineId: string | null): string | null =>
+    machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
   const nameOf = (agentId: string): string => {
     const agent = agentOf(agentId);
     return agent ? agentDisplayName(agent) : agentId;
@@ -394,7 +411,7 @@ export function BenchmarkPage() {
       { replace: true },
     );
 
-  const benchmarkOf = (benchmarkId: string | null): BenchmarkSummary | null =>
+  const benchmarkOf = (benchmarkId: string | null): MergedBenchmark | null =>
     benchmarkId === null ? null : (benchmarks?.find((b) => b.id === benchmarkId) ?? null);
   const usingBenchmark = benchmarkOf(using);
   const deletingBenchmark = benchmarkOf(deleting);
@@ -406,7 +423,12 @@ export function BenchmarkPage() {
     try {
       await api.deleteBenchmark(projectId, benchmarkId);
       toastSuccess(S.benchmark.deleted);
-      setBenchmarks((prev) => (prev ?? []).filter((b) => b.id !== benchmarkId));
+      // Delete removes this server's directory; a copy a machine holds is still a Benchmark.
+      if (deletingBenchmark !== null && deletingBenchmark.machineIds.length > 1) {
+        setReload((n) => n + 1);
+      } else {
+        setBenchmarks((prev) => (prev ?? []).filter((b) => b.id !== benchmarkId));
+      }
       setDeleting(null);
     } catch (e) {
       toastError(apiErrorText(e));
@@ -449,7 +471,9 @@ export function BenchmarkPage() {
             benchmark={b}
             locale={locale}
             nameOf={nameOf}
-            canDelete={isOwner}
+            machineName={b.machineIds.length === 1 ? machineNameOf(b.machineIds[0] ?? null) : null}
+            // Only this server's copy can be deleted from here.
+            canDelete={isOwner && b.machineIds.includes(null)}
             onOpen={() => open(b.id)}
             onUse={() => setUsing(b.id)}
             onDelete={() => setDeleting(b.id)}

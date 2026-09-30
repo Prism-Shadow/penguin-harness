@@ -45,33 +45,144 @@ export const en: Strings = {
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
   machines: {
     pageTitle: "Machines",
-    pageDesc:
-      "The hosts declared in this server's own ~/.ssh/config. Pick one to install this build of PenguinHarness on it: the machine is probed, a matching Node runtime rides along only if it needs one, and the image is copied over and installed there. The config is read, never written, and the install uses the server account's own ssh keys.",
-    /** Version line under the title; `version` is what would be pushed. */
-    imageVersion: (version: string) => `Installs version ${version}`,
+    imageVersion: (version: string) => `This server: ${version}`,
     noImage:
       "This server has no install image to push. A packaged or tarball install carries one; a source checkout gets one from its first hot push.",
-    empty: "No hosts in ~/.ssh/config.",
-    /** The picker: an ssh config can declare hundreds of hosts, so the panel is a fuzzy search over aliases. */
-    pick: "Choose a machine\u2026",
-    search: "Search hosts\u2026",
-    noMatch: "No host matches that.",
-    /** How many matches the visible rows leave out — a silent truncation would read as "not in my config". */
-    more: (count: number) => `${count} more \u2014 keep typing to narrow it down.`,
-    /** Heading of the standing list of machines this server has installed on. */
-    installedTitle: (count: number) => `Installed machines (${count})`,
-    /** What the selected machine already carries, remembered on the server across restarts. */
-    installedAt: (version: string, when: string) => `${version} installed here on ${when}.`,
-    install: "Install",
-    installing: "Installing\u2026",
-    reinstall: "Reinstall",
-    /** Terminal states of a finished job. */
-    installed: (version: string) => `Installed ${version}.`,
-    alreadyInstalled: (version: string) => `Already on ${version} \u2014 nothing to install.`,
-    failedAt: (step: string) => `The install failed while trying to ${step}.`,
-    /** The progress log's own heading, so the block is not an unlabelled wall of text. */
-    output: "Install output",
-    adminOnly: "Only an admin can install on a machine.",
+    empty: "No host in ~/.ssh/config left to add.",
+    search: "Search hosts…",
+    noMatch: "No host matches.",
+    localTitle: "this server",
+    noneInUse: "No machine in use yet.",
+    sshHint:
+      "A machine can be added when this server's account can ssh into it by key (`ssh <alias>` works in a terminal here). Whoever set up ssh can put it in ~/.ssh/config.",
+    now: "now",
+    allHosts: (count: number) => `${count} more in ~/.ssh/config`,
+    expand: "Expand",
+    fewer: "Collapse",
+    host: {
+      addTitle: "New ssh host",
+      newVerb: "New",
+      configureVerb: "Configure",
+      add: "Write to ssh config",
+      alias: "Alias (Host)",
+      aliasHint: "One word; `ssh <alias>` and this page will call the machine by it.",
+      hostName: "Address (HostName)",
+      hostNameHint: "An IP or a domain name.",
+      user: "User",
+      userHint: "Empty means this server account's own user name.",
+      port: "Port",
+      portHint: "Empty means 22.",
+      identityFile: "Key file (IdentityFile)",
+      identityFileHint: "Empty means ssh's default key.",
+      oneWord: "Must be one word: no space, no #.",
+      portRange: "A whole number from 1 to 65535.",
+      exists: "The ssh config already has this alias.",
+      added: (alias: string) => `Wrote ${alias}. Enable it from Add machines….`,
+      configure: "Configure ssh host",
+      editTitle: "Configure ssh host",
+      saved: (alias: string) => `Updated ${alias} in the ssh config.`,
+      foreign:
+        "This block was not written by PenguinHarness and may carry options this form does not know; edit it in ~/.ssh/config.",
+    },
+    add: "Add machines…",
+    addSelected: (count: number) => `Enable these ${count}`,
+    use: "Enable",
+    stopUsing: "Disable",
+    updateAll: (count: number) => `Update all (${count})`,
+    selectedCount: (count: number) => `${count} selected`,
+    pickAll: "all",
+    pickNone: "none",
+    state: {
+      serving: "Serving",
+      queued: "Queued",
+      working: "Working",
+      ready: "Connected",
+      failed: "Failed",
+      installedOnly: "Installed",
+      behind: "Behind",
+      notConnected: "Offline",
+      unreachable: "Unreachable",
+      stopped: "Stopped",
+      linkedStopped: "Connected, not serving",
+      unknown: "Unchecked",
+    },
+    phase: {
+      check: "Checking the machine…",
+      install: "Installing the program…",
+      handover: "Handing over the build…",
+      restart: "Restarting its server…",
+      connect: "Connecting…",
+      sync: "Handing over the Model config…",
+    },
+    stepOf: (step: number, total: number) => `step ${step} of ${total}`,
+    queued: "Waiting its turn behind the machines before it.",
+    working: "Working…",
+    failedAt: (step: string) => `Failed at "${step}".`,
+    replaceProgram: "Force install",
+    replaceProgramWhy:
+      "Whatever is on that machine now, put this build's program there and restart its server — anyone using it will be interrupted.",
+    refusedSelf: (alias: string) => `${alias} is the machine this server runs on; nothing to add.`,
+    refusedUnknown: (alias: string) => `${alias} is not in this server's ssh config.`,
+    details: "Details",
+    detailInstalled: "Installed",
+    detailSince: "Since",
+    detailVersion: "Version",
+    detailStarted: "Started",
+    detailServer: "Server",
+    detailChecked: "Checked",
+    detailMachineId: "Machine id",
+    detailRoot: "Server root",
+    serverUpOn: (port: number) => `up on port ${port}`,
+    output: "Output",
+    agentsUnreachable: "That machine is not connected — use it from the Machines page",
+    adminOnly: "Only an admin can manage machines.",
+  },
+
+  /** Keyboard shortcuts: the registry's command and group labels (lib/shortcuts/registry.ts). */
+  shortcuts: {
+    commands: {
+      "palette.toggle": "Command palette",
+      "sessions.search": "Search sessions",
+      "chat.new": "New chat",
+      "sidebar.toggle": "Show or hide the sidebar",
+      "dock.toggleRight": "Show or hide the right sidebar",
+      "dock.toggleBottom": "Show or hide the bottom panel",
+      "terminal.toggle": "Show or hide the terminal",
+      "terminal.new": "New terminal",
+      "terminal.close": "Close the focused terminal",
+      "editor.save": "Save",
+    },
+    groups: {
+      general: "General",
+      panels: "Panels",
+      terminal: "Terminal",
+      editor: "Editor",
+    },
+    /** Where a focus-scoped command wins, for the shadowed-conflict hint. */
+    scopes: {
+      terminal: "the terminal",
+      editor: "the editor",
+    },
+    unbound: "Not set",
+    /** The recorder button's tooltip. */
+    rebind: "Change shortcut",
+    record: "Press the new shortcut…",
+    recordHint: "Esc cancels · Backspace clears",
+    needsModifier:
+      "Hold Ctrl or Alt (⌘ or ⌃ on macOS); Shift only together with them. Or use an F key",
+    resetRow: "Restore default",
+    resetAll: "Reset all",
+    resetAllBody: (n: number): string => `Restore ${n} shortcuts to their defaults?`,
+    conflictSame: (other: string): string =>
+      `Shares its shortcut with "${other}"; only the first in the list fires`,
+    conflictShadowed: (other: string, surface: string): string =>
+      `In ${surface}, "${other}" takes this shortcut first`,
+    browserReserved:
+      "The browser keeps this combination for itself; it only works in the desktop app",
+    browserCommon:
+      "The browser also uses this combination; in a browser tab it takes over that browser function",
+    desktopMenuReserved: "Overrides the desktop app's menu shortcut of the same keys",
+    saveFailed: "Shortcuts could not be saved to the account",
   },
 
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
@@ -122,6 +233,106 @@ export const en: Strings = {
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
   },
 
+  builtinBrowser: {
+    panelTitle: "Browser",
+    tabs: "Tabs",
+    newTab: "New tab",
+    closeTab: "Close tab",
+    untitled: "New tab",
+    back: "Back",
+    forward: "Forward",
+    reload: "Reload",
+    stop: "Stop loading",
+    address: "Address",
+    addressPlaceholder: "Search or enter address",
+    suggestions: "History",
+    more: "More",
+    importAction: "Import from browser…",
+    clearDataAction: "Clear browsing data…",
+    setHomepageAction: "Set homepage…",
+    openExternal: "Open in system browser",
+    devTools: "Developer tools",
+    home: "Home",
+    agentBusy: (action: string): string => `An agent is using the browser: ${action}`,
+    agentBusyTab: "An agent is using this tab",
+    actions: {
+      navigate: "opening a page",
+      scan: "reading the page",
+      exec: "running a script",
+      click: "clicking",
+      type: "typing",
+      screenshot: "taking a screenshot",
+      cdp: "sending a DevTools command",
+    },
+    unavailableTitle: "Built-in browser unavailable",
+    unavailableDesktop: "The built-in browser runs in the PenguinHarness desktop app.",
+    unavailableShell: "This desktop app is too old for the built-in browser. Update it to use it.",
+    unavailableWindow: "No app window is available to show the browser.",
+    openFailed: (reason: string): string => `Could not open a tab: ${reason}`,
+    importTitle: "Import from browser",
+    importIntro:
+      "Copies sign-ins and history from a browser on this computer into the built-in browser. The browser you import from is left unchanged.",
+    importLoading: "Looking for browsers…",
+    importNone: "No browser to import from was found on this computer.",
+    importSourcesFailed: (reason: string): string => `Could not list the browsers: ${reason}`,
+    importSource: "Import from",
+    importWhat: "What to import",
+    importCookies: "Cookies and sign-ins",
+    importHistory: "History",
+    importDomains: "Only these sites",
+    importDomainsHint:
+      "Comma separated, for example amazon.com, github.com. Leave empty to import every site.",
+    importDomainsPlaceholder: "amazon.com, github.com",
+    importKeychainNote: "Your Mac may ask for Keychain access.",
+    importRun: "Import",
+    importRunning: "Importing…",
+    importDone: "Done",
+    importCookiesResult: (c: {
+      found: number;
+      imported: number;
+      skipped: number;
+      failed: number;
+    }): string =>
+      `Cookies: ${c.imported} of ${c.found} imported` +
+      (c.skipped > 0 ? `, ${c.skipped} skipped` : "") +
+      (c.failed > 0 ? `, ${c.failed} failed` : ""),
+    importHistoryResult: (h: { found: number; imported: number }): string =>
+      `History: ${h.imported} of ${h.found} entries imported`,
+    importFailed: (reason: string): string => `Import failed: ${reason}`,
+    clearTitle: "Clear browsing data",
+    clearBody: "Choose what to remove from the built-in browser. This cannot be undone.",
+    clearCookies: "Cookies and sign-ins",
+    clearCache: "Cached images and files",
+    clearStorage: "Site storage",
+    clearHistory: "History",
+    clearConfirm: "Clear",
+    clearDone: "Browsing data cleared",
+    clearFailed: (reason: string): string => `Could not clear the data: ${reason}`,
+    homepageTitle: "Set homepage",
+    homepageIntro: "New tabs and the Home button open this page.",
+    homepageAddress: "Address",
+    homepagePlaceholder: "example.com",
+    homepageHintEmpty: "Leave empty for none; new tabs then open blank.",
+    homepageHintOpens: (url: string): string => `Opens ${url}`,
+    homepageUseCurrent: "Use current page",
+    homepageClear: "Clear",
+    homepageFailed: (reason: string): string => `Could not save the homepage: ${reason}`,
+    crashedTitle: "This page crashed",
+    crashedOutOfMemory: "It ran out of memory. Close tabs you no longer need, then reload it.",
+    crashedBody: "Reload it to try again.",
+    crashedTab: "The page crashed",
+    load: {
+      memory: (size: string, tabs: number): string =>
+        `The browser is using ${size} across ${tabs} ${tabs === 1 ? "tab" : "tabs"}.`,
+      lowSystemMemory: (percent: number): string =>
+        `This computer is low on memory (${percent}% free).`,
+      manyTabs: (tabs: number): string => `${tabs} tabs are open.`,
+      advice: "Close tabs you no longer need.",
+      join: (sentences: string[]): string => sentences.join(" "),
+      heavyTab: (size: string): string => `Uses ${size} of memory`,
+    },
+  },
+
   tracePanel: {
     empty: "No traces yet",
     emptyHint: "This session has not produced a Trace file yet",
@@ -131,8 +342,8 @@ export const en: Strings = {
   settings: {
     language: "Language",
     languageInfo: "Interface language; can follow the browser.",
-    /** Sidebar user-menu row opening the System settings dialog. */
-    systemSettings: "System settings",
+    /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
+    title: "Settings",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -140,6 +351,10 @@ export const en: Strings = {
     profile: "Profile",
     generalTitle: "General",
     appearanceTitle: "Appearance",
+    shortcutsTitle: "Keyboard shortcuts",
+    /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
+    shortcutsInfo:
+      "Shortcuts follow the platform: ⌘ on macOS, Ctrl elsewhere. A change applies at once in every tab of this browser; the account's other browsers and the desktop app pick it up the next time they load. Bindings are stored per account and per platform, so a Mac and a Windows machine each keep their own. A browser tab cannot receive the chords the browser itself reserves (Ctrl+W / ⌘W, for example), so those work in the desktop app only; a chord the browser also uses (Ctrl+P / ⌘P prints) takes over that browser function in a browser tab. The list marks both.",
     accountTitle: "Account",
     /** Trace import: the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "Import Trace",
@@ -186,6 +401,20 @@ export const en: Strings = {
       tls: "TLS handshake failed",
       network: "Unreachable",
     },
+    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
+    pluginsTitle: "Plugins",
+    /** An enum option this machine cannot honour, listed greyed out. */
+    pluginOptionUnavailable: (title: string, reason: string) =>
+      `${title} (not supported: ${reason})`,
+    pluginsInfo:
+      "The options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here.",
+    /** A secret field with a stored value: submitting it empty keeps the stored one. */
+    pluginSecretKeepHint: "Leave empty to keep the saved value",
+    pluginSecretClear: "Clear stored value",
+    /** The Plugins settings page's machine picker: each server keeps its own plugin settings. */
+    pluginConfigMachine: "Machine",
+    /** Under a number field whose box does not parse; the save is not sent. */
+    pluginFieldNotNumber: "Must be a number",
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
@@ -258,8 +487,50 @@ export const en: Strings = {
     title: "Command Palette",
     placeholder: "Type to filter commands…",
     noResults: "No matching commands",
-    hint: "Ctrl+P / ⌘P to toggle · ↑↓ to select · Enter to run",
+    /** Footer of the palette; `toggle` is the formatted palette.toggle chord, null while unbound. */
+    hint: (toggle: string | null): string =>
+      toggle === null
+        ? "↑↓ to select · Enter to run"
+        : `${toggle} to toggle · ↑↓ to select · Enter to run`,
     harnessHistory: "Harness history",
+  },
+  modelPicker: {
+    groups: "Model groups",
+    hideModelsWithoutKey: "Hide models without a key",
+    hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,
+  },
+  workflows: {
+    tabsLabel: "Chat and workflows",
+    chatTab: "Chat",
+    brokenMark: "The current files failed to load",
+    reload: "Reload",
+    reloading: "Reloading…",
+    history: "History",
+    loadError: "Load error",
+    loadingHistory: "Loading history…",
+    /** The full-page route while it is still finding out which page it should show. */
+    loadingPage: "Opening the page…",
+    noHistory: "No versions recorded yet.",
+    current: "current",
+    restore: "Restore",
+    remove: "Remove",
+    fillApp: "Fill the app",
+    /** `palette` is the formatted palette.toggle chord, null while unbound. */
+    fillAppHint: (palette: string | null): string =>
+      palette === null
+        ? "Show this page as the whole app; the command palette is the way to leave"
+        : `Show this page as the whole app; ${palette} opens the command palette to leave`,
+    exitFullPage: "Exit full page (back to chat)",
+    exitHint: (palette: string | null): string =>
+      palette === null
+        ? "Open the command palette to get back to the chat."
+        : `Press ${palette} for the command palette to get back to the chat.`,
+    noSuchPage: "This workflow does not exist or has no page.",
+    removeConfirm: "Delete this workflow and all its recorded versions?",
+    removeYes: "Remove",
+    removing: "Removing…",
+    removeNo: "Keep",
+    fileCount: (n: number) => `${n} files`,
   },
   harnessHistory: {
     title: "Harness history",
@@ -554,7 +825,7 @@ export const en: Strings = {
   },
 
   /**
-   * The Profile page of System settings, and the avatar/nickname it writes. Visible in every
+   * The Profile page of Settings, and the avatar/nickname it writes. Visible in every
    * session, the desktop shell's own window included: a profile needs no password to change.
    */
   profile: {
@@ -963,6 +1234,7 @@ export const en: Strings = {
     mcpDeleteConfirm: (name: string): string =>
       `Delete MCP Server "${name}"? Its tools stop being available from the next Session on.`,
     defaultValue: "(default)",
+    livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
     deleteConfirm: (name: string): string =>
@@ -1008,11 +1280,8 @@ export const en: Strings = {
     addToGroup: "Add model",
     editTitle: "Model settings",
     addTitle: "Add model (OpenAI protocol)",
-    addTitleVendor: "Add model",
     addProtocolHint:
       "New models use the OpenAI Chat Completions protocol; set the base URL to a compatible endpoint",
-    vendorProtocolHint: (vendor: string): string =>
-      `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     addProtocolHintPinned: (protocol: string): string =>
       `Models in this group always use the ${protocol} protocol; set the base URL to your own server`,
     addProtocolHintPinnedGateway: (protocol: string): string =>
@@ -1020,6 +1289,25 @@ export const en: Strings = {
     autoRouteNone:
       "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
     useCustomGroup: "Move to Custom",
+    /** Warning on a hand-added vendor-group row whose model id AgentHub cannot route (such a row can no longer be created, only inherited). */
+    vendorRowUnroutable:
+      "This model ID cannot be routed and will fail at request time: a vendor group carries built-in models only.",
+    /** The way out offered beside that warning: opens the config dialog with the row already in the custom group. */
+    moveToCustomGroup: "Move to a custom group",
+    /**
+     * Warning on a built-in row saved before the catalog pinned the protocol its id needs:
+     * re-merging the catalog repairs it, and a move would be the wrong advice. It never
+     * quotes the sync button's own label — a member sees this sentence with no button beside
+     * it, and the owner who does have one reads the label right there.
+     */
+    vendorRowStalePin:
+      "This built-in model's entry predates the protocol the catalog now pins for it, so it cannot be routed; re-syncing the built-in catalog restores that pin.",
+    /** Connectivity test on a hand-added row: replaces the upstream "is not supported" sentence, which names client types the user has no way to act on. */
+    testNotRoutable:
+      "Failed: this model ID cannot be routed. A vendor group carries built-in models only — move it to a custom group and pick or detect its protocol.",
+    /** Connectivity test on a built-in row missing its pin: the same split the card makes, so the two never give opposite advice. */
+    testStalePin:
+      "Failed: this built-in model's entry predates the protocol the catalog now pins for it, so it cannot be routed. Re-syncing the built-in catalog restores that pin; it does not belong in a custom group.",
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
@@ -1028,7 +1316,7 @@ export const en: Strings = {
     groupModeImport: "Import models",
     groupImportAll: "Import all models",
     groupImportNeedUrl: "Fill in a valid base URL first (http/https)",
-    groupImportKeyHint: "Leave empty to read the protocol's OPENAI_* / ANTHROPIC_* env vars",
+    groupImportKeyHint: "The endpoint's API key (required unless the URL is the vendor's own)",
     groupImportListing: "Fetching model list…",
     groupImportSaving: (n: number): string => `Importing ${n} models…`,
     groupImportUnsupported: "This protocol cannot list models — add them manually",
@@ -1053,7 +1341,7 @@ export const en: Strings = {
     noSearchResults: "No matching models",
     syncCatalog: "Sync presets",
     syncCatalogHint:
-      "Update preset models from the built-in catalog: add missing entries and reset differing ones to the catalog's fields; locally added models and API keys are left untouched",
+      "Update preset models from the built-in catalog: add missing entries, and refresh context window, pricing, protocol and vision on the ones already here. Your base URL, API key and output cap are never overwritten, and locally added models are left untouched",
     syncDone: (added: number, updated: number) =>
       `Presets synced: ${added} added, ${updated} updated`,
     syncUpToDate: "Presets are already up to date",
@@ -1689,6 +1977,22 @@ export const en: Strings = {
     applyConfirmRemove: (name: string) => `Remove ${name}?`,
     applyConfirmBody: "Agent runs in progress in every Project will be stopped.",
     pageTitle: "Plugins",
+    /** The header's machine picker: which machine's plugins the page shows and edits. */
+    viewMachine: "Machine",
+    allMachines: "All machines",
+    thisServer: "This server",
+    /** A row listed for some machines only, by alias. */
+    onlyOn: (names: string) => `only on ${names}`,
+    /** An all-machines row listed only for other machines. */
+    notHere: "not on this server",
+    /** A row the Project lists for a machine that has not reported it running yet. */
+    notSynced: "not on that machine yet",
+    /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
+    sharedCannotRemove: "Enabled on all machines: remove it in the All machines view.",
+    machineUnreadable: (name: string, reason: string) =>
+      `Could not read what ${name} runs: ${reason}`,
+    /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
+    openSettings: "Plugin settings",
     pageDesc:
       "Every plugin in one list. The library's plugins ship with this build (skills and/or a hook package — quick-start a chat, or install to agents); the module plugins this Project asks for run in the server, and the rest of the registry can be installed for it.",
     /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
@@ -1778,8 +2082,8 @@ export const en: Strings = {
     importPromptTail: (projectId: string, agentId: string): string =>
       [
         "Read the source in full first and review every script for malicious behavior (exfiltrating data, touching files outside its source, running unknown commands); continue only once it is safe.",
-        'Then produce a PenguinHarness hook package: a hooks.json (name, description, description_zh, version in the YYYY.MM.DD.N format, and one command list per hook point — stop / pre_tool_use / user_prompt — each entry { "command": "<script path relative to the package>", "timeout": <seconds> }) plus plain Node .mjs scripts using builtin modules only.',
-        'Script contract: stdin carries one JSON object — at the stop point { "hook": "stop", "session_id", "trace_path" } (trace_path is the Trace file the Session is writing, absent without a Trace); the pre_tool_use point adds tool_name, tool_call_id and arguments (the raw argument JSON string); the user_prompt point carries scratchpad_dir and prompt instead. Empty stdout means no opinion; otherwise stdout is one JSON answer — stop: { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }, pre_tool_use: { "decision": "allow" | "deny", "reason", "output" }, user_prompt: { "context" }. A non-zero exit, non-JSON stdout or a timeout is recorded as a failure and ignored.',
+        'Then produce a PenguinHarness hook package: a hooks.json (name, description, description_zh, version in the YYYY.MM.DD.N format, and one command list per hook point — stop / pre_tool_use / user_prompt — each entry { "command": "<script path relative to the package>", "timeout": <seconds> }) plus plain Node .mjs scripts using builtin modules only. A hook point the package does not use may be left out or []; a user_prompt entry may add "trigger": "prompt" (every prompt the user submits, the default) or "host" (only when the host starts the package\'s flow by name).',
+        'Script contract: stdin carries one JSON object — at the stop point { "hook": "stop", "session_id", "trace_path" } (trace_path is the Trace file the Session is writing, absent without a Trace); the pre_tool_use point adds tool_name, tool_call_id and arguments (the raw argument JSON string); the user_prompt point carries trace_path, scratchpad_dir and prompt (the user\'s message text). Empty stdout means no opinion; otherwise stdout is one JSON answer — stop: { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }, pre_tool_use: { "decision": "allow" | "deny", "reason", "output" }, user_prompt: { "context" }, which is sent right behind the user\'s message on every prompt. A non-zero exit, non-JSON stdout or a timeout is recorded as a failure and ignored.',
         `Install it into agent_state/hooks/<name>/ of agent "${agentId}" in Project "${projectId}" (the directory name is the package name and must match ^[A-Za-z0-9_-]+$), then tell me what it does and at which hook point it fires.`,
       ].join("\n"),
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
@@ -1791,7 +2095,7 @@ export const en: Strings = {
     injection: {
       enable: "Enable hooks",
       enableHint:
-        "With it on, every Session this agent starts runs all installed hook packages at the loop's hook points. With it off, a new Session runs no hooks at all and the installed packages stay on disk. A Task already running keeps the setting it started with.",
+        "With it on, every Session this agent starts runs all installed hook packages at the loop's hook points. With it off, a new Session runs no hooks at all and the installed packages stay on disk. A Task already running keeps the setting it started with until its context is compacted.",
       savedToast: "Saved — takes effect from the next turn",
     },
   },
@@ -1929,12 +2233,80 @@ export const en: Strings = {
       `Context compacted; thinking level switched to "${to}".`,
     thinkingSwitchCompactFailed:
       "The compaction did not finish; the thinking level was switched anyway.",
-    workspaceUseThis: "Use this dir",
-    workspaceUp: "Parent dir",
-    workspaceNoSubdirs: "No subdirectories",
+    workspaceHere: "here",
+    /** Why a listed machine cannot be picked — shown ON its row, where the question is asked. */
+    workspaceMachineWhy: {
+      "no-identity": "not identified",
+    },
     workspaceAuto: "Temporary workspace",
     workspaceClear: "Use a temporary workspace instead",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
+    /** The Workspace finder: the modal the Workspace pickers open (workspace-finder.tsx). */
+    finder: {
+      choose: "Choose",
+      back: "Back",
+      forward: "Forward",
+      up: "Up",
+      refresh: "Refresh",
+      address: "Path",
+      addressPlaceholder: "An absolute path, or one starting with ~",
+      editPath: "Edit path",
+      filter: "Filter",
+      showSidebar: "Show sidebar",
+      hideSidebar: "Hide sidebar",
+      quickAccess: "Quick access",
+      thisPc: "This PC",
+      recent: "Recent",
+      machines: "Machines",
+      places: {
+        desktop: "Desktop",
+        documents: "Documents",
+        downloads: "Downloads",
+        pictures: "Pictures",
+      },
+      documentsMac: "Documents",
+      addToQuickAccess: "Add to Quick access",
+      removeFromQuickAccess: "Remove from Quick access",
+      addCurrentToQuickAccess: "Add the current folder to Quick access",
+      removeNamed: (name: string): string => `Remove ${name} from Quick access`,
+      open: "Open",
+      openFolder: (name: string): string => `Open ${name}`,
+      chooseThis: "Choose this folder",
+      chooseCurrent: "Choose the current folder",
+      copyPath: "Copy path",
+      /** Accessible name of the breadcrumb trail. */
+      path: "Current path",
+      columnName: "Name",
+      columnModified: "Date modified",
+      /** Tooltip on a file row: files are listed for context but cannot be picked. */
+      fileNotSelectable: "Only folders can be chosen",
+      empty: "This folder is empty",
+      noMatch: (q: string): string => `Nothing here has "${q}" in its name`,
+      deniedTitle: "Can't read this folder",
+      denied: "The account running the server is not allowed to read this folder.",
+      /**
+       * macOS privacy protection refused the folder and this page cannot ask for it (a browser
+       * tab, or another machine's listing): the process that reads it has to be allowed.
+       */
+      deniedMacServer:
+        "macOS is blocking access to this folder. The process running the server has to be allowed: a server started from a terminal belongs to that terminal, so allow the terminal in System Settings → Privacy & Security → Files and Folders (or give it Full Disk Access), then retry.",
+      /** The desktop app can ask: before it has (see allowAccess). */
+      deniedMacAsk:
+        "macOS is blocking access to this folder. Use “Allow access” to ask macOS for it, and allow it when macOS asks.",
+      /** Asked, and the folder is still refused: a packaged app. */
+      deniedMacRefused:
+        "macOS did not allow it. If PenguinHarness is not listed under Files and Folders, add it under Full Disk Access with +, then retry.",
+      /** Asked, and the folder is still refused: a development instance, whose reads macOS charges to its terminal. */
+      deniedMacRefusedDev:
+        "This is an unpackaged development instance: macOS counts its file access against the terminal that started it. Allow that terminal under Files and Folders (or give it Full Disk Access), then retry.",
+      /** Has the desktop app read the folder in its own name, which is what makes macOS ask. */
+      allowAccess: "Allow access",
+      /** The same button while the app's read waits for the user to answer macOS. */
+      allowAccessWaiting: "Waiting for macOS…",
+      /** Opens System Settings at the Privacy & Security pane the box names. */
+      openSystemSettings: "Open System Settings",
+      loadFailed: "Can't open this folder",
+    },
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
     groupByWorkspace: "Group by workspace",
     groupByAgent: "Group by agent",
@@ -1966,6 +2338,8 @@ export const en: Strings = {
     deleteWorkspaceConfirm: (name: string) =>
       `Remove "${name}"? This only removes the workspace group from the sidebar — the directory on disk and existing chats are untouched, and it can be re-added anytime.`,
     tempWorkspaces: "Temporary workspaces",
+    onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
+    machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
     /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
@@ -2082,18 +2456,16 @@ When done, open index.html in a browser and self-test once.`,
           'stock for me": resolve a company name to its ticker itself, and when there is no match ' +
           "or the company is not listed, say so rather than inventing a quote.",
       },
-      rag: {
-        label: "Build a Claude Code docs RAG agent",
-        desc: "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",
+      missionControl: {
+        label: "Build a custom workflow UI: mission control",
+        desc: "A workflow tab beside the chat: dispatch a task to several agents at once and watch every Session's live status",
         prompt:
-          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG knowledge app: " +
-          "clone the repo and prepare the corpus, then build a retrieval index; " +
-          "the app acts as a Claude Code configuration expert, answering Claude Code questions " +
-          "with retrieval-augmented replies and clickable citations that reveal the matched " +
-          "original text chunk and link to the real documents; " +
-          "give it a beautiful web chat UI following the web-design skill. " +
-          "When done, run the app and self-test one Chinese question and one English question, confirming both retrieve " +
-          "the right English documents and stream their answers, then tell me how to access it.",
+          "Build yourself a workflow: a mission-control tab beside this chat. I type a task and pick " +
+          "one or more of this Project's Agents; it opens a Session for each and runs them in " +
+          "parallel. Every run is a card with a live, animated status (queued, running, done) and " +
+          "its elapsed time, and the board survives a reload. Add a second tab with the numbers — " +
+          "runs per Agent, average duration — and a button that fills the whole app, like a wall " +
+          "display. Take every colour from the theme variables so it looks right in light and dark.",
       },
       agentBenchmarkBuild: {
         label: "Build a general-purpose decision agent and its benchmark",
@@ -2165,6 +2537,32 @@ Scenarios:
     /** The same rule as `workspaceHint`, short enough to sit under a form field. */
     workspaceHintShort: "Leave empty for a temporary workspace",
     approvalMode: "Approval mode",
+    /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
+    permission: {
+      label: "Permissions",
+      levels: {
+        all: "Full access",
+        partial: "Partial",
+        "read-only": "Read only",
+        off: "Off",
+      } as Record<string, string>,
+      fs: "Filesystem",
+      fsModes: {
+        "read-only": "Read only",
+        "workspace-write": "Workspace write",
+        "danger-full-access": "Full access",
+      } as Record<string, string>,
+      network: "Network",
+      networkModes: {
+        open: "Full access",
+        local: "Local network (localhost only)",
+        none: "No network",
+      } as Record<string, string>,
+      unsupported: "Not supported",
+      localUnsupported: "No sandbox backend on this machine can limit the network to localhost",
+      more: "More…",
+      approval: "Approval",
+    },
     approvalModeNames: {
       "allow-all": "Approve everything",
       "deny-all": "Deny everything",
@@ -2348,6 +2746,12 @@ Scenarios:
     statParenOpen: " (",
     statParenClose: ")",
     noSessions: "No Sessions yet",
+    /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    sessionOnOfflineMachine: (machine: string) =>
+      `This conversation is on ${machine}, which is not connected right now.`,
+    sessionOnOfflineMachineUnknown:
+      "This conversation is on a machine that is not connected right now.",
+    sessionOfflineHint: "It will open as soon as the connection is back.",
     emptyStream: "Send a message to start the conversation",
     historyLoadFailed: "Failed to load history",
     statsLabel: "Stats",
@@ -2603,6 +3007,12 @@ Scenarios:
       budget_limited: "budget exhausted",
       aborted: "interrupted",
     } as Record<string, string>,
+    linkMenu: {
+      openInBuiltinBrowser: "Open in built-in browser",
+      openExternal: "Open in system browser",
+      openInNewTab: "Open in new tab",
+      copyLink: "Copy link address",
+    },
   },
 
   /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
@@ -2990,7 +3400,6 @@ Scenarios:
     /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
     wrapLines: "Wrap",
     unsaved: "Unsaved changes",
-    saveTitle: "Save (Ctrl+S / ⌘S)",
     saveConfirmTitle: "Save file",
     saveConfirm: (name: string): string =>
       `Save changes to ${name}? The file in the Workspace will be overwritten.`,
@@ -3610,7 +4019,7 @@ Scenarios:
       "deny-all": "Deny all",
     } as Record<string, string>,
     status: "Status",
-    statusActive: "Active",
+    statusActive: "Running",
     statusPaused: "Paused",
     pause: "Pause organization",
     resume: "Resume organization",
@@ -3630,6 +4039,11 @@ Scenarios:
     /** Principals as the chat and tickets name them. */
     principalSystem: "System",
     principalAll: "Everyone",
+    /** A data path in a ticket drawn as a capsule: the hover names the whole path, a click copies it. */
+    pathCapsule: {
+      hint: (path: string): string => `${path}\nClick to copy the full path`,
+      copy: (path: string): string => `Copy path ${path}`,
+    },
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "Unbounded",
@@ -3643,6 +4057,10 @@ Scenarios:
       noEmployees: "This organization has no employees yet",
       untitledSession: "Untitled session",
       loadFailed: "The employee list could not be loaded",
+      temporary: (n: number): string => `Temporary (${n})`,
+      temporaryEntry: (title: string): string => `Temporary · ${title}`,
+      closeTemporary: "Remove from Temporary",
+      closeAllTemporary: "Close all",
     },
     overview: {
       title: "Overview",
@@ -3902,7 +4320,7 @@ Scenarios:
     },
     tickets: {
       title: "Tickets",
-      info: "Five columns are a ticket's life: proposed → in progress → review → done / rejected. Drag a card to move it between columns, click a card's title to open its detail in place; a blocked ticket stays in its column with a badge. A ticket is the organization's unit of work: use New ticket, top right, to create one and name an owner, and the owner's desk session starts a ticket session for it.",
+      info: "Five columns are a ticket's life: proposed → in progress → review → done / rejected. Click a card to open its detail in place, and drag it to another column to move it (on a touch screen, press and hold the card first); a blocked ticket stays in its column with a badge. A ticket is the organization's unit of work: use New ticket, top right, to create one and name an owner, and the owner's desk session starts a ticket session for it.",
       columns: {
         proposed: "Proposed",
         in_progress: "In progress",
@@ -4246,8 +4664,9 @@ Scenarios:
       documentLoadFailed: "Could not load the document",
       /** A row's tooltip: when the file was last written, and its size. */
       updatedAt: (time: string, size: string): string => `Updated ${time} · ${size}`,
-      /** Beside the editor's buttons: what the text is, and the shortcut. */
-      editorHint: "Markdown · Ctrl/⌘+S to save",
+      /** Beside the editor's buttons: what the text is, and the save shortcut (null while unbound). */
+      editorHint: (shortcut: string | null): string =>
+        shortcut === null ? "Markdown" : `Markdown · ${shortcut} to save`,
     },
   },
   errors: {
@@ -4284,6 +4703,8 @@ Scenarios:
         "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
+      model_not_routable:
+        "This model ID cannot be routed by a vendor group's protocol. Vendor groups carry built-in models only — add the model under a custom group and pick or detect its protocol.",
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
       goal_plugin_not_installed:
@@ -4299,6 +4720,7 @@ Scenarios:
       image_too_large: "The image is too large to send inline.",
       dir_not_absolute: "The directory must be an absolute path.",
       dir_not_found: "That directory does not exist or is inaccessible.",
+      dir_permission_denied: "Reading that directory is not allowed.",
       not_a_dir: "That path is not a directory.",
       path_not_found: "That path does not exist.",
       reveal_failed: "Could not open the folder.",
@@ -4371,6 +4793,11 @@ Scenarios:
       ticket_session_failed: "The ticket session could not be started.",
       handbook_file_not_found: "That document no longer exists.",
       handbook_index_required: "The handbook index (README.md) cannot be deleted.",
+      browser_unavailable:
+        "The built-in browser is unavailable: it needs the PenguinHarness desktop app to be open.",
+      source_not_found: "That browser profile was not found.",
+      shell_unreachable: "The desktop app could not be reached.",
+      timeout: "That took too long. Try again.",
     },
   },
 };

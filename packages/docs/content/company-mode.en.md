@@ -21,10 +21,10 @@ Development mode is one person talking to one agent. Company mode, the Web App's
 
 - You need an admin account. Company mode is off by default on every server, and only admins see its server switch.
 
-1. Open **System settings** › Server › **Company mode**, and turn on **Enable company mode**. The change is saved at once.
+1. Open **Settings** › Server › **Company mode**, and turn on **Enable company mode**. The change is saved at once.
 2. At the top left of the sidebar, the mode switch reads **Development** | **Company**, with a **Beta** tag. Select **Company**.
 
-To go back, select **Development**. Every user sees the mode switch while the server switch is on. To hide it for yourself only, turn off **Company mode** under **System settings** › Personal › **General**; organizations keep running. See [Switches and lifecycle](#switches-and-lifecycle).
+To go back, select **Development**. Every user sees the mode switch while the server switch is on. To hide it for yourself only, turn off **Company mode** under **Settings** › Personal › **General**; organizations keep running. See [Switches and lifecycle](#switches-and-lifecycle).
 
 ## Create an organization
 
@@ -266,6 +266,7 @@ In company mode, the sidebar lists the organization's pages: **Overview**, **Org
 
 - **Overview** is where an organization opens. It shows the mission folded to one line, this period's spend against the CEO's budget, and a KPI strip, followed by three full-width sections: the **Inbox** (all-hands messages that mention you or `@all`, every blocked ticket whoever it waits on, and the tickets closed this period), today's calendar, and the budget alerts. No card is a link; each has one corner button that names the page it summarizes.
 - **Org Chart** shows the reporting tree. Each employee's menu offers **Hire a subordinate**, **Set budget**, **Change reporting line**, **New desk session** and **Leave the organization**.
+- **Tickets** is the board. Clicking a card opens its ticket in place, and dragging the card to another column moves the ticket; on a touch screen, hold the card until it lifts before dragging it, since a finger that moves straight away scrolls the page. The move control inside the ticket moves it without dragging. Inside a ticket, the parent, a child ticket and a ticket session each open by clicking their title. A ticket session opens as its full conversation and goes to the top of the sidebar's **Temporary** group, below **Desks**. It stays listed, in this browser, until you remove it with its ✕ or empty the whole group with **Close all** in its header; going elsewhere or reloading the page keeps it. Both only take entries off the list: the sessions themselves are kept. Ticket sessions are never listed in the sidebar otherwise.
 - **Handbook** shows the knowledge base as an explorer tree beside the rendered document. At every level, folders come before documents; folders stay collapsed until opened, and the arrow keys move through the tree.
 - **Finance** shows the period in three rows: the KPI panel beside the daily trend, then the spend tree and the ticket table side by side, then the period's warnings and pauses.
 - **Calendar** and **Tickets** each show a single create button while they are empty, under a hint you can dismiss for good.
@@ -276,8 +277,8 @@ The organization settings include **Working language**, **Approval mode** and **
 
 | Switch | Where | Effect |
 | --- | --- | --- |
-| Server | **System settings** › Server › **Company mode** (admins only; off by default) | Off stops the organization scheduler: nothing fires, and nothing is backfilled when it is turned back on. Every organization route answers 404, and the mode switch disappears for everyone. |
-| Personal | **System settings** › Personal › **General** › **Company mode** (shown only while the server switch is on) | Hides the mode switch for you only. Organizations keep running. |
+| Server | **Settings** › Server › **Company mode** (admins only; off by default) | Off stops the organization scheduler: nothing fires, and nothing is backfilled when it is turned back on. Every organization route answers 404, and the mode switch disappears for everyone. |
+| Personal | **Settings** › Personal › **General** › **Company mode** (shown only while the server switch is on) | Hides the mode switch for you only. Organizations keep running. |
 | Organization | **Pause organization** in the organization settings | Stops all of the organization's automatic triggers. People can still open any desk and talk to it. |
 
 **There is no delete.** An organization is either running or paused, and that is its whole lifecycle. Deleting one would throw away the only way back to its conversations, employees, desks and tickets, while a paused organization costs nothing to keep: it fires nothing, and every desk is still there to talk to.

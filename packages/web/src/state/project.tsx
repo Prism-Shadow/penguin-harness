@@ -19,6 +19,15 @@ import * as api from "../api/endpoints";
 const PROJECT_KEY = "penguin.lastProjectId";
 const agentKey = (projectId: string) => `penguin.lastAgentId.${projectId}`;
 
+/**
+ * Remembers a Project and Agent the way the store does, for a surface that sits outside the
+ * ProjectProvider (the full-page workflow route) and wants the shell to open on them next.
+ */
+export function rememberSelection(projectId: string, agentId: string): void {
+  localStorage.setItem(PROJECT_KEY, projectId);
+  localStorage.setItem(agentKey(projectId), agentId);
+}
+
 interface ProjectContextValue {
   projects: ProjectSummary[];
   projectsLoading: boolean;
@@ -114,11 +123,7 @@ function createProjectStore() {
       try {
         const res = await api.listAgents(currentProjectId);
         const wanted = get().currentAgentId ?? localStorage.getItem(agentKey(currentProjectId));
-        const found = res.agents.find((a) => a.agentId === wanted);
-        // Default to conversing with default_agent.
-        const fallback =
-          res.agents.find((a) => a.agentId === "default_agent") ?? res.agents[0] ?? null;
-        set({ agents: res.agents, currentAgentId: (found ?? fallback)?.agentId ?? null });
+        set({ agents: res.agents, currentAgentId: agentOf(res.agents, wanted)?.agentId ?? null });
       } finally {
         set({ agentsLoading: false });
       }
@@ -130,6 +135,25 @@ function createProjectStore() {
       set({ currentAgentId: agentId });
     },
   }));
+}
+
+/**
+ * The Agent an id names among THIS server's, else the one a conversation defaults to
+ * (`default_agent`, then the first). The id may name an Agent only a machine has — a draft or
+ * a Session on that machine follows its pick through to the current Agent — and the current
+ * Agent is never one of those: the chat page renders nothing until there is a current Agent,
+ * so resolving such an id to null left every chat route on its placeholder until a reload.
+ */
+export function agentOf(
+  agents: readonly AgentSummary[],
+  agentId: string | null,
+): AgentSummary | null {
+  return (
+    agents.find((a) => a.agentId === agentId) ??
+    agents.find((a) => a.agentId === "default_agent") ??
+    agents[0] ??
+    null
+  );
 }
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
@@ -149,7 +173,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ProjectContextValue>(() => {
     const currentProject =
       state.projects.find((p) => p.projectId === state.currentProjectId) ?? null;
-    const currentAgent = state.agents.find((a) => a.agentId === state.currentAgentId) ?? null;
+    const currentAgent = agentOf(state.agents, state.currentAgentId);
     return {
       projects: state.projects,
       projectsLoading: state.projectsLoading,

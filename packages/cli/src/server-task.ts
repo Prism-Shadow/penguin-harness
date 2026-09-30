@@ -14,7 +14,12 @@
  * with it on a dropped connection; `resync_required` (buffer evicted) prints a dim
  * notice — the messages endpoint still holds the full history for `penguin logs`.
  */
-import { isEventMessage, isHookInput, isModelMessage } from "@prismshadow/penguin-core";
+import {
+  isEventMessage,
+  isHookContinue,
+  isHookInput,
+  isModelMessage,
+} from "@prismshadow/penguin-core";
 import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
 import type { GoalServerEvent } from "@prismshadow/penguin-server/api";
 import { ServerClient } from "./client.js";
@@ -195,6 +200,8 @@ export async function watchTask(
   let timedOut = false;
   let outcome: GoalOutcome | undefined;
   let round = 0;
+  // Set by a stop hook's `continue` event, spent by the input that follows it.
+  let continued = false;
   let segmentStartedAt = Date.now();
   // Approval prompts serialize on a promise chain: concurrent requests (parent +
   // subagent) must not interleave their Q&A on one stdin.
@@ -255,9 +262,12 @@ export async function watchTask(
     }
     if (opts.goal) {
       // A hook's input is a round boundary: round 1's protocol message (sent right behind
-      // the objective), then every stop-hook continue — the same predicate as the server's
-      // goal_round events.
-      if (isHookInput(msg)) {
+      // the objective), then every stop-hook continue, each announced by the hook's
+      // `continue` event — the same rule as the server's goal_round events. Any other
+      // harness-stamped input is another package's user_prompt context, not a round.
+      if (isHookContinue(msg)) continued = true;
+      if (isHookInput(msg) && (round === 0 || continued)) {
+        continued = false;
         if (round > 0) renderer?.endTask(Date.now() - segmentStartedAt);
         round++;
         segmentStartedAt = Date.now();

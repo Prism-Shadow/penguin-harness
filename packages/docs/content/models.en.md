@@ -62,7 +62,7 @@ The group appears in the list once its first model is saved.
 **Import models** fills a new group with every model an OpenAI-compatible or Anthropic-compatible endpoint lists.
 
 1. Select **Import models**.
-2. In **API key**, enter the key. Leave it empty to use the protocol's `OPENAI_*` or `ANTHROPIC_*` environment variables.
+2. In **API key**, enter the endpoint's key. The server's `OPENAI_*` / `ANTHROPIC_*` variables are not used for an endpoint that is not the vendor's own (see [Set API keys](#set-api-keys)), so a listing without a key is refused.
 3. In **Custom base URL**, enter the endpoint's base URL.
 4. Select **Detect** at the top-right of the field, or pick the protocol from the menu at the right edge of the field. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
 5. Select **Import all models**. PenguinHarness asks the endpoint for its model list and saves every model into the new group, in the endpoint's order.
@@ -88,7 +88,7 @@ All of the group's models and their API keys are removed. Built-in groups cannot
 2. In **Model ID**, enter the model id exactly as the provider's API expects it, for example `gpt-5.5`. **Get model IDs** opens the provider's model list.
 3. Optional: in **Display name**, enter a display name. An empty display name shows the model id.
 4. Fill in the credentials and endpoint:
-   - **API key**: leave it empty to use the provider's environment variable. The field names the variable when it is set on the server.
+   - **API key**: in a vendor group, leave it empty to use the provider's environment variable; the field names the variable when it is set on the server. In a gateway group, in **Custom** and in groups you created, the key is required — no environment variable is used for an endpoint that is not the vendor's own.
    - **Custom base URL**: required in **Custom** and in groups you created. In gateway groups it is filled in for you.
 5. Optional: fill in the limits and prices:
    - **Context window**: the model's context window in Tokens. For a model that is not in the built-in catalog, an empty field saves as 1000000.
@@ -163,8 +163,8 @@ Detection never blocks a save. If you select **Confirm** while the protocol is s
 
 - Probes are minimal invalid requests with `{}` bodies. They cost no Tokens and need no valid model id: an error in the protocol's own shape proves the route exists, a `404` or `405` means the path is not served, and HTML or gateway noise counts for nothing.
 - The probed URLs and auth headers are exactly what the AgentHub client uses after saving: `Authorization: Bearer` for the OpenAI protocols, and `x-api-key` plus `Authorization: Bearer` and `anthropic-version` for `ant-messages`. A detected protocol is one that will really work.
-- The server picks the probe credential in three steps: the API key typed in the dialog, else the key already stored for the entry, else the environment variable of the protocol that probe speaks (`ANTHROPIC_API_KEY` for `ant-messages`, `OPENAI_API_KEY` for the two OpenAI protocols). The choice is made per probe, because the protocol is what is being determined. None of these values reach the browser or the response.
-- Detection works with no credential at all, since a protocol-shaped `401` identifies the route. An authenticated probe is still far more likely to get that answer than the generic `401` or gateway HTML an anonymous request often gets.
+- The server picks the probe credential in three steps: the API key typed in the dialog, else the key already stored for the entry, else the environment variable of the protocol that probe speaks (`ANTHROPIC_API_KEY` for `ant-messages`, `OPENAI_API_KEY` for the two OpenAI protocols) — but only when the probed URL is that vendor's own endpoint. The choice is made per probe, because the protocol is what is being determined. None of these values reach the browser or the response.
+- Detection works with no credential at all, since a protocol-shaped `401` identifies the route. A gateway or a private server is therefore probed anonymously: your vendor key is never sent to a URL you typed.
 - Nothing is inferred from the model id in these groups. Typing `claude-sonnet-5` into a custom group does not select the Anthropic client or its `ANTHROPIC_*` key: custom groups fall back to `openai-chat`, and the API key hint follows that. Vendor and gateway groups are not affected; their ids are known to the catalog, so they route by id or by the group's preset.
 - Entries created before detection existed keep `client_type = "openai"`, which is still an alias of `openai-chat`. They are rewritten only when you pick a protocol or a detection applies. An older, non-standard protocol value is shown read-only: "Protocol: {t} (kept as configured; not editable)".
 - Detection is available as `POST /api/projects/:id/models/detect` (owner only); see [Server API](/server-api).
@@ -180,7 +180,7 @@ Detection never blocks a save. If you select **Confirm** while the protocol is s
 > [!NOTE]
 > Unlike protocol detection, this probe is a real, billed request: an image request cannot be made free the way the protocol probes are. It runs only when you select **Detect**, never on its own and never on save.
 
-The credential comes from the same chain as the connection test: the key typed in the dialog, else the stored key, else the protocol's environment variable, all resolved on the server. **Vision support** appears only for models that are not in the built-in catalog; catalog models already declare whether they accept images.
+The credential comes from the same chain as the connection test: the key typed in the dialog, else the stored key, else the environment variable where the endpoint is allowed one (see [Set API keys](#set-api-keys)), all resolved on the server. **Vision support** appears only for models that are not in the built-in catalog; catalog models already declare whether they accept images.
 
 ## Set API keys
 
@@ -188,7 +188,7 @@ Each model carries its own API key, or none.
 
 - **One model.** In **Model settings**, enter the key in **API key**. Once saved, the key is shown masked; leave the field empty to keep it, or select **Clear stored API key** to remove it.
 - **A whole group.** On a group's header, select **Set key** and enter the key. It applies to every model in the group.
-- **No key.** A model without a key uses the provider's environment variable on the server; see [Built-in provider groups](#built-in-provider-groups). The card and the dialog show when a key is read from an environment variable.
+- **No key.** A model without a key uses the provider's environment variable on the server **only when its requests go to that provider's official endpoint**: the entry has no base URL (AgentHub's own `*_API_KEY` / `*_BASE_URL` pairing then applies), or its base URL is the vendor's own endpoint. A row with its own base URL is never covered by the environment, not even when `OPENAI_BASE_URL` names the same server. Gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, the Qwen gateways, ModelScope), **Custom**, **vLLM** and groups you created point at other endpoints, so their models need their own key: a Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The Penguin Go group is the exception that proves the rule — its rows fall back to its own `PENGUIN_GO_API_KEY`, never to a vendor's variable. The card and the dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
 
 A key you type is stored in the hidden Project config file, which has mode 0600. The Web App always masks it.
 
@@ -359,7 +359,7 @@ A local inference server can join a Project in two ways.
 
 ### Add the model to the vLLM group
 
-Add the model to the **vLLM** group. The protocol is fixed to `openai-chat-vllm-adapter`, and the group has no preset base URL, so set **Custom base URL** to your server.
+Add the model to the **vLLM** group. The protocol is fixed to `openai-chat-vllm-adapter`, and the group has no preset base URL, so set **Custom base URL** to your server. Set **API key** too: the server's key, or any placeholder if it checks none. A row with its own base URL is never covered by the server's `OPENAI_API_KEY`, so a keyless row is refused.
 
 The group ships eight preset models at a price of 0:
 
@@ -381,6 +381,7 @@ Add a `custom` model with:
 - `client_type = "openai-chat"`
 - `base_url` pointing at the server, for example `http://127.0.0.1:8000/v1`
 - the served model name as `model_id`
+- `api_key`: the server's key, or any placeholder if it checks none — the environment's `OPENAI_API_KEY` does not cover a server of your own
 
 Protocol detection settles on `openai-chat` for such servers, and the base URL field's suffix menu selects it by hand.
 
@@ -398,12 +399,13 @@ The per-request output limit and the compaction threshold both follow this windo
 
 ## Built-in provider groups
 
-The table below lists the built-in groups and the environment variables their models fall back to when an entry has no key. The catalog source is `packages/core/src/state/model-catalog.ts`. Each group also has a `_BASE_URL` variant, for example `ANTHROPIC_BASE_URL`. The **Models** page lists the groups in this order, followed by the groups you create.
+The table below lists the built-in groups and the environment variables their models fall back to when an entry has no key. The catalog source is `packages/core/src/state/model-catalog.ts`. Each group also has a `_BASE_URL` variant, for example `ANTHROPIC_BASE_URL`. The **Models** page lists the groups in this order, followed by the groups you create. A gateway group's rows carry the gateway's endpoint, so **they never fall back**: the variable in their row is the one their protocol client reads, and exactly because it holds your vendor key it is not sent to the gateway (see [Set API keys](#set-api-keys)).
 
 | Provider | API key env var | Notes |
 | --- | --- | --- |
 | tokendance | `OPENAI_API_KEY` | The recommended group. OpenAI-compatible gateway, preset base URL `https://tokendance.space/gateway/v1`; model ids are bare, with no vendor prefix (e.g. `glm-5.3`, `kimi-k3`); pricing is the gateway's own CNY rates, several of them currently discounted |
 | penguin-go | `PENGUIN_GO_API_KEY` | Preset relay group, fixed base URL `https://token.penguin.ooo/api`; its header authorizes a key for you or takes one you set by hand. See [The Penguin Go group](#the-penguin-go-group) |
+| opencode-go | `OPENAI_API_KEY` | OpenCode Go subscription gateway. Each model pins its own protocol: Chat Completions or Responses at `https://opencode.ai/zen/go/v1`, Anthropic Messages at `https://opencode.ai/zen/go` (that client's variable is `ANTHROPIC_API_KEY`). See [The OpenCode Go group](#the-opencode-go-group) |
 | deepseek | `DEEPSEEK_API_KEY` | Group of the default model |
 | openrouter | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI (OpenAI-compatible), preset base URL `https://api.fireworks.ai/inference/v1`; API model ids look like `accounts/fireworks/models/<slug>` |
@@ -418,14 +420,15 @@ The table below lists the built-in groups and the environment variables their mo
 | qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan subscription gateway, preset base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`; pricing from each model page's official list price (the preview model has only a quota-multiplier promo, no list price) |
 | modelscope | `OPENAI_API_KEY` | ModelScope's OpenAI-compatible api-inference gateway, preset base URL `https://api-inference.modelscope.cn/v1`; ids are the upstream repo names (`deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`); the group's header authorizes a token for you through an authorization bridge, or takes one you set by hand. See [The ModelScope group](#the-modelscope-group) |
 | vllm | `OPENAI_API_KEY` | Self-hosted vLLM servers: protocol fixed to `openai-chat-vllm-adapter`, no preset base URL, eight preset models priced at 0 (see [Connect a local or self-hosted endpoint](#connect-a-local-or-self-hosted-endpoint)) |
-| custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint; ships one preset, Atria Dawn Preview (Anthropic Messages API at `api.atria-asi.ai`, credential from `ANTHROPIC_API_KEY` when the entry has none, 256K window, priced at $0 until the vendor publishes prices) |
+| custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint; ships one preset, Atria Dawn Preview (Anthropic Messages API at `api.atria-asi.ai`, needs its own key, 256K window, priced at $0 until the vendor publishes prices) |
 
-The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through AgentHub's generic OpenAI-protocol clients, so with blank credentials they read `OPENAI_API_KEY`, not a gateway-specific variable. ModelScope also uses the `OPENAI_*` credential variables because its credential is an api-inference token, and all three presets pin the generic Responses protocol.
+The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through AgentHub's generic OpenAI-protocol clients, whose variable is `OPENAI_API_KEY`; a keyless row there is refused rather than sent your OpenAI key. The same holds for custom, vLLM and user-created groups unless the row's base URL is the vendor's own endpoint. ModelScope also uses the `OPENAI_*` credential variables because its credential is an api-inference token, and all three presets pin the generic Responses protocol; a keyless ModelScope row is refused the same way.
 
 - The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) for its presets and for any model you add to it, because OpenRouter serves the Responses API at that same base URL for every model it resells.
 - The other gateway presets use the Chat Completions client (`client_type = "openai-chat"`).
 - ModelScope is an aggregate gateway like Penguin Go, but all three of its presets use AgentHub's generic Responses client (`client_type = "openai-responses"`).
 - Those gateway clients read the same `OPENAI_*` variables, so the credential rules are identical either way.
+- The OpenCode Go group is the exception: its models use three protocols, so each one pins its own; see [The OpenCode Go group](#the-opencode-go-group).
 
 The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax preset uses `https://api.minimax.io/v1`. `MINIMAX_BASE_URL` is read only for entries without their own `base_url`.
 
@@ -440,6 +443,15 @@ The group's key comes from its header; see [Authorize a new API key](#authorize-
 - The platform's promotions replace the ones stored for this group. As in every other group, `.project_config.toml` holds the list price and the promotion lives in the server's database; **Sync presets** never sets one, and each authorization or **Sync** replaces them. If that record is lost, usage is priced at the list price until the next one writes it back.
 
 The platform quotes peak rates in USD per million Tokens. The group's DeepSeek rows follow DeepSeek's current line-up, `deepseek-flash` and `deepseek-v4-pro`, and declare the same off-peak schedule as the direct DeepSeek group, so their cards and cost records use half price outside Beijing weekday 9:00–12:00 and 14:00–18:00.
+
+### The OpenCode Go group
+
+`opencode-go` holds the 27 models OpenCode lists for its Go subscription. One key serves all of them: set it once with **Set key** on the group header.
+
+- **Protocols.** OpenCode serves each model on one of three endpoints, so each row pins its own `client_type` and base URL. Chat Completions (`openai-chat`) and Responses (`openai-responses`) models use `https://opencode.ai/zen/go/v1`. Anthropic Messages (`ant-messages`) models use `https://opencode.ai/zen/go`, because the client adds `/v1/messages` itself. Like every gateway's rows, none of them falls back to `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`: the key goes on the group. A model you add to the group yourself gets `openai-chat` and the `/v1` base URL.
+- **Prices.** Go is a monthly subscription whose usage limits are dollar amounts per model: a monthly allowance, of which at most 20% can be used in five hours and 50% in a week. The rows record the per-token rates a request draws from that allowance, so for this group the cost center shows how much of it you used, not a bill. `gpt-5.6-luna`, `grok-4.6`, `qwen3.7-plus` and `qwen3.6-plus` record their base tier, which covers up to 272K, 200K, 256K and 256K input tokens respectively. The four DeepSeek models follow DeepSeek's off-peak schedule; see [Prices and promotions](#prices-and-promotions).
+- **Opt-in and regions.** Five models answer with an error until the key's OpenCode workspace opts in to them. `muse-spark-1.3-contributor` and `muse-spark-1.2-contributor` need consent to Meta training on prompts and completions. `deepseek-v4.1-flash`, `deepseek-v4-flash` and `deepseek-v4-pro` need consent to being served from China. Some models also refuse requests from certain regions: from mainland China, `gpt-5.6-luna` and both Muse Spark models answer with an error.
+- **Session header.** Requests to the group name their conversation in `x-opencode-session`; see [App attribution](#app-attribution).
 
 ### The ModelScope group
 
@@ -470,7 +482,7 @@ The list is not exhaustive.
 - **DeepSeek images.** `deepseek-flash` is V4.1 Flash and reads images; `deepseek-v4-pro` is the V4 Pro 0813 release and is text-only. To send an image, use `deepseek-flash`.
 - **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, and **Sync presets** keeps its price current. A retired row is never added to a Project that does not have it, and a new Project never gets one.
 - **OpenAI twice.** The whole OpenAI line-up is listed twice: directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions).
-- **GLM-5.3 Flash five times.** It appears directly as `glm-5.3-flash`, under the same id on TokenDance, and as OpenRouter's `z-ai/glm-5.3-flash`, Fireworks AI's `accounts/fireworks/models/glm-5p3-flash` and Qwen pay-as-you-go's `ZHIPU/GLM-5.3-Flash`. Every row accepts images: AgentHub's GLM client forwards image parts for this one GLM id, every other GLM id refuses them, and the gateway rows go through the generic OpenAI-compatible clients, which carry images for any id. What the rows do not share is the price: each records what its own seller charges, so they disagree while a promotion runs.
+- **GLM-5.3 Flash six times.** It appears directly as `glm-5.3-flash`, under the same id on TokenDance and OpenCode Go, and as OpenRouter's `z-ai/glm-5.3-flash`, Fireworks AI's `accounts/fireworks/models/glm-5p3-flash` and Qwen pay-as-you-go's `ZHIPU/GLM-5.3-Flash`. Every row accepts images: AgentHub's GLM client forwards image parts for this one GLM id, every other GLM id refuses them, and the gateway rows go through the generic OpenAI-compatible clients, which carry images for any id. What the rows do not share is the price: each records what its own seller charges, so they disagree while a promotion runs.
 - **OpenRouter free tier.** The catalog carries the `:free` model variant `nvidia/nemotron-3-ultra-550b-a55b:free` and the `openrouter/free` unified Free Models Router. They cost nothing, but OpenRouter's free-tier rate limits and data policy apply.
 
 ### Prices and promotions
@@ -479,7 +491,7 @@ The list is not exhaustive.
 - **Rows with no price.** The pricing block can be absent altogether, which records "nobody has looked this vendor's price up" rather than "free": such a row shows no price badge on the **Models** page, and the cost center reports its usage as uncosted. ModelScope's preset rows are the catalog's only ones — ModelScope bills for api-inference, but its model pages are client-rendered and carry no read-able rate. Three zeros would be worse than absent: they would read as the free tier and badge a billed gateway "Free".
 - **Base tier only.** Where a vendor's prices step up with input size, the catalog records the base tier. MiniMax M3 records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; above that, every rate doubles, and the priority tier is 1.5x, so long-context and priority usage is underestimated. OpenAI (above 272K) and Gemini 3.1 Pro (above 200K) follow the same convention.
 - **DeepSeek off-peak.** The direct DeepSeek rows record the official peak prices and declare DeepSeek's off-peak schedule: outside Beijing time 9:00–12:00 and 14:00–18:00 on weekdays, every bucket is halved. The **Models** page shows a `50% off` tag during those hours, and the cost center bills at that rate.
-  - Four resold rows follow the same schedule because their sellers pass DeepSeek's windows through: TokenDance's `deepseek-v4.1-flash`, OpenRouter's `deepseek/deepseek-v4.1-flash`, and Penguin Go's `deepseek-flash` and `deepseek-v4-pro`.
+  - Eight resold rows follow the same schedule because their sellers pass DeepSeek's windows through: TokenDance's `deepseek-v4.1-flash`, OpenRouter's `deepseek/deepseek-v4.1-flash`, Penguin Go's `deepseek-flash` and `deepseek-v4-pro`, and OpenCode Go's `deepseek-v4.1-flash`, `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp` and `deepseek-v4-pro`.
   - Qwen bills the DeepSeek models it resells on a schedule of its own, half price from 22:00 to 8:00 Beijing time every day. `deepseek-v4.1-flash` in both Qwen groups, and the Token Plan's `deepseek-v4-pro-0813`, declare that one instead, and the tag's tooltip names the windows of whichever schedule the row follows.
   - The stored price is always the peak price, so what is on disk does not depend on the hour a Project was created or synced.
 - **Flat promotions.** Nine TokenDance models are discounted today:
@@ -545,9 +557,9 @@ The catalog decides these headers by **endpoint host**, not by the entry's provi
 | `openrouter.ai` | `X-OpenRouter-Title` | `PenguinHarness` |
 | `openrouter.ai` | `X-OpenRouter-Categories` | `cli-agent,personal-agent` |
 | `tokendance.space` | `X-App-URL` | `https://penguin.ooo/` |
-| `opencode.ai` | `x-opencode-session` | The Session id, sent only when a Session id is known |
+| `opencode.ai` | `x-opencode-session` | The Session id; a request outside any Session (a connectivity test, a vision probe) sends a fresh id of its own |
 
-Every other endpoint, including every direct vendor and every gateway that reads no such header, receives no extra headers. The OpenRouter and TokenDance headers state the app's identity only. The OpenCode header names the conversation, because that gateway routes each conversation by it; no header carries anything about the user or the agent.
+Every other endpoint, including every direct vendor and every gateway that reads no such header, receives no extra headers. The OpenRouter and TokenDance headers state the app's identity only. The OpenCode header names the conversation, because that gateway routes and caches each conversation by it and refuses a request that names none; no header carries anything about the user or the agent.
 
 ## How it works
 

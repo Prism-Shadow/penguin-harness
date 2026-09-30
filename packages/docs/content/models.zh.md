@@ -62,7 +62,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 **导入模型**会把一个 OpenAI 兼容或 Anthropic 兼容端点列出的所有模型填进新分组。
 
 1. 点击**导入模型**。
-2. 在 **API key** 里输入密钥。留空则使用协议的 `OPENAI_*` 或 `ANTHROPIC_*` 环境变量。
+2. 在 **API key** 里输入该端点的密钥。端点不是厂商自己的地址时，服务端的 `OPENAI_*` / `ANTHROPIC_*` 变量不会被使用（见[设置 API key](#设置-api-key)），不填 key 的导入会被拒绝。
 3. 在**自定义 base URL** 里输入端点的 base URL。
 4. 点击字段右上角的**检测协议**，或者在字段最右侧的菜单里选择协议。见[检测自定义模型的协议](#检测自定义模型的协议)。
 5. 点击**批量导入模型**。PenguinHarness 会向端点请求模型列表，然后按端点返回的顺序把所有模型保存到新分组。
@@ -88,7 +88,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 2. 在**模型 ID** 里输入模型 id，必须与供应商 API 要求的完全一致，例如 `gpt-5.5`。**获取模型 id** 会打开供应商的模型列表。
 3. 可选：在**模型名称**里输入显示名。显示名为空时直接显示模型 id。
 4. 填写凭证和端点：
-   - **API key**：留空则使用供应商的环境变量。如果服务端设置了这个变量，输入框会显示变量名。
+   - **API key**：在厂商分组里留空则使用供应商的环境变量，服务端设置了这个变量时输入框会显示变量名。在网关分组、**Custom** 分组和你创建的分组里 key 必填——端点不是厂商自己的地址时，不会使用任何环境变量。
    - **自定义 base URL**：在 **Custom** 分组和你创建的分组里必填。网关分组会自动填好。
 5. 可选：填写限制和价格：
    - **上下文窗口**：模型的上下文窗口大小，单位是 Token。模型不在内置模型目录里时，留空会保存为 1000000。
@@ -163,8 +163,8 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 - 探测请求是请求体为 `{}` 的最小无效请求，不消耗 Token，也不需要有效的模型 id：返回的错误若符合协议自身的格式，就证明路由存在；返回 `404` 或 `405`，说明路径没有提供服务；HTML 或网关杂讯一律不算数。
 - 探测用的 URL 和认证头，与保存后 AgentHub 客户端实际使用的完全一致：OpenAI 系协议用 `Authorization: Bearer`，`ant-messages` 用 `x-api-key` 加 `Authorization: Bearer` 和 `anthropic-version`。所以检测出的协议一定真实可用。
-- 服务端按三步选取探测凭据：优先用弹窗里填写的 API key，其次用这个条目已保存的 key，最后用探测目标协议对应的环境变量（`ant-messages` 用 `ANTHROPIC_API_KEY`，两个 OpenAI 协议用 `OPENAI_API_KEY`）。每发一次探测都会重新选择，因为此刻要确定的就是协议。这些值不会传到浏览器，也不会出现在响应里。
-- 完全没有凭据也能检测，因为协议格式的 `401` 同样能识别路由。不过相比匿名请求经常得到的笼统 `401` 或网关 HTML，带凭据的探测得到这个明确答案的可能性大得多。
+- 服务端按三步选取探测凭据：优先用弹窗里填写的 API key，其次用这个条目已保存的 key，最后用探测目标协议对应的环境变量（`ant-messages` 用 `ANTHROPIC_API_KEY`，两个 OpenAI 协议用 `OPENAI_API_KEY`）——但只在被探测的 URL 是该厂商自己的端点时才会使用。每发一次探测都会重新选择，因为此刻要确定的就是协议。这些值不会传到浏览器，也不会出现在响应里。
+- 完全没有凭据也能检测，因为协议格式的 `401` 同样能识别路由。因此网关或私有服务器一律匿名探测：你的厂商 key 不会发往你输入的 URL。
 - 在这些分组里，不会从模型 id 推断任何东西。在自定义分组里输入 `claude-sonnet-5`，不会因此选用 Anthropic 客户端或它的 `ANTHROPIC_*` key：自定义分组一律回退到 `openai-chat`，API key 提示也照此显示。供应商分组和网关分组不受影响；模型目录认识它们的 id，所以按 id 或按分组的预置来路由。
 - 在检测功能出现之前创建的条目，保留 `client_type = "openai"`，它至今仍是 `openai-chat` 的别名。只有手动选择协议、或某次检测生效时，才会改写这个值。旧的非标准协议值以只读方式显示：「协议：{t}（沿用原配置，不可修改）」。
 - 检测也可以通过 `POST /api/projects/:id/models/detect` 调用（仅 owner 可用），参见 [Server API](/server-api)。
@@ -180,7 +180,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 > [!NOTE]
 > 和协议检测不同，这一探测是真实、计费的请求：图片请求无法像协议探测那样做到免费。它只在你点击**检测**时执行，绝不会自动运行，也不会在保存时运行。
 
-凭据来源和连通性测试是同一条链路：先用弹窗里填写的 key，其次用已保存的 key，最后用协议对应的环境变量，全部在服务端解析。**支持视觉**只对不在内置模型目录里的模型显示；目录里的模型本身就声明了是否接受图片。
+凭据来源和连通性测试是同一条链路：先用弹窗里填写的 key，其次用已保存的 key，最后在端点允许的范围内用环境变量（见[设置 API key](#设置-api-key)），全部在服务端解析。**支持视觉**只对不在内置模型目录里的模型显示；目录里的模型本身就声明了是否接受图片。
 
 ## 设置 API key
 
@@ -188,7 +188,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 - **单个模型。** 在**模型配置**里，把 key 填入 **API key**。保存后 key 会打码显示；输入框留空即保留原 key，点击**清除已存 API key** 可删除它。
 - **整个分组。** 在分组标题栏上点击**手动设置密钥**并输入 key，组内所有模型都会使用它。
-- **不配 key。** 没配 key 的模型使用服务端上供应商的环境变量；参见[内置供应商分组](#内置供应商分组)。key 来自环境变量时，卡片和弹窗都会显示这一点。
+- **不配 key。** 没配 key 的模型**只在请求确实发往该供应商的官方端点时**使用服务端上供应商的环境变量：条目没有 base URL（此时按 AgentHub 自己的 `*_API_KEY` / `*_BASE_URL` 配对），或 base URL 是厂商自己的端点。自带 base URL 的条目一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、两个 Qwen 网关、ModelScope）、**Custom**、**vLLM** 和你创建的分组指向别的端点，其中的模型必须配自己的 key：在这些分组里对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。Penguin Go 分组是唯一的例外，它回退到自己的 `PENGUIN_GO_API_KEY`，从不使用厂商变量。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
 
 你填写的 key 存在 Project 的隐藏配置文件里，文件权限为 0600。Web App 里它始终打码显示。
 
@@ -358,7 +358,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 
 ### 把模型添加到 vLLM 分组
 
-把模型添加到 **vLLM** 分组。协议固定为 `openai-chat-vllm-adapter`，分组没有预置 base URL，所以要把**自定义 base URL** 设置为你的服务器地址。
+把模型添加到 **vLLM** 分组。协议固定为 `openai-chat-vllm-adapter`，分组没有预置 base URL，所以要把**自定义 base URL** 设置为你的服务器地址。同时填上 **API key**：服务器的 key，服务器不校验 key 时随便填一个占位值也行。自带 base URL 的条目不会由服务端的 `OPENAI_API_KEY` 覆盖，没有 key 的条目会被拒绝。
 
 分组自带八个预置模型，价格均为 0：
 
@@ -380,6 +380,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 - `client_type = "openai-chat"`
 - `base_url` 指向服务器，例如 `http://127.0.0.1:8000/v1`
 - `model_id` 填服务器实际提供的模型名称
+- `api_key`：服务器的 key，服务器不校验 key 时填任意占位值——环境里的 `OPENAI_API_KEY` 不覆盖你自己的服务器
 
 对这类服务器，协议检测会判定为 `openai-chat`；也可以通过 base URL 字段的后缀菜单手动选定。
 
@@ -397,12 +398,13 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 
 ## 内置供应商分组
 
-下表列出了各个内置分组，以及条目没有 key 时模型回退使用的环境变量。模型目录的源码位于 `packages/core/src/state/model-catalog.ts`。每个分组还有一个 `_BASE_URL` 变体，例如 `ANTHROPIC_BASE_URL`。**模型库**页面按这个顺序列出分组，你创建的分组排在后面。
+下表列出了各个内置分组，以及条目没有 key 时模型回退使用的环境变量。模型目录的源码位于 `packages/core/src/state/model-catalog.ts`。每个分组还有一个 `_BASE_URL` 变体，例如 `ANTHROPIC_BASE_URL`。**模型库**页面按这个顺序列出分组，你创建的分组排在后面。网关分组的条目带着网关自己的端点，因此**从不回退**：表里的变量是它们的协议客户端读取的那一个，而正因为它存的是你的厂商 key，它不会被发往网关（见[设置 API key](#设置-api-key)）。
 
 | 供应商 | API key 环境变量 | 说明 |
 | --- | --- | --- |
 | tokendance | `OPENAI_API_KEY` | 推荐分组。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为裸名称，不带供应商前缀（如 `glm-5.3`、`kimi-k3`）；价格采用网关自己的人民币费率，目前有几项在打折 |
 | penguin-go | `PENGUIN_GO_API_KEY` | 预置的中转分组，固定 base URL `https://token.penguin.ooo/api`；分组标题栏可以为你自动授权一把 key，也可以手动设置。见 [Penguin Go 分组](#penguin-go-分组) |
+| opencode-go | `OPENAI_API_KEY` | OpenCode Go 订阅网关。每个模型各自固定协议：Chat Completions 或 Responses 走 `https://opencode.ai/zen/go/v1`，Anthropic Messages 走 `https://opencode.ai/zen/go`（该客户端的变量是 `ANTHROPIC_API_KEY`）。见 [OpenCode Go 分组](#opencode-go-分组) |
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在的分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI（OpenAI 兼容），预置 base URL `https://api.fireworks.ai/inference/v1`；API 模型 id 形如 `accounts/fireworks/models/<slug>` |
@@ -417,14 +419,15 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 | qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；价格取自各模型页面的官方牌价（预览模型只有配额倍率优惠，没有牌价） |
 | modelscope | `OPENAI_API_KEY` | 魔搭的 OpenAI 兼容 api-inference 网关，预置 base URL `https://api-inference.modelscope.cn/v1`；id 就是上游仓库名（如 `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）；分组标题栏可以经授权中转层为你自动授权一把 token，也可以手动设置。见 [ModelScope 分组](#modelscope-分组) |
 | vllm | `OPENAI_API_KEY` | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，无预置 base URL，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
-| custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn Preview（Anthropic Messages API，地址 `api.atria-asi.ai`，条目没有凭据时使用 `ANTHROPIC_API_KEY`，上下文窗口 256K，供应商公布价格之前定价 $0） |
+| custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn Preview（Anthropic Messages API，地址 `api.atria-asi.ai`，需要自己的 key，上下文窗口 256K，供应商公布价格之前定价 $0） |
 
-OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 AgentHub 通用的 OpenAI 协议客户端，凭据留空时读取 `OPENAI_API_KEY`，而不是某个网关专属的变量。ModelScope 也使用 `OPENAI_*` 凭据变量，因为它的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议。
+OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 AgentHub 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom、vLLM 和自建分组同样如此，除非条目的 base URL 就是厂商自己的端点。ModelScope 也使用 `OPENAI_*` 凭据变量，因为它的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
 
 - OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
 - ModelScope 像 Penguin Go 一样是聚合网关，但三条预置都使用 AgentHub 通用 Responses 客户端（`client_type = "openai-responses"`）。
 - 这些网关客户端读取相同的 `OPENAI_*` 变量，所以无论哪种方式，凭据规则完全一致。
+- OpenCode Go 分组是例外：它的模型用到三种协议，因此每个模型各自固定协议，见 [OpenCode Go 分组](#opencode-go-分组)。
 
 直连 MiniMax M3 的客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模型使用 `https://api.minimax.io/v1`。只有条目没有自己的 `base_url` 时，才会读取 `MINIMAX_BASE_URL`。
 
@@ -439,6 +442,15 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 - 平台的促销会替换这个分组已存的促销。和其他分组一样，`.project_config.toml` 里存的是牌价，促销存在服务端的数据库里；**同步预置**从不设置促销，每次授权或**同步**都会整体替换它们。这条记录丢失后，用量按牌价计价，直到下一次授权或同步把它写回来。
 
 平台报的是高峰档费率，单位是每百万 Token 多少美元。分组里的 DeepSeek 条目跟随 DeepSeek 当前的模型阵容，只有 `deepseek-flash` 和 `deepseek-v4-pro`，并声明与直连 DeepSeek 分组相同的空闲时段，因此在北京时间工作日 9:00–12:00、14:00–18:00 之外，卡片和成本记录都按半价计算。
+
+### OpenCode Go 分组
+
+`opencode-go` 收录 OpenCode 为 Go 订阅列出的 27 个模型。它们共用一把 key：在分组标题栏用**手动设置密钥**设置一次即可。
+
+- **协议。** OpenCode 把每个模型放在三个端点之一上，因此每个条目各自固定 `client_type` 与 base URL。Chat Completions（`openai-chat`）和 Responses（`openai-responses`）模型使用 `https://opencode.ai/zen/go/v1`；Anthropic Messages（`ant-messages`）模型使用 `https://opencode.ai/zen/go`，因为客户端会自行加上 `/v1/messages`。与所有网关的条目一样，它们都不会回退到 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`：key 要设在分组上。你自己添加到该分组的模型使用 `openai-chat` 和带 `/v1` 的 base URL。
+- **价格。** Go 按月订阅，用量上限是按模型计的美元额度：每月一份额度，每 5 小时最多用掉其中 20%，每周最多 50%。条目记录的是每次请求从额度中扣除的每 Token 价格，因此对这个分组而言，成本中心显示的是你用掉了多少额度，而不是一张账单。`gpt-5.6-luna`、`grok-4.6`、`qwen3.7-plus` 和 `qwen3.6-plus` 记录基础档，分别覆盖 272K、200K、256K 和 256K 输入 Token 以内。四个 DeepSeek 模型遵循 DeepSeek 的空闲时段，见[价格与促销](#价格与促销)。
+- **开通与地区。** 在 key 所属的 OpenCode 工作区开通之前，有五个模型会直接报错。`muse-spark-1.3-contributor` 和 `muse-spark-1.2-contributor` 需要同意 Meta 用提示词和回复训练模型。`deepseek-v4.1-flash`、`deepseek-v4-flash` 和 `deepseek-v4-pro` 需要同意由中国境内托管的服务提供。部分模型还会拒绝来自某些地区的请求：从中国大陆访问时，`gpt-5.6-luna` 和两个 Muse Spark 模型都会报错。
+- **会话请求头。** 发往该分组的请求会在 `x-opencode-session` 中标明所属对话，见[应用归因](#应用归因)。
 
 ### ModelScope 分组
 
@@ -469,7 +481,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 - **DeepSeek 图像能力。** `deepseek-flash` 就是 V4.1 Flash，支持读图；`deepseek-v4-pro` 是 V4 Pro 0813 版本，仅支持文本。要发送图像，请使用 `deepseek-flash`。
 - **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，**同步预置**也会继续更新它的价格。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
 - **OpenAI 出现两次。** OpenAI 全系模型出现了两遍：一次直连（用你自己的 OpenAI key，官方牌价），一次在 OpenRouter 上以 `openai/<id>` 形式（网关费率，随其当前促销活动浮动）。
-- **GLM-5.3 Flash 出现五次。** 分别是直连的 `glm-5.3-flash`、TokenDance 上的同名条目，以及 OpenRouter 的 `z-ai/glm-5.3-flash`、Fireworks AI 的 `accounts/fireworks/models/glm-5p3-flash` 和 Qwen 按量付费的 `ZHIPU/GLM-5.3-Flash`。每一条都接受图像：AgentHub 的 GLM 客户端只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像；各网关条目走通用的 OpenAI 兼容客户端，对任何 id 都会携带图像。各条不一致的是价格：每条记录的都是自己卖家收取的价格，所以促销期间彼此不同。
+- **GLM-5.3 Flash 出现六次。** 分别是直连的 `glm-5.3-flash`、TokenDance 与 OpenCode Go 上的同名条目，以及 OpenRouter 的 `z-ai/glm-5.3-flash`、Fireworks AI 的 `accounts/fireworks/models/glm-5p3-flash` 和 Qwen 按量付费的 `ZHIPU/GLM-5.3-Flash`。每一条都接受图像：AgentHub 的 GLM 客户端只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像；各网关条目走通用的 OpenAI 兼容客户端，对任何 id 都会携带图像。各条不一致的是价格：每条记录的都是自己卖家收取的价格，所以促销期间彼此不同。
 - **OpenRouter 免费档。** 目录收录了 `:free` 变体 `nvidia/nemotron-3-ultra-550b-a55b:free`，以及 `openrouter/free` 这个统一的免费模型路由（Free Models Router）。它们不花钱，但 OpenRouter 免费档的限流和数据政策仍然适用。
 
 ### 价格与促销
@@ -478,7 +490,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 - **没有价格的条目。** 价格字段可以整体缺席，含义是「没人查过这家的价格」，而不是免费：这类条目在**模型库**页面不显示价格徽标，成本中心把它的用量报为未计价。目录里目前只有 ModelScope 的预置条目是这样——魔搭的 api-inference 是计费的，但它的模型页面是客户端渲染的，读不到费率。写成三个 0 反而更糟：那会被当作免费档，给一个计费网关打上「Free」徽标。
 - **仅记录基础档。** 供应商的价格随输入规模上调时，目录只记录基础档。MiniMax M3 记录的是 MiniMax 标准按量付费档在 512K 输入 Token 及以下的价格；超过后每项费率翻倍，priority 档为 1.5 倍，所以长上下文和 priority 用量的成本估算会偏低。OpenAI（272K 以上）和 Gemini 3.1 Pro（200K 以上）遵循同样的约定。
 - **DeepSeek 空闲时段。** 直连 DeepSeek 的条目记录官方高峰价格，并声明 DeepSeek 的空闲时段规则：工作日北京时间 9:00–12:00 和 14:00–18:00 以外的时段，三项价格全部减半。**模型库**页面在这些时段显示 `省 50%` 标签，成本中心也按这个费率计费。
-  - 四条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、OpenRouter 的 `deepseek/deepseek-v4.1-flash`，以及 Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`。
+  - 八条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、OpenRouter 的 `deepseek/deepseek-v4.1-flash`、Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`，以及 OpenCode Go 的 `deepseek-v4.1-flash`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 和 `deepseek-v4-pro`。
   - Qwen 转售的 DeepSeek 模型按它自己的时段计费：北京时间每天 22:00 至次日 8:00 半价。两个 Qwen 分组的 `deepseek-v4.1-flash` 和 Token Plan 的 `deepseek-v4-pro-0813` 声明的是这一套，折扣标签的悬停说明写的也是该条目所遵循时段的窗口。
   - 存储的价格始终是高峰价格，所以磁盘上的数值与 Project 创建或同步的时间无关。
 - **固定折扣。** 目前有九个 TokenDance 模型在打折：
@@ -544,9 +556,9 @@ api_key = "sk-..."
 | `openrouter.ai` | `X-OpenRouter-Title` | `PenguinHarness` |
 | `openrouter.ai` | `X-OpenRouter-Categories` | `cli-agent,personal-agent` |
 | `tokendance.space` | `X-App-URL` | `https://penguin.ooo/` |
-| `opencode.ai` | `x-opencode-session` | Session id，仅在已知 Session id 时发送 |
+| `opencode.ai` | `x-opencode-session` | Session id；不属于任何 Session 的请求（连通性测试、视觉探测）各自使用一个新生成的 id |
 
-其他端点，包括所有直连厂商和不读取这类请求头的网关，都不会收到额外的请求头。OpenRouter 和 TokenDance 的请求头只表明应用身份。OpenCode 的请求头标明对话，因为那个网关靠它来路由每段对话；没有任何请求头携带用户或 Agent 的信息。
+其他端点，包括所有直连厂商和不读取这类请求头的网关，都不会收到额外的请求头。OpenRouter 和 TokenDance 的请求头只表明应用身份。OpenCode 的请求头标明对话，因为那个网关靠它来路由和缓存每段对话，并拒绝没有标明对话的请求；没有任何请求头携带用户或 Agent 的信息。
 
 ## 工作原理
 

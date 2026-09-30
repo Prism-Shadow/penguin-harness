@@ -1,5 +1,5 @@
 /**
- * System settings dialog: one popup holding the settings that used to sit as separate rows
+ * Settings dialog: one popup holding the settings that used to sit as separate rows
  * in the sidebar user menu, on the PagedDialog shell (left rail of pages, ChatGPT-style
  * rows on the right). The rail is grouped — Personal for the viewer's own preferences,
  * Server for the server-global settings an admin writes — and both the rail and the pane
@@ -23,10 +23,12 @@ import { COMPANY_MODE_ICON, GEAR_ICON } from "../../components/ui/icons";
 import { ProfileSection } from "./profile-section";
 import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
+import { ShortcutsSection } from "./shortcuts-section";
 import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
+import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
 /** Rail glyphs, on the shared 24x24 stroke grid (see NAV_ICONS' conventions). */
@@ -38,6 +40,9 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   /** Sun: appearance. */
   appearance:
     "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4l1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4l1.4-1.4",
+  /** Keyboard: a rounded plate, two rows of keys and a space bar. */
+  shortcuts:
+    "M3 6h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM6 9.5h.01M9.5 9.5h.01M13 9.5h.01M16.5 9.5h.01M6 12.5h.01M9.5 12.5h.01M13 12.5h.01M16.5 12.5h.01M8.5 15.5h7",
   /** Single person: the signed-in account. */
   account: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
   /** Globe: outbound traffic. */
@@ -47,12 +52,27 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   uploads: "M12 15V4m0 0L7 9m5-5l5 5M4 20h16",
   /** The building the mode switch wears: company mode. */
   company: COMPANY_MODE_ICON,
+  /** Puzzle piece: plugins. */
+  plugins:
+    "M10 4a2 2 0 1 1 4 0v2h3a1 1 0 0 1 1 1v3h-2a2 2 0 1 0 0 4h2v3a1 1 0 0 1-1 1h-3v-2a2 2 0 1 0-4 0v2H7a1 1 0 0 1-1-1v-3h2a2 2 0 1 0 0-4H6V7a1 1 0 0 1 1-1h3V4z",
   /** Two people: user management. */
   users:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
 };
 
-export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsDialog({
+  open,
+  onClose,
+  section,
+  pluginFocus,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** The page an opening starts on; a page this viewer may not open falls back like any other. */
+  section?: SettingsSectionKey;
+  /** On the Plugins page: the card an opening scrolls to (e.g. `sandbox`). */
+  pluginFocus?: string;
+}) {
   // uploadLimits feeds the Upload limits page's "?" (sectionInfo below); the rest pick pages.
   const { user, desktopMode, sessionVia, uploadLimits } = useAuth();
   const sections = visibleSettingsSections({
@@ -62,12 +82,13 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   });
   const [active, setActive] = useState<SettingsSectionKey | null>(null);
 
-  // Each opening starts on the viewer's first page: clearing the choice lets `current`
-  // below resolve it against the live list. Deliberately keyed on `open` alone — re-running
-  // on every sections identity change would yank the user off a page they navigated to.
+  // Each opening starts on the requested page, or the viewer's first: `current` below
+  // resolves the choice against the live list. Deliberately keyed on `open` (and the
+  // request) alone — re-running on every sections identity change would yank the user off a
+  // page they navigated to.
   useEffect(() => {
-    if (open) setActive(null);
-  }, [open]);
+    if (open) setActive(section ?? null);
+  }, [open, section]);
 
   const current = resolveSettingsSection(active, sections);
   if (current === null) return null;
@@ -77,10 +98,12 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     profile: S.settings.profile,
     general: S.settings.generalTitle,
     appearance: S.settings.appearanceTitle,
+    shortcuts: S.settings.shortcutsTitle,
     account: S.settings.accountTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
     company: S.settings.companyModeTitle,
+    plugins: S.settings.pluginsTitle,
     users: S.admin.users,
   };
   const groupLabel: Record<SettingsGroupKey, string> = {
@@ -90,9 +113,11 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   // Page-level explanations, disclosed by the "?" the shell draws beside the pane heading.
   // Pages whose rows explain themselves one by one carry none.
   const sectionInfo: Partial<Record<SettingsSectionKey, string>> = {
+    shortcuts: S.settings.shortcutsInfo,
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
+    plugins: S.settings.pluginsInfo,
   };
 
   const groups: Array<PagedDialogGroup<SettingsSectionKey>> = settingsGroups(sections).map(
@@ -114,7 +139,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     <PagedDialog
       open={open}
       onClose={onClose}
-      title={S.settings.systemSettings}
+      title={S.settings.title}
       groups={groups}
       active={current}
       onSelect={setActive}
@@ -122,10 +147,14 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       {current === "profile" && <ProfileSection />}
       {current === "general" && <GeneralSection />}
       {current === "appearance" && <AppearanceSection />}
+      {current === "shortcuts" && <ShortcutsSection />}
       {current === "account" && <AccountSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
       {current === "company" && <CompanySection />}
+      {current === "plugins" && (
+        <PluginsSection {...(pluginFocus !== undefined ? { focus: pluginFocus } : {})} />
+      )}
       {current === "users" && <AdminUsersSection />}
     </PagedDialog>
   );

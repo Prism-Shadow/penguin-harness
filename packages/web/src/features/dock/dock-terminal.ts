@@ -1,9 +1,10 @@
 /**
  * The dock's terminal-side helpers: creating/adopting shells for terminal tabs, and the
- * global Ctrl+` hotkey. Split from dock-state.ts so the store stays pure (unit-testable
+ * global `terminal.toggle` command. Split from dock-state.ts so the store stays pure (unit-testable
  * without fetch); this module owns every server round-trip a terminal tab needs.
  */
 import { S } from "../../lib/strings";
+import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { toastError } from "../../components/ui/toast";
 import {
   HttpStatusError,
@@ -12,12 +13,15 @@ import {
   type TerminalInfo,
 } from "../terminal/terminal-view";
 import { liveTerminals, noteTerminalCreated, refreshTerminals } from "../terminal/terminal-list";
+import { machineForTerminal, rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
   addTerminalTab,
   currentDockScope,
+  docksOnScreen,
   removeTab,
   restoreTerminalTab,
   showTerminal,
+  toggleDock,
   toggleTerminalDocks,
   unownedTerminals,
   type DockPosition,
@@ -30,15 +34,26 @@ const HOME_CWD = "~";
  * The Workspace a new shell should start in — the conversation's own directory, which is
  * where its files are and what the agent has been working in. Published by the surface
  * that knows it (the chat page for a Session, the draft page for the Workspace picked
- * there) rather than read from a store, because the Ctrl+` hotkey creates shells from a
- * module-scope listener with no React context to consult. Null = none known; the shell
+ * there) rather than read from a store, because the terminal toggle creates shells from a
+ * module-scope command handler with no React context to consult. Null = none known; the shell
  * falls back to home.
  */
 let workspaceCwd: string | null = null;
+/**
+ * And the machine that directory is ON. A Workspace path is only meaningful on its own
+ * filesystem, so the machine travels with it — the same pairing every other Workspace
+ * carries in this feature. Null = this server.
+ */
+let workspaceMachine: string | null = null;
 
-/** Points new shells at this absolute Workspace path; null restores the home default. */
-export function setDockCwd(path: string | null): void {
+/**
+ * Points new shells at this absolute Workspace path, on `machineId`; null path restores the
+ * home default. A shell for a conversation that lives on a machine has to be a pty on THAT
+ * machine: the files it is for are there, and the agent it sits beside is there.
+ */
+export function setDockCwd(path: string | null, machineId: string | null = null): void {
   workspaceCwd = path !== null && path.trim() !== "" ? path : null;
+  workspaceMachine = workspaceCwd === null ? null : machineId;
 }
 
 /** A rejected working directory (gone, replaced by a file, relative) — see resolveCwd server-side. */
@@ -56,8 +71,15 @@ function isBadCwd(err: unknown): boolean {
  * how a server-side spawn failure used to present.
  */
 export async function createShellInDock(position?: DockPosition): Promise<void> {
+  // The machine is named explicitly: there is no terminal id yet for the routing rule to
+  // read, which is the one call in this feature that cannot use it.
+  const machine = workspaceMachine;
   const create = (cwd: string): Promise<TerminalInfo> =>
-    fetchJson<TerminalInfo>("/api/terminals", { method: "POST", body: JSON.stringify({ cwd }) });
+    fetchJson<TerminalInfo>(
+      "/api/terminals",
+      { method: "POST", body: JSON.stringify({ cwd }) },
+      machine,
+    );
   try {
     let created: TerminalInfo;
     try {
@@ -65,8 +87,11 @@ export async function createShellInDock(position?: DockPosition): Promise<void> 
     } catch (err) {
       if (workspaceCwd === null || !isBadCwd(err)) throw err;
       console.warn(`[terminal] Workspace unusable as cwd, opening in ${HOME_CWD}:`, err);
+      // Home is still home ON THAT MACHINE: a Workspace that has gone is no reason to put
+      // the shell on a different computer from the conversation it belongs to.
       created = await create(HOME_CWD);
     }
+    rememberTerminalMachine(created.id, machine);
     noteTerminalCreated(created);
     addTerminalTab(created.id, position);
   } catch (err) {
@@ -92,12 +117,18 @@ export async function createShellInDock(position?: DockPosition): Promise<void> 
  * every live shell is already tabbed somewhere (or none exists) is a new one created.
  */
 export async function openTerminalInDock(position?: DockPosition): Promise<void> {
-  const listed = await fetchJson<{ terminals: TerminalInfo[] }>("/api/terminals").catch(() => null);
-  const live = (listed?.terminals ?? liveTerminals()).filter((t) => t.alive);
-  const adoptable = unownedTerminals(live.map((t) => t.id)).at(-1);
+  // Through the list, not a bare fetch of this server's collection: a terminal is a pty on
+  // ONE machine, and `/api/terminals` asked without a machine answers for this one alone —
+  // so a conversation on a machine would never find the shell it already has there, and
+  // would spawn a second one beside it on every open.
+  await refreshTerminals();
+  const live = liveTerminals().filter((t) => t.alive);
+  // And it has to be a shell on the machine this conversation's files are on, for the same
+  // reason createShellInDock creates one there.
+  const here = live.filter((t) => machineForTerminal(t.id) === workspaceMachine);
+  const adoptable = unownedTerminals(here.map((t) => t.id)).at(-1);
   if (adoptable !== undefined) {
     addTerminalTab(adoptable, position);
-    void refreshTerminals();
     return;
   }
   await createShellInDock(position);
@@ -115,7 +146,14 @@ export async function openTerminalInDock(position?: DockPosition): Promise<void>
  */
 export function detachTerminal(id: string, position: DockPosition): void {
   const fromScope = currentDockScope();
-  const popup = window.open(`/terminal?id=${encodeURIComponent(id)}`, "_blank");
+  // The machine travels in the URL: the new window starts with an empty terminal map, so
+  // without it a detached remote pane would try to attach to a pty on the wrong computer.
+  const machine = machineForTerminal(id);
+  const popup = window.open(
+    `/terminal?id=${encodeURIComponent(id)}` +
+      (machine === null ? "" : `&machine=${encodeURIComponent(machine)}`),
+    "_blank",
+  );
   removeTab(`terminal:${id}`);
   if (!popup) return; // blocked popup: the shell stays reachable from the "+" menus
   const timer = window.setInterval(() => {
@@ -133,8 +171,8 @@ export function detachTerminal(id: string, position: DockPosition): void {
 }
 
 /**
- * Ctrl+`: hide the shown terminals, or bring them back — and with no terminal tab in
- * this conversation, adopt or create a shell (the async tail the store's synchronous
+ * The terminal toggle: hide the shown terminals, or bring them back — and with no terminal
+ * tab in this conversation, adopt or create a shell (the async tail the store's synchronous
  * toggle hands off).
  */
 export function toggleTerminal(): void {
@@ -144,15 +182,29 @@ export function toggleTerminal(): void {
 /** Re-exported for callers that already know which shell they want on screen. */
 export { showTerminal };
 
-// Ctrl+` (the Codex/VS Code binding), registered at module scope: a React-effect listener
-// leaves a window after first paint where the shortcut is silently dead — an effect runs
-// after paint, and a keypress can land in between. The store is page-global anyway; on
-// routes without the docks (login, /terminal) the toggle just flips hidden state.
-if (typeof window !== "undefined") {
-  window.addEventListener("keydown", (event) => {
-    if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-    if (event.key !== "`" && event.code !== "Backquote") return;
-    event.preventDefault();
-    toggleTerminal();
-  });
-}
+// `terminal.toggle` (Ctrl+` on every platform by default — the Codex/VS Code binding),
+// registered at module scope: a React-effect registration leaves a window after first paint
+// where the shortcut is silently dead — an effect runs after paint, and a keypress can land
+// in between. The store is page-global anyway; on routes without the docks (login,
+// /terminal) the toggle just flips hidden state. The chord itself is the keymap's: the
+// window dispatcher matches it and calls this handler.
+onCommand("terminal.toggle", () => {
+  toggleTerminal();
+});
+// The other dock commands live here for the same reason: the store (dock-state.ts) stays
+// free of the dispatcher, and this module is evaluated wherever the docks can appear. Each
+// declines on a page without docks (the browser's own key then runs): a toggle there would
+// flip nothing visible, and a new terminal would spawn a server shell into the placeholder
+// arrangement the next conversation inherits.
+onCommand("terminal.new", () => {
+  if (!docksOnScreen()) return false;
+  void createShellInDock();
+});
+onCommand("dock.toggleRight", () => {
+  if (!docksOnScreen()) return false;
+  toggleDock("right");
+});
+onCommand("dock.toggleBottom", () => {
+  if (!docksOnScreen()) return false;
+  toggleDock("bottom");
+});

@@ -106,7 +106,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 ## 服务器设置（仅管理员）
 
-服务器全局的代理、附件和公司模式设置。
+服务器全局的代理、附件和公司模式设置，以及插件声明的设置分组。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -114,6 +114,9 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | PUT | `/api/admin/settings` | 更新设置；省略的字段保持当前值，任何字段非法都会拒绝整个 PUT。返回更新后的完整设置 |
 | GET | `/api/admin/settings/proxy-probe` | 可达性探测的目标：`{targets: [{provider, url}]}`。不发起任何请求 |
 | POST | `/api/admin/settings/proxy-probe/:provider` | 经服务器的出站链路探测其中一个目标，不发送任何凭证：`{probe: {provider, url, outcome, ms, status?}}` |
+| GET | `/api/admin/plugin-config` | 模块声明的每个设置分组，沙盒的排在最前：`{plugins: [{name, configuration, values, parent?, notices?}]}`。见[插件设置](#插件设置) |
+| PUT | `/api/admin/plugin-config` | 保存一个分组的值：`{name, values}`。返回全部分组，与 GET 相同 |
+| POST | `/api/admin/plugin-config/action` | 执行某个分组的一个动作：`{name, action}`。返回执行结果，以及执行后的全部分组 |
 
 只要有 HTTP 响应返回，探测的 `outcome` 就是 `reachable`，否则为 `timeout`、`dns`、`refused`、`tls` 或 `network`。`:provider` 不在目标列表里时返回 `404` `probe_target_not_found`。
 
@@ -160,6 +163,14 @@ PUT 按如下规则校验：
 
 `companyMode` 是服务器的**启用公司模式**开关，默认关闭。修改无需重启即生效：开关关闭期间，所有组织路由都返回 `404` `company_mode_off`，组织的调度器也不会触发任何事件。
 
+### 插件设置
+
+设置分组是投给 `PluginConfigProvider.groups` 的 contribution，沙盒的排在最前。列表中的每个分组带有它的 schema（`configuration`）、合并到缺省值上的存储值（密钥掩码）、它被画在哪个分组的卡片里（`parent`），以及实时状态行（`notices`）。
+
+字段类型有 `string`、`secret`、`boolean`、`number`、`enum`（带 `options`）和 `list`（每行一个值，可选 `maxItems`）。`number` 可声明 `minimum` 与 `maximum`；`string` 与 `list` 可声明每个值或每一行都须匹配的 `pattern`（配 `patternErrorMessage`）。
+
+PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，密钥按掩码原样送回即保持存储值。被拒的字段返回 `400` `plugin_config_invalid` 并点名该字段；没有分组叫这个名字时返回 `404` `plugin_config_unknown`。声明它的模块自己经 watch 或下次读取拿到改动，无需重启。
+
 ## 机器（仅管理员）
 
 通过 ssh 在其他主机上安装本服务器的构建，并管理与这些主机的连接。
@@ -181,7 +192,7 @@ PUT 按如下规则校验：
 - `POST …/connect` 维持一条 `ssh -T -D` 会话：空闲时永不超时，断开后自动重连，服务器重启或热推送后也会自动恢复。Windows 机器返回 `409` `connect_unsupported`，因为没有 shell 可以维持会话。
 - `POST …/disconnect` 断开后远端服务器继续运行：它属于那台机器，其他人可能还在使用。
 - `POST …/restart` 之所以是独立操作，是因为机器上的文件可以在运行期间更新，只有重启才能让进程与文件保持一致。
-- `GET …/dirs` 与下文的 API 代理一样，用机器自身的 id 寻址。机器未连接时返回 `404`，因为读取操作绝不会自行建立 ssh 连接。
+- `GET …/dirs` 与下文的 API 代理一样，用机器自身的 id 寻址。机器未连接时返回 `404`，因为读取操作绝不会自行建立 ssh 连接；那台机器拒绝列出的目录返回 `403 dir_permission_denied`。其条目只有文件夹，不带 `kind` 与 `mtime`。
 
 ### 机器字段
 
@@ -605,6 +616,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/agents/:agentId/sessions` | 列出 Agent 的 Session 及运行状态，不论由哪个客户端创建；`excludeOrg=1` 则只要用户自己的那些 |
 | POST | `/agents/:agentId/sessions` | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201 `{session}` |
 | GET | `/dirs?path=` | Workspace 选择器背后的服务器端目录浏览器 |
+| POST | `/dirs/access` | 桌面端：请 shell 以应用自身的身份读一次 macOS 拒绝的目录，让 macOS 询问用户：`{path}` → `{granted, packaged}` |
 | GET | `/dir-skills?path=` | 目录所带的 Skill，用于导入到新 Agent |
 
 - Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active`、`subagent`、`schedule`、`benchmark` 或 `archived`）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
@@ -613,7 +625,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
 - `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，客户端不能发送这个值。只有 `excludeOrg` 会把它当作过滤条件，而且只用来剔除这些行。
 - `source` 只接受 `"benchmark"`，用于 Benchmark 评估或优化创建的 Session。`subagent` 和 `schedule` 由服务器自己设置。
-- `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries}`，只包含子目录；读不了的目录按空列表返回，用户仍然可以向上返回。
+- `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，请求主目录时另带 `roots`，即实际存在的各盘符根目录。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。
+- `POST /dirs/access` 是桌面端 Workspace 选择器里的**允许访问**。macOS 只替它认定为读取责任方的应用询问桌面、文稿与下载的访问权限，因此由桌面 shell 的主进程把绝对路径 `path` 读一次，响应要等用户作答后才返回。`granted` 表示这次读取是否成功（非 macOS 平台不读取，恒为 `true`）。`packaged` 为 `false` 表示这是从终端启动的开发实例，macOS 把它的读取记在该终端名下。`path` 不是绝对路径时返回 `400` `dir_not_absolute`；服务器没有可询问的桌面 shell 时返回 `503` `shell_unreachable`；shell 在 120 秒内没有应答时返回 `504` `timeout`。只有桌面应用自己的窗口可以调用，其他会话返回 `403` `desktop_shell_only`。
 - `GET /dir-skills` 只读取绝对路径下的 `<path>/.agents/skills` 和 `<path>/.claude/skills`，响应为 `{path, skills}`。没有 Skill 的目录返回空列表。参见 [Agent](#agent) 一节中的 `POST /agents`。
 
 ## 用量与 Trace（Agent 级别）
@@ -1018,6 +1031,7 @@ Telegram 连接时会先清空积压，跳过无连接期间发送的消息。�
 | GET | `/api/desktop/update` | 桌面应用更新器的状态：`{status}` |
 | POST | `/api/desktop/update/check`、`/api/desktop/update/download`、`/api/desktop/update/install` | 把命令转发给桌面 shell；202 |
 | GET / PUT | `/api/desktop/tray` | 读取系统托盘图标偏好：`{status}` / 转发更改：`{showTrayIcon?, locale?}` → 202 |
+| POST | `/api/desktop/privacy-settings` | 请 shell 打开 macOS「隐私与安全性」的某个面板：`{pane}`（`files` 或 `fullDisk`）→ 202 |
 | POST | `/api/hmr/assets/probe` | 热更新：报告存储缺少哪些 blob |
 | PUT | `/api/hmr/blobs/:sha` | 热更新：按 sha256 上传一个 blob |
 | POST | `/api/hmr/upgrade` | 热更新：把 platform、CLI 和 web bundle 一并升到新版本 |
@@ -1025,7 +1039,8 @@ Telegram 连接时会先清空积压，跳过无连接期间发送的消息。�
 
 - 非桌面模式下，桌面路由返回 `404` `not_found`。
 - `POST /api/desktop/shutdown` 不使用 cookie 会话。它用桌面 shell 专有的 Bearer token 认证（否则返回 `401` `unauthorized`），先应答，再立即开始优雅关闭。
-- update 和 tray 路由只响应桌面 shell 自己的窗口：其他任何会话都会得到 `403` `desktop_shell_only`。shell 未监听时，返回 `503` `shell_unreachable`。`showTrayIcon` 不是布尔值时，`PUT /api/desktop/tray` 返回 `400` `invalid_show_tray_icon`；`locale` 不是 `zh` 或 `en` 时返回 `400` `invalid_locale`；两个字段都未提供时返回 `400` `empty_tray_patch`。PUT 只确认收到更改；请用 GET 读回实际结果。
+- update、tray 和 privacy-settings 路由只响应桌面 shell 自己的窗口：其他任何会话都会得到 `403` `desktop_shell_only`。shell 未监听时，返回 `503` `shell_unreachable`。`showTrayIcon` 不是布尔值时，`PUT /api/desktop/tray` 返回 `400` `invalid_show_tray_icon`；`locale` 不是 `zh` 或 `en` 时返回 `400` `invalid_locale`；两个字段都未提供时返回 `400` `empty_tray_patch`。PUT 只确认收到更改；请用 GET 读回实际结果。
+- `pane` 不是 `files`（文件与文件夹）或 `fullDisk`（完全磁盘访问权限）时，`POST /api/desktop/privacy-settings` 返回 `400` `invalid_privacy_pane`。shell 只在 macOS 上打开面板。
 - `/api/hmr` 路由仅限管理员（`403` `forbidden`）。绑定在非环回地址上时还要求 HTTPS，否则返回 `403` `hmr_disabled`。只有 `PENGUIN_TRUST_PROXY=1` 时 `X-Forwarded-Proto` 才生效。升级完成后，每个已连接的客户端都会收到 `web_updated` 并重新加载。
 
 ## 流式传输（SSE）
@@ -1035,7 +1050,7 @@ Telegram 连接时会先清空积压，跳过无连接期间发送的消息。�
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | 每个 Session | `GET /api/sessions/:sessionId/stream` | Session 的消息流和运行事件，包括子 Agent Session 的 `session_created` 以及目标模式事件 |
-| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_state`、`session_background`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated` 以及公司模式的 `org_*` 事件 |
+| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_state`、`session_background`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated` 以及公司模式的 `org_*` 事件 |
 
 ### 传输格式
 
@@ -1060,7 +1075,7 @@ export type ServerEvent =
   | { type: "credentials_updated" }
   | { type: "hello" }
   | { type: "web_updated"; rev: string }
-  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
+  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source?: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "goal_started"; sessionId: string; objective: string; budget: number }
@@ -1083,7 +1098,7 @@ export type ServerEvent =
 | `credentials_updated` | Project 的模型凭据发生变化 |
 | `hello` | 用户通道上的握手 |
 | `web_updated` | 热更新替换了对外提供的 web 资源；客户端需重新加载 |
-| `session_created` | 注册了一个新 Session，例如子 Agent Session |
+| `session_created` | 一个 Session 现在存在了：由 Web App、CLI、定时任务或 Agent 派生子 Session 创建 |
 | `schedule_fired` | 定时任务已触发，Prompt 已投递 |
 | `schedule_queued` | 目标 Session 正在运行，这次触发已排队 |
 | `goal_started` | 目标运行开始，在第一轮之前 |
@@ -1101,7 +1116,7 @@ export type ServerEvent =
 - 以下情况会触发 `session_background`：命令超过让出窗口转入后台，或以 `run_in_background` 启动；进程退出或停止；后台子 Agent 开始一轮、结束一轮或释放。事件携带 `SessionInfo.backgroundTasks` 的当前值（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转入后台、正处于一轮中的子 Agent Session 数），归零时同样发送，列表无需重新拉取就能撤下标记。两个计数都为零时，列表行和单个 Session 的 GET 会省略这个字段。受众与 `session_state` 相同。
 - `credentials_updated` 在 `PUT /models` 或签发 API key 的流程完成之后发送。缓存的运行时已失效，客户端应清除因认证失败而禁用的输入框状态。
 - `web_updated` 以 `rev` 携带新的 web 修订号，发送到每个用户通道。
-- `session_created` 发送到父 Session 的通道。
+- `session_created` 在每次创建时发送到 Project 所有者和成员的用户通道；子 Agent Session 还会同时发送到父 Session 的通道。用户创建的 Session 没有 `source`，与行上一致。通过 `PATCH /api/sessions/:id` 设置的标题以同样方式作为 `session_title` 宣告。
 - `schedule_fired` 的 `sessionId` 是接收 Prompt 的 Session，在新建 Session 模式下是一个新 Session。排队的触发会在 Session 空闲后发送。
 - `goal_round` 携带 `used`，即目前累计的 Token 数。
 - `org_*` 事件发送到 Project 成员的用户通道。`org_channel` 包含消息里的提及信息，客户端可据此判断消息是否指向自己。这些事件是尽力而为的；持久状态以组织路由为准。
@@ -1111,7 +1126,7 @@ export type ServerEvent =
 - 事件 id 在每个通道内单调递增，格式为 `<epoch>-<seq>`。
 - 每个通道保留一个有界的重放缓冲区：最近 10,000 个事件或 8MB。
 - 携带 `Last-Event-ID` 重连时，如果 id 仍在缓冲区内，服务器会重放缺失的事件；否则先发送 `resync_required`，客户端重新拉取 `/messages` 后再继续。
-- 每 20 秒写入一行心跳注释。
+- 每 20 秒写入一行心跳注释。同一次心跳会复查连接背后的会话，会话已删除或已过期时结束该流，因此登录被吊销的客户端会立即停止接收，而不必等到下一次请求失败才发现。直接吊销会话的操作——管理员重置密码或删除账号——会当场结束该用户所有打开中的流，心跳是兜底。以本地 API token 鉴权的流没有对应的会话记录，不受影响。
 - 事件顺序：携带 `Last-Event-ID` 重连时，先到达重放的缺失部分（或 `resync_required`），然后是初始事件（权威的 `task_state` 快照和所有仍待处理的 `approval_request`），最后是实时流。不带 `Last-Event-ID` 的新连接跳过重放，第一个事件就是 `task_state` 快照。
 
 ### 推荐的客户端模式

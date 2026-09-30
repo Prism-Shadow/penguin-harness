@@ -22,6 +22,7 @@ import type {
   ModelsUpdateRequest,
   ProjectRole,
   ProjectSummary,
+  ServerEvent,
 } from "../api/types.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { RawTable, UtilityCompletion } from "../services/project-config-service.js";
@@ -29,7 +30,7 @@ import type {
   ListEndpointModelsOptions,
   ModelRequestContext,
   ModelRef,
-  PluginTable,
+  PluginTables,
   ProjectConfig,
 } from "@prismshadow/penguin-core";
 import type { TieredRates } from "../services/usage-service.js";
@@ -114,10 +115,10 @@ export abstract class ProjectConfigStore extends Interface<{
   setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto>;
   getChatDefaults(projectId: string): Promise<ChatDefaultsDto>;
   setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto>;
-  /** The `[plugins]` table this Project asks for: package name → requirement, in the file's order. */
-  getPlugins(projectId: string): Promise<PluginTable>;
-  /** Replaces the table (a declarative PUT); answers what was written. */
-  setPlugins(projectId: string, plugins: PluginTable): Promise<PluginTable>;
+  /** The `[plugins]` key: the shared table and each machine's own, package name → requirement, in the file's order. */
+  getPluginTables(projectId: string): Promise<PluginTables>;
+  /** Replaces the tables (a declarative PUT); answers what was written. */
+  setPluginTables(projectId: string, tables: PluginTables): Promise<PluginTables>;
   getCommandPolicy(projectId: string): Promise<CommandPolicyDto>;
   setCommandPolicy(
     projectId: string,
@@ -222,3 +223,14 @@ export abstract class ModelOAuth extends Interface<{
     code: string;
   }): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }>;
 }>() {}
+
+/**
+ * ProjectEvents: the mechanism ProjectNotifier implements — a user-level event to everyone
+ * who can see a Project, its owner and its members with GET /api/events open. The runtime
+ * publishes a Session's state flips and its generated title this way, and a route
+ * publishes a change the list could not otherwise learn of (a rename, a new Session).
+ */
+@Interface()
+export abstract class ProjectEvents {
+  abstract notifyProjectUsers(projectId: string, event: ServerEvent): void;
+}

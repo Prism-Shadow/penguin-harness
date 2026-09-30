@@ -423,8 +423,14 @@ for (const project of projects) {
    * undefined must not pass. The checker can only strip both at once, so null is noted
    * here and put back on the projected definition by `orNull` / `exprOrNull`.
    */
+  // `getNonNullableType(unknown)` is `{}` — everything that is not null or undefined — so an
+  // optional `unknown` member (a JSON body, say) used to be projected as the empty object
+  // shape, which refuses `null`. `unknown` and `any` have nothing to strip: keep them.
   const sansUndefined = (type) => ({
-    type: checker.getNonNullableType(type),
+    type:
+      type.flags & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)
+        ? type
+        : checker.getNonNullableType(type),
     nullable: type.isUnion() && hasNull(type),
   });
   const orNull = (def) =>
