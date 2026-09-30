@@ -18,6 +18,12 @@ import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
 import { useTheme } from "../../state/theme";
+import { currentPlatform } from "../../lib/shortcuts/platform";
+import { keymap } from "../../lib/shortcuts/store";
+import { terminalClipboardAction } from "../../lib/shortcuts/terminal-clipboard";
+import { terminalKeyAction } from "../../lib/shortcuts/terminal-keys";
+import { useAuth } from "../../state/auth";
+import { machineForTerminal, terminalUrl } from "../../lib/terminal-machines";
 
 /**
  * xterm and its addons load lazily, on the first actual terminal render: their UMD
@@ -114,8 +120,17 @@ export function terminalTheme(dark: boolean): ITheme {
   return dark ? DARK_THEME : LIGHT_THEME;
 }
 
-async function request(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(path, {
+/**
+ * Every terminal round-trip goes through here, and so is addressed to the machine that holds
+ * the terminal it names (lib/terminal-machines.ts). `server` is for the one call with no id
+ * to route by: creating a terminal names its machine before the terminal exists.
+ */
+async function request(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<Response> {
+  return fetch(terminalUrl(path, server), {
     credentials: "same-origin",
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -150,23 +165,39 @@ function httpError(
 }
 
 /** Any non-ok status is an error, 404 included — use probeJson where absence is expected. */
-export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await request(path, init);
+export async function fetchJson<T>(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<T> {
+  const res = await request(path, init, server);
   if (!res.ok) throw httpError(path, init, res, await res.text());
   return (await res.json()) as T;
 }
 
 /** Existence probe: 404 means "not there" and answers null; every other failure throws. */
-export async function probeJson<T>(path: string, init?: RequestInit): Promise<T | null> {
-  const res = await request(path, init);
+export async function probeJson<T>(
+  path: string,
+  init?: RequestInit,
+  server?: string | null,
+): Promise<T | null> {
+  const res = await request(path, init, server);
   if (res.status === 404) return null;
   if (!res.ok) throw httpError(path, init, res, await res.text());
   return (await res.json()) as T;
 }
 
-function streamUrl(id: string, cols: number, rows: number): string {
+/**
+ * Always THIS server's stream. A pty on a machine is named in the id instead of the path —
+ * `<terminalId>@<machineId>@<userId>` — and this server's platform relays the socket through
+ * the connection it holds (server: machines/terminal-relay.ts). The user id is what the
+ * runtime's owner check reads; naming anyone else is refused there.
+ */
+function streamUrl(id: string, cols: number, rows: number, userId: string): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${location.host}/api/terminals/${id}/stream?cols=${cols}&rows=${rows}`;
+  const machine = machineForTerminal(id);
+  const ref = machine === null ? id : `${id}@${machine}@${userId}`;
+  return `${scheme}//${location.host}/api/terminals/${ref}/stream?cols=${cols}&rows=${rows}`;
 }
 
 export interface TerminalViewProps {
@@ -180,9 +211,9 @@ export interface TerminalViewProps {
   /** OSC window-title changes, parsed by this client's own xterm from the byte stream. */
   onTitle?: (title: string) => void;
   /**
-   * Ctrl+W pressed inside this terminal. The host decides what a close is — the dock tab's
-   * confirm-then-kill, the standalone page's kill-then-close-window; with no handler the key
-   * goes to the shell like any other.
+   * The `terminal.close` shortcut (⌃⌥` / Ctrl+Alt+` by default) pressed inside this terminal. The
+   * host decides what a close is — the dock tab's confirm-then-kill, the standalone page's
+   * kill-then-close-window; with no handler the key goes to the shell like any other.
    */
   onCloseRequest?: () => void;
   className?: string;
@@ -203,6 +234,7 @@ export function TerminalView({
   // (the view pool exists to keep exactly those alive). The ref is what lets the
   // once-per-mount effect below read the current appearance without depending on it.
   const { terminalDark } = useTheme();
+  const userId = useAuth().user?.userId ?? "";
   const darkRef = useRef(terminalDark);
   darkRef.current = terminalDark;
   const termRef = useRef<XTerminal | null>(null);
@@ -350,47 +382,51 @@ export function TerminalView({
       };
 
       /**
-       * Terminal clipboard keys (the Windows Terminal / VS Code conventions — the single
-       * Ctrl+Shift+C of the first cut was unreliable: Chrome grabs it for DevTools):
-       * - copy: Ctrl+Shift+C, Ctrl+Insert, or plain Ctrl+C while a selection exists
-       *   (SIGINT still goes through when nothing is selected);
-       * - paste: Ctrl+V, Ctrl+Shift+V and Shift+Insert all ride the browser's NATIVE paste
-       *   event into xterm's textarea (no clipboard permission involved) — the browser
-       *   fires `paste` for every one of these, so returning false (skip xterm's own key
-       *   handling, keep the browser default) is the whole implementation; calling the
-       *   async clipboard API here as well double-pastes.
+       * Keys the terminal decides before xterm does. xterm hands this handler its own
+       * textarea's events and nothing else, so everything here is seen only by the terminal
+       * that has focus.
+       *
+       * 1. Clipboard keys, a fixed platform convention (lib/shortcuts/terminal-clipboard.ts):
+       *    a copy writes the selection here; a paste rides the browser's NATIVE paste event
+       *    into xterm's textarea (no clipboard permission involved), so returning false —
+       *    skip xterm's own key handling, keep the browser default — is the whole
+       *    implementation, and calling the async clipboard API as well would double-paste.
+       * 2. The keymap (lib/shortcuts/terminal-keys.ts decides). The terminal-scope command
+       *    (`terminal.close`, ⌃⌥` / Ctrl+Alt+` by default) is consumed here so it never
+       *    reaches the shell. Everything else is xterm's: the shell keeps every key xterm would
+       *    send it, even one an app command is bound to (Ctrl+W, tmux's Ctrl+B, and on Linux
+       *    the Ctrl+Alt chords, which xterm sends as Meta), and the chords xterm sends nothing
+       *    for — Ctrl+`, Ctrl+Shift+`, every ⌘ chord, and on Windows the Ctrl+Alt ones it
+       *    leaves to AltGr — are left un-prevented and bubble to the window dispatcher that
+       *    owns them.
        */
+      const platform = currentPlatform();
       term.attachCustomKeyEventHandler((event) => {
         if (event.type !== "keydown") return true;
-        const key = event.key.toLowerCase();
-        const copyCombo =
-          (event.ctrlKey && event.shiftKey && key === "c") ||
-          (event.ctrlKey && !event.shiftKey && event.key === "Insert") ||
-          (event.ctrlKey && !event.shiftKey && !event.altKey && key === "c" && term.hasSelection());
-        if (copyCombo) {
+        const clipboard = terminalClipboardAction(event, platform, term.hasSelection());
+        if (clipboard === "copy") {
           copySelection();
           return false;
         }
-        const pasteCombo =
-          (event.ctrlKey && !event.altKey && key === "v") ||
-          (!event.ctrlKey && event.shiftKey && event.key === "Insert");
-        if (pasteCombo) {
+        if (clipboard === "paste") {
           return false; // native paste path (see above)
         }
-        // Ctrl+W closes this terminal when the host offers a close (the dock tab's ×, the
-        // standalone page). Consumed here so it never reaches the shell, where it is
-        // readline's delete-word, and seen only by the terminal that has focus — xterm hands
-        // this handler its own textarea's events and nothing else, so no window-level
-        // listener is involved. Browsers keep Ctrl+W for closing the browser tab and may act
-        // first; the desktop shell delivers it here.
-        const closeCombo =
-          event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && key === "w";
-        if (closeCombo && callbacks.current.onCloseRequest) {
-          event.preventDefault();
-          callbacks.current.onCloseRequest();
-          return false;
+        const action = terminalKeyAction(event, keymap(), platform, {
+          canClose: callbacks.current.onCloseRequest !== undefined,
+        });
+        switch (action) {
+          case "shell":
+            return true;
+          case "consume":
+            event.preventDefault();
+            event.stopPropagation();
+            return false;
+          case "close":
+            event.preventDefault();
+            event.stopPropagation();
+            callbacks.current.onCloseRequest?.();
+            return false;
         }
-        return true;
       });
 
       /**
@@ -458,7 +494,7 @@ export function TerminalView({
           if (disposed) return;
           callbacks.current.onInfo?.(terminal);
 
-          socket = new WebSocket(streamUrl(terminal.id, term.cols, term.rows));
+          socket = new WebSocket(streamUrl(terminal.id, term.cols, term.rows, userId));
           socket.binaryType = "arraybuffer";
 
           socket.onopen = () => report("ready");

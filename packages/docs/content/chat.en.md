@@ -67,7 +67,7 @@ Limits apply at two moments:
 - When you pick or drop a file: a file over the per-file size (100MB by default) or an image over 20MB is refused before anything is read, and the message names the limit in force.
 - When you send: a message carries at most 20 files and 120MB in total by default. Over that, the send fails with "Too many files attached to one message." or "The request is too large."
 
-An admin can change both sizes under [System settings › Upload limits](/settings#upload-limits). The 20MB cap for images placed inline does not follow them: an inline image enters the conversation and the Trace, where its size is paid again on every history page and every Session resume.
+An admin can change both sizes under [Settings › Upload limits](/settings#upload-limits). The 20MB cap for images placed inline does not follow them: an inline image enters the conversation and the Trace, where its size is paid again on every history page and every Session resume.
 
 On send, attached files are written into the Session's scratchpad, which is deleted with the Session. The conversation shows an "Attached files" notice; the file contents never enter the conversation, and the model opens each file by path with its file tools. On a model without image input, images are saved to the scratchpad the same way and passed as file paths, and a hint above the composer says so.
 
@@ -197,7 +197,7 @@ The fork is a new Session with the same agent, model, Workspace and approval mod
 
 - **Text** renders as it streams, and thinking blocks can be collapsed.
 - **Steps**, meaning thinking and tool calls, are grouped under a **Running** or **Done** header with the step count and time. The group is open while it runs, closes when it is done, and opens again when a call in it needs approval.
-- **Tool cards** expand to show arguments and output, with a live timer while running. A card is headed by the description the model wrote or a shortened file path. Built-in tools go by short names (`read_file` reads as "read", with the full name in the tooltip); turn this off with **Tool short names** under [System settings › Appearance](/settings#appearance). Other tools, MCP tools included, always use their own names.
+- **Tool cards** expand to show arguments and output, with a live timer while running. A card is headed by the description the model wrote or a shortened file path. Built-in tools go by short names (`read_file` reads as "read", with the full name in the tooltip); turn this off with **Tool short names** under [Settings › Appearance](/settings#appearance). Other tools, MCP tools included, always use their own names.
 - **Compaction** leaves a row whose title is its status: **Compacting** while it runs and **Compacted** when it ends (**Clearing** and **Cleared** for a context clear), with its time. While it runs, the row opens a thinking section once the request's thinking arrives, and a result section when the summary starts; both are collapsed by default, each with its own time. The row folds back to one line when the compaction ends. A failed compaction keeps the title **Compaction** (or **Clear**) over a one-line reason.
 - **MCP connect**, the first connection to the agent's MCP servers, leaves a row with the number of tools found and the names of unavailable servers. It expands into one group per server, with its status, tool count and connect time, and each group opens to its tool list or the error.
 - **Subagents** each leave a row with their avatar, name, short Session id, a spinner while running, and an amber dot while one of their tool calls awaits approval. Selecting the row opens the **Agents panel**: a call graph of that Task at the top, with each node's elapsed time, and the selected subagent's live conversation below. Nested tool cards and approvals work as in the main chat, the subagent has a composer of its own, and **Jump to this session** opens it as a full conversation. When the current Task starts a subagent, the Agents panel opens by itself, once per Task.
@@ -239,14 +239,17 @@ Good to know:
 - Near the top or bottom of the conversation, the fan shortens to what fits.
 - Drag the button up or down along the edge; a short press is still a click. It springs back to the edge, never rests over the toolbar or the composer, and keeps its position in this browser for every conversation.
 - While the right sidebar is closed and a subagent awaits approval, the button and its Agents panel entry show the amber dot.
-- **Hide launcher** puts the button away for good, and a message says where to turn it back on: the **Shortcuts launcher** switch under [System settings › Appearance](/settings#appearance).
+- **Hide launcher** puts the button away for good, and a message says where to turn it back on: the **Shortcuts launcher** switch under [Settings › Appearance](/settings#appearance).
 
 ### Use a terminal
 
 Terminals open as tabs in the docks, or on the standalone `/terminal` page.
 
 - Ctrl+` shows or hides the terminal tabs. With no terminal open, it takes over a running shell no conversation holds, or starts a new one.
-- Ctrl+W, with a terminal focused, closes that terminal after a confirmation, like the × on its tab. The keystroke never reaches the shell. Browsers reserve Ctrl+W for closing the browser tab and may act on it first; the desktop app passes it to the terminal.
+- Ctrl+Shift+` starts a new terminal in the docks.
+- Ctrl+Alt+`, with a terminal focused, closes that terminal after a confirmation, like the × on its tab. The keystroke never reaches the shell. Ctrl+W does: it is readline's delete-word.
+
+The three terminal keys use the Control key on a Mac too.
 
 ## Check Session stats
 
@@ -349,8 +352,17 @@ A group's active conversations, and each open folder, show ten conversations at 
 | Shift+F10 | Open the menu of the focused conversation row, or of the Files panel |
 | Esc | Close a menu; fold the shortcuts launcher; cancel a pending threshold change |
 | Left / Right | Move the focused compaction threshold marker by 1,000 Tokens (10,000 with Shift) |
+| Ctrl+Alt+S | Open **Search chats** in the sidebar |
+| Ctrl+Alt+N | Start a new chat |
+| Ctrl+Alt+1 | Show or hide the sidebar |
+| Ctrl+Alt+2 | Show or hide the right sidebar |
+| Ctrl+Alt+3 | Show or hide the bottom panel |
 | Ctrl+` | Show or hide the terminal tabs |
-| Ctrl+W | Close the focused terminal, after confirmation |
+| Ctrl+Shift+` | Start a new terminal |
+| Ctrl+Alt+` | Close the focused terminal, after confirmation |
+| Ctrl+S | Save in the Files panel's editor or the handbook |
+
+On a Mac, ⌘ takes the place of Ctrl in Ctrl+S and in the Ctrl+Alt rows other than the terminal's (⌘S, ⌥⌘S); the three terminal keys use the Control key there too. Every row from Ctrl+Alt+S down is a default: change it under [System settings › Keyboard shortcuts](/settings#keyboard-shortcuts).
 
 ## Limits
 

@@ -20,6 +20,12 @@ import type { ToolCallIdAllocator } from "../llm/tool-call-ids.js";
 export interface GenerativeModelConfig {
   modelId: string;
   apiKey?: string;
+  /**
+   * Optional host-owned credential resolver, called before every upstream request. When it
+   * returns a different key, the AgentHub client is rebuilt with its stateful history intact.
+   * Core assigns no provider semantics to this hook.
+   */
+  resolveApiKey?: () => Promise<string | undefined>;
   baseUrl?: string;
   /**
    * AgentHub client protocol (`openai-chat` / `openai-responses` / `claude-4-8` /
@@ -68,8 +74,9 @@ export interface GenerativeModelConfig {
   /**
    * The Session's id, for endpoints whose attribution scheme identifies the conversation
    * rather than the app (OpenCode's `x-opencode-session`; see state/model-catalog.ts
-   * `attributionHeaders`). Unset: no such header is sent — a placeholder id would file every
-   * conversation at the gateway under one session, which is worse than naming none.
+   * `attributionHeaders`). Unset — a request outside any Session: a connectivity test, a
+   * vision probe, a one-off utility completion — attributionHeaders mints a fresh id, which
+   * the instance then keeps for all of its requests, so they are a conversation of their own.
    */
   sessionId?: string;
   /**

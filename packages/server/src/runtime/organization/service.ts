@@ -126,7 +126,7 @@ import {
   employeeLeft,
   systemMessage,
 } from "./notices.js";
-import { appendChannelMessage, listTickets, syncCaches } from "./reconcile.js";
+import { appendChannelMessage, listTickets, syncApprovalMode, syncCaches } from "./reconcile.js";
 import type { LoadedTicket } from "./reconcile.js";
 import { rotaWarnings } from "./rota.js";
 import { OrganizationScheduler } from "./scheduler.js";
@@ -669,8 +669,16 @@ export class OrganizationService {
         await this.validateModel(projectId, req.model);
         next.model = req.model;
       }
+      const modeChanged = next.approvalMode !== org.config.approvalMode;
       await this.deps.store.writeConfig(org.dir, next);
       org.config = next;
+      // Every API write of the approval mode comes through here, so this is where a change
+      // reaches the desk and ticket sessions already open rather than only the next ones. A
+      // hand edit of org_config.toml does not pass here.
+      if (modeChanged) {
+        const { tickets } = await listTickets(this.deps, org);
+        syncApprovalMode(this.deps, org, tickets);
+      }
       return this.settings(org);
     });
   }

@@ -55,6 +55,8 @@ export abstract class Auth extends Interface<{
   localApiToken(): string | null;
   authenticateApiToken(token: string): { user: UserRow; via: SessionVia } | null;
   authenticateWithMeta(token: string): { user: UserRow; via: SessionVia; renewed: boolean } | null;
+  sessionIsLive(token: string): boolean;
+  isAdmin(userId: string): boolean;
 }>() {}
 
 /** Admin: the mechanism AdminService implements. */

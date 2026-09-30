@@ -29,7 +29,7 @@ The same range and agent filter decide which rows the server error panel lists, 
 
 Three cards show totals: **Today**, **Last 7 days**, and **Total** for the selected date range. All three follow the agent and model filters. Each card lists the Tokens, the number of requests and the cost.
 
-Prices are shown in the display currency you choose under [System settings › General](/settings#general). Only models with configured pricing count toward cost. When some records have no price, an asterisk appears beside **Cost** and a note at the bottom of the page says so.
+Prices are shown in the display currency you choose under [Settings › General](/settings#general). Only models with configured pricing count toward cost. When some records have no price, an asterisk appears beside **Cost** and a note at the bottom of the page says so.
 
 ## Read the charts
 

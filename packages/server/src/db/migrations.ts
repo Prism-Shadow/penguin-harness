@@ -460,6 +460,70 @@ export const MIGRATIONS: readonly Migration[] = [
       db.exec("DROP TABLE IF EXISTS model_promotions");
     },
   },
+  {
+    version: 10,
+    name: "model-provider-auth-tokens",
+    // Additive: one new table, nothing existing touched. A predecessor build never reads it;
+    // the access token already written into .project_config.toml keeps working until it
+    // expires, so rollback only loses silent refresh state.
+    // KEEP until every supported upgrade starts from schema 10 or newer. The release that
+    // raises the minimum database baseline past 9 owns removing this migration block and its
+    // version-9 fixture; the table itself remains while provider token refresh uses it.
+    swapSafe: true,
+    up(db) {
+      // Frozen copy of the DDL as of the provider-auth-token feature; do not re-derive from
+      // schema.ts. IF NOT EXISTS because the declarative track may already have created it
+      // (ADOPTION).
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS model_provider_auth_tokens ( -- Server-side OAuth refresh metadata for provider groups. The current request token remains in .project_config.toml as api_key; this table holds only the refresh material that must never be returned to the frontend or written into Project files.
+          project_id              TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+          provider                TEXT NOT NULL,
+          refresh_token           TEXT NOT NULL,
+          access_token_expires_at TEXT,
+          updated_at              TEXT NOT NULL,
+          PRIMARY KEY (project_id, provider)
+        );
+      `);
+    },
+    // LOSES every stored refresh token and access-token expiry. Existing access tokens in
+    // Project files remain until they expire; users re-authorize to restore silent refresh.
+    down(db) {
+      db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
+    },
+  },
+  {
+    version: 11,
+    name: "sessions-sandbox",
+    // The Session's own sandbox policy (JSON), snapshotted from the server's settings when
+    // the Session is created, so a later settings change leaves running Sessions alone.
+    // NULL = a row from before this column: it takes the settings in force at its next
+    // command and keeps them from then on. Swap-safe: a pushed platform boots against the
+    // runtime's already-open database, so the column has to arrive by a migration.
+    swapSafe: true,
+    up(db) {
+      ensureColumn(db, "sessions", "sandbox", "TEXT");
+    },
+    // Not a DROP: schema.ts declares the column, and dropping it would put every Session
+    // back under whatever the settings say.
+    down() {},
+  },
+  {
+    version: 12,
+    name: "machines-columns",
+    // A machines table can predate migration 4 — a data root that ran the machines line
+    // before it was released kept forwards, not sessions — and that migration's IF NOT
+    // EXISTS adopted it whatever its columns were, so the first connect failed on the row's
+    // insert. Adds what is missing, nullable; a platform rolled back to 4 declared these
+    // columns itself, so there is nothing for it to mind.
+    swapSafe: true,
+    up(db) {
+      ensureColumn(db, "machines", "session_pid", "INTEGER");
+      ensureColumn(db, "machines", "platform", "TEXT");
+    },
+    // Nothing to undo: what this added, 4 already declares, and a column it found in place
+    // was never this migration's to take away.
+    down() {},
+  },
 ];
 
 /** The highest version this build knows how to reach. */

@@ -7,7 +7,11 @@
  * composes.
  */
 import { describe, expect, it } from "vitest";
-import { resolveModelEnv } from "@prismshadow/penguin-core/model-catalog";
+import {
+  MODEL_CATALOG,
+  modelEnvPreviewKey,
+  resolveModelEnv,
+} from "@prismshadow/penguin-core/model-catalog";
 import { zh as ZH } from "../src/lib/strings";
 import { en as EN } from "../src/lib/strings-en";
 import { clientTypeAfterProviderChange, rowToEntry } from "../src/features/models/models-page";
@@ -17,6 +21,7 @@ import {
   detectableBaseUrl,
   displayWidthCh,
   envHintClientType,
+  envHintKeyFor,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -177,6 +182,96 @@ describe("envHintClientType (custom groups never infer a client from the model i
     expect(envHintClientType("anthropic", "")).toBeUndefined();
     expect(envFor("anthropic", "claude-sonnet-5", "")).toBe("ANTHROPIC_API_KEY");
     expect(envFor("google", "gemini-3.1-pro", "")).toBe("GEMINI_API_KEY");
+  });
+});
+
+describe("envHintKeyFor (the API-key field promises a variable only where the entry may fall back to it)", () => {
+  it("names nothing for a gateway row: its preset endpoint is not the vendor's, so the vendor key is not its key", () => {
+    // The #786 finding: once an Anthropic row had proved OPENAI_API_KEY / ANTHROPIC_API_KEY
+    // set, a TokenDance or OpenCode Go row read "leave empty to use the ... env var".
+    expect(
+      envHintKeyFor("tokendance", "glm-5.3", "openai-chat", "https://tokendance.space/gateway/v1"),
+    ).toBeUndefined();
+    expect(
+      envHintKeyFor(
+        "openrouter",
+        "openai/gpt-5.5",
+        "openai-responses",
+        "https://openrouter.ai/api/v1",
+      ),
+    ).toBeUndefined();
+    expect(
+      envHintKeyFor("custom", "claude-sonnet-5", "ant-messages", "https://gw.example.com"),
+    ).toBeUndefined();
+    expect(envHintKeyFor("vllm", "Qwen/Qwen3.8-27B", "", "http://gpu-box:8000/v1")).toBeUndefined();
+    expect(
+      envHintKeyFor("my-group", "some-model", "", "https://gw.example.com/v1"),
+    ).toBeUndefined();
+  });
+
+  it("names the vendor's variable for a first-party row, and the relay's own for Penguin Go", () => {
+    expect(envHintKeyFor("anthropic", "claude-sonnet-4-6", "", "")).toBe("ANTHROPIC_API_KEY");
+    expect(envHintKeyFor("google", "gemini-3.1-pro", "", "")).toBe("GEMINI_API_KEY");
+    expect(
+      envHintKeyFor("deepseek", "deepseek-flash", "deepseek-v4", "https://api.deepseek.com"),
+    ).toBe("DEEPSEEK_API_KEY");
+    // A custom row pointed at the vendor's own endpoint gets the vendor's key: it goes to the vendor.
+    expect(envHintKeyFor("custom", "gpt-5.6", "openai-chat", "https://api.openai.com/v1")).toBe(
+      "OPENAI_API_KEY",
+    );
+    expect(
+      envHintKeyFor(
+        "penguin-go",
+        "gemini-3.8-flash",
+        "gemini-3.8",
+        "https://token.penguin.ooo/api",
+      ),
+    ).toBe("PENGUIN_GO_API_KEY");
+  });
+
+  it("follows the base URL as it is edited: re-pointing a vendor row at a proxy drops the hint", () => {
+    expect(
+      envHintKeyFor("anthropic", "claude-sonnet-4-6", "", "https://proxy.example/anthropic"),
+    ).toBeUndefined();
+    expect(envHintKeyFor("anthropic", "claude-sonnet-4-6", "", "https://api.anthropic.com/")).toBe(
+      "ANTHROPIC_API_KEY",
+    );
+  });
+
+  it("promises nothing for a keyless vLLM preset or custom row with no base URL, and agrees with the server's preview rule", () => {
+    // The vLLM presets ship with no base URL; the server refuses them a masked preview for the
+    // same reason the field must not read "leave empty to use OPENAI_API_KEY": a self-hosted
+    // id would be run against api.openai.com. Both sides read core's modelEnvPreviewKey.
+    const cases: Array<[string, string, string, string]> = [
+      ...MODEL_CATALOG.filter((m) => m.provider === "vllm").map(
+        (m): [string, string, string, string] => [
+          m.provider,
+          m.modelId,
+          m.clientType ?? "",
+          m.baseUrl ?? "",
+        ],
+      ),
+      ["custom", "local-model", "openai-chat", ""],
+      ["custom", "gpt-5.6", "openai-chat", "https://api.openai.com/v1"],
+      ["anthropic", "claude-sonnet-4-6", "", ""],
+      ["anthropic", "claude-sonnet-4-6", "", "https://proxy.example/anthropic"],
+      ["tokendance", "glm-5.3", "openai-chat", "https://tokendance.space/gateway/v1"],
+      ["penguin-go", "gemini-3.8-flash", "gemini-3.8", "https://token.penguin.ooo/api"],
+    ];
+    for (const [provider, modelId, clientType, baseUrl] of cases) {
+      expect(envHintKeyFor(provider, modelId, clientType, baseUrl), `${provider}/${modelId}`).toBe(
+        modelEnvPreviewKey({
+          provider,
+          modelId,
+          clientType: envHintClientType(provider, clientType),
+          baseUrl,
+        }),
+      );
+    }
+    for (const m of MODEL_CATALOG.filter((v) => v.provider === "vllm")) {
+      expect(envHintKeyFor("vllm", m.modelId, "", ""), m.modelId).toBeUndefined();
+    }
+    expect(envHintKeyFor("custom", "local-model", "openai-chat", "")).toBeUndefined();
   });
 });
 

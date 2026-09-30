@@ -22,6 +22,16 @@ CREATE TABLE IF NOT EXISTS model_promotions ( -- NOT a cache rebuildable from fi
   PRIMARY KEY (project_id, provider, model_id)
 );`;
 
+export const MODEL_PROVIDER_AUTH_TOKENS_SQL = `
+CREATE TABLE IF NOT EXISTS model_provider_auth_tokens ( -- Server-side OAuth refresh metadata for provider groups. The current request token remains in .project_config.toml as api_key; this table holds only the refresh material that must never be returned to the frontend or written into Project files.
+  project_id              TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+  provider                TEXT NOT NULL,
+  refresh_token           TEXT NOT NULL,
+  access_token_expires_at TEXT,
+  updated_at              TEXT NOT NULL,
+  PRIMARY KEY (project_id, provider)
+);`;
+
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
   user_id             TEXT PRIMARY KEY,            -- semantic id doubles as login name: ^[a-z][a-z0-9_-]{1,31}$
@@ -59,6 +69,7 @@ CREATE TABLE IF NOT EXISTS project_members (  -- member grants only; owners are 
   PRIMARY KEY (project_id, user_id)
 );
 ${MODEL_PROMOTIONS_SQL}
+${MODEL_PROVIDER_AUTH_TOKENS_SQL}
 CREATE TABLE IF NOT EXISTS agents (           -- index only; name/description live in system_config.yaml
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,
@@ -79,6 +90,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   client        TEXT,                                -- creating client: 'web' (created via the Web App) | 'cli' (adopted from a CLI Trace); NULL = legacy row, treated as web
   has_trace     INTEGER NOT NULL DEFAULT 0,          -- cache: a Trace record exists (set at task start / adoption / subagent registration; lazily backfilled by list hydration)
   fork_count    INTEGER NOT NULL DEFAULT 0,          -- monotonically allocated child-fork number for this source Session; never decremented when a fork is deleted
+  sandbox       TEXT,                                -- the Session's sandbox policy snapshot (JSON SandboxSettings); NULL = legacy row, snapshotted at its next command
   last_active_at TEXT,                               -- last activity this server drove for the session (ISO; stamped once when a run starts and once when it ends, initialized to created_at); monotonic, never moves backwards; NULL only before openDatabase's one-time backfill
   created_at    TEXT NOT NULL
 );                                            -- the subagent/schedule/benchmark SOURCE is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row)

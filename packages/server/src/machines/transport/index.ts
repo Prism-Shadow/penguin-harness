@@ -22,4 +22,4 @@ export { sessionOf } from "./ssh-session.js";
 export type { ShellSession } from "./ssh-session.js";
 export { execFailureText, looksLikeAuthFailure, runBytes } from "./exec.js";
 export type { ExecResult } from "./exec.js";
-export { listHostAliases } from "./targets.js";
+export { appendHostBlock, listHostAliases, readSshConfig, writeSshConfig } from "./targets.js";
