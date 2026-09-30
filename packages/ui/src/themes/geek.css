@@ -571,6 +571,9 @@
   /* Tabs: a 2px ink rule under the selected tab, opencode's underline; no hover bar. */
   :root[data-theme="geek"] .ui-underline-nav [role="tab"] {
     position: relative;
+    /* The ink rule below is the only marker: the host's own bottom border (and its hover bar)
+       gives way. */
+    border-bottom-color: transparent;
   }
   :root[data-theme="geek"] .ui-underline-nav [role="tab"]::after {
     content: "";
@@ -735,6 +738,38 @@
     color: var(--ui-fg);
   }
   :root[data-theme="geek"] .ui-activity[data-state="error"] [data-slot="label"] {
+    color: var(--ui-tone-danger-fg);
+  }
+  /* Folds: the leading mark is the fold — ▸ closed, ▾ open, in the row's state ink (subtle when
+     settled, danger on error). While the row runs its spinner stays; the
+     chevrons go. */
+  :root[data-theme="geek"] .ui-activity :is([data-slot="toggle"], [data-slot="toggle-end"]) {
+    display: none;
+  }
+  :root[data-theme="geek"]
+    .ui-activity:has([data-slot="toggle"]):not([data-state="running"])
+    [data-slot="mark"]
+    > * {
+    display: none;
+  }
+  :root[data-theme="geek"]
+    .ui-activity:has([data-slot="toggle"]):not([data-state="running"])
+    [data-slot="mark"]::before {
+    content: "▸";
+    display: inline-block;
+    width: 1em;
+    line-height: 1;
+    text-align: center;
+    color: var(--ui-fg-subtle);
+  }
+  :root[data-theme="geek"]
+    :is(.ui-activity[aria-expanded="true"], .ui-activity:has(> [aria-expanded="true"])):has(
+      [data-slot="toggle"]
+    ):not([data-state="running"])
+    [data-slot="mark"]::before {
+    content: "▾";
+  }
+  :root[data-theme="geek"] .ui-activity[data-state="error"] [data-slot="mark"]::before {
     color: var(--ui-tone-danger-fg);
   }
   :root[data-theme="geek"] .ui-activity [data-slot="detail"] {

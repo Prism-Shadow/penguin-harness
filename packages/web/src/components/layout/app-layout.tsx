@@ -418,6 +418,7 @@ export function AppLayout() {
           hydrated prefs confirm it was never dismissed, so it does not flash-then-vanish on load. */}
       {passwordBannerRelevant && passwordBannerDismissed === false && (
         <NoticeStrip
+          banner
           tone="attention"
           className="relative flex shrink-0 items-center justify-center gap-3 border-b px-8 py-1.5 text-xs"
         >

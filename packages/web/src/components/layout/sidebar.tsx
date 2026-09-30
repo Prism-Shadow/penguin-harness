@@ -2120,8 +2120,9 @@ export function Sidebar({
               settings (grouping + sort radios), and the mode-dependent create button (the created
               object follows the grouping mode). The search opens in place, over the label's
               column, so it costs no extra row; the magnifier becomes the field's leading glyph.
-              No ruled separator at this boundary — the nav toggle above is the seam. */}
-          <SidebarListHeader label={S.chat.sessionList} searching={searchOpen}>
+              No ruled separator at this boundary — the nav toggle above is the seam. The label
+              names the grouping: workspaces, agents, or the recent ones by time. */}
+          <SidebarListHeader label={S.chat.sessionListByMode[groupMode]} searching={searchOpen}>
             {searchOpen ? (
               /* Expanded field: the magnifier, the input and the clear ×, one bordered
              box filling the row (its width rides the column tween). Esc and × both

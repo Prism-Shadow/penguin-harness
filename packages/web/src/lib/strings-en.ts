@@ -2320,6 +2320,7 @@ Scenarios:
       },
     },
     sessionList: "Sessions",
+    sessionListByMode: { workspace: "Workspaces", agent: "Agents", time: "Recent" },
     defaultSessionTitle: "New chat",
     agent: "Agent",
     model: "Model",

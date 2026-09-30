@@ -122,7 +122,9 @@ export function WorkGroup({
         data-kind={kind}
         data-state={running ? "running" : "done"}
       >
-        <StatusIcon state={running ? "running" : "done"} />
+        <span data-slot="mark" className="flex shrink-0">
+          <StatusIcon state={running ? "running" : "done"} />
+        </span>
         <span
           data-slot="label"
           className={`${DISCLOSURE_HEADER_TITLE_CLASS} ${running ? "text-tone-success-fg" : "text-fg-muted"}`}
@@ -147,8 +149,12 @@ export function WorkGroup({
           />
         )}
         <ActivityProgress running={stepRunning} />
+        {/* The fold's chevron follows the words; `order-last` carries it past the spacer to the
+            row's far edge unless a theme's recipe keeps it beside them. */}
+        <span data-slot="toggle" className="order-last flex shrink-0">
+          <Chevron open={shown} className="text-fg-subtle" />
+        </span>
         <span className="min-w-0 flex-1" />
-        <Chevron open={shown} className="text-fg-subtle" />
       </button>
       {shown && (
         <div

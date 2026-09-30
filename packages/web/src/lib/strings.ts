@@ -2328,6 +2328,8 @@ Benchmark：
       },
     },
     sessionList: "Session",
+    /** The Session list's heading, named for how the list is grouped. */
+    sessionListByMode: { workspace: "工作区", agent: "智能体", time: "最近" },
     defaultSessionTitle: "新对话",
     agent: "Agent",
     model: "Model",

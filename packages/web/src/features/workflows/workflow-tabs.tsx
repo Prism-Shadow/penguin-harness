@@ -364,12 +364,12 @@ export function WorkflowFrame({
         )}
       </div>
       {tab.error !== null && !bare && (
-        <NoticeStrip tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
+        <NoticeStrip banner tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
           {S.workflows.loadError}: {tab.error}
         </NoticeStrip>
       )}
       {failure !== null && (
-        <NoticeStrip tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
+        <NoticeStrip banner tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
           {failure}
         </NoticeStrip>
       )}

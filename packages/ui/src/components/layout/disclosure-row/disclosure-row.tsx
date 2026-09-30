@@ -163,14 +163,22 @@ export function DisclosureRow({
         data-kind={activity?.kind}
         data-state={activity?.state}
       >
-        {icon}
+        {icon !== undefined && (
+          <span data-slot="mark" className="flex shrink-0">
+            {icon}
+          </span>
+        )}
         <span className={labelClass} {...(activity ? { "data-slot": "label" } : {})}>
           {label}
         </span>
         {trailing}
         {activity && <ActivityProgress running={activity.state === "running"} />}
+        {/* The chevron follows the words; `order-last` carries it past the spacer to the row's far
+            edge unless a theme's recipe keeps it beside them. */}
+        <span data-slot="toggle" className="order-last flex shrink-0">
+          <Chevron open={open} className="text-fg-subtle" />
+        </span>
         <span className="min-w-0 flex-1" />
-        <Chevron open={open} className="text-fg-subtle" />
       </button>
       {open && children}
     </div>
