@@ -6,7 +6,7 @@
  *
  * Three trigger shapes open the same Finder-style modal (workspace-finder.tsx):
  * - "pill" (default): the draft page's compact toolbar pill;
- * - "form": the shared form-control trigger (FormPickerButton), for dialogs — the finder is a
+ * - "form": the shared form-control trigger (FormPickerTrigger), for dialogs — the finder is a
  *   Modal of its own and stacks above the host dialog;
  * - `trigger`: a caller-rendered button (the sidebar's new-workspace header button).
  */
@@ -14,7 +14,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { Chevron } from "../../components/ui/chevron";
-import { FormPickerButton } from "../../components/ui/form-picker";
+import { FormPickerTrigger } from "../../components/ui/form-picker";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -123,9 +123,9 @@ export function WorkspaceSelect({
   if (variant === "form") {
     return (
       <>
-        <FormPickerButton
+        <FormPickerTrigger
           size="sm"
-          open={open}
+          expanded={open}
           onClick={() => setOpen(!open)}
           leading={folderIcon("")}
           label={label}

@@ -223,6 +223,130 @@ export const zh = {
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
   },
 
+  /** The built-in browser (desktop app only): its dock panel, toolbar and dialogs. */
+  builtinBrowser: {
+    /** The dock tab's name, also in the dock's menus and the launcher. */
+    panelTitle: "浏览器",
+    /** The browser's own tab strip (its accessible name). */
+    tabs: "标签页",
+    newTab: "新建标签页",
+    closeTab: "关闭标签页",
+    /** A tab with no title yet — a blank new tab. */
+    untitled: "新标签页",
+    back: "后退",
+    forward: "前进",
+    reload: "重新加载",
+    stop: "停止加载",
+    /** The address bar's accessible name, and its placeholder. */
+    address: "地址栏",
+    addressPlaceholder: "搜索或输入网址",
+    /** The history suggestions under the address bar (their accessible name). */
+    suggestions: "历史记录",
+    /** The toolbar's overflow menu. */
+    more: "更多",
+    importAction: "从浏览器导入…",
+    clearDataAction: "清除浏览数据…",
+    /** Opens the homepage dialog. */
+    setHomepageAction: "设置主页…",
+    openExternal: "在系统浏览器中打开",
+    devTools: "开发者工具",
+    /** The toolbar's button to the homepage, beside reload; shown only while one is set. */
+    home: "主页",
+    /** The toolbar's mark while an agent drives the browser; `action` is one of `actions`. */
+    agentBusy: (action: string): string => `智能体正在使用浏览器：${action}`,
+    /** A busy tab's tooltip in the strip, after its title. */
+    agentBusyTab: "智能体正在使用此标签页",
+    actions: {
+      navigate: "打开网页",
+      scan: "读取页面",
+      exec: "运行脚本",
+      click: "点击页面",
+      type: "输入文字",
+      screenshot: "截取屏幕",
+      cdp: "发送调试命令",
+    },
+    /** The panel where the browser cannot run; the title, then why. */
+    unavailableTitle: "内置浏览器不可用",
+    unavailableDesktop: "内置浏览器只能在 PenguinHarness 桌面应用中使用。",
+    unavailableShell: "当前桌面应用版本过旧，请更新后使用内置浏览器。",
+    unavailableWindow: "没有可以显示浏览器的应用窗口。",
+    openFailed: (reason: string): string => `无法打开标签页：${reason}`,
+    /** The import dialog: copies sign-ins and history from a browser installed on this computer. */
+    importTitle: "从浏览器导入",
+    importIntro: "把系统浏览器里的登录状态和历史记录复制到内置浏览器，原浏览器中的数据不会改变。",
+    importLoading: "正在查找浏览器…",
+    importNone: "这台电脑上没有找到可以导入的浏览器。",
+    importSourcesFailed: (reason: string): string => `无法读取浏览器列表：${reason}`,
+    importSource: "导入来源",
+    importWhat: "导入内容",
+    importCookies: "Cookie 与登录状态",
+    importHistory: "历史记录",
+    importDomains: "仅限这些网站",
+    importDomainsHint: "用逗号分隔，例如 amazon.com, github.com；留空则导入全部网站",
+    importDomainsPlaceholder: "amazon.com, github.com",
+    importKeychainNote: "Mac 可能会请求钥匙串访问权限。",
+    importRun: "导入",
+    importRunning: "正在导入…",
+    importDone: "完成",
+    importCookiesResult: (c: {
+      found: number;
+      imported: number;
+      skipped: number;
+      failed: number;
+    }): string =>
+      `Cookie：已导入 ${c.imported} / ${c.found}` +
+      (c.skipped > 0 ? `，跳过 ${c.skipped}` : "") +
+      (c.failed > 0 ? `，失败 ${c.failed}` : ""),
+    importHistoryResult: (h: { found: number; imported: number }): string =>
+      `历史记录：已导入 ${h.imported} / ${h.found} 条`,
+    importFailed: (reason: string): string => `导入失败：${reason}`,
+    /** The clear-browsing-data confirmation. */
+    clearTitle: "清除浏览数据",
+    clearBody: "选择要从内置浏览器中删除的数据，此操作无法撤销。",
+    clearCookies: "Cookie 与登录状态",
+    clearCache: "缓存的图片和文件",
+    clearStorage: "网站存储的数据",
+    clearHistory: "历史记录",
+    clearConfirm: "清除",
+    clearDone: "已清除浏览数据",
+    clearFailed: (reason: string): string => `清除失败：${reason}`,
+    /** The homepage dialog: the page new tabs and the Home button open. */
+    homepageTitle: "设置主页",
+    homepageIntro: "新建标签页和主页按钮会打开这个页面。",
+    homepageAddress: "网址",
+    homepagePlaceholder: "example.com",
+    /** The address field's hint: what an empty field means, else the page the entry opens. */
+    homepageHintEmpty: "留空表示不设主页，新建标签页为空白页。",
+    homepageHintOpens: (url: string): string => `将打开 ${url}`,
+    /** Fills the field with the page on screen. */
+    homepageUseCurrent: "使用当前页面",
+    /** Empties the field; saving it then removes the homepage. */
+    homepageClear: "清除",
+    homepageFailed: (reason: string): string => `无法保存主页：${reason}`,
+    /** A tab whose page crashed: the panel's notice in its place, with Reload as the action. */
+    crashedTitle: "此页面已崩溃",
+    /** The notice's body when the page ran out of memory (the system took its memory back). */
+    crashedOutOfMemory: "它耗尽了内存。请先关闭不再需要的标签页，再重新加载。",
+    crashedBody: "重新加载即可再试一次。",
+    /** A crashed tab's tooltip line in the strip, after its title, and its mark's accessible name. */
+    crashedTab: "页面已崩溃",
+    /**
+     * The browser's load, when the server warns about it: the toolbar's mark (its tooltip and
+     * accessible name) and the one toast per warning. Sentences joined in the order given here.
+     */
+    load: {
+      memory: (size: string, tabs: number): string =>
+        `浏览器正在使用 ${size} 内存（${tabs} 个标签页）。`,
+      lowSystemMemory: (percent: number): string => `这台电脑的可用内存不足（剩余 ${percent}%）。`,
+      manyTabs: (tabs: number): string => `已打开 ${tabs} 个标签页。`,
+      advice: "请关闭不再需要的标签页。",
+      /** The sentences above, as one warning. */
+      join: (sentences: string[]): string => sentences.join(""),
+      /** A heavy tab's tooltip line in the strip, after its title, and its mark's accessible name. */
+      heavyTab: (size: string): string => `占用 ${size} 内存`,
+    },
+  },
+
   /** The Trace dock panel (the current conversation's Trace files). */
   tracePanel: {
     empty: "暂无轨迹",
@@ -370,6 +494,18 @@ export const zh = {
     noResults: "没有匹配的命令",
     hint: "Ctrl+P / Ctrl+Shift+P（⌘P）切换 · ↑↓ 选择 · Enter 执行",
     harnessHistory: "Harness 历史",
+  },
+  modelPicker: {
+    /** Accessible name of the dialog's provider-group rail. */
+    groups: "模型分组",
+    /** Footer toggle while models without a key are listed: turns the listing back off. */
+    hideModelsWithoutKey: "隐藏未配置 key 的模型",
+    /**
+     * Footer keyboard legend; `mod` is "⌥" on macOS and "Alt+" elsewhere. Only the two moves a
+     * list does not suggest by itself — ↑↓, Enter and Esc go without saying, and the footer
+     * shares its line with the key-less toggle.
+     */
+    hint: (mod: string): string => `←→ 切换分组与列表 · ${mod}1–9 跳到分组`,
   },
   workflows: {
     tabsLabel: "聊天与工作流",
@@ -1450,7 +1586,7 @@ export const zh = {
      * which is what identifies the key to the reader.
      */
     readFromEnv: "读取自环境变量",
-    /** Chat model dropdown's bottom expander row: reveals the models hidden by the configured-key filter. */
+    /** Model picker's footer toggle: lists the models hidden by the configured-key filter. */
     showModelsWithoutKey: (n: number): string => `显示未配置 key 的模型（${n} 个）`,
     modelIdExists: "该模型 id 已存在",
     pricingAllOrNone: "三项价格需一并填写",
@@ -1911,8 +2047,8 @@ export const zh = {
     importPromptTail: (projectId: string, agentId: string): string =>
       [
         "先完整阅读来源，逐个审查脚本有没有恶意行为（外传数据、改动来源之外的文件、执行来路不明的命令等），确认安全后再继续。",
-        '然后产出一个 PenguinHarness 钩子包：一份 hooks.json（name、description、description_zh、version（格式 YYYY.MM.DD.N），以及各钩子点的命令列表 stop / pre_tool_use / user_prompt，每项为 { "command": "<脚本相对路径>", "timeout": <秒> }）加上纯 Node 的 .mjs 脚本（只用内置模块）。',
-        '脚本契约：stdin 收到一份 JSON——stop 点为 { "hook": "stop", "session_id", "trace_path" }（trace_path 是 Session 正在写入的 Trace 文件，无 Trace 时缺省），pre_tool_use 点另有 tool_name、tool_call_id、arguments（原始参数 JSON 串），user_prompt 点则是 scratchpad_dir 与 prompt；stdout 为空即无意见，否则一份 JSON 回答——stop 点 { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }，pre_tool_use 点 { "decision": "allow" | "deny", "reason", "output" }，user_prompt 点 { "context" }；退出码非零、stdout 不是 JSON 或超时都按失败记录、不采纳。',
+        '然后产出一个 PenguinHarness 钩子包：一份 hooks.json（name、description、description_zh、version（格式 YYYY.MM.DD.N），以及各钩子点的命令列表 stop / pre_tool_use / user_prompt，每项为 { "command": "<脚本相对路径>", "timeout": <秒> }）加上纯 Node 的 .mjs 脚本（只用内置模块）。用不到的钩子点可以省略或写成 []；user_prompt 的条目可以另加 "trigger": "prompt"（缺省：用户每次提交 Prompt 时运行）或 "host"（只在宿主按包名启动该包的流程时运行）。',
+        '脚本契约：stdin 收到一份 JSON——stop 点为 { "hook": "stop", "session_id", "trace_path" }（trace_path 是 Session 正在写入的 Trace 文件，无 Trace 时缺省），pre_tool_use 点另有 tool_name、tool_call_id、arguments（原始参数 JSON 串），user_prompt 点带 trace_path、scratchpad_dir 与 prompt（用户的消息文本）；stdout 为空即无意见，否则一份 JSON 回答——stop 点 { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }，pre_tool_use 点 { "decision": "allow" | "deny", "reason", "output" }，user_prompt 点 { "context" }，它在每条 Prompt 中紧随用户消息发出；退出码非零、stdout 不是 JSON 或超时都按失败记录、不采纳。',
         `把它安装到 Project「${projectId}」中 Agent「${agentId}」的 agent_state/hooks/<name>/ 目录（目录名即包名，须匹配 ^[A-Za-z0-9_-]+$），最后向我说明它做什么、在哪个钩子点触发。`,
       ].join("\n"),
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
@@ -1923,7 +2059,7 @@ export const zh = {
     injection: {
       enable: "启用钩子",
       enableHint:
-        "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置。",
+        "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置，直到其上下文被压缩。",
       savedToast: "已保存，自下一轮对话起生效",
     },
   },
@@ -2807,6 +2943,17 @@ Benchmark：
       budget_limited: "预算耗尽",
       aborted: "已中断",
     } as Record<string, string>,
+    /**
+     * The conversation's menu for a web link: a secondary click on it, or Shift+F10 / the Menu
+     * key while it has focus. The built-in browser's row shows only in the desktop app with the
+     * browser available; the external row names the system browser there, a new tab elsewhere.
+     */
+    linkMenu: {
+      openInBuiltinBrowser: "在内置浏览器中打开",
+      openExternal: "在系统浏览器中打开",
+      openInNewTab: "在新标签页中打开",
+      copyLink: "复制链接地址",
+    },
   },
 
   /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
@@ -4520,6 +4667,8 @@ Benchmark：
       ticket_session_failed: "无法发起工单会话。",
       handbook_file_not_found: "该文档已不存在。",
       handbook_index_required: "手册索引（README.md）不能删除。",
+      browser_unavailable: "内置浏览器不可用：它需要 PenguinHarness 桌面应用处于打开状态。",
+      source_not_found: "找不到这个浏览器配置文件。",
     },
   },
 };

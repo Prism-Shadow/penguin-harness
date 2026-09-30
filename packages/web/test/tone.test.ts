@@ -65,6 +65,9 @@ describe("status marks take their colour from the tokens", () => {
       "features/chat/step-banner.tsx",
       "features/chat/goal-banner.tsx",
       "features/chat/subagent-chip.tsx",
+      "features/builtin-browser/browser-layer.tsx",
+      "features/builtin-browser/browser-tab-strip.tsx",
+      "features/builtin-browser/browser-toolbar.tsx",
     ];
     for (const rel of files) {
       const src = read(rel);

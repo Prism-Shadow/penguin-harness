@@ -109,6 +109,7 @@ import {
   loadModelGroupOrder,
   saveModelGroupOrder,
 } from "./model-group-order";
+import { TAG_INK, TAG_SHAPE, modelTags } from "./model-tags";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -2060,35 +2061,6 @@ function AddGroupDialog({
 // ---------------------------------------------------------------------------
 
 /**
- * Card tag palette. Every mark wears one small neutral pill — the same faint surface and border
- * whatever it says — and the hue survives only in the text. Six marks filling six coloured
- * chips turned a row of tags into confetti; on a page whose job is scanning names, the marks
- * are meant to be noticed second.
- *
- * Three inks, so the row groups instead of enumerating: what the model IS (its default status),
- * what it CAN do, and what it COSTS. Identity is carried by the words in every case — the ink
- * only sorts them at a glance, and never alone says which mark this is.
- *
- * These are identities, not judgements, which is why they are spelled here instead of in
- * `lib/tone.ts`, whose five tones each rate a thing's state — the same reason
- * `category-colors.ts` and `update-dot.tsx` keep their own colours. Contrast against the
- * surfaces a card sits on (white and gray-50 in light; this app's overridden gray-950 `#000000`
- * and gray-900 `#0d0d0d` in dark) clears 4.5:1 for every ink; the shared border is decorative,
- * so it is not held to 3:1.
- */
-/** The pill itself: no fill at all, so a row of marks sits on the card rather than on top of it. */
-const TAG_SHAPE =
-  "whitespace-nowrap rounded-full border border-gray-200 px-1.5 text-[10px] font-medium leading-[15px] dark:border-gray-700";
-const TAG_INK = {
-  /** This model's standing in the Project. */
-  status: "text-brand-700 dark:text-brand-300",
-  /** What it can do. */
-  capability: "text-emerald-700 dark:text-emerald-400",
-  /** What it costs. */
-  price: "text-amber-700 dark:text-amber-400",
-} as const;
-
-/**
  * Card: display name + lifetime Token spend + status badges; context / pricing / key status folded
  * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
  * title row's right edge. The whole card is clickable (the model homepage link lives in the
@@ -2137,75 +2109,21 @@ function ModelCard({
       }
     : { cacheRead: row.cacheRead, cacheWrite: row.cacheWrite, output: row.output };
   /**
-   * Every standing mark this row carries, in one horizontal row of its own.
+   * Every standing mark this row carries (model-tags.ts, shared with the model picker's rows),
+   * in one horizontal row of its own.
    *
    * They had been sharing the title's line, where each was width the model's NAME had to give
    * up — a long name truncated to make room for a mark that could have been read anywhere. A
    * row of their own costs one line and gives the name the whole of the first.
-   *
-   * Order is fixed rather than by which happen to be true, so the eye can learn where to look:
-   * what this Project chose (default, vision proxy) before what the model is (vision, fast,
-   * free) before what it costs today (the discount).
    */
-  const tags: Array<{ key: string; label: string; title?: string; className: string }> = [
-    ...(isDefault
-      ? [
-          {
-            key: "default",
-            label: S.models.default,
-            className: TAG_INK.status,
-          },
-        ]
-      : []),
-    ...(row.vision
-      ? [
-          {
-            key: "vision",
-            label: S.models.visionBadge,
-            className: TAG_INK.capability,
-          },
-        ]
-      : []),
-    ...(isVisionModel
-      ? [
-          {
-            key: "visionModel",
-            label: S.models.visionModelBadge,
-            className: TAG_INK.capability,
-          },
-        ]
-      : []),
-    ...(row.fastMode
-      ? [
-          {
-            key: "fastMode",
-            label: S.models.fastModeBadge,
-            className: TAG_INK.capability,
-          },
-        ]
-      : []),
-    ...(isFreeModel(row)
-      ? [
-          {
-            key: "free",
-            label: S.models.freeBadge,
-            className: TAG_INK.price,
-          },
-        ]
-      : []),
-    ...(discount
-      ? [
-          {
-            key: "discount",
-            label: S.models.discountBadge(discount.percent),
-            title: discount.peak
-              ? S.models.offPeakTitle(discount.percent, discount.peak)
-              : S.models.discountTitle(discount.percent),
-            className: TAG_INK.price,
-          },
-        ]
-      : []),
-  ];
+  const tags = modelTags({
+    isDefault,
+    vision: row.vision,
+    isVisionModel,
+    fastMode: row.fastMode,
+    free: isFreeModel(row),
+    discount,
+  });
 
   const priceLine = (a: string, b: string, c: string): string =>
     `${displayPrice(a, currency)} / ${displayPrice(b, currency)} / ${displayPrice(c, currency)}`;

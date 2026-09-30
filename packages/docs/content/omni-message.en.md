@@ -129,7 +129,7 @@ interface InlineDataPayload {
 }
 ```
 
-`sender` separates the human user (`user`) from the parent agent driving a subagent (`parent_agent`), the harness's automatic injections such as background-task completion reports and hook continues (`harness`), and the server's own triggers such as scheduled tasks (`server`). It is never sent to the provider.
+`sender` separates the human user (`user`) from the parent agent driving a subagent (`parent_agent`), the harness's automatic injections such as background-task completion reports, stop-hook continues and user-prompt hook contexts (`harness`), and the server's own triggers such as scheduled tasks (`server`). It is never sent to the provider.
 
 `tool_call` and `tool_call_output` pair strictly via `tool_call_id`. The calls of a turn form one batch, and outputs are re-fed in the original call order (see [The Agent Loop](/agent-loop)).
 
@@ -356,7 +356,8 @@ interface SubagentPayload {
 
 interface HookPayload {
   type: "hook";
-  hook: "stop" | "pre_tool_use";    // the hook point that fired (see the agent loop's hooks)
+  hook: "stop" | "pre_tool_use"     // the hook point that fired (see the agent loop's hooks)
+    | "user_prompt";                // user_prompt: only for a hook that failed
   name: string;               // the hook's name: "goal", "continual-learning", …
   decision?: "continue" | "stop"    // stop point
     | "allow" | "deny";             // pre_tool_use point; absent when the hook only left a record

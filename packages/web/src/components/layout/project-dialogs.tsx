@@ -540,8 +540,8 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
  * level) plus the Project's default model, laid out as a compact responsive two-column
  * grid. Workspace and model reuse the chat draft's own pickers — WorkspaceSelect (the
  * folder finder, a modal stacked on this one) and ModelSelect (the composer's model
- * dropdown) — with their `form` trigger variant, so the controls line up with the dialog's
- * Input/Select while what they open stays exactly the composer's.
+ * picker, a dialog too) — with their `form` trigger variant, so the controls line up with
+ * the dialog's Input/Select while what they open stays exactly the composer's.
  * The model default is SINGLE-SOURCED with the models page — the picker renders and writes
  * the same top-level `default_model` (via the narrow PUT /models/default route), never a
  * second key; changing it also releases the draft-cached model pin exactly as the models
@@ -739,8 +739,8 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
               </span>
               {models.models.length > 0 ? (
                 <>
-                  {/* The composer's model dropdown (provider logo + name + searchable grouped
-                      panel); the default row carries the S.models.default marker. */}
+                  {/* The composer's model picker (provider logo + name, opening the model-picker
+                      dialog); the default row carries the S.models.default marker. */}
                   <ModelSelect
                     models={models.models}
                     value={modelRef}

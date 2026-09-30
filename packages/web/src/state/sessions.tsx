@@ -56,6 +56,11 @@ import * as api from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { openUserEvents } from "../api/sse";
 import { isCompanyEvent, publishCompanyEvent, publishCompanyResync } from "./company";
+import {
+  isBuiltinBrowserEvent,
+  publishBuiltinBrowserEvent,
+  publishBuiltinBrowserResync,
+} from "../features/builtin-browser/browser-events";
 import { WORKFLOW_UPDATED_EVENT } from "../lib/workflow-tabs";
 import { mergeCounts, newestFirst } from "../lib/session-merge";
 import {
@@ -1063,6 +1068,14 @@ export function applyUserEvent(
     store.setState({ liveStatuses: new Map() });
     void store.getState().reload();
     publishCompanyResync();
+    if (source === null) publishBuiltinBrowserResync();
+    return;
+  }
+  // The built-in browser's tabs, page requests and agent activity go to the browser layer in
+  // the app shell. Only this server's: the pages live in the desktop shell that spawned it, and
+  // a machine's server drives no shell on this screen.
+  if (isBuiltinBrowserEvent(ev)) {
+    if (source === null) publishBuiltinBrowserEvent(ev);
     return;
   }
   // Company-mode notifications fan out to the company store and any mounted organization page

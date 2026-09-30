@@ -3,9 +3,9 @@
  * (controlBase + the shared size tier, sm by default — leading icon, truncating label, trailing
  * chevron) with a portaled dropdown hanging under its left edge. It is the single source of the
  * "form-variant" look shared by the model picker, the workspace picker and the schedule's
- * session picker, so the three read identically and none re-hand-rolls the trigger. The
- * workspace picker opens a modal rather than a dropdown, so it takes the trigger alone
- * (FormPickerButton).
+ * session picker, so the three read identically and none re-hand-rolls the trigger. The model
+ * and workspace pickers open a dialog instead of a menu, so they take the trigger alone
+ * (FormPickerTrigger).
  *
  * It owns only the trigger + Dropdown wiring; the menu body is the caller's `children`
  * (a searchable list, …), and open/close state stays with the caller (the pickers drive it
@@ -18,10 +18,8 @@ import { controlBase } from "./field";
 import { sizeClass } from "./input";
 import type { ControlSize } from "./input";
 
-/** The trigger's own props: everything but the dropdown wiring. */
-export interface FormPickerButtonProps {
-  open: boolean;
-  onClick: () => void;
+/** The trigger's own props: everything FormPicker draws, minus the menu it hangs. */
+export interface FormPickerTriggerProps {
   /** Leading visual (provider logo / folder icon), sized by the caller; omitted when there's none. */
   leading?: ReactNode;
   /** The selected value's display, or a placeholder (pair with `muted`). */
@@ -33,18 +31,20 @@ export interface FormPickerButtonProps {
   title: string;
   ariaLabel: string;
   ariaHaspopup?: "listbox" | "dialog";
+  /** Whether the thing it opens is open (announced as `aria-expanded`). */
+  expanded: boolean;
   disabled?: boolean;
   /** Same size tier as Input/Select; sm is the form rung every picker sits at today. */
   size?: ControlSize;
+  onClick: () => void;
 }
 
 /**
- * The form-variant trigger on its own, for a picker whose panel is not a dropdown — the
- * Workspace picker opens a modal from it — so that picker still looks exactly like the others.
+ * The form-variant trigger on its own, for a picker that opens a dialog rather than a hanging
+ * menu (the model picker, the workspace finder): the same button FormPicker draws, so both
+ * kinds of picker read identically in a form.
  */
-export function FormPickerButton({
-  open,
-  onClick,
+export function FormPickerTrigger({
   leading,
   label,
   labelClassName = "",
@@ -52,16 +52,18 @@ export function FormPickerButton({
   title,
   ariaLabel,
   ariaHaspopup = "listbox",
+  expanded,
   disabled = false,
   size = "sm",
-}: FormPickerButtonProps) {
+  onClick,
+}: FormPickerTriggerProps) {
   return (
     <button
       type="button"
       title={title}
       aria-label={ariaLabel}
       aria-haspopup={ariaHaspopup}
-      aria-expanded={open}
+      aria-expanded={expanded}
       disabled={disabled}
       onClick={onClick}
       className={`flex w-full items-center gap-2 text-left ${controlBase} ${sizeClass[size]} disabled:cursor-not-allowed disabled:opacity-60`}
@@ -80,8 +82,9 @@ export function FormPicker({
   setOpen,
   menuClass,
   children,
-  ...button
-}: Omit<FormPickerButtonProps, "onClick"> & {
+  ...trigger
+}: Omit<FormPickerTriggerProps, "expanded" | "onClick"> & {
+  open: boolean;
   setOpen: (open: boolean) => void;
   /** Width / origin classes for the dropdown panel (placement itself is measured from the trigger). */
   menuClass: string;
@@ -94,7 +97,7 @@ export function FormPicker({
       setOpen={setOpen}
       menuClass={menuClass}
       portal={{ direction: "down", align: "left" }}
-      button={<FormPickerButton open={open} onClick={() => setOpen(!open)} {...button} />}
+      button={<FormPickerTrigger {...trigger} expanded={open} onClick={() => setOpen(!open)} />}
     >
       {children}
     </Dropdown>

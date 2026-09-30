@@ -446,7 +446,7 @@ export class SandboxWslStatus {
               "Packages Initialize installs besides bubblewrap, one per line (for example nodejs, npm, python3). They are apt packages on Ubuntu and apk packages on Alpine. Windows toolchains cannot run inside the sandbox.",
             descriptionZh:
               "初始化时除 bubblewrap 外安装的软件包，每行一个（例如 nodejs、npm、python3）。Ubuntu 上是 apt 包，Alpine 上是 apk 包。Windows 工具链无法在沙盒内运行。",
-            default: ["git", "curl"],
+            default: ["git", "curl", "nodejs"],
             pattern: "^[a-z0-9][a-z0-9._+-]*$",
             patternErrorMessage: "must be package names",
           },

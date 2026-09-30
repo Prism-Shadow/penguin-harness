@@ -10,7 +10,7 @@ import { toneSurface } from "../../lib/tone";
  * wrong at half the call sites. The class strings themselves still come from the shared status
  * tones, so a badge that *does* report a status matches every other mark for that state.
  */
-export type BadgeTone = "gray" | "brand" | "green" | "yellow" | "amber" | "red";
+export type BadgeTone = "gray" | "brand" | "green" | "amber" | "red";
 
 const toneClass: Record<BadgeTone, string> = {
   gray: toneSurface.muted,
@@ -18,10 +18,6 @@ const toneClass: Record<BadgeTone, string> = {
   // as prominent without claiming any severity ("default", "origin", "queued").
   brand: "bg-gray-200/80 text-gray-700 dark:bg-gray-700/60 dark:text-gray-200",
   green: toneSurface.success,
-  // Light-yellow, also outside the status vocabulary: a neutral informational tag (the "Free"
-  // model badge). It stays on the yellow palette so it reads as distinct from amber, which
-  // carries warning semantics (aborted stop_reason, the proxy-vision badge on the same card).
-  yellow: "bg-yellow-50 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300",
   amber: toneSurface.attention,
   red: toneSurface.danger,
 };
