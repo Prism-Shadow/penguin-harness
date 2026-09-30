@@ -144,7 +144,7 @@ export function WorkspaceSelect({
     <>
       <button
         type="button"
-        title={title}
+        data-tooltip={title}
         aria-label={fieldName}
         aria-haspopup="dialog"
         aria-expanded={open}

@@ -150,6 +150,7 @@ export function Input({
   className,
   autoComplete,
   id,
+  title,
   ...rest
 }: InputProps) {
   const bad = Boolean(error) || Boolean(invalid);
@@ -181,6 +182,8 @@ export function Input({
         // Secret while masked; PasswordInput's reveal toggle flips the type to text, and the
         // opt-out that matters was already read from the password state.
         {...autofillProps(autoComplete, rest.type === "password")}
+        // A hover hint shows in the shared tooltip, never the browser's own `title`.
+        data-tooltip={title}
         {...rest}
       />
     </Field>
@@ -217,6 +220,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     className,
     autoComplete,
     id,
+    title,
     ...rest
   },
   ref,
@@ -248,6 +252,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         aria-required={required || undefined}
         aria-describedby={error ? errorId : undefined}
         {...autofillProps(autoComplete, false)}
+        data-tooltip={title}
         {...rest}
       />
     </Field>

@@ -90,7 +90,7 @@ export function TerminalKeyBar({ control, modifiers, onModifiers, focused }: Ter
       type="button"
       data-testid={props.testId}
       aria-label={props.label}
-      title={props.label}
+      data-tooltip={props.label}
       {...(props.pressed !== undefined ? { "aria-pressed": props.pressed } : {})}
       // Keeps focus (and the soft keyboard) on the terminal — see the file header.
       onMouseDown={(event) => event.preventDefault()}

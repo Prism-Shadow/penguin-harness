@@ -282,7 +282,7 @@ export function UsagePage() {
       <div className="mx-auto max-w-5xl space-y-4">
         {/* Top filters: controls have no external title (the explanation is written into the "all …" option), so they're baseline-centered with the page title */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold">{S.usage.title}</h1>
+          <h1 className="ui-display text-xl font-semibold">{S.usage.title}</h1>
           <div className="flex flex-wrap items-center gap-2">
             <div className="w-32">
               <Select

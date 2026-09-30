@@ -183,7 +183,7 @@ export function GroupPager({
     <div className="mt-1 flex items-center justify-center gap-1.5 px-1.5 py-0.5">
       <button
         type="button"
-        title={S.chat.prevGroupPage}
+        data-tooltip={S.chat.prevGroupPage}
         aria-label={S.chat.prevGroupPage}
         disabled={page <= 0}
         onClick={() => step(-1)}
@@ -202,7 +202,7 @@ export function GroupPager({
       </span>
       <button
         type="button"
-        title={S.chat.nextGroupPage}
+        data-tooltip={S.chat.nextGroupPage}
         aria-label={S.chat.nextGroupPage}
         disabled={page >= pageCount - 1}
         onClick={() => step(1)}
@@ -351,7 +351,9 @@ export function GroupHeader({
       // cursor-grab while the header is a handle — the SessionRow treatment one axis up.
       // Groups have no sort toggle by design, so the cursor is the only thing on screen
       // that says this row can be dragged at all.
-      className={`group/header flex items-center gap-0.5 px-1 pb-0.5${
+      // min-w-0: the row never asks for more than its column; the title button is the part
+      // that gives way (it truncates), the actions after it keep their size.
+      className={`group/header flex min-w-0 items-center gap-0.5 px-1 pb-0.5${
         draggable ? " cursor-grab" : ""
       }`}
       {...(draggable
@@ -363,7 +365,7 @@ export function GroupHeader({
         onClick={onToggle}
         aria-expanded={open}
         aria-label={open ? S.nav.collapseGroup : S.nav.expandGroup}
-        {...(title !== undefined ? { title } : {})}
+        {...(title !== undefined ? { "data-tooltip": title } : {})}
         className="flex min-w-0 flex-1 items-center gap-1 self-stretch rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
       >
         {icon}

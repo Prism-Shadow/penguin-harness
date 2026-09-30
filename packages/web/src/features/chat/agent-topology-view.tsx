@@ -65,7 +65,7 @@ export function AgentTopologyView({
               type="button"
               aria-label={`${label} · ${stateLabel}`}
               aria-pressed={selected}
-              title={tooltip}
+              data-tooltip={tooltip}
               onClick={() => onSelect(node)}
               style={{ left: x, top: y, width: NODE_W, height: NODE_H }}
               className={`absolute flex flex-col justify-center gap-0.5 rounded-md border bg-white px-2 text-left transition-colors duration-150 dark:bg-gray-900 ${

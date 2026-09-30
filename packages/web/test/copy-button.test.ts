@@ -1,7 +1,7 @@
 /**
- * The copy button's feedback follows the WRITE: the check (and the tooltip's flip to the
- * copied label) appears only once writeClipboard reports the text reached the clipboard,
- * and a refused write leaves the control idle. clipboard.test.ts pins the entry itself; this
+ * The copy button's feedback follows the WRITE: the check appears only once writeClipboard
+ * reports the text reached the clipboard, and a refused write leaves the control idle. The
+ * tooltip names the action throughout and never flips to the result. clipboard.test.ts pins the entry itself; this
  * pins the one place its answer is consumed, so dropping the `if (!ok) return;` guard in
  * useCopied (back to an unconditional check) fails here.
  *
@@ -15,7 +15,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement, ReactNode } from "react";
 import { CopyButton } from "../src/components/ui/copy-button";
-import { S } from "../src/lib/strings";
 
 /** Hook slots in call order, the cursor rewound on each render, and every value `copied` was set to. */
 const hooks = vi.hoisted(() => ({
@@ -51,7 +50,11 @@ const writeClipboard = vi.hoisted(() => vi.fn<(text: string) => Promise<boolean>
 
 vi.mock("../src/lib/clipboard", () => ({ writeClipboard }));
 
-type Button = ReactElement<{ title: string; onClick: () => void }>;
+type Button = ReactElement<{
+  "data-tooltip": string;
+  onClick: () => void;
+  children: ReactElement<{ copied: boolean }>;
+}>;
 
 const LABEL = "Copy session id";
 
@@ -84,7 +87,8 @@ describe("CopyButton: the check follows the write", () => {
   it("shows no check when the write is refused", async () => {
     writeClipboard.mockResolvedValue(false);
     const idle = render();
-    expect(idle.props.title).toBe(LABEL);
+    expect(idle.props["data-tooltip"]).toBe(LABEL);
+    expect(idle.props.children.props.copied).toBe(false);
 
     idle.props.onClick();
     await settle();
@@ -92,7 +96,7 @@ describe("CopyButton: the check follows the write", () => {
     expect(writeClipboard).toHaveBeenCalledTimes(1);
     expect(writeClipboard.mock.calls[0]?.[0]).toBe("sess-42");
     expect(hooks.copiedSets).not.toContain(true);
-    expect(render().props.title).toBe(LABEL);
+    expect(render().props.children.props.copied).toBe(false);
   });
 
   it("shows the check once the write landed, and clears it after the window", async () => {
@@ -101,10 +105,12 @@ describe("CopyButton: the check follows the write", () => {
     await settle();
 
     expect(hooks.copiedSets).toEqual([true]);
-    expect(render().props.title).toBe(S.common.copied);
+    const copied = render();
+    expect(copied.props.children.props.copied).toBe(true);
+    expect(copied.props["data-tooltip"]).toBe(LABEL);
 
     vi.runAllTimers();
     expect(hooks.copiedSets).toEqual([true, false]);
-    expect(render().props.title).toBe(LABEL);
+    expect(render().props.children.props.copied).toBe(false);
   });
 });

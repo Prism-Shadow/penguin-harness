@@ -76,12 +76,12 @@ describe("Md links", () => {
     expectNewTab(tags[0]);
   });
 
-  it('preserves the markdown link title from [text](url "title")', () => {
+  it('shows the markdown link title from [text](url "title") in the shared tooltip', () => {
     const html = render('Read [docs](https://example.com "API docs") first.');
     const tags = anchors(html);
     expect(tags).toHaveLength(1);
     expect(tags[0]).toContain('href="https://example.com"');
-    expect(tags[0]).toContain('title="API docs"');
+    expect(tags[0]).toContain('data-tooltip="API docs"');
     expectNewTab(tags[0]);
   });
 

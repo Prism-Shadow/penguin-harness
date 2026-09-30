@@ -87,7 +87,8 @@ function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: Mcp
                 </code>
                 {tool.description !== undefined && (
                   <span
-                    title={tool.description}
+                    data-tooltip={tool.description}
+                    data-tooltip-content="text"
                     className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500"
                   >
                     {tool.description}

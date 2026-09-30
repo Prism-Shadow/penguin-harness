@@ -146,12 +146,14 @@ jobs:
             tests: pnpm --filter @prismshadow/penguin-server test
           - shard: web-cli
             build: "@prismshadow/penguin-core...,@prismshadow/penguin-web..."
-            tests: pnpm --filter @prismshadow/penguin-web --filter @prismshadow/penguin-cli test
+            tests: >-
+              pnpm --filter @prismshadow/penguin-web --filter @prismshadow/penguin-ui
+              --filter @prismshadow/penguin-cli test
           - shard: rest
             build: "@prismshadow/penguin-desktop..."
             tests: >-
               pnpm --filter @prismshadow/penguin-desktop --filter @prismshadow/penguin-landing
-              --filter @prismshadow/penguin-docs test
+              --filter @prismshadow/penguin-docs --filter @prismshadow/penguin-ui-gallery test
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup

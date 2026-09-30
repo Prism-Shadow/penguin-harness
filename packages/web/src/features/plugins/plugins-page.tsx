@@ -84,8 +84,9 @@ import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { toneInk, toneStrip, toneSurface } from "../../lib/tone";
+import { toneInk, toneSurface } from "../../lib/tone";
 import { Input } from "../../components/ui/input";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /**
  * What one Agent has installed, by name → the installed copy's version (`YYYY.MM.DD.N`, or ""
@@ -602,7 +603,7 @@ export function PluginsPage() {
     <div className="h-full overflow-y-auto p-4 [scrollbar-gutter:stable] md:p-6">
       <div className="mx-auto max-w-5xl">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+          <h1 className="ui-display flex items-center gap-1.5 text-xl font-semibold">
             {S.plugins.pageTitle}
             <InfoPopover label={S.plugins.pageTitle}>{S.plugins.pageDesc}</InfoPopover>
           </h1>
@@ -656,14 +657,14 @@ export function PluginsPage() {
         )}
 
         {remote !== null && "error" in remote && remote.machineId === viewMachine && (
-          <div className={`mt-4 rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
+          <NoticeStrip tone="attention" className="mt-4 rounded-md px-3 py-2 text-xs">
             {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
-          </div>
+          </NoticeStrip>
         )}
         {deployment !== null && viewIncludesHere && deployment.restartPending && (
-          <div className={`mt-4 rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
+          <NoticeStrip tone="attention" className="mt-4 rounded-md px-3 py-2 text-xs">
             {S.plugins.restartPending}
-          </div>
+          </NoticeStrip>
         )}
 
         {error ? (
@@ -1216,7 +1217,7 @@ function Tag({
 }) {
   return (
     <span
-      title={title}
+      data-tooltip={title}
       className={`rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800 ${mono ? "font-mono text-gray-500 dark:text-gray-400" : "font-medium text-gray-600 dark:text-gray-300"}`}
     >
       {children}
@@ -1319,14 +1320,16 @@ function PluginCard({
           <div className="min-w-0 flex-1">
             <span
               className="block truncate font-mono text-[13px] font-semibold"
-              title={plugin.name}
+              data-tooltip={plugin.name}
+              data-tooltip-content="code"
             >
               {plugin.name}
             </span>
             {/* Short description truncates to one line (full description goes into title for hover reading). */}
             <p
               className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
-              title={fullDescription}
+              data-tooltip={fullDescription}
+              data-tooltip-content="text"
             >
               {description}
             </p>
@@ -1334,7 +1337,11 @@ function PluginCard({
         </div>
         {/* Metadata line under the header (e.g. `v2026.08.29.1 · updated 3 days ago · used by
             2 agents`); what the plugin contains lives in the detail Modal this card opens. */}
-        <p className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500" title={meta}>
+        <p
+          className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500"
+          data-tooltip={meta}
+          data-tooltip-content="text"
+        >
           {meta}
         </p>
         {/* Tag line: the category, "built in" (the library ships with the build), what it carries. */}
@@ -1508,7 +1515,11 @@ function InstallRow({
   return (
     <div className="flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60">
       <AgentAvatar id={agentId} name={name} size={22} className="shrink-0 rounded" />
-      <span className="min-w-0 flex-1 truncate text-sm" title={agentId}>
+      <span
+        className="min-w-0 flex-1 truncate text-sm"
+        data-tooltip={agentId}
+        data-tooltip-content="text"
+      >
         {name}
       </span>
       {installed && outdated && (
@@ -1620,14 +1631,16 @@ function ModuleRow({
           <div className="flex items-baseline gap-2">
             <span
               className="min-w-0 truncate font-mono text-[13px] font-semibold"
-              title={`${S.pluginRegistry.specifierHint}: ${specifier}`}
+              data-tooltip={`${S.pluginRegistry.specifierHint}: ${specifier}`}
+              data-tooltip-content="code"
             >
               {specifier}
             </span>
           </div>
           <p
             className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
-            title={entry?.description}
+            data-tooltip={entry?.description}
+            data-tooltip-content="text"
           >
             {entry?.description ?? S.plugins.shippedNoEntry}
           </p>
@@ -1635,7 +1648,8 @@ function ModuleRow({
       </div>
       <p
         className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500"
-        title={`${meta}${meta === "" ? "" : " · "}${stateText}`}
+        data-tooltip={`${meta}${meta === "" ? "" : " · "}${stateText}`}
+        data-tooltip-content="text"
       >
         {meta !== "" && <span>{meta} · </span>}
         <span
@@ -1653,7 +1667,11 @@ function ModuleRow({
         </span>
       </p>
       {state === "failed" && error !== undefined && (
-        <p className={`mt-1 truncate text-[11px] ${toneInk.danger}`} title={error}>
+        <p
+          className={`mt-1 truncate text-[11px] ${toneInk.danger}`}
+          data-tooltip={error}
+          data-tooltip-content="text"
+        >
           {error}
         </p>
       )}

@@ -714,8 +714,8 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
                 </option>
               ))}
             </Select>
-            {/* Plain tier names, not the composer dropdown's annotated variant: a native
-                <select> paints the picked option's own text on the collapsed control, so
+            {/* Plain tier names, not the composer dropdown's annotated variant: a Select
+                shows the picked option's own text on its closed trigger, so
                 annotating the rows here would also put "(xhigh)" on what is, once closed,
                 a trigger. Matches the approval-mode select directly above, whose options
                 are plain localized names too. */}
@@ -1075,7 +1075,8 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                       )}
                       <p
                         className="mt-0.5 truncate font-mono text-[11px] text-gray-400"
-                        title={r.pattern}
+                        data-tooltip={r.pattern}
+                        data-tooltip-content="code"
                       >
                         {r.pattern}
                       </p>

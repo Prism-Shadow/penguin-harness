@@ -39,7 +39,7 @@ export function PathCapsule({ path }: { path: string }) {
     <>
       <button
         type="button"
-        title={copied ? S.common.copied : S.company.pathCapsule.hint(path)}
+        data-tooltip={copied ? S.common.copied : S.company.pathCapsule.hint(path)}
         aria-label={S.company.pathCapsule.copy(path)}
         onClick={() => flash(path)}
         // Baseline-aligned on the label, so the capsule sits on the sentence's line; the glyph

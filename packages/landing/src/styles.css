@@ -30,11 +30,22 @@
   }
   .dark {
     color-scheme: dark;
-    /* Pure-black dark base, matching the Web App (true-neutral gray overrides). */
-    --color-gray-950: #000000;
-    --color-gray-900: #0d0d0d;
-    --color-gray-800: #1f1f1f;
-    --color-gray-700: #303030;
+    /* A calm neutral dark, shared with the Web App's Primer dark and the theme gallery: the
+       canvas lifted off black, surfaces a step lighter, and the whole gray ramp re-pointed to
+       true neutrals — Tailwind's own grays lean blue, which is what made the dark landing look
+       like a different site. Body text (100) sits at 16:1 on the canvas, muted (400) at 7:1
+       and subtle (500) above 4.5:1 on the surfaces. */
+    --color-gray-950: #141414;
+    --color-gray-900: #1c1c1c;
+    --color-gray-800: #2a2a2a;
+    --color-gray-700: #383838;
+    --color-gray-600: #575757;
+    --color-gray-500: #8f8f8f;
+    --color-gray-400: #ababab;
+    --color-gray-300: #d4d4d4;
+    --color-gray-200: #e3e3e3;
+    --color-gray-100: #f0f0f0;
+    --color-gray-50: #f7f7f7;
   }
   html {
     scroll-behavior: smooth;

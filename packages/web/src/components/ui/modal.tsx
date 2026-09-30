@@ -211,7 +211,9 @@ export function Modal({
   if (!open) return null;
   return createPortal(
     <div
-      className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+      // ui-scrim: the dimmed layer between the page and the dialog; a theme may blur the page
+      // through it. The overlay is the scrim itself, with the dialog inside it.
+      className="ui-scrim anim-fade fixed inset-0 z-50 flex items-end justify-center bg-[var(--ui-overlay-backdrop)] p-0 sm:items-center sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -225,7 +227,7 @@ export function Modal({
         {...(headerless ? { "aria-label": title } : { "aria-labelledby": titleId })}
         tabIndex={-1}
         onKeyDown={onPanelKeyDown}
-        className={`anim-pop w-full ${widthClass ?? "sm:max-w-md"} ${
+        className={`ui-glass anim-pop w-full ${widthClass ?? "sm:max-w-md"} ${
           fullScreenOnPhone
             ? "flex h-[100dvh] flex-col pt-[env(safe-area-inset-top)] sm:pt-0"
             : "rounded-t-lg"

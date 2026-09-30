@@ -14,9 +14,6 @@
  * the exported manifests and label helpers rather than a rendered DOM
  * (title-reveal.test.ts convention).
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ARCHIVE_ICON,
@@ -33,11 +30,22 @@ import { MESSAGING_RELAY_ICON } from "../src/components/ui/icons";
 import { STAT_ICONS } from "../src/lib/stat-icons";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
+
+const SCAN = scanSources();
+const ROW_MENU = "packages/web/src/components/ui/session-row-menu.tsx";
 
 /** Every test that switches locale puts the default (zh) back. */
 afterEach(() => setActiveStrings(zh));
 
 const RESTING = { archived: false, pinned: false };
+
+describe("the row menu's sources", () => {
+  it("scan every source root, and find the row menu in one place", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, ROW_MENU);
+  });
+});
 
 describe("HOVER_ROW_ACTIONS", () => {
   it("is archive alone — the ellipsis beside it is the menu's pointer entry, not an action", () => {
@@ -98,10 +106,7 @@ describe("the hover buttons' CSS contract", () => {
   // Node-only suite, so this is asserted against the source text (title-reveal.test.ts
   // convention). It is worth pinning: an invisible button still takes taps, and these are
   // invisible for the whole of every touch session, delete included.
-  const source = readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), "../src/components/ui/session-row-menu.tsx"),
-    "utf8",
-  );
+  const source = sourceFile(SCAN, ROW_MENU).text;
 
   it("gates pointer events on the same conditions as visibility, leaving no phantom tap target", () => {
     expect(source).toContain("pointer-events-none");

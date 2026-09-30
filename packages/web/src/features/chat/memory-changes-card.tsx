@@ -19,6 +19,7 @@ import { memoryRowKey } from "../../lib/omni/memory-changes";
 import { PathLabel } from "./message-files-card";
 import { FILE_EDIT_ICON, FILE_WRITE_ICON, MEMORY_ICON } from "../../components/ui/icons";
 import { scopeGlyph } from "./memory-view";
+import { namedHint } from "../../components/ui/tooltip";
 
 const MAX_VISIBLE = 3;
 
@@ -47,14 +48,14 @@ export function MemoryChangesCard({
     const glyph = scopeGlyph(row.scope, row.scopeKey);
     return (
       <>
-        <span title={glyph.title} className="shrink-0 text-gray-400">
+        <span data-tooltip={glyph.title} className="shrink-0 text-gray-400">
           <GlyphIcon d={glyph.d} size={ICON_SIZE.rowLead} />
           <span className="sr-only">{glyph.title}</span>
         </span>
         <PathLabel path={row.file} />
         <span className="min-w-0 flex-1" />
         <span
-          title={row.op === "write" ? S.chat.memoryOpWrite : S.chat.memoryOpEdit}
+          {...namedHint(row.op === "write" ? S.chat.memoryOpWrite : S.chat.memoryOpEdit)}
           className="shrink-0 text-gray-400"
         >
           <GlyphIcon
@@ -94,7 +95,7 @@ export function MemoryChangesCard({
             <button
               key={key}
               type="button"
-              title={S.chat.memoryRowOpen}
+              data-tooltip={S.chat.memoryRowOpen}
               onClick={() => onLocateChange(row)}
               className="group flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
             >
