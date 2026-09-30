@@ -33,14 +33,16 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
+import { wire } from "@prismshadow/penguin-core/kernel";
 import type {
   MessagingBindingsResponse,
   QQBindingResponse,
   QQTestResponse,
 } from "../src/api/types.js";
+import { ProjectsRepo } from "../src/db/repos/projects.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
@@ -68,12 +70,11 @@ import {
   qqChatIdOf,
   qqConfigOf,
 } from "../src/runtime/messaging/qq-connector.js";
-import { fakeSession, sessionRow } from "./fixtures/session.js";
+import { forwardingTo } from "./fixtures/forwarding.js";
+import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-08-27-10-00-00-q9000001";
-const SID2 = "session-2026-08-27-10-00-01-q9000002";
 const BASE = (sid: string) => `/api/sessions/${sid}/messaging/qq`;
 const APP_ID = "102000001";
 const APP_SECRET = "qq-app-secret-ABCD-1234";
@@ -336,8 +337,17 @@ describe("qq binding routes and the passive reply budget", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let fake: FakeQQTransport;
-  let projectId: string;
   let runs: TextPayload[][];
+  /**
+   * The case's Project and its two Sessions, fresh per case: the app is the describe's, a
+   * binding, a gateway and a status belong to their Session, and the error log dedupes and
+   * reads per Project. The Project is birder's row alone — every Session here is a fake, so
+   * nothing opens a default Agent's tree.
+   */
+  let projectId: string;
+  let SID: string;
+  let SID2: string;
+  let cases = 0;
 
   /** Save the credentials, then flip the toggle on and wait for the gateway handshake. */
   const bindEnabled = async (sid: string, appId = APP_ID, put: Record<string, unknown> = {}) => {
@@ -346,19 +356,34 @@ describe("qq binding routes and the passive reply budget", () => {
     await waitFor(() => t.deps.messaging.statusOf(sid, "qq").state === "connected");
   };
 
-  beforeEach(async () => {
-    fake = new FakeQQTransport();
-    t = await createTestApp({ qqTransport: fake, qqTailFlushMs: TAIL_MS });
+  beforeAll(async () => {
+    t = await createTestApp({ qqTransport: forwardingTo(() => fake), qqTailFlushMs: TAIL_MS });
     const { cookie } = await provisionUser(t.app, "birder");
     api = apiClient(t.app, cookie);
-    projectId = "birder-default_project";
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  beforeEach(() => {
+    fake = new FakeQQTransport();
     runs = [];
+    cases += 1;
+    projectId = `birder-case-${cases}`;
+    wire(ProjectsRepo, { db: t.deps.db }).insert({
+      projectId,
+      ownerUserId: "birder",
+      createdAt: new Date().toISOString(),
+    });
+    SID = uniqueSessionId();
+    SID2 = uniqueSessionId();
     const row = sessionRow(SID, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, echoFakeSession(SID, runs));
   });
-  afterEach(async () => {
-    await t.cleanup();
+  afterEach(() => {
+    // What the case bound goes with it, gateway and all, and so does the error log it wrote.
+    for (const row of t.deps.messagingRepo.listAll()) t.deps.messaging.unbindSession(row.sessionId);
+    t.deps.db.prepare("DELETE FROM error_records").run();
   });
 
   // —— Routes ——————————————————————————————————————————————————————————————

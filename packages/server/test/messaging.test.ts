@@ -62,7 +62,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   assistantText,
   approvalDecision,
@@ -74,7 +74,9 @@ import {
   toolCall,
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import { wire } from "@prismshadow/penguin-core/kernel";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
+import { ProjectsRepo } from "../src/db/repos/projects.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../src/services/attachment-limits.js";
 import { MESSAGE_MAX } from "../src/runtime/error-recorder.js";
@@ -122,12 +124,12 @@ import {
 import { replyFileMentions } from "../src/runtime/messaging/reply-files.js";
 import { FILE_BYTES, FakeFeishuSdk, IMAGE_BYTES, oneChunk } from "./fixtures/feishu.js";
 import type { SentMedia } from "./fixtures/feishu.js";
-import { fakeSession, sessionRow } from "./fixtures/session.js";
+import { forwardingTo } from "./fixtures/forwarding.js";
+import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp, TestAppOptions } from "./helpers.js";
 
 const SID = "session-2026-08-25-10-00-00-fe15aa01";
-const SID2 = "session-2026-08-25-10-00-01-fe15aa02";
 const BASE = (sid: string) => `/api/sessions/${sid}/messaging/feishu`;
 
 /**
@@ -594,8 +596,21 @@ describe("messaging binding routes and bridge", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let fake: FakeFeishuSdk;
-  let projectId: string;
   let runs: InputPayload[][];
+  /**
+   * The case's Project and its two Sessions, fresh per case: the app is the describe's, a
+   * binding, a run and a status belong to their Session, and the error log dedupes and reads
+   * per Project. The Project is birder's row alone — every Session here is a fake, so nothing
+   * opens a default Agent's tree.
+   */
+  let projectId: string;
+  let SID: string;
+  let SID2: string;
+  let cases = 0;
+  /** The describe's app, with birder signed in; a case that needs other tuning boots its own. */
+  let shared: TestApp;
+  let sharedApi: ReturnType<typeof apiClient>;
+  let own: TestApp | null = null;
 
   /** Save credentials, then flip the toggle on — the two-step flow the flow tests need. */
   const bindEnabled = async (sid: string, body: Record<string, unknown> = PUT_BODY) => {
@@ -621,22 +636,51 @@ describe("messaging binding routes and bridge", () => {
       errors: t.deps.errors,
     });
 
-  /** The suite's app, rebuildable: the pacing test needs one whose per-line wait is not zero. */
-  const boot = async (opts: TestAppOptions = {}) => {
-    fake = new FakeFeishuSdk();
-    t = await createTestApp({ feishuSdk: fake, ...opts });
-    const { cookie } = await provisionUser(t.app, "birder");
-    api = apiClient(t.app, cookie);
-    projectId = "birder-default_project";
+  /** Points the case at `app`: its own Project and Session ids, SID adopted as an echoing Session. */
+  const enter = (app: TestApp, client: ReturnType<typeof apiClient>) => {
+    t = app;
+    api = client;
     runs = [];
+    cases += 1;
+    projectId = `birder-case-${cases}`;
+    wire(ProjectsRepo, { db: app.deps.db }).insert({
+      projectId,
+      ownerUserId: "birder",
+      createdAt: new Date().toISOString(),
+    });
+    SID = uniqueSessionId();
+    SID2 = uniqueSessionId();
     const row = sessionRow(SID, { projectId });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, echoFakeSession(SID, runs));
   };
 
-  beforeEach(() => boot());
+  /** An app of the case's own, for tuning the shared one does not have (a per-line pace, an image budget). */
+  const boot = async (opts: TestAppOptions) => {
+    fake = new FakeFeishuSdk();
+    own = await createTestApp({ feishuSdk: fake, ...opts });
+    enter(own, apiClient(own.app, (await provisionUser(own.app, "birder")).cookie));
+  };
+
+  beforeAll(async () => {
+    shared = await createTestApp({ feishuSdk: forwardingTo(() => fake) });
+    sharedApi = apiClient(shared.app, (await provisionUser(shared.app, "birder")).cookie);
+  });
+  afterAll(async () => {
+    await shared.cleanup();
+  });
+  beforeEach(() => {
+    fake = new FakeFeishuSdk();
+    enter(shared, sharedApi);
+  });
   afterEach(async () => {
-    await t.cleanup();
+    await own?.cleanup();
+    own = null;
+    // What the case bound goes with it, connection and all, and so does the error log it wrote.
+    for (const row of shared.deps.messagingRepo.listAll()) {
+      shared.deps.messaging.unbindSession(row.sessionId);
+    }
+    shared.deps.db.prepare("DELETE FROM error_records").run();
   });
 
   it("GET reports unbound + disconnected before any PUT", async () => {
@@ -847,11 +891,14 @@ describe("messaging binding routes and bridge", () => {
 
   it("authz: non-members get 404; a member reads but cannot write or toggle (owner-only)", async () => {
     await api.put(BASE(SID), PUT_BODY);
-    const outsider = apiClient(t.app, (await provisionUser(t.app, "outsider")).cookie);
+    // Accounts of this attempt's own: the app outlives the case, and a retry would find
+    // fixed names taken.
+    const suffix = SID.slice(-8);
+    const outsider = apiClient(t.app, (await provisionUser(t.app, `outsider_${suffix}`)).cookie);
     expect((await outsider.get(BASE(SID))).status).toBe(404);
 
-    const mate = await provisionUser(t.app, "mate");
-    await api.post(`/api/projects/${projectId}/members`, { userId: "mate" });
+    const mate = await provisionUser(t.app, `mate_${suffix}`);
+    await api.post(`/api/projects/${projectId}/members`, { userId: `mate_${suffix}` });
     const member = apiClient(t.app, mate.cookie);
     expect((await member.get(BASE(SID))).status).toBe(200);
     expect((await member.put(BASE(SID), PUT_BODY)).status).toBe(403);
@@ -1180,7 +1227,6 @@ describe("messaging binding routes and bridge", () => {
   it("paces the messages of a per-line reply instead of firing them back to back", async () => {
     // The pace is a real wait, so this one test runs on an app with a short one; the rest of
     // the suite collapses it to zero.
-    await t.cleanup();
     await boot({ messagingLineDelayMs: 40 });
     await bindReplying(SPOKEN, { appId: "cli_lines_paced", linePerMessage: true });
     await messageBot("oc_paced");
@@ -3152,14 +3198,19 @@ describe("the session list's messaging mark", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   const projectId = "birder-default_project";
+  /** The case's Session: the app is the describe's, and each case marks a row of its own. */
+  let SID: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
     api = apiClient(t.app, (await provisionUser(t.app, "birder")).cookie);
-    t.deps.sessionsRepo.insert(sessionRow(SID, { projectId }));
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+  beforeEach(() => {
+    SID = uniqueSessionId();
+    t.deps.sessionsRepo.insert(sessionRow(SID, { projectId }));
   });
 
   /** The Session's row as the development list serves it. */
@@ -3321,6 +3372,8 @@ describe("a redelivered inbound message", () => {
 describe("a message carrying several files", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
+  /** The case's Session: the app is the describe's, and a binding belongs to its Session. */
+  let SID: string;
   let bridge: MessagingBridge;
   let runs: InputPayload[][];
   let fired: ((msg: MessagingInboundMessage) => Promise<void>) | null;
@@ -3391,6 +3444,14 @@ describe("a message carrying several files", () => {
       },
     });
 
+  beforeAll(async () => {
+    t = await createTestApp({ feishuSdk: new FakeFeishuSdk() });
+    const { cookie } = await provisionUser(t.app, "birder");
+    api = apiClient(t.app, cookie);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
   beforeEach(async () => {
     caps = [];
     notices = [];
@@ -3398,9 +3459,7 @@ describe("a message carrying several files", () => {
     park = false;
     release = null;
     runs = [];
-    t = await createTestApp({ feishuSdk: new FakeFeishuSdk() });
-    const { cookie } = await provisionUser(t.app, "birder");
-    api = apiClient(t.app, cookie);
+    SID = uniqueSessionId();
     const row = sessionRow(SID, { projectId: "birder-default_project" });
     t.deps.sessionsRepo.insert(row);
     t.deps.manager.adopt(row, heldEchoSession());
@@ -3422,10 +3481,11 @@ describe("a message carrying several files", () => {
     });
     await bridge.start();
   });
-  afterEach(async () => {
+  afterEach(() => {
     release?.();
     bridge.stop();
-    await t.cleanup();
+    // The binding goes with the case, so the next case's bridge starts on its own alone.
+    t.deps.messaging.unbindSession(SID);
   });
 
   /** The one text part of a run's input (the path lines ride it). */
