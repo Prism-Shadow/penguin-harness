@@ -658,8 +658,6 @@ export const en: GalleryStrings = {
       edit: "Edit",
       copy: "Copy",
       settings: "Settings",
-      beside: "Beside",
-      below: "Below",
       besideTip: "Opens to the right of its trigger",
       belowTip: "Opens under its trigger",
       command:

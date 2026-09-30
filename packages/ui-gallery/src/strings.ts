@@ -627,8 +627,6 @@ export const zh = {
       edit: "编辑",
       copy: "复制",
       settings: "设置",
-      beside: "右侧",
-      below: "下方",
       besideTip: "在触发元素右侧弹出",
       belowTip: "在触发元素下方弹出",
       command:
