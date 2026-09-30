@@ -27,9 +27,10 @@
  * - Removing a workflow removes its folder and recorded versions.
  *
  * Every load runs the TypeScript compiler, so the loaded-once group shares one app and one
- * compile; each editing case needs a folder of its own to break.
+ * compile; each editing case needs a folder of its own to break, which it gets in an Agent of
+ * its own within the editing group's one app.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir } from "@prismshadow/penguin-core";
@@ -396,19 +397,37 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
 describe("editing a workflow", { timeout: 30_000 }, () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
+  /** The case's own Agent's workflows, and the demo folder in it the case edits. */
+  let base: string;
   let dir: string;
+  let editors = 0;
 
-  beforeEach(async () => {
-    ({ t, owner, dir } = await workflowApp());
+  beforeAll(async () => {
+    t = await createTestApp();
+    owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
+    const created = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
+    expect(created.status, await created.text()).toBe(201);
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
   });
+  // A plain Agent per case, so each has a demo of its own to break. The Agents stay until the
+  // app goes: a loaded workflow's folder is watched, and a watched folder can refuse removal
+  // on Windows.
+  beforeEach(async () => {
+    editors += 1;
+    const agentId = `editor_${editors}`;
+    const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId });
+    expect(made.status, await made.text()).toBe(201);
+    base = `/api/projects/${PROJECT}/agents/${agentId}/workflows`;
+    dir = path.join(agentDir(t.root, PROJECT, agentId), "workflows", "demo");
+    await writeDemo(dir);
+  });
 
-  const list = () => listOf(owner);
+  const list = () => listOf(owner, base);
 
   async function reload(): Promise<WorkflowInfo> {
-    const res = await owner.post(`${BASE}/demo/reload`);
+    const res = await owner.post(`${base}/demo/reload`);
     expect(res.status).toBe(200);
     return ((await res.json()) as { workflow: WorkflowInfo }).workflow;
   }
@@ -417,7 +436,7 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     const workflow = await reload();
     // Whatever went wrong, the instance that loaded keeps answering, with its tabs.
     expect(workflow.tabs).toHaveLength(1);
-    expect(await (await owner.get(`${BASE}/demo/api/`)).json()).toMatchObject({
+    expect(await (await owner.get(`${base}/demo/api/`)).json()).toMatchObject({
       greeting: "hello",
     });
     return workflow.error ?? "";
@@ -431,7 +450,7 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     const [listed] = await list();
     expect(listed!.error).toBe(null);
     await fs.rm(path.join(dir, "notes.md"));
-    const res = await owner.get(`${BASE}/demo/api/greet`);
+    const res = await owner.get(`${base}/demo/api/greet`);
     expect(res.status, await res.text()).toBe(200);
   });
 
@@ -439,43 +458,43 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     const [v1] = await list();
     await fs.writeFile(path.join(dir, "index.ts"), indexSource("bonjour"));
     await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v2</h1>");
-    const reload = await owner.post(`${BASE}/demo/reload`);
+    const reload = await owner.post(`${base}/demo/reload`);
     const v2 = ((await reload.json()) as { workflow: WorkflowInfo }).workflow;
     expect(v2.revision).not.toBe(v1!.revision);
     expect(v2.uiRev).not.toBe(v1!.uiRev);
     expect(
-      (await (await owner.get(`${BASE}/demo/api/`)).json()) as { greeting: string },
+      (await (await owner.get(`${base}/demo/api/`)).json()) as { greeting: string },
     ).toMatchObject({
       greeting: "bonjour",
     });
 
-    const history = (await (await owner.get(`${BASE}/demo/history`)).json()) as {
+    const history = (await (await owner.get(`${base}/demo/history`)).json()) as {
       versions: WorkflowVersion[];
     };
     expect(history.versions.map((v) => v.revision)).toEqual([v2.revision, v1!.revision]);
     expect(history.versions[1]!.files).toContain("ui/index.html");
 
-    const back = await owner.post(`${BASE}/demo/rollback`, { revision: v1!.revision });
+    const back = await owner.post(`${base}/demo/rollback`, { revision: v1!.revision });
     expect(back.status).toBe(200);
     expect(((await back.json()) as { workflow: WorkflowInfo }).workflow.revision).toBe(
       v1!.revision,
     );
-    expect(await (await owner.get(`${BASE}/demo/ui/index.html`)).text()).toBe("<h1>demo v1</h1>");
+    expect(await (await owner.get(`${base}/demo/ui/index.html`)).text()).toBe("<h1>demo v1</h1>");
     // Only the serving revision keeps its emitted code.
     expect((await fs.readdir(path.join(dir, ".build"))).sort()).toEqual(
       [v1!.revision, "status.json"].sort(),
     );
     expect(
-      (await (await owner.get(`${BASE}/demo/api/`)).json()) as { greeting: string },
+      (await (await owner.get(`${base}/demo/api/`)).json()) as { greeting: string },
     ).toMatchObject({
       greeting: "hello",
     });
     // The rolled-back revision is now the newest entry, once.
-    const after = (await (await owner.get(`${BASE}/demo/history`)).json()) as {
+    const after = (await (await owner.get(`${base}/demo/history`)).json()) as {
       versions: WorkflowVersion[];
     };
     expect(after.versions.map((v) => v.revision)).toEqual([v1!.revision, v2.revision]);
-    expect((await owner.post(`${BASE}/demo/rollback`, { revision: "000000000000" })).status).toBe(
+    expect((await owner.post(`${base}/demo/rollback`, { revision: "000000000000" })).status).toBe(
       404,
     );
   });
@@ -491,16 +510,16 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
         },
       ]),
     );
-    const res = await owner.post(`${BASE}/demo/reload`);
+    const res = await owner.post(`${base}/demo/reload`);
     const broken = ((await res.json()) as { workflow: WorkflowInfo }).workflow;
     // Named before anything runs: the host gave this workflow no types for that interface.
     expect(broken.error).toContain(
       "requires.host '@prismshadow/penguin-server#Workflows': not among the types this workflow was written against",
     );
-    expect(await (await owner.get(`${BASE}/demo/api/`)).json()).toMatchObject({
+    expect(await (await owner.get(`${base}/demo/api/`)).json()).toMatchObject({
       greeting: "hello",
     });
-    expect(await (await owner.get(`${BASE}/demo/history`)).json()).toMatchObject({
+    expect(await (await owner.get(`${base}/demo/history`)).json()).toMatchObject({
       versions: [{ name: "Demo" }],
     });
   });
@@ -634,12 +653,12 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
 
   it("removes the folder and its recorded versions on request", async () => {
     await list();
-    expect((await owner.delete(`${BASE}/demo`)).status).toBe(204);
+    expect((await owner.delete(`${base}/demo`)).status).toBe(204);
     expect(await list()).toEqual([]);
     await expect(fs.stat(dir)).rejects.toThrow();
-    expect((await owner.get(`${BASE}/demo/api/`)).status).toBe(404);
-    expect((await owner.delete(`${BASE}/demo`)).status).toBe(404);
-    const history = (await (await owner.get(`${BASE}/demo/history`)).json()) as {
+    expect((await owner.get(`${base}/demo/api/`)).status).toBe(404);
+    expect((await owner.delete(`${base}/demo`)).status).toBe(404);
+    const history = (await (await owner.get(`${base}/demo/history`)).json()) as {
       versions: WorkflowVersion[];
     };
     expect(history.versions).toEqual([]);
