@@ -15,15 +15,21 @@ import type {
 import {
   Badge,
   Button,
+  ConfirmModal,
   FieldError,
   FieldHint,
   FieldLabel,
   ICONS,
   InfoPopover,
   Input,
+  Modal,
+  NavList,
+  NavRow,
   Select,
   SettingRow,
   Switch,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -44,9 +50,6 @@ import { ModelSelect, modelLabel } from "../../features/chat/model-select";
 import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { sameModelRef } from "../../features/models/model-grouping";
-import { toastError, toastSuccess } from "../ui/toast";
-import { Modal } from "../ui/modal";
-import { ConfirmModal } from "../ui/confirm-modal";
 import { SemanticIdField } from "../../features/semantic-id/semantic-id-field";
 
 /** Approval modes offered by the new-chat-defaults select, in the composer menu's order. */
@@ -177,25 +180,6 @@ const TAB_ICON_PATHS = {
 
 type SettingsTab = keyof typeof TAB_ICON_PATHS;
 
-function TabIcon({ d }: { d: string }) {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="shrink-0"
-    >
-      <path d={d} />
-    </svg>
-  );
-}
-
 /**
  * Project settings dialog: a left tab rail (General / Members / Defaults / Security
  * policy) with a row-styled content pane per tab; on narrow screens the rail degrades to a
@@ -234,27 +218,21 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   return (
     <Modal open={open} title={S.project.settingsTitle} onClose={onClose} widthClass="sm:max-w-3xl">
       <div className="flex flex-col gap-3 sm:min-h-[26rem] sm:flex-row sm:gap-0">
-        <nav
-          aria-label={S.project.settingsTitle}
-          className="flex shrink-0 gap-1 overflow-x-auto sm:w-44 sm:flex-col sm:overflow-x-visible sm:border-r sm:border-gray-100 sm:pr-3 dark:sm:border-gray-800"
+        <NavList
+          label={S.project.settingsTitle}
+          orientation="responsive"
+          className="shrink-0 sm:w-44 sm:border-r sm:border-line-muted sm:pr-3"
         >
           {tabs.map((t) => (
-            <button
+            <NavRow
               key={t.key}
-              type="button"
-              aria-current={active.key === t.key ? "page" : undefined}
+              label={t.label}
+              glyph={TAB_ICON_PATHS[t.key]}
+              active={active.key === t.key}
               onClick={() => setTab(t.key)}
-              className={`flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
-                active.key === t.key
-                  ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/60"
-              }`}
-            >
-              <TabIcon d={TAB_ICON_PATHS[t.key]} />
-              <span className="truncate">{t.label}</span>
-            </button>
+            />
           ))}
-        </nav>
+        </NavList>
         <section className="min-w-0 flex-1 sm:pl-5">
           <h3 className="flex items-center gap-1.5 text-base font-semibold">
             {active.label}
@@ -394,6 +372,8 @@ function GeneralSection({
         title={S.project.deleteProject}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => void doDelete()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.deleteConfirm}</p>
       </ConfirmModal>
@@ -1053,7 +1033,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                         <p className="mt-0.5 text-xs text-gray-400">{r.description}</p>
                       )}
                       <p
-                        className="mt-0.5 truncate font-mono text-[11px] text-gray-400"
+                        className="mt-0.5 truncate font-mono text-xs text-gray-400"
                         data-tooltip={r.pattern}
                         data-tooltip-content="code"
                       >

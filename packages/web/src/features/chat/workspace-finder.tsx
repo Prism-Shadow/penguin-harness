@@ -27,30 +27,33 @@ import type { DesktopPrivacyPane, DirListResponse } from "@prismshadow/penguin-s
 import {
   Button,
   CloseIcon,
+  Dropdown,
   GlyphIcon,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  Menu,
+  MenuItem,
+  Modal,
+  NoticeStrip,
+  isContextMenuKey,
+  isLongPressPointer,
   noAutofill,
+  toastError,
+  toastSuccess,
+  useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { writeClipboard } from "../../lib/clipboard";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
 import { isElectronRenderer } from "../../lib/desktop-renderer";
 import { formatDateTime } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 import { machineLabel, nameOnMachine, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
 import { useSessions } from "../../state/sessions";
-import { Modal } from "../../components/ui/modal";
-import { useRowContextMenu } from "../../components/ui/context-menu";
-import { Dropdown } from "../../components/ui/dropdown";
-import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import {
   EMPTY_HISTORY,
   TYPE_SELECT_RESET_MS,
@@ -1380,19 +1383,18 @@ export function WorkspaceFinder({
           menuClass="w-max min-w-40 max-w-[calc(100vw-2rem)]"
           button={null}
         >
-          {finderMenuItems(menuTarget, inQuickAccess(menuTarget.path, menuTarget.machine)).map(
-            (item) => (
-              <button
-                key={item}
-                type="button"
-                className={overflowMenuRowClass}
-                onClick={() => runMenuItem(item, menuTarget)}
-              >
-                {overflowMenuGlyph(MENU_ICON[item])}
-                {menuLabel(item, menuTarget)}
-              </button>
-            ),
-          )}
+          <Menu density="sm">
+            {finderMenuItems(menuTarget, inQuickAccess(menuTarget.path, menuTarget.machine)).map(
+              (item) => (
+                <MenuItem
+                  key={item}
+                  glyph={MENU_ICON[item]}
+                  label={menuLabel(item, menuTarget)}
+                  onSelect={() => runMenuItem(item, menuTarget)}
+                />
+              ),
+            )}
+          </Menu>
         </Dropdown>
       )}
     </Modal>

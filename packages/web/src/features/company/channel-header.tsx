@@ -21,17 +21,21 @@ import {
   AgentAvatar,
   AvatarStack,
   Button,
+  ConfirmModal,
+  Dropdown,
   GlyphIcon,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
   InfoPopover,
   Input,
+  Menu,
+  MenuItem,
   UserAvatar,
   menuPanelClass,
-  menuRowClass,
-  menuRowTone,
   noAutofill,
+  toastError,
+  toastSuccess,
   usePortalPanel,
 } from "@prismshadow/penguin-ui";
 import type { AvatarStackItem } from "@prismshadow/penguin-ui";
@@ -39,10 +43,6 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Dropdown } from "../../components/ui/dropdown";
-import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
@@ -226,28 +226,24 @@ function InvitePicker({
             </p>
           ) : (
             candidates.map((c) => (
-              <button
+              <MenuItem
                 key={c.principal}
-                type="button"
+                density="sm"
                 disabled={busy}
-                onClick={() => {
+                onSelect={() => {
                   setOpen(false);
                   onQuery("");
                   onPick(c);
                 }}
-                className={`flex items-center justify-between gap-3 ${menuRowClass} text-xs disabled:opacity-60 ${menuRowTone()}`}
-              >
-                <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
+                glyph={
                   <MemberAvatar
                     member={{ principal: c.principal, name: c.name, kind: c.kind }}
                     size={ICON_SIZE.rowLead}
                   />
-                  <span className="min-w-0 truncate">{c.name}</span>
-                </span>
-                <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                  {c.detail ?? (c.kind === "user" ? S.company.channels.members : "")}
-                </span>
-              </button>
+                }
+                label={c.name}
+                trailing={c.detail ?? (c.kind === "user" ? S.company.channels.members : "")}
+              />
             ))
           )}
         </div>
@@ -466,60 +462,50 @@ export function ChannelHeader({
               </button>
             }
           >
-            {!detail.archived && (
-              <>
-                <button
-                  type="button"
-                  className={overflowMenuRowClass}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setRenameOpen(true);
-                  }}
-                >
-                  {overflowMenuGlyph(ICONS.pencil)}
-                  {S.company.channels.rename}
-                </button>
-                <button
-                  type="button"
-                  className={overflowMenuRowClass}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setPurposeOpen(true);
-                  }}
-                >
-                  {overflowMenuGlyph(PURPOSE_ICON)}
-                  {S.company.channels.editPurpose}
-                </button>
-              </>
-            )}
-            {/* Archiving is a people-only action, and the Web App's caller is always a
-                person — an employee reaches channels through the CLI. */}
-            {!allHands &&
-              (detail.archived ? (
-                <button
-                  type="button"
-                  className={overflowMenuRowClass}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void setArchived(false);
-                  }}
-                >
-                  {overflowMenuGlyph(ICONS.archiveRestore)}
-                  {S.company.channels.unarchive}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className={overflowMenuRowClass}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setArchiveOpen(true);
-                  }}
-                >
-                  {overflowMenuGlyph(ICONS.archive)}
-                  {S.company.channels.archive}
-                </button>
-              ))}
+            <Menu density="sm">
+              {!detail.archived && (
+                <>
+                  <MenuItem
+                    glyph={ICONS.pencil}
+                    label={S.company.channels.rename}
+                    onSelect={() => {
+                      setMenuOpen(false);
+                      setRenameOpen(true);
+                    }}
+                  />
+                  <MenuItem
+                    glyph={PURPOSE_ICON}
+                    label={S.company.channels.editPurpose}
+                    onSelect={() => {
+                      setMenuOpen(false);
+                      setPurposeOpen(true);
+                    }}
+                  />
+                </>
+              )}
+              {/* Archiving is a people-only action, and the Web App's caller is always a
+                  person — an employee reaches channels through the CLI. */}
+              {!allHands &&
+                (detail.archived ? (
+                  <MenuItem
+                    glyph={ICONS.archiveRestore}
+                    label={S.company.channels.unarchive}
+                    onSelect={() => {
+                      setMenuOpen(false);
+                      void setArchived(false);
+                    }}
+                  />
+                ) : (
+                  <MenuItem
+                    glyph={ICONS.archive}
+                    label={S.company.channels.archive}
+                    onSelect={() => {
+                      setMenuOpen(false);
+                      setArchiveOpen(true);
+                    }}
+                  />
+                ))}
+            </Menu>
             {/* The all-hands channel simply has no archive row; one short line says why it is
                 missing. What that channel IS belongs to the header's "?", and repeating the
                 whole paragraph here made a menu out of an explanation. */}
@@ -555,6 +541,7 @@ export function ChannelHeader({
         open={leaveOpen}
         title={S.company.channels.leaveTitle}
         confirmLabel={S.company.channels.leave}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setLeaveOpen(false))}
         onConfirm={() => void leave(me)}
@@ -567,6 +554,7 @@ export function ChannelHeader({
         open={archiveOpen}
         title={S.company.channels.archiveTitle}
         confirmLabel={S.company.channels.archive}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setArchiveOpen(false))}
         onConfirm={() => void setArchived(true)}

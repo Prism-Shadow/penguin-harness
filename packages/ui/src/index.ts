@@ -69,3 +69,73 @@ export * from "./components/forms/toggle-row/toggle-row";
 export * from "./components/forms/segmented/segmented";
 export * from "./components/forms/swatch-picker/swatch-picker";
 export * from "./components/forms/pref-row/pref-row";
+
+// W3-A — menus and hints: the dropdown panel and the Menu rows it holds, the row context menu
+// (its hook and its pure gesture rules), the form-style picker built on the dropdown, and the
+// tooltip with its document-wide `data-tooltip` layer.
+export * from "./components/overlays/dropdown/dropdown";
+export * from "./components/overlays/menu/menu";
+export * from "./components/overlays/portal-panel/context-menu";
+export * from "./components/overlays/portal-panel/use-row-context-menu";
+export * from "./components/forms/select/form-picker";
+export * from "./components/overlays/tooltip/tooltip";
+
+// W3-B — dialogs: the Escape-layer stack and focus rules every overlay shares, the modal family,
+// the drawer and the spring sheet with their motion helpers, and the lightbox.
+export * from "./components/overlays/esc-layers/esc-layers";
+export * from "./components/overlays/modal/modal";
+export * from "./components/overlays/confirm-modal/confirm-modal";
+export * from "./components/overlays/paged-dialog/paged-dialog";
+export * from "./components/overlays/drawer/drawer";
+export * from "./components/overlays/drawer/sheet";
+export * from "./components/overlays/lightbox/lightbox";
+export * from "./motion/spring";
+export * from "./motion/sheet-physics";
+export * from "./motion/use-reduced-motion";
+
+// W3-C — notices: the notice strip, and the toast stack that renders its toasts through it
+// (with the `toast*` functions and their store).
+export * from "./components/feedback/notice/notice-strip";
+export * from "./components/overlays/toaster/toaster";
+
+// W5 — content: Markdown as reading text and its pipeline, the code surface and block with the
+// language tables, the type roles, and the diff viewer. The Shiki engine is not here: it is the
+// `./highlighter` subpath, so no static import of this barrel reaches it.
+export * from "./components/content/prose/prose";
+export * from "./components/content/prose/markdown-plugins";
+export * from "./components/content/code-block/code-block";
+export * from "./components/content/code-block/code-languages";
+export * from "./components/content/typography/typography";
+export * from "./components/content/diff-viewer/diff-viewer";
+
+// W4-A — navigation, notices and readings: the tab bar, the grouped list's header, folder, more
+// row and pager, the create pair, the notice with its variants and the page to-do built on it,
+// the progress bar, the duration slot and its live clock, the beta tag, the disclosure row, and
+// the stat tile and chip.
+export * from "./components/navigation/tabs/tabs";
+export * from "./components/navigation/group-header/group-header";
+export * from "./components/navigation/group-header/pager";
+export * from "./components/actions/create-buttons/create-buttons";
+export * from "./components/feedback/notice/notice";
+export * from "./components/feedback/todo-notice/todo-notice";
+export * from "./components/feedback/progress-bar/progress-bar";
+export * from "./components/feedback/duration-slot/duration-slot";
+export * from "./components/feedback/beta-badge/beta-badge";
+export * from "./components/layout/disclosure-row/disclosure-row";
+export * from "./components/data/stat-tile/stat-tile";
+export * from "./components/data/stat-chip/stat-chip";
+
+// W4-B — layout and data: the card, the page frame and header, the ruled and the collapsible
+// section, the entity header, list rows, label/value pairs, the log well and the table family.
+export * from "./components/layout/card/card";
+export * from "./components/layout/page/page";
+export * from "./components/layout/ruled-section/ruled-section";
+export * from "./components/layout/collapsible-section/collapsible-section";
+export * from "./components/layout/entity-header/entity-header";
+export * from "./components/data/list-row/list-row";
+export * from "./components/data/key-value/key-value";
+export * from "./components/data/log-view/log-view";
+export * from "./components/data/table/table";
+
+// W4-C — navigation: the nav list and its rows, the rail of a paged dialog or a settings page.
+export * from "./components/navigation/nav-list/nav-list";

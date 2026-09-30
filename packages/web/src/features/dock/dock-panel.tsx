@@ -32,11 +32,19 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
-import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  CloseIcon,
+  ConfirmModal,
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Dropdown } from "../../components/ui/dropdown";
 import { ChordKbd } from "../../components/ui/chord-kbd";
 import { useDisplayedBinding, useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
@@ -59,7 +67,7 @@ import { isBrowserOffered, subscribeBrowser } from "../builtin-browser/browser-s
 import { confirmClose } from "./close-guard";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
-import { panelGlyph, panelLabel } from "./panel-meta";
+import { panelGlyph, panelGlyphPath, panelLabel } from "./panel-meta";
 import {
   DOCK_MIN_HEIGHT_PX,
   DOCK_RATIO_MAX,
@@ -608,54 +616,46 @@ export function DockPanel({
         </DockButton>
       }
     >
-      {PANEL_KINDS.filter((kind) => kind !== "builtin-browser" || browserOffered).map((kind) => (
-        <button
-          key={kind}
-          type="button"
-          data-testid={`dock-add-${kind}`}
-          onClick={() => openPanelHere(kind)}
-          className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-        >
-          <span className="shrink-0 text-gray-500 dark:text-gray-400">{panelGlyph(kind)}</span>
-          <span className="min-w-0 truncate">{panelLabel(kind)}</span>
-        </button>
-      ))}
-      {terminalSupported && (
-        <>
-          <div className="mx-2 my-1 border-t border-gray-100 dark:border-gray-800" />
-          <button
-            type="button"
-            data-testid="dock-add-terminal"
-            onClick={() => {
-              setAddOpen(false);
-              void createShellInDock(merged ? undefined : position);
-            }}
-            className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-          >
-            <span className="shrink-0 text-gray-500 dark:text-gray-400">
-              <GlyphIcon d={ICONS.plus} size={ICON_SIZE.iconButton} />
-            </span>
-            <span className="min-w-0 truncate">{S.terminal.newShell}</span>
-          </button>
-          {adoptable.map((terminal, index) => (
-            <button
-              key={terminal.id}
-              type="button"
-              data-testid="dock-add-shell"
-              data-terminal-id={terminal.id}
-              onClick={() => {
+      <Menu>
+        {PANEL_KINDS.filter((kind) => kind !== "builtin-browser" || browserOffered).map((kind) => (
+          <MenuItem
+            key={kind}
+            data-testid={`dock-add-${kind}`}
+            glyph={panelGlyphPath(kind)}
+            label={panelLabel(kind)}
+            onSelect={() => openPanelHere(kind)}
+          />
+        ))}
+        {terminalSupported && (
+          <>
+            <MenuSeparator />
+            <MenuItem
+              data-testid="dock-add-terminal"
+              glyph={ICONS.plus}
+              label={S.terminal.newShell}
+              onSelect={() => {
                 setAddOpen(false);
-                addTerminalTab(terminal.id, merged ? undefined : position);
+                void createShellInDock(merged ? undefined : position);
               }}
-              className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-            >
-              <span className="min-w-0 truncate">
-                {terminalLabel(terminal, terminal.id, index + 1)}
-              </span>
-            </button>
-          ))}
-        </>
-      )}
+            />
+            {/* Live shells no conversation holds, on the small rung: they are entries of the
+                row above rather than panels of their own. */}
+            {adoptable.map((terminal, index) => (
+              <MenuItem
+                key={terminal.id}
+                density="sm"
+                data-testid="dock-add-shell"
+                data-terminal-id={terminal.id}
+                label={terminalLabel(terminal, terminal.id, index + 1)}
+                onSelect={() => {
+                  setAddOpen(false);
+                  addTerminalTab(terminal.id, merged ? undefined : position);
+                }}
+              />
+            ))}
+          </>
+        )}
+      </Menu>
     </Dropdown>
   );
 
@@ -858,6 +858,7 @@ export function DockPanel({
       onClose={() => setConfirmKill(null)}
       onConfirm={killConfirmed}
       confirmLabel={S.terminal.killShell}
+      cancelLabel={S.common.cancel}
     >
       {confirmKill !== null && (
         <p className="break-words text-sm text-gray-600 dark:text-gray-300">

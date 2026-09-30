@@ -3,11 +3,11 @@
  * makes it feel immediate. Components call these; none of them throws.
  */
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
+import { toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { toastError } from "../../components/ui/toast";
 import { openPanel } from "../dock/dock-state";
 import { dispatchBrowser } from "./browser-store";
 import type { BrowserGuest } from "./browser-state";

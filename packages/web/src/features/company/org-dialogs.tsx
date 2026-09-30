@@ -40,14 +40,18 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  ConfirmModal,
   FieldError,
   FieldHint,
   FieldLabel,
   ICON_GAP,
   InfoPopover,
   Input,
+  Modal,
   Select,
   Textarea,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -58,9 +62,6 @@ import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { ModelSelect, modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
@@ -263,7 +264,7 @@ function MissionExamples({
             data-tooltip-content="text"
             disabled={disabled}
             onClick={() => onPick(copy)}
-            className="min-w-0 truncate rounded-md border border-gray-200 px-2 py-1 text-left text-[11px] text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+            className="min-w-0 truncate rounded-md border border-gray-200 px-2 py-1 text-left text-xs text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100"
           >
             {copy.name}
           </button>
@@ -841,6 +842,8 @@ export function OrganizationSettingsDialog({
         title={S.company.deleteOrg}
         busy={busy}
         confirmDisabled={typedId.trim() !== orgId}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => void doDelete()}
       >

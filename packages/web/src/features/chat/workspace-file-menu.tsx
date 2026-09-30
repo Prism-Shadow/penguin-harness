@@ -10,17 +10,12 @@
  * same shape the preview header already uses: it is the browser's own save, not a fetch this
  * app has to run.
  *
- * The rows reuse the session row menu's compact styling (see its module header, which already
- * declares itself shared beyond that row), so every overflow menu in the app reads the same.
+ * The rows are the UI package's Menu rows at the small density, the one every overflow and
+ * context menu in the app uses, so they read the same as the Session row's menu.
  */
-import { ICONS } from "@prismshadow/penguin-ui";
+import { ICONS, Menu, MenuItem } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import {
-  overflowMenuDangerClass,
-  overflowMenuGlyph,
-  overflowMenuRowClass,
-} from "../../components/ui/session-row-menu";
 
 /** The one Workspace entry a menu is acting on. */
 export interface FileMenuTarget {
@@ -66,62 +61,59 @@ export function WorkspaceFileMenuRows({
   onClose: () => void;
 }) {
   return (
-    <>
-      <button type="button" className={overflowMenuRowClass} onClick={() => onCopyPath(target)}>
-        {overflowMenuGlyph(STAT_ICONS.copy)}
-        {S.files.copyPath}
-      </button>
-      <button type="button" className={overflowMenuRowClass} onClick={() => onAddToChat(target)}>
-        {overflowMenuGlyph(ICONS.messagePlus)}
-        {S.files.addToChat}
-      </button>
+    <Menu density="sm">
+      <MenuItem
+        glyph={STAT_ICONS.copy}
+        label={S.files.copyPath}
+        onSelect={() => onCopyPath(target)}
+      />
+      <MenuItem
+        glyph={ICONS.messagePlus}
+        label={S.files.addToChat}
+        onSelect={() => onAddToChat(target)}
+      />
       {onAddSelection !== undefined && (
-        <button type="button" className={overflowMenuRowClass} onClick={onAddSelection}>
-          {overflowMenuGlyph(ICONS.messagePlus)}
-          {S.files.addSelectionToChat}
-        </button>
+        <MenuItem
+          glyph={ICONS.messagePlus}
+          label={S.files.addSelectionToChat}
+          onSelect={onAddSelection}
+        />
       )}
       {target.kind === "dir" ? (
-        <button
-          type="button"
-          className={overflowMenuRowClass}
-          onClick={() => onUploadInto(target.path)}
-        >
-          {overflowMenuGlyph(ICONS.upload)}
-          {S.files.uploadHere}
-        </button>
+        <MenuItem
+          glyph={ICONS.upload}
+          label={S.files.uploadHere}
+          onSelect={() => onUploadInto(target.path)}
+        />
       ) : (
         <>
-          <a
+          <MenuItem
+            glyph={ICONS.download}
+            label={S.files.download}
             href={downloadHref(target.path)}
             download={downloadName(target.path)}
-            onClick={onClose}
-            className={overflowMenuRowClass}
-          >
-            {overflowMenuGlyph(ICONS.download)}
-            {S.files.download}
-          </a>
+            onSelect={onClose}
+          />
           {/* The two that change the Workspace come last, after everything that only reads it,
               and the destructive one is last of all — the furthest row from where the pointer
               lands, in the red every other overflow menu gives a delete. */}
           {onRename !== undefined && (
-            <button type="button" className={overflowMenuRowClass} onClick={() => onRename(target)}>
-              {overflowMenuGlyph(ICONS.penLine)}
-              {S.files.renameTitle}
-            </button>
+            <MenuItem
+              glyph={ICONS.penLine}
+              label={S.files.renameTitle}
+              onSelect={() => onRename(target)}
+            />
           )}
           {onDelete !== undefined && (
-            <button
-              type="button"
-              className={overflowMenuDangerClass}
-              onClick={() => onDelete(target)}
-            >
-              {overflowMenuGlyph(ICONS.trash)}
-              {S.common.delete}
-            </button>
+            <MenuItem
+              glyph={ICONS.trash}
+              label={S.common.delete}
+              danger
+              onSelect={() => onDelete(target)}
+            />
           )}
         </>
       )}
-    </>
+    </Menu>
   );
 }

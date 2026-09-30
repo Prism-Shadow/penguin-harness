@@ -1,9 +1,8 @@
 /**
  * Plugin library page: the built-in plugin library (loaded by core from the @penguinharness/* packages), shown sectioned by category.
  * A plugin ships skills and/or a hook package (scripts the harness runs at the loop's hook
- * points, e.g. after every Task), and is installed on an Agent as a whole. Groups are
- * borderless — the group header (category name + plugin count, no icon) is collapsible,
- * highlights on hover, and animates height on expand/collapse; expanded by default. Cards
+ * points, e.g. after every Task), and is installed on an Agent as a whole. Each list is a
+ * collapsible section whose head strip folds it (the theme's layout motion moves the fold). Cards
  * within a group form a grid, generously sized: two per row from the sm breakpoint up, one per
  * row on narrow screens. Each card = a rounded icon tile centered against the two text rows
  * (its color comes from skillTileColor — a per-name palette hashed from the plugin name; DTO
@@ -51,16 +50,24 @@ import type {
 import {
   AgentAvatar,
   Button,
-  Chevron,
+  CollapsibleSection,
+  ConfirmModal,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
-  InfoPopover,
+  Modal,
+  Notice,
+  PageFrame,
+  PageHeader,
   SearchInput,
   Skeleton,
   SkeletonCard,
   StatusIcon,
+  Text,
+  TodoNotice,
   UpdateDot,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -76,10 +83,6 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { Modal } from "../../components/ui/modal";
-import { TodoNotice } from "../../components/ui/todo-notice";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { prepareNewChatDraft } from "../chat/new-chat";
@@ -89,7 +92,6 @@ import { SettingsDialog } from "../settings/settings-dialog";
 import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
 import { toneInk, toneSurface } from "../../lib/tone";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /**
  * What one Agent has installed, by name → the installed copy's version (`YYYY.MM.DD.N`, or ""
@@ -599,18 +601,16 @@ export function PluginsPage() {
   // The scrollbar gutter stays reserved: a filter that shortens the page below the viewport
   // would otherwise take the scrollbar with it and shift everything sideways at the click.
   return (
-    <div className="h-full overflow-y-auto p-4 [scrollbar-gutter:stable] md:p-6">
-      <div className="mx-auto max-w-5xl">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="ui-display flex items-center gap-1.5 text-xl font-semibold">
-            {S.plugins.pageTitle}
-            <InfoPopover label={S.plugins.pageTitle}>{S.plugins.pageDesc}</InfoPopover>
-          </h1>
-          {/* The options loaded plugins declare live on the Settings dialog's Plugins page, an
-              admin's page; this opens the dialog there rather than sending anyone through the
-              user menu to find it. */}
-          {isAdmin && (
-            <div className="flex shrink-0 items-center gap-2">
+    <PageFrame className="[scrollbar-gutter:stable]">
+      {/* The options loaded plugins declare live on the Settings dialog's Plugins page, an
+          admin's page; the header's gear opens the dialog there rather than sending anyone
+          through the user menu to find it. */}
+      <PageHeader
+        title={S.plugins.pageTitle}
+        info={S.plugins.pageDesc}
+        actions={
+          isAdmin ? (
+            <>
               {/* Which machine's plugins the rows show, and which table an install or a
                   removal edits: the shared one, or that machine's own. */}
               {otherMachines.length > 0 && (
@@ -630,14 +630,10 @@ export function PluginsPage() {
               >
                 <GlyphIcon d={ICONS.gear} size={ICON_SIZE.iconButton} />
               </Button>
-            </div>
-          )}
-        </div>
-        <SettingsDialog
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          section="plugins"
-        />
+            </>
+          ) : undefined
+        }
+      >
         {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
             that takes all of it in one press, and the way to clear it for someone who has looked
             and decided to stay on the installed copies. A plugin is never NEW here — one nobody
@@ -654,136 +650,142 @@ export function PluginsPage() {
             onDismiss={() => dismissTodo(projectId, "plugins", todo.signature)}
           />
         )}
-
         {remote !== null && "error" in remote && remote.machineId === viewMachine && (
-          <NoticeStrip tone="attention" className="mt-4 rounded-md px-3 py-2 text-xs">
+          <Notice tone="attention" className="mt-4">
             {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}
-          </NoticeStrip>
+          </Notice>
         )}
         {deployment !== null && viewIncludesHere && deployment.restartPending && (
-          <NoticeStrip tone="attention" className="mt-4 rounded-md px-3 py-2 text-xs">
+          <Notice tone="attention" className="mt-4">
             {S.plugins.restartPending}
-          </NoticeStrip>
+          </Notice>
         )}
+      </PageHeader>
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        section="plugins"
+      />
 
-        {error ? (
-          <div className="mt-6 flex items-center gap-3">
-            <p className={`text-sm ${toneInk.danger}`}>{error}</p>
-            <Button size="sm" onClick={() => window.location.reload()}>
-              {S.common.retry}
-            </Button>
-          </div>
-        ) : groups === null ? (
-          <div className="mt-6 grid grid-cols-1 gap-2.5">
-            {Array.from({ length: 4 }, (_, i) => (
-              <SkeletonCard key={i} className="p-4">
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="mt-2 h-4 w-3/4" />
-                <Skeleton className="mt-3 h-6 w-36" />
-              </SkeletonCard>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-6 md:grid md:grid-cols-[minmax(0,1fr)_12rem] md:gap-4">
-            <div className="min-w-0 space-y-3">
-              <SearchInput
-                size="sm"
-                value={query}
-                placeholder={S.plugins.searchPlaceholder}
-                aria-label={S.plugins.searchPlaceholder}
-                onChange={setQuery}
-              />
-              {/* ONE list, one plugin per row, every kind in the same card: what is installed
+      {/* The header block ends in its own bottom margin, so the content's top margin tops it
+          up to the page's usual gap under the header. */}
+      {error ? (
+        <div className="mt-2 flex items-center gap-3">
+          <p className={`text-sm ${toneInk.danger}`}>{error}</p>
+          <Button size="sm" onClick={() => window.location.reload()}>
+            {S.common.retry}
+          </Button>
+        </div>
+      ) : groups === null ? (
+        <div className="mt-2 grid grid-cols-1 gap-2">
+          {Array.from({ length: 4 }, (_, i) => (
+            <SkeletonCard key={i} className="p-4">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="mt-2 h-4 w-3/4" />
+              <Skeleton className="mt-3 h-6 w-36" />
+            </SkeletonCard>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-2 md:grid md:grid-cols-[minmax(0,1fr)_12rem] md:gap-4">
+          <div className="min-w-0 space-y-3">
+            <SearchInput
+              size="sm"
+              value={query}
+              placeholder={S.plugins.searchPlaceholder}
+              aria-label={S.plugins.searchPlaceholder}
+              onChange={setQuery}
+            />
+            {/* ONE list, one plugin per row, every kind in the same card: what is installed
                   first — the library's plugins (they ship with the build and every Agent may use
                   them) and the module plugins this Project asks for — then what could be. A
                   plugin's category is a tag on its row, not a group around it. */}
+            <PluginList
+              title={S.plugins.installedSection(installedRows.length)}
+              open={installedOpen || filtering}
+              onToggle={() => setInstalledOpen((v) => !v)}
+            >
+              {installedRows.map((row) =>
+                row.kind === "library" ? (
+                  <PluginCard
+                    key={`library:${row.plugin.name}`}
+                    plugin={row.plugin}
+                    category={row.category}
+                    installed={installed}
+                    onQuickInvoke={quickInvoke}
+                    onToggleInstall={toggleInstall}
+                    onUpdateOutdated={updateOutdated}
+                  />
+                ) : (
+                  <ModuleRow
+                    key={`module:${row.specifier}`}
+                    specifier={row.specifier}
+                    entry={row.entry}
+                    state={row.state}
+                    error={row.error}
+                    shipped={row.shipped}
+                    onlyOn={row.onlyOn}
+                    removeBlocked={row.removeBlocked}
+                    busy={pendingSpecifier === row.specifier}
+                    blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
+                    onInstall={null}
+                    onRemove={
+                      isAdmin
+                        ? () => setPendingApply({ specifier: row.specifier, install: false })
+                        : null
+                    }
+                  />
+                ),
+              )}
+            </PluginList>
+            {availableRows.length > 0 && (
               <PluginList
-                title={S.plugins.installedSection(installedRows.length)}
-                open={installedOpen || filtering}
-                onToggle={() => setInstalledOpen((v) => !v)}
+                title={S.plugins.availableSection(availableRows.length)}
+                open={availableOpen || filtering}
+                onToggle={() => setAvailableOpen((v) => !v)}
               >
-                {installedRows.map((row) =>
-                  row.kind === "library" ? (
-                    <PluginCard
-                      key={`library:${row.plugin.name}`}
-                      plugin={row.plugin}
-                      category={row.category}
-                      installed={installed}
-                      onQuickInvoke={quickInvoke}
-                      onToggleInstall={toggleInstall}
-                      onUpdateOutdated={updateOutdated}
-                    />
-                  ) : (
-                    <ModuleRow
-                      key={`module:${row.specifier}`}
-                      specifier={row.specifier}
-                      entry={row.entry}
-                      state={row.state}
-                      error={row.error}
-                      shipped={row.shipped}
-                      onlyOn={row.onlyOn}
-                      removeBlocked={row.removeBlocked}
-                      busy={pendingSpecifier === row.specifier}
-                      blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
-                      onInstall={null}
-                      onRemove={
-                        isAdmin
-                          ? () => setPendingApply({ specifier: row.specifier, install: false })
-                          : null
-                      }
-                    />
-                  ),
-                )}
+                {availableRows.map((row) => (
+                  <ModuleRow
+                    key={`module:${row.specifier}`}
+                    specifier={row.specifier}
+                    entry={row.entry}
+                    state={row.state}
+                    shipped={row.shipped}
+                    busy={pendingSpecifier === row.specifier}
+                    blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
+                    onInstall={
+                      isAdmin
+                        ? () => setPendingApply({ specifier: row.specifier, install: true })
+                        : null
+                    }
+                    onRemove={null}
+                  />
+                ))}
               </PluginList>
-              {availableRows.length > 0 && (
-                <PluginList
-                  title={S.plugins.availableSection(availableRows.length)}
-                  open={availableOpen || filtering}
-                  onToggle={() => setAvailableOpen((v) => !v)}
-                >
-                  {availableRows.map((row) => (
-                    <ModuleRow
-                      key={`module:${row.specifier}`}
-                      specifier={row.specifier}
-                      entry={row.entry}
-                      state={row.state}
-                      shipped={row.shipped}
-                      busy={pendingSpecifier === row.specifier}
-                      blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
-                      onInstall={
-                        isAdmin
-                          ? () => setPendingApply({ specifier: row.specifier, install: true })
-                          : null
-                      }
-                      onRemove={null}
-                    />
-                  ))}
-                </PluginList>
-              )}
-              {filtering && installedRows.length === 0 && availableRows.length === 0 && (
-                <p className="px-1 text-sm text-gray-400 dark:text-gray-500">{S.plugins.noMatch}</p>
-              )}
-            </div>
-            {/* The filter column: the categories on the page, then two attributes with a
+            )}
+            {filtering && installedRows.length === 0 && availableRows.length === 0 && (
+              <p className="px-1 text-sm text-gray-400 dark:text-gray-500">{S.plugins.noMatch}</p>
+            )}
+          </div>
+          {/* The filter column: the categories on the page, then two attributes with a
                 handful of values each (what a plugin carries, what it is here). Free-form
                 keywords are not a facet — they feed the search box. A pick narrows both lists,
                 and the lists unfold while anything is picked or typed. */}
-            <PluginFilters
-              facets={facets}
-              picked={picked}
-              onCategory={(c) => setPickedCategories((prev) => toggle(prev, c))}
-              onKind={(k) => setPickedKinds((prev) => toggle(prev, k))}
-              onState={(st) => setPickedStates((prev) => toggle(prev, st))}
-              onClear={() => {
-                setPickedCategories(new Set());
-                setPickedKinds(new Set());
-                setPickedStates(new Set());
-                setQuery("");
-              }}
-            />
-          </div>
-        )}
-      </div>
+          <PluginFilters
+            facets={facets}
+            picked={picked}
+            onCategory={(c) => setPickedCategories((prev) => toggle(prev, c))}
+            onKind={(k) => setPickedKinds((prev) => toggle(prev, k))}
+            onState={(st) => setPickedStates((prev) => toggle(prev, st))}
+            onClear={() => {
+              setPickedCategories(new Set());
+              setPickedKinds(new Set());
+              setPickedStates(new Set());
+              setQuery("");
+            }}
+          />
+        </div>
+      )}
 
       {/* A module plugin change: what it costs is said before it runs. */}
       {pendingApply !== null && (
@@ -796,6 +798,7 @@ export function PluginsPage() {
           }
           tone="primary"
           confirmLabel={pendingApply.install ? S.plugins.install : S.plugins.uninstall}
+          cancelLabel={S.common.cancel}
           busy={pendingSpecifier !== null}
           onClose={() => setPendingApply(null)}
           onConfirm={() => void runDeploymentInstall(pendingApply.specifier, pendingApply.install)}
@@ -813,6 +816,7 @@ export function PluginsPage() {
           title={S.todo.pluginsConfirmTitle(pendingBulk.plugins.length)}
           tone="primary"
           confirmLabel={S.skills.updateAction}
+          cancelLabel={S.common.cancel}
           busy={bulkRunning}
           onClose={() => setPendingBulk(null)}
           onConfirm={() => void runBulkUpdate(pendingBulk)}
@@ -830,7 +834,7 @@ export function PluginsPage() {
           </div>
         </ConfirmModal>
       )}
-    </div>
+    </PageFrame>
   );
 }
 
@@ -983,8 +987,8 @@ export function availablePluginRows(
 }
 
 /**
- * A titled list of rows: the header bar the library's groups had — the whole row toggles
- * the fold, as on the model page — with one column of cards under it.
+ * A titled list of rows: a collapsible section whose head strip toggles the fold, as on the
+ * model page, with one column of cards under it.
  */
 function PluginList({
   title,
@@ -998,29 +1002,13 @@ function PluginList({
   children: React.ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-md bg-white dark:bg-gray-900">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={onToggle}
-        className="flex w-full items-center gap-2.5 bg-gray-50 px-3 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
-      >
-        <span className="min-w-0 truncate text-sm font-semibold">{title}</span>
-        <span className="min-w-0 flex-1" />
-        <Chevron open={open} className="text-gray-400" />
-      </button>
+    <CollapsibleSection title={title} open={open} onOpenChange={onToggle}>
       <div
-        className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+        className={`grid grid-cols-1 gap-2 p-2 transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}`}
       >
-        <div className="overflow-hidden" inert={!open}>
-          <div
-            className={`grid grid-cols-1 gap-2.5 p-2.5 transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}`}
-          >
-            {children}
-          </div>
-        </div>
+        {children}
       </div>
-    </section>
+    </CollapsibleSection>
   );
 }
 
@@ -1134,7 +1122,7 @@ function PluginFilters({
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] transition-colors duration-150 ${
+      className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm transition-colors duration-150 ${
         on
           ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-700/70 dark:text-gray-100"
           : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800/70"
@@ -1150,17 +1138,17 @@ function PluginFilters({
         {on && <GlyphIcon d="M20 6 9 17l-5-5" size={10} />}
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      <span className="shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+      <span className="shrink-0 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500">
         {count}
       </span>
     </button>
   );
   const group = (title: string, children: React.ReactNode) => (
     <div>
-      <div className="mb-1 px-2 text-[11px] font-semibold tracking-wide text-gray-400 uppercase dark:text-gray-500">
+      <Text variant="eyebrow" as="div" className="mb-1 px-2">
         {title}
-      </div>
-      <div className="space-y-0.5">{children}</div>
+      </Text>
+      <div className="space-y-1">{children}</div>
     </div>
   );
   const active = picked.categories.size > 0 || picked.kinds.size > 0 || picked.states.size > 0;
@@ -1173,7 +1161,7 @@ function PluginFilters({
         onClick={onClear}
         tabIndex={active ? 0 : -1}
         aria-hidden={!active}
-        className={`px-2 text-[11px] text-gray-400 underline-offset-2 hover:underline dark:text-gray-500 ${active ? "" : "invisible"}`}
+        className={`px-2 text-xs text-gray-400 underline-offset-2 hover:underline dark:text-gray-500 ${active ? "" : "invisible"}`}
       >
         {S.plugins.filterClear}
       </button>
@@ -1317,7 +1305,7 @@ function PluginCard({
           />
           <div className="min-w-0 flex-1">
             <span
-              className="block truncate font-mono text-[13px] font-semibold"
+              className="block truncate font-mono text-[length:var(--ui-text-code-size)] font-semibold"
               data-tooltip={plugin.name}
               data-tooltip-content="code"
             >
@@ -1336,14 +1324,14 @@ function PluginCard({
         {/* Metadata line under the header (e.g. `v2026.08.29.1 · updated 3 days ago · used by
             2 agents`); what the plugin contains lives in the detail Modal this card opens. */}
         <p
-          className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500"
+          className="mt-2.5 truncate text-xs text-gray-400 dark:text-gray-500"
           data-tooltip={meta}
           data-tooltip-content="text"
         >
           {meta}
         </p>
         {/* Tag line: the category, "built in" (the library ships with the build), what it carries. */}
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
           <Tag>{category}</Tag>
           <Tag title={S.plugins.libraryBuiltinHint}>{S.plugins.builtin}</Tag>
           {plugin.skills.length > 0 && <Tag mono>{S.skills.skillCount(plugin.skills.length)}</Tag>}
@@ -1407,7 +1395,7 @@ function PluginCard({
           title={S.skills.manageInstallTitle(plugin.name)}
           onClose={() => setInstallOpen(false)}
         >
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             {agents.length === 0 && (
               <p className="py-1.5 text-xs text-gray-400">{S.common.loading}</p>
             )}
@@ -1435,6 +1423,7 @@ function PluginCard({
           title={S.plugins.updateConfirmTitle(plugin.name)}
           tone="primary"
           confirmLabel={S.skills.updateAction}
+          cancelLabel={S.common.cancel}
           busy={updating}
           onClose={() => setPendingUpdate(null)}
           onConfirm={() => void confirmUpdate()}
@@ -1471,6 +1460,7 @@ function PluginCard({
           open
           title={S.plugins.uninstallConfirmTitle(plugin.name)}
           confirmLabel={S.skills.uninstall}
+          cancelLabel={S.common.cancel}
           onClose={() => setPendingUninstall(null)}
           onConfirm={() => {
             const agentId = pendingUninstall;
@@ -1628,7 +1618,7 @@ function ModuleRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <span
-              className="min-w-0 truncate font-mono text-[13px] font-semibold"
+              className="min-w-0 truncate font-mono text-[length:var(--ui-text-code-size)] font-semibold"
               data-tooltip={`${S.pluginRegistry.specifierHint}: ${specifier}`}
               data-tooltip-content="code"
             >
@@ -1645,7 +1635,7 @@ function ModuleRow({
         </div>
       </div>
       <p
-        className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500"
+        className="mt-2.5 truncate text-xs text-gray-400 dark:text-gray-500"
         data-tooltip={`${meta}${meta === "" ? "" : " · "}${stateText}`}
         data-tooltip-content="text"
       >
@@ -1666,14 +1656,14 @@ function ModuleRow({
       </p>
       {state === "failed" && error !== undefined && (
         <p
-          className={`mt-1 truncate text-[11px] ${toneInk.danger}`}
+          className={`mt-1 truncate text-xs ${toneInk.danger}`}
           data-tooltip={error}
           data-tooltip-content="text"
         >
           {error}
         </p>
       )}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
         {(entry?.categories ?? []).map((category) => (
           <Tag key={category}>{category}</Tag>
         ))}

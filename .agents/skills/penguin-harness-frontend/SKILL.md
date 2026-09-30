@@ -25,9 +25,10 @@ This file records the decisions that already exist so they are not re-litigated 
 | `danger` | failed, destructive, over a limit | errors, delete affordances |
 | `muted` | settled; the mark should recede | a done row's glyph |
 
-Four maps, by the shape of the thing being coloured: `toneInk` (a glyph or a line of status text),
-`toneSurface` (a tinted pill with its own text — badges), `toneDot` (the 6px state dots),
-`toneStrip` (a bordered notice that owns a row).
+Three maps, by the shape of the thing being coloured: `toneInk` (a glyph or a line of status text),
+`toneSurface` (a tinted pill with its own text — badges), `toneDot` (the 6px state dots). A
+notice that owns a row is the shared UI package's `NoticeStrip`, which takes the package's tone
+names (`busy` → `success`, `link` → `info`, `muted` → `neutral`); toasts render through it.
 
 Rules:
 
@@ -223,9 +224,16 @@ Three behaviours there are load-bearing:
 - **`z-[60]`**, above the modal overlay's `z-50`: a portaled node sits in the root stacking context
   and may be opened from inside a dialog.
 
-Modals and `Dropdown` additionally register in the Esc-layer stack (`modal.tsx`'s `pushEscLayer`),
-so Escape only acts on the topmost layer. A portal panel does not need to — capture plus
-`stopPropagation` already gets there first.
+Modals, drawers, sheets, the lightbox and `Dropdown` additionally register in the Esc-layer stack
+(the UI package's `esc-layers.ts`: `useEscLayer`, or `pushEscLayer` / `isTopEscLayer`), so Escape
+only acts on the topmost layer. A portal panel does not need to — capture plus `stopPropagation`
+already gets there first.
+
+A menu's rows are the package's Menu family, never a hand-built row: `Menu` (the list, `role="menu"`,
+density `md` for account and project menus, `sm` for a row's overflow and context menus) holding
+`MenuItem` (glyph, label, description, trailing note, `danger`, `checked`, `href`),
+`MenuRadioItem`, `MenuSeparator` and `MenuLabel`. The panel around them stays a `Dropdown`. A row
+outside a `Menu` is a plain button, for a panel that mixes rows with a search box or a listbox.
 
 ## The rest of the house style
 

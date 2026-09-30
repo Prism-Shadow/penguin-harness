@@ -499,6 +499,33 @@ importers:
       '@fontsource/ibm-plex-sans-condensed':
         specifier: ^5.3.0
         version: 5.3.0
+      '@shikijs/langs':
+        specifier: ^4.3.1
+        version: 4.3.1
+      '@shikijs/themes':
+        specifier: ^4.3.1
+        version: 4.3.1
+      katex:
+        specifier: ^0.16.47
+        version: 0.16.47
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.2.17)(react@19.2.7)(supports-color@10.2.2)
+      rehype-katex:
+        specifier: ^7.0.1
+        version: 7.0.1
+      remark-gfm:
+        specifier: ^4.0.0
+        version: 4.0.1(supports-color@10.2.2)
+      remark-math:
+        specifier: ^6.0.0
+        version: 6.0.0(supports-color@10.2.2)
+      shiki:
+        specifier: ^4.3.1
+        version: 4.3.1
+      zustand:
+        specifier: ^5.0.15
+        version: 5.0.15(@types/react@19.2.17)(react@19.2.7)
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -579,12 +606,6 @@ importers:
       '@prismshadow/penguin-ui':
         specifier: workspace:*
         version: link:../ui
-      '@shikijs/langs':
-        specifier: ^4.3.1
-        version: 4.3.1
-      '@shikijs/themes':
-        specifier: ^4.3.1
-        version: 4.3.1
       '@xterm/addon-clipboard':
         specifier: ^0.1.0
         version: 0.1.0(@xterm/xterm@5.5.0)
@@ -600,9 +621,6 @@ importers:
       copy-to-clipboard:
         specifier: ^4.0.2
         version: 4.0.2
-      katex:
-        specifier: ^0.16.47
-        version: 0.16.47
       react:
         specifier: ^19.1.0
         version: 19.2.7
@@ -615,18 +633,6 @@ importers:
       react-router:
         specifier: ^8.3.0
         version: 8.3.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      rehype-katex:
-        specifier: ^7.0.1
-        version: 7.0.1
-      remark-gfm:
-        specifier: ^4.0.0
-        version: 4.0.1(supports-color@10.2.2)
-      remark-math:
-        specifier: ^6.0.0
-        version: 6.0.0(supports-color@10.2.2)
-      shiki:
-        specifier: ^4.3.1
-        version: 4.3.1
       uqr:
         specifier: ^0.1.3
         version: 0.1.3

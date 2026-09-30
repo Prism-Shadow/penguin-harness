@@ -11,13 +11,11 @@
  */
 import { useEffect, useState } from "react";
 import type { UsageErrorItem, UsageErrors } from "@prismshadow/penguin-server/api";
-import { Badge } from "@prismshadow/penguin-ui";
+import { Badge, ConfirmModal, Pager, toastError, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Empty } from "./usage-charts";
 import { toneInk } from "../../lib/tone";
 
@@ -363,21 +361,17 @@ export function ErrorsPanel({
             <span className="text-red-600 dark:text-red-400">{pageError}</span>
           )}
           {(pageCount > 1 || page > 0) && (
-            <>
-              <span className="ml-auto tabular-nums">
-                {S.usage.errorsPageOf(page + 1, pageCount, pagedTotal)}
-              </span>
-              <PagerButton
-                label={S.usage.errorsNewer}
-                disabled={page === 0 || loading}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-              />
-              <PagerButton
-                label={S.usage.errorsOlder}
-                disabled={page + 1 >= pageCount || loading}
-                onClick={() => setPage((p) => p + 1)}
-              />
-            </>
+            <Pager
+              variant="labelled"
+              className="ml-auto"
+              page={page}
+              pageCount={pageCount}
+              onChange={setPage}
+              previousLabel={S.usage.errorsNewer}
+              nextLabel={S.usage.errorsOlder}
+              readout={S.usage.errorsPageOf(page + 1, pageCount, pagedTotal)}
+              disabled={loading}
+            />
           )}
         </div>
       )}
@@ -389,6 +383,7 @@ export function ErrorsPanel({
         tone="danger"
         title={S.usage.errorsClearTitle}
         confirmLabel={S.usage.errorsClear}
+        cancelLabel={S.common.cancel}
         busy={clearing}
         onClose={() => setConfirmingClear(false)}
         onConfirm={() => void runClear()}
@@ -401,27 +396,5 @@ export function ErrorsPanel({
         </div>
       </ConfirmModal>
     </div>
-  );
-}
-
-/** Pager step button: same recessive treatment as the rest of the panel's chrome. */
-function PagerButton({
-  label,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  disabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="rounded-md border border-gray-200 px-2 py-0.5 transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-800 dark:hover:bg-gray-800/60 dark:disabled:hover:bg-transparent"
-    >
-      {label}
-    </button>
   );
 }

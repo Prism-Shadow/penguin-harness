@@ -12,15 +12,20 @@
  * aren't highlighted together).
  */
 import { Fragment, useState } from "react";
-import { Badge, ICONS, RequiredMark } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  ICONS,
+  REHYPE_PLUGINS,
+  REMARK_PLUGINS,
+  RequiredMark,
+  ZoomableImage,
+} from "@prismshadow/penguin-ui";
 import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import ReactMarkdown from "react-markdown";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { S } from "../../lib/strings";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import { formatTime, humanizeTokens } from "../../lib/format";
 import { stopReasonTone } from "../../lib/stop-reason-tone";
-import { ZoomableImage } from "../../components/ui/image-zoom";
 
 /** An event type as a badge: the session header stands out as a neutral solid tag. */
 export function typeBadge(type: string): BadgeStyle {
@@ -221,8 +226,8 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
   // Pre-split traces embedded `tools` here; per the explicit-incompatibility decision the
   // legacy field is not rendered — the toolset view is the tool_list_ready event.
   return (
-    <div className="space-y-2.5">
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
+    <div className="space-y-2">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
         {rows.map(([k, v]) => (
           <Fragment key={k}>
             <dt className="text-gray-400">{k}</dt>
@@ -430,7 +435,7 @@ export function EventRow({
             : "hover:bg-gray-50 dark:hover:bg-gray-800/50"
         }`}
       >
-        <span className="shrink-0 font-mono text-[11px] text-gray-400">
+        <span className="shrink-0 font-mono text-xs text-gray-400">
           {formatTime(msg.timestamp)}
         </span>
         <TypeIcon type={payloadType} />

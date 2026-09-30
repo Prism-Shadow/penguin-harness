@@ -73,10 +73,11 @@ const APPENDIX_A = [
  * Glass is for the layers that float over the page (the composer card, dialogs, menus, popovers,
  * tooltips); the eyebrow and display rungs for the sidebar's list label and the page titles; live
  * marks for the spinner, a pulsing state dot and the machines page's working marks; frames for
- * the transcript's cards; the shell for the app layout; a decorative icon for the rows and headers
- * whose label already says what the icon says (sidebar rows and group headers, the settings rail,
- * a menu row's glyph, a tab, an empty state) — a session row is not a host, its avatar and marks
- * carry information; a tree for a file tree and a work group's steps; a field for a settings row;
+ * the transcript's cards, the code block, the page's cards and a table that is its own box; the
+ * shell for the app layout; a decorative icon for the rows and headers whose label already says
+ * what the icon says (sidebar rows and group headers, a nav row's glyph in a rail, a menu row's
+ * glyph, a tab, an empty state) — a session row is not a host, its avatar and marks carry
+ * information; a tree for a file tree and a work group's steps; a field for a settings row;
  * activity for the transcript's work in progress (the work group's header, a tool call, the
  * thinking row).
  */
@@ -92,28 +93,24 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "TooltipLayer",
     "TooltipPanel",
   ],
-  "ui-eyebrow": ["Sidebar", "GroupHeader", "PagedDialog"],
-  "ui-display": [
-    "Heading",
-    "EmptyState",
-    "AgentsPage",
-    "ModelsPage",
-    "PluginsPage",
-    "UsagePage",
-    "BenchmarkPage",
-    "MachinesPage",
-    "DraftView",
-  ],
-  "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard"],
-  "ui-frame": ["ToolCallCard", "WorkGroup", "CodeBlock"],
+  // `Text` carries it for its eyebrow role (W5), the one door a group label takes in new code.
+  "ui-eyebrow": ["Sidebar", "GroupHeader", "PagedDialog", "Text"],
+  // The page titles are `PageHeader`'s; the usage page and the draft view's hero still write
+  // their own until their waves (W8, W6).
+  "ui-display": ["Heading", "PageHeader", "EmptyState", "UsagePage", "DraftView"],
+  "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard", "ProgressBar"],
+  // The transcript's cards and the code block, and the page-level boxes (W4): the card and a
+  // table that is its own box.
+  "ui-frame": ["ToolCallCard", "WorkGroup", "CodeBlock", "Card", "Table"],
   "ui-underline-nav": ["Tabs"],
   "ui-shell": ["AppLayout"],
   "ui-icon-decor": [
     "GlyphIcon",
     "Sidebar",
-    "PagedDialog",
+    "NavRow",
     "SettingsDialog",
     "MenuItemGlyph",
+    "MenuItem",
     "GroupHeader",
     "Tabs",
     "EmptyState",
@@ -143,7 +140,7 @@ const NOT_HOOKS = new Set(["ui-sans-serif", "ui-serif", "ui-monospace", "ui-roun
 const FRAME_SLOTS = new Set(["head", "body", "foot", "pane"]);
 const SHELL_SLOTS = new Set(["nav", "main", "dock"]);
 const FIELD_SLOTS = new Set(["label", "control", "hint"]);
-const LIVE_SIGNALS = new Set(["dot", "caret", "spinner"]);
+const LIVE_SIGNALS = new Set(["dot", "caret", "spinner", "bar"]);
 const ICON_ROLES = new Set(["nav", "group", "menu", "empty"]);
 const ACTIVITY_KINDS = new Set(["thinking", "tool"]);
 const ACTIVITY_STATES = new Set(["running", "done", "error"]);
@@ -279,7 +276,9 @@ describe("style hooks", () => {
         const problems: string[] = [];
         const live = element.attributes.get("data-live");
         if (names.has("ui-live") && live !== null && !LIVE_SIGNALS.has(String(live))) {
-          problems.push(`${at} .ui-live needs data-live="dot|caret|spinner", has ${String(live)}`);
+          problems.push(
+            `${at} .ui-live needs data-live="dot|caret|spinner|bar", has ${String(live)}`,
+          );
         }
         const level = element.attributes.get("aria-level");
         if (names.has("ui-display") && element.intrinsic && element.tag !== "h1" && level !== "1") {

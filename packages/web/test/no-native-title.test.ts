@@ -1,10 +1,11 @@
 /**
  * No native `title` tooltips in the Web App.
  *
- * Every hover hint shows in the shared tooltip (components/ui/tooltip.tsx): through
- * `data-tooltip` on the element, read by the one `TooltipLayer`, or a `<Tooltip>` wrapper. A
- * native `title` waits about a second, cannot be themed and never shows on keyboard focus, so
- * one left behind is a hint that looks and behaves unlike every other in the app.
+ * Every hover hint shows in the shared tooltip (the UI package's overlays/tooltip/tooltip.tsx,
+ * whose own tests read a `data-tooltip` request): through `data-tooltip` on the element, read by
+ * the one `TooltipLayer`, or a `<Tooltip>` wrapper. A native `title` waits about a second, cannot
+ * be themed and never shows on keyboard focus, so one left behind is a hint that looks and
+ * behaves unlike every other in the app.
  *
  * The check parses the real JSX with the TypeScript parser, because whether `title` is an
  * attribute of a DOM element or a prop of a component (a Modal's heading, an EmptyState's) is a
@@ -21,7 +22,6 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { expectEveryRootScanned, scanSources } from "./helpers/roots";
 import type { SourceFile } from "./helpers/roots";
-import { tooltipRequest } from "../src/components/ui/tooltip";
 
 /** Intrinsic elements whose `title` the platform needs. */
 const TITLE_ALLOWED_ON = new Set(["iframe"]);
@@ -229,33 +229,5 @@ describe("native title tooltips", () => {
         'const A = () => <div role="img" aria-label="Board"><span data-tooltip="Open 3" /></div>;',
       ),
     ).toEqual([]);
-  });
-});
-
-describe("a data-tooltip request", () => {
-  const el = (attrs: Record<string, string>) => ({
-    getAttribute: (name: string) => attrs[name] ?? null,
-  });
-
-  it("reads the text, the kind and the side, defaulting to a label below", () => {
-    expect(tooltipRequest(el({ "data-tooltip": "Rename" }))).toEqual({
-      label: "Rename",
-      content: "label",
-      placement: "bottom",
-    });
-    expect(
-      tooltipRequest(
-        el({
-          "data-tooltip": "npm run dev",
-          "data-tooltip-content": "code",
-          "data-tooltip-placement": "right",
-        }),
-      ),
-    ).toEqual({ label: "npm run dev", content: "code", placement: "right" });
-  });
-
-  it("asks for nothing when the text is missing or blank", () => {
-    expect(tooltipRequest(el({}))).toBeNull();
-    expect(tooltipRequest(el({ "data-tooltip": "  " }))).toBeNull();
   });
 });

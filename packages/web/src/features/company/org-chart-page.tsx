@@ -28,7 +28,20 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router";
 import type { OrgChartResponse, OrgEmployeeItem } from "@prismshadow/penguin-server/api";
-import { Button, EmptyState, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  ConfirmModal,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  Notice,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -37,13 +50,6 @@ import { toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
-import {
-  overflowMenuDangerClass,
-  overflowMenuGlyph,
-  overflowMenuRowClass,
-} from "../../components/ui/session-row-menu";
 import { usePointerDrag } from "../dock/use-pointer-drag";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import { orgKey } from "./company-nav";
@@ -65,7 +71,6 @@ import type { CanvasSize, CanvasView } from "./canvas-view";
 import { ChartCard, ChartLegend } from "./chart-card";
 import { DeskRenewDialog, EmployeeEditDialog, HireDialog } from "./employee-dialogs";
 import type { EmployeeEdit } from "./employee-dialogs";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Node-menu glyphs (24x24 line paths): the open door of a desk session, a plus person for hiring, a coin for budget, an arrow for the line, a refresh for a fresh desk, a door out for leaving. */
 const MENU_ICONS = {
@@ -358,33 +363,25 @@ export function OrgChartPage() {
     danger = false,
     disabled = false,
   ) => (
-    <button
-      type="button"
-      className={danger ? overflowMenuDangerClass : overflowMenuRowClass}
+    <MenuItem
+      glyph={icon}
+      label={label}
+      danger={danger}
       disabled={disabled}
-      onClick={() => {
+      onSelect={() => {
         close();
         onClick();
       }}
-    >
-      {danger ? (
-        <span className="shrink-0">
-          <GlyphIcon d={icon} size={ICON_SIZE.inlineGlyph} />
-        </span>
-      ) : (
-        overflowMenuGlyph(icon)
-      )}
-      {label}
-    </button>
+    />
   );
 
   /* Opening the desk sits first and apart: it is where the reader goes, while everything
      below it rewrites the chart file. `close` is the card's own panel dismissal — the card
      owns the menu, since only it sees the gesture that opened one. */
   const nodeMenu = (employee: OrgEmployeeItem, isCeo: boolean, close: () => void) => (
-    <>
+    <Menu density="sm">
       {menuRow(close, MENU_ICONS.openDesk, S.company.openDesk, () => void openDesk(employee))}
-      <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+      <MenuSeparator />
       {menuRow(close, MENU_ICONS.hire, S.company.chart.hire, () => setHireFor(employee))}
       {menuRow(close, MENU_ICONS.budget, S.company.chart.setBudget, () =>
         setEditFor({ employee, edit: "budget" }),
@@ -394,7 +391,7 @@ export function OrgChartPage() {
           setEditFor({ employee, edit: "reportsTo" }),
         )}
       {menuRow(close, MENU_ICONS.renewDesk, S.company.chart.renewDesk, () => setRenewFor(employee))}
-      <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+      <MenuSeparator />
       {isCeo ? (
         <span className="block px-2.5 py-1.5 text-xs text-gray-400 dark:text-gray-500">
           {S.company.chart.ceoCannotLeave}
@@ -402,7 +399,7 @@ export function OrgChartPage() {
       ) : (
         menuRow(close, MENU_ICONS.leave, S.company.chart.leave, () => setLeaveFor(employee), true)
       )}
-    </>
+    </Menu>
   );
 
   const zoomControl = (
@@ -451,20 +448,19 @@ export function OrgChartPage() {
     >
       {/* A refresh that failed while a chart is on screen: say so above it, keep the chart. */}
       {error !== null && (
-        <NoticeStrip
+        <Notice
           tone="danger"
-          className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-xs"
+          role="alert"
+          className="mb-3"
+          retry={{ label: S.common.retry, onClick: () => void load() }}
         >
-          <span>{S.company.chart.refreshFailed(error)}</span>
-          <Button size="sm" onClick={() => void load()}>
-            {S.common.retry}
-          </Button>
-        </NoticeStrip>
+          {S.company.chart.refreshFailed(error)}
+        </Notice>
       )}
       {layout.detached.length > 0 && (
-        <NoticeStrip tone="attention" className="mb-3 rounded-md border px-3 py-1.5 text-xs">
+        <Notice tone="attention" className="mb-3">
           {S.company.chart.detachedNotice(layout.detached.length)}
-        </NoticeStrip>
+        </Notice>
       )}
       {layout.nodes.length === 0 ? (
         <EmptyState title={S.company.chart.empty} />
@@ -472,7 +468,7 @@ export function OrgChartPage() {
         <>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <ChartLegend />
-            <span className="text-[11px] text-gray-500 dark:text-gray-400">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               {S.company.chart.employeeCount(chart.employees.length)}
             </span>
           </div>
@@ -517,7 +513,7 @@ export function OrgChartPage() {
               </svg>
               {layout.detachedTop !== null && (
                 <p
-                  className={`absolute right-0 left-0 text-center text-[11px] font-medium ${toneInk.danger}`}
+                  className={`absolute right-0 left-0 text-center text-xs font-medium ${toneInk.danger}`}
                   style={{ top: layout.detachedTop - CHART_DETACHED_LABEL_H }}
                 >
                   {S.company.chart.detached}
@@ -596,6 +592,7 @@ export function OrgChartPage() {
         title={S.company.chart.leave}
         tone="danger"
         confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setLeaveFor(null))}
         onConfirm={() => void runLeave()}

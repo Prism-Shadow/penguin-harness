@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type { WorkflowInfo, WorkflowVersion } from "@prismshadow/penguin-server/api";
-import { Button } from "@prismshadow/penguin-ui";
+import { Button, NoticeStrip } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
@@ -33,7 +33,6 @@ import {
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { localizedText } from "../chat/skill-use";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** The Agent's workflow tabs, kept fresh by the server's `workflow_updated` events. */
 export function useWorkflowTabs(
@@ -119,7 +118,7 @@ export function WorkflowTabStrip({
       {notices.map((n) => (
         <NoticeStrip
           key={n.workflowId}
-          tone={n.error === null ? "muted" : "attention"}
+          tone={n.error === null ? "neutral" : "attention"}
           role="status"
           className="shrink-0 truncate px-3 py-1 text-xs"
           data-tooltip={n.error ?? n.hints.join("\n")}

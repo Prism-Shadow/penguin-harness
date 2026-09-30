@@ -18,11 +18,15 @@ import { NavLink, useNavigate } from "react-router";
 import type { OrgChannelItem } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  FolderSection,
   GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
   PlusIcon,
   SkeletonList,
+  Text,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -30,8 +34,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { toneInk, toneSurface } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { FolderSection, Icon } from "../../components/ui/group-list";
-import { toastError, toastSuccess } from "../../components/ui/toast";
+import { Icon } from "../../components/ui/group-list";
 import { Truncated } from "../../components/ui/truncated";
 import { orgChannelPath } from "./company-nav";
 import { JoinChannelConfirm, NewChannelDialog } from "./channel-dialogs";
@@ -144,14 +147,12 @@ function ChannelRow({
         </span>
         <Truncated text={label} className="min-w-0 flex-1" />
         {channel.mentionsMe > 0 && (
-          <span
-            className={`shrink-0 rounded px-1 text-[10px] font-semibold ${toneSurface.attention}`}
-          >
+          <span className={`shrink-0 rounded px-1 text-xs font-semibold ${toneSurface.attention}`}>
             {S.company.channels.mentionChip}
           </span>
         )}
         {channel.unread > 0 && (
-          <span className="shrink-0 text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+          <span className="shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-400">
             {channel.unread}
           </span>
         )}
@@ -163,7 +164,7 @@ function ChannelRow({
         <button
           type="button"
           onClick={join}
-          className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-gray-200 px-1.5 py-0.5 text-[11px] text-gray-600 opacity-0 transition-opacity duration-150 hover:text-gray-900 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 dark:bg-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
+          className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-600 opacity-0 transition-opacity duration-150 hover:text-gray-900 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 dark:bg-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
         >
           {S.company.channels.join}
         </button>
@@ -175,7 +176,7 @@ function ChannelRow({
 /** A run's title inside the list (My channels / Other channels), with how many it holds. */
 function GroupTitle({ label, count }: { label: string; count: number }) {
   return (
-    <p className="flex items-center gap-1.5 px-2.5 pb-0.5 pt-2.5 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+    <p className="flex items-center gap-1.5 px-2.5 pb-0.5 pt-2.5 text-xs font-medium text-gray-500 dark:text-gray-400">
       <span className="min-w-0 truncate">{label}</span>
       <span className="tabular-nums text-gray-400 dark:text-gray-500">{count}</span>
     </p>
@@ -235,9 +236,9 @@ export function ChannelSidebar({
       {/* The list's header, at the height and density of the development list's own, with
           "New channel" as its trailing action. */}
       <div className="mt-3 flex items-center justify-between gap-2 px-1 pt-2">
-        <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+        <Text variant="eyebrow" as="span" className="px-1">
           {S.company.channels.listTitle}
-        </span>
+        </Text>
         <NewChannelButton
           projectId={projectId}
           orgId={orgId}
@@ -257,7 +258,7 @@ export function ChannelSidebar({
         )
       ) : (
         <>
-          <ul className="space-y-0.5 pt-1">
+          <ul className="space-y-1 pt-1">
             {groups.allHands !== null && row(groups.allHands)}
             {groups.mine.length > 0 && (
               <li>
@@ -278,7 +279,7 @@ export function ChannelSidebar({
               open={archivedOpen}
               onToggle={() => setArchivedOpen((v) => !v)}
             >
-              <ul className="space-y-0.5">{groups.archived.map((c) => row(c))}</ul>
+              <ul className="space-y-1">{groups.archived.map((c) => row(c))}</ul>
             </FolderSection>
           )}
           {groups.allHands === null &&
@@ -340,7 +341,7 @@ export function ChannelRailRows({ projectId, orgId }: { projectId: string; orgId
               // back to expanding it just to look.
               <span
                 aria-hidden
-                className={`absolute -right-0.5 -top-0.5 min-w-[14px] rounded-full px-1 text-[9px] font-semibold leading-[14px] tabular-nums ${
+                className={`absolute -right-0.5 -top-0.5 min-w-[14px] rounded-full px-1 text-xs font-semibold leading-[14px] tabular-nums ${
                   channel.mentionsMe > 0
                     ? toneSurface.attention
                     : "bg-gray-300 text-gray-800 dark:bg-gray-700 dark:text-gray-100"

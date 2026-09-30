@@ -6,9 +6,8 @@
  */
 import { useState } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
-import { ChevronDown, ICON_SIZE, ProviderLogo } from "@prismshadow/penguin-ui";
+import { ChevronDown, FormPickerTrigger, ICON_SIZE, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { FormPickerTrigger } from "../../components/ui/form-picker";
 import { sameModelRef } from "../models/model-grouping";
 import { modelLabel } from "./model-picker-logic";
 import { ModelPickerModal } from "./model-picker-modal";

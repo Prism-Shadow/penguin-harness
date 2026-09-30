@@ -31,6 +31,8 @@ import {
   GlyphIcon,
   ICONS,
   Input,
+  Modal,
+  NoticeStrip,
   Segmented,
   Select,
   Textarea,
@@ -39,13 +41,11 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatScore } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Modal } from "../../components/ui/modal";
 import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
 import { ModelSelect } from "../chat/model-select";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import { MAX_RUNS, evaluateTail, optimizeTail } from "./benchmark-prompts";
 import type { EvaluateParams, OptimizeParams } from "./benchmark-prompts";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** The Skill the evaluator agent must carry; the dialog warns when the chosen agent lacks it. */
 const EVALUATION_SKILL = "agent-evaluation";

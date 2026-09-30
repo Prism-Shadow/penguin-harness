@@ -19,7 +19,7 @@
  */
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { GlyphIcon, ICONS, menuRowClass, menuRowTone } from "@prismshadow/penguin-ui";
-import type { AnchorRect } from "../../lib/context-menu";
+import type { AnchorRect } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Icon } from "./group-list";
 

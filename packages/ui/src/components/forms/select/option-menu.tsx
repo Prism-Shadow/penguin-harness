@@ -53,8 +53,8 @@ const PANEL_WIDTH = 288; // w-72
  * A row description's font size per tier. Descriptions sit on the small rung: at the base tier
  * that is a step below the row title; at the sm tier the title is already on the small rung and
  * there is no rung below it, so the two share a size and the description stands apart by its
- * muted ink alone (a fixed `text-[Npx]` would ignore the user's font-size setting). Hand-built
- * menus that mimic this row (the protocol suffix menu) read it from here.
+ * muted ink alone (a fixed `text-[Npx]` would ignore the user's font-size setting). The Menu
+ * rows' description sits on the same small rung.
  */
 export const rowDescClass: Record<ControlSize, string> = { base: "text-xs", sm: "text-xs" };
 

@@ -1,20 +1,27 @@
 /**
- * 选择器: the package's Select, Segmented, Switch, ToggleRow, SwatchPicker and OptionMenu, and the
- * app's Dropdown, each holding its own choice.
+ * 选择器: the package's Select, Segmented, Switch, ToggleRow, SwatchPicker, OptionMenu and
+ * Dropdown, each holding its own choice, and the Menu rows at both densities.
  */
 import { useState } from "react";
 import {
   ACCENT_PRESETS,
   Button,
   ChevronDown,
+  Dropdown,
+  ICONS,
+  Menu,
+  MenuItem,
+  MenuLabel,
+  MenuRadioItem,
+  MenuSeparator,
   OptionMenu,
   Segmented,
   Select,
   SwatchPicker,
   Switch,
   ToggleRow,
+  menuPanelClass,
 } from "@prismshadow/penguin-ui";
-import { Dropdown, menuItemClass } from "../../../../web/src/components/ui/dropdown";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
@@ -36,6 +43,8 @@ export function PickersBoard() {
   const [swatch, setSwatch] = useState(swatches[0]?.value ?? "");
   const [permission, setPermission] = useState<string | null>(t.choices[1]?.value ?? null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [groupBy, setGroupBy] = useState<"workspace" | "agent">("workspace");
+  const [sortBy, setSortBy] = useState<"recent" | "manual">("recent");
   return (
     <div className="gf-board">
       <BoardGroup title={t.select}>
@@ -147,18 +156,66 @@ export function PickersBoard() {
               </Button>
             }
           >
-            {t.menuItems.map((item) => (
-              <button
-                key={item}
-                type="button"
-                role="menuitem"
-                className={menuItemClass}
-                onClick={() => setMenuOpen(false)}
-              >
-                {item}
-              </button>
-            ))}
+            <Menu>
+              <MenuItem glyph={ICONS.pin} label={t.menuPin} onSelect={() => setMenuOpen(false)} />
+              <MenuItem
+                glyph={ICONS.pencil}
+                label={t.menuRename}
+                onSelect={() => setMenuOpen(false)}
+              />
+              <MenuItem label={t.menuMove} onSelect={() => setMenuOpen(false)} />
+              <MenuSeparator />
+              <MenuItem
+                glyph={ICONS.trash}
+                label={t.menuDelete}
+                danger
+                onSelect={() => setMenuOpen(false)}
+              />
+            </Menu>
           </Dropdown>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.menuRows} aside={t.menuRowsHint}>
+        {/* The rows as an open panel shows them, side by side: the body rung, then the small. */}
+        <div className="lib-row items-start">
+          <div className={`${menuPanelClass} w-56`}>
+            <Menu density="md">
+              <MenuItem label={t.menuSettings} />
+              <MenuItem label={t.menuUpdate} trailing={t.menuVersion} />
+              <MenuItem label={t.menuSignOut} danger />
+            </Menu>
+          </div>
+          <div className={`${menuPanelClass} w-44`}>
+            <Menu density="sm">
+              <MenuLabel>{t.menuGroupBy}</MenuLabel>
+              <MenuRadioItem
+                glyph={ICONS.folder}
+                label={t.menuByWorkspace}
+                checked={groupBy === "workspace"}
+                onSelect={() => setGroupBy("workspace")}
+              />
+              <MenuRadioItem
+                glyph={ICONS.robot}
+                label={t.menuByAgent}
+                checked={groupBy === "agent"}
+                onSelect={() => setGroupBy("agent")}
+              />
+              <MenuSeparator />
+              <MenuLabel>{t.menuSortBy}</MenuLabel>
+              <MenuRadioItem
+                glyph={ICONS.clock}
+                label={t.menuRecent}
+                checked={sortBy === "recent"}
+                onSelect={() => setSortBy("recent")}
+              />
+              <MenuRadioItem
+                glyph={ICONS.arrowUpDown}
+                label={t.menuManual}
+                checked={sortBy === "manual"}
+                onSelect={() => setSortBy("manual")}
+              />
+            </Menu>
+          </div>
         </div>
       </BoardGroup>
     </div>

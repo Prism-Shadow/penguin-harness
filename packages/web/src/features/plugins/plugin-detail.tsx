@@ -9,8 +9,7 @@
  * on hand at once and nothing here is fetched per directory.
  */
 import { useEffect, useState } from "react";
-import { Badge, ICONS } from "@prismshadow/penguin-ui";
-import { Modal } from "../../components/ui/modal";
+import { Badge, ICONS, Modal } from "@prismshadow/penguin-ui";
 import { FileBrowser } from "../../components/ui/file-browser";
 import type { FileBrowserPreview } from "../../components/ui/file-browser";
 import type { TreeToggle } from "../../components/ui/file-tree";
@@ -219,7 +218,7 @@ export function PluginDetailModal({
           <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
             {localizedText(locale, plugin.description, plugin.descriptionZh)}
           </p>
-          <p className="mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">{meta}</p>
+          <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">{meta}</p>
           {/* The hook points the package answers at: bare point names (`stop`, `user_prompt`) — identifiers, not copy. */}
           {plugin.hooks.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">

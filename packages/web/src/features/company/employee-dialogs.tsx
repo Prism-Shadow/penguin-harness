@@ -13,14 +13,20 @@ import { useEffect, useState } from "react";
 import type { OrgEmployeeItem, OrgHireRequest } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  ConfirmModal,
   FieldError,
   FieldHint,
   FieldLabel,
+  FormPicker,
   ICONS,
   Input,
+  Modal,
+  RuledSection,
   Segmented,
   Select,
   Textarea,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -31,14 +37,9 @@ import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { FormPicker } from "../../components/ui/form-picker";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { OrgSection } from "./org-layout";
 import { MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
@@ -222,8 +223,8 @@ export function HireDialog({
           </>
         }
       >
-        <div className="space-y-5">
-          <OrgSection title={S.company.chart.hireAgentSection}>
+        <div className="space-y-6">
+          <RuledSection level={3} title={S.company.chart.hireAgentSection}>
             <div className="space-y-3">
               <div>
                 <FieldLabel>{S.company.chart.hireSource}</FieldLabel>
@@ -324,8 +325,8 @@ export function HireDialog({
                 </>
               )}
             </div>
-          </OrgSection>
-          <OrgSection title={S.company.chart.hirePositionSection}>
+          </RuledSection>
+          <RuledSection level={3} title={S.company.chart.hirePositionSection}>
             <div className="space-y-3">
               <Input
                 label={S.company.chart.employeeTitle}
@@ -369,7 +370,7 @@ export function HireDialog({
                 }}
               />
             </div>
-          </OrgSection>
+          </RuledSection>
         </div>
       </Modal>
       <ConfirmModal
@@ -377,6 +378,7 @@ export function HireDialog({
         title={S.company.chart.hire}
         tone="primary"
         confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setConfirmOpen(false))}
         onConfirm={() => void hire()}
@@ -570,6 +572,7 @@ export function EmployeeEditDialog({
         title={title}
         tone="primary"
         confirmLabel={S.common.save}
+        cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setConfirmOpen(false))}
         onConfirm={() => void save()}

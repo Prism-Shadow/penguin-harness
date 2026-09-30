@@ -24,9 +24,8 @@
  * status dot, the "+") stay, each naming itself.
  */
 import { useCallback, useMemo, useState } from "react";
-import { GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { ConfirmModal, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { useVisualViewportHeight } from "../../lib/use-visual-viewport-height";
 import { useTerminalChrome } from "./terminal-appearance";
@@ -244,6 +243,7 @@ export function TerminalPage() {
         onClose={() => setConfirmKill(false)}
         onConfirm={() => void killConfirmed()}
         confirmLabel={S.terminal.killShell}
+        cancelLabel={S.common.cancel}
       >
         {info && (
           <p className="break-words text-sm text-gray-600 dark:text-gray-300">

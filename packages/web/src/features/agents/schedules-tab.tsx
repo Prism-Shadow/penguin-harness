@@ -24,16 +24,30 @@ import type {
   SchedulesResponse,
   ScheduleStatus,
 } from "@prismshadow/penguin-server/api";
-import { Badge, Button, HelpFold, SettingsEmpty, SkeletonList } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  Button,
+  ConfirmModal,
+  HelpFold,
+  SettingsEmpty,
+  SkeletonList,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
-import { AiCreateModal, CreateButtons } from "../ai-create";
+import { AiCreateModal } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { ScheduleFormModal } from "../schedules/schedule-form-modal";
 import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
 import { toggleBody } from "../schedules/schedule-upsert";
@@ -159,7 +173,7 @@ export function SchedulesTab({
           two buttons offer the AI path and the form side by side; a member, who cannot write
           files here, gets the AI button alone — asking the agent is a message, not a write. */}
       <div className="flex justify-end">
-        <CreateButtons
+        <AiCreateButtons
           size="sm"
           onAi={() => openAi("")}
           {...(isOwner ? { onManual: () => setForm({ editing: null }) } : {})}
@@ -175,111 +189,104 @@ export function SchedulesTab({
           <ScheduleSuggestions mode="agent" onPick={openAi} />
         </div>
       ) : (
-        <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-                <th className="whitespace-nowrap px-3 py-2.5">{S.common.name}</th>
-                <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colStatus}</th>
-                <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colPeriod}</th>
-                <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colTarget}</th>
-                <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colFireTimes}</th>
-                <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colQueued}</th>
-                {isOwner && <th className="px-3 py-2.5" />}
-              </tr>
-            </thead>
-            <tbody>
-              {schedules.map((item) => (
-                <tr
-                  key={item.name}
-                  className="border-b border-gray-100 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
+        <Table tableClassName="min-w-[720px]">
+          <TableHead>
+            <TableHeaderCell>{S.common.name}</TableHeaderCell>
+            <TableHeaderCell>{S.schedule.colStatus}</TableHeaderCell>
+            <TableHeaderCell>{S.schedule.colPeriod}</TableHeaderCell>
+            <TableHeaderCell>{S.schedule.colTarget}</TableHeaderCell>
+            <TableHeaderCell>{S.schedule.colFireTimes}</TableHeaderCell>
+            <TableHeaderCell>{S.schedule.colQueued}</TableHeaderCell>
+            {isOwner && <TableHeaderCell />}
+          </TableHead>
+          <TableBody>
+            {schedules.map((item) => (
+              <TableRow key={item.name}>
+                {/* Long text columns truncate with the full value on hover instead of wrapping. */}
+                <TableCell
+                  className="max-w-40 truncate font-mono text-xs"
+                  data-tooltip={item.name}
+                  data-tooltip-content="code"
                 >
-                  {/* Long text columns truncate with the full value on hover instead of wrapping. */}
-                  <td
-                    className="max-w-40 truncate px-3 py-2 font-mono text-xs"
-                    data-tooltip={item.name}
-                    data-tooltip-content="code"
-                  >
-                    {item.name}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2">
-                    {/* invalid reason is folded into the hover title. */}
-                    <span data-tooltip={item.invalidReason}>
-                      <Badge {...STATUS_BADGE[item.status]}>
-                        {S.schedule.statusNames[item.status] ?? item.status}
-                      </Badge>
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
-                    {item.period !== undefined ? (
-                      <span className="font-mono">{item.period}</span>
-                    ) : (
-                      S.schedule.once
-                    )}
-                  </td>
-                  <td
-                    className="max-w-36 truncate px-3 py-2 text-xs text-gray-500 dark:text-gray-400"
-                    data-tooltip={item.sessionId}
-                    data-tooltip-content="text"
-                  >
-                    {item.sessionId !== undefined ? (
-                      <span className="font-mono">{item.sessionId}</span>
-                    ) : (
-                      S.schedule.newSession
-                    )}
-                  </td>
-                  {/* Deliberate two-line stack — top: next fire time; bottom: last fired time
-                      (both show — when absent); nowrap keeps each line whole. */}
-                  <td className="whitespace-nowrap px-3 py-2 text-xs">
-                    <span className="block text-gray-600 dark:text-gray-300">
-                      {item.nextFireAt ? formatDateTime(item.nextFireAt) : "—"}
-                    </span>
-                    <span className="block text-gray-400 dark:text-gray-500">
-                      {item.lastFiredAt ? formatDateTime(item.lastFiredAt) : "—"}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2">
-                    {item.queued && <Badge variant="solid">{S.schedule.queued}</Badge>}
-                  </td>
-                  {isOwner && (
-                    <td className="whitespace-nowrap px-3 py-2 text-right">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() => void toggle(item)}
-                      >
-                        {item.enabled ? S.schedule.disable : S.schedule.enable}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() => setForm({ editing: item })}
-                      >
-                        {S.common.edit}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() => setDeleting(item.name)}
-                      >
-                        {S.common.delete}
-                      </Button>
-                    </td>
+                  {item.name}
+                </TableCell>
+                <TableCell nowrap>
+                  {/* invalid reason is folded into the hover title. */}
+                  <span data-tooltip={item.invalidReason}>
+                    <Badge {...STATUS_BADGE[item.status]}>
+                      {S.schedule.statusNames[item.status] ?? item.status}
+                    </Badge>
+                  </span>
+                </TableCell>
+                <TableCell nowrap className="text-xs text-gray-500 dark:text-gray-400">
+                  {item.period !== undefined ? (
+                    <span className="font-mono">{item.period}</span>
+                  ) : (
+                    S.schedule.once
                   )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                </TableCell>
+                <TableCell
+                  className="max-w-36 truncate text-xs text-gray-500 dark:text-gray-400"
+                  data-tooltip={item.sessionId}
+                  data-tooltip-content="text"
+                >
+                  {item.sessionId !== undefined ? (
+                    <span className="font-mono">{item.sessionId}</span>
+                  ) : (
+                    S.schedule.newSession
+                  )}
+                </TableCell>
+                {/* Deliberate two-line stack — top: next fire time; bottom: last fired time
+                    (both show — when absent); nowrap keeps each line whole. */}
+                <TableCell nowrap className="text-xs">
+                  <span className="block text-gray-600 dark:text-gray-300">
+                    {item.nextFireAt ? formatDateTime(item.nextFireAt) : "—"}
+                  </span>
+                  <span className="block text-gray-400 dark:text-gray-500">
+                    {item.lastFiredAt ? formatDateTime(item.lastFiredAt) : "—"}
+                  </span>
+                </TableCell>
+                <TableCell nowrap>
+                  {item.queued && <Badge variant="solid">{S.schedule.queued}</Badge>}
+                </TableCell>
+                {isOwner && (
+                  <TableCell align="right" nowrap>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => void toggle(item)}
+                    >
+                      {item.enabled ? S.schedule.disable : S.schedule.enable}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => setForm({ editing: item })}
+                    >
+                      {S.common.edit}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => setDeleting(item.name)}
+                    >
+                      {S.common.delete}
+                    </Button>
+                  </TableCell>
+                )}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       {invalidFiles.length > 0 && (
         <div className="text-xs text-red-600 dark:text-red-400">
           <p className="font-medium">{S.schedule.invalidFiles}</p>
-          <ul className="mt-0.5 space-y-0.5 font-mono">
+          <ul className="mt-0.5 space-y-1 font-mono">
             {invalidFiles.map((f) => (
               <li key={f.name}>
                 {f.name}: {f.error}
@@ -320,6 +327,8 @@ export function SchedulesTab({
         busy={busy}
         onClose={() => setDeleting(null)}
         onConfirm={() => void confirmRemove()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting !== null ? S.schedule.deleteConfirm(deleting) : ""}

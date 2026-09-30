@@ -34,10 +34,15 @@ import {
   AgentAvatar,
   Button,
   CloseIcon,
+  Dropdown,
+  FolderSection,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
   SkeletonList,
+  toastError,
+  toastSuccess,
+  useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -48,17 +53,14 @@ import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
-import { useRowContextMenu } from "../../components/ui/context-menu";
 import { writeClipboard } from "../../lib/clipboard";
-import { Dropdown } from "../../components/ui/dropdown";
-import { FolderSection, Icon } from "../../components/ui/group-list";
+import { Icon } from "../../components/ui/group-list";
 import {
   DESK_ROW_ACTIONS,
   SessionRowHoverActions,
   SessionRowMenuRows,
 } from "../../components/ui/session-row-menu";
 import type { SessionRowAction, SessionRowState } from "../../components/ui/session-row-menu";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
 import { orgKey } from "./company-nav";
@@ -454,7 +456,7 @@ export function OrgSessionGroups({
             {S.company.sessionList.noEmployees}
           </p>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="space-y-1">
             {desks.map((d) => (
               <DeskRow
                 key={d.agentId}
@@ -479,13 +481,13 @@ export function OrgSessionGroups({
             <button
               type="button"
               onClick={() => dismissAllTempSessions(user?.userId ?? null, projectId, orgId)}
-              className="shrink-0 rounded px-1.5 py-1 text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+              className="shrink-0 rounded px-1.5 py-1 text-xs font-medium text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
             >
               {S.company.sessionList.closeAllTemporary}
             </button>
           }
         >
-          <ul className="space-y-0.5">
+          <ul className="space-y-1">
             {tempRows.map((row) => (
               <TempRow
                 key={row.sessionId}

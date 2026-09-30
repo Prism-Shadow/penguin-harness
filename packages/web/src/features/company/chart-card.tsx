@@ -36,15 +36,21 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { OrgEmployeeItem, OrgEmployeeState } from "@prismshadow/penguin-server/api";
-import { AgentAvatar, Dot, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import {
+  AgentAvatar,
+  Dot,
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  useRowContextMenu,
+} from "@prismshadow/penguin-ui";
 import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { useRowContextMenu } from "../../components/ui/context-menu";
 import { formatMoney, formatPercent } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { Dropdown } from "../../components/ui/dropdown";
 import { budgetTone } from "./finance-tree";
 import { INVALID_ICON } from "./shared";
 import { CHART_NODE_H, CHART_NODE_W, workspaceTail } from "./org-chart-tree";

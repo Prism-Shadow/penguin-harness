@@ -3,8 +3,8 @@
  * budget bar and ring, the budget field and the two marks a budget box wears (its unit, and
  * what a converted amount will be stored as), the ticket status and priority pills, the
  * blocked badge, the failed-refresh line, the two ways out of a summary — the title that
- * opens what it names, and the corner button a titleless card or row uses instead — the
- * labelled value and the bordered KPI tile, and principal naming.
+ * opens what it names, and the corner button a titleless card or row uses instead — and
+ * principal naming. The bordered KPI tile is the shared UI package's `StatTile`.
  * Every status colour here is a tone from lib/tone.ts, picked by meaning.
  */
 import { useId } from "react";
@@ -17,27 +17,26 @@ import type {
 import {
   AgentAvatar,
   Badge,
-  Button,
   FieldError,
   FieldHint,
   FieldLabel,
   GlyphIcon,
-  ICON_GAP,
   ICON_SIZE,
   Input,
+  Notice,
+  ProgressBar,
 } from "@prismshadow/penguin-ui";
 import type { BadgeStyle, ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
 import { toStoredUsd, unitLabel } from "./budget-input";
 import { budgetTone } from "./finance-tree";
+import type { BudgetTone } from "./finance-tree";
 import { parsePrincipal } from "./principals";
 import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
 import type { OrgStatusKind } from "./shell-org-status";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Circled exclamation (lucide circle-alert): the mark of an invalid chart entry or ticket file, and of the finance page's alert count. */
 export const INVALID_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01";
@@ -174,21 +173,17 @@ export function ErrorLine({
   className?: string;
 }) {
   return (
-    <NoticeStrip
+    <Notice
       tone="danger"
       role="alert"
-      className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs ${className}`}
+      className={className}
+      retry={{ label: S.common.retry, onClick: onRetry }}
     >
-      <span data-slot="body" className="min-w-0">
-        <span className="font-medium">{message}</span>
-        {detail !== undefined && detail !== message && (
-          <span className="ml-2 opacity-80">{detail}</span>
-        )}
-      </span>
-      <Button size="sm" data-slot="actions" onClick={onRetry}>
-        {S.common.retry}
-      </Button>
-    </NoticeStrip>
+      <span className="font-medium">{message}</span>
+      {detail !== undefined && detail !== message && (
+        <span className="ml-2 opacity-80">{detail}</span>
+      )}
+    </Notice>
   );
 }
 
@@ -269,7 +264,15 @@ export function SpendRing({
   );
 }
 
-/** Spend against a budget as a bar: attention from 80%, danger from 100%; a muted rule when there is no budget. */
+/** A budget reading as the progress bar's fill; no budget draws an empty neutral bar. */
+const BUDGET_FILL: Record<BudgetTone, ToneName> = {
+  muted: "neutral",
+  success: "success",
+  attention: "attention",
+  danger: "danger",
+};
+
+/** Spend against a budget as a bar: attention from 80%, danger from 100%; an empty bar when there is no budget. */
 export function BudgetBar({
   cost,
   budget,
@@ -298,17 +301,12 @@ export function BudgetBar({
           {label}
         </p>
       )}
-      <div
-        role="progressbar"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(width)}
+      <ProgressBar
+        value={Math.round(width)}
+        tone={BUDGET_FILL[tone]}
+        label={label}
         data-tooltip={label}
-        className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
-      >
-        <div className={`h-full rounded-full ${toneDot[tone]}`} style={{ width: `${width}%` }} />
-      </div>
+      />
     </div>
   );
 }
@@ -335,7 +333,7 @@ export function MoneyPerMonthUnit({ currency }: { currency: Currency }) {
 export function StoredUsdNote({ usd, currency }: { usd: number | null; currency: Currency }) {
   if (currency === "USD" || usd === null) return null;
   return (
-    <span className="mt-1 block text-[11px] text-gray-400 dark:text-gray-500">
+    <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">
       {S.company.budgetStoredAs(formatMoney(usd, "USD"))}
     </span>
   );
@@ -486,54 +484,5 @@ export function PrincipalChip({
       )}
       <span className="truncate">{label}</span>
     </span>
-  );
-}
-
-/**
- * One KPI as its own bordered card, the shape the cost center's summary uses: a small glyph
- * beside the label, the value bold beneath it, and a line of detail under that. A tone inks
- * the glyph and the value together, so the reading and its mark say the same thing. The card
- * is plain elements — a KPI is a reading, not a control, and a whole-card click would swallow
- * whatever sits inside it; anything extra rides beside the value as children (the finance
- * page hangs its gauge there).
- */
-export function StatTile({
-  icon,
-  label,
-  value,
-  tone,
-  detail,
-  children,
-}: {
-  /** A 24x24 line path, drawn through GlyphIcon like every other mark in the app. */
-  icon: string;
-  label: string;
-  value: ReactNode;
-  tone?: Tone;
-  /** One quiet line under the value: what the number is measured against. */
-  detail?: string;
-  children?: ReactNode;
-}) {
-  const ink = tone !== undefined ? toneInk[tone] : "";
-  return (
-    <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-      <p
-        className={`mb-1.5 flex items-center ${ICON_GAP.row} text-[11px] text-gray-500 dark:text-gray-400`}
-      >
-        <GlyphIcon d={icon} size={ICON_SIZE.inlineGlyph} className={ink} />
-        <span className="truncate">{label}</span>
-      </p>
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className={`truncate text-lg font-semibold tabular-nums ${ink}`}>{value}</p>
-          {detail !== undefined && (
-            <p className="mt-0.5 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
-              {detail}
-            </p>
-          )}
-        </div>
-        {children}
-      </div>
-    </div>
   );
 }

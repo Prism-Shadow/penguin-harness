@@ -35,14 +35,21 @@ import type {
 import {
   ActivityIcon,
   Button,
+  ConfirmModal,
   CopyButton,
   Dot,
+  Dropdown,
   EmptyState,
   GlyphIcon,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
+  Modal,
   Skeleton,
+  StatChip,
+  toastError,
+  toastInfo,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { switchDeskModel } from "../company/desk-model";
@@ -85,11 +92,7 @@ import { useAuth } from "../../state/auth";
 import { useTheme } from "../../state/theme";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Truncated } from "../../components/ui/truncated";
-import { Dropdown } from "../../components/ui/dropdown";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
@@ -165,19 +168,6 @@ import { exitedProcessIds, reportableProcessFailure } from "./process-list";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
-
-/** Iconized stat item: a symbol + a value, with the title giving the full meaning. */
-function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
-  return (
-    <span
-      data-tooltip={label}
-      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs text-gray-500 dark:text-gray-400`}
-    >
-      <GlyphIcon d={icon} />
-      {value}
-    </span>
-  );
-}
 
 /**
  * Session id row in the details card: the id is selectable mono text (styled like the other
@@ -2138,10 +2128,11 @@ export function ChatPage() {
                   infoOpen ? "bg-gray-100 dark:bg-gray-800" : ""
                 }`}
               >
-                {/* Wide: the chip row (icon + title per chip carries the full meaning). */}
-                <span className="hidden items-center gap-3 px-2 sm:flex">
+                {/* Wide: the chip row (icon + tooltip per chip carries the full meaning). The
+                    row sets the chips' face and ink, and keeps each on one line. */}
+                <span className="hidden items-center gap-3 whitespace-nowrap px-2 font-mono text-xs text-gray-500 sm:flex dark:text-gray-400">
                   <StatChip
-                    icon={STAT_ICONS.tokens}
+                    glyph={STAT_ICONS.tokens}
                     value={hs.tokensText}
                     label={`${S.chat.statTokens}（Token）`}
                   />
@@ -2151,13 +2142,13 @@ export function ChatPage() {
                       something's broken. */}
                   {hs.costText != null && (
                     <StatChip
-                      icon={STAT_ICONS.cost}
+                      glyph={STAT_ICONS.cost}
                       value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
                       label={`${S.common.cost}（${currency}）${hs.costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
                     />
                   )}
                   <StatChip
-                    icon={STAT_ICONS.elapsed}
+                    glyph={STAT_ICONS.elapsed}
                     value={hs.elapsedNode}
                     label={`${S.chat.statElapsed}${hs.elapsedSplit ?? ""}`}
                   />
@@ -2571,6 +2562,7 @@ export function ChatPage() {
         title={S.chat.thinkingSwitchTitle}
         tone="primary"
         confirmLabel={S.chat.thinkingSwitchCompactFirst}
+        cancelLabel={S.common.cancel}
         confirmDisabled={stream.taskState !== "idle"}
         onConfirm={compactThenThinkingSwitch}
         secondaryLabel={S.chat.thinkingSwitchConfirm}

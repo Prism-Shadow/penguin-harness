@@ -46,25 +46,36 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import ReactMarkdown from "react-markdown";
 import {
   Button,
   CloseIcon,
+  CodeSurface,
+  ConfirmModal,
   CopiedStatus,
   CopyCheckGlyph,
+  Dropdown,
   EmptyState,
   GlyphIcon,
   HiddenFileInput,
   ICONS,
   ICON_SIZE,
   Input,
+  Prose,
   SearchInput,
   SkeletonList,
   Spinner,
+  Tooltip,
+  ZoomableImage,
+  isContextMenuKey,
+  isLongPressPointer,
+  languageForExtension,
   noAutofill,
+  toastError,
+  toastInfo,
+  toastSuccess,
   useCopied,
+  useRowContextMenu,
 } from "@prismshadow/penguin-ui";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import type { SessionInfo, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -116,14 +127,7 @@ import {
   writeTreeWidth,
 } from "../../lib/workspace-tree";
 import type { ComposerReference, EditorState, Listings } from "../../lib/workspace-tree";
-import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { useRowContextMenu } from "../../components/ui/context-menu";
-import { Dropdown } from "../../components/ui/dropdown";
-import { ZoomableImage } from "../../components/ui/image-zoom";
 import { restoreSelection } from "../../components/ui/text-selection";
-import { Tooltip } from "../../components/ui/tooltip";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
@@ -131,8 +135,6 @@ import { tabKey } from "../dock/dock-state";
 import { DOCK_TRANSITION_MS } from "../dock/use-dock-mount";
 import { usePointerDrag } from "../dock/use-pointer-drag";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
-import { CodeSurface } from "./code-block";
-import { languageForExtension } from "./code-languages";
 import { WorkspaceFileEditor } from "./workspace-editor";
 import { WorkspaceFileMenuRows } from "./workspace-file-menu";
 import type { FileMenuTarget } from "./workspace-file-menu";
@@ -2139,65 +2141,62 @@ export function WorkspaceBrowser({
                 />
               )
             ) : p.kind === "md" && richView === "rendered" ? (
-              // Markdown's default rendered view: uses the same md-body layout as message bodies
-              // (ReactMarkdown outputs pure static HTML with no script execution surface, so no iframe sandbox is needed).
+              // Markdown's default rendered view: the reading box and pipeline message bodies use
+              // (static HTML with no script execution surface, so no iframe sandbox is needed),
+              // with the image and link adapters swapped for ones that know the Workspace.
               <>
-                <div className="md-body text-base leading-relaxed text-gray-800 dark:text-gray-100">
-                  <ReactMarkdown
-                    remarkPlugins={REMARK_PLUGINS}
-                    rehypePlugins={REHYPE_PLUGINS}
-                    components={{
-                      // Relative images are resolved against the md file's directory into the file API (otherwise resolving against the app's origin would always 404).
-                      // `v` is the read nonce, not a cache-buster for its own sake: a
-                      // Workspace image is rewritten under the same path, and without it a
-                      // re-read of the Markdown would keep painting the previous bytes from
-                      // the browser's image cache.
-                      img: ({ src, alt }) => (
-                        <img
-                          src={
-                            typeof src === "string" && !EXTERNAL_REF_RE.test(src)
-                              ? `${api.workspaceFileUrl(
-                                  sessionId,
-                                  resolveRelative(parentDir(p.path), src),
-                                )}&v=${p.nonce}`
-                              : src
-                          }
-                          alt={alt ?? ""}
-                          loading="lazy"
-                          className="max-w-full"
-                        />
-                      ),
-                      // External links open in a new tab; relative links point to a Workspace
-                      // file, clicking opens it in the tree and the preview; in-page anchors keep default behavior.
-                      a: ({ href, children }) => {
-                        if (typeof href !== "string" || href.startsWith("#")) {
-                          return <a href={href}>{children}</a>;
+                <Prose
+                  text={p.content ?? ""}
+                  className="text-base leading-relaxed text-gray-800 dark:text-gray-100"
+                  components={{
+                    // Relative images are resolved against the md file's directory into the file API (otherwise resolving against the app's origin would always 404).
+                    // `v` is the read nonce, not a cache-buster for its own sake: a
+                    // Workspace image is rewritten under the same path, and without it a
+                    // re-read of the Markdown would keep painting the previous bytes from
+                    // the browser's image cache.
+                    img: ({ src, alt }) => (
+                      <img
+                        src={
+                          typeof src === "string" && !EXTERNAL_REF_RE.test(src)
+                            ? `${api.workspaceFileUrl(
+                                sessionId,
+                                resolveRelative(parentDir(p.path), src),
+                              )}&v=${p.nonce}`
+                            : src
                         }
-                        if (EXTERNAL_REF_RE.test(href)) {
-                          return (
-                            <a href={href} target="_blank" rel="noreferrer">
-                              {children}
-                            </a>
-                          );
-                        }
-                        const target = resolveRelative(parentDir(p.path), href);
+                        alt={alt ?? ""}
+                        loading="lazy"
+                        className="max-w-full"
+                      />
+                    ),
+                    // External links open in a new tab; relative links point to a Workspace
+                    // file, clicking opens it in the tree and the preview; in-page anchors keep default behavior.
+                    a: ({ href, children }) => {
+                      if (typeof href !== "string" || href.startsWith("#")) {
+                        return <a href={href}>{children}</a>;
+                      }
+                      if (EXTERNAL_REF_RE.test(href)) {
                         return (
-                          <a
-                            href={api.workspaceFileUrl(sessionId, target)}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              openFile(target, { locate: true });
-                            }}
-                          >
+                          <a href={href} target="_blank" rel="noreferrer">
                             {children}
                           </a>
                         );
-                      },
-                    }}
-                  >
-                    {p.content ?? ""}
-                  </ReactMarkdown>
-                </div>
+                      }
+                      const target = resolveRelative(parentDir(p.path), href);
+                      return (
+                        <a
+                          href={api.workspaceFileUrl(sessionId, target)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            openFile(target, { locate: true });
+                          }}
+                        >
+                          {children}
+                        </a>
+                      );
+                    },
+                  }}
+                />
                 {p.truncated && (
                   <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
                 )}
@@ -2547,6 +2546,7 @@ export function WorkspaceBrowser({
         title={S.files.overwriteTitle}
         tone="primary"
         confirmLabel={S.files.upload}
+        cancelLabel={S.common.cancel}
         onClose={() => setPendingUpload(null)}
         onConfirm={() => {
           if (pendingUpload) void doUpload(pendingUpload.files, pendingUpload.dir);
@@ -2578,6 +2578,7 @@ export function WorkspaceBrowser({
         title={S.files.saveConfirmTitle}
         tone="primary"
         confirmLabel={S.common.save}
+        cancelLabel={S.common.cancel}
         busy={saving}
         onClose={() => setSaveConfirm(false)}
         onConfirm={() => void save()}
@@ -2593,6 +2594,7 @@ export function WorkspaceBrowser({
         open={renameTarget !== null}
         title={S.files.renameTitle}
         confirmLabel={S.files.renameConfirm}
+        cancelLabel={S.common.cancel}
         confirmDisabled={renameTarget?.version == null || renameDraft.trim() === ""}
         busy={fileActionBusy}
         tone="primary"
@@ -2614,6 +2616,7 @@ export function WorkspaceBrowser({
         open={removeTarget !== null}
         title={S.files.deleteTitle}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         confirmDisabled={removeTarget?.version == null}
         busy={fileActionBusy}
         onClose={() => setRemoveTarget(null)}
@@ -2631,6 +2634,7 @@ export function WorkspaceBrowser({
         title={S.files.conflictTitle}
         tone="primary"
         confirmLabel={S.files.overwriteAnyway}
+        cancelLabel={S.common.cancel}
         onClose={() => setConflict(null)}
         onConfirm={() => void save({ overwrite: true })}
       >
@@ -2644,6 +2648,7 @@ export function WorkspaceBrowser({
         open={discardPrompt !== null}
         title={S.files.discardTitle}
         confirmLabel={S.files.discard}
+        cancelLabel={S.common.cancel}
         onClose={() => {
           discardPrompt?.resolve(false);
           setDiscardPrompt(null);

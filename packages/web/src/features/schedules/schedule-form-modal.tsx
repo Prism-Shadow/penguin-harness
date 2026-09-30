@@ -26,18 +26,19 @@ import {
   FieldError,
   FieldHint,
   FieldLabel,
+  FormPicker,
   Input,
+  Modal,
   PickerList,
   Select,
   Textarea,
+  toastInfo,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { Modal } from "../../components/ui/modal";
-import { FormPicker } from "../../components/ui/form-picker";
-import { toastInfo, toastSuccess } from "../../components/ui/toast";
 import { ModelSelect } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";

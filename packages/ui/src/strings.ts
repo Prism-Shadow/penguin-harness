@@ -33,6 +33,26 @@ export interface UiStrings {
   moreInfo: string;
   /** The same name with the subject folded in ("More info: Vault"): InfoPopover, HelpFold. */
   moreInfoAbout: (subject: string) => string;
+  /** The toast stack's name as a live region and landmark (`Toaster`). */
+  notifications: string;
+  /** What pressing a toast does, read after its text: it dismisses it (`Toaster`). */
+  dismiss: string;
+  /** The name and tooltip of a code block's copy button (`CodeBlock`). */
+  copyCode: string;
+  /** A collapsed group header's name: pressing it expands the group (`GroupHeader`). */
+  expand: string;
+  /** An expanded group header's name: pressing it collapses the group (`GroupHeader`). */
+  collapse: string;
+  /** A "more" row's text and name when its caller counts nothing (`MoreRow`, `FolderSection`). */
+  more: string;
+  /** The row that folds a revealed list back to its first page (`FolderSection`). */
+  fewer: string;
+  /** A pager's step back, as its name and tooltip (`Pager`). */
+  previous: string;
+  /** A pager's step forward, as its name and tooltip (`Pager`). */
+  next: string;
+  /** What a pager's "2/5" readout says aloud: the page, then how many there are (`Pager`). */
+  pagePosition: (page: number, pageCount: number) => string;
 }
 
 /** The English fallbacks, used wherever no provider is mounted (a test, a stand-alone page). */
@@ -45,6 +65,16 @@ export const DEFAULT_UI_STRINGS: UiStrings = {
   clearSearch: "Clear search",
   moreInfo: "More info",
   moreInfoAbout: (subject) => `More info: ${subject}`,
+  notifications: "Notifications",
+  dismiss: "Dismiss",
+  copyCode: "Copy code",
+  expand: "Expand",
+  collapse: "Collapse",
+  more: "More",
+  fewer: "Show less",
+  previous: "Previous page",
+  next: "Next page",
+  pagePosition: (page, pageCount) => `Page ${page} of ${pageCount}`,
 };
 
 const UiStringsContext = createContext<UiStrings>(DEFAULT_UI_STRINGS);

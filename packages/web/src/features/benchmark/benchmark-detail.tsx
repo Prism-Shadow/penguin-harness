@@ -14,10 +14,18 @@ import type { BenchmarkCaseSummary, BenchmarkEvaluation } from "@prismshadow/pen
 import {
   AgentAvatar,
   Button,
+  Card,
   EmptyState,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  Modal,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
 } from "@prismshadow/penguin-ui";
 import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
@@ -26,7 +34,6 @@ import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../.
 import { toneInk } from "../../lib/tone";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { Modal } from "../../components/ui/modal";
 import { NEUTRAL_SERIES } from "../../lib/category-colors";
 import { makeRangeGeom, segmentPoints } from "../usage/chart-geom";
 import { ChartLine, ChartPoint, ChartSwatch, type ChartPaint } from "../../components/ui/chart";
@@ -156,7 +163,7 @@ function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
           {series.map((s, i) => (
             <span
               key={s.unlabeled ? "unlabeled" : s.key}
-              className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400"
+              className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
             >
               <ChartSwatch paint={scoreSeriesPaint(s, i)} shape="block" />
               <span className="font-mono">{labelOf(s)}</span>
@@ -168,8 +175,6 @@ function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
     </div>
   );
 }
-
-const CELL = "px-3 py-2";
 
 /** One evaluation record: a clickable row; the detail it used to unfold is a dialog of its own. */
 function EvaluationRow({
@@ -189,11 +194,8 @@ function EvaluationRow({
   currency: Currency;
 }) {
   return (
-    <tr
-      onClick={onOpen}
-      className="cursor-pointer border-b border-gray-100 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
-    >
-      <td className={CELL}>
+    <TableRow onClick={onOpen} className="cursor-pointer">
+      <TableCell>
         {/* The row is what a mouse clicks, and this is the same target for a keyboard: a table
             row cannot be a button, so the cell that names the record carries the real one. */}
         <button
@@ -207,12 +209,12 @@ function EvaluationRow({
           {formatDateTime(evaluation.time)}
         </button>
         {machineName !== null && (
-          <span className="ml-1.5 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+          <span className="ml-1.5 font-mono text-xs text-gray-400 dark:text-gray-500">
             {S.chat.machineTag(machineName)}
           </span>
         )}
-      </td>
-      <td className={`${CELL} text-xs text-gray-500 dark:text-gray-400`}>
+      </TableCell>
+      <TableCell className="text-xs text-gray-500 dark:text-gray-400">
         {evaluation.agentId ? (
           <span className="flex items-center gap-1.5">
             <AgentAvatar
@@ -225,30 +227,39 @@ function EvaluationRow({
         ) : (
           <span className="text-gray-400">—</span>
         )}
-      </td>
-      <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
+      </TableCell>
+      <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">
         {evaluation.version !== undefined ? `v${evaluation.version}` : "—"}
-      </td>
-      <td
-        className={`${CELL} max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400`}
+      </TableCell>
+      <TableCell
+        className="max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400"
         data-tooltip={evaluation.provider}
         data-tooltip-content="code"
       >
         {evaluation.modelId}
-      </td>
-      <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
+      </TableCell>
+      <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">
         {evaluation.thinkingLevel}
-      </td>
-      <td className={`${CELL} font-mono text-xs font-semibold tabular-nums`}>
+      </TableCell>
+      {/* Figures, but left-aligned under their headers like every other column here. */}
+      <TableCell align="left" numeric className="font-mono text-xs font-semibold">
         {formatScore(evaluation.score)}
-      </td>
-      <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
+      </TableCell>
+      <TableCell
+        align="left"
+        numeric
+        className="font-mono text-xs text-gray-500 dark:text-gray-400"
+      >
         {formatMoney(evaluation.cost, currency)}
-      </td>
-      <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
+      </TableCell>
+      <TableCell
+        align="left"
+        numeric
+        className="font-mono text-xs text-gray-500 dark:text-gray-400"
+      >
         {evaluation.durationMs !== undefined ? humanizeDuration(evaluation.durationMs) : "—"}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -294,7 +305,7 @@ function CasesSection({
   return (
     <div>
       <p className="mb-1 text-xs font-semibold text-gray-500">{S.benchmark.cases}</p>
-      <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <Card padding="none">
         {error && <p className={`px-3 py-2 text-xs ${toneInk.danger}`}>{error}</p>}
         {!cases && !error && <p className="px-3 py-2 text-xs text-gray-400">{S.common.loading}</p>}
         {cases?.map((item) => {
@@ -320,7 +331,7 @@ function CasesSection({
             </button>
           );
         })}
-      </div>
+      </Card>
     </div>
   );
 }
@@ -397,38 +408,34 @@ export function BenchmarkDetail({
 
           <div>
             <p className="mb-1 text-xs font-semibold text-gray-500">{S.benchmark.evaluations}</p>
-            <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-              <table className="w-full min-w-[820px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-                    <th className="px-3 py-2.5">{S.common.time}</th>
-                    <th className="px-3 py-2.5">{S.benchmark.agentColumn}</th>
-                    <th className="px-3 py-2.5">{S.benchmark.colVersion}</th>
-                    <th className="px-3 py-2.5">{S.benchmark.colModel}</th>
-                    <th className="px-3 py-2.5">{S.benchmark.colThinkingLevel}</th>
-                    <th className="px-3 py-2.5">{S.benchmark.colScore}</th>
-                    <th className="px-3 py-2.5">{S.common.cost}</th>
-                    <th className="px-3 py-2.5">{S.benchmark.colDuration}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Newest first on screen, while the index stays the scoreboard position the
-                      dialog is opened by. */}
-                  {evaluations
-                    .map((ev, index) => ({ ev, index }))
-                    .reverse()
-                    .map(({ ev, index }) => (
-                      <EvaluationRow
-                        key={index}
-                        evaluation={ev}
-                        machineName={bm.machineIds.length > 1 ? machineNameOf(ev.machineId) : null}
-                        onOpen={() => setOpenEvaluationIndex(index)}
-                        currency={currency}
-                      />
-                    ))}
-                </tbody>
-              </table>
-            </div>
+            <Table tableClassName="min-w-[820px]">
+              <TableHead>
+                <TableHeaderCell>{S.common.time}</TableHeaderCell>
+                <TableHeaderCell>{S.benchmark.agentColumn}</TableHeaderCell>
+                <TableHeaderCell>{S.benchmark.colVersion}</TableHeaderCell>
+                <TableHeaderCell>{S.benchmark.colModel}</TableHeaderCell>
+                <TableHeaderCell>{S.benchmark.colThinkingLevel}</TableHeaderCell>
+                <TableHeaderCell>{S.benchmark.colScore}</TableHeaderCell>
+                <TableHeaderCell>{S.common.cost}</TableHeaderCell>
+                <TableHeaderCell>{S.benchmark.colDuration}</TableHeaderCell>
+              </TableHead>
+              <TableBody>
+                {/* Newest first on screen, while the index stays the scoreboard position the
+                    dialog is opened by. */}
+                {evaluations
+                  .map((ev, index) => ({ ev, index }))
+                  .reverse()
+                  .map(({ ev, index }) => (
+                    <EvaluationRow
+                      key={index}
+                      evaluation={ev}
+                      machineName={bm.machineIds.length > 1 ? machineNameOf(ev.machineId) : null}
+                      onOpen={() => setOpenEvaluationIndex(index)}
+                      currency={currency}
+                    />
+                  ))}
+              </TableBody>
+            </Table>
           </div>
         </>
       )}
