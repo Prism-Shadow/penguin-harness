@@ -130,7 +130,7 @@ function TestedAgents({
   return (
     <div
       className="hidden shrink-0 items-center gap-1 sm:flex"
-      title={`${S.benchmark.testedAgents}: ${agentIds.map(nameOf).join(", ")}`}
+      data-tooltip={`${S.benchmark.testedAgents}: ${agentIds.map(nameOf).join(", ")}`}
     >
       {shown.map((agentId) => (
         <AgentAvatar
@@ -215,7 +215,7 @@ export function BenchmarkCard({
           {latest && (
             <span
               className={`inline-flex shrink-0 items-center ${ICON_GAP.tight}`}
-              title={S.benchmark.lastEvaluated(formatRelativeShort(latest.time, locale))}
+              data-tooltip={S.benchmark.lastEvaluated(formatRelativeShort(latest.time, locale))}
             >
               <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
               {formatRelativeShort(latest.time, locale)}
@@ -237,7 +237,7 @@ export function BenchmarkCard({
           <>
             <span
               className="block font-mono text-sm font-semibold tabular-nums"
-              title={S.benchmark.latestScoreLabel}
+              data-tooltip={S.benchmark.latestScoreLabel}
             >
               {formatScore(latest.score)}
             </span>
@@ -282,7 +282,7 @@ export function BenchmarkCard({
       {masked && (
         <div
           role="note"
-          title={failed ? failedHint : S.benchmark.buildingHint}
+          data-tooltip={failed ? failedHint : S.benchmark.buildingHint}
           className="absolute inset-0 flex cursor-not-allowed flex-col items-center justify-center gap-1 rounded-md bg-white/75 px-4 text-center backdrop-blur-[1px] dark:bg-gray-900/75"
         >
           {/* A failed creation is the one thing here the user has to act on, so its title takes
@@ -524,7 +524,11 @@ export function BenchmarkPage() {
               size={ICON_SIZE.rowLead}
               className="shrink-0 rounded"
             />
-            <span className="min-w-0 truncate" title={nameOf(filterAgentId)}>
+            <span
+              className="min-w-0 truncate"
+              data-tooltip={nameOf(filterAgentId)}
+              data-tooltip-content="text"
+            >
               {S.benchmark.filterByAgent(filterAgentId)}
             </span>
             <Button size="sm" variant="ghost" onClick={clearAgentFilter}>

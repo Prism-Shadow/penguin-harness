@@ -1,16 +1,18 @@
 /**
  * The site frame every page renders inside: the top bar, then the body — an optional left column
- * with the surface list, the content column, and an optional right column ("on this page").
+ * with the surface list, the content column, and an optional right column ("on this page") —
+ * and the tooltip layer the chrome's `data-tooltip` hints render through.
  *
  * At phone width the columns collapse: the left and right columns disappear, the content column
- * fills, and the menu button in the bar opens a drawer under it holding the page links, the view
- * controls and the surface list, closed again by a link, the button or Escape.
+ * fills, and the menu button in the bar opens a drawer under it holding the page links, every
+ * view control with its label and the surface list, closed again by a link, the button or Escape.
  */
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useGallery } from "../state";
 import { SurfaceNav } from "./sidenav";
-import { ModeSwitch, PageLinks, TopBar, ViewControls, ViewToggles } from "./topbar";
+import { ChromeTooltips } from "./tooltip";
+import { PageLinks, TopBar, ViewControls } from "./topbar";
 import type { SitePage } from "./topbar";
 
 export function Site({
@@ -18,7 +20,6 @@ export function Site({
   activeId = null,
   nav = false,
   toc,
-  wide = false,
   children,
 }: {
   page: SitePage;
@@ -28,8 +29,6 @@ export function Site({
   nav?: boolean;
   /** The right column's content. */
   toc?: ReactNode;
-  /** Let the content column grow past the reading width: frames need the room. */
-  wide?: boolean;
   children: ReactNode;
 }) {
   const { S } = useGallery();
@@ -55,17 +54,12 @@ export function Site({
           </nav>
           <div className="g-drawer-controls">
             <span className="g-nav-eyebrow">{S.site.settings}</span>
-            <ViewControls />
-            <ViewToggles />
-            <div className="g-control">
-              <span className="g-control-label">{S.rail.mode}</span>
-              <ModeSwitch />
-            </div>
+            <ViewControls all />
           </div>
           <SurfaceNav activeId={activeId} onNavigate={close} />
         </div>
       )}
-      <div className="g-body" data-wide={wide || undefined}>
+      <div className="g-body">
         {nav && (
           <aside className="g-sidenav">
             <SurfaceNav activeId={activeId} />
@@ -74,6 +68,7 @@ export function Site({
         <main className="g-main">{children}</main>
         {toc && <aside className="g-toc">{toc}</aside>}
       </div>
+      <ChromeTooltips />
     </div>
   );
 }

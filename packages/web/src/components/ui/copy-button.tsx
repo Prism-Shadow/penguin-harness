@@ -112,7 +112,7 @@ export function CopyButton({
     <>
       <button
         type="button"
-        title={copied ? S.common.copied : label}
+        data-tooltip={copied ? S.common.copied : label}
         aria-label={label}
         onClick={() => flash(typeof text === "function" ? text() : text)}
         className={className}

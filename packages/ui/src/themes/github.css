@@ -9,8 +9,9 @@
  * unification — Mona Sans + Noto, one border grey, Primer's tone hues — lands as W1a.
  *
  * Dark is no longer the app's white-on-pure-black inversion (user decision, 2026-09-29): the
- * canvas lifts to #121212, the body ink comes down to about 9:1 and the near-white is kept for
- * headings and emphasis, the way claude.dev and opencode.ai set their dark pages. The dark rule
+ * canvas lifts to #121212, the body ink sits at about 12:1 with the muted ink at 6:1 and the
+ * subtle at 4.7:1 (a first pass at 9:1 read too dim), and the near-white is kept for headings
+ * and emphasis, the way claude.dev and opencode.ai set their dark pages. The dark rule
  * re-points the whole gray bridge to that ramp, so the app's `dark:text-gray-*` classes calm
  * with the tokens.
  *
@@ -351,20 +352,21 @@
   :root[data-theme="github"].dark {
     /* ---- Gray bridge: one neutral ramp (no indigo tint) for a calm dark. The four dark steps
        lift off pure black — the canvas is 950 at #121212 — and the ink steps come down from
-       white: 50 is the near-white kept for headings, 100 the body ink at about 9:1 on the
-       canvas, 300 a secondary ink, 400 the muted ink at about 5:1, 500 the subtle ink for
-       placeholders and meta text. The app's message prose is `dark:text-gray-100` and its meta
-       text `dark:text-gray-400`, so re-pointing the whole ramp is what calms the app. ---- */
+       white: 50 is the near-white kept for headings, 100 the body ink at about 12:1 on the
+       canvas, 300 a secondary ink at about 8:1, 400 the muted ink at about 6:1, 500 the subtle
+       ink for placeholders and meta text at about 4.7:1 on the muted surface. The app's message
+       prose is `dark:text-gray-100` and its meta text `dark:text-gray-400`, so re-pointing the
+       whole ramp is what sets the app's dark. ---- */
     --color-gray-950: #121212;
     --color-gray-900: #1a1a1a;
     --color-gray-800: #262626;
     --color-gray-700: #333333;
-    --color-gray-600: #4a4a4a;
-    --color-gray-500: #767676;
-    --color-gray-400: #8c8c8c;
-    --color-gray-300: #9e9e9e;
-    --color-gray-200: #adadad;
-    --color-gray-100: #b8b8b8;
+    --color-gray-600: #5a5a5a;
+    --color-gray-500: #8a8a8a;
+    --color-gray-400: #a1a1a1;
+    --color-gray-300: #b0b0b0;
+    --color-gray-200: #c2c2c2;
+    --color-gray-100: #d6d6d6;
     --color-gray-50: #f0f0f0;
     /* Stays literal white in dark: the app's `dark:border-white/10`, `dark:bg-white/10`,
        `dark:hover:bg-white` and `ring-white` read it as light INK, and its few unpaired `bg-white`
@@ -380,7 +382,7 @@
     --ui-inset: #0e0e0e;
     --ui-overlay: var(--color-gray-900);
 
-    /* ---- Colour — text: body about 9:1, headings near-white, muted about 5:1 ---- */
+    /* ---- Colour — text: body about 12:1, headings near-white, muted about 6:1, subtle 4.7:1 ---- */
     --ui-fg: var(--color-gray-100);
     --ui-fg-emphasis: var(--color-gray-50);
     --ui-fg-muted: var(--color-gray-400);

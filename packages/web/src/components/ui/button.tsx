@@ -38,10 +38,23 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size;
 }
 
-export function Button({ variant = "secondary", size = "md", className, ...rest }: ButtonProps) {
+export function Button({
+  variant = "secondary",
+  size = "md",
+  className,
+  title,
+  ...rest
+}: ButtonProps) {
+  // `title` is the hover hint, shown in the shared tooltip (tooltip.tsx) rather than the
+  // browser's own. The native attribute also named a wordless button; the shared tooltip names
+  // nothing, so an icon button whose only label was its title keeps it as its accessible name.
+  const nameless =
+    size === "icon" && rest["aria-label"] === undefined && rest["aria-labelledby"] === undefined;
   return (
     <button
       type="button"
+      data-tooltip={title}
+      {...(nameless && title !== undefined ? { "aria-label": title } : {})}
       className={`${buttonBase} disabled:cursor-not-allowed disabled:opacity-60 ${variantClass[variant]} ${sizeClass[size]} ${className ?? ""}`}
       {...rest}
     />

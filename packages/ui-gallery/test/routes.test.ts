@@ -1,7 +1,7 @@
 /**
  * The site's addresses: a path names a route, a surface page is `/s/<surface>`, a module page is
  * `/c/<module>` with a board or a section in the hash, and every link built for another page
- * carries the view state but never one page's pinned compare.
+ * carries the view state.
  */
 import { describe, expect, it } from "vitest";
 import { MODULE_IDS } from "../../ui/src/module";
@@ -11,7 +11,6 @@ import {
   homeHref,
   moduleHref,
   modulePath,
-  pageState,
   parseRoute,
   routeHref,
   surfaceHref,
@@ -53,9 +52,9 @@ describe("parseRoute", () => {
 });
 
 describe("links between pages", () => {
-  const state = { ...DEFAULT_STATE, theme: "modern" as const, compare: "chat" as const };
+  const state = { ...DEFAULT_STATE, theme: "modern" as const };
 
-  it("build a surface page's address with the view state, dropping the pinned compare", () => {
+  it("build a surface page's address with the view state", () => {
     expect(surfaceHref("", state, "models")).toBe(`/s/models?${PREFS}`);
     expect(surfaceHref("/gallery", state, "chat-new")).toBe(`/gallery/s/chat-new?${PREFS}`);
   });
@@ -67,11 +66,6 @@ describe("links between pages", () => {
   it("build the home and the other routes the same way", () => {
     expect(homeHref("", state, "surfaces")).toBe(`/?${PREFS}#surfaces`);
     expect(routeHref("/base", state, "/fonts")).toBe(`/base/fonts?${PREFS}`);
-  });
-
-  it("carry a site-wide compare but drop a pinned one", () => {
-    expect(pageState(state)).toEqual({ ...state, compare: false });
-    expect(pageState({ ...state, compare: true }).compare).toBe(true);
   });
 
   it("read the anchor a hash names", () => {

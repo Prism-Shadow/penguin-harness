@@ -6,7 +6,7 @@
  */
 import { useState } from "react";
 import { HOME_SURFACE, SURFACE_GROUPS, surfaceById } from "../app/surfaces";
-import { ThemeFrames, useFrameSrc } from "../chrome/app-frame";
+import { AppFrame, useFrameSrc } from "../chrome/app-frame";
 import { ChromeIcon } from "../chrome/icons";
 import { Site } from "../chrome/site";
 import { BASE } from "../lib/location";
@@ -51,7 +51,7 @@ export function HomePage() {
             </a>
           </div>
           <div className="g-frame">
-            <ThemeFrames surface={surface} themes={[state.theme]} eager reloadKey={epoch} />
+            <AppFrame surface={surface} reloadKey={epoch} />
           </div>
         </section>
 

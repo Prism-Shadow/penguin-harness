@@ -33,6 +33,7 @@ import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { packToolLanes, toolSpanBounds } from "./lane-packing";
 import type { PackedLane } from "./lane-packing";
+import { namedHint } from "../../components/ui/tooltip";
 
 /**
  * Linked highlighting: `ts` is the anchor shared by both sides; `key` /
@@ -254,7 +255,11 @@ function Track({ children }: { children: ReactNode }) {
 function Lane({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center">
-      <span className={`${LABEL_STICKY} text-gray-400 dark:text-gray-500`} title={label}>
+      <span
+        className={`${LABEL_STICKY} text-gray-400 dark:text-gray-500`}
+        data-tooltip={label}
+        data-tooltip-content="text"
+      >
         <span className={LABEL_TEXT}>{label}</span>
       </span>
       <Track>{children}</Track>
@@ -552,7 +557,9 @@ export function TimelineChart({
                         onMouseEnter={() => enter(barKey, s.ts)}
                         onMouseLeave={leave}
                         onClick={() => onJump?.(s.ts)}
-                        title={`${segmentLabel(s.kind)}${s.name ? ` ${s.name}` : ""} · ${humanizeDuration(s.endMs - s.startMs)}`}
+                        {...namedHint(
+                          `${segmentLabel(s.kind)}${s.name ? ` ${s.name}` : ""} · ${humanizeDuration(s.endMs - s.startMs)}`,
+                        )}
                         className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${segmentColor(s.kind)} ${dimClass(active, legendMatch)}`}
                         style={placeExact(s.startMs, s.endMs, g.t0, g.total)}
                       />
@@ -565,7 +572,8 @@ export function TimelineChart({
                   <div key={`${rowIdx}-${row.name}`} className="flex items-center">
                     <span
                       className={`${LABEL_STICKY} text-gray-500 dark:text-gray-400`}
-                      title={row.name}
+                      data-tooltip={row.name}
+                      data-tooltip-content="text"
                     >
                       <span className={LABEL_TEXT}>{row.name}</span>
                     </span>
@@ -584,7 +592,9 @@ export function TimelineChart({
                                 onMouseEnter={() => enter(`w-${s.toolCallId}`, approvalTs)}
                                 onMouseLeave={leave}
                                 onClick={() => onJump?.(approvalTs)}
-                                title={`${s.name} · ${S.traces.legendApprovalWait}${s.decision ? ` (${s.decision})` : ""} · ${humanizeDuration(s.approvalMs - s.callMs)}`}
+                                {...namedHint(
+                                  `${s.name} · ${S.traces.legendApprovalWait}${s.decision ? ` (${s.decision})` : ""} · ${humanizeDuration(s.approvalMs - s.callMs)}`,
+                                )}
                                 className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${COLORS.approvalWait} ${dimClass(
                                   isActive(`w-${s.toolCallId}`),
                                   legendKey === null || legendKey === "approvalWait",
@@ -605,7 +615,9 @@ export function TimelineChart({
                                       onMouseEnter={() => enter(`p-${s.toolCallId}`, s.callTs)}
                                       onMouseLeave={leave}
                                       onClick={() => onJump?.(s.callTs)}
-                                      title={`${s.name} · ${S.traces.legendApprovalWait} · ${S.traces.inProgress}`}
+                                      {...namedHint(
+                                        `${s.name} · ${S.traces.legendApprovalWait} · ${S.traces.inProgress}`,
+                                      )}
                                       className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${COLORS.approvalWait} ${
                                         dim || "animate-pulse"
                                       }`}
@@ -625,11 +637,13 @@ export function TimelineChart({
                                       onMouseEnter={() => enter(`e-${s.toolCallId}`, execTs)}
                                       onMouseLeave={leave}
                                       onClick={() => onJump?.(execTs)}
-                                      title={`${s.name} · ${S.traces.legendToolExec} · ${
-                                        open
-                                          ? S.traces.inProgress
-                                          : humanizeDuration(endMs - execStart)
-                                      }${s.failed ? ` · ${s.status}` : ""}`}
+                                      {...namedHint(
+                                        `${s.name} · ${S.traces.legendToolExec} · ${
+                                          open
+                                            ? S.traces.inProgress
+                                            : humanizeDuration(endMs - execStart)
+                                        }${s.failed ? ` · ${s.status}` : ""}`,
+                                      )}
                                       className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${COLORS.exec} ${
                                         s.failed ? "ring-1 ring-red-500" : ""
                                       } ${running ? "animate-pulse opacity-70" : dim}`}
@@ -654,7 +668,8 @@ export function TimelineChart({
                     <div key={o.key} className="flex items-center">
                       <span
                         className={`${LABEL_STICKY} text-gray-500 dark:text-gray-400`}
-                        title={o.name}
+                        data-tooltip={o.name}
+                        data-tooltip-content="text"
                       >
                         <span className={LABEL_TEXT}>{o.name}</span>
                       </span>
@@ -663,7 +678,9 @@ export function TimelineChart({
                           onMouseEnter={() => enter(`o-${o.key}`, o.ts)}
                           onMouseLeave={leave}
                           onClick={() => onJump?.(o.ts)}
-                          title={`${o.name} · ${S.traces.legendOther} · ${humanizeDuration(o.endMs - o.startMs)}`}
+                          {...namedHint(
+                            `${o.name} · ${S.traces.legendOther} · ${humanizeDuration(o.endMs - o.startMs)}`,
+                          )}
                           className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${COLORS.other} ${
                             o.failed ? "ring-1 ring-red-500" : ""
                           } ${dim}`}
@@ -706,7 +723,7 @@ export function TimelineChart({
         <button
           type="button"
           aria-label={S.traces.zoomOut}
-          title={S.traces.zoomOut}
+          data-tooltip={S.traces.zoomOut}
           onClick={() => zoomStep(1 / 1.4)}
           className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-gray-200 text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
         >
@@ -715,7 +732,7 @@ export function TimelineChart({
         <div
           ref={trackRef}
           onDoubleClick={resetZoom}
-          title={S.traces.zoomReset}
+          data-tooltip={S.traces.zoomReset}
           className="relative h-3 min-w-0 flex-1 rounded bg-gray-100 dark:bg-gray-800"
         >
           <div
@@ -738,7 +755,7 @@ export function TimelineChart({
         <button
           type="button"
           aria-label={S.traces.zoomIn}
-          title={S.traces.zoomIn}
+          data-tooltip={S.traces.zoomIn}
           onClick={() => zoomStep(1.4)}
           className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-gray-200 text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
         >

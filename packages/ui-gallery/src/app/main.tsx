@@ -46,6 +46,18 @@ const params = parseFrameParams(window.location.search);
 getStore({ lang: params.lang, signedIn: !params.signedOut });
 installFetchShim();
 
+// Framed, a focus must not scroll the page around the frame: the chat composer focuses itself
+// on mount, and the browser scrolls every ancestor document to centre a newly focused element,
+// which dragged the gallery page down until the frame's top sat under the sticky bar. The frame
+// is scaled to fit, so nothing in it is ever out of view; the app's own scroll-on-focus is not
+// missed. Standalone (opened in its own tab) keeps the browser's behaviour.
+if (window.parent !== window) {
+  const focus = HTMLElement.prototype.focus;
+  HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
+    focus.call(this, { ...options, preventScroll: true });
+  };
+}
+
 const container = document.getElementById("root");
 if (!container) throw new Error("#root mount point not found");
 

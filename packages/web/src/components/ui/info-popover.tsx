@@ -62,7 +62,7 @@ export function InfoPopover({
         ref={triggerRef}
         type="button"
         aria-label={name}
-        title={name}
+        data-tooltip={name}
         aria-expanded={open}
         aria-controls={panelId}
         // While open the panel is also the trigger's description, so a screen reader reads the

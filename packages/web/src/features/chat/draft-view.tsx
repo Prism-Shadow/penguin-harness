@@ -97,6 +97,7 @@ import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 import { ICON_GAP } from "../../lib/icon-scale";
+import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -966,7 +967,7 @@ export function DraftView({
                         <li key={task.id}>
                           <button
                             type="button"
-                            title={`${copy.desc}\n${S.chat.exampleFillHint}`}
+                            data-tooltip={`${copy.desc}\n${S.chat.exampleFillHint}`}
                             disabled={!skillsLoaded}
                             onClick={() => fillExample(task)}
                             className={`flex w-full items-center gap-2 ${exampleRowClass}`}
@@ -1063,7 +1064,7 @@ function VersionBadge() {
     <button
       type="button"
       onClick={openUpdateModal}
-      title={note}
+      data-tooltip={note}
       aria-label={note}
       className={`${versionBadgeClass} hover:underline`}
     >
@@ -1094,7 +1095,7 @@ function AgentSelect({
       button={
         <button
           type="button"
-          title={S.chat.chooseAgent}
+          data-tooltip={S.chat.chooseAgent}
           aria-label={S.chat.chooseAgent}
           onClick={() => setOpen(!open)}
           className={pillClass}
@@ -1127,7 +1128,7 @@ function AgentSelect({
                 onSelect(a);
                 setOpen(false);
               }}
-              className={`flex w-full items-center ${ICON_GAP.menu} px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
+              className={`flex items-center ${ICON_GAP.menu} ${menuRowClass} ${menuRowTone(active)}`}
             >
               <AgentAvatar
                 id={a.agentId}
@@ -1136,24 +1137,14 @@ function AgentSelect({
                 className="shrink-0 rounded"
               />
               <span className="min-w-0 flex-1">
-                <span
-                  className={`block truncate text-xs ${
-                    active
-                      ? "font-medium text-gray-900 dark:text-gray-100"
-                      : "text-gray-700 dark:text-gray-300"
-                  }`}
-                >
-                  {agentDisplayName(a)}
-                </span>
+                <span className="block truncate text-xs">{agentDisplayName(a)}</span>
                 {a.description && (
                   <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
                     {a.description}
                   </span>
                 )}
               </span>
-              <span className="w-4 shrink-0 text-center text-xs text-gray-500 dark:text-gray-400">
-                {active ? "✓" : ""}
-              </span>
+              <ChoiceCheck on={active} />
             </button>
           );
         })}

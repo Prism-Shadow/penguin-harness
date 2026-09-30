@@ -49,7 +49,7 @@ export const DESLOP_RULES = {
   11: "one spinner",
   12: "spacing on the rhythm steps",
   13: "text sizes are rungs",
-  14: "uppercase only through the eyebrow, display and activity hooks",
+  14: "uppercase only through the eyebrow, display, activity and chart hooks",
   15: "numbers that align or update use tabular figures",
   16: "mono is for data, not labels",
   17: "one bordered surface per region",
@@ -1132,13 +1132,14 @@ const cssAnimationCheck =
 /**
  * Rule 14: `text-transform: uppercase` outside `.ui-eyebrow` / `.ui-display` rules — and the
  * `.ui-activity` label, the transcript's mono capitals (user decision, 2026-09-29): a step's
- * label is a group-label rung in Console, and the hook is the one door to it.
+ * label is a group-label rung in Console, and the hook is the one door to it — and, the same
+ * way, a `.ui-chart` axis label, Console's tracked mono capitals on a plot.
  */
 const cssUppercaseCheck: Check = (analysis) =>
   declarations(analysis).flatMap(({ rule, decl }) =>
     decl.name === "text-transform" &&
     decl.value === "uppercase" &&
-    !/\.ui-(?:eyebrow|display|activity)\b/.test(fullSelector(rule))
+    !/\.ui-(?:eyebrow|display|activity|chart)\b/.test(fullSelector(rule))
       ? [{ line: decl.line, found: `${rule.selector} { text-transform: uppercase }` }]
       : [],
   );
@@ -1159,11 +1160,13 @@ const cssHookMonoCheck: Check = (analysis) =>
  * window, which holds the floating sheet and the glass layers against it (user decision,
  * 2026-09-19), and the RUNNING state of `.ui-activity`, whose highlight sweeping across a label
  * is the signal that a step is in progress (user decision, 2026-09-29) — never the resting
- * states, so a finished transcript carries no wash. A gradient on any other hook is still the
- * tell. A gradient in app CSS that is not a hook (the context bar's hatch, which carries
- * meaning) is review.
+ * states, so a finished transcript carries no wash. A third, `.ui-chart`, may paint one as a
+ * MASK: a line's area fading towards the baseline, a bar's hatch — a gradient that carries the
+ * data's shape, not atmosphere (user decision, 2026-09-29). A gradient on any other hook, as a
+ * background or as a mask, is still the tell. A gradient in app CSS that is not a hook (the
+ * context bar's hatch, which carries meaning) is review.
  */
-const GRADIENT_RECIPES = /\.ui-shell\b|\.ui-activity\[data-state="running"\]/;
+const GRADIENT_RECIPES = /\.ui-shell\b|\.ui-activity\[data-state="running"\]|\.ui-chart\b/;
 
 const cssDecorationCheck: Check = (analysis) =>
   declarations(analysis).flatMap(({ rule, decl }) => {
@@ -1171,7 +1174,7 @@ const cssDecorationCheck: Check = (analysis) =>
     if (
       /\.ui-[a-z]/.test(selector) &&
       !GRADIENT_RECIPES.test(selector) &&
-      /^background(?:-image)?$/.test(decl.name) &&
+      /^(?:background(?:-image)?|(?:-webkit-)?mask-image)$/.test(decl.name) &&
       /gradient\(/.test(decl.value)
     ) {
       return [{ line: decl.line, found: `${rule.selector} { ${decl.name}: …gradient() }` }];

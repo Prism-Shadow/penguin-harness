@@ -31,7 +31,7 @@ export interface SwitchProps extends Omit<
   onChange: (checked: boolean) => void;
 }
 
-export function Switch({ checked, onChange, disabled, className, ...rest }: SwitchProps) {
+export function Switch({ checked, onChange, disabled, className, title, ...rest }: SwitchProps) {
   return (
     <button
       type="button"
@@ -48,6 +48,8 @@ export function Switch({ checked, onChange, disabled, className, ...rest }: Swit
         (checked ? "bg-accent" : "bg-gray-200 dark:bg-gray-700") +
         ` ${className ?? ""}`
       }
+      // A hover hint shows in the shared tooltip, never the browser's own `title`.
+      data-tooltip={title}
       {...rest}
     >
       <span

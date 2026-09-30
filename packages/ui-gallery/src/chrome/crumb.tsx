@@ -13,7 +13,8 @@ export function Breadcrumb({ text, className = "" }: { text: string; className?:
     <button
       type="button"
       className={`g-crumb ${className}`}
-      title={S.section.copyBreadcrumb}
+      aria-label={S.section.copyBreadcrumb}
+      data-tooltip={S.section.copyBreadcrumb}
       onClick={() => copy("crumb", text)}
     >
       <ChromeIcon name={copied ? "check" : "copy"} size={13} />

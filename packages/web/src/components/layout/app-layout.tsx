@@ -40,7 +40,7 @@ import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
-import { toneStrip } from "../../lib/tone";
+import { NoticeStrip } from "../ui/notice-strip";
 
 /**
  * "Last conversation" glyph, used only by the rail: lucide's history mark — a clock read
@@ -459,7 +459,7 @@ export function AppLayout() {
           <button
             type="button"
             aria-label={badges.note !== null ? `${drawerName} · ${badges.note}` : drawerName}
-            {...(badges.note !== null ? { title: badges.note } : {})}
+            {...(badges.note !== null ? { "data-tooltip": badges.note } : {})}
             onClick={() => setDrawerOpen(true)}
             className="relative flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
@@ -485,8 +485,9 @@ export function AppLayout() {
             Permanently dismissible via the X on the right (per-user ui_prefs); only rendered once
             hydrated prefs confirm it was never dismissed, so it does not flash-then-vanish on load. */}
         {passwordBannerRelevant && passwordBannerDismissed === false && (
-          <div
-            className={`relative flex shrink-0 items-center justify-center gap-3 border-b px-8 py-1.5 text-xs ${toneStrip.attention}`}
+          <NoticeStrip
+            tone="attention"
+            className="relative flex shrink-0 items-center justify-center gap-3 border-b px-8 py-1.5 text-xs"
           >
             <span>{S.account.initialPasswordBanner}</span>
             <button
@@ -505,13 +506,13 @@ export function AppLayout() {
             <button
               type="button"
               aria-label={S.common.close}
-              title={S.common.close}
+              data-tooltip={S.common.close}
               onClick={dismissPasswordBanner}
               className="absolute inset-y-0.5 right-1.5 flex items-center rounded-md px-1 text-amber-500 transition-colors duration-150 hover:text-amber-950 dark:text-amber-400/70 dark:hover:text-amber-100"
             >
               <CloseIcon size={12} />
             </button>
-          </div>
+          </NoticeStrip>
         )}
 
         <main className="min-h-0 min-w-0 flex-1 overflow-hidden">

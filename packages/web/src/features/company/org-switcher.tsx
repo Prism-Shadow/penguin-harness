@@ -30,8 +30,11 @@ import {
   useOrganizationCreated,
 } from "./org-dialogs";
 import { OrgStatusDot } from "./shared";
+import { menuRowClass, menuRowTone } from "../../components/ui/field";
 
-const menuItemClass = `flex w-full items-center ${ICON_GAP.menu} px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`;
+/** The switcher's rows: the shared menu row, a list of organizations and the actions under it. */
+const menuItemBase = `flex items-center ${ICON_GAP.menu} ${menuRowClass} text-sm`;
+const menuItemClass = `${menuItemBase} ${menuRowTone()}`;
 
 export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
@@ -88,7 +91,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           <button
             type="button"
             onClick={() => setOpen(!open)}
-            title={triggerLabel}
+            data-tooltip={triggerLabel}
             // The count beside the name renders aria-hidden — it is a bare `@3` — so the
             // accessible name has to carry the same fact in words.
             aria-label={triggerLabel}
@@ -146,13 +149,13 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                 <button
                   key={key}
                   type="button"
-                  title={S.company.inProject(projectName(o.projectId), o.name)}
+                  data-tooltip={S.company.inProject(projectName(o.projectId), o.name)}
                   aria-current={active ? "true" : undefined}
                   onClick={() => {
                     setOpen(false);
                     go(orgPagePath(o.projectId, o.orgId, "overview"));
                   }}
-                  className={`${menuItemClass} ${active ? "font-semibold" : ""}`}
+                  className={`${menuItemBase} ${menuRowTone(active)}`}
                 >
                   <OrgStatusDot org={o} />
                   <span className="min-w-0 flex-1 truncate">{o.name}</span>

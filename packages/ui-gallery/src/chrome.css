@@ -43,21 +43,24 @@
   --g-gutter: 24px;
 }
 
+/* Dark: a calm neutral, the landing site's and the app's Primer dark — a near-neutral canvas
+   lifted off black, surfaces a step lighter, ink at 15:1 on the canvas, the muted ink at 7:1 and
+   the subtle one above 4.5:1 on every chrome surface, one brand blue. */
 :root.dark {
-  --g-page: #0d1117;
-  --g-surface: #0d1117;
-  --g-inset: #161b22;
-  --g-hover: #1c2129;
-  --g-ink: #e6edf3;
-  --g-ink-2: #9aa4b2;
-  --g-ink-3: #6e7681;
-  --g-line: #232a33;
-  --g-line-strong: #30363d;
-  --g-accent: #6ea8fe;
-  --g-accent-soft: rgb(110 168 254 / 0.12);
-  --g-bad: #f87171;
+  --g-page: #141414;
+  --g-surface: #1c1c1c;
+  --g-inset: #1f1f1f;
+  --g-hover: #262626;
+  --g-ink: #ececec;
+  --g-ink-2: #ababab;
+  --g-ink-3: #8f8f8f;
+  --g-line: #2a2a2a;
+  --g-line-strong: #383838;
+  --g-accent: #669df6;
+  --g-accent-soft: rgb(102 157 246 / 0.14);
+  --g-bad: #f28b82;
   --g-raise: 0 0 0 1px rgb(255 255 255 / 0.08);
-  --g-float: 0 12px 32px rgb(0 0 0 / 0.5);
+  --g-float: 0 12px 32px rgb(0 0 0 / 0.55);
 }
 
 /* ---- Base for chrome subtrees ------------------------------------------------------------ */
@@ -109,17 +112,17 @@
   background: var(--g-page);
 }
 
-/* The top bar: brand, page links, the controls. Wraps to a second row before it overflows. */
+/* The top bar, one row: brand and page links left, the controls right; never wraps — what does
+   not fit the row lives in the popover, and at phone width in the drawer. */
 .g-topbar {
   position: sticky;
   top: 0;
   z-index: 30;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 20px;
-  min-height: var(--g-bar);
-  padding: 8px var(--g-gutter);
+  gap: 20px;
+  height: var(--g-bar);
+  padding: 0 var(--g-gutter);
   border-bottom: 1px solid var(--g-line);
   background: var(--g-page);
 }
@@ -165,11 +168,12 @@
 .g-bar-controls {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 10px;
+  flex-shrink: 0;
+  gap: 10px;
   margin-left: auto;
 }
-.g-menu {
+/* The menu button is the phone bar's; it outranks the icon button's display below. */
+.g-topbar .g-menu {
   display: none;
 }
 
@@ -190,29 +194,16 @@
 .g-site[data-nav][data-toc] .g-body {
   grid-template-columns: var(--g-nav) minmax(0, var(--g-column)) var(--g-toc);
 }
-/* Compare frames need the room: the content column grows past the reading width. */
-.g-site[data-nav] .g-body[data-wide] {
-  grid-template-columns: var(--g-nav) minmax(0, 1fr);
-  max-width: 1600px;
-}
-.g-site[data-nav][data-toc] .g-body[data-wide] {
-  grid-template-columns: var(--g-nav) minmax(0, 1fr) var(--g-toc);
-}
 .g-main {
   min-width: 0;
 }
 
 /* ---- Controls ----------------------------------------------------------------------------- */
 
+/* The labelled rows of the popover and the drawer: the label left, the control right. */
 .g-controls {
   display: grid;
-  gap: 10px;
-}
-.g-controls[data-compact] {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 .g-control {
   display: flex;
@@ -221,8 +212,9 @@
   gap: 12px;
   min-width: 0;
 }
-.g-controls[data-compact] .g-control-label {
-  display: none;
+.g-controls-foot {
+  padding-top: 12px;
+  border-top: 1px solid var(--g-line);
 }
 .g-control-label {
   color: var(--g-ink-2);
@@ -290,34 +282,6 @@
   color: var(--g-ink);
   box-shadow: var(--g-raise);
 }
-.g-toggles {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 2px;
-}
-.g-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--g-ink-2);
-  font-size: 13px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.g-toggle:hover {
-  color: var(--g-ink);
-  background: var(--g-hover);
-}
-.g-toggle[aria-pressed="true"] {
-  color: var(--g-accent);
-  background: var(--g-accent-soft);
-}
-
 /* The accent row: each swatch painted in the colour it applies; the pressed one ringed. */
 .g-swatches {
   display: inline-flex;
@@ -344,61 +308,130 @@
     0 0 0 3.5px var(--g-ink);
 }
 
-/* A native select on the chrome's look: the font pairings. */
+/* The drawn select (chrome/select.tsx): a trigger showing the chosen option, a listbox panel
+   portaled to the body, the chosen row checked, the active row filled. */
 .g-select {
   display: inline-flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
+  width: 168px;
   height: 28px;
-  padding: 0 4px 0 8px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--g-line-strong);
   border-radius: 7px;
-  background: var(--g-inset);
-  color: var(--g-ink-2);
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-.g-select-label {
-  color: var(--g-ink-3);
-}
-.g-select select {
-  height: 24px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 5px;
   background: var(--g-page);
   color: var(--g-ink);
-  font: inherit;
-  font-weight: 500;
-  box-shadow: var(--g-raise);
+  font-size: 13px;
+  text-align: left;
   cursor: pointer;
 }
-.g-controls[data-compact] .g-select-label {
-  display: none;
+.g-select:hover {
+  background: var(--g-hover);
 }
-
-/* The fonts in use, under the bar's controls: the role labels muted, the families in ink. */
-.g-bar-readout {
-  flex-basis: 100%;
+.g-select[aria-expanded="true"] {
+  border-color: var(--g-accent);
+}
+.g-select-value {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.g-readout {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-  max-width: 100%;
-  font-size: 12.5px;
+.g-select > .g-icon {
   color: var(--g-ink-3);
 }
-.g-readout-label::after {
-  content: ":";
+.g-listbox {
+  position: fixed;
+  z-index: 60;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--g-line);
+  border-radius: 8px;
+  background: var(--g-page);
+  box-shadow: var(--g-float);
+}
+.g-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--g-ink-2);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.g-option[data-active],
+.g-option:hover {
+  color: var(--g-ink);
+  background: var(--g-hover);
+}
+.g-option[aria-selected="true"] {
+  color: var(--g-ink);
+  font-weight: 500;
+}
+/* The active row's fill is its focus mark; a ring on top of it would double it. */
+.g-chrome .g-option:focus-visible {
+  outline: none;
+}
+.g-option > .g-icon {
+  color: var(--g-ink-3);
+}
+
+/* The popover under the bar's settings button: the secondary controls, then the fonts in use. */
+.g-popover {
+  position: relative;
+}
+.g-popover-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 31;
+  display: grid;
+  gap: 12px;
+  width: 336px;
+  padding: 14px 16px;
+  border: 1px solid var(--g-line);
+  border-radius: 10px;
+  background: var(--g-page);
+  box-shadow: var(--g-float);
+}
+
+/* The tooltip (chrome/tooltip.tsx): a small panel under whatever carries `data-tooltip`. */
+.g-tip {
+  position: fixed;
+  z-index: 70;
+  width: max-content;
+  padding: 4px 8px;
+  border: 1px solid var(--g-line);
+  border-radius: 6px;
+  background: var(--g-page);
+  color: var(--g-ink);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-line;
+  box-shadow: var(--g-float);
+  pointer-events: none;
+}
+
+/* The fonts in use: the label muted, the families in ink, wrapping as they need. */
+.g-readout {
+  display: grid;
+  gap: 2px;
+  font-size: 12.5px;
+  color: var(--g-ink-3);
 }
 .g-readout-value {
   color: var(--g-ink-2);
   font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .g-readout-line {
   font-variant-numeric: tabular-nums;
@@ -579,7 +612,7 @@
   padding-left: 18px;
 }
 
-/* The toolbar over a preview: the kind, the primary control, open, compare, link, the crumb. */
+/* The toolbar over a preview: the primary control, open standalone, the link, the crumb. */
 .g-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -606,10 +639,6 @@
 .g-tool:hover {
   color: var(--g-ink);
   background: var(--g-hover);
-}
-.g-tool[aria-pressed="true"] {
-  color: var(--g-accent);
-  background: var(--g-accent-soft);
 }
 .g-tool-primary {
   color: var(--g-accent);
@@ -736,59 +765,7 @@
   color: var(--g-accent);
 }
 
-/* ---- The framed app: compare mode and the phone view ---------------------------------------- */
-
-/* The frames stack at full width: three apps at a third of the column are unreadable. */
-.g-framed {
-  display: grid;
-  gap: 1px;
-  background: var(--g-line);
-}
-/* Phone: 390 px frames, centred, side by side when comparing, on the chrome's inset. */
-.g-framed[data-phone] {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: flex-start;
-  gap: 20px;
-  padding: 28px 20px;
-  background: var(--g-inset);
-}
-.g-framed-item {
-  margin: 0;
-  min-width: 0;
-  background: var(--g-surface);
-}
-.g-framed[data-phone] .g-framed-item {
-  width: min(390px, 100%);
-  border: 1px solid var(--g-line-strong);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.g-framed-item figcaption {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-bottom: 1px solid var(--g-line);
-  background: var(--g-page);
-  font-size: 13px;
-}
-.g-framed-theme {
-  font-weight: 500;
-  flex-shrink: 0;
-}
-.g-crumb-compact {
-  margin-left: auto;
-  font-size: 11px;
-}
-.g-framed-item iframe {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  border: 0;
-  background: transparent;
-}
+/* ---- The framed app ------------------------------------------------------------------------ */
 
 /* The app's document: its own root, sized to the app's window and scaled by the fit below. */
 .g-app {
@@ -796,12 +773,20 @@
 }
 .g-app-frame {
   display: block;
+  max-width: 100%;
   border: 0;
   background: transparent;
 }
+/* Phone: a 390 px frame, centred, in a rounded hairline on the chrome's inset. */
 .g-app[data-phone] {
   display: flex;
   justify-content: center;
+  padding: 28px 20px;
+  background: var(--g-inset);
+}
+.g-app[data-phone] .g-app-frame {
+  border: 1px solid var(--g-line-strong);
+  border-radius: 12px;
 }
 
 /* ---- Fitted frames: the app laid out at its window width, scaled to the column -------------- */
@@ -1092,15 +1077,13 @@
     --g-gutter: 16px;
   }
   .g-topbar {
-    gap: 8px 12px;
-    flex-wrap: nowrap;
+    gap: 12px;
   }
   .g-links,
-  .g-bar-controls,
-  .g-bar-readout {
+  .g-bar-controls {
     display: none;
   }
-  .g-menu {
+  .g-topbar .g-menu {
     display: inline-grid;
     margin-left: auto;
   }
@@ -1124,16 +1107,17 @@
   }
   .g-drawer-controls {
     display: grid;
-    gap: 10px;
+    gap: 12px;
+  }
+  .g-drawer-controls .g-select {
+    width: min(168px, 55vw);
   }
   .g-drawer .g-nav-group {
     margin-top: 16px;
   }
   .g-body,
   .g-site[data-nav] .g-body,
-  .g-site[data-nav][data-toc] .g-body,
-  .g-site[data-nav] .g-body[data-wide],
-  .g-site[data-nav][data-toc] .g-body[data-wide] {
+  .g-site[data-nav][data-toc] .g-body {
     grid-template-columns: minmax(0, 1fr);
     max-width: none;
     padding-bottom: 80px;
@@ -1161,7 +1145,7 @@
     margin-left: 0;
     flex-basis: 100%;
   }
-  .g-framed[data-phone] {
+  .g-app[data-phone] {
     padding: 16px 12px;
   }
   .g-token-list,

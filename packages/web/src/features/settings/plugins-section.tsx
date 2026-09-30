@@ -33,10 +33,11 @@ import { PasswordInput } from "../../components/ui/password-input";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { SectionShell } from "./section-shell";
 import { useSessions } from "../../state/sessions";
 import { MachinePicker } from "../machines/machine-picker";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** The picker's value for this server; a machine id is never this short. */
 const THIS_SERVER = "*";
@@ -534,9 +535,9 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
               <span className="min-w-0 break-words">{localized(notice.text, notice.textZh)}</span>
             </p>
           ) : notice.tone === "attention" ? (
-            <p key={i} className={`rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
+            <NoticeStrip tone="attention" as="p" key={i} className="rounded-md px-3 py-2 text-xs">
               {localized(notice.text, notice.textZh)}
-            </p>
+            </NoticeStrip>
           ) : (
             <p key={i} className="text-xs text-gray-500 dark:text-gray-400">
               {localized(notice.text, notice.textZh)}
@@ -555,9 +556,9 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     <SectionShell>
       {picker}
       {machine !== null && loadError !== null && (
-        <p className={`rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
+        <NoticeStrip tone="attention" as="p" className="rounded-md px-3 py-2 text-xs">
           {S.plugins.machineUnreadable(nameOf(machine), loadError)}
-        </p>
+        </NoticeStrip>
       )}
       <FocusCard focus={focus} ready={entries.length > 0} />
       {cards.map((card) => {

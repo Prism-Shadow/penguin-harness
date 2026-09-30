@@ -27,8 +27,8 @@ import { Badge } from "../../components/ui/badge";
 import { Skeleton } from "../../components/ui/skeleton";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
-import { toneStrip } from "../../lib/tone";
 import { ModuleTreeView } from "./module-tree-view";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** The last path segment without its extension: `store/platform/1a2b….mjs` → `1a2b…`. */
 function shortSha(pointer: string | null): string {
@@ -99,7 +99,7 @@ function IfaceRow({ i }: { i: IfaceChange }) {
   const t = S.harnessHistory;
   return (
     <li className="rounded-md border border-gray-200 px-3 py-2 dark:border-gray-800">
-      <div className="flex items-center gap-2 font-mono text-sm" title={i.key}>
+      <div className="flex items-center gap-2 font-mono text-sm" data-tooltip={i.key}>
         <Badge tone={changeTone[i.change]}>{t.change[i.change]}</Badge>
         {i.key.slice(i.key.indexOf("#") + 1)}
         <span className="truncate text-xs text-gray-400 dark:text-gray-500">
@@ -262,9 +262,9 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="mx-auto max-w-6xl">
             {error !== null && (
-              <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>
+              <NoticeStrip tone="danger" className="mt-4 rounded-md border px-3 py-2 text-sm">
                 {error}
-              </div>
+              </NoticeStrip>
             )}
 
             {history === null ? (
@@ -418,11 +418,12 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
                         ) : diff.state === "loading" || diff.state === "idle" ? (
                           <Skeleton className="mt-2 h-9 w-full" />
                         ) : diff.state === "error" ? (
-                          <div
-                            className={`mt-2 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}
+                          <NoticeStrip
+                            tone="danger"
+                            className="mt-2 rounded-md border px-3 py-2 text-sm"
                           >
                             {diff.message}
-                          </div>
+                          </NoticeStrip>
                         ) : diff.diff.modules.length + diff.diff.ifaces.length === 0 &&
                           diff.diff.types.added +
                             diff.diff.types.removed +

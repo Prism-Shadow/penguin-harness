@@ -36,11 +36,13 @@ export function ScoreSparkline({
       viewBox={`0 0 ${W} ${H}`}
       role="img"
       aria-label={label}
-      className={`text-gray-500 dark:text-gray-400 ${className}`}
+      data-tooltip={label}
+      // ui-chart: a theme may redraw the line and the newest point its own way.
+      className={`ui-chart text-gray-500 dark:text-gray-400 ${className}`}
     >
-      <title>{label}</title>
       {points.length > 1 && (
         <polyline
+          data-part="series"
           points={points.map(([x, y]) => `${x},${y}`).join(" ")}
           fill="none"
           stroke="currentColor"
@@ -49,7 +51,9 @@ export function ScoreSparkline({
           strokeLinejoin="round"
         />
       )}
-      {last !== undefined && <circle cx={last[0]} cy={last[1]} r={2} fill="currentColor" />}
+      {last !== undefined && (
+        <circle data-part="point" cx={last[0]} cy={last[1]} r={2} fill="currentColor" />
+      )}
     </svg>
   );
 }

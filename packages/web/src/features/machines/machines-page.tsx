@@ -32,7 +32,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMessageTime } from "../../lib/format";
-import { toneDot, toneInk, toneStrip } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
@@ -57,6 +57,7 @@ import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machin
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 import { SshHostDialog } from "./ssh-host-dialog";
 import type { HostFormMode } from "./ssh-host-dialog";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;
@@ -483,14 +484,14 @@ export function MachinesPage() {
         )}
 
         {error !== null && (
-          <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>
+          <NoticeStrip tone="danger" className="mt-4 rounded-md border px-3 py-2 text-sm">
             {error}
-          </div>
+          </NoticeStrip>
         )}
         {noImage && error === null && (
-          <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${toneStrip.attention}`}>
+          <NoticeStrip tone="attention" className="mt-4 rounded-md border px-3 py-2 text-sm">
             {S.machines.noImage}
-          </div>
+          </NoticeStrip>
         )}
 
         {/* The selection bar: a fixed slot between the title and the cards, so the cards
@@ -619,7 +620,7 @@ function Verb({
       <button
         type="button"
         disabled={disabled}
-        title={title ?? label}
+        data-tooltip={title ?? label}
         aria-label={label}
         aria-expanded={ariaExpanded}
         onClick={click}
@@ -797,7 +798,8 @@ function MachineCard({
           ) : (
             <div
               className={`mt-0.5 truncate text-xs ${lineInk}`}
-              title={reasonText(reading) ?? undefined}
+              data-tooltip={reasonText(reading) ?? undefined}
+              data-tooltip-content="text"
             >
               {stateLine(reading, machine, locale)}
             </div>

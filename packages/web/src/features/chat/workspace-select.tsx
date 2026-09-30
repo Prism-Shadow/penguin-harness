@@ -29,6 +29,7 @@ import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { machineLabel, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
+import { menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
 export const pillClass =
@@ -314,7 +315,7 @@ export function WorkspaceSelect({
                 // Start over at that machine's home directory.
                 loadDirRef.current(entry.id);
               }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:hover:bg-gray-800 dark:disabled:hover:bg-transparent"
+              className={`flex items-center gap-2 ${menuRowClass} text-xs disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent ${menuRowTone(entry.id === machine)}`}
             >
               <span
                 className={`min-w-0 flex-1 truncate ${entry.selectable ? "" : "text-gray-400 dark:text-gray-500"}`}
@@ -396,7 +397,11 @@ export function WorkspaceSelect({
                 className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
               >
                 <GlyphIcon d={FOLDER_ICON} className="text-gray-400" />
-                <span className="min-w-0 flex-1 truncate" title={entry.name}>
+                <span
+                  className="min-w-0 flex-1 truncate"
+                  data-tooltip={entry.name}
+                  data-tooltip-content="text"
+                >
                   {entry.name}
                 </span>
               </button>
@@ -409,7 +414,11 @@ export function WorkspaceSelect({
           {/* Load failure (e.g. the cached starting directory was deleted): provide "retry" to fall back to the home directory, avoiding getting stuck in an error state. */}
           {error && (
             <li className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-red-500">
-              <span className="min-w-0 flex-1 truncate" title={error}>
+              <span
+                className="min-w-0 flex-1 truncate"
+                data-tooltip={error}
+                data-tooltip-content="text"
+              >
                 {error}
               </span>
               <button
@@ -494,7 +503,7 @@ export function WorkspaceSelect({
       button={
         <button
           type="button"
-          title={trimmed ? `${fieldName}：${trimmed}` : (menuHint ?? S.chat.workspaceHint)}
+          data-tooltip={trimmed ? `${fieldName}：${trimmed}` : (menuHint ?? S.chat.workspaceHint)}
           aria-label={fieldName}
           onClick={toggle}
           className={pillClass}

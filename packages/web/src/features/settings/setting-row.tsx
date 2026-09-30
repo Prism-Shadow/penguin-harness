@@ -69,7 +69,7 @@ export function AccentPicker({
         <button
           key={s.value}
           type="button"
-          title={S.settings.accentNames[s.value]}
+          data-tooltip={S.settings.accentNames[s.value]}
           aria-label={S.settings.accentNames[s.value]}
           aria-pressed={value === s.value}
           onClick={() => onChange(s.value)}

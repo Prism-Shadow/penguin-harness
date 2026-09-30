@@ -1,17 +1,15 @@
 /**
- * Chrome controls, styled by chrome.css only: a segmented control, a toggle, a select for the
- * longer option lists (the font pairings), and a swatch row for the accent — each swatch painted
- * in the colour it would apply, so the row previews the theme's palette before anything is
- * chosen.
+ * Chrome controls, styled by chrome.css only: a segmented control and a swatch row for the accent
+ * — each swatch painted in the colour it would apply, so the row previews the theme's palette
+ * before anything is chosen. The select for the longer option lists is chrome/select.tsx.
  */
 import type { CSSProperties, ReactNode } from "react";
-import { ChromeIcon } from "./icons";
-import type { ChromeIconName } from "./icons";
 
 export interface SegmentOption<T extends string> {
   value: T;
   label: ReactNode;
-  title?: string;
+  /** A hint shown on hover and focus, for a segment whose label is short or an icon. */
+  hint?: string;
 }
 
 export function Segmented<T extends string>({
@@ -32,68 +30,14 @@ export function Segmented<T extends string>({
           key={option.value}
           type="button"
           aria-pressed={option.value === value}
-          title={option.title}
+          aria-label={option.hint}
+          data-tooltip={option.hint}
           onClick={() => onChange(option.value)}
         >
           {option.label}
         </button>
       ))}
     </div>
-  );
-}
-
-/** A native select on the chrome's look: the font pairings, whose lists are too long for segments. */
-export function Select<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: readonly { value: T; label: string }[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <label className="g-select" title={label}>
-      <span className="g-select-label">{label}</span>
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value as T)}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-/** A pressed-or-not switch drawn as a quiet text button: compare. */
-export function Toggle({
-  icon,
-  label,
-  pressed,
-  onChange,
-}: {
-  icon: ChromeIconName;
-  label: string;
-  pressed: boolean;
-  onChange: (pressed: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="g-toggle"
-      aria-pressed={pressed}
-      onClick={() => onChange(!pressed)}
-    >
-      <ChromeIcon name={icon} size={14} />
-      <span>{label}</span>
-    </button>
   );
 }
 
@@ -125,7 +69,7 @@ export function Swatches({
           className="g-swatch"
           aria-pressed={option.value === value}
           aria-label={option.label}
-          title={option.label}
+          data-tooltip={option.label}
           data-empty={option.color === "" || undefined}
           style={{ "--g-swatch": option.color || "transparent" } as CSSProperties}
           onClick={() => onChange(option.value)}

@@ -21,7 +21,7 @@ export function IconsBoard() {
       >
         <div className="gf-icon-sizes">
           {WEB_ICON_SIZES.map(({ name, px }) => (
-            <span key={name} className="gf-icon-size" title={`ICON_SIZE.${name}`}>
+            <span key={name} className="gf-icon-size" data-tooltip={`ICON_SIZE.${name}`}>
               <Glyph d={sample} size={px} />
               <span className="gf-caption gf-mono">
                 {name} {px}
@@ -43,14 +43,17 @@ export function IconsBoard() {
                 <span
                   key={icon.d}
                   className="gf-icon"
-                  title={`${icon.names.join("\n")}\n— ${icon.sources.join(", ")}`}
+                  data-tooltip={`${icon.names.join("\n")}\n— ${icon.sources.join(", ")}`}
                 >
                   <Glyph d={icon.d} size={16} />
                   <span className="gf-caption gf-mono gf-icon-name">
                     {icon.names[0]?.replace(/_ICONS?$/, "").replace(/^[A-Z_]+ICONS\./, "")}
                   </span>
                   {icon.names.length > 1 && (
-                    <span className="gf-caption gf-icon-dupes" title={S.foundations.duplicateNames}>
+                    <span
+                      className="gf-caption gf-icon-dupes"
+                      data-tooltip={S.foundations.duplicateNames}
+                    >
                       ×{icon.names.length}
                     </span>
                   )}

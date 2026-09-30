@@ -339,6 +339,8 @@ export function RequestsChart({
               segs[i]!.map((seg) => (
                 <rect
                   key={`${buckets[i]}-${seg.index}`}
+                  data-part="bar"
+                  data-series={seg.index}
                   x={geom.x(i) - barW / 2}
                   y={seg.y}
                   width={barW}
@@ -357,6 +359,8 @@ export function RequestsChart({
             {drawn.map((e, si) => (
               <path
                 key={`rate-${e.label}:${si}`}
+                data-part="series"
+                data-series={si}
                 d={linePath(rateGeom, lines[si]!)}
                 fill="none"
                 stroke="currentColor"
@@ -558,6 +562,7 @@ export function TokenBarChart({
             segs[i]!.map((s) => (
               <rect
                 key={`${p.bucket}-${s.key}`}
+                data-part="bar"
                 x={geom.x(i) - barW / 2}
                 y={s.y}
                 width={barW}
@@ -575,6 +580,7 @@ export function TokenBarChart({
             opacity={curveDim ? 0.3 : 1}
           >
             <path
+              data-part="series"
               d={linePath(rateGeom, line)}
               fill="none"
               stroke="currentColor"
@@ -583,6 +589,7 @@ export function TokenBarChart({
             />
             {hover !== null && (
               <circle
+                data-part="point"
                 cx={rateGeom.x(hover.i)}
                 cy={rateGeom.y(line[hover.i] ?? 0)}
                 r={2.5}

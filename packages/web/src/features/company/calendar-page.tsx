@@ -33,7 +33,7 @@ import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { employeeColor } from "../../lib/category-colors";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
@@ -67,6 +67,7 @@ import {
 } from "./calendar-geom";
 import type { Cadence, CalendarView, EventInstance, GridDay } from "./calendar-geom";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 const PREV_ICON = "M15 18 9 12l6-6";
 const NEXT_ICON = "m9 18 6-6-6-6";
@@ -410,7 +411,7 @@ export function CalendarPage() {
       <button
         key={i.key}
         type="button"
-        title={title}
+        data-tooltip={title}
         onClick={() => {
           opts.onOpen?.();
           openEdit(i.event);
@@ -491,7 +492,7 @@ export function CalendarPage() {
       >
         <button
           type="button"
-          title={createLabel}
+          data-tooltip={createLabel}
           aria-label={createLabel}
           disabled={employees.length === 0}
           onClick={() => openCreate(createMs)}
@@ -567,7 +568,7 @@ export function CalendarPage() {
             <button
               key={h}
               type="button"
-              title={createLabel}
+              data-tooltip={createLabel}
               aria-label={createLabel}
               disabled={employees.length === 0}
               className={`${CREATE_SLOT_CLASS} inset-x-0 flex items-center justify-center border-t border-gray-100 dark:border-gray-800`}
@@ -762,7 +763,7 @@ export function CalendarPage() {
               <button
                 key={e.agentId}
                 type="button"
-                title={
+                data-tooltip={
                   active ? S.company.calendar.allEmployees : S.company.calendar.legendFilter(e.name)
                 }
                 aria-pressed={active}
@@ -785,7 +786,8 @@ export function CalendarPage() {
                 </span>
                 <span
                   className={`truncate ${struck ? "text-gray-400 dark:text-gray-500" : "text-gray-500 dark:text-gray-400"}`}
-                  title={cadences.join(" · ")}
+                  data-tooltip={cadences.join(" · ")}
+                  data-tooltip-content="text"
                 >
                   {cadences.length === 0
                     ? S.company.calendar.legendEmpty
@@ -798,19 +800,21 @@ export function CalendarPage() {
       )}
 
       {error !== null && (
-        <div
-          className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}
+        <NoticeStrip
+          tone="danger"
+          className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs"
         >
           <span>{S.company.calendar.loadFailed(error)}</span>
           <Button size="sm" onClick={() => void load()}>
             {S.common.retry}
           </Button>
-        </div>
+        </NoticeStrip>
       )}
 
       {events !== null && events.length === 0 && invalidFiles.length === 0 && !hintDismissed && (
-        <div
-          className={`mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
+        <NoticeStrip
+          tone="muted"
+          className="mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs"
         >
           <span className="min-w-0 flex-1">{S.company.calendar.emptyHint}</span>
           <Button
@@ -826,13 +830,13 @@ export function CalendarPage() {
           >
             <CloseIcon />
           </Button>
-        </div>
+        </NoticeStrip>
       )}
 
       {events === null && error === null ? <CalendarSkeleton view={view} /> : grid}
 
       {invalidFiles.length > 0 && (
-        <div className={`mt-4 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}>
+        <NoticeStrip tone="danger" className="mt-4 rounded-md border px-3 py-2 text-xs">
           <p className="mb-1 font-medium">{S.company.calendar.invalidFiles}</p>
           <ul className="space-y-0.5 font-mono">
             {invalidFiles.map((f) => (
@@ -841,7 +845,7 @@ export function CalendarPage() {
               </li>
             ))}
           </ul>
-        </div>
+        </NoticeStrip>
       )}
 
       {/* Create / edit dialog: the scheduled-task form minus its target, the employee as a select. */}
@@ -1080,7 +1084,7 @@ function DayOverflow({
       <button
         ref={triggerRef}
         type="button"
-        title={label}
+        data-tooltip={label}
         aria-label={label}
         aria-expanded={open}
         aria-controls={panelId}

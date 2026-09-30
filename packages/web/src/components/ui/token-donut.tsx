@@ -8,7 +8,7 @@
  * supply one). If all three buckets are 0, only the base ring is drawn; when
  * usage exceeds the limit, the ring is filled proportionally to usage and
  * colored by threshold (>80% amber / >95% red) to signal approaching/exceeding
- * the limit; exact values are given via a `<title>` hover.
+ * the limit; exact values show in the shared tooltip on hover.
  * Segments use the site-wide TOKEN_COLORS (works in both light/dark); the base
  * ring uses a currentColor gray.
  * The context usage under the chat page's input box is a **single-color,
@@ -76,13 +76,15 @@ export function TokenDonut({
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
-      className={`block shrink-0 ${ringTone}`}
+      // ui-chart: a theme may redraw the parts (the track as the grid, each arc a series).
+      className={`ui-chart block shrink-0 ${ringTone}`}
       role="img"
       aria-label={title}
+      data-tooltip={title}
     >
-      <title>{title}</title>
       {/* Base ring (empty ring / remainder) */}
       <circle
+        data-part="grid"
         cx={center}
         cy={center}
         r={r}
@@ -92,7 +94,7 @@ export function TokenDonut({
         strokeWidth={strokeWidth}
       />
       {/* Three arc segments: clockwise, starting at 12 o'clock (rotate -90), positioned via cumulative dashoffset per segment. */}
-      {segs.map((seg) => {
+      {segs.map((seg, index) => {
         if (seg.value <= 0) return null;
         const len = (seg.value / denom) * c;
         const offset = -(acc / denom) * c;
@@ -100,6 +102,8 @@ export function TokenDonut({
         return (
           <circle
             key={seg.key}
+            data-part="series"
+            data-series={index}
             cx={center}
             cy={center}
             r={r}

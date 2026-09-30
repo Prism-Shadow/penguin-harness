@@ -200,7 +200,7 @@ export function WorkGroup({
             </span>
             <span
               role="img"
-              title={S.chat.approvalWaiting}
+              data-tooltip={S.chat.approvalWaiting}
               aria-label={S.chat.approvalWaiting}
               className={`h-1.5 w-1.5 shrink-0 rounded-full sm:hidden ${toneDot.attention}`}
             />

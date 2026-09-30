@@ -230,7 +230,8 @@ function EvaluationRow({
       </td>
       <td
         className={`${CELL} max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400`}
-        title={evaluation.provider}
+        data-tooltip={evaluation.provider}
+        data-tooltip-content="code"
       >
         {evaluation.modelId}
       </td>

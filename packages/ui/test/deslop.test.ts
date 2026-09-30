@@ -458,8 +458,10 @@ describe("the rule checks, on known shapes", () => {
       found(
         "t.css",
         ".a .ui-eyebrow { text-transform: uppercase; }\n.b { text-transform: uppercase; }\n" +
-          // The transcript's mono capitals: a step's label is a group-label rung in Console.
-          '.ui-activity [data-slot="label"] { text-transform: uppercase; }',
+          // The transcript's mono capitals: a step's label is a group-label rung in Console;
+          // a plot's axis labels are the same rung.
+          '.ui-activity [data-slot="label"] { text-transform: uppercase; }\n' +
+          '.ui-chart [data-part="label"] { text-transform: uppercase; }',
       ),
     ).toEqual(["14:.b { text-transform: uppercase }"]);
   });
@@ -520,6 +522,16 @@ describe("the rule checks, on known shapes", () => {
           ':root .ui-activity[data-state="done"] { background: linear-gradient(red, blue); }',
       ),
     ).toEqual(['18::root .ui-activity[data-state="done"] { background: …gradient() }']);
+    // A chart may paint a gradient as a mask (an area's fade, a bar's hatch); a mask gradient on
+    // any other hook is the tell like a background one.
+    expect(
+      found(
+        "t.css",
+        ':root .ui-chart [data-part="area"] { mask-image: linear-gradient(#000, transparent); }\n' +
+          ':root .ui-chart [data-part="bar"] { -webkit-mask-image: repeating-linear-gradient(red, blue); }\n' +
+          ":root .ui-frame { mask-image: linear-gradient(red, blue); }",
+      ),
+    ).toEqual(["18::root .ui-frame { mask-image: …gradient() }"]);
     expect(
       found(
         "t.css",

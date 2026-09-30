@@ -252,7 +252,7 @@ export function SubagentsView({
               {activeLabel}
             </span>
             <span
-              title={active.sessionId}
+              data-tooltip={active.sessionId}
               className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500"
             >
               {shortSessionId(active.sessionId)}
@@ -264,7 +264,7 @@ export function SubagentsView({
             {/* Jump out of the panel: the child conversation as a full Session. */}
             <button
               type="button"
-              title={S.subagentPanel.openAsSession}
+              data-tooltip={S.subagentPanel.openAsSession}
               aria-label={S.subagentPanel.openAsSession}
               data-testid="subagent-open-session"
               onClick={openAsSession}

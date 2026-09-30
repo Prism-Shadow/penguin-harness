@@ -118,7 +118,7 @@ describe("the beta tag on the work-mode switch", () => {
     expect(markup).toContain('aria-hidden="true"');
     expect(markup).toContain(zh.company.beta);
     // The tooltip is the one thing the tag still says on its own.
-    expect(markup).toContain(`title="${zh.company.betaTitle}"`);
+    expect(markup).toContain(`data-tooltip="${zh.company.betaTitle}"`);
   });
 
   it("costs an option without one nothing", () => {

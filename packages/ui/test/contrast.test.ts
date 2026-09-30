@@ -20,12 +20,15 @@
  *   (Frost's navigation column is transparent on the field) — 4.5:1. The field's two washes are
  *   gradients this suite cannot read; a theme keeps them faint enough that the muted ink still
  *   clears 4.5:1 where they are strongest (Frost's values were measured by hand at 4.56:1);
- * - the calm dark (2026-09-29): body text at 7:1 or better on the page surfaces, so a dark
- *   theme set down from white stays legible, and the emphasis ink at 4.5:1;
+ * - the calm dark (2026-09-29, raised the same day after the owner found the first pass too
+ *   dim): in dark, body text at 11:1 or better on the three page surfaces, the muted ink at
+ *   6:1 and the subtle ink at 4.5:1; light keeps 7:1 and 4.5:1; the emphasis ink at 4.5:1 in
+ *   both;
  * - the switch: its knob on the off track and, for the theme's accent and every preset, the
  *   `knob-on` on the accent — 3:1, so the knob never vanishes on a near-white dark accent.
  *
- * `fg-subtle` has no floor: it is placeholder and disabled ink, which WCAG exempts.
+ * `fg-subtle` has no floor in light — placeholder and disabled ink, which WCAG exempts, and
+ * Primer's is the app's — and holds 4.5:1 in dark, where timestamps and meta text read from it.
  *
  * A pair a theme cannot meet yet goes in EXCEPTIONS with the reason and the wave that fixes it; an
  * exception that has started passing fails the suite until it is removed.
@@ -57,7 +60,7 @@ import { SRC_DIR } from "./helpers/paths";
 interface Pair {
   readonly fg: TokenName;
   readonly bg: TokenName;
-  readonly min: 3 | 4.5 | 7;
+  readonly min: number;
 }
 
 interface ContrastException {
@@ -99,30 +102,38 @@ const ACCENT_PAIRS: readonly Pair[] = [
   { fg: "--ui-switch-knob-on", bg: "--ui-accent", min: 3 },
 ];
 
-const PAIRS: readonly Pair[] = [
+/**
+ * The ink floors on the three page surfaces, per mode. Light keeps the WCAG floors and exempts
+ * the subtle ink (placeholders and disabled text; Primer's is the app's). Dark is held higher
+ * on purpose: a first calm dark at 7 / 4.5 read too dim to the owner (2026-09-29), so body text
+ * holds 11:1, the muted ink 6:1 and the subtle ink — timestamps, placeholders, meta — 4.5:1.
+ */
+const INK_FLOORS: Readonly<Record<ThemeModeName, ReadonlyArray<readonly [TokenName, number]>>> = {
+  light: [
+    ["--ui-fg", 7],
+    ["--ui-fg-muted", 4.5],
+  ],
+  dark: [
+    ["--ui-fg", 11],
+    ["--ui-fg-muted", 6],
+    ["--ui-fg-subtle", 4.5],
+  ],
+};
+const INK_SURFACES = ["--ui-canvas", "--ui-surface", "--ui-surface-muted"] as const;
+
+const pairsFor = (mode: ThemeModeName): readonly Pair[] => [
   ...[...PAGE_SURFACES, "--ui-overlay" as const].map((bg) => ({
     fg: "--ui-fg" as const,
     bg,
-    min: 4.5 as const,
+    min: 4.5,
   })),
-  // Body text on the page surfaces holds 7:1 (the calm dark stays legible; light clears it
-  // anyway); the emphasis ink is text too.
-  ...(["--ui-canvas", "--ui-surface", "--ui-surface-muted"] as const).map((bg) => ({
-    fg: "--ui-fg" as const,
-    bg,
-    min: 7 as const,
-  })),
+  ...INK_FLOORS[mode].flatMap(([fg, min]) => INK_SURFACES.map((bg) => ({ fg, bg, min }))),
   ...(["--ui-canvas", "--ui-surface"] as const).map((bg) => ({
     fg: "--ui-fg-emphasis" as const,
     bg,
-    min: 4.5 as const,
+    min: 4.5,
   })),
   { fg: "--ui-switch-knob", bg: "--ui-switch-track", min: 3 },
-  ...(["--ui-canvas", "--ui-surface", "--ui-surface-muted"] as const).map((bg) => ({
-    fg: "--ui-fg-muted" as const,
-    bg,
-    min: 4.5 as const,
-  })),
   ...(["--ui-canvas", "--ui-surface"] as const).map((bg) => ({
     fg: "--ui-fg-link" as const,
     bg,
@@ -217,7 +228,7 @@ describe("theme contrast", () => {
 
       it(`${id} ${mode}: every listed pair clears its floor`, () => {
         const failures: string[] = [];
-        for (const pair of PAIRS) {
+        for (const pair of pairsFor(mode)) {
           const result = measure(pair, mode, resolve);
           if (typeof result === "string") failures.push(`${pair.fg} on ${pair.bg}: ${result}`);
           else if (result.ratio < pair.min && excepted(pair) === undefined) {
@@ -232,7 +243,7 @@ describe("theme contrast", () => {
 
       it(`${id} ${mode}: carries no exception that has started passing`, () => {
         const stale = EXCEPTIONS.filter((e) => e.theme === id && e.mode === mode).filter((e) => {
-          const pair = PAIRS.find((p) => p.fg === e.fg && p.bg === e.bg);
+          const pair = pairsFor(mode).find((p) => p.fg === e.fg && p.bg === e.bg);
           if (pair === undefined) return true;
           const result = measure(pair, mode, resolve);
           return typeof result !== "string" && result.ratio >= pair.min;

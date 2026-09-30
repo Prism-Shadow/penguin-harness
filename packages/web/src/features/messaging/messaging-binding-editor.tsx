@@ -705,7 +705,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <label
             className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
-            title={S.messaging.bindByEnableHint}
+            data-tooltip={S.messaging.bindByEnableHint}
           >
             <Switch
               checked={facts.enabled}
@@ -721,7 +721,8 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         </div>
         {facts.status.state === "error" && facts.status.lastError !== undefined && (
           <p
-            title={facts.status.lastError}
+            data-tooltip={facts.status.lastError}
+            data-tooltip-content="text"
             className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
           >
             {facts.status.lastError}
@@ -734,7 +735,8 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             left with the symptom and no trace of the cause. */}
         {facts.status.state !== "error" && facts.status.lastConnectionError !== undefined && (
           <p
-            title={facts.status.lastConnectionError.detail}
+            data-tooltip={facts.status.lastConnectionError.detail}
+            data-tooltip-content="text"
             className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
           >
             {S.messaging.lastConnectionError(
@@ -771,7 +773,8 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             live fault, and a title= is hover-only and unreachable on touch. */}
         {facts.status.lastDeliveryError !== undefined && (
           <p
-            title={facts.status.lastDeliveryError.detail}
+            data-tooltip={facts.status.lastDeliveryError.detail}
+            data-tooltip-content="text"
             className="line-clamp-2 text-xs break-words text-gray-500 dark:text-gray-400"
           >
             {facts.status.lastDeliveryError.stage === "inbound"

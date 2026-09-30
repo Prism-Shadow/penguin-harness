@@ -70,7 +70,11 @@ export function StepBanner({
           right edge. min-w-0 (not flex-1) lets a long detail truncate while a short one
           keeps the duration snug against it. */}
       {detail !== undefined && (
-        <span title={detail} className="min-w-0 truncate font-mono text-xs text-gray-400">
+        <span
+          data-tooltip={detail}
+          data-tooltip-content="code"
+          className="min-w-0 truncate font-mono text-xs text-gray-400"
+        >
           {detail}
         </span>
       )}

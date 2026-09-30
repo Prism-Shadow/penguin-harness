@@ -580,7 +580,7 @@ export function AgentsPage() {
                       {machineName !== null && (
                         <span
                           className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
-                          title={elsewhereTitle}
+                          data-tooltip={elsewhereTitle}
                         >
                           {S.chat.machineTag(machineName)}
                         </span>
@@ -619,7 +619,7 @@ export function AgentsPage() {
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
                       <span
                         className="inline-flex shrink-0 items-center gap-1 tabular-nums"
-                        title={S.agent.sessionCount(a.sessionCount)}
+                        data-tooltip={S.agent.sessionCount(a.sessionCount)}
                       >
                         <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
                         {a.sessionCount}
@@ -628,7 +628,7 @@ export function AgentsPage() {
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.agent.toolCount(a.toolCount)}
+                        data-tooltip={S.agent.toolCount(a.toolCount)}
                         aria-label={S.agent.toolCount(a.toolCount)}
                         onClick={() => openSettingsTab(a.agentId, "tools")}
                       >
@@ -639,7 +639,7 @@ export function AgentsPage() {
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.skills.skillCount(a.skillCount)}
+                        data-tooltip={S.skills.skillCount(a.skillCount)}
                         aria-label={S.skills.skillCount(a.skillCount)}
                         onClick={() => openSettingsTab(a.agentId, "skills")}
                       >
@@ -650,7 +650,7 @@ export function AgentsPage() {
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.hooks.hookCount(a.hookCount)}
+                        data-tooltip={S.hooks.hookCount(a.hookCount)}
                         aria-label={S.hooks.hookCount(a.hookCount)}
                         onClick={() => openSettingsTab(a.agentId, "hooks")}
                       >
@@ -661,7 +661,7 @@ export function AgentsPage() {
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.agent.memoryCount(a.memoryCount)}
+                        data-tooltip={S.agent.memoryCount(a.memoryCount)}
                         aria-label={S.agent.memoryCount(a.memoryCount)}
                         onClick={() => openSettingsTab(a.agentId, "memory")}
                       >
@@ -672,7 +672,7 @@ export function AgentsPage() {
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.agent.vaultKeyCount(a.vaultKeyCount)}
+                        data-tooltip={S.agent.vaultKeyCount(a.vaultKeyCount)}
                         aria-label={S.agent.vaultKeyCount(a.vaultKeyCount)}
                         onClick={() => openSettingsTab(a.agentId, "vault")}
                       >
@@ -683,7 +683,7 @@ export function AgentsPage() {
                         type="button"
                         className={STAT_LINK_CLASS}
                         disabled={elsewhere}
-                        title={S.agent.scheduleCount(a.scheduleCount)}
+                        data-tooltip={S.agent.scheduleCount(a.scheduleCount)}
                         aria-label={S.agent.scheduleCount(a.scheduleCount)}
                         onClick={() => openSettingsTab(a.agentId, "schedules")}
                       >
@@ -692,7 +692,7 @@ export function AgentsPage() {
                       </button>
                       <span
                         className="inline-flex shrink-0 items-center gap-1"
-                        title={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
+                        data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
                       >
                         <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
                         {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
@@ -749,7 +749,7 @@ export function AgentsPage() {
                     {builtin ? (
                       <span
                         role="img"
-                        title={S.agent.builtinUndeletable}
+                        data-tooltip={S.agent.builtinUndeletable}
                         aria-label={S.agent.builtinUndeletable}
                         className="inline-flex cursor-not-allowed items-center justify-center rounded-md border border-transparent p-1.5 text-gray-300 dark:text-gray-600"
                       >
@@ -860,7 +860,7 @@ export function AgentsPage() {
                 </span>
                 <button
                   type="button"
-                  title={S.agent.createSnapshotClear}
+                  data-tooltip={S.agent.createSnapshotClear}
                   aria-label={S.agent.createSnapshotClear}
                   disabled={busy}
                   onClick={() => setSnapshotFile(null)}

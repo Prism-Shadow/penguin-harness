@@ -128,11 +128,12 @@ import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
 import { modelWindowBelowCompactionLimit } from "../../lib/context";
-import { toneStrip } from "../../lib/tone";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
+import { NoticeStrip } from "../../components/ui/notice-strip";
+import { ChoiceCheck, menuPanelClass, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /**
  * Agent candidate panel for the `/agent` switch picker — the agent-side counterpart of
@@ -263,7 +264,7 @@ function ThinkingLevelSelect({
       button={
         <button
           type="button"
-          title={`${S.chat.thinkingLevel}：${label}`}
+          data-tooltip={`${S.chat.thinkingLevel}：${label}`}
           aria-label={S.chat.thinkingLevel}
           disabled={disabled || value === null}
           onClick={() => setOpen(!open)}
@@ -288,11 +289,7 @@ function ThinkingLevelSelect({
             onChange(level);
             setOpen(false);
           }}
-          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-            level === value
-              ? "font-medium text-gray-900 dark:text-gray-100"
-              : "text-gray-600 dark:text-gray-400"
-          }`}
+          className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone(level === value)}`}
         >
           {/* The one surface that annotates: a menu row is where the tier is CHOSEN, so it
               names the wire value the pick will send. The trigger above stays the plain
@@ -300,7 +297,7 @@ function ThinkingLevelSelect({
           <span className="min-w-0 flex-1 truncate">
             {S.chat.thinkingLevelMenuName(S.chat.thinkingLevelNames[level] ?? level, level)}
           </span>
-          <span className="w-3 shrink-0 text-center">{level === value ? "✓" : ""}</span>
+          <ChoiceCheck on={level === value} />
         </button>
       ))}
       {note && (
@@ -349,7 +346,7 @@ function SteerModeRow({
   const modeButton = (mode: SteerMode, label: string, hint: string) => (
     <button
       type="button"
-      title={hint}
+      data-tooltip={hint}
       aria-pressed={steerMode === mode}
       onClick={() => onChangeSteerMode(mode)}
       className={`h-5 rounded px-1.5 text-xs transition-colors duration-150 ${
@@ -415,7 +412,7 @@ function SkillSelect({
         <button
           type="button"
           aria-label={S.chat.skillsSelect}
-          title={S.chat.skillsSelect}
+          data-tooltip={S.chat.skillsSelect}
           disabled={disabled}
           // The panel is unmounted while closed, so its search box starts empty on every open.
           onClick={() => setOpen(!open)}
@@ -492,7 +489,7 @@ function PlusMenu({
         <button
           type="button"
           aria-label={S.chat.plusMenu}
-          title={S.chat.plusMenu}
+          data-tooltip={S.chat.plusMenu}
           onClick={() => setOpen(!open)}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
@@ -510,18 +507,14 @@ function PlusMenu({
             setOpen(false);
             item.onSelect();
           }}
-          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent dark:hover:bg-gray-800 dark:disabled:hover:bg-transparent ${
-            item.active
-              ? "font-medium text-gray-900 dark:text-gray-100"
-              : "text-gray-600 dark:text-gray-400"
-          }`}
+          className={`flex items-center gap-2 ${menuRowClass} text-xs disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent dark:disabled:hover:bg-transparent ${menuRowTone(item.active)}`}
         >
           <GlyphIcon d={item.icon} className="shrink-0 text-gray-400 dark:text-gray-500" />
           <span className="shrink-0">{item.label}</span>
           <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
             {item.desc}
           </span>
-          <span className="w-3 shrink-0 text-center">{item.active ? "✓" : ""}</span>
+          <ChoiceCheck on={item.active} />
         </button>
       ))}
       {footer && (
@@ -620,7 +613,7 @@ function QueuedMessageLine({
         <button
           type="button"
           aria-label={S.chat.recallQueued}
-          title={S.chat.recallQueuedTitle}
+          data-tooltip={S.chat.recallQueuedTitle}
           disabled={disabled}
           onClick={onRecall}
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
@@ -2056,7 +2049,7 @@ export function ChatInput({
       {slashOpen && (
         <div
           style={{ maxHeight: upwardMaxH }}
-          className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+          className={`ui-glass ${menuPanelClass} absolute bottom-full left-0 z-40 mb-1.5 w-80 max-w-[calc(100vw-2rem)] overscroll-contain`}
         >
           {slashMatches.map((c, i) => (
             <button
@@ -2072,7 +2065,8 @@ export function ChatInput({
               <span className="shrink-0 font-mono text-gray-800 dark:text-gray-200">{c.cmd}</span>
               {/* Overly long descriptions (skill descriptions) are truncated: full text goes into the title. */}
               <span
-                title={c.desc}
+                data-tooltip={c.desc}
+                data-tooltip-content="text"
                 className="min-w-0 flex-1 truncate text-xs text-gray-500 dark:text-gray-400"
               >
                 {c.desc}
@@ -2150,7 +2144,7 @@ export function ChatInput({
           {attachments.map((file, i) => (
             <span
               key={i}
-              title={file.name}
+              data-tooltip={file.name}
               className={`anim-pop flex max-w-56 items-center ${ICON_GAP.tight} rounded-md border border-gray-200 bg-gray-50 py-1 pl-2 pr-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200`}
             >
               <GlyphIcon
@@ -2182,8 +2176,9 @@ export function ChatInput({
           waiting on the user. Dismissible, because keeping the threshold high on purpose is a
           legitimate answer and a notice with no way down stops being read. */}
       {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
-        <div
-          className={`anim-fade mb-1 flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs ${toneStrip.attention}`}
+        <NoticeStrip
+          tone="attention"
+          className="anim-fade mb-1 flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs"
         >
           <p className="min-w-0">
             {S.chat.contextWindowUnderThreshold(
@@ -2207,7 +2202,7 @@ export function ChatInput({
               </Button>
             )}
           </div>
-        </div>
+        </NoticeStrip>
       )}
 
       {/* When the model doesn't support viewing images directly: images still upload as usual,
@@ -2302,7 +2297,10 @@ export function ChatInput({
                 fixed upward popover so it never covers the objective textarea below. */}
             {goalOn && (
               <span className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200">
-                <span className="flex shrink-0 items-center gap-1" title={S.chat.goalModeDesc}>
+                <span
+                  className="flex shrink-0 items-center gap-1"
+                  data-tooltip={S.chat.goalModeDesc}
+                >
                   <GlyphIcon d={GOAL_ICON} size={13} className="text-gray-500 dark:text-gray-400" />
                   <span>{S.chat.goalMode}</span>
                 </span>
@@ -2356,7 +2354,7 @@ export function ChatInput({
                         aria-invalid={goalBudgetDraftInvalid}
                         aria-describedby="goal-budget-hint"
                         {...noAutofill}
-                        title={
+                        data-tooltip={
                           goalBudgetDraftInvalid ? S.chat.goalBudgetInvalid : S.chat.goalBudgetHint
                         }
                         className={`min-w-0 flex-1 rounded-md border bg-white px-2 py-1 font-mono text-xs leading-5 placeholder:text-gray-400 focus:outline-none focus:ring-2 dark:bg-gray-950 dark:placeholder:text-gray-500 ${
@@ -2368,7 +2366,7 @@ export function ChatInput({
                       <button
                         type="button"
                         aria-label={S.chat.goalBudgetSave}
-                        title={S.chat.goalBudgetSave}
+                        data-tooltip={S.chat.goalBudgetSave}
                         disabled={goalBudgetDraftInvalid}
                         onClick={saveGoalBudget}
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-35 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
@@ -2403,7 +2401,7 @@ export function ChatInput({
                 Agent" without spelling the sentence out. */}
             {target !== null && (
               <span
-                title={S.chat.handoffTargetTitle(agentDisplayName(target))}
+                data-tooltip={S.chat.handoffTargetTitle(agentDisplayName(target))}
                 className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
               >
                 <AgentAvatar
@@ -2431,7 +2429,7 @@ export function ChatInput({
                 model display; sending forks the conversation onto it. */}
             {pendingModel !== null && (
               <span
-                title={S.chat.modelSwitchTargetTitle(modelLabel(pendingModel))}
+                data-tooltip={S.chat.modelSwitchTargetTitle(modelLabel(pendingModel))}
                 className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
               >
                 <ProviderLogo provider={pendingModel.provider} className="h-3.5 w-3.5 shrink-0" />
@@ -2455,7 +2453,7 @@ export function ChatInput({
                 <span
                   key={name}
                   className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-                  {...(meta ? { title: localizedShortText(locale, meta) } : {})}
+                  {...(meta ? { "data-tooltip": localizedShortText(locale, meta) } : {})}
                 >
                   <SkillIcon
                     icon={meta?.icon}
@@ -2636,7 +2634,8 @@ export function ChatInput({
             {/* Help text: shown only when the card is wide enough (@lg); it never competes for
                 space on phones, where the group scrolls instead. */}
             <span
-              title={S.chat.slashHint}
+              data-tooltip={S.chat.slashHint}
+              data-tooltip-content="text"
               className="hidden min-w-0 truncate text-gray-300 @lg:block dark:text-gray-600"
             >
               {S.chat.slashHint}
@@ -2693,7 +2692,7 @@ export function ChatInput({
               /* Subagent composer: the child runs whatever model it was spawned with, and no
                  /model command exists here — so the badge is pure display, nothing to click. */
               <span
-                title={modelRef?.modelId ?? ""}
+                data-tooltip={modelRef?.modelId ?? ""}
                 className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-md px-1 text-gray-400 dark:text-gray-500"
               >
                 <ProviderLogo
@@ -2709,7 +2708,7 @@ export function ChatInput({
                  (the /model command) instead of doing nothing. */
               <button
                 type="button"
-                title={modelRef?.modelId ?? ""}
+                data-tooltip={modelRef?.modelId ?? ""}
                 // Short accessible name (the toast carries the full hint): the long copy
                 // contains the literal "发送"/"Send", which would collide with the send
                 // button's accessible name for assistive tech and name-based test queries.
@@ -2733,7 +2732,7 @@ export function ChatInput({
               Merging the pair keeps the running-state row within a 320px viewport. */}
             <button
               type="button"
-              title={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
+              data-tooltip={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
               aria-label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
               disabled={stopAction ? false : running ? !canMidRunSend : !canSend}
               onClick={() => (stopAction ? void onStop() : void send())}

@@ -17,7 +17,7 @@ import type {
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
-import { toneDot, toneInk, toneStrip } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
@@ -32,6 +32,7 @@ import { budgetTone } from "./finance-tree";
 import { parsePrincipal } from "./principals";
 import { ORG_STATUS_TONE, orgStatusKind } from "./shell-org-status";
 import type { OrgStatusKind } from "./shell-org-status";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Circled exclamation (lucide circle-alert): the mark of an invalid chart entry or ticket file, and of the finance page's alert count. */
 export const INVALID_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.01";
@@ -65,7 +66,7 @@ export function JumpButton({
     <button
       type="button"
       onClick={onClick}
-      title={label}
+      data-tooltip={label}
       aria-label={label}
       className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${className}`}
     >
@@ -100,7 +101,7 @@ export function TitleButton({
     <button
       type="button"
       onClick={onClick}
-      {...(title !== undefined ? { title } : {})}
+      {...(title !== undefined ? { "data-tooltip": title } : {})}
       className={`min-w-0 text-left hover:underline focus-visible:underline ${className}`}
     >
       {children}
@@ -124,7 +125,10 @@ const ORG_STATUS_BADGE: Record<OrgStatusKind, BadgeTone> = {
 export function OrgStatusPill({ org }: { org: { status: OrgStatus; invalid?: string } }) {
   const kind = orgStatusKind(org);
   return (
-    <span {...(org.invalid !== undefined ? { title: org.invalid } : {})} className="inline-flex">
+    <span
+      {...(org.invalid !== undefined ? { "data-tooltip": org.invalid } : {})}
+      className="inline-flex"
+    >
       <Badge tone={ORG_STATUS_BADGE[kind]}>{orgStatusLabel(kind)}</Badge>
     </span>
   );
@@ -135,7 +139,7 @@ export function OrgStatusDot({ org }: { org: { status: OrgStatus; invalid?: stri
   const kind = orgStatusKind(org);
   const label = orgStatusLabel(kind);
   return (
-    <span title={label} className="inline-flex shrink-0 items-center">
+    <span data-tooltip={label} className="inline-flex shrink-0 items-center">
       <span className={`block h-1.5 w-1.5 rounded-full ${toneDot[ORG_STATUS_TONE[kind]]}`} />
       <span className="sr-only">{label}</span>
     </span>
@@ -160,20 +164,21 @@ export function ErrorLine({
   className?: string;
 }) {
   return (
-    <div
+    <NoticeStrip
+      tone="danger"
       role="alert"
-      className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger} ${className}`}
+      className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs ${className}`}
     >
-      <span className="min-w-0">
+      <span data-slot="body" className="min-w-0">
         <span className="font-medium">{message}</span>
         {detail !== undefined && detail !== message && (
           <span className="ml-2 opacity-80">{detail}</span>
         )}
       </span>
-      <Button size="sm" onClick={onRetry}>
+      <Button size="sm" data-slot="actions" onClick={onRetry}>
         {S.common.retry}
       </Button>
-    </div>
+    </NoticeStrip>
   );
 }
 
@@ -214,9 +219,9 @@ export function SpendRing({
       viewBox={`0 0 ${size} ${size}`}
       role="img"
       aria-label={label}
+      data-tooltip={label}
       className={`block shrink-0 ${ink}`}
     >
-      <title>{label}</title>
       <circle
         cx={center}
         cy={center}
@@ -289,7 +294,7 @@ export function BudgetBar({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(width)}
-        title={label}
+        data-tooltip={label}
         className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
       >
         <div className={`h-full rounded-full ${toneDot[tone]}`} style={{ width: `${width}%` }} />
@@ -413,7 +418,10 @@ export function PriorityBadge({ priority }: { priority: OrgTicketPriority }) {
 /** The blocked mark: an attention pill whose tooltip carries the reason and who it waits on. */
 export function BlockedBadge({ reason, by }: { reason: string; by?: string }) {
   return (
-    <span title={S.company.tickets.blockedTooltip(reason, by ?? "—")} className="inline-flex">
+    <span
+      data-tooltip={S.company.tickets.blockedTooltip(reason, by ?? "—")}
+      className="inline-flex"
+    >
       <Badge tone="amber">{S.company.tickets.blocked}</Badge>
     </span>
   );

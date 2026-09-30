@@ -1,16 +1,15 @@
 /**
  * `/s/<surface>` — one surface's page: the surface list on the left, the content column — the
- * group's eyebrow, the title, the description, the app framed on the surface's route (one frame
- * per theme when comparing), then where the surface is in the app and the fonts the frame is
- * set in — and "on this page" on the right.
+ * group's eyebrow, the title, the description, the app framed on the surface's route, then
+ * where the surface is in the app and the fonts the frame is set in — and "on this page" on the
+ * right.
  */
-import { THEME_IDS } from "@prismshadow/penguin-ui";
 import { useCallback, useState } from "react";
 import type { FontReadout } from "../app/fonts";
 import { formatFontReadout } from "../app/fonts";
 import { surfaceById } from "../app/surfaces";
 import type { SurfaceId } from "../app/surfaces";
-import { ThemeFrames, useFrameSrc } from "../chrome/app-frame";
+import { AppFrame, useFrameSrc } from "../chrome/app-frame";
 import { useCopy } from "../chrome/copy";
 import { Breadcrumb } from "../chrome/crumb";
 import { ChromeIcon } from "../chrome/icons";
@@ -18,14 +17,14 @@ import { Site } from "../chrome/site";
 import { OnThisPage } from "../chrome/toc";
 import { formatBreadcrumb } from "../lib/breadcrumb";
 import { absoluteUrl } from "../lib/location";
-import { pageState, surfacePath } from "../lib/routes";
-import { comparesSurface, formatGalleryQuery, withSurfaceCompare } from "../lib/url-state";
+import { surfacePath } from "../lib/routes";
+import { formatGalleryQuery } from "../lib/url-state";
 import { useScrollSpy } from "../lib/use-scroll-spy";
 import { useText } from "../preview";
 import { useGallery } from "../state";
 
 export function SurfacePage({ id }: { id: SurfaceId }) {
-  const { S, state, update } = useGallery();
+  const { S, state } = useGallery();
   const text = useText();
   const [copied, copy] = useCopy();
   const [epoch, setEpoch] = useState(0);
@@ -33,7 +32,6 @@ export function SurfacePage({ id }: { id: SurfaceId }) {
   const onFonts = useCallback((readout: FontReadout | null) => setFonts(readout), []);
   const surface = surfaceById(id)!;
   const { title, description, how } = text.surface(id);
-  const compare = comparesSurface(state, id);
   const standalone = useFrameSrc(surface, state.theme);
   const active = useScrollSpy(["app", "where", "fonts"]);
   const crumb = formatBreadcrumb({
@@ -42,10 +40,7 @@ export function SurfacePage({ id }: { id: SurfaceId }) {
     size: state.size,
     ...text.qualifiers(),
   });
-  const link = () => {
-    const pinned = compare ? withSurfaceCompare(pageState(state), id, true) : pageState(state);
-    return absoluteUrl(`${surfacePath(id)}${formatGalleryQuery(pinned)}`);
-  };
+  const link = () => absoluteUrl(`${surfacePath(id)}${formatGalleryQuery(state)}`);
   const toc = [
     { id: "app", title: S.home.app },
     { id: "where", title: S.frame.how },
@@ -53,13 +48,7 @@ export function SurfacePage({ id }: { id: SurfaceId }) {
   ];
 
   return (
-    <Site
-      page="surfaces"
-      activeId={id}
-      nav
-      wide={compare}
-      toc={<OnThisPage items={toc} activeId={active} />}
-    >
+    <Site page="surfaces" activeId={id} nav toc={<OnThisPage items={toc} activeId={active} />}>
       <article className="g-doc">
         <header className="g-doc-head">
           <p className="g-eyebrow">{text.surfaceGroup(surface.group)}</p>
@@ -83,18 +72,9 @@ export function SurfacePage({ id }: { id: SurfaceId }) {
             </a>
             <button
               type="button"
-              className="g-tool"
-              aria-pressed={compare}
-              onClick={() => update((s) => withSurfaceCompare(s, id, !compare))}
-            >
-              <ChromeIcon name="columns" size={14} />
-              <span>{compare ? S.frame.compareOn : S.frame.compare}</span>
-            </button>
-            <button
-              type="button"
               className="g-tool g-tool-icon"
-              title={S.section.copyLink}
               aria-label={S.section.copyLink}
+              data-tooltip={S.section.copyLink}
               onClick={() => copy("link", link())}
             >
               <ChromeIcon name={copied === "link" ? "check" : "link"} size={14} />
@@ -102,13 +82,7 @@ export function SurfacePage({ id }: { id: SurfaceId }) {
             <Breadcrumb text={crumb} />
           </div>
           <div className="g-frame" data-framed>
-            <ThemeFrames
-              surface={surface}
-              themes={compare ? THEME_IDS : [state.theme]}
-              eager
-              reloadKey={epoch}
-              onFonts={onFonts}
-            />
+            <AppFrame surface={surface} reloadKey={epoch} onFonts={onFonts} />
           </div>
         </section>
 

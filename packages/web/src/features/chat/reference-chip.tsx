@@ -60,7 +60,7 @@ export function ReferenceChip({
   const title = referenceTitle(reference);
   return (
     <span
-      title={title}
+      data-tooltip={title}
       className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
     >
       <GlyphIcon

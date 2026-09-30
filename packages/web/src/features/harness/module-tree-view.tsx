@@ -8,7 +8,7 @@ import * as api from "../../api/endpoints";
 import { Badge } from "../../components/ui/badge";
 import { Skeleton } from "../../components/ui/skeleton";
 import { S } from "../../lib/strings";
-import { toneStrip } from "../../lib/tone";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 interface Manifest {
   name: string;
@@ -142,7 +142,7 @@ function Detail({ name, table }: { name: string; table: Table }) {
         ) : (
           <ul className="flex flex-col gap-px font-mono">
             {req.map(([f, r]) => (
-              <li key={f} title={r.iface}>
+              <li key={f} data-tooltip={r.iface}>
                 {f}: {short(r.iface)}
                 {r.from ? <span className="text-gray-400"> ← {r.from}</span> : null}
               </li>
@@ -157,7 +157,7 @@ function Detail({ name, table }: { name: string; table: Table }) {
         ) : (
           <ul className="flex flex-col gap-px font-mono">
             {prov.map(([a, k]) => (
-              <li key={a} title={k}>
+              <li key={a} data-tooltip={k}>
                 {a}
                 {a !== short(k) ? <span className="text-gray-400">: {short(k)}</span> : null}
                 {kind === "group" && !exportsSet.has(a) ? (
@@ -215,7 +215,9 @@ export function ModuleTreeView({ hash }: { hash: string }) {
   }, [table]);
   if (error !== null)
     return (
-      <div className={`mt-2 rounded-md border px-3 py-2 text-sm ${toneStrip.danger}`}>{error}</div>
+      <NoticeStrip tone="danger" className="mt-2 rounded-md border px-3 py-2 text-sm">
+        {error}
+      </NoticeStrip>
     );
   if (table === null) return <Skeleton className="mt-2 h-9 w-full" />;
   return (

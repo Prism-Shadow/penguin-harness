@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-29
 - **Type:** process
-- **Scope:** `ui-gallery`, `ui`, `web`
+- **Scope:** `ui-gallery`, `ui`, `web`, `landing`
 - **PR:** [#892](https://github.com/Prism-Shadow/penguin-harness/pull/892)
 
 [中文版](2026-09-29-gallery-real-app.zh.md)
@@ -11,9 +11,10 @@ The gallery used to rebuild the app's screens from stand-in compositions, which 
 
 ## What the gallery shows
 
-- The home page is the real app, fully clickable. Each surface — conversations (idle, running, thinking, waiting for approval), a new conversation, agents and their settings, schedules, the plugin marketplace, models, machines, cost, evaluation, settings (including Appearance) and sign-in — has its own page, with a three-theme comparison.
+- The home page is the real app, fully clickable. Each surface — conversations (idle, running, thinking, waiting for approval), a new conversation, agents and their settings, schedules, the plugin marketplace, models, machines, cost, evaluation, settings (including Appearance) and sign-in — has its own page.
 - The demo data covers a signed-in admin, a Project with agents and Sessions, running tool calls and thinking, models from the built-in catalog, plugins, usage, benchmarks and schedules, in English and Chinese. Sending a message streams a scripted reply; actions that need a real server answer with a read-only notice. The terminal is not available.
-- The top bar's theme, mode, accent, text size, font pairing, language and viewport controls drive the framed app through the same preferences the app reads, and the top bar states the Latin, CJK and monospaced families in use and the text size in pixels.
+- The top bar keeps to one row: theme, language and mode sit in it, and accent, text size, the labelled Latin and CJK font pickers and the viewport sit in a popover. They drive the framed app through the same preferences the app reads, and the popover names the Latin, CJK and monospaced faces actually rendering and the text size in pixels.
+- Its pickers and hints follow the app's own select and tooltip, and its dark mode shares one neutral palette with the landing site.
 
 ## Details
 

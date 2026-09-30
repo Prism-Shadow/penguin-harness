@@ -182,7 +182,7 @@ function DeskRow({
           type="button"
           aria-current={active ? "true" : undefined}
           disabled={opening}
-          title={row.jobTitle !== "" ? `${row.name} · ${row.jobTitle}` : row.name}
+          data-tooltip={row.jobTitle !== "" ? `${row.name} · ${row.jobTitle}` : row.name}
           aria-label={label}
           // A press-and-hold that opened the menu must not also open the desk: touch screens
           // replay the held press as a click once the finger lifts.
@@ -203,7 +203,7 @@ function DeskRow({
               channel, the channel named in the tooltip and the screen-reader text. */}
           {messagingChannel !== undefined && (
             <span
-              title={S.messaging.enabledIndicator[messagingChannel]}
+              data-tooltip={S.messaging.enabledIndicator[messagingChannel]}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
               <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
@@ -352,7 +352,7 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
           <button
             key={d.agentId}
             type="button"
-            title={name}
+            data-tooltip={name}
             aria-label={name}
             disabled={opening === d.agentId}
             onClick={() => void openDesk(d.agentId, d.sessionId)}

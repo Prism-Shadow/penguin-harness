@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  comparesSurface,
   DEFAULT_STATE,
   formatGalleryQuery,
   parseGalleryState,
   PREF_KEYS,
   resolveMode,
-  withSurfaceCompare,
 } from "../src/lib/url-state";
 
 const PREFS = "theme=github&mode=light&size=m&latin=theme&cjk=theme&lang=en&accent=neutral";
@@ -14,7 +12,7 @@ const PREFS = "theme=github&mode=light&size=m&latin=theme&cjk=theme&lang=en&acce
 describe("gallery URL state", () => {
   it("reads every field and round-trips through the canonical query", () => {
     const search =
-      "?theme=geek&mode=dark&size=xl&latin=mona-sans&cjk=noto-sans-sc&lang=zh&accent=blue&compare=chat&view=phone";
+      "?theme=geek&mode=dark&size=xl&latin=mona-sans&cjk=noto-sans-sc&lang=zh&accent=blue&view=phone";
     const state = parseGalleryState(search);
     expect(state).toEqual({
       theme: "geek",
@@ -24,7 +22,6 @@ describe("gallery URL state", () => {
       cjk: "noto-sans-sc",
       lang: "zh",
       accent: "blue",
-      compare: "chat",
       view: "phone",
     });
     expect(parseGalleryState(formatGalleryQuery(state))).toEqual(state);
@@ -37,22 +34,15 @@ describe("gallery URL state", () => {
     expect(PREF_KEYS).toEqual(["theme", "mode", "size", "latin", "cjk", "lang", "accent"]);
   });
 
-  it("reads compare as every page, one surface's page, or off", () => {
-    expect(parseGalleryState("?compare=1").compare).toBe(true);
-    expect(parseGalleryState("?compare=models").compare).toBe("models");
-    expect(parseGalleryState("?compare=0").compare).toBe(false);
-    expect(parseGalleryState("?compare=nope").compare).toBe(false);
-    expect(parseGalleryState("").compare).toBe(false);
+  it("always writes the seven preferences and the view only when set", () => {
+    expect(formatGalleryQuery(DEFAULT_STATE)).toBe(`?${PREFS}`);
+    expect(formatGalleryQuery({ ...DEFAULT_STATE, view: "phone" })).toBe(`?${PREFS}&view=phone`);
   });
 
-  it("always writes the seven preferences and only the flags that are set", () => {
-    expect(formatGalleryQuery(DEFAULT_STATE)).toBe(`?${PREFS}`);
-    expect(formatGalleryQuery({ ...DEFAULT_STATE, compare: true, view: "phone" })).toBe(
-      `?${PREFS}&compare=1&view=phone`,
-    );
-    expect(formatGalleryQuery({ ...DEFAULT_STATE, compare: "usage" })).toBe(
-      `?${PREFS}&compare=usage`,
-    );
+  it("ignores the retired compare param: a link quoted with it opens on one frame", () => {
+    expect(parseGalleryState("?compare=1")).toEqual(DEFAULT_STATE);
+    expect(parseGalleryState("?compare=chat")).toEqual(DEFAULT_STATE);
+    expect(formatGalleryQuery(parseGalleryState("?compare=1"))).not.toContain("compare");
   });
 
   it("keeps route params right after the preferences, in the order given", () => {
@@ -94,21 +84,5 @@ describe("gallery URL state", () => {
     expect(resolveMode("system", true)).toBe("dark");
     expect(resolveMode("system", false)).toBe("light");
     expect(resolveMode("light", true)).toBe("light");
-  });
-
-  it("compares a surface's page when every page does or when it is the one pinned", () => {
-    expect(comparesSurface({ ...DEFAULT_STATE, compare: true }, "chat")).toBe(true);
-    expect(comparesSurface({ ...DEFAULT_STATE, compare: "chat" }, "chat")).toBe(true);
-    expect(comparesSurface({ ...DEFAULT_STATE, compare: "chat" }, "models")).toBe(false);
-    expect(comparesSurface(DEFAULT_STATE, "chat")).toBe(false);
-  });
-
-  it("pins one page's compare, and clears whatever compare covered it", () => {
-    const on = withSurfaceCompare(DEFAULT_STATE, "chat", true);
-    expect(on.compare).toBe("chat");
-    expect(withSurfaceCompare(on, "chat", false).compare).toBe(false);
-    expect(withSurfaceCompare({ ...DEFAULT_STATE, compare: true }, "chat", false).compare).toBe(
-      false,
-    );
   });
 });

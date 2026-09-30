@@ -2,12 +2,13 @@
  * The real Web App in a frame: one `app.html` document per frame — its own root for the theme
  * attributes, its own storage, its own router — opened on a surface's route with the page's
  * preferences in the URL (src/app/frame.ts). Laid out at the app's window width and scaled to
- * the column (chrome/fit.tsx), or at phone width, unscaled; mounted lazily, so a page of
- * compare frames loads them as they come into view.
+ * the column (chrome/fit.tsx), or at phone width, unscaled, in a phone-shaped frame on the
+ * chrome's inset.
  *
  * A change of theme, mode, size or fonts changes the frame's URL, and the frame reloads with
- * the new preferences — the URL is the state, as everywhere in the gallery. The first frame on
- * a page reports the fonts it is set in, for the top bar's readout.
+ * the new preferences — the URL is the state, as everywhere in the gallery. The frame reports
+ * the fonts it is actually set in, for the readout in the top bar's popover and, when the page
+ * asks, its own font line.
  */
 import type { ThemeId } from "@prismshadow/penguin-ui";
 import { useEffect, useRef, useState } from "react";
@@ -43,25 +44,17 @@ export function useFrameSrc(surface: Surface, theme: ThemeId): string {
 
 export function AppFrame({
   surface,
-  theme,
-  eager = false,
-  reports = false,
   onFonts,
   reloadKey = 0,
 }: {
   surface: Surface;
-  theme: ThemeId;
-  /** Load at once rather than when scrolled near: the home page's frame. */
-  eager?: boolean;
-  /** Report the fonts this frame is set in to the top bar's readout. */
-  reports?: boolean;
   /** Also hand the readout to the page, for its own font line. */
   onFonts?: (readout: FontReadout | null) => void;
   /** A new value reloads the frame (the Reload control). */
   reloadKey?: number;
 }) {
   const { S, state } = useGallery();
-  const src = useFrameSrc(surface, theme);
+  const src = useFrameSrc(surface, state.theme);
   const phone = state.view === "phone";
   const size = phone ? PHONE_FRAME : APP_FRAME;
   const frame = useRef<HTMLIFrameElement>(null);
@@ -76,78 +69,33 @@ export function AppFrame({
     let live = true;
     void readFrameFonts(frame.current).then((readout) => {
       if (!live) return;
-      if (reports) reportFrameFonts(readout);
+      reportFrameFonts(readout);
       onFonts?.(readout);
     });
     return () => {
       live = false;
     };
-  }, [loaded, src, reports, onFonts]);
+  }, [loaded, src, onFonts]);
 
-  useEffect(() => {
-    if (!reports) return;
-    return () => reportFrameFonts(null);
-  }, [reports]);
+  // Leaving the page takes the frame's report with it; the popover falls back to the page's own root.
+  useEffect(() => () => reportFrameFonts(null), []);
 
-  const themeName = S.rail.themeNames[theme];
   const iframe = (
     <iframe
       key={`${src}#${reloadKey}`}
       ref={frame}
       className="g-app-frame"
-      title={S.frame.frameOf(themeName)}
+      title={S.frame.frameOf(S.rail.themeNames[state.theme])}
       src={src}
       width={size.width}
       height={size.height}
-      loading={eager ? "eager" : "lazy"}
+      loading="eager"
       onLoad={() => setLoaded(true)}
     />
   );
   return (
     <div className="g-app" data-phone={phone || undefined} data-loaded={loaded || undefined}>
       {phone ? iframe : <Fit natural={size.width}>{iframe}</Fit>}
-    </div>
-  );
-}
-
-/** One frame per theme when comparing, captioned; the active theme's alone otherwise. */
-export function ThemeFrames({
-  surface,
-  themes,
-  eager = false,
-  reloadKey = 0,
-  onFonts,
-}: {
-  surface: Surface;
-  themes: readonly ThemeId[];
-  eager?: boolean;
-  reloadKey?: number;
-  onFonts?: (readout: FontReadout | null) => void;
-}) {
-  const { S, state } = useGallery();
-  return (
-    <div
-      className="g-framed"
-      data-compare={themes.length > 1 || undefined}
-      data-phone={state.view === "phone" || undefined}
-    >
-      {themes.map((theme, index) => (
-        <figure key={theme} className="g-framed-item">
-          {themes.length > 1 && (
-            <figcaption>
-              <span className="g-framed-theme">{S.rail.themeNames[theme]}</span>
-            </figcaption>
-          )}
-          <AppFrame
-            surface={surface}
-            theme={theme}
-            eager={eager && index === 0}
-            reports={index === 0}
-            reloadKey={reloadKey}
-            {...(index === 0 && onFonts ? { onFonts } : {})}
-          />
-        </figure>
-      ))}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 /**
- * The fonts in use, as the top bar and each surface page state them: the Latin, CJK and mono
- * families and the root size, read from a framed app's computed styles — the first frame on the
- * page reports its readout here once it has loaded — or, on a page without a frame, from the
+ * The fonts in use, as the top bar's popover and each surface page state them: the Latin, CJK
+ * and mono faces actually rendering and the root size, read from a framed app once it has loaded
+ * — the frame on the page reports its readout here — or, on a page without a frame, from the
  * page's own root, which carries the same theme attributes and theme sheets.
  */
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -12,7 +12,7 @@ import { useGallery } from "../state";
 let frameReadout: FontReadout | null = null;
 const listeners = new Set<() => void>();
 
-/** A framed app reports what it is set in; the top bar follows the latest report. */
+/** A framed app reports what it is set in; the readout follows the latest report. */
 export function reportFrameFonts(readout: FontReadout | null): void {
   frameReadout = readout;
   for (const listener of listeners) listener();
@@ -33,7 +33,7 @@ export function readFrameFonts(frame: HTMLIFrameElement): Promise<FontReadout | 
   );
 }
 
-/** The readout the page shows: the frames' when one has reported, else the page root's. */
+/** The readout the page shows: the frame's when one has reported, else the page root's. */
 export function useFontReadout(): FontReadout | null {
   const { state } = useGallery();
   const reported = useSyncExternalStore(subscribe, () => frameReadout);
@@ -56,16 +56,16 @@ export function useFontReadout(): FontReadout | null {
   return reported ?? own;
 }
 
-/** `Latin Mona Sans · CJK MiSans · Mono JetBrains Mono · 16px`, or the pending word. */
+/** The label, then `Latin Mona Sans · CJK MiSans · Mono JetBrains Mono · 16px` or the pending word. */
 export function FontReadoutLine() {
   const { S } = useGallery();
   const readout = useFontReadout();
   return (
-    <span className="g-readout" title={S.readout.label}>
+    <div className="g-readout">
       <span className="g-readout-label">{S.readout.label}</span>
       <span className="g-readout-value">
         {readout ? formatFontReadout(readout, S.readout) : S.readout.pending}
       </span>
-    </span>
+    </div>
   );
 }

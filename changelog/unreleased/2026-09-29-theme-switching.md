@@ -18,12 +18,18 @@ The Web App's Appearance settings gained a theme picker — Primer (通用), Fro
 
 ## The themes reach the real app
 
-- The app window, the sidebar's navigation rows and group headers, the settings rail, menu rows, the work group and its thinking and tool rows, the composer card, menus, popovers, tooltips and dialogs, settings rows, page titles and tab bars carry the theme hooks, so Frost and Console restyle them as they do in the gallery — Frost's glow on running work and Console's transcript-style steps included. Primer looks as before apart from the new default size.
+- The app window, the sidebar's navigation rows and group headers, the settings rail, menu rows, the work group and its thinking and tool rows, the composer card, menus, popovers, tooltips and dialogs, settings rows, page titles and tab bars carry the theme hooks, so Frost and Console restyle them as they do in the gallery — Frost's shimmer on running work and Console's transcript-style steps included. Notices (toasts and notice strips) and the usage, context and score charts carry hooks too, so each theme draws them its own way. Primer looks as before apart from the new default size.
 - The switch knob and filled accent buttons take their colours from the theme, so a knob stays visible on a light accent track and a label stays readable on every accent fill.
+
+## Tooltips, pickers and counts
+
+- Every hover hint in the Web App shows in the app's own tooltip — the one the sidebar's rail used — instead of the browser's: it opens after a short pause, on keyboard focus as well as on hover, and follows the theme. Truncated text shows whole in it. Elements whose hint was their only name keep that name for screen readers.
+- Pickers and menus share one look: the panel, row spacing, hover and selected states and the check mark of the settings selects, in the composer's model, thinking, permission and skill pickers, the agent, machine, protocol and organization pickers, and every menu.
+- The pending-approval count beside a Session title is a plain number in the attention colour, with no rounded badge behind it.
 
 ## Calmer dark mode
 
-- Dark mode no longer puts near-white text on near-black in any theme. Body text sits at about 70% white, at least 7:1 against every page surface, and near-white is kept for headings and emphasis. Primer's dark canvas is lifted off pure black, and the gray scale behind `dark:` classes moves with it.
+- Dark mode keeps near-white for headings and emphasis and sets body text a step below it, at least 11:1 against every page surface; secondary text stays at least 6:1 and meta text (timestamps, placeholders) at least 4.5:1. Primer's dark canvas is lifted off pure black, and the gray scale behind `dark:` classes moves with it.
 - In Console, messages, the composer's input and Session titles read in the sans reading face; navigation, labels, step rows and code stay monospaced. Console's work group loses its box, and Frost's work group lines its steps up with the header.
 
 ## Details

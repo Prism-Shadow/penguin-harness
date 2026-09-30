@@ -1,15 +1,14 @@
 /**
  * The gallery's view state, which lives in the URL so any view can be quoted as a link.
  *
- *   /s/chat?theme=geek&mode=dark&size=l&latin=mona-sans&cjk=theme&lang=zh&accent=neutral&compare=chat&view=phone
+ *   /s/chat?theme=geek&mode=dark&size=l&latin=mona-sans&cjk=theme&lang=zh&accent=neutral&view=phone
  *
  * `theme`, `mode`, `size`, `latin`, `cjk`, `lang` and `accent` are always written out — they are
  * also the preferences a fresh visit restores from the last one, so a copied link must pin them
  * or it would open on the reader's own — and a link keeps meaning the same thing if a default
- * ever changes. `compare` and `view` appear only when set: `compare=1` frames every surface on
- * every page in the three themes, `compare=<surface>` only that page; `view=phone` frames every
- * surface at phone width. Pure: parsing never throws, and an unknown or missing value falls back
- * to the caller's fallback (the last-used value) and then to the default.
+ * ever changes. `view` appears only when set: `view=phone` frames every surface at phone width.
+ * Pure: parsing never throws, and an unknown or missing value falls back to the caller's
+ * fallback (the last-used value) and then to the default.
  *
  * The preferences are the app's own: the frame writes them under the app's storage keys, and the
  * gallery's root applies them through the package's `applyThemeAttributes`, so a size or a font
@@ -19,8 +18,6 @@ import { DEFAULT_THEME_ID, THEME_IDS } from "@prismshadow/penguin-ui";
 import type { ThemeId } from "@prismshadow/penguin-ui";
 import { DEFAULT_TEXT_SIZE, TEXT_SIZES } from "@prismshadow/penguin-ui/boot";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
-import { isSurfaceId } from "../app/surfaces";
-import type { SurfaceId } from "../app/surfaces";
 import { ACCENT_IDS, THEME_ACCENT } from "./accents";
 import { CJK_FONTS, LATIN_FONTS, LEGACY_SIZES } from "./themes";
 import type { FontCjk, FontLatin } from "./themes";
@@ -35,9 +32,6 @@ export type Lang = (typeof LANGS)[number];
 export const VIEWS = ["desktop", "phone"] as const;
 export type View = (typeof VIEWS)[number];
 
-/** `false`, every page (`true`), or one surface's page. */
-export type Compare = boolean | SurfaceId;
-
 export interface GalleryState {
   theme: ThemeId;
   mode: ModePref;
@@ -51,7 +45,6 @@ export interface GalleryState {
    * comes back when the reader returns to a theme that lists it.
    */
   accent: string;
-  compare: Compare;
   view: View;
 }
 
@@ -63,7 +56,6 @@ export const DEFAULT_STATE: GalleryState = {
   cjk: "theme",
   lang: "en",
   accent: THEME_ACCENT,
-  compare: false,
   view: "desktop",
 };
 
@@ -80,17 +72,6 @@ function pick<T extends string>(
     if (value != null && (allowed as readonly string[]).includes(value)) return value as T;
   }
   return undefined;
-}
-
-function parseCompare(value: string | null): Compare {
-  if (value === null) return false;
-  if (value === "1") return true;
-  return isSurfaceId(value) ? value : false;
-}
-
-function formatCompare(compare: Compare): string | null {
-  if (compare === false) return null;
-  return compare === true ? "1" : compare;
 }
 
 /** A `size=` value, with the retired `tier=` scale (sm / md / lg) read the way the app migrates it. */
@@ -111,7 +92,6 @@ export function parseGalleryState(search: string, remembered: RememberedPrefs = 
     cjk: pick(CJK_FONTS, params.get("cjk"), remembered.cjk) ?? DEFAULT_STATE.cjk,
     lang: pick(LANGS, params.get("lang"), remembered.lang) ?? DEFAULT_STATE.lang,
     accent: pick(ACCENT_IDS, params.get("accent"), remembered.accent) ?? DEFAULT_STATE.accent,
-    compare: parseCompare(params.get("compare")),
     view: pick(VIEWS, params.get("view")) ?? DEFAULT_STATE.view,
   };
 }
@@ -129,8 +109,6 @@ export function formatGalleryQuery(
 ): string {
   const parts = PREF_KEYS.map((key) => `${key}=${enc(state[key])}`);
   for (const [key, value] of Object.entries(extra)) parts.push(`${enc(key)}=${enc(value)}`);
-  const compare = formatCompare(state.compare);
-  if (compare !== null) parts.push(`compare=${enc(compare)}`);
   if (state.view !== DEFAULT_STATE.view) parts.push(`view=${enc(state.view)}`);
   return `?${parts.join("&")}`;
 }
@@ -138,18 +116,4 @@ export function formatGalleryQuery(
 /** `system` resolved against the OS preference; every other mode is itself. */
 export function resolveMode(mode: ModePref, prefersDark: boolean): "light" | "dark" {
   return mode === "system" ? (prefersDark ? "dark" : "light") : mode;
-}
-
-/** Whether a surface's page renders its three compare frames. */
-export function comparesSurface(state: GalleryState, id: SurfaceId): boolean {
-  return state.compare === true || state.compare === id;
-}
-
-/**
- * The state with one surface page's compare toggled: on, it pins that page
- * (`compare=<surface>`); off, it clears whatever compare covered it, since a site-wide compare
- * cannot except one page.
- */
-export function withSurfaceCompare(state: GalleryState, id: SurfaceId, on: boolean): GalleryState {
-  return { ...state, compare: on ? id : false };
 }

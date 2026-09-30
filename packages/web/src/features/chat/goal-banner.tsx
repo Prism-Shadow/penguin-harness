@@ -21,7 +21,11 @@ export function GoalStatusBanner({ goal }: { goal: GoalBannerState }) {
   return (
     <div className="anim-fade mb-2 flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
       <GlyphIcon d={GOAL_ICON} className="shrink-0 text-gray-400 dark:text-gray-500" />
-      <span className="min-w-0 flex-1 truncate" title={goal.objective}>
+      <span
+        className="min-w-0 flex-1 truncate"
+        data-tooltip={goal.objective}
+        data-tooltip-content="text"
+      >
         {goal.objective}
       </span>
       <span className="shrink-0 text-gray-400 dark:text-gray-500">

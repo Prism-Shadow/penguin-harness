@@ -404,6 +404,25 @@
     color: var(--ui-fg-emphasis);
   }
 
+  /* A notice's tone as one ink every theme's recipe reads: the tone tokens keyed by the hook's
+     five tone names (`warning` is the attention tone), mapped here once so no theme restates
+     it. `--_tone-fg` is private to the recipes (not a token). */
+  .ui-notice[data-tone="info"] {
+    --_tone-fg: var(--ui-tone-info-fg);
+  }
+  .ui-notice[data-tone="success"] {
+    --_tone-fg: var(--ui-tone-success-fg);
+  }
+  .ui-notice[data-tone="warning"] {
+    --_tone-fg: var(--ui-tone-attention-fg);
+  }
+  .ui-notice[data-tone="danger"] {
+    --_tone-fg: var(--ui-tone-danger-fg);
+  }
+  .ui-notice[data-tone="neutral"] {
+    --_tone-fg: var(--ui-tone-neutral-fg);
+  }
+
   /* Where a tree's levels start. A tree with roots (a file tree) indents from the tree inset;
      a tree with no depth-0 rows hangs off its container's own head (a work group's steps under
      its header), so its first level is the head's level: a recipe that indents by

@@ -1800,7 +1800,7 @@ export function Sidebar({
         {onCollapse && (
           <button
             type="button"
-            title={S.nav.collapseSidebar}
+            data-tooltip={S.nav.collapseSidebar}
             aria-label={S.nav.collapseSidebar}
             onClick={onCollapse}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
@@ -2023,7 +2023,7 @@ export function Sidebar({
             onClick={toggleNavGroup}
             aria-expanded={!navCollapsed}
             aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-            title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
+            data-tooltip={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
             className="flex h-4 w-full items-center justify-center rounded-md bg-gray-200/70 text-gray-400 transition-colors duration-150 hover:bg-gray-300/60 hover:text-gray-700 dark:bg-gray-800/70 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-300"
           >
             <ChevronDown
@@ -2103,7 +2103,7 @@ export function Sidebar({
                     />
                     <button
                       type="button"
-                      title={S.chat.searchClear}
+                      data-tooltip={S.chat.searchClear}
                       aria-label={S.chat.searchClear}
                       onClick={closeSearch}
                       className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
@@ -2114,7 +2114,7 @@ export function Sidebar({
                 ) : (
                   <button
                     type="button"
-                    title={S.chat.searchSessions}
+                    data-tooltip={S.chat.searchSessions}
                     aria-label={S.chat.searchSessions}
                     onClick={() => setSearchOpen(true)}
                     className={headerControlClass(false)}
@@ -2130,7 +2130,7 @@ export function Sidebar({
                   button={
                     <button
                       type="button"
-                      title={S.chat.listSettings}
+                      data-tooltip={S.chat.listSettings}
                       aria-label={S.chat.listSettings}
                       aria-haspopup="menu"
                       aria-expanded={listSettingsOpen}
@@ -2204,7 +2204,7 @@ export function Sidebar({
                 {newEntity === "agent" ? (
                   <button
                     type="button"
-                    title={newEntityLabel}
+                    data-tooltip={newEntityLabel}
                     aria-label={newEntityLabel}
                     onClick={() => {
                       navigate("/agents", { state: { create: true } });
@@ -2217,7 +2217,7 @@ export function Sidebar({
                 ) : newEntity === "chat" ? (
                   <button
                     type="button"
-                    title={newEntityLabel}
+                    data-tooltip={newEntityLabel}
                     aria-label={newEntityLabel}
                     onClick={() => newChat()}
                     className={headerControlClass(false)}
@@ -2241,7 +2241,7 @@ export function Sidebar({
                     trigger={(open, toggle) => (
                       <button
                         type="button"
-                        title={newEntityLabel}
+                        data-tooltip={newEntityLabel}
                         aria-label={newEntityLabel}
                         aria-expanded={open}
                         onClick={toggle}
@@ -2346,7 +2346,7 @@ export function Sidebar({
                             {/* New chat: enters draft state directly with this group's Agent (all options live on the draft input card) */}
                             <button
                               type="button"
-                              title={S.chat.newSessionMenu}
+                              data-tooltip={S.chat.newSessionMenu}
                               aria-label={S.chat.newSessionMenu}
                               onClick={() => newChat({ agentId: agent.agentId })}
                               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
@@ -2355,7 +2355,8 @@ export function Sidebar({
                             </button>
                             <button
                               type="button"
-                              title={S.agent.settings}
+                              data-tooltip={S.agent.settings}
+                              aria-label={S.agent.settings}
                               onClick={() => go(`/agents/${agent.agentId}`)}
                               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                             >
@@ -2466,7 +2467,7 @@ export function Sidebar({
                           {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the Project's new-chat default, like any other new chat */}
                           <button
                             type="button"
-                            title={S.chat.newSessionInWorkspace}
+                            data-tooltip={S.chat.newSessionInWorkspace}
                             aria-label={S.chat.newSessionInWorkspace}
                             onClick={() =>
                               newChat({
@@ -2611,7 +2612,7 @@ export function Sidebar({
                 ? {
                     // The dot alone is mysterious: name what is waiting on the trigger (hover
                     // tooltip + accessible name), in the update row's own wording.
-                    title: badges.softwareNote,
+                    "data-tooltip": badges.softwareNote,
                     "aria-label": `${user?.displayName ?? user?.userId ?? ""} · ${badges.softwareNote}`,
                   }
                 : {})}
@@ -2833,7 +2834,7 @@ function DraftRow({
         <div className="flex shrink-0 items-center">
           <button
             type="button"
-            title={S.chat.deleteDraft}
+            data-tooltip={S.chat.deleteDraft}
             aria-label={S.chat.deleteDraft}
             onClick={onDelete}
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 hover:bg-gray-300/60 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-gray-700 dark:hover:text-red-400"
@@ -2897,7 +2898,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
   return (
     <button
       type="button"
-      title={pinned ? S.nav.unpinGroup : S.nav.pinGroup}
+      data-tooltip={pinned ? S.nav.unpinGroup : S.nav.pinGroup}
       aria-label={S.nav.pinGroup}
       aria-pressed={pinned}
       onClick={onToggle}
@@ -3068,7 +3069,7 @@ function SessionRow({
           className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
         >
           {agentHint !== undefined && (
-            <span title={agentHint} className="flex shrink-0 items-center">
+            <span data-tooltip={agentHint} className="flex shrink-0 items-center">
               <AgentAvatar id={s.agentId} name={agentHint} size={14} className="rounded" />
               {/* The avatar is aria-hidden and title only serves pointer users: expose the Agent name to keyboard/screen-reader users as visually hidden text inside the row button. */}
               <span className="sr-only">{agentHint}</span>
@@ -3100,7 +3101,7 @@ function SessionRow({
               and in sr text, which is what lets them recede this far. */}
           {/* Pinned indicator: a dim pin after the title (unpin lives in the row menu). */}
           {pinned && canPin && (
-            <span title={S.chat.pinnedSession} className={`shrink-0 ${toneInk.muted}`}>
+            <span data-tooltip={S.chat.pinnedSession} className={`shrink-0 ${toneInk.muted}`}>
               <Icon d={PIN_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
@@ -3110,7 +3111,7 @@ function SessionRow({
               dialog lives in the row menu). */}
           {s.messagingChannel !== undefined && (
             <span
-              title={S.messaging.enabledIndicator[s.messagingChannel]}
+              data-tooltip={S.messaging.enabledIndicator[s.messagingChannel]}
               className={`shrink-0 ${toneInk.muted}`}
             >
               <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
@@ -3132,9 +3133,14 @@ function SessionRow({
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
           <StatusGlyph activity={activity} />
+          {/* The count is a numeral in the attention ink, with no pill: a filled chip beside the
+              title read as a second button and fought every theme's row. */}
           {s.pendingApprovalCount > 0 && (
-            <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
-              <Badge tone="amber">{s.pendingApprovalCount}</Badge>
+            <span
+              data-tooltip={S.chat.pendingApprovals(s.pendingApprovalCount)}
+              className={`shrink-0 text-xs font-semibold tabular-nums ${toneInk.attention}`}
+            >
+              {s.pendingApprovalCount}
             </span>
           )}
         </button>
@@ -3235,7 +3241,7 @@ function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDel
            glyph the dot columns line up with the rows' trailing slot below. */
         <button
           type="button"
-          title={S.chat.workspaceMenu}
+          data-tooltip={S.chat.workspaceMenu}
           aria-label={S.chat.workspaceMenu}
           aria-haspopup="menu"
           aria-expanded={open}

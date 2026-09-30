@@ -15,7 +15,7 @@ import * as api from "../../api/endpoints";
 import { Button } from "../../components/ui/button";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { forwardFrameKeys, readDocumentTheme, themeWorkflowFrame } from "../../lib/workflow-theme";
 import {
   FILL_APP_MESSAGE,
@@ -32,6 +32,7 @@ import {
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { localizedText } from "../chat/skill-use";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** The Agent's workflow tabs, kept fresh by the server's `workflow_updated` events. */
 export function useWorkflowTabs(
@@ -115,16 +116,16 @@ export function WorkflowTabStrip({
   return (
     <>
       {notices.map((n) => (
-        <div
+        <NoticeStrip
           key={n.workflowId}
+          tone={n.error === null ? "muted" : "attention"}
           role="status"
-          className={`shrink-0 truncate px-3 py-1 text-xs ${
-            n.error === null ? toneStrip.muted : toneStrip.attention
-          }`}
-          title={n.error ?? n.hints.join("\n")}
+          className="shrink-0 truncate px-3 py-1 text-xs"
+          data-tooltip={n.error ?? n.hints.join("\n")}
+          data-tooltip-content="text"
         >
           <span className="font-mono">{n.workflowId}</span>: {n.error ?? n.hints[0]}
-        </div>
+        </NoticeStrip>
       ))}
       {tabs.length > 0 && (
         <div
@@ -147,7 +148,7 @@ export function WorkflowTabStrip({
               type="button"
               role="tab"
               aria-selected={active === t.tabId}
-              title={t.error ?? undefined}
+              data-tooltip={t.error ?? undefined}
               className={`${TAB_BASE} ${active === t.tabId ? TAB_ACTIVE : TAB_IDLE}`}
               onClick={() => onSelect(t.tabId)}
             >
@@ -364,12 +365,14 @@ export function WorkflowFrame({
         )}
       </div>
       {tab.error !== null && !bare && (
-        <div className={`shrink-0 px-3 py-1.5 text-xs ${toneStrip.danger}`}>
+        <NoticeStrip tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
           {S.workflows.loadError}: {tab.error}
-        </div>
+        </NoticeStrip>
       )}
       {failure !== null && (
-        <div className={`shrink-0 px-3 py-1.5 text-xs ${toneStrip.danger}`}>{failure}</div>
+        <NoticeStrip tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
+          {failure}
+        </NoticeStrip>
       )}
       <div
         id={historyId}

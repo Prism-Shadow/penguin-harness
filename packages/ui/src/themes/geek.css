@@ -4,7 +4,7 @@
  * stays in IBM Plex Sans. Paper-white light and warm near-black dark, one interface orange,
  * square corners everywhere, hairlines only where they carry structure, depth by surface steps
  * rather than shadow, a ruled full-bleed window, standalone frames whose head sits in the box's
- * top rule like a TUI, a `>` before the selected navigation row, a block caret, motion that
+ * top rule like a TUI, the selected navigation row set in the bold cut, a block caret, motion that
  * jumps in steps, and the agent's work rendered as a transcript — `└` steps, mono capitals, a
  * hatched block bar. References: opencode.ai (the mono chrome, the paper and the warm black, the
  * ruled column, the underline tabs, the calm dark), e2b.dev (the orange, the square shapes, the
@@ -13,10 +13,10 @@
  * Status of each group:
  * - Light is opencode's paper (`#fdfcfc` page, `rgb(29 29 31)` ink, `rgb(100 98 98)` muted),
  *   stepped one shade so cards read as a lighter step on the page; dark is opencode's warm
- *   near-black (`#131010`) with the same steps upward, and its ink set calm (2026-09-29): the
- *   body at about 8.7:1 on the canvas (opencode's `rgb(184 178 178)`, claude.dev's
- *   `rgb(176 174 165)`), the near-white kept for headings, the muted ink about 4.7:1 on the
- *   muted surface. The accent is E2B's orange; in dark it takes black ink, as every dark fill
+ *   near-black (`#131010`) with the same steps upward, and its ink set calm but not dim
+ *   (2026-09-29): the body at about 12:1 on the canvas, the near-white kept for headings, the
+ *   muted ink about 6.2:1 and the subtle 4.7:1 on the muted surface — a first pass at
+ *   opencode's `rgb(184 178 178)` (8.7:1) read too dim to the owner. The accent is E2B's orange; in dark it takes black ink, as every dark fill
  *   here does, and the rest of the family derives from it (hover and active shaded, the wash and
  *   the line at an alpha), so a preset sets the one value per mode.
  * - Semantic tones are a hairline plus a 10–14% tint on E2B's code hues (proposal), tuned so every
@@ -354,11 +354,11 @@
        for headings. white stays literal: `dark:*-white/N` hairlines read it as ink. */
     --color-white: #ffffff;
     --color-gray-50: #f3f1f0;
-    --color-gray-100: #b5b0af;
-    --color-gray-200: #a7a2a1;
-    --color-gray-300: #9a9594;
-    --color-gray-400: #8d8887;
-    --color-gray-500: #6f6a69;
+    --color-gray-100: #d9d4d3;
+    --color-gray-200: #c5c0bf;
+    --color-gray-300: #b4afae;
+    --color-gray-400: #a39e9d;
+    --color-gray-500: #8d8887;
     --color-gray-600: #5a5453;
     --color-gray-700: #2f2b2b;
     --color-gray-800: #242020;
@@ -372,8 +372,8 @@
     --ui-overlay: #1d1a1a;
     --ui-overlay-backdrop: rgb(0 0 0 / 0.6);
 
-    /* Colour — text: body about 8.7:1 on the canvas, headings and links near-white, muted
-       about 4.7:1 on the muted surface */
+    /* Colour — text: body about 12:1 on the canvas, headings and links near-white, muted about
+       6.2:1 and subtle 4.7:1 on the muted surface */
     --ui-fg: var(--color-gray-100);
     --ui-fg-emphasis: var(--color-gray-50);
     --ui-fg-muted: var(--color-gray-400);
@@ -460,8 +460,8 @@
    * `animate-spin` and `.ui-frame` redraw a card's box.
    *
    * Console gives a recipe to: eyebrow (its ink; the rung is theme.css's), display, live, frame,
-   * underline-nav, shell, icon-decor, tree, field, activity. `.ui-glass` is a no-op here: the
-   * overlay is opaque through the glass tokens.
+   * underline-nav, shell, icon-decor, tree, field, activity, notice, chart. `.ui-glass` is a
+   * no-op here: the overlay is opaque through the glass tokens.
    */
 
   /* Group label on the h6 rung (theme.css): the chrome face, uppercase, tracked — and muted. */
@@ -603,27 +603,15 @@
   :root[data-theme="geek"] .ui-shell > [data-slot="dock"] {
     border-inline-start: var(--ui-border-w) solid var(--ui-shell-line);
   }
+  /* The selected navigation row — a nav entry or the open session — is marked quietly: the
+     bold cut over the host's own selected fill, no glyph (a first pass hung an accent `>` before
+     it; the owner asked for it to go). Mono bold keeps the row's advance, so nothing moves. */
   :root[data-theme="geek"] .ui-shell [data-slot="nav"] [aria-current="page"] {
-    position: relative;
-  }
-  :root[data-theme="geek"] .ui-shell [data-slot="nav"] [aria-current="page"]::before {
-    content: ">";
-    position: absolute;
-    inset-block: 0;
-    inset-inline-start: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: calc(var(--ui-space-unit) * 2);
-    font-family: var(--ui-font-ui);
-    font-size: var(--ui-text-small-size);
-    font-weight: 700;
-    color: var(--ui-accent);
-    pointer-events: none;
+    font-weight: var(--ui-weight-strong);
   }
 
   /* Decorative icons are not drawn: a navigation row is its label, a group header its eyebrow, a
-     menu row its verb, and the `>` before the selected row is the one mark. Icons that carry
+     menu row its verb, and the selected row is marked by its weight alone. Icons that carry
      information (status marks, file kinds, tool glyphs, avatars) never take the hook and stay. */
   :root[data-theme="geek"] .ui-icon-decor {
     display: none;
@@ -662,29 +650,30 @@
     pointer-events: none;
   }
 
-  /* A frame that holds a tree (a work group over its tool rows) or sits inside one (a tool card
-     hung off an elbow) gives up the TUI box: no fill, no rule on any part (the host's own rules
-     between head and body included), no rule through the head, and the head keeps the host's
-     own positioning and geometry — `revert-layer` hands them back to the host's utilities, so a
-     header that sticks while its rows scroll keeps sticking with the height it had — so the
-     rows hang off the head, or the card off its elbow, by the connector rules alone. A frame
-     standing on its own keeps its box. */
-  :root[data-theme="geek"] .ui-frame:has(> .ui-tree),
+  /* A frame headed by a step of the agent's work (a work group, open or collapsed — collapsed
+     it has no tree, so the head is what names it) or holding a tree, or sitting inside one (a
+     tool card hung off an elbow), gives up the TUI box: no fill, no rule on any part (the host's
+     own rules between head and body included), no rule through the head, and the head keeps
+     the host's own positioning and geometry — `revert-layer` hands them back to the host's
+     utilities, so a header that sticks while its rows scroll keeps sticking with the height it
+     had — so the rows hang off the head, or the card off its elbow, by the connector rules
+     alone. A frame standing on its own keeps its box. */
+  :root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity),
   :root[data-theme="geek"] .ui-tree .ui-frame {
     background-color: transparent;
   }
-  :root[data-theme="geek"] .ui-frame:has(> .ui-tree) > *,
+  :root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity) > *,
   :root[data-theme="geek"] .ui-tree .ui-frame > * {
     border: 0;
   }
-  :root[data-theme="geek"] .ui-frame:has(> .ui-tree) > [data-slot="head"],
+  :root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity) > [data-slot="head"],
   :root[data-theme="geek"] .ui-tree .ui-frame > [data-slot="head"] {
     position: revert-layer;
     min-height: revert-layer;
     padding-inline: revert-layer;
   }
   :root[data-theme="geek"]
-    .ui-frame:has(> .ui-tree)
+    .ui-frame:has(> .ui-tree, > .ui-activity)
     > [data-slot="head"]
     > :is(:first-child, :last-child),
   :root[data-theme="geek"]
@@ -694,8 +683,8 @@
     > :is(:first-child, :last-child) {
     padding-inline: revert-layer;
   }
-  :root[data-theme="geek"] .ui-frame:has(> .ui-tree) > [data-slot="head"]::before,
-  :root[data-theme="geek"] .ui-frame:has(> .ui-tree) > [data-slot="head"]::after,
+  :root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity) > [data-slot="head"]::before,
+  :root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity) > [data-slot="head"]::after,
   :root[data-theme="geek"] .ui-tree .ui-frame > [data-slot="head"]::before,
   :root[data-theme="geek"] .ui-tree .ui-frame > [data-slot="head"]::after {
     display: none;
@@ -747,15 +736,19 @@
   }
   /* In a boxless work group the header and the rows are painted in the page's own colour: they
      stick while their bodies scroll, so they must stay opaque, and on the page that fill is
-     invisible at rest. A hover takes the muted surface. A row inside a frame that keeps its box
-     keeps its own fill. */
-  :root[data-theme="geek"] .ui-frame:has(> .ui-tree) > [data-slot="head"],
+     invisible in every state. A row inside a frame that keeps its box keeps its own fill. */
+  :root[data-theme="geek"] .ui-frame:has(> .ui-tree, > .ui-activity) > [data-slot="head"],
   :root[data-theme="geek"] .ui-tree .ui-activity {
     background-color: var(--ui-canvas);
   }
-  :root[data-theme="geek"] .ui-frame:has(> .ui-tree) > [data-slot="head"]:hover,
-  :root[data-theme="geek"] .ui-tree .ui-activity:hover {
-    background-color: var(--ui-surface-muted);
+  /* A hover changes the ink alone — the label steps up to the body ink — so the group looks the
+     same at rest, hovered, open and stuck; no fill moves. */
+  :root[data-theme="geek"]
+    .ui-frame:has(> .ui-tree, > .ui-activity)
+    > [data-slot="head"]:hover
+    [data-slot="label"],
+  :root[data-theme="geek"] .ui-tree .ui-activity:hover [data-slot="label"] {
+    color: var(--ui-fg);
   }
   :root[data-theme="geek"] .ui-activity [data-slot="label"] {
     font-family: var(--ui-font-ui);
@@ -804,6 +797,85 @@
     to {
       clip-path: inset(0 0 0 0);
     }
+  }
+
+  /* A notice is a log line: the chrome face at the small rung, an uppercase tone tag in the
+     tone's ink before the text, a hairline down the left edge in the same ink, no corner, no
+     shadow — the one coloured left rule this theme draws, the log's gutter, drawn here by the
+     hook and never by a component (user decision, 2026-09-29). It is painted in the page's own
+     colour: nothing on the page, opaque where a toast floats over content. */
+  :root[data-theme="geek"] .ui-notice {
+    position: relative;
+    padding-inline-start: calc(var(--ui-row-px) + 5ch);
+    border: 0;
+    border-inline-start: var(--ui-border-w) solid var(--_tone-fg);
+    border-radius: 0;
+    background-color: var(--ui-canvas);
+    box-shadow: none;
+    color: var(--ui-fg);
+    font-family: var(--ui-font-ui);
+    font-size: var(--ui-text-small-size);
+  }
+  /* The tag stands out of the flow — absolutely at the row's inset, in the four columns the host
+     is padded for — because a host lays its body and actions out as a flex row, and a tag in the
+     flow would be a third item pushing the body to the middle. */
+  :root[data-theme="geek"] .ui-notice::before {
+    content: "INFO";
+    position: absolute;
+    inset-inline-start: var(--ui-row-px);
+    inset-block: 0;
+    display: flex;
+    align-items: center;
+    font-weight: var(--ui-weight-strong);
+    letter-spacing: var(--ui-tracking-label);
+    color: var(--_tone-fg);
+  }
+  :root[data-theme="geek"] .ui-notice[data-tone="success"]::before {
+    content: "OK";
+  }
+  :root[data-theme="geek"] .ui-notice[data-tone="warning"]::before {
+    content: "WARN";
+  }
+  :root[data-theme="geek"] .ui-notice[data-tone="danger"]::before {
+    content: "ERR";
+  }
+  :root[data-theme="geek"] .ui-notice[data-tone="neutral"]::before {
+    content: "NOTE";
+  }
+
+  /* Charts are drawn like a terminal plot: a dashed grid on crisp pixels, axis labels in the
+     chrome face as tracked capitals, 1px lines with hard joins and ends, points that render as
+     squares (a pixel-aligned circle this small is a square), and bars hatched like a `▓` — a
+     stripe mask over the bar's own colour, the one gradient a chart may paint. The colours stay
+     the host's. */
+  :root[data-theme="geek"] .ui-chart [data-part="grid"] {
+    stroke: var(--ui-line-emphasis);
+    stroke-dasharray: 2 3;
+    shape-rendering: crispEdges;
+  }
+  /* The axis part is both the tick text and the axis-break marks, so lines and text split by
+     element: a stroke on text would outline its glyphs. */
+  :root[data-theme="geek"] .ui-chart :is(line, path, polyline)[data-part="axis"] {
+    stroke: var(--ui-chart-axis);
+    shape-rendering: crispEdges;
+  }
+  :root[data-theme="geek"] .ui-chart text:is([data-part="axis"], [data-part="label"]) {
+    fill: var(--ui-chart-axis);
+    font-family: var(--ui-font-ui);
+    letter-spacing: var(--ui-tracking-label);
+    text-transform: uppercase;
+  }
+  :root[data-theme="geek"] .ui-chart :is(path, polyline)[data-part="series"] {
+    stroke-width: 1;
+    stroke-linejoin: miter;
+    stroke-linecap: butt;
+  }
+  :root[data-theme="geek"] .ui-chart [data-part="point"] {
+    shape-rendering: crispEdges;
+  }
+  :root[data-theme="geek"] .ui-chart [data-part="bar"] {
+    -webkit-mask-image: repeating-linear-gradient(135deg, #000000 0 2px, transparent 2px 4px);
+    mask-image: repeating-linear-gradient(135deg, #000000 0 2px, transparent 2px 4px);
   }
 }
 

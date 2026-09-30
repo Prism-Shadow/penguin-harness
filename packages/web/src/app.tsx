@@ -14,6 +14,7 @@ import { ThemeProvider } from "./state/theme";
 import { AuthProvider } from "./state/auth";
 import { AppRouter } from "./router";
 import { Toaster } from "./components/ui/toast";
+import { TooltipLayer } from "./components/ui/tooltip";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
 
 /**
@@ -41,6 +42,8 @@ export function App({ initialPath }: { initialPath?: string } = {}) {
             <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
             {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
             <Toaster />
+            {/* The hover hints of every `data-tooltip` element: one listener set, one panel. */}
+            <TooltipLayer />
           </LocaleScope>
         </AuthProvider>
       </ThemeProvider>

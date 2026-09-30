@@ -124,7 +124,7 @@ function SummaryRow({ label, value, detail }: { label: string; value: string; de
   const hasDetail = detail !== undefined && detail !== "";
   return (
     <div
-      title={hasDetail ? `${label}${detail}` : undefined}
+      data-tooltip={hasDetail ? `${label}${detail}` : undefined}
       className="flex items-baseline justify-between gap-3 py-0.5"
     >
       <span className="shrink-0 text-[11px] text-gray-400">{label}</span>
@@ -147,7 +147,7 @@ const CHIP_CLASS =
 /** Icon + value; hover shows what this item is (plain text alone doesn't convey the meaning). */
 function StatChip({ icon, value, label }: { icon: string; value: string; label: string }) {
   return (
-    <span title={label} aria-label={label} className={`${CHIP_CLASS} gap-1`}>
+    <span data-tooltip={label} aria-label={label} className={`${CHIP_CLASS} gap-1`}>
       <GlyphIcon d={icon} className="text-gray-400" />
       {value}
     </span>
@@ -171,11 +171,11 @@ function InputChip({ buckets }: { buckets: Buckets }) {
       aria-label={`${S.traces.taskInput} ${humanizeTokens(input)} · ${hitTitle}`}
       className={CHIP_CLASS}
     >
-      <span title={S.traces.taskInput} className="flex items-center gap-1">
+      <span data-tooltip={S.traces.taskInput} className="flex items-center gap-1">
         <GlyphIcon d={STAT_ICONS.input} className="text-gray-400" />
         {humanizeTokens(input)}
       </span>
-      <span title={hitTitle} className="ml-1 flex items-center gap-0.5 text-gray-400">
+      <span data-tooltip={hitTitle} className="ml-1 flex items-center gap-0.5 text-gray-400">
         <span>(</span>
         <GlyphIcon d={STAT_ICONS.cacheHit} />
         <span>{humanizeTokens(buckets.cacheRead)}</span>

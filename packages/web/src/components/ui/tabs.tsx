@@ -40,7 +40,9 @@ export function Tabs<K extends string>({
             type="button"
             role="tab"
             aria-selected={item.key === active}
-            {...(badge !== null ? { title: badge, "aria-label": `${item.label} · ${badge}` } : {})}
+            {...(badge !== null
+              ? { "data-tooltip": badge, "aria-label": `${item.label} · ${badge}` }
+              : {})}
             onClick={() => onChange(item.key)}
             className={`relative -mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors duration-150 ${
               item.key === active

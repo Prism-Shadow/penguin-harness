@@ -32,9 +32,9 @@ export function ActivitySparkline({
       viewBox={`0 0 ${W} ${H}`}
       role="img"
       aria-label={label}
+      data-tooltip={label}
       className={`text-emerald-600 dark:text-emerald-500 ${className}`}
     >
-      <title>{label}</title>
       {area !== null && <polygon points={area} fill="currentColor" fillOpacity="0.12" />}
       <polyline
         points={line}

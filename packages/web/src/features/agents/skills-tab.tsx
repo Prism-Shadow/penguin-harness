@@ -263,14 +263,16 @@ export function SkillsTab({
               <div className="min-w-0 flex-1">
                 <span
                   className="block truncate font-mono text-[13px] font-semibold"
-                  title={skill.name}
+                  data-tooltip={skill.name}
+                  data-tooltip-content="code"
                 >
                   {skill.name}
                 </span>
                 {/* Short description truncates to one line (full description goes into title for hover reading). */}
                 <p
                   className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
-                  title={skill.description}
+                  data-tooltip={skill.description}
+                  data-tooltip-content="text"
                 >
                   {localizedShortText(locale, skill)}
                 </p>
@@ -278,7 +280,7 @@ export function SkillsTab({
               {metaLine(skill) !== "" && (
                 <span
                   className="hidden shrink-0 text-[11px] text-gray-400 sm:block dark:text-gray-500"
-                  title={metaLine(skill)}
+                  data-tooltip={metaLine(skill)}
                 >
                   {metaLine(skill)}
                 </span>

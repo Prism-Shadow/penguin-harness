@@ -143,6 +143,7 @@ export function CloseIcon({ size = 14, className = "" }: { size?: number; classN
 export function CloseButton({
   onClose,
   className = "",
+  title,
   ...rest
 }: { onClose: () => void; className?: string } & Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
@@ -154,6 +155,7 @@ export function CloseButton({
       aria-label={S.common.close}
       onClick={onClose}
       className={`rounded-md p-1.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 ${className}`}
+      data-tooltip={title}
       {...rest}
     >
       <CloseIcon />

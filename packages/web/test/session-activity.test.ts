@@ -87,7 +87,7 @@ describe("BackgroundTasksMark", () => {
   it("names the count where it stands for a count", () => {
     const markup = render(S.chat.backgroundTasks(3), ICON_SIZE.rowMark);
     expect(markup).toContain(`aria-label="${S.chat.backgroundTasks(3)}"`);
-    expect(markup).toContain(`title="${S.chat.backgroundTasks(3)}"`);
+    expect(markup).toContain(`data-tooltip="${S.chat.backgroundTasks(3)}"`);
     expect(markup).toContain('role="img"');
     expect(S.chat.backgroundTasks(3)).toContain("3");
   });
@@ -121,7 +121,7 @@ describe("ScheduleMark", () => {
     expect(markup()).not.toContain(toneInk.busy);
     // Muted is the one tone allowed under 3:1, and only where the meaning is already in text.
     expect(markup()).toContain(`aria-label="${S.chat.sessionScheduled}"`);
-    expect(markup()).toContain(`title="${S.chat.sessionScheduled}"`);
+    expect(markup()).toContain(`data-tooltip="${S.chat.sessionScheduled}"`);
     expect(markup()).toContain(`d="${SCHEDULE_ICON}"`);
   });
 });
@@ -168,13 +168,13 @@ describe("SessionActivityIcon", () => {
     }
   });
 
-  it("gives the hourglass a hover tooltip through the svg title child", () => {
+  it("gives every mark the shared hover tooltip", () => {
     for (const activity of ["running", "compacting"] as const) {
-      expect(render(activity)).toContain(`<title>${sessionActivityLabel(activity)}</title>`);
+      expect(render(activity)).toContain(`data-tooltip="${sessionActivityLabel(activity)}"`);
     }
-    // The dot is an HTML span, so its tooltip is a plain title attribute.
+    // The dot is an HTML span, so its tooltip is the shared one, read from data-tooltip.
     expect(render("completedUnread")).toContain(
-      `title="${sessionActivityLabel("completedUnread")}"`,
+      `data-tooltip="${sessionActivityLabel("completedUnread")}"`,
     );
   });
 

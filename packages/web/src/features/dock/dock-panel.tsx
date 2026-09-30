@@ -110,7 +110,7 @@ function DockButton(props: {
   return (
     <button
       type="button"
-      title={props.label}
+      data-tooltip={props.label}
       aria-label={props.label}
       data-testid={props.testId}
       onClick={props.onClick}
@@ -158,7 +158,7 @@ function DockTabButton(props: {
     >
       <button
         type="button"
-        title={props.title}
+        data-tooltip={props.title}
         onClick={props.onSelect}
         className="flex h-full min-w-0 flex-1 items-center gap-1.5 pl-2 pr-1 text-left text-xs"
       >
@@ -172,7 +172,7 @@ function DockTabButton(props: {
       </button>
       <button
         type="button"
-        title={
+        data-tooltip={
           props.closeShortcut !== undefined
             ? `${props.closeLabel} (${props.closeShortcut})`
             : props.closeLabel
@@ -851,7 +851,7 @@ export function DockPanel({
             role="separator"
             aria-orientation="horizontal"
             aria-label={S.dock.resize}
-            title={S.dock.resize}
+            data-tooltip={S.dock.resize}
             {...resizerDragProps}
             onDoubleClick={onResizerDoubleClick}
             className={`absolute -top-[3px] left-0 right-0 z-20 h-1.5 cursor-ns-resize transition-colors duration-150 ${
@@ -883,7 +883,7 @@ export function DockPanel({
           role="separator"
           aria-orientation="vertical"
           aria-label={S.dock.resize}
-          title={S.dock.resize}
+          data-tooltip={S.dock.resize}
           {...resizerDragProps}
           onDoubleClick={onResizerDoubleClick}
           className={`w-1.5 shrink-0 cursor-col-resize transition-colors duration-150 ${

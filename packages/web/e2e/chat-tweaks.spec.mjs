@@ -93,7 +93,7 @@ test("schedule form pickers and details Session-id copy", async ({ page }) => {
   // to "已复制" — NO "已复制" text is rendered (#312), and the "Session id" label is untouched.
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
-  await page.locator('button[title="Session 信息"]').click();
+  await page.locator('button[data-tooltip="Session 信息"]').click();
   await expect(page.getByText(sessionId, { exact: true }).first()).toBeVisible();
   const copyBtn = page.getByRole("button", { name: "复制 Session ID" });
   await copyBtn.click();

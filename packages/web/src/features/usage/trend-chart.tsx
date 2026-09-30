@@ -81,12 +81,14 @@ export function TrendChart({
           <g>
             {/* Area fill: the line closes down to the baseline, low opacity reinforces the trend's sense of "volume" */}
             <path
+              data-part="area"
               d={areaPath(geom, cost)}
               className="fill-current"
               stroke="none"
               opacity={hover !== null ? 0.06 : 0.1}
             />
             <path
+              data-part="series"
               d={linePath(geom, cost)}
               fill="none"
               stroke="currentColor"
@@ -97,6 +99,7 @@ export function TrendChart({
               series.map((p, i) => (
                 <circle
                   key={p.bucket}
+                  data-part="point"
                   cx={geom.x(i)}
                   cy={geom.y(cost[i] ?? 0)}
                   r={hover === i ? 4 : 2.5}
@@ -106,6 +109,7 @@ export function TrendChart({
               ))}
             {!everyDot && hover !== null && (
               <circle
+                data-part="point"
                 cx={geom.x(hover)}
                 cy={geom.y(cost[hover] ?? 0)}
                 r={4}

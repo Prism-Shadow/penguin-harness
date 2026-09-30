@@ -28,6 +28,8 @@
  * | `ui-field`         | a labelled control row                                   | children carry `data-slot="label" \| "control"` and optionally `"hint"` |
  * | `ui-activity`      | a step of the agent's work in the transcript: a thinking | `data-kind="thinking" \| "tool"`, `data-state="running" \| "done" \| "error"`; descendants may carry `data-slot="label" \| "detail" \| "progress"` (the progress slot exists only while running, hidden by the host — a recipe that draws it sets `display` itself) |
  * |                    | row, a tool-call row, a work group's header              |                                                       |
+ * | `ui-notice`        | a notice: a toast, an inline notice strip                | `data-tone="info" \| "success" \| "warning" \| "danger" \| "neutral"`; children may carry `data-slot="icon" \| "title" \| "body" \| "actions"` |
+ * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"` |
  *
  * `ui-shell` is the one place a theme may paint a field of colour: Frost lays a soft warm field
  * behind the window, leaves the navigation column transparent on it and floats the main column as
@@ -42,7 +44,8 @@
  *   tool glyph or an avatar, which carry information and stay in every theme. Primer keeps them
  *   monochrome; Frost colours them by role (the accent on navigation rows and empty states, the
  *   muted ink on group headers, a menu row's own ink — a danger row keeps its red); Console hides
- *   them, so its text marks (`>`, the eyebrow) carry the structure and it shows far fewer icons.
+ *   them, so the eyebrow and the selected row's weight carry the structure and it shows far
+ *   fewer icons.
  *   A call site applies it by passing `decor="<role>"` to an icon renderer (`GlyphIcon`,
  *   `Glyph`), which writes the class and `data-role` for it; the hook guard reads the prop on
  *   the call site and holds the enclosing row or header to the host list. A wrapper that holds
@@ -69,14 +72,27 @@
  * `ui-activity` (2026-09-29) is how a theme renders work in progress without the component
  * knowing which theme runs. The host writes what it knows — the kind of step, its state, and
  * which descendant is the label, the detail (a path, an argument preview, a duration) and the
- * progress slot — and stays a plain row under Primer. Frost makes the running row glow: a soft
- * halo and a tinted border in the accent's hue, breathing, and a highlight that sweeps across the
- * label; at rest nothing is added. Console renders a transcript: the label in the chrome face at
- * the small rung, uppercase and tracked, muted once done and full ink while running, the detail
- * muted, no box around the row, and a hatched block bar in the progress slot while the step
- * runs; a step in a work group hangs off the `└` its `ui-tree` row draws. Both recipes go still
- * under reduced motion (the halo holds, the bar holds one fill) and read as finished at rest.
- * The host's own status icon stays: the recipes add to it, never replace it.
+ * progress slot — and stays a plain row under Primer. Frost adds nothing around the row — no
+ * fill, border, ring or halo, the way Codex and macOS show work in progress — and lets a soft
+ * highlight in the accent's hue sweep across the label; at rest nothing is added. Console
+ * renders a transcript: the label in the chrome face at the small rung, uppercase and tracked,
+ * muted once done and full ink while running, the detail muted, no box around the row and no
+ * fill that moves between rest, hover, open and stuck (a hover changes the ink alone), and a
+ * hatched block bar in the progress slot while the step runs; a step in a work group hangs off
+ * the `└` its `ui-tree` row draws. Both recipes go still under reduced motion (a plain label,
+ * the bar holding one fill) and read as finished at rest. The host's own status icon stays: the
+ * recipes add to it, never replace it.
+ *
+ * `ui-notice` and `ui-chart` (2026-09-29) let notices and charts differ per theme where their
+ * components had one look. A notice names its tone; Primer keeps the host's own strip, Frost
+ * floats a soft card on the overlay surface with the tone as one small dot of its ink, Console
+ * writes a log line — the chrome face, an uppercase tone tag (`INFO`, `OK`, `WARN`, `ERR`,
+ * `NOTE`) and a hairline down the left edge in the tone's ink, no fill. A chart names its parts;
+ * Primer keeps the host's drawing, Frost all but hides the grid, rounds joins, caps and points and
+ * fades a line's area, Console dashes the grid on crisp pixels, sets axis labels as tracked mono
+ * capitals, hardens lines to 1px with square joins and hatches bars. A series keeps the colour
+ * its host gave it in every theme: the recipes change weight, joins, grids and inks, never the
+ * data's identity.
  */
 export const HOOKS = [
   "ui-glass",
@@ -90,6 +106,8 @@ export const HOOKS = [
   "ui-tree",
   "ui-field",
   "ui-activity",
+  "ui-notice",
+  "ui-chart",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

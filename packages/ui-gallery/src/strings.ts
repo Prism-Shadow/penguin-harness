@@ -161,7 +161,7 @@ export const zh = {
     appLead:
       "这就是应用本身：侧栏、各个中心、对话与设置都能点开。主题与字号等控件作用于框内的应用；发送消息会得到一段脚本回复。",
     index: "界面索引",
-    indexLead: "每个界面一页：应用停在该界面上，可在三套主题下对比。",
+    indexLead: "每个界面一页：应用停在该界面上，切换主题、字号与字体即可查看。",
     foundations: "基础与字体",
     foundationsLead: "令牌词汇表的各个面板，以及打包的字体、字样与许可。",
   },
@@ -187,7 +187,6 @@ export const zh = {
     viewports: { desktop: "桌面", phone: "手机" },
     langNames: { en: "EN", zh: "中文" },
     modes: { light: "浅色", dark: "深色", system: "跟随系统" },
-    compare: "三主题对比",
   },
   /** The current fonts, read from the framed app: the role labels before each family. */
   readout: {
@@ -195,6 +194,7 @@ export const zh = {
     latin: "英文",
     cjk: "中文",
     mono: "等宽",
+    system: "系统",
     pending: "读取中…",
   },
   /** The breadcrumb's own words; everything else in it is a name from elsewhere. */
@@ -210,8 +210,6 @@ export const zh = {
   frame: {
     open: "单独打开",
     reload: "重新载入",
-    compare: "三主题对比",
-    compareOn: "退出对比",
     frameOf: (theme: string) => `${theme} 下的应用`,
     how: "在应用里的位置",
     route: "路由",
@@ -342,6 +340,8 @@ export const zh = {
       "ui-tree": "行会嵌套的列表：文件树、工作组的工具行、子 Agent 调用图",
       "ui-field": "带标签的控件行：表单字段或设置行",
       "ui-activity": "正在工作的思考行或工具行：运行中、已完成或出错",
+      "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
+      "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
     } as Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],

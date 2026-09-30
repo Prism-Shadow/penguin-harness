@@ -61,7 +61,7 @@ export function FormPicker({
       button={
         <button
           type="button"
-          title={title}
+          data-tooltip={title}
           aria-label={ariaLabel}
           aria-haspopup={ariaHaspopup}
           aria-expanded={open}

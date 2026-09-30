@@ -29,6 +29,7 @@ import {
 } from "../models/model-grouping";
 import { loadModelGroupOrder } from "../models/model-group-order";
 import { useProject } from "../../state/project";
+import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /**
  * Display label for a model: the display name, or falls back to the upstream id (model_id is
@@ -137,14 +138,12 @@ export function PickerList<T>({
               type="button"
               ref={key === activeKey ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
               onClick={() => onPick(item)}
-              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                current
-                  ? "font-medium text-gray-900 dark:text-gray-100"
-                  : "text-gray-600 dark:text-gray-400"
-              }${key === activeKey ? " bg-gray-100 dark:bg-gray-800" : ""}`}
+              className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone(current)}${
+                key === activeKey ? " bg-gray-100 dark:bg-gray-800" : ""
+              }`}
             >
               {renderRow(item)}
-              <span className="w-3 shrink-0 text-center text-xs">{current ? "✓" : ""}</span>
+              <ChoiceCheck on={current} />
             </button>
           );
         })}
@@ -239,7 +238,7 @@ export function ModelMenuList({
           {!hasConfiguredKey(m) && (
             <span
               role="img"
-              title={S.models.noKey}
+              data-tooltip={S.models.noKey}
               aria-label={S.models.noKey}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
@@ -370,7 +369,7 @@ export function ModelSelect({
       button={
         <button
           type="button"
-          title={`${S.chat.chooseModel}：${label}`}
+          data-tooltip={`${S.chat.chooseModel}：${label}`}
           aria-label={S.chat.chooseModel}
           disabled={disabled || models.length === 0}
           onClick={() => setOpen(!open)}

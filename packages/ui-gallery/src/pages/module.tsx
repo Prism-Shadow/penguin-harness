@@ -18,7 +18,7 @@ import { formatBreadcrumb } from "../lib/breadcrumb";
 import { absoluteUrl, BASE } from "../lib/location";
 import type { CollectedModule } from "../lib/modules";
 import { PAGE_SECTION_IDS } from "../lib/modules";
-import { anchorOf, moduleHref, modulePath, pageState, surfaceHref } from "../lib/routes";
+import { anchorOf, moduleHref, modulePath, surfaceHref } from "../lib/routes";
 import { formatGalleryQuery } from "../lib/url-state";
 import { useScrollSpy } from "../lib/use-scroll-spy";
 import { ModuleView, useText } from "../preview";
@@ -84,7 +84,7 @@ function BoardSection({ entry, variant }: { entry: CollectedModule; variant: Mod
     ...text.qualifiers(),
   });
   const link = () =>
-    absoluteUrl(`${modulePath(module.id)}${formatGalleryQuery(pageState(state))}#${variant.key}`);
+    absoluteUrl(`${modulePath(module.id)}${formatGalleryQuery(state)}#${variant.key}`);
   return (
     <section id={variant.key} className="g-variant">
       <h2 className="g-h2">{title}</h2>
@@ -93,8 +93,8 @@ function BoardSection({ entry, variant }: { entry: CollectedModule; variant: Mod
         <button
           type="button"
           className="g-tool g-tool-icon"
-          title={S.section.copyLink}
           aria-label={S.section.copyLink}
+          data-tooltip={S.section.copyLink}
           onClick={() => copy("link", link())}
         >
           <ChromeIcon name={copied === "link" ? "check" : "link"} size={14} />

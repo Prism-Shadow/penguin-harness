@@ -31,8 +31,8 @@
  */
 import { useState } from "react";
 import { Dropdown } from "../../components/ui/dropdown";
-import { CheckIcon, ChevronDown } from "../../components/ui/icons";
-import { menuRowClass } from "../../components/ui/field";
+import { ChevronDown } from "../../components/ui/icons";
+import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 // This menu is an OptionMenu by hand (its trigger lives inside the base URL field, which
 // OptionMenu cannot do), so it takes its row typography from OptionMenu's own records rather
 // than re-spelling them — a change to the family reaches it.
@@ -86,7 +86,7 @@ export function ProtocolSuffixMenu({
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label={`${S.models.protocol}: ${name}`}
-          title={S.models.protocolTriggerTitle(name)}
+          data-tooltip={S.models.protocolTriggerTitle(name)}
           onClick={() => setOpen((v) => !v)}
           className={
             "flex items-center gap-1 rounded px-1 py-0.5 font-mono text-xs transition-colors duration-150 " +
@@ -123,21 +123,13 @@ export function ProtocolSuffixMenu({
                 setOpen(false);
                 onPick(t);
               }}
-              className={`block ${menuRowClass} hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                selected ? "bg-gray-100 dark:bg-gray-800" : ""
-              }`}
+              className={`block ${menuRowClass} ${menuRowTone(selected)}`}
             >
               <span className="flex items-center justify-between gap-2">
-                <span
-                  className={`min-w-0 truncate ${sizeTextClass.sm} ${
-                    selected
-                      ? "font-medium text-gray-900 dark:text-gray-100"
-                      : "text-gray-700 dark:text-gray-300"
-                  }`}
-                >
+                <span className={`min-w-0 truncate ${sizeTextClass.sm}`}>
                   {S.models.protocolNames[t] ?? t}
                 </span>
-                {selected && <CheckIcon className="text-gray-500 dark:text-gray-400" />}
+                <ChoiceCheck on={selected} />
               </span>
               {/* The path this protocol appends: the same string the trigger shows, so the
                   menu explains what the suffix in the field means. */}

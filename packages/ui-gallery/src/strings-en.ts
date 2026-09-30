@@ -155,7 +155,8 @@ export const en: GalleryStrings = {
     appLead:
       "This is the app itself: the sidebar, every center, the chat and the settings all open. The theme and size controls drive the app in the frame; sending a message streams a scripted reply.",
     index: "Surface index",
-    indexLead: "One page per surface: the app opened on it, comparable across the three themes.",
+    indexLead:
+      "One page per surface: the app opened on it, under whatever theme, size and fonts you set.",
     foundations: "Foundations and fonts",
     foundationsLead:
       "The boards of the token vocabulary, and the bundled faces, specimens and licences.",
@@ -178,13 +179,13 @@ export const en: GalleryStrings = {
     viewports: { desktop: "Desktop", phone: "Phone" },
     langNames: { en: "EN", zh: "中文" },
     modes: { light: "Light", dark: "Dark", system: "System" },
-    compare: "Compare themes",
   },
   readout: {
     label: "Fonts in use",
     latin: "Latin",
     cjk: "CJK",
     mono: "Mono",
+    system: "System",
     pending: "Reading…",
   },
   crumb: {
@@ -198,8 +199,6 @@ export const en: GalleryStrings = {
   frame: {
     open: "Open standalone",
     reload: "Reload",
-    compare: "Compare themes",
-    compareOn: "Leave compare",
     frameOf: (theme) => `The app in ${theme}`,
     how: "Where it is in the app",
     route: "Route",
@@ -336,6 +335,9 @@ export const en: GalleryStrings = {
         "a list whose rows nest: a file tree, a work group's tool rows, the subagent graph",
       "ui-field": "a labelled control row: a form field or a settings row",
       "ui-activity": "a thinking or tool row at work: running, done or in error",
+      "ui-notice":
+        "a notice strip or toast, coloured by its tone: info, success, warning, danger or neutral",
+      "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],

@@ -38,14 +38,14 @@ import { createPortal } from "react-dom";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { FOCUSABLE_SELECTOR, isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
 import { scrollMovesAnchor } from "../../lib/context-menu";
+import { menuPanelClass, menuRowClass, menuRowTone } from "./field";
 
 /** Gap between the trigger and the portaled panel, and the panel's minimum distance from the viewport edge (px). */
 const PANEL_GAP = 4;
 const VIEWPORT_MARGIN = 8;
 
 /** The panel's plain row: full-width, left-aligned, hover-filled. Shared so menus opened from different anchors cannot drift apart on density. */
-export const menuItemClass =
-  "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
+export const menuItemClass = `block ${menuRowClass} text-sm ${menuRowTone()}`;
 
 /** Portal docking: which way the panel opens and which of its edges lines up with the trigger. */
 export interface DropdownPortal {
@@ -305,7 +305,7 @@ export function Dropdown({
   // Portaled panels sit at z-[60], above a Modal's z-50 overlay (a body portal appended
   // after the overlay would otherwise paint UNDER it and be unclickable); in-flow panels
   // keep the z-40 menu tier — they stack within their host's own context.
-  const panelClass = `ui-glass anim-pop ${portal ? "z-[60]" : "z-40"} overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900 ${
+  const panelClass = `ui-glass ${menuPanelClass} ${portal ? "z-[60]" : "z-40"} ${
     portal ? "" : "max-h-[70vh]"
   } ${menuClass ?? "left-0 top-full mt-1 w-64 max-w-[calc(100vw-2rem)] origin-top-left"}`;
 

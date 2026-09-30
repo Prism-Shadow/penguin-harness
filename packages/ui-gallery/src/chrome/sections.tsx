@@ -101,7 +101,7 @@ export function PartsSection({ module }: { module: Module }) {
               .filter(Boolean)
               .join(" · ");
             return (
-              <p key={section.id} className="g-part-line" title={`${section.id}\n${line}`}>
+              <p key={section.id} className="g-part-line" data-tooltip={section.id}>
                 {line}
               </p>
             );
@@ -157,7 +157,12 @@ function Ratios({ name, values }: { name: string; values: TokenValues }) {
   return (
     <span className="g-ratios">
       {chips.map(({ target, ratio, pass }) => (
-        <span key={target} className="g-ratio" data-pass={pass} title={`${name} on ${target}`}>
+        <span
+          key={target}
+          className="g-ratio"
+          data-pass={pass}
+          data-tooltip={`${name} on ${target}`}
+        >
           {target.replace("--ui-", "")} {ratio.toFixed(1)}
         </span>
       ))}

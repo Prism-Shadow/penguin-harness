@@ -232,7 +232,9 @@ export function ChartFrame({
         viewBox={`0 0 ${w} ${CHART_H}`}
         width={w}
         height={CHART_H}
-        className="text-gray-600 dark:text-gray-400"
+        // ui-chart: a theme may redraw the parts, which carry data-part — the grid, the axis
+        // labels and breaks here, the series, areas, bars and points in the caller's marks.
+        className="ui-chart text-gray-600 dark:text-gray-400"
         role="img"
         onMouseLeave={() => {
           onHover(null);
@@ -249,6 +251,7 @@ export function ChartFrame({
         {gridLevels.map((v, i) => (
           <g key={i}>
             <line
+              data-part="grid"
               x1={PAD_L}
               x2={w - geom.padR}
               y1={y(v)}
@@ -257,6 +260,7 @@ export function ChartFrame({
               strokeWidth={1}
             />
             <text
+              data-part="axis"
               x={PAD_L - 6}
               y={y(v) + 3}
               textAnchor="end"
@@ -272,6 +276,7 @@ export function ChartFrame({
         {rightAxis?.ticks.map((v) => (
           <text
             key={`r${v}`}
+            data-part="axis"
             x={w - geom.padR + 6}
             y={rightAxis.y(v) + 3}
             textAnchor="start"
@@ -306,6 +311,7 @@ export function ChartFrame({
             i + 1 < geom.n ? (
               <g
                 key={`break-${i}`}
+                data-part="axis"
                 className="pointer-events-none stroke-gray-400 dark:stroke-gray-500"
                 strokeWidth={1}
               >
@@ -332,6 +338,7 @@ export function ChartFrame({
           return (
             <text
               key={i}
+              data-part="axis"
               x={x(i)}
               y={CHART_H - 6}
               textAnchor="middle"

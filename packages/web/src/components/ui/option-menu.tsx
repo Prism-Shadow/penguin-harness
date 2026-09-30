@@ -29,8 +29,15 @@ import { useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { errorClass, sizeClass, sizeTextClass } from "./input";
 import type { ControlSize } from "./input";
-import { Field, controlBase, menuRowClass } from "./field";
-import { CheckIcon, ChevronDown } from "./icons";
+import {
+  ChoiceCheck,
+  Field,
+  controlBase,
+  menuPanelClass,
+  menuRowClass,
+  menuRowTone,
+} from "./field";
+import { ChevronDown } from "./icons";
 import { usePortalPanel } from "./use-portal-panel";
 
 export interface OptionMenuChoice<T extends string> {
@@ -132,7 +139,7 @@ export function OptionMenu<T extends string>({
               left: position.left,
               minWidth: position.triggerWidth,
             }}
-            className="ui-glass anim-pop z-[60] max-h-[70vh] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className={`ui-glass ${menuPanelClass} z-[60] max-h-[70vh] w-72 max-w-[calc(100vw-2rem)]`}
           >
             {options.map((opt) => (
               <button
@@ -144,25 +151,13 @@ export function OptionMenu<T extends string>({
                   onChange(opt.value);
                   setOpen(false);
                 }}
-                className={`block ${menuRowClass} hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                  opt.value === value ? "bg-gray-100 dark:bg-gray-800" : ""
-                }`}
+                className={`block ${menuRowClass} ${menuRowTone(opt.value === value)}`}
               >
                 <span className="flex items-center justify-between gap-2">
                   {/* Row title takes the control's own tier, so the menu reads exactly like
                       an Input of that tier. */}
-                  <span
-                    className={`${sizeTextClass[size]} ${
-                      opt.value === value
-                        ? "font-medium text-gray-900 dark:text-gray-100"
-                        : "text-gray-700 dark:text-gray-300"
-                    }`}
-                  >
-                    {opt.label}
-                  </span>
-                  {opt.value === value && (
-                    <CheckIcon className="text-gray-500 dark:text-gray-400" />
-                  )}
+                  <span className={sizeTextClass[size]}>{opt.label}</span>
+                  <ChoiceCheck on={opt.value === value} />
                 </span>
                 <span
                   className={`mt-0.5 block ${rowDescClass[size]} text-gray-500 dark:text-gray-400`}

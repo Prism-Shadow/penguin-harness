@@ -44,7 +44,7 @@ describe("InfoPopover", () => {
     expect(html).toContain("<button");
     expect(html).toContain('type="button"');
     expect(html).toContain(`aria-label="${S.common.moreInfo}"`);
-    expect(html).toContain(`title="${S.common.moreInfo}"`);
+    expect(html).toContain(`data-tooltip="${S.common.moreInfo}"`);
   });
 
   it("starts collapsed, and points at the panel it will open", () => {

@@ -31,10 +31,12 @@
  * `data-font-cjk`, resolved in `theme.css`'s `ui-font` layer) replaces the sans and the CJK face
  * under any theme and leaves the mono face alone.
  *
- * Dark mode is calmer than a white-on-black inversion: `--ui-fg` is the body ink at roughly
- * 70% white (about 9:1, never under 7:1), `--ui-fg-emphasis` the near-white kept for headings
- * and emphasis (the two are one value in light), and the muted and subtle inks step down from
- * the body ink (muted never under 4.5:1). Surfaces sit a step off pure black.
+ * Dark mode is calmer than a white-on-black inversion, but not dim: `--ui-fg` is the body ink
+ * at roughly 84% white (about 12:1 on the page surfaces, never under 11:1 — the owner found a
+ * first, 9:1 pass too dim), `--ui-fg-emphasis` the near-white kept for headings and emphasis
+ * (the two are one value in light), and the muted and subtle inks step down from the body ink
+ * (muted never under 6:1, subtle — timestamps, placeholders, meta — never under 4.5:1).
+ * Surfaces sit a step off pure black.
  *
  * Motion is three languages behind one set of names: the presence tokens (`--ui-dur-enter`,
  * `--ui-enter-shift`, `--ui-enter-scale`, `--ui-enter-blur`, …) drive the theme-independent

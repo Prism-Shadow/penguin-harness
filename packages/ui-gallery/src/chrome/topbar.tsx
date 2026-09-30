@@ -1,15 +1,17 @@
 /**
- * The top bar every page shares (unthemed): the brand, the page links — Home, Surfaces,
- * Foundations, Fonts, the current one marked — the view controls: theme (by its display name),
- * accent (the active theme's own presets, each painted in its colour, after 随主题), text size
- * (the five steps by name), the Latin and CJK font pairings, language, viewport, the compare
- * toggle and the mode switch — and, under them, the fonts the framed app is set in. Every
- * control writes the URL, and the frames reload with it.
+ * The top bar every page shares (unthemed), one row: the brand and the page links — Home,
+ * Surfaces, Foundations, Fonts, the current one marked — on the left; on the right the controls
+ * a reviewer reaches for most, theme (by its display name), language and the mode switch, then a
+ * button opening the rest in a popover: accent (the active theme's own presets, each painted in
+ * its colour, after 随主题), text size (the five steps by name), the Latin and CJK font pairings,
+ * the viewport, and under them the fonts the framed app is actually set in. Every control writes
+ * the URL, and the frames reload with it.
  *
- * At phone width the links and controls leave the bar for the drawer (chrome/site.tsx), and a menu
- * button opens it.
+ * At phone width the links and controls leave the bar for the drawer (chrome/site.tsx), where
+ * every control has its label, and a menu button opens it.
  */
 import { THEME_IDS } from "@prismshadow/penguin-ui";
+import type { ReactNode } from "react";
 import { accentPresetsOf, accentSwatch, THEME_ACCENT } from "../lib/accents";
 import { BASE } from "../lib/location";
 import { homeHref, moduleHref, routeHref } from "../lib/routes";
@@ -18,9 +20,11 @@ import { LANGS, MODE_PREFS, VIEWS } from "../lib/url-state";
 import type { ModePref } from "../lib/url-state";
 import { useText } from "../preview";
 import { useGallery } from "../state";
-import { Segmented, Select, Swatches, Toggle } from "./controls";
+import { Segmented, Swatches } from "./controls";
 import { FontReadoutLine } from "./font-readout";
 import { ChromeIcon } from "./icons";
+import { Popover } from "./popover";
+import { Select } from "./select";
 
 const MODE_ICONS = { light: "sun", dark: "moon", system: "monitor" } as const;
 const VIEW_ICONS = { desktop: "monitor", phone: "phone" } as const;
@@ -36,8 +40,8 @@ export function ModeSwitch() {
         <button
           key={mode}
           type="button"
-          title={S.rail.modes[mode]}
           aria-label={S.rail.modes[mode]}
+          data-tooltip={S.rail.modes[mode]}
           aria-pressed={state.mode === mode}
           onClick={() => update({ mode })}
         >
@@ -45,6 +49,31 @@ export function ModeSwitch() {
         </button>
       ))}
     </div>
+  );
+}
+
+function ThemeControl() {
+  const { S, state, update } = useGallery();
+  const text = useText();
+  return (
+    <Segmented
+      label={S.rail.theme}
+      value={state.theme}
+      options={THEME_IDS.map((id) => ({ value: id, label: text.theme(id) }))}
+      onChange={(theme) => update({ theme })}
+    />
+  );
+}
+
+function LanguageControl() {
+  const { S, state, update } = useGallery();
+  return (
+    <Segmented
+      label={S.rail.language}
+      value={state.lang}
+      options={LANGS.map((lang) => ({ value: lang, label: S.rail.langNames[lang] }))}
+      onChange={(lang) => update({ lang })}
+    />
   );
 }
 
@@ -75,103 +104,105 @@ function AccentControl() {
   );
 }
 
-/**
- * The view controls. In the bar (`compact`) they sit in one row without their labels; in the
- * phone drawer each has its label.
- */
-export function ViewControls({ compact = false }: { compact?: boolean }) {
+function SizeControl() {
   const { S, state, update } = useGallery();
-  const text = useText();
-  const fontWords = { theme: S.rail.fontTheme, system: S.rail.fontSystem };
   return (
-    <div className="g-controls" data-compact={compact || undefined}>
-      <div className="g-control">
-        <span className="g-control-label">{S.rail.theme}</span>
-        <Segmented
-          label={S.rail.theme}
-          value={state.theme}
-          options={THEME_IDS.map((id) => ({ value: id, label: text.theme(id) }))}
-          onChange={(theme) => update({ theme })}
-        />
-      </div>
-      <div className="g-control">
-        <span className="g-control-label">{S.rail.accent}</span>
-        <AccentControl />
-      </div>
-      <div className="g-control">
-        <span className="g-control-label">{S.rail.size}</span>
-        <Segmented
-          label={S.rail.size}
-          value={state.size}
-          options={TEXT_SIZES.map((size) => ({
-            value: size,
-            label: S.rail.sizeNames[size],
-            title: S.rail.sizeTitle(S.rail.sizeNames[size], TEXT_SIZE_PX_NUMBER[size]),
-          }))}
-          onChange={(size) => update({ size })}
-        />
-      </div>
-      <div className="g-control">
-        <span className="g-control-label">{S.rail.fontLatin}</span>
-        <Select
-          label={S.rail.fontLatin}
-          value={state.latin}
-          options={LATIN_FONTS.map((id) => ({ value: id, label: fontLabel(id, fontWords) }))}
-          onChange={(latin) => update({ latin })}
-        />
-      </div>
-      <div className="g-control">
-        <span className="g-control-label">{S.rail.fontCjk}</span>
-        <Select
-          label={S.rail.fontCjk}
-          value={state.cjk}
-          options={CJK_FONTS.map((id) => ({ value: id, label: fontLabel(id, fontWords) }))}
-          onChange={(cjk) => update({ cjk })}
-        />
-      </div>
-      <div className="g-control">
-        <span className="g-control-label">{S.rail.language}</span>
-        <Segmented
-          label={S.rail.language}
-          value={state.lang}
-          options={LANGS.map((lang) => ({ value: lang, label: S.rail.langNames[lang] }))}
-          onChange={(lang) => update({ lang })}
-        />
-      </div>
-      <div className="g-control">
-        <span className="g-control-label">{S.rail.viewport}</span>
-        <Segmented
-          label={S.rail.viewport}
-          value={state.view}
-          options={VIEWS.map((view) => ({
-            value: view,
-            label: (
-              <span className="g-seg-icon">
-                <ChromeIcon name={VIEW_ICONS[view]} size={13} />
-                {!compact && S.rail.viewports[view]}
-              </span>
-            ),
-            title: S.rail.viewports[view],
-          }))}
-          onChange={(view) => update({ view })}
-        />
-      </div>
+    <Segmented
+      label={S.rail.size}
+      value={state.size}
+      options={TEXT_SIZES.map((size) => ({
+        value: size,
+        label: S.rail.sizeNames[size],
+        hint: S.rail.sizeTitle(S.rail.sizeNames[size], TEXT_SIZE_PX_NUMBER[size]),
+      }))}
+      onChange={(size) => update({ size })}
+    />
+  );
+}
+
+function ViewportControl() {
+  const { S, state, update } = useGallery();
+  return (
+    <Segmented
+      label={S.rail.viewport}
+      value={state.view}
+      options={VIEWS.map((view) => ({
+        value: view,
+        label: (
+          <span className="g-seg-icon">
+            <ChromeIcon name={VIEW_ICONS[view]} size={13} />
+            {S.rail.viewports[view]}
+          </span>
+        ),
+      }))}
+      onChange={(view) => update({ view })}
+    />
+  );
+}
+
+/** One labelled row of the popover or the drawer. */
+function Control({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="g-control">
+      <span className="g-control-label">{label}</span>
+      {children}
     </div>
   );
 }
 
-/** The compare switch. */
-export function ViewToggles() {
+/**
+ * The labelled rows: the secondary controls — accent, size, the two font pairings, viewport —
+ * or, in the drawer, every control. The fonts in use close the list.
+ */
+export function ViewControls({ all = false }: { all?: boolean }) {
   const { S, state, update } = useGallery();
+  const fontWords = { theme: S.rail.fontTheme, system: S.rail.fontSystem };
   return (
-    <div className="g-toggles">
-      <Toggle
-        icon="columns"
-        label={S.rail.compare}
-        pressed={state.compare === true}
-        onChange={(compare) => update({ compare })}
-      />
-    </div>
+    <>
+      <div className="g-controls">
+        {all && (
+          <>
+            <Control label={S.rail.theme}>
+              <ThemeControl />
+            </Control>
+            <Control label={S.rail.mode}>
+              <ModeSwitch />
+            </Control>
+            <Control label={S.rail.language}>
+              <LanguageControl />
+            </Control>
+          </>
+        )}
+        <Control label={S.rail.accent}>
+          <AccentControl />
+        </Control>
+        <Control label={S.rail.size}>
+          <SizeControl />
+        </Control>
+        <Control label={S.rail.fontLatin}>
+          <Select
+            label={S.rail.fontLatin}
+            value={state.latin}
+            options={LATIN_FONTS.map((id) => ({ value: id, label: fontLabel(id, fontWords) }))}
+            onChange={(latin) => update({ latin })}
+          />
+        </Control>
+        <Control label={S.rail.fontCjk}>
+          <Select
+            label={S.rail.fontCjk}
+            value={state.cjk}
+            options={CJK_FONTS.map((id) => ({ value: id, label: fontLabel(id, fontWords) }))}
+            onChange={(cjk) => update({ cjk })}
+          />
+        </Control>
+        <Control label={S.rail.viewport}>
+          <ViewportControl />
+        </Control>
+      </div>
+      <div className="g-controls-foot">
+        <FontReadoutLine />
+      </div>
+    </>
   );
 }
 
@@ -226,18 +257,18 @@ export function TopBar({
         <PageLinks current={page} />
       </nav>
       <div className="g-bar-controls">
-        <ViewControls compact />
-        <ViewToggles />
+        <ThemeControl />
+        <LanguageControl />
         <ModeSwitch />
-      </div>
-      <div className="g-bar-readout">
-        <FontReadoutLine />
+        <Popover label={S.site.settings} icon="sliders">
+          <ViewControls />
+        </Popover>
       </div>
       <button
         type="button"
         className="g-icon-button g-menu"
-        title={open ? S.site.closeMenu : S.site.menu}
         aria-label={open ? S.site.closeMenu : S.site.menu}
+        data-tooltip={open ? S.site.closeMenu : S.site.menu}
         aria-expanded={open}
         onClick={onToggle}
       >

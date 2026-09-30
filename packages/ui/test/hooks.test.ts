@@ -10,8 +10,10 @@
  * that let the themes differ in organisation rather than in colour alone: `ui-icon-decor` (an icon
  * a theme may recolour or drop), `ui-tree` (rows that nest, which Console joins with connector
  * rules) and `ui-field` (a labelled control row, which Console sets as a table row) — and the
- * eleventh, `ui-activity` (a step of the agent's work: Frost makes the running row glow, Console
- * renders a transcript; user decision, 2026-09-29). This suite holds the source to it:
+ * eleventh, `ui-activity` (a step of the agent's work: Frost sweeps a highlight across its label,
+ * Console renders a transcript; user decision, 2026-09-29), and the twelfth and thirteenth,
+ * `ui-notice` and `ui-chart` (notices and charts that differ per theme; the same day). This suite
+ * holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -27,9 +29,11 @@
  *   sits on an h1, `.ui-frame`'s slots are `head`, `body`, `foot` or `pane`, `.ui-shell`'s are
  *   `nav`, `main` or `dock`, `.ui-field`'s are `label`, `control` or `hint`, a tree row's
  *   `data-depth` is a digit 0–8 and its `data-last` is `"true"`, a decorative icon's
- *   `data-role` is one of the four the recipes tint apart, and `.ui-activity` names its kind
+ *   `data-role` is one of the four the recipes tint apart, `.ui-activity` names its kind
  *   (`thinking` / `tool`), its state (`running` / `done` / `error`) and its slots (`label`,
- *   `detail`, `progress`).
+ *   `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`, `title`,
+ *   `body`, `actions`), and a chart's parts are the seven the recipes style, wherever a
+ *   `data-part` is written.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -52,6 +56,8 @@ const APPENDIX_A = [
   "ui-tree",
   "ui-field",
   "ui-activity",
+  "ui-notice",
+  "ui-chart",
 ];
 
 /**
@@ -69,7 +75,17 @@ const APPENDIX_A = [
  * transcript's work in progress (the work group's header, a tool call, the thinking row).
  */
 const HOSTS: Readonly<Record<string, readonly string[]>> = {
-  "ui-glass": ["ChatInput", "Modal", "Dropdown", "Select", "OptionMenu", "InfoPopover", "Tooltip"],
+  "ui-glass": [
+    "ChatInput",
+    "Modal",
+    "Dropdown",
+    "Select",
+    "OptionMenu",
+    "InfoPopover",
+    "Tooltip",
+    "TooltipLayer",
+    "TooltipPanel",
+  ],
   "ui-eyebrow": ["Sidebar", "GroupHeader", "PagedDialog"],
   "ui-display": [
     "Heading",
@@ -99,6 +115,11 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-tree": ["FileTree", "WorkGroup"],
   "ui-field": ["Field", "PrefRow", "SettingRow"],
   "ui-activity": ["WorkGroup", "ToolCallCard", "DisclosureRow"],
+  // The Web App's notices (2026-09-29): the toast, and the one shared strip every inline notice
+  // renders through. The charts: the usage charts' frame (its children — the trend, requests and
+  // token-bar charts — carry parts, not the hook), the token donut and the benchmark sparkline.
+  "ui-notice": ["Toaster", "NoticeStrip"],
+  "ui-chart": ["ChartFrame", "TokenDonut", "ScoreSparkline"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -112,6 +133,10 @@ const ICON_ROLES = new Set(["nav", "group", "menu", "empty"]);
 const ACTIVITY_KINDS = new Set(["thinking", "tool"]);
 const ACTIVITY_STATES = new Set(["running", "done", "error"]);
 const ACTIVITY_SLOTS = new Set(["label", "detail", "progress"]);
+const NOTICE_TONES = new Set(["info", "success", "warning", "danger", "neutral"]);
+const NOTICE_SLOTS = new Set(["icon", "title", "body", "actions"]);
+/** A chart's parts, wherever a chart's children are written (a mark component draws into the frame's svg). */
+const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label"]);
 /** The icon renderers: a `decor` prop on one of these is the decorative-icon hook applied. */
 const ICON_RENDERERS = new Set(["GlyphIcon"]);
 /** A tree row's depth: the eight levels the recipes spell out, and the roots. */
@@ -165,7 +190,7 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the eleven of Appendix A, each with its hosts", () => {
+  it("are the thirteen of Appendix A, each with its hosts", () => {
     expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
     expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
   });
@@ -289,6 +314,26 @@ describe("style hooks", () => {
               problems.push(`${at} .ui-activity slot "${slot}" is not label, detail or progress`);
             }
           }
+        }
+        // A notice names its tone as a literal the recipes select on, and its slots are the four.
+        if (names.has("ui-notice")) {
+          const tone = element.attributes.get("data-tone");
+          if (tone !== null && (typeof tone !== "string" || !NOTICE_TONES.has(tone))) {
+            problems.push(
+              `${at} .ui-notice needs data-tone="info|success|warning|danger|neutral", has ${String(tone)}`,
+            );
+          }
+          for (const { slot } of childSlots(element)) {
+            if (!NOTICE_SLOTS.has(slot)) {
+              problems.push(`${at} .ui-notice slot "${slot}" is not icon, title, body or actions`);
+            }
+          }
+        }
+        // A chart's parts are written wherever a mark is drawn, inside the frame's svg or by a
+        // component that renders into it: every literal `data-part` is one the recipes style.
+        const part = element.attributes.get("data-part");
+        if (typeof part === "string" && !CHART_PARTS.has(part)) {
+          problems.push(`${at} data-part="${part}" is not grid|axis|series|area|bar|point|label`);
         }
         // Tree rows are written by the host, wherever it renders them: every literal depth and
         // last mark in the package must be what the recipes select on.

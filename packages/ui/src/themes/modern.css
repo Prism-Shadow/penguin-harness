@@ -3,9 +3,9 @@
  * navigation column transparent on it, the main column a rounded sheet floating over it; pill
  * controls, generous radii on boxes, regular-weight titles set large with negative tracking,
  * frosted glass on the layers that float over content, motion that springs and de-blurs, and
- * work in progress that glows. References: sierra.ai (the colour field, the type, the pills),
- * Figma's UI3 (the floating sheet, the roomy density) and dimagent.cn (the luminous working
- * states).
+ * work in progress shown by nothing more than a highlight sweeping across its label.
+ * References: sierra.ai (the colour field, the type, the pills), Figma's UI3 (the floating
+ * sheet, the roomy density) and Codex / macOS (the lineless working state).
  *
  * Status of each group:
  * - The light palette is measured on sierra.ai (its Tailwind theme and computed styles). The
@@ -13,8 +13,9 @@
  *   soft radial washes (sage from the top-left, sand from the bottom-right) at an alpha that keeps
  *   muted navigation text at 4.5:1 where the washes are strongest; never blue-grey, never loud.
  *   Sierra ships no dark mode: the dark section is a proposal on the same warm-neutral hue, set
- *   calm (2026-09-29) — the body ink about 9:1 on the canvas, the near-white kept for headings,
- *   the muted ink about 4.7:1 on the muted surface — the way claude.dev sets its dark page.
+ *   calm (2026-09-29) but not dim — the body ink about 12:1 on the canvas, the near-white kept
+ *   for headings, the muted ink about 6.2:1 and the subtle 4.7:1 on the muted surface (a first
+ *   pass at 9:1 read too dim to the owner).
  * - The accent family derives from `--ui-accent`: hover and active are the accent shaded, the
  *   wash and the line are the accent at an alpha, so a preset sets the one value per mode.
  * - Semantic tones use Sierra's hues, tuned until every tone reads at 4.5:1 as text on its own
@@ -343,12 +344,12 @@
        stays literal: `dark:*-white/N` hairlines read it as ink. */
     --color-white: #ffffff;
     --color-gray-50: #f3f1ee;
-    --color-gray-100: #bbb6af;
-    --color-gray-200: #aca79f;
-    --color-gray-300: #9b968f;
-    --color-gray-400: #8f8a83;
-    --color-gray-500: #746f69;
-    --color-gray-600: #57534e;
+    --color-gray-100: #ded9d2;
+    --color-gray-200: #c9c4bc;
+    --color-gray-300: #b8b3ab;
+    --color-gray-400: #a7a29b;
+    --color-gray-500: #8f8a83;
+    --color-gray-600: #5f5b56;
     --color-gray-700: #3a3734;
     --color-gray-800: #2b2926;
     --color-gray-900: #1e1d1b;
@@ -362,7 +363,8 @@
     --ui-overlay: #23221f;
     --ui-overlay-backdrop: rgb(0 0 0 / 0.5);
 
-    /* Colour — text: body about 9:1 on the canvas, muted about 4.7:1 on the muted surface */
+    /* Colour — text: body about 12:1 on the canvas, muted about 6.2:1 and subtle 4.7:1 on the
+       muted surface */
     --ui-fg: var(--color-gray-100);
     --ui-fg-emphasis: var(--color-gray-50);
     --ui-fg-muted: var(--color-gray-400);
@@ -471,8 +473,8 @@
    * `animate-spin`, `.ui-glass` replace a panel's opaque fill and `.ui-shell` re-paint the
    * window's columns.
    *
-   * Frost gives all eleven a recipe: glass, eyebrow (its ink; the rung is theme.css's), display,
-   * live, frame, underline-nav, shell, icon-decor, tree, field, activity.
+   * Frost gives all thirteen a recipe: glass, eyebrow (its ink; the rung is theme.css's),
+   * display, live, frame, underline-nav, shell, icon-decor, tree, field, activity, notice, chart.
    */
 
   /* Frosted transient layer: menus, popovers, tooltips, the modal card, the floating composer and
@@ -526,6 +528,33 @@
   :root[data-theme="modern"] .ui-frame > [data-slot="head"] {
     background-color: inherit;
     border-bottom-color: transparent;
+  }
+
+  /* A work group — a frame headed by a step of the agent's work, open or collapsed — is lineless
+     in every state, the way Codex and macOS list work: no card border, no fill, no rule under
+     the header or between the rows. Header and rows sit on the page, painted in its colour so
+     they stay opaque while they stick, spaced by whitespace, and a hover is a soft rounded
+     highlight; a running step adds nothing but the sweep across its label. */
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) {
+    border-color: transparent;
+    background-color: transparent;
+    box-shadow: none;
+  }
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) > * {
+    border-color: transparent;
+  }
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) > [data-slot="head"],
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-tree .ui-activity {
+    border-radius: var(--ui-radius-sm);
+    background-color: var(--ui-canvas);
+  }
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) > [data-slot="head"]:hover,
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-tree .ui-activity:hover {
+    background-color: var(--ui-surface-muted);
+  }
+  :root[data-theme="modern"] .ui-frame:has(> .ui-activity) .ui-tree > [data-depth] {
+    border-color: transparent;
+    margin-block: var(--ui-stack-0);
   }
 
   /* Tabs: a rounded accent bar under the selected tab. */
@@ -654,40 +683,14 @@
     min-width: 0;
   }
 
-  /* Work in progress glows, the way dimagent lights its working states: a running row is a
-     luminous surface — a faint tint of the accent under it, a ring and an inner wash of the
-     accent's hue drawn INSIDE the row (a work group clips its rows, so a glow cast outward
-     would be cut off), and a soft halo around it where there is room — and a highlight in the
-     same hue sweeps across its label. The glow breathes between two strengths, both plainly
-     visible: a still of any moment reads as glowing, and the declared state, which reduced
-     motion holds, sits between them. Calm, never a flash. At rest (done, error) the row is the
-     host's plain row, so a finished transcript adds nothing. The highlight is a gradient
-     clipped to the label's glyphs and slid across them; parked at either end it shows only the
-     ink, which is what the still state shows. The slots are found anywhere inside the row (a
+  /* Work in progress is shown the way Codex and macOS show it: nothing around the row — no
+     fill, no border, no ring, no halo (a first pass drew a luminous surface; the owner asked
+     for the lineless version) — and a soft highlight in the accent's hue sweeping across the
+     label, beside the host's own status mark. At rest (done, error) the row is the host's plain
+     row, so a finished transcript adds nothing. The highlight is a gradient clipped to the
+     label's glyphs and slid across them; parked at either end it shows only the ink, which is
+     what reduced motion shows: a plain label. The slots are found anywhere inside the row (a
      card nests them in its own button); a work group's header shares the recipe with its rows. */
-  :root[data-theme="modern"] .ui-activity[data-state="running"] {
-    border-color: color-mix(in srgb, var(--ui-accent) 45%, var(--ui-line));
-    background-color: color-mix(in srgb, var(--ui-accent) 8%, var(--ui-surface));
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--ui-accent) 40%, transparent),
-      inset 0 0 28px color-mix(in srgb, var(--ui-accent) 24%, transparent),
-      0 0 20px -4px color-mix(in srgb, var(--ui-accent) 40%, transparent);
-    animation: ui-frost-halo 2.8s var(--ui-ease-in-out) infinite alternate;
-  }
-  @keyframes ui-frost-halo {
-    from {
-      box-shadow:
-        inset 0 0 0 1px color-mix(in srgb, var(--ui-accent) 30%, transparent),
-        inset 0 0 22px color-mix(in srgb, var(--ui-accent) 16%, transparent),
-        0 0 16px -6px color-mix(in srgb, var(--ui-accent) 28%, transparent);
-    }
-    to {
-      box-shadow:
-        inset 0 0 0 1px color-mix(in srgb, var(--ui-accent) 52%, transparent),
-        inset 0 0 34px color-mix(in srgb, var(--ui-accent) 34%, transparent),
-        0 0 26px -2px color-mix(in srgb, var(--ui-accent) 55%, transparent);
-    }
-  }
   :root[data-theme="modern"] .ui-activity[data-state="running"] [data-slot="label"] {
     color: var(--ui-fg);
     background-image: linear-gradient(
@@ -711,6 +714,69 @@
     to {
       background-position: 0% 0;
     }
+  }
+
+  /* A notice floats: a soft card on the overlay surface under the overlay's shadow, no coloured
+     border and no tinted fill — the tone is one small dot of its ink at the start (a toast is a
+     button; the dot is its `::before`, which a button draws too). The dot sits out of the flow,
+     absolutely at the row's inset with the host padded to make room, because a host lays its
+     body and actions out as a flex row — a dot in the flow would be a third item and push the
+     body to the middle. A toast that also carries `ui-glass` frosts like every other floating
+     layer. */
+  :root[data-theme="modern"] .ui-notice {
+    position: relative;
+    padding-inline-start: calc(var(--ui-row-px) + 1.125em);
+    border-color: transparent;
+    border-radius: var(--ui-radius-lg);
+    background-color: var(--ui-overlay);
+    box-shadow: var(--ui-shadow-overlay);
+    color: var(--ui-fg);
+  }
+  :root[data-theme="modern"] .ui-notice::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: var(--ui-row-px);
+    top: 50%;
+    width: 0.5em;
+    height: 0.5em;
+    margin-top: -0.25em;
+    border-radius: var(--ui-radius-pill);
+    background-color: var(--_tone-fg);
+  }
+
+  /* Charts are soft: the grid all but disappears into the chart-grid ink, lines join and end
+     round and sit a little heavier, a line's area fades to nothing towards the baseline, points
+     are round with a thin ring of the surface, bars have soft ends. The colours stay the host's
+     — a series keeps the ink its data was given; only weight, joins, the grid and the labels are
+     the theme's. The area's fade is a mask, the one gradient a chart may paint. */
+  :root[data-theme="modern"] .ui-chart [data-part="grid"] {
+    stroke: var(--ui-chart-grid);
+    stroke-dasharray: none;
+  }
+  /* The axis part is both the tick text and the axis-break marks, so lines and text split by
+     element: a stroke on text would outline its glyphs. */
+  :root[data-theme="modern"] .ui-chart :is(line, path, polyline)[data-part="axis"] {
+    stroke: var(--ui-chart-axis);
+  }
+  :root[data-theme="modern"] .ui-chart text:is([data-part="axis"], [data-part="label"]) {
+    fill: var(--ui-chart-axis);
+    font-family: var(--ui-font-sans);
+  }
+  :root[data-theme="modern"] .ui-chart :is(path, polyline)[data-part="series"] {
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  :root[data-theme="modern"] .ui-chart [data-part="area"] {
+    -webkit-mask-image: linear-gradient(to bottom, #000000, transparent);
+    mask-image: linear-gradient(to bottom, #000000, transparent);
+  }
+  :root[data-theme="modern"] .ui-chart [data-part="point"] {
+    stroke: var(--ui-surface);
+    stroke-width: 1.5;
+  }
+  :root[data-theme="modern"] .ui-chart [data-part="bar"] {
+    rx: 2px;
   }
 
   /* MiSans ships Regular (400) and Medium (500) only. A heavier request renders in Medium rather

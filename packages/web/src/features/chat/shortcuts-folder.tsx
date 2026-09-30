@@ -75,7 +75,7 @@ function RowAction({
   return (
     <button
       type="button"
-      title={label}
+      data-tooltip={label}
       aria-label={label}
       onClick={onClick}
       className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 dark:text-gray-500 ${
@@ -172,7 +172,7 @@ export function ShortcutsFolder({
                 <li key={shortcut.id} className="flex items-center gap-1">
                   <button
                     type="button"
-                    title={`${shortcut.title}\n${S.chat.exampleFillHint}`}
+                    data-tooltip={`${shortcut.title}\n${S.chat.exampleFillHint}`}
                     onClick={() => onFill(shortcut.prompt)}
                     className={`flex min-w-0 flex-1 items-center gap-2 ${exampleRowClass}`}
                   >
@@ -197,7 +197,7 @@ export function ShortcutsFolder({
                 <li>
                   <button
                     type="button"
-                    title={S.chat.shortcuts.newFromComposer}
+                    data-tooltip={S.chat.shortcuts.newFromComposer}
                     onClick={startCreate}
                     className={`flex w-full items-center gap-2 ${exampleRowClass}`}
                   >

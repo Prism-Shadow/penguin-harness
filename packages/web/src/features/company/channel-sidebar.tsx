@@ -76,7 +76,7 @@ function NewChannelButton({
     <>
       <button
         type="button"
-        title={label}
+        data-tooltip={label}
         aria-label={label}
         onClick={() => setOpen(true)}
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
@@ -124,7 +124,7 @@ function ChannelRow({
       <NavLink
         to={orgChannelPath(projectId, orgId, channel.channelId)}
         onClick={() => onNavigate?.()}
-        title={channel.purpose !== "" ? `${label} · ${channel.purpose}` : label}
+        data-tooltip={channel.purpose !== "" ? `${label} · ${channel.purpose}` : label}
         aria-label={note !== null ? `${label} · ${note}` : label}
         className={({ isActive }) =>
           `flex min-w-0 flex-1 items-center ${ICON_GAP.row} rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
@@ -319,7 +319,8 @@ export function ChannelRailRows({ projectId, orgId }: { projectId: string; orgId
           <NavLink
             key={channel.channelId}
             to={orgChannelPath(projectId, orgId, channel.channelId)}
-            title={name}
+            data-tooltip={name}
+            data-tooltip-placement="right"
             aria-label={name}
             className={({ isActive }) =>
               `relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${

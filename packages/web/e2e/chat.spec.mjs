@@ -67,7 +67,9 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // event. Scoped to the toolbar's details trigger (the chips now double as the "Session 信息"
   // button at the far right): the per-reply footer reuses the same 用时 ("elapsed") label once
   // the turn's stats line lands.
-  const headerElapsed = page.locator('button[title="Session 信息"] span[title="用时"]');
+  const headerElapsed = page.locator(
+    'button[data-tooltip="Session 信息"] span[data-tooltip="用时"]',
+  );
   const elapsedBefore = await headerElapsed.textContent();
   await expect(headerElapsed).not.toHaveText(elapsedBefore);
 
@@ -77,8 +79,11 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Keep the status dot and the live stats, but their rendered boxes must remain disjoint.
   await page.setViewportSize({ width: 877, height: 438 });
   await page.waitForTimeout(200);
-  const runningStatus = page.locator('span[title="运行中"]').filter({ hasText: "运行中" }).first();
-  const tokenTotal = page.locator('span[title="Token 累计（Token）"]');
+  const runningStatus = page
+    .locator('span[data-tooltip="运行中"]')
+    .filter({ hasText: "运行中" })
+    .first();
+  const tokenTotal = page.locator('span[data-tooltip="Token 累计（Token）"]');
   const [runningBox, tokenBox] = await Promise.all([
     runningStatus.boundingBox(),
     tokenTotal.boundingBox(),
@@ -260,7 +265,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   const overflowY = await timeline.evaluate((el) => getComputedStyle(el).overflowY);
   expect(overflowY).toBe("hidden");
   // Hover a timeline tool-exec segment → the matching event row highlights (cross-link).
-  const seg = main.getByTitle(/exec_command · 工具调用执行/).first();
+  const seg = main.locator('[data-tooltip*="exec_command · 工具调用执行"]').first();
   await expect(seg).toBeVisible();
   await seg.hover();
   await expect(main.locator("button.bg-amber-50").first()).toBeVisible();
@@ -309,10 +314,10 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect(page.getByText(/Report generated/)).toBeVisible();
   await expect(page.getByText("1 个文件")).toBeVisible();
   // Card rows carry the 点击预览 ("click to preview") affordance — that distinguishes them from
-  // the Files panel tree rows, which also use title=<name> on their buttons.
-  const cardRow = page.locator('button[title="demo.html"]').filter({ hasText: "点击预览" });
+  // the Files panel tree rows, which also use data-tooltip=<name> on their buttons.
+  const cardRow = page.locator('button[data-tooltip="demo.html"]').filter({ hasText: "点击预览" });
   await expect(cardRow).toBeVisible();
-  await expect(page.locator('button[title="missing-report.pdf"]')).toHaveCount(0);
+  await expect(page.locator('button[data-tooltip="missing-report.pdf"]')).toHaveCount(0);
   // Clicking the row opens the Files panel preview via the normalized relative path.
   await cardRow.click();
   await expect(page.locator("iframe")).toBeVisible();

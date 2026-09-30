@@ -4,7 +4,7 @@
  * so there is no client-side router to keep in step.
  *
  *   /                 home: the app in a frame, the surface index
- *   /s/<surface>      one surface's page: the app at that route, framed per theme when comparing
+ *   /s/<surface>      one surface's page: the app framed at that route
  *   /c/<module>       a documentation module's page (Foundations): `#<board>` addresses a section,
  *                     `#parts`, `#tokens` and `#source` the sections after them
  *   /fonts            font specimens, declared faces and licences
@@ -61,30 +61,25 @@ export function modulePath(id: string): string {
   return `/c/${encodeURIComponent(id)}`;
 }
 
-/** A link to a surface page carrying the view state. A pinned compare belongs to its page, so a link drops it. */
+/** A link to a surface page carrying the view state. */
 export function surfaceHref(base: string, state: GalleryState, id: string): string {
-  return `${base}${surfacePath(id)}${formatGalleryQuery(pageState(state))}`;
+  return `${base}${surfacePath(id)}${formatGalleryQuery(state)}`;
 }
 
 /** A link to a module page carrying the view state: `/c/<module>?theme=…#<board>`. */
 export function moduleHref(base: string, state: GalleryState, id: string, anchor?: string): string {
-  const query = formatGalleryQuery(pageState(state));
+  const query = formatGalleryQuery(state);
   return `${base}${modulePath(id)}${query}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
 }
 
 /** A link to the home page, or to a section of it (`#surfaces`), carrying the view state. */
 export function homeHref(base: string, state: GalleryState, anchor?: string): string {
-  return `${base}/${formatGalleryQuery(pageState(state))}${anchor ? `#${anchor}` : ""}`;
+  return `${base}/${formatGalleryQuery(state)}${anchor ? `#${anchor}` : ""}`;
 }
 
 /** A link to another route (`/fonts`) carrying the view state. */
 export function routeHref(base: string, state: GalleryState, path: string): string {
-  return `${base}${path}${formatGalleryQuery(pageState(state))}`;
-}
-
-/** The state a link to another page carries: the preferences and the site-wide compare, never one page's pin. */
-export function pageState(state: GalleryState): GalleryState {
-  return { ...state, compare: state.compare === true };
+  return `${base}${path}${formatGalleryQuery(state)}`;
 }
 
 /** The section a page's hash names, or null for none. */

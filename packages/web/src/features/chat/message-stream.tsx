@@ -495,7 +495,7 @@ export function MessageStream({
         <button
           type="button"
           aria-label={S.chat.jumpToLatest}
-          title={S.chat.jumpToLatest}
+          data-tooltip={S.chat.jumpToLatest}
           onClick={jumpToLatest}
           className="anim-pop absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-gray-300 bg-white p-1.5 text-gray-500 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
         >

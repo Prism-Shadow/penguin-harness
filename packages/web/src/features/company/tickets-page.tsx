@@ -35,7 +35,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { toneDot, toneInk, toneStrip } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
@@ -75,6 +75,7 @@ import { MoveTicketConfirm } from "./ticket-dialog";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, splitPrincipalList } from "./principals";
 import { dayKey } from "./calendar-geom";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Private drag payload type of a card move (never text/plain: a mis-aimed drop must not paste into a text field). */
 const TICKET_DRAG_MIME = "application/x-penguin-ticket-id";
@@ -258,7 +259,7 @@ export function TicketsPage() {
           setDrag(null);
           setDropOver(null);
         }}
-        title={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
+        data-tooltip={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
         className={`block w-full cursor-grab rounded-md border bg-white p-2.5 text-left text-xs transition-colors duration-150 hover:border-gray-300 dark:bg-gray-900 dark:hover:border-gray-600 ${
           t.invalid !== undefined
             ? "border-red-300 dark:border-red-800"
@@ -279,7 +280,7 @@ export function TicketsPage() {
             <PriorityBadge priority={t.priority} />
           </span>
           {t.invalid !== undefined && (
-            <span className={`mt-0.5 shrink-0 ${toneInk.danger}`} title={t.invalid}>
+            <span className={`mt-0.5 shrink-0 ${toneInk.danger}`} data-tooltip={t.invalid}>
               <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
               <span className="sr-only">{S.company.tickets.invalid}</span>
             </span>
@@ -292,7 +293,9 @@ export function TicketsPage() {
             {t.due !== undefined && (
               <span
                 className={`inline-flex items-center gap-1 font-mono tabular-nums ${overdue ? toneInk.danger : ""}`}
-                title={overdue ? `${S.company.tickets.overdue} · ${t.due}` : S.company.tickets.due}
+                data-tooltip={
+                  overdue ? `${S.company.tickets.overdue} · ${t.due}` : S.company.tickets.due
+                }
               >
                 <GlyphIcon d={DUE_ICON} size={ICON_SIZE.inlineGlyph} />
                 {t.due}
@@ -312,7 +315,8 @@ export function TicketsPage() {
         {t.parent !== undefined && (
           <p
             className="mt-2 truncate text-[11px] text-gray-400 dark:text-gray-500"
-            title={t.parent}
+            data-tooltip={t.parent}
+            data-tooltip-content="text"
           >
             {S.company.tickets.parentLine(titles.get(t.parent) ?? t.parent)}
           </p>
@@ -320,7 +324,7 @@ export function TicketsPage() {
         <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
           <span
             className="flex min-w-0 text-gray-700 dark:text-gray-200"
-            title={`${S.company.tickets.owner} ${principalLabel(t.owner, names)}`}
+            data-tooltip={`${S.company.tickets.owner} ${principalLabel(t.owner, names)}`}
           >
             <PrincipalChip principal={t.owner} names={names} size={ICON_SIZE.rowLead} />
           </span>
@@ -367,22 +371,24 @@ export function TicketsPage() {
       }
     >
       {error !== null && (
-        <div
-          className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}
+        <NoticeStrip
+          tone="danger"
+          className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs"
         >
           <span>{S.company.tickets.loadFailed(error)}</span>
           <Button size="sm" onClick={() => void load()}>
             {S.common.retry}
           </Button>
-        </div>
+        </NoticeStrip>
       )}
 
       {board !== null &&
         allTickets(board).length === 0 &&
         board.invalidFiles.length === 0 &&
         !hintDismissed && (
-          <div
-            className={`mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.muted}`}
+          <NoticeStrip
+            tone="muted"
+            className="mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs"
           >
             <span className="min-w-0 flex-1">{S.company.tickets.emptyHint}</span>
             <Button
@@ -398,7 +404,7 @@ export function TicketsPage() {
             >
               <CloseIcon />
             </Button>
-          </div>
+          </NoticeStrip>
         )}
 
       <div className="overflow-x-auto pb-2">
@@ -452,7 +458,7 @@ export function TicketsPage() {
       </div>
 
       {(invalids.length > 0 || (board !== null && board.invalidFiles.length > 0)) && (
-        <div className={`mt-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}>
+        <NoticeStrip tone="danger" className="mt-2 rounded-md border px-3 py-2 text-xs">
           {invalids.length > 0 && (
             <>
               <p className="mb-1 flex items-center gap-1.5 font-medium">
@@ -490,7 +496,7 @@ export function TicketsPage() {
               </ul>
             </>
           )}
-        </div>
+        </NoticeStrip>
       )}
 
       {/* Move confirmation: the target column, and a reason when the target is rejected —

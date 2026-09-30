@@ -433,7 +433,8 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         >
           <StatusIcon state={state} label={stateLabel} />
           <span
-            title={nameTitle}
+            data-tooltip={nameTitle}
+            data-tooltip-content="code"
             data-slot="label"
             className="shrink-0 truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-300"
           >
@@ -510,7 +511,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           ctx.onSendToBackground && (
             <button
               type="button"
-              title={S.chat.sendToBackgroundHint}
+              data-tooltip={S.chat.sendToBackgroundHint}
               onClick={() => void ctx.onSendToBackground?.(item.toolCallId)}
               className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
             >
@@ -542,7 +543,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               ≥sm the row stays one line (the desktop column is wide enough in practice). */}
           <div className="mb-2 flex items-start gap-2 sm:items-center">
             <span
-              title={nameTitle}
+              data-tooltip={nameTitle}
               className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-300"
             >
               {displayName || S.chat.unknownTool}
