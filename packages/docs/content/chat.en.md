@@ -17,7 +17,7 @@ The chat page is where you work with an agent. You start a conversation, follow 
 A new conversation starts as a draft. The Session is created when you send the first message.
 
 1. In the sidebar, select **New chat**. The draft opens on the agent in the Project's **New chat defaults**, as long as that agent still exists in the Project; otherwise on `default_agent`, and otherwise on the first agent.
-2. Above the composer, pick the **Agent**, the **Workspace** (a directory on the server, chosen in a directory browser), the **Approval mode**, the **Model** and the **Thinking level**.
+2. Above the composer, pick the **Agent**, the **Workspace** (a directory on the server, chosen in a directory browser; to use none, select **Start in a temporary workspace** at its bottom left), the **Approval mode**, the **Model** and the **Thinking level**.
 3. Type your message and press Enter.
 
 Once the Session exists, its model and Workspace are locked. To move to another model later, see [Switch the model](#switch-the-model).

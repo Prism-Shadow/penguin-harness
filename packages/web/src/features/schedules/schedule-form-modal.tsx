@@ -24,7 +24,6 @@ import {
   Button,
   Checkbox,
   FieldError,
-  FieldHint,
   FieldLabel,
   FormPicker,
   Input,
@@ -468,9 +467,9 @@ function ScheduleFormDialog({
                       projectId={projectId}
                       workspace={form.workspace}
                       onChange={(workspace) => set({ workspace })}
+                      agentId={agentId}
                       variant="form"
                     />
-                    <FieldHint>{S.chat.workspaceHintShort}</FieldHint>
                   </div>
                 </>
               )}

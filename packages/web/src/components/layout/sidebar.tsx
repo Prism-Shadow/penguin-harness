@@ -2446,6 +2446,7 @@ export function Sidebar({
                 // machine is chosen; the draft and settings pickers edit a workspace that
                 // already has one.
                 chooseMachine
+                clearable={false}
                 trigger={(open, toggle) => (
                   <SidebarControl
                     label={newEntityLabel}

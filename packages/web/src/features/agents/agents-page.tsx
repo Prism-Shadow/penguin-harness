@@ -931,7 +931,6 @@ export function AgentsPage() {
                   variant="form"
                   fieldLabel={S.agent.createDirSkills}
                   emptyLabel={S.agent.createDirSkillsPick}
-                  menuHint={S.agent.createDirSkillsHint}
                   clearLabel={S.agent.createDirSkillsClear}
                 />
                 {skillsDir && dirSkills !== null && dirSkills.length > 0 && (

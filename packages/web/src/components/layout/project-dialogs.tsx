@@ -17,7 +17,6 @@ import {
   Button,
   ConfirmModal,
   FieldError,
-  FieldHint,
   FieldLabel,
   ICONS,
   InfoPopover,
@@ -716,14 +715,15 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
             <div className="sm:col-span-2">
               <FieldLabel>{S.chat.workspace}</FieldLabel>
               {/* The draft page's folder finder: browse server directories, go to a typed
-                  path, or clear back to a temporary workspace. */}
+                  path, or start in a temporary workspace. That one would belong to the
+                  default Agent when one is set, so the finder can show where. */}
               <WorkspaceSelect
                 projectId={projectId}
                 workspace={workspace}
                 onChange={setWorkspace}
+                {...(agentId ? { agentId } : {})}
                 variant="form"
               />
-              <FieldHint>{S.chat.workspaceHintShort}</FieldHint>
             </div>
           </div>
           <div className="mt-3 flex justify-end">
