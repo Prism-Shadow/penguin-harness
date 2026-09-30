@@ -1319,39 +1319,22 @@ export function WorkspaceFinder({
 
   const clear = clearButton({
     offered: onClear !== undefined,
-    workspace,
     stateDir: agentState !== null && agentState.agentId === agentId ? agentState.dir : null,
     machine,
   });
 
   const footer = (
     <>
-      {/* The host's "no folder" choice: a button whatever is chosen now, checked while nothing
-          is. Label and path share one truncating line, so a narrow footer cuts the path first
-          and the label after it. */}
+      {/* The host's "no folder" choice: a plain text button whatever is chosen now; the folder a
+          temporary Workspace would get is its tooltip. */}
       {clear !== null && (
         <Button
           size="sm"
-          aria-pressed={clear.pressed}
           title={clear.fullPath ?? clearTitle}
           className="mr-auto min-w-0 self-center"
           onClick={() => onClear?.(machine)}
         >
-          {clear.pressed && (
-            <GlyphIcon
-              d={CHECK_ICON}
-              size={ICON_SIZE.inlineGlyph}
-              className="shrink-0 text-gray-500 dark:text-gray-400"
-            />
-          )}
-          <span className="min-w-0 truncate">
-            {clearLabel}
-            {clear.path !== null && (
-              <span className="ml-1.5 font-normal text-gray-400 dark:text-gray-500">
-                {clear.path}
-              </span>
-            )}
-          </span>
+          <span className="min-w-0 truncate">{clearLabel}</span>
         </Button>
       )}
       {/* The buttons keep their width; on a phone the button beside them truncates instead. */}

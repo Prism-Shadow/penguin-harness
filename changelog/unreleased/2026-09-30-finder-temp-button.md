@@ -1,4 +1,4 @@
-# Workspace finder offers the temporary workspace as a button with its path
+# Workspace finder offers the temporary workspace as a button
 
 - **Date:** 2026-09-30
 - **Type:** feature
@@ -11,8 +11,8 @@ The Workspace finder's bottom-left became a button, **Start in a temporary works
 
 ## Details
 
-- The button appears wherever the picker offers no folder (the chat draft, Project settings → Defaults, the schedule form), whether or not a folder is chosen. While none is, it carries a check.
-- After its label it shows, muted, where the temporary Workspace would be created: `…/agents/<agent>/workspaces/tmp-…`. The full path is in the tooltip. The path is derived from the `stateDir` of the Agent's config. When the Agent is not known (Defaults with no default Agent) or another machine is being browsed, the button shows its label alone and the tooltip states the rule.
+- The button appears wherever the picker offers no folder (the chat draft, Project settings → Defaults, the schedule form), whether or not a folder is chosen. It is plain text.
+- Its tooltip names where the temporary Workspace would be created (`…/agents/<agent>/workspaces/tmp-…`), derived from the `stateDir` of the Agent's config. When the Agent is not known (Defaults with no default Agent) or another machine is being browsed, the tooltip states the rule instead.
 - The hint also left the picker's tooltip and the Workspace fields in Project settings → Defaults and the schedule form. The company workspace field dropped its own version of it.
 - The company workspace picker's button reads **Use the organization's own directory**, and the Agent create dialog's reads **Don't import from a directory**. The sidebar's new-workspace finder has no such button.
-- On a narrow screen the path truncates first, then the label, and Cancel and Choose keep their width.
+- On a narrow screen the label truncates, and Cancel and Choose keep their width.

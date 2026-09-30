@@ -84,16 +84,6 @@ function separatorOf(path: string): string {
   return /^[A-Za-z]:|^\\\\/.test(path) ? "\\" : "/";
 }
 
-/** The last `count` segments of a path behind an ellipsis (`…/workspaces/tmp-…`); a shorter path as it is. */
-export function pathTail(path: string, count: number): string {
-  const segments = splitBreadcrumbs(path)
-    .slice(1)
-    .map((c) => c.label);
-  if (segments.length <= count) return path;
-  const sep = separatorOf(path);
-  return `…${sep}${segments.slice(-count).join(sep)}`;
-}
-
 /** Back/forward history: the visited folders and where in them the finder stands. */
 export interface NavHistory {
   entries: string[];
@@ -559,25 +549,19 @@ export function tempWorkspacePath(stateDir: string): string | null {
 
 /** The footer's "no folder" button (see clearButton). */
 export interface ClearButton {
-  /** The host's value is already empty, so the button is the current choice. */
-  pressed: boolean;
-  /** The temporary Workspace's folder cut to its tail, shown on the button; null when not known here. */
-  path: string | null;
-  /** The same folder in full, for the tooltip. */
+  /** The folder a temporary Workspace would get, for the tooltip; null when not known here. */
   fullPath: string | null;
 }
 
 /**
  * The footer's "no folder" button: there whenever the host offers going back to no folder,
- * whatever is chosen now, and pressed while nothing is. It names the folder a temporary
- * Workspace would get once the Agent's `agent_state` directory is known, and only while this
- * server is browsed: that directory is this server's, and another machine lays out its own.
+ * whatever is chosen now. Its tooltip names the folder a temporary Workspace would get once the
+ * Agent's `agent_state` directory is known, and only while this server is browsed: that
+ * directory is this server's, and another machine lays out its own.
  */
 export function clearButton(input: {
   /** The host offers no folder: a temporary Workspace, or its own empty value. */
   offered: boolean;
-  /** The host's current value. */
-  workspace: string;
   /** The Agent's `agent_state` directory on this server; null when unknown. */
   stateDir: string | null;
   /** The machine being browsed (null: this server). */
@@ -586,9 +570,5 @@ export function clearButton(input: {
   if (!input.offered) return null;
   const full =
     input.stateDir !== null && input.machine === null ? tempWorkspacePath(input.stateDir) : null;
-  return {
-    pressed: input.workspace.trim() === "",
-    path: full === null ? null : pathTail(full, 4),
-    fullPath: full,
-  };
+  return { fullPath: full };
 }

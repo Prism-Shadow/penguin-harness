@@ -29,7 +29,6 @@ import {
   historyVisit,
   loadQuickAccess,
   parentOf,
-  pathTail,
   quickAccessKey,
   quickAccessPlaces,
   recentWorkspaces,
@@ -391,30 +390,22 @@ describe("a folder the server may not read", () => {
 
 describe("the footer's no-folder button", () => {
   const stateDir = "/home/me/.penguin/data/default_project/agents/writer/agent_state";
-  const base = { offered: true, workspace: "", stateDir: null, machine: null };
+  const base = { offered: true, stateDir: null, machine: null };
 
-  it("is there whenever the host offers no folder, pressed only while nothing is chosen", () => {
+  it("is there whenever the host offers no folder", () => {
     expect(clearButton({ ...base, offered: false })).toBeNull();
-    expect(clearButton(base)?.pressed).toBe(true);
-    expect(clearButton({ ...base, workspace: "  " })?.pressed).toBe(true);
-    expect(clearButton({ ...base, workspace: "/srv/app" })?.pressed).toBe(false);
+    expect(clearButton(base)).not.toBeNull();
   });
 
-  it("names the folder a temporary Workspace would get, cut to its tail on the button", () => {
-    expect(clearButton({ ...base, workspace: "/srv/app", stateDir })).toEqual({
-      pressed: false,
-      path: "…/agents/writer/workspaces/tmp-…",
+  it("names the folder a temporary Workspace would get, in its tooltip", () => {
+    expect(clearButton({ ...base, stateDir })).toEqual({
       fullPath: "/home/me/.penguin/data/default_project/agents/writer/workspaces/tmp-…",
     });
   });
 
   it("names none without the Agent's directory, or while another machine is browsed", () => {
-    expect(clearButton(base)).toEqual({ pressed: true, path: null, fullPath: null });
-    expect(clearButton({ ...base, stateDir, machine: "far" })).toEqual({
-      pressed: true,
-      path: null,
-      fullPath: null,
-    });
+    expect(clearButton(base)).toEqual({ fullPath: null });
+    expect(clearButton({ ...base, stateDir, machine: "far" })).toEqual({ fullPath: null });
   });
 
   it("keeps a Windows path's separator, and names nothing for an unknown layout", () => {
@@ -423,12 +414,6 @@ describe("the footer's no-folder button", () => {
     );
     expect(tempWorkspacePath("/srv/agents/a/state")).toBeNull();
     expect(tempWorkspacePath("/")).toBeNull();
-  });
-
-  it("cuts a path to its last segments, and leaves a short one whole", () => {
-    expect(pathTail("/a/b/c/d/e", 2)).toBe("…/d/e");
-    expect(pathTail("C:\\a\\b\\c", 2)).toBe("…\\b\\c");
-    expect(pathTail("/a/b", 2)).toBe("/a/b");
   });
 });
 
@@ -467,7 +452,8 @@ describe("the modal (source contract)", () => {
   });
 
   it("offers no folder as a footer button, with no rule spelled out beside it", () => {
-    expect(finder).toContain("aria-pressed={clear.pressed}");
+    expect(finder).toContain("title={clear.fullPath ?? clearTitle}");
+    expect(finder).not.toContain("clear.pressed");
     expect(finder).toMatch(/api\s*\.getAgentConfig\(projectId, agentId\)/);
     expect(finder).not.toMatch(/hint/i);
     // The sidebar's new-workspace button adds a folder: it has no empty value to go back to.
