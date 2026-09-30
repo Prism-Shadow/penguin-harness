@@ -561,6 +561,63 @@ describe("foldLedger", () => {
     expect(p.openBatches).toEqual([]);
   });
 
+  it("an impl line registers the impl PR, a later one replaces it, each with an event; the materials stay", () => {
+    const state = foldLedger(
+      lines(
+        { kind: "created", number: 1, title: "T", author: "dev", delegatedBy: "boss", brief: "b" },
+        {
+          kind: "material",
+          number: 1,
+          material: {
+            kind: "pr",
+            label: "up/site#801",
+            url: "https://github.com/up/site/pull/801",
+          },
+          by: "agent:dev",
+        },
+        {
+          kind: "impl",
+          number: 1,
+          url: "https://github.com/acme/site/pull/11",
+          label: "acme/site#11",
+          by: "agent:dev",
+        },
+        {
+          kind: "impl",
+          number: 1,
+          url: "https://github.com/acme/site/pull/12",
+          label: "acme/site#12",
+          by: "user:boss",
+        },
+      ),
+    );
+    const p = state.proposals.get(1)!;
+    expect(p.implPr).toEqual({
+      url: "https://github.com/acme/site/pull/12",
+      label: "acme/site#12",
+      by: "user:boss",
+      at,
+    });
+    expect(p.materials).toHaveLength(1);
+    expect(p.events.map((e) => [e.kind, e.text])).toEqual([
+      ["created", undefined],
+      ["material_added", "up/site#801"],
+      ["material_added", "impl acme/site#11"],
+      ["material_added", "impl acme/site#12"],
+    ]);
+    const fresh = foldLedger(
+      lines({
+        kind: "created",
+        number: 2,
+        title: "U",
+        author: "dev",
+        delegatedBy: "boss",
+        brief: "b",
+      }),
+    );
+    expect(fresh.proposals.get(2)?.implPr).toBeNull();
+  });
+
   it("skips a line about a proposal that does not exist, and keeps counting seq", () => {
     const state = foldLedger(
       lines(

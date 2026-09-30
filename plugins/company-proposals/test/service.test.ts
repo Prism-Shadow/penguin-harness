@@ -232,6 +232,106 @@ describe("ProposalService", () => {
     return created.number;
   }
 
+  it("registers one impl PR per proposal through the routes, refuses a taken PR, and the graph carries the proposal", async () => {
+    const A = "a".repeat(40);
+    const D = "0".repeat(40);
+    const gh: RunGh = async (args) => {
+      const p = args[1]!;
+      if (p.startsWith("repos/acme/site/pulls?"))
+        return JSON.stringify([
+          {
+            number: 11,
+            title: "PR 11",
+            draft: false,
+            url: "https://github.com/acme/site/pull/11",
+            branch: "feat/a",
+            head: A,
+            base: "dev",
+          },
+        ]);
+      if (p === "repos/acme/site/branches/dev") return JSON.stringify(D);
+      if (p === `repos/acme/site/compare/${D}...${A}`)
+        return JSON.stringify({ status: "ahead", ahead_by: 2, behind_by: 0 });
+      return githubGh(args, { timeoutMs: 0, maxBytes: 0 });
+    };
+    let values: Record<string, unknown> = {};
+    service = new ProposalService({
+      gateway,
+      agents,
+      root,
+      settings,
+      log,
+      gh,
+      pluginConfig: { get: () => values },
+    });
+    const first = await delegated();
+    const second = await delegated();
+    const app = new Hono();
+    app.use(async (c, next) => {
+      c.set("user" as never, { userId: "boss" } as never);
+      c.set("sessionVia" as never, "token" as never);
+      await next();
+    });
+    app.route("/p/:projectId/o/:orgId/proposals", proposalRoutes(service));
+    const call = (method: string, suffix: string, body?: unknown) =>
+      app.request(`/p/${PROJECT}/o/${ORG}/proposals${suffix}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    const url = "https://github.com/acme/site/pull/11";
+
+    const set = await call("PUT", `/${first}/impl`, { url, agentId: "acme_dev" });
+    expect(set.status).toBe(200);
+    expect(((await set.json()) as { implPr: unknown }).implPr).toMatchObject({
+      url,
+      label: "acme/site#11",
+      by: "agent:acme_dev",
+    });
+    const taken = await call("PUT", `/${second}/impl`, { url, agentId: "acme_dev" });
+    expect(taken.status).toBe(409);
+    expect(((await taken.json()) as { error: { code: string } }).error.code).toBe("impl_pr_taken");
+    expect((await call("PUT", `/${second}/impl`, { url, agentId: "acme_qa" })).status).toBe(403);
+    expect(
+      (await call("PUT", `/${second}/impl`, { url: "https://example.com/x", agentId: "acme_dev" }))
+        .status,
+    ).toBe(400);
+
+    // The graph is off until a delivery repository is set.
+    expect((await call("GET", "/graph")).status).toBe(409);
+    values = { deliveryRepo: "acme/site" };
+    const graph = (await (await call("GET", "/graph")).json()) as {
+      nodes: Array<{ number: number; proposal: { number: number } | null }>;
+      top: number | null;
+    };
+    expect(graph.nodes.map((n) => [n.number, n.proposal?.number])).toEqual([[11, first]]);
+    expect(graph.top).toBe(11);
+
+    // The one-time adoption: the latest pr material on the delivery repository, a person only.
+    for (const u of [
+      "https://github.com/acme/site/pull/20",
+      "https://github.com/up/site/pull/900",
+      "https://github.com/acme/site/pull/21",
+    ]) {
+      await service.addMaterial(PROJECT, ORG, second, { kind: "pr", url: u }, author);
+    }
+    expect((await call("POST", "/adopt-impl", { agentId: "acme_dev" })).status).toBe(403);
+    const adopted = await service.adoptImpl(PROJECT, ORG, BOSS);
+    expect(adopted.adopted).toEqual([
+      { number: second, url: "https://github.com/acme/site/pull/21" },
+    ]);
+    expect(adopted.ambiguous).toEqual([
+      {
+        number: second,
+        urls: ["https://github.com/acme/site/pull/20", "https://github.com/acme/site/pull/21"],
+      },
+    ]);
+    expect(adopted.skipped).toEqual([]);
+    expect((await service.get(PROJECT, ORG, second, BOSS)).implPr?.label).toBe("acme/site#21");
+    // Run again, nothing is left to adopt.
+    expect((await service.adoptImpl(PROJECT, ORG, BOSS)).adopted).toEqual([]);
+  });
+
   it("answers 404 while company mode is off or the organization is missing, 403 to an outsider", async () => {
     gateway.enabled = false;
     expect(await refused(() => service.list(PROJECT, ORG, BOSS))).toEqual({

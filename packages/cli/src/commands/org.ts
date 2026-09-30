@@ -80,8 +80,11 @@ import type {
   OrgTicketsResponse,
   OrganizationDetail,
   OrganizationsResponse,
+  ProposalAdoptImplResponse,
   ProposalCommentsResponse,
   ProposalDetail,
+  ProposalGraphNode,
+  ProposalGraphResponse,
   ProposalTestGroupsResponse,
   ProposalTestEntry,
   ProposalItem,
@@ -586,6 +589,70 @@ function renderProposals(items: readonly ProposalItem[], t: Messages): string {
   );
 }
 
+/**
+ * `proposal graph`: the chain from the base branch, one PR per line indented by its depth,
+ * then the PRs off the chain and the proposals whose impl PR is not on the graph. Each line:
+ * the PR, its branch and head, the layer's size, the marks, the proposal, the origins' twins.
+ * Relations, statuses and marks stay in English: they are field values.
+ */
+function renderGraph(g: ProposalGraphResponse, t: Messages): string {
+  const short = (sha: string | null): string => (sha === null ? "?" : sha.slice(0, 9));
+  const line = (n: ProposalGraphNode): string => {
+    const marks = [
+      ...(n.draft ? ["draft"] : []),
+      ...(n.fork ? ["fork"] : []),
+      ...(g.top === n.number ? ["top"] : []),
+      ...(n.onChain ? [] : [`${n.relation} ${n.base}`]),
+    ];
+    const size = n.ahead === null ? "" : ` +${n.ahead}${n.behind ? ` -${n.behind}` : ""}`;
+    const proposal =
+      n.proposal === null
+        ? t.org.graphNoProposal()
+        : `proposal #${n.proposal.number} ${n.proposal.status}`;
+    const origins = n.origins.map((o) => `${o.origin} #${o.number} ${o.relation}`);
+    return [
+      `#${n.number} ${n.branch} ${short(n.head)}${size}`,
+      ...(marks.length > 0 ? [`[${marks.join(", ")}]`] : []),
+      proposal,
+      ...origins,
+    ].join("  ");
+  };
+  const byNumber = new Map(g.nodes.map((n) => [n.number, n]));
+  const depth = (n: ProposalGraphNode): number => {
+    let d = 1;
+    let at = n.parent;
+    // The nodes arrive in chain order; the cap guards a cycle of declared bases.
+    while (at !== null && at !== 0 && d < g.nodes.length + 1) {
+      d++;
+      at = byNumber.get(at)?.parent ?? null;
+    }
+    return d;
+  };
+  const chain = g.nodes.filter((n) => n.onChain);
+  const off = g.nodes.filter((n) => !n.onChain);
+  const blocks = [
+    [
+      `${g.repo} ${g.base.branch} ${short(g.base.head)}${g.base.fork ? "  [fork]" : ""}`,
+      ...chain.map((n) => indent(depth(n), line(n))),
+    ].join("\n"),
+    ...(off.length > 0
+      ? [[t.org.graphOffChain(), ...off.map((n) => indent(1, line(n)))].join("\n")]
+      : []),
+    ...(g.unplaced.length > 0
+      ? [
+          [
+            t.org.graphUnplaced(),
+            ...g.unplaced.map((p) => indent(1, `proposal #${p.number} ${p.status}  ${p.implPr}`)),
+          ].join("\n"),
+        ]
+      : []),
+    ...(g.errors.length > 0
+      ? [[t.org.graphErrors(), ...g.errors.map((e) => indent(1, e))].join("\n")]
+      : []),
+  ];
+  return `${blocks.join("\n\n")}\n`;
+}
+
 /** The order when the server sends no declared groups (one older than the declaration). */
 const DEFAULT_TEST_GROUP_ORDER = ["unit", "integration", "e2e", "bench"];
 
@@ -622,6 +689,10 @@ function renderProposal(d: ProposalDetail, t: Messages, marked: string | null): 
       ? [t.org.proposalRevisedAfterApproval(d.approvedRevision, d.revision)]
       : []),
     t.org.proposalPeople(d.author, d.implementer, d.delegatedBy),
+    // A server older than impl PRs sends no field.
+    ...(d.implPr !== undefined && d.implPr !== null
+      ? [t.org.proposalImplPr(d.implPr.label, d.implPr.url)]
+      : []),
     ...(d.brief.trim() !== "" ? [t.org.proposalBrief(d.brief)] : []),
     ...(d.sessions.length > 0 ? [t.org.proposalSessions(d.sessions.join(", "))] : []),
   ];
@@ -2125,6 +2196,64 @@ export function registerOrgCommand(program: Command, t: Messages): void {
         ),
       );
     }
+  });
+
+  scoped(
+    proposal
+      .command("impl [number] [url]")
+      .description(t.org.proposalImplDesc)
+      .option("--adopt", t.org.proposalImplAdopt),
+    t,
+  ).action(async (rawNumber: string | undefined, rawUrl: string | undefined, opts) => {
+    if (opts.adopt === true) {
+      const scope = await orgScope(opts, t);
+      if (scope === null) return;
+      const res = await proposalRequest<ProposalAdoptImplResponse>(
+        scope,
+        t,
+        "POST",
+        "/adopt-impl",
+        { ...actorFields() },
+      );
+      if (res === null) return;
+      if (opts.json === true) printJson(res);
+      else {
+        for (const a of res.adopted) printLine(t.org.proposalImplSet(a.number, a.url));
+        for (const a of res.ambiguous)
+          printLine(t.org.proposalImplAmbiguous(a.number, a.urls.join(", ")));
+        for (const s of res.skipped) printLine(t.org.proposalImplSkipped(s.number, s.reason));
+      }
+      return;
+    }
+    if (rawNumber === undefined || rawUrl === undefined) {
+      fail(t, t.org.proposalImplUsage());
+      return;
+    }
+    const number = parseProposalNumber(rawNumber, t);
+    if (number === null) return;
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const detail = await proposalRequest<ProposalDetail>(scope, t, "PUT", `/${number}/impl`, {
+      url: rawUrl,
+      ...actorFields(),
+    });
+    if (detail === null) return;
+    if (opts.json === true) printJson(detail);
+    else printLine(t.org.proposalImplSet(detail.number, detail.implPr?.url ?? rawUrl));
+  });
+
+  scoped(proposal.command("graph").description(t.org.proposalGraphDesc), t).action(async (opts) => {
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const graph = await proposalRequest<ProposalGraphResponse>(
+      scope,
+      t,
+      "GET",
+      `/graph${query(actorQuery())}`,
+    );
+    if (graph === null) return;
+    if (opts.json === true) printJson(graph);
+    else process.stdout.write(renderGraph(graph, t));
   });
 
   const material = proposal.command("material").description(t.org.proposalMaterialDesc);

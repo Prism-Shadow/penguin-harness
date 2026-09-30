@@ -6834,6 +6834,98 @@ export interface ProposalItem {
   /** The caller's pending comments (people only; 0 for an employee). */
   pendingComments: number;
   materials: ProposalMaterial[];
+  /** The one pull request the proposal is implemented by (`penguin org proposal impl`); null until registered, absent from a server older than impl PRs. */
+  implPr?: ProposalImplPr | null;
+}
+
+/**
+ * A proposal's impl PR: one per proposal, and a PR is the impl PR of at most one proposal.
+ * Registering another replaces it. The `pr` materials stay what they were — the history,
+ * the official twin — and are never read to guess this.
+ */
+export interface ProposalImplPr {
+  url: string;
+  /** `<owner>/<repo>#<n>`. */
+  label: string;
+  /** `agent:<id>` or `user:<id>`. */
+  by: string;
+  at: string;
+}
+
+/** `PUT …/:number/impl`. */
+export interface ProposalImplRequest {
+  url: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+/**
+ * `POST …/proposals/adopt-impl` (a person): every proposal without an impl PR takes the
+ * latest `pr` material on the delivery repository as one. A one-time migration for ledgers
+ * written before impl PRs; see changelog/unreleased/2026-09-30-backward-compatibility.md.
+ */
+export interface ProposalAdoptImplResponse {
+  adopted: Array<{ number: number; url: string }>;
+  /** Adopted, but more than one `pr` material was on the delivery repository: the latest was taken. */
+  ambiguous: Array<{ number: number; urls: string[] }>;
+  /** Not adopted: no `pr` material there, or that PR is already another proposal's. */
+  skipped: Array<{ number: number; reason: string }>;
+}
+
+/** How one head stands against another: `ahead` = it contains the other and more. */
+export type ProposalGraphRelation = "same" | "ahead" | "behind" | "diverged" | "unknown";
+
+/** The PR an origin has on a node's branch, and how its head stands against the node's. */
+export interface ProposalGraphOriginPr {
+  /** The origin's name, as the settings list it (`fork`, `origin`). */
+  origin: string;
+  number: number;
+  url: string;
+  draft: boolean;
+  head: string;
+  relation: ProposalGraphRelation;
+}
+
+/** One open PR on the delivery repository: a commit in the graph. */
+export interface ProposalGraphNode {
+  number: number;
+  url: string;
+  title: string;
+  draft: boolean;
+  branch: string;
+  head: string;
+  /** The declared base branch (`baseRefName`): a declaration, checked against ancestry below. */
+  base: string;
+  /** The PR whose head branch is the declared base; 0 = the base branch; null = neither (a closed PR's branch, say). */
+  parent: number | null;
+  /** The head against the declared base's head: `ahead` (or `same`) is stacked, anything else is off the chain. */
+  relation: ProposalGraphRelation;
+  /** Commits the head has that the declared base's head has not (the layer's size); null when unknown. */
+  ahead: number | null;
+  behind: number | null;
+  /** Reached from the base branch through stacked edges only. */
+  onChain: boolean;
+  /** More than one stacked child: the chain forks here. */
+  fork: boolean;
+  /** The proposal whose impl PR this is; null for a PR no proposal registered. */
+  proposal: { number: number; title: string; status: ProposalStatus } | null;
+  /** The other origins' PRs on the same branch. */
+  origins: ProposalGraphOriginPr[];
+}
+
+/** `GET …/proposals/graph`: the delivery repository's open PRs as a commit graph. */
+export interface ProposalGraphResponse {
+  repo: string;
+  base: { branch: string; head: string | null; fork: boolean };
+  origins: Array<{ name: string; repo: string }>;
+  nodes: ProposalGraphNode[];
+  /** The one leaf of the chain, or null when the chain forks (or is empty): the graph marks forks, it does not pick. */
+  top: number | null;
+  /** Proposals with an impl PR that is not an open PR on the delivery repository. */
+  unplaced: Array<{ number: number; title: string; status: ProposalStatus; implPr: string }>;
+  /** What could not be read from GitHub; the graph is partial when present. */
+  errors: string[];
+  checkedAt: string;
 }
 
 export interface ProposalDetail extends ProposalItem {
