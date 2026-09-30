@@ -12,10 +12,11 @@
  * size, line height, letter spacing, tab size, padding, wrap mode — and those are stated once,
  * for both layers, in `.code-surface`.
  *
- * No spell-check or autocorrect, and Ctrl+S / Cmd+S saves — the browser's own "save page"
- * default is suppressed while the focus is here. Long lines scroll sideways, as code should,
- * unless the Wrap toggle soft-wraps them; the toggle, Save and Cancel all live in the panel's
- * preview header, and this component owns only the text.
+ * No spell-check or autocorrect, and the save shortcut saves (the caller's binding, ⌘S / Ctrl+S
+ * when it names none) — the browser's own "save page" default is suppressed while the focus is
+ * here. Long lines scroll sideways, as code should, unless the Wrap toggle soft-wraps them; the
+ * toggle, Save and Cancel all live in the panel's preview header, and this component owns only
+ * the text.
  */
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -25,6 +26,11 @@ import { languageForFileName } from "../code-block/code-languages";
 /** Quiet period before re-highlighting, so a keystroke costs a re-render and not a tokenize. */
 const EDIT_HIGHLIGHT_SETTLE_MS = 200;
 
+/** Ctrl+S or ⌘S without Alt: the save key when the caller names no binding. */
+function isDefaultSaveKey(event: KeyboardEvent): boolean {
+  return (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s";
+}
+
 export function WorkspaceFileEditor({
   path,
   value,
@@ -33,6 +39,7 @@ export function WorkspaceFileEditor({
   highlight = true,
   onChange,
   onSave,
+  isSaveKey = isDefaultSaveKey,
 }: {
   /** The file being edited: its name picks the highlighting language. */
   path: string;
@@ -48,6 +55,8 @@ export function WorkspaceFileEditor({
   highlight?: boolean;
   onChange: (next: string) => void;
   onSave: () => void;
+  /** Whether a keydown is the save shortcut; the app passes the user's binding. */
+  isSaveKey?: (event: KeyboardEvent) => boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
@@ -58,9 +67,10 @@ export function WorkspaceFileEditor({
   const [composing, setComposing] = useState(false);
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") {
+    if (isSaveKey(e.nativeEvent)) {
+      // A held chord repeats: every repeat is kept from the browser (Save Page), one save runs.
       e.preventDefault();
-      onSave();
+      if (!e.repeat) onSave();
     }
   };
 

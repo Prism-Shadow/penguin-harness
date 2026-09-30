@@ -110,14 +110,17 @@ export function canonicalPath(target: string): string {
 }
 
 /**
- * The writable roots a policy grants, canonical and deduplicated: the workspace under
- * `workspace-write`, and the temp areas whenever the policy makes temp writable (either mode).
+ * The writable roots a policy grants, canonical and deduplicated: the workspace and the
+ * policy's further roots (the Session's scratchpad) under `workspace-write`, and the temp
+ * areas whenever the policy makes temp writable (either mode).
  */
 export function writableRoots(policy: SandboxPolicy): string[] {
   return [
     ...new Set(
       [
-        ...(policy.mode === "workspace-write" ? [policy.workspaceRoot] : []),
+        ...(policy.mode === "workspace-write"
+          ? [policy.workspaceRoot, ...(policy.writableRoots ?? [])]
+          : []),
         ...(policy.writableTemp === true ? ["/tmp", tmpdir()] : []),
       ].map(canonicalPath),
     ),

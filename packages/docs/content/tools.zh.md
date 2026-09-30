@@ -188,9 +188,15 @@ exec_command(cmd)
 
 ### 文件工具
 
-`read_file` / `edit_file` / `write_file` 与 shell 工具一样，以用户的完整权限运行。相对路径以 Workspace 为基准解析，也允许绝对路径。符号链接会解析到它指向的文件：读取、编辑和写入都作用于目标文件，链接本身仍是链接。`read_file` 拒绝读取机密存储 `.vault.toml` 和 `.project_config.toml`：无论文件位于哪个目录、路径是否经过符号链接，都按文件名匹配。
+`read_file` / `edit_file` / `write_file` 是 harness 自己的代码，但它们的每一次文件系统效果——stat、读取、原子写入、列目录、解析符号链接，以及 `read_file` 下载图片 URL——都经一个文件系统端口执行。相对路径以 Workspace 为基准解析，也允许绝对路径。符号链接会解析到它指向的文件：读取、编辑和写入都作用于目标文件，链接本身仍是链接。`read_file` 拒绝读取机密存储 `.vault.toml` 和 `.project_config.toml`：无论文件位于哪个目录、路径是否经过符号链接，都按文件名匹配。
 
-文件工具返回单个最终输出，而不是流式输出；唯一的例外是：对纯文本模型，`read_file` 会流式返回视觉模型对图片的描述。这些工具从不抛出异常。失败时以解释性文字返回，并带有 `stop_reason: fatal`。
+在被[沙盒](/settings#沙盒)封禁的 Session 里，这个端口是一个助手进程，由包裹命令的同一个 confiner 包裹：harness 以内联程序启动一个 Node 进程（`node -e …`，只用内置模块，因此无需随 bundle 分发任何文件），策略与范围（Workspace 与 Session 的 scratchpad）与命令相同，工具的各项操作以 JSON 行经它的 stdin / stdout 往返。文件工具能做的于是与命令完全一致：约束 Session 命令的后端同样约束它们，屏蔽路径也不例外，下载遵守网络档位。每个 Session 一个助手：在第一次受封禁的文件操作时启动、此后复用，Session 的策略改变或助手崩溃后重新启动，调用被中止时被杀掉（沙盒可能正卡住这次操作），随 Session 一起结束。被拒绝的写入以内核的权限错误返回，工具点明是沙盒所为，让模型换一条路再试：
+
+```text
+Failed to write "/etc/hosts": EROFS: read-only file system, open '/etc/hosts' — refused by this session's sandbox, which does not allow that here.
+```
+
+WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进发行版：Windows 盘符路径在进入时映射为 `/mnt/<盘符>` 的写法，返回时还原。在 `nodejs` 加入软件包列表之前初始化的发行版需要重新初始化。没有沙盒时（SDK 或 CLI 独立运行，或沙盒关闭），端口就是 harness 进程本身，文件工具与 shell 工具一样以用户的完整权限运行。
 
 `edit_file` 和 `write_file` 在服务器进程内按文件串行执行，串行键取文件的真实路径，因此符号链接与其目标算作同一个文件。并行编辑同一文件时，会依次应用各次修改；如果前一次编辑已经移除了某个 `old_string`，后续编辑将匹配失败，而不是覆盖前面的修改。其他进程的写入不受这把锁约束。
 
@@ -390,7 +396,7 @@ tools:
 
 `tools.mcpServers` 的每一项都是 `{ name, config }`。`name` 会成为工具名的前缀：必须以字母或数字开头，且只能包含字母、数字、`_` 和 `-`；名称重复的条目直接跳过。`config` 描述传输方式，支持三种：
 
-- `stdio`：本地进程（`command` / `args` / `env` / `cwd`）。进程环境变量由 SDK 的安全继承默认值和条目的 `env` 合并而成，`env` 优先。与命令子进程不同，MCP Server 进程**不会**拿到 Agent 的 Vault：Server 需要的任何变量都要列在条目的 `env` 里。`cwd` 默认为当前 Session 的 Workspace。
+- `stdio`：本地进程（`command` / `args` / `env` / `cwd`）。进程环境变量由 SDK 的安全继承默认值和条目的 `env` 合并而成，`env` 优先。与命令子进程不同，MCP Server 进程**不会**拿到 Agent 的 Vault：Server 需要的任何变量都要列在条目的 `env` 里。`cwd` 默认为当前 Session 的 Workspace。该进程与命令一样在 Session 的[沙盒](/settings#沙盒)下启动：同一个 confiner 改写它的 argv，没有后端能实施的策略会让该 Server 连接失败，而不是脱离封禁启动。
 - `http`：Streamable HTTP，当前规范的远程传输方式（`url` / `headers`）。
 - `sse`：旧式 HTTP+SSE 传输方式，为尚未迁移的 Server 保留（`url` / `headers`）。
 

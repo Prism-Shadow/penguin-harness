@@ -222,6 +222,9 @@ export class SandboxService {
       const policy: SandboxPolicy = {
         mode: settings.mode,
         workspaceRoot: opts.workspaceDir,
+        // The Session's scratchpad is writable beside the Workspace: the plan file, a goal's
+        // state file and the attachments live there, and hooks and commands both write it.
+        ...(opts.scratchpadDir !== undefined ? { writableRoots: [opts.scratchpadDir] } : {}),
         ...(settings.network !== undefined ? { network: settings.network } : {}),
         ...(settings.maskPaths !== undefined && settings.maskPaths.length > 0
           ? { maskPaths: settings.maskPaths }

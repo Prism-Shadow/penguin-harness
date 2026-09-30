@@ -17,13 +17,32 @@
  * no node integration); every capability flows through the server's HTTP API.
  *
  * Attach mode: when a live server (e.g. `penguin web`) already owns the data root, the
- * window loads that instance instead — normal login page, deliberate degradation.
+ * window loads that instance instead. The one-shot token buys nothing there, so the shell
+ * signs the window in the other way it is entitled to — a session minted straight into the
+ * data root it owns (see attach-session.ts) — and the same move answers any later arrival at
+ * the sign-in page, which has no password anyone could type. Signing out is the exception:
+ * it is a decision rather than a failure, so it is left to stand until the next sign-in or
+ * the next launch.
  *
  * Tray: a system-tray icon is shown for as long as the app runs, and by default closing the
  * window only hides it, so the server and its background tasks keep running (see tray.ts;
  * both preferences live in userData/tray.json and Quit still goes through the graceful
  * stop). Settings › Appearance turns the icon off and on, reaching the shell over the same
  * utilityProcess relay the client updater uses.
+ *
+ * Built-in browser: the main window (and no other) may host <webview> guests in the
+ * `persist:penguin-browser` partition, and builtin-browser.ts relays raw CDP and cookie writes
+ * for them over that same port. That relay is the only part of the browser the shell carries,
+ * and it lives here because it has to: a guest's `webContents.debugger` and the partition's
+ * session are main-process APIs that neither the page nor the server process can reach. The
+ * tab registry, the page scripts, scan / exec / click, import and history are the server
+ * platform's, delivered by push like any other product behavior.
+ *
+ * Folder access (macOS): on the Workspace picker's request, relayed over the same port, the
+ * main process reads a protected folder once and opens System Settings at a privacy pane (see
+ * folder-access.ts). It lives here because it has to: macOS asks about Desktop, Documents and
+ * Downloads only on behalf of the app it holds responsible, and the app is this process. What
+ * to tell the user about the outcome is the Web App's.
  *
  * Dev isolation: the dev profile — an unpackaged run, or any build launched with `--dev`
  * — takes a dev-suffixed identity (own userData, and with it the single-instance lock and
@@ -39,15 +58,28 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { app, BrowserWindow, dialog, shell } from "electron";
+import { app, BrowserWindow, dialog, session, shell } from "electron";
 import type { WindowOpenHandlerResponse } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
+import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
+import type { ServerLock } from "@prismshadow/penguin-server/lock";
 import { appIdentity, desktopDataRoot, resolveProfile } from "./app-identity.js";
+import {
+  createSignInGuard,
+  isLoginPageUrl,
+  planSignIn,
+  signInFailureDialog,
+} from "./attach-session.js";
+import type { SignInFailure } from "./attach-session.js";
 import { embeddedCliEntry } from "./launcher.js";
 import { webDistEntry, webDistFor } from "./web-dist.js";
 import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
+import { createBuiltinBrowserShell } from "./builtin-browser.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
+import { logLine, logServerOutput, startDesktopLog, stopDesktopLog } from "./desktop-log.js";
+import { handleFolderAccessFrame } from "./folder-access.js";
+import type { FolderAccessFrameDeps } from "./folder-access.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
@@ -65,14 +97,18 @@ import {
 import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
 import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
 import {
+  APP_WINDOW_OPTIONS,
+  childGoneLine,
   classifyWindowOpen,
   desktopLoginUrl,
   hidesOnClose,
   isAppUrl,
-  isAuthorizationBridgeUrl,
   isExternalScheme,
   isLocalSurfaceUrl,
   MAX_SERVER_RESTARTS,
+  RENDERER_HEALTHY_MS,
+  rendererGoneLine,
+  rendererReloadDelayMs,
   restartDelayMs,
   urlForLog,
 } from "./util.js";
@@ -103,11 +139,32 @@ let trayLocale: TrayLocale = "en";
 let server: EmbeddedServer | null = null;
 /** The live server child, for pushes that are not answers to one of its messages. */
 let relayChild: EmbeddedServer["child"] | null = null;
+/**
+ * The built-in browser's guests and their relay (see the header). Frames for the server go to
+ * whichever child is live; with none, a push is dropped and the next server asks for the tabs.
+ */
+const builtinBrowser = createBuiltinBrowserShell({
+  post: (message) => relayChild?.postMessage(message),
+  locale: () => trayLocale,
+  log: (line) => logLine(`[shell] ${line}`),
+});
+/** The Workspace picker's macOS folder access (see the header); replies go to whichever child is live. */
+const folderAccess: FolderAccessFrameDeps = {
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+  readdir: (dir) => fs.promises.readdir(dir),
+  openExternal: (url) => shell.openExternal(url),
+  post: (reply) => relayChild?.postMessage(reply),
+  log: (line) => logLine(`[shell] ${line}`),
+};
 /** App origin (embedded or attached); null until boot resolves. */
 let appOrigin: string | null = null;
 let quitting = false;
 let stopPromise: Promise<void> | null = null;
 let restartAttempts = 0;
+/** The main window's page died this many times in a row; a page that stays up resets it. */
+let rendererDeaths = 0;
+let rendererHealthyTimer: NodeJS.Timeout | null = null;
 
 // app.name, not a literal: a dev run raises this box while the installed build may be
 // running beside it, and a dialog titled "PenguinHarness" cannot be attributed to either.
@@ -132,8 +189,12 @@ function createWindow(url: string): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // The built-in browser's tabs are <webview> guests of this page. This window only:
+      // windows it opens are built from their own preferences, which leave the tag off.
+      webviewTag: true,
     },
   });
+  builtinBrowser.host(win);
   win.once("ready-to-show", () => win?.show());
   // Close-to-tray: the window goes away, the app and its embedded server stay, and the tray
   // icon is the way back. Every real exit — the tray's Quit, the app menu's, an OS logout —
@@ -155,37 +216,56 @@ function createWindow(url: string): void {
   // (classifyWindowOpen): only the Workspace preview hand-off, a preview page and a detached
   // terminal get a window of this app; other sites go to the system browser; anything else
   // on this instance is refused, since every other app path boots a second copy of the App.
-  win.webContents.setWindowOpenHandler(({ url: target }) => {
-    // The one addition, and this window's alone: Penguin Go's authorization bridge. The Web
-    // App opens it from the Authorize click, then points it at the platform or closes it when
-    // `/start` fails. It is an implementation detail, not a second app window, so it stays
-    // hidden. It is decided here and not in openWindowFor, which every opened window shares, so
-    // HTML in a preview window cannot open hidden windows. An HTML preview in this window's own
-    // Files panel still can: its iframe allows popups, and this handler is not told which frame
-    // asked.
-    if (isAuthorizationBridgeUrl(target)) {
-      return {
-        action: "allow",
-        overrideBrowserWindowOptions: {
-          show: false,
-          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-        },
-      };
-    }
-    return openWindowFor(target, iconPath);
-  });
-  win.webContents.on("did-create-window", (child, details) =>
-    guardOpenedWindow(child, iconPath, isAuthorizationBridgeUrl(details.url)),
-  );
+  // This window gets no exception of its own: the handler is not told which frame asked, and
+  // the Files panel previews Agent-written HTML in an iframe that allows popups, so any window
+  // allowed here is one that HTML can open too — a hidden one, it could own outright.
+  win.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
+  win.webContents.on("did-create-window", (child) => guardOpenedWindow(child, iconPath));
   win.webContents.on("will-navigate", (event, target) => {
     if (!isAppUrl(target, appOrigin)) {
       event.preventDefault();
       openInSystem(target);
     }
   });
-  win.webContents.on("render-process-gone", () => win?.webContents.reload());
+  // The catch-all for every route to the sign-in page — an attached instance that never saw
+  // this shell's token, a session that lapsed, a claim that failed. The page asks for a
+  // password this installation does not have, so the shell answers it the way it answers
+  // attach mode (see signInFromDataRoot). Both events are needed: the App routes to the
+  // sign-in page within the loaded page, and the server redirects to it across a load.
+  win.webContents.on("did-navigate", (_event, url) => onMainWindowNavigated(url));
+  win.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (isMainFrame) onMainWindowNavigated(url);
+  });
+  watchForSignOut(win);
+  // The page's renderer died (the app-level handler below logs why): reload it, after a pause
+  // that grows while it keeps dying, so a page that crashes as it loads cannot spin.
+  const target = win;
+  target.webContents.on("render-process-gone", () => reloadAfterRendererDeath(target));
+  target.webContents.on("unresponsive", () => logLine("[shell] the window stopped responding"));
+  target.webContents.on("responsive", () => logLine("[shell] the window responds again"));
   armSmokeProbe(win);
   void win.loadURL(url);
+}
+
+/**
+ * Reloads the main window's page after its renderer died: at once the first time, then after
+ * a growing pause (rendererReloadDelayMs) while it keeps dying. A page that then stays up for
+ * RENDERER_HEALTHY_MS starts the ladder over.
+ */
+function reloadAfterRendererDeath(target: BrowserWindow): void {
+  if (rendererHealthyTimer !== null) clearTimeout(rendererHealthyTimer);
+  rendererHealthyTimer = null;
+  const wait = rendererReloadDelayMs(rendererDeaths);
+  rendererDeaths += 1;
+  if (wait > 0) logLine(`[shell] the window's page keeps dying; reloading it in ${wait} ms`);
+  setTimeout(() => {
+    if (quitting || target.isDestroyed()) return;
+    target.webContents.reload();
+    rendererHealthyTimer = setTimeout(() => {
+      rendererDeaths = 0;
+      rendererHealthyTimer = null;
+    }, RENDERER_HEALTHY_MS);
+  }, wait);
 }
 
 /**
@@ -198,21 +278,29 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
     case "window":
       return {
         action: "allow",
+        // Electron merges the page's `window.open` feature string under this override, so
+        // every key a page could use to hide the window is pinned here (APP_WINDOW_OPTIONS).
         overrideBrowserWindowOptions: {
-          width: 1100,
-          height: 800,
-          autoHideMenuBar: true,
           ...(iconPath !== null ? { icon: iconPath } : {}),
           // Same hardening as the main window: a preview is Agent-written, untrusted HTML
-          // and must never get Node.
-          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+          // and must never get Node. Nor <webview>, the main window's alone: Electron copies
+          // an opener's preference only when it is the safe one, so without this line the
+          // main window's `webviewTag: true` leaves a features string (`webviewTag=yes`) in
+          // charge.
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+            webviewTag: false,
+          },
+          ...APP_WINDOW_OPTIONS,
         },
       };
     case "external":
       void shell.openExternal(target);
       return { action: "deny" };
     case "deny":
-      process.stdout.write(`[shell] refused to open a window for ${urlForLog(target)}\n`);
+      logLine(`[shell] refused to open a window for ${urlForLog(target)}`);
       return { action: "deny" };
   }
 }
@@ -222,25 +310,37 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
  * opens: a window-open handler belongs to one window, so a window opened from a preview page
  * would otherwise open anything at all. Its navigation policy is "stay within this instance's
  * loopback surface": a child lands on the preview host after the redirect, and the main
- * window's stricter app-origin-only rule would bounce the preview itself out.
+ * window's stricter app-origin-only rule would bounce the preview itself out. A window stays
+ * open when one of its links opens externally.
  *
- * `authorizationBridge` marks the main window's hidden Penguin Go bridge. Only the main window
- * opens one, so every window further down passes false.
+ * The window is also kept where the user can see it. APP_WINDOW_OPTIONS pins what the page's
+ * feature string could hide, but a position is not an option to pin — `left`/`top` arrive as
+ * `x`/`y` — so the window is centered here instead, and the page's own `moveTo`/`resizeTo`,
+ * which Electron would otherwise apply, is refused: off-screen is hidden too.
  */
-function guardOpenedWindow(
-  child: BrowserWindow,
-  iconPath: string | null,
-  authorizationBridge: boolean,
-): void {
+function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void {
+  child.center();
+  child.webContents.on("content-bounds-updated", (event) => event.preventDefault());
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
-  child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath, false));
+  child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath));
+  // A session that dies while a child window is open sends that window to the sign-in page
+  // too — the App's guard redirects on the first 401, wherever it is rendered. A sign-in form
+  // is of no use in a subordinate surface: there is no password to type, and signing back in
+  // is the main window's business, which it now does by itself. So the child closes instead,
+  // which for a detached terminal returns its tab to the dock in the main window rather than
+  // stranding it behind a form. A preview window never reaches this page: an unauthorized
+  // preview hand-off answers with an API error, not the App.
+  const closeOnSignInPage = (url: string): void => {
+    if (isLoginPageUrl(url, appOrigin)) child.close();
+  };
+  child.webContents.on("did-navigate", (_event, url) => closeOnSignInPage(url));
+  child.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (isMainFrame) closeOnSignInPage(url);
+  });
   child.webContents.on("will-navigate", (event, target) => {
     if (!isLocalSurfaceUrl(target, appOrigin)) {
       event.preventDefault();
       openInSystem(target);
-      // A preview window stays open when one of its links opens externally. The hidden
-      // authorization bridge has completed its only job and must not linger.
-      if (authorizationBridge) child.close();
     }
   });
 }
@@ -248,7 +348,7 @@ function guardOpenedWindow(
 /** A navigation that leaves the app: a web or mail link goes to the system; any other scheme is refused. */
 function openInSystem(target: string): void {
   if (isExternalScheme(target)) void shell.openExternal(target);
-  else process.stdout.write(`[shell] refused to hand ${urlForLog(target)} to the system\n`);
+  else logLine(`[shell] refused to hand ${urlForLog(target)} to the system`);
 }
 
 /**
@@ -287,6 +387,89 @@ function navigateMainWindow(target: string): void {
   void win.loadURL(url);
 }
 
+// --- signing the window in -------------------------------------------------
+
+/** The data root this shell owns; null until boot resolves it. */
+let shellDataRoot: string | null = null;
+/**
+ * The lock of the server this shell attached to instead of starting its own, so a failure
+ * can name the process holding the data root; null while the server is this shell's.
+ */
+let attachedServer: ServerLock | null = null;
+/**
+ * Which arrivals at the sign-in page the shell answers with a session — one attempt per
+ * stay, and none at all after a sign-out. It starts fresh with the process, which is what
+ * makes a launch the way back in after signing out (see attach-session.ts).
+ */
+const signInGuard = createSignInGuard();
+
+/**
+ * Puts a session cookie for the current origin into the window's cookie store, by minting a
+ * session row in the data root this shell owns. False means it could not and the dialog
+ * explaining that is up; the caller then lets the window reach the sign-in page, which is at
+ * least a page with an explanation behind it rather than a dead end.
+ */
+async function signInFromDataRoot(): Promise<boolean> {
+  const root = shellDataRoot;
+  if (root === null || appOrigin === null) return false;
+  const plan = planSignIn({ root, origin: appOrigin, mint: mintApiToken });
+  if (plan.outcome === "failed") {
+    showSignInFailure(root, plan.failure);
+    return false;
+  }
+  try {
+    await session.defaultSession.cookies.set(plan.cookie);
+    return true;
+  } catch (err) {
+    // The row exists and the cookie store refused it. Rare enough to have no handling of its
+    // own, and identical from where the user sits, so it takes the same explanation.
+    showSignInFailure(root, { reason: "failed", detail: String(err) });
+    return false;
+  }
+}
+
+/** Reports a failed sign-in: one line in the log, and the dialog the user acts on. */
+function showSignInFailure(dataRoot: string, failure: SignInFailure): void {
+  logLine(`[shell] the window could not be signed in: ${failure.detail}`);
+  const opts = {
+    type: "warning" as const,
+    title: app.name,
+    ...signInFailureDialog({ dataRoot, other: attachedServer, failure }),
+  };
+  void (win !== null ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts));
+}
+
+/** The App's sign-out, as a request pattern: the one intent a navigation cannot express. */
+const SIGN_OUT_REQUEST = "*://*/api/auth/logout";
+
+/**
+ * Watches for the App ending the session on purpose, which the catch-all must not undo.
+ * A sign-out leads to the same page as an expired session and needs the opposite answer, and
+ * the page never tells the shell which it is — so the intent is read off the request the App
+ * makes to end the session. The listener belongs to the session rather than to one window, so
+ * a sign-out from any window of this app counts, and registering it again replaces it.
+ */
+function watchForSignOut(target: BrowserWindow): void {
+  target.webContents.session.webRequest.onCompleted({ urls: [SIGN_OUT_REQUEST] }, (details) => {
+    // A refused sign-out leaves the session alive, so the window never reaches the sign-in
+    // page, and there is nothing to suppress.
+    if (details.statusCode < 400 && isAppUrl(details.url, appOrigin)) signInGuard.signedOut();
+  });
+}
+
+/** Runs the guard's decision for wherever the main window has just landed. */
+function onMainWindowNavigated(url: string): void {
+  if (signInGuard.arrived(url, appOrigin) !== "rescue") return;
+  void signInFromDataRoot().then((signedIn) => {
+    // The app root, not a reload: the page underneath IS the sign-in page, and reloading it
+    // shows it for a beat before the App redirects a signed-in window away from it. A failed
+    // attempt loads nothing — the window is already going where it would be sent.
+    const landing = signedIn && appOrigin !== null ? `${appOrigin}/` : null;
+    signInGuard.tried(landing);
+    if (landing !== null) void win?.loadURL(landing);
+  });
+}
+
 // --- tray -----------------------------------------------------------------
 
 /**
@@ -306,7 +489,7 @@ function openTray(): void {
     onShowWindow: showMainWindow,
     onNavigate: navigateMainWindow,
     onQuit: () => app.quit(),
-    log: (line) => process.stdout.write(`[shell] ${line}\n`),
+    log: (line) => logLine(`[shell] ${line}`),
   });
 }
 
@@ -321,7 +504,7 @@ function setShowTrayIcon(next: boolean): void {
   try {
     updateTrayPrefs(app.getPath("userData"), { showTrayIcon: next });
   } catch (err) {
-    process.stdout.write(`[shell] the tray preference could not be saved: ${String(err)}\n`);
+    logLine(`[shell] the tray preference could not be saved: ${String(err)}`);
   }
   if (next) {
     openTray();
@@ -348,7 +531,7 @@ function setTrayLocale(next: TrayLocale): void {
   try {
     updateTrayPrefs(app.getPath("userData"), { locale: next });
   } catch (err) {
-    process.stdout.write(`[shell] the tray language could not be saved: ${String(err)}\n`);
+    logLine(`[shell] the tray language could not be saved: ${String(err)}`);
   }
   tray?.setLocale(next);
   pushTrayStatus();
@@ -356,14 +539,17 @@ function setTrayLocale(next: TrayLocale): void {
 
 /**
  * Shell relay over the utilityProcess port: forward the account-menu row's check/install
- * frames to the updater and the Appearance switch's frames to the tray, push every updater
- * status fold back, and push both current states now — the fresh child, restarts included,
- * must not start blind. The subscription dies with the child; the next start wires the next
- * one.
+ * frames to the updater, the Appearance switch's frames to the tray, the built-in browser's
+ * commands to its guests and the Workspace picker's folder-access requests to folder-access.ts,
+ * push every updater status fold back, and push both current states now — the fresh child,
+ * restarts included, must not start blind. The subscription dies with the child; the next
+ * start wires the next one.
  */
 function wireShellRelay(child: EmbeddedServer["child"]): void {
   relayChild = child;
   child.on("message", (message: unknown) => {
+    if (builtinBrowser.handle(message)) return;
+    if (handleFolderAccessFrame(message, folderAccess)) return;
     const action = parseUpdaterCommand(message);
     if (action !== null) {
       handleUpdaterCommand(action);
@@ -410,7 +596,7 @@ async function startServerAndWindow(dataRoot: string): Promise<void> {
     profile,
     portFile: path.join(app.getPath("userData"), "server-port"),
     preferredPortFile: path.join(app.getPath("userData"), "preferred-port"),
-    log: (chunk) => process.stdout.write(`[server] ${chunk}`),
+    log: (chunk, stream) => logServerOutput(stream, chunk),
   });
   server = started;
   appOrigin = started.origin;
@@ -431,7 +617,10 @@ async function startServerAndWindow(dataRoot: string): Promise<void> {
 
 /** Unexpected server death: restart with backoff; give up with an error dialog at the cap. */
 async function handleServerExit(dataRoot: string, code: number): Promise<void> {
-  if (quitting) return;
+  if (quitting) {
+    logLine(`[shell] server exited (code ${code})`);
+    return;
+  }
   server = null;
   if (restartAttempts >= MAX_SERVER_RESTARTS) {
     fatal(`The embedded server keeps exiting (last exit code ${code}).`, "Giving up.");
@@ -439,7 +628,7 @@ async function handleServerExit(dataRoot: string, code: number): Promise<void> {
   }
   const wait = restartDelayMs(restartAttempts);
   restartAttempts += 1;
-  process.stdout.write(`[shell] server exited (code ${code}); restarting in ${wait}ms\n`);
+  logLine(`[shell] server exited (code ${code}); restarting in ${wait}ms`);
   await new Promise((resolve) => setTimeout(resolve, wait));
   if (quitting) return;
   try {
@@ -458,16 +647,26 @@ async function boot(): Promise<void> {
     homedir: os.homedir(),
     releaseRoot: resolveRoot,
   });
+  shellDataRoot = dataRoot;
   if (profile === "dev") {
-    process.stdout.write(`[shell] dev instance '${app.name}' on data root ${dataRoot}\n`);
+    logLine(`[shell] dev instance '${app.name}' on data root ${dataRoot}`);
   }
   const existing = await liveServerLock(dataRoot);
   if (existing !== null) {
-    // Attach mode: the one-shot token only works against a server this shell spawned,
-    // so the window goes through the normal login page of the existing instance.
+    // Attach mode: another server — a `penguin web` run, an older app still up — holds this
+    // data root, and the one-shot token only works against a server this shell spawned. The
+    // window is signed in the other way the product recognizes instead: a session minted
+    // straight into the root this shell owns, which is the same authority the CLI mints on.
+    attachedServer = existing;
     appOrigin = `http://localhost:${existing.port}`;
-    process.stdout.write(`[shell] attaching to the running server at ${appOrigin}\n`);
-    createWindow(`${appOrigin}/`);
+    logLine(`[shell] attaching to the running server at ${appOrigin} (pid ${existing.pid})`);
+    await signInFromDataRoot();
+    // Either way the window opens on the app root: signed in it goes straight into the App,
+    // and otherwise the App sends it to the sign-in page the dialog has just explained. The
+    // attempt is recorded with that URL, so arriving there does not buy a second one.
+    const landing = `${appOrigin}/`;
+    signInGuard.tried(landing);
+    createWindow(landing);
     return;
   }
   await startServerAndWindow(dataRoot);
@@ -478,7 +677,40 @@ async function boot(): Promise<void> {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // The log file is this instance's from here: a second launch quits above without touching it.
+  const logFile = startDesktopLog(path.join(app.getPath("userData"), "logs", "desktop.log"));
+  logLine(
+    `[shell] ${app.name} ${app.getVersion()} starting (Electron ${process.versions.electron}, ` +
+      `${process.platform} ${process.arch}, ${Math.round(os.totalmem() / 2 ** 30)} GB memory); log ${logFile}`,
+  );
+
   app.on("second-instance", () => showMainWindow());
+
+  // Every renderer and child process that dies says so in the log: the app window's page (which
+  // the window then reloads), a browser tab's, DevTools', the GPU process, the embedded server.
+  app.on("render-process-gone", (_event, contents, details) => {
+    logLine(
+      `[shell] ${rendererGoneLine({
+        type: contents.getType(),
+        id: contents.id,
+        url: contents.getURL(),
+        reason: details.reason,
+        exitCode: details.exitCode,
+      })}`,
+    );
+  });
+  app.on("child-process-gone", (_event, details) => {
+    logLine(
+      `[shell] ${childGoneLine({
+        type: details.type,
+        reason: details.reason,
+        exitCode: details.exitCode,
+        ...(details.serviceName !== undefined ? { serviceName: details.serviceName } : {}),
+        ...(details.name !== undefined ? { name: details.name } : {}),
+      })}`,
+    );
+  });
+  app.on("will-quit", () => stopDesktopLog());
 
   app.on("window-all-closed", () => {
     // macOS keeps the app alive in the Dock; elsewhere closing the window quits.
@@ -515,7 +747,7 @@ if (!app.requestSingleInstanceLock()) {
         platform: process.platform,
         env: process.env,
         shell: process.env.SHELL,
-        log: (line) => process.stdout.write(`[shell] ${line}\n`),
+        log: (line) => logLine(`[shell] ${line}`),
       });
       // Standard menu plus native desktop-only actions; the window gets no IPC channel.
       // The install item is the release profile's, like the per-launch repair below: the

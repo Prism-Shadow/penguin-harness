@@ -31,7 +31,7 @@ profile is assembled in this sequence:
 | --- | --- |
 | The read-only world | `--ro-bind / /`, `--dev /dev`, `--proc /proc`, `--die-with-parent` |
 | writable temp (either mode) | `--tmpfs /tmp`, `--bind <tmpdir> <same>` when `$TMPDIR` is elsewhere |
-| `workspace-write` | `--bind <workspaceRoot> <same>` |
+| `workspace-write` | `--bind <workspaceRoot> <same>`, then `--bind <root> <same>` for each of the policy's `writableRoots` (the Session's scratchpad) |
 | `network: none` | `--unshare-net` |
 | `network: local` | not supported: an empty network namespace loses the host's loopback too |
 | `mask-paths` | `--tmpfs <dir>` or `--ro-bind /dev/null <file>` |

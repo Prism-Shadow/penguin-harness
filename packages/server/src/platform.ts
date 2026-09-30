@@ -33,6 +33,7 @@ import {
   ResourceGroups,
 } from "./hmr/capabilities.js";
 import { ScryptHasher, PasswordHasher } from "./auth/password.js";
+import { LiveStreamRegistry, LiveStreams } from "./auth/live-streams.js";
 import {
   DefaultMessagingTuning,
   Messaging,
@@ -121,7 +122,12 @@ import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
 import { AuthRoutes } from "./http/routes/auth.js";
-import { DesktopRoutes, DesktopTrayRoutes, DesktopUpdateRoutes } from "./http/routes/desktop.js";
+import {
+  DesktopPrivacySettingsRoutes,
+  DesktopRoutes,
+  DesktopTrayRoutes,
+  DesktopUpdateRoutes,
+} from "./http/routes/desktop.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
@@ -162,6 +168,7 @@ import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
+import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 
 /**
  * The platform's module tree: the root module and its children, in one place.
@@ -257,13 +264,14 @@ export class RuntimeModule {}
     UsersRepo,
     AuthSessionsRepo,
     ScryptHasher,
+    LiveStreamRegistry,
     AuthService,
     AdminService,
     AdminRoutes,
     MeRoutes,
     AuthRoutes,
   ],
-  exports: [Users, AuthSessions, Auth, Admin, PasswordHasher],
+  exports: [Users, AuthSessions, Auth, Admin, PasswordHasher, LiveStreams],
 })
 export class IdentityModule {}
 
@@ -432,6 +440,7 @@ export class CompanyModule {}
     DesktopRoutes,
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
+    DesktopPrivacySettingsRoutes,
     PluginRoutes,
     PluginRegistryRoutes,
     InstalledPluginRoutes,
@@ -469,6 +478,7 @@ export class WorkflowsModule {}
     MachinesModule,
     TerminalRelay,
     WorkflowsModule,
+    BuiltinBrowserModule,
     Startup,
   ],
 })

@@ -60,6 +60,7 @@ import {
   Input,
   PreviewPane,
   SplitPane,
+  Spinner,
   Tooltip,
   TreePane,
   WorkspaceFileEditor,
@@ -73,7 +74,6 @@ import {
   toastSuccess,
   useCopied,
   useRowContextMenu,
-  writeClipboard,
 } from "@prismshadow/penguin-ui";
 import type {
   FileMenuTarget,
@@ -88,7 +88,12 @@ import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { isDesktopShellWindow } from "../../lib/account-menu";
+import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
+import { isShortcut } from "../../lib/shortcuts/match";
+import { currentPlatform } from "../../lib/shortcuts/platform";
+import { keymap } from "../../lib/shortcuts/store";
 import { joinWorkspacePath } from "../../lib/file-path";
+import { writeClipboard } from "../../lib/clipboard";
 import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
 import type { DragSignal } from "../../lib/file-drop";
 import { MB_BYTES, splitBySize } from "../../lib/upload-limits";
@@ -460,6 +465,7 @@ export function WorkspaceBrowser({
   // the new tab to the same-origin sandbox (which the link flags rather than failing
   // silently in the page) and the in-app rendered view to the srcDoc fallback.
   const { previewIsolated, desktopMode, sessionVia } = useAuth();
+  const saveShortcut = useShortcutLabel("editor.save");
   // The desktop app's own window is the one page whose machine IS the server's, so it is the
   // only one offered "show in folder" — see lib/account-menu.ts for why a browser signed into
   // the same server, even on this machine, must not be.
@@ -1400,9 +1406,9 @@ export function WorkspaceBrowser({
   const copyPath = (target: FileMenuTarget): void => {
     // A menu row cannot carry the copy button's own at-the-control feedback: the row acts and
     // the panel closes out from under it. A toast is the confirmation that survives that, and
-    // it says the same word (sidebar.tsx's copy-id row does the same).
-    writeClipboard(target.path);
-    toastSuccess(S.common.copied);
+    // it says the same word (sidebar.tsx's copy-id row does the same) — only once the write
+    // has landed.
+    void writeClipboard(target.path).then((ok) => ok && toastSuccess(S.common.copied));
   };
 
   const addToChat = (target: FileMenuTarget): void => {
@@ -1681,7 +1687,7 @@ export function WorkspaceBrowser({
                 aria-label={uploadLabel}
               />
               {uploading !== null ? (
-                <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+                <Spinner size="sm" label={uploadLabel} />
               ) : (
                 <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
               )}
@@ -2062,7 +2068,11 @@ export function WorkspaceBrowser({
           </button>
         </Tooltip>
         <Tooltip
-          label={saving ? S.common.saving : S.files.saveTitle}
+          label={
+            saving
+              ? S.common.saving
+              : `${S.common.save}${saveShortcut !== null ? ` (${saveShortcut})` : ""}`
+          }
           placement="bottom"
           className="shrink-0"
         >
@@ -2074,7 +2084,7 @@ export function WorkspaceBrowser({
             className={`${iconActionClass} disabled:opacity-40`}
           >
             {saving ? (
-              <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              <Spinner size="sm" label={S.common.saving} />
             ) : (
               <GlyphIcon d={STAT_ICONS.check} size={ICON_SIZE.iconButton} />
             )}
@@ -2147,6 +2157,9 @@ export function WorkspaceBrowser({
             highlight={editing.draft.length <= TEXT_PREVIEW_LIMIT}
             onChange={updateDraft}
             onSave={requestSave}
+            // The editor.save binding (⌘S / Ctrl+S by default), read from the keymap at the
+            // keystroke so a rebinding in the settings takes effect without a remount.
+            isSaveKey={(event) => isShortcut(event, keymap(), "editor.save", currentPlatform())}
           />
         )
       }

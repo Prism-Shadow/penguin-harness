@@ -35,6 +35,8 @@ export interface ToolbarTriggerProps {
   width?: "sm" | "md";
   /** Whether the picker it opens is open. */
   expanded?: boolean;
+  /** What it opens, when that is not a menu the caller wraps it in (a dialog). */
+  ariaHaspopup?: "dialog" | "listbox" | "menu";
   onClick?: () => void;
   /** State a caller or a test reads back off the button (`data-level`). */
   [data: `data-${string}`]: string | number | boolean | undefined;
@@ -56,6 +58,7 @@ export function ToolbarTrigger({
   disabled = false,
   width = "sm",
   expanded,
+  ariaHaspopup,
   onClick,
   ...data
 }: ToolbarTriggerProps) {
@@ -73,6 +76,7 @@ export function ToolbarTrigger({
       aria-label={ariaLabel}
       data-tooltip={tooltip ?? ariaLabel}
       {...(expanded !== undefined ? { "aria-expanded": expanded } : {})}
+      {...(ariaHaspopup !== undefined ? { "aria-haspopup": ariaHaspopup } : {})}
       disabled={disabled}
       onClick={onClick}
       className={

@@ -8,32 +8,32 @@ fetched from a CDN, so the desktop build renders offline.
 
 | theme | sans (reading) | ui (chrome) | mono | CJK |
 | --- | --- | --- | --- | --- |
-| Primer `github` | Mona Sans Variable (from W1a; system stack until then) | = sans | JetBrains Mono Variable behind the system mono stack (W1a) | Noto Sans SC Variable (W1a) |
+| Primer `github` | Mona Sans Variable | = sans | JetBrains Mono Variable | Noto Sans SC Variable |
 | Frost `modern` | **MiSans** 400 / 500 | = sans | JetBrains Mono Variable | MiSans (the same family) |
-| Console `geek` | IBM Plex Sans Variable | Commit Mono 400 / 700 | Commit Mono 400 / 700 | Noto Sans SC Variable |
+| Console `geek` | IBM Plex Sans Variable | = sans | JetBrains Mono Variable | Noto Sans SC Variable |
 
 Two faces per theme since the theme identities (2026-09-19): `--ui-font-ui` is the chrome's face
 (`body` sets it; navigation, controls, labels, headings, badges, tables) and `--ui-font-sans` the
-reading face (message text, prose, the composer's input opt in with `font-sans`). Primer and Frost
-point both at one family; Console sets its chrome in Commit Mono and reads in Plex Sans. The display
-face is the chrome face everywhere: Console's h1 is the mono bold, and IBM Plex Sans Condensed 600
-(the old uppercase h1) stays declared in `geek.css` but unnamed until its dependency is dropped.
+reading face (message text, prose, the composer's input opt in with `font-sans`). Every theme points
+both at one family; Console set its chrome in a mono face until 2026-09-30, and now keeps mono for
+code and a few technical marks (the status-line tags, a step's label and block bar, chart axis
+labels). The display face is the chrome face everywhere: Console's h1 is the Plex Sans bold, and IBM
+Plex Sans Condensed 600 (the old uppercase h1) stays declared in `geek.css` but unnamed until its
+dependency is dropped.
 
 | family | files | source | licence |
 | --- | --- | --- | --- |
 | Mona Sans Variable | `github.css`: latin + latin-ext | `@fontsource-variable/mona-sans` | OFL-1.1 |
-| JetBrains Mono Variable | `github.css`: latin + latin-ext (Frost names the same faces) | `@fontsource-variable/jetbrains-mono` | OFL-1.1 |
+| JetBrains Mono Variable | `github.css`: latin + latin-ext (Frost and Console name the same faces) | `@fontsource-variable/jetbrains-mono` | OFL-1.1 |
 | MiSans | `modern.css` → `misans/misans.css`: Regular as 400 and Medium as 500, 99 `unicode-range` slices each | vendored: `scripts/build-misans.py` cuts them from Xiaomi's official package | MiSans Font Intellectual Property License Agreement |
 | IBM Plex Sans Variable | `geek.css`: latin + latin-ext | `@fontsource-variable/ibm-plex-sans` | OFL-1.1 |
 | IBM Plex Sans Condensed | `geek.css`: 600, latin + latin-ext | `@fontsource/ibm-plex-sans-condensed` | OFL-1.1 |
-| Commit Mono | `geek.css`: 400 and 700, one latin file each | `@fontsource/commit-mono` | OFL-1.1 |
 | Noto Sans SC Variable | `cjk.css`: fontsource's own sheet, 101 `unicode-range` slices | `@fontsource-variable/noto-sans-sc` | OFL-1.1 |
 
 Why these faces: Mona Sans is GitHub's product face. MiSans gives Frost one family for Latin and
 Chinese, so a zh line sits in the same face as the English around it; no other face on the shortlist
-has Chinese. Commit Mono, the face opencode.ai and e2b.dev ship, is Console's chrome — navigation,
-controls, labels, headings — and its code face; IBM Plex Sans keeps Console's reading text
-proportional, which a monospaced paragraph is not.
+has Chinese. IBM Plex Sans is Console's main face, chrome and reading text alike, and JetBrains
+Mono, the code face the three themes share, sets its code and its technical marks.
 
 Frost ships two MiSans weights and no more, so `themes/modern.css` turns off weight synthesis: a 600
 or 700 request renders in Medium instead of a synthesized bold, which smears Han strokes. Frost's
@@ -46,8 +46,8 @@ Font files and font declarations cost differently:
 - **Files.** A browser fetches a font file only when an element's `font-family` names its family
   and its text falls inside the face's `unicode-range`. Each theme file names only its own
   families, so a session downloads its theme's faces and nothing else, and only the slices its text
-  touches; Primer names no bundled family in W0 and downloads none. The consumers' Vite configs
-  never inline a font (`build.assetsInlineLimit`), so every slice stays a file of its own.
+  touches. The consumers' Vite configs never inline a font (`build.assetsInlineLimit`), so every
+  slice stays a file of its own.
 - **Declarations.** `index.css` declares every theme's faces unconditionally, so all of them are
   rules in the app's main stylesheet and every session downloads them, Primer's included: about
   94 KB of the stylesheet's 122 KB gzipped, most of it the `unicode-range` lists of MiSans's 198
@@ -59,9 +59,9 @@ each language; Playwright network log, identical in light and dark):
 
 | theme | English page | Chinese page |
 | --- | --- | --- |
-| Primer (W0: system fonts) | 0 files | 0 files |
+| Primer | not measured since it took its bundled faces (2026-09-30) | not measured |
 | Frost | 5 files, 92.6 KB (MiSans 3 + 1 slices, JetBrains Mono) | 27 files, 627 KB (MiSans 16 + 10 slices, JetBrains Mono) |
-| Console | 4 files, 121.7 KB (Plex Sans, Condensed 600, Commit Mono 400, 1 Noto slice for a symbol) | 17 files, 893 KB (14 Noto slices, the three Latin faces) |
+| Console | not measured since it took JetBrains Mono (2026-09-30) | not measured |
 
 ## Bytes in `dist/`
 
@@ -77,8 +77,7 @@ gallery), because the offline desktop app needs them all:
 | JetBrains Mono Variable | 2 | 55,600 |
 | IBM Plex Sans Variable | 2 | 76,676 |
 | IBM Plex Sans Condensed 600 | 2 | 35,860 |
-| Commit Mono 400 / 700 | 2 | 95,432 |
-| **total** | **309** | **9,091,684** |
+| **total** | **307** | **8,996,252** |
 
 MiSans covers the characters of Noto's slice partition plus its own other non-ideograph characters.
 The roughly 15,500 rare ideographs outside that partition are not shipped (they would add 2.46 MB per

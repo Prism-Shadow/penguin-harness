@@ -12,8 +12,10 @@ import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 export interface PanelsToolbarToggle {
   /** Stable id: the toggle's test id is `dock-toggle-<key>`. */
   key: string;
-  /** The accessible name and the tooltip. */
+  /** The accessible name, and the tooltip when `tooltip` is absent. */
   label: string;
+  /** The tooltip, when it says more than the name (the name with its shortcut). */
+  tooltip?: string;
   /** The glyph's path, from the icon registry. */
   glyph: string;
   /** The dock is on screen. */
@@ -40,7 +42,7 @@ export function PanelsToolbar({ toggles, className = "", ...rest }: PanelsToolba
           type="button"
           aria-expanded={toggle.active}
           onClick={toggle.onToggle}
-          data-tooltip={toggle.label}
+          data-tooltip={toggle.tooltip ?? toggle.label}
           aria-label={toggle.label}
           data-testid={`dock-toggle-${toggle.key}`}
           className={`relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${

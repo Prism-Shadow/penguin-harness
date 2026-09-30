@@ -25,11 +25,13 @@ import {
   userText,
 } from "./omnimessage/index.js";
 import type { OmniMessage, SessionMetaPayload } from "./omnimessage/index.js";
+import { stripLeadingMarkerBlocks } from "./omnimessage/markers/index.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
 import { runStopHooks } from "./hooks/stop-hook.js";
 import type { HookSubagentSpawner, SessionHooks, StopHook } from "./hooks/stop-hook.js";
 import { runPreToolUseHooks } from "./hooks/tool-hook.js";
 import type { PreToolUseHook } from "./hooks/tool-hook.js";
+import { runUserPromptHooks } from "./hooks/prompt-hook.js";
 import type { UserPromptHook, UserPromptHookResult } from "./hooks/prompt-hook.js";
 import { pumpOpener } from "./internal/merge-queue.js";
 import type {
@@ -61,6 +63,17 @@ import type {
   TraceSink,
 } from "./engine/context-engine.js";
 
+/**
+ * A context as the composition layer opens it for a Session: the engine's
+ * {@link OpenedContext}, plus the hooks that context runs with. Hook packages are read when
+ * a model context opens, like the rest of the Agent State, so a rotation brings its own
+ * set; the engine never sees them.
+ */
+export interface SessionOpenedContext extends OpenedContext {
+  /** The opened context's hooks, replacing the Session's whole set. Absent = the Session keeps the ones it has (an embedder that registered in-process hooks and rotates without re-reading any). */
+  hooks?: SessionHooks;
+}
+
 export interface SessionConfig {
   /** Session metadata: the first context's runtime configuration (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source) — a context a compaction opens brings its own through `openNextContext`; the toolset travels separately as the first run's tool_list_ready event. */
   meta: SessionMetaPayload;
@@ -91,9 +104,12 @@ export interface SessionConfig {
    * The Session adopts the meta as its current one (`metaMessage`); the engine yields the
    * records live, writes meta and records at the head of the rotated Trace file, and seeds
    * the new LLM's cumulative session counts itself. Context compaction is unavailable if not
-   * provided.
+   * provided. The hooks it answers with become the Session's (see
+   * {@link SessionOpenedContext}).
    */
-  openNextContext?: (opts: OpenContextOptions) => OpenedContext | Promise<OpenedContext>;
+  openNextContext?: (
+    opts: OpenContextOptions,
+  ) => SessionOpenedContext | Promise<SessionOpenedContext>;
 
   /**
    * Factory for the bare LLM used by out-of-band, one-off requests (same Model/credential as
@@ -124,8 +140,9 @@ export interface SessionConfig {
    */
   modelHasVision: boolean;
   /**
-   * Stop hooks consulted after every Task of a `run` call, and the spawner that honors a
-   * hook's `subagent` answer (see hooks/stop-hook.ts). Absent = none.
+   * The first context's hooks — one list per hook point, and the spawner that honors a stop
+   * hook's `subagent` answer (see hooks/stop-hook.ts). Absent = none. A context
+   * `openNextContext` opens may bring its own.
    */
   hooks?: SessionHooks;
   /**
@@ -276,11 +293,17 @@ export class Session {
   private level?: ThinkingLevelName;
   private readonly imagesDir: string;
   private readonly modelHasVision: boolean;
-  /** Stop hooks every `run` of this Session consults, and the spawner for their subagent answers (see SessionConfig.hooks). */
-  private readonly stopHooks: readonly StopHook[];
-  private readonly preToolUseHooks: readonly PreToolUseHook[];
-  private readonly userPromptHooks: readonly UserPromptHook[];
-  private readonly spawnSubagent?: HookSubagentSpawner;
+  /**
+   * The hooks of the context that is running, and the spawner for a stop hook's subagent
+   * answer: the first context's at construction, replaced whole by each context
+   * `openNextContext` opens with a set of its own (see `adoptHooks`). Every consult reads
+   * these fields when it happens, so a rotation in the middle of a `run` call hands the
+   * rest of that call to the new context's hooks.
+   */
+  private stopHooks: readonly StopHook[] = [];
+  private preToolUseHooks: readonly PreToolUseHook[] = [];
+  private userPromptHooks: readonly UserPromptHook[] = [];
+  private spawnSubagent: HookSubagentSpawner | undefined;
   private readonly commandPolicy?: CommandPolicySource;
   private metaWritten = false;
   /**
@@ -326,10 +349,7 @@ export class Session {
 
     this.imagesDir = config.imagesDir;
     this.modelHasVision = config.modelHasVision;
-    this.stopHooks = config.hooks?.stop ?? [];
-    this.preToolUseHooks = config.hooks?.preToolUse ?? [];
-    this.userPromptHooks = config.hooks?.userPrompt ?? [];
-    if (config.hooks?.spawnSubagent) this.spawnSubagent = config.hooks.spawnSubagent;
+    if (config.hooks) this.adoptHooks(config.hooks);
     if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
     this.bootstrap = config.bootstrap;
     this.cancelBootstrap = config.cancelBootstrap;
@@ -346,8 +366,9 @@ export class Session {
       ...(config.openNextContext
         ? {
             openNextContext: async (opts: OpenContextOptions): Promise<OpenedContext> => {
-              const opened = await config.openNextContext!(opts);
+              const { hooks, ...opened } = await config.openNextContext!(opts);
               if (opened.sessionMeta) this.meta = opened.sessionMeta;
+              if (hooks) this.adoptHooks(hooks);
               return opened;
             },
           }
@@ -382,6 +403,77 @@ export class Session {
   }
 
   /**
+   * Runs the named package's host-triggered `user_prompt` hook (`trigger: "host"`) — hooks
+   * run in core and nowhere else; the host calls this when it accepts a user prompt for the
+   * flow the package owns (the server does for a goal start, with `extras: { budget }`).
+   * The Session supplies its own id, Trace path and scratchpad directory; the answer's
+   * `context` is the text the host sends right behind the user's message, stamped
+   * `sender: "harness"`. Returns null when the package is not installed or names no such
+   * command (the host's cue to refuse the flow); an empty answer is `{}`. No `hook` event
+   * is recorded — the expansion message is the record.
+   */
+  async runUserPromptHook(
+    name: string,
+    prompt: string,
+    extras?: Record<string, string | number | boolean>,
+  ): Promise<UserPromptHookResult | null> {
+    const hook = this.userPromptHooks.find((h) => h.name === name && h.trigger === "host");
+    if (!hook) return null;
+    const tracePath = this.trace?.currentPath?.();
+    const result = await hook.run({
+      sessionId: this.sessionId,
+      ...(tracePath !== undefined ? { tracePath } : {}),
+      scratchpadDir: this.imagesDir,
+      prompt,
+      ...(extras !== undefined ? { extras } : {}),
+    });
+    return result ?? {};
+  }
+
+  /** Takes a context's hooks as the Session's own, whole: a point the set does not list has none. */
+  private adoptHooks(hooks: SessionHooks): void {
+    this.stopHooks = hooks.stop ?? [];
+    this.preToolUseHooks = hooks.preToolUse ?? [];
+    this.userPromptHooks = hooks.userPrompt ?? [];
+    this.spawnSubagent = hooks.spawnSubagent;
+  }
+
+  /**
+   * The user-prompt consult of one Prompt (the engine's `RunOptions.userPrompt` seam): runs
+   * the hooks due on every Prompt against the text of the user's own in `input`, and
+   * returns their records. Null — nothing to consult — when no such hook is installed or
+   * the input carries no user text without a sender: an input the harness, the server or a
+   * parent agent wrote is not a Prompt the user submitted.
+   */
+  private async consultUserPromptHooks(
+    input: OmniMessage[],
+    signal?: AbortSignal,
+  ): Promise<{ records: OmniMessage[] } | null> {
+    const hooks = this.userPromptHooks.filter((h) => h.trigger !== "host");
+    if (hooks.length === 0) return null;
+    const texts: string[] = [];
+    for (const msg of input) {
+      if (msg.type !== "model_msg" || (msg.origin && msg.origin.length > 0)) continue;
+      const p = msg.payload as { type?: string; role?: string; text?: string; sender?: string };
+      if (p.type !== "text" || p.role !== "user" || typeof p.text !== "string") continue;
+      if (p.sender !== undefined && p.sender !== "user") continue;
+      texts.push(p.text);
+    }
+    if (texts.length === 0) return null;
+    const text = texts.join("\n");
+    const tracePath = this.trace?.currentPath?.();
+    return runUserPromptHooks(hooks, {
+      sessionId: this.sessionId,
+      ...(tracePath !== undefined ? { tracePath } : {}),
+      scratchpadDir: this.imagesDir,
+      // The user's own words: a skill invocation or an origin note in front of them is the
+      // host's framing, the same reading the goal start gives its objective.
+      prompt: stripLeadingMarkerBlocks(text).trim() || text,
+      ...(signal ? { signal } : {}),
+    });
+  }
+
+  /**
    * Runs a Task to completion and streams out OmniMessage. `newMessages` is this call's Prompt
    * (only the newly added input); `opts` carries the abort signal `signal` and the per-call
    * approval callback `approve` (the engine calls it once per tool_call within a turn).
@@ -392,6 +484,11 @@ export class Session {
    * until a turn no longer produces a tool_call (Task ends) or it's aborted.
    * Docs: /docs/agent-loop § "The loop at a glance".
    *
+   * A Prompt carrying text of the user's own is first put to the user-prompt hooks (see
+   * hooks/prompt-hook.ts): each `context` they answer follows the Prompt as a user text
+   * stamped `sender: "harness"` — yielded, since the host has not seen it, written to the
+   * Trace and sent with the Prompt in the Task's first request.
+   *
    * When the Task ends, the Session's stop hooks are consulted (see hooks/stop-hook.ts):
    * every answer is recorded as a `hook` event on the stream and in the Trace, and the first
    * `continue` drives another Task inside this same call — its input is yielded first, as a
@@ -400,31 +497,6 @@ export class Session {
    * max_turns cap) or an aborted signal ends the call; the return value is the last Task's
    * cutoff, exactly as for a single Task.
    */
-  /**
-   * Runs the named package's `user_prompt` hook — hooks run in core and nowhere else; the
-   * host calls this when it accepts a user prompt for the flow the package owns (the server
-   * does for a goal start, with `extras: { budget }`). The Session supplies its own id and
-   * scratchpad directory; the answer's `context` is the text the host sends right behind
-   * the user's message, stamped `sender: "harness"`. Returns null when the package is not
-   * installed or names no `user_prompt` command (the host's cue to refuse the flow); an
-   * empty answer is `{}`. No `hook` event is recorded — the expansion message is the record.
-   */
-  async runUserPromptHook(
-    name: string,
-    prompt: string,
-    extras?: Record<string, string | number | boolean>,
-  ): Promise<UserPromptHookResult | null> {
-    const hook = this.userPromptHooks.find((h) => h.name === name);
-    if (!hook) return null;
-    const result = await hook.run({
-      sessionId: this.sessionId,
-      scratchpadDir: this.imagesDir,
-      prompt,
-      ...(extras !== undefined ? { extras } : {}),
-    });
-    return result ?? {};
-  }
-
   async *run(
     newMessages: OmniMessage[],
     opts?: SessionRunOptions,
@@ -444,12 +516,15 @@ export class Session {
     // a hook `allow` never overrides the policy — hook packages sit in agent-writable
     // state, the policy is Project-owned security config — so a policy-vetoed allow is
     // downgraded to no decision and the approval chain (policy outermost) answers.
-    if (this.preToolUseHooks.length > 0) {
-      const hooks = this.preToolUseHooks;
+    // The hooks are read at each consult rather than captured here: a compaction inside
+    // this call opens a context with hooks of its own, and the calls after it are theirs.
+    {
       const signal = opts?.signal;
       opts = {
         ...opts,
         preToolUse: async (tc) => {
+          const hooks = this.preToolUseHooks;
+          if (hooks.length === 0) return null;
           const p = tc.payload;
           const tracePath = this.trace?.currentPath?.();
           const outcome = await runPreToolUseHooks(hooks, {
@@ -471,12 +546,19 @@ export class Session {
       };
     }
     const approve = opts?.approve;
-    const spawn = this.spawnSubagent;
+    // User-prompt hooks ride the engine's consult seam too (RunOptions.userPrompt), for the
+    // call's own Prompt only: a Task a stop hook continues into starts from the hook's
+    // input, which no user submitted.
+    let taskOpts: SessionRunOptions | undefined = {
+      ...opts,
+      userPrompt: (prompt, signal) => this.consultUserPromptHooks(prompt, signal),
+    };
     let input = newMessages;
     for (;;) {
       // Manual iteration (not for-await) so the engine's return value — how the Task ended —
       // is read: a cutoff means the model never finished, which no `continue` may override.
-      const it = this.runTask(input, opts);
+      const it = this.runTask(input, taskOpts);
+      taskOpts = opts;
       let cutoff: RunCutoff | null = null;
       for (;;) {
         const res = await it.next();
@@ -488,6 +570,7 @@ export class Session {
       }
       if (this.stopHooks.length === 0) return cutoff;
       const tracePath = this.trace?.currentPath?.();
+      const spawn = this.spawnSubagent;
       const outcome = await runStopHooks(
         this.stopHooks,
         {

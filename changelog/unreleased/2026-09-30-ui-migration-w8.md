@@ -12,7 +12,7 @@ W8 of the UI-package migration moves the chart foundation and the command palett
 
 - **Chart primitives:** the marks (`ChartBar`, `ChartLine`, `ChartArea`, `ChartPoint`, `ChartArc`, grid and axis, `TimelineBar`) with their geometry, `useChartStyle`, `ChartFrame` with its hover helpers, and `TokenDonut` (its words now come in a `labels` prop).
 - **New:** `Sparkline` (the agent activity and benchmark score curves), `Ring` (a gauge of arcs against a budget, now drawing the finance gauge, the spend ring and the context ring), and `Legend` (inline or as a list, with hover, pin and toggle).
-- **Command palette:** `CommandPalette` is the presentation; the Web App keeps the actions and the Ctrl/Cmd+P shortcut in `AppPalette`.
+- **Command palette:** `CommandPalette` is the presentation; the Web App keeps the actions and the shortcut binding (the keymap's `palette.toggle`) in `AppPalette`.
 
 ## Details
 

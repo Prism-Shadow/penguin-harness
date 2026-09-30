@@ -36,6 +36,7 @@ import {
 } from "../src/tokens";
 import type { ThemeId } from "../src/tokens";
 import {
+  GRAY_STEPS,
   accentProblems,
   analyzeFile,
   analyzeThemeFile,
@@ -43,6 +44,7 @@ import {
   darkRepeats,
   matchesPolicyPath,
   modeDeclarations,
+  parseColor,
   parseCssRules,
   scanSourceRoots,
   stripCssComments,
@@ -444,26 +446,73 @@ describe("the integration revision of the contract (2026-09-29)", () => {
     }
   });
 
-  it("keeps Primer's light ink, faces and switch as today's, and moves only its dark", () => {
+  it("keeps Primer's light ink, lines and switch on today's rungs, and moves only its dark", () => {
     const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
     if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
     const light = primer.analysis.modes.light;
-    expect(light.get("--ui-fg")).toBe("var(--color-gray-900)");
-    expect(light.get("--ui-switch-track")).toBe("var(--color-gray-200)");
+    // The rungs are the ones the app always drew; the bridge under them went neutral (below).
+    const rungs: Readonly<Record<string, string>> = {
+      "--ui-surface-muted": "var(--color-gray-50)",
+      "--ui-fg": "var(--color-gray-900)",
+      "--ui-fg-muted": "var(--color-gray-500)",
+      "--ui-fg-subtle": "var(--color-gray-400)",
+      "--ui-line": "var(--color-gray-200)",
+      "--ui-line-muted": "var(--color-gray-100)",
+      "--ui-line-emphasis": "var(--color-gray-300)",
+      "--ui-switch-track": "var(--color-gray-200)",
+    };
+    for (const [name, value] of Object.entries(rungs)) expect(light.get(name), name).toBe(value);
     expect(light.get("--ui-switch-knob")).toBe("#ffffff");
-    // The sans stack reads the CJK face where it named the two system faces: the same list.
+    // The faces are GitHub Primer's (2026-09-30): the sans stack reads the CJK face where it
+    // named the two system CJK faces, and those two stay behind Noto as its fallback.
     expect(light.get("--ui-font-sans")).toContain("var(--ui-font-cjk)");
-    expect(light.get("--ui-font-cjk")).toBe('"PingFang SC", "Microsoft YaHei"');
+    expect(light.get("--ui-font-cjk")).toBe(
+      '"Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei"',
+    );
     // Dark lifts off pure black and calms the body ink: the ramp, not the app's #000.
     const dark = primer.analysis.modes.dark;
     expect(dark.get("--color-gray-950")).not.toBe("#000000");
     expect(dark.get("--color-gray-100")).not.toBe(light.get("--color-gray-100"));
   });
 
+  it("keeps Primer's grays and its own accent pure neutral in both modes", () => {
+    // The owner found the slate tint of Tailwind's stock gray (hue about 264) read off, and took
+    // the zero-chroma grays of Vercel's Geist as the reference (2026-09-30): light re-points the
+    // bridge to Tailwind's `neutral` scale at the same rungs, dark was a neutral ramp already, and
+    // the accent family is the neutral near-black in light and near-white in dark. A value is
+    // neutral when its three channels agree; the oklch conversion leaves a rounding hair.
+    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
+    if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
+    const tinted = (value: string | undefined): boolean => {
+      const color = value === undefined ? null : parseColor(value);
+      if (color === null) return true;
+      return Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b) > 0.5;
+    };
+    const accent = [
+      "--ui-accent",
+      "--ui-accent-hover",
+      "--ui-accent-active",
+      "--ui-accent-fg",
+      "--ui-accent-muted",
+      "--ui-accent-line",
+    ];
+    for (const mode of THEME_MODES) {
+      const values = modeDeclarations(primer.analysis, mode);
+      const names = [...GRAY_STEPS.map((step) => `--color-gray-${step}`), ...accent];
+      const off = names.filter((name) => tinted(values.get(name)));
+      expect(
+        off.map((name) => `${name}: ${values.get(name)}`),
+        mode,
+      ).toEqual([]);
+    }
+    expect(primer.analysis.modes.light.get("--color-gray-900")).toBe("oklch(20.5% 0 0)");
+    expect(THEME_OWN_ACCENTS.github).toEqual({ light: "#171717", dark: "#f5f5f5" });
+  });
+
   it("resolves the font pairing in theme.css's ui-font layer, for every face the lists offer", () => {
     // Every chosen face has a rule; a Latin choice sets the reading sans (and keeps the CJK face
     // in its stack), a CJK choice sets the CJK face; no pairing rule touches the mono or the
-    // chrome face directly — Console's mono chrome is its identity, not a reading preference.
+    // chrome face directly — the chrome reaches a choice through the sans it reads.
     const rules = parseCssRules(read("theme.css")).filter((rule) =>
       /data-font-(?:latin|cjk)=/.test(rule.selector),
     );
@@ -488,15 +537,14 @@ describe("the integration revision of the contract (2026-09-29)", () => {
       expect(rule.declarations.map((d) => d.name)).not.toContain("--ui-font-ui");
     }
     // A chosen face reaches every theme: each sans stack reads the CJK face, and the chrome
-    // face is the sans (Primer, Frost) or the mono (Console), never a third stack.
+    // face is the sans in every theme — Console's too, since it left its mono chrome
+    // (2026-09-30) — so a chosen Latin face reaches the chrome as well as the reading text.
     for (const theme of THEMES) {
       if (theme.status !== "filled") continue;
       for (const mode of THEME_MODES) {
         const values = new Map([...theme.analysis.modes.light, ...theme.analysis.modes[mode]]);
         expect(values.get("--ui-font-sans"), `${theme.id} ${mode}`).toContain("var(--ui-font-cjk)");
-        expect(["var(--ui-font-sans)", "var(--ui-font-mono)"], `${theme.id} ${mode}`).toContain(
-          values.get("--ui-font-ui"),
-        );
+        expect(values.get("--ui-font-ui"), `${theme.id} ${mode}`).toBe("var(--ui-font-sans)");
       }
     }
   });
@@ -597,7 +645,7 @@ describe("the chart style tokens (round 7)", () => {
   });
 
   it("keeps Primer at today's geometry, and its palette at the steps that read on white", () => {
-    // The one Primer change of the theme work (2026-09-30): amber, sky, emerald, teal and orange
+    // A Primer change of the theme work (2026-09-30): amber, sky, emerald, teal and orange
     // move from their 500 steps (2.2–2.9:1 on white) to the 600 steps the app's dark series
     // already used; violet, rose and fuchsia clear 3:1 at 500 and stay.
     const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
@@ -746,6 +794,27 @@ describe("the themes' own faces (round 6)", () => {
         }
       }
     }
+  });
+
+  it("sets Console in Plex Sans, and the mono face only on code and technical marks", () => {
+    // The owner's call (2026-09-30): IBM Plex Sans is Console's main face, chrome included, and
+    // JetBrains Mono (in place of Commit Mono) is kept for code — `code` / `pre` in theme.css —
+    // and for the marks that are technical on purpose. No other Console recipe names it.
+    expect(THEME_FONTS.geek).toEqual({
+      latin: "IBM Plex Sans",
+      cjk: "Noto Sans SC",
+      mono: "JetBrains Mono",
+    });
+    const mono = parseCssRules(read("themes/geek.css"))
+      .filter((rule) =>
+        rule.declarations.some((d) => d.name === "font-family" && /--ui-font-mono/.test(d.value)),
+      )
+      .map((rule) => rule.selector);
+    expect(mono).toEqual([
+      ':root[data-theme="geek"] .ui-activity [data-slot="label"]',
+      ':root[data-theme="geek"] .ui-notice::before',
+      ':root[data-theme="geek"] .ui-chart text:is([data-part="axis"], [data-part="label"])',
+    ]);
   });
 
   it("offers the pairing's faces under the same names", () => {

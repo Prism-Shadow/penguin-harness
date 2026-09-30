@@ -39,19 +39,27 @@ export interface DockTabItem {
 export interface DockTabButtonProps {
   tab: DockTabItem;
   active: boolean;
+  /** A finger is the pointer: the pill and its × grow to targets a finger can land in. */
+  coarse?: boolean;
   onSelect: () => void;
   onClose: () => void;
 }
 
 /** One pill in the strip: the select button (the tab) and its ×, side by side. */
-export function DockTabButton({ tab, active, onSelect, onClose }: DockTabButtonProps) {
+export function DockTabButton({
+  tab,
+  active,
+  coarse = false,
+  onSelect,
+  onClose,
+}: DockTabButtonProps) {
   return (
     <div
       data-testid="dock-tab"
       data-tab-id={tab.key}
       {...(tab.terminalId !== undefined ? { "data-terminal-id": tab.terminalId } : {})}
       data-active={active}
-      className={`flex h-6 max-w-44 items-center rounded-md pr-0.5 transition-colors duration-150 ${
+      className={`flex ${coarse ? "h-8" : "h-6"} max-w-44 items-center rounded-md pr-0.5 transition-colors duration-150 ${
         active ? "bg-line-muted text-fg" : "text-fg-muted hover:bg-line-muted hover:text-fg"
       }`}
     >
@@ -79,7 +87,7 @@ export function DockTabButton({ tab, active, onSelect, onClose }: DockTabButtonP
         aria-label={`${tab.closeLabel}: ${tab.label}`}
         data-testid="dock-tab-close"
         onClick={onClose}
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:bg-line-emphasis hover:text-fg"
+        className={`flex ${coarse ? "h-6 w-6" : "h-4 w-4"} shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:bg-line-emphasis hover:text-fg`}
       >
         <CloseIcon size={10} />
       </button>
@@ -93,6 +101,8 @@ export interface DockTabsProps extends Omit<HTMLAttributes<HTMLDivElement>, "onS
   active: string | null;
   onSelect: (key: string) => void;
   onClose: (key: string) => void;
+  /** A finger is the pointer: larger pills and × targets (the glyphs keep their size). */
+  coarse?: boolean;
   /** The strip's node, for a caller that hit-tests its tabs during a drag. */
   stripRef?: RefObject<HTMLDivElement | null>;
 }
@@ -102,6 +112,7 @@ export function DockTabs({
   active,
   onSelect,
   onClose,
+  coarse = false,
   stripRef,
   className = "",
   ...rest
@@ -151,6 +162,7 @@ export function DockTabs({
           key={tab.key}
           tab={tab}
           active={tab.key === active}
+          coarse={coarse}
           onSelect={() => onSelect(tab.key)}
           onClose={() => onClose(tab.key)}
         />

@@ -18,7 +18,7 @@ UI 包迁移的 W6 把对话拆分进 `@prismshadow/penguin-ui`：对话记录�
 - **输入区**：
   - `ComposerCard`、`ChipRow`、`ToolbarTrigger`、`SendButton`、`SlashMenu`、`SlashPicker`。
   - `TagInput` 与 `Chip`，以及输入区的选择框 `MenuSelect`。
-  - `ContextRing`，以及 `ModelSelect` / `ModelMenuList`；Web App 中绑定模型目录的选择器改名为 `ModelCatalogSelect`。
+  - `ContextRing`，以及模型选择器的触发按钮 `ModelSelect`（选择器本身是 Web App 的模型选择对话框）；Web App 中绑定模型目录的选择器改名为 `ModelCatalogSelect`。
 - **公司频道**：`ChannelRun` 与 `ChannelBubble`。
 
 ## 细节

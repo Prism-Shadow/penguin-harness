@@ -13,6 +13,7 @@ import { useSyncExternalStore } from "react";
 import { ICONS, PanelsToolbar } from "@prismshadow/penguin-ui";
 import type { PanelsToolbarToggle } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import {
   dockVersion,
   isDockVisible,
@@ -33,9 +34,18 @@ export function DockToggles({ agentsPending }: DockTogglesProps) {
   // toggle — the edge the panel opens on.
   const pendingDock: DockPosition = panelDock("agents") ?? "right";
 
-  const toggle = (position: DockPosition, label: string, glyph: string): PanelsToolbarToggle => ({
+  const bottomTitle = useShortcutTitle(S.dock.bottomDock, "dock.toggleBottom");
+  const rightTitle = useShortcutTitle(S.dock.rightDock, "dock.toggleRight");
+
+  const toggle = (
+    position: DockPosition,
+    label: string,
+    tooltip: string,
+    glyph: string,
+  ): PanelsToolbarToggle => ({
     key: position,
     label,
+    tooltip,
     glyph,
     active: isDockVisible(position),
     badge: agentsPending && pendingDock === position,
@@ -47,8 +57,8 @@ export function DockToggles({ agentsPending }: DockTogglesProps) {
   return (
     <PanelsToolbar
       toggles={[
-        toggle("bottom", S.dock.bottomDock, ICONS.panelBottom),
-        toggle("right", S.dock.rightDock, ICONS.panelRight),
+        toggle("bottom", S.dock.bottomDock, bottomTitle, ICONS.panelBottom),
+        toggle("right", S.dock.rightDock, rightTitle, ICONS.panelRight),
       ]}
     />
   );
