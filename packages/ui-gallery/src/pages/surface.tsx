@@ -13,6 +13,7 @@ import { AppFrame, useFrameSrc } from "../chrome/app-frame";
 import { useCopy } from "../chrome/copy";
 import { Breadcrumb } from "../chrome/crumb";
 import { ChromeIcon } from "../chrome/icons";
+import { SurfaceNav } from "../chrome/sidenav";
 import { Site } from "../chrome/site";
 import { OnThisPage } from "../chrome/toc";
 import { formatBreadcrumb } from "../lib/breadcrumb";
@@ -20,8 +21,8 @@ import { absoluteUrl } from "../lib/location";
 import { surfacePath } from "../lib/routes";
 import { formatGalleryQuery } from "../lib/url-state";
 import { useScrollSpy } from "../lib/use-scroll-spy";
-import { useText } from "../preview";
 import { useGallery } from "../state";
+import { useText } from "../text";
 
 export function SurfacePage({ id }: { id: SurfaceId }) {
   const { S, state } = useGallery();
@@ -48,7 +49,11 @@ export function SurfacePage({ id }: { id: SurfaceId }) {
   ];
 
   return (
-    <Site page="surfaces" activeId={id} nav toc={<OnThisPage items={toc} activeId={active} />}>
+    <Site
+      page="surfaces"
+      nav={(onNavigate) => <SurfaceNav activeId={id} {...(onNavigate ? { onNavigate } : {})} />}
+      toc={<OnThisPage items={toc} activeId={active} />}
+    >
       <article className="g-doc">
         <header className="g-doc-head">
           <p className="g-eyebrow">{text.surfaceGroup(surface.group)}</p>

@@ -22,7 +22,14 @@ import { REPO_ROOT, SRC_DIR } from "./helpers/paths";
  * Modules whose job is the theme id, relative to src/. The contract names the ids, the boot script
  * applies them, and the test helpers read the theme files by id. Nothing a component imports.
  */
-const THEME_MACHINERY: readonly string[] = ["tokens.ts", "boot.ts", "testing/"];
+const THEME_MACHINERY: readonly string[] = [
+  "tokens.ts",
+  "boot.ts",
+  "testing/",
+  // The fonts' credits name the themes that use each face: data about the themes, not a
+  // component that renders differently under one.
+  "fonts/credits.ts",
+];
 
 const THEME_IDENTIFIERS = new Set([
   "useTheme",

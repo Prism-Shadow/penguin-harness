@@ -1,31 +1,31 @@
 /**
- * The site's addresses: a path names a route, a surface page is `/s/<surface>`, a module page is
- * `/c/<module>` with a board or a section in the hash, and every link built for another page
- * carries the view state.
+ * The site's addresses: a path names a route, a surface page is `/s/<surface>`, a library page
+ * is `/c/<topic>`, the fonts pages are `/fonts`, `/fonts/specimens` and `/fonts/licences`, and
+ * every link built for another page carries the view state.
  */
 import { describe, expect, it } from "vitest";
-import { MODULE_IDS } from "../../ui/src/module";
 import { SURFACE_IDS } from "../src/app/surfaces";
+import { TOPIC_IDS } from "../src/library/topics";
 import {
   anchorOf,
+  FONTS_PAGE_IDS,
+  fontsHref,
+  fontsPath,
   homeHref,
-  moduleHref,
-  modulePath,
   parseRoute,
-  routeHref,
   surfaceHref,
   surfacePath,
+  topicHref,
+  topicPath,
 } from "../src/lib/routes";
 import { DEFAULT_STATE } from "../src/lib/url-state";
 
 const PREFS = "theme=modern&mode=light&size=m&latin=theme&cjk=theme&lang=en&accent=neutral";
 
 describe("parseRoute", () => {
-  it("names the home and fonts routes", () => {
+  it("names the home route", () => {
     expect(parseRoute("/")).toEqual({ kind: "home" });
     expect(parseRoute("")).toEqual({ kind: "home" });
-    expect(parseRoute("/fonts")).toEqual({ kind: "fonts" });
-    expect(parseRoute("/fonts/")).toEqual({ kind: "fonts" });
   });
 
   it("gives every surface a page at /s/<id>, and names what /s/<other> misses", () => {
@@ -36,15 +36,25 @@ describe("parseRoute", () => {
     expect(parseRoute("/s/chat/extra")).toEqual({ kind: "unknown", path: "/s/chat/extra" });
   });
 
-  it("gives every module a page at /c/<id>, and names what /c/<other> misses", () => {
-    for (const id of MODULE_IDS) {
-      expect(parseRoute(modulePath(id))).toEqual({ kind: "module", id });
+  it("gives every library topic a page at /c/<id>, and names what /c/<other> misses", () => {
+    for (const id of TOPIC_IDS) {
+      expect(parseRoute(topicPath(id))).toEqual({ kind: "topic", id });
     }
     expect(parseRoute("/c/nope")).toEqual({ kind: "missing", id: "nope" });
-    expect(parseRoute("/c/foundations/extra")).toEqual({
-      kind: "unknown",
-      path: "/c/foundations/extra",
-    });
+    // The one-page Foundations module is gone: its old address names nothing.
+    expect(parseRoute("/c/foundations")).toEqual({ kind: "missing", id: "foundations" });
+    expect(parseRoute("/c/buttons/extra")).toEqual({ kind: "unknown", path: "/c/buttons/extra" });
+  });
+
+  it("gives the fonts section three pages, the defaults at /fonts itself", () => {
+    expect(FONTS_PAGE_IDS).toEqual(["defaults", "specimens", "licences"]);
+    expect(fontsPath("defaults")).toBe("/fonts");
+    expect(fontsPath("specimens")).toBe("/fonts/specimens");
+    for (const page of FONTS_PAGE_IDS) {
+      expect(parseRoute(fontsPath(page))).toEqual({ kind: "fonts", page });
+    }
+    expect(parseRoute("/fonts/")).toEqual({ kind: "fonts", page: "defaults" });
+    expect(parseRoute("/fonts/nope")).toEqual({ kind: "missing", id: "nope" });
     // The retired routes name nothing now.
     expect(parseRoute("/embed").kind).toBe("unknown");
     expect(parseRoute("/screens/chat").kind).toBe("unknown");
@@ -59,13 +69,15 @@ describe("links between pages", () => {
     expect(surfaceHref("/gallery", state, "chat-new")).toBe(`/gallery/s/chat-new?${PREFS}`);
   });
 
-  it("build a module page's address with the board in the hash", () => {
-    expect(moduleHref("", state, "foundations", "colour")).toBe(`/c/foundations?${PREFS}#colour`);
+  it("build a library page's address, with a group in the hash", () => {
+    expect(topicHref("", state, "buttons")).toBe(`/c/buttons?${PREFS}`);
+    expect(topicHref("", state, "colour", "surfaces")).toBe(`/c/colour?${PREFS}#surfaces`);
   });
 
-  it("build the home and the other routes the same way", () => {
+  it("build the home and the fonts pages the same way", () => {
     expect(homeHref("", state, "surfaces")).toBe(`/?${PREFS}#surfaces`);
-    expect(routeHref("/base", state, "/fonts")).toBe(`/base/fonts?${PREFS}`);
+    expect(fontsHref("/base", state, "defaults")).toBe(`/base/fonts?${PREFS}`);
+    expect(fontsHref("/base", state, "licences")).toBe(`/base/fonts/licences?${PREFS}`);
   });
 
   it("read the anchor a hash names", () => {

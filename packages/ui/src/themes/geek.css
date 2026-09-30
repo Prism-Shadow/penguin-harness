@@ -816,6 +816,10 @@
     font-family: var(--ui-font-ui);
     font-size: var(--ui-text-small-size);
   }
+  /* The host's own leading mark gives way to the tag: two marks would say the same thing. */
+  :root[data-theme="geek"] .ui-notice [data-slot="icon"] {
+    display: none;
+  }
   /* The tag stands out of the flow — absolutely at the row's inset, in the four columns the host
      is padded for — because a host lays its body and actions out as a flex row, and a tag in the
      flow would be a third item pushing the body to the middle. */

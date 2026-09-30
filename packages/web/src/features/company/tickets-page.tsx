@@ -462,7 +462,9 @@ export function TicketsPage() {
           {invalids.length > 0 && (
             <>
               <p className="mb-1 flex items-center gap-1.5 font-medium">
-                <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                <span data-slot="icon" className="shrink-0">
+                  <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                </span>
                 {S.company.tickets.invalidTickets}
               </p>
               <ul className="mb-2 space-y-0.5">
@@ -484,7 +486,9 @@ export function TicketsPage() {
           {board !== null && board.invalidFiles.length > 0 && (
             <>
               <p className="mb-1 flex items-center gap-1.5 font-medium">
-                <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                <span data-slot="icon" className="shrink-0">
+                  <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
+                </span>
                 {S.company.tickets.invalidFiles}
               </p>
               <ul className="space-y-0.5 font-mono">

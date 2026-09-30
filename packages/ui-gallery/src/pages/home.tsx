@@ -1,21 +1,19 @@
 /**
  * `/` — the home page: a short intro, the real app in a frame (the finished conversation, in the
- * active theme, laid out for the app's window and scaled to the column; Reload reloads it), the
- * problems the registry found, if any, the surface index — every surface in its group, each a
- * card linking to its page — and the links to Foundations and Fonts.
+ * active theme, laid out for the app's window and scaled to the column; Reload reloads it), then
+ * the three sections' indexes — every surface in its group, every library topic in its group,
+ * and the fonts pages — each entry a card linking to its page.
  */
 import { useState } from "react";
 import { HOME_SURFACE, SURFACE_GROUPS, surfaceById } from "../app/surfaces";
 import { AppFrame, useFrameSrc } from "../chrome/app-frame";
 import { ChromeIcon } from "../chrome/icons";
 import { Site } from "../chrome/site";
+import { TOPIC_GROUPS } from "../library/topics";
 import { BASE } from "../lib/location";
-import { moduleHref, routeHref, surfaceHref } from "../lib/routes";
-import { useText } from "../preview";
-import { DEMOS, MODULES } from "../registry";
+import { FONTS_PAGE_IDS, fontsHref, surfaceHref, topicHref } from "../lib/routes";
 import { useGallery } from "../state";
-
-const PROBLEMS = [...MODULES.problems, ...DEMOS.problems];
+import { useText } from "../text";
 
 export function HomePage() {
   const { S, state } = useGallery();
@@ -55,19 +53,6 @@ export function HomePage() {
           </div>
         </section>
 
-        {PROBLEMS.length > 0 && (
-          <div className="g-problems">
-            <strong>{S.intro.problems}</strong>
-            <ul>
-              {PROBLEMS.map((problem) => (
-                <li key={problem}>
-                  <code>{problem}</code>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         <section id="surfaces" className="g-section">
           <h2 className="g-h2">{S.home.index}</h2>
           <p className="g-section-lead">{S.home.indexLead}</p>
@@ -91,27 +76,40 @@ export function HomePage() {
           ))}
         </section>
 
-        <section id="foundations" className="g-section">
-          <h2 className="g-h2">{S.home.foundations}</h2>
-          <p className="g-section-lead">{S.home.foundationsLead}</p>
+        <section id="library" className="g-section">
+          <h2 className="g-h2">{S.home.library}</h2>
+          <p className="g-section-lead">{S.home.libraryLead}</p>
+          {TOPIC_GROUPS.map((group) => (
+            <div key={group.id} className="g-index-group">
+              <h3 className="g-index-eyebrow">{text.topicGroup(group.id)}</h3>
+              <ul className="g-index">
+                {group.topics.map((topic) => {
+                  const { title, description } = text.topic(topic.id);
+                  return (
+                    <li key={topic.id}>
+                      <a href={topicHref(BASE, state, topic.id)}>
+                        <strong>{title}</strong>
+                        <span>{description}</span>
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </section>
+
+        <section id="fonts" className="g-section">
+          <h2 className="g-h2">{S.home.fonts}</h2>
+          <p className="g-section-lead">{S.home.fontsLead}</p>
           <ul className="g-index">
-            {MODULES.list.map(({ module }) => {
-              const { title, description } = text.module(module);
-              return (
-                <li key={module.id}>
-                  <a href={moduleHref(BASE, state, module.id)}>
-                    <strong>{title}</strong>
-                    <span>{description}</span>
-                  </a>
-                </li>
-              );
-            })}
-            <li>
-              <a href={routeHref(BASE, state, "/fonts")}>
-                <strong>{S.fonts.title}</strong>
-                <span>{S.fonts.specimensHint}</span>
-              </a>
-            </li>
+            {FONTS_PAGE_IDS.map((page) => (
+              <li key={page}>
+                <a href={fontsHref(BASE, state, page)}>
+                  <strong>{S.fonts.pages[page]}</strong>
+                </a>
+              </li>
+            ))}
           </ul>
         </section>
 

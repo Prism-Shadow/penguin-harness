@@ -2,11 +2,8 @@
  * Files the gallery reads as text, via Vite globs:
  *
  * - icon sources: the Web App modules that declare line-icon paths (see lib/icon-registry.ts), for
- *   the Foundations › Icons board until W1 moves the registry into the package;
- * - font licences: `packages/ui/src/fonts/LICENSES/*.txt`, lazy, for `/fonts`.
- *
- * Kept apart from registry.ts: the Foundations module imports these, and registry.ts imports the
- * modules.
+ *   the library's Icons board;
+ * - font licences: `packages/ui/src/fonts/LICENSES/*.txt`, lazy, for `/fonts/licences`.
  */
 import { extractIconPaths, extractIconSizes } from "./lib/icon-registry";
 

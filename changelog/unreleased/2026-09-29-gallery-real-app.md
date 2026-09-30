@@ -16,6 +16,12 @@ The gallery used to rebuild the app's screens from stand-in compositions, which 
 - The top bar keeps to one row: theme, language and mode sit in it, and accent, text size, the labelled Latin and CJK font pickers and the viewport sit in a popover. They drive the framed app through the same preferences the app reads, and the popover names the Latin, CJK and monospaced faces actually rendering and the text size in pixels.
 - Its pickers and hints follow the app's own select and tooltip, and its dark mode shares one neutral palette with the landing site.
 
+## Sections
+
+- The site has four sections — Home, Surfaces, Foundations and Fonts — each with its own navigation. Surfaces opens straight onto the conversation page.
+- Foundations is a component library: one page per topic (buttons, inputs, pickers, toasts, notices, dialogs, tooltips, tabs, badges, empty states, loading, charts, avatars, files, and the colour, type, shape, density, focus, motion, icon and hook boards), each rendering the Web App's own components in a themed frame.
+- Fonts lists each theme's default Latin, CJK and monospaced faces, the current pairing and the licences.
+
 ## Details
 
 - The stand-in modules, screens, hero and fixtures in `packages/ui` are removed, along with the gallery's `/embed` and `/screens` routes; the Foundations boards and the fonts page stay.

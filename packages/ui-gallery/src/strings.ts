@@ -5,15 +5,14 @@
  * 极客 here, Primer / Frost / Console in English) and so are breadcrumbs; theme ids, token names,
  * accent preset ids and font names stay English in both.
  *
- * `surfaces` names the app's surfaces the gallery frames (src/app/surfaces.ts) in both
- * dictionaries; `catalog` translates the Foundations module's titles and its sections'. English
- * reads the module file directly, so only `zh` fills `catalog`; a test checks it covers every
- * module, variant and section.
+ * `surfaces` names the app's surfaces the gallery frames (src/app/surfaces.ts) and `library`
+ * the component library's topics (src/library/topics.ts), in both dictionaries; a test checks
+ * each covers every id.
  */
 import type { HookName, ThemeId, ToneName } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
-import type { ModuleId } from "../../ui/src/module";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
+import type { TopicGroupId, TopicId } from "./library/topics";
 
 /** What a surface page says: its title, one line on what the frame shows, and how the app reaches it. */
 export interface SurfaceCopy {
@@ -162,8 +161,10 @@ export const zh = {
       "这就是应用本身：侧栏、各个中心、对话与设置都能点开。主题与字号等控件作用于框内的应用；发送消息会得到一段脚本回复。",
     index: "界面索引",
     indexLead: "每个界面一页：应用停在该界面上，切换主题、字号与字体即可查看。",
-    foundations: "基础与字体",
-    foundationsLead: "令牌词汇表的各个面板，以及打包的字体、字样与许可。",
+    library: "组件库",
+    libraryLead: "真实的 Web 组件，按类别各一页，在当前主题、明暗、字号与字体下渲染，可以操作。",
+    fonts: "字体",
+    fontsLead: "每个主题的默认字体、当前选择、字样与许可。",
   },
   /**
    * The view controls' copy, in the top bar; the key keeps the name of the rail that held them,
@@ -204,7 +205,6 @@ export const zh = {
   },
   intro: {
     resolving: "正在解析令牌…",
-    problems: "模块与演示的问题",
   },
   /** A framed app's toolbar and captions. */
   frame: {
@@ -219,17 +219,7 @@ export const zh = {
     copyLink: "复制链接",
     copied: "已复制",
     copyBreadcrumb: "复制路径",
-    parts: "组件",
-    tokens: "令牌",
-    source: "源码",
-    variants: "变体",
-    tokensIn: (where: string, count: number) => `${where} 下读取的 ${count} 个令牌`,
-    noTokens: "这个面板没有读取任何令牌。",
     unset: "未定义",
-    loadingCode: "正在加载源码…",
-    partsOf: (count: number) => `${count} 个组件`,
-    noParts: "这个模块不列出组件。",
-    replaces: (what: string) => `替代 ${what}`,
   },
   foundations: {
     surfaces: "表面",
@@ -366,7 +356,17 @@ export const zh = {
     },
   },
   fonts: {
-    title: "字体与许可",
+    title: "字体",
+    pages: { defaults: "默认字体", specimens: "字样", licences: "许可" },
+    defaultsTitle: "默认字体",
+    defaultsHint:
+      "每个主题各角色的默认字体：英文（正文与界面）、中文与等宽。「系统字体」指交给平台决定。",
+    system: "系统字体",
+    current: "当前选择",
+    currentHint: "顶栏里选定的字体组合；「随主题」即上表中当前主题的一行。实际渲染的字体见下一行。",
+    followsTheme: (theme: string) => `随主题（${theme}）`,
+    specimensTitle: "字样",
+    licencesTitle: "许可",
     specimens: "字样",
     specimensHint: "每个主题的字体族，在五档字号（14 / 15 / 16 / 18 / 20 px）下各排一段中英文。",
     declared: "已声明的字体",
@@ -381,31 +381,246 @@ export const zh = {
     noLicences: "还没有许可文本。",
     status: { loaded: "已加载", unloaded: "未使用", loading: "加载中", error: "失败" },
   },
-  catalog: {
-    modules: {
-      foundations: {
-        title: "基础",
-        description:
-          "调色板、字号梯度、形状与层次、节奏间距、图标、动效、焦点与十个样式钩子，每项一块面板。",
-        variants: {
-          colour: "颜色",
-          type: "排版",
-          "shape-depth": "形状与层次",
-          spacing: "间距",
-          icons: "图标",
-          motion: "动效",
-          focus: "焦点",
-          hooks: "样式钩子",
-        },
+  /** The component library: its topics, and the words each board prints. */
+  library: {
+    title: "组件库",
+    groups: { components: "组件", foundations: "视觉基础" } as Record<TopicGroupId, string>,
+    topics: {
+      buttons: { title: "按钮", description: "四种变体、两档尺寸与图标按钮，以及禁用与进行中。" },
+      inputs: {
+        title: "输入与表单",
+        description: "文本框、多行文本、密码框与字段脚手架：标签、提示、说明与错误。",
       },
-    } as Partial<
-      Record<ModuleId, { title: string; description: string; variants: Record<string, string> }>
-    >,
-    sections: {
-      "icons-glyph-icon": { description: "唯一的线形图标渲染器，描边读取 --ui-icon-stroke。" },
-      "icons-registry": { title: "图标表", description: "所有路径字符串，按组归档，只声明一次。" },
-      "icons-marks": { title: "标记", description: "与线形图标并存的非网格标记。" },
-    } as Partial<Record<string, { title?: string; description: string }>>,
+      pickers: { title: "选择器", description: "下拉选择、分段控件、开关、选项菜单与下拉菜单。" },
+      toasts: {
+        title: "提示弹窗",
+        description: "完成操作后的弹出提示：成功、信息、注意与错误，按按钮触发。",
+      },
+      notices: { title: "提示条", description: "占据一行的提示：每种语气，带与不带操作。" },
+      dialogs: { title: "对话框", description: "模态对话框、确认框、抽屉与底部面板。" },
+      tooltips: {
+        title: "悬停提示",
+        description: "悬停与聚焦时出现的提示：data-tooltip 属性与 Tooltip 组件。",
+      },
+      tabs: { title: "标签页", description: "下划线式标签切换，可带更新标记。" },
+      badges: {
+        title: "徽标与状态",
+        description: "徽标、运行状态图标、会话活动标记与更新点。",
+      },
+      empty: { title: "空状态", description: "列表或详情为空时的占位文字，可带操作。" },
+      loading: { title: "加载", description: "转圈与骨架屏。" },
+      charts: { title: "图表", description: "Token 环形图、用量趋势图与评分折线，使用演示数据。" },
+      avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸。" },
+      files: { title: "文件", description: "文件树与只读文件浏览器。" },
+      colour: {
+        title: "颜色",
+        description: "表面、文字、线条、强调色、语义色调、图表序列与代码色。",
+      },
+      type: { title: "字体排印", description: "各角色的字号、行高与字重。" },
+      shape: { title: "形状", description: "圆角、阴影层级与嵌套。" },
+      density: { title: "密度", description: "间距单位与控件高度。" },
+      focus: { title: "焦点", description: "焦点环、输入框焦点、选区与滚动条。" },
+      motion: { title: "动效", description: "进出、显现、布局与时长缓动。" },
+      icons: { title: "图标", description: "图标尺寸与 Web App 的图标表。" },
+      hooks: { title: "样式钩子", description: "主题可以重绘的结构钩子，逐个示范。" },
+    } as Record<TopicId, { title: string; description: string }>,
+    buttons: {
+      variants: "变体",
+      primary: "保存",
+      secondary: "取消",
+      danger: "删除",
+      ghost: "更多",
+      sizes: "尺寸",
+      md: "默认尺寸",
+      sm: "小尺寸",
+      icon: "图标按钮",
+      states: "状态",
+      disabled: "已禁用",
+      busy: "保存中…",
+    },
+    inputs: {
+      basics: "文本框",
+      name: "名称",
+      namePlaceholder: "Docs Expert",
+      nameHint: "在侧栏与消息中显示的名字。",
+      email: "邮箱",
+      emailValue: "zheng@example",
+      emailError: "邮箱地址不完整。",
+      required: "必填",
+      info: "带说明",
+      infoText: "改动在下一次 Task 开始时生效。",
+      sizes: "尺寸",
+      base: "基础尺寸",
+      small: "表单尺寸",
+      textarea: "多行文本",
+      textareaPlaceholder: "写一段系统提示…",
+      mono: "等宽",
+      monoValue: "temperature: 0.2\nmax_tokens: 4096",
+      password: "密码",
+      passwordHint: "至少 12 个字符。",
+    },
+    pickers: {
+      select: "下拉选择",
+      selectLabel: "模型",
+      options: ["DeepSeek V4.1 Flash", "Claude Sonnet 4.5", "GLM-5.3"] as readonly string[],
+      segmented: "分段控件",
+      segments: ["浅色", "深色", "跟随系统"] as readonly string[],
+      switches: "开关",
+      switchLabel: "完成时通知",
+      switchHint: "Task 结束时弹出系统通知。",
+      switchOff: "工具短名",
+      optionMenu: "选项菜单",
+      optionLabel: "权限",
+      choices: [
+        { value: "r", trigger: "r", label: "只读", description: "只能读取工作区。" },
+        { value: "rw", trigger: "rw", label: "读写", description: "可以修改工作区里的文件。" },
+        { value: "ask", trigger: "ask", label: "逐项审批", description: "每次写入前先询问。" },
+      ] as readonly { value: string; trigger: string; label: string; description: string }[],
+      dropdown: "下拉菜单",
+      menu: "更多操作",
+      menuItems: ["置顶", "重命名", "移动到…", "删除"] as readonly string[],
+    },
+    toasts: {
+      fire: "触发一条提示",
+      hint: "提示出现在页面顶部，几秒后自动消失；错误与注意会停留更久。",
+      success: "成功",
+      info: "信息",
+      attention: "注意",
+      error: "错误",
+      successText: "已保存。",
+      infoText: "索引正在后台重建。",
+      attentionText: "已保存，但有 2 个字段被截断。",
+      errorText: "连接失败：无法访问 api.example。",
+    },
+    notices: {
+      plain: "每种语气",
+      dotted: "带前导标记",
+      withActions: "带操作",
+      texts: {
+        link: "新版本 0.3.0 可用。",
+        success: "索引已重建，共 214 个文件。",
+        busy: "正在同步语料库…",
+        attention: "有 1 条未预期错误。",
+        danger: "模型返回 401：密钥无效。",
+        muted: "这个会话已归档。",
+      },
+      action: "查看",
+      dismiss: "忽略",
+    },
+    dialogs: {
+      modal: "模态对话框",
+      openModal: "打开对话框",
+      modalTitle: "重命名会话",
+      modalBody: "新的名字会显示在侧栏与消息里。",
+      save: "保存",
+      cancel: "取消",
+      confirm: "确认框",
+      openConfirm: "删除会话…",
+      confirmTitle: "删除这个会话？",
+      confirmBody: "对话记录与 Trace 文件会一并删除，无法恢复。",
+      confirmLabel: "删除",
+      drawer: "抽屉",
+      openDrawer: "打开抽屉",
+      drawerTitle: "导航",
+      drawerBody: "手机宽度下的侧栏从边缘滑入。",
+      sheet: "底部面板",
+      openSheet: "打开底部面板",
+      sheetTitle: "文件",
+      sheetBody: "向上拖动展开到整屏，向下拖动关闭。",
+    },
+    tooltips: {
+      attribute: "data-tooltip 属性",
+      attributeHint: "任何元素加上属性即可；只有图标的按钮同时带 aria-label。",
+      component: "Tooltip 组件",
+      componentHint: "需要包裹时使用：右侧或下方摆放。",
+      truncated: "被截断的文本",
+      truncatedHint: "行里放不下的命令或标题，完整内容放进提示里。",
+      edit: "编辑",
+      copy: "复制",
+      settings: "设置",
+      beside: "右侧",
+      below: "下方",
+      command:
+        "pnpm --filter @prismshadow/penguin-web exec vitest run test/session-activity.test.ts --reporter verbose",
+    },
+    tabs: {
+      basic: "标签切换",
+      badged: "带更新标记",
+      items: ["概览", "轨迹", "文件", "设置"] as readonly string[],
+      badgeText: "有 3 个技能可更新",
+      body: (tab: string) => `「${tab}」的内容。`,
+    },
+    badges: {
+      badges: "徽标",
+      tones: {
+        gray: "默认",
+        brand: "来源",
+        green: "运行中",
+        yellow: "免费",
+        amber: "已中止",
+        red: "失败",
+      },
+      status: "运行状态",
+      states: {
+        running: "运行中",
+        waiting: "等待审批",
+        done: "已完成",
+        failed: "失败",
+        stopped: "已停止",
+      },
+      activity: "会话活动",
+      activities: { running: "运行中", compacting: "压缩中", completedUnread: "有未读回复" },
+      marks: "其他标记",
+      background: "后台任务",
+      schedule: "定时任务",
+      dot: "更新点",
+      dotAnchor: "插件市场",
+      pill: "更新提示",
+      pillText: "3 个可更新",
+    },
+    empty: {
+      page: "页面空状态",
+      title: "还没有会话",
+      description: "发送第一条消息后，会话会出现在这里。",
+      action: "新对话",
+      settings: "设置区空状态",
+      settingsText: "还没有添加任何 MCP 服务器。",
+    },
+    loading: {
+      spinner: "转圈",
+      sizes: "三档尺寸",
+      skeleton: "骨架屏",
+      list: "列表",
+      card: "卡片",
+    },
+    charts: {
+      donut: "Token 环形图",
+      donutHint: "缓存读取、缓存写入与输出的构成，环的余量随接近上限变色。",
+      trend: "用量趋势",
+      trendHint: "十四天的成本折线，悬停查看某一天。",
+      sparkline: "评分折线",
+      sparklineHint: "一个评估任务的历次得分，最新一次标出。",
+    },
+    avatars: {
+      user: "用户头像",
+      agent: "智能体头像",
+      userNames: ["admin", "演示管理员"] as readonly string[],
+      agents: [
+        { id: "docs-expert", name: "Docs Expert" },
+        { id: "release-notes", name: "Release Notes" },
+        { id: "qa", name: "QA" },
+      ] as readonly { id: string; name: string }[],
+    },
+    files: {
+      tree: "文件树",
+      treeLabel: "工作区",
+      browser: "文件浏览器",
+      header: "docs-expert",
+      emptyPreview: "选择左侧的文件预览。",
+      emptyDir: "空目录",
+      readme:
+        "# Docs Expert\n\n从 `corpus/` 建立 BM25 索引，回答关于 Claude Code 文档的问题。\n\n- `src/rag.ts` — 检索\n- `test/` — 用例",
+    },
   },
 };
 

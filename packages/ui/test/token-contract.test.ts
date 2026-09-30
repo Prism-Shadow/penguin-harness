@@ -16,7 +16,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FONT_CJK_OPTIONS, FONT_LATIN_OPTIONS } from "../src/boot";
+import {
+  BUNDLED_FONT_FAMILIES,
+  FONT_CJK_OPTIONS,
+  FONT_LATIN_OPTIONS,
+  SYSTEM_FONT,
+  THEME_FONTS,
+} from "../src/boot";
 import {
   ACCENT_PRESETS,
   DEFAULT_THEME_ID,
@@ -495,6 +501,41 @@ describe("the integration revision of the contract (2026-09-29)", () => {
           `${id}: ${rule.selector}`,
         ).toEqual(["color"]);
       }
+    }
+  });
+});
+
+describe("the themes' own faces (round 6)", () => {
+  // THEME_FONTS is what the Fonts page states as a theme's defaults; it must be what the theme
+  // file's stacks name first — a bundled family by its declared name, or, for `System`, a stack
+  // that names no bundled family at all. The pairing options name faces by the same names.
+  const bundled = new Set<string>(Object.values(BUNDLED_FONT_FAMILIES));
+  const firstFamily = (stack: string | undefined) =>
+    (stack ?? "")
+      .split(",")[0]!
+      .trim()
+      .replace(/^["']|["']$/g, "");
+  const STACKS = { latin: "--ui-font-sans", cjk: "--ui-font-cjk", mono: "--ui-font-mono" } as const;
+
+  it("names, for every theme, the family each stack puts first", () => {
+    for (const theme of THEMES) {
+      if (theme.status !== "filled") continue;
+      for (const [role, token] of Object.entries(STACKS)) {
+        const name = THEME_FONTS[theme.id][role as keyof typeof STACKS];
+        const first = firstFamily(theme.analysis.modes.light.get(token));
+        if (name === SYSTEM_FONT) {
+          expect(bundled.has(first), `${theme.id} ${role}: ${first} is a bundled face`).toBe(false);
+        } else {
+          expect(first, `${theme.id} ${role}`).toBe(BUNDLED_FONT_FAMILIES[name]);
+        }
+      }
+    }
+  });
+
+  it("offers the pairing's faces under the same names", () => {
+    for (const option of [...FONT_LATIN_OPTIONS, ...FONT_CJK_OPTIONS]) {
+      if (option.id === "theme" || option.id === "system") continue;
+      expect(Object.keys(BUNDLED_FONT_FAMILIES), option.id).toContain(option.label);
     }
   });
 });

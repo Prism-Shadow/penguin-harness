@@ -199,6 +199,13 @@ export const en: Strings = {
     title: "Settings",
     /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
     fontCredit: "Uses the MiSans font by Xiaomi",
+    creditsTitle: "Credits",
+    creditsIntro: "The fonts bundled with the app, and the license each ships under.",
+    creditsThemes: "Used by",
+    creditsNoTheme: "Not a theme's default",
+    creditsLicense: "License",
+    creditsSource: "Source",
+    creditsLicenseText: "Full license text",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",

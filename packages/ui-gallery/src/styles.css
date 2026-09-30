@@ -1,10 +1,8 @@
 /**
- * Gallery styles. The package's theme foundation comes first, exactly as the Web App imports it,
- * so previews render what the app would; then the gallery's own sheets: chrome.css (the unthemed
- * rail, headers, pills and drawers) and foundations.css (the themed Foundations pages).
- *
- * Tailwind scans the gallery (its Vite root) and the whole package source — demos included, which
- * is the difference from the app's entry, where `*.demo.tsx` is excluded.
+ * Gallery page styles. The package's theme foundation comes first, exactly as the Web App imports
+ * it, so the page's own root carries the theme under test (the fonts page's specimens read it);
+ * then chrome.css, the unthemed site chrome. The boards and the app render in their own framed
+ * documents (src/app/app.css, src/library/library.css), which carry the app's stylesheet.
  */
 @import "tailwindcss";
 @import "@prismshadow/penguin-ui/theme.css";
@@ -13,7 +11,6 @@
 @import "@prismshadow/penguin-ui/themes/geek.css";
 @import "@prismshadow/penguin-ui/fonts.css";
 @import "./chrome.css";
-@import "./foundations/foundations.css";
 
 @source "../../ui/src";
 /* The test helpers spell class patterns the guards look for; they are not markup. */

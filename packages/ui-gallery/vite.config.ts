@@ -2,13 +2,14 @@
  * Vite config: the component gallery (React SPA + Tailwind CSS 4), a local dev tool, plus the
  * framed Web App as a second page.
  *
- * Two documents come out of one build: `index.html`, the gallery site, and `app.html`, the
- * real Web App mounted against an in-browser mock of its API (src/app). The app's own source
- * is imported from `packages/web/src`; its network layer is swapped for the mock by
- * `mockWebNetwork()` (src/app/mock/vite-plugin.ts), and its two inline boot scripts — the
+ * Three documents come out of one build: `index.html`, the gallery site; `app.html`, the real
+ * Web App mounted against an in-browser mock of its API (src/app); and `lib.html`, one component
+ * library board made of the app's real components (src/library). The app's own source is
+ * imported from `packages/web/src`; its network layer is swapped for the mock by
+ * `mockWebNetwork()` (src/app/mock/vite-plugin.ts), and the two inline boot scripts — the
  * storage seed that gives a frame its own preferences, then the app's own pre-paint script,
- * generated from the package so neither can drift — are prepended to `app.html` at serve and
- * build time. The app's highlighting worker needs ES-format workers, as in the app's config,
+ * generated from the package so neither can drift — are prepended to both framed documents at
+ * serve and build time. The app's highlighting worker needs ES-format workers, as in the app's config,
  * and React is deduplicated so the app and the gallery never load two copies.
  *
  * `@prismshadow/penguin-ui` resolves to the live `packages/ui/src` through the workspace link;
@@ -35,7 +36,11 @@ const at = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
 function watchPackageSources(): Plugin {
   const roots = [at("../ui/src/"), at("../web/src/")];
-  const stylesheets = [at("./src/styles.css"), at("./src/app/app.css")];
+  const stylesheets = [
+    at("./src/styles.css"),
+    at("./src/app/app.css"),
+    at("./src/library/library.css"),
+  ];
   return {
     name: "penguin:gallery-watch-sources",
     configureServer(server) {
@@ -56,7 +61,9 @@ function watchPackageSources(): Plugin {
   };
 }
 
-/** The two inline scripts `app.html` opens with, in the order the frame needs them. */
+/** The framed documents, which open with two inline scripts, in the order a frame needs them. */
+const FRAME_DOCUMENTS = ["app.html", "lib.html"];
+
 function frameDocument(): Plugin {
   const scripts = `${storageSeedScript()};${BOOT_SCRIPT}`;
   return {
@@ -64,7 +71,7 @@ function frameDocument(): Plugin {
     transformIndexHtml: {
       order: "pre",
       handler(_html, ctx) {
-        if (!ctx.filename.endsWith("app.html")) return;
+        if (!FRAME_DOCUMENTS.some((name) => ctx.filename.endsWith(name))) return;
         return [{ tag: "script", children: scripts, injectTo: "head-prepend" }];
       },
     },
@@ -100,7 +107,9 @@ export default defineConfig({
     // Never inline a font, as in the web app: a small slice would otherwise sit in the
     // stylesheet as a data: URI, whatever theme is shown.
     assetsInlineLimit: (file) => (file.endsWith(".woff2") ? false : undefined),
-    rollupOptions: { input: { gallery: at("./index.html"), app: at("./app.html") } },
+    rollupOptions: {
+      input: { gallery: at("./index.html"), app: at("./app.html"), library: at("./lib.html") },
+    },
   },
   worker: { format: "es" },
   // Fixed PenguinHarness dev port; the allocation table lives in core's internal/ports.ts.

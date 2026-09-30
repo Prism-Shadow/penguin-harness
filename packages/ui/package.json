@@ -19,6 +19,7 @@
       "default": "./src/fonts/index.css"
     },
     "./boot": "./src/boot.ts",
+    "./fonts-credits": "./src/fonts/credits.ts",
     "./testing": "./src/testing/index.ts"
   },
   "scripts": {

@@ -56,6 +56,7 @@ describe("visibleSettingsSections", () => {
       "general",
       "appearance",
       "account",
+      "credits",
       "proxy",
       "uploads",
       "company",
@@ -69,7 +70,13 @@ describe("visibleSettingsSections", () => {
     // switch and user management are admin surfaces, and the whole point of dropping them is that a non-admin is never
     // told they exist. Updating is not among them either way: it lives in the sidebar user
     // menu, outside this dialog, for every account.
-    expect(plain.map((s) => s.key)).toEqual(["profile", "general", "appearance", "account"]);
+    expect(plain.map((s) => s.key)).toEqual([
+      "profile",
+      "general",
+      "appearance",
+      "account",
+      "credits",
+    ]);
   });
 
   it("strips the desktop shell's window down to what a token session can use", () => {
@@ -80,6 +87,7 @@ describe("visibleSettingsSections", () => {
       "profile",
       "general",
       "appearance",
+      "credits",
       "proxy",
       "uploads",
       "company",
@@ -95,6 +103,7 @@ describe("visibleSettingsSections", () => {
       "general",
       "appearance",
       "account",
+      "credits",
       "proxy",
       "uploads",
       "company",
@@ -154,6 +163,22 @@ describe("the Settings dialog", () => {
     // the raw registry and rendered the admin rows to everyone.
     expect(source).toContain("visibleSettingsSections({");
     expect(source).not.toContain("SECTION_RULES");
+  });
+
+  it("renders the credits page, which carries the MiSans credit the account menu used to", () => {
+    // MiSans's licence asks the app to credit it wherever it runs, so the page is visible to
+    // every viewer (pinned above) and the sentence heads it.
+    expect(source).toContain('{current === "credits" && <CreditsSection />}');
+    const credits = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        "../src/features/settings/credits-section.tsx",
+      ),
+      "utf8",
+    );
+    expect(credits).toContain("{S.settings.fontCredit}");
+    expect(credits).toContain("FONT_CREDITS.map");
+    expect(credits).toContain("aria-controls={panelId}");
   });
 
   it("resolves the page it renders through the same gate on every render", () => {

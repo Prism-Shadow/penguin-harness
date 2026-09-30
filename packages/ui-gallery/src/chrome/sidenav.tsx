@@ -1,34 +1,84 @@
 /**
- * The surface list: a search box over the app's surfaces grouped as the index groups them
- * (src/app/surfaces.ts), then Foundations and Fonts, the current page marked. The left column of
- * a page holds it; at phone width the drawer does. The search matches a surface's title in either
- * language and its id, and Ctrl/⌘ K focuses it.
+ * A section's left column: the links of the section the page is in, grouped, the current page
+ * marked. Three sections have one — 界面 lists the app's surfaces under a search box (Ctrl/⌘ K
+ * focuses it; it matches a title in either language and the id), 基础 lists the component
+ * library's topics by group, 字体 lists the fonts pages. At phone width the drawer holds the same
+ * list.
  */
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { SURFACE_GROUPS } from "../app/surfaces";
+import { TOPIC_GROUPS } from "../library/topics";
 import { BASE } from "../lib/location";
-import { moduleHref, routeHref, surfaceHref } from "../lib/routes";
-import { useText } from "../preview";
-import { MODULES } from "../registry";
+import { FONTS_PAGE_IDS, fontsHref, surfaceHref, topicHref } from "../lib/routes";
+import type { FontsPageId } from "../lib/routes";
 import { useGallery } from "../state";
 import { zh } from "../strings";
 import { en } from "../strings-en";
+import { useText } from "../text";
 import { ChromeIcon } from "./icons";
 
-/** One group of the list: the surfaces of a group, or Foundations and Fonts at the end. */
-interface NavGroup {
+export interface NavLink {
   id: string;
   title: string;
-  links: { id: string; title: string; href: string }[];
+  href: string;
+}
+
+/** One group of a list; a group without a title is the list's only one. */
+export interface NavGroup {
+  id: string;
+  title?: string;
+  links: NavLink[];
+}
+
+/** A section's navigation list, as every section renders it. */
+export function SectionNav({
+  label,
+  groups,
+  activeId,
+  onNavigate,
+  children,
+}: {
+  label: string;
+  groups: readonly NavGroup[];
+  /** The page this is, for the current mark. */
+  activeId: string | null;
+  /** A link was followed: the drawer closes. */
+  onNavigate?: () => void;
+  /** What sits above the groups: the surface list's search box, or what a search left empty. */
+  children?: ReactNode;
+}) {
+  return (
+    <nav className="g-nav" aria-label={label}>
+      {children}
+      {groups.map((group) => (
+        <div key={group.id} className="g-nav-group">
+          {group.title !== undefined && <span className="g-nav-eyebrow">{group.title}</span>}
+          <ul>
+            {group.links.map((link) => (
+              <li key={link.id}>
+                <a
+                  className="g-nav-link"
+                  href={link.href}
+                  aria-current={link.id === activeId ? "page" : undefined}
+                  onClick={onNavigate}
+                >
+                  {link.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </nav>
+  );
 }
 
 export function SurfaceNav({
   activeId,
   onNavigate,
 }: {
-  /** The surface or module page this is, for the current mark. */
   activeId: string | null;
-  /** A link was followed: the drawer closes. */
   onNavigate?: () => void;
 }) {
   const { S, state } = useGallery();
@@ -67,21 +117,13 @@ export function SurfaceNav({
     }),
   })).filter((group) => group.links.length > 0);
 
-  const more = [
-    ...MODULES.list.flatMap(({ module }) => {
-      const title = text.module(module).title;
-      return matches(title, module.title, module.id)
-        ? [{ id: module.id, title, href: moduleHref(BASE, state, module.id) }]
-        : [];
-    }),
-    ...(matches(S.site.fonts, zh.site.fonts, en.site.fonts, "fonts")
-      ? [{ id: "fonts", title: S.site.fonts, href: routeHref(BASE, state, "/fonts") }]
-      : []),
-  ];
-  if (more.length > 0) groups.push({ id: "foundations", title: S.site.foundations, links: more });
-
   return (
-    <nav className="g-nav" aria-label={S.site.nav}>
+    <SectionNav
+      label={S.site.nav}
+      groups={groups}
+      activeId={activeId}
+      {...(onNavigate ? { onNavigate } : {})}
+    >
       <label className="g-search">
         <ChromeIcon name="search" size={14} />
         <input
@@ -95,25 +137,62 @@ export function SurfaceNav({
         <kbd>{S.site.searchShortcut}</kbd>
       </label>
       {groups.length === 0 && <p className="g-muted g-nav-empty">{S.site.noMatches}</p>}
-      {groups.map((group) => (
-        <div key={group.id} className="g-nav-group">
-          <span className="g-nav-eyebrow">{group.title}</span>
-          <ul>
-            {group.links.map((link) => (
-              <li key={link.id}>
-                <a
-                  className="g-nav-link"
-                  href={link.href}
-                  aria-current={link.id === activeId ? "page" : undefined}
-                  onClick={onNavigate}
-                >
-                  {link.title}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </nav>
+    </SectionNav>
+  );
+}
+
+export function TopicNav({
+  activeId,
+  onNavigate,
+}: {
+  activeId: string | null;
+  onNavigate?: () => void;
+}) {
+  const { S, state } = useGallery();
+  const text = useText();
+  const groups: NavGroup[] = TOPIC_GROUPS.map((group) => ({
+    id: group.id,
+    title: text.topicGroup(group.id),
+    links: group.topics.map((topic) => ({
+      id: topic.id,
+      title: text.topic(topic.id).title,
+      href: topicHref(BASE, state, topic.id),
+    })),
+  }));
+  return (
+    <SectionNav
+      label={S.library.title}
+      groups={groups}
+      activeId={activeId}
+      {...(onNavigate ? { onNavigate } : {})}
+    />
+  );
+}
+
+export function FontsNav({
+  activeId,
+  onNavigate,
+}: {
+  activeId: FontsPageId;
+  onNavigate?: () => void;
+}) {
+  const { S, state } = useGallery();
+  const groups: NavGroup[] = [
+    {
+      id: "fonts",
+      links: FONTS_PAGE_IDS.map((page) => ({
+        id: page,
+        title: S.fonts.pages[page],
+        href: fontsHref(BASE, state, page),
+      })),
+    },
+  ];
+  return (
+    <SectionNav
+      label={S.site.fonts}
+      groups={groups}
+      activeId={activeId}
+      {...(onNavigate ? { onNavigate } : {})}
+    />
   );
 }

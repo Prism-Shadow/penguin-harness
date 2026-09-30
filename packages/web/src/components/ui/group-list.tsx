@@ -331,7 +331,9 @@ export function GroupHeader({
       // cursor-grab while the header is a handle — the SessionRow treatment one axis up.
       // Groups have no sort toggle by design, so the cursor is the only thing on screen
       // that says this row can be dragged at all.
-      className={`group/header flex items-center gap-0.5 px-1 pb-0.5${
+      // min-w-0: the row never asks for more than its column; the title button is the part
+      // that gives way (it truncates), the actions after it keep their size.
+      className={`group/header flex min-w-0 items-center gap-0.5 px-1 pb-0.5${
         draggable ? " cursor-grab" : ""
       }`}
       {...(draggable

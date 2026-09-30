@@ -3,7 +3,8 @@
  *
  * Server-global pages write through /api/admin/settings (or the admin user routes) and
  * belong to admins alone; the personal pages are per-user preferences every signed-in user
- * owns. Two pages additionally depend on how this session runs: the account page only
+ * owns (the credits page is one of them, open to everyone). Two pages additionally depend on
+ * how this session runs: the account page only
  * exists where a password can be changed (see offersChangePassword), and user management
  * disappears in desktop mode, where the app is single-user. The profile page is neither — an
  * avatar and a nickname are display data, so every signed-in session may set them. Updating
@@ -29,6 +30,7 @@ export type SettingsSectionKey =
   | "general"
   | "appearance"
   | "account"
+  | "credits"
   | "proxy"
   | "uploads"
   | "company"
@@ -63,6 +65,9 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     // The desktop shell's own window has no password to change; a password-established
     // session against the same server still does. Same predicate as the old menu row.
     { key: "account", group: "personal", visible: (v) => offersChangePassword(v) },
+    // The bundled fonts and their licences. Every session, the desktop shell's own window
+    // included: MiSans's licence asks the app to credit it wherever it runs.
+    { key: "credits", group: "personal", visible: () => true },
     { key: "proxy", group: "server", visible: (v) => v.isAdmin },
     { key: "uploads", group: "server", visible: (v) => v.isAdmin },
     // The company-mode master switch: server-global like the proxy and upload limits.

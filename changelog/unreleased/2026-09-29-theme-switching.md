@@ -15,6 +15,7 @@ The Web App's Appearance settings gained a theme picker — Primer (通用), Fro
 - **Accent** lists the active theme's own presets after "Theme's own". A preset another theme lists is kept: it shows as the theme's own accent until a theme that lists it is active again.
 - **Font size** has five steps — XS 14px, S 15px, M 16px (the new default), L 18px (the old default) and XL 20px. A size chosen in an earlier release carries over by pixels; see [backward compatibility](2026-09-29-backward-compatibility.md).
 - **Fonts** picks the Latin face and the CJK face separately, each defaulting to the theme's own; the monospaced face always stays the theme's.
+- A new **Credits** page, last in the Personal group and open to every account (the desktop window included), lists each bundled font — its family, the themes that use it, its license, and the full license text on request. The MiSans credit moved there from the account menu.
 
 ## The themes reach the real app
 
@@ -31,6 +32,7 @@ The Web App's Appearance settings gained a theme picker — Primer (通用), Fro
 
 - Dark mode keeps near-white for headings and emphasis and sets body text a step below it, at least 11:1 against every page surface; secondary text stays at least 6:1 and meta text (timestamps, placeholders) at least 4.5:1. Primer's dark canvas is lifted off pure black, and the gray scale behind `dark:` classes moves with it.
 - In Console, messages, the composer's input and Session titles read in the sans reading face; navigation, labels, step rows and code stay monospaced. Console's work group loses its box, and Frost's work group lines its steps up with the header.
+- Frost's dialogs are opaque (only menus, popovers and tooltips stay frosted), and at phone width the app fills the screen with no inset around it.
 
 ## Details
 

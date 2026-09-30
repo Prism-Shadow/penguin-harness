@@ -134,6 +134,9 @@ const pairsFor = (mode: ThemeModeName): readonly Pair[] => [
     min: 4.5,
   })),
   { fg: "--ui-switch-knob", bg: "--ui-switch-track", min: 3 },
+  // A frosted layer's ink on the glass over the worst backdrop it can float over (black in
+  // light, white in dark): a menu stays legible whatever scrolls behind it.
+  { fg: "--ui-fg", bg: "--ui-glass-bg", min: 4.5 },
   ...(["--ui-canvas", "--ui-surface"] as const).map((bg) => ({
     fg: "--ui-fg-link" as const,
     bg,
@@ -166,8 +169,9 @@ const pairsFor = (mode: ThemeModeName): readonly Pair[] => [
  * fills (an accent, a tint, the switch's track) over a surface, the shell's field over the UA
  * canvas and its columns over the field.
  */
-function layerBelow(bg: TokenName): TokenName | "base" {
+function layerBelow(bg: TokenName): TokenName | "base" | "worst" {
   if (bg === "--ui-canvas" || bg === "--ui-shell-field") return "base";
+  if (bg === "--ui-glass-bg") return "worst";
   if ((PAGE_SURFACES as readonly string[]).includes(bg) || bg === "--ui-overlay")
     return "--ui-canvas";
   if (bg === "--ui-shell-nav-bg" || bg === "--ui-shell-main-bg") return "--ui-shell-field";
@@ -181,8 +185,18 @@ function opaqueBackground(bg: TokenName, mode: ThemeModeName, resolve: Resolve):
   const color = resolve(bg);
   if (typeof color === "string") return color;
   const below = layerBelow(bg);
+  // The page sits on the UA canvas; a frosted layer is measured over the worst content it can
+  // float over — the opposite extreme.
   const under =
-    below === "base" ? (mode === "light" ? WHITE : BLACK) : opaqueBackground(below, mode, resolve);
+    below === "base"
+      ? mode === "light"
+        ? WHITE
+        : BLACK
+      : below === "worst"
+        ? mode === "light"
+          ? BLACK
+          : WHITE
+        : opaqueBackground(below, mode, resolve);
   return typeof under === "string" ? under : composite(color, under);
 }
 

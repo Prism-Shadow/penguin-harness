@@ -14,12 +14,14 @@ import { THEME_IDS } from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
 import { accentPresetsOf, accentSwatch, THEME_ACCENT } from "../lib/accents";
 import { BASE } from "../lib/location";
-import { homeHref, moduleHref, routeHref } from "../lib/routes";
+import { FIRST_TOPIC } from "../library/topics";
+import { HOME_SURFACE } from "../app/surfaces";
+import { fontsHref, homeHref, surfaceHref, topicHref } from "../lib/routes";
 import { CJK_FONTS, fontLabel, LATIN_FONTS, TEXT_SIZE_PX_NUMBER, TEXT_SIZES } from "../lib/themes";
 import { LANGS, MODE_PREFS, VIEWS } from "../lib/url-state";
 import type { ModePref } from "../lib/url-state";
-import { useText } from "../preview";
 import { useGallery } from "../state";
+import { useText } from "../text";
 import { Segmented, Swatches } from "./controls";
 import { FontReadoutLine } from "./font-readout";
 import { ChromeIcon } from "./icons";
@@ -206,18 +208,17 @@ export function ViewControls({ all = false }: { all?: boolean }) {
   );
 }
 
-/** The page links, each carrying the view state; the current page marked. */
+/**
+ * The section links, each carrying the view state, the current section marked: 界面 opens the
+ * chat surface's page, 基础 the library's first topic, 字体 the fonts defaults.
+ */
 export function PageLinks({ current, onNavigate }: { current: SitePage; onNavigate?: () => void }) {
   const { S, state } = useGallery();
   const links: { page: SitePage; label: string; href: string }[] = [
     { page: "home", label: S.site.home, href: homeHref(BASE, state) },
-    { page: "surfaces", label: S.site.surfaces, href: homeHref(BASE, state, "surfaces") },
-    {
-      page: "foundations",
-      label: S.site.foundations,
-      href: moduleHref(BASE, state, "foundations"),
-    },
-    { page: "fonts", label: S.site.fonts, href: routeHref(BASE, state, "/fonts") },
+    { page: "surfaces", label: S.site.surfaces, href: surfaceHref(BASE, state, HOME_SURFACE) },
+    { page: "foundations", label: S.site.foundations, href: topicHref(BASE, state, FIRST_TOPIC) },
+    { page: "fonts", label: S.site.fonts, href: fontsHref(BASE, state, "defaults") },
   ];
   return (
     <>

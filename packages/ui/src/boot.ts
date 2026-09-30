@@ -127,6 +127,49 @@ export function isFontCjk(value: unknown): value is FontCjk {
 }
 
 // ---------------------------------------------------------------------------
+// The themes' own faces
+// ---------------------------------------------------------------------------
+
+/**
+ * The display name of every bundled family → the family its `@font-face` declares
+ * (`fonts/*.css`). The pairing options and the themes' own faces are named by the display
+ * names, which is also what the credits and the Fonts page print.
+ */
+export const BUNDLED_FONT_FAMILIES = {
+  "Mona Sans": "Mona Sans Variable",
+  "IBM Plex Sans": "IBM Plex Sans Variable",
+  MiSans: "MiSans",
+  "Noto Sans SC": "Noto Sans SC Variable",
+  "JetBrains Mono": "JetBrains Mono Variable",
+  "Commit Mono": "Commit Mono",
+} as const;
+export type BundledFontName = keyof typeof BUNDLED_FONT_FAMILIES;
+
+/** A theme that names no bundled face names the platform's own; a consumer words this. */
+export const SYSTEM_FONT = "System";
+export type ThemeFontName = BundledFontName | typeof SYSTEM_FONT;
+
+export interface ThemeFonts {
+  /** The reading / UI sans (`--ui-font-sans`); Console's chrome is its mono face on top of it. */
+  readonly latin: ThemeFontName;
+  /** `--ui-font-cjk`. */
+  readonly cjk: ThemeFontName;
+  /** `--ui-font-mono`. */
+  readonly mono: ThemeFontName;
+}
+
+/**
+ * Each theme's own faces, as display names — what the Fonts page states as a theme's defaults
+ * beside the user's choice. A test holds every entry to the family its theme file's stack names
+ * first (`System` = a stack that names no bundled family).
+ */
+export const THEME_FONTS: Readonly<Record<ThemeId, ThemeFonts>> = {
+  github: { latin: SYSTEM_FONT, cjk: SYSTEM_FONT, mono: SYSTEM_FONT },
+  modern: { latin: "MiSans", cjk: "MiSans", mono: "JetBrains Mono" },
+  geek: { latin: "IBM Plex Sans", cjk: "Noto Sans SC", mono: "Commit Mono" },
+};
+
+// ---------------------------------------------------------------------------
 // Applying the attributes
 // ---------------------------------------------------------------------------
 

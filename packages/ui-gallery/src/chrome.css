@@ -1,6 +1,7 @@
 /*
- * The gallery chrome: the top bar, the surface list, the content column with its sections and
- * toolbars, "on this page", the framed app and the fonts page.
+ * The gallery chrome: the top bar, a section's navigation list, the content column with its
+ * sections and toolbars, "on this page", the framed app, the framed component library and the
+ * fonts pages.
  * Deliberately UNTHEMED — every colour is a `--g-*` variable and every length is px, never rem or
  * em — so switching the theme, the accent or the root size under test never moves the chrome; only
  * the previews follow `<html style="font-size">`. It follows only the mode (`.dark` on <html>).
@@ -193,6 +194,10 @@
 }
 .g-site[data-nav][data-toc] .g-body {
   grid-template-columns: var(--g-nav) minmax(0, var(--g-column)) var(--g-toc);
+}
+/* A framed board needs the room: the content column grows past the reading width. */
+.g-site[data-nav] .g-body[data-wide] {
+  grid-template-columns: var(--g-nav) minmax(0, 960px);
 }
 .g-main {
   min-width: 0;
@@ -599,19 +604,6 @@
   font-size: 13px;
   color: var(--g-ink-3);
 }
-.g-problems {
-  margin: 28px 0 0;
-  padding: 10px 12px;
-  border: 1px solid var(--g-line-strong);
-  border-radius: 8px;
-  color: var(--g-bad);
-  font-size: 13px;
-}
-.g-problems ul {
-  margin: 4px 0 0;
-  padding-left: 18px;
-}
-
 /* The toolbar over a preview: the primary control, open standalone, the link, the crumb. */
 .g-toolbar {
   display: flex;
@@ -706,22 +698,6 @@
   color: var(--g-ink);
 }
 
-.g-matrix {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 16px;
-}
-.g-matrix-cell {
-  display: grid;
-  gap: 6px;
-  align-content: start;
-}
-.g-matrix-label {
-  font-family: var(--g-mono);
-  font-size: 11px;
-  color: var(--g-ink-3);
-}
-
 /* ---- "On this page" ----------------------------------------------------------------------- */
 
 .g-toc {
@@ -789,6 +765,19 @@
   border-radius: 12px;
 }
 
+/* ---- The framed component library: at the column's width, as tall as its board ------------- */
+
+.g-lib {
+  min-width: 0;
+}
+.g-lib-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  transition: height 120ms ease-out;
+}
+
 /* ---- Fitted frames: the app laid out at its window width, scaled to the column -------------- */
 
 /* The box the page sees takes the scaled height (set inline); the frame inside keeps its natural
@@ -803,119 +792,8 @@
   transform-origin: 0 0;
 }
 
-/* ---- Parts, Tokens, Source ---------------------------------------------------------------- */
+/* ---- Code and tables ----------------------------------------------------------------------- */
 
-.g-parts {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-}
-.g-part-line {
-  margin: 0;
-  padding: 2px 0;
-  color: var(--g-ink-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.g-part {
-  border: 1px solid var(--g-line);
-  border-radius: 8px;
-  overflow: hidden;
-  scroll-margin-top: calc(var(--g-bar) + 16px);
-}
-.g-part-head {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  padding: 8px 12px;
-  font-size: 13px;
-}
-.g-part-preview {
-  min-height: 0;
-  padding: 20px;
-  border-top: 1px solid var(--g-line);
-}
-.g-part-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-  padding: 6px 8px;
-  border-top: 1px solid var(--g-line);
-  background: var(--g-page);
-}
-.g-part-foot > .g-crumb {
-  margin-left: auto;
-}
-.g-axes {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.g-token-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 0 16px;
-  margin-top: 12px;
-}
-.g-token {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 2px 8px;
-  padding: 3px 4px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  min-width: 0;
-}
-.g-token:hover {
-  background: var(--g-hover);
-}
-.g-token-swatch {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 1px rgb(127 127 127 / 0.35);
-}
-.g-token-swatch[data-empty] {
-  box-shadow: none;
-}
-.g-token-name {
-  font-family: var(--g-mono);
-  font-size: 11.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.g-token-value {
-  font-family: var(--g-mono);
-  font-size: 11.5px;
-  color: var(--g-ink-3);
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.g-token-value[data-unset] {
-  color: var(--g-bad);
-}
-.g-ratios {
-  grid-column: 2 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  font-family: var(--g-mono);
-  font-size: 11px;
-  color: var(--g-ink-3);
-}
-.g-ratio[data-pass="false"] {
-  color: var(--g-bad);
-}
 .g-code {
   margin: 12px 0 0;
   max-height: 560px;
@@ -1048,6 +926,28 @@
   border-top: 1px solid var(--g-line);
   vertical-align: top;
 }
+.g-fonts-table th[scope="row"] {
+  font-weight: 500;
+  text-align: left;
+}
+.g-fonts-table tr[aria-current] td,
+.g-fonts-table tr[aria-current] th {
+  color: var(--g-accent);
+}
+.g-fonts-current {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, max-content));
+  gap: 12px 40px;
+  margin: 16px 0;
+}
+.g-fonts-current dt {
+  font-size: 13px;
+  color: var(--g-ink-3);
+}
+.g-fonts-current dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+}
 .g-num-cell {
   font-variant-numeric: tabular-nums;
 }
@@ -1117,7 +1017,8 @@
   }
   .g-body,
   .g-site[data-nav] .g-body,
-  .g-site[data-nav][data-toc] .g-body {
+  .g-site[data-nav][data-toc] .g-body,
+  .g-site[data-nav] .g-body[data-wide] {
     grid-template-columns: minmax(0, 1fr);
     max-width: none;
     padding-bottom: 80px;
@@ -1148,7 +1049,6 @@
   .g-app[data-phone] {
     padding: 16px 12px;
   }
-  .g-token-list,
   .g-font-role {
     grid-template-columns: minmax(0, 1fr);
   }

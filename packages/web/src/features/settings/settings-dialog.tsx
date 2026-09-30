@@ -29,6 +29,7 @@ import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
 import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
+import { CreditsSection } from "./credits-section";
 
 /** Rail glyphs, on the shared 24x24 stroke grid (see NAV_ICONS' conventions). */
 const SECTION_ICONS: Record<SettingsSectionKey, string> = {
@@ -41,6 +42,8 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
     "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4l1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4l1.4-1.4",
   /** Single person: the signed-in account. */
   account: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
+  /** Circled C: credits and licences. */
+  credits: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM15 9.5a3.5 3.5 0 1 0 0 5",
   /** Globe: outbound traffic. */
   proxy:
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 0 0 18M12 3a15 15 0 0 1 0 18",
@@ -95,6 +98,7 @@ export function SettingsDialog({
     general: S.settings.generalTitle,
     appearance: S.settings.appearanceTitle,
     account: S.settings.accountTitle,
+    credits: S.settings.creditsTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
     company: S.settings.companyModeTitle,
@@ -142,6 +146,7 @@ export function SettingsDialog({
       {current === "general" && <GeneralSection />}
       {current === "appearance" && <AppearanceSection />}
       {current === "account" && <AccountSection />}
+      {current === "credits" && <CreditsSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
       {current === "company" && <CompanySection />}

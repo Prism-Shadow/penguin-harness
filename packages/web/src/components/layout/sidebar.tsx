@@ -1917,8 +1917,12 @@ export function Sidebar({
           (each row's sr-only Agent name) anchor and scroll inside it — anchored to the
           initial containing block instead, rows past the fold would bypass this
           overflow-y-auto and stretch the **document**, so expanding "More" / a source
-          folder made the whole page scroll (composer pushed up, blank space below). */}
-      <div className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          folder made the whole page scroll (composer pushed up, blank space below).
+          overflow-x-clip: the list scrolls one way only. With overflow-y set, a horizontal
+          overflow of a single pixel — a group header's actions in a theme with wider type or
+          roomier controls — would otherwise turn into a sideways scrollbar under the list;
+          nothing here is meant to be reached by scrolling sideways. */}
+      <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 pb-2">
         <nav className="space-y-0.5">
           {/* Expand/collapse SLIDE: grid-template-rows tweens between 0fr and 1fr with the
               inner overflow-hidden clipping the rows (the skills/models-page convention) —

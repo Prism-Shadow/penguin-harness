@@ -237,6 +237,13 @@ export const zh = {
     title: "设置",
     /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
     fontCredit: "使用了小米 MiSans 字体",
+    creditsTitle: "版权信息",
+    creditsIntro: "应用内置的字体，以及各自的许可。",
+    creditsThemes: "用于",
+    creditsNoTheme: "没有主题默认使用",
+    creditsLicense: "许可",
+    creditsSource: "来源",
+    creditsLicenseText: "许可全文",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",

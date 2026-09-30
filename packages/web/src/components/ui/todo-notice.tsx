@@ -77,7 +77,7 @@ export function TodoNotice({
       className="mt-3 flex items-center justify-between gap-4 rounded-lg border px-4 py-3"
     >
       <p className={`flex min-w-0 items-center text-xs ${ICON_GAP.menu}`}>
-        <span aria-hidden className={`shrink-0 ${UPDATE_DOT_INLINE}`} />
+        <span aria-hidden data-slot="icon" className={`shrink-0 ${UPDATE_DOT_INLINE}`} />
         <span className="min-w-0">{text}</span>
       </p>
       {/* The update sits to the RIGHT of the dismiss, which is where every ConfirmModal in the
