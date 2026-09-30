@@ -44,13 +44,17 @@
  * turn ends** and manual compaction both go into the Session total (the Trace page lists
  * compaction turns separately); see the task-stats module comments.
  */
-import { Md, StatusIcon } from "@prismshadow/penguin-ui";
+import {
+  DISCLOSURE_BODY_MD_CLASS,
+  DisclosureRow,
+  LiveDuration,
+  Md,
+  StatusIcon,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import type { CompactionItem } from "../../lib/omni/stream-model";
 import { compactionResultVisible, compactionSummaryText } from "../../lib/omni/compaction-summary";
-import { DISCLOSURE_BODY_MD_CLASS, DisclosureRow } from "./disclosure-row";
-import { LiveDuration } from "./live-duration";
 import { StepBanner } from "./step-banner";
 
 /**

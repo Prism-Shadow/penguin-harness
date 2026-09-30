@@ -108,6 +108,38 @@ export * from "./components/content/code-block/code-languages";
 export * from "./components/content/typography/typography";
 export * from "./components/content/diff-viewer/diff-viewer";
 
+// W4-A — navigation, notices and readings: the tab bar, the grouped list's header, folder, more
+// row and pager, the create pair, the notice with its variants and the page to-do built on it,
+// the progress bar, the duration slot and its live clock, the beta tag, the disclosure row, and
+// the stat tile and chip.
+export * from "./components/navigation/tabs/tabs";
+export * from "./components/navigation/group-header/group-header";
+export * from "./components/navigation/group-header/pager";
+export * from "./components/actions/create-buttons/create-buttons";
+export * from "./components/feedback/notice/notice";
+export * from "./components/feedback/todo-notice/todo-notice";
+export * from "./components/feedback/progress-bar/progress-bar";
+export * from "./components/feedback/duration-slot/duration-slot";
+export * from "./components/feedback/beta-badge/beta-badge";
+export * from "./components/layout/disclosure-row/disclosure-row";
+export * from "./components/data/stat-tile/stat-tile";
+export * from "./components/data/stat-chip/stat-chip";
+
+// W4-B — layout and data: the card, the page frame and header, the ruled and the collapsible
+// section, the entity header, list rows, label/value pairs, the log well and the table family.
+export * from "./components/layout/card/card";
+export * from "./components/layout/page/page";
+export * from "./components/layout/ruled-section/ruled-section";
+export * from "./components/layout/collapsible-section/collapsible-section";
+export * from "./components/layout/entity-header/entity-header";
+export * from "./components/data/list-row/list-row";
+export * from "./components/data/key-value/key-value";
+export * from "./components/data/log-view/log-view";
+export * from "./components/data/table/table";
+
+// W4-C — navigation: the nav list and its rows, the rail of a paged dialog or a settings page.
+export * from "./components/navigation/nav-list/nav-list";
+
 // W8-A — charts: the theme's chart style, the primitives every mark is drawn through, the plot
 // frame with its geometry, and the charts built on them — the token donut, the sparkline, the
 // ring gauge and the legend.

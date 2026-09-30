@@ -16,7 +16,18 @@
  */
 import { useMemo, useRef, useState } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
-import { Chevron, StatusIcon, ZoomableImage } from "@prismshadow/penguin-ui";
+import {
+  ActivityProgress,
+  Chevron,
+  DISCLOSURE_OUTPUT_PRE_CLASS,
+  DISCLOSURE_ROW_CLASS,
+  DISCLOSURE_ROW_STICKY_CLASS,
+  LiveDuration,
+  StatusIcon,
+  ZoomableImage,
+  activityState,
+  useElapsedPast,
+} from "@prismshadow/penguin-ui";
 import type { RunState } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
@@ -24,16 +35,8 @@ import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
-import {
-  ActivityProgress,
-  DISCLOSURE_OUTPUT_PRE_CLASS,
-  DISCLOSURE_ROW_CLASS,
-  DISCLOSURE_ROW_STICKY_CLASS,
-  activityState,
-} from "./disclosure-row";
 import { toneInk } from "../../lib/tone";
 import { ApprovalButtons } from "./approval-buttons";
-import { LiveDuration, useElapsedPast } from "./live-duration";
 import { useTheme } from "../../state/theme";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
 import { SubagentChip } from "./subagent-chip";

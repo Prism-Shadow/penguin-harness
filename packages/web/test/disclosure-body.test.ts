@@ -1,6 +1,6 @@
 /**
  * The expanded Markdown body the thinking block and the compaction sections share
- * (features/chat/disclosure-row.tsx). vitest is node-only here (`environment: "node"`, no
+ * (the shared UI package's disclosure-row.tsx). vitest is node-only here (`environment: "node"`, no
  * jsdom), so this pins the contract against the source text and the stylesheets — the
  * title-reveal.test.ts convention.
  *
@@ -16,10 +16,7 @@
  * rounded box the transcript uses for a quotation.
  */
 import { describe, expect, it } from "vitest";
-import {
-  DISCLOSURE_BODY_MD_CLASS,
-  DISCLOSURE_OUTPUT_PRE_CLASS,
-} from "../src/features/chat/disclosure-row";
+import { DISCLOSURE_BODY_MD_CLASS, DISCLOSURE_OUTPUT_PRE_CLASS } from "@prismshadow/penguin-ui";
 import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
 const SCAN = scanSources();
@@ -61,7 +58,7 @@ const unlayered = SCAN.files
 describe("the disclosure body's sources", () => {
   it("scan every source root, and find the shared classes in one place", () => {
     expectEveryRootScanned(SCAN);
-    expectSingleHome(SCAN, "packages/web/src/features/chat/disclosure-row.tsx");
+    expectSingleHome(SCAN, "packages/ui/src/components/layout/disclosure-row/disclosure-row.tsx");
   });
 });
 
@@ -86,15 +83,7 @@ describe("the disclosure body's relation to the output block", () => {
   it("wears the same divider, inset and ink", () => {
     const body = classes(DISCLOSURE_BODY_MD_CLASS);
     const output = classes(DISCLOSURE_OUTPUT_PRE_CLASS);
-    for (const shared of [
-      "border-t",
-      "border-gray-100",
-      "dark:border-gray-800",
-      "px-3",
-      "py-2",
-      "text-gray-600",
-      "dark:text-gray-300",
-    ]) {
+    for (const shared of ["border-t", "border-line-muted", "px-3", "py-2", "text-fg-muted"]) {
       expect(output).toContain(shared);
       expect(body).toContain(shared);
     }

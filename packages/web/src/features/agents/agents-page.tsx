@@ -30,6 +30,7 @@ import {
   AgentAvatar,
   Badge,
   Button,
+  Card,
   CloseIcon,
   ConfirmModal,
   EmptyState,
@@ -43,9 +44,12 @@ import {
   ICON_SIZE,
   Input,
   Modal,
+  PageFrame,
+  PageHeader,
   Skeleton,
   SkeletonCard,
   Textarea,
+  TodoNotice,
   UpdatePill,
   toastError,
   toastSuccess,
@@ -62,7 +66,6 @@ import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../../lib/b
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { TodoNotice } from "../../components/ui/todo-notice";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
@@ -78,7 +81,8 @@ import { WorkspaceSelect } from "../chat/workspace-select";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { AiCreateModal, CreateButtons } from "../ai-create";
+import { AiCreateModal } from "../ai-create";
+import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { mergeAgents } from "../../lib/benchmark-merge";
 import type { AgentSource } from "../../lib/benchmark-merge";
 import { useSessions } from "../../state/sessions";
@@ -477,318 +481,310 @@ export function AgentsPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-5xl">
-        {/* The title row and the notice under it share one block, so the gap below the block
-            (to the list) is the same whether or not the notice is showing — the models page's
-            header has the same shape. */}
-        <div className="mb-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="ui-display text-xl font-semibold">{S.agent.listTitle}</h1>
-            {/* Search plus the create pair, in the Models page header's shape: on a narrow
-                screen flex-wrap drops the pair onto its own line and the box shrinks with it,
-                fixed width from sm up. Both controls take the form rung — CreateButtons defaults
-                to it — so the buttons read at the size of the box beside them. */}
-            <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
-              <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
-                <Input
-                  size="sm"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={S.agent.searchPlaceholder}
-                />
-              </div>
-              <CreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
+    <PageFrame>
+      {/* The title row and the notice under it share one header block, so the gap below it (to
+          the list) is the same whether or not the notice is showing — the models page's header
+          has the same shape. Search plus the create pair sit at the end of the title row: on a
+          narrow screen they wrap onto their own line and the box shrinks with it, fixed width
+          from sm up. Both controls take the form rung — CreateButtons defaults to it — so the
+          buttons read at the size of the box beside them. */}
+      <PageHeader
+        title={S.agent.listTitle}
+        actions={
+          <>
+            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+              <Input
+                size="sm"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={S.agent.searchPlaceholder}
+              />
             </div>
-          </div>
+            <AiCreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
+          </>
+        }
+      >
+        {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
+            An Agent's kernel is never NEW — the Agent already exists and its config is simply
+            behind the defaults generation — so the line states the upgradable count alone
+            rather than padding it with a zero the page has no meaning for. The per-card capsule
+            below and the per-Agent update in settings are untouched. */}
+        {kernelTodo && (
+          <TodoNotice
+            text={S.todo.changesUpgradable(noticeCounts(kernelTodo).updated)}
+            actionLabel={S.todo.updateNow}
+            busy={kernelRunning}
+            onAction={() => setKernelConfirmOpen(true)}
+            dismissLabel={S.todo.dismiss}
+            onDismiss={() => dismissTodo(projectId ?? null, "agents", kernelTodo.signature)}
+          />
+        )}
+      </PageHeader>
 
-          {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
-              An Agent's kernel is never NEW — the Agent already exists and its config is simply
-              behind the defaults generation — so the line states the upgradable count alone
-              rather than padding it with a zero the page has no meaning for. The per-card capsule
-              below and the per-Agent update in settings are untouched. */}
-          {kernelTodo && (
-            <TodoNotice
-              text={S.todo.changesUpgradable(noticeCounts(kernelTodo).updated)}
-              actionLabel={S.todo.updateNow}
-              busy={kernelRunning}
-              onAction={() => setKernelConfirmOpen(true)}
-              dismissLabel={S.todo.dismiss}
-              onDismiss={() => dismissTodo(projectId ?? null, "agents", kernelTodo.signature)}
+      {agentsLoading ? (
+        /* Same single-column row styling as the real list (space-y-3 + the card's p-4), with a
+           three-line info column plus sparkline/button-group placeholders, so no layout shift
+           occurs once the skeleton disappears */
+        <div className="space-y-3">
+          {Array.from({ length: 4 }, (_, i) => (
+            <SkeletonCard key={i} className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
+              <div className="min-w-[14rem] flex-1">
+                <Skeleton className="h-[18px] w-40" />
+                <Skeleton className="mt-1.5 h-4 w-2/3" />
+                <Skeleton className="mt-1.5 h-4 w-48" />
+              </div>
+              <Skeleton className="hidden h-9 w-40 md:block" />
+              <Skeleton className="h-8 w-52" />
+            </SkeletonCard>
+          ))}
+        </div>
+      ) : shownAgents.length === 0 ? (
+        <EmptyState title={query.trim() === "" ? S.common.none : S.agent.searchEmpty} />
+      ) : (
+        /* GitHub-repo-list-style single column: separate cards with row spacing; each row is
+           one horizontal band of "info | sparkline | button group", with the info column
+           compressed to two lines of text (name line + combined description/stats line) to
+           minimize row height */
+        <div className="space-y-3">
+          {shownAgents.map(({ agent: a, machineIds: on }) => {
+            const builtin = BUILTIN_AGENT_IDS.has(a.agentId);
+            // An Agent this server does not have: everything below reads and writes its state
+            // directory, which is on the machine. Its name says where it is, its New chat opens
+            // there, and the rest is inert rather than answering 404 from here.
+            const machineName = on.includes(null) ? null : machineNameOf(on[0] ?? null);
+            const elsewhere = machineName !== null;
+            const elsewhereTitle = machineName === null ? "" : S.agent.livesOnMachine(machineName);
+            return (
+              <Card
+                key={a.agentId}
+                padding="md"
+                className="flex flex-wrap items-center gap-x-6 gap-y-2"
+              >
+                {/* Info column: once it can't fit within 14rem, everything after it
+                    (sparkline/buttons) wraps as a whole. The avatar counts as the first line
+                    (same line as the name); description/stats share the same left edge as the
+                    avatar (the column's left edge) */}
+                <div className="min-w-[14rem] flex-1">
+                  {/* Title line: small avatar + name + agentId + version badge */}
+                  <div className="flex items-center gap-2">
+                    <AgentAvatar
+                      id={a.agentId}
+                      name={agentDisplayName(a)}
+                      size={18}
+                      className="shrink-0 rounded"
+                    />
+                    {/* min-w-0: flex children don't shrink below their content by default; needed here to truncate overly long names */}
+                    <span className="min-w-0 truncate text-base font-bold">
+                      {agentDisplayName(a)}
+                    </span>
+                    {machineName !== null && (
+                      <span
+                        className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
+                        data-tooltip={elsewhereTitle}
+                      >
+                        {S.chat.machineTag(machineName)}
+                      </span>
+                    )}
+                    <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
+                      {a.agentId}
+                    </span>
+                    <Badge>v{a.version}</Badge>
+                    {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
+                        names the state in words rather than as another bare dot — a capsule in
+                        the version badge's own geometry, tinted the same pale red the dots on
+                        this trail carry, opening the settings overview where the update action
+                        lives. */}
+                    {a.kernelOutdated && (
+                      <UpdatePill onClick={() => openSettingsTab(a.agentId, "overview")}>
+                        {S.agent.kernelUpdateNeeded}
+                      </UpdatePill>
+                    )}
+                  </div>
+                  {/* Description truncated to one line (an empty description still takes up a line, keeping card heights equal) */}
+                  <p className="mt-1.5 min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
+                    {a.description ?? ""}
+                  </p>
+                  {/* Stats on their own line: same color/font size as the description; each
+                      item hugs its content, with spacing left to the container's uniform
+                      gap-x-4; meaning folded into the hover title. Tool/skill/hook/memory/
+                      vault/schedule counts are buttons deep-linking to the matching settings tab,
+                      listed in the settings tabs' order (also for built-in Agents — their
+                      Settings entry point has no gating either); session count and
+                      last-modified stay plain text.
+                      flex-wrap is load-bearing: every item is shrink-0 (a count must not be
+                      cut in half) and the row has no scroll box, so with nowrap the seven
+                      items simply spill past the card's padding once the info column is
+                      narrower than they are — a phone. Wrapping spends a second line instead,
+                      and never triggers where the row already fits. */}
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                    <span
+                      className="inline-flex shrink-0 items-center gap-1 tabular-nums"
+                      data-tooltip={S.agent.sessionCount(a.sessionCount)}
+                    >
+                      <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
+                      {a.sessionCount}
+                    </span>
+                    <button
+                      type="button"
+                      className={STAT_LINK_CLASS}
+                      disabled={elsewhere}
+                      data-tooltip={S.agent.toolCount(a.toolCount)}
+                      aria-label={S.agent.toolCount(a.toolCount)}
+                      onClick={() => openSettingsTab(a.agentId, "tools")}
+                    >
+                      <GlyphIcon d={STAT_ICONS.toolCalls} size={ICON_SIZE.inlineGlyph} />
+                      {a.toolCount}
+                    </button>
+                    <button
+                      type="button"
+                      className={STAT_LINK_CLASS}
+                      disabled={elsewhere}
+                      data-tooltip={S.skills.skillCount(a.skillCount)}
+                      aria-label={S.skills.skillCount(a.skillCount)}
+                      onClick={() => openSettingsTab(a.agentId, "skills")}
+                    >
+                      <GlyphIcon d={CARD_ICONS.skills} size={ICON_SIZE.inlineGlyph} />
+                      {a.skillCount}
+                    </button>
+                    <button
+                      type="button"
+                      className={STAT_LINK_CLASS}
+                      disabled={elsewhere}
+                      data-tooltip={S.hooks.hookCount(a.hookCount)}
+                      aria-label={S.hooks.hookCount(a.hookCount)}
+                      onClick={() => openSettingsTab(a.agentId, "hooks")}
+                    >
+                      <GlyphIcon d={ICONS.fishHook} size={ICON_SIZE.inlineGlyph} />
+                      {a.hookCount}
+                    </button>
+                    <button
+                      type="button"
+                      className={STAT_LINK_CLASS}
+                      disabled={elsewhere}
+                      data-tooltip={S.agent.memoryCount(a.memoryCount)}
+                      aria-label={S.agent.memoryCount(a.memoryCount)}
+                      onClick={() => openSettingsTab(a.agentId, "memory")}
+                    >
+                      <GlyphIcon d={CARD_ICONS.memory} size={ICON_SIZE.inlineGlyph} />
+                      {a.memoryCount}
+                    </button>
+                    <button
+                      type="button"
+                      className={STAT_LINK_CLASS}
+                      disabled={elsewhere}
+                      data-tooltip={S.agent.vaultKeyCount(a.vaultKeyCount)}
+                      aria-label={S.agent.vaultKeyCount(a.vaultKeyCount)}
+                      onClick={() => openSettingsTab(a.agentId, "vault")}
+                    >
+                      <GlyphIcon d={CARD_ICONS.vaultKeys} size={ICON_SIZE.inlineGlyph} />
+                      {a.vaultKeyCount}
+                    </button>
+                    <button
+                      type="button"
+                      className={STAT_LINK_CLASS}
+                      disabled={elsewhere}
+                      data-tooltip={S.agent.scheduleCount(a.scheduleCount)}
+                      aria-label={S.agent.scheduleCount(a.scheduleCount)}
+                      onClick={() => openSettingsTab(a.agentId, "schedules")}
+                    >
+                      <GlyphIcon d={CARD_ICONS.schedules} size={ICON_SIZE.inlineGlyph} />
+                      {a.scheduleCount}
+                    </button>
+                    <span
+                      className="inline-flex shrink-0 items-center gap-1"
+                      data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
+                    >
+                      <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
+                      {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Session activity sparkline (hidden on narrow screens first, giving the horizontal space back to content and buttons) */}
+                <ActivitySparkline
+                  data={a.sessionActivity}
+                  label={S.agent.activity(a.sessionActivity.length || 30)}
+                  className="hidden shrink-0 md:block"
+                />
+
+                {/* Button group to the right of the sparkline: "New Chat" shows text, the rest are square icon buttons (tooltip shows the full name) */}
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={() => newChat(a.agentId, on.includes(null) ? null : (on[0] ?? null))}
+                  >
+                    <GlyphIcon d={CARD_ICONS.newChat} />
+                    {S.chat.newSessionMenu}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={elsewhere}
+                    {...(elsewhere ? { title: elsewhereTitle } : {})}
+                    onClick={() => {
+                      setCurrentAgentId(a.agentId);
+                      navigate(`/agents/${a.agentId}`);
+                    }}
+                  >
+                    <GlyphIcon d={ICONS.gear} />
+                    {S.common.settings}
+                  </Button>
+                  <Button
+                    size="icon"
+                    title={elsewhere ? elsewhereTitle : S.nav.usage}
+                    aria-label={S.nav.usage}
+                    disabled={elsewhere}
+                    onClick={() => navigate(`/usage?agentId=${encodeURIComponent(a.agentId)}`)}
+                  >
+                    <GlyphIcon
+                      d={CARD_ICONS.usage}
+                      size={15}
+                      className="text-gray-600 dark:text-gray-300"
+                    />
+                  </Button>
+                  {/* Built-in Agents can't be deleted: shown as a non-button light gray
+                      placeholder (no border/background, no hover response, disabled cursor,
+                      explained via tooltip); the transparent border keeps the same box size as
+                      an icon button so column widths stay consistent across cards */}
+                  {builtin ? (
+                    <span
+                      role="img"
+                      data-tooltip={S.agent.builtinUndeletable}
+                      aria-label={S.agent.builtinUndeletable}
+                      className="inline-flex cursor-not-allowed items-center justify-center rounded-md border border-transparent p-1.5 text-gray-300 dark:text-gray-600"
+                    >
+                      <GlyphIcon d={CARD_ICONS.trash} size={15} />
+                    </span>
+                  ) : (
+                    <Button
+                      size="icon"
+                      variant="danger"
+                      title={elsewhere ? elsewhereTitle : S.agent.deleteAgent}
+                      aria-label={S.agent.deleteAgent}
+                      disabled={elsewhere}
+                      onClick={() => setDeleting({ agentId: a.agentId, name: agentDisplayName(a) })}
+                    >
+                      <GlyphIcon d={CARD_ICONS.trash} size={15} />
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+          {/* Until the Project has an agent of its own, the list ends in the AI path's call to
+              action: the built-in default is not one the user set up. Hidden while searching
+              (the list itself is being filtered). */}
+          {query.trim() === "" && agents.every((a) => BUILTIN_AGENT_IDS.has(a.agentId)) && (
+            <EmptyState
+              title={S.agent.firstAgentTitle}
+              description={S.agent.firstAgentDesc}
+              action={
+                <AiCreateButtons size="sm" onAi={() => setAiOpen(true)} onManual={openCreate} />
+              }
             />
           )}
         </div>
-
-        {agentsLoading ? (
-          /* Same single-column row styling as the real list (space-y-3 + px-5 py-4), with a
-             three-line info column plus sparkline/button-group placeholders, so no layout shift
-             occurs once the skeleton disappears */
-          <div className="space-y-3">
-            {Array.from({ length: 4 }, (_, i) => (
-              <SkeletonCard
-                key={i}
-                className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4"
-              >
-                <div className="min-w-[14rem] flex-1">
-                  <Skeleton className="h-[18px] w-40" />
-                  <Skeleton className="mt-1.5 h-4 w-2/3" />
-                  <Skeleton className="mt-1.5 h-4 w-48" />
-                </div>
-                <Skeleton className="hidden h-9 w-40 md:block" />
-                <Skeleton className="h-8 w-52" />
-              </SkeletonCard>
-            ))}
-          </div>
-        ) : shownAgents.length === 0 ? (
-          <EmptyState title={query.trim() === "" ? S.common.none : S.agent.searchEmpty} />
-        ) : (
-          /* GitHub-repo-list-style single column: separate cards with row spacing; each row is
-             one horizontal band of "info | sparkline | button group", with the info column
-             compressed to two lines of text (name line + combined description/stats line) to
-             minimize row height */
-          <div className="space-y-3">
-            {shownAgents.map(({ agent: a, machineIds: on }) => {
-              const builtin = BUILTIN_AGENT_IDS.has(a.agentId);
-              // An Agent this server does not have: everything below reads and writes its state
-              // directory, which is on the machine. Its name says where it is, its New chat opens
-              // there, and the rest is inert rather than answering 404 from here.
-              const machineName = on.includes(null) ? null : machineNameOf(on[0] ?? null);
-              const elsewhere = machineName !== null;
-              const elsewhereTitle =
-                machineName === null ? "" : S.agent.livesOnMachine(machineName);
-              return (
-                <div
-                  key={a.agentId}
-                  className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-gray-200 bg-white px-5 py-4 dark:border-gray-800 dark:bg-gray-900"
-                >
-                  {/* Info column: once it can't fit within 14rem, everything after it
-                      (sparkline/buttons) wraps as a whole. The avatar counts as the first line
-                      (same line as the name); description/stats share the same left edge as the
-                      avatar (the column's left edge) */}
-                  <div className="min-w-[14rem] flex-1">
-                    {/* Title line: small avatar + name + agentId + version badge */}
-                    <div className="flex items-center gap-2">
-                      <AgentAvatar
-                        id={a.agentId}
-                        name={agentDisplayName(a)}
-                        size={18}
-                        className="shrink-0 rounded"
-                      />
-                      {/* min-w-0: flex children don't shrink below their content by default; needed here to truncate overly long names */}
-                      <span className="min-w-0 truncate text-base font-bold">
-                        {agentDisplayName(a)}
-                      </span>
-                      {machineName !== null && (
-                        <span
-                          className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
-                          data-tooltip={elsewhereTitle}
-                        >
-                          {S.chat.machineTag(machineName)}
-                        </span>
-                      )}
-                      <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
-                        {a.agentId}
-                      </span>
-                      <Badge>v{a.version}</Badge>
-                      {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
-                          names the state in words rather than as another bare dot — a capsule in
-                          the version badge's own geometry, tinted the same pale red the dots on
-                          this trail carry, opening the settings overview where the update action
-                          lives. */}
-                      {a.kernelOutdated && (
-                        <UpdatePill onClick={() => openSettingsTab(a.agentId, "overview")}>
-                          {S.agent.kernelUpdateNeeded}
-                        </UpdatePill>
-                      )}
-                    </div>
-                    {/* Description truncated to one line (an empty description still takes up a line, keeping card heights equal) */}
-                    <p className="mt-1.5 min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
-                      {a.description ?? ""}
-                    </p>
-                    {/* Stats on their own line: same color/font size as the description; each
-                        item hugs its content, with spacing left to the container's uniform
-                        gap-x-4; meaning folded into the hover title. Tool/skill/hook/memory/
-                        vault/schedule counts are buttons deep-linking to the matching settings tab,
-                        listed in the settings tabs' order (also for built-in Agents — their
-                        Settings entry point has no gating either); session count and
-                        last-modified stay plain text.
-                        flex-wrap is load-bearing: every item is shrink-0 (a count must not be
-                        cut in half) and the row has no scroll box, so with nowrap the seven
-                        items simply spill past the card's padding once the info column is
-                        narrower than they are — a phone. Wrapping spends a second line instead,
-                        and never triggers where the row already fits. */}
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-                      <span
-                        className="inline-flex shrink-0 items-center gap-1 tabular-nums"
-                        data-tooltip={S.agent.sessionCount(a.sessionCount)}
-                      >
-                        <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
-                        {a.sessionCount}
-                      </span>
-                      <button
-                        type="button"
-                        className={STAT_LINK_CLASS}
-                        disabled={elsewhere}
-                        data-tooltip={S.agent.toolCount(a.toolCount)}
-                        aria-label={S.agent.toolCount(a.toolCount)}
-                        onClick={() => openSettingsTab(a.agentId, "tools")}
-                      >
-                        <GlyphIcon d={STAT_ICONS.toolCalls} size={ICON_SIZE.inlineGlyph} />
-                        {a.toolCount}
-                      </button>
-                      <button
-                        type="button"
-                        className={STAT_LINK_CLASS}
-                        disabled={elsewhere}
-                        data-tooltip={S.skills.skillCount(a.skillCount)}
-                        aria-label={S.skills.skillCount(a.skillCount)}
-                        onClick={() => openSettingsTab(a.agentId, "skills")}
-                      >
-                        <GlyphIcon d={CARD_ICONS.skills} size={ICON_SIZE.inlineGlyph} />
-                        {a.skillCount}
-                      </button>
-                      <button
-                        type="button"
-                        className={STAT_LINK_CLASS}
-                        disabled={elsewhere}
-                        data-tooltip={S.hooks.hookCount(a.hookCount)}
-                        aria-label={S.hooks.hookCount(a.hookCount)}
-                        onClick={() => openSettingsTab(a.agentId, "hooks")}
-                      >
-                        <GlyphIcon d={ICONS.fishHook} size={ICON_SIZE.inlineGlyph} />
-                        {a.hookCount}
-                      </button>
-                      <button
-                        type="button"
-                        className={STAT_LINK_CLASS}
-                        disabled={elsewhere}
-                        data-tooltip={S.agent.memoryCount(a.memoryCount)}
-                        aria-label={S.agent.memoryCount(a.memoryCount)}
-                        onClick={() => openSettingsTab(a.agentId, "memory")}
-                      >
-                        <GlyphIcon d={CARD_ICONS.memory} size={ICON_SIZE.inlineGlyph} />
-                        {a.memoryCount}
-                      </button>
-                      <button
-                        type="button"
-                        className={STAT_LINK_CLASS}
-                        disabled={elsewhere}
-                        data-tooltip={S.agent.vaultKeyCount(a.vaultKeyCount)}
-                        aria-label={S.agent.vaultKeyCount(a.vaultKeyCount)}
-                        onClick={() => openSettingsTab(a.agentId, "vault")}
-                      >
-                        <GlyphIcon d={CARD_ICONS.vaultKeys} size={ICON_SIZE.inlineGlyph} />
-                        {a.vaultKeyCount}
-                      </button>
-                      <button
-                        type="button"
-                        className={STAT_LINK_CLASS}
-                        disabled={elsewhere}
-                        data-tooltip={S.agent.scheduleCount(a.scheduleCount)}
-                        aria-label={S.agent.scheduleCount(a.scheduleCount)}
-                        onClick={() => openSettingsTab(a.agentId, "schedules")}
-                      >
-                        <GlyphIcon d={CARD_ICONS.schedules} size={ICON_SIZE.inlineGlyph} />
-                        {a.scheduleCount}
-                      </button>
-                      <span
-                        className="inline-flex shrink-0 items-center gap-1"
-                        data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
-                      >
-                        <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
-                        {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Session activity sparkline (hidden on narrow screens first, giving the horizontal space back to content and buttons) */}
-                  <ActivitySparkline
-                    data={a.sessionActivity}
-                    label={S.agent.activity(a.sessionActivity.length || 30)}
-                    className="hidden shrink-0 md:block"
-                  />
-
-                  {/* Button group to the right of the sparkline: "New Chat" shows text, the rest are square icon buttons (tooltip shows the full name) */}
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      onClick={() => newChat(a.agentId, on.includes(null) ? null : (on[0] ?? null))}
-                    >
-                      <GlyphIcon d={CARD_ICONS.newChat} />
-                      {S.chat.newSessionMenu}
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={elsewhere}
-                      {...(elsewhere ? { title: elsewhereTitle } : {})}
-                      onClick={() => {
-                        setCurrentAgentId(a.agentId);
-                        navigate(`/agents/${a.agentId}`);
-                      }}
-                    >
-                      <GlyphIcon d={ICONS.gear} />
-                      {S.common.settings}
-                    </Button>
-                    <Button
-                      size="icon"
-                      title={elsewhere ? elsewhereTitle : S.nav.usage}
-                      aria-label={S.nav.usage}
-                      disabled={elsewhere}
-                      onClick={() => navigate(`/usage?agentId=${encodeURIComponent(a.agentId)}`)}
-                    >
-                      <GlyphIcon
-                        d={CARD_ICONS.usage}
-                        size={15}
-                        className="text-gray-600 dark:text-gray-300"
-                      />
-                    </Button>
-                    {/* Built-in Agents can't be deleted: shown as a non-button light gray
-                        placeholder (no border/background, no hover response, disabled cursor,
-                        explained via tooltip); the transparent border keeps the same box size as
-                        an icon button so column widths stay consistent across cards */}
-                    {builtin ? (
-                      <span
-                        role="img"
-                        data-tooltip={S.agent.builtinUndeletable}
-                        aria-label={S.agent.builtinUndeletable}
-                        className="inline-flex cursor-not-allowed items-center justify-center rounded-md border border-transparent p-1.5 text-gray-300 dark:text-gray-600"
-                      >
-                        <GlyphIcon d={CARD_ICONS.trash} size={15} />
-                      </span>
-                    ) : (
-                      <Button
-                        size="icon"
-                        variant="danger"
-                        title={elsewhere ? elsewhereTitle : S.agent.deleteAgent}
-                        aria-label={S.agent.deleteAgent}
-                        disabled={elsewhere}
-                        onClick={() =>
-                          setDeleting({ agentId: a.agentId, name: agentDisplayName(a) })
-                        }
-                      >
-                        <GlyphIcon d={CARD_ICONS.trash} size={15} />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            {/* Until the Project has an agent of its own, the list ends in the AI path's call to
-                action: the built-in default is not one the user set up. Hidden while searching
-                (the list itself is being filtered). */}
-            {query.trim() === "" && agents.every((a) => BUILTIN_AGENT_IDS.has(a.agentId)) && (
-              <EmptyState
-                title={S.agent.firstAgentTitle}
-                description={S.agent.firstAgentDesc}
-                action={
-                  <CreateButtons size="sm" onAi={() => setAiOpen(true)} onManual={openCreate} />
-                }
-              />
-            )}
-          </div>
-        )}
-      </div>
+      )}
 
       <Modal
         open={createOpen}
@@ -1054,6 +1050,6 @@ export function AgentsPage() {
           <p className="mt-2 text-xs text-red-600 dark:text-red-400">{deleteError}</p>
         )}
       </ConfirmModal>
-    </div>
+    </PageFrame>
   );
 }

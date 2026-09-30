@@ -64,6 +64,8 @@ describe("the library's topics", () => {
       "avatars",
       "files",
       "content",
+      "layout",
+      "data",
     ]);
     const foundations = TOPIC_GROUPS.find((group) => group.id === "foundations")!.topics;
     expect(foundations.map((topic) => topic.id)).toEqual([
@@ -283,6 +285,50 @@ describe("the content board", () => {
       );
       expect(t.heading(2)).toContain("2");
     }
+  });
+});
+
+describe("the layout and data boards", () => {
+  it("show every layout and data component from the package, and nothing from the app", () => {
+    const boards = {
+      layout: [
+        "PageFrame",
+        "PageHeader",
+        "Card",
+        "CardHeader",
+        "RuledSection",
+        "CollapsibleSection",
+        "EntityHeader",
+        "NavList",
+        "NavRow",
+      ],
+      data: [
+        "Table",
+        "TableHead",
+        "TableHeaderCell",
+        "TableRow",
+        "TableCell",
+        "ListRow",
+        "KeyValue",
+        "KeyValueRow",
+        "LogView",
+      ],
+    };
+    for (const [topic, components] of Object.entries(boards)) {
+      const board = read(`../src/library/boards/${topic}.tsx`);
+      expect(board).toMatch(/from "@prismshadow\/penguin-ui";/);
+      expect(board).not.toMatch(/web\/src/);
+      for (const component of components) {
+        expect(board, `${topic}: ${component}`).toMatch(new RegExp(`<${component}[\\s/>]`));
+      }
+    }
+    // Both paddings of the card, a folded section, a bare table and a row that opens something.
+    const layout = read("../src/library/boards/layout.tsx");
+    expect(layout).toMatch(/<Card padding="none">/);
+    expect(layout).toMatch(/defaultOpen=\{false\}/);
+    const data = read("../src/library/boards/data.tsx");
+    expect(data).toMatch(/<Table framed=\{false\} size="sm">/);
+    expect(data).toMatch(/onClick=\{/);
   });
 });
 

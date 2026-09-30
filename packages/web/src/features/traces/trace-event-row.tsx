@@ -226,8 +226,8 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
   // Pre-split traces embedded `tools` here; per the explicit-incompatibility decision the
   // legacy field is not rendered — the toolset view is the tool_list_ready event.
   return (
-    <div className="space-y-2.5">
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
+    <div className="space-y-2">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
         {rows.map(([k, v]) => (
           <Fragment key={k}>
             <dt className="text-gray-400">{k}</dt>
@@ -435,7 +435,7 @@ export function EventRow({
             : "hover:bg-gray-50 dark:hover:bg-gray-800/50"
         }`}
       >
-        <span className="shrink-0 font-mono text-[11px] text-gray-400">
+        <span className="shrink-0 font-mono text-xs text-gray-400">
           {formatTime(msg.timestamp)}
         </span>
         <TypeIcon type={payloadType} />

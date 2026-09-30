@@ -25,6 +25,13 @@ export function uiStringsOf(dict: Strings): UiStrings {
     notifications: dict.common.notifications,
     dismiss: dict.common.dismiss,
     copyCode: dict.chat.copyCode,
+    expand: dict.nav.expandGroup,
+    collapse: dict.nav.collapseGroup,
+    more: dict.chat.loadMore,
+    fewer: dict.chat.showLess,
+    previous: dict.common.previousPage,
+    next: dict.common.nextPage,
+    pagePosition: dict.chat.groupPagePosition,
   };
 }
 

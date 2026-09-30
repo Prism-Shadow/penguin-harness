@@ -17,10 +17,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Chevron, StatusIcon } from "@prismshadow/penguin-ui";
+import { Chevron, LiveDuration, StatusIcon } from "@prismshadow/penguin-ui";
 import type { RunState } from "@prismshadow/penguin-ui";
 import { humanizeDuration } from "../../lib/format";
-import { LiveDuration } from "./live-duration";
 import { toneInk } from "../../lib/tone";
 
 export function StepBanner({

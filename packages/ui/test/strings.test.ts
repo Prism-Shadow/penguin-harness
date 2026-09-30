@@ -25,14 +25,21 @@ describe("UiStrings", () => {
     expect(Object.keys(DEFAULT_UI_STRINGS).sort()).toEqual([
       "clearSearch",
       "close",
+      "collapse",
       "copied",
       "copyCode",
       "dismiss",
+      "expand",
+      "fewer",
       "hidePassword",
       "loading",
+      "more",
       "moreInfo",
       "moreInfoAbout",
+      "next",
       "notifications",
+      "pagePosition",
+      "previous",
       "showPassword",
     ]);
     expect(DEFAULT_UI_STRINGS).toMatchObject({
@@ -47,8 +54,10 @@ describe("UiStrings", () => {
       notifications: "Notifications",
       dismiss: "Dismiss",
     });
-    // The one formatter: the subject folds into the name, keeping "More info" its prefix.
+    // The formatters: the subject folds into the name, keeping "More info" its prefix; a
+    // pager's position counts from 1.
     expect(DEFAULT_UI_STRINGS.moreInfoAbout("Vault")).toBe("More info: Vault");
+    expect(DEFAULT_UI_STRINGS.pagePosition(2, 5)).toBe("Page 2 of 5");
   });
 
   it("falls back to the defaults when no provider is mounted", () => {

@@ -25,6 +25,7 @@ import type { HookItem } from "@prismshadow/penguin-server/api";
 import {
   Badge,
   Button,
+  Card,
   ConfirmModal,
   CopiedStatus,
   CopyCheckGlyph,
@@ -254,7 +255,7 @@ export function HooksTab({
       ) : hooks.length === 0 ? (
         <SettingsEmpty>{S.hooks.agentTabEmpty}</SettingsEmpty>
       ) : (
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <Card padding="none">
           {hooks.map((hook) => {
             const description = localizedText(locale, hook.description, hook.descriptionZh);
             return (
@@ -274,7 +275,7 @@ export function HooksTab({
                       point names, wrapping onto a second line rather than truncating. */}
                   <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                     <span
-                      className="max-w-full truncate font-mono text-[13px] font-semibold"
+                      className="max-w-full truncate font-mono text-[length:var(--ui-text-code-size)] font-semibold"
                       data-tooltip={hook.name}
                       data-tooltip-content="code"
                     >
@@ -295,7 +296,7 @@ export function HooksTab({
                 </div>
                 {hook.version !== "" && (
                   <span
-                    className="hidden shrink-0 text-[11px] text-gray-400 sm:block dark:text-gray-500"
+                    className="hidden shrink-0 text-xs text-gray-400 sm:block dark:text-gray-500"
                     data-tooltip={hook.version}
                   >
                     {hook.version}
@@ -325,7 +326,7 @@ export function HooksTab({
               </div>
             );
           })}
-        </div>
+        </Card>
       )}
 
       {/* Import modal: recommended chat import on top, zip upload below (the Skills tab's shape). */}
@@ -341,7 +342,7 @@ export function HooksTab({
             <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
               {S.hooks.importChatWhy}
             </p>
-            <div className="mt-2.5 space-y-2.5">
+            <div className="mt-2.5 space-y-3">
               {/* A source may be a whole pasted hooks config block, so the field is multi-line. */}
               <Textarea
                 label={S.hooks.importSourceLabel}

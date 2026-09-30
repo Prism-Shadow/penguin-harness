@@ -1,5 +1,6 @@
 /**
- * Company mode's two beta marks (features/company/beta-badge.tsx).
+ * Company mode's two beta marks (features/company/company-beta.tsx, the tag drawn by the shared
+ * UI package's `BetaBadge`).
  *
  * The tag, on 「公司」 in the work-mode switch: it has to be legible, it has to reach a screen
  * reader through the option's name, and it must not move the switch around — which is the whole
@@ -15,10 +16,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Segmented } from "@prismshadow/penguin-ui";
 import {
   BETA_NOTICE_KEY,
-  BetaBadge,
+  CompanyBetaBadge,
   markBetaNoticeShown,
   shouldShowBetaNotice,
-} from "../src/features/company/beta-badge";
+} from "../src/features/company/company-beta";
 import { zh } from "../src/lib/strings";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
@@ -49,7 +50,8 @@ describe("the beta marks' sources", () => {
   it("scan every source root, and find the badge and the switch in one place each", () => {
     const scan = scanSources();
     expectEveryRootScanned(scan);
-    expectSingleHome(scan, "packages/web/src/features/company/beta-badge.tsx");
+    expectSingleHome(scan, "packages/web/src/features/company/company-beta.tsx");
+    expectSingleHome(scan, "packages/ui/src/components/feedback/beta-badge/beta-badge.tsx");
     expectSingleHome(scan, "packages/ui/src/components/forms/segmented/segmented.tsx");
   });
 });
@@ -90,7 +92,7 @@ function workModeSwitch(withBadge: boolean): string {
           value: "company",
           label: zh.company.modeCompany,
           ...(withBadge
-            ? { badge: { node: createElement(BetaBadge), name: zh.company.beta } }
+            ? { badge: { node: createElement(CompanyBetaBadge), name: zh.company.beta } }
             : {}),
         },
       ],

@@ -619,6 +619,9 @@ export const en: Strings = {
     notifications: "Notifications",
     /** Read after a toast's text: pressing the toast dismisses it. */
     dismiss: "Dismiss",
+    /** A pager's two steps, as their names and tooltips (the shared UI package's `Pager`). */
+    previousPage: "Previous page",
+    nextPage: "Next page",
     name: "Name",
     username: "Username",
     role: "Role",

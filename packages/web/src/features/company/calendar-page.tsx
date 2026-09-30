@@ -28,7 +28,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
-  CloseIcon,
+  Card,
   ConfirmModal,
   GlyphIcon,
   ICONS,
@@ -36,7 +36,7 @@ import {
   ICON_SIZE,
   Input,
   Modal,
-  NoticeStrip,
+  Notice,
   Segmented,
   Select,
   Skeleton,
@@ -144,7 +144,7 @@ const CREATE_SLOT_CLASS =
 function CreateSlotHint({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`pointer-events-none z-10 inline-flex items-center ${ICON_GAP.tight} text-[10px] leading-4 text-gray-500 opacity-0 transition-opacity duration-150 group-hover/slot:opacity-100 group-focus-visible/slot:opacity-100 dark:text-gray-400 ${className}`}
+      className={`pointer-events-none z-10 inline-flex items-center ${ICON_GAP.tight} text-xs leading-4 text-gray-500 opacity-0 transition-opacity duration-150 group-hover/slot:opacity-100 group-focus-visible/slot:opacity-100 dark:text-gray-400 ${className}`}
     >
       <GlyphIcon d={ICONS.plus} size={ICON_SIZE.inlineGlyph} />
       {S.company.calendar.create}
@@ -417,7 +417,7 @@ export function CalendarPage() {
           opts.onOpen?.();
           openEdit(i.event);
         }}
-        className={`flex min-w-0 items-center gap-1 rounded px-1 text-left text-[11px] leading-5 transition-opacity ${color.chip} ${
+        className={`flex min-w-0 items-center gap-1 rounded px-1 text-left text-xs leading-5 transition-opacity ${color.chip} ${
           opts.block ? "h-full w-full" : "w-full"
         } ${i.past && outcome === null ? "opacity-60" : ""} ${
           inert ? "line-through decoration-1 opacity-60" : ""
@@ -506,7 +506,7 @@ export function CalendarPage() {
         <div className="pointer-events-none relative pb-5">
           <p className="mb-1 flex h-5 items-center">
             <span
-              className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums ${
+              className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums ${
                 isToday
                   ? "bg-accent font-semibold text-accent-fg"
                   : day.inMonth
@@ -517,7 +517,7 @@ export function CalendarPage() {
               {new Date(day.dayStartMs).getDate()}
             </span>
           </p>
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             {shown.map((i) => (
               <span key={i.key} className="pointer-events-auto block">
                 {chip(i)}
@@ -615,55 +615,57 @@ export function CalendarPage() {
     const cols = days.length === 1 ? "grid-cols-[3rem_1fr]" : "grid-cols-[3rem_repeat(7,1fr)]";
     return (
       <div className="overflow-x-auto">
-        <div
-          className={`${days.length === 1 ? "" : "min-w-[52rem]"} overflow-hidden rounded-md border border-gray-200 dark:border-gray-800`}
-        >
-          <div
-            className={`grid ${cols} border-b border-gray-200 text-[11px] font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400`}
-          >
-            <div />
-            {days.map((day) => {
-              const d = new Date(day.dayStartMs);
-              const isToday = day.key === todayKey;
-              return (
-                <div
-                  key={day.key}
-                  className={`flex items-center gap-1.5 border-l border-gray-100 px-2 py-1.5 dark:border-gray-800 ${
-                    isToday ? "font-semibold text-gray-900 dark:text-gray-100" : ""
-                  }`}
-                >
-                  {S.company.calendar.weekdays[(d.getDay() + 6) % 7]}
-                  <span
-                    className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${
-                      isToday ? "bg-accent text-accent-fg" : ""
+        {/* The width floor sits on a wrapper: the card keeps its own `min-w-0`. */}
+        <div className={days.length === 1 ? "" : "min-w-[52rem]"}>
+          <Card padding="none">
+            <div
+              className={`grid ${cols} border-b border-gray-200 text-xs font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400`}
+            >
+              <div />
+              {days.map((day) => {
+                const d = new Date(day.dayStartMs);
+                const isToday = day.key === todayKey;
+                return (
+                  <div
+                    key={day.key}
+                    className={`flex items-center gap-1.5 border-l border-gray-100 px-2 py-1.5 dark:border-gray-800 ${
+                      isToday ? "font-semibold text-gray-900 dark:text-gray-100" : ""
                     }`}
                   >
-                    {d.getDate()}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <div
-            ref={scrollRef}
-            className="overflow-y-auto"
-            style={{ height: VISIBLE_HOURS * HOUR_PX }}
-          >
-            <div className={`grid ${cols}`}>
-              <div className="relative" style={{ height: HOUR_PX * 24 }}>
-                {Array.from({ length: 24 }, (_, h) => (
-                  <span
-                    key={h}
-                    className="absolute right-2 font-mono text-[10px] tabular-nums text-gray-400 dark:text-gray-500"
-                    style={{ top: h * HOUR_PX - 6 }}
-                  >
-                    {h === 0 ? "" : hourLabel(h)}
-                  </span>
-                ))}
-              </div>
-              {days.map(timeColumn)}
+                    {S.company.calendar.weekdays[(d.getDay() + 6) % 7]}
+                    <span
+                      className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${
+                        isToday ? "bg-accent text-accent-fg" : ""
+                      }`}
+                    >
+                      {d.getDate()}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          </div>
+            <div
+              ref={scrollRef}
+              className="overflow-y-auto"
+              style={{ height: VISIBLE_HOURS * HOUR_PX }}
+            >
+              <div className={`grid ${cols}`}>
+                <div className="relative" style={{ height: HOUR_PX * 24 }}>
+                  {Array.from({ length: 24 }, (_, h) => (
+                    // Centred on its hour line: half the label's 16px line box above it.
+                    <span
+                      key={h}
+                      className="absolute right-2 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500"
+                      style={{ top: h * HOUR_PX - 8 }}
+                    >
+                      {h === 0 ? "" : hourLabel(h)}
+                    </span>
+                  ))}
+                </div>
+                {days.map(timeColumn)}
+              </div>
+            </div>
+          </Card>
         </div>
       </div>
     );
@@ -672,22 +674,24 @@ export function CalendarPage() {
   const grid =
     view === "month" ? (
       <div className="overflow-x-auto">
-        <div className="min-w-[44rem] overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-          <div className="grid grid-cols-7 border-b border-gray-200 text-[11px] font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400">
-            {S.company.calendar.weekdays.map((w) => (
-              <div key={w} className="px-2 py-1.5">
-                {w}
+        <div className="min-w-[44rem]">
+          <Card padding="none">
+            <div className="grid grid-cols-7 border-b border-gray-200 text-xs font-medium text-gray-500 dark:border-gray-800 dark:text-gray-400">
+              {S.company.calendar.weekdays.map((w) => (
+                <div key={w} className="px-2 py-1.5">
+                  {w}
+                </div>
+              ))}
+            </div>
+            {monthGrid(anchor).map((row, r) => (
+              <div
+                key={r}
+                className="grid grid-cols-7 border-b border-gray-100 last:border-b-0 dark:border-gray-800"
+              >
+                {row.map(monthCell)}
               </div>
             ))}
-          </div>
-          {monthGrid(anchor).map((row, r) => (
-            <div
-              key={r}
-              className="grid grid-cols-7 border-b border-gray-100 last:border-b-0 dark:border-gray-800"
-            >
-              {row.map(monthCell)}
-            </div>
-          ))}
+          </Card>
         </div>
       </div>
     ) : view === "week" ? (
@@ -749,7 +753,7 @@ export function CalendarPage() {
       {/* Legend: one entry per employee in the chart's colour order, naming its cadence; a click
           filters to it, and strikes through everyone it just switched off. */}
       {employees.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-x-1 gap-y-1 text-[11px]">
+        <div className="mb-3 flex flex-wrap gap-x-1 gap-y-1 text-xs">
           {employees.map((e) => {
             const own = (events ?? []).filter((ev) => ev.agentId === e.agentId);
             const cadences = own.map(
@@ -801,52 +805,44 @@ export function CalendarPage() {
       )}
 
       {error !== null && (
-        <NoticeStrip
+        <Notice
           tone="danger"
-          className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs"
+          role="alert"
+          className="mb-3"
+          retry={{ label: S.common.retry, onClick: () => void load() }}
         >
-          <span>{S.company.calendar.loadFailed(error)}</span>
-          <Button size="sm" onClick={() => void load()}>
-            {S.common.retry}
-          </Button>
-        </NoticeStrip>
+          {S.company.calendar.loadFailed(error)}
+        </Notice>
       )}
 
       {events !== null && events.length === 0 && invalidFiles.length === 0 && !hintDismissed && (
-        <NoticeStrip
+        <Notice
           tone="neutral"
-          className="mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs"
-        >
-          <span className="min-w-0 flex-1">{S.company.calendar.emptyHint}</span>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="shrink-0"
-            title={S.company.calendar.dismissHint}
-            aria-label={S.company.calendar.dismissHint}
-            onClick={() => {
+          className="mb-3"
+          dismiss={{
+            ariaLabel: S.company.calendar.dismissHint,
+            onClick: () => {
               dismissHint(emptyHintKey);
               setHintDismissed(true);
-            }}
-          >
-            <CloseIcon />
-          </Button>
-        </NoticeStrip>
+            },
+          }}
+        >
+          {S.company.calendar.emptyHint}
+        </Notice>
       )}
 
       {events === null && error === null ? <CalendarSkeleton view={view} /> : grid}
 
       {invalidFiles.length > 0 && (
-        <NoticeStrip tone="danger" className="mt-4 rounded-md border px-3 py-2 text-xs">
-          <p className="mb-1 font-medium">{S.company.calendar.invalidFiles}</p>
-          <ul className="space-y-0.5 font-mono">
+        <Notice tone="danger" title={S.company.calendar.invalidFiles} className="mt-4">
+          <ul className="mt-1 space-y-1 font-mono">
             {invalidFiles.map((f) => (
               <li key={`${f.agentId}/${f.name}`}>
                 {f.agentId}/{f.name}: {f.error}
               </li>
             ))}
           </ul>
-        </NoticeStrip>
+        </Notice>
       )}
 
       {/* Create / edit dialog: the scheduled-task form minus its target, the employee as a select. */}
@@ -1076,8 +1072,9 @@ function DayOverflow({
   const { triggerRef, panelRef, position } = usePortalPanel({
     open,
     onClose: () => setOpen(false),
-    // A chip row is 20px tall; the header and the panel's own padding add about 40.
-    estimatedHeight: total * 22 + 40,
+    // A chip row is 20px tall with 4px between rows; the header and the panel's own padding add
+    // about 40.
+    estimatedHeight: total * 24 + 40,
     panelWidth: DAY_PANEL_WIDTH,
   });
   const close = () => setOpen(false);
@@ -1092,7 +1089,7 @@ function DayOverflow({
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
-        className="block w-full rounded px-1 text-left text-[10px] text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+        className="block w-full rounded px-1 text-left text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
       >
         {S.company.calendar.moreEvents(hidden)}
       </button>
@@ -1114,7 +1111,7 @@ function DayOverflow({
             className="anim-pop z-[60] flex max-h-[70vh] max-w-[calc(100vw-2rem)] flex-col rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
             <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
-              <span className="truncate text-[11px] font-medium tabular-nums text-gray-700 dark:text-gray-200">
+              <span className="truncate text-xs font-medium tabular-nums text-gray-700 dark:text-gray-200">
                 {dateLabel}
               </span>
               <button
@@ -1123,12 +1120,12 @@ function DayOverflow({
                   close();
                   onOpenDay();
                 }}
-                className="shrink-0 text-[11px] text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
+                className="shrink-0 text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
               >
                 {S.company.calendar.openDay}
               </button>
             </div>
-            <div className="space-y-0.5 overflow-y-auto p-1">{children(close)}</div>
+            <div className="space-y-1 overflow-y-auto p-1">{children(close)}</div>
           </div>,
           document.body,
         )}
@@ -1141,36 +1138,38 @@ function CalendarSkeleton({ view }: { view: CalendarView }) {
   if (view === "month") {
     return (
       <div className="overflow-x-auto">
-        <div className="min-w-[44rem] overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
-          <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-800">
-            {Array.from({ length: 7 }, (_, i) => (
-              <div key={i} className="px-2 py-2">
-                <Skeleton className="h-3 w-8" />
-              </div>
-            ))}
-          </div>
-          {Array.from({ length: 5 }, (_, r) => (
-            <div
-              key={r}
-              className="grid grid-cols-7 border-b border-gray-100 last:border-b-0 dark:border-gray-800"
-            >
-              {Array.from({ length: 7 }, (_, c) => (
-                <div
-                  key={c}
-                  className="min-h-24 space-y-1 border-r border-gray-100 p-1.5 last:border-r-0 dark:border-gray-800"
-                >
-                  <Skeleton className="h-3 w-4" />
-                  {(r + c) % 3 === 0 && <Skeleton className="h-4 w-full" />}
+        <div className="min-w-[44rem]">
+          <Card padding="none">
+            <div className="grid grid-cols-7 border-b border-gray-200 dark:border-gray-800">
+              {Array.from({ length: 7 }, (_, i) => (
+                <div key={i} className="px-2 py-2">
+                  <Skeleton className="h-3 w-8" />
                 </div>
               ))}
             </div>
-          ))}
+            {Array.from({ length: 5 }, (_, r) => (
+              <div
+                key={r}
+                className="grid grid-cols-7 border-b border-gray-100 last:border-b-0 dark:border-gray-800"
+              >
+                {Array.from({ length: 7 }, (_, c) => (
+                  <div
+                    key={c}
+                    className="min-h-24 space-y-1 border-r border-gray-100 p-1.5 last:border-r-0 dark:border-gray-800"
+                  >
+                    <Skeleton className="h-3 w-4" />
+                    {(r + c) % 3 === 0 && <Skeleton className="h-4 w-full" />}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Card>
         </div>
       </div>
     );
   }
   return (
-    <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+    <Card padding="none">
       <div className="flex gap-4 border-b border-gray-200 px-14 py-2 dark:border-gray-800">
         {Array.from({ length: view === "week" ? 7 : 1 }, (_, i) => (
           <Skeleton key={i} className="h-3 w-12" />
@@ -1184,6 +1183,6 @@ function CalendarSkeleton({ view }: { view: CalendarView }) {
           </div>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }

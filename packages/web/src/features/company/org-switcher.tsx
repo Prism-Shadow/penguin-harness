@@ -113,7 +113,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
               </span>
               {/* The Project the organization belongs to: the second line, so the name stays the headline. */}
               {current !== null && (
-                <span className="block truncate text-[11px] leading-tight text-gray-500 dark:text-gray-400">
+                <span className="block truncate text-xs leading-tight text-gray-500 dark:text-gray-400">
                   {projectName(current.projectId)}
                 </span>
               )}
@@ -121,7 +121,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
             {channelNote !== null && (
               <span
                 aria-hidden
-                className={`shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
+                className={`shrink-0 rounded-full px-1.5 text-xs font-semibold tabular-nums ${
                   company.channelMentions > 0
                     ? toneSurface.attention
                     : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200"

@@ -4,18 +4,23 @@
  * other — the reader chooses between two things they can see, instead of discovering the second
  * one inside the first. The wand button always carries the accent and the hand button never
  * does, so the pair reads the same on every page.
+ *
+ * Both labels are the caller's: the app names the two paths ("Create with AI" / "Create
+ * manually", or an object's own verb, "Import with AI").
  */
-import { Button, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { Button } from "../button/button";
+import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
+import { ICONS } from "../../icons/icons";
 
 export interface CreateButtonsProps {
   onAi: () => void;
-  /** Absent: the manual path is not offered on this surface (a member who may not write the form's target still gets the AI path). */
+  /** The AI path's label. */
+  aiLabel: string;
+  /** Absent: the manual path is not offered on this surface. */
   onManual?: () => void;
-  size?: "sm" | "md";
-  /** Labels when the object has its own verb ("Import with AI" / "Import manually"); default S.aiCreate.withAi / S.aiCreate.manual. */
-  aiLabel?: string;
+  /** The manual path's label; required wherever `onManual` is given. */
   manualLabel?: string;
+  size?: "sm" | "md";
   /** Greys both paths. */
   disabled?: boolean;
   /**
@@ -29,10 +34,10 @@ export interface CreateButtonsProps {
 
 export function CreateButtons({
   onAi,
-  onManual,
-  size = "sm",
   aiLabel,
+  onManual,
   manualLabel,
+  size = "sm",
   disabled,
   manualDisabled,
   className,
@@ -41,7 +46,7 @@ export function CreateButtons({
     <div className={`flex flex-wrap items-center gap-2 ${className ?? ""}`}>
       <Button size={size} variant="primary" disabled={disabled} onClick={onAi}>
         <GlyphIcon d={ICONS.wand} />
-        {aiLabel ?? S.aiCreate.withAi}
+        {aiLabel}
       </Button>
       {onManual !== undefined && (
         <Button
@@ -51,7 +56,7 @@ export function CreateButtons({
           onClick={onManual}
         >
           <GlyphIcon d={ICONS.hand} />
-          {manualLabel ?? S.aiCreate.manual}
+          {manualLabel}
         </Button>
       )}
     </div>

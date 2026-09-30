@@ -405,7 +405,8 @@ export const en: GalleryStrings = {
       },
       notices: {
         title: "Notice strips",
-        description: "A notice that owns a row: every tone, with and without actions.",
+        description:
+          "A notice that owns a row: every tone, with and without actions; the three notice variants built on it, and the page to-do.",
       },
       dialogs: {
         title: "Dialogs",
@@ -421,13 +422,16 @@ export const en: GalleryStrings = {
       badges: {
         title: "Badges and status",
         description:
-          "Badges and counts, state dots, run-state icons, session activity marks and the update dot.",
+          "Badges and counts, state dots, run-state icons, session activity marks, the update dot, and the stat tile and chip.",
       },
       empty: {
         title: "Empty states",
         description: "The placeholder for a list or detail with nothing in it, with an action.",
       },
-      loading: { title: "Loading", description: "The spinner and the skeletons." },
+      loading: {
+        title: "Loading",
+        description: "The spinner, the skeletons and the progress bar.",
+      },
       charts: {
         title: "Charts",
         description:
@@ -442,6 +446,15 @@ export const en: GalleryStrings = {
         title: "Content",
         description:
           "Headings and text roles, inline code, Markdown prose, code blocks and surfaces, and the diff viewer.",
+      },
+      layout: {
+        title: "Layout",
+        description:
+          "The page frame and header, cards and their headers, ruled and collapsible sections, the entity header and the navigation list.",
+      },
+      data: {
+        title: "Data",
+        description: "Tables, list rows, label/value pairs and the log view.",
       },
       colour: {
         title: "Colour",
@@ -618,6 +631,19 @@ export const en: GalleryStrings = {
       },
       action: "View",
       dismiss: "Dismiss",
+      variants: "Three variants",
+      variantNames: {
+        strip: "Strip: across a panel",
+        callout: "Callout: a block of its own",
+        inline: "Inline: inside the content",
+      },
+      retry: "Retry",
+      calloutTitle: "The template has no memory placeholder",
+      calloutBody: "Insert the placeholder into the prompt template to inject memory.",
+      todo: "Page to-do",
+      todoText: "3 skills can be updated",
+      todoAction: "Update all",
+      todoDismiss: "Mark as read",
     },
     dialogs: {
       modal: "Modal",
@@ -714,6 +740,15 @@ export const en: GalleryStrings = {
       dotAnchor: "Plugins",
       pill: "Update pill",
       pillText: "3 updates",
+      statTile: "Stat tiles",
+      spend: "Spend this month",
+      spendDetail: "Organization budget $40",
+      alerts: "Alerts",
+      alertsDetail: "1 over budget, 1 paused",
+      statChip: "Stat chips",
+      input: "Input",
+      output: "Output",
+      elapsed: "Elapsed",
     },
     empty: {
       page: "Page empty state",
@@ -729,6 +764,11 @@ export const en: GalleryStrings = {
       skeleton: "Skeletons",
       list: "List",
       card: "Card",
+      progress: "Progress bar",
+      progressHint: "Three heights; still while indeterminate",
+      progressLabel: "Download progress",
+      progressOver: "Over the limit",
+      progressIndeterminate: "Indeterminate",
     },
     charts: {
       parts: {
@@ -882,6 +922,112 @@ export const en: GalleryStrings = {
       patch: "From a patch",
       diffLabel: "Changes to src/config.ts",
       patchLabel: "Changes to src/limits.ts",
+    },
+    layout: {
+      page: "Page and header",
+      pageHint:
+        "A page header has one display title and no eyebrow; the way back sits above the title, the actions at the end of its row.",
+      pageTitle: "Agents",
+      pageInfo: "Each agent has its own prompt, tools, skills and memory.",
+      pageDescription: "4 agents in this project.",
+      pageBody: "The page's content starts here.",
+      back: "Back to the list",
+      search: "Search agents",
+      create: "New",
+      cards: "Cards",
+      padded: "Padded: a title row above the content",
+      cardTitle: "Spend this month",
+      cardInfo: "What every agent spent on models this month.",
+      cardAction: "Export",
+      cardValue: "$128.45",
+      cardBody: "12% less than last month.",
+      flush: "Flush: rows run edge to edge under a ruled strip",
+      flushTitle: "Recent sessions",
+      flushDescription: "By their last message.",
+      flushRows: [
+        "Draft this week's release notes",
+        "Find the skipped scheduled run",
+        "Add three cases to the eval set",
+      ],
+      ruled: "Ruled section",
+      ruledTitle: "Inbox",
+      ruledInfo: "Tickets waiting on you: to review, or sent back.",
+      ruledAction: "Mark all read",
+      ruledBody: "Three tickets wait for your review.",
+      collapsible: "Collapsible section",
+      collapsibleHint:
+        "The fold is layout motion: the body's grid row goes between 1fr and 0fr, and the theme decides how it moves.",
+      providerName: "OpenAI",
+      modelCount: (n: number) => (n === 1 ? "1 model" : `${n} models`),
+      addModel: "Add a model",
+      foldedTitle: "Custom",
+      foldedBody: "This group has no models yet.",
+      entity: "Entity header",
+      entityName: "Code reviewer",
+      entityDescription:
+        "Reads every PR's diff and raises only the problems that would cause a bug.",
+      copyId: "Copy id",
+      entityAction: "Open a session",
+      entityTags: ["review", "read-only"],
+      nav: "Navigation list",
+      navHint:
+        "The current row takes the solid fill and is the current page; a glyph is decoration beside a label that already says it. A dialog's rail scrolls sideways on a phone.",
+      navLabel: "Agent settings",
+      navRail: "A rail: glyph, label and a trailing count; the last row has nowhere to go yet",
+      navDense: "Dense, inside a panel",
+      navRows: {
+        overview: "Overview",
+        models: "Models",
+        schedules: "Schedules",
+        vault: "Vault",
+        billing: "Billing",
+      },
+    },
+    data: {
+      table: "Table",
+      tableHint:
+        "One header style: the small rung, medium weight, muted ink and a rule; a table on its own is framed, its header on the muted surface.",
+      caption: "Schedules",
+      columns: {
+        name: "Name",
+        status: "Status",
+        period: "Period",
+        cost: "Cost",
+        employee: "Employee",
+      },
+      enabled: "Enabled",
+      paused: "Paused",
+      pause: "Pause",
+      enable: "Enable",
+      bare: "A compact table inside a card",
+      spendTitle: "Spend by employee",
+      employees: ["Researcher", "Writer", "Editor"],
+      rows: "List rows",
+      rowsHint:
+        "A row that opens what it names makes its mark and text one button; its actions stay outside it.",
+      skillDescriptions: [
+        "Reads PDFs and fills in their forms.",
+        "Builds web pages to a design system.",
+        "Distils reusable lessons from sessions.",
+      ],
+      skillMeta: "2 days ago",
+      exportSkill: (name: string) => `Export ${name}`,
+      clickable: "Rows that open what they name",
+      cases: [
+        "Form validation on the sign-in page",
+        "First commit in an empty repository",
+        "Truncating a very long file name",
+      ],
+      keyValue: "Label and value",
+      labels: {
+        version: "Version",
+        started: "Started",
+        root: "Data root",
+        machineId: "Machine id",
+      },
+      log: "Log",
+      logHint: "A job still running: its latest line in the body ink.",
+      logLabel: "Update output",
     },
   },
 };
