@@ -734,7 +734,7 @@ export const en: Strings = {
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "Mark as read",
 
-    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+    // —— The page notice's own line and its bulk action (the UI package's TodoNotice) ——
 
     /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
     changesWithAdded: (added: number, updated: number): string =>
@@ -805,6 +805,9 @@ export const en: Strings = {
     notifications: "Notifications",
     /** Read after a toast's text: pressing the toast dismisses it. */
     dismiss: "Dismiss",
+    /** A pager's two steps, as their names and tooltips (the shared UI package's `Pager`). */
+    previousPage: "Previous page",
+    nextPage: "Next page",
     name: "Name",
     username: "Username",
     role: "Role",

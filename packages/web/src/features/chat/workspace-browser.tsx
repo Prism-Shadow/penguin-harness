@@ -46,10 +46,10 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import ReactMarkdown from "react-markdown";
 import {
   Button,
   CloseIcon,
+  CodeSurface,
   ConfirmModal,
   CopiedStatus,
   CopyCheckGlyph,
@@ -60,6 +60,7 @@ import {
   ICONS,
   ICON_SIZE,
   Input,
+  Prose,
   SearchInput,
   SkeletonList,
   Spinner,
@@ -67,6 +68,7 @@ import {
   ZoomableImage,
   isContextMenuKey,
   isLongPressPointer,
+  languageForExtension,
   noAutofill,
   toastError,
   toastInfo,
@@ -74,7 +76,6 @@ import {
   useCopied,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import type { SessionInfo, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -134,8 +135,6 @@ import { tabKey } from "../dock/dock-state";
 import { DOCK_TRANSITION_MS } from "../dock/use-dock-mount";
 import { usePointerDrag } from "../dock/use-pointer-drag";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
-import { CodeSurface } from "./code-block";
-import { languageForExtension } from "./code-languages";
 import { WorkspaceFileEditor } from "./workspace-editor";
 import { WorkspaceFileMenuRows } from "./workspace-file-menu";
 import type { FileMenuTarget } from "./workspace-file-menu";
@@ -2142,65 +2141,62 @@ export function WorkspaceBrowser({
                 />
               )
             ) : p.kind === "md" && richView === "rendered" ? (
-              // Markdown's default rendered view: uses the same md-body layout as message bodies
-              // (ReactMarkdown outputs pure static HTML with no script execution surface, so no iframe sandbox is needed).
+              // Markdown's default rendered view: the reading box and pipeline message bodies use
+              // (static HTML with no script execution surface, so no iframe sandbox is needed),
+              // with the image and link adapters swapped for ones that know the Workspace.
               <>
-                <div className="md-body text-base leading-relaxed text-gray-800 dark:text-gray-100">
-                  <ReactMarkdown
-                    remarkPlugins={REMARK_PLUGINS}
-                    rehypePlugins={REHYPE_PLUGINS}
-                    components={{
-                      // Relative images are resolved against the md file's directory into the file API (otherwise resolving against the app's origin would always 404).
-                      // `v` is the read nonce, not a cache-buster for its own sake: a
-                      // Workspace image is rewritten under the same path, and without it a
-                      // re-read of the Markdown would keep painting the previous bytes from
-                      // the browser's image cache.
-                      img: ({ src, alt }) => (
-                        <img
-                          src={
-                            typeof src === "string" && !EXTERNAL_REF_RE.test(src)
-                              ? `${api.workspaceFileUrl(
-                                  sessionId,
-                                  resolveRelative(parentDir(p.path), src),
-                                )}&v=${p.nonce}`
-                              : src
-                          }
-                          alt={alt ?? ""}
-                          loading="lazy"
-                          className="max-w-full"
-                        />
-                      ),
-                      // External links open in a new tab; relative links point to a Workspace
-                      // file, clicking opens it in the tree and the preview; in-page anchors keep default behavior.
-                      a: ({ href, children }) => {
-                        if (typeof href !== "string" || href.startsWith("#")) {
-                          return <a href={href}>{children}</a>;
+                <Prose
+                  text={p.content ?? ""}
+                  className="text-base leading-relaxed text-gray-800 dark:text-gray-100"
+                  components={{
+                    // Relative images are resolved against the md file's directory into the file API (otherwise resolving against the app's origin would always 404).
+                    // `v` is the read nonce, not a cache-buster for its own sake: a
+                    // Workspace image is rewritten under the same path, and without it a
+                    // re-read of the Markdown would keep painting the previous bytes from
+                    // the browser's image cache.
+                    img: ({ src, alt }) => (
+                      <img
+                        src={
+                          typeof src === "string" && !EXTERNAL_REF_RE.test(src)
+                            ? `${api.workspaceFileUrl(
+                                sessionId,
+                                resolveRelative(parentDir(p.path), src),
+                              )}&v=${p.nonce}`
+                            : src
                         }
-                        if (EXTERNAL_REF_RE.test(href)) {
-                          return (
-                            <a href={href} target="_blank" rel="noreferrer">
-                              {children}
-                            </a>
-                          );
-                        }
-                        const target = resolveRelative(parentDir(p.path), href);
+                        alt={alt ?? ""}
+                        loading="lazy"
+                        className="max-w-full"
+                      />
+                    ),
+                    // External links open in a new tab; relative links point to a Workspace
+                    // file, clicking opens it in the tree and the preview; in-page anchors keep default behavior.
+                    a: ({ href, children }) => {
+                      if (typeof href !== "string" || href.startsWith("#")) {
+                        return <a href={href}>{children}</a>;
+                      }
+                      if (EXTERNAL_REF_RE.test(href)) {
                         return (
-                          <a
-                            href={api.workspaceFileUrl(sessionId, target)}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              openFile(target, { locate: true });
-                            }}
-                          >
+                          <a href={href} target="_blank" rel="noreferrer">
                             {children}
                           </a>
                         );
-                      },
-                    }}
-                  >
-                    {p.content ?? ""}
-                  </ReactMarkdown>
-                </div>
+                      }
+                      const target = resolveRelative(parentDir(p.path), href);
+                      return (
+                        <a
+                          href={api.workspaceFileUrl(sessionId, target)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            openFile(target, { locate: true });
+                          }}
+                        >
+                          {children}
+                        </a>
+                      );
+                    },
+                  }}
+                />
                 {p.truncated && (
                   <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
                 )}

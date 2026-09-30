@@ -21,15 +21,18 @@ import { useMemo } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
-import { SkeletonList } from "@prismshadow/penguin-ui";
-import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
-import { SETTLED_MD_COMPONENTS } from "../../features/chat/md";
+import {
+  CodeBlock,
+  REHYPE_PLUGINS,
+  REMARK_PLUGINS,
+  SETTLED_MD_COMPONENTS,
+  SkeletonList,
+  languageForExtension,
+} from "@prismshadow/penguin-ui";
 import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
 import type { FileTreeRow } from "../../lib/file-tree";
 import { S } from "../../lib/strings";
 import { extOf, previewKindFor } from "../../lib/workspace-tree";
-import { CodeBlock } from "../../features/chat/code-block";
-import { languageForExtension } from "../../features/chat/code-languages";
 import { FileTree } from "./file-tree";
 import type { TreeToggle } from "./file-tree";
 

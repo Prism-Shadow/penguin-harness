@@ -7,8 +7,8 @@
  *
  * The app's own entry reconciles browser storage against the server's data root before
  * mounting; a frame's storage is fresh every load, so there is nothing to reconcile and the
- * app mounts at once. KaTeX's stylesheet and the app's come in the same order as in the app's
- * entry, so the app's `.katex` rules still win the cascade.
+ * app mounts at once. KaTeX's stylesheet comes with the shared UI package's Markdown (its prose
+ * component imports it), as it does in the app.
  *
  * `open=settings` (or `settings.<page>`) asks the app for its Settings dialog through the
  * app's own request seam, which the account menu answers as soon as it mounts.
@@ -18,9 +18,6 @@ import { createRoot } from "react-dom/client";
 import { App } from "../../../web/src/app";
 import { requestSettings } from "../../../web/src/features/settings/settings-request";
 import type { SettingsSectionKey } from "../../../web/src/lib/settings-sections";
-// The app's dependency, reached through its own node_modules: the gallery does not depend on
-// KaTeX, and the app's math rules expect this sheet ahead of the app's own.
-import "../../../web/node_modules/katex/dist/katex.min.css";
 import "./app.css";
 import { parseFrameParams } from "./frame";
 import { installFetchShim } from "./mock/fetch-shim";

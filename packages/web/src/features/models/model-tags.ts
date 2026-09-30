@@ -23,7 +23,7 @@ import type { DiscountedPrice } from "./model-grouping";
 
 /** The pill itself: no fill at all, so a row of marks sits on its row rather than on top of it. */
 export const TAG_SHAPE =
-  "whitespace-nowrap rounded-full border border-gray-200 px-1.5 text-[10px] font-medium leading-[15px] dark:border-gray-700";
+  "whitespace-nowrap rounded-full border border-gray-200 px-1.5 text-xs font-medium leading-[15px] dark:border-gray-700";
 
 export const TAG_INK = {
   /** This model's standing in the Project. */

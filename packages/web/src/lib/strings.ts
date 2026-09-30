@@ -788,7 +788,7 @@ export const zh = {
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "标记为已读",
 
-    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+    // —— The page notice's own line and its bulk action (the UI package's TodoNotice) ——
 
     /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
     changesWithAdded: (added: number, updated: number): string =>
@@ -858,6 +858,9 @@ export const zh = {
     notifications: "通知",
     /** Read after a toast's text: pressing the toast dismisses it. */
     dismiss: "关闭",
+    /** A pager's two steps, as their names and tooltips (the shared UI package's `Pager`). */
+    previousPage: "上一页",
+    nextPage: "下一页",
     name: "名称",
     username: "用户名",
     role: "角色",

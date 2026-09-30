@@ -64,6 +64,9 @@ describe("the library's topics", () => {
       "charts",
       "avatars",
       "files",
+      "content",
+      "layout",
+      "data",
     ]);
     const foundations = TOPIC_GROUPS.find((group) => group.id === "foundations")!.topics;
     expect(foundations.map((topic) => topic.id)).toEqual([
@@ -234,6 +237,94 @@ describe("the charts board", () => {
     expect(board).toMatch(
       /from "\.\.\/\.\.\/\.\.\/\.\.\/web\/src\/features\/traces\/timeline-chart"/,
     );
+  });
+});
+
+describe("the content board", () => {
+  it("shows every content component from the package, and nothing from the app", () => {
+    const board = read("../src/library/boards/content.tsx");
+    expect(board).toMatch(/from "@prismshadow\/penguin-ui";/);
+    expect(board).not.toMatch(/web\/src/);
+    for (const component of [
+      "Heading",
+      "Text",
+      "InlineCode",
+      "Prose",
+      "CodeBlock",
+      "CodeSurface",
+      "DiffViewer",
+    ]) {
+      expect(board).toMatch(new RegExp(`<${component}[\\s/>]`));
+    }
+    // Both densities of prose, both diff layouts and a patch.
+    expect(board).toMatch(/<Prose variant="compact"/);
+    expect(board).toMatch(/mode="split"/);
+    expect(board).toMatch(/<DiffViewer patch=\{PATCH\}/);
+  });
+
+  it("highlights through the app's highlighter, handed over by the frame", () => {
+    const entry = read("../src/library/main.tsx");
+    expect(entry).toMatch(/<CodeHighlighterProvider highlight=\{highlightCode\}>/);
+    expect(entry).toMatch(/from "\.\.\/\.\.\/\.\.\/web\/src\/features\/chat\/code-highlight"/);
+    // KaTeX's sheet comes with the package's Markdown; neither frame reaches into node_modules.
+    for (const frame of ["../src/library/main.tsx", "../src/app/main.tsx"]) {
+      expect(read(frame)).not.toMatch(/katex\.min\.css/);
+    }
+  });
+
+  it("names every text role in both dictionaries", () => {
+    for (const S of [zh, en]) {
+      const t = S.library.content;
+      for (const text of Object.values(t.samples)) expect(text.trim()).not.toBe("");
+      expect(Object.keys(t.samples).sort()).toEqual(
+        ["body", "caption", "eyebrow", "label", "mono", "small"].sort(),
+      );
+      expect(t.heading(2)).toContain("2");
+    }
+  });
+});
+
+describe("the layout and data boards", () => {
+  it("show every layout and data component from the package, and nothing from the app", () => {
+    const boards = {
+      layout: [
+        "PageFrame",
+        "PageHeader",
+        "Card",
+        "CardHeader",
+        "RuledSection",
+        "CollapsibleSection",
+        "EntityHeader",
+        "NavList",
+        "NavRow",
+      ],
+      data: [
+        "Table",
+        "TableHead",
+        "TableHeaderCell",
+        "TableRow",
+        "TableCell",
+        "ListRow",
+        "KeyValue",
+        "KeyValueRow",
+        "LogView",
+      ],
+    };
+    for (const [topic, components] of Object.entries(boards)) {
+      const board = read(`../src/library/boards/${topic}.tsx`);
+      expect(board).toMatch(/from "@prismshadow\/penguin-ui";/);
+      expect(board).not.toMatch(/web\/src/);
+      for (const component of components) {
+        expect(board, `${topic}: ${component}`).toMatch(new RegExp(`<${component}[\\s/>]`));
+      }
+    }
+    // Both paddings of the card, a folded section, a bare table and a row that opens something.
+    const layout = read("../src/library/boards/layout.tsx");
+    expect(layout).toMatch(/<Card padding="none">/);
+    expect(layout).toMatch(/defaultOpen=\{false\}/);
+    const data = read("../src/library/boards/data.tsx");
+    expect(data).toMatch(/<Table framed=\{false\} size="sm">/);
+    expect(data).toMatch(/onClick=\{/);
   });
 });
 

@@ -22,9 +22,9 @@
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
 import type { Components, Options } from "react-markdown";
+import { Md } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneSurface } from "../../lib/tone";
-import { Md } from "../chat/md";
 import { mentionIsMe, mentionLabel, mentionRuns } from "./channel-mentions";
 
 /** The mdast shapes this pass touches, declared structurally rather than taking `@types/mdast` on. */

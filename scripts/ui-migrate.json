@@ -587,6 +587,155 @@
           "names": ["NoticeStrip", "NOTICE_TONE", "NoticeTone"]
         }
       ]
+    },
+    "W4": {
+      "packages/web/src/components/ui/tabs": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/navigation/tabs/tabs.tsx",
+          "names": ["Tabs", "TabItem"]
+        }
+      ],
+      "packages/web/src/components/ui/group-list": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/navigation/group-header/group-header.tsx",
+          "names": ["GroupHeader", "FolderSection", "MoreRow"]
+        }
+      ],
+      "packages/web/src/features/ai-create/create-buttons": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/actions/create-buttons/create-buttons.tsx",
+          "names": ["CreateButtons", "CreateButtonsProps"]
+        }
+      ],
+      "packages/web/src/features/ai-create": [
+        {
+          "owner": "W4-A",
+          "target": "packages/web/src/features/ai-create/ai-create-buttons",
+          "dest": "packages/web/src/features/ai-create/ai-create-buttons.tsx",
+          "names": ["CreateButtons→AiCreateButtons", "CreateButtonsProps→AiCreateButtonsProps"]
+        }
+      ],
+      "packages/web/src/components/ui/todo-notice": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/todo-notice/todo-notice.tsx",
+          "names": ["TodoNotice"]
+        }
+      ],
+      "packages/web/src/features/company/beta-badge": [
+        {
+          "owner": "W4-A",
+          "target": "packages/web/src/features/company/company-beta",
+          "dest": "packages/web/src/features/company/company-beta.tsx",
+          "names": [
+            "BetaBadge→CompanyBetaBadge",
+            "BETA_NOTICE_KEY",
+            "BetaNoticeStorage",
+            "shouldShowBetaNotice",
+            "markBetaNoticeShown"
+          ]
+        }
+      ],
+      "packages/web/src/features/chat/disclosure-row": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/layout/disclosure-row/disclosure-row.tsx",
+          "names": [
+            "DisclosureRow",
+            "ActivityMark",
+            "ActivityProgress",
+            "activityState",
+            "DISCLOSURE_ROW_CLASS",
+            "DISCLOSURE_ROW_STICKY_CLASS",
+            "DISCLOSURE_LABEL_CLASS",
+            "DISCLOSURE_HEADER_ROW_CLASS",
+            "DISCLOSURE_HEADER_STICKY_CLASS",
+            "DISCLOSURE_HEADER_TITLE_CLASS",
+            "DISCLOSURE_OUTPUT_PRE_CLASS",
+            "DISCLOSURE_BODY_MD_CLASS",
+            "DISCLOSURE_CARD_CLASS"
+          ]
+        }
+      ],
+      "packages/web/src/features/chat/live-duration": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/feedback/duration-slot/duration-slot.tsx",
+          "names": ["LiveDuration", "useElapsedPast"]
+        }
+      ],
+      "packages/web/src/features/company/shared": [
+        {
+          "owner": "W4-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/data/stat-tile/stat-tile.tsx",
+          "names": ["StatTile"]
+        }
+      ],
+      "packages/web/src/features/company/org-layout": [
+        {
+          "owner": "W4-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/layout/ruled-section/ruled-section.tsx",
+          "names": ["OrgSection→RuledSection"]
+        }
+      ]
+    },
+    "W5": {
+      "packages/web/src/features/chat/md": [
+        {
+          "owner": "W5-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/prose/prose.tsx",
+          "names": ["Md", "SETTLED_MD_COMPONENTS"]
+        },
+        {
+          "owner": "W5-A",
+          "target": "packages/web/src/features/chat/workspace-links",
+          "dest": "packages/web/src/features/chat/workspace-links.tsx",
+          "names": ["WorkspaceLinksProvider"]
+        }
+      ],
+      "packages/web/src/lib/markdown-plugins": [
+        {
+          "owner": "W5-A",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/prose/markdown-plugins.ts",
+          "names": ["REMARK_PLUGINS", "REHYPE_PLUGINS", "NO_REHYPE_PLUGINS"]
+        }
+      ],
+      "packages/web/src/features/chat/code-block": [
+        {
+          "owner": "W5-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/code-block/code-block.tsx",
+          "names": ["CodeBlock", "CodeSurface"]
+        }
+      ],
+      "packages/web/src/features/chat/code-languages": [
+        {
+          "owner": "W5-B",
+          "target": "@prismshadow/penguin-ui",
+          "dest": "packages/ui/src/components/content/code-block/code-languages.ts",
+          "names": [
+            "languageForExtension",
+            "resolveLanguage",
+            "isPlainTextLanguage",
+            "PLAIN_TEXT_LANGUAGE",
+            "LANGUAGE_LOADERS",
+            "LANGUAGE_ALIASES"
+          ]
+        }
+      ]
     }
   }
 }

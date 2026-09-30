@@ -65,7 +65,7 @@ export function HandbookExplorer({
       // Only the index overrides its name: every other row says on screen everything it means.
       rowLabel={(row) => (row.isIndex ? tooltip(row) : undefined)}
       rowTrailing={(row) => (
-        <span className="shrink-0 text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+        <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
           {row.kind === "dir"
             ? row.docs
             : row.file === null
