@@ -36,6 +36,7 @@ import {
 } from "../../features/company/company-nav";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { UserMenu } from "./user-menu";
+import { usePinnedBalanceView } from "../../features/models/group-balance";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { useNewChat } from "../../features/chat/use-new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
@@ -188,10 +189,15 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     badges.softwareNote !== null
       ? `${accountName ?? ""} · ${badges.softwareNote}`
       : (accountName ?? S.auth.admin);
-  const avatarTooltip =
-    badges.softwareNote !== null
-      ? `${S.nav.userSettings} · ${badges.softwareNote}`
-      : S.nav.userSettings;
+  /** The balance pinned beside the user name: the rail has no row for it, so its tooltip carries it. */
+  const pinnedBalance = usePinnedBalanceView();
+  const avatarTooltip = [
+    S.nav.userSettings,
+    badges.softwareNote,
+    pinnedBalance === null ? null : `${pinnedBalance.label} ${pinnedBalance.text}`,
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
   const expandTitle = useShortcutTitle(S.nav.expandSidebar, "sidebar.toggle");
 
   return (

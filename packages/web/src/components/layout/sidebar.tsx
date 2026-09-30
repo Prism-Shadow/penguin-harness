@@ -183,6 +183,7 @@ import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { UserMenu } from "./user-menu";
+import { PinnedBalanceBadge } from "../../features/models/group-balance";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useProjectSchedules } from "../../features/schedules/schedule-store";
@@ -2608,7 +2609,8 @@ export function Sidebar({
       </div>
 
       {/* Bottom user row: the trigger for the account menu both this sidebar and the
-          collapsed rail open (user-menu.tsx). */}
+          collapsed rail open (user-menu.tsx). A balance pinned on the models page stands
+          beside the name, muted, for as long as it stays pinned. */}
       <div className="shrink-0 border-t border-gray-200 p-2 dark:border-gray-800">
         <UserMenu
           menuClass="bottom-full left-0 right-0 mb-1 origin-bottom"
@@ -2640,6 +2642,7 @@ export function Sidebar({
               <span className="min-w-0 flex-1 truncate text-sm font-medium">
                 {user?.displayName ?? user?.userId}
               </span>
+              <PinnedBalanceBadge />
               {user?.isAdmin && (
                 <span className="text-xs text-gray-400 dark:text-gray-500">{S.auth.admin}</span>
               )}

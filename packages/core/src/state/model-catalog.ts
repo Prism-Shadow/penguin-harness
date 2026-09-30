@@ -120,6 +120,24 @@ export interface ModelProviderBridgeAuth {
   flow: "penguin-go" | "modelscope";
 }
 
+/**
+ * An account-balance endpoint the vendor publishes, called with the group's own API key as a
+ * Bearer token. The server makes that call (the key never reaches the browser); the endpoint
+ * is the vendor's, like the OAuth one above, so it can live in this browser-bundled file.
+ */
+export interface ModelProviderBalance {
+  /** GET endpoint answering the balance of the account the key belongs to. */
+  url: string;
+  /**
+   * How to read the answer, one reader per published response shape:
+   * - `tokendance`: `{ balance: { credits, credits_used, balance } }`, integers in micro-yuan
+   *   (1 CNY = 1,000,000);
+   * - `deepseek`: `{ is_available, balance_infos: [{ currency, total_balance, … }] }`, one entry
+   *   per currency the account holds.
+   */
+  format: "tokendance" | "deepseek";
+}
+
 export interface ModelProviderInfo {
   id: string;
   /** Display name (brand name, shared by Chinese and English UI). */
@@ -133,7 +151,7 @@ export interface ModelProviderInfo {
   envKey: string;
   /** base URL env var name. */
   envBaseUrlKey: string;
-  /** Console URL for obtaining an API key (frontend links this in the group header); none for custom. */
+  /** Console URL for obtaining an API key (frontend links it beside the API key field of the group key dialog and the model dialog); none for custom. */
   apiKeyUrl?: string;
   /** Vendor's model list / docs page URL (frontend's "add model" dialog links this as "get model id"); none for custom. */
   modelsUrl?: string;
@@ -155,6 +173,18 @@ export interface ModelProviderInfo {
    * group in the Web App.
    */
   bridgeAuth?: ModelProviderBridgeAuth;
+  /**
+   * The vendor's account-balance endpoint (see ModelProviderBalance); absent for every group
+   * whose vendor publishes none. Declaring it is what puts the balance in the group's header.
+   */
+  balance?: ModelProviderBalance;
+  /**
+   * The group takes models the user adds by hand: `custom` and vLLM, whose rows point at an
+   * endpoint the catalog cannot know. Every other built-in group carries its catalog presets
+   * and the rows it already stores, and nothing else. Read it through isAddableGroup, which
+   * also answers for user-defined groups.
+   */
+  addable?: boolean;
   /**
    * The AgentHub protocol EVERY entry in this group speaks, models the user adds included.
    *
@@ -307,6 +337,11 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
       exchangeUrl: "https://tokendance.space/portal/api/v1/auth/keys",
       keyName: "PenguinHarness",
     },
+    // https://tokendance.space/docs/open-api (the account's wallet, in micro-yuan)
+    balance: {
+      url: "https://tokendance.space/portal/api/v1/user/balance",
+      format: "tokendance",
+    },
   },
   {
     id: PENGUIN_GO_PROVIDER_ID,
@@ -340,6 +375,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     envBaseUrlKey: "DEEPSEEK_BASE_URL",
     apiKeyUrl: "https://platform.deepseek.com/api_keys",
     modelsUrl: "https://api-docs.deepseek.com/quick_start/pricing",
+    // https://api-docs.deepseek.com/api/get-user-balance
+    balance: { url: `${DEEPSEEK_BASE_URL}/user/balance`, format: "deepseek" },
   },
   {
     id: "openrouter",
@@ -472,8 +509,16 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     envBaseUrlKey: "OPENAI_BASE_URL",
     modelsUrl: "https://recipes.vllm.ai/",
     clientType: VLLM_CLIENT_TYPE,
+    // The served ids are the user's own, so this group keeps taking models added by hand.
+    addable: true,
   },
-  { id: "custom", label: "Custom", envKey: "OPENAI_API_KEY", envBaseUrlKey: "OPENAI_BASE_URL" },
+  {
+    id: "custom",
+    label: "Custom",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    addable: true,
+  },
 ];
 
 /** Three-bucket price literal (unit fixed to usd_per_mtok). */
@@ -2889,11 +2934,12 @@ export function providerClientType(providerId: string): string | undefined {
  * id alone. That makes the group's contents a closed set — the ids this catalog ships, plus
  * the few whose preset pins a protocol because their own id would not route — and an id
  * outside it cannot be started at all, whatever else is configured on the entry. Every
- * surface that has to answer "may a model be added here, and is this one routable?" reads
- * the group's shape through this one predicate rather than re-deriving it: the models page's
- * group actions and its config dialog, the models PUT, and the CLI's `config model add`.
+ * surface that has to answer "is this one routable?" reads the group's shape through this one
+ * predicate rather than re-deriving it: the models page's cards and its config dialog, the
+ * models PUT, and the CLI's `config model add`. Whether a model may be added to the group at
+ * all is a separate, wider rule: isAddableGroup.
  *
- * Every other group answers the protocol question by itself and therefore takes any id the
+ * Every other group answers the protocol question by itself and therefore routes any id the
  * endpoint serves: `custom` and user-defined groups detect or pick it, a gateway inherits its
  * preset's, and a group-level pin (OpenRouter, vLLM) hands it to every entry.
  */
@@ -2926,6 +2972,28 @@ export function unroutableVendorModel(
   if (id === "" || !isVendorGroup(provider)) return false;
   const pinned = clientType?.trim();
   return resolveModelEnv(id, pinned === "" ? undefined : pinned) === undefined;
+}
+
+/**
+ * Whether models may be added to this group by hand: `custom`, vLLM (ModelProviderInfo.addable)
+ * and every user-defined group, i.e. an id this catalog does not know. Every other built-in
+ * group — the first-party vendors and the gateways — carries its catalog presets and the rows
+ * it already stores: the models page offers no add-model entry point there, and the models PUT
+ * and the CLI's `config model add` refuse a new row that is not a preset (unaddableModel).
+ */
+export function isAddableGroup(providerId: string): boolean {
+  const info = providerInfo(providerId);
+  return info === undefined || info.addable === true;
+}
+
+/**
+ * Whether writing this pair as a NEW row of its group would add a model by hand where the group
+ * takes none: a group isAddableGroup refuses, and a `(provider, model_id)` pair that is not one
+ * of the catalog's rows for it. A preset passes, so "Sync presets" can put a deleted one back;
+ * a row the table already stores is not a new one, and the callers never ask about it.
+ */
+export function unaddableModel(provider: string, modelId: string): boolean {
+  return !isAddableGroup(provider) && catalogEntryFor(provider, modelId.trim()) === undefined;
 }
 
 /** Env var fallback for a single model (the var names AgentHub's client actually reads when api_key / base_url is blank). */

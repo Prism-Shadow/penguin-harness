@@ -1382,9 +1382,9 @@ export const zh = {
       {
         key: "openrouter",
         label: "OpenRouter 热门模型",
-        description: "读取模型列表页，加为一个分组",
+        description: "读取模型列表页，加为一个自建分组",
         prompt:
-          "把 https://openrouter.ai/models 上的热门模型加为一个 OpenRouter 分组（先问我要 API key）。",
+          "把 https://openrouter.ai/models 上的热门模型加为一个自建分组（先问我要 API key）。",
       },
       {
         key: "vllm",
@@ -1419,6 +1419,8 @@ export const zh = {
     platformSync: "同步",
     homepage: "模型主页",
     speedTest: "测速",
+    /** The same icon button while its group's run is going: stops after the probe in flight. */
+    speedTestStop: "停止测速",
     speedTestTitle: "分组测速",
     speedTestConfirm: (n: number): string =>
       `将对该分组的 ${n} 个模型逐个发起一次真实请求,测量首 token 延迟(TTFT)与输出速率(TPS),会消耗少量 API 额度。是否继续?`,
@@ -1560,7 +1562,7 @@ export const zh = {
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>
       `确定删除「${name}」？该模型的配置与 API key 将一并移除。`,
-    groupApiKey: "手动设置密钥",
+    groupApiKey: "填写密钥",
     groupApiKeyTitle: (label: string): string => `为「${label}」统一配置 API key`,
     groupApiKeyHint: (n: number): string => `将写入该分组下全部 ${n} 个模型；留空不改动。`,
     getApiKey: "前往密钥管理",
@@ -1568,7 +1570,33 @@ export const zh = {
     groupKeyApplied: (n: number): string => `已为 ${n} 个模型配置 API key`,
     // 供应商授权取 key（模型分组头部动作）：整个 PKCE 流程都在服务端跑，前端只拿到一个
     // 不透明的 flow id 和状态。
-    oauthKey: "自动获取密钥",
+    oauthKey: "连接",
+    /** The same button once the group holds a key: the flow again, for a fresh key or another account. */
+    reconnect: "重新连接",
+    /** The small status beside it: whether the group holds a stored key, however that key got there. */
+    connectedStatus: "连接成功",
+    notConnectedStatus: "未连接",
+    /**
+     * A group's account balance in its header (and pinned beside the user name): the tooltip
+     * names the group and the time of the reading. `time` is already formatted.
+     */
+    balanceTitle: (label: string, time: string): string => `${label} 余额，查询于 ${time}`,
+    balanceRefreshHint: "点击刷新",
+    /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
+    balanceUnavailable: "账户当前不可用，余额可能不足",
+    /** The tooltip of the muted dash shown when no balance could be read, by the server's code. */
+    balanceErrors: {
+      no_key: "该分组没有保存 API key，无法查询余额",
+      upstream_failed: "服务商没有返回余额，可点击重试",
+      unsupported: "该分组不支持查询余额",
+    } as Record<string, string | undefined>,
+    /** Appended when the vendor answered with an HTTP error. */
+    balanceStatus: (status: number): string => `（服务商返回 HTTP ${status}）`,
+    /** Pin toggle beside a balance: shows it beside the user name in the sidebar, one at a time. */
+    pinBalance: "置顶到用户名旁",
+    unpinBalance: "取消置顶",
+    /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */
+    tokenDanceBanner: "连接 TokenDance 钱包，无需手动配置模型密钥",
     oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,
     oauthIntro: (label: string, n: number): string =>
       `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,
@@ -4717,6 +4745,7 @@ Benchmark：
       memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
+      model_not_addable: "该分组只承载内置模型，不能再添加其他模型；请在自定义分组中添加。",
       model_not_routable:
         "该模型 ID 无法按厂商分组的协议路由。厂商分组只承载内置模型；请在自定义分组中添加该模型，并选择或检测其接口协议。",
       unknown_skill: "所选目录下没有这个技能。",

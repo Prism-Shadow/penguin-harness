@@ -309,6 +309,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.tokenDanceBannerDismissed",
+    scope: "browser",
+    why: "That the models page's TokenDance banner was dismissed in this browser; it names nothing on the server, and a wipe is not a request to show it again.",
+  },
+  {
+    kind: "exact",
     key: "penguin.lastOrgKey",
     scope: "install",
     why: "The organization last opened in company mode, as <projectId>/<orgId> of this root.",
