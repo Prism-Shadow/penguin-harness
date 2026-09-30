@@ -593,14 +593,14 @@ describe("default_project presets", () => {
   let prevKey: string | undefined;
 
   beforeEach(() => {
-    // The default model (DeepSeek) uses the OpenAI protocol, whose SDK requires a credential at
+    // The default model routes to MMSP's DeepSeek client, which requires a credential at
     // **construction time** — this case creates a Session, so we stuff in a fake key (no real request is sent). CI has no keys.
-    prevKey = process.env.OPENAI_API_KEY;
-    process.env.OPENAI_API_KEY = "test-key-not-used";
+    prevKey = process.env.DEEPSEEK_API_KEY;
+    process.env.DEEPSEEK_API_KEY = "test-key-not-used";
   });
   afterEach(async () => {
-    if (prevKey === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = prevKey;
+    if (prevKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+    else process.env.DEEPSEEK_API_KEY = prevKey;
     await t.cleanup();
   });
 
