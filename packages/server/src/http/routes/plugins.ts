@@ -105,9 +105,9 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     for (const plugin of plugins) {
       await installPlugin(deps.config.root, projectId, agentId, plugin);
     }
-    // Hook packages are bound when a core Session is built (skills are read from disk on
-    // demand, hooks are not): a runtime cached for this Agent would keep running the old
-    // set — or none — until it was evicted, so its next idle access re-resumes it.
+    // Core reads hook packages when a model context opens: a conversation that is running
+    // would keep the old set — or none — until its next compaction. Rebuilding the runtime
+    // re-reads them on its next idle access, so the plugin works from the next Task.
     deps.manager.invalidateAgentRuntimes(projectId, agentId);
     const [skills, hooks] = await Promise.all([
       listInstalledSkills(deps.config.root, projectId, agentId),

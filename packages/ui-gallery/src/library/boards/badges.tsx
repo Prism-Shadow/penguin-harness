@@ -13,7 +13,7 @@ import { ICON_SIZE } from "../../../../web/src/lib/icon-scale";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
-const BADGE_TONES: readonly BadgeTone[] = ["gray", "brand", "green", "yellow", "amber", "red"];
+const BADGE_TONES: readonly BadgeTone[] = ["gray", "brand", "green", "amber", "red"];
 const RUN_STATES: readonly RunState[] = ["running", "waiting", "done", "failed", "stopped"];
 const ACTIVITIES = ["running", "compacting", "completedUnread"] as const;
 

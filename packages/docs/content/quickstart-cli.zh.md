@@ -48,7 +48,7 @@ penguin config model add --provider deepseek --model-id deepseek-flash --api-key
 之后也可以在 Web App 的**模型库**页面添加模型。
 
 - 模型始终以 `(provider, model_id)` 二元组引用，因此 `--provider` 与 `--model-id` 都必填。PenguinHarness 不会根据模型 id 推断供应商。内置分组见[模型与 Provider](/models)。
-- API Key 也可以来自环境变量。模型条目没有内联 `api_key` 时，LLM 网关库 AgentHub 会读取 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY` 等变量。工作目录下的 `.env` 文件会自动加载。
+- API Key 也可以来自环境变量，但仅限厂商自己的端点。模型条目没有内联 `api_key`、且没有自己的 `base_url`（或 `base_url` 就是厂商官方端点）时，LLM 网关库 AgentHub 会读取 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY` 等变量。指向网关或自己服务器的条目需要 `--api-key`。工作目录下的 `.env` 文件会自动加载。
 
 ## 启动 Web App
 

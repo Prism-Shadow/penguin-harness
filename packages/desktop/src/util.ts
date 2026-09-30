@@ -112,6 +112,14 @@ export type WindowOpenAction = "window" | "external" | "deny";
  * exist — one more window per click. Other schemes (`file:`, custom protocol handlers) are
  * refused outright rather than handed to the OS (isExternalScheme). With no origin, which no
  * window ever sees, everything is refused.
+ *
+ * `about:blank` — `window.open()` with no URL — is refused with the other schemes, and that is
+ * load-bearing: a blank window inherits its opener's origin, so the opener can script it, and a
+ * handler is not told which frame asked. The Files panel previews Agent-written HTML in an
+ * iframe that allows popups, so a blank window allowed for any purpose would be a hidden window
+ * that HTML could own. The Web App therefore asks for none when it is drawn by this shell's
+ * renderer (it reads `Electron/` in the user agent, whatever session it holds): it opens
+ * Penguin Go's authorization URL directly, which this rule routes to the system browser.
  */
 export function classifyWindowOpen(url: string, origin: string | null): WindowOpenAction {
   if (origin === null || !isExternalScheme(url)) return "deny";
@@ -130,6 +138,40 @@ export function classifyWindowOpen(url: string, origin: string | null): WindowOp
 }
 
 /**
+ * What a window of this app looks like, whatever the page that opened it asked for.
+ *
+ * Electron builds a new window's options as `{ show: true, width: 800, height: 600,
+ * ...featuresFromThePage, ...override }` (lib/browser/guest-window-manager.ts), and the
+ * page's `window.open` feature string may set `show`, `skipTaskbar`, `opacity`, `transparent`,
+ * `focusable`, a position and size limits (allowedWindowOptions in
+ * lib/browser/parse-features-string.ts). A preview page is Agent-written HTML, and a window it
+ * is allowed to open must never be one the user cannot see: with `show=no`, `skipTaskbar=yes`
+ * or `opacity=0` the "window" a `/preview/` URL earns would be as hidden as the blank one
+ * classifyWindowOpen refuses, and same-origin with the preview that opened it. So every key
+ * that can hide, dim, or shrink a window to nothing is spelled out here, and the override
+ * spreads this last. Position is not an option — `left`/`top` land as `x`/`y` — so the window
+ * is centered after creation, and a page's `moveTo`/`resizeTo` is refused (see
+ * guardOpenedWindow in main.ts). The size limits are the defaults restated: 0 is Electron's
+ * "no maximum".
+ */
+export const APP_WINDOW_OPTIONS = {
+  width: 1100,
+  height: 800,
+  minWidth: 320,
+  minHeight: 240,
+  maxWidth: 0,
+  maxHeight: 0,
+  show: true,
+  skipTaskbar: false,
+  opacity: 1,
+  transparent: false,
+  focusable: true,
+  hiddenInMissionControl: false,
+  enableLargerThanScreen: false,
+  autoHideMenuBar: true,
+} as const;
+
+/**
  * A URL as a log line may show it: origin and path for a web URL, the scheme alone for any
  * other. A query or a fragment can carry a token, and neither says where the request went.
  */
@@ -145,22 +187,55 @@ export function urlForLog(url: string): string {
     : `a ${target.protocol} URL`;
 }
 
-/**
- * The one inert window the Web App opens synchronously while Penguin Go creates an
- * authorization flow. It must stay inside Electron until the real HTTPS URL arrives:
- * handing `about:blank` to Windows asks the OS to find an application for the `about:`
- * scheme and raises a system dialog instead of opening the user's browser.
- */
-export function isAuthorizationBridgeUrl(url: string): boolean {
-  return url === "about:blank";
-}
-
 /** Max automatic server restarts before giving up with an error dialog. */
 export const MAX_SERVER_RESTARTS = 3;
 
 /** Restart backoff: 1s, 2s, 4s (attempt is 0-based). */
 export function restartDelayMs(attempt: number): number {
   return Math.min(1000 * 2 ** attempt, 8000);
+}
+
+/** A window whose page stays up this long after a reload is healthy again: the next crash reloads at once. */
+export const RENDERER_HEALTHY_MS = 60_000;
+
+/**
+ * How long the main window waits before reloading a page whose renderer died, by how many times
+ * it has died in a row (0-based): at once the first time, then 1s, 2s, 4s … up to 30s, so a
+ * page that crashes as it loads cannot spin the machine in a reload loop.
+ */
+export function rendererReloadDelayMs(attempt: number): number {
+  return attempt <= 0 ? 0 : Math.min(1000 * 2 ** (attempt - 1), 30_000);
+}
+
+/** What died, as the log names it: Electron's render-process-gone details and the page. */
+export interface RendererGone {
+  /** `webContents.getType()`: the app window's page is a `window`, a browser tab a `webview`. */
+  type: string;
+  id: number;
+  url: string;
+  reason: string;
+  exitCode: number;
+}
+
+/** The log line for a renderer that went away: which page, and why (never the page's query). */
+export function rendererGoneLine(gone: RendererGone): string {
+  const page = gone.url === "" ? "" : ` ${urlForLog(gone.url)}`;
+  return `a renderer is gone: ${gone.type} ${gone.id}${page} (${gone.reason}, exit code ${gone.exitCode})`;
+}
+
+/** The log line for another child process that went away (Electron's child-process-gone details). */
+export function childGoneLine(gone: {
+  type: string;
+  reason: string;
+  exitCode: number;
+  serviceName?: string;
+  name?: string;
+}): string {
+  const names = [gone.serviceName, gone.name].filter(
+    (name): name is string => name !== undefined && name !== "",
+  );
+  const named = names.length > 0 ? ` ${[...new Set(names)].join(" / ")}` : "";
+  return `a child process is gone: ${gone.type}${named} (${gone.reason}, exit code ${gone.exitCode})`;
 }
 
 /**

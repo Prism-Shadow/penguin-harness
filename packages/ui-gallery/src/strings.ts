@@ -573,7 +573,6 @@ export const zh = {
         gray: "默认",
         brand: "来源",
         green: "运行中",
-        yellow: "免费",
         amber: "已中止",
         red: "失败",
       },
