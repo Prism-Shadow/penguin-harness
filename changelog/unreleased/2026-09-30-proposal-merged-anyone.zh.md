@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `plugins`, `cli`
+- **PR:** [Myriad-Dreamin/penguin-harness#126](https://github.com/Myriad-Dreamin/penguin-harness/pull/126)
 
 [English](2026-09-30-proposal-merged-anyone.md)
 
