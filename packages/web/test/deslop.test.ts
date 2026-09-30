@@ -60,7 +60,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "components/layout/app-layout.tsx": { 1: [1, "W7"] },
   "components/layout/sidebar.tsx": {
     1: [3, "W7"],
-    12: [5, "W7"],
+    12: [3, "W7"],
     13: [2, "W7"],
     14: [2, "W7"],
   },
