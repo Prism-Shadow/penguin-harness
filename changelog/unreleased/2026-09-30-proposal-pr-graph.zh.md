@@ -3,7 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `plugins`, `cli`, `server`
-- **PR:** PR_LINK
+- **PR:** [Myriad-Dreamin/penguin-harness#108](https://github.com/Myriad-Dreamin/penguin-harness/pull/108)
 
 [English](2026-09-30-proposal-pr-graph.md)
 
