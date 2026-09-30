@@ -1,15 +1,26 @@
 /**
- * Live Session status over the user-level event stream (state/sessions.tsx).
+ * Live Session status over the user-level event stream (state/sessions.tsx, applyUserEvent),
+ * and the glyph a sidebar row ends up drawing across a whole run (sessionRowActivity, the
+ * function the row itself calls). A tab subscribes only to the conversation it has open, so
+ * every other row depends on the user channel.
  *
- * A tab subscribes to the one conversation it has open, so the Session channel's `task_state`
- * can only ever move that row's badge; every other row would sit on whatever status its last
- * list fetch returned. The user channel's `session_state` closes that gap, and these tests pin
- * both halves of it: what the store does with the event, and the glyph the row ends up drawing
- * across a whole run — which is the case the feature exists for.
- *
- * The store is exercised directly (createSessionsStore / applyUserEvent): vitest runs this
- * package in Node with no DOM, so there is no React tree to mount. `sessionRowActivity` is the
- * same function the sidebar row calls, so the glyph assertions are the real rule, not a copy.
+ * - session_state moves the named row (state and stamp, compaction as its own state) and
+ *   leaves every other row alone; a stamp change alone still lands.
+ * - session_background sets or clears the named row's counts, and moves neither the glyph nor
+ *   the status.
+ * - session_title renames the named row in place.
+ * - An event for a Session no loaded page holds changes nothing, and one that matches the row
+ *   already is a no-op (the same array, so nothing re-renders).
+ * - A first run settles into the unread dot, not a blank: the run itself proves the Session
+ *   has a Trace, from the server's flag or a live status, and a Session that ran never goes
+ *   back to blank; a brand-new or genuinely never-run Session stays blank.
+ * - For a Session the user is not looking at: nothing, hourglass, unread dot, and nothing
+ *   again once opened — also for one opened earlier, for compaction, and in a tab that did not
+ *   start the task.
+ * - The open Session finishes as read; its own stream and the user channel converge on one
+ *   row; a status before its row is loaded is dropped.
+ * - web_updated reloads the window, resync_required and this Project's schedule_fired refetch
+ *   the list, and anything else is ignored.
  */
 import { describe, expect, it } from "vitest";
 import type { ServerEvent, SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
@@ -104,22 +115,6 @@ describe("session_state on the user channel", () => {
     expect(rowOf(store, "a").lastActiveAt).toBe(LOOKED);
   });
 
-  it("ignores a Session no loaded page holds instead of inventing a row", () => {
-    const store = storeWith(session("a"));
-    const before = store.getState().sessions;
-    applyUserEvent(store, stateEvent("not-loaded", "running", STARTED), neverReload);
-    // Same array reference: nothing was appended and nothing re-rendered.
-    expect(store.getState().sessions).toBe(before);
-    expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(["a"]);
-  });
-
-  it("a repeated event is a no-op (state, stamp and trace flag all already match)", () => {
-    const store = storeWith(session("a", { status: "running", lastActiveAt: STARTED }));
-    const before = store.getState().sessions;
-    applyUserEvent(store, stateEvent("a", "running", STARTED), neverReload);
-    expect(store.getState().sessions).toBe(before);
-  });
-
   it("carries a stamp change through even when the state itself did not change", () => {
     // Run start and run end both stamp the row; a goal loop's rounds keep it "running".
     const store = storeWith(session("a", { status: "running" }));
@@ -157,25 +152,6 @@ describe("session_background on the user channel", () => {
     expect(sessionBackgroundTasks(rowOf(store, "a"))).toBe(0);
   });
 
-  it("ignores a Session no loaded page holds instead of inventing a row", () => {
-    const store = storeWith(session("a"));
-    const before = store.getState().sessions;
-    applyUserEvent(store, backgroundEvent("not-loaded", 1, 0), neverReload);
-    expect(store.getState().sessions).toBe(before);
-  });
-
-  it("is a no-op when the counts already match", () => {
-    const store = storeWith(session("a", { backgroundTasks: { processes: 2, subagents: 1 } }));
-    const before = store.getState().sessions;
-    applyUserEvent(store, backgroundEvent("a", 2, 1), neverReload);
-    expect(store.getState().sessions).toBe(before);
-    // Zero onto an already-clear row is the same non-event.
-    const clear = storeWith(session("b"));
-    const beforeClear = clear.getState().sessions;
-    applyUserEvent(clear, backgroundEvent("b", 0, 0), neverReload);
-    expect(clear.getState().sessions).toBe(beforeClear);
-  });
-
   it("moves neither the glyph nor the status: an idle, read row keeps its blank glyph and gains the mark", () => {
     const store = storeWith(session("a"));
     const seen = seenAt("a", LOOKED);
@@ -205,23 +181,53 @@ describe("session_title on the user channel", () => {
     expect(rowOf(store, "b").title).toBe("Login page bug");
     expect(rowOf(store, "a").title).toBeUndefined();
   });
+});
 
-  it("ignores a Session no loaded page holds instead of inventing a row", () => {
+describe("events that need no change", () => {
+  const events: ServerEvent[] = [
+    stateEvent("not-loaded", "running", STARTED),
+    { type: "session_background", sessionId: "not-loaded", processes: 1, subagents: 0 },
+    { type: "session_title", sessionId: "not-loaded", title: "whatever" },
+  ];
+
+  it("an event for a Session no loaded page holds invents no row and re-renders nothing", () => {
+    // The user channel carries every Session this user can see, most of them absent from
+    // this list: an unlisted id must not churn the array and re-render every row.
     const store = storeWith(session("a"));
     const before = store.getState().sessions;
-    applyUserEvent(store, titleEvent("not-loaded", "whatever"), neverReload);
-    expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(["a"]);
-    // The user channel carries every Session this user can see, most of them absent from this
-    // list: an unlisted id must not churn the array and re-render every row.
+    for (const event of events) applyUserEvent(store, event, neverReload);
     expect(store.getState().sessions).toBe(before);
   });
 
-  it("is a no-op when the row already carries that title (both channels deliver it)", () => {
-    const store = storeWith(session("a"));
-    applyUserEvent(store, titleEvent("a", "Login page bug"), neverReload);
-    const after = store.getState().sessions;
-    applyUserEvent(store, titleEvent("a", "Login page bug"), neverReload);
-    expect(store.getState().sessions).toBe(after);
+  it("an event the row already matches is a no-op (both channels deliver the same facts)", () => {
+    const store = storeWith(
+      session("a", {
+        status: "running",
+        lastActiveAt: STARTED,
+        title: "Login page bug",
+        backgroundTasks: { processes: 2, subagents: 1 },
+      }),
+      session("b"),
+    );
+    const before = store.getState().sessions;
+    applyUserEvent(store, stateEvent("a", "running", STARTED), neverReload);
+    applyUserEvent(
+      store,
+      { type: "session_background", sessionId: "a", processes: 2, subagents: 1 },
+      neverReload,
+    );
+    applyUserEvent(
+      store,
+      { type: "session_title", sessionId: "a", title: "Login page bug" },
+      neverReload,
+    );
+    // Zero onto an already-clear row is the same non-event.
+    applyUserEvent(
+      store,
+      { type: "session_background", sessionId: "b", processes: 0, subagents: 0 },
+      neverReload,
+    );
+    expect(store.getState().sessions).toBe(before);
   });
 });
 
