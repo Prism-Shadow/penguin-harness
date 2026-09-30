@@ -144,20 +144,23 @@ describe("models preset & catalog enrichment", () => {
     expect(mimo.credential?.apiKeyMasked).toBeUndefined();
 
     // OpenCode Go pins each row's protocol and endpoint, so one group holds rows on different
-    // clients: a Messages row sits on the base without /v1 and falls back to the Anthropic
-    // client's variable, a Chat Completions row on the /v1 base and the OPENAI_* one.
-    expect(pick(body, "opencode-go", "qwen3.8-max")).toMatchObject({
+    // clients: a Messages row sits on the base without /v1, a Chat Completions row on the /v1
+    // base. Like every gateway's rows, neither falls back to its client's environment
+    // variable — that holds the user's vendor key, and the gateway is not the vendor.
+    const messagesRow = pick(body, "opencode-go", "qwen3.8-max");
+    expect(messagesRow).toMatchObject({
       clientType: "ant-messages",
       credential: { baseUrl: "https://opencode.ai/zen/go" },
-      envKey: "ANTHROPIC_API_KEY",
       vision: true,
     });
-    expect(pick(body, "opencode-go", "glm-5.3")).toMatchObject({
+    expect(messagesRow.envKey).toBeUndefined();
+    const chatRow = pick(body, "opencode-go", "glm-5.3");
+    expect(chatRow).toMatchObject({
       clientType: "openai-chat",
       credential: { baseUrl: "https://opencode.ai/zen/go/v1" },
-      envKey: "OPENAI_API_KEY",
       vision: false,
     });
+    expect(chatRow.envKey).toBeUndefined();
 
     // A catalog row on a promotion is preset at its LIST price like every other row, and the
     // promotion is seeded beside it in web.db: the rows reporting a discount are exactly the

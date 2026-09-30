@@ -26,6 +26,7 @@
  * `context_engine` only consumes OmniMessage; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
  */
+import { randomUUID } from "node:crypto";
 import {
   AutoLLMClient,
   EmptyResponseError,
@@ -985,8 +986,11 @@ export class GenerativeModel implements LLMInterface {
     // configured endpoint reads (see attributionHeaders); AgentHub hands it to every request
     // the routed client makes, and endpoints with no attribution scheme get no extra headers
     // at all. The Session's id rides along for the schemes that name the conversation rather
-    // than the app.
-    const headers = attributionHeaders(config.baseUrl, config.sessionId);
+    // than the app; an instance built outside any Session — a connectivity test, a vision
+    // probe, a one-off utility completion — names itself with a fresh id instead, so its
+    // requests are a conversation of their own (OpenCode refuses a request that names none).
+    // Kept in clientOptions, so a rotated credential goes on under the same name.
+    const headers = attributionHeaders(config.baseUrl, config.sessionId ?? randomUUID());
     this.clientOptions = {
       model: config.modelId,
       ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),

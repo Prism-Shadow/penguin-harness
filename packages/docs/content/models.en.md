@@ -557,9 +557,9 @@ The catalog decides these headers by **endpoint host**, not by the entry's provi
 | `openrouter.ai` | `X-OpenRouter-Title` | `PenguinHarness` |
 | `openrouter.ai` | `X-OpenRouter-Categories` | `cli-agent,personal-agent` |
 | `tokendance.space` | `X-App-URL` | `https://penguin.ooo/` |
-| `opencode.ai` | `x-opencode-session` | The Session id, sent only when a Session id is known |
+| `opencode.ai` | `x-opencode-session` | The Session id; a request outside any Session (a connectivity test, a vision probe) sends a fresh id of its own |
 
-Every other endpoint, including every direct vendor and every gateway that reads no such header, receives no extra headers. The OpenRouter and TokenDance headers state the app's identity only. The OpenCode header names the conversation, because that gateway routes each conversation by it; no header carries anything about the user or the agent.
+Every other endpoint, including every direct vendor and every gateway that reads no such header, receives no extra headers. The OpenRouter and TokenDance headers state the app's identity only. The OpenCode header names the conversation, because that gateway routes and caches each conversation by it and refuses a request that names none; no header carries anything about the user or the agent.
 
 ## How it works
 

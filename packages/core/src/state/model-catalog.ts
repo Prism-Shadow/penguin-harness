@@ -3504,10 +3504,13 @@ function hostMatches(host: string, domain: string): boolean {
  *   takes priority over any App URL recorded on the API key — the same key may be in use by
  *   other tools, so the per-request value is the accurate one.
  * - OpenCode (https://opencode.ai): `x-opencode-session` alone, and it names the conversation
- *   rather than the app — the gateway keys its backend routing on it, so the value has to hold
- *   still across a Session's requests and differ between Sessions. It is therefore sent only
- *   when a Session id is at hand: a stand-in constant would file every conversation under one
- *   session, which serves the gateway worse than naming none.
+ *   rather than the app — the gateway keys its routing and prompt caching on it, so the value
+ *   has to hold still across a conversation's requests and differ between conversations, and
+ *   it refuses a request that names none (400 "Request is missing x-opencode-session"). The
+ *   caller supplies the id: a Session's requests pass the Session's, and GenerativeModel gives
+ *   an instance built outside any Session a fresh one of its own. Given none, this returns
+ *   nothing for the host rather than inventing a value — a stand-in constant here would file
+ *   every such request under one session.
  */
 export function attributionHeaders(
   baseUrl: string | undefined,

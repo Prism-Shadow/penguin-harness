@@ -556,9 +556,9 @@ api_key = "sk-..."
 | `openrouter.ai` | `X-OpenRouter-Title` | `PenguinHarness` |
 | `openrouter.ai` | `X-OpenRouter-Categories` | `cli-agent,personal-agent` |
 | `tokendance.space` | `X-App-URL` | `https://penguin.ooo/` |
-| `opencode.ai` | `x-opencode-session` | Session id，仅在已知 Session id 时发送 |
+| `opencode.ai` | `x-opencode-session` | Session id；不属于任何 Session 的请求（连通性测试、视觉探测）各自使用一个新生成的 id |
 
-其他端点，包括所有直连厂商和不读取这类请求头的网关，都不会收到额外的请求头。OpenRouter 和 TokenDance 的请求头只表明应用身份。OpenCode 的请求头标明对话，因为那个网关靠它来路由每段对话；没有任何请求头携带用户或 Agent 的信息。
+其他端点，包括所有直连厂商和不读取这类请求头的网关，都不会收到额外的请求头。OpenRouter 和 TokenDance 的请求头只表明应用身份。OpenCode 的请求头标明对话，因为那个网关靠它来路由和缓存每段对话，并拒绝没有标明对话的请求；没有任何请求头携带用户或 Agent 的信息。
 
 ## 工作原理
 
