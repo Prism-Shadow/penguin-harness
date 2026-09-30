@@ -18,10 +18,10 @@ export const zh = {
 
   nav: {
     chat: "对话",
-    newChat: "新对话",
+    newChat: "新建对话",
     agents: "智能体",
     models: "模型库",
-    machines: "机器",
+    machines: "机器管理",
     plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
@@ -36,6 +36,9 @@ export const zh = {
     expandGroup: "展开",
     pinGroup: "置顶分组",
     unpinGroup: "取消置顶",
+    /** A nav entry's pin toggle: a pinned entry stays visible when the collapsible area folds. */
+    pinEntry: "常驻",
+    unpinEntry: "取消常驻",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "概览",
@@ -49,7 +52,7 @@ export const zh = {
 
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
   machines: {
-    pageTitle: "机器",
+    pageTitle: "机器管理",
     /** Tooltip on the version in the header: what this server would install. */
     imageVersion: (version: string) => `本服务端版本：${version}`,
     noImage:
@@ -156,7 +159,7 @@ export const zh = {
     serverUpOn: (port: number) => `运行中，端口 ${port}`,
     /** The progress log's own heading, so the block is not an unlabelled wall of text. */
     output: "输出",
-    agentsUnreachable: "那台机器尚未连接——请在「机器」页面使用它",
+    agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
   },
 

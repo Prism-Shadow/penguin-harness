@@ -1,26 +1,27 @@
 /**
- * Collapse state of the sidebar's page-nav group (pure decisions, unit tested): the
- * 智能体 → 评估中心 run of entries collapses as one group behind a nav-row-wide chevron
- * button under the group's last entry (arrow up = collapse; collapsed, the button
- * stays — arrow down — as the way back). The pinned "New chat" block above is NOT
- * part of the group — it stays visible in both states (the manifest below simply never
- * contains it).
+ * The sidebar's nav entries and how they fold (pure decisions, unit tested). In development
+ * mode every entry — New chat, then the page manifest below — is either PINNED, always
+ * shown, or COLLAPSIBLE, inside the area a nav-row-wide chevron button under it folds away
+ * (arrow up = collapse; collapsed, the button stays — arrow down — as the way back). New
+ * chat, Agents, Models and Plugins are pinned by default; the user moves an entry across
+ * with the row's pin button or by dragging it into or out of the collapsible area. Both
+ * areas keep manifest order, and with nothing collapsible there is no chevron. Company
+ * mode's six entries stay outside the split: they fold as one group behind the same button.
  *
- * One global storage key, not per Project: the nav is identical everywhere, so like the
- * grouping mode (GROUP_MODE_KEY) this is a single user preference — toggling it anywhere
- * toggles it everywhere. Storage is injectable (model-group-expansion.ts convention:
- * vitest runs in Node, no localStorage); nothing stored, unrecognized values, and
- * throwing storage all fall back to expanded — the default.
+ * Global storage keys, not per Project: the nav is identical everywhere, so like the
+ * grouping mode (GROUP_MODE_KEY) the fold and the pin choices are single user preferences —
+ * changing them anywhere changes them everywhere. Storage is injectable
+ * (model-group-expansion.ts convention: vitest runs in Node, no localStorage); nothing
+ * stored, unrecognized values, and throwing storage all fall back to the defaults.
  */
 
 /**
- * Page entries of the collapsible nav group, in rendered order. Each key names its
- * route (`/<key>`), its S.nav label, and its NAV_ICONS glyph — the sidebar derives
- * its nav rows from this manifest, so the covered range is pinned here (and in the
- * unit tests) rather than duplicated. Some entries are admin-only (see below), so the
- * sidebar renders navKeysFor(user.isAdmin), not the raw manifest. Traces is deliberately
- * absent: reading a Trace happens in the chat toolbar's panel switcher, which is the only
- * place it happens.
+ * Page entries of the nav, in rendered order. Each key names its route (`/<key>`), its
+ * S.nav label, and its NAV_ICONS glyph — the sidebar derives its nav rows from this
+ * manifest, so the covered range is pinned here (and in the unit tests) rather than
+ * duplicated. Some entries are admin-only (see below), so the sidebar renders
+ * navKeysFor(user.isAdmin), not the raw manifest. Traces is deliberately absent: reading a
+ * Trace happens in the chat toolbar's panel switcher, which is the only place it happens.
  */
 import { NAV_PAGE_KEYS, PAGES } from "./pages";
 
@@ -64,14 +65,80 @@ export function navKeysFor(isAdmin: boolean): readonly NavGroupKey[] {
 }
 
 /**
- * Page entries that are visible and reachable: collapsing hides the whole group (the
- * chevron-button toggle and the pinned "New chat" block above are outside it and stay).
- * The sidebar keeps the rows mounted while collapsed — the collapse is an animated
- * height tween — but at zero height, faded out, and inert: exactly this empty set of
- * reachable entries.
+ * A development-mode nav entry: New chat or a page. New chat opens a draft rather than a
+ * route, so it is not in the manifest, but it is pinned or collapsible like any page.
  */
-export function visibleNavKeys(collapsed: boolean, isAdmin = true): readonly NavGroupKey[] {
-  return collapsed ? [] : navKeysFor(isAdmin);
+export type NavEntryKey = "newChat" | NavGroupKey;
+
+/** Every entry this user sees, in rendered order: New chat first, then their pages. */
+export function navEntryKeysFor(isAdmin: boolean): readonly NavEntryKey[] {
+  return ["newChat", ...navKeysFor(isAdmin)];
+}
+
+/** Entries pinned until the user says otherwise; every other entry, a page added later included, starts collapsible. */
+export const DEFAULT_PINNED_NAV_KEYS: ReadonlySet<NavEntryKey> = new Set<NavEntryKey>([
+  "newChat",
+  "agents",
+  "models",
+  "plugins",
+]);
+
+/**
+ * The user's pin choices that differ from the defaults, by entry: true = pinned, false =
+ * collapsible. An entry absent here takes its default, which is what lets a page added in a
+ * later release arrive where its own default puts it.
+ */
+export type NavPinOverrides = Readonly<Partial<Record<NavEntryKey, boolean>>>;
+
+export function isNavPinned(key: NavEntryKey, overrides: NavPinOverrides): boolean {
+  return overrides[key] ?? DEFAULT_PINNED_NAV_KEYS.has(key);
+}
+
+/** The two areas, each keeping the order `keys` has — the manifest's, whatever order the entries were moved in. */
+export function splitNavEntries(
+  keys: readonly NavEntryKey[],
+  overrides: NavPinOverrides,
+): { pinned: NavEntryKey[]; collapsible: NavEntryKey[] } {
+  const pinned: NavEntryKey[] = [];
+  const collapsible: NavEntryKey[] = [];
+  for (const key of keys) {
+    if (isNavPinned(key, overrides)) pinned.push(key);
+    else collapsible.push(key);
+  }
+  return { pinned, collapsible };
+}
+
+/**
+ * `overrides` with one entry pinned or unpinned — the write both the pin button and a drop
+ * make. A choice that matches the default is removed rather than stored, so only deviations
+ * are ever kept; a call that changes nothing returns `overrides` itself, and callers skip the
+ * write on that identity.
+ */
+export function withNavPinned(
+  overrides: NavPinOverrides,
+  key: NavEntryKey,
+  pinned: boolean,
+): NavPinOverrides {
+  if (isNavPinned(key, overrides) === pinned) return overrides;
+  const next: Partial<Record<NavEntryKey, boolean>> = { ...overrides };
+  if (pinned === DEFAULT_PINNED_NAV_KEYS.has(key)) delete next[key];
+  else next[key] = pinned;
+  return next;
+}
+
+/**
+ * Entries that are visible and reachable, in rendered order: the pinned ones always, the
+ * collapsible ones only while their area is expanded (the chevron-button toggle is outside
+ * both and stays). The sidebar keeps folded rows mounted — the fold is an animated height
+ * tween — but at zero height, faded out, and inert: exactly their absence from this list.
+ */
+export function visibleNavKeys(
+  collapsed: boolean,
+  isAdmin = true,
+  overrides: NavPinOverrides = {},
+): readonly NavEntryKey[] {
+  const { pinned, collapsible } = splitNavEntries(navEntryKeysFor(isAdmin), overrides);
+  return collapsed ? pinned : [...pinned, ...collapsible];
 }
 
 /** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory implementation. */
@@ -80,7 +147,7 @@ export interface NavCollapseStorage {
   setItem(key: string, value: string): void;
 }
 
-/** The single global key (`penguin.…` naming convention); holds "collapsed" / "expanded". */
+/** The fold's single global key (`penguin.…` naming convention); holds "collapsed" / "expanded". */
 export const NAV_GROUP_COLLAPSED_KEY = "penguin.sidebarNavGroupCollapsed";
 
 /**
@@ -106,6 +173,46 @@ export function storeNavGroupCollapsed(collapsed: boolean, storage?: NavCollapse
       NAV_GROUP_COLLAPSED_KEY,
       collapsed ? "collapsed" : "expanded",
     );
+  } catch {
+    /* best-effort persistence (quota limits / private browsing) */
+  }
+}
+
+/** The pin choices' single global key; holds NavPinOverrides as a JSON object. */
+export const NAV_PINNED_KEY = "penguin.sidebarNavPinned";
+
+/** Keys a stored choice may name: New chat and the whole manifest, pages this user is not offered included. */
+const NAV_ENTRY_KEYS: ReadonlySet<string> = new Set<string>(["newChat", ...NAV_GROUP_KEYS]);
+
+/**
+ * Reads the stored choices. Only a boolean under a key the manifest knows is kept, so a key
+ * this build does not have — a page since removed, a hand edit — is ignored rather than
+ * trusted; absent, unparseable or throwing storage reads as no choices, i.e. the defaults.
+ * `localStorage` is resolved inside the try for the reason initialNavGroupCollapsed gives.
+ */
+export function initialNavPinOverrides(storage?: NavCollapseStorage): NavPinOverrides {
+  try {
+    const parsed: unknown = JSON.parse((storage ?? localStorage).getItem(NAV_PINNED_KEY) ?? "{}");
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    const overrides: Partial<Record<NavEntryKey, boolean>> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (NAV_ENTRY_KEYS.has(key) && typeof value === "boolean") {
+        overrides[key as NavEntryKey] = value;
+      }
+    }
+    return overrides;
+  } catch {
+    return {};
+  }
+}
+
+/** Writes the choices on every change (best-effort, like the fold). */
+export function storeNavPinOverrides(
+  overrides: NavPinOverrides,
+  storage?: NavCollapseStorage,
+): void {
+  try {
+    (storage ?? localStorage).setItem(NAV_PINNED_KEY, JSON.stringify(overrides));
   } catch {
     /* best-effort persistence (quota limits / private browsing) */
   }

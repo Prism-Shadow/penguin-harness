@@ -1,10 +1,12 @@
 /**
  * Single-column sidebar, top to bottom:
- * Project switcher -> new chat (a draft on the Project's new-chat defaults) + page nav
- * (Agents → Evaluation Center, one collapsible group behind a nav-row-wide chevron button
- * under its last entry: arrow
- * up = click to collapse, arrow down while collapsed = the way back; state persists in
- * localStorage, the pinned new-chat block never collapses) -> Session area with three grouping
+ * Project switcher -> nav: New chat (a draft on the Project's new-chat defaults), then
+ * Agents → Evaluation Center. Each entry is pinned (always shown) or collapsible (folded away
+ * by a nav-row-wide chevron button under the collapsible area: arrow up = click to collapse,
+ * arrow down while collapsed = the way back); New chat, Agents, Models and Plugins are pinned
+ * by default, a row's hover pin button or a drag across the areas moves an entry, and both
+ * the fold and the pin choices persist in localStorage (nav-group-collapse.ts). A pinned New
+ * chat keeps its fixed slot above the scroll area -> Session area with three grouping
  * modes (chosen in the section header's list options; the
  * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
  * (the default; groups loaded Sessions by their
@@ -37,7 +39,7 @@
  * Color scheme is white/gray-based: active state uses a solid gray fill, running status uses a small color dot, no large blocks of color.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { NavLink, useLocation, useMatch, useNavigate } from "react-router";
 import type {
   SessionCategory,
@@ -86,9 +88,15 @@ import { machineForSession } from "../../lib/session-machines";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import {
   initialNavGroupCollapsed,
-  navKeysFor,
+  initialNavPinOverrides,
+  isNavPinned,
+  navEntryKeysFor,
+  splitNavEntries,
   storeNavGroupCollapsed,
+  storeNavPinOverrides,
+  withNavPinned,
 } from "../../lib/nav-group-collapse";
+import type { NavEntryKey } from "../../lib/nav-group-collapse";
 import {
   loadPinnedSessions,
   removePinnedSession,
@@ -132,10 +140,12 @@ import {
   SessionRowMenuRows,
   TRASH_ICON,
   contextMenuActions,
+  hoverButtonClass,
   overflowMenuDangerClass,
   overflowMenuGlyph,
   overflowMenuRowClass,
 } from "../ui/session-row-menu";
+import { GlyphIcon } from "../ui/glyph-icon";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { UserAvatar } from "../ui/user-avatar";
@@ -245,6 +255,38 @@ const GROUP_DRAG_MIME = "application/x-penguin-group-key";
  * from the desktop, a Session row — paint a phantom drop line, and commit on release.
  */
 const isGroupDrag = (e: ReactDragEvent): boolean => e.dataTransfer.types.includes(GROUP_DRAG_MIME);
+
+/** Private drag payload type of a nav entry moved between the pinned and collapsible areas (never text/plain, as above). */
+const NAV_DRAG_MIME = "application/x-penguin-nav-entry";
+
+/** Is the drag in flight a nav entry of ours? Authorizes a nav drop the way isGroupDrag authorizes a group drop. */
+const isNavDrag = (e: ReactDragEvent): boolean => e.dataTransfer.types.includes(NAV_DRAG_MIME);
+
+/** The two nav areas a dragged entry can be dropped into. */
+type NavArea = "pinned" | "collapsible";
+
+/** One nav row: New chat, a page, or one of company mode's organization pages. */
+interface NavItem {
+  key: string;
+  /** Development mode's entry, which carries a pin toggle and drags between the areas. */
+  entry?: NavEntryKey;
+  /** Where a page row leads — null for a row with nowhere to lead, which renders disabled (New chat opens a draft instead). */
+  to: string | null;
+  label: string;
+  icon: string;
+  note: string | null;
+}
+
+/**
+ * A nav row's link or button. The hover fill answers to the whole row (`group`) rather than
+ * to the link alone, so it holds while the pointer is on the pin button over the row's end.
+ */
+const navRowClass = (active: boolean) =>
+  `flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
+    active
+      ? "bg-gray-200/70 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+      : "text-gray-600 group-hover:bg-gray-200/50 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:bg-gray-800/70 dark:group-hover:text-gray-200"
+  }`;
 
 /** Manual drag-reordering needs a pointer that can drag (HTML5 DnD never fires from touch) — the outline rail's query. */
 const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
@@ -480,8 +522,21 @@ export function Sidebar({
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   const folderOnlyStoreKey =
     currentProjectId === null ? null : expandedFolderOnlyGroupsKey(currentProjectId);
-  /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
+  /** Folded collapsible nav area (company mode: the whole nav group); expanded by default, the choice persists across sessions. */
   const [navCollapsed, setNavCollapsed] = useState(initialNavGroupCollapsed);
+  /** The user's changes to which nav entries are pinned (the defaults live in nav-group-collapse.ts); persisted like the fold. */
+  const [navPins, setNavPins] = useState(initialNavPinOverrides);
+  /** Nav entry being dragged across the areas, and the area a drop would move it into. */
+  const [navDrag, setNavDrag] = useState<NavEntryKey | null>(null);
+  const [navDropArea, setNavDropArea] = useState<NavArea | null>(null);
+  /**
+   * The entry whose pin button takes focus once its row re-mounts in the other area. Moving
+   * an entry moves its row to another container, and the button that had focus goes with the
+   * old one — a keyboard user would be dropped onto <body>.
+   */
+  const pinFocusRef = useRef<NavEntryKey | null>(null);
+  /** The chevron toggle: where focus goes when the moved row lands in a folded (inert) area. */
+  const navToggleRef = useRef<HTMLButtonElement | null>(null);
   /** Grouping mode of the Session list (Workspace by default; the choice persists across sessions). */
   const [groupMode, setGroupModeState] = useState<GroupMode>(initialGroupMode);
   /** Collapsed groups (expanded by default), keyed by Agent id or Workspace group key depending on the mode; persisted per Project. */
@@ -636,6 +691,77 @@ export function Sidebar({
     storeNavGroupCollapsed(next);
     setNavCollapsed(next);
   };
+
+  /** Pin or unpin one nav entry: the pin button and a drop across the areas both land here. */
+  const setNavPinned = (key: NavEntryKey, pinned: boolean) => {
+    const next = withNavPinned(navPins, key, pinned);
+    if (next === navPins) return;
+    storeNavPinOverrides(next);
+    setNavPins(next);
+  };
+
+  /**
+   * Drag wiring of one development-mode nav row: the row is its own handle. Offered only
+   * where a pointer that can drag exists (HTML5 drag-and-drop never fires from touch); the
+   * pin button is the way everywhere, and the only one there.
+   */
+  const navRowDragProps = (key: NavEntryKey) =>
+    canDrag
+      ? {
+          draggable: true,
+          onDragStart: (e: ReactDragEvent) => {
+            e.dataTransfer.setData(NAV_DRAG_MIME, key);
+            e.dataTransfer.effectAllowed = "move" as const;
+            setNavDrag(key);
+          },
+          onDragEnd: () => {
+            setNavDrag(null);
+            setNavDropArea(null);
+          },
+        }
+      : {};
+
+  /**
+   * Drop wiring of one nav area. Only a drag that would move the entry to this side is
+   * accepted, so dropping a row back into its own area is not a drop at all; where inside the
+   * area it lands is not asked, since both areas keep manifest order.
+   */
+  const navAreaDropProps = (area: NavArea) => ({
+    onDragOver: (e: ReactDragEvent) => {
+      if (navDrag === null || !isNavDrag(e)) return;
+      if (isNavPinned(navDrag, navPins) === (area === "pinned")) return;
+      e.preventDefault();
+      // The effect must be one effectAllowed permits, or the drop never fires (groupDragProps).
+      e.dataTransfer.dropEffect = "move";
+      setNavDropArea(area);
+    },
+    // Crossing onto one of the area's own rows fires dragleave too; still inside is no change.
+    onDragLeave: (e: ReactDragEvent) => {
+      const to = e.relatedTarget;
+      if (to instanceof Node && e.currentTarget.contains(to)) return;
+      setNavDropArea((prev) => (prev === area ? null : prev));
+    },
+    onDrop: (e: ReactDragEvent) => {
+      if (navDrag === null || !isNavDrag(e)) return;
+      e.preventDefault();
+      setNavPinned(navDrag, area === "pinned");
+      setNavDrag(null);
+      setNavDropArea(null);
+    },
+  });
+
+  /**
+   * The drop highlight of the area a drag is over: an accent ring laid over the area's
+   * (`relative`) box. An overlay, like the group drop line, because the rows are positioned
+   * and paint over anything the box draws itself — New chat's active fill hid an outline.
+   */
+  const navDropRing = (area: NavArea) =>
+    navDropArea === area ? (
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-10 rounded-md ring-1 ring-inset ring-[var(--accent-bg)]"
+      />
+    ) : null;
 
   /** Workspace-mode per-group exact server totals (folded from the per-Agent per-Workspace counts). */
   const workspaceGroupCounts = useMemo(
@@ -1763,20 +1889,27 @@ export function Sidebar({
         );
 
   /**
-   * Page entries of the collapsible nav group. Development mode: 智能体 → 评估中心, driven by
-   * the NAV_GROUP_KEYS manifest minus the entries this user's role cannot reach. Company
-   * mode: the organization's six pages (COMPANY_NAV_KEYS) — channels are not among them,
-   * they are the list below. Always mounted — the collapse animates their height to zero and
-   * turns them inert.
+   * Nav rows, by area. Development mode: New chat, then the NAV_GROUP_KEYS manifest minus the
+   * entries this user's role cannot reach, each in the pinned or the collapsible area
+   * (nav-group-collapse.ts). Company mode: the organization's six pages (COMPANY_NAV_KEYS) —
+   * channels are not among them, they are the list below — all collapsible, with no pins.
+   * Collapsible rows are always mounted — the fold animates their height to zero and turns
+   * them inert.
    */
-  const navItems: Array<{
-    key: string;
-    /** Where the row leads — null for a row with nowhere to lead, which renders disabled. */
-    to: string | null;
-    label: string;
-    icon: string;
-    note: string | null;
-  }> = inCompany
+  const devNavItem = (key: NavEntryKey): NavItem =>
+    key === "newChat"
+      ? { key, entry: key, to: null, label: S.nav.newChat, icon: NEW_CHAT_ICON, note: null }
+      : {
+          key,
+          entry: key,
+          to: `/${key}`,
+          label: S.nav[key],
+          icon: NAV_ICONS[key],
+          note: navNoteFor(badges, `/${key}`),
+        };
+  const navSplit = splitNavEntries(navEntryKeysFor(user?.isAdmin === true), navPins);
+  const pinnedNavItems: NavItem[] = inCompany ? [] : navSplit.pinned.map(devNavItem);
+  const collapsibleNavItems: NavItem[] = inCompany
     ? COMPANY_NAV_KEYS.map((key) => ({
         key,
         // Company mode with no organization keeps its six rows and disables them: the pages
@@ -1787,13 +1920,123 @@ export function Sidebar({
         icon: COMPANY_NAV_ICONS[key],
         note: null,
       }))
-    : navKeysFor(user?.isAdmin === true).map((key) => ({
-        key,
-        to: `/${key}`,
-        label: S.nav[key],
-        icon: NAV_ICONS[key],
-        note: navNoteFor(badges, `/${key}`),
-      }));
+    : navSplit.collapsible.map(devNavItem);
+  /** A pinned New chat keeps its fixed slot above the scroll area; the other pinned rows scroll with the list. */
+  const fixedNewChat = pinnedNavItems.find((item) => item.entry === "newChat") ?? null;
+  const scrollingPinnedItems = pinnedNavItems.filter((item) => item !== fixedNewChat);
+
+  /**
+   * One nav row. A page row is a NavLink and New chat a button; a row with nowhere to lead
+   * keeps its place and glyph, muted and inert. A development-mode row is also its own drag
+   * handle and carries its pin toggle at the end, over the link's last few pixels (a button
+   * cannot sit inside a link), so the link keeps the whole row as its hit area.
+   */
+  const renderNavRow = (item: NavItem) => {
+    const { key, entry, to, note } = item;
+    const glyph = (
+      <span className="text-gray-500 dark:text-gray-400">
+        <Icon d={item.icon} />
+      </span>
+    );
+    let row: ReactNode;
+    if (entry === "newChat") {
+      // Same gray active state as a page row while on the draft page; font-medium always.
+      row = (
+        <button
+          type="button"
+          title={newChatTitle}
+          onClick={() => newChat()}
+          className={`${navRowClass(activeSessionId === DRAFT_SESSION_ID)} font-medium`}
+        >
+          {glyph}
+          {item.label}
+        </button>
+      );
+    } else if (to === null) {
+      /* Nowhere to go: the row keeps its place and its glyph, muted, with no hover fill and
+         nothing to click or tab to. */
+      return (
+        <span
+          key={key}
+          role="link"
+          aria-disabled="true"
+          className="relative flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-gray-400 dark:text-gray-600"
+        >
+          <span className="text-gray-300 dark:text-gray-700">
+            <Icon d={item.icon} />
+          </span>
+          {item.label}
+        </span>
+      );
+    } else {
+      row = (
+        <NavLink
+          to={to}
+          draggable={false}
+          onClick={() => onNavigate?.()}
+          {...(note !== null
+            ? {
+                // The row's own label is visible, so the tooltip only adds what the dot
+                // means; the accessible name keeps that label as its prefix. (The collapsed
+                // rail's icon-only twin has no visible label, so its tooltip carries both.)
+                title: note,
+                "aria-label": `${item.label} · ${note}`,
+              }
+            : {})}
+          className={({ isActive }) => `${navRowClass(isActive)}${isActive ? " font-medium" : ""}`}
+        >
+          {glyph}
+          {item.label}
+        </NavLink>
+      );
+    }
+    const pinned = entry !== undefined && isNavPinned(entry, navPins);
+    return (
+      <div
+        key={key}
+        className="group relative flex items-center"
+        {...(entry === undefined ? {} : navRowDragProps(entry))}
+      >
+        {row}
+        {entry !== undefined && (
+          <span className="peer absolute right-1 top-1/2 flex -translate-y-1/2">
+            <NavPinButton
+              pinned={pinned}
+              onToggle={(e) => {
+                // A keyboard toggle follows its row into the other area (see pinFocusRef).
+                if (e.currentTarget.matches(":focus-visible")) pinFocusRef.current = entry;
+                setNavPinned(entry, !pinned);
+              }}
+              buttonRef={(el) => {
+                if (el === null || pinFocusRef.current !== entry) return;
+                pinFocusRef.current = null;
+                el.focus();
+                // A row that lands in the folded area is inert and cannot take focus: the
+                // chevron that unfolds it is the nearest place to stand.
+                if (document.activeElement !== el) navToggleRef.current?.focus();
+              }}
+            />
+          </span>
+        )}
+        {/* Four nav entries sit on a badge trail — Agents (an outdated kernel, fixed on the
+            Agent settings page two clicks down), Plugins, Models and the Cost Center (each
+            cleared on the page itself). The dot is anchored to the row, not to the label
+            text (where it would float over whatever follows the word): at the row's right
+            edge, on the same inset as its horizontal padding, and vertically centred on the
+            row rather than on the line of text. The pin button takes that spot on hover or
+            focus, so the dot yields to it there — the session row's time/actions handoff —
+            and where there is no hover and the pin is always shown, it sits just left of it. */}
+        {note !== null && (
+          <span className="transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0">
+            <UpdateDot
+              size="inline"
+              position="right-2.5 top-1/2 -translate-y-1/2 [@media(hover:none)]:right-9"
+            />
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div ref={rootRef} className="flex h-full w-full flex-col">
@@ -1899,10 +2142,11 @@ export function Sidebar({
         )}
       </div>
 
-      {/* New chat: the only pinned entry besides the Project switcher above and the user row
-          below. No background fill, the same gray hover/active styling as the nav items,
-          distinguished only by its position and font-medium; shows the same gray active state
-          while on the draft page.
+      {/* A pinned New chat: the fixed slot below the Project switcher, the one nav row that
+          does not scroll. No background fill, the same gray hover/active styling as the other
+          nav rows, distinguished by its position and font-medium; shows the same gray active
+          state while on the draft page. It is part of the pinned area, so it is a drop target
+          for an entry dragged out of the collapsible one.
           The gap to the scroll area below is this block's OWN pb-2, not padding inside the
           scroller: padding-top there belongs to the scrollable content and slides away with
           it, so a scrolled nav entry ended up flush against this pinned button, the two
@@ -1910,26 +2154,16 @@ export function Sidebar({
           the same text-to-text rhythm two adjacent nav rows have. */}
       {/* Company mode pins nothing here: a channel is made rarely, so "New channel" is the
           channel list's own header action rather than a permanent row (channel-sidebar.tsx).
+          Nor does a collapsible New chat, which renders at the head of the collapsible area.
           The slot still holds its 8px, which is the gap the scroll area below depends on. */}
-      {inCompany ? (
+      {fixedNewChat === null ? (
         <div className="shrink-0 pb-2" />
       ) : (
         <div className="shrink-0 px-2 pb-2 pt-2">
-          <button
-            type="button"
-            title={newChatTitle}
-            onClick={() => newChat()}
-            className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors duration-150 ${
-              activeSessionId === DRAFT_SESSION_ID
-                ? "bg-gray-200/70 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
-            }`}
-          >
-            <span className="text-gray-500 dark:text-gray-400">
-              <Icon d={NEW_CHAT_ICON} />
-            </span>
-            {S.chat.newSessionMenu}
-          </button>
+          <div {...navAreaDropProps("pinned")} className="relative">
+            {renderNavRow(fixedNewChat)}
+            {navDropRing("pinned")}
+          </div>
         </div>
       )}
 
@@ -1945,111 +2179,79 @@ export function Sidebar({
           folder made the whole page scroll (composer pushed up, blank space below). */}
       <div className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <nav className="space-y-0.5">
-          {/* Expand/collapse SLIDE: grid-template-rows tweens between 0fr and 1fr with the
-              inner overflow-hidden clipping the rows (the skills/models-page convention) —
-              the moving clip edge reveals/hides the entries while the toggle button and the
-              Session list below glide up/down with it; a subtle opacity fade rides along,
-              both 200ms, moving as one with the chevron flip below. The rows stay mounted
-              for the tween but go inert while collapsed (zero-height rows must not stay
-              Tab-focusable or clickable). Transitions fire only on state CHANGES, so a mount
-              restoring a persisted collapsed state renders collapsed instantly — only user
-              toggles animate; reduced motion is covered by the global
-              prefers-reduced-motion override in styles.css. */}
-          <div
-            className={`grid transition-[grid-template-rows] duration-200 ease-out ${
-              navCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
-            }`}
-          >
-            <div className="overflow-hidden" inert={navCollapsed}>
+          {/* The pinned area's scrolling rows. Mid-drag an empty one still takes a row's
+              height, so there is somewhere to drop an entry that should become pinned. */}
+          {(scrollingPinnedItems.length > 0 || navDrag !== null) && (
+            <div
+              {...navAreaDropProps("pinned")}
+              className={`relative flex flex-col gap-0.5 ${
+                scrollingPinnedItems.length === 0 ? "min-h-8" : ""
+              }`}
+            >
+              {scrollingPinnedItems.map(renderNavRow)}
+              {navDropRing("pinned")}
+            </div>
+          )}
+          {/* The collapsible area and its chevron, one drop target. With nothing collapsible
+              there is nothing to fold and no chevron — except mid-drag, when the chevron
+              band is the place to drop the first entry in. */}
+          {(collapsibleNavItems.length > 0 || navDrag !== null) && (
+            <div
+              {...(inCompany ? {} : navAreaDropProps("collapsible"))}
+              className="relative flex flex-col gap-0.5"
+            >
+              {/* Expand/collapse SLIDE: grid-template-rows tweens between 0fr and 1fr with
+                  the inner overflow-hidden clipping the rows (the skills/models-page
+                  convention) — the moving clip edge reveals/hides the entries while the
+                  toggle button and the Session list below glide up/down with it; a subtle
+                  opacity fade rides along, both 200ms, moving as one with the chevron flip
+                  below. The rows stay mounted for the tween but go inert while collapsed
+                  (zero-height rows must not stay Tab-focusable or clickable). Transitions
+                  fire only on state CHANGES, so a mount restoring a persisted collapsed state
+                  renders collapsed instantly — only user toggles animate; reduced motion is
+                  covered by the global prefers-reduced-motion override in styles.css. */}
               <div
-                className={`space-y-0.5 transition-opacity duration-200 ${
-                  navCollapsed ? "opacity-0" : "opacity-100"
+                className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+                  navCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
                 }`}
               >
-                {navItems.map((item) => {
-                  /* Four nav entries sit on a badge trail — Agents (an outdated kernel, fixed on
-                     the Agent settings page two clicks down), Skills, Models and the Cost Center
-                     (each cleared on the page itself). The dot is anchored to the row, not to the
-                     label text (where it would float over whatever follows the word): at the
-                     row's right edge, on the same inset as its horizontal padding, and vertically
-                     centred on the row rather than on the line of text. */
-                  const note = item.note;
-                  if (item.to === null) {
-                    /* Nowhere to go: the row keeps its place and its glyph, muted, with no
-                       hover fill and nothing to click or tab to. */
-                    return (
-                      <span
-                        key={item.key}
-                        role="link"
-                        aria-disabled="true"
-                        className="relative flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-gray-400 dark:text-gray-600"
-                      >
-                        <span className="text-gray-300 dark:text-gray-700">
-                          <Icon d={item.icon} />
-                        </span>
-                        {item.label}
-                      </span>
-                    );
-                  }
-                  return (
-                    <NavLink
-                      key={item.key}
-                      to={item.to}
-                      onClick={() => onNavigate?.()}
-                      {...(note !== null
-                        ? {
-                            // The row's own label is visible, so the tooltip only adds what
-                            // the dot means; the accessible name keeps that label as its
-                            // prefix. (The collapsed rail's icon-only twin has no visible
-                            // label, so its tooltip carries both.)
-                            title: note,
-                            "aria-label": `${item.label} · ${note}`,
-                          }
-                        : {})}
-                      className={({ isActive }) =>
-                        `relative flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
-                          isActive
-                            ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                            : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
-                        }`
-                      }
-                    >
-                      <span className="text-gray-500 dark:text-gray-400">
-                        <Icon d={item.icon} />
-                      </span>
-                      {item.label}
-                      {note !== null && (
-                        <UpdateDot size="inline" position="right-2.5 top-1/2 -translate-y-1/2" />
-                      )}
-                    </NavLink>
-                  );
-                })}
+                <div className="overflow-hidden" inert={navCollapsed}>
+                  <div
+                    className={`space-y-0.5 transition-opacity duration-200 ${
+                      navCollapsed ? "opacity-0" : "opacity-100"
+                    }`}
+                  >
+                    {collapsibleNavItems.map(renderNavRow)}
+                  </div>
+                </div>
               </div>
+              {/* Collapse toggle of the collapsible area: a slim (h-4) nav-row-wide button
+                  directly under its last entry — a centered chevron pointing UP while
+                  expanded (click to collapse) and DOWN while collapsed (the button stays as
+                  the only way back, right under the pinned rows once the entries are
+                  hidden). The soft resting band is deliberate — the sidebar's one exception
+                  to flat-at-rest: it makes the strip read as the seam between the page nav
+                  above and the Session list below (the ruled separator it replaces was
+                  rejected as a line under the button); hover deepens it a step further so it
+                  stays clearly interactive. Icon-only, so tooltip + aria carry the name
+                  (GroupHeader's collapse/expand wording). */}
+              <button
+                ref={navToggleRef}
+                type="button"
+                onClick={toggleNavGroup}
+                aria-expanded={!navCollapsed}
+                aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
+                title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
+                className="flex h-4 w-full items-center justify-center rounded-md bg-gray-200/70 text-gray-400 transition-colors duration-150 hover:bg-gray-300/60 hover:text-gray-700 dark:bg-gray-800/70 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+              >
+                <ChevronDown
+                  size={12}
+                  className={`transition-transform duration-200 ${navCollapsed ? "" : "rotate-180"}`}
+                />
+              </button>
+              {navDropRing("collapsible")}
             </div>
-          </div>
-          {/* Collapse toggle of the page-nav group (智能体 → 评估中心): a slim (h-4)
-              nav-row-wide button directly under the group's last entry — a centered chevron
-              pointing UP while expanded (click to collapse) and DOWN while collapsed (the
-              button stays as the only way back, right under the new-chat boundary once the
-              entries are hidden). The soft resting band is deliberate — the sidebar's one
-              exception to flat-at-rest: it makes the strip read as the seam between the
-              page nav above and the Session list below (the ruled separator it replaces
-              was rejected as a line under the button); hover deepens it a step further so
-              it stays clearly interactive. Icon-only, so tooltip + aria carry the name
-              (GroupHeader's collapse/expand wording). */}
-          <button
-            type="button"
-            onClick={toggleNavGroup}
-            aria-expanded={!navCollapsed}
-            aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-            title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-            className="flex h-4 w-full items-center justify-center rounded-md bg-gray-200/70 text-gray-400 transition-colors duration-150 hover:bg-gray-300/60 hover:text-gray-700 dark:bg-gray-800/70 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-300"
-          >
-            <ChevronDown
-              size={12}
-              className={`transition-transform duration-200 ${navCollapsed ? "" : "rotate-180"}`}
-            />
-          </button>
+          )}
         </nav>
 
         {inCompany ? (
@@ -2919,6 +3121,39 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
       }`}
     >
       <Icon d={PIN_ICON} size={ICON_SIZE.groupHeaderAction} />
+    </button>
+  );
+}
+
+/**
+ * A development-mode nav row's pin toggle: a pinned entry stays shown when the collapsible
+ * area folds, an unpinned one folds with it. The session row's hover button — flat, revealed
+ * on row hover or its own keyboard focus, pointer-events-gated with that opacity
+ * (session-row-menu.tsx says why) — with one addition: where there is no hover at all it is
+ * always shown, because touch has no drag and this button is the only way to move an entry
+ * there. The tack is filled while pinned. As in GroupPinButton, the accessible name stays
+ * static and aria-pressed carries the state, while the tooltip names the move a click makes.
+ */
+function NavPinButton({
+  pinned,
+  onToggle,
+  buttonRef,
+}: {
+  pinned: boolean;
+  onToggle: (e: ReactMouseEvent<HTMLButtonElement>) => void;
+  buttonRef: (el: HTMLButtonElement | null) => void;
+}) {
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      title={pinned ? S.nav.unpinEntry : S.nav.pinEntry}
+      aria-label={S.nav.pinEntry}
+      aria-pressed={pinned}
+      onClick={onToggle}
+      className={`${hoverButtonClass} hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100`}
+    >
+      <GlyphIcon d={PIN_ICON} size={14} filled={pinned} />
     </button>
   );
 }

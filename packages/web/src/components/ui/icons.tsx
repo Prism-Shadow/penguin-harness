@@ -393,8 +393,8 @@ export const NAV_ICONS = {
   /**
    * Model library (a chip: body, die and three pins a side). Three pins rather than the six a
    * real package would show — at the 16px these rows draw, six pins a side fuse into a serrated
-   * edge and stop being pins. The die is what keeps the mark clear of `machines`, the next nav
-   * row down: a bare body with side ticks and a stack of server units both reduce to "a rectangle
+   * edge and stop being pins. The die is what keeps the mark clear of `machines`, two nav rows
+   * down: a bare body with side ticks and a stack of server units both reduce to "a rectangle
    * with lines", while concentric squares ringed with pins reduce to nothing else in this table.
    */
   models:

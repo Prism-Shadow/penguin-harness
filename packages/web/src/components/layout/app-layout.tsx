@@ -12,6 +12,7 @@ import { S } from "../../lib/strings";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
+import { navKeysFor } from "../../lib/nav-group-collapse";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
@@ -74,8 +75,9 @@ const railItemClass = (active: boolean) =>
 
 /**
  * Collapsed narrow rail: expand button on top; below it, in product-specified order, last
- * conversation / new chat / Agents / Skills / Models / Costs / Benchmark; user avatar at the
- * bottom, opening the same account menu the pinned sidebar's avatar does. No Logo shown.
+ * conversation / new chat / Agents / Models / Plugins / Machines (admins) / Cost Center /
+ * Evaluation Center; user avatar at the bottom, opening the same account menu the pinned
+ * sidebar's avatar does. No Logo shown.
  *
  * Every entry is an icon with no visible label, so each carries a localized aria-label and
  * the same words in a styled Tooltip — never also a native `title`, which would put a second
@@ -126,9 +128,10 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /** Mirrors the pinned sidebar's "New chat" (use-new-chat.ts): parks any typed-but-unsent draft text first, then opens a draft that names nothing, so it starts on the Project's new-chat defaults. */
   const newChat = useNewChat();
 
-  /** Page entries (rail positions 3-8): same routes, same labels as the pinned nav.
-      Traces is not among them: reading a Trace happens in the chat toolbar's panel
-      switcher, which is the only place it happens. */
+  /** Page entries (after last conversation and new chat): the pinned nav's manifest, routes
+      and labels, in its order, and all of them whether pinned or collapsible there — the
+      rail has no fold. Traces is not among them: reading a Trace happens in the chat
+      toolbar's panel switcher, which is the only place it happens. */
   const pages: ReadonlyArray<{
     key: string;
     /** Where the entry leads — null while company mode has no organization, which renders it disabled. */
@@ -146,13 +149,13 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         icon: COMPANY_NAV_ICONS[key],
         note: null,
       }))
-    : [
-        { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
-        { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
-        { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
-        { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
-        { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
-      ].map((item) => ({ ...item, key: item.to, note: navNoteFor(badges, item.to) }));
+    : navKeysFor(user?.isAdmin === true).map((key) => ({
+        key,
+        to: `/${key}`,
+        label: S.nav[key],
+        icon: NAV_ICONS[key],
+        note: navNoteFor(badges, `/${key}`),
+      }));
 
   /**
    * The rail's avatar hangs its menu off the rail's OUTER edge rather than over the rail:
@@ -266,9 +269,9 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             </button>
           </Tooltip>
         )}
-        {/* 3-8. Page entries */}
+        {/* 3 onward. Page entries */}
         {pages.map((item) => {
-          /* Four entries sit on a badge trail — Agents (an outdated kernel), Skills, Models and
+          /* Four entries sit on a badge trail — Agents (an outdated kernel), Plugins, Models and
              the Cost Center. The dot itself is decorative: the tooltip and the accessible name
              say what is waiting, and this rail's icons have no visible label, so they carry
              both the entry's name and that sentence. */
