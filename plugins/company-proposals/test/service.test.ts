@@ -468,7 +468,10 @@ describe("ProposalService", () => {
         .split("\n")
         .filter((l) => l.trim() !== "").length;
     // Neither on its own nor handed to a colleague: the way out is named, and nothing is written.
-    for (const req of [{ brief: "Rotate the API token" }, { author: "acme_impl", brief: "Split" }]) {
+    for (const req of [
+      { brief: "Rotate the API token" },
+      { author: "acme_impl", brief: "Split" },
+    ]) {
       const err = await service.create(PROJECT, ORG, req, author).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(ProposalError);
       expect(err).toMatchObject({ status: 403, code: "roadmap_only" });
@@ -529,7 +532,9 @@ describe("ProposalService", () => {
         roadmap: { number: 3, key: "x" },
       }),
     ).rejects.toMatchObject({ status: 400, code: "bad_request" });
-    expect((await fs.readFile(ledgerPath(root, PROJECT, ORG), "utf8")).trim().split("\n")).toHaveLength(1);
+    expect(
+      (await fs.readFile(ledgerPath(root, PROJECT, ORG), "utf8")).trim().split("\n"),
+    ).toHaveLength(1);
   });
 
   it("the skills plugin is installed only where it is missing, and a library without it is only logged", async () => {

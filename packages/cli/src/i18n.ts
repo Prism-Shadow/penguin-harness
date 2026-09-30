@@ -1912,8 +1912,7 @@ const en: Messages = {
     proposalResolveDesc: "Resolve one comment, with a note on what changed",
     proposalStatusFilter:
       "Only proposals in this state (drafting, ready, approved, merged, rejected)",
-    proposalAuthor:
-      "The employee that writes the proposal (its Agent id)",
+    proposalAuthor: "The employee that writes the proposal (its Agent id)",
     proposalBrief_: "The delegation, in one sentence",
     proposalTitle: "A working title (the published document's own title replaces it)",
     proposalFile: "The proposal as one Markdown document",
@@ -3119,7 +3118,8 @@ const zh: Messages = {
     proposalDesc: "提案（company-proposals 插件）：写给人读的一份改动，员工同时实施它",
     proposalLsDesc: "列出组织的提案（按 --status 本地过滤）",
     proposalShowDesc: "显示一份提案：头部、范围、材料、各节、评论与事件",
-    proposalCreateDesc: "发起一份提案，交给某位员工写（由人发起；员工的新提案来自获批的 roadmap 条目）",
+    proposalCreateDesc:
+      "发起一份提案，交给某位员工写（由人发起；员工的新提案来自获批的 roadmap 条目）",
     proposalPublishDesc:
       "从 Markdown 文件发布一次修订（frontmatter 的 title 与 scope，然后是各节）",
     proposalBriefDesc: "改写提案的简介（作者或人）；修订、评论与认可都不动",
