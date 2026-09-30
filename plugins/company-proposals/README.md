@@ -46,6 +46,14 @@ penguin org proposal merged <n>                         # the implementer or a p
 penguin org proposal reject <n> --reason <text>         # any employee, as a person may: the reason and who are recorded
 ```
 
+To run a proposal on a server, from inside a checkout of this repository:
+
+```text
+penguin org proposal deploy <n> --to <port|url> [--dry-run]
+```
+
+It fetches the head of the proposal's impl PR, installs and builds it in a throwaway worktree under `.worktrees/`, runs that generation's own `scripts/deploy.mjs <target>`, and then reads the target's `GET /api/version`: its revision must name the head, or the command fails. The credential is the target's, from the environment (`PENGUIN_ADMIN_PASSWORD` or `PENGUIN_API_TOKEN`, as `deploy.mjs` takes them); the command stores none. The build runs where the command runs, never on the server that holds the proposals.
+
 The document a revision sends:
 
 ```markdown

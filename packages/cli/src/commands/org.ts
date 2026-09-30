@@ -101,6 +101,7 @@ import {
   ServerClient,
 } from "../client.js";
 import { getSessionInfo } from "../server-session.js";
+import { deployProposal, httpReadRevision, spawnRun } from "./proposal-deploy.js";
 import { dim } from "../render.js";
 import { renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
@@ -2278,6 +2279,40 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (graph === null) return;
     if (opts.json === true) printJson(graph);
     else process.stdout.write(renderGraph(graph, t));
+  });
+
+  scoped(
+    proposal
+      .command("deploy <number>")
+      .description(t.org.proposalDeployDesc)
+      .requiredOption("--to <port|url>", t.org.proposalDeployTo)
+      .option("--dry-run", t.org.proposalDeployDryRun),
+    t,
+  ).action(async (raw: string, opts) => {
+    const number = parseProposalNumber(raw, t);
+    if (number === null) return;
+    const scope = await orgScope(opts, t);
+    if (scope === null) return;
+    const detail = await proposalRequest<ProposalDetail>(scope, t, "GET", `/${number}`);
+    if (detail === null) return;
+    const outcome = await deployProposal({
+      proposal: { number, implPrUrl: detail.implPr?.url ?? null },
+      to: String(opts.to),
+      cwd: process.cwd(),
+      dryRun: opts.dryRun === true,
+      env: process.env,
+      run: spawnRun,
+      readRevision: httpReadRevision,
+      node: process.execPath,
+      log: (line) => process.stderr.write(`${line}\n`),
+    });
+    if (!outcome.ok) {
+      fail(t, outcome.reason);
+      return;
+    }
+    if (opts.json === true) printJson(outcome);
+    else if (outcome.dryRun) printLine(t.org.proposalDeployPlanned(number, outcome.head));
+    else printLine(t.org.proposalDeployDone(number, outcome.head, outcome.revision ?? ""));
   });
 
   const material = proposal.command("material").description(t.org.proposalMaterialDesc);

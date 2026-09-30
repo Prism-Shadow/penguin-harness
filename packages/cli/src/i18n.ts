@@ -652,6 +652,11 @@ export interface Messages {
     proposalImplAdopt: string;
     /** `proposal graph`: the delivery repository's PR graph. */
     proposalGraphDesc: string;
+    proposalDeployDesc: string;
+    proposalDeployTo: string;
+    proposalDeployDryRun: string;
+    proposalDeployPlanned: (n: number, head: string) => string;
+    proposalDeployDone: (n: number, head: string, revision: string) => string;
     proposalFeedbackDesc: string;
     /** `proposal conclude <n>`: a discussion's conclusion, to the owner's desk. */
     proposalConcludeDesc: string;
@@ -1903,6 +1908,14 @@ const en: Messages = {
       "Give every proposal without an impl PR its latest pr material on the delivery repository",
     proposalGraphDesc:
       "Show the delivery repository's open PRs as a commit graph, with each PR's proposal and the origins' PRs on the same branch",
+    proposalDeployDesc:
+      "Hot-update a penguin server to the proposal's impl PR head: fetch it, build it in a throwaway worktree, run that generation's scripts/deploy.mjs, then confirm the target runs it (credential: PENGUIN_ADMIN_PASSWORD or PENGUIN_API_TOKEN in the environment — unset a session's own PENGUIN_API_TOKEN first, it belongs to this machine's data root)",
+    proposalDeployTo:
+      "The target server: a port on this machine (an ssh -L tunnel or a local server) or a full origin",
+    proposalDeployDryRun: "Resolve and fetch the head, print the plan, and push nothing",
+    proposalDeployPlanned: (n, head) => `Proposal #${n} would deploy ${head} (dry run, nothing pushed).`,
+    proposalDeployDone: (n, head, revision) =>
+      `Proposal #${n} deployed: the target now runs ${revision} (${head}).`,
     proposalFeedbackDesc:
       "Send the author feedback from the implementation (or, with --runtime, from testing the dev branch)",
     proposalConcludeDesc:
@@ -3135,6 +3148,12 @@ const zh: Messages = {
     proposalImplAdopt: "为每份还没有 impl PR 的提案取它在交付仓库上最新的一条 pr 材料",
     proposalGraphDesc:
       "把交付仓库的 open PR 排成提交关系图，标出每张 PR 的提案和各 origin 在同名分支上的 PR",
+    proposalDeployDesc:
+      "把一台 penguin server 热更新到提案的 impl PR head：取回它、在临时 worktree 里构建、跑那一代自己的 scripts/deploy.mjs，再确认目标确实在跑它（凭据：环境里的 PENGUIN_ADMIN_PASSWORD 或 PENGUIN_API_TOKEN——会话自带的 PENGUIN_API_TOKEN 属于本机数据根，推别的 server 前先 unset）",
+    proposalDeployTo: "目标 server：本机端口（ssh -L 隧道或本机服务）或完整 origin",
+    proposalDeployDryRun: "只解析并取回 head、打印计划，不推送",
+    proposalDeployPlanned: (n, head) => `提案 #${n} 将部署 ${head}（演练，未推送）。`,
+    proposalDeployDone: (n, head, revision) => `提案 #${n} 已部署：目标现在跑的是 ${revision}（${head}）。`,
     proposalFeedbackDesc: "把实施中的发现反馈给作者（加 --runtime 则是测试 dev 分支的发现）",
     proposalConcludeDesc:
       "把一次讨论的结论送到负责人的工位，只送一次（在讨论会话里执行，或由人加 --discussion 指定）",
