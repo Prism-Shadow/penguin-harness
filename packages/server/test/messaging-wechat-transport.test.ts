@@ -14,6 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
 import { MessagingMediaTooLargeError } from "../src/runtime/messaging/media.js";
 import type { WeChatCredentials } from "../src/runtime/messaging/wechat-api.js";
 import {
@@ -599,6 +600,75 @@ describe("outbound sends", () => {
         ).rejects.toThrow(/upload URL was not returned/);
       },
     );
+  });
+});
+
+describe("the verdict a failure carries", () => {
+  // What the error table files a connection failure or a send by: error-kind.ts reads
+  // `recovers` at those two capture points and nothing else. Asserted where the adapter decides
+  // it rather than on a hand-built error, which would only prove the classifier reads a boolean.
+  const failureOf = async (
+    answer: (call: Call) => Response | null,
+    run: () => Promise<unknown>,
+  ): Promise<WeChatApiError> => {
+    let caught: unknown;
+    await withFetch(answer, async () => {
+      caught = await run().then(
+        () => null,
+        (e: unknown) => e,
+      );
+    });
+    expect(caught).toBeInstanceOf(WeChatApiError);
+    return caught as WeChatApiError;
+  };
+  const send = () => client().sendText({ userId: USER, text: "hi" });
+  const probe = () => client().checkCredentials();
+
+  it("recovers from a refusal the platform makes behind an accepted credential", async () => {
+    // The reported row: the platform declined a send it had authenticated. Nothing on this
+    // channel — no permission, no console setting — is anyone's to change, and the next send
+    // goes through.
+    const err = await failureOf(() => jsonResponse({ ret: -2, errmsg: "prepare failed" }), send);
+    expect(err.message).toBe("wechat send failed: prepare failed");
+    expect(err.authenticated).toBe(true);
+    expect(err.recovers).toBe(true);
+    expect(messagingErrorKind(err, "messaging_send_failed")).toBe("expected");
+  });
+
+  it("recovers from the session timeout, though the credential probe still fails on it", async () => {
+    // The other reported row. The platform pauses the session; its own client waits and
+    // resumes, never asking for a new scan — so the probe fails while it lasts, and the
+    // outage it opens is routine.
+    const err = await failureOf(
+      () => jsonResponse({ ret: WECHAT_STALE_TOKEN_CODE, errmsg: "session timeout" }),
+      probe,
+    );
+    expect(err.message).toBe("wechat credential check failed: session timeout");
+    expect(err.authenticated).toBe(false);
+    expect(err.recovers).toBe(true);
+    expect(messagingErrorKind(err, "messaging_connect_failed")).toBe("expected");
+  });
+
+  it("recovers from a request that never arrived, and from a 408, a 429 or a 5xx", async () => {
+    const unreachable = await failureOf(() => {
+      throw new TypeError("fetch failed");
+    }, send);
+    expect(unreachable.recovers).toBe(true);
+    for (const status of [408, 429, 500, 502, 503]) {
+      const err = await failureOf(() => new Response("busy", { status }), send);
+      expect(err.recovers).toBe(true);
+    }
+  });
+
+  it("does not recover from a refused credential, a wrong host or an unreadable answer", async () => {
+    for (const status of [401, 403, 404]) {
+      const err = await failureOf(() => new Response("invalid bot token", { status }), probe);
+      expect(err.recovers).toBe(false);
+      expect(messagingErrorKind(err, "messaging_connect_failed")).toBe("unexpected");
+    }
+    const garbled = await failureOf(() => new Response("<html>proxy</html>"), send);
+    expect(garbled.recovers).toBe(false);
+    expect(messagingErrorKind(garbled, "messaging_send_failed")).toBe("unexpected");
   });
 });
 

@@ -45,6 +45,8 @@ export const ICONS = {
    */
   robotPair:
     "M7.3 4.2V2.2M3.8 4.2h7a2.2 2.2 0 0 1 2.2 2.2v5.8a2.2 2.2 0 0 1-2.2 2.2h-7a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2zM4.6 9.2h.01M10 9.2h.01M18.6 14.8v-1.7M16.5 14.8h4.2a1.7 1.7 0 0 1 1.7 1.7v3.8a1.7 1.7 0 0 1-1.7 1.7h-4.2a1.7 1.7 0 0 1-1.7-1.7v-3.8a1.7 1.7 0 0 1 1.7-1.7zM17.3 18.4h.01M20.5 18.4h.01",
+  /** A person: head and shoulders (lucide user). The person at the keyboard, beside the agent. */
+  user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
   /**
    * The cerebrum from the side: the lobed outline, then the gyri inside it. The drawing was
    * authored with the whole figure shifted a little down the box; the shift is baked into the
@@ -132,6 +134,11 @@ export const ICONS = {
    * it sits level with the other marks of a stats row.
    */
   clockCompact: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2",
+  /**
+   * A clock read backwards (lucide history): the face opens into an arrow turning back. Going
+   * back to where the reader was, which a bare clock face — "ordered by time" — does not say.
+   */
+  history: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5M12 7v5l4 2",
   /** A calendar (lucide calendar): two rings, the header rule and the page. */
   calendar:
     "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
@@ -231,6 +238,19 @@ export const ICONS = {
   plus: "M12 5v14M5 12h14",
   /** A magnifier: a lens and its handle. The search box's leading mark and the toggle that opens one. */
   search: "M21 21l-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z",
+  /**
+   * An arrow that turns back on itself: the head at the left, the shaft looping round beneath it.
+   * Bring it back — the undo reading, not the bin's: what it takes back is returned, not thrown
+   * away.
+   */
+  undo: "M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11",
+  /** A picture: the rounded frame, and a mountain line across its lower half. */
+  image:
+    "M6 5h12a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3zM3 15l5-5 4 4 3-3 6 6",
+  /** Three sliders set at different heights (feather sliders): how something behaves, adjustable. */
+  sliders: "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6",
+  /** A four-pointed spark: effort and thought, the dial a model thinks harder on. */
+  sparkle: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z",
 
   // --- Direction ----------------------------------------------------------------------------
 
@@ -247,6 +267,13 @@ export const ICONS = {
   /** The same chevron pointing right: the next page. */
   chevronRight: "M9 18l6-6-6-6",
   /**
+   * A chevron pointing left at an upright bar on the left edge: fold a column away against that
+   * edge — the sidebar collapsing to its rail.
+   */
+  chevronLeftPipe: "M15 6l-6 6 6 6M4 4v16",
+  /** The mirror: a chevron pointing right at a bar on the right edge, unfolding the column. */
+  chevronRightPipe: "M9 6l6 6-6 6M20 4v16",
+  /**
    * An arrow pointing left, centred in the box: head and shaft span the same width, where
    * `arrowLeft`'s head sits left of centre. With its mirror, a pair that steps back and forward
    * along one line.
@@ -261,6 +288,11 @@ export const ICONS = {
   panelBottom: "M4 5h16v14H4zM4 14h16",
   /** A window with a right pane. */
   panelRight: "M4 5h16v14H4zM14 5v14",
+  /**
+   * A pane with an arrow escaping its top-right corner: this moves out into a window of its own.
+   * A different drawing from `externalLink`, whose arrow leaves from the pane's edge.
+   */
+  boxArrowOut: "M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5",
   /** Four square tiles of two heights. */
   tiles: "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z",
   /** Four rounded tiles of two heights (lucide layout-dashboard). */
@@ -281,6 +313,10 @@ export const ICONS = {
     "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM8 7v7M12 7v4M16 7v9",
   /** Bars of three heights on a baseline. */
   barChart: "M4 20V10m6 10V4m6 16v-7m4 7H2",
+  /** Three full-width lines (lucide menu): the phone's button that opens the navigation drawer. */
+  menu: "M4 6h16M4 12h16M4 18h16",
+  /** Three sliders on their tracks (lucide sliders-horizontal): a list's display options. */
+  slidersHorizontal: "M21 5h-7M10 5H3M21 12h-9M8 12H3M21 19h-5M12 19H3M14 2v6M8 9v6M16 16v6",
 
   // --- Status -------------------------------------------------------------------------------
 

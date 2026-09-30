@@ -1,11 +1,10 @@
 /**
- * File summary card for a supplied assistant-text scope (visual reference: Codex's "files
- * changed" card): the root conversation passes a completed Task's aggregated assistant text,
- * while nested conversations — which don't produce task_stats — pass one settled assistant
- * message to preserve their existing behavior. Extracts inline-code paths heuristically via
- * isFilePathLike, normalizes them to Workspace-relative paths, confirms they actually exist via
- * files/stat, and renders a light-background "N files" card whose rows open the Files panel.
- * Collapses when there are more than 3 rows.
+ * File summary card for a supplied assistant-text scope: the root conversation passes a
+ * completed Task's aggregated assistant text, while nested conversations — which don't produce
+ * task_stats — pass one settled assistant message to preserve their existing behavior. Extracts
+ * inline-code paths heuristically via isFilePathLike, normalizes them to Workspace-relative
+ * paths, confirms they actually exist via files/stat, and renders them as the UI package's
+ * ChangesCard — an "N files" card whose rows open the Files panel, folded past 3 rows.
  *
  * The card waits for stat results and doesn't render when no candidate exists. It intentionally
  * does not claim these files were changed: opaque exec_command shells provide no reliable
@@ -13,11 +12,9 @@
  * currently openable.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Chevron, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { ChangesCard, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { isFilePathLike, toWorkspaceRelative } from "../../lib/file-path";
-
-const MAX_VISIBLE = 3;
 
 /** Extracts file paths from inline code in raw Markdown (deduplicated, preserving order of appearance). */
 export function extractFilePaths(markdown: string): string[] {
@@ -30,28 +27,6 @@ export function extractFilePaths(markdown: string): string[] {
     out.push(text);
   }
   return out;
-}
-
-/** Path split into segments: directory prefix faded, filename bold (Codex-style). The directory
- *  segment has shrink-[9999] and collapses first, the filename segment truncates only after —
- *  both segments are truncatable, so the row never overflows its container on a narrow panel.
- *  Shared with the memory-changes card, which renders the same row family. */
-export function PathLabel({ path }: { path: string }) {
-  const slash = path.lastIndexOf("/");
-  const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
-  const name = slash >= 0 ? path.slice(slash + 1) : path;
-  return (
-    <span className="flex min-w-0 items-baseline font-mono text-sm">
-      {dir && (
-        <span className="min-w-0 shrink-[9999] truncate text-gray-400 dark:text-gray-500">
-          {dir}
-        </span>
-      )}
-      <span className="min-w-0 truncate font-semibold text-gray-800 dark:text-gray-100">
-        {name}
-      </span>
-    </span>
-  );
 }
 
 export function MessageFilesCard({
@@ -99,59 +74,24 @@ export function MessageFilesCard({
     };
   }, [candidates, statFiles]);
 
-  const [expanded, setExpanded] = useState(false);
   if (paths === null || paths.length === 0) return null;
 
-  const visible = expanded ? paths : paths.slice(0, MAX_VISIBLE);
-  const hidden = paths.length - visible.length;
-
+  // Each row shows its full path as its tooltip (the row itself may truncate it), and says in
+  // words that a click previews it — no card-level action: every row already has its own.
   return (
-    <div className="anim-msg my-3 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-      {/* Header bar: a single line of "icon + N files", light background to distinguish it from
-          the rows (Codex-style). No card-level action entry point — each row already has its own
-          "Preview", adding one to the header would just duplicate the row action. */}
-      <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-800/60 dark:bg-gray-800/40">
-        <GlyphIcon d={ICONS.file} size={ICON_SIZE.rowLead} className="text-gray-400" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {S.chat.filesInMessage(paths.length)}
-        </span>
-      </div>
-      {/* File row list: thin dividers within the card, clicking a row opens it in the Files panel preview. */}
-      <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
-        {visible.map((path) => (
-          <button
-            key={path}
-            type="button"
-            data-tooltip={path}
-            onClick={() => onOpenFile(path)}
-            className="group flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-          >
-            <GlyphIcon d={ICONS.file} size={ICON_SIZE.rowLead} className="text-gray-400" />
-            <PathLabel path={path} />
-            <span className="min-w-0 flex-1" />
-            {/* Right-aligned "click to preview" text: makes the row action explicit (a trailing
-                chevron would read as expand/collapse instead). The whole row is already a
-                <button> (buttons can't nest), so this uses a span, and the click still targets
-                the whole row. */}
-            <span
-              aria-hidden
-              className="shrink-0 text-xs text-gray-400 transition-colors duration-150 group-hover:text-gray-600 dark:text-gray-500 dark:group-hover:text-gray-300"
-            >
-              {S.chat.openPreview}
-            </span>
-          </button>
-        ))}
-        {(hidden > 0 || expanded) && paths.length > MAX_VISIBLE && (
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800/50"
-          >
-            {expanded ? S.chat.showLess : S.chat.showMoreFiles(hidden)}
-            <Chevron open={expanded} size={ICON_SIZE.chevronDense} />
-          </button>
-        )}
-      </div>
-    </div>
+    <ChangesCard
+      glyph={ICONS.file}
+      title={S.chat.filesInMessage(paths.length)}
+      rows={paths.map((path) => ({
+        id: path,
+        path,
+        glyph: ICONS.file,
+        tooltip: path,
+        onOpen: () => onOpenFile(path),
+      }))}
+      openHint={S.chat.openPreview}
+      showMore={S.chat.showMoreFiles}
+      showLess={S.chat.showLess}
+    />
   );
 }

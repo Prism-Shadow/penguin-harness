@@ -1,5 +1,7 @@
 /**
- * Context usage gauge in the composer toolbar, and the composition panel behind it.
+ * Context usage gauge in the composer toolbar, and the composition panel behind it. The ring is
+ * the UI package's `ContextRing`; this module decides what it fills against, names it, and opens
+ * the panel from it.
  *
  * The resting state is the ring alone: a **single-colour** indicator of total occupancy (no
  * bucketing), turning amber past 80% and red past 95%. The exact `used/basis` figures are not
@@ -68,7 +70,14 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
-import { ConfirmModal, Input, usePortalPanel } from "@prismshadow/penguin-ui";
+import {
+  ConfirmModal,
+  ContextRing,
+  Input,
+  Legend,
+  usePointerDrag,
+  usePortalPanel,
+} from "@prismshadow/penguin-ui";
 import { getSessionContext } from "../../api/endpoints";
 import {
   MIN_COMPACTION_THRESHOLD,
@@ -82,8 +91,6 @@ import {
 } from "../../lib/context";
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { usePointerDrag } from "../dock/use-pointer-drag";
 import { contextComposition } from "./context-parts";
 import type { ContextPartKey } from "./context-parts";
 
@@ -215,70 +222,26 @@ export function ContextGauge({
     }
   };
 
-  const color =
-    unknown || pct <= 0.8
-      ? "text-gray-400 dark:text-gray-500"
-      : pct > 0.95
-        ? toneInk.danger
-        : toneInk.attention;
   // The ring draws no numbers, so its accessible name carries them: the ratio AND the figures it
   // was computed from, which is all the subagent composer's panel-less ring can offer.
   const usageText = unknown
     ? S.chat.contextUnknown
     : `${S.chat.contextUsage} ${Math.round(pct * 100)}% · ${humanizeTokens(now)}/${humanizeTokens(basis)}`;
-  const R = 5;
-  const C = 2 * Math.PI * R;
-  const gauge = (
-    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="block shrink-0">
-      <circle
-        cx="7"
-        cy="7"
-        r={R}
-        fill="none"
-        stroke="currentColor"
-        strokeOpacity="0.25"
-        strokeWidth="2"
-      />
-      <circle
-        cx="7"
-        cy="7"
-        r={R}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeDasharray={`${C * pct} ${C}`}
-        transform="rotate(-90 7 7)"
-      />
-    </svg>
-  );
-  // Same box as every other icon control on this toolbar (h-8 w-8, matching the model selector
-  // and the send button): a 14px ring in a 23px hit area sat visibly short of its neighbours.
-  const shell = `flex h-8 w-8 shrink-0 items-center justify-center ${color}`;
 
   if (sessionId === undefined) {
-    return (
-      <span data-tooltip={usageText} aria-label={usageText} role="img" className={shell}>
-        {gauge}
-      </span>
-    );
+    return <ContextRing ratio={pct} unknown={unknown} label={usageText} />;
   }
   return (
     <>
-      {/* Hover paints only a background, not the ink its neighbours also change: the ring's colour
-          is the warning ladder, and a hover tone would overwrite the very thing it reports. */}
-      <button
+      <ContextRing
         ref={triggerRef}
-        type="button"
-        data-tooltip={usageText}
-        aria-label={usageText}
-        aria-expanded={open}
-        aria-controls={panelId}
+        ratio={pct}
+        unknown={unknown}
+        label={usageText}
+        expanded={open}
+        controls={panelId}
         onClick={() => (open ? closePanel() : setOpen(true))}
-        className={`${shell} rounded-md transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
-      >
-        {gauge}
-      </button>
+      />
       {open &&
         position &&
         createPortal(
@@ -296,7 +259,7 @@ export function ContextGauge({
               maxWidth: PANEL_MAX_WIDTH,
               maxHeight: PANEL_MAX_HEIGHT,
             }}
-            className="anim-pop z-[60] overflow-y-auto rounded-md border border-gray-200 bg-white p-2.5 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            className="anim-pop z-[60] overflow-y-auto rounded-md border border-gray-200 bg-white p-3 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900"
           >
             <ContextPanel
               sessionId={sessionId}
@@ -521,21 +484,23 @@ function ContextPanel({
             {S.chat.contextWindowIs(humanizeTokens(windowTokens))}
           </p>
 
-          <ul className="mt-1.5 space-y-0.5">
-            {composition.parts.map((p) => (
-              <ShareRow
-                key={p.key}
-                label={PART_LABELS[p.key]()}
-                swatch={p.color}
-                tokens={p.tokens}
-                percent={p.percent}
-                highlighted={lit === p.key}
-                pinned={pinned === p.key}
-                onHover={(on) => setHovered(on ? p.key : null)}
-                onSelect={() => togglePinned(p.key)}
-              />
-            ))}
-          </ul>
+          {/* The bar's segments sit inside its aria-hidden track and stay mouse-only, so this
+              legend is the only surface pinning can be reached from at all: each row is a
+              toggle button carrying the pin's state. */}
+          <Legend
+            layout="list"
+            className="mt-1.5"
+            items={composition.parts.map((p) => ({
+              key: p.key,
+              label: PART_LABELS[p.key](),
+              paint: { ink: "", swatch: p.color },
+              value: <ShareFigures tokens={p.tokens} percent={p.percent} />,
+            }))}
+            active={lit}
+            pinned={pinned}
+            onHover={setHovered}
+            onSelect={togglePinned}
+          />
 
           {composition.tools.length > 0 && (
             <>
@@ -556,7 +521,7 @@ function ContextPanel({
                 <div
                   role="group"
                   aria-label={S.chat.contextRankLabel}
-                  className="flex shrink-0 items-center gap-0.5"
+                  className="flex shrink-0 items-center gap-1"
                 >
                   {RANKING_VIEWS.map(({ view, label }) => (
                     <button
@@ -575,41 +540,41 @@ function ContextPanel({
                   ))}
                 </div>
               </div>
+              {/* The rankings share the parts' rows, without a swatch (they have no segment)
+                  and without a pin: hovering one only lights its own row. */}
               {ranking === "tools" ? (
-                <ul className="mt-1 space-y-0.5">
-                  {composition.tools.map((t) => (
-                    <ShareRow
-                      key={t.name}
-                      label={t.name}
-                      mono
-                      tokens={t.tokens}
-                      percent={t.percent}
-                      highlighted={hovered === `tool:${t.name}`}
-                      onHover={(on) => setHovered(on ? `tool:${t.name}` : null)}
-                    />
-                  ))}
-                </ul>
+                <Legend
+                  layout="list"
+                  mono
+                  className="mt-1"
+                  items={composition.tools.map((t) => ({
+                    key: `tool:${t.name}`,
+                    label: t.name,
+                    value: <ShareFigures tokens={t.tokens} percent={t.percent} />,
+                  }))}
+                  active={hovered}
+                  onHover={setHovered}
+                />
               ) : composition.files.length === 0 ? (
                 <p className="mt-1 text-gray-400 dark:text-gray-500">
                   {S.chat.contextNoFileTraffic}
                 </p>
               ) : (
-                <ul className="mt-1 space-y-0.5">
-                  {composition.files.map((f) => (
-                    <ShareRow
-                      key={f.path}
-                      label={f.name}
-                      // Two files can share a name; the path settles which is which on hover
-                      // rather than trailing after every row.
-                      title={f.path}
-                      mono
-                      tokens={f.tokens}
-                      percent={f.percent}
-                      highlighted={hovered === `file:${f.path}`}
-                      onHover={(on) => setHovered(on ? `file:${f.path}` : null)}
-                    />
-                  ))}
-                </ul>
+                <Legend
+                  layout="list"
+                  mono
+                  className="mt-1"
+                  items={composition.files.map((f) => ({
+                    key: `file:${f.path}`,
+                    label: f.name,
+                    // Two files can share a name; the path settles which is which on hover
+                    // rather than trailing after every row.
+                    title: f.path,
+                    value: <ShareFigures tokens={f.tokens} percent={f.percent} />,
+                  }))}
+                  active={hovered}
+                  onHover={setHovered}
+                />
               )}
             </>
           )}
@@ -851,53 +816,14 @@ const PART_LABELS: Record<ContextPartKey, () => string> = {
   toolResults: () => S.chat.contextPartToolResults,
 };
 
-/** One `swatch · label · ~tokens · percent` line, shared by the six parts and both rankings. */
-function ShareRow({
-  label,
-  title,
-  swatch,
-  tokens,
-  percent,
-  mono = false,
-  highlighted = false,
-  pinned = false,
-  onHover,
-  onSelect,
-}: {
-  label: string;
-  /** Tooltip of the label, when it should say more than the label does; the label is its own otherwise. */
-  title?: string;
-  /** Legend colour of the matching bar segment; absent for the rankings, which have no segment. */
-  swatch?: string;
-  tokens: number;
-  /** Already a whole percent (apportioned for the parts, rounded for the rankings) — not re-rounded here. */
-  percent: number;
-  mono?: boolean;
-  highlighted?: boolean;
-  /** Pinned rather than merely hovered — the carrier hover never draws, so `aria-pressed` has something to agree with. */
-  pinned?: boolean;
-  onHover?: (on: boolean) => void;
-  /** A click pins the row's highlight (the six parts); the rankings pass none and stay hover-only. */
-  onSelect?: () => void;
-}) {
-  // The row's own box: padding, rounding and both highlight carriers. It sits on the <li> for a
-  // hover-only row and on the <button> for a selectable one, so the two measure identically and
-  // the button's hit area is the whole padded row rather than the text inside it.
-  const boxClass = `flex items-center gap-1.5 rounded px-1 py-px transition-colors duration-150 ${
-    highlighted ? "bg-gray-100 dark:bg-gray-800" : ""
-  } ${pinned ? "inset-ring-1 inset-ring-gray-400 dark:inset-ring-gray-600" : ""}`;
-  const cells = (
+/**
+ * A share's figures after its label in the legend rows (the six parts and both rankings): the
+ * estimate, and the whole percent — apportioned for the parts, rounded for the rankings, and not
+ * re-rounded here.
+ */
+function ShareFigures({ tokens, percent }: { tokens: number; percent: number }) {
+  return (
     <>
-      {swatch !== undefined && (
-        <span aria-hidden className={`h-2 w-2 shrink-0 rounded-[2px] ${swatch}`} />
-      )}
-      <span
-        data-tooltip={title ?? label}
-        data-tooltip-content="code"
-        className={`min-w-0 flex-1 truncate text-gray-600 dark:text-gray-300 ${mono ? "font-mono" : ""}`}
-      >
-        {label}
-      </span>
       <span className="shrink-0 font-mono font-medium text-gray-900 dark:text-gray-100">
         ~{humanizeTokens(tokens)}
       </span>
@@ -905,28 +831,5 @@ function ShareRow({
         {percent}%
       </span>
     </>
-  );
-  // The bar's segments sit inside its aria-hidden track and stay mouse-only, so the legend is the
-  // only surface pinning can be reached from at all: a selectable row is a real button carrying
-  // the toggle's state, and the <li> then keeps nothing but the negative margin.
-  return (
-    <li
-      onMouseEnter={() => onHover?.(true)}
-      onMouseLeave={() => onHover?.(false)}
-      className={onSelect === undefined ? `-mx-1 ${boxClass}` : "-mx-1"}
-    >
-      {onSelect === undefined ? (
-        cells
-      ) : (
-        <button
-          type="button"
-          aria-pressed={pinned}
-          onClick={onSelect}
-          className={`w-full cursor-pointer text-left outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60 ${boxClass}`}
-        >
-          {cells}
-        </button>
-      )}
-    </li>
   );
 }

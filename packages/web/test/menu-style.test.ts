@@ -38,10 +38,8 @@ describe("menus and pickers", () => {
   });
 
   it("draw their rows with the Menu family, never a hand-built menu row", () => {
-    // The Session row's menu keeps its own rows until the sidebar's rows move into the package.
-    const pending = ["packages/web/src/components/ui/session-row-menu.tsx"];
     const handBuilt = SCAN.files
-      .filter((file) => file.root === "web" && !pending.includes(file.id))
+      .filter((file) => file.root === "web")
       .filter((file) => /\bmenuRow(?:Class|Tone)\b/.test(file.text))
       .map((file) => file.id);
     expect(handBuilt).toEqual([]);

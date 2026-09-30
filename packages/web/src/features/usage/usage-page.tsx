@@ -28,7 +28,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
-import { Input, Select, Skeleton } from "@prismshadow/penguin-ui";
+import {
+  Input,
+  PageFrame,
+  PageHeader,
+  Select,
+  Skeleton,
+  TodoNotice,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -36,7 +43,6 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { TodoNotice } from "../../components/ui/todo-notice";
 import { formatMoney, humanizeTokens } from "../../lib/format";
 import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
 import { useProject } from "../../state/project";
@@ -95,7 +101,7 @@ function SummaryCard({
   return (
     <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
       <p className="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">{title}</p>
-      <div className="space-y-0.5">
+      <div className="space-y-1">
         <SummaryRow label={S.usage.tokens} value={humanizeTokens(bucket.total)} />
         <SummaryRow label={S.usage.requests} value={String(bucket.requests)} muted />
         {/* The unpriced-records asterisk sits on the word "cost" (superscript), keeping the number clean and readable; see the footer for the explanation */}
@@ -276,12 +282,13 @@ export function UsagePage() {
     ...compactCounts(s, plotted.kept),
   }));
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-5xl space-y-4">
-        {/* Top filters: controls have no external title (the explanation is written into the "all …" option), so they're baseline-centered with the page title */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="ui-display text-xl font-semibold">{S.usage.title}</h1>
-          <div className="flex flex-wrap items-center gap-2">
+    <PageFrame contentClassName="space-y-4">
+      {/* The filters are the header's actions: they carry no external title (the explanation is
+          written into the "all …" option), so they sit centred on the title row. */}
+      <PageHeader
+        title={S.usage.title}
+        actions={
+          <>
             <div className="w-32">
               <Select
                 size="sm"
@@ -364,110 +371,110 @@ export function UsagePage() {
                 />
               </div>
             )}
-          </div>
+          </>
+        }
+      />
+
+      {/* Last stop on the Cost Center trail, in the one shape all four dismissible trails
+          use: directly under the title, not down against the errors table. It counts the
+          probe's own trailing window (use-project-todos.ts), which is not the filters above
+          it, so it states what the badge is about rather than what any one panel is showing.
+          "Read", not "done" — nothing is being updated here, the user has simply looked, and
+          this is the one of the four that offers no bulk action: a past error cannot be
+          updated, so the block renders the dismiss control alone. */}
+      {todo && (
+        <TodoNotice
+          text={S.todo.unexpectedErrors(todo.count)}
+          dismissLabel={S.todo.markRead}
+          onDismiss={() => dismissTodo(projectId, "errors", todo.signature)}
+        />
+      )}
+
+      {/* Summary cards (today / last 7 days / cumulative) */}
+      {data ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <SummaryCard title={S.usage.today} bucket={data.summary.today} currency={currency} />
+          <SummaryCard title={S.usage.last7d} bucket={data.summary.last7d} currency={currency} />
+          <SummaryCard title={S.usage.total} bucket={data.summary.total} currency={currency} />
         </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+      )}
 
-        {/* Last stop on the Cost Center trail, in the one shape all four dismissible trails
-            use: directly under the title, not down against the errors table. It counts the
-            probe's own trailing window (use-project-todos.ts), which is not the filters above
-            it, so it states what the badge is about rather than what any one panel is showing.
-            "Read", not "done" — nothing is being updated here, the user has simply looked, and
-            this is the one of the four that offers no bulk action: a past error cannot be
-            updated, so the block renders the dismiss control alone. */}
-        {todo && (
-          <TodoNotice
-            text={S.todo.unexpectedErrors(todo.count)}
-            dismissLabel={S.todo.markRead}
-            onDismiss={() => dismissTodo(projectId, "errors", todo.signature)}
-          />
-        )}
-
-        {/* Summary cards (today / last 7 days / cumulative) */}
-        {data ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <SummaryCard title={S.usage.today} bucket={data.summary.today} currency={currency} />
-            <SummaryCard title={S.usage.last7d} bucket={data.summary.last7d} currency={currency} />
-            <SummaryCard title={S.usage.total} bucket={data.summary.total} currency={currency} />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Skeleton className="h-24" />
-            <Skeleton className="h-24" />
-            <Skeleton className="h-24" />
-          </div>
-        )}
-
-        {/* Time-series charts, all over the shared range + precision: requests +
-            success rate by Agent and by Model on the first row, Token buckets +
-            cache hit rate and cost on the second. Charts always fit their card — nothing scrolls. */}
-        {data ? (
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <ChartCard title={S.usage.chartRequestsByAgent}>
-              <RequestsChart
-                series={plotted.points}
-                entities={agentEntities}
-                granularity={data.granularity}
-                breaks={plotted.breaks}
-              />
-            </ChartCard>
-            <ChartCard title={S.usage.chartRequestsByModel}>
-              <RequestsChart
-                series={plotted.points}
-                entities={modelEntities}
-                granularity={data.granularity}
-                breaks={plotted.breaks}
-              />
-            </ChartCard>
-            {/* The Token legend lives in its card header while its marks live inside the card, so that state is lifted to this level */}
-            <ChartCard
-              title={S.usage.chartTokenTrend}
-              extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
-            >
-              <TokenBarChart
-                series={plotted.points}
-                granularity={data.granularity}
-                legend={tokenBucket}
-                breaks={plotted.breaks}
-              />
-            </ChartCard>
-            <ChartCard title={S.usage.chartCostTrend}>
-              <TrendChart
-                series={plotted.points}
-                granularity={data.granularity}
-                currency={currency}
-                breaks={plotted.breaks}
-              />
-            </ChartCard>
-          </div>
-        ) : (
-          <Skeleton className="h-64" />
-        )}
-
-        {/* Errors (a single full-width panel: stats + a recent-errors table) */}
-        {data && (
-          <ChartCard title={S.usage.errors}>
-            <ErrorsPanel
-              errors={data.errors}
-              projectId={projectId}
-              filters={errorFilters}
-              preset={loaded.preset === "custom" ? undefined : loaded.preset}
-              // Clearing the log is a Project-level management operation, gated on the owner
-              // by the route; a member reads the panel without the action.
-              canClear={currentProject?.role === "owner"}
-              // The badge and the notice above are gated on a probe cached per Project for the
-              // browser session, not on this response — without the re-probe an emptied table
-              // would sit under a dot still pointing at the rows that just went.
-              onCleared={() => {
-                refreshProjectTodos(projectId);
-                void load();
-              }}
+      {/* Time-series charts, all over the shared range + precision: requests +
+          success rate by Agent and by Model on the first row, Token buckets +
+          cache hit rate and cost on the second. Charts always fit their card — nothing scrolls. */}
+      {data ? (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <ChartCard title={S.usage.chartRequestsByAgent}>
+            <RequestsChart
+              series={plotted.points}
+              entities={agentEntities}
+              granularity={data.granularity}
+              breaks={plotted.breaks}
             />
           </ChartCard>
-        )}
+          <ChartCard title={S.usage.chartRequestsByModel}>
+            <RequestsChart
+              series={plotted.points}
+              entities={modelEntities}
+              granularity={data.granularity}
+              breaks={plotted.breaks}
+            />
+          </ChartCard>
+          {/* The Token legend lives in its card header while its marks live inside the card, so that state is lifted to this level */}
+          <ChartCard
+            title={S.usage.chartTokenTrend}
+            extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
+          >
+            <TokenBarChart
+              series={plotted.points}
+              granularity={data.granularity}
+              legend={tokenBucket}
+              breaks={plotted.breaks}
+            />
+          </ChartCard>
+          <ChartCard title={S.usage.chartCostTrend}>
+            <TrendChart
+              series={plotted.points}
+              granularity={data.granularity}
+              currency={currency}
+              breaks={plotted.breaks}
+            />
+          </ChartCard>
+        </div>
+      ) : (
+        <Skeleton className="h-64" />
+      )}
 
-        {hasUncostedRows && <p className="text-xs text-gray-400">{S.usage.uncostedNote}</p>}
-        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-      </div>
-    </div>
+      {/* Errors (a single full-width panel: stats + a recent-errors table) */}
+      {data && (
+        <ChartCard title={S.usage.errors}>
+          <ErrorsPanel
+            errors={data.errors}
+            projectId={projectId}
+            filters={errorFilters}
+            preset={loaded.preset === "custom" ? undefined : loaded.preset}
+            // Clearing the log is a Project-level management operation, gated on the owner
+            // by the route; a member reads the panel without the action.
+            canClear={currentProject?.role === "owner"}
+            // The badge and the notice above are gated on a probe cached per Project for the
+            // browser session, not on this response — without the re-probe an emptied table
+            // would sit under a dot still pointing at the rows that just went.
+            onCleared={() => {
+              refreshProjectTodos(projectId);
+              void load();
+            }}
+          />
+        </ChartCard>
+      )}
+
+      {hasUncostedRows && <p className="text-xs text-gray-400">{S.usage.uncostedNote}</p>}
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </PageFrame>
   );
 }

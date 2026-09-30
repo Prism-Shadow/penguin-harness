@@ -1323,6 +1323,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
   const usageErrors: UsageErrorItem[] = [
     {
       ts: iso(ago(0, 95)),
+      firstTs: iso(ago(0, 180)),
+      count: 4,
       source: "llm",
       code: "rate_limited",
       kind: "expected",
@@ -1330,6 +1332,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     },
     {
       ts: iso(ago(2, 40)),
+      firstTs: iso(ago(2, 40)),
+      count: 1,
       source: "http",
       code: "file_too_large",
       kind: "expected",
@@ -1337,6 +1341,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     },
     {
       ts: iso(ago(5, 12)),
+      firstTs: iso(ago(5, 12)),
+      count: 1,
       source: "runtime",
       code: "internal",
       kind: "unexpected",

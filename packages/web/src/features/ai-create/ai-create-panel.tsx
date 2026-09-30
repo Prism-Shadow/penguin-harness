@@ -170,7 +170,7 @@ export function AiCreatePanel({
                     {ex.label}
                   </div>
                   {ex.description !== undefined && (
-                    <div className="truncate text-[11px] text-gray-500 dark:text-gray-400">
+                    <div className="truncate text-xs text-gray-500 dark:text-gray-400">
                       {ex.description}
                     </div>
                   )}

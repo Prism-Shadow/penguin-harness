@@ -70,6 +70,7 @@
   --color-canvas: var(--ui-canvas);
   --color-surface: var(--ui-surface);
   --color-surface-muted: var(--ui-surface-muted);
+  --color-fill-neutral: var(--ui-fill-neutral);
   --color-surface-inset: var(--ui-inset);
   --color-overlay: var(--ui-overlay);
 

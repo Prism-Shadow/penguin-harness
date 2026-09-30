@@ -7,6 +7,7 @@
  * hold between them (seriesPoints, stroked by chart-geom's segmentPath).
  */
 import { describe, expect, it } from "vitest";
+import { makeRangeGeom, segmentPath } from "@prismshadow/penguin-ui";
 import {
   defaultTargetScore,
   evaluationLabel,
@@ -20,7 +21,6 @@ import {
   sparklineSeries,
 } from "../src/features/benchmark/benchmark-metrics";
 import type { EvaluationLabelLike } from "../src/features/benchmark/benchmark-metrics";
-import { makeRangeGeom, segmentPath } from "../src/features/usage/chart-geom";
 
 const evaluations = [{ score: 60 }, { score: 75.25 }, { score: 85.5 }];
 

@@ -1,9 +1,10 @@
 /**
- * A reference staged in the composer, drawn as a chip: what it points at — a Workspace file, a
- * directory, a quoted range of a file, or an excerpt of the conversation — never the text the
- * message will carry. The composer draws one per staged reference, above its text body.
+ * A reference staged in the composer, drawn as the UI package's `Chip`: what it points at — a
+ * Workspace file, a directory, a quoted range of a file, or an excerpt of the conversation —
+ * never the text the message will carry. The composer draws one per staged reference, above its
+ * text body.
  */
-import { GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
+import { Chip, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { excerptLabel } from "../../lib/selection-menu";
 import { lineSuffix } from "../../lib/workspace-tree";
@@ -56,31 +57,25 @@ export function ReferenceChip({
 }) {
   const { name, lines } = referenceParts(reference);
   const title = referenceTitle(reference);
+  // The name gives way, the line numbers do not: they are four characters, and they are the half
+  // the truncated name cannot tell you. The tooltip carries the whole path and the range together.
   return (
-    <span
-      data-tooltip={title}
-      className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-    >
-      <GlyphIcon
-        d={REFERENCE_ICON[reference.kind]}
-        size={13}
-        className="shrink-0 text-gray-500 dark:text-gray-400"
-      />
-      {/* The name gives way, the line numbers do not: they are four characters, and they are
-          the half the truncated name cannot tell you. The tooltip carries the whole path and
-          the range together. */}
-      <span className="min-w-0 truncate">{name}</span>
-      {lines !== "" && <span className="shrink-0">{lines}</span>}
-      <button
-        type="button"
-        // An excerpt is named by its label here: its tooltip is the whole passage, which is
-        // far too long to announce as the name of a remove button.
-        aria-label={`${S.files.removeReference} ${reference.kind === "excerpt" ? name : title}`}
-        onClick={onRemove}
-        className="shrink-0 rounded p-px text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
-      >
-        ×
-      </button>
-    </span>
+    <Chip
+      label={name}
+      suffix={lines}
+      glyph={
+        <GlyphIcon
+          d={REFERENCE_ICON[reference.kind]}
+          size={13}
+          className="shrink-0 text-fg-muted"
+        />
+      }
+      tooltip={title}
+      mono
+      // An excerpt is named by its label here: its tooltip is the whole passage, which is far too
+      // long to announce as the name of a remove button.
+      removeLabel={`${S.files.removeReference} ${reference.kind === "excerpt" ? name : title}`}
+      onRemove={onRemove}
+    />
   );
 }
