@@ -398,7 +398,7 @@ tools:
 
 `tools.mcpServers` 的每一项都是 `{ name, config }`。`name` 会成为工具名的前缀：必须以字母或数字开头，且只能包含字母、数字、`_` 和 `-`；名称重复的条目直接跳过。`config` 描述传输方式，支持三种：
 
-- `stdio`：本地进程（`command` / `args` / `env` / `cwd`）。进程环境变量由 SDK 的安全继承默认值和条目的 `env` 合并而成，`env` 优先。与命令子进程不同，MCP Server 进程**不会**拿到 Agent 的 Vault：Server 需要的任何变量都要列在条目的 `env` 里。`cwd` 默认为当前 Session 的 Workspace。
+- `stdio`：本地进程（`command` / `args` / `env` / `cwd`）。进程环境变量由 SDK 的安全继承默认值和条目的 `env` 合并而成，`env` 优先。与命令子进程不同，MCP Server 进程**不会**拿到 Agent 的 Vault：Server 需要的任何变量都要列在条目的 `env` 里。`cwd` 默认为当前 Session 的 Workspace。该进程与命令一样在 Session 的[沙盒](/settings#沙盒)下启动：同一个 confiner 改写它的 argv，没有后端能实施的策略会让该 Server 连接失败，而不是脱离封禁启动。
 - `http`：Streamable HTTP，当前规范的远程传输方式（`url` / `headers`）。
 - `sse`：旧式 HTTP+SSE 传输方式，为尚未迁移的 Server 保留（`url` / `headers`）。
 

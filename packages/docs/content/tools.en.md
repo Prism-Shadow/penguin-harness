@@ -398,7 +398,7 @@ tools:
 
 Each `tools.mcpServers` entry is `{ name, config }`. `name` becomes the tool-name prefix: it must start with a letter or digit and contain only letters, digits, `_` and `-`, and a duplicate name is skipped. `config` describes the transport. Three transports are supported:
 
-- `stdio`: a local process (`command` / `args` / `env` / `cwd`). The process environment is the SDK's safe inherited defaults plus the entry's `env`, with `env` winning. Unlike command subprocesses, MCP Server processes do **not** receive the agent's Vault: list any variable a Server needs in the entry's `env`. `cwd` defaults to the Session's Workspace.
+- `stdio`: a local process (`command` / `args` / `env` / `cwd`). The process environment is the SDK's safe inherited defaults plus the entry's `env`, with `env` winning. Unlike command subprocesses, MCP Server processes do **not** receive the agent's Vault: list any variable a Server needs in the entry's `env`. `cwd` defaults to the Session's Workspace. The process starts under the Session's [sandbox](/settings#sandbox) exactly as a command does: the same confiner rewrites its argv, and a policy no backend can enforce fails the Server's connect rather than starting it unconfined.
 - `http`: Streamable HTTP, the current spec's remote transport (`url` / `headers`).
 - `sse`: the legacy HTTP+SSE transport, kept for servers that have not migrated (`url` / `headers`).
 

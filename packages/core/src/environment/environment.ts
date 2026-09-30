@@ -42,6 +42,7 @@ import type {
   SubagentMessageOutcome,
   SubagentRunner,
   ThinkingLevelName,
+  SpawnConfiner,
   ToolConfig,
   ToolDefinition,
   ToolDetachResult,
@@ -165,6 +166,8 @@ export class Environment implements EnvironmentInterface {
   private readonly sandboxPolicy: (() => SandboxSettings | null) | null;
   /** The Session's scratchpad, writable beside the Workspace under a workspace-write policy. */
   private readonly sessionScratchpadDir: string | null;
+  /** The Session's confiner getter (see EnvironmentConfig.confineSpawn), for the stdio MCP servers this Environment starts; commands take it through their session manager. */
+  private readonly confineSpawn: (() => SpawnConfiner | null) | undefined;
 
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
@@ -190,6 +193,7 @@ export class Environment implements EnvironmentInterface {
     });
     this.sandboxPolicy = config.sandboxPolicy ?? null;
     this.sessionScratchpadDir = config.sessionScratchpadDir ?? null;
+    this.confineSpawn = config.confineSpawn;
     this.subagentSessions = new SubagentSessionManager();
     // Background-task liveness fans in from both registries and from the subagent run-state
     // pings: the host's background-state listener hears every change of "what is still
@@ -239,7 +243,15 @@ export class Environment implements EnvironmentInterface {
    */
   private newMcpProvider(servers: ToolConfig["mcpServers"]): McpToolProvider | null {
     return servers.length > 0
-      ? new McpToolProvider(servers, { workspaceDir: this.workspaceDir })
+      ? new McpToolProvider(servers, {
+          workspaceDir: this.workspaceDir,
+          // A stdio server is started under the Session's sandbox like a command, with the
+          // same confiner and scope (see McpToolProviderOptions.confineSpawn).
+          ...(this.confineSpawn !== undefined ? { confineSpawn: this.confineSpawn } : {}),
+          ...(this.sessionScratchpadDir !== null
+            ? { scratchpadDir: this.sessionScratchpadDir }
+            : {}),
+        })
       : null;
   }
 

@@ -261,6 +261,82 @@ describe("MCP over stdio through Environment", () => {
   });
 });
 
+describe("MCP over stdio — under the Session's sandbox", () => {
+  const RUNNER = fileURLToPath(new URL("./fixtures/mcp-runner.mjs", import.meta.url));
+  let tmp: string;
+  beforeAll(async () => {
+    tmp = await realpath(await mkdtemp(path.join(tmpdir(), "penguin-mcp-sandbox-")));
+  });
+  afterAll(async () => {
+    await rmEventually(tmp);
+  });
+
+  it("starts a server through the Session's confiner, with the runner's environment laid over the server's", async () => {
+    const scopes: unknown[] = [];
+    const env = new Environment({
+      workspaceDir: tmp,
+      sessionScratchpadDir: path.join(tmp, "scratchpad", "s1"),
+      toolConfig: {
+        customTools: [],
+        mcpServers: [fixtureEntry({ env: { FIXTURE_SECRET: "from-entry" } })],
+      },
+      confineSpawn: () => (argv, opts) => {
+        scopes.push(opts);
+        return {
+          argv: [argv[0]!, RUNNER, ...argv.slice(1)],
+          env: { FIXTURE_SECRET: "from-runner" },
+        };
+      },
+    });
+    try {
+      const final = finalPayload(await runTool(env, "mcp__fx__probe", {}));
+      // The runner's entry lies over the entry's own, and the runner saw it first.
+      expect(final.output).toMatch(/^via-runner:from-runner\|/);
+      expect(scopes).toEqual([
+        { cwd: tmp, workspaceDir: tmp, scratchpadDir: path.join(tmp, "scratchpad", "s1") },
+      ]);
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it("fails that server's connect when the confiner cannot enforce the policy, and starts nothing", async () => {
+    const provider = new McpToolProvider([fixtureEntry()], {
+      workspaceDir: tmp,
+      confineSpawn: () => () => {
+        throw new Error("no sandbox backend is mounted");
+      },
+      warn: () => {},
+    });
+    try {
+      expect(await provider.listTools()).toEqual([]);
+      const [result] = provider.connectResults();
+      expect(result).toMatchObject({
+        server: "fx",
+        transport: "stdio",
+        status: "fatal",
+        error_code: "connect_failed",
+      });
+      expect(result!.error_message).toContain("sandbox: no sandbox backend is mounted");
+    } finally {
+      await provider.close();
+    }
+  });
+
+  it("starts a server unconfined while the confiner getter answers null", async () => {
+    const provider = new McpToolProvider([fixtureEntry()], {
+      workspaceDir: tmp,
+      confineSpawn: () => null,
+      warn: () => {},
+    });
+    try {
+      expect((await provider.listTools()).length).toBeGreaterThan(0);
+    } finally {
+      await provider.close();
+    }
+  });
+});
+
 describe("MCP over stdio — per-server budgets and interruption", () => {
   let tmp: string;
 
