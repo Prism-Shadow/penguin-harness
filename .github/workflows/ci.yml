@@ -131,9 +131,8 @@ jobs:
   # `version`, or the hook package's `penguin.hooks.version` in package.json: installed copies
   # would never learn about the change (the update flag reads the version). Compared against the
   # pull request's base; a push has no base and the script passes on an empty one.
-  # The second step checks the SKILL.md content itself without a build or install.
-  # The suites step enumerates plugins/<name>/test/** and fails on an empty enumeration,
-  # so a missing glob cannot pass vacuously on newer Node versions.
+  #
+  # The skills step reads the content those versions gate without a build or install.
   plugin-versions:
     needs: plan
     if: needs.plan.outputs.plugins == 'true'
