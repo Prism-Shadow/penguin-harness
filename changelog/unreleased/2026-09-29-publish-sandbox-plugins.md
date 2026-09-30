@@ -24,8 +24,6 @@
   does.
 - The release pre-flight (`scripts/check-publishable.mjs`) now also fails when a published
   package depends on a private plugin, not only on a private package.
-- `scripts/check-plugin-packs.mjs` packs every published code plugin, installs the tarballs with
-  npm and loads them. CI's `npm packaging` job runs it.
 - The release reference gains the procedure for the first publish of a new name. Before the next
   tag, a maintainer publishes the four backends and `@penguinharness/agent-company-proposals`
   once by hand, then configures each of them as a Trusted Publisher.

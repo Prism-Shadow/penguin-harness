@@ -15,5 +15,4 @@
   改动之前，从包安装的副本里，bwrap 没有可执行位，也缺少它链接的 `libcap.so.2`。
 - 从未发布过的服务端插件 `languages`、`claude-code`、`discord-bot`、`company-proposals` 与 `company-roadmaps` 改标为 private。发布流程会跳过它们，它们不再让打 tag 卡在预检上。原本带着它们的各种安装物照旧带着。
 - 发布预检（`scripts/check-publishable.mjs`）现在还会检查已发布的包是否依赖 private 插件，发现即失败，不再只查 private 包。
-- `scripts/check-plugin-packs.mjs` 把每个要发布的代码插件打包，用 npm 装上 tarball 并加载。CI 的 `npm packaging` 作业会运行它。
 - 发布参考文档补上了新包名首发的流程。下一个 tag 之前，由维护者手工首发四个后端与 `@penguinharness/agent-company-proposals`，再为每个包配置 Trusted Publisher。
