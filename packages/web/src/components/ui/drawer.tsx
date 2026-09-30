@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import { CloseButton } from "./icons";
+import { CloseButton } from "@prismshadow/penguin-ui";
 import { isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
 
 export interface DrawerProps {

@@ -32,19 +32,12 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
+import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import {
-  ADD_ICON,
-  CloseIcon,
-  NAV_ICONS,
-  PANEL_BOTTOM_ICON,
-  PANEL_RIGHT_ICON,
-} from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Kbd } from "../../components/ui/kbd";
-import { ICON_SIZE } from "../../lib/icon-scale";
+import { ChordKbd } from "../../components/ui/chord-kbd";
 import { useDisplayedBinding, useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { toneDot } from "../../lib/tone";
@@ -299,7 +292,7 @@ function DockPicker({
             </span>
             <span className="min-w-0 flex-1 truncate">{S.terminal.title}</span>
             {toggleChord !== null && (
-              <Kbd chord={toggleChord} className="shrink-0 text-gray-400 dark:text-gray-500" />
+              <ChordKbd chord={toggleChord} className="text-gray-400 dark:text-gray-500" />
             )}
           </button>
         )}
@@ -611,7 +604,7 @@ export function DockPanel({
       menuClass="w-56"
       button={
         <DockButton label={S.dock.addTab} testId="dock-add" onClick={() => setAddOpen(!addOpen)}>
-          <GlyphIcon d={ADD_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.plus} size={ICON_SIZE.iconButton} />
         </DockButton>
       }
     >
@@ -640,7 +633,7 @@ export function DockPanel({
             className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
           >
             <span className="shrink-0 text-gray-500 dark:text-gray-400">
-              <GlyphIcon d={ADD_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.plus} size={ICON_SIZE.iconButton} />
             </span>
             <span className="min-w-0 truncate">{S.terminal.newShell}</span>
           </button>
@@ -806,7 +799,7 @@ export function DockPanel({
             onClick={() => moveDock(position, other)}
           >
             <GlyphIcon
-              d={position === "right" ? PANEL_BOTTOM_ICON : PANEL_RIGHT_ICON}
+              d={position === "right" ? ICONS.panelBottom : ICONS.panelRight}
               size={ICON_SIZE.rowLead}
             />
           </DockButton>

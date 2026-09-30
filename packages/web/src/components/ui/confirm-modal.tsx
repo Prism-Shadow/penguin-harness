@@ -17,16 +17,15 @@
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { Button, ICONS } from "@prismshadow/penguin-ui";
 import { Modal } from "./modal";
-import { Button } from "./button";
-import { WARNING_ICON } from "./icons";
 import { S } from "../../lib/strings";
 
 /** Tinted icon badge per tone: warning triangle on red for danger, pencil-on-gray for confirmations that overwrite/save. */
 function ToneBadge({ tone }: { tone: "danger" | "primary" }) {
   const glyph =
     tone === "danger"
-      ? WARNING_ICON
+      ? ICONS.triangleAlert
       : // Pencil-line (lucide): writing changes down.
         "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
   return (

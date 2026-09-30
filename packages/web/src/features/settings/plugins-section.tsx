@@ -27,7 +27,6 @@ import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { localizedText } from "../chat/skill-use";
 import { apiErrorText } from "../../lib/api-error";
-import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Select } from "../../components/ui/select";
@@ -38,7 +37,7 @@ import { SectionShell } from "./section-shell";
 import { useSessions } from "../../state/sessions";
 import { MachinePicker } from "../machines/machine-picker";
 import { NoticeStrip } from "../../components/ui/notice-strip";
-import { Spinner } from "@prismshadow/penguin-ui";
+import { Button, Spinner } from "@prismshadow/penguin-ui";
 
 /** The picker's value for this server; a machine id is never this short. */
 const THIS_SERVER = "*";

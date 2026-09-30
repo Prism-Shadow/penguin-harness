@@ -13,10 +13,8 @@
  */
 import { useState } from "react";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
+import { CloseIcon, GlyphIcon, ICONS, ICON_SIZE, PlusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { CloseIcon, GLOBE_ICON, PlusIcon, WARNING_ICON } from "../../components/ui/icons";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { faviconSrc, isBlankUrl, tabLabel } from "./address";
 import { formatMemory } from "./load";
@@ -31,7 +29,7 @@ function TabIcon({ tab }: { tab: BuiltinBrowserTab }) {
         aria-label={S.builtinBrowser.crashedTab}
         className={`shrink-0 ${toneInk.danger}`}
       >
-        <GlyphIcon d={WARNING_ICON} size={ICON_SIZE.inlineGlyph} />
+        <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.inlineGlyph} />
       </span>
     );
   }
@@ -48,7 +46,7 @@ function TabIcon({ tab }: { tab: BuiltinBrowserTab }) {
   if (src === null || src === failed) {
     return (
       <span aria-hidden className="shrink-0 text-gray-400 dark:text-gray-500">
-        <GlyphIcon d={GLOBE_ICON} size={ICON_SIZE.inlineGlyph} />
+        <GlyphIcon d={ICONS.globe} size={ICON_SIZE.inlineGlyph} />
       </span>
     );
   }
@@ -149,7 +147,7 @@ export function BrowserTabStrip({
                     data-testid="builtin-browser-heavy-tab"
                     className={`shrink-0 ${toneInk.attention}`}
                   >
-                    <GlyphIcon d={WARNING_ICON} size={ICON_SIZE.inlineGlyph} />
+                    <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.inlineGlyph} />
                   </span>
                 )}
               </button>

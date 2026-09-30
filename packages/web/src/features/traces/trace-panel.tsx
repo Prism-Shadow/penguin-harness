@@ -15,14 +15,11 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import { DownloadIcon, EmptyState, ICON_SIZE, Skeleton } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatBytes } from "../../lib/format";
-import { DownloadIcon } from "../../components/ui/icons";
-import { EmptyState } from "../../components/ui/empty-state";
-import { Skeleton } from "../../components/ui/skeleton";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { TraceFileView } from "./trace-file-view";
 import {
   activeTraceFile,

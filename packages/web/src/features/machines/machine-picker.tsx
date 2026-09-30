@@ -8,10 +8,9 @@
  * in-place panel.
  */
 import { useState } from "react";
-import { Button } from "../../components/ui/button";
+import { Button, ChevronDown } from "@prismshadow/penguin-ui";
 import { Dropdown } from "../../components/ui/dropdown";
 import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
-import { ChevronDown } from "../../components/ui/icons";
 
 export interface MachineChoice {
   value: string;

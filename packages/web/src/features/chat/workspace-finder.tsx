@@ -24,6 +24,7 @@ import type {
   ReactNode,
 } from "react";
 import type { DesktopPrivacyPane, DirListResponse } from "@prismshadow/penguin-server/api";
+import { Button, CloseIcon, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { writeClipboard } from "../../lib/clipboard";
@@ -32,32 +33,16 @@ import { apiErrorText } from "../../lib/api-error";
 import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
 import { isElectronRenderer } from "../../lib/desktop-renderer";
 import { formatDateTime } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { NoticeStrip } from "../../components/ui/notice-strip";
 import { machineLabel, nameOnMachine, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
 import { useSessions } from "../../state/sessions";
 import { Modal } from "../../components/ui/modal";
-import { Button } from "../../components/ui/button";
 import { useRowContextMenu } from "../../components/ui/context-menu";
 import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CLOCK_ICON, FOLDER_ICON, FOLDER_OPEN_ICON } from "../../components/ui/group-list";
-import {
-  ARROW_BACK_ICON,
-  ARROW_FORWARD_ICON,
-  CloseIcon,
-  DOWNLOAD_ICON,
-  FILE_ICON,
-  REFRESH_ICON,
-} from "../../components/ui/icons";
 import { noAutofill } from "../../components/ui/input";
-import {
-  PIN_ICON,
-  overflowMenuGlyph,
-  overflowMenuRowClass,
-} from "../../components/ui/session-row-menu";
+import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import {
   EMPTY_HISTORY,
@@ -113,20 +98,20 @@ const ENTER_ICON = "M9 18l6-6-6-6";
 const PLACE_ICON: Record<Place["key"], string> = {
   home: HOME_ICON,
   desktop: DESKTOP_ICON,
-  documents: FILE_ICON,
-  downloads: DOWNLOAD_ICON,
+  documents: ICONS.file,
+  downloads: ICONS.download,
   pictures: PICTURES_ICON,
   drive: DRIVE_ICON,
-  folder: FOLDER_ICON,
+  folder: ICONS.folder,
 };
 
 const MENU_ICON: Record<FinderMenuItem, string> = {
-  open: FOLDER_OPEN_ICON,
+  open: ICONS.folderOpen,
   choose: CHECK_ICON,
-  addToQuickAccess: PIN_ICON,
-  removeFromQuickAccess: PIN_ICON,
+  addToQuickAccess: ICONS.pin,
+  removeFromQuickAccess: ICONS.pin,
   copyPath: STAT_ICONS.copy,
-  refresh: REFRESH_ICON,
+  refresh: ICONS.refresh,
 };
 
 function isMacPlatform(): boolean {
@@ -912,7 +897,7 @@ export function WorkspaceFinder({
             {recents.map((r) =>
               sideRow({
                 key: `recent:${r.machineId ?? ""}:${r.path}`,
-                icon: CLOCK_ICON,
+                icon: ICONS.clock,
                 label: nameOnMachine(
                   baseName(r.path),
                   r.machineId === null ? null : machineLabel(machines, r.machineId),
@@ -1017,7 +1002,7 @@ export function WorkspaceFinder({
             onClick={editAddress}
             className="flex h-full shrink-0 items-center pl-2.5 pr-1 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
           >
-            <GlyphIcon d={FOLDER_ICON} size={ICON_SIZE.inlineGlyph} />
+            <GlyphIcon d={ICONS.folder} size={ICON_SIZE.inlineGlyph} />
           </button>
           <nav
             ref={crumbsRef}
@@ -1092,7 +1077,7 @@ export function WorkspaceFinder({
           aria-label={f.back}
           onClick={() => step(-1)}
         >
-          <GlyphIcon d={ARROW_BACK_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.arrowLeftCentered} size={ICON_SIZE.iconButton} />
         </button>
         <button
           type="button"
@@ -1102,7 +1087,7 @@ export function WorkspaceFinder({
           aria-label={f.forward}
           onClick={() => step(1)}
         >
-          <GlyphIcon d={ARROW_FORWARD_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.arrowRightCentered} size={ICON_SIZE.iconButton} />
         </button>
         <button
           type="button"
@@ -1123,7 +1108,7 @@ export function WorkspaceFinder({
           aria-label={f.refresh}
           onClick={refresh}
         >
-          <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.iconButton} />
+          <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.iconButton} />
         </button>
       </div>
       {addressBar}
@@ -1253,7 +1238,7 @@ export function WorkspaceFinder({
           }`}
         >
           <GlyphIcon
-            d={folder ? FOLDER_ICON : FILE_ICON}
+            d={folder ? ICONS.folder : ICONS.file}
             size={ICON_SIZE.rowLead}
             className={`shrink-0 ${accent ? "" : "text-gray-400"}`}
           />

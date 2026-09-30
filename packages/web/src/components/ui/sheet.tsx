@@ -26,7 +26,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { CloseButton } from "./icons";
+import { CloseButton } from "@prismshadow/penguin-ui";
 import { usePrefersReducedMotion } from "./use-reduced-motion";
 import { SPRING_DEFAULT, SPRING_MOMENTUM, createSpringDriver } from "../../lib/spring";
 import type { SpringDriver } from "../../lib/spring";

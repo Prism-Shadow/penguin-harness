@@ -26,16 +26,19 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Navigate, Outlet, useNavigate, useParams } from "react-router";
 import type { OrganizationSummary } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { COMPANY_MODE_ICON } from "../../components/ui/icons";
 import { InfoPopover } from "../../components/ui/info-popover";
-import { Skeleton } from "../../components/ui/skeleton";
 import { orgKey, orgPagePath, resolveOrgLanding } from "./company-nav";
 import { CreateOrganizationDialog, useOrganizationCreated } from "./org-dialogs";
 import { ORG_EXAMPLES } from "./org-examples";
@@ -141,7 +144,7 @@ function OrgEmptyLanding() {
     <OrgCenteredFrame>
       <div className="mx-auto max-w-2xl py-8 text-center md:py-14">
         <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300">
-          <GlyphIcon d={COMPANY_MODE_ICON} size={ICON_SIZE.sectionMark + 6} />
+          <GlyphIcon d={ICONS.building} size={ICON_SIZE.sectionMark + 6} />
         </span>
         <h1 className="mt-4 text-2xl font-semibold tracking-tight">{S.company.landingTitle}</h1>
         <p className="mx-auto mt-2 max-w-xl text-sm text-gray-600 dark:text-gray-300">

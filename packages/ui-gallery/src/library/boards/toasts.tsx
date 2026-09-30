@@ -1,5 +1,5 @@
 /** 提示弹窗: the toast after an action completes, in its four kinds, fired from buttons (the Toaster is mounted by the frame). */
-import { Button } from "../../../../web/src/components/ui/button";
+import { Button } from "@prismshadow/penguin-ui";
 import {
   toastAttention,
   toastError,

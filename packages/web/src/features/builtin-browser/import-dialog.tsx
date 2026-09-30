@@ -8,11 +8,11 @@ import type {
   BuiltinBrowserImportResult,
   BuiltinBrowserImportSource,
 } from "@prismshadow/penguin-server/api";
+import { Button } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { Button } from "../../components/ui/button";
 import { FieldLabel } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";

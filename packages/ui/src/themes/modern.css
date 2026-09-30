@@ -120,6 +120,10 @@
     --ui-tone-info-emphasis: #2f66c4;
     --ui-tone-info-emphasis-fg: #ffffff;
 
+    /* Colour — marks: the update dot in a soft coral, the danger hue lifted so it reads as news;
+       one value on both pages */
+    --ui-mark-new: #f0765a;
+
     /* Charts: soft. A low-chroma palette in the roles (heather, ochre, dusk blue, rose, sage,
        mauve, teal, clay), each just clearing 3:1 on the canvas so a line and a point read; the
        bars are the same colours let through at seven tenths (a little more in dark) with no

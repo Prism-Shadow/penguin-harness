@@ -9,8 +9,8 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { CloseIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { CloseIcon } from "./icons";
 
 export function ZoomableImage({
   src,

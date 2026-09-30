@@ -14,18 +14,21 @@ import type {
   OrgTicketPriority,
   OrgTicketStatus,
 } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Badge,
+  Button,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+} from "@prismshadow/penguin-ui";
+import type { BadgeStyle, ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatMoney, formatPercent } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Badge } from "../../components/ui/badge";
-import type { BadgeTone } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
 import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input } from "../../components/ui/input";
 import { toStoredUsd, unitLabel } from "./budget-input";
 import { budgetTone } from "./finance-tree";
@@ -120,10 +123,10 @@ export function orgStatusText(org: { status: OrgStatus; invalid?: string }): str
   return orgStatusLabel(orgStatusKind(org));
 }
 
-const ORG_STATUS_BADGE: Record<OrgStatusKind, BadgeTone> = {
-  invalid: "red",
-  paused: "amber",
-  active: "green",
+const ORG_STATUS_BADGE: Record<OrgStatusKind, ToneName> = {
+  invalid: "danger",
+  paused: "attention",
+  active: "success",
 };
 
 /** An organization's headline state as a pill: invalid configuration outranks paused, paused outranks active. The reason rides in the tooltip when the configuration is invalid. */
@@ -402,19 +405,24 @@ export function MoneyPerMonthInput({
   );
 }
 
-const STATUS_TONE: Record<OrgTicketStatus, BadgeTone> = {
-  proposed: "gray",
-  in_progress: "green",
-  review: "amber",
-  done: "brand",
-  rejected: "red",
+/** A finished ticket is settled, neither good nor bad news: a neutral tag, solid so it reads. */
+const STATUS_BADGE: Record<OrgTicketStatus, BadgeStyle> = {
+  proposed: { tone: "neutral" },
+  in_progress: { tone: "success" },
+  review: { tone: "attention" },
+  done: { tone: "neutral", variant: "solid" },
+  rejected: { tone: "danger" },
 };
 
 export function TicketStatusBadge({ status }: { status: OrgTicketStatus }) {
-  return <Badge tone={STATUS_TONE[status]}>{S.company.tickets.columns[status] ?? status}</Badge>;
+  return <Badge {...STATUS_BADGE[status]}>{S.company.tickets.columns[status] ?? status}</Badge>;
 }
 
-const PRIORITY_TONE: Record<OrgTicketPriority, BadgeTone> = { P0: "red", P1: "amber", P2: "gray" };
+const PRIORITY_TONE: Record<OrgTicketPriority, ToneName> = {
+  P0: "danger",
+  P1: "attention",
+  P2: "neutral",
+};
 
 export function PriorityBadge({ priority }: { priority: OrgTicketPriority }) {
   return <Badge tone={PRIORITY_TONE[priority]}>{priority}</Badge>;
@@ -427,7 +435,7 @@ export function BlockedBadge({ reason, by }: { reason: string; by?: string }) {
       data-tooltip={S.company.tickets.blockedTooltip(reason, by ?? "—")}
       className="inline-flex"
     >
-      <Badge tone="amber">{S.company.tickets.blocked}</Badge>
+      <Badge tone="attention">{S.company.tickets.blocked}</Badge>
     </span>
   );
 }

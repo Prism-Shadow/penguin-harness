@@ -36,17 +36,13 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { OrgEmployeeItem, OrgEmployeeState } from "@prismshadow/penguin-server/api";
+import { AgentAvatar, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useRowContextMenu } from "../../components/ui/context-menu";
 import { formatMoney, formatPercent } from "../../lib/format";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ELLIPSIS_ICON } from "../../components/ui/session-row-menu";
-import { FOLDER_ICON } from "../../components/ui/group-list";
 import { budgetTone } from "./finance-tree";
 import { INVALID_ICON } from "./shared";
 import { CHART_NODE_H, CHART_NODE_W, workspaceTail } from "./org-chart-tree";
@@ -187,7 +183,7 @@ export function ChartCard({
                 <GlyphIcon d={INVALID_ICON} size={10} />
               </span>
             ) : (
-              <GlyphIcon d={FOLDER_ICON} size={10} />
+              <GlyphIcon d={ICONS.folder} size={10} />
             )}
             <span className="truncate">{workspaceTail(employee.workspace)}</span>
           </span>
@@ -245,7 +241,7 @@ export function ChartCard({
                 ctx.open ? "opacity-100" : "opacity-70"
               }`}
             >
-              <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.groupHeaderAction} filled />
+              <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.groupHeaderAction} filled />
             </button>
           }
         >

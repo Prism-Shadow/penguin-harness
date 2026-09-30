@@ -36,9 +36,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { FocusEvent, MouseEvent, RefObject } from "react";
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import type { OutlineEntry } from "./outline-model";
 import {
   globalTurnNumber,

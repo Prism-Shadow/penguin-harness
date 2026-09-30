@@ -25,6 +25,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  ChevronDown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
 import { useLocale } from "../../state/locale";
@@ -33,14 +41,10 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMessageTime } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
-import { Skeleton } from "../../components/ui/skeleton";
 import { toastError } from "../../components/ui/toast";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { noAutofill, panelSearchClass } from "../../components/ui/input";
-import { ChevronDown, GEAR_ICON, NAV_ICONS } from "../../components/ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import {
   MACHINE_PHASES,
   anyJobPending,
@@ -70,8 +74,6 @@ const POLL_MS = 1500;
 const PLUG_PATH = "M9 2v4M15 2v4M6 6h12v4a6 6 0 0 1-12 0V6zM12 16v6";
 const UNPLUG_PATH = "M9 2v3M15 2v3M6 5h12v3a6 6 0 0 1-12 0V5zM7 22h10M7 22v-4M17 22v-4";
 
-/** The + in the picker's foot: a new host for the ssh config. */
-const PLUS_PATH = "M12 5v14M5 12h14";
 /** The expand verb's glyph, on the 24-grid like the others; turned over when unfolded. */
 const CHEVRON_PATH = "M6 9l6 6 6-6";
 /** Select all: a box with a check. Select none: the empty box. */
@@ -440,7 +442,7 @@ export function MachinesPage() {
                 <Verb
                   label={S.machines.host.newVerb}
                   title={S.machines.host.addTitle}
-                  d={PLUS_PATH}
+                  d={ICONS.plus}
                   onClick={() => {
                     setPickerOpen(false);
                     setHostForm({ kind: "add" });
@@ -843,7 +845,7 @@ function MachineCard({
           <Verb
             label={S.machines.host.configureVerb}
             title={S.machines.host.configure}
-            d={GEAR_ICON}
+            d={ICONS.gear}
             disabled={busy}
             onClick={onConfigure}
           />

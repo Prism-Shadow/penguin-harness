@@ -16,9 +16,9 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { toneInk } from "../../lib/tone";
 import {
   PERMISSION_LEVEL_GLYPH,

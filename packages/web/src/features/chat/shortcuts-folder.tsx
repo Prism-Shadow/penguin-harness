@@ -19,17 +19,13 @@
  *   out of reach on a phone.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button, GlyphIcon, ICONS, ICON_SIZE, PlusIcon } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { PlusIcon } from "../../components/ui/icons";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { PENCIL_ICON, TRASH_ICON } from "../../components/ui/session-row-menu";
 import { toastError } from "../../components/ui/toast";
 import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
 import {
@@ -180,12 +176,12 @@ export function ShortcutsFolder({
                   </button>
                   <RowAction
                     label={S.common.edit}
-                    glyph={PENCIL_ICON}
+                    glyph={ICONS.pencil}
                     onClick={() => setDraft({ ...shortcut })}
                   />
                   <RowAction
                     label={S.common.delete}
-                    glyph={TRASH_ICON}
+                    glyph={ICONS.trash}
                     danger
                     onClick={() => setDeleting(shortcut)}
                   />

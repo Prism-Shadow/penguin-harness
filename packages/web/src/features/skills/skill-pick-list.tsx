@@ -18,9 +18,9 @@
  */
 import { useState } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import { ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { menuSearchClass, noAutofill } from "../../components/ui/input";
 import { filterSkills, localizedShortText } from "../chat/skill-use";
 import { SkillIcon } from "./skill-icon-view";

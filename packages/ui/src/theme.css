@@ -9,9 +9,10 @@
  * What lives here is theme-independent: the `dark` variant, the cascade layer order, the bridge
  * from the `--ui-*` token contract (tokens.ts) to Tailwind utilities, the base rules that read
  * tokens, the motion rules behind the `data-presence` / `data-backdrop` / `data-reveal` /
- * `data-layout-motion` attributes, and the depth ladder the `ui-tree` recipes measure with. Token
- * VALUES live only in `themes/*.css`, and so do the user's accent presets: each theme lists its
- * own, in `@layer ui-accent`, scoped to that theme (tokens.ts, `ACCENT_PRESETS`).
+ * `data-layout-motion` attributes, the activity marks' turn and squeeze, and the depth ladder the
+ * `ui-tree` recipes measure with. Token VALUES live only in `themes/*.css`, and so do the user's
+ * accent presets: each theme lists its own, in `@layer ui-accent`, scoped to that theme (tokens.ts,
+ * `ACCENT_PRESETS`).
  *
  * Attributes on <html>: `class="dark"` (mode), `data-theme` (absent = github), `data-accent`
  * (absent = the theme's own accent; an id the active theme does not list paints nothing, which
@@ -132,6 +133,9 @@
   --color-tone-info-line: var(--ui-tone-info-line);
   --color-tone-info-emphasis: var(--ui-tone-info-emphasis);
   --color-tone-info-emphasis-fg: var(--ui-tone-info-emphasis-fg);
+
+  /* Marks that are not a tone: bg-mark-new (the update dot) */
+  --color-mark-new: var(--ui-mark-new);
 
   /* Charts: identity colours, not judgement */
   --color-chart-1: var(--ui-chart-1);
@@ -342,6 +346,48 @@
     transition-duration: var(--ui-dur-layout);
     transition-timing-function: var(--ui-ease-layout);
   }
+
+  /*
+   * The activity marks' own motion (ActivityIcon): the same in every theme, because the motion is
+   * the mark — the two live states share one ink and are told apart by shape and by how they move.
+   *
+   * - `hourglass-turn`: an hourglass does not spin, it gets turned over — held still, flipped 180
+   *   degrees in about 360 ms, held again, flipped back. The long dwell is what keeps it legible
+   *   at a 12 px row mark: a continuous spin at that size reads as a smudge.
+   * - `compact-squeeze`: compaction pushes a context down to a summary, so the compress mark
+   *   closes on its centre bar and springs back.
+   *
+   * Both keyframes touch `transform` alone and the glyph at rest has none, so switching animation
+   * off (reduced motion, below) leaves the mark upright, full size and fully visible.
+   */
+  .hourglass-turn {
+    animation: hourglass-turn 3s ease-in-out infinite;
+  }
+  @keyframes hourglass-turn {
+    0%,
+    38% {
+      transform: rotate(0deg);
+    }
+    50%,
+    88% {
+      transform: rotate(180deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+  .compact-squeeze {
+    animation: compact-squeeze 1.8s ease-in-out infinite;
+  }
+  @keyframes compact-squeeze {
+    0%,
+    100% {
+      transform: scaleY(1);
+    }
+    50% {
+      transform: scaleY(0.62);
+    }
+  }
 }
 
 /* No motion: the gallery's switch on the root, then the user's system preference. Live signals
@@ -357,6 +403,9 @@
 }
 :root[data-motion="reduced"] [data-layout-motion] {
   transition: none;
+}
+:root[data-motion="reduced"] :is(.hourglass-turn, .compact-squeeze) {
+  animation: none;
 }
 /* The `ui-activity` recipes animate the running row (Frost's halo), a slot inside it (Frost's
    label highlight) and a slot's pseudo-elements (Console's block bar), so all three are named:
@@ -383,6 +432,9 @@
   }
   [data-layout-motion] {
     transition: none;
+  }
+  :is(.hourglass-turn, .compact-squeeze) {
+    animation: none;
   }
   :is(.ui-activity, .ui-activity *),
   :is(.ui-activity, .ui-activity *)::before,

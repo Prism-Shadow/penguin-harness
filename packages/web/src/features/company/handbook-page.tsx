@@ -20,6 +20,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import type { OrgHandbookFile, OrgHandbookFileResponse } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  EmptyState,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -29,15 +37,10 @@ import { currentPlatform } from "../../lib/shortcuts/platform";
 import { keymap } from "../../lib/shortcuts/store";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useLocale } from "../../state/locale";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { Skeleton } from "../../components/ui/skeleton";
 import type { TreeToggle } from "../../components/ui/file-tree";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";

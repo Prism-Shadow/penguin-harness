@@ -1,5 +1,5 @@
 /** 悬停提示: the app's one tooltip, by attribute (read by the frame's TooltipLayer) and by component, and on a truncated line. */
-import { Button } from "../../../../web/src/components/ui/button";
+import { Button } from "@prismshadow/penguin-ui";
 import { Tooltip } from "../../../../web/src/components/ui/tooltip";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";

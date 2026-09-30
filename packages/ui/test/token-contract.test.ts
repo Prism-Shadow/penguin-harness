@@ -337,8 +337,8 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
     // 215, plus the integration round's four (the emphasis ink and the switch's three), plus
     // the chart round's nine (two more series, the reference line, six geometry names), plus
     // the bar outline's three, plus the knob's hairline edge, plus the streaming pair
-    // (2026-09-30).
-    expect(TOKEN_NAMES.length).toBe(234);
+    // (2026-09-30), plus the update mark's fill (W1, the same day).
+    expect(TOKEN_NAMES.length).toBe(235);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {
@@ -576,6 +576,36 @@ describe("the integration revision of the contract (2026-09-29)", () => {
         ).toEqual(["color"]);
       }
     }
+  });
+});
+
+describe("the update mark (W1, 2026-09-30)", () => {
+  // The update dot says "something new down this path", which is not a tone's judgement, so it
+  // has a colour of its own. It never carries the meaning alone — its anchor names what is new —
+  // so no contrast floor applies: every theme and mode declares a value, and that is the check.
+  it("is a group of its own, bridged to bg-mark-new", () => {
+    expect(TOKEN_GROUPS.find((group) => group.id === "color-marks")?.names).toEqual([
+      "--ui-mark-new",
+    ]);
+    const sheet = stripCssComments(readFileSync(join(SRC_DIR, "theme.css"), "utf8"));
+    expect(sheet).toMatch(/@theme inline\s*\{[^}]*--color-mark-new:\s*var\(--ui-mark-new\);/);
+  });
+
+  it("is declared by every theme in both modes", () => {
+    for (const theme of THEMES) {
+      if (theme.status !== "filled") continue;
+      for (const mode of THEME_MODES) {
+        const value = modeDeclarations(theme.analysis, mode).get("--ui-mark-new");
+        expect(value, `${theme.id} ${mode}`).toBeTruthy();
+      }
+    }
+  });
+
+  it("keeps Primer's pale notification red, one value in both modes", () => {
+    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
+    if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
+    expect(primer.analysis.modes.light.get("--ui-mark-new")).toBe("oklch(70.4% 0.191 22.216)");
+    expect(primer.analysis.modes.dark.has("--ui-mark-new")).toBe(false);
   });
 });
 

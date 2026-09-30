@@ -1,6 +1,14 @@
-/** 头像: the user avatar at its two rungs, with and without a nickname, and the agent avatar at three sizes. */
-import { AgentAvatar } from "../../../../web/src/components/ui/agent-avatar";
-import { USER_AVATAR_SIZE, UserAvatar } from "../../../../web/src/components/ui/user-avatar";
+/**
+ * 头像: the user avatar at its two rungs, with and without a nickname, the agent avatar at three
+ * sizes, and the avatar stack — agents and an account overlapping, then the count of the rest.
+ */
+import {
+  AgentAvatar,
+  AvatarStack,
+  ICON_SIZE,
+  USER_AVATAR_SIZE,
+  UserAvatar,
+} from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
@@ -8,6 +16,10 @@ export function AvatarsBoard() {
   const { S } = useGallery();
   const t = S.library.avatars;
   const [userId, displayName] = t.userNames;
+  const stack = [
+    { id: userId ?? "admin", name: displayName ?? userId ?? "admin", kind: "user" as const },
+    ...t.agents.map((agent) => ({ id: agent.id, name: agent.name })),
+  ];
   return (
     <div className="gf-board">
       <BoardGroup title={t.user}>
@@ -44,6 +56,22 @@ export function AvatarsBoard() {
               <span className="lib-caption">{size}px</span>
             </span>
           ))}
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.stack}>
+        <div className="lib-row">
+          <span className="lib-cell">
+            <AvatarStack items={stack.slice(0, 3)} size={ICON_SIZE.groupHeaderAvatar} />
+            <span className="lib-caption">{t.stackShown(3, 3)}</span>
+          </span>
+          <span className="lib-cell">
+            <AvatarStack items={stack} size={ICON_SIZE.groupHeaderAvatar} />
+            <span className="lib-caption">{t.stackShown(3, stack.length)}</span>
+          </span>
+          <span className="lib-cell">
+            <AvatarStack items={stack} max={2} size={ICON_SIZE.rowLead} />
+            <span className="lib-caption">{t.stackShown(2, stack.length)}</span>
+          </span>
         </div>
       </BoardGroup>
     </div>

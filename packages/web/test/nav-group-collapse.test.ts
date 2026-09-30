@@ -28,7 +28,7 @@ import {
   withNavPinned,
 } from "../src/lib/nav-group-collapse";
 import type { NavCollapseStorage, NavPinOverrides } from "../src/lib/nav-group-collapse";
-import { NAV_ICONS } from "../src/components/ui/icons";
+import { NAV_ICONS } from "../src/lib/nav-icons";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

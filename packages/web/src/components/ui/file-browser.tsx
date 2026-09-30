@@ -21,6 +21,7 @@ import { useMemo } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
+import { SkeletonList } from "@prismshadow/penguin-ui";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import { SETTLED_MD_COMPONENTS } from "../../features/chat/md";
 import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
@@ -31,7 +32,6 @@ import { CodeBlock } from "../../features/chat/code-block";
 import { languageForExtension } from "../../features/chat/code-languages";
 import { FileTree } from "./file-tree";
 import type { TreeToggle } from "./file-tree";
-import { SkeletonList } from "./skeleton";
 
 /** A reference naming a scheme of its own (`https:`, `mailto:`) points outside the browsed files. */
 const EXTERNAL_REF_RE = /^[a-z][a-z0-9+.-]*:/i;

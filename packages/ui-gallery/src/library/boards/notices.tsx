@@ -2,7 +2,7 @@
  * 提示条: the app's NoticeStrip in every tone — plain, with the leading mark a call site draws
  * (`data-slot="icon"`, which a theme that draws its own tone mark hides), and with actions.
  */
-import { Button } from "../../../../web/src/components/ui/button";
+import { Button } from "@prismshadow/penguin-ui";
 import { NoticeStrip } from "../../../../web/src/components/ui/notice-strip";
 import { toneDot } from "../../../../web/src/lib/tone";
 import type { Tone } from "../../../../web/src/lib/tone";

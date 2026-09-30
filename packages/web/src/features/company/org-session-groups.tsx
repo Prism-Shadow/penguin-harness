@@ -29,30 +29,35 @@
  */
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import {
+  ActivityIcon,
+  AgentAvatar,
+  Button,
+  CloseIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  SkeletonList,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { sessionActivityLabel } from "../../lib/session-activity";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
 import { useRowContextMenu } from "../../components/ui/context-menu";
 import { writeClipboard } from "../../lib/clipboard";
 import { Dropdown } from "../../components/ui/dropdown";
 import { FolderSection, Icon } from "../../components/ui/group-list";
-import { CloseIcon, MESSAGING_RELAY_ICON } from "../../components/ui/icons";
-import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
 import {
   DESK_ROW_ACTIONS,
   SessionRowHoverActions,
   SessionRowMenuRows,
 } from "../../components/ui/session-row-menu";
 import type { SessionRowAction, SessionRowState } from "../../components/ui/session-row-menu";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
@@ -219,11 +224,13 @@ function DeskRow({
               data-tooltip={S.messaging.enabledIndicator[messagingChannel]}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
+              <Icon d={ICONS.paperPlane} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.messaging.enabledIndicator[messagingChannel]}</span>
             </span>
           )}
-          {activity !== null && <SessionActivityIcon activity={activity} />}
+          {activity !== null && (
+            <ActivityIcon activity={activity} label={sessionActivityLabel(activity)} />
+          )}
         </button>
         {/* The menu affordance's slot, laid out rather than overlaid and reserved on every row
             — including a desk that does not exist yet — so the names line up down the group
@@ -339,7 +346,9 @@ function TempRow({
             className="shrink-0 rounded"
           />
           <Truncated text={row.title} className="min-w-0 flex-1" />
-          {row.activity !== null && <SessionActivityIcon activity={row.activity} />}
+          {row.activity !== null && (
+            <ActivityIcon activity={row.activity} label={sessionActivityLabel(row.activity)} />
+          )}
         </button>
         {/* The same trailing slot a desk row keeps for its menu, so the run marks line up
             across the two groups. */}

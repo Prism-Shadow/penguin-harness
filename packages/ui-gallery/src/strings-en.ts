@@ -392,7 +392,8 @@ export const en: GalleryStrings = {
     topics: {
       buttons: {
         title: "Buttons",
-        description: "Four variants, two sizes and the icon button; disabled and busy.",
+        description:
+          "Five variants, five sizes and the icon button; disabled and loading; links and keyboard hints.",
       },
       inputs: {
         title: "Inputs and forms",
@@ -424,7 +425,8 @@ export const en: GalleryStrings = {
       tabs: { title: "Tabs", description: "The underline tab switcher, with an update badge." },
       badges: {
         title: "Badges and status",
-        description: "Badges, run-state icons, session activity marks and the update dot.",
+        description:
+          "Badges and counts, state dots, run-state icons, session activity marks and the update dot.",
       },
       empty: {
         title: "Empty states",
@@ -441,7 +443,10 @@ export const en: GalleryStrings = {
         description:
           "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, cost trend and token bars, requests and success rate, the activity and score sparklines, the Trace timeline.",
       },
-      avatars: { title: "Avatars", description: "The user and agent avatars at their sizes." },
+      avatars: {
+        title: "Avatars",
+        description: "The user and agent avatars at their sizes, and a stack of them.",
+      },
       files: { title: "Files", description: "The file tree and the read-only file browser." },
       colour: {
         title: "Colour",
@@ -464,13 +469,28 @@ export const en: GalleryStrings = {
       secondary: "Cancel",
       danger: "Delete",
       ghost: "More",
+      link: "View details",
       sizes: "Sizes",
       md: "Default size",
       sm: "Small",
+      xs: "Extra small",
+      leading: "New",
       icon: "Icon button",
+      iconHint: "The label is required: it is both the accessible name and the tooltip.",
+      add: "Add",
+      edit: "Edit",
       states: "States",
       disabled: "Disabled",
       busy: "Saving…",
+      links: "Links",
+      linksHint:
+        "A link in a sentence is always underlined; a standalone one shows the underline on hover. An external link opens in a new tab and carries the external mark.",
+      inlineBefore: "See the ",
+      inlineLink: "release notes",
+      inlineAfter: " for what changed.",
+      external: "All releases",
+      keys: "Keyboard hints",
+      shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]],
     },
     inputs: {
       basics: "Inputs",
@@ -603,12 +623,18 @@ export const en: GalleryStrings = {
     badges: {
       badges: "Badges",
       tones: {
-        gray: "default",
-        brand: "origin",
-        green: "running",
-        amber: "aborted",
-        red: "failed",
+        neutral: "default",
+        success: "running",
+        attention: "aborted",
+        danger: "failed",
+        done: "done",
+        info: "free",
       },
+      variants: { soft: "Soft", outline: "Outline", solid: "Solid" },
+      count: "Count",
+      dots: "State dots",
+      dotsHint: "Six tones; only what is live pulses",
+      live: "Live",
       status: "Run state",
       states: {
         running: "Running",
@@ -741,6 +767,8 @@ export const en: GalleryStrings = {
     avatars: {
       user: "User avatar",
       agent: "Agent avatar",
+      stack: "Avatar stack",
+      stackShown: (shown, total) => `${shown} of ${total} shown`,
       userNames: ["admin", "Demo admin"],
       agents: [
         { id: "docs-expert", name: "Docs Expert" },

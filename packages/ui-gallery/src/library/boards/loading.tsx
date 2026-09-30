@@ -1,8 +1,15 @@
-/** 加载: the spinner (the running-state ring) at three sizes, and the skeleton line, list and card. */
-import { Skeleton, SkeletonCard, SkeletonList } from "../../../../web/src/components/ui/skeleton";
-import { StatusIcon } from "../../../../web/src/components/ui/status-icon";
+/** 加载: the running-state spinner on its three rungs, and the skeleton line, list and card. */
+import { Skeleton, SkeletonCard, SkeletonList, StatusIcon } from "@prismshadow/penguin-ui";
+import type { StatusIconSize } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
+
+/** The rungs and the pixels each one draws at. */
+const SPINNER_RUNGS: readonly (readonly [StatusIconSize, number])[] = [
+  ["xs", 10],
+  ["sm", 12],
+  ["md", 14],
+];
 
 export function LoadingBoard() {
   const { S } = useGallery();
@@ -11,10 +18,12 @@ export function LoadingBoard() {
     <div className="gf-board">
       <BoardGroup title={t.spinner} aside={t.sizes}>
         <div className="lib-row">
-          {[13, 16, 24].map((size) => (
+          {SPINNER_RUNGS.map(([size, px]) => (
             <span key={size} className="lib-cell">
               <StatusIcon state="running" size={size} />
-              <span className="lib-caption">{size}px</span>
+              <span className="lib-caption">
+                {size} · {px}px
+              </span>
             </span>
           ))}
         </div>

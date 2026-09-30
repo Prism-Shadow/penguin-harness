@@ -1,5 +1,6 @@
 /**
- * App root component: Locale -> Theme -> Auth -> LocaleScope -> Router provider composition.
+ * App root component: Locale -> Theme -> Auth -> LocaleScope -> Router provider composition,
+ * with the app's clipboard writer handed to the shared UI package's copy controls.
  * LocaleScope (a remount boundary) sits inside AuthProvider: switching language rebuilds the UI tree without
  * re-fetching auth, avoiding a full-screen white flash from RequireAuth briefly seeing user=undefined.
  * Also installs the app-wide file-drop guard: a file dropped outside the chat area — the only
@@ -9,12 +10,14 @@
  * drop on the sidebar do something; it makes it do nothing.
  */
 import { useEffect } from "react";
+import { ClipboardWriterProvider } from "@prismshadow/penguin-ui";
 import { LocaleProvider, LocaleScope } from "./state/locale";
 import { ThemeProvider } from "./state/theme";
 import { AuthProvider } from "./state/auth";
 import { AppRouter } from "./router";
 import { Toaster } from "./components/ui/toast";
 import { TooltipLayer } from "./components/ui/tooltip";
+import { writeClipboard } from "./lib/clipboard";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
 
 /**
@@ -35,18 +38,20 @@ export function App({ initialPath }: { initialPath?: string } = {}) {
     };
   }, []);
   return (
-    <LocaleProvider>
-      <ThemeProvider>
-        <AuthProvider>
-          <LocaleScope>
-            <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
-            {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
-            <Toaster />
-            {/* The hover hints of every `data-tooltip` element: one listener set, one panel. */}
-            <TooltipLayer />
-          </LocaleScope>
-        </AuthProvider>
-      </ThemeProvider>
-    </LocaleProvider>
+    <ClipboardWriterProvider write={writeClipboard}>
+      <LocaleProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <LocaleScope>
+              <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
+              {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
+              <Toaster />
+              {/* The hover hints of every `data-tooltip` element: one listener set, one panel. */}
+              <TooltipLayer />
+            </LocaleScope>
+          </AuthProvider>
+        </ThemeProvider>
+      </LocaleProvider>
+    </ClipboardWriterProvider>
   );
 }

@@ -30,8 +30,8 @@
  * the call site — so no extra row appears in the happy path.
  */
 import { useState } from "react";
+import { ChevronDown } from "@prismshadow/penguin-ui";
 import { Dropdown } from "../../components/ui/dropdown";
-import { ChevronDown } from "../../components/ui/icons";
 import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 // This menu is an OptionMenu by hand (its trigger lives inside the base URL field, which
 // OptionMenu cannot do), so it takes its row typography from OptionMenu's own records rather

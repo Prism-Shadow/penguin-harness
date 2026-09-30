@@ -72,12 +72,13 @@ const APPENDIX_A = [
  *
  * Glass is for the layers that float over the page (the composer card, dialogs, menus, popovers,
  * tooltips); the eyebrow and display rungs for the sidebar's list label and the page titles; live
- * marks for the spinner and the machines page's working marks; frames for the transcript's cards;
- * the shell for the app layout; a decorative icon for the rows and headers whose label already
- * says what the icon says (sidebar rows and group headers, the settings rail, a menu row's glyph,
- * a tab, an empty state) — a session row is not a host, its avatar and marks carry information;
- * a tree for a file tree and a work group's steps; a field for a settings row; activity for the
- * transcript's work in progress (the work group's header, a tool call, the thinking row).
+ * marks for the spinner, a pulsing state dot and the machines page's working marks; frames for
+ * the transcript's cards; the shell for the app layout; a decorative icon for the rows and headers
+ * whose label already says what the icon says (sidebar rows and group headers, the settings rail,
+ * a menu row's glyph, a tab, an empty state) — a session row is not a host, its avatar and marks
+ * carry information; a tree for a file tree and a work group's steps; a field for a settings row;
+ * activity for the transcript's work in progress (the work group's header, a tool call, the
+ * thinking row).
  */
 const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-glass": [
@@ -103,7 +104,7 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "MachinesPage",
     "DraftView",
   ],
-  "ui-live": ["Spinner", "Stepper", "MachineCard"],
+  "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard"],
   "ui-frame": ["ToolCallCard", "WorkGroup", "CodeBlock"],
   "ui-underline-nav": ["Tabs"],
   "ui-shell": ["AppLayout"],

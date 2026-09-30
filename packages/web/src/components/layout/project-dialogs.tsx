@@ -13,6 +13,7 @@ import type {
   ModelRefDto,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
+import { Badge, Button, ICONS } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -32,16 +33,13 @@ import { ModelSelect, modelLabel } from "../../features/chat/model-select";
 import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { sameModelRef } from "../../features/models/model-grouping";
-import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select } from "../ui/select";
 import { Switch } from "../ui/switch";
-import { GEAR_ICON } from "../ui/icons";
 import { FieldError, FieldHint, FieldLabel } from "../ui/field";
 import { toastError, toastSuccess } from "../ui/toast";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
-import { Badge } from "../ui/badge";
 import { InfoPopover } from "../ui/info-popover";
 import { SemanticIdField } from "../../features/semantic-id/semantic-id-field";
 
@@ -161,7 +159,7 @@ export function CreateProjectDialog({
 
 /** Path data for the settings tabs' small icons (24px viewBox, stroked like NAV_ICONS). */
 const TAB_ICON_PATHS = {
-  general: GEAR_ICON,
+  general: ICONS.gear,
   /** Two people (lucide users). Project members are humans — the Agent glyph used to stand in here. */
   members:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
@@ -494,7 +492,7 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
             <tr key={m.userId}>
               <td className="whitespace-nowrap px-2.5 py-1.5">{m.userId}</td>
               <td className="whitespace-nowrap px-2.5 py-1.5">
-                <Badge tone="gray">{m.role}</Badge>
+                <Badge>{m.role}</Badge>
               </td>
               <td className="whitespace-nowrap px-2.5 py-1 text-right">
                 {isOwner && m.role !== "owner" && m.userId !== user?.userId && (
@@ -519,7 +517,7 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
                 />
               </td>
               <td className="whitespace-nowrap px-2.5 py-1.5">
-                <Badge tone="gray">member</Badge>
+                <Badge>member</Badge>
               </td>
               <td className="whitespace-nowrap px-2.5 py-1 text-right">
                 <Button size="sm" disabled={!newMemberId.trim()} onClick={() => void addMember()}>

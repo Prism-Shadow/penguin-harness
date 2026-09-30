@@ -18,8 +18,8 @@
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { usePortalPanel } from "./use-portal-panel";
 
 /** Circled question mark: the app's 9-radius status circle, with a mark and a dot inside it. */

@@ -11,19 +11,21 @@
  */
 import { useEffect, useState } from "react";
 import type { BenchmarkCaseSummary, BenchmarkEvaluation } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Button,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+} from "@prismshadow/penguin-ui";
 import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { NEUTRAL_SERIES } from "../../lib/category-colors";
 import { makeRangeGeom, segmentPoints } from "../usage/chart-geom";
@@ -451,7 +453,7 @@ export function BenchmarkDetail({
           }}
           footer={
             <Button size="sm" variant="secondary" onClick={() => setAskingCaseId(openCase.id)}>
-              <GlyphIcon d={MAGIC_WAND_ICON} />
+              <GlyphIcon d={ICONS.wand} />
               {S.benchmark.askAi}
             </Button>
           }
