@@ -1,9 +1,9 @@
 /**
  * What a focused terminal does with a keydown after the clipboard keys have had their turn.
  * Pure: the surface passes what it knows (whether it offers a close, which global commands have a
- * handler) and acts on the answer. This is the decision behind the platform split — ⌘W closes on
- * a Mac while Ctrl+W reaches readline; the terminal toggle pressed inside xterm runs without
- * reaching the pty; a chord nothing answers (Ctrl+P before the palette exists) is the shell's.
+ * handler) and acts on the answer: the close chord (⌃⌥` / Ctrl+Alt+` by default) closes while
+ * Ctrl+W reaches readline; the terminal toggle pressed inside xterm runs without reaching the
+ * pty; a chord nothing answers (Ctrl+Alt+P before the palette exists) is the shell's.
  */
 import { matchShortcut } from "./match";
 import type { CommandId, KeyLike, Keymap, Platform } from "./types";

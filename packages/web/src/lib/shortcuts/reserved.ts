@@ -1,10 +1,13 @@
 /**
  * Chords the page never receives, or receives at a price. `browserReserved` names the chords
  * Chromium, Firefox and Safari act on before the page sees them (a binding to one of these is dead
- * in a browser tab and only works in the desktop app). `desktopReserved` names what the desktop
- * shell itself binds: "shell" for the keys it takes on `before-input-event` before the page,
- * "menu" for its menu-role accelerators, which the page CAN take (an accelerator fires only for a
- * key the page left alone) at the cost of shadowing that menu action.
+ * in a browser tab and only works in the desktop app). `browserCommon` names the chords a browser
+ * binds but acts on only when the page leaves the key alone (a binding to one of these works in a
+ * browser tab and takes over that browser function there, as ⌘P would take over Print).
+ * `desktopReserved` names what the desktop shell itself binds: "shell" for the keys it takes on
+ * `before-input-event` before the page, "menu" for its menu-role accelerators, which the page CAN
+ * take (an accelerator fires only for a key the page left alone) at the cost of shadowing that
+ * menu action.
  */
 import { chordEquals, normalizeChord, parseChord } from "./chord";
 import type { Chord, HostKind, Platform } from "./types";
@@ -54,6 +57,148 @@ const BROWSER_BY_PLATFORM: Record<Platform, readonly string[]> = {
     "Ctrl+ArrowLeft", // previous space
     "Ctrl+ArrowRight", // next space
     "Ctrl+Space", // input source switch
+  ],
+};
+
+/**
+ * The browsers' own functions on chords the page can take, read from Chrome's and Safari's
+ * published shortcut tables and from Firefox's key definitions (browser-sets.inc.xhtml) and
+ * DevTools table; a browser in parentheses is the one that binds the chord for that function.
+ * Chords the reserved tables above hold are not repeated.
+ */
+const COMMON_ALL = [
+  "Mod+KeyP", // print
+  "Mod+KeyS", // save page
+  "Mod+KeyO", // open a file
+  "Mod+KeyF", // find
+  "Mod+KeyG", // find next
+  "Mod+Shift+KeyG", // find previous
+  "Mod+KeyE", // search (on macOS: find the selection)
+  "Mod+KeyK", // search the web
+  "Mod+KeyL", // address bar
+  "Mod+KeyR", // reload
+  "Mod+Shift+KeyR", // reload, ignoring the cache (Safari: Reader)
+  "Mod+KeyD", // bookmark this page
+  "Mod+Shift+KeyD", // bookmark all tabs (Safari: add to Reading List)
+  "Mod+KeyB", // bookmarks sidebar (Firefox)
+  "Mod+Shift+KeyB", // bookmarks bar
+  "Mod+Shift+KeyO", // bookmark manager
+  "Mod+KeyJ", // downloads
+  "Mod+Shift+KeyH", // history (on macOS also the home page, Chrome and Safari)
+  "Mod+KeyU", // view source
+  "Mod+KeyI", // page info (Firefox)
+  "Mod+Shift+KeyI", // developer tools (on macOS: Chrome's email a link)
+  "Mod+Shift+KeyJ", // console (on macOS: Chrome's downloads)
+  "Mod+Alt+Shift+KeyI", // browser toolbox
+  "Mod+Alt+KeyZ", // sidebar (Firefox; on macOS its debugger)
+  "Mod+Shift+KeyM", // switch profile (Chrome)
+  "Mod+Shift+KeyA", // add-ons (Firefox)
+  "Mod+Shift+KeyS", // screenshot (Firefox)
+  "Mod+Shift+KeyX", // text direction (Firefox)
+  "Mod+Shift+Delete", // clear browsing data
+  "Mod+Equal", // zoom in
+  "Mod+Shift+Equal", // zoom in (+)
+  "Mod+Minus", // zoom out
+  "Mod+Shift+Minus", // zoom out (_, Firefox)
+  "Mod+Digit0", // actual size
+  "Mod+KeyZ", // undo
+  "Mod+Shift+KeyZ", // redo (on Windows: Firefox's debugger)
+  "Mod+KeyX", // cut
+  "Mod+KeyC", // copy
+  "Mod+KeyV", // paste
+  "Mod+KeyA", // select all
+  "Ctrl+KeyM", // mute the tab (Firefox)
+  "Ctrl+Shift+PageUp", // move the tab left (Chrome)
+  "Ctrl+Shift+PageDown", // move the tab right (Chrome)
+  "F3", // find next
+  "Shift+F3", // find previous (Firefox)
+  "F5", // reload
+  "Shift+F5", // reload, ignoring the cache (Firefox: profiler)
+  "F7", // caret browsing
+  "Shift+F7", // style editor (Firefox)
+  "Shift+F9", // storage inspector (Firefox)
+  "F12", // developer tools
+];
+
+/** Shared by Windows and Linux; macOS spells these functions with ⌘ and ⌥ instead. */
+const COMMON_OFF_MAC = [
+  "Mod+KeyH", // history
+  "Alt+ArrowLeft", // back
+  "Alt+ArrowRight", // forward
+  "Alt+Home", // home page
+  "Alt+KeyD", // address bar
+  "Alt+KeyE", // browser menu (Chrome)
+  "Alt+KeyF", // browser menu (Chrome)
+  "Alt+Shift+KeyA", // focus inactive dialogs (Chrome)
+  "Alt+Shift+KeyI", // feedback (Chrome)
+  "Alt+Shift+KeyN", // split view (Chrome)
+  "Alt+Shift+KeyT", // toolbar focus (Chrome)
+  "Mod+Shift+KeyC", // pick an element (Firefox)
+  "Mod+Shift+KeyE", // network monitor (Firefox)
+  "Mod+Shift+KeyK", // web console (Firefox)
+  "Mod+Shift+BracketRight", // picture-in-picture (Firefox)
+  "Mod+Alt+KeyU", // open tabs sidebar (Firefox)
+  "Mod+Alt+KeyX", // AI chatbot sidebar (Firefox)
+  "Mod+F5", // reload, ignoring the cache (Firefox)
+  "Mod+F6", // skip to the page (Chrome)
+  "F1", // help (Chrome)
+  "F6", // address bar (Chrome)
+  "F10", // toolbar focus (Chrome)
+];
+
+const COMMON_BY_PLATFORM: Record<Platform, readonly string[]> = {
+  windows: [
+    "Mod+KeyY", // redo (Firefox)
+    "F9", // reader view (Firefox)
+  ],
+  linux: [
+    "Mod+Shift+KeyY", // downloads (Firefox)
+    "Mod+Alt+KeyR", // reader view (Firefox)
+    "Mod+BracketLeft", // back (Firefox)
+    "Mod+BracketRight", // forward (Firefox)
+    "Alt+Digit1", // switch to tab 1… (Firefox)
+    "Alt+Digit2",
+    "Alt+Digit3",
+    "Alt+Digit4",
+    "Alt+Digit5",
+    "Alt+Digit6",
+    "Alt+Digit7",
+    "Alt+Digit8",
+    "Alt+Digit9", // …last tab
+  ],
+  mac: [
+    "Mod+KeyY", // history
+    "Mod+Comma", // settings
+    "Mod+Period", // stop loading (Firefox)
+    "Mod+BracketLeft", // back
+    "Mod+BracketRight", // forward
+    "Mod+ArrowLeft", // back
+    "Mod+ArrowRight", // forward
+    "Mod+Shift+Backslash", // tab overview (Safari)
+    "Mod+Shift+Backspace", // clear browsing data
+    "Mod+Shift+KeyF", // full screen (Firefox)
+    "Mod+Ctrl+KeyF", // full screen
+    "Mod+Ctrl+Digit1", // bookmarks sidebar (Safari)
+    "Mod+Ctrl+Digit2", // Reading List sidebar (Safari)
+    "Mod+Alt+KeyB", // bookmark manager (Chrome)
+    "Mod+Alt+KeyC", // inspect an element
+    "Mod+Alt+KeyE", // network monitor (Firefox)
+    "Mod+Alt+KeyF", // search the web
+    "Mod+Alt+KeyI", // developer tools
+    "Mod+Alt+KeyJ", // JavaScript console
+    "Mod+Alt+KeyK", // web console (Firefox)
+    "Mod+Alt+KeyM", // responsive design mode (Firefox)
+    "Mod+Alt+KeyN", // split view (Chrome)
+    "Mod+Alt+KeyP", // page setup (Chrome)
+    "Mod+Alt+KeyR", // reader view (Firefox)
+    "Mod+Alt+KeyU", // view source
+    "Mod+Alt+Shift+KeyA", // focus inactive dialogs (Chrome)
+    "Mod+Alt+Shift+BracketRight", // picture-in-picture (Firefox)
+    "Mod+Alt+ArrowUp", // cycle the focus through the toolbars (Chrome)
+    "Mod+Alt+ArrowDown",
+    "Ctrl+KeyU", // open tabs sidebar (Firefox)
+    "Ctrl+KeyX", // AI chatbot sidebar (Firefox)
+    "Ctrl+KeyZ", // sidebar (Firefox)
   ],
 };
 
@@ -159,6 +304,14 @@ export function browserReserved(chord: Chord, platform: Platform): boolean {
   return (
     inTable(chord, table("browser", BROWSER_ALL, platform)) ||
     inTable(chord, table("browser-platform", BROWSER_BY_PLATFORM[platform], platform))
+  );
+}
+
+export function browserCommon(chord: Chord, platform: Platform): boolean {
+  return (
+    inTable(chord, table("common", COMMON_ALL, platform)) ||
+    (platform !== "mac" && inTable(chord, table("common-off-mac", COMMON_OFF_MAC, platform))) ||
+    inTable(chord, table("common-platform", COMMON_BY_PLATFORM[platform], platform))
   );
 }
 

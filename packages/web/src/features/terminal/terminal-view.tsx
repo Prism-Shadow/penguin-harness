@@ -185,7 +185,7 @@ export interface TerminalViewProps {
   /** OSC window-title changes, parsed by this client's own xterm from the byte stream. */
   onTitle?: (title: string) => void;
   /**
-   * The `terminal.close` shortcut (⌘W / Ctrl+W by default) pressed inside this terminal. The
+   * The `terminal.close` shortcut (⌃⌥` / Ctrl+Alt+` by default) pressed inside this terminal. The
    * host decides what a close is — the dock tab's confirm-then-kill, the standalone page's
    * kill-then-close-window; with no handler the key goes to the shell like any other.
    */
@@ -365,13 +365,12 @@ export function TerminalView({
        *    skip xterm's own key handling, keep the browser default — is the whole
        *    implementation, and calling the async clipboard API as well would double-paste.
        * 2. The keymap (lib/shortcuts/terminal-keys.ts decides). A terminal-scope command
-       *    (`terminal.close`, ⌘W / Ctrl+W by default) is consumed here so it never reaches the
-       *    shell, where it is readline's delete-word; browsers keep that chord for closing the
-       *    browser tab and act first, the desktop shell delivers it. A global-scope command
-       *    with a handler (Ctrl+` toggling the docks) is not sent to the shell either, but is
-       *    left un-prevented so it bubbles to the window dispatcher that owns it — VS Code's
-       *    "commands to skip shell". Anything else, including a chord no surface answers, goes
-       *    to the shell as typed.
+       *    (`terminal.close`, ⌃⌥` / Ctrl+Alt+` by default) is consumed here so it never
+       *    reaches the shell. A global-scope command with a handler (Ctrl+` toggling the docks)
+       *    is not sent to the shell either, but is left un-prevented so it bubbles to the
+       *    window dispatcher that owns it — VS Code's "commands to skip shell". Anything else,
+       *    including a chord no surface answers and Ctrl+W (readline's delete-word), goes to
+       *    the shell as typed.
        */
       const platform = currentPlatform();
       term.attachCustomKeyEventHandler((event) => {

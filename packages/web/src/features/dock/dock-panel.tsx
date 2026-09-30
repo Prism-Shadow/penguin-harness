@@ -683,7 +683,7 @@ export function DockPanel({
     if (tab.kind === "terminal") terminalOrdinals.set(tab.terminalId, terminalOrdinals.size + 1);
   });
 
-  // The terminal.close shortcut (⌘W / Ctrl+W by default) inside a shown terminal asks for its
+  // The terminal.close shortcut (⌃⌥` / Ctrl+Alt+` by default) inside a shown terminal asks for its
   // tab to close, and takes the × path above,
   // confirmation included. Only the dock holding that tab answers — and not while it is
   // collapsing out, when the merged view may list the same tab — so no request is answered

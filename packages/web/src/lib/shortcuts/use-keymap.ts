@@ -2,7 +2,7 @@
  * React reads of the keymap. Every display site of a chord goes through these, so a change made
  * in the settings dialog — or in another tab, through the mirror's `storage` event — redraws the
  * tooltip, the kbd and the button title without a reload. A display read also drops a chord the
- * host cannot deliver (⌘W in a browser tab closes the tab, not the terminal), so no tooltip
+ * host cannot deliver (⌘W in a browser tab closes the tab, whatever it is bound to), so no tooltip
  * promises a key that does the opposite; the settings page reads the raw keymap and says why.
  */
 import { useSyncExternalStore } from "react";
