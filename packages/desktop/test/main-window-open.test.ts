@@ -42,7 +42,10 @@ describe("main.ts window-open handling", () => {
   });
 
   it("pins the page-controllable window options in the one allow", () => {
-    const override = /overrideBrowserWindowOptions:\s*\{[\s\S]*?\n\s*\},/.exec(source)?.[0];
+    // The whole literal, up to the brace at its own indentation: the webPreferences object
+    // inside it closes on a deeper one.
+    const literal = /^([ \t]*)overrideBrowserWindowOptions:\s*\{[\s\S]*?\n\1\},/m;
+    const override = literal.exec(source)?.[0];
     expect(override).toBeDefined();
     // Spread last, so nothing above it in the literal wins over the pinned keys.
     expect(override).toMatch(/\.\.\.APP_WINDOW_OPTIONS,\s*\},$/);
