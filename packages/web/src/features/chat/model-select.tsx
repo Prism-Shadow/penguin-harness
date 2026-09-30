@@ -18,6 +18,7 @@ import { ProviderLogo } from "../../components/ui/provider-logo";
 import { sameModelRef } from "../models/model-grouping";
 import { modelLabel } from "./model-picker-logic";
 import { ModelPickerModal } from "./model-picker-modal";
+import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 // Re-exported for the pages that label models (the models page, the Project and company
 // dialogs); it lives beside the picker's pure logic so the dialog can share it without an
@@ -114,14 +115,12 @@ export function PickerList<T>({
               type="button"
               ref={key === activeKey ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
               onClick={() => onPick(item)}
-              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                current
-                  ? "font-medium text-gray-900 dark:text-gray-100"
-                  : "text-gray-600 dark:text-gray-400"
-              }${key === activeKey ? " bg-gray-100 dark:bg-gray-800" : ""}`}
+              className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone(current)}${
+                key === activeKey ? " bg-gray-100 dark:bg-gray-800" : ""
+              }`}
             >
               {renderRow(item)}
-              <span className="w-3 shrink-0 text-center text-xs">{current ? "✓" : ""}</span>
+              <ChoiceCheck on={current} />
             </button>
           );
         })}
@@ -225,7 +224,7 @@ export function ModelSelect({
     <>
       <button
         type="button"
-        title={`${S.chat.chooseModel}：${label}`}
+        data-tooltip={`${S.chat.chooseModel}：${label}`}
         aria-label={S.chat.chooseModel}
         aria-haspopup="dialog"
         aria-expanded={open}

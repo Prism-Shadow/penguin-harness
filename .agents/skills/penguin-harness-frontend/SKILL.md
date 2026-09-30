@@ -38,9 +38,9 @@ Rules:
 - **Never make colour the only carrier.** Every status mark also names its state in an accessible
   name or in adjacent text.
 - **Contrast is measured, not assumed.** The ratios in `tone.ts` are WCAG 2.x against the four
-  surfaces marks actually sit on — white and gray-50 in light, and the values this app *overrides*
-  in `styles.css` for dark (gray-950 is `#000000`, gray-900 is `#0d0d0d`, not Tailwind's stock
-  values). Recompute if you change a tone; a graphical mark needs 3:1, and `muted` is the one tone
+  surfaces marks actually sit on — white and gray-50 in light, and the values the default theme
+  *overrides* for dark (`packages/ui/src/themes/github.css`: gray-950 is `#000000`, gray-900 is
+  `#0d0d0d`, not Tailwind's stock values). Recompute if you change a tone; a graphical mark needs 3:1, and `muted` is the one tone
   allowed below it because its meaning is always already in text.
 - **What is out of scope**, and must not be folded in: categorical palettes where colour is an
   identity rather than a judgement (`category-colors.ts`, `token-colors.ts`, the timeline phase
@@ -137,8 +137,9 @@ One record: `sizeTextClass` in `components/ui/input.tsx`. Two rungs — `sm` is 
 `text-base` — and `sizeClass` pairs each with its padding. `Select`'s menu rows, `OptionMenu`'s row
 titles, `Textarea` and `FormPicker` all read it, so a rung moves the whole family at once.
 
-The rungs are **relative, not the pixel values their names suggest**. `theme.tsx`'s `FONT_PX` sets
-the root font size per tier (16/18/20px, default 18) and `styles.css` overrides no `--text-*`, so
+The rungs are **relative, not the pixel values their names suggest**. `FONT_SCALE_PX` (in
+`@prismshadow/penguin-ui/boot`, applied before first paint and by `theme.tsx`) sets the root font
+size per tier (16/18/20px, default 18) and no stylesheet overrides a `--text-*`, so
 `text-xs` is 13.5px at the default tier rather than 12px, and every rung tracks the user's setting.
 
 **A call site passes `size`; it never spells a `text-*` class.** The caller's class and the

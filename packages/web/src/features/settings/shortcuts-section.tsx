@@ -101,7 +101,7 @@ function ShortcutRow({
         {overridden && (
           <button
             type="button"
-            title={S.shortcuts.resetRow}
+            data-tooltip={S.shortcuts.resetRow}
             aria-label={`${S.shortcuts.resetRow}: ${S.shortcuts.commands[cmd.id]}`}
             onClick={() => resetBinding(cmd.id)}
             className="flex h-6 w-6 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"

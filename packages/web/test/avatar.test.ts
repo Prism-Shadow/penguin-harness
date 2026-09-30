@@ -113,7 +113,7 @@ const hexRgb = (s: string) =>
   [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16) / 255) as [number, number, number];
 
 // App surfaces the tile sits on: light = white / gray-50 rows / gray-100 hover;
-// dark = the true-neutral overrides in styles.css (gray-900/800/700).
+// dark = the default theme's true-neutral overrides (penguin-ui themes/github.css: gray-900/800/700).
 const LIGHT_SURFACES = ["#ffffff", "#f9fafb", "#f3f4f6"].map(hexRgb);
 const DARK_SURFACES = ["#0d0d0d", "#1f1f1f", "#303030"].map(hexRgb);
 

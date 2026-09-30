@@ -35,7 +35,7 @@ export function HandoffBanner({ origin }: { origin: HandoffOrigin }) {
   return (
     <button
       type="button"
-      title={S.chat.handoffBack(origin.sessionTitle)}
+      data-tooltip={S.chat.handoffBack(origin.sessionTitle)}
       onClick={() => navigate(`/chat/${sessionId}`)}
       className={`${bannerFrame} transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200`}
     >
@@ -58,7 +58,7 @@ export function ModelSwitchBanner({ origin }: { origin: ModelSwitchOrigin }) {
   return (
     <button
       type="button"
-      title={S.chat.handoffBack(origin.sessionTitle)}
+      data-tooltip={S.chat.handoffBack(origin.sessionTitle)}
       onClick={() => navigate(`/chat/${sessionId}`)}
       className={`${bannerFrame} transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200`}
     >

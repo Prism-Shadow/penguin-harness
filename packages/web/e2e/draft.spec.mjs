@@ -172,7 +172,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   ).json();
   const meta = replay.messages.find((m) => m.type === "session_meta");
   expect(meta?.payload?.thinking_level).toBeUndefined();
-  await expect(page.getByTitle("思考等级：高 (high)")).toBeVisible();
+  await expect(page.locator('[data-tooltip="思考等级：高 (high)"]')).toBeVisible();
 
   // On a successful send the cache clears — except the model selection, which carries over as
   // the next conversation's default (switch-becomes-default, like the thinking level above).

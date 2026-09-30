@@ -9,6 +9,7 @@
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Chevron } from "../../components/ui/chevron";
+import type { RunState } from "../../components/ui/status-icon";
 
 /**
  * The row itself (collapsed and expanded state share it; the hover tone is the "open or
@@ -82,6 +83,35 @@ export const DISCLOSURE_BODY_MD_CLASS =
 export const DISCLOSURE_CARD_CLASS =
   "anim-msg my-2 overflow-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900";
 
+/**
+ * What a work step is and where it stands, for the `ui-activity` hook: the transcript's thinking
+ * and tool rows and the work group's header carry it, so a theme can render work in progress
+ * its own way (a glow while running, a transcript line with a block progress bar).
+ */
+export interface ActivityMark {
+  kind: "thinking" | "tool";
+  state: "running" | "done" | "error";
+}
+
+/**
+ * The run states the status icon shows, folded onto the three the activity hook knows. Waiting
+ * on an approval is unfinished work, so it reads as running; a stopped step is settled.
+ */
+export function activityState(state: RunState): ActivityMark["state"] {
+  if (state === "failed") return "error";
+  return state === "running" || state === "waiting" ? "running" : "done";
+}
+
+/**
+ * The activity hook's progress slot, rendered only while the step is actually executing (not
+ * while it waits on an approval), empty and `hidden`: the default theme draws no bar, and a
+ * hidden node leaves no gap in the row's flex spacing, so a theme that draws one sets its own
+ * `display`.
+ */
+export function ActivityProgress({ running }: { running: boolean }) {
+  return running ? <span data-slot="progress" aria-hidden className="hidden" /> : null;
+}
+
 export function DisclosureRow({
   icon,
   label,
@@ -89,6 +119,7 @@ export function DisclosureRow({
   variant = "row",
   sticky = false,
   defaultOpen = false,
+  activity,
   children,
 }: {
   /** Leading status icon slot (a StatusIcon, matching the thinking/tool rows). */
@@ -105,6 +136,8 @@ export function DisclosureRow({
   /** Pins the row while its body scrolls: nested rows under the stuck group header, a header against the scrollport (per variant). */
   sticky?: boolean;
   defaultOpen?: boolean;
+  /** A work step (the thinking row): the row carries the `ui-activity` hook with this mark. */
+  activity?: ActivityMark;
   /** Expanded body; the caller styles it (md body, output <pre>, …). */
   children: ReactNode;
 }) {
@@ -130,11 +163,16 @@ export function DisclosureRow({
           }
         }}
         aria-expanded={open}
-        className={`${sticky ? `${stickyClass} ` : ""}${rowClass}`}
+        className={`${activity ? "ui-activity " : ""}${sticky ? `${stickyClass} ` : ""}${rowClass}`}
+        data-kind={activity?.kind}
+        data-state={activity?.state}
       >
         {icon}
-        <span className={labelClass}>{label}</span>
+        <span className={labelClass} {...(activity ? { "data-slot": "label" } : {})}>
+          {label}
+        </span>
         {trailing}
+        {activity && <ActivityProgress running={activity.state === "running"} />}
         <span className="min-w-0 flex-1" />
         <Chevron open={open} className="text-gray-400" />
       </button>

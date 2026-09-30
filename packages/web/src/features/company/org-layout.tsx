@@ -159,7 +159,7 @@ function OrgEmptyLanding() {
               <li key={example.id} className="min-w-0">
                 <button
                   type="button"
-                  title={copy.mission}
+                  data-tooltip={copy.mission}
                   onClick={() => openCreate(copy)}
                   className="flex h-full w-full flex-col rounded-md border border-gray-200 p-3 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/60"
                 >

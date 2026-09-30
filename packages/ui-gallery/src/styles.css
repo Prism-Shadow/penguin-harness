@@ -1,0 +1,17 @@
+/**
+ * Gallery page styles. The package's theme foundation comes first, exactly as the Web App imports
+ * it, so the page's own root carries the theme under test (the fonts page's specimens read it);
+ * then chrome.css, the unthemed site chrome. The boards and the app render in their own framed
+ * documents (src/app/app.css, src/library/library.css), which carry the app's stylesheet.
+ */
+@import "tailwindcss";
+@import "@prismshadow/penguin-ui/theme.css";
+@import "@prismshadow/penguin-ui/themes/github.css";
+@import "@prismshadow/penguin-ui/themes/modern.css";
+@import "@prismshadow/penguin-ui/themes/geek.css";
+@import "@prismshadow/penguin-ui/fonts.css";
+@import "./chrome.css";
+
+@source "../../ui/src";
+/* The test helpers spell class patterns the guards look for; they are not markup. */
+@source not "../../ui/src/testing";

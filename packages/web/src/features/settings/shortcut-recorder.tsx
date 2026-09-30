@@ -86,7 +86,7 @@ export function ShortcutRecorder({
       <button
         ref={buttonRef}
         type="button"
-        title={S.shortcuts.rebind}
+        data-tooltip={S.shortcuts.rebind}
         aria-pressed={recording}
         onClick={() => {
           if (!recording) update(recorderStart());

@@ -198,12 +198,16 @@ export function SchedulesTab({
                   className="border-b border-gray-100 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
                 >
                   {/* Long text columns truncate with the full value on hover instead of wrapping. */}
-                  <td className="max-w-40 truncate px-3 py-2 font-mono text-xs" title={item.name}>
+                  <td
+                    className="max-w-40 truncate px-3 py-2 font-mono text-xs"
+                    data-tooltip={item.name}
+                    data-tooltip-content="code"
+                  >
                     {item.name}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">
                     {/* invalid reason is folded into the hover title. */}
-                    <span title={item.invalidReason}>
+                    <span data-tooltip={item.invalidReason}>
                       <Badge tone={STATUS_TONE[item.status]}>
                         {S.schedule.statusNames[item.status] ?? item.status}
                       </Badge>
@@ -218,7 +222,8 @@ export function SchedulesTab({
                   </td>
                   <td
                     className="max-w-36 truncate px-3 py-2 text-xs text-gray-500 dark:text-gray-400"
-                    title={item.sessionId}
+                    data-tooltip={item.sessionId}
+                    data-tooltip-content="text"
                   >
                     {item.sessionId !== undefined ? (
                       <span className="font-mono">{item.sessionId}</span>

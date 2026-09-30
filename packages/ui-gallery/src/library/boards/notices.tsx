@@ -1,0 +1,61 @@
+/**
+ * 提示条: the app's NoticeStrip in every tone — plain, with the leading mark a call site draws
+ * (`data-slot="icon"`, which a theme that draws its own tone mark hides), and with actions.
+ */
+import { Button } from "../../../../web/src/components/ui/button";
+import { NoticeStrip } from "../../../../web/src/components/ui/notice-strip";
+import { toneDot } from "../../../../web/src/lib/tone";
+import type { Tone } from "../../../../web/src/lib/tone";
+import { BoardGroup } from "../../foundations/shared";
+import { useGallery } from "../../state";
+
+const TONES: readonly Tone[] = ["link", "success", "busy", "attention", "danger", "muted"];
+
+const STRIP_CLASS = "flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm";
+
+export function NoticesBoard() {
+  const { S } = useGallery();
+  const t = S.library.notices;
+  return (
+    <div className="gf-board">
+      <BoardGroup title={t.plain}>
+        <div className="lib-stack">
+          {TONES.map((tone) => (
+            <NoticeStrip key={tone} tone={tone} as="p" className={STRIP_CLASS}>
+              {t.texts[tone]}
+            </NoticeStrip>
+          ))}
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.dotted}>
+        <div className="lib-stack">
+          {TONES.map((tone) => (
+            <NoticeStrip key={tone} tone={tone} className={STRIP_CLASS}>
+              <span
+                data-slot="icon"
+                aria-hidden
+                className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[tone]}`}
+              />
+              <span>{t.texts[tone]}</span>
+            </NoticeStrip>
+          ))}
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.withActions}>
+        <div className="lib-stack">
+          {(["link", "attention", "danger"] as const).map((tone) => (
+            <NoticeStrip key={tone} tone={tone} className={STRIP_CLASS}>
+              <span className="min-w-0 flex-1">{t.texts[tone]}</span>
+              <span data-slot="actions" className="flex shrink-0 gap-2">
+                <Button size="sm" variant="ghost">
+                  {t.dismiss}
+                </Button>
+                <Button size="sm">{t.action}</Button>
+              </span>
+            </NoticeStrip>
+          ))}
+        </div>
+      </BoardGroup>
+    </div>
+  );
+}

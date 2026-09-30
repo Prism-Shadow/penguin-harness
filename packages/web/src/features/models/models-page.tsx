@@ -141,10 +141,11 @@ import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
-import { toneInk, toneStrip } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { KeyAuthDialog } from "./key-auth-dialog";
 import type { KeyAuthTexts } from "./key-auth-dialog";
+import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /**
  * The authorization flows a group's "authorize a key" dialog can run, keyed by the flow named
@@ -1160,7 +1161,7 @@ export function ModelsPage() {
       <div className="mx-auto max-w-5xl">
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+            <h1 className="ui-display flex items-center gap-1.5 text-xl font-semibold">
               {S.models.title}
               {!isOwner && (
                 <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>
@@ -1264,7 +1265,7 @@ export function ModelsPage() {
                   {drag.dropEdge !== null && (
                     <div
                       aria-hidden
-                      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-[var(--accent-bg)] ${
+                      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent ${
                         drag.dropEdge === "above" ? "-top-1.5" : "-bottom-1.5"
                       }`}
                     />
@@ -1461,7 +1462,7 @@ export function ModelsPage() {
                           target="_blank"
                           rel="noreferrer noopener"
                           aria-label={`${S.models.getApiKey} ${group.provider.label}`}
-                          title={S.models.getApiKey}
+                          data-tooltip={S.models.getApiKey}
                           className="inline-flex shrink-0 items-center whitespace-nowrap p-1 text-xs text-brand-600 underline-offset-2 hover:underline @4xl:p-0 dark:text-brand-300"
                         >
                           <GlyphIcon d={EXTERNAL_LINK_ICON} size={13} className="@4xl:hidden" />
@@ -2070,7 +2071,7 @@ function AddGroupDialog({
                   type="button"
                   disabled={detecting || busy}
                   onClick={() => void detect()}
-                  title={S.models.detectProtocolHint}
+                  data-tooltip={S.models.detectProtocolHint}
                   className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
                 >
                   {detecting && (
@@ -2234,7 +2235,7 @@ export function ModelCard({
           {speed.ttftMs !== undefined && (
             <span
               className={`flex items-center gap-0.5 ${TONE_CLASS[ttftTone(speed.ttftMs)]}`}
-              title={S.models.ttftTitle}
+              data-tooltip={S.models.ttftTitle}
             >
               <GlyphIcon d={CLOCK_ICON} size={11} />
               {Math.round(speed.ttftMs)}ms
@@ -2243,7 +2244,7 @@ export function ModelCard({
           {speed.tps !== undefined && (
             <span
               className={`flex items-center gap-0.5 ${TONE_CLASS[tpsTone(speed.tps)]}`}
-              title={S.models.tpsTitle}
+              data-tooltip={S.models.tpsTitle}
             >
               <GlyphIcon d={ZAP_ICON} size={11} />
               {speed.tps} tok/s
@@ -2253,7 +2254,7 @@ export function ModelCard({
       ) : (
         <span
           className="shrink-0 text-[11px] font-medium text-red-600 dark:text-red-400"
-          title={speed.message}
+          data-tooltip={speed.message}
         >
           {S.models.speedFailed}
         </span>
@@ -2284,7 +2285,7 @@ export function ModelCard({
           {usedTokens !== undefined && usedTokens > 0 && (
             <span
               className="shrink-0 text-[10px] tabular-nums text-gray-400 dark:text-gray-500"
-              title={S.models.usedTokensTitle}
+              data-tooltip={S.models.usedTokensTitle}
             >
               {S.models.usedTokens(humanizeTokens(usedTokens))}
             </span>
@@ -2297,7 +2298,11 @@ export function ModelCard({
             the tags' own, so a card with marks and a card without are exactly as tall. */}
         <span className="flex min-h-[17px] w-full flex-wrap items-center gap-1">
           {tags.map((tag) => (
-            <span key={tag.key} title={tag.title} className={`${TAG_SHAPE} ${tag.className}`}>
+            <span
+              key={tag.key}
+              data-tooltip={tag.title}
+              className={`${TAG_SHAPE} ${tag.className}`}
+            >
               {tag.label}
             </span>
           ))}
@@ -2321,8 +2326,9 @@ export function ModelCard({
           sync, or the move the config dialog's own button performs — so the owner lands where
           the problem is fixed rather than on a second explanation. */}
       {fix !== null && (
-        <div
-          className={`flex items-center justify-between gap-2 border-t px-3 py-2 text-[11px] ${toneStrip.attention}`}
+        <NoticeStrip
+          tone="attention"
+          className="flex items-center justify-between gap-2 border-t px-3 py-2 text-[11px]"
         >
           <span className="min-w-0">
             {fix === "sync" ? S.models.vendorRowStalePin : S.models.vendorRowUnroutable}
@@ -2337,7 +2343,7 @@ export function ModelCard({
               {S.models.moveToCustomGroup}
             </Button>
           )}
-        </div>
+        </NoticeStrip>
       )}
     </div>
   );
@@ -3001,9 +3007,10 @@ function ModelDialog({
         {fieldErrors.modelId && <FieldError>{fieldErrors.modelId}</FieldError>}
       </label>
       {routingFix !== null && (
-        <div
+        <NoticeStrip
+          tone="attention"
           role="alert"
-          className={`flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs ${toneStrip.attention}`}
+          className="flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs"
         >
           {/* A built-in model whose stored entry lost its protocol pin needs the preset sync,
               not a move: the same split the card makes, so the two places the owner can read
@@ -3031,7 +3038,7 @@ function ModelDialog({
               {S.models.useCustomGroup}
             </Button>
           )}
-        </div>
+        </NoticeStrip>
       )}
       <div className="grid grid-cols-2 gap-2">
         <Input
@@ -3378,7 +3385,7 @@ function ModelDialog({
                 type="button"
                 disabled={detecting}
                 onClick={() => void detectFromButton()}
-                title={S.models.detectProtocolHint}
+                data-tooltip={S.models.detectProtocolHint}
                 className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
               >
                 {detecting && (
@@ -3641,7 +3648,7 @@ function ModelDialog({
                       type="button"
                       disabled={visionDetecting}
                       onClick={() => void detectVisionFromButton()}
-                      title={S.models.detectVisionHint}
+                      data-tooltip={S.models.detectVisionHint}
                       className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
                     >
                       {visionDetecting && (
@@ -3673,7 +3680,7 @@ function ModelDialog({
               <div className={toggleCellClass}>
                 <label
                   className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-                  title={S.models.fastModeHint}
+                  data-tooltip={S.models.fastModeHint}
                 >
                   <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
                     {S.models.fastMode}
