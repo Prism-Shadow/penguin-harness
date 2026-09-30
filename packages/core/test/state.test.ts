@@ -1032,6 +1032,83 @@ describe("project-config round trip", () => {
     );
   });
 
+  it("rewrites the client types of AgentHub 0.4 to MMSP's once, on load, keeping the rest of the file", async () => {
+    // A Project written before MMSP 0.5.0 holds the per-generation names the old router
+    // accepted; MMSP refuses them at client construction, so the loader maps each to the
+    // client that speaks the same wire protocol and writes the file back — every other key
+    // (a display name, the default chat block) intact.
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        'name = "Legacy"',
+        'default_model = { provider = "deepseek", model_id = "deepseek-flash" }',
+        "",
+        "[default_chat]",
+        'thinking_level = "high"',
+        "",
+        "[[models]]",
+        'provider = "deepseek"',
+        'model_id = "deepseek-flash"',
+        'client_type = "deepseek-v4"',
+        'base_url = "https://api.deepseek.com"',
+        "",
+        "[[models]]",
+        'provider = "penguin-go"',
+        'model_id = "gemini-3.8-flash"',
+        'client_type = "gemini-3.8"',
+        'base_url = "https://go.example/api"',
+        "",
+        "[[models]]",
+        'provider = "minimax"',
+        'model_id = "MiniMax-M3"',
+        'client_type = "minimax-m3"',
+        "",
+        "[[models]]",
+        'provider = "custom"',
+        'model_id = "my-claude"',
+        'client_type = "Claude-5"',
+        'base_url = "https://proxy.example"',
+        'api_key = "sk-keep"',
+        "",
+        "[[models]]",
+        'provider = "custom"',
+        'model_id = "kept"',
+        'client_type = "openai-responses"',
+        'base_url = "https://proxy.example/v1"',
+      ].join("\n"),
+      "utf8",
+    );
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    const typeOf = (provider: string, modelId: string): string | undefined =>
+      getModel(loaded, { provider, model_id: modelId })?.client_type;
+    expect(typeOf("deepseek", "deepseek-flash")).toBe("deepseek-official");
+    expect(typeOf("penguin-go", "gemini-3.8-flash")).toBe("gemini-generate-content");
+    expect(typeOf("minimax", "MiniMax-M3")).toBe("minimax-official");
+    expect(typeOf("custom", "my-claude")).toBe("anthropic-official"); // matched case-insensitively
+    expect(typeOf("custom", "kept")).toBe("openai-responses"); // a 0.5.0 name passes through
+    expect(loaded.name).toBe("Legacy");
+    expect(loaded.default_chat?.thinking_level).toBe("high");
+    expect(loaded.default_model).toEqual({ provider: "deepseek", model_id: "deepseek-flash" });
+    // The file was rewritten with the new names and nothing else lost.
+    const rewritten = await fs.readFile(file, "utf8");
+    expect(rewritten).toContain('client_type = "deepseek-official"');
+    expect(rewritten).toContain('client_type = "gemini-generate-content"');
+    expect(rewritten).toContain('client_type = "minimax-official"');
+    expect(rewritten).toContain('client_type = "anthropic-official"');
+    expect(rewritten).not.toMatch(/deepseek-v4|gemini-3\.8"|minimax-m3|Claude-5/);
+    expect(rewritten).toContain('api_key = "sk-keep"');
+    expect(rewritten).toContain('base_url = "https://go.example/api"');
+    expect(rewritten).toContain('thinking_level = "high"');
+    expect(rewritten).toContain('name = "Legacy"');
+    // Once: a second load finds nothing to migrate and leaves the file untouched.
+    const { mtimeMs } = await fs.stat(file);
+    await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect((await fs.stat(file)).mtimeMs).toBe(mtimeMs);
+    expect(await fs.readFile(file, "utf8")).toBe(rewritten);
+  });
+
   it("addModel files the entry under the provider it was given, never one of its own choosing", async () => {
     // provider is a required field: nothing is inferred from the builtin catalog, so a model
     // outside the known groups is filed under custom only because the caller said so. glm-5.2

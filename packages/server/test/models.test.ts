@@ -451,6 +451,46 @@ describe("models preset & catalog enrichment", () => {
     expect(legacy.envKey).toBeUndefined();
   });
 
+  it("a config stored with AgentHub 0.4 client types is migrated on its first read: GET reports MMSP's names and the file is rewritten once", async () => {
+    // A Project written before MMSP 0.5.0: the old router's per-generation names, which MMSP
+    // refuses at client construction. The service's reader rewrites the file the moment it
+    // reads it, so every consumer of the table — this GET, a Session's credential resolution,
+    // the scheduler — sees the new names, and the row stays exactly where it was.
+    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    await writeFile(
+      cfgFile,
+      [
+        'name = "Legacy"',
+        "[[models]]",
+        'provider = "penguin-go"',
+        'model_id = "gemini-3.8-flash"',
+        'client_type = "gemini-3.8"',
+        'base_url = "https://go.example/api"',
+        "",
+        "[[models]]",
+        'provider = "deepseek"',
+        'model_id = "deepseek-flash"',
+        'client_type = "deepseek-v4"',
+        'base_url = "https://api.deepseek.com"',
+        'api_key = "sk-keep"',
+      ].join("\n"),
+      "utf8",
+    );
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(body, "penguin-go", "gemini-3.8-flash").clientType).toBe("gemini-generate-content");
+    expect(pick(body, "deepseek", "deepseek-flash").clientType).toBe("deepseek-official");
+    const rewritten = await readFile(cfgFile, "utf8");
+    expect(rewritten).toContain('client_type = "gemini-generate-content"');
+    expect(rewritten).toContain('client_type = "deepseek-official"');
+    expect(rewritten).not.toMatch(/gemini-3\.8"|deepseek-v4/);
+    expect(rewritten).toContain('name = "Legacy"');
+    expect(rewritten).toContain('api_key = "sk-keep"');
+    // The rewritten file is what later reads serve, and they leave it alone.
+    const { mtimeMs } = await stat(cfgFile);
+    await api.get(url());
+    expect((await stat(cfgFile)).mtimeMs).toBe(mtimeMs);
+  });
+
   it("a configured model that has since been dropped from the built-in catalog still loads, keeps its data, and stays usable", async () => {
     // Migration guard for catalog removals (the 2026-08-18 inclusionai/ling-3.0-flash:free
     // delisting is the live example): a user who configured the preset before it was removed

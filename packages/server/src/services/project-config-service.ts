@@ -44,6 +44,7 @@ import {
   imageUrlMessage,
   metaMaxTokens,
   presetPromotions,
+  migrateLegacyClientTypes,
   projectConfigFromTable,
   projectConfigPath,
   renderProjectConfigToml,
@@ -502,6 +503,12 @@ export class ProjectConfigService implements ProjectConfigStore {
       return null;
     }
     const table = asTable(parseToml(raw));
+    if (migrateLegacyClientTypes(table)) {
+      // A file from before MMSP 0.5.0: rewritten once, before it is served; the next read
+      // parses the rewritten file (writeRaw drops the cache).
+      await this.writeRaw(projectId, table);
+      return table;
+    }
     this.cache.set(projectId, { mtimeMs: cacheable(mtimeMs), table });
     return table;
   }

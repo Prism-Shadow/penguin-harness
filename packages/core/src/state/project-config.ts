@@ -290,6 +290,75 @@ function assertModelEntry(file: string, entry: unknown): ModelEntry {
 }
 
 /**
+ * The client types AgentHub 0.4 named after model generations, matched the way its router
+ * matched them (substrings of the lowercased value, in its branch order), and the MMSP 0.5.0
+ * client that speaks the same wire protocol: the 0.4 Gemini client spoke generateContent,
+ * which the compatible client still does (and what the Penguin Go relay serves), the rest
+ * became their vendor's official client. The 0.5.0 names contain none of these substrings.
+ */
+const LEGACY_CLIENT_TYPES: readonly (readonly [
+  matches: (t: string) => boolean,
+  clientType: string,
+])[] = [
+  [(t) => t.includes("gemini-3") || t.includes("gemini-embedding"), "gemini-generate-content"],
+  [
+    (t) =>
+      t.includes("claude") &&
+      (t.includes("4-6") || t.includes("4-7") || t.includes("4-8") || t.includes("-5")),
+    "anthropic-official",
+  ],
+  [
+    (t) =>
+      t.includes("gpt-5.4") ||
+      t.includes("gpt-5.5") ||
+      t.includes("gpt-5.6") ||
+      t.includes("gpt-6"),
+    "openai-official",
+  ],
+  [(t) => t.includes("glm-5"), "zai-official"],
+  [
+    (t) => t.includes("kimi-k3") || t.includes("kimi-k2.5") || t.includes("kimi-k2.6"),
+    "moonshot-official",
+  ],
+  [(t) => t === "minimax-m3", "minimax-official"],
+  [(t) => t.includes("deepseek-v4"), "deepseek-official"],
+];
+
+/**
+ * One-time migration of a parsed `.project_config.toml` table: MMSP 0.5.0 refuses the client
+ * types AgentHub 0.4 accepted (`Unknown client type "gemini-3.8"`), so every `[[models]]` entry
+ * carrying one is rewritten in place to the client that speaks the same wire protocol. Both
+ * loaders — `loadProjectConfig` here and the server's `ProjectConfigService.readTable` — write
+ * the table back the moment this returns true, so a file is rewritten once and an old name
+ * that reappears later (a models PUT from a page opened before the upgrade, a machine sync
+ * from an older install) is repaired at its next read. Nothing is written when nothing
+ * matched. Entries the catalog has since unpinned (`deepseek/deepseek-flash`,
+ * `minimax/MiniMax-M3`) come out pinned to their vendor's official client, which routes; the
+ * Models page's preset sync clears the pin like any other catalog difference.
+ *
+ * Removal: at the 0.3.0 release preparation, by whoever prepares it, once its release notes
+ * say a Project last opened before the release that shipped this migration must be opened once
+ * on a 0.2.x release first. Takes out LEGACY_CLIENT_TYPES, this function, the write-back in the
+ * two loaders, and their tests (core `state.test.ts`, server `models.test.ts`); see
+ * changelog/unreleased/2026-09-30-backward-compatibility.md.
+ */
+export function migrateLegacyClientTypes(table: Record<string, unknown>): boolean {
+  let changed = false;
+  for (const entry of Array.isArray(table.models) ? table.models : []) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const m = entry as { client_type?: unknown };
+    if (typeof m.client_type !== "string") continue;
+    const t = m.client_type.trim().toLowerCase();
+    const replacement = LEGACY_CLIENT_TYPES.find(([matches]) => matches(t))?.[1];
+    if (replacement !== undefined) {
+      m.client_type = replacement;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
  * Leniently parses the `[default_chat]` block (new-chat defaults): each key is validated
  * independently and an invalid value (wrong type / unknown enum member / `"none"` as a
  * thinking level) drops that key rather than failing the load — the block only ever
@@ -523,7 +592,16 @@ export async function loadProjectConfig(root: string, projectId: string): Promis
     throw err;
   }
   // Defensive: parseToml may return null/undefined for an empty file, and destructuring it would throw a TypeError.
-  return projectConfigFromTable(file, (parseToml(raw) ?? {}) as Record<string, unknown>);
+  const table = (parseToml(raw) ?? {}) as Record<string, unknown>;
+  // The raw table is written back, not the typed config, so every key the file carries
+  // survives the rewrite (this loader keeps known keys only).
+  if (migrateLegacyClientTypes(table)) {
+    await atomicWriteFile(file, renderProjectConfigToml(table), {
+      mode: 0o600,
+      followSymlinks: true,
+    });
+  }
+  return projectConfigFromTable(file, table);
 }
 
 /** A TOML inline table for a paired reference (reuses smol-toml's string serialization, guaranteeing correct escaping). */
