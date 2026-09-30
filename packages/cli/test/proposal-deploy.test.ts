@@ -97,8 +97,8 @@ describe("resolves a proposal to its impl PR head and plans the push", () => {
     expect(outcome).toEqual({ ok: true, head: HEAD, revision: null, dryRun: true });
     expect(calls.map(line)).toEqual([
       `git -C ${path.join(CHECKOUT, "packages", "cli")} rev-parse --show-toplevel`,
-      `git -C ${CHECKOUT} fetch --no-tags https://github.com/acme/penguin-harness.git +refs/pull/42/head:refs/penguin-deploy/pr-42`,
-      `git -C ${CHECKOUT} rev-parse --verify refs/penguin-deploy/pr-42^{commit}`,
+      `git -C ${CHECKOUT} fetch --no-tags https://github.com/acme/penguin-harness.git refs/pull/42/head`,
+      `git -C ${CHECKOUT} rev-parse --verify FETCH_HEAD^{commit}`,
     ]);
     expect(read).toBe(0);
   });
@@ -111,10 +111,10 @@ describe("builds the head in a throwaway worktree and runs that generation's dep
     expect(outcome).toMatchObject({ ok: true, head: HEAD, dryRun: false });
     expect(calls.slice(1).map((c) => [line(c), c.cwd])).toEqual([
       [
-        `git -C ${CHECKOUT} fetch --no-tags https://github.com/acme/penguin-harness.git +refs/pull/42/head:refs/penguin-deploy/pr-42`,
+        `git -C ${CHECKOUT} fetch --no-tags https://github.com/acme/penguin-harness.git refs/pull/42/head`,
         CHECKOUT,
       ],
-      [`git -C ${CHECKOUT} rev-parse --verify refs/penguin-deploy/pr-42^{commit}`, CHECKOUT],
+      [`git -C ${CHECKOUT} rev-parse --verify FETCH_HEAD^{commit}`, CHECKOUT],
       [`git -C ${CHECKOUT} worktree add --detach ${TREE} ${HEAD}`, CHECKOUT],
       ["pnpm install --frozen-lockfile", TREE],
       ["pnpm -r build", TREE],

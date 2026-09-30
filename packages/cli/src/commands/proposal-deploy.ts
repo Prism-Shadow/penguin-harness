@@ -129,18 +129,16 @@ export async function deployProposal(o: DeployOptions): Promise<DeployOutcome> {
   });
   if (top.code !== 0) return { ok: false, reason: `not inside a git checkout: ${o.cwd}` };
   const repoDir = top.stdout.trim();
-  const ref = `refs/penguin-deploy/pr-${pr.pull}`;
   const git = (args: string[], capture = false): Promise<RunResult> =>
     o.run("git", ["-C", repoDir, ...args], { cwd: repoDir, capture });
-  if (
-    (await git(["fetch", "--no-tags", pr.repoUrl, `+refs/pull/${pr.pull}/head:${ref}`])).code !== 0
-  ) {
+  // Into FETCH_HEAD only: the run leaves no ref behind in the caller's checkout.
+  if ((await git(["fetch", "--no-tags", pr.repoUrl, `refs/pull/${pr.pull}/head`])).code !== 0) {
     return { ok: false, reason: `could not fetch refs/pull/${pr.pull}/head from ${pr.repoUrl}` };
   }
-  const parsed = await git(["rev-parse", "--verify", `${ref}^{commit}`], true);
+  const parsed = await git(["rev-parse", "--verify", "FETCH_HEAD^{commit}"], true);
   const head = parsed.stdout.trim();
   if (parsed.code !== 0 || !/^[0-9a-f]{40}$/.test(head)) {
-    return { ok: false, reason: `fetched ${ref} does not name a commit` };
+    return { ok: false, reason: `refs/pull/${pr.pull}/head did not fetch as a commit` };
   }
   o.log(`proposal #${n} → ${o.proposal.implPrUrl} @ ${head} → ${baseUrl}`);
   if (o.dryRun) return { ok: true, head, revision: null, dryRun: true };
