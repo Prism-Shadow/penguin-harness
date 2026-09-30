@@ -9,12 +9,10 @@
 import { useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
+import { ChevronDown, ICON_SIZE, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { FormPickerTrigger } from "../../components/ui/form-picker";
-import { ChevronDown } from "../../components/ui/icons";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { menuSearchClass, noAutofill } from "../../components/ui/input";
-import { ProviderLogo } from "../../components/ui/provider-logo";
 import { sameModelRef } from "../models/model-grouping";
 import { modelLabel } from "./model-picker-logic";
 import { ModelPickerModal } from "./model-picker-modal";

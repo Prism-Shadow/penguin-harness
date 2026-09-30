@@ -16,13 +16,14 @@
  */
 import { useMemo, useRef, useState } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
+import { Chevron, StatusIcon } from "@prismshadow/penguin-ui";
+import type { RunState } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
-import { Chevron } from "../../components/ui/chevron";
 import {
   ActivityProgress,
   DISCLOSURE_OUTPUT_PRE_CLASS,
@@ -32,8 +33,6 @@ import {
 } from "./disclosure-row";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { toneInk } from "../../lib/tone";
-import { StatusIcon } from "../../components/ui/status-icon";
-import type { RunState } from "../../components/ui/status-icon";
 import { ApprovalButtons } from "./approval-buttons";
 import { LiveDuration, useElapsedPast } from "./live-duration";
 import { useTheme } from "../../state/theme";

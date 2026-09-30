@@ -12,7 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CloseIcon } from "../../components/ui/icons";
+import { Badge, CloseIcon, Skeleton } from "@prismshadow/penguin-ui";
 import { useDialogLayer } from "../../components/ui/modal";
 import type {
   HarnessHistoryEntry,
@@ -23,8 +23,6 @@ import type {
   VersionHistoryResponse,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { Badge } from "../../components/ui/badge";
-import { Skeleton } from "../../components/ui/skeleton";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { ModuleTreeView } from "./module-tree-view";
@@ -37,10 +35,10 @@ function shortSha(pointer: string | null): string {
   return base.replace(/\.[a-z]+$/i, "");
 }
 
-const changeTone: Record<MemberChange["change"], "green" | "red" | "amber"> = {
-  added: "green",
-  removed: "red",
-  changed: "amber",
+const changeTone: Record<MemberChange["change"], "success" | "danger" | "attention"> = {
+  added: "success",
+  removed: "danger",
+  changed: "attention",
 };
 
 function isCurrent(
@@ -295,7 +293,7 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
                             {e.source?.revision ?? t.noProvenance}
                           </span>
                           {isCurrent(e, history.current) ? (
-                            <Badge tone="green">{t.current}</Badge>
+                            <Badge tone="success">{t.current}</Badge>
                           ) : null}
                         </div>
                         <div className="mt-0.5 flex justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">

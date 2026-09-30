@@ -19,8 +19,8 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
+import { CloseButton } from "@prismshadow/penguin-ui";
 import { setShortcutBlocker } from "../../lib/shortcuts/dispatcher";
-import { CloseButton } from "./icons";
 
 export interface ModalProps {
   open: boolean;

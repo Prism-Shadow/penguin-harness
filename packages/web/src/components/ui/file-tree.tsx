@@ -30,13 +30,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { Chevron, GlyphIcon, ICONS, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { subtreeEnd, treeKeyStep } from "../../lib/file-tree";
 import type { FileTreeRow } from "../../lib/file-tree";
-import { Chevron } from "./chevron";
-import { GlyphIcon } from "./glyph-icon";
-import { FOLDER_ICON, FOLDER_OPEN_ICON } from "./group-list";
-import { FILE_ICON } from "./icons";
-import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** Left padding of a depth-0 row, in px; deeper rows add `TREE_INDENT_PX` per level. */
 const TREE_PAD_PX = 6;
@@ -250,7 +246,7 @@ export function FileTree<Row extends FileTreeRow>({
           {row.kind === "dir" && <Chevron open={row.expanded} size={ICON_SIZE.chevronDense} />}
         </span>
         <GlyphIcon
-          d={row.kind === "dir" ? (row.expanded ? FOLDER_OPEN_ICON : FOLDER_ICON) : FILE_ICON}
+          d={row.kind === "dir" ? (row.expanded ? ICONS.folderOpen : ICONS.folder) : ICONS.file}
           size={ICON_SIZE.rowLead}
           className="text-gray-400"
         />

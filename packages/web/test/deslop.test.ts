@@ -32,11 +32,14 @@ import { expectEveryRootScanned, scanSources } from "./helpers/roots";
 const SCAN = scanSources();
 const WEB = SCAN.files.filter((file) => file.root === "web");
 
-/** The homes §3 names, as the web app spells them today. It has no Spinner of its own: W1 adds it. */
+/**
+ * The homes §3 names, as the web app spells them today. It has no Spinner of its own (the
+ * package's is the one), and the chevron's rotation left with the chevron.
+ */
 const POLICY: DeslopPolicy = {
-  transformMotion: ["chevron.tsx", "sheet.tsx", "drawer.tsx", "dock-launcher.tsx"],
+  transformMotion: ["sheet.tsx", "drawer.tsx", "dock-launcher.tsx"],
   entranceMotion: [],
-  pulseHomes: ["dot.tsx", "skeleton.tsx", "streaming-caret.tsx"],
+  pulseHomes: ["dot.tsx", "streaming-caret.tsx"],
   spinnerHomes: [],
   tokensOnly: false,
   hexHomes: [],
@@ -67,21 +70,16 @@ const ALLOWLIST: DeslopAllowlist = {
     13: [3, "W7"],
     14: [2, "W7"],
   },
-  "components/ui/badge.tsx": { 13: [1, "W1"] },
   "components/ui/confirm-modal.tsx": { 7: [1, "W3"] },
-  "components/ui/copy-button.tsx": { 12: [2, "W1"] },
   "components/ui/group-list.tsx": { 12: [1, "W4"], 13: [3, "W4"], 14: [2, "W4"] },
   "components/ui/input.tsx": { 9: [1, "W2"] },
-  "components/ui/kbd.tsx": { 13: [1, "W10"] },
   "components/ui/option-menu.tsx": { 13: [1, "W2"] },
   "components/ui/paged-dialog.tsx": { 13: [1, "W3"], 14: [2, "W3"] },
   "components/ui/segmented.tsx": { 12: [2, "W2"] },
   "components/ui/session-row-menu.tsx": { 1: [1, "W1b"] },
   "components/ui/sheet.tsx": { 19: [1, "W3"] },
-  "components/ui/status-icon.tsx": { 11: [2, "W1b"] },
   "components/ui/switch.tsx": { 1: [1, "W2"] },
   "components/ui/toast.tsx": { 9: [4, "W4"] },
-  "components/ui/update-dot.tsx": { 13: [1, "W1"] },
   "features/agents/agent-settings-page.tsx": { 12: [3, "W4"] },
   "features/agents/hooks-tab.tsx": { 12: [1, "W4"], 13: [2, "W4"] },
   "features/agents/mcp-servers-section.tsx": { 13: [3, "W4"] },
@@ -92,7 +90,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/ai-create/ai-create-panel.tsx": { 13: [1, "W4"] },
   "features/benchmark/benchmark-case-browser.tsx": { 13: [2, "W4"] },
   "features/benchmark/benchmark-detail.tsx": { 13: [2, "W4"] },
-  "features/benchmark/benchmark-page.tsx": { 13: [2, "W4"], 18: [1, "W4"] },
+  "features/benchmark/benchmark-page.tsx": { 13: [1, "W4"], 18: [1, "W4"] },
   "features/benchmark/create-benchmark-modal.tsx": { 13: [1, "W3"] },
   "features/benchmark/evaluation-detail-modal.tsx": { 13: [2, "W3"] },
   "features/builtin-browser/browser-tab-strip.tsx": { 11: [2, "W10"], 12: [2, "W10"] },
@@ -107,7 +105,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/chat/drop-zone.tsx": { 18: [1, "W7"] },
   "features/chat/live-duration.tsx": { 6: [1, "W4"] },
   "features/chat/memory-view.tsx": { 13: [2, "W6"] },
-  "features/chat/message-item.tsx": { 4: [2, "W6"], 6: [1, "W6"], 13: [3, "W6"] },
+  "features/chat/message-item.tsx": { 4: [2, "W6"], 13: [3, "W6"] },
   "features/chat/message-stream.tsx": { 11: [2, "W1b"] },
   "features/chat/model-picker-modal.tsx": { 12: [1, "W10"] },
   "features/chat/shortcuts-folder.tsx": { 12: [1, "W7"] },

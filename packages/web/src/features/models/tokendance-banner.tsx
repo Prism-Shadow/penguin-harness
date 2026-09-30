@@ -8,11 +8,8 @@
  * so the global reduced-motion rule leaves the banner plain.
  */
 import { useState } from "react";
+import { Button, CloseButton, ICON_GAP, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_GAP } from "../../lib/icon-scale";
-import { Button } from "../../components/ui/button";
-import { CloseButton } from "../../components/ui/icons";
-import { ProviderLogo } from "../../components/ui/provider-logo";
 
 /** The group the banner connects: it is TokenDance's by name, so it names the group too. */
 export const TOKENDANCE_PROVIDER_ID = "tokendance";

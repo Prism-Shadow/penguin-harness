@@ -9,7 +9,7 @@
  * the component library's topics (src/library/topics.ts), in both dictionaries; a test checks
  * each covers every id.
  */
-import type { HookName, ThemeId, ToneName } from "@prismshadow/penguin-ui";
+import type { HookName, StreamReveal, ThemeId, ToneName } from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
 import type { ChartToken } from "./library/chart-tokens";
@@ -71,6 +71,12 @@ export const zh = {
     "chat-thinking": {
       title: "对话 · 思考中",
       description: "任务进行中：模型正在思考，思考行显示运行状态，文字仍在增长。",
+      how: "侧栏 › 带运行标记的会话行。",
+    },
+    "chat-streaming": {
+      title: "对话 · 流式输出",
+      description:
+        "任务进行中：回答正在流式到达，按当前主题的方式显现；答完停留片刻后重新开始，循环播放。",
       how: "侧栏 › 带运行标记的会话行。",
     },
     "chat-approval": {
@@ -333,6 +339,7 @@ export const zh = {
       "ui-notice": "提示条与弹出通知：按语气（信息、成功、警告、错误、中性）着色",
       "ui-chart": "统计图：网格、坐标轴、折线、面积、柱与数据点",
       "ui-scrim": "对话框、抽屉与面板背后的遮罩层",
+      "ui-stream": "正在流式输出的回答：各主题决定新文字如何出现",
     } as Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
@@ -387,7 +394,10 @@ export const zh = {
     title: "组件库",
     groups: { components: "组件", foundations: "视觉基础" } as Record<TopicGroupId, string>,
     topics: {
-      buttons: { title: "按钮", description: "四种变体、两档尺寸与图标按钮，以及禁用与进行中。" },
+      buttons: {
+        title: "按钮",
+        description: "五种变体、五档尺寸与图标按钮，禁用与加载中，以及链接与键盘提示。",
+      },
       inputs: {
         title: "输入与表单",
         description: "文本框、多行文本、密码框与字段脚手架：标签、提示、说明与错误。",
@@ -406,16 +416,21 @@ export const zh = {
       tabs: { title: "标签页", description: "下划线式标签切换，可带更新标记。" },
       badges: {
         title: "徽标与状态",
-        description: "徽标、运行状态图标、会话活动标记与更新点。",
+        description: "徽标与计数、状态点、运行状态图标、会话活动标记与更新点。",
       },
       empty: { title: "空状态", description: "列表或详情为空时的占位文字，可带操作。" },
       loading: { title: "加载", description: "转圈与骨架屏。" },
+      streaming: {
+        title: "流式输出",
+        description:
+          "助手回答随流到达时怎样显现：通用即时显示，白领按词淡入、带一层微光，极客逐字打出。",
+      },
       charts: {
         title: "图表",
         description:
           "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、趋势与用量柱、请求与成功率、活动与评分折线、轨迹时间线。",
       },
-      avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸。" },
+      avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸，以及头像组。" },
       files: { title: "文件", description: "文件树与只读文件浏览器。" },
       colour: {
         title: "颜色",
@@ -435,13 +450,28 @@ export const zh = {
       secondary: "取消",
       danger: "删除",
       ghost: "更多",
+      link: "查看详情",
       sizes: "尺寸",
       md: "默认尺寸",
       sm: "小尺寸",
+      xs: "最小尺寸",
+      leading: "新建",
       icon: "图标按钮",
+      iconHint: "名称必填：它既是无障碍名称，也是悬停提示。",
+      add: "添加",
+      edit: "编辑",
       states: "状态",
       disabled: "已禁用",
       busy: "保存中…",
+      links: "链接",
+      linksHint:
+        "句中的链接始终带下划线，独立的链接悬停时才出现下划线；外部链接在新标签页打开，并带外链标记。",
+      inlineBefore: "本次改动见",
+      inlineLink: "发布说明",
+      inlineAfter: "。",
+      external: "查看全部版本",
+      keys: "键盘提示",
+      shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]] as readonly (readonly string[])[],
     },
     inputs: {
       basics: "文本框",
@@ -558,12 +588,18 @@ export const zh = {
     badges: {
       badges: "徽标",
       tones: {
-        gray: "默认",
-        brand: "来源",
-        green: "运行中",
-        amber: "已中止",
-        red: "失败",
+        neutral: "默认",
+        success: "运行中",
+        attention: "已中止",
+        danger: "失败",
+        done: "已完成",
+        info: "免费",
       },
+      variants: { soft: "浅底", outline: "描边", solid: "实底" },
+      count: "计数",
+      dots: "状态点",
+      dotsHint: "六种语气；只有正在进行的事才跳动",
+      live: "进行中",
       status: "运行状态",
       states: {
         running: "运行中",
@@ -596,6 +632,19 @@ export const zh = {
       skeleton: "骨架屏",
       list: "列表",
       card: "卡片",
+    },
+    streaming: {
+      reply: "助手回答",
+      receiving: "正在接收…",
+      received: "已全部到达",
+      modes: {
+        instant: "即时：文字一到就显示，不加动效",
+        fade: "淡入：按词显现，末尾几行从带强调色微光的渐变里浮现",
+        typewriter: "打字机：逐字打出，末尾跟着一个实心块状光标",
+      } as Record<StreamReveal, string>,
+      unset: "按即时处理",
+      rate: (perSecond: number) => `每秒约 ${Math.round(perSecond)} 字`,
+      reduced: "已开启减少动态效果，回答到达即显示",
     },
     charts: {
       parts: {
@@ -678,6 +727,8 @@ export const zh = {
     avatars: {
       user: "用户头像",
       agent: "智能体头像",
+      stack: "头像组",
+      stackShown: (shown: number, total: number) => `共 ${total} 个，显示 ${shown} 个`,
       userNames: ["admin", "演示管理员"] as readonly string[],
       agents: [
         { id: "docs-expert", name: "Docs Expert" },

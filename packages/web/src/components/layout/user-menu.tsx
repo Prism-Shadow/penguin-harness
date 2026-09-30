@@ -17,12 +17,11 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
+import { ICON_GAP, UserAvatar } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_GAP } from "../../lib/icon-scale";
 import { useAuth } from "../../state/auth";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Dropdown, menuItemClass } from "../ui/dropdown";
-import { UserAvatar } from "../ui/user-avatar";
 import type { DropdownPortal } from "../ui/dropdown";
 import { UpdateRow } from "../account/update-row";
 import { openUpdateModal } from "../../lib/use-update-flow";

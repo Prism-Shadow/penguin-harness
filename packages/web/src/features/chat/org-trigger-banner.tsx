@@ -4,9 +4,9 @@
  * trigger, the event / message / ticket it names, and the budget line — the same shape as the
  * scheduled-task banner beside it. The trigger's body renders as usual below.
  */
+import { Badge } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatDateTime } from "../../lib/format";
-import { Badge } from "../../components/ui/badge";
 import { summarizeOrgTrigger } from "./org-trigger";
 import type { OrgTriggerOrigin } from "./org-trigger";
 
@@ -16,7 +16,7 @@ export function OrgTriggerBanner({ origin }: { origin: OrgTriggerOrigin }) {
   return (
     <p className="anim-msg my-2 flex w-fit flex-wrap items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
       <span>{S.chat.orgTriggerFrom(t.org)}</span>
-      <Badge tone="brand">{kind}</Badge>
+      <Badge variant="solid">{kind}</Badge>
       {t.subject !== null && (
         <span className="font-mono text-gray-700 dark:text-gray-300">
           {t.subject}

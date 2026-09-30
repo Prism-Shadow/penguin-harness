@@ -13,16 +13,12 @@
 import { useEffect } from "react";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { GlyphIcon, ICONS, ICON_SIZE, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatDateTime } from "../../lib/format";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { REFRESH_ICON } from "../../components/ui/icons";
-import { PIN_ICON } from "../../components/ui/session-row-menu";
-import { ProviderLogo } from "../../components/ui/provider-logo";
 import {
   displayBalance,
   formatBalance,
@@ -91,7 +87,7 @@ function BalancePin({ pinned, onToggle }: { pinned: boolean; onToggle: () => voi
       onClick={onToggle}
       className={`${BALANCE_BUTTON} ${pinned ? "text-gray-700 dark:text-gray-200" : "text-gray-400 dark:text-gray-500"}`}
     >
-      <GlyphIcon d={PIN_ICON} size={ICON_SIZE.groupHeaderAction} filled={pinned} />
+      <GlyphIcon d={ICONS.pin} size={ICON_SIZE.groupHeaderAction} filled={pinned} />
     </button>
   );
 }
@@ -128,7 +124,7 @@ export function GroupBalance({
         aria-label={hint}
         className={`${BALANCE_BUTTON} text-gray-400 dark:text-gray-500`}
       >
-        <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.groupHeaderAction} />
+        <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.groupHeaderAction} />
       </button>
       <span
         className={`whitespace-nowrap pl-1 text-xs tabular-nums text-gray-500 dark:text-gray-400${state?.loading === true && state.answer !== undefined ? " opacity-60" : ""}`}

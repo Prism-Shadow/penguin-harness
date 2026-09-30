@@ -44,12 +44,31 @@ import type {
   SessionCategoryCounts,
   SessionInfo,
 } from "@prismshadow/penguin-server/api";
+import {
+  ActivityIcon,
+  AgentAvatar,
+  BackgroundTasksMark,
+  Badge,
+  Button,
+  CheckIcon,
+  ChevronDown,
+  ICONS,
+  ICON_SIZE,
+  ScheduleMark,
+  SkeletonList,
+  UpdateDot,
+  UserAvatar,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeShort } from "../../lib/format";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
-import { sessionBackgroundTasks, sessionRowActivity } from "../../lib/session-activity";
+import {
+  sessionActivityLabel,
+  sessionBackgroundTasks,
+  sessionRowActivity,
+} from "../../lib/session-activity";
 import type { SessionActivity } from "../../lib/session-activity";
 import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
@@ -126,23 +145,16 @@ import { Dropdown, menuItemClass } from "../ui/dropdown";
 import { useRowContextMenu } from "../ui/context-menu";
 import {
   HOVER_ROW_ACTIONS,
-  PENCIL_ICON,
-  PIN_ICON,
   SessionRowHoverActions,
   SessionRowMenuRows,
-  TRASH_ICON,
   contextMenuActions,
   overflowMenuDangerClass,
   overflowMenuGlyph,
   overflowMenuRowClass,
 } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
-import { AgentAvatar } from "../ui/agent-avatar";
-import { UserAvatar } from "../ui/user-avatar";
-import { CheckIcon, ChevronDown, GEAR_ICON, MESSAGING_RELAY_ICON, NAV_ICONS } from "../ui/icons";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import {
-  FOLDER_ICON,
-  FOLDER_OPEN_ICON,
   GROUP_MODE_ICONS,
   SORT_MODE_ICONS,
   FolderSection,
@@ -158,18 +170,9 @@ import type { GroupMode } from "../ui/group-list";
 import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { writeClipboard } from "../../lib/clipboard";
 import { Truncated } from "../ui/truncated";
-import { Badge } from "../ui/badge";
-import {
-  BackgroundTasksMark,
-  ScheduleMark,
-  SessionActivityIcon,
-} from "../ui/session-activity-icon";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
-import { Button } from "../ui/button";
 import { Input, noAutofill } from "../ui/input";
-import { SkeletonList } from "../ui/skeleton";
-import { UpdateDot } from "../ui/update-dot";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { MessagingBindingModal } from "../../features/messaging/messaging-binding-modal";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
@@ -187,7 +190,6 @@ import { PinnedBalanceBadge } from "../../features/models/group-balance";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useProjectSchedules } from "../../features/schedules/schedule-store";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { Segmented } from "../ui/segmented";
 import { useCompany } from "../../state/company";
 import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-switcher";
@@ -376,7 +378,7 @@ function StatusGlyph({ activity }: { activity: SessionActivity }) {
   // truncates into whatever space is left, so letting the slot collapse would re-flow the title
   // of every never-run row (and again the moment its first run starts).
   if (activity === null) return <span aria-hidden="true" className="block h-3 w-3 shrink-0" />;
-  return <SessionActivityIcon activity={activity} />;
+  return <ActivityIcon activity={activity} label={sessionActivityLabel(activity)} />;
 }
 
 export function Sidebar({
@@ -1869,7 +1871,7 @@ export function Sidebar({
                 }`}
               >
                 <span className="truncate font-sans">{projectDisplayName(p)}</span>
-                <Badge tone="gray">{p.role}</Badge>
+                <Badge>{p.role}</Badge>
               </button>
             ))}
             <div className="mt-1.5 border-t border-gray-100 pt-1.5 dark:border-gray-800">
@@ -2278,7 +2280,7 @@ export function Sidebar({
                         onClick={toggle}
                         className={headerControlClass(open)}
                       >
-                        <AddBadgeIcon base={FOLDER_ICON} />
+                        <AddBadgeIcon base={ICONS.folder} />
                       </button>
                     )}
                   />
@@ -2382,7 +2384,7 @@ export function Sidebar({
                               onClick={() => newChat({ agentId: agent.agentId })}
                               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                             >
-                              <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
+                              <Icon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
                             </button>
                             <button
                               type="button"
@@ -2391,7 +2393,7 @@ export function Sidebar({
                               onClick={() => go(`/agents/${agent.agentId}`)}
                               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                             >
-                              <Icon d={GEAR_ICON} size={ICON_SIZE.groupHeaderAction} />
+                              <Icon d={ICONS.gear} size={ICON_SIZE.groupHeaderAction} />
                             </button>
                           </>
                         }
@@ -2474,7 +2476,7 @@ export function Sidebar({
                           data-role="group"
                         >
                           <Icon
-                            d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
+                            d={collapsed ? ICONS.folder : ICONS.folderOpen}
                             size={ICON_SIZE.groupHeaderGlyph}
                           />
                         </span>
@@ -2510,7 +2512,7 @@ export function Sidebar({
                             }
                             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                           >
-                            <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
+                            <Icon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
                           </button>
                           {/* Manually-added (registry-backed) Workspaces only: rename-alias /
                                 remove-from-sidebar overflow, to the right of the "+" (session-
@@ -2872,10 +2874,7 @@ function DraftRow({
             onClick={onDelete}
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 hover:bg-gray-300/60 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-gray-700 dark:hover:text-red-400"
           >
-            <Icon
-              d="M4 6h16M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6M6 6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 10.5v6M14 10.5v6"
-              size={14}
-            />
+            <Icon d={ICONS.trash} size={14} />
           </button>
         </div>
       </div>
@@ -2941,7 +2940,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
           : "text-gray-400 opacity-0 focus-visible:opacity-100 group-hover/header:opacity-100 dark:text-gray-500"
       }`}
     >
-      <Icon d={PIN_ICON} size={ICON_SIZE.groupHeaderAction} />
+      <Icon d={ICONS.pin} size={ICON_SIZE.groupHeaderAction} />
     </button>
   );
 }
@@ -3135,7 +3134,7 @@ function SessionRow({
           {/* Pinned indicator: a dim pin after the title (unpin lives in the row menu). */}
           {pinned && canPin && (
             <span data-tooltip={S.chat.pinnedSession} className={`shrink-0 ${toneInk.muted}`}>
-              <Icon d={PIN_ICON} size={ICON_SIZE.rowMark} />
+              <Icon d={ICONS.pin} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
@@ -3147,14 +3146,14 @@ function SessionRow({
               data-tooltip={S.messaging.enabledIndicator[s.messagingChannel]}
               className={`shrink-0 ${toneInk.muted}`}
             >
-              <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
+              <Icon d={ICONS.paperPlane} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.messaging.enabledIndicator[s.messagingChannel]}</span>
             </span>
           )}
           {/* Scheduled-task indicator: the row says this conversation will run on its own, and
               the schedules panel says how often and what. A paused task, or one past its end
               time, draws nothing — nothing more will fire from it, and a mark would be noise. */}
-          {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
+          {scheduled && <ScheduleMark label={S.chat.sessionScheduled} size={ICON_SIZE.rowMark} />}
           {/* Background work the conversation owns while sitting idle: still running, only
               outside the turn, so it reads as live work rather than as a standing arrangement.
               The mark leaves with the last task (live via session_background). */}
@@ -3286,12 +3285,12 @@ function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDel
       }
     >
       <button type="button" className={overflowMenuRowClass} onClick={item(onRename)}>
-        {overflowMenuGlyph(PENCIL_ICON)}
+        {overflowMenuGlyph(ICONS.pencil)}
         {S.chat.renameWorkspace}
       </button>
       <button type="button" className={overflowMenuDangerClass} onClick={item(onDelete)}>
         <span className="shrink-0">
-          <Icon d={TRASH_ICON} size={13} />
+          <Icon d={ICONS.trash} size={13} />
         </span>
         {S.chat.deleteWorkspace}
       </button>

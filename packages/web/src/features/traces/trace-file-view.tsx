@@ -32,6 +32,7 @@ import type {
   TraceTaskStats,
   TraceToolSpan,
 } from "@prismshadow/penguin-server/api";
+import { Chevron, GlyphIcon, Skeleton } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -48,9 +49,6 @@ import {
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { resolveContextWindow } from "../../lib/context";
 import { useTheme } from "../../state/theme";
-import { Skeleton } from "../../components/ui/skeleton";
-import { Chevron } from "../../components/ui/chevron";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { TokenDonut } from "../../components/ui/token-donut";
 import { TRACE_EVENT_PAGE_SIZE, loadTraceEventPages } from "./trace-events-loader";
 import { TimelineChart } from "./timeline-chart";

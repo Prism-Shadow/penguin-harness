@@ -51,6 +51,7 @@ import type {
   SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
+import { AgentAvatar, Chevron, ICONS, ICON_GAP, PenguinLogo } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { UNCONFINED } from "../../lib/permission-level";
@@ -62,11 +63,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Chevron } from "../../components/ui/chevron";
-import { AGENT_GROUP_ICON } from "../../components/ui/group-list";
 import { Dropdown } from "../../components/ui/dropdown";
-import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { versionBadgeFor } from "../../lib/update-flow";
@@ -97,7 +94,6 @@ import { newChatAgentId } from "./new-chat";
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
 import { sameModelRef } from "../models/model-grouping";
-import { ICON_GAP } from "../../lib/icon-scale";
 import { ChoiceCheck, menuRowClass, menuRowTone } from "../../components/ui/field";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
@@ -135,18 +131,16 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
  * competing with the titles, while the folder row is exactly where a glyph earns its place —
  * it is what you scan to pick a category.
  *
- * webapps: a browser window (chrome bar + two dots). agents: AGENT_GROUP_ICON itself — the one
- * glyph in the app that means "agent", worn by the sidebar's Agents entry and its grouping
+ * webapps: a browser window (chrome bar + two dots). agents: the registry's robot itself — the
+ * one glyph in the app that means "agent", worn by the sidebar's Agents entry and its grouping
  * option — imported rather than copied, because a hand-copied duplicate is what silently drifts
- * the day that glyph is redrawn. (`components/ui/group-list.tsx` pulls in nothing from
- * `features/`, so there is no cycle to avoid here.) schedules: a clock face with hands — the
- * plainest mark for "fires on a timer", and distinct from the hourglass that already means a
- * Session is waiting.
+ * the day that glyph is redrawn. schedules: a clock face with hands — the plainest mark for
+ * "fires on a timer", and distinct from the hourglass that already means a Session is waiting.
  */
 const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
   webapps:
     "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
-  agents: AGENT_GROUP_ICON,
+  agents: ICONS.robot,
   schedules: "M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M12 6.5V12l3.5 2",
 };
 
@@ -875,7 +869,7 @@ export function DraftView({
             heading). The asset is square-cropped and the graphic already has a bit of built-in
             padding, so a small margin is enough to sit visually close to the title. */}
         <div className="mb-10 text-center">
-          <PenguinLogo className="mx-auto mb-1 h-36 w-36 rounded-3xl" />
+          <PenguinLogo src="/penguin-logo.svg" className="mx-auto mb-1 h-36 w-36 rounded-3xl" />
           <h1 className="ui-display text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
             {S.appName}
           </h1>

@@ -27,6 +27,7 @@
  */
 import { useId, useState } from "react";
 import { createPortal } from "react-dom";
+import { ChevronDown } from "@prismshadow/penguin-ui";
 import { errorClass, sizeClass, sizeTextClass } from "./input";
 import type { ControlSize } from "./input";
 import {
@@ -37,7 +38,6 @@ import {
   menuRowClass,
   menuRowTone,
 } from "./field";
-import { ChevronDown } from "./icons";
 import { usePortalPanel } from "./use-portal-panel";
 
 export interface OptionMenuChoice<T extends string> {

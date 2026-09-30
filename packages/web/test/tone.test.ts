@@ -18,9 +18,9 @@ const read = (id: string) => sourceFile(SCAN, id).text;
 
 /** The status files that take their colour from the tokens, wherever each one lives. */
 const STATUS_FILES = [
-  "packages/web/src/components/ui/status-icon.tsx",
-  "packages/web/src/components/ui/session-activity-icon.tsx",
-  "packages/web/src/components/ui/badge.tsx",
+  "packages/ui/src/components/icons/status-icon/status-icon.tsx",
+  "packages/ui/src/components/icons/activity-icon/activity-icon.tsx",
+  "packages/ui/src/components/feedback/badge/badge.tsx",
   "packages/web/src/features/chat/step-banner.tsx",
   "packages/web/src/features/chat/goal-banner.tsx",
   "packages/web/src/features/chat/subagent-chip.tsx",
@@ -70,11 +70,11 @@ describe("status marks take their colour from the tokens", () => {
   it("inks the two hourglass states with the same attention tone", () => {
     // The session list's running glyph and the stream's waiting-for-approval glyph are the same
     // state to a reader — unfinished, waiting — so they are the same colour.
-    expect(read("packages/web/src/components/ui/status-icon.tsx")).toContain(
-      "waiting: toneInk.attention",
+    expect(read("packages/ui/src/components/icons/status-icon/status-icon.tsx")).toContain(
+      'waiting: "text-tone-attention-fg"',
     );
-    expect(read("packages/web/src/components/ui/session-activity-icon.tsx")).toContain(
-      "toneInk.attention",
+    expect(read("packages/ui/src/components/icons/activity-icon/activity-icon.tsx")).toContain(
+      "text-tone-attention-fg",
     );
   });
 
@@ -83,8 +83,6 @@ describe("status marks take their colour from the tokens", () => {
     // out of scope and are not listed here.
     for (const rel of STATUS_FILES) {
       const src = read(rel);
-      // badge.tsx keeps one deliberate exception, a yellow informational tag that must not read
-      // as a warning; it says so at the definition.
       const offenders = [...src.matchAll(/\b(?:text|bg|border)-(?:amber|emerald|red|green)-\d+/g)];
       expect(offenders, `${rel} spells a status colour inline`).toHaveLength(0);
     }

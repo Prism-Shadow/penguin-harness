@@ -13,16 +13,21 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import type { PluginIndexEntry } from "@prismshadow/penguin-server/api";
 import ReactMarkdown from "react-markdown";
+import {
+  Button,
+  CopiedStatus,
+  CopyCheckGlyph,
+  GlyphIcon,
+  ICONS,
+  Skeleton,
+  useCopied,
+} from "@prismshadow/penguin-ui";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { Button } from "../../components/ui/button";
-import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
-import { Skeleton } from "../../components/ui/skeleton";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { toneInk } from "../../lib/tone";
 
 export function PluginDetailPage() {
@@ -74,7 +79,7 @@ export function PluginDetailPage() {
           to="/plugins"
           className="inline-flex items-center gap-1.5 text-xs text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
         >
-          <GlyphIcon d="M15 6l-6 6 6 6" size={14} />
+          <GlyphIcon d={ICONS.chevronLeft} size={14} />
           {S.pluginRegistry.back}
         </Link>
 

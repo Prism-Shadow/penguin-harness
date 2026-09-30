@@ -35,24 +35,20 @@ import type {
   OrgTicketStatus,
   OrgTicketsResponse,
 } from "@prismshadow/penguin-server/api";
+import { Button, CloseIcon, GlyphIcon, ICONS, ICON_SIZE, Skeleton } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { Button } from "../../components/ui/button";
 import { Switch } from "../../components/ui/switch";
 import { Segmented } from "../../components/ui/segmented";
 import { Modal } from "../../components/ui/modal";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { FieldLabel } from "../../components/ui/field";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon } from "../../components/ui/icons";
-import { Skeleton } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";
 import {
@@ -83,9 +79,6 @@ import { NoticeStrip } from "../../components/ui/notice-strip";
 import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
-
-/** Clock face (lucide): the due-date mark on a card. */
-const DUE_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2";
 
 /**
  * The colour bar atop each column. Proposed is neutral, in-progress takes the accent (it is
@@ -261,7 +254,7 @@ export function TicketsPage() {
                   overdue ? `${S.company.tickets.overdue} · ${t.due}` : S.company.tickets.due
                 }
               >
-                <GlyphIcon d={DUE_ICON} size={ICON_SIZE.inlineGlyph} />
+                <GlyphIcon d={ICONS.clockCompact} size={ICON_SIZE.inlineGlyph} />
                 {t.due}
                 {overdue && <span className="sr-only">{S.company.tickets.overdue}</span>}
               </span>

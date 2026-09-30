@@ -4,8 +4,8 @@
  * static text, no navigation — skill management lives on the skill library page); the body text
  * after the block is rendered as usual by the caller.
  */
+import { GlyphIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { BOOK_ICON } from "./skill-use";
 
 export function SkillsBanner({ names }: { names: string[] }) {

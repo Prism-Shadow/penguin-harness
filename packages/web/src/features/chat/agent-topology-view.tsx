@@ -7,10 +7,9 @@
  * Each child node shows its wall-clock elapsed time (ticking while it runs, frozen at its last
  * activity when done — never a sum of its items); the root carries no stamps and shows none.
  */
+import { AgentAvatar, StatusIcon } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { StatusIcon } from "../../components/ui/status-icon";
 import { LiveDuration } from "./live-duration";
 import { layoutTopology, NODE_H, NODE_W } from "./agent-topology";
 import type { TopologyNode } from "./agent-topology";
@@ -94,7 +93,7 @@ export function AgentTopologyView({
                       </span>
                     )}
                 {/* Status is already part of the button's accessible name: keep the glyph decorative. */}
-                <StatusIcon state={node.running ? "running" : "done"} size={10} />
+                <StatusIcon state={node.running ? "running" : "done"} size="xs" />
               </span>
               {/* Second line: what this child was spawned to do. Indented to the label's own
                   left edge (avatar width + gap) and truncated to one line — the model writes a

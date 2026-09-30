@@ -6,8 +6,8 @@
  * them.
  */
 import type { ReactNode } from "react";
+import { ICON_GAP } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_GAP } from "../../lib/icon-scale";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { accentSwatches, useTheme } from "../../state/theme";
 import type { Accent, ThemeId } from "../../state/theme";

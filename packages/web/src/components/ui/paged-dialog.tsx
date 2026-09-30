@@ -12,9 +12,8 @@
  * along with the second dimension (Tabs' convention).
  */
 import type { ReactNode } from "react";
-import { ICON_GAP } from "../../lib/icon-scale";
+import { CloseButton, ICON_GAP } from "@prismshadow/penguin-ui";
 import { Modal } from "./modal";
-import { CloseButton } from "./icons";
 import { InfoPopover } from "./info-popover";
 
 export interface PagedDialogItem<K extends string> {

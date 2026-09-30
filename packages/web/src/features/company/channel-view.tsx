@@ -42,21 +42,24 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import type { OrgChannelDetail, OrgChannelMessage } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Button,
+  EmptyState,
+  GlyphIcon,
+  ICON_GAP,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Button } from "../../components/ui/button";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS } from "../../components/ui/icons";
-import { Skeleton } from "../../components/ui/skeleton";
+import { NAV_ICONS } from "../../lib/nav-icons";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
 import { useOrg } from "./org-layout";

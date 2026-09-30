@@ -24,9 +24,8 @@
  */
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
+import { Chevron, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Chevron } from "./chevron";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 
 export function HelpFold({
   children,

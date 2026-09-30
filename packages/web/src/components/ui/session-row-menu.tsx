@@ -18,34 +18,11 @@
  * off the row entirely.
  */
 import type { MouseEvent as ReactMouseEvent } from "react";
+import { GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import type { AnchorRect } from "../../lib/context-menu";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "./glyph-icon";
 import { Icon } from "./group-list";
-import { MESSAGING_RELAY_ICON } from "./icons";
 import { menuRowClass, menuRowTone } from "./field";
-import { STAT_ICONS } from "../../lib/stat-icons";
-
-/** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
-export const PIN_ICON =
-  "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z";
-
-/** Row-action glyphs (thin-line, matching the shared Icon set): pencil / archive / unarchive / trash. */
-export const PENCIL_ICON = "M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3zM14 7l3 3";
-export const ARCHIVE_ICON =
-  "M3 8h18M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M4 8l1.5-3h13L20 8M9.5 13.5 12 16l2.5-2.5";
-export const UNARCHIVE_ICON =
-  "M3 8h18M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M4 8l1.5-3h13L20 8M12 17v-5m-2.5 2L12 11l2.5 3";
-export const TRASH_ICON =
-  "M4 6h16M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6M6 6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 10.5v6M14 10.5v6";
-/**
- * Three-dot ellipsis, drawn as FILLED circles: the hover "more" button. Hairline-stroke
- * dots vanish at row-glyph size, so this mark renders through GlyphIcon's `filled` mode —
- * the stroke rides on top of the fill, landing the dots at the visual weight of the
- * archive glyph beside it.
- */
-export const ELLIPSIS_ICON =
-  "M4.5 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM19.5 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z";
 
 /** Compact overflow-menu row (session row menu + workspace group menu): small text, leading thin-line glyph. */
 export const overflowMenuRowClass = `flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone()}`;
@@ -127,28 +104,28 @@ export function sessionRowMenuItem(
     case "pin":
       return {
         label: state.pinned ? S.chat.unpinSession : S.chat.pinSession,
-        icon: PIN_ICON,
+        icon: ICONS.pin,
         danger: false,
       };
     case "rename":
-      return { label: S.chat.renameSession, icon: PENCIL_ICON, danger: false };
+      return { label: S.chat.renameSession, icon: ICONS.pencil, danger: false };
     case "copy":
       // The same glyph and label the details card's Session id row carries: one copy
       // affordance for one value, wherever the reader meets it.
-      return { label: S.chat.copySessionId, icon: STAT_ICONS.copy, danger: false };
+      return { label: S.chat.copySessionId, icon: ICONS.copy, danger: false };
     case "messaging":
       // Same paper plane the session row flies when it is actually relaying: the menu entry
       // and the mark it produces are one feature, and a reader should not have to learn two
       // shapes for it.
-      return { label: S.messaging.bindAction, icon: MESSAGING_RELAY_ICON, danger: false };
+      return { label: S.messaging.bindAction, icon: ICONS.paperPlane, danger: false };
     case "archive":
       return {
         label: state.archived ? S.chat.unarchiveSession : S.chat.archiveSession,
-        icon: state.archived ? UNARCHIVE_ICON : ARCHIVE_ICON,
+        icon: state.archived ? ICONS.archiveRestore : ICONS.archive,
         danger: false,
       };
     case "delete":
-      return { label: S.chat.deleteSession, icon: TRASH_ICON, danger: true };
+      return { label: S.chat.deleteSession, icon: ICONS.trash, danger: true };
   }
 }
 
@@ -245,7 +222,9 @@ export function SessionRowHoverActions({
         onClick={openMore}
         className={`${hoverButtonClass} hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200`}
       >
-        <GlyphIcon d={ELLIPSIS_ICON} size={14} filled />
+        {/* Hairline-stroke dots vanish at row-glyph size, so the ellipsis is drawn filled: the
+            stroke rides on top of the fill, landing the dots at the archive glyph's weight. */}
+        <GlyphIcon d={ICONS.ellipsis} size={14} filled />
       </button>
     </>
   );

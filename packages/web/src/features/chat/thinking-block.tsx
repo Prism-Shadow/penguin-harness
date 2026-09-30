@@ -5,11 +5,11 @@
  * same source every other disclosure row uses; shares the running-state icons (in progress /
  * done / failed) with tool cards.
  */
+import { StatusIcon } from "@prismshadow/penguin-ui";
+import type { RunState } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import type { ThinkingItem } from "../../lib/omni/stream-model";
-import { StatusIcon } from "../../components/ui/status-icon";
-import type { RunState } from "../../components/ui/status-icon";
 import { DISCLOSURE_BODY_MD_CLASS, DisclosureRow, activityState } from "./disclosure-row";
 import { LiveDuration } from "./live-duration";
 import { Md } from "./md";

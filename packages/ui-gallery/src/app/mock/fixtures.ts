@@ -179,8 +179,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       ),
       createdAt: iso(ago(90)),
       updatedAt: iso(ago(1, 30)),
-      activeSessionCount: 3,
-      sessionCount: 11,
+      activeSessionCount: 4,
+      sessionCount: 12,
       sessionActivity: activity(7, 6),
       toolCount: 6,
       version: 14,
@@ -447,6 +447,16 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       IDS.agents.docs,
       L("规划 0.3 发布说明", "Plan the 0.3 release notes"),
       ago(0, 2),
+      {
+        status: "running",
+        lastActiveAt: iso(ago(0, 0)),
+      },
+    ),
+    session(
+      IDS.sessions.streaming,
+      IDS.agents.docs,
+      L("讲解引用校验", "Explain the citation guard"),
+      ago(0, 2.5),
       {
         status: "running",
         lastActiveAt: iso(ago(0, 0)),

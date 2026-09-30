@@ -51,17 +51,27 @@ import type {
   ModelUpdateEntry,
   ModelVisionDetectRequest,
 } from "@prismshadow/penguin-server/api";
+import {
+  Button,
+  Chevron,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Link,
+  ProviderLogo,
+  SkeletonList,
+  buttonClass,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
 import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { FieldError, FieldLabel } from "../../components/ui/field";
 import { PasswordInput } from "../../components/ui/password-input";
@@ -72,12 +82,6 @@ import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { AiCreateModal, CreateButtons } from "../ai-create";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { Chevron } from "../../components/ui/chevron";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { EXTERNAL_LINK_ICON, LINK_ICON } from "../../components/ui/icons";
-import { ProviderLogo } from "../../components/ui/provider-logo";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { EmptyState } from "../../components/ui/empty-state";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
@@ -222,22 +226,18 @@ function inputToUsd(inputStr: string, currency: Currency): string {
   return currency === "CNY" ? trimNum(n / USD_TO_CNY) : trimNum(n);
 }
 
-/** Group-header action glyphs (24x24 line paths): add, bulk key, external link, gauge for speed test. */
-const PLUS_ICON = "M12 5v14M5 12h14";
-/** Trash can (same drawing as the agent cards' delete action). */
+/**
+ * Group-header action glyphs this page draws itself (24x24 line paths); add, bulk key and the
+ * catalog sync read `ICONS.plus`, `ICONS.key` and `ICONS.rotateCw`. The trash can is the tapered
+ * bin the agent cards' delete action wears, not the registry's straight-sided `ICONS.trash`.
+ */
 const TRASH_ICON =
   "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
-const KEY_ICON =
-  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
 /** Arrow entering a door: authorize with the provider and come back with a key. */
 const SIGN_IN_ICON = "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3";
-/** Rotate clockwise: refresh an already-authorized platform catalog. */
-const SYNC_ICON = "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10";
 
 /** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
 const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
-/** The same group action while its run is going: a rounded square, drawn filled — stop. */
-const STOP_ICON = "M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z";
 const CLOCK_ICON = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 7v5l3.5 2";
 const ZAP_ICON = "M13 2 3 14h9l-1 8 10-12h-9l1-8Z";
 
@@ -1233,7 +1233,7 @@ export function ModelsPage() {
                   setOauthFor(group.provider.id);
                 }}
               >
-                <GlyphIcon d={LINK_ICON} size={ICON_SIZE.groupHeaderAction} />
+                <GlyphIcon d={ICONS.chainLink} size={ICON_SIZE.groupHeaderAction} />
                 <span className="hidden @3xl:inline">{verb}</span>
               </Button>
             )}
@@ -1253,7 +1253,7 @@ export function ModelsPage() {
             title={S.models.platformSync}
             onClick={() => void syncPlatformModels()}
           >
-            <GlyphIcon d={SYNC_ICON} size={ICON_SIZE.groupHeaderAction} />
+            <GlyphIcon d={ICONS.rotateCw} size={ICON_SIZE.groupHeaderAction} />
             <span className="hidden @3xl:inline">{S.models.platformSync}</span>
           </Button>
         );
@@ -1270,13 +1270,14 @@ export function ModelsPage() {
             title={S.models.groupApiKey}
             onClick={() => setGroupKeyFor(group.provider.id)}
           >
-            <GlyphIcon d={KEY_ICON} size={ICON_SIZE.groupHeaderAction} />
+            <GlyphIcon d={ICONS.key} size={ICON_SIZE.groupHeaderAction} />
             <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
           </Button>
         );
       case "speedTest": {
         // One icon for both directions: it starts a run (after the confirmation) and, while
-        // its own group's run is going, stops it. Every other group's waits its turn.
+        // its own group's run is going, stops it — the gauge turns into the registry's square in
+        // a circle. Every other group's waits its turn.
         const running = speedRunning === group.provider.id;
         const verb = running ? S.models.speedTestStop : S.models.speedTest;
         return (
@@ -1290,9 +1291,8 @@ export function ModelsPage() {
             onClick={() => (running ? stopSpeedTest() : setSpeedFor(group.provider.id))}
           >
             <GlyphIcon
-              d={running ? STOP_ICON : GAUGE_ICON}
+              d={running ? ICONS.stopCircle : GAUGE_ICON}
               size={ICON_SIZE.groupHeaderAction}
-              filled={running}
             />
           </Button>
         );
@@ -1310,7 +1310,7 @@ export function ModelsPage() {
             title={S.models.addToGroup}
             onClick={() => setAddingTo(group.provider.id)}
           >
-            <GlyphIcon d={PLUS_ICON} size={ICON_SIZE.groupHeaderAction} />
+            <GlyphIcon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
             <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
           </Button>
         );
@@ -1510,10 +1510,9 @@ export function ModelsPage() {
                             section. `shrink-0` keeps it whole: the vendor name beside it is
                             the element allowed to truncate on a narrow page. */}
                         {group.provider.recommended && (
-                          // Not a `Badge`: its `brand` tone is deliberately gray — neutral
-                          // emphasis outside the status vocabulary — and an endorsement is
-                          // neither a status nor neutral, which is the category tone.ts keeps
-                          // out on purpose. Unfilled, like the card marks below it: an outline
+                          // Not a `Badge`: every Badge tone is a status or `neutral`, and an
+                          // endorsement is neither, which is the category tone.ts keeps out on
+                          // purpose. Unfilled, like the card marks below it: an outline
                           // is enough to make it a pill, and a block of colour on the collapse
                           // bar competes with the vendor name it is endorsing. It gives way on
                           // a narrow row before the name does.
@@ -2135,21 +2134,24 @@ function AddGroupDialog({
                 <FieldLabel required block={false}>
                   {S.models.baseUrl}
                 </FieldLabel>
-                <button
-                  type="button"
+                <Button
+                  variant="link"
+                  size="sm"
                   disabled={detecting || busy}
                   onClick={() => void detect()}
-                  data-tooltip={S.models.detectProtocolHint}
-                  className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+                  title={S.models.detectProtocolHint}
+                  className="shrink-0"
+                  leading={
+                    detecting && (
+                      <span
+                        aria-hidden
+                        className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                      />
+                    )
+                  }
                 >
-                  {detecting && (
-                    <span
-                      aria-hidden
-                      className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                    />
-                  )}
                   {detecting ? S.models.detecting : S.models.detectProtocol}
-                </button>
+                </Button>
               </span>
               <div className="relative">
                 <Input
@@ -3053,14 +3055,14 @@ function ModelDialog({
           <span className="flex shrink-0 items-baseline gap-2.5">
             {/* The model-homepage entry lives in the dialog header (top-right button); only the "get model ids" provider link stays here. */}
             {dialogProvider?.modelsUrl && (
-              <a
+              <Link
                 href={dialogProvider.modelsUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+                external
+                variant="standalone"
+                className="shrink-0 text-xs"
               >
-                {S.models.getModelIds} ↗
-              </a>
+                {S.models.getModelIds}
+              </Link>
             )}
           </span>
         </span>
@@ -3288,12 +3290,12 @@ function ModelDialog({
               <a
                 href={modelHomepageUrl(row.provider, row.modelId)}
                 target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                rel="noopener noreferrer"
+                className={`${buttonClass("secondary", "sm")} shrink-0`}
               >
                 {S.models.homepage}
                 {/* External-link glyph (opens in a new tab) */}
-                <GlyphIcon d={EXTERNAL_LINK_ICON} />
+                <GlyphIcon d={ICONS.externalLink} />
               </a>
             )}
           </div>
@@ -3368,14 +3370,14 @@ function ModelDialog({
           <span className="mb-1 flex items-baseline justify-between gap-2">
             <FieldLabel block={false}>{S.models.apiKey}</FieldLabel>
             {dialogProvider?.apiKeyUrl && (
-              <a
+              <Link
                 href={dialogProvider.apiKeyUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+                external
+                variant="standalone"
+                className="shrink-0 text-xs"
               >
-                {S.models.getApiKey} ↗
-              </a>
+                {S.models.getApiKey}
+              </Link>
             )}
           </span>
           <PasswordInput
@@ -3459,21 +3461,24 @@ function ModelDialog({
               {/* Always live: no API key is needed (the server falls back to the stored key
                   and then to the protocol's env var), and anything that does go wrong is
                   explained in a popup. `detecting` only guards re-entrancy. */}
-              <button
-                type="button"
+              <Button
+                variant="link"
+                size="sm"
                 disabled={detecting}
                 onClick={() => void detectFromButton()}
-                data-tooltip={S.models.detectProtocolHint}
-                className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+                title={S.models.detectProtocolHint}
+                className="shrink-0"
+                leading={
+                  detecting && (
+                    <span
+                      aria-hidden
+                      className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                    />
+                  )
+                }
               >
-                {detecting && (
-                  <span
-                    aria-hidden
-                    className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                  />
-                )}
                 {detecting ? S.models.detecting : S.models.detectProtocol}
-              </button>
+              </Button>
             </span>
           ) : (
             <FieldLabel required={baseUrlRequired}>{S.models.baseUrl}</FieldLabel>
@@ -3722,21 +3727,24 @@ function ModelDialog({
                     />
                   </label>
                   {canEdit && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="link"
+                      size="sm"
                       disabled={visionDetecting}
                       onClick={() => void detectVisionFromButton()}
-                      data-tooltip={S.models.detectVisionHint}
-                      className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+                      title={S.models.detectVisionHint}
+                      className="shrink-0"
+                      leading={
+                        visionDetecting && (
+                          <span
+                            aria-hidden
+                            className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                          />
+                        )
+                      }
                     >
-                      {visionDetecting && (
-                        <span
-                          aria-hidden
-                          className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-                        />
-                      )}
                       {visionDetecting ? S.models.detectingVision : S.models.detectVision}
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {!form.vision && (
@@ -3918,14 +3926,9 @@ function GroupKeyDialog({
           </p>
         )}
         {provider.apiKeyUrl && (
-          <a
-            href={provider.apiKeyUrl}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="inline-block text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-          >
-            {S.models.getApiKey} ↗
-          </a>
+          <Link href={provider.apiKeyUrl} external variant="standalone" className="text-xs">
+            {S.models.getApiKey}
+          </Link>
         )}
       </div>
     </Modal>
@@ -4155,13 +4158,9 @@ function ModelOAuthDialog({
         )}
         {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
         {phase !== "done" && (
-          <button
-            type="button"
-            onClick={() => setManual((v) => !v)}
-            className="text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-          >
+          <Button variant="link" size="sm" onClick={() => setManual((v) => !v)}>
             {manual ? S.models.oauthCallbackSwitch : S.models.oauthManualSwitch}
-          </button>
+          </Button>
         )}
       </div>
     </Modal>

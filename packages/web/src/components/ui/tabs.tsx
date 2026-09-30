@@ -2,7 +2,7 @@
  * Tab switcher component (controlled): GitHub-style underline; scrolls
  * horizontally on narrow screens.
  */
-import { UpdateDot } from "./update-dot";
+import { UpdateDot } from "@prismshadow/penguin-ui";
 
 export interface TabItem<K extends string = string> {
   key: K;

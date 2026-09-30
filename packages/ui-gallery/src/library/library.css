@@ -154,6 +154,21 @@ html[data-framed] body {
 .lib-box[data-narrow] {
   max-width: 18rem;
 }
+/* The streaming board's reply at a chat column's measure: the live reply laid over an invisible
+   copy of the finished one in a single grid cell, so the box is the finished reply's height from
+   the first chunk on and the frame never grows line by line. */
+.lib-stream {
+  display: grid;
+  max-width: 46rem;
+  padding: 0.25rem 1.25rem;
+}
+.lib-stream > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.lib-stream-sizer {
+  visibility: hidden;
+}
 /* A line a row truncates, for the tooltip board. */
 .lib-truncated {
   display: block;

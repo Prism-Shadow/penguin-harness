@@ -47,6 +47,19 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import ReactMarkdown from "react-markdown";
+import {
+  Button,
+  CloseIcon,
+  CopiedStatus,
+  CopyCheckGlyph,
+  EmptyState,
+  GlyphIcon,
+  HiddenFileInput,
+  ICONS,
+  ICON_SIZE,
+  SkeletonList,
+  useCopied,
+} from "@prismshadow/penguin-ui";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
 import type { SessionInfo, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -100,31 +113,14 @@ import {
 } from "../../lib/workspace-tree";
 import type { ComposerReference, EditorState, Listings } from "../../lib/workspace-tree";
 import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
-import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_OPEN_ICON } from "../../components/ui/group-list";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import {
-  CloseIcon,
-  DOWNLOAD_ICON,
-  EXTERNAL_LINK_ICON,
-  FILE_EDIT_ICON,
-  REFRESH_ICON,
-  UPLOAD_ICON,
-  WRAP_TEXT_ICON,
-} from "../../components/ui/icons";
 import { Input, noAutofill, panelSearchClass } from "../../components/ui/input";
 import { ZoomableImage } from "../../components/ui/image-zoom";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { restoreSelection } from "../../components/ui/text-selection";
 import { Tooltip } from "../../components/ui/tooltip";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
@@ -154,8 +150,6 @@ const SNIFF_BYTES = 8 * 1024;
 const SEARCH_DEBOUNCE_MS = 250;
 /** Window with a left pane: the tree toggle. */
 const PANEL_LEFT_ICON = "M4 5h16v14H4zM10 5v14";
-/** Left-pointing chevron: the narrow layout's back-to-tree button. */
-const BACK_ICON = "M15 18l-6-6 6-6";
 
 /** An external reference with a scheme (http(s)/mailto/data, etc.), passed through as-is in the md rendered view. */
 const EXTERNAL_REF_RE = /^[a-z][a-z0-9+.-]*:/i;
@@ -586,7 +580,7 @@ export function WorkspaceBrowser({
   /**
    * The preview header's copy action. Driven by the hook rather than a plain CopyButton
    * because the tooltip is a Tooltip panel here, not a `title`, and a trigger may carry only
-   * one of the two — the glyph swap and the live region are the ones copy-button.tsx owns.
+   * one of the two — the glyph swap and the live region are the ones CopyButton uses.
    */
   const { copied, flash: flashCopy } = useCopied();
   const [width, setWidth] = useState(0);
@@ -1790,7 +1784,7 @@ export function WorkspaceBrowser({
             onClick={refreshAll}
             className={iconActionClass}
           >
-            <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.iconButton} />
           </button>
         </Tooltip>
         {/* The picker's own input carries the name: a label with no text names nothing, and the
@@ -1809,7 +1803,7 @@ export function WorkspaceBrowser({
             {uploading !== null ? (
               <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
             ) : (
-              <GlyphIcon d={UPLOAD_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
             )}
           </label>
         </Tooltip>
@@ -1935,7 +1929,7 @@ export function WorkspaceBrowser({
         onClick={() => setWrap(!wrapLines)}
         className={iconToggleClass(wrapLines)}
       >
-        <GlyphIcon d={WRAP_TEXT_ICON} size={ICON_SIZE.iconButton} />
+        <GlyphIcon d={ICONS.wrapText} size={ICON_SIZE.iconButton} />
       </button>
     </Tooltip>
   );
@@ -2008,7 +2002,7 @@ export function WorkspaceBrowser({
               onClick={() => void startEdit()}
               className={iconActionClass}
             >
-              <GlyphIcon d={FILE_EDIT_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.penLine} size={ICON_SIZE.iconButton} />
             </button>
           </Tooltip>
         )}
@@ -2029,7 +2023,7 @@ export function WorkspaceBrowser({
               aria-label={openInNewTabLabel}
               className={`${iconActionClass} ${previewIsolated ? "" : toneInk.attention}`}
             >
-              <GlyphIcon d={EXTERNAL_LINK_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.externalLink} size={ICON_SIZE.iconButton} />
             </a>
           </Tooltip>
         )}
@@ -2384,7 +2378,7 @@ export function WorkspaceBrowser({
             aria-label={S.files.download}
             className={iconActionClass}
           >
-            <GlyphIcon d={DOWNLOAD_ICON} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.download} size={ICON_SIZE.iconButton} />
           </a>
         </Tooltip>
         {isShellWindow && (
@@ -2395,7 +2389,7 @@ export function WorkspaceBrowser({
               onClick={() => void revealInFolder(preview.path)}
               className={iconActionClass}
             >
-              <GlyphIcon d={FOLDER_OPEN_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.folderOpen} size={ICON_SIZE.iconButton} />
             </button>
           </Tooltip>
         )}
@@ -2446,7 +2440,7 @@ export function WorkspaceBrowser({
               onClick={backToTree}
               className={iconActionClass}
             >
-              <GlyphIcon d={BACK_ICON} size={ICON_SIZE.iconButton} />
+              <GlyphIcon d={ICONS.chevronLeft} size={ICON_SIZE.iconButton} />
             </button>
           </Tooltip>
         )}

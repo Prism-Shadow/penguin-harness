@@ -1,17 +1,18 @@
 /**
- * The icon family (src/lib/icon-scale.ts and the renderers in components/ui).
+ * The icon family as the app uses it: the role-named scale, the registry and the renderers, all in
+ * the shared UI package (`icon-scale.ts`, `components/icons/…`).
  *
  * These are source scans rather than render assertions, because the thing that decays is not any
  * one component's output — it is a new inline `<svg>` re-drawing a glyph the app already owns, at
  * a stroke weight nobody chose. The three paths asserted below each used to exist in five or six
  * hand-typed copies.
  *
- * The scans cover the web app and the shared UI package (test/helpers/roots.ts): a glyph that moves
+ * The scans cover the web app and the shared UI package (test/helpers/roots.ts): a glyph that moved
  * into the package keeps its one home, and a copy re-typed on either side is still a second copy.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ICON_SIZE, ICON_GAP } from "../src/lib/icon-scale";
+import { ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 import { DEFAULT_THEME_ID, THEME_IDS, THEME_MODES } from "../../ui/src/tokens";
 import { analyzeThemeFile, resolveThemeValue } from "../../ui/src/testing/theme-tokens";
 import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
@@ -28,14 +29,17 @@ const FILES = SCAN.files
 const occurrences = (needle: string) =>
   FILES.filter(([, src]) => src.includes(needle)).map(([id]) => id);
 
-const ICONS = "packages/web/src/components/ui/icons.tsx";
-const CHEVRON = "packages/web/src/components/ui/chevron.tsx";
-const GLYPH_ICON = "packages/web/src/components/ui/glyph-icon.tsx";
+const REGISTRY = "packages/ui/src/components/icons/icons.ts";
+const MARKS = "packages/ui/src/components/icons/marks/marks.tsx";
+const CHEVRON = "packages/ui/src/components/icons/chevron/chevron.tsx";
+const GLYPH_ICON = "packages/ui/src/components/icons/glyph-icon/glyph-icon.tsx";
+const SCALE = "packages/ui/src/icon-scale.ts";
 
 describe("icon scale", () => {
   it("scans every source root, and finds the icon modules in one place each", () => {
     expectEveryRootScanned(SCAN);
-    for (const id of [ICONS, CHEVRON, GLYPH_ICON, "packages/web/src/lib/icon-scale.ts"]) {
+    // The marks file is left out: the chart primitives' `marks.tsx` shares its name.
+    for (const id of [REGISTRY, CHEVRON, GLYPH_ICON, SCALE]) {
       expectSingleHome(SCAN, id);
     }
   });
@@ -55,11 +59,11 @@ describe("icon scale", () => {
 
 describe("one glyph, one home", () => {
   it("draws the form-control caret in exactly one place", () => {
-    expect(occurrences("M3 4.5l3 3 3-3")).toEqual([ICONS]);
+    expect(occurrences("M3 4.5l3 3 3-3")).toEqual([MARKS]);
   });
 
   it("draws the close cross in exactly one place", () => {
-    expect(occurrences("M2 2l10 10M12 2L2 12")).toEqual([ICONS]);
+    expect(occurrences("M2 2l10 10M12 2L2 12")).toEqual([MARKS]);
   });
 
   it("draws the collapse chevron in exactly one place", () => {
@@ -70,24 +74,24 @@ describe("one glyph, one home", () => {
   // buttons and the dock header's move-dock buttons — which is exactly how the marks above
   // accumulated their copies.
   it("draws the bottom-dock mark in exactly one place", () => {
-    expect(occurrences("M4 5h16v14H4zM4 14h16")).toEqual([ICONS]);
+    expect(occurrences("M4 5h16v14H4zM4 14h16")).toEqual([REGISTRY]);
   });
 
   it("draws the right-dock mark in exactly one place", () => {
-    expect(occurrences("M4 5h16v14H4zM14 5v14")).toEqual([ICONS]);
+    expect(occurrences("M4 5h16v14H4zM14 5v14")).toEqual([REGISTRY]);
   });
 
   it("draws the memory brain in exactly one place", () => {
     // The Memory mark was hand-typed three times — the dock's panel table, the memory-changes
     // card and the agent card's memory count — so a redraw moved one surface and left the others
     // on the old picture.
-    expect(occurrences("M5.15 8.05C5.05 9.75")).toEqual([ICONS]);
+    expect(occurrences("M5.15 8.05C5.05 9.75")).toEqual([REGISTRY]);
   });
 
   it("draws the background-task trace in exactly one place", () => {
     // Three surfaces draw it now — a session row, the chat header pill and a backgrounded
     // tool row — which is how the paths above ended up hand-typed five times each.
-    expect(occurrences("M2 12h4l3 9 6-18 3 9h4")).toEqual([ICONS]);
+    expect(occurrences("M2 12h4l3 9 6-18 3 9h4")).toEqual([REGISTRY]);
   });
 });
 

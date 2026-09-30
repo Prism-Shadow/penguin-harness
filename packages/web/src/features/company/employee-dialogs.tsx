@@ -11,6 +11,7 @@
  */
 import { useEffect, useState } from "react";
 import type { OrgEmployeeItem, OrgHireRequest } from "@prismshadow/penguin-server/api";
+import { Button, ICONS } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -20,7 +21,6 @@ import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Segmented } from "../../components/ui/segmented";
@@ -29,7 +29,6 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { FormPicker } from "../../components/ui/form-picker";
 import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { PLUGIN_ICON } from "../../components/ui/icons";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
@@ -117,7 +116,7 @@ export function HireDialog({
       .then((res) => {
         if (cancelled) return;
         setLibrary(
-          res.groups.flatMap((g) => g.plugins.map((p) => ({ ...p, fallbackIcon: PLUGIN_ICON }))),
+          res.groups.flatMap((g) => g.plugins.map((p) => ({ ...p, fallbackIcon: ICONS.puzzle }))),
         );
       })
       .catch(() => {

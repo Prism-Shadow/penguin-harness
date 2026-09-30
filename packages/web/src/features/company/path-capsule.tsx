@@ -20,13 +20,9 @@
 import { useMemo } from "react";
 import type { ReactNode } from "react";
 import type { Components, Options } from "react-markdown";
+import { CopiedStatus, GlyphIcon, ICONS, ICON_SIZE, useCopied } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { CopiedStatus, useCopied } from "../../components/ui/copy-button";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_ICON } from "../../components/ui/group-list";
-import { FILE_ICON } from "../../components/ui/icons";
 import { Md } from "../chat/md";
 import { codePath, pathKind, pathLabel, spellAsWritten, splitPaths } from "./path-capsules";
 import type { PathScope } from "./path-capsules";
@@ -34,7 +30,7 @@ import type { PathScope } from "./path-capsules";
 /** One data path as a capsule. */
 export function PathCapsule({ path }: { path: string }) {
   const { copied, flash } = useCopied();
-  const glyph = copied ? STAT_ICONS.check : pathKind(path) === "file" ? FILE_ICON : FOLDER_ICON;
+  const glyph = copied ? STAT_ICONS.check : pathKind(path) === "file" ? ICONS.file : ICONS.folder;
   return (
     <>
       <button

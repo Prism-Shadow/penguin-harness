@@ -32,13 +32,10 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
+import { CloseButton, GlyphIcon, ICONS, ICON_SIZE, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseButton } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { noAutofill, panelSearchClass } from "../../components/ui/input";
-import { ProviderLogo } from "../../components/ui/provider-logo";
 import { ChoiceCheck } from "../../components/ui/field";
 import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { loadModelGroupOrder } from "../models/model-group-order";
@@ -57,13 +54,6 @@ import {
   stepIndex,
 } from "./model-picker-logic";
 import type { PickerGroup, PickerNavKey, PickerRegion } from "./model-picker-logic";
-
-/**
- * "No key" marker for key-less rows: a key struck through by a prohibition slash (24x24 line
- * art, grayscale via currentColor, matching the approval-mode icon style).
- */
-const NO_KEY_ICON =
-  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20";
 
 const NAV_KEYS: Record<string, PickerNavKey> = {
   ArrowUp: "up",
@@ -294,7 +284,7 @@ function ModelPickerBody({
               aria-label={S.models.noKey}
               className="shrink-0 text-gray-400 dark:text-gray-500"
             >
-              <GlyphIcon d={NO_KEY_ICON} size={ICON_SIZE.inlineGlyph} />
+              <GlyphIcon d={ICONS.keyOff} size={ICON_SIZE.inlineGlyph} />
             </span>
           )}
           <ChoiceCheck on={current} />

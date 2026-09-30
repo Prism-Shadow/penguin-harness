@@ -32,6 +32,17 @@ import type {
   SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
+import {
+  ActivityIcon,
+  Button,
+  CopyButton,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  Skeleton,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { switchDeskModel } from "../company/desk-model";
 import { useCompany } from "../../state/company";
@@ -48,7 +59,11 @@ import {
   humanizeTokens,
 } from "../../lib/format";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
-import { sessionActivity, sessionBackgroundTasks } from "../../lib/session-activity";
+import {
+  sessionActivity,
+  sessionActivityLabel,
+  sessionBackgroundTasks,
+} from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
 import {
   approvalKey,
@@ -71,16 +86,8 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Button } from "../../components/ui/button";
-import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
-import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
-import { EmptyState } from "../../components/ui/empty-state";
-import {
-  SessionActivityIcon,
-  sessionActivityLabel,
-} from "../../components/ui/session-activity-icon";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
@@ -152,10 +159,7 @@ import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
 import { PanelsToolbar } from "./panels-toolbar";
 import { toneDot, toneInk } from "../../lib/tone";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { exitedProcessIds, reportableProcessFailure } from "./process-list";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
@@ -188,7 +192,7 @@ function SessionIdRow({ sessionId }: { sessionId: string }) {
       </p>
       <div className="flex items-start gap-1.5">
         <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{sessionId}</span>
-        <CopyButton text={sessionId} label={S.chat.copySessionId} className={ROW_COPY_CLASS} />
+        <CopyButton text={sessionId} label={S.chat.copySessionId} size="sm" className="shrink-0" />
       </div>
     </div>
   );
@@ -2086,7 +2090,10 @@ export function ChatPage() {
                 data-tooltip={sessionActivityLabel(headerActivity)}
                 className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
               >
-                <SessionActivityIcon activity={headerActivity} />
+                <ActivityIcon
+                  activity={headerActivity}
+                  label={sessionActivityLabel(headerActivity)}
+                />
                 <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
               </span>
             )}
@@ -2169,14 +2176,14 @@ export function ChatPage() {
                       data-tooltip={S.chat.backgroundTasks(backgroundCount)}
                       className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
-                      <GlyphIcon d={BACKGROUND_TASKS_ICON} />
+                      <GlyphIcon d={ICONS.pulse} />
                       {backgroundCount}
                     </span>
                   )}
                 </span>
                 {/* Narrow: the info icon alone (the chips would crowd the title out). */}
                 <span className="flex h-7 w-7 items-center justify-center text-gray-500 sm:hidden dark:text-gray-400">
-                  <GlyphIcon d={INFO_ICON} size={ICON_SIZE.navRow} />
+                  <GlyphIcon d={ICONS.info} size={ICON_SIZE.navRow} />
                 </span>
               </button>
             }

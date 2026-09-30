@@ -318,6 +318,12 @@ describe("clipboard writes go through one entry", () => {
     expect(offenders(LIBRARY_IMPORT)).toEqual([]);
   });
 
+  it("hands the entry to the shared UI package's copy controls, at the app root", () => {
+    const app = readFileSync(join(SRC, "app.tsx"), "utf8");
+    expect(app).toContain('import { writeClipboard } from "./lib/clipboard";');
+    expect(app).toContain("<ClipboardWriterProvider write={writeClipboard}>");
+  });
+
   it("leaves reads alone: the terminal's mouse paste still reads the Clipboard API", () => {
     const reads = sourceFiles(SRC).filter((file) =>
       /navigator\s*\.\s*clipboard[\s\S]{0,40}?\.\s*readText\s*\(/.test(readFileSync(file, "utf8")),

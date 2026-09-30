@@ -9,12 +9,12 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
+import { EmptyState } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
-import { EmptyState } from "../../components/ui/empty-state";
 import { MessageItem } from "./message-item";
 import { WorkspaceLinksProvider } from "./md";
 import { WorkGroup, isWorkItem } from "./work-group";

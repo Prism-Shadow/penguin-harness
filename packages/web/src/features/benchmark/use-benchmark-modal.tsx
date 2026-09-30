@@ -24,14 +24,12 @@ import type {
   ModelRefDto,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
+import { Button, GlyphIcon, ICONS } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatScore } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
 import { FieldHint, FieldLabel } from "../../components/ui/field";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { Segmented } from "../../components/ui/segmented";
@@ -258,7 +256,7 @@ export function UseBenchmarkModal({
             parameter of the open tab is in range.
           */}
           <Button size="sm" variant="primary" disabled={!ready} onClick={go}>
-            <GlyphIcon d={MAGIC_WAND_ICON} />
+            <GlyphIcon d={ICONS.wand} />
             {S.aiCreate.editInChat}
           </Button>
         </>

@@ -14,6 +14,8 @@ export const IDS = {
     runningTool: "s-link-check",
     /** A Task mid-run: the model thinking, the text still streaming in. */
     thinking: "s-release-plan",
+    /** A Task mid-run: the reply streaming in, played on a loop while the Session is watched. */
+    streaming: "s-citation-guard",
     /** A Task waiting on a human: a command that needs approval. */
     approval: "s-publish",
     /** Older conversations that fill the list. */
@@ -40,6 +42,7 @@ export const ALL_SESSION_IDS: readonly string[] = [
   IDS.sessions.done,
   IDS.sessions.runningTool,
   IDS.sessions.thinking,
+  IDS.sessions.streaming,
   IDS.sessions.approval,
   ...IDS.sessions.older,
   IDS.sessions.archived,

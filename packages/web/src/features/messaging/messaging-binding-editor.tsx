@@ -48,12 +48,12 @@ import type {
   MessagingRuntimeStatus,
   TelegramTestResponse,
 } from "@prismshadow/penguin-server/api";
+import { Button } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { toneInk, type Tone } from "../../lib/tone";
-import { Button } from "../../components/ui/button";
 import { FieldLabel } from "../../components/ui/field";
 import { HelpFold } from "../../components/ui/help-fold";
 import { InfoPopover } from "../../components/ui/info-popover";

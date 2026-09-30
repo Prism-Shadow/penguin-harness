@@ -13,17 +13,23 @@
  */
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import {
+  Badge,
+  Button,
+  CheckIcon,
+  ChevronDown,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  PlusIcon,
+  SkeletonList,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneSurface } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Dropdown } from "../../components/ui/dropdown";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CheckIcon, ChevronDown, GEAR_ICON, PlusIcon } from "../../components/ui/icons";
 import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
 import {
   CreateOrganizationDialog,
@@ -167,9 +173,9 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                   <OrgStatusDot org={o} />
                   <span className="min-w-0 flex-1 truncate">{o.name}</span>
                   {o.invalid !== undefined ? (
-                    <Badge tone="red">{S.company.orgInvalid}</Badge>
+                    <Badge tone="danger">{S.company.orgInvalid}</Badge>
                   ) : o.status === "paused" ? (
-                    <Badge tone="amber">{S.company.orgPaused}</Badge>
+                    <Badge tone="attention">{S.company.orgPaused}</Badge>
                   ) : null}
                   {active && (
                     <span className="shrink-0 text-gray-500 dark:text-gray-400">
@@ -211,7 +217,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
               }}
             >
               <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                <GlyphIcon d={GEAR_ICON} size={ICON_SIZE.rowLead} />
+                <GlyphIcon d={ICONS.gear} size={ICON_SIZE.rowLead} />
               </span>
               {S.company.orgSettings}
             </button>

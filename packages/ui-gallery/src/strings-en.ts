@@ -55,6 +55,12 @@ export const en: GalleryStrings = {
         "A Task mid-run: the model is thinking; the thinking row shows the running state and the text keeps growing.",
       how: "Sidebar › a session row with the running mark.",
     },
+    "chat-streaming": {
+      title: "Chat · streaming",
+      description:
+        "A Task mid-run: the answer is streaming in and reveals the way the current theme does it; once done it holds for a moment and streams again, on a loop.",
+      how: "Sidebar › a session row with the running mark.",
+    },
     "chat-approval": {
       title: "Chat · awaiting approval",
       description:
@@ -328,6 +334,7 @@ export const en: GalleryStrings = {
         "a notice strip or toast, coloured by its tone: info, success, warning, danger or neutral",
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
+      "ui-stream": "a reply that is still streaming: each theme decides how new text appears",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -385,7 +392,8 @@ export const en: GalleryStrings = {
     topics: {
       buttons: {
         title: "Buttons",
-        description: "Four variants, two sizes and the icon button; disabled and busy.",
+        description:
+          "Five variants, five sizes and the icon button; disabled and loading; links and keyboard hints.",
       },
       inputs: {
         title: "Inputs and forms",
@@ -417,19 +425,28 @@ export const en: GalleryStrings = {
       tabs: { title: "Tabs", description: "The underline tab switcher, with an update badge." },
       badges: {
         title: "Badges and status",
-        description: "Badges, run-state icons, session activity marks and the update dot.",
+        description:
+          "Badges and counts, state dots, run-state icons, session activity marks and the update dot.",
       },
       empty: {
         title: "Empty states",
         description: "The placeholder for a list or detail with nothing in it, with an action.",
       },
       loading: { title: "Loading", description: "The spinner and the skeletons." },
+      streaming: {
+        title: "Streaming",
+        description:
+          "How an assistant reply reveals as it streams in: Primer shows it at once, Frost fades it in word by word with a soft glow, Console types it out.",
+      },
       charts: {
         title: "Charts",
         description:
           "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, cost trend and token bars, requests and success rate, the activity and score sparklines, the Trace timeline.",
       },
-      avatars: { title: "Avatars", description: "The user and agent avatars at their sizes." },
+      avatars: {
+        title: "Avatars",
+        description: "The user and agent avatars at their sizes, and a stack of them.",
+      },
       files: { title: "Files", description: "The file tree and the read-only file browser." },
       colour: {
         title: "Colour",
@@ -452,13 +469,28 @@ export const en: GalleryStrings = {
       secondary: "Cancel",
       danger: "Delete",
       ghost: "More",
+      link: "View details",
       sizes: "Sizes",
       md: "Default size",
       sm: "Small",
+      xs: "Extra small",
+      leading: "New",
       icon: "Icon button",
+      iconHint: "The label is required: it is both the accessible name and the tooltip.",
+      add: "Add",
+      edit: "Edit",
       states: "States",
       disabled: "Disabled",
       busy: "Saving…",
+      links: "Links",
+      linksHint:
+        "A link in a sentence is always underlined; a standalone one shows the underline on hover. An external link opens in a new tab and carries the external mark.",
+      inlineBefore: "See the ",
+      inlineLink: "release notes",
+      inlineAfter: " for what changed.",
+      external: "All releases",
+      keys: "Keyboard hints",
+      shortcuts: [["Ctrl", "K"], ["Ctrl", "`"], ["Esc"]],
     },
     inputs: {
       basics: "Inputs",
@@ -591,12 +623,18 @@ export const en: GalleryStrings = {
     badges: {
       badges: "Badges",
       tones: {
-        gray: "default",
-        brand: "origin",
-        green: "running",
-        amber: "aborted",
-        red: "failed",
+        neutral: "default",
+        success: "running",
+        attention: "aborted",
+        danger: "failed",
+        done: "done",
+        info: "free",
       },
+      variants: { soft: "Soft", outline: "Outline", solid: "Solid" },
+      count: "Count",
+      dots: "State dots",
+      dotsHint: "Six tones; only what is live pulses",
+      live: "Live",
       status: "Run state",
       states: {
         running: "Running",
@@ -629,6 +667,19 @@ export const en: GalleryStrings = {
       skeleton: "Skeletons",
       list: "List",
       card: "Card",
+    },
+    streaming: {
+      reply: "Assistant reply",
+      receiving: "Receiving…",
+      received: "All received",
+      modes: {
+        instant: "shows text the moment it arrives, with no motion",
+        fade: "fades in word by word, the last lines rising out of a softly glowing accent veil",
+        typewriter: "types out character by character behind a solid block caret",
+      },
+      unset: "treated as instant",
+      rate: (perSecond) => `about ${Math.round(perSecond)} characters a second`,
+      reduced: "reduced motion is on, so the reply shows as it arrives",
     },
     charts: {
       parts: {
@@ -716,6 +767,8 @@ export const en: GalleryStrings = {
     avatars: {
       user: "User avatar",
       agent: "Agent avatar",
+      stack: "Avatar stack",
+      stackShown: (shown, total) => `${shown} of ${total} shown`,
       userNames: ["admin", "Demo admin"],
       agents: [
         { id: "docs-expert", name: "Docs Expert" },
