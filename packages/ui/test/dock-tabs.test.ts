@@ -54,6 +54,21 @@ describe("DockTabs", () => {
     expect(html).toContain('data-terminal-id="t1"');
   });
 
+  it("grows the pills and the × targets under a finger", () => {
+    const coarse = renderStatic(
+      createElement(DockTabs, {
+        tabs: TABS,
+        active: "workspace",
+        coarse: true,
+        onSelect: () => {},
+        onClose: () => {},
+      }),
+    );
+    expect(classTokens(render())).toEqual(expect.arrayContaining(["h-6", "h-4", "w-4"]));
+    expect(classTokens(coarse)).toEqual(expect.arrayContaining(["h-8", "h-6", "w-6"]));
+    expect(classTokens(coarse)).not.toContain("h-4");
+  });
+
   it("marks a tab's badge with the attention dot, in tokens", () => {
     const html = render();
     expect(html.match(/bg-tone-attention-emphasis/g)).toHaveLength(1);

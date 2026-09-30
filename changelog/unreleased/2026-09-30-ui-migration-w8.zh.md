@@ -12,7 +12,7 @@ UI 包迁移的 W8 把统计图基础与命令面板搬进 `@prismshadow/penguin
 
 - **统计图基元**：各类标记（`ChartBar`、`ChartLine`、`ChartArea`、`ChartPoint`、`ChartArc`、网格与坐标轴、`TimelineBar`）及其几何计算、`useChartStyle`、`ChartFrame` 及其悬停辅助，以及 `TokenDonut`（文案改由 `labels` 属性传入）。
 - **新增**：`Sparkline`（智能体活跃度与评估分数两条迷你折线）、`Ring`（按预算绘制的圆环仪表，现用于财务仪表、支出环与上下文圆环）、`Legend`（行内或列表两种形态，支持悬停、固定与切换）。
-- **命令面板**：`CommandPalette` 负责呈现；动作列表与 Ctrl/Cmd+P 快捷键留在 Web App 的 `AppPalette`。
+- **命令面板**：`CommandPalette` 负责呈现；动作列表与快捷键绑定（快捷键表中的 `palette.toggle`）留在 Web App 的 `AppPalette`。
 
 ## 细节
 

@@ -55,6 +55,9 @@ import {
 import type { DockPickerChoice, DockTabItem } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { NAV_ICONS } from "../../lib/nav-icons";
+import { chordKeys } from "../../components/ui/chord-kbd";
+import { useDisplayedBinding, useShortcutLabel } from "../../lib/shortcuts/use-keymap";
+import { useCoarsePointer } from "../../lib/use-coarse-pointer";
 import { useTerminalChrome } from "../terminal/terminal-appearance";
 import {
   displayTitle,
@@ -69,6 +72,7 @@ import {
   subscribeTerminalCloseRequests,
 } from "../terminal/terminal-view-pool";
 import type { TerminalInfo } from "../terminal/terminal-view";
+import { isBrowserOffered, subscribeBrowser } from "../builtin-browser/browser-store";
 import { confirmClose } from "./close-guard";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
@@ -105,7 +109,10 @@ import {
   usePanelWidthValue,
 } from "../chat/use-panel-width";
 
-/** The picker's order: the agents first, the terminal next, then the rest of the panels. */
+/**
+ * The picker's order after the agents, the terminal and the built-in browser (each shown only
+ * where it can run): the rest of the panels.
+ */
 const PICKER_PANELS: readonly PanelKind[] = [
   "workspace",
   "memory",
@@ -179,6 +186,9 @@ export function DockPanel({
 }: DockPanelProps) {
   useSyncExternalStore(subscribeDock, dockVersion);
   const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
+  const closeShortcut = useShortcutLabel("terminal.close");
+  const toggleChord = useDisplayedBinding("terminal.toggle");
+  const browserOffered = useSyncExternalStore(subscribeBrowser, isBrowserOffered);
   const terminalById = new Map(terminals.map((t) => [t.id, t]));
   const { position, merged, tabs, activeKey } = view;
   const horizontal = position === "bottom";
@@ -378,6 +388,27 @@ export function DockPanel({
     [horizontal],
   );
 
+  // ------------------------------------------------------------------- touch height toggle
+
+  // The bottom dock's height is set by dragging its top boundary — a 4px line, which is a
+  // mouse target and not a finger one. On touch the same two heights a user actually wants
+  // (as much as the dock can take, and back to where it was) get a button. The remembered
+  // height is per mount on purpose: the ratio itself is persisted, so a dock left maximised
+  // restores to the shared default rather than to a height from another session.
+  const coarsePointer = useCoarsePointer();
+  const restoreRatio = useRef<number | null>(null);
+  const maximized = bottomRatio() >= DOCK_RATIO_MAX;
+  const toggleMaximized = useCallback(() => {
+    if (bottomRatio() >= DOCK_RATIO_MAX) {
+      const previous = restoreRatio.current;
+      if (previous === null) resetBottomRatio();
+      else setBottomRatio(previous);
+      return;
+    }
+    restoreRatio.current = bottomRatio();
+    setBottomRatio(DOCK_RATIO_MAX);
+  }, []);
+
   // ------------------------------------------------------------------------------ add menu
 
   const openPanelHere = (kind: PanelKind): void => {
@@ -401,6 +432,7 @@ export function DockPanel({
       button={
         <DockHeaderButton
           label={S.dock.addTab}
+          coarse={coarsePointer}
           data-testid="dock-add"
           onClick={() => setAddOpen(!addOpen)}
         >
@@ -409,7 +441,7 @@ export function DockPanel({
       }
     >
       <Menu>
-        {PANEL_KINDS.map((kind) => (
+        {PANEL_KINDS.filter((kind) => kind !== "builtin-browser" || browserOffered).map((kind) => (
           <MenuItem
             key={kind}
             data-testid={`dock-add-${kind}`}
@@ -502,7 +534,8 @@ export function DockPanel({
     if (tab.kind === "terminal") terminalOrdinals.set(tab.terminalId, terminalOrdinals.size + 1);
   });
 
-  // Ctrl+W inside a shown terminal asks for its tab to close, and takes the × path above,
+  // The terminal.close shortcut (⌃⌥` / Ctrl+Alt+` by default) inside a shown terminal asks for its
+  // tab to close, and takes the × path above,
   // confirmation included. Only the dock holding that tab answers — and not while it is
   // collapsing out, when the merged view may list the same tab — so no request is answered
   // twice. The ref keeps one subscription per mount while the handler reads the current tabs.
@@ -536,7 +569,7 @@ export function DockPanel({
       title: info ? `${info.name} — ${info.cwd}` : label,
       glyph: <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.inlineGlyph} />,
       closeLabel: S.terminal.killShell,
-      closeShortcut: "Ctrl+W",
+      closeShortcut: closeShortcut ?? undefined,
       terminalId: tab.terminalId,
     };
   });
@@ -548,7 +581,8 @@ export function DockPanel({
 
   // An open dock with nothing in it yet: the picker chooses what this dock opens. The
   // terminal row adopts the newest shell no conversation holds, or starts a fresh one, and
-  // names its hotkey.
+  // names its hotkey while one is bound; the built-in browser is offered only where it can
+  // be shown (the desktop app's own window, with a shell that hosts it).
   const pickPanel = (kind: PanelKind): DockPickerChoice => ({
     key: kind,
     label: panelLabel(kind),
@@ -563,11 +597,12 @@ export function DockPanel({
             key: "terminal",
             label: S.terminal.title,
             glyph: <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.iconButton} />,
-            keys: ["Ctrl", "`"],
+            ...(toggleChord !== null ? { keys: chordKeys(toggleChord) } : {}),
             onChoose: () => void openTerminalInDock(merged ? undefined : position),
           },
         ]
       : []),
+    ...(browserOffered ? [pickPanel("builtin-browser")] : []),
     ...PICKER_PANELS.map(pickPanel),
   ];
 
@@ -648,6 +683,7 @@ export function DockPanel({
           active={activeKey}
           onSelect={activateTab}
           onClose={closeByKey}
+          coarse={coarsePointer}
           stripRef={stripRef}
           {...stripDragProps}
         />
@@ -655,7 +691,12 @@ export function DockPanel({
       actions={
         <>
           {activeTab?.kind === "terminal" && (
-            <DockHeaderButton label={S.terminal.detach} data-testid="dock-detach" onClick={detach}>
+            <DockHeaderButton
+              label={S.terminal.detach}
+              coarse={coarsePointer}
+              data-testid="dock-detach"
+              onClick={detach}
+            >
               <GlyphIcon d={ICONS.boxArrowOut} size={ICON_SIZE.rowLead} />
             </DockHeaderButton>
           )}
@@ -663,6 +704,7 @@ export function DockPanel({
           {!merged && tabs.length > 0 && (
             <DockHeaderButton
               label={position === "right" ? S.dock.moveToBottom : S.dock.moveToRight}
+              coarse={coarsePointer}
               data-testid="dock-move"
               onClick={() => moveDock(position, other)}
             >
@@ -672,7 +714,25 @@ export function DockPanel({
               />
             </DockHeaderButton>
           )}
-          <DockHeaderButton label={S.dock.hideDock} data-testid="dock-close" onClick={hide}>
+          {horizontal && coarsePointer && tabs.length > 0 && (
+            <DockHeaderButton
+              label={maximized ? S.dock.restore : S.dock.maximize}
+              coarse
+              data-testid="dock-maximize"
+              onClick={toggleMaximized}
+            >
+              <GlyphIcon
+                d={maximized ? ICONS.cornersIn : ICONS.cornersOut}
+                size={ICON_SIZE.rowLead}
+              />
+            </DockHeaderButton>
+          )}
+          <DockHeaderButton
+            label={S.dock.hideDock}
+            coarse={coarsePointer}
+            data-testid="dock-close"
+            onClick={hide}
+          >
             <CloseIcon size={12} />
           </DockHeaderButton>
         </>

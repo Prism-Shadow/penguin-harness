@@ -24,6 +24,8 @@ export function panelLabel(kind: PanelKind): string {
       return S.messaging.panelTitle;
     case "schedules":
       return S.schedule.panelTitle;
+    case "builtin-browser":
+      return S.builtinBrowser.panelTitle;
   }
 }
 
@@ -42,6 +44,8 @@ export function panelGlyphPath(kind: PanelKind): string {
       return ICONS.paperPlane;
     case "schedules":
       return ICONS.alarmClock;
+    case "builtin-browser":
+      return ICONS.globe;
   }
 }
 

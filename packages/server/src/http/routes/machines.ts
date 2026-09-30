@@ -269,6 +269,13 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       c.req.param("machineId"),
       c.req.query("path") ?? "",
     );
+    if (listing === "denied") {
+      throw new HttpError(
+        403,
+        "dir_permission_denied",
+        "That machine does not allow reading this directory.",
+      );
+    }
     if (listing === null) {
       throw new HttpError(
         404,

@@ -1,8 +1,9 @@
 /**
  * Foundations › Type: the role scale from h1 to caption, prose, the chrome line and code, each set
  * in its own role tokens, English and Chinese side by side — the step between rungs, the heading
- * weights, Console's mono chrome against its sans prose, and where a Latin face hands over to its
- * CJK fallback, all at a glance. `prose` is the reading face; `ui` is the chrome face `body` sets.
+ * weights, the chrome face against the reading face (one family in every theme today, two names a
+ * theme may set apart), and where a Latin face hands over to its CJK fallback, all at a glance.
+ * `prose` is the reading face; `ui` is the chrome face `body` sets.
  */
 import type { CSSProperties } from "react";
 import { useGallery } from "../state";

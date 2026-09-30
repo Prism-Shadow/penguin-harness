@@ -30,6 +30,7 @@ import type {
   DesktopUpdaterCommandMessage,
 } from "@prismshadow/penguin-server/api";
 import { resolveProfile } from "./app-identity.js";
+import { logLine } from "./desktop-log.js";
 import { feedUrlOverride, updateSourceConfig, updateSupport } from "./update-support.js";
 import {
   feedLabel,
@@ -56,7 +57,7 @@ const GITHUB_FEED = {
 };
 
 function log(line: string): void {
-  process.stdout.write(`[updater] ${line}\n`);
+  logLine(`[updater] ${line}`);
 }
 
 // Pure over argv and isPackaged, so resolving it here again costs nothing and keeps the

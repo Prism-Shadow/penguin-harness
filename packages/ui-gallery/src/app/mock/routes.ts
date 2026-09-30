@@ -23,6 +23,10 @@ import type {
   AgentVaultConfigDto,
   AuthResponse,
   BenchmarkCasesResponse,
+  BuiltinBrowserHistoryResponse,
+  BuiltinBrowserImportSourcesResponse,
+  BuiltinBrowserSettings,
+  BuiltinBrowserStatus,
   BenchmarkCreateResponse,
   BenchmarksResponse,
   CaseMaterial,
@@ -747,6 +751,14 @@ router
     const path = query.get("path") || "/home/demo";
     return store.f.dirs[path] ?? { path, parent: "/home/demo", entries: [] };
   })
+  // Only the desktop app's own window may ask macOS for a folder, and the gallery is not one.
+  .post("/api/projects/:projectId/dirs/access", () =>
+    fail(
+      403,
+      "desktop_shell_only",
+      "Asking macOS for a folder is available from the desktop app's own window.",
+    ),
+  )
   .get("/api/projects/:projectId/dir-skills", ({ query }): DirectorySkillsResponse => ({
     path: query.get("path") ?? "",
     skills: [],
@@ -1846,7 +1858,38 @@ router
   .post("/api/desktop/update/download", () => notFound("Desktop updater"))
   .post("/api/desktop/update/install", () => notFound("Desktop updater"))
   .get("/api/desktop/tray", (): DesktopTrayStatusResponse => ({ status: null }))
-  .put("/api/desktop/tray", () => empty());
+  .put("/api/desktop/tray", () => empty())
+  .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"));
+
+// ---------------------------------------------------------------------------------------------
+// The built-in browser: the desktop shell's, so it answers as a server with no shell does
+// ---------------------------------------------------------------------------------------------
+
+function browserUnavailable(): never {
+  return fail(503, "browser_unavailable", "The built-in browser needs the desktop app.");
+}
+
+router
+  .get("/api/builtin-browser/status", (): BuiltinBrowserStatus => ({
+    available: false,
+    reason: "not_desktop",
+    tabs: [],
+    activeTabId: null,
+  }))
+  .post("/api/builtin-browser/tabs", browserUnavailable)
+  .post("/api/builtin-browser/tabs/claim", browserUnavailable)
+  .post("/api/builtin-browser/tabs/on-screen", browserUnavailable)
+  .post("/api/builtin-browser/tabs/:tab/activate", browserUnavailable)
+  .delete("/api/builtin-browser/tabs/:tab", browserUnavailable)
+  .get("/api/builtin-browser/import/sources", (): BuiltinBrowserImportSourcesResponse => ({
+    sources: [],
+  }))
+  .post("/api/builtin-browser/import", () => readOnly("import into the built-in browser"))
+  .get("/api/builtin-browser/settings", (): BuiltinBrowserSettings => ({ homepage: null }))
+  .put("/api/builtin-browser/settings", () => readOnly("change the built-in browser's settings"))
+  .get("/api/builtin-browser/history", (): BuiltinBrowserHistoryResponse => ({ entries: [] }))
+  .delete("/api/builtin-browser/history", () => empty())
+  .post("/api/builtin-browser/clear-data", browserUnavailable);
 
 // ---------------------------------------------------------------------------------------------
 // Company mode: off in the demo, so every organization route answers as the server does then
@@ -1873,6 +1916,7 @@ router
   })
   .get("/api/projects/:projectId/organizations/:orgId", companyOff)
   .patch("/api/projects/:projectId/organizations/:orgId", companyOff)
+  .delete("/api/projects/:projectId/organizations/:orgId", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/chart", companyOff)
   .post("/api/projects/:projectId/organizations/:orgId/employees", companyOff)
   .patch("/api/projects/:projectId/organizations/:orgId/employees/:agentId", companyOff)

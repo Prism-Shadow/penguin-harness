@@ -66,20 +66,20 @@ An unparseable value stops the server at startup instead of falling back silentl
 
 ### Provider credential variables
 
-When a model entry has no inline `api_key`, AgentHub falls back to the provider's environment variable. A `*_BASE_URL` value is used only when the entry does not inline `base_url`.
+When a model entry has no inline `api_key`, it falls back to the provider's environment variable **only when its requests go to that provider's official endpoint**: the entry has no `base_url`, or its `base_url` is the vendor's own endpoint. A `*_BASE_URL` value is used only when the entry does not inline `base_url`; an entry with its own `base_url` is never covered by the environment, even when `OPENAI_BASE_URL` names the same server. Every other entry — the gateway groups' preset endpoints, custom, vLLM and user-created groups with their own endpoints — needs its own `api_key`, and PenguinHarness refuses to build a client for it otherwise; see [Set API keys](/models#set-api-keys).
 
 | Provider | API key | Base URL |
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai, openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, modelscope, vllm, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai, openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, modelscope, vllm, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-The openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. ModelScope also shares `OPENAI_*` because its group credential is an api-inference token, even when a preset row pins a model-specific protocol. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. The direct MiniMax M3 Responses client uses `MINIMAX_*`, and the built-in MiniMax preset already pins the official endpoint. For provider groups and the built-in model catalog, see [Models & Providers](/models).
+The openrouter, fireworks, siliconflow, tokendance, opencode-go, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables — which, by the rule above, their rows do not fall back to: the variable holds your OpenAI key, and a gateway is not OpenAI. The same holds for the opencode-go models on Anthropic Messages, whose client reads `ANTHROPIC_*`. ModelScope also shares `OPENAI_*` because its group credential is an api-inference token, and all three presets pin the generic Responses client; its rows do not fall back to it either. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. The direct MiniMax M3 Responses client uses `MINIMAX_*`, and the built-in MiniMax preset already pins the official endpoint. For provider groups and the built-in model catalog, see [Models & Providers](/models).
 
 ## Project config
 
@@ -108,7 +108,7 @@ The openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-tok
 | `max_tokens` | number | The agent's `model.max_tokens` | Per-model max output Tokens; overrides the agent's `model.max_tokens` when set |
 | `fast_mode` | boolean | Off | Per-model fast mode (the provider's premium faster serving tier) |
 | `pricing` | table | — | Three price buckets, `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`). Always the list price |
-| `api_key` | string | The provider's environment variable | Inline credential |
+| `api_key` | string | The provider's environment variable, for the vendor's own endpoint only | Inline credential |
 | `base_url` | string | Preset for some catalog entries | Custom base URL |
 | `created_at` | string | — | When `api_key` was written (ISO 8601); a display field maintained by the interface layer |
 
@@ -118,7 +118,7 @@ Field notes:
 - `fast_mode`: only `true` is persisted. It is offered only for models whose AgentHub client can serve it, and the others reject requests that carry it. See [Models](/models#fast-mode).
 - `pricing`: the figure here is the list price. A running promotion is not written to this file: the server keeps it in `web.db` and takes it off when it computes cost. See [Prices and promotions](/models#prices-and-promotions).
 - `base_url`: the built-in catalog presets it for gateways and for the direct rows that pin a client, MiniMax M3 and DeepSeek `deepseek-flash`.
-- `api_key`: when empty, AgentHub falls back to the provider's environment variable.
+- `api_key`: when empty, the entry falls back to the provider's environment variable only when its endpoint is the vendor's own (see [Provider credential variables](#provider-credential-variables)); a gateway, custom or vLLM entry needs its own key.
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
@@ -288,7 +288,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | `skills.prompt` | Built-in template | The `{{SKILLS}}` block; carries `{{SKILL_METADATA}}` |
 | `schedules.enabled` | `true` | Whether the scheduled-tasks section enters the context |
 | `schedules.prompt` | Built-in template | The `{{SCHEDULES}}` block, which teaches file-based task management; carries `{{SCHEDULE_LIST}}` |
-| `hooks.enabled` | `true` | Whether a new Session runs the installed hook packages at the loop's hook points |
+| `hooks.enabled` | `true` | Whether the installed hook packages run at the loop's hook points |
 | `tools.builtin` | The full default toolset when omitted | Tool entries; once written, replaces the default list wholesale |
 | `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`) |
 

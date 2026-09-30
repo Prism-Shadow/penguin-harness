@@ -22,6 +22,7 @@ describe("PanelsToolbar", () => {
           {
             key: "right",
             label: "Right dock",
+            tooltip: "Right dock (Ctrl+Alt+R)",
             glyph: "M0 0h1",
             active: true,
             badge: true,
@@ -34,6 +35,9 @@ describe("PanelsToolbar", () => {
     expect(html).toMatch(/aria-expanded="false"[^>]*aria-label="Bottom dock"/);
     expect(html).toMatch(/aria-expanded="true"[^>]*aria-label="Right dock"/);
     expect(html).toContain('data-testid="dock-toggle-right"');
+    // The tooltip may add the shortcut; the name stays the label alone.
+    expect(html).toContain('data-tooltip="Right dock (Ctrl+Alt+R)" aria-label="Right dock"');
+    expect(html).toContain('data-tooltip="Bottom dock" aria-label="Bottom dock"');
     expect(html.match(/bg-tone-attention-emphasis/g)).toHaveLength(1);
   });
 });

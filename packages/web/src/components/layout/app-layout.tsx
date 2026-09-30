@@ -25,7 +25,10 @@ import {
   UserAvatar,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { nagsAboutInitialPassword } from "../../lib/account-menu";
 import { S } from "../../lib/strings";
+import { onCommand } from "../../lib/shortcuts/dispatcher";
+import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
@@ -37,7 +40,7 @@ import { NAV_ICONS } from "../../lib/nav-icons";
 import { useCompany } from "../../state/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
 import { ChannelRailRows } from "../../features/company/channel-sidebar";
-import { DeskRailRows } from "../../features/company/org-session-groups";
+import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
 import {
   COMPANY_NAV_KEYS,
   isOrgRoute,
@@ -48,12 +51,24 @@ import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
-import { prepareNewChatDraft } from "../../features/chat/new-chat";
+import { useNewChat } from "../../features/chat/use-new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
+import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
 import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
+
+/**
+ * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
+ * `hidden md:block`, and Tailwind's `md` is 768px at the browser's default font size — a media
+ * query ignores the app's 18px root. Below it the drawer's own sidebar answers the commands while
+ * it is open.
+ */
+function pinnedSidebarOnScreen(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
+}
 
 /**
  * The folded navigation column: the unfold button on top; below it, in product-specified order,
@@ -108,11 +123,8 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${lastSession.sessionId}`);
   };
 
-  /** Mirrors the pinned sidebar's "New chat": parks any typed-but-unsent draft text first, then opens a draft that names nothing, so it starts on the Project's new-chat defaults (new-chat.ts). */
-  const newChat = () => {
-    if (user && currentProject) prepareNewChatDraft(user.userId, currentProject.projectId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`);
-  };
+  /** Mirrors the pinned sidebar's "New chat" (use-new-chat.ts): parks any typed-but-unsent draft text first, then opens a draft that names nothing, so it starts on the Project's new-chat defaults. */
+  const newChat = useNewChat();
 
   /** Page entries (rail positions 3-8): same routes, same labels as the pinned nav.
       Traces is not among them: reading a Trace happens in the chat toolbar's panel
@@ -180,6 +192,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     badges.softwareNote !== null
       ? `${S.nav.userSettings} · ${badges.softwareNote}`
       : S.nav.userSettings;
+  const expandTitle = useShortcutTitle(S.nav.expandSidebar, "sidebar.toggle");
 
   return (
     <Rail
@@ -187,6 +200,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         <>
           <RailItem
             label={S.nav.expandSidebar}
+            tooltip={expandTitle}
             glyph={ICONS.chevronRightPipe}
             onClick={onExpand}
             className="shrink-0"
@@ -284,16 +298,17 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
           />
         );
       })}
-      {/* The organization's channels and then its desks, under the pages the way they sit
-          under the nav in the pinned sidebar. A hairline says where each run ends; a channel
-          row carries its own unread count and a desk its running dot, since a rail with no
-          labels must still say how much is waiting. */}
+      {/* The organization's channels, its desks and then its Temporary entries, under the pages
+          the way they sit under the nav in the pinned sidebar. A hairline says where each run
+          ends; a channel row carries its own unread count and a desk or an entry its running
+          dot, since a rail with no labels must still say how much is waiting. */}
       {inCompany && navOrg !== null && (
         <>
           <RailDivider />
           <ChannelRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
           <RailDivider />
           <DeskRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
+          <TempSessionRailRows projectId={navOrg.projectId} orgId={navOrg.orgId} />
         </>
       )}
     </Rail>
@@ -301,7 +316,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 }
 
 export function AppLayout() {
-  const { user, desktopMode } = useAuth();
+  const { user, desktopMode, sessionVia } = useAuth();
   // The docks belong to the conversation they were arranged in, so switching Sessions
   // switches the arrangement with it (dock-state.ts). The draft page's route id ("new" /
   // a parked draft id) is a scope of its own, handed to the Session the first send
@@ -333,7 +348,8 @@ export function AppLayout() {
   // dismissed banner never flashes before disappearing. Hydration only runs when the banner
   // would show at all; unreachable prefs fail open (treated as not dismissed, banner shows).
   const [passwordBannerDismissed, setPasswordBannerDismissed] = useState<boolean | null>(null);
-  const passwordBannerRelevant = Boolean(user?.passwordIsInitial) && !desktopMode;
+  const passwordBannerRelevant =
+    Boolean(user?.passwordIsInitial) && nagsAboutInitialPassword({ desktopMode, sessionVia });
   useEffect(() => {
     if (!passwordBannerRelevant) return;
     let cancelled = false;
@@ -366,15 +382,58 @@ export function AppLayout() {
       localStorage.setItem("penguin.sidebarCollapsed", next ? "1" : "0");
       return next;
     });
+  // The commands whose surface is this layout. Each declines (returns false, so the browser's
+  // own key runs) when its effect could not be seen: the pinned sidebar exists only from the
+  // `md` breakpoint up (below it the drawer's own sidebar answers while open), and company mode
+  // has neither a session search nor a development New chat. New chat runs from here rather
+  // than from the sidebar so it works with the sidebar collapsed to its rail. The search field
+  // only exists in the expanded sidebar: with the rail showing, the command expands the sidebar
+  // with the field already open (the pinned Sidebar mounts fresh on every expand and takes the
+  // flag as its initial state); otherwise it declines and the sidebar's own handler takes it.
+  const inCompany = company.workMode === "company";
+  const newChat = useNewChat();
+  const [openSearchOnExpand, setOpenSearchOnExpand] = useState(false);
+  useEffect(() => {
+    const offs = [
+      onCommand("sidebar.toggle", () => {
+        if (!pinnedSidebarOnScreen()) return false;
+        setOpenSearchOnExpand(false);
+        toggleCollapsed();
+      }),
+      onCommand("chat.new", () => {
+        if (inCompany) return false;
+        newChat();
+      }),
+      onCommand("sessions.search", () => {
+        if (inCompany || !pinnedSidebarOnScreen() || !collapsed) return false;
+        setOpenSearchOnExpand(true);
+        toggleCollapsed();
+      }),
+    ];
+    return () => {
+      for (const off of offs) off();
+    };
+  }, [collapsed, inCompany, newChat]);
 
   return (
     <AppShell
       navCollapsed={collapsed}
       nav={
         collapsed ? (
-          <CollapsedRail onExpand={toggleCollapsed} />
+          <CollapsedRail
+            onExpand={() => {
+              setOpenSearchOnExpand(false);
+              toggleCollapsed();
+            }}
+          />
         ) : (
-          <Sidebar onCollapse={toggleCollapsed} />
+          <Sidebar
+            onCollapse={() => {
+              setOpenSearchOnExpand(false);
+              toggleCollapsed();
+            }}
+            initialSearchOpen={openSearchOnExpand}
+          />
         )
       }
       overlays={
@@ -454,6 +513,12 @@ export function AppLayout() {
           views live in this pool and are adopted into dock tab bodies by DOM handoff,
           so navigating between pages never reconnects a terminal. */}
       <TerminalDockRuntime />
+      {/* Reconciles the shortcut mirror with the account's prefs and carries edits back. */}
+      <ShortcutRuntime />
+      {/* The built-in browser's pages (desktop app only): they live here, outside every page,
+          and are laid over the dock's browser tab by coordinates — a webview moved in the DOM
+          reloads, so navigating the app must never re-parent one. */}
+      <BuiltinBrowserLayer />
       <AppPalette />
     </AppShell>
   );

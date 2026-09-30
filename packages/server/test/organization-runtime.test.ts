@@ -911,6 +911,43 @@ describe("organization runtime", () => {
       );
       expect(sessions.findById(work)?.approvalMode).toBe("read-only");
     });
+
+    it("carries a changed approval mode onto the sessions it already has, except archived ones", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      // Everything here is opened under the default mode: the CEO's first desk, kept in the
+      // ledger as history once renewed, the current CEO and HR desks, and two sessions on one
+      // ticket, the second of which a person archives.
+      const firstDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
+      const ceoDesk = (await service.desk(P, ORG, CEO, { renew: true })).sessionId;
+      const hrDesk = (await service.desk(P, ORG, HR, {})).sessionId;
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Ship it", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      const start = async (): Promise<string> =>
+        (await service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice" })).sessionId;
+      const work = await start();
+      const archived = await start();
+      sessions.setArchived(archived, new Date(nowMs).toISOString());
+      const live = [firstDesk, ceoDesk, hrDesk, work];
+      const modeOf = (sessionId: string) => sessions.findById(sessionId)?.approvalMode;
+      expect([...live, archived].map(modeOf)).toEqual(Array(5).fill("allow-all"));
+
+      await service.patch(P, ORG, { approvalMode: "read-only" }, "alice");
+      expect(live.map(modeOf)).toEqual(Array(4).fill("read-only"));
+      expect(modeOf(archived)).toBe("allow-all");
+
+      // A write that leaves the mode where it is touches no session, so a desk whose mode was
+      // changed from its own composer keeps it until the organization's mode next changes.
+      sessions.updateApprovalMode(hrDesk, "deny-all");
+      await service.patch(P, ORG, { name: "Acme Inc", approvalMode: "read-only" }, "alice");
+      expect(modeOf(hrDesk)).toBe("deny-all");
+      await service.patch(P, ORG, { approvalMode: "allow-all" }, "alice");
+      expect(live.map(modeOf)).toEqual(Array(4).fill("allow-all"));
+    });
   });
 
   describe("who starts a ticket session", () => {
@@ -2530,6 +2567,43 @@ describe("organization runtime", () => {
       expect(cache.deskSessions(P, ORG)).toHaveLength(3);
       const list = await service.sessions(P, ORG);
       expect(list.desks.map((d) => d.sessionId)).toEqual([renewed.sessionId]);
+    });
+
+    it("deletes the organization and nothing else: its files to the trash, its Agents and Sessions left alone", async () => {
+      await createOrg();
+      const desk = await service.desk(P, ORG, CEO, {});
+      await service.createTicket(
+        P,
+        ORG,
+        { title: "Goes with the company", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      await service.delete(P, ORG);
+
+      // Gone from every surface.
+      expect((await service.list(P)).map((o) => o.orgId)).toEqual([]);
+      await expect(service.detail(P, ORG, "alice")).rejects.toMatchObject({ status: 404 });
+      await expect(service.delete(P, ORG)).rejects.toMatchObject({ status: 404 });
+      // Whole, in the Project's trash: moving the directory back is how it is restored.
+      const bin = path.join(path.dirname(store.dir(P, ORG)), ".trash");
+      const [kept] = await fs.readdir(bin);
+      expect(kept).toMatch(new RegExp(`^${ORG}-\\d{8}T\\d+Z$`));
+      expect(await fs.readFile(path.join(bin, kept!, "org_chart.yaml"), "utf8")).toContain(CEO);
+      // What this server derived from it went with it; what it HAD did not.
+      expect(cache.ownerOfSession(desk.sessionId)).toBeNull();
+      expect(sessions.findById(desk.sessionId)).not.toBeNull();
+      expect(existingAgents.has(CEO)).toBe(true);
+      // A pass over the Project finds nothing to drive and nothing to complain about.
+      const before = created.length;
+      await scheduler.tickOnce();
+      expect(created).toHaveLength(before);
+      expect(errors).toEqual([]);
+      // The id itself is free, but its CEO's Agent was kept — and a new organization's CEO
+      // is `<orgId>_ceo`. Reusing the id means letting that Agent go first.
+      await expect(createOrg()).rejects.toMatchObject({ status: 409, code: "agent_exists" });
+      existingAgents.delete(CEO);
+      await createOrg();
+      expect((await service.list(P)).map((o) => o.orgId)).toEqual([ORG]);
     });
 
     it("rebuilds the session caches from the files after they are dropped", async () => {

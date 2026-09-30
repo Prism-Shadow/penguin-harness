@@ -19,7 +19,7 @@ W7 of the UI-package migration lifts the app's frame into `@prismshadow/penguin-
 - The terminal's own light/dark palette stays in the Web App: it sits outside the token system by design.
 - The launcher keeps its sizes. Its caption stays 13 px and now follows the text-size setting.
 - The dock's tabs are a proper tab list (`role="tab"`).
-- The nav column's hover and selected fills are washes of the text colour, and company mode's channel and desk rows use them too.
+- The nav column's hover and selected fills are washes of the text colour, and company mode's channel, desk and Temporary rows use them too.
 
 ## Visible changes in the default theme (Primer)
 
@@ -35,4 +35,5 @@ W7 of the UI-package migration lifts the app's frame into `@prismshadow/penguin-
   - Its handles use the same info tone.
   - The picker's shortcuts are key caps.
   - The bottom handle's cursor is `row-resize`.
+  - On touch, the maximise button draws the registry's corner brackets, one pixel further out than before.
 - **Dark mode:** the nav column's fill is the muted surface (#1a1a1a → #202020).

@@ -24,12 +24,18 @@ export type DockEdge = "right" | "bottom";
 /** A small square header button: the dock's add, detach, move and hide controls. */
 export function DockHeaderButton({
   label,
+  coarse = false,
   children,
   className = "",
   ...rest
 }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label"> & {
   /** The accessible name and the tooltip. */
   label: string;
+  /**
+   * A finger is the pointer: a 24px box is a comfortable mouse target and a poor finger one, so
+   * the box grows while the glyph inside keeps its size.
+   */
+  coarse?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -38,7 +44,7 @@ export function DockHeaderButton({
       data-tooltip={label}
       aria-label={label}
       {...rest}
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:bg-line-muted hover:text-fg ${className}`}
+      className={`flex ${coarse ? "h-8 w-8" : "h-6 w-6"} shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:bg-line-muted hover:text-fg ${className}`}
     >
       {children}
     </button>

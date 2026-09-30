@@ -18,7 +18,7 @@ W6 of the UI-package migration lifts the conversation into `@prismshadow/penguin
 - **Composer:**
   - `ComposerCard`, `ChipRow`, `ToolbarTrigger`, `SendButton`, `SlashMenu` and `SlashPicker`.
   - `TagInput` and `Chip`, and `MenuSelect` for the composer's selects.
-  - `ContextRing`, and `ModelSelect` / `ModelMenuList`. The web's catalog-bound picker is `ModelCatalogSelect`.
+  - `ContextRing`, and `ModelSelect`, the model picker's trigger (the picker itself is the Web App's model-picker dialog). The web's catalog-bound picker is `ModelCatalogSelect`.
 - **Company channel:** `ChannelRun` and `ChannelBubble`.
 
 ## Details

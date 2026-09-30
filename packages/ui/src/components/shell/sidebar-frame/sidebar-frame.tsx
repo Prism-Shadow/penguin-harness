@@ -16,7 +16,7 @@
  * washes of the ink (`NAV_FILL`). The frame paints no background of its own: the column that holds
  * it does (`AppShell`'s navigation slot, or the phone's drawer).
  */
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import { ChevronFlip } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
@@ -36,8 +36,11 @@ export interface SidebarFrameProps {
   modeSwitch?: { label: string; control: ReactNode };
   /** The switcher row's content: the Project or organization switcher. */
   switcher: ReactNode;
-  /** The fold button at the start of the switcher row; drawn only when given. */
-  collapse?: { label: string; onClick: () => void };
+  /**
+   * The fold button at the start of the switcher row; drawn only when given. `tooltip` says more
+   * than the name when it has more to say (the name with its shortcut).
+   */
+  collapse?: { label: string; tooltip?: string; onClick: () => void };
   /**
    * The one entry pinned under the switcher ("New chat"). Without one the column keeps the gap the
    * scroll area below depends on.
@@ -49,6 +52,8 @@ export interface SidebarFrameProps {
   account: ReactNode;
   /** Layers the column opens (its dialogs), mounted after it. */
   overlays?: ReactNode;
+  /** The column's node: a caller that must know whether the column is on screen reads it. */
+  rootRef?: Ref<HTMLDivElement>;
 }
 
 export function SidebarFrame({
@@ -59,9 +64,10 @@ export function SidebarFrame({
   children,
   account,
   overlays,
+  rootRef,
 }: SidebarFrameProps) {
   return (
-    <div className="flex h-full w-full flex-col">
+    <div ref={rootRef} className="flex h-full w-full flex-col">
       {modeSwitch !== undefined && (
         <div className="shrink-0 px-2 pt-2" role="group" aria-label={modeSwitch.label}>
           {modeSwitch.control}
@@ -71,7 +77,7 @@ export function SidebarFrame({
         {collapse !== undefined && (
           <button
             type="button"
-            data-tooltip={collapse.label}
+            data-tooltip={collapse.tooltip ?? collapse.label}
             aria-label={collapse.label}
             onClick={collapse.onClick}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-fg-subtle transition-colors duration-150 hover:bg-fg/7 hover:text-fg"
@@ -206,14 +212,17 @@ export function sidebarControlClass(active = false): string {
 /** An icon control on the list header, named by its hint. */
 export function SidebarControl({
   label,
+  tooltip,
   glyph,
   active = false,
   onClick,
   "aria-haspopup": hasPopup,
   "aria-expanded": expanded,
 }: {
-  /** The accessible name and the hint. */
+  /** The accessible name, and the hint when `tooltip` is absent. */
   label: string;
+  /** The hint, when it says more than the name (the name with its shortcut). */
+  tooltip?: string;
   /** A registry path, drawn at the header's small rung, or a mark the caller sized. */
   glyph: string | ReactNode;
   /** Its menu or picker is open. */
@@ -225,7 +234,7 @@ export function SidebarControl({
   return (
     <button
       type="button"
-      data-tooltip={label}
+      data-tooltip={tooltip ?? label}
       aria-label={label}
       aria-haspopup={hasPopup}
       aria-expanded={expanded}
