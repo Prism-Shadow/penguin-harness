@@ -6095,6 +6095,8 @@ Benchmark：
       noItems: "还没有条目。",
       stage: { draft: "草稿", brief: "仅 brief", delegated: "已委派" },
       childRoadmap: (n: number) => `路线图 #${n}`,
+      statusUnknown: "状态未知",
+      statusUnknownHint: "提案列表还没读到这份提案；读到后这里显示它的状态。",
       openProposal: "打开提案",
       approvals: "批准",
       byPerson: "人",

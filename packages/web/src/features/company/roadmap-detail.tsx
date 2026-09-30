@@ -5,7 +5,9 @@
  *
  * The items come first. A proposal item that has its proposal linked is that proposal's row —
  * its number, its current title as the link, its status; one that does not says where it stands
- * (a draft, a brief waiting for its two approvals with the person's Approve, or delegated). Every
+ * (a draft, a brief waiting for its two approvals with the person's Approve, or delegated). A
+ * linked proposal the organization's list does not hold (yet) wears a grey "status unknown" pill,
+ * so a list that failed to load never leaves the rows bare. Every
  * employee the column names is a face and a name, never an id. The body is Markdown through the
  * channel message pipeline, so a `proposal:<n>` in it is a capsule, an `@` a name and a footnote
  * a note; it is laid straight into the column with no card around it. The record is the
@@ -288,7 +290,14 @@ function RoadmapItemRow({
             <Badge tone="brand">{t.childRoadmap(row.child)}</Badge>
           ) : linked === null ? (
             <Badge tone={STAGE_TONE[row.stage]}>{t.stage[row.stage]}</Badge>
-          ) : null}
+          ) : (
+            // The proposal is not in the organization's list: the list has not loaded (a failed
+            // read, a machine link that dropped) or it does not carry this number. The row still
+            // says it has a status, one the column could not read, instead of drawing none.
+            <span title={t.statusUnknownHint}>
+              <Badge tone="gray">{t.statusUnknown}</Badge>
+            </span>
+          )}
         </div>
         {linked === null && row.brief !== "" && (
           <p className="mt-0.5 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
