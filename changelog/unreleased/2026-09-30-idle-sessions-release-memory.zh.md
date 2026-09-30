@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [Myriad-Dreamin/penguin-harness#116](https://github.com/Myriad-Dreamin/penguin-harness/pull/116)
 
 [English](2026-09-30-idle-sessions-release-memory.md)
 
