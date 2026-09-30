@@ -44,8 +44,11 @@ import {
   ICON_GAP,
   ICON_SIZE,
   InfoPopover,
+  NoticeStrip,
   Segmented,
   noAutofill,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -59,7 +62,6 @@ import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { TrendChart } from "../usage/trend-chart";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
@@ -90,7 +92,6 @@ import {
 } from "./finance-tree";
 import type { SpendStateKey } from "./finance-tree";
 import { agentPrincipal } from "./principals";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Pencil (lucide): the budget cell's edit affordance. */
 const PENCIL_ICON =

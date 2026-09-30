@@ -10,7 +10,14 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { Button, Input, PasswordInput, PenguinLogo, Segmented } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Input,
+  Modal,
+  PasswordInput,
+  PenguinLogo,
+  Segmented,
+} from "@prismshadow/penguin-ui";
 import { S } from "../lib/strings";
 import { apiErrorText } from "../lib/api-error";
 import { useDocumentTitle } from "../lib/use-document-title";
@@ -19,7 +26,6 @@ import { useLocale } from "../state/locale";
 import type { LangPref } from "../state/locale";
 import { useTheme } from "../state/theme";
 import type { ThemeMode } from "../state/theme";
-import { Modal } from "../components/ui/modal";
 import { LoginCircuit } from "./login-circuit";
 
 /** Which advice a failed claim asks for; the server decides it from the deployment, not from the token. */

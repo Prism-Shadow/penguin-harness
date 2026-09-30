@@ -17,7 +17,9 @@
  *   animation); prefers-reduced-motion degrades to a fade plus a direct snap
  *   into position.
  * - Body scroll is locked while open; Esc or clicking the overlay closes it;
- *   focus returns to the element that had it before opening.
+ *   focus returns to the element that had it before opening. Escape goes
+ *   through the shared Escape-layer stack, so a dialog or menu opened from
+ *   inside the sheet takes the first Escape alone.
  *
  * Coordinate system: the panel sits at bottom-0 with height 92dvh (FULL_FRACTION
  * and the class must be changed together), translateY y is in [0, panel height],
@@ -26,11 +28,12 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { CloseButton } from "@prismshadow/penguin-ui";
-import { usePrefersReducedMotion } from "./use-reduced-motion";
-import { SPRING_DEFAULT, SPRING_MOMENTUM, createSpringDriver } from "../../lib/spring";
-import type { SpringDriver } from "../../lib/spring";
-import { nearestSnap, project, rubberband } from "../../lib/sheet-physics";
+import { CloseButton } from "../../actions/close-button/close-button";
+import { nearestSnap, project, rubberband } from "../../../motion/sheet-physics";
+import { SPRING_DEFAULT, SPRING_MOMENTUM, createSpringDriver } from "../../../motion/spring";
+import type { SpringDriver } from "../../../motion/spring";
+import { usePrefersReducedMotion } from "../../../motion/use-reduced-motion";
+import { useEscLayer } from "../esc-layers/esc-layers";
 
 export type SheetSnap = "half" | "full";
 
@@ -48,9 +51,19 @@ export interface SheetProps {
   onClose: () => void;
   title?: string;
   children: ReactNode;
+  /** The header's close cross's accessible name; defaults to the interface's word for "close". */
+  closeLabel?: string;
 }
 
-export function Sheet({ open, snap, onSnapChange, onClose, title, children }: SheetProps) {
+export function Sheet({
+  open,
+  snap,
+  onSnapChange,
+  onClose,
+  title,
+  children,
+  closeLabel,
+}: SheetProps) {
   // Don't unmount immediately when open=false: unmount only after the exit animation finishes (onSettle).
   const [mounted, setMounted] = useState(open);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -154,14 +167,9 @@ export function Sheet({ open, snap, onSnapChange, onClose, title, children }: Sh
     };
   }, [mounted]);
 
-  useEffect(() => {
-    if (!mounted || !open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [mounted, open, onClose]);
+  // Escape closes only while the sheet is the topmost layer: a dialog or menu opened from inside
+  // it is closed first.
+  useEscLayer(mounted && open, onClose);
 
   // Focus restoration: return to the element that had focus before opening, after closing.
   useEffect(() => {
@@ -271,7 +279,7 @@ export function Sheet({ open, snap, onSnapChange, onClose, title, children }: Sh
       />
       <div
         ref={panelRef}
-        className={`absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col overflow-hidden rounded-t-2xl border-t border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 ${
+        className={`absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface shadow-[var(--ui-shadow-drawer)] ${
           reduced ? "anim-fade" : ""
         }`}
         style={{ transform: "translate3d(0, 100%, 0)" }}
@@ -287,10 +295,14 @@ export function Sheet({ open, snap, onSnapChange, onClose, title, children }: Sh
           // Also fires after a normal pointerup — the draggingRef guard in onPointerCancel prevents double handling.
           onLostPointerCapture={onPointerCancel}
         >
-          <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-gray-300 dark:bg-gray-600" />
+          <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-line-emphasis" />
           <div className="flex items-center justify-between px-4 pb-2 pt-1.5">
             <span className="text-base font-semibold">{title ?? ""}</span>
-            <CloseButton onClose={onClose} onPointerDown={(e) => e.stopPropagation()} />
+            <CloseButton
+              onClose={onClose}
+              label={closeLabel}
+              onPointerDown={(e) => e.stopPropagation()}
+            />
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">

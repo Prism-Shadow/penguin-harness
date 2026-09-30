@@ -52,15 +52,20 @@ import {
   AgentAvatar,
   Button,
   Chevron,
+  ConfirmModal,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
   InfoPopover,
+  Modal,
+  NoticeStrip,
   SearchInput,
   Skeleton,
   SkeletonCard,
   StatusIcon,
   UpdateDot,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -76,10 +81,7 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { Modal } from "../../components/ui/modal";
 import { TodoNotice } from "../../components/ui/todo-notice";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { prepareNewChatDraft } from "../chat/new-chat";
@@ -89,7 +91,6 @@ import { SettingsDialog } from "../settings/settings-dialog";
 import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
 import { toneInk, toneSurface } from "../../lib/tone";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /**
  * What one Agent has installed, by name → the installed copy's version (`YYYY.MM.DD.N`, or ""
@@ -796,6 +797,7 @@ export function PluginsPage() {
           }
           tone="primary"
           confirmLabel={pendingApply.install ? S.plugins.install : S.plugins.uninstall}
+          cancelLabel={S.common.cancel}
           busy={pendingSpecifier !== null}
           onClose={() => setPendingApply(null)}
           onConfirm={() => void runDeploymentInstall(pendingApply.specifier, pendingApply.install)}
@@ -813,6 +815,7 @@ export function PluginsPage() {
           title={S.todo.pluginsConfirmTitle(pendingBulk.plugins.length)}
           tone="primary"
           confirmLabel={S.skills.updateAction}
+          cancelLabel={S.common.cancel}
           busy={bulkRunning}
           onClose={() => setPendingBulk(null)}
           onConfirm={() => void runBulkUpdate(pendingBulk)}
@@ -1435,6 +1438,7 @@ function PluginCard({
           title={S.plugins.updateConfirmTitle(plugin.name)}
           tone="primary"
           confirmLabel={S.skills.updateAction}
+          cancelLabel={S.common.cancel}
           busy={updating}
           onClose={() => setPendingUpdate(null)}
           onConfirm={() => void confirmUpdate()}
@@ -1471,6 +1475,7 @@ function PluginCard({
           open
           title={S.plugins.uninstallConfirmTitle(plugin.name)}
           confirmLabel={S.skills.uninstall}
+          cancelLabel={S.common.cancel}
           onClose={() => setPendingUninstall(null)}
           onConfirm={() => {
             const agentId = pendingUninstall;

@@ -9,8 +9,7 @@
  * on hand at once and nothing here is fetched per directory.
  */
 import { useEffect, useState } from "react";
-import { Badge, ICONS } from "@prismshadow/penguin-ui";
-import { Modal } from "../../components/ui/modal";
+import { Badge, ICONS, Modal } from "@prismshadow/penguin-ui";
 import { FileBrowser } from "../../components/ui/file-browser";
 import type { FileBrowserPreview } from "../../components/ui/file-browser";
 import type { TreeToggle } from "../../components/ui/file-tree";

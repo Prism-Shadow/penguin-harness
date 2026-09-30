@@ -28,11 +28,14 @@ import type { MachineInfo, MachineJob, MachinesResponse } from "@prismshadow/pen
 import {
   Button,
   ChevronDown,
+  Dropdown,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  NoticeStrip,
   SearchInput,
   Skeleton,
+  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
@@ -42,8 +45,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMessageTime } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
-import { Dropdown } from "../../components/ui/dropdown";
-import { toastError } from "../../components/ui/toast";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import {
   MACHINE_PHASES,
@@ -61,7 +62,6 @@ import { MAX_VISIBLE_MACHINES, highlightSegments, matchMachines } from "./machin
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 import { SshHostDialog } from "./ssh-host-dialog";
 import type { HostFormMode } from "./ssh-host-dialog";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** How often the page re-reads the list while a job is queued or running. */
 const POLL_MS = 1500;

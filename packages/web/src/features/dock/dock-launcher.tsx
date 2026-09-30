@@ -36,14 +36,21 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
 } from "react";
-import { GlyphIcon, ICONS, ICON_SIZE, scrollMovesAnchor } from "@prismshadow/penguin-ui";
+import {
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  SPRING_DEFAULT,
+  SPRING_MOMENTUM,
+  createSpringDriver,
+  scrollMovesAnchor,
+  toastInfo,
+  usePrefersReducedMotion,
+} from "@prismshadow/penguin-ui";
+import type { SpringDriver } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { toastInfo } from "../../components/ui/toast";
-import { usePrefersReducedMotion } from "../../components/ui/use-reduced-motion";
 import { toneDot, toneInk } from "../../lib/tone";
-import { SPRING_DEFAULT, SPRING_MOMENTUM, createSpringDriver } from "../../lib/spring";
-import type { SpringDriver } from "../../lib/spring";
 import { subscribeTerminals, terminalApiSupported } from "../terminal/terminal-list";
 import { openTerminalInDock } from "./dock-terminal";
 import { panelGlyph, panelLabel } from "./panel-meta";

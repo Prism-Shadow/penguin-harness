@@ -1,5 +1,6 @@
+/** The Sheet's gesture math (src/motion/sheet-physics.ts). */
 import { describe, expect, it } from "vitest";
-import { nearestSnap, project, rubberband } from "../src/lib/sheet-physics";
+import { nearestSnap, project, rubberband } from "../src/motion/sheet-physics";
 
 describe("project", () => {
   it("zero velocity, zero displacement", () => {

@@ -11,11 +11,17 @@
  * chat input docked at the bottom of the screen opens upward.
  */
 import { useState } from "react";
-import type { ReactNode } from "react";
 import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
-import { ChoiceCheck, GlyphIcon, menuRowClass, menuRowTone } from "@prismshadow/penguin-ui";
+import {
+  Dropdown,
+  GlyphIcon,
+  Menu,
+  MenuItem,
+  MenuLabel,
+  MenuRadioItem,
+  MenuSeparator,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Dropdown } from "../../components/ui/dropdown";
 import { toneInk } from "../../lib/tone";
 import {
   PERMISSION_LEVEL_GLYPH,
@@ -28,15 +34,6 @@ import { SettingsDialog } from "../settings/settings-dialog";
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 const FS_MODES: SessionSandbox["mode"][] = ["read-only", "workspace-write", "danger-full-access"];
 const NETWORK_MODES: SessionSandbox["network"][] = ["open", "local", "none"];
-
-/** A section's small heading inside the panel. */
-function PanelSectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <div className="px-3 pt-2 pb-1 text-xs font-medium text-gray-400 dark:text-gray-500">
-      {children}
-    </div>
-  );
-}
 
 /**
  * One choice row: its text, and a check when it is the current value. An unavailable choice
@@ -55,22 +52,14 @@ function Choice({
 }) {
   const off = unavailable !== undefined;
   return (
-    <button
-      type="button"
-      role="menuitemradio"
-      aria-checked={selected}
-      aria-disabled={off || undefined}
+    <MenuRadioItem
+      label={label}
+      checked={selected}
       disabled={off}
       data-tooltip={unavailable}
-      onClick={onPick}
-      className={`flex items-center gap-2 ${menuRowClass} text-xs ${
-        off ? "cursor-not-allowed text-gray-400 dark:text-gray-600" : menuRowTone(selected)
-      }`}
-    >
-      <span className="min-w-0 flex-1 truncate whitespace-nowrap">{label}</span>
-      {off && <span className="shrink-0 text-xs">{S.chat.permission.unsupported}</span>}
-      <ChoiceCheck on={selected} />
-    </button>
+      trailing={off ? S.chat.permission.unsupported : undefined}
+      onSelect={onPick}
+    />
   );
 }
 
@@ -160,8 +149,8 @@ export function PermissionSelect({
           </button>
         }
       >
-        <div role="menu" aria-label={P.label} className="pb-1">
-          <PanelSectionLabel>{P.fs}</PanelSectionLabel>
+        <Menu label={P.label} density="sm" className="pb-1">
+          <MenuLabel>{P.fs}</MenuLabel>
           {FS_MODES.map((mode) => (
             <Choice
               key={mode}
@@ -174,7 +163,7 @@ export function PermissionSelect({
               }
             />
           ))}
-          <PanelSectionLabel>{P.network}</PanelSectionLabel>
+          <MenuLabel>{P.network}</MenuLabel>
           {NETWORK_MODES.map((network) => (
             <Choice
               key={network}
@@ -191,7 +180,7 @@ export function PermissionSelect({
               }
             />
           ))}
-          <PanelSectionLabel>{P.approval}</PanelSectionLabel>
+          <MenuLabel>{P.approval}</MenuLabel>
           {APPROVAL_MODES.map((mode) => (
             <Choice
               key={mode}
@@ -206,23 +195,19 @@ export function PermissionSelect({
           ))}
           {isAdmin && (
             <>
-              <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+              <MenuSeparator />
               {/* More…: the rest of the sandbox (masked paths, the temp directory, the backend)
                 is on the Settings page's Sandbox card, where this opens. */}
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
+              <MenuItem
+                label={P.more}
+                onSelect={() => {
                   setOpen(false);
                   setSettingsOpen(true);
                 }}
-                className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone()}`}
-              >
-                <span className="min-w-0 flex-1 truncate whitespace-nowrap">{P.more}</span>
-              </button>
+              />
             </>
           )}
-        </div>
+        </Menu>
       </Dropdown>
       {isAdmin && (
         <SettingsDialog

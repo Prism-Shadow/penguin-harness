@@ -5,7 +5,7 @@
  * in one file and `amber-500` in the next for the same "waiting" state.
  */
 import { describe, expect, it } from "vitest";
-import { toneDot, toneInk, toneStrip, toneSurface } from "../src/lib/tone";
+import { toneDot, toneInk, toneSurface } from "../src/lib/tone";
 import type { Tone } from "../src/lib/tone";
 import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
@@ -33,7 +33,7 @@ describe("tone tokens", () => {
   });
 
   it("covers every tone in every map", () => {
-    for (const map of [toneInk, toneSurface, toneDot, toneStrip]) {
+    for (const map of [toneInk, toneSurface, toneDot]) {
       for (const tone of TONES) expect(map[tone]).toBeTruthy();
       expect(Object.keys(map).sort()).toEqual([...TONES].sort());
     }

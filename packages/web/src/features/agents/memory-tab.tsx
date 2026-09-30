@@ -32,9 +32,11 @@ import type {
 import {
   Button,
   Chevron,
+  ConfirmModal,
   CopiedStatus,
   CopyCheckGlyph,
   DownloadIcon,
+  Drawer,
   GlyphIcon,
   HelpFold,
   HiddenFileInput,
@@ -42,14 +44,20 @@ import {
   IconButton,
   InfoPopover,
   Md,
+  Modal,
+  NoticeStrip,
   RadioGroup,
+  Sheet,
   SkeletonList,
   Textarea,
   ToggleRow,
   UploadIcon,
   buttonClass,
+  toastError,
+  toastSuccess,
   useCopied,
 } from "@prismshadow/penguin-ui";
+import type { SheetSnap } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -57,11 +65,7 @@ import { formatRelativeDate } from "../../lib/format";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { Modal } from "../../components/ui/modal";
-import { Drawer } from "../../components/ui/drawer";
-import { Sheet, type SheetSnap } from "../../components/ui/sheet";
-import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
+import { useSaveConfirm } from "./save-confirm";
 import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
@@ -73,7 +77,6 @@ import {
 import type { MemoryImportPlan } from "./memory-transfer";
 
 import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -955,6 +958,7 @@ export function MemoryTab({
         tone="danger"
         title={S.memory.importConfirmTitle}
         confirmLabel={S.memory.importAction}
+        cancelLabel={S.common.cancel}
         busy={importBusy}
         onClose={() => setImportPlan(null)}
         onConfirm={() => void runImport(true)}
@@ -976,6 +980,7 @@ export function MemoryTab({
         tone="danger"
         title={S.memory.deleteTitle}
         confirmLabel={S.memory.delete}
+        cancelLabel={S.common.cancel}
         onClose={() => setRemoving(null)}
         onConfirm={() => void confirmRemove()}
       >

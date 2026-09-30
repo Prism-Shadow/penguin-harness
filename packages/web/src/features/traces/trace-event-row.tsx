@@ -18,6 +18,7 @@ import {
   REHYPE_PLUGINS,
   REMARK_PLUGINS,
   RequiredMark,
+  ZoomableImage,
 } from "@prismshadow/penguin-ui";
 import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import ReactMarkdown from "react-markdown";
@@ -25,7 +26,6 @@ import { S } from "../../lib/strings";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import { formatTime, humanizeTokens } from "../../lib/format";
 import { stopReasonTone } from "../../lib/stop-reason-tone";
-import { ZoomableImage } from "../../components/ui/image-zoom";
 
 /** An event type as a badge: the session header stands out as a neutral solid tag. */
 export function typeBadge(type: string): BadgeStyle {

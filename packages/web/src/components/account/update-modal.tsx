@@ -14,7 +14,7 @@
  * The flow and the actions live in `use-update-flow.ts`; this file only renders.
  */
 import type { ReactNode } from "react";
-import { Button, Link } from "@prismshadow/penguin-ui";
+import { Button, Link, Modal } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { toneInk } from "../../lib/tone";
@@ -27,7 +27,6 @@ import {
   useUpdateFlow,
   useUpdateFlowOwner,
 } from "../../lib/use-update-flow";
-import { Modal } from "../ui/modal";
 
 const RELEASES_URL = "https://github.com/Prism-Shadow/penguin-harness/releases";
 

@@ -29,10 +29,14 @@ import {
   ActivityIcon,
   AgentAvatar,
   Button,
+  Dropdown,
   ICONS,
   ICON_GAP,
   ICON_SIZE,
   SkeletonList,
+  toastError,
+  toastSuccess,
+  useRowContextMenu,
   writeClipboard,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -43,8 +47,6 @@ import { toneDot, toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
-import { useRowContextMenu } from "../../components/ui/context-menu";
-import { Dropdown } from "../../components/ui/dropdown";
 import { FolderSection, Icon } from "../../components/ui/group-list";
 import {
   DESK_ROW_ACTIONS,
@@ -52,7 +54,6 @@ import {
   SessionRowMenuRows,
 } from "../../components/ui/session-row-menu";
 import type { SessionRowAction, SessionRowState } from "../../components/ui/session-row-menu";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
 import { orgKey } from "./company-nav";

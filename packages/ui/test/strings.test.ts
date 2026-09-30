@@ -27,10 +27,12 @@ describe("UiStrings", () => {
       "close",
       "copied",
       "copyCode",
+      "dismiss",
       "hidePassword",
       "loading",
       "moreInfo",
       "moreInfoAbout",
+      "notifications",
       "showPassword",
     ]);
     expect(DEFAULT_UI_STRINGS).toMatchObject({
@@ -42,6 +44,8 @@ describe("UiStrings", () => {
       clearSearch: "Clear search",
       moreInfo: "More info",
       copyCode: "Copy code",
+      notifications: "Notifications",
+      dismiss: "Dismiss",
     });
     // The one formatter: the subject folds into the name, keeping "More info" its prefix.
     expect(DEFAULT_UI_STRINGS.moreInfoAbout("Vault")).toBe("More info: Vault");

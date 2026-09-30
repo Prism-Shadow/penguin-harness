@@ -21,6 +21,7 @@ import {
   AgentAvatar,
   AvatarStack,
   Button,
+  ConfirmModal,
   EmptyState,
   GlyphIcon,
   ICON_GAP,
@@ -29,6 +30,8 @@ import {
   Select,
   Skeleton,
   SkeletonCard,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -42,8 +45,6 @@ import { useSessions } from "../../state/sessions";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { useLocale } from "../../state/locale";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { AiCreateModal, CreateButtons, pickDefaultAgent } from "../ai-create";
 import { latestWithDelta, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
 import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompts";
@@ -588,6 +589,7 @@ export function BenchmarkPage() {
         onClose={() => setDeleting(null)}
         onConfirm={() => void confirmDelete()}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         busy={deleteBusy}
       >
         <p className="text-sm text-gray-700 dark:text-gray-200">

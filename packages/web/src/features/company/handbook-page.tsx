@@ -22,14 +22,18 @@ import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent
 import type { OrgHandbookFile, OrgHandbookFileResponse } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  ConfirmModal,
   EmptyState,
   GlyphIcon,
   ICON_GAP,
   ICON_SIZE,
   Input,
   Md,
+  Modal,
   Skeleton,
   Textarea,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -37,10 +41,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { Modal } from "../../components/ui/modal";
 import type { TreeToggle } from "../../components/ui/file-tree";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgEmptyLine, OrgPage, OrgSection, useOrg } from "./org-layout";
 import { ErrorLine } from "./shared";
 import { COLLAPSE_ALL_ICON, HandbookExplorer } from "./handbook-explorer";
@@ -441,6 +442,7 @@ export function HandbookPage() {
         open={deleteOpen}
         title={S.company.handbook.deleteDocument}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         busy={deleting}
         onClose={() => (deleting ? undefined : setDeleteOpen(false))}
         onConfirm={() => void remove()}

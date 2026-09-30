@@ -49,10 +49,10 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
+import { toastAttention } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { apiErrorText } from "../lib/api-error";
 import { S } from "../lib/strings";
-import { toastAttention } from "../components/ui/toast";
 import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/beta-badge";
 import { channelBadgeCounts } from "../features/company/channel-list";
 import { orgKey, parseOrgKey } from "../features/company/company-nav";

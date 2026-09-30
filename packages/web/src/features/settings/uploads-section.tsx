@@ -14,13 +14,19 @@
  */
 import { useEffect, useState } from "react";
 import type { ServerSettings } from "@prismshadow/penguin-server/api";
-import { Button, Input, SettingsSection } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Input,
+  SettingsSection,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 
 export function UploadsSection() {
   const { uploadLimits, refresh } = useAuth();

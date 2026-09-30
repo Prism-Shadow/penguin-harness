@@ -7,8 +7,8 @@
  *
  * It is the Files panel preview's selection menu applied to the conversation, and it borrows
  * that menu's parts instead of copying them: `useRowContextMenu` for the anchored open state
- * and its dismissal, the `Dropdown` in `anchorRect` mode for the panel, the overflow-menu row
- * styling, and `restoreSelection` for the highlight. It is also what gives the desktop app a
+ * and its dismissal, the `Dropdown` in `anchorRect` mode for the panel, the small Menu rows,
+ * and `restoreSelection` for the highlight. It is also what gives the desktop app a
  * copy menu for conversation text, since Electron raises no context menu of its own.
  *
  * Whatever the rules decline is left to the browser untouched: `preventDefault` runs only once
@@ -24,11 +24,20 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
-import { ICONS, writeClipboard } from "@prismshadow/penguin-ui";
+import {
+  Dropdown,
+  ICONS,
+  Menu,
+  MenuItem,
+  contextMenuAnchor,
+  isContextMenuKey,
+  toastSuccess,
+  useRowContextMenu,
+  writeClipboard,
+} from "@prismshadow/penguin-ui";
+import type { AnchorRect, ContextMenuEventLike } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { contextMenuAnchor, isContextMenuKey } from "../../lib/context-menu";
-import type { AnchorRect, ContextMenuEventLike } from "../../lib/context-menu";
 import {
   SELECTION_MENU_ITEMS,
   excerptReference,
@@ -36,11 +45,7 @@ import {
   selectionEndAnchor,
 } from "../../lib/selection-menu";
 import type { ComposerReference } from "../../lib/workspace-tree";
-import { useRowContextMenu } from "../../components/ui/context-menu";
-import { Dropdown } from "../../components/ui/dropdown";
-import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
 import { restoreSelection } from "../../components/ui/text-selection";
-import { toastSuccess } from "../../components/ui/toast";
 
 /** The selection a gesture opened the menu on, captured before anything could collapse it. */
 export interface CapturedSelection {
@@ -75,32 +80,26 @@ export function SelectionMenuRows({
     <>
       {SELECTION_MENU_ITEMS.map((item) =>
         item === "copy" ? (
-          <button
+          <MenuItem
             key={item}
-            type="button"
-            className={overflowMenuRowClass}
-            onClick={() => {
+            glyph={STAT_ICONS.copy}
+            label={S.common.copy}
+            onSelect={() => {
               writeClipboard(selection.text);
               toastSuccess(S.common.copied);
               onDone(selection);
             }}
-          >
-            {overflowMenuGlyph(STAT_ICONS.copy)}
-            {S.common.copy}
-          </button>
+          />
         ) : (
-          <button
+          <MenuItem
             key={item}
-            type="button"
-            className={overflowMenuRowClass}
-            onClick={() => {
+            glyph={ICONS.messagePlus}
+            label={S.files.addToChat}
+            onSelect={() => {
               onAddExcerpt(excerptReference(selection.text));
               onDone(selection);
             }}
-          >
-            {overflowMenuGlyph(ICONS.messagePlus)}
-            {S.files.addToChat}
-          </button>
+          />
         ),
       )}
     </>
@@ -235,7 +234,9 @@ export function useStreamSelectionMenu(
       button={null}
     >
       {captured !== null && (
-        <SelectionMenuRows selection={captured} onAddExcerpt={onAddExcerpt} onDone={done} />
+        <Menu density="sm">
+          <SelectionMenuRows selection={captured} onAddExcerpt={onAddExcerpt} onDone={done} />
+        </Menu>
       )}
     </Dropdown>
   );

@@ -50,8 +50,10 @@ import {
   Button,
   CloseIcon,
   CodeSurface,
+  ConfirmModal,
   CopiedStatus,
   CopyCheckGlyph,
+  Dropdown,
   EmptyState,
   GlyphIcon,
   HiddenFileInput,
@@ -61,9 +63,17 @@ import {
   Prose,
   SearchInput,
   SkeletonList,
+  Tooltip,
+  ZoomableImage,
+  isContextMenuKey,
+  isLongPressPointer,
   languageForExtension,
   noAutofill,
+  toastError,
+  toastInfo,
+  toastSuccess,
   useCopied,
+  useRowContextMenu,
   writeClipboard,
 } from "@prismshadow/penguin-ui";
 import type { SessionInfo, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
@@ -115,14 +125,7 @@ import {
   writeTreeWidth,
 } from "../../lib/workspace-tree";
 import type { ComposerReference, EditorState, Listings } from "../../lib/workspace-tree";
-import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { useRowContextMenu } from "../../components/ui/context-menu";
-import { Dropdown } from "../../components/ui/dropdown";
-import { ZoomableImage } from "../../components/ui/image-zoom";
 import { restoreSelection } from "../../components/ui/text-selection";
-import { Tooltip } from "../../components/ui/tooltip";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
@@ -2536,6 +2539,7 @@ export function WorkspaceBrowser({
         title={S.files.overwriteTitle}
         tone="primary"
         confirmLabel={S.files.upload}
+        cancelLabel={S.common.cancel}
         onClose={() => setPendingUpload(null)}
         onConfirm={() => {
           if (pendingUpload) void doUpload(pendingUpload.files, pendingUpload.dir);
@@ -2567,6 +2571,7 @@ export function WorkspaceBrowser({
         title={S.files.saveConfirmTitle}
         tone="primary"
         confirmLabel={S.common.save}
+        cancelLabel={S.common.cancel}
         busy={saving}
         onClose={() => setSaveConfirm(false)}
         onConfirm={() => void save()}
@@ -2582,6 +2587,7 @@ export function WorkspaceBrowser({
         open={renameTarget !== null}
         title={S.files.renameTitle}
         confirmLabel={S.files.renameConfirm}
+        cancelLabel={S.common.cancel}
         confirmDisabled={renameTarget?.version == null || renameDraft.trim() === ""}
         busy={fileActionBusy}
         tone="primary"
@@ -2603,6 +2609,7 @@ export function WorkspaceBrowser({
         open={removeTarget !== null}
         title={S.files.deleteTitle}
         confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
         confirmDisabled={removeTarget?.version == null}
         busy={fileActionBusy}
         onClose={() => setRemoveTarget(null)}
@@ -2620,6 +2627,7 @@ export function WorkspaceBrowser({
         title={S.files.conflictTitle}
         tone="primary"
         confirmLabel={S.files.overwriteAnyway}
+        cancelLabel={S.common.cancel}
         onClose={() => setConflict(null)}
         onConfirm={() => void save({ overwrite: true })}
       >
@@ -2633,6 +2641,7 @@ export function WorkspaceBrowser({
         open={discardPrompt !== null}
         title={S.files.discardTitle}
         confirmLabel={S.files.discard}
+        cancelLabel={S.common.cancel}
         onClose={() => {
           discardPrompt?.resolve(false);
           setDiscardPrompt(null);

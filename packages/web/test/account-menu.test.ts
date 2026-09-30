@@ -110,8 +110,8 @@ describe("the account menu", () => {
     expect(signOut).toBeGreaterThan(-1);
     const gate = source.lastIndexOf("{!desktopMode && (", signOut);
     expect(gate).toBeGreaterThan(-1);
-    // Only sign-out's own <button> stands between that gate and the label it renders.
-    expect(source.slice(gate, signOut).match(/<\w/g)).toEqual(["<b"]);
+    // Only sign-out's own <MenuItem> stands between that gate and the label it renders.
+    expect(source.slice(gate, signOut).match(/<\w+/g)).toEqual(["<MenuItem"]);
   });
 
   it("confirms before signing out, from a dialog the closing menu cannot take with it", () => {

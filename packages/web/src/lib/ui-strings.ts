@@ -22,6 +22,8 @@ export function uiStringsOf(dict: Strings): UiStrings {
     clearSearch: dict.chat.searchClear,
     moreInfo: dict.common.moreInfo,
     moreInfoAbout: dict.common.moreInfoAbout,
+    notifications: dict.common.notifications,
+    dismiss: dict.common.dismiss,
     copyCode: dict.chat.copyCode,
   };
 }

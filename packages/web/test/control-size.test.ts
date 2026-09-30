@@ -45,7 +45,7 @@ const FAMILY: Record<string, string> = {
   "input.tsx": "packages/ui/src/components/forms/input/input.tsx",
   "select.tsx": "packages/ui/src/components/forms/select/select.tsx",
   "option-menu.tsx": "packages/ui/src/components/forms/select/option-menu.tsx",
-  "form-picker.tsx": "packages/web/src/components/ui/form-picker.tsx",
+  "form-picker.tsx": "packages/ui/src/components/forms/select/form-picker.tsx",
   "search-input.tsx": "packages/ui/src/components/forms/search-input/search-input.tsx",
 };
 
@@ -282,7 +282,7 @@ describe("control font size", () => {
     expect(
       findLooseFooterButtons(),
       'A Button in a Modal footer passes size="sm", so the dialog\'s buttons read at the same ' +
-        "size as its fields (compare components/ui/confirm-modal.tsx).",
+        "size as its fields (compare the UI package's ConfirmModal).",
     ).toEqual([]);
   });
 

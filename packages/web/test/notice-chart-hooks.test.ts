@@ -1,19 +1,28 @@
 /**
- * The notice and chart hooks on the real app: every notice strip renders through NoticeStrip
- * (so it carries `ui-notice` and a `data-tone` in the hook's words), toasts carry the same hook,
- * and the charts' roots carry `ui-chart` with their parts named by literal `data-part` values.
+ * The notice and chart hooks on the real app: every notice renders through the package's
+ * NoticeStrip (so it carries `ui-notice` and a `data-tone` in the hook's words), the toast
+ * included, a mark a call site draws before a notice's text sits in its icon slot, and the charts'
+ * roots carry `ui-chart` with their parts named by literal `data-part` values.
  */
 import ts from "typescript";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { NOTICE_TONE, NoticeStrip } from "../src/components/ui/notice-strip";
-import { scanSources, sourceFile } from "./helpers/roots";
+import { NOTICE_TONE, NoticeStrip, ToastStack } from "@prismshadow/penguin-ui";
+import { expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
 const SCAN = scanSources();
 const text = (id: string) => sourceFile(SCAN, `packages/web/src/${id}`).text;
 
+const NOTICE_STRIP = "packages/ui/src/components/feedback/notice/notice-strip.tsx";
+const TOASTER = "packages/ui/src/components/overlays/toaster/toaster.tsx";
+
 describe("notices", () => {
+  it("live in the shared UI package, one copy each", () => {
+    expectSingleHome(SCAN, NOTICE_STRIP);
+    expectSingleHome(SCAN, TOASTER);
+  });
+
   it("render the hook with the tone in the hook's words", () => {
     const html = renderToStaticMarkup(
       createElement(NoticeStrip, { tone: "attention", className: "px-3" }, "Heads up"),
@@ -25,14 +34,21 @@ describe("notices", () => {
     );
   });
 
-  it("go through NoticeStrip, and toasts carry the hook too", () => {
-    const inline = SCAN.files
-      .filter((file) => file.root === "web" && file.name.endsWith(".tsx"))
-      .filter((file) => !file.id.endsWith("components/ui/notice-strip.tsx"))
-      .filter((file) => /toneStrip[.[]/.test(file.text.replace(/\/\*[\s\S]*?\*\//g, "")))
+  it("go through NoticeStrip, the toast included", () => {
+    // The strip is the one place a notice's box is spelled: no other file writes the hook.
+    const own = SCAN.files
+      .filter((file) => file.name.endsWith(".tsx") && file.id !== NOTICE_STRIP)
+      .filter((file) => /\bui-notice\b/.test(file.text.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, "")))
       .map((file) => file.id);
-    expect(inline).toEqual([]);
-    expect(text("components/ui/toast.tsx")).toContain("ui-notice");
+    expect(own).toEqual([]);
+    const html = renderToStaticMarkup(
+      createElement(ToastStack, {
+        items: [{ id: 1, kind: "error", text: "Connection failed" }],
+        onDismiss: () => {},
+      }),
+    );
+    expect(html).toContain("ui-notice");
+    expect(html).toContain('data-tone="danger"');
   });
 });
 
@@ -93,9 +109,7 @@ function unslottedMarks(file: { path: string; text: string; id: string }): strin
 
 describe("a notice's own mark", () => {
   it("sits in the icon slot, so a theme that draws its own can hide it", () => {
-    const hits = SCAN.files
-      .filter((file) => file.root === "web" && file.name.endsWith(".tsx"))
-      .flatMap(unslottedMarks);
+    const hits = SCAN.files.filter((file) => file.name.endsWith(".tsx")).flatMap(unslottedMarks);
     expect(hits).toEqual([]);
   });
 

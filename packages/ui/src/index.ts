@@ -70,6 +70,34 @@ export * from "./components/forms/segmented/segmented";
 export * from "./components/forms/swatch-picker/swatch-picker";
 export * from "./components/forms/pref-row/pref-row";
 
+// W3-A — menus and hints: the dropdown panel and the Menu rows it holds, the row context menu
+// (its hook and its pure gesture rules), the form-style picker built on the dropdown, and the
+// tooltip with its document-wide `data-tooltip` layer.
+export * from "./components/overlays/dropdown/dropdown";
+export * from "./components/overlays/menu/menu";
+export * from "./components/overlays/portal-panel/context-menu";
+export * from "./components/overlays/portal-panel/use-row-context-menu";
+export * from "./components/forms/select/form-picker";
+export * from "./components/overlays/tooltip/tooltip";
+
+// W3-B — dialogs: the Escape-layer stack and focus rules every overlay shares, the modal family,
+// the drawer and the spring sheet with their motion helpers, and the lightbox.
+export * from "./components/overlays/esc-layers/esc-layers";
+export * from "./components/overlays/modal/modal";
+export * from "./components/overlays/confirm-modal/confirm-modal";
+export * from "./components/overlays/paged-dialog/paged-dialog";
+export * from "./components/overlays/drawer/drawer";
+export * from "./components/overlays/drawer/sheet";
+export * from "./components/overlays/lightbox/lightbox";
+export * from "./motion/spring";
+export * from "./motion/sheet-physics";
+export * from "./motion/use-reduced-motion";
+
+// W3-C — notices: the notice strip, and the toast stack that renders its toasts through it
+// (with the `toast*` functions and their store).
+export * from "./components/feedback/notice/notice-strip";
+export * from "./components/overlays/toaster/toaster";
+
 // W5 — content: Markdown as reading text and its pipeline, the code surface and block with the
 // language tables, the type roles, and the diff viewer. The Shiki engine is not here: it is the
 // `./highlighter` subpath, so no static import of this barrel reaches it.

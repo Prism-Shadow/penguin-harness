@@ -13,10 +13,8 @@
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { CodeHighlighterProvider } from "@prismshadow/penguin-ui";
+import { CodeHighlighterProvider, Toaster, TooltipLayer } from "@prismshadow/penguin-ui";
 import { highlightCode } from "../../../web/src/features/chat/code-highlight";
-import { Toaster } from "../../../web/src/components/ui/toast";
-import { TooltipLayer } from "../../../web/src/components/ui/tooltip";
 import { LocaleProvider, LocaleScope } from "../../../web/src/state/locale";
 import { ThemeProvider } from "../../../web/src/state/theme";
 import "./library.css";

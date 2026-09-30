@@ -62,7 +62,7 @@ test("switching accounts: B does not restore A's draft; both drafts coexist", as
   // the last match, which is the bottom user menu). The menu row only opens the confirmation;
   // the dialog's own button, scoped to the dialog because both carry the same label, ends the session.
   await page.getByRole("button", { name: UA }).last().click();
-  await page.getByRole("button", { name: "登出" }).click();
+  await page.getByRole("menuitem", { name: "登出" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "登出" }).click();
   await page.waitForURL(/\/login/);
 

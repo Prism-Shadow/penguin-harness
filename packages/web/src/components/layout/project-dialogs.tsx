@@ -15,15 +15,19 @@ import type {
 import {
   Badge,
   Button,
+  ConfirmModal,
   FieldError,
   FieldHint,
   FieldLabel,
   ICONS,
   InfoPopover,
   Input,
+  Modal,
   Select,
   SettingRow,
   Switch,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -44,9 +48,6 @@ import { ModelSelect, modelLabel } from "../../features/chat/model-select";
 import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { sameModelRef } from "../../features/models/model-grouping";
-import { toastError, toastSuccess } from "../ui/toast";
-import { Modal } from "../ui/modal";
-import { ConfirmModal } from "../ui/confirm-modal";
 import { SemanticIdField } from "../../features/semantic-id/semantic-id-field";
 
 /** Approval modes offered by the new-chat-defaults select, in the composer menu's order. */
@@ -394,6 +395,8 @@ function GeneralSection({
         title={S.project.deleteProject}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => void doDelete()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.deleteConfirm}</p>
       </ConfirmModal>
@@ -1053,7 +1056,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                         <p className="mt-0.5 text-xs text-gray-400">{r.description}</p>
                       )}
                       <p
-                        className="mt-0.5 truncate font-mono text-[11px] text-gray-400"
+                        className="mt-0.5 truncate font-mono text-xs text-gray-400"
                         data-tooltip={r.pattern}
                         data-tooltip-content="code"
                       >

@@ -36,6 +36,7 @@ import {
   USER_AVATAR_SIZE,
   UserAvatar,
   buttonClass,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -43,7 +44,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { avatarDataUrlFromFile } from "../../lib/avatar-image";
 import { profileControls } from "../../lib/profile-form";
 import { useAuth } from "../../state/auth";
-import { toastSuccess } from "../../components/ui/toast";
 
 /** What the picker offers — the three formats the server stores, spelled the way `accept` wants. */
 const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";

@@ -24,9 +24,9 @@
  *
  * Portaled to document.body at fixed viewport coordinates, like every other overlay here
  * (see use-portal-panel.ts): an in-place absolute panel is a descendant of its trigger, so a
- * scrolling or clipping ancestor — the collapsed rail is both — cuts it off. It sits on the
+ * scrolling or clipping ancestor — a collapsed rail is both — cuts it off. It sits on the
  * portaled-panel layer (z-[60]) and takes no pointer events, so it can never swallow a click
- * meant for what it covers.
+ * meant for what it covers. It is drawn on the overlay surface every menu uses, in the body ink.
  *
  * Two geometries, chosen by the shape of the control strip rather than by taste: `right` for
  * a vertical rail, `bottom` for a horizontal toolbar, where a panel to the side would cover
@@ -324,7 +324,7 @@ function TooltipPanel({
         right: position.right,
         maxWidth: `min(${contentMaxWidth[content]}, ${position.room}px)`,
       }}
-      className={`ui-glass anim-fade pointer-events-none z-[60] w-max rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${contentClass[content]} ${placement === "right" ? "-translate-y-1/2" : ""}`}
+      className={`ui-glass anim-fade pointer-events-none z-[60] w-max rounded-md border border-line bg-overlay px-2 py-1 text-xs text-fg shadow-lg ${contentClass[content]} ${placement === "right" ? "-translate-y-1/2" : ""}`}
     >
       {label}
     </div>,

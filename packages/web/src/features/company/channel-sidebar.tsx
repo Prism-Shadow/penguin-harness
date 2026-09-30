@@ -23,6 +23,8 @@ import {
   ICON_SIZE,
   PlusIcon,
   SkeletonList,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -31,7 +33,6 @@ import { toneInk, toneSurface } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { FolderSection, Icon } from "../../components/ui/group-list";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { orgChannelPath } from "./company-nav";
 import { JoinChannelConfirm, NewChannelDialog } from "./channel-dialogs";

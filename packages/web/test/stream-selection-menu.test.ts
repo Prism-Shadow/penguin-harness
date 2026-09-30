@@ -26,8 +26,8 @@ import { en } from "../src/lib/strings-en";
 /** Toasts raised during a test (the real store would leave its dismiss timers running). */
 const toasts = vi.hoisted(() => [] as string[]);
 
-vi.mock("../src/components/ui/toast", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/components/ui/toast")>();
+vi.mock("@prismshadow/penguin-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@prismshadow/penguin-ui")>();
   return {
     ...actual,
     toastSuccess: (text: string) => {
@@ -41,7 +41,7 @@ const EXCERPT = "Run the migration first.\nThen restart the server so it picks u
 /** A selection as the stream captures it: the text as selected (a trailing newline included). */
 const SELECTION: CapturedSelection = { text: `${EXCERPT}\n`, range: {} as Range };
 
-type Row = ReactElement<{ onClick: () => void; children: ReactNode }>;
+type Row = ReactElement<{ onSelect: () => void; label: ReactNode }>;
 
 /** The rows as the component returns them, to reach their click handlers. */
 function rows(props: Parameters<typeof SelectionMenuRows>[0]): Row[] {
@@ -49,12 +49,8 @@ function rows(props: Parameters<typeof SelectionMenuRows>[0]): Row[] {
   return ([] as ReactNode[]).concat(fragment.props.children).filter(isValidElement) as Row[];
 }
 
-/** A row's visible label: its text children, without the glyph. */
-const label = (row: Row) =>
-  ([] as ReactNode[])
-    .concat(row.props.children)
-    .filter((child): child is string => typeof child === "string")
-    .join("");
+/** A row's visible label (the Menu row's own prop; the glyph is a separate one). */
+const label = (row: Row) => row.props.label;
 
 afterEach(() => {
   setActiveStrings(zh);
@@ -71,8 +67,8 @@ describe("SelectionMenuRows", () => {
         onDone: () => {},
       }),
     );
-    const copy = html.indexOf(`${S.common.copy}</button>`);
-    const add = html.indexOf(`${S.files.addToChat}</button>`);
+    const copy = html.indexOf(`>${S.common.copy}</span>`);
+    const add = html.indexOf(`>${S.files.addToChat}</span>`);
     expect(copy).toBeGreaterThan(-1);
     expect(add).toBeGreaterThan(copy);
   });
@@ -86,8 +82,8 @@ describe("SelectionMenuRows", () => {
         onDone: () => {},
       }),
     );
-    expect(html).toContain("Copy</button>");
-    expect(html).toContain("Add to conversation</button>");
+    expect(html).toContain(">Copy</span>");
+    expect(html).toContain(">Add to conversation</span>");
   });
 });
 
@@ -105,7 +101,7 @@ describe("Add to conversation", () => {
     const add = rows({ selection: SELECTION, onAddExcerpt: control.addReference, onDone }).find(
       (row) => label(row) === S.files.addToChat,
     );
-    add!.props.onClick();
+    add!.props.onSelect();
 
     // One reference, carried into the message as a blockquote; the draft itself is never filled.
     expect(staged).toEqual([
@@ -141,7 +137,7 @@ describe("Copy", () => {
     const copy = rows({ selection: SELECTION, onAddExcerpt: () => {}, onDone }).find(
       (row) => label(row) === S.common.copy,
     );
-    copy!.props.onClick();
+    copy!.props.onSelect();
 
     expect(writeText).toHaveBeenCalledExactlyOnceWith(SELECTION.text);
     expect(toasts).toEqual([S.common.copied]);

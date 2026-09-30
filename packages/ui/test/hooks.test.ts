@@ -112,6 +112,7 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "PagedDialog",
     "SettingsDialog",
     "MenuItemGlyph",
+    "MenuItem",
     "GroupHeader",
     "Tabs",
     "EmptyState",

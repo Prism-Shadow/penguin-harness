@@ -18,13 +18,7 @@
  */
 import { useState } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
-import {
-  ChoiceCheck,
-  ICON_SIZE,
-  SearchInput,
-  menuRowClass,
-  menuRowTone,
-} from "@prismshadow/penguin-ui";
+import { ICON_SIZE, MenuItem, SearchInput } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { filterSkills, localizedShortText } from "../chat/skill-use";
@@ -109,27 +103,32 @@ export function SkillPickList({
           filtered.map((s) => {
             const on = selected.includes(s.name);
             return (
-              <button
+              <MenuItem
                 key={s.name}
-                type="button"
+                density="sm"
                 aria-pressed={on}
-                onClick={() => onToggle(s.name)}
-                className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone(on)}`}
-              >
-                {/* Each row's icon (icon.svg, sanitized and inlined), else the kind's glyph. */}
-                <SkillIcon
-                  icon={s.icon}
-                  fallback={s.fallbackIcon}
-                  size={ICON_SIZE.inlineGlyph}
-                  className="shrink-0 text-gray-400 dark:text-gray-500"
-                />
-                <span className="shrink-0 font-mono">{s.name}</span>
-                {/* Prefers the short description (falls back to the full description if missing), per the UI language. */}
-                <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
-                  {localizedShortText(locale, s)}
-                </span>
-                <ChoiceCheck on={on} />
-              </button>
+                checked={on}
+                onSelect={() => onToggle(s.name)}
+                // Each row's icon (icon.svg, sanitized and inlined), else the kind's glyph.
+                glyph={
+                  <SkillIcon
+                    icon={s.icon}
+                    fallback={s.fallbackIcon}
+                    size={ICON_SIZE.inlineGlyph}
+                    className="shrink-0 text-gray-400 dark:text-gray-500"
+                  />
+                }
+                // The name, then the short description (falls back to the full description if
+                // missing, per the UI language), muted, which gives way when the row runs out.
+                label={
+                  <>
+                    <span className="font-mono">{s.name}</span>{" "}
+                    <span className="text-gray-400 dark:text-gray-500">
+                      {localizedShortText(locale, s)}
+                    </span>
+                  </>
+                }
+              />
             );
           })
         )}

@@ -17,7 +17,7 @@
  *
  * This half owns only the DOM: element rects, the hold timer, and dispatching events.
  * Every decision — which gesture counts, which anchor, whether a dismiss is believed —
- * is pure and lives in `lib/context-menu.ts`, where the sequences can be tested without
+ * is pure and lives in `context-menu.ts` beside it, where the sequences can be tested without
  * a DOM.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -35,8 +35,8 @@ import {
   longPressMoved,
   pointerAnchor,
   reduceHold,
-} from "../../lib/context-menu";
-import type { AnchorRect, HoldEvent, HoldState } from "../../lib/context-menu";
+} from "./context-menu";
+import type { AnchorRect, HoldEvent, HoldState } from "./context-menu";
 
 /** Handlers the owning row spreads onto its container element. */
 export interface ContextMenuRowProps {

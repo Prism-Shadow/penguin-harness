@@ -1,6 +1,7 @@
+/** The spring the Sheet and the dock launcher animate with (src/motion/spring.ts). */
 import { describe, expect, it } from "vitest";
-import { SPRING_DEFAULT, SPRING_MOMENTUM, isSettled, stepSpring } from "../src/lib/spring";
-import type { SpringConfig } from "../src/lib/spring";
+import { SPRING_DEFAULT, SPRING_MOMENTUM, isSettled, stepSpring } from "../src/motion/spring";
+import type { SpringConfig } from "../src/motion/spring";
 
 /** Runs a number of frames at 16ms per frame, returning the final state and path. */
 function run(from: number, target: number, config: SpringConfig, frames = 240) {

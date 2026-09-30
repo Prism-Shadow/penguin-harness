@@ -20,12 +20,16 @@ import { useState } from "react";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import {
   Button,
+  ConfirmModal,
   InfoPopover,
   Input,
+  Modal,
   OptionMenu,
   Segmented,
   SettingsEmpty,
   Textarea,
+  toastError,
+  toastSuccess,
 } from "@prismshadow/penguin-ui";
 import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -33,9 +37,6 @@ import type { McpServerTestResponse } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { toastError, toastSuccess } from "../../components/ui/toast";
 import {
   emptyMcpForm,
   formToServer,
@@ -588,6 +589,8 @@ export function McpServersSection({
         busy={busy}
         onClose={() => setDeleting(null)}
         onConfirm={() => void confirmDelete()}
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting !== null ? S.agent.mcpDeleteConfirm(servers[deleting]?.name ?? "") : ""}

@@ -18,19 +18,18 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { DirListResponse } from "@prismshadow/penguin-server/api";
 import {
   Chevron,
+  Dropdown,
+  FormPicker,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
-  menuRowClass,
-  menuRowTone,
+  MenuItem,
   noAutofill,
+  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { Dropdown } from "../../components/ui/dropdown";
-import { FormPicker } from "../../components/ui/form-picker";
-import { toastError } from "../../components/ui/toast";
 import { machineLabel, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
 
@@ -311,36 +310,33 @@ export function WorkspaceSelect({
           }
         >
           {machines.map((entry, index) => (
-            <button
+            <MenuItem
               key={entry.selectable ? (entry.id ?? "local") : `unusable-${index}`}
-              type="button"
+              density="sm"
               disabled={!entry.selectable}
-              onClick={() => {
+              checked={entry.id === machine}
+              onSelect={() => {
                 setMachineOpen(false);
                 if (entry.id === machine) return;
                 setMachine(entry.id);
                 // Start over at that machine's home directory.
                 loadDirRef.current(entry.id);
               }}
-              className={`flex items-center gap-2 ${menuRowClass} text-xs disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent ${menuRowTone(entry.id === machine)}`}
-            >
-              <span
-                className={`min-w-0 flex-1 truncate ${entry.selectable ? "" : "text-gray-400 dark:text-gray-500"}`}
-              >
-                {entry.label}
-              </span>
-              {entry.local && (
-                <span className="shrink-0 text-gray-400">{S.chat.workspaceHere}</span>
-              )}
-              {/* A machine that cannot be browsed is shown, disabled, saying why — right
-                  where "why can I not pick that one?" is asked. Leaving it out, or counting
-                  it in a footnote, answers somewhere the question was not. */}
-              {entry.reason !== undefined && (
-                <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                  {S.chat.workspaceMachineWhy[entry.reason]}
-                </span>
-              )}
-            </button>
+              label={entry.label}
+              // A machine that cannot be browsed is shown, disabled, saying why — right where
+              // "why can I not pick that one?" is asked. Leaving it out, or counting it in a
+              // footnote, answers somewhere the question was not.
+              trailing={
+                entry.local || entry.reason !== undefined ? (
+                  <span className="flex gap-2">
+                    {entry.local && <span>{S.chat.workspaceHere}</span>}
+                    {entry.reason !== undefined && (
+                      <span>{S.chat.workspaceMachineWhy[entry.reason]}</span>
+                    )}
+                  </span>
+                ) : undefined
+              }
+            />
           ))}
         </Dropdown>
       )}

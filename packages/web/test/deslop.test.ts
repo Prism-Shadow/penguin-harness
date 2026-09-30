@@ -34,10 +34,11 @@ const WEB = SCAN.files.filter((file) => file.root === "web");
 
 /**
  * The homes §3 names, as the web app spells them today. It has no Spinner of its own (the
- * package's is the one), and the chevron's rotation left with the chevron.
+ * package's is the one), the chevron's rotation left with the chevron, and the sheet's and the
+ * drawer's motion with them (W3).
  */
 const POLICY: DeslopPolicy = {
-  transformMotion: ["sheet.tsx", "drawer.tsx", "dock-launcher.tsx"],
+  transformMotion: ["dock-launcher.tsx"],
   entranceMotion: [],
   pulseHomes: ["dot.tsx", "streaming-caret.tsx"],
   spinnerHomes: [],
@@ -62,19 +63,14 @@ const ALLOWLIST: DeslopAllowlist = {
   },
   "components/account/update-row.tsx": { 11: [2, "W1b"] },
   "components/layout/app-layout.tsx": { 1: [1, "W7"] },
-  "components/layout/project-dialogs.tsx": { 13: [1, "W3"] },
   "components/layout/sidebar.tsx": {
     1: [5, "W1b+W7"],
     12: [5, "W7"],
-    13: [3, "W7"],
+    13: [2, "W7"],
     14: [2, "W7"],
   },
-  "components/ui/confirm-modal.tsx": { 7: [1, "W3"] },
   "components/ui/group-list.tsx": { 12: [1, "W4"], 13: [3, "W4"], 14: [2, "W4"] },
-  "components/ui/paged-dialog.tsx": { 13: [1, "W3"], 14: [2, "W3"] },
   "components/ui/session-row-menu.tsx": { 1: [1, "W1b"] },
-  "components/ui/sheet.tsx": { 19: [1, "W3"] },
-  "components/ui/toast.tsx": { 9: [4, "W4"] },
   "features/agents/agent-settings-page.tsx": { 12: [3, "W4"] },
   "features/agents/hooks-tab.tsx": { 12: [1, "W4"], 13: [2, "W4"] },
   "features/agents/mcp-servers-section.tsx": { 13: [3, "W4"] },
@@ -86,15 +82,13 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/benchmark/benchmark-case-browser.tsx": { 13: [2, "W4"] },
   "features/benchmark/benchmark-detail.tsx": { 13: [2, "W4"] },
   "features/benchmark/benchmark-page.tsx": { 13: [1, "W4"], 18: [1, "W4"] },
-  "features/benchmark/create-benchmark-modal.tsx": { 13: [1, "W3"] },
-  "features/benchmark/evaluation-detail-modal.tsx": { 13: [2, "W3"] },
   "features/chat/agent-topology-view.tsx": { 12: [1, "W6"], 13: [3, "W6"] },
   "features/chat/chat-input.tsx": { 7: [1, "W6"], 12: [7, "W6"], 13: [5, "W6"] },
   "features/chat/chat-page.tsx": { 6: [1, "W1b"], 12: [2, "W6"], 13: [3, "W6"], 15: [1, "W4"] },
   "features/chat/context-gauge.tsx": { 12: [5, "W8"] },
   "features/chat/conversation-outline.tsx": { 1: [1, "W1b"], 6: [2, "W1b"], 12: [1, "W6"] },
   "features/chat/disclosure-row.tsx": { 13: [1, "W4"], 14: [2, "W4"] },
-  "features/chat/draft-view.tsx": { 12: [1, "W6"], 13: [2, "W6"] },
+  "features/chat/draft-view.tsx": { 12: [1, "W6"], 13: [1, "W6"] },
   "features/chat/drop-zone.tsx": { 18: [1, "W7"] },
   "features/chat/live-duration.tsx": { 6: [1, "W4"] },
   "features/chat/memory-view.tsx": { 13: [2, "W6"] },
@@ -118,7 +112,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/company/beta-badge.tsx": { 13: [1, "W4"] },
   "features/company/calendar-page.tsx": { 12: [3, "W4"], 13: [10, "W4"] },
   "features/company/channel-composer.tsx": { 13: [2, "W6"] },
-  "features/company/channel-header.tsx": { 13: [4, "W6"] },
+  "features/company/channel-header.tsx": { 13: [3, "W6"] },
   "features/company/channel-sidebar.tsx": { 12: [2, "W4"], 13: [6, "W4"], 14: [2, "W4"] },
   "features/company/channel-view.tsx": { 12: [1, "W6"], 13: [6, "W6"] },
   "features/company/chart-card.tsx": { 6: [1, "W1b"], 12: [1, "W8"], 13: [5, "W8"] },
@@ -131,7 +125,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/company/org-dialogs.tsx": { 13: [1, "W4"] },
   "features/company/org-layout.tsx": { 12: [1, "W4"], 13: [2, "W4"], 14: [2, "W4"] },
   "features/company/org-session-groups.tsx": { 12: [1, "W4"] },
-  "features/company/org-switcher.tsx": { 13: [3, "W4"], 14: [2, "W4"] },
+  "features/company/org-switcher.tsx": { 13: [2, "W4"] },
   "features/company/overview-page.tsx": { 12: [2, "W4"], 13: [2, "W4"], 14: [4, "W4"] },
   "features/company/shared.tsx": { 13: [3, "W4"] },
   "features/company/ticket-dialog.tsx": { 12: [6, "W4"], 13: [3, "W4"], 14: [2, "W4"] },
@@ -157,7 +151,6 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/traces/trace-file-view.tsx": { 12: [2, "W4"], 13: [5, "W4"], 15: [1, "W4"] },
   "features/usage/usage-charts.tsx": { 13: [3, "W8"] },
   "features/usage/usage-page.tsx": { 12: [1, "W8"] },
-  "lib/tone.ts": { 9: [4, "W4"] },
   "pages/login.tsx": { 9: [1, "W4"] },
 };
 

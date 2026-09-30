@@ -4,11 +4,10 @@
  * Pure rendering over the table — the same data the CI page draws.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Skeleton } from "@prismshadow/penguin-ui";
+import { Badge, NoticeStrip, Skeleton } from "@prismshadow/penguin-ui";
 import type { BadgeStyle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { NoticeStrip } from "../../components/ui/notice-strip";
 
 interface Manifest {
   name: string;

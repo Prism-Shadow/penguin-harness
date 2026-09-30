@@ -30,18 +30,10 @@
  * the call site — so no extra row appears in the happy path.
  */
 import { useState } from "react";
-import {
-  ChevronDown,
-  ChoiceCheck,
-  menuRowClass,
-  menuRowTone,
-  rowDescClass,
-  sizeTextClass,
-} from "@prismshadow/penguin-ui";
-import { Dropdown } from "../../components/ui/dropdown";
+import { ChevronDown, Dropdown, Menu, MenuRadioItem } from "@prismshadow/penguin-ui";
 // This menu is an OptionMenu by hand (its trigger lives inside the base URL field, which
-// OptionMenu cannot do), so it takes its row typography from OptionMenu's own records rather
-// than re-spelling them — a change to the family reaches it.
+// OptionMenu cannot do), so it takes its rows from the Menu family rather than re-spelling
+// them — a change to the family reaches it.
 import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
 import { PROTOCOL_CLIENT_TYPES } from "./protocol-types";
@@ -114,38 +106,22 @@ export function ProtocolSuffixMenu({
         </button>
       }
     >
-      <div role="menu">
-        {PROTOCOL_CLIENT_TYPES.map((t) => {
-          const selected = t === value;
-          return (
-            <button
-              key={t}
-              type="button"
-              role="menuitemradio"
-              aria-checked={selected}
-              onClick={() => {
-                setOpen(false);
-                onPick(t);
-              }}
-              className={`block ${menuRowClass} ${menuRowTone(selected)}`}
-            >
-              <span className="flex items-center justify-between gap-2">
-                <span className={`min-w-0 truncate ${sizeTextClass.sm}`}>
-                  {S.models.protocolNames[t] ?? t}
-                </span>
-                <ChoiceCheck on={selected} />
-              </span>
-              {/* The path this protocol appends: the same string the trigger shows, so the
-                  menu explains what the suffix in the field means. */}
-              <span
-                className={`mt-0.5 block font-mono ${rowDescClass.sm} text-gray-500 dark:text-gray-500`}
-              >
-                {protocolPathForModel("custom", t)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <Menu density="sm">
+        {PROTOCOL_CLIENT_TYPES.map((t) => (
+          <MenuRadioItem
+            key={t}
+            checked={t === value}
+            onSelect={() => {
+              setOpen(false);
+              onPick(t);
+            }}
+            label={S.models.protocolNames[t] ?? t}
+            // The path this protocol appends: the same string the trigger shows, so the menu
+            // explains what the suffix in the field means.
+            description={<span className="font-mono">{protocolPathForModel("custom", t)}</span>}
+          />
+        ))}
+      </Menu>
     </Dropdown>
   );
 }

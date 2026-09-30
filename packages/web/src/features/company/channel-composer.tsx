@@ -13,9 +13,8 @@
  */
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Button, ICON_GAP, noAutofill } from "@prismshadow/penguin-ui";
+import { Button, Dropdown, ICON_GAP, noAutofill } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Dropdown } from "../../components/ui/dropdown";
 import { PrincipalChip } from "./shared";
 import {
   insertMention,

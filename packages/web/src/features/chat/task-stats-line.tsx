@@ -28,7 +28,7 @@
  */
 import { useState } from "react";
 import type { TracePosition } from "@prismshadow/penguin-server/api";
-import { CopyButton, GlyphIcon } from "@prismshadow/penguin-ui";
+import { ConfirmModal, CopyButton, GlyphIcon } from "@prismshadow/penguin-ui";
 import { formatTaskStats } from "../../lib/omni/task-stats";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import {
@@ -40,7 +40,6 @@ import {
 } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { S } from "../../lib/strings";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useTheme } from "../../state/theme";
 import { useLocale } from "../../state/locale";
 
@@ -222,6 +221,7 @@ export function TaskStatsLine({
             title={S.chat.forkSession}
             tone="primary"
             confirmLabel={S.chat.forkSessionConfirmAction}
+            cancelLabel={S.common.cancel}
             busy={forking}
             onClose={() => setConfirmingFork(false)}
             onConfirm={() => {

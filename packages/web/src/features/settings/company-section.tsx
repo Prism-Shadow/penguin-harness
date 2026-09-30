@@ -12,13 +12,12 @@
  * wherever the switch stands.
  */
 import { useEffect, useState } from "react";
-import { SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
+import { SettingsSection, ToggleRow, toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { toastError } from "../../components/ui/toast";
 import { writeCompanyMode } from "./company-mode-write";
 
 export function CompanySection() {
